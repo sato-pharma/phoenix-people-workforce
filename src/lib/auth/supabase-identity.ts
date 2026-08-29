@@ -71,6 +71,11 @@ export function mapPhoenixRoleToAccessScopeType(role: PhoenixRole): AccessScopeT
       return "SUPER_ADMIN";
     case "CEO":
     case "SFE Manager":
+    // HR Operations, 2026-08-29 (owner), kept in step with scopeForRole, which now returns
+    // "company" for this seat. This column is only the mirror written at provisioning; access is
+    // decided by scopeForRole at request time and never read back from here. A mirror that
+    // disagrees with the live function is how an audit of this table reaches a wrong conclusion.
+    case "HR Operations":
       return "COMPANY_READ";
     case "Finance Manager":
       return "FINANCE";

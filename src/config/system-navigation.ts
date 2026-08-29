@@ -1465,7 +1465,19 @@ const hrNavigationSectionSeeds = [
   {
     id: "hr-attendance",
     items: [
+      // Kept for BOTH seats. Attendance is named in the HR Business Partner job description too —
+      // "use HR data to identify turnover, vacancy, attendance, performance or engagement patterns
+      // that need management attention" — so Advisory's attendance:read is correct and this row is
+      // right. What was wrong was the destination: every data view inside the hub was CEO/Super
+      // Admin only, so the hub listed 0 of 12 for her and 3 of 12 for Operations. Widened above.
       { href: "/hr/attendance", icon: Fingerprint, label: "Attendance", permissions: [{ resource: "attendance", action: "read" }] },
+      // HR Operations only — the day-by-day org-wide record behind "identify unexplained absences,
+      // missing punches or inconsistent records". Same findability problem as the Company Vacation
+      // Report: it sits in peopleManagementPageItems, which this catalogue does not open.
+      // "Activity Report" for symmetry with the Vacation Report row above, which had to drop
+      // "Company" to fit the rail. This one fits either way (153px); matching them is a choice, so
+      // that two rows added together do not read as two different naming conventions.
+      { href: "/hr/admin/company-activity-report", icon: Activity, label: "Activity Report", permissions: [{ resource: "leave", action: "read" }], roles: ["HR Operations"] },
       { href: "/hr/attendance/device-user-mapping", icon: Fingerprint, label: "Device User Mapping", permissions: [{ resource: "employees", action: "update" }] },
       { href: "/hr/attendance/policies", icon: CalendarClock, label: "Attendance Policies", permissions: [{ resource: "employees", action: "update" }] },
       { href: "/hr/hr-calendar", icon: CalendarDays, label: "Company Calendar", permissions: [{ resource: "hr_calendar" }] },
@@ -1475,8 +1487,23 @@ const hrNavigationSectionSeeds = [
   {
     id: "hr-leave",
     items: [
-      { href: "/hr/leave-management", icon: CalendarDays, label: "Leave Management", permissions: [{ resource: "leave", action: "read" }] },
+      // excludedRoles: HR Advisory, 2026-08-29. Leave administration appears NOWHERE in the HR
+      // Business Partner job description — it is HR Operations' second area ("Maintain leave
+      // balances and ensure approved leave is correctly recorded"). Advisory holds leave:[read,
+      // create] for her OWN requests, which the "Request Vacation" row under My Requests already
+      // serves, so this row opened a hub that listed nothing she could enter: 0 of 3 children
+      // visible. An always-empty hub reads as a broken page, not as "not for you".
+      { href: "/hr/leave-management", icon: CalendarDays, label: "Leave Management", permissions: [{ resource: "leave", action: "read" }], excludedRoles: ["HR Advisory"] },
       { href: "/hr/leave-management/vacation-control", icon: Settings2, label: "Vacation Control", permissions: [{ resource: "leave", action: "update" }] },
+      // HR Operations only — the org-wide leave register. It lives in peopleManagementPageItems,
+      // a hub this catalogue has no row for, so without this line the seat passes the gate
+      // (companyVacationReportReaderRoles) and still cannot find the page.
+      // Labelled "Vacation Report", not "Company Vacation Report" as the page's own hero reads:
+      // the full name measures 158px against the admin rail's 157px budget, and the owner's rule is
+      // no ellipsis and no wrap, so the label gives way rather than the rail. It loses nothing —
+      // the row sits in the Leave section of an admin shell only HR Operations sees, where there is
+      // no personal vacation report for it to be confused with.
+      { href: "/hr/admin/vacation-report", icon: FileSpreadsheet, label: "Vacation Report", permissions: [{ resource: "leave", action: "read" }], roles: ["HR Operations"] },
       { href: "/hr/admin/approvals-hub", icon: Inbox, label: "Other Approvals", permissions: [{ resource: "leave", action: "read" }], navBadge: "approvals-hub-pending" },
     ],
     label: "Leave Management",
@@ -1484,7 +1511,12 @@ const hrNavigationSectionSeeds = [
   {
     id: "hr-payroll",
     items: [
-      { href: "/hr/admin/payroll-management", icon: FileSpreadsheet, label: "Payroll Management", permissions: [{ resource: "payroll" }, { resource: "payslips" }, { resource: "deductions", action: "read" }] },
+      // excludedRoles: HR Advisory, 2026-08-29. Payroll appears NOWHERE in the HR Business Partner
+      // job description, and her Role Boundaries bar her from salary changes outright; payroll
+      // inputs and monthly closure are HR Operations' third area. Advisory reached this row through
+      // payslips:read — the grant that shows her HER OWN payslip — and the hub then listed 0 of 7.
+      // Her own payslip is unaffected: that is the employee-portal path, not this admin hub.
+      { href: "/hr/admin/payroll-management", icon: FileSpreadsheet, label: "Payroll Management", permissions: [{ resource: "payroll" }, { resource: "payslips" }, { resource: "deductions", action: "read" }], excludedRoles: ["HR Advisory"] },
       // NO "Deductions" row here, deliberately. app/(admin)/admin/deductions/page.tsx gates on a
       // hard-coded `VIEW_ROLES = {Super Admin, CEO}` — a role set, not a permission — and redirects
       // everyone else to /employee-portals. This catalogue serves `hrNamespaceRoles`, which is the
@@ -1564,7 +1596,9 @@ export const leaveManagementPageItems: readonly AdminToolsPageItem[] = [
     label: "Vacation Report",
     description: "View vacation balances and history.",
     permissions: [{ resource: "leave" }],
-    roles: ["Super Admin", "CEO"],
+    // HR Operations added 2026-08-29 (owner). "Maintain leave balances and ensure approved leave is
+    // correctly recorded" is her job description's own sentence for this page.
+    roles: ["Super Admin", "CEO", "HR Operations"],
   },
   {
     href: "/leave-management/vacation-control",
@@ -2219,7 +2253,13 @@ export const attendanceManagementPageItems: readonly AdminToolsPageItem[] = [
     label: "Fingerprint Report",
     description: "Raw fingerprint clock-in/clock-out punches per employee.",
     permissions: [{ resource: "employees" }],
-    roles: ["CEO", "Super Admin"],
+    // HR Operations added 2026-08-29 (owner). Her job description's second area opens "Review
+    // attendance records, FINGERPRINT INPUTS, approved leave, permissions, excuses" — this is that
+    // screen. Note the page already admitted her: canAccessFingerprintReport is CEO or
+    // employees:read, which she holds, so this row was hiding a page she could already open by
+    // typing the address. Hidden is not revoked, and a surface that is reachable but unfindable is
+    // the worse of the two states.
+    roles: ["CEO", "Super Admin", "HR Operations"],
   },
   {
     href: "/attendance/employee-day-report",
@@ -2235,7 +2275,19 @@ export const attendanceManagementPageItems: readonly AdminToolsPageItem[] = [
     label: "Monthly Summary",
     description: "Monthly attendance summary and totals per employee.",
     permissions: [{ resource: "employees" }],
-    roles: ["CEO", "Super Admin"],
+    // HR Operations added 2026-08-29 (owner) — "Prepare clean, supported monthly attendance
+    // outputs" is her job description's own phrase for this page. Same story as Fingerprint Report
+    // above: app/(admin)/attendance/monthly-summary/page.tsx gates on employees:read and nothing
+    // else, so she could already reach it and only the sidebar disagreed.
+    //
+    // HR Advisory added at the same time, and this row is the ONLY attendance destination she gets.
+    // Her job description names attendance exactly once, as insight rather than administration —
+    // "use HR data to identify turnover, vacancy, attendance, performance or engagement patterns
+    // that need management attention" — which is the monthly aggregate, not raw punches and not
+    // policy setup. Without it her Attendance sidebar row opened a hub listing 0 of 12 items, and a
+    // permanently empty hub reads to its owner as a broken page rather than as a boundary. The page
+    // admits her already (employees:read, which she holds); nothing about its gate changes here.
+    roles: ["CEO", "Super Admin", "HR Operations", "HR Advisory"],
   },
   {
     href: "/attendance/analytics",
@@ -2304,7 +2356,11 @@ export const attendanceManagementPageItems: readonly AdminToolsPageItem[] = [
     label: "Holiday Calendar",
     description: "Manage the company holiday calendar.",
     permissions: [{ resource: "employees", action: "read" }],
-    roles: systemAdministratorNavigationRoles,
+    // HR Operations added 2026-08-29 (owner). Official holidays are an input to every attendance
+    // and leave figure she is responsible for, so she cannot reconcile a month without seeing the
+    // calendar it was measured against. The page gates on canAccessAttendanceSetup, which is just
+    // canAccess(employees, …) — she already passed it; only this row disagreed.
+    roles: [...systemAdministratorNavigationRoles, "HR Operations"],
   },
 ] as const satisfies readonly AdminToolsPageItem[];
 
@@ -2320,7 +2376,11 @@ export const payrollManagementPageItems: readonly AdminToolsPageItem[] = [
     label: "Payroll Report",
     description: "Company payroll report — gross, net, and deductions per employee.",
     permissions: [{ resource: "payroll" }],
-    roles: companyPayrollNavigationRoles,
+    // HR Operations added 2026-08-29 (owner), with her COMPANY payroll scope. Her job description's
+    // third area is "Payroll HR Inputs & Monthly Closure", and this seat was composed with
+    // payroll:[read, export] from the start — getPayrollScope was the only thing refusing her, so
+    // those grants were decorative until now. Read and export; no payroll write action is granted.
+    roles: [...companyPayrollNavigationRoles, "HR Operations"],
     excludedRoles: ["CEO"],
   },
   {
@@ -2355,7 +2415,15 @@ export const payrollManagementPageItems: readonly AdminToolsPageItem[] = [
     label: "Payslips Center",
     description: "Generate and manage employee payslips.",
     permissions: [{ resource: "payslips" }],
-    roles: ["Super Admin", "CEO"],
+    // HR Operations added 2026-08-29 (owner). This is the widest surface the company-scope ruling
+    // opens: every employee's payslip, the CEO's included. She was composed with
+    // payslips:[read, export] when the seat was built and getPayrollScope was the only thing
+    // refusing her, so the grant existed and did nothing — but "already granted" is a reason to
+    // raise this, not a reason to treat it as settled. Read and export only: generating, editing
+    // and publishing a payslip are separate matrix actions this seat does not hold, and the page
+    // itself still asks for each. If that is wider than intended, take HR Operations out of this
+    // one row — it is independent of the other three payroll rows and of the scope change.
+    roles: ["Super Admin", "CEO", "HR Operations"],
   },
   {
     href: "/admin/deductions-governance",
@@ -2381,7 +2449,16 @@ export const payrollManagementPageItems: readonly AdminToolsPageItem[] = [
     // the card goes by name, on the hub AND in the command palette. hubPageItemGroups folds every
     // hub card the viewer's role admits back into Cmd+K regardless of the parent hub row, so
     // hiding /admin/payroll-management from his sidebar alone would not have hidden this card.
-    excludedRoles: ["Finance Manager"],
+    //
+    // HR Operations excluded 2026-08-29, for the same reason and by the same mechanism. Her seat
+    // holds deductions:read — it is what opens Deductions Governance for her — so this card
+    // admitted her, but app/(admin)/admin/deductions/page.tsx gates on a hard-coded role set of
+    // {Super Admin, CEO} and redirects everyone else to /employee-portals. It was a dead link for
+    // her before this branch and would have become a more prominent one, since the payroll hub now
+    // lists four cards for her instead of two. Excluded by NAME rather than by widening VIEW_ROLES:
+    // that boundary is the owner's, set by role on 2026-08-11, and hidden is not revoked — the page
+    // refuses her either way.
+    excludedRoles: ["Finance Manager", "HR Operations"],
   },
 ] as const satisfies readonly AdminToolsPageItem[];
 
@@ -2618,6 +2695,14 @@ export const peopleManagementPageItems: readonly AdminToolsPageItem[] = [
     // nine responsibilities of her job description are carried out on this screen. HR Advisory is
     // deliberately NOT here - she is read/export only, and the page ships an editing UI that takes
     // no capability props, so admitting her would show Save buttons the API refuses.
+    //
+    // This entry is load-bearing in a way that is easy to miss and was briefly reverted on
+    // 2026-08-29 because of it. She is offered no People Management hub ROW, so nothing renders
+    // this card for her and it looks like dead weight. But tests/hr-url-namespace.test.ts derives
+    // each seat's admin closure from these lists and requires every /hr row to point INSIDE it -
+    // the namespace may narrow the matrix, never widen it. Take her off this card and her
+    // /hr/employees row becomes a page "neither seat's permissions admit", i.e. the HR namespace
+    // inventing access rather than mirroring it. The card is the grant; the /hr row is the mirror.
     roles: ["Super Admin", "HR Operations"],
   },
   // Organogram/Probation moved to direct sidebar links — see the
@@ -2682,7 +2767,15 @@ export const peopleManagementPageItems: readonly AdminToolsPageItem[] = [
     label: "Company Vacation Report",
     description: "Every HR-approved leave request alongside unverified CRM/attendance leave signals, org-wide.",
     permissions: [{ resource: "leave" }],
-    roles: ["Super Admin"],
+    // HR Operations added 2026-08-29 (owner) — see companyVacationReportReaderRoles, which is the
+    // gate the page itself asserts. She reads and exports; turning a CRM Signal row into a real
+    // balance-deducting request stays Super Admin only at the page and at the approve route.
+    //
+    // She never SEES this card — she is offered no People Management hub row, and reaches the
+    // report by her own /hr/admin/vacation-report sidebar row. It is still required: this list is
+    // the admin closure tests/hr-url-namespace.test.ts derives, and a /hr row pointing outside that
+    // closure is a widening by the namespace rather than a mirror of an existing grant.
+    roles: ["Super Admin", "HR Operations"],
   },
   {
     href: "/admin/company-activity-report",
@@ -2690,7 +2783,15 @@ export const peopleManagementPageItems: readonly AdminToolsPageItem[] = [
     label: "Company Activity Report",
     description: "Day-by-day CRM visits, office attendance, and leave for any employee slice and date range — not a payroll report.",
     permissions: [{ resource: "leave" }],
-    roles: ["Super Admin"],
+    // HR Operations added 2026-08-29 (owner) — see companyActivityReportReaderRoles. This is the
+    // report behind "identify unexplained absences, missing punches or inconsistent records". It
+    // has no write path, so this is read-only by construction.
+    //
+    // As with the Vacation Report card above, she never sees this card — it is required because
+    // tests/hr-url-namespace.test.ts derives her admin closure from these lists, and her
+    // /hr/admin/company-activity-report row must point inside it. tests/company-activity-report.ts
+    // pins this list, so it moves deliberately or not at all.
+    roles: ["Super Admin", "HR Operations"],
   },
   {
     href: "/admin/support-requests",

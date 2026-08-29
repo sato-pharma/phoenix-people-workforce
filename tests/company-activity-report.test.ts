@@ -364,13 +364,21 @@ export function runCompanyActivityReportTests() {
   assert.equal(Object.keys(OUTCOME_LABEL).length, ALL_COMPANY_ACTIVITY_DAY_OUTCOMES.length, "OUTCOME_LABEL must carry no keys beyond the declared union");
   assert.equal(Object.keys(OUTCOME_FILL).length, ALL_COMPANY_ACTIVITY_DAY_OUTCOMES.length, "OUTCOME_FILL must carry no keys beyond the declared union");
 
-  // ── (12) Role gate — exactly two roles, named exhaustively so a new role is never admitted by
+  // ── (12) Role gate — exactly three roles, named exhaustively so a new role is never admitted by
   //    default; the server-side assert is the boundary, so both pages and the export route must
-  //    actually call it, not merely hide a link. ──
+  //    actually call it, not merely hide a link.
+  //
+  //    HR Operations joined 2026-08-29 on the owner's company-scope ruling — a widening that was
+  //    asked for, and the only reason this list moved. This is the report behind her job
+  //    description's "identify unexplained absences, missing punches or inconsistent records", and
+  //    it has no write path, so read access is the whole of it. She is admitted by membership of
+  //    companyActivityReportReaderRoles, not by her scope: the predicate short-circuits on
+  //    scope === "system" alone, and hers is "company". ──
   assert.equal(canReadCompanyActivityReport(context("Super Admin")), true);
   assert.equal(canReadCompanyActivityReport(context("SFE Manager")), true);
+  assert.equal(canReadCompanyActivityReport(context("HR Operations")), true);
   const readers = phoenixRoles.filter((role) => canReadCompanyActivityReport(context(role)));
-  assert.deepEqual([...readers].sort(), ["SFE Manager", "Super Admin"], "exactly two roles may read the company activity report — a third arriving here is an unrequested widening");
+  assert.deepEqual([...readers].sort(), ["HR Operations", "SFE Manager", "Super Admin"], "exactly three roles may read the company activity report — a fourth arriving here is an unrequested widening");
 
   assert.throws(
     () => assertCompanyActivityReportReadAccess(context("Regional Manager")),
@@ -403,5 +411,12 @@ export function runCompanyActivityReportTests() {
 
   const hubCard = peopleManagementPageItems.find((item) => item.href === "/admin/company-activity-report");
   assert.ok(hubCard, "the Super Admin hub card must exist");
-  assert.deepEqual(hubCard?.roles, ["Super Admin"]);
+  // HR Operations joined this card 2026-08-29 with the owner's ruling, and it is NOT cosmetic even
+  // though she is offered no People Management hub row and so never renders it. This list is the
+  // admin closure tests/hr-url-namespace.test.ts derives per seat, and it requires every /hr row to
+  // point INSIDE that closure — the HR namespace may narrow the matrix, never widen it. Her
+  // /hr/admin/company-activity-report row is that mirror, so taking her off this card turns the row
+  // into a page "neither seat's permissions admit" and the namespace test goes red. Reverting this
+  // to ["Super Admin"] alone was tried on 2026-08-29 and produced exactly that failure.
+  assert.deepEqual(hubCard?.roles, ["Super Admin", "HR Operations"]);
 }

@@ -345,7 +345,15 @@ export function assertSystemAdministratorWorkspaceAccess(
  * stays Super Admin only, because the owner's instruction was explicit: he can read, he can
  * export, he cannot add.
  */
-export const companyVacationReportReaderRoles = ["Super Admin", "SFE Manager"] as const satisfies readonly PhoenixRole[];
+// HR Operations added 2026-08-29 (owner). Her job description's second area is "Attendance, Leave &
+// Working-Time Administration" — "Maintain leave balances and ensure approved leave is correctly
+// recorded" — which is this register and no smaller surface. Membership here rather than her new
+// company scope is deliberate and is the whole point of the named-set convention: canReadCompany-
+// VacationReport short-circuits on scope "system" only, so a company scope would NOT have admitted
+// her, and this line is the only thing that does. READ and export; the one write this report can
+// perform (turning a CRM Signal row into a balance-deducting request) keeps its Super-Admin-only
+// gate below, untouched.
+export const companyVacationReportReaderRoles = ["Super Admin", "SFE Manager", "HR Operations"] as const satisfies readonly PhoenixRole[];
 const companyVacationReportReaderRoleSet = new Set<PhoenixRole>(companyVacationReportReaderRoles);
 
 export function canReadCompanyVacationReport(context: Pick<AccessContext, "role" | "scope">): boolean {
@@ -372,7 +380,12 @@ export function assertCompanyVacationReportReadAccess(
  * Owner-confirmed 2026-08-28: this is NOT a payroll report — it exists purely for awareness and
  * accuracy review. It has no write path at all, so READING is all this ever grants.
  */
-export const companyActivityReportReaderRoles = ["Super Admin", "SFE Manager"] as const satisfies readonly PhoenixRole[];
+// HR Operations added 2026-08-29 (owner), for the same job-description area as the vacation
+// report above: "Identify unexplained absences, missing punches or inconsistent records and
+// follow up with the employee/manager before payroll closure". This report is the day-by-day
+// account of attendance, leave activity and gaps, which is that sentence exactly. It has no
+// write path at all, so reading is all this can ever grant.
+export const companyActivityReportReaderRoles = ["Super Admin", "SFE Manager", "HR Operations"] as const satisfies readonly PhoenixRole[];
 const companyActivityReportReaderRoleSet = new Set<PhoenixRole>(companyActivityReportReaderRoles);
 
 export function canReadCompanyActivityReport(context: Pick<AccessContext, "role" | "scope">): boolean {
@@ -1395,7 +1408,24 @@ export function scopeForRole(role: PhoenixRole): AccessScope {
   if (
     role === "Super Admin" ||
     role === "CEO" ||
-    role === "Finance Manager"
+    role === "Finance Manager" ||
+    // Owner ruling 2026-08-29. HR Operations administers attendance, leave and payroll inputs for
+    // the whole company — her job description opens "Review attendance records, fingerprint inputs,
+    // approved leave, permissions, excuses" and "Maintain leave balances", neither of which means
+    // anything about one person. She resolved to "self" until now, which is the scope of somebody
+    // who may see only their own row, and it silently contradicted grants she already held:
+    // attendance/leave/employees/payroll/payslips read+export were all composed onto this seat when
+    // it was built, and a self scope makes several of them unusable while leaving them looking
+    // granted.
+    //
+    // This widens LESS than it appears. canAccess short-circuits on scope === "system" and on
+    // nothing else, so no permission-matrix boundary moves here — every refusal asserted by
+    // tests/hr-function-governance.test.ts still comes from the matrix. Reading this file for
+    // `scope === "company"` finds exactly two consumers: canViewEmployeeActivity (still gated in
+    // front by user_activity:read, which this seat does not hold) and the command centre's company
+    // payroll summary. The org-wide REPORTS stay behind their own named role sets above, which is
+    // the convention here precisely so a scope change cannot drag them along by accident.
+    role === "HR Operations"
   ) {
     return "company";
   }
@@ -1623,7 +1653,21 @@ export function getPayrollScope(context: Pick<AccessContext, "role">): BusinessS
   if (
     context.role === "CEO" ||
     context.role === "Finance Manager" ||
-    context.role === "Super Admin"
+    context.role === "Super Admin" ||
+    // Owner ruling 2026-08-29, the payroll half of the same decision as scopeForRole above.
+    //
+    // This seat was ALREADY granted payroll:[read, export] and payslips:[read, export] in the
+    // matrix when it was composed — its job description owns "Payroll HR Inputs & Monthly Closure"
+    // and preparing clean attendance outputs "before payroll closure". But this function is
+    // consulted BEFORE those grants: /payroll and /admin/payslips-center both redirect on
+    // getPayrollScope(access) !== "COMPANY" and never reach the permission check. So the seat held
+    // four payroll grants that no page would honour — granted on paper, bounced in practice, which
+    // is the exact failure mode this repo has shipped three times.
+    //
+    // Read+export only. Every payroll WRITE — publishing a batch, deciding a deduction, moving an
+    // amount — is a separate matrix action this seat does not hold, and Payroll Copilot and
+    // Insurance Wages stay Super-Admin-gated at their own pages.
+    context.role === "HR Operations"
   ) {
     return "COMPANY";
   }

@@ -110,18 +110,39 @@ export async function runPhase22RoleMatrixSecurityTests() {
     true,
     "the seat-continuity marker keeps a mid-replacement report visible to the stand-in DM",
   );
-  assert.equal(hrAdvisory.scope, "self");
   const hrOperations = createAccessContext({ hrId: "A-17", role: "HR Operations" });
 
-  // ── The shell moved (owner, 2026-08-28) ─────────────────────────────────────────────────────
+  // ── The shell moved (owner, 2026-08-28); the SCOPES then split (owner, 2026-08-29) ───────────
   // The retired HR Advisory seat was moved OUT of the admin shell on 2026-07-24 and into
-  // the employee portal; its two successors are back on the admin shell. Scope stays "self" for
-  // both — their company-wide visibility comes from targeted per-feature carve-outs
-  // (canSeeEmployee, canAccessCompanyOrganogram, canAccessCompanyVacancies), never a scope change,
-  // so payroll and sales access stay exactly as narrow as before. Asserting the scope AND the
-  // shell together is what catches a future "just give her company scope" shortcut.
+  // the employee portal; its two successors are back on the admin shell.
+  //
+  // This block asserted scope "self" for BOTH seats in one loop, and said that asserting scope and
+  // shell together is what catches a future "just give her company scope" shortcut. It still does
+  // — for HR Advisory, where the reasoning below is unchanged and her company-wide visibility comes
+  // from targeted per-feature carve-outs (canSeeEmployee, canAccessCompanyOrganogram,
+  // canAccessCompanyVacancies), never a scope change. HR Operations was moved to "company" by the
+  // owner's explicit ruling on 2026-08-29, so the two are asserted SEPARATELY now: a loop over both
+  // seats cannot express "one moved and the other must not", and collapsing them again is how the
+  // seat that did not move would quietly follow the seat that did.
+  //
+  // Why that move is not the shortcut this guard was built to stop. `canAccess` short-circuits on
+  // scope === "system" ONLY, so "company" is inert against the permission matrix and hands her no
+  // permission she did not already hold — tests/hr-operations-company-scope.test.ts proves it by
+  // exhausting every resource/action pair under both scopes and requiring every answer to be
+  // identical, so if "company" ever gains a shortcut of its own that suite goes red for every HR
+  // grant at once. What the scope IS read by is four separate mechanisms, and getPayrollScope is
+  // the one that mattered: /payroll and /admin/payslips-center redirect on it BEFORE reaching the
+  // permission check, so the payroll and payslips grants she was already given bounced her at the
+  // door while she resolved to "self" — granted on paper, refused in practice.
+  assert.equal(hrAdvisory.scope, "self", "an HR Advisory AccessScope stays self — carve-outs, never scope");
+  assert.equal(
+    hrOperations.scope,
+    "company",
+    "HR Operations resolves to company scope on the owner's 2026-08-29 ruling — she administers " +
+      "attendance, leave and payroll inputs for the whole company. If this ever reads \"self\" again, " +
+      "her Payroll Report and Payslips Center rows are visible and both redirect on open",
+  );
   for (const seat of [hrAdvisory, hrOperations]) {
-    assert.equal(seat.scope, "self", "an HR seat's AccessScope stays self — carve-outs, never scope");
     assert.equal(resolveNavigationMode(seat), "admin");
     assert.equal(await canAccess(seat, "employee_profile", "read"), true);
     assert.equal(await canAccess(seat, "employee_profile", "update"), true);
