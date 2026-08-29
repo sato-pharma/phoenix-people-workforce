@@ -8,7 +8,7 @@ import { getPermissionMatrix, permissionActions, permissionResources } from "@/l
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { getSections, type PermissionLookup } from "@/lib/navigation/active-path";
 import { layoutOwnerKey } from "@/lib/navigation/personal-layout";
-import { loadPersonalLayout } from "@/lib/navigation/personal-layout-store";
+import { loadCompanyDefaultLayout, loadEffectiveLayout } from "@/lib/navigation/personal-layout-store";
 
 export const dynamic = "force-dynamic";
 
@@ -52,19 +52,38 @@ export default async function SidebarLayoutPage() {
     items: section.items.map((item) => ({ href: item.href, label: item.label })),
   }));
 
-  const savedLayout = await loadPersonalLayout(layoutOwnerKey(access));
+  // Open on what this person's navigation ACTUALLY renders from -- their own layout, or the
+  // company default when they have never arranged anything. Opening on their empty personal row
+  // while the shell around them showed the company default would make the editor look broken.
+  const { layout: savedLayout, source: layoutSource } = await loadEffectiveLayout(layoutOwnerKey(access));
+
+  // Only a Super Admin can publish or withdraw the company default, so only a Super Admin pays for
+  // the extra read that says whether one exists. Everyone else learns it for free: if their own
+  // navigation resolved from the company row, there is one.
+  const canManageCompanyDefault = access.role === "Super Admin";
+  const companyDefaultExists = canManageCompanyDefault
+    ? (await loadCompanyDefaultLayout()) !== null
+    : layoutSource === "company";
+
   const pageCount = catalogue.reduce((total, section) => total + section.items.length, 0);
 
   return (
     <div className="space-y-6">
       <AdminPageHero
-        description="Put any page in the row above the page title, the row below it, the top strip, or any module — press Move to on the page, or drag it. This changes your own navigation and nobody else's."
+        description={
+          canManageCompanyDefault
+            ? "Put any page in the row above the page title, the row below it, the top strip, or any module — press Move to on the page, or drag it. Saving changes your own navigation. Publishing a company default changes it for everyone who has never arranged their own."
+            : "Put any page in the row above the page title, the row below it, the top strip, or any module — press Move to on the page, or drag it. This changes your own navigation and nobody else's."
+        }
         eyebrow="Personal"
         icon={<LayoutGrid className="h-3.5 w-3.5" />}
         title="Navigation Layout"
       />
       <SidebarLayoutEditor
+        canManageCompanyDefault={canManageCompanyDefault}
         catalogue={catalogue}
+        companyDefaultExists={companyDefaultExists}
+        layoutSource={layoutSource}
         pageCount={pageCount}
         savedLayout={savedLayout}
       />
