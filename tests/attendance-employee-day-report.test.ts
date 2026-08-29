@@ -59,4 +59,60 @@ export function runAttendanceEmployeeDayReportTests() {
     /listFlexEligibleEmployees\(\s*filters\?\.dateFrom && filters\?\.dateTo \? \{ dateFromIso: filters\.dateFrom, dateToIso: filters\.dateTo \} : undefined,\s*\)/,
     "the page must pass the admin's chosen range through to listFlexEligibleEmployees once picked",
   );
+
+  // 4. Track C cutover (C5). The day report's deduction confirmations must read and
+  //    write the UNIFIED deductions module (deductions_candidates/deductions_decisions,
+  //    category "fingerprint") that live Automated Payroll reads — NOT the legacy
+  //    deductions-governance tables, which only the now-retired Payroll Copilot ever
+  //    read. Before this repoint a confirmation here reached no live payroll at all, so
+  //    a regression back to the singular tables would silently disconnect it again.
+  assert.doesNotMatch(
+    lib,
+    /from\("deduction_candidates"\)|from\("deduction_decisions"\)/,
+    "the day report must not read or write the legacy singular deduction_candidates/deduction_decisions tables",
+  );
+  assert.doesNotMatch(
+    lib,
+    /deductions-governance\/(?:service|candidate-key|types)/,
+    "the day report must not import from the legacy deductions-governance service/keys/types",
+  );
+  assert.match(
+    lib,
+    /from\("deductions_candidates"\)/,
+    "the day report must write the unified deductions_candidates table",
+  );
+  assert.match(
+    lib,
+    /recordDecision\(\{[\s\S]*?actor: input\.actor,/,
+    "confirmations must go through the unified recordDecision, passing the Super Admin actor",
+  );
+
+  // 5. Dedup contract. A candidate this report creates must be keyed BYTE-IDENTICALLY to
+  //    the monthly fingerprint connector (connectors/fingerprint.ts) — same sourceSystem
+  //    and the `${hrId}:${dateIso}` sourceRecordId — so the collector and an on-demand
+  //    confirmation converge on ONE candidate rather than double-charging the same day.
+  assert.match(
+    lib,
+    /sourceSystem: "fingerprint_report"/,
+    "created candidates must use the connector's sourceSystem so candidate_keys match",
+  );
+  assert.match(
+    lib,
+    /sourceRecordId: `\$\{hrId\}:\$\{input\.dateIso\}`/,
+    "created candidates must use the connector's `${hrId}:${dateIso}` sourceRecordId so candidate_keys match",
+  );
+
+  // 6. HR-id matching must use the ALIAS-AWARE compactDeductionsHrId — the same derivation
+  //    the unified table stores in employee_hr_id_compact. Matching on the non-alias-aware
+  //    compactHrKey silently drops an aliased HR_ID (e.g. AAA→AA) from every reader.
+  assert.doesNotMatch(
+    lib,
+    /compactHrKey\(/,
+    "the day report must not match deduction candidates on the non-alias-aware compactHrKey",
+  );
+  assert.match(
+    lib,
+    /compactDeductionsHrId\(/,
+    "the day report must match deduction candidates on the alias-aware compactDeductionsHrId",
+  );
 }

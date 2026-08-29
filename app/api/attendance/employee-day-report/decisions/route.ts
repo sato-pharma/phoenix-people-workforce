@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import {
   getEmployeeDayDeductionDecisions,
   upsertAndDecideEmployeeDayDeduction,
+  type EmployeeDayDecisionInfo,
 } from "@/lib/attendance/employee-day-report";
 import { resolveAccessContext } from "@/lib/auth/server";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
@@ -94,10 +95,19 @@ export async function POST(request: Request) {
       dateIso,
       decisionStatus: body.decisionStatus,
       days: typeof body.days === "number" ? body.days : 0,
-      actorLoginId: access.hrId ?? access.loginId ?? "system",
+      actor: access,
     });
 
-    return NextResponse.json({ decision });
+    // Return the report's own decision shape (the same EmployeeDayDecisionInfo the GET
+    // endpoint returns), not the raw unified DeductionsDecision — the client's optimistic
+    // update reads appliedDeductionValue, and both endpoints must speak one contract.
+    const decisionInfo: EmployeeDayDecisionInfo = {
+      candidateId: decision.candidateId,
+      decisionStatus: decision.decisionStatus,
+      appliedDeductionValue: decision.appliedValue,
+      appliedAmount: decision.appliedAmount,
+    };
+    return NextResponse.json({ decision: decisionInfo });
   } catch (error) {
     return errorResponse(error);
   }
