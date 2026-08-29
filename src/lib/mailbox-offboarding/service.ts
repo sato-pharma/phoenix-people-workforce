@@ -27,6 +27,8 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 import type {
   MailboxAwaitingLeaver,
+  MailboxBulkOutcome,
+  MailboxBulkStep,
   MailboxDisposition,
   MailboxOffboardingDashboardData,
   MailboxOffboardingStats,
@@ -35,6 +37,7 @@ import type {
   MailboxTaskSource,
   MailboxTaskStatus,
   RecordMailboxStepInput,
+  RecordMailboxStepsBulkInput,
 } from "./types";
 
 /**
@@ -402,4 +405,141 @@ export function isMailboxStep(value: unknown): value is MailboxStep {
     value === "not_applicable" ||
     value === "reopen"
   );
+}
+
+/** How many bulk writes run at once. Four is a throttle, not a throughput target — see below. */
+const BULK_CONCURRENCY = 4;
+
+/** Refused above this. A selection larger than the register is a bug in the caller, not a request. */
+export const MAILBOX_BULK_MAX = 200;
+
+/**
+ * Is this step already recorded on this row? A bulk pass must not re-stamp it.
+ *
+ * Re-recording is not harmless. Every record writes an audit row and moves the `*_by` and `*_at`
+ * columns to the person who pressed the button, so a second pass would quietly reassign an earlier
+ * admin's attestation to whoever ran the bulk action — overwriting the answer to "who said they
+ * did this", which is the only thing this register actually knows.
+ */
+function bulkStepAlreadyRecorded(row: TaskRow, step: MailboxBulkStep): boolean {
+  if (step === "password_reset") return row.password_reset_at !== null;
+  if (step === "app_passwords_cleared") return row.app_passwords_cleared_at !== null;
+  return row.disposition !== null;
+}
+
+/**
+ * Records ONE step against MANY tasks, and reports what happened to each one.
+ *
+ * Four decisions are load-bearing here, each one the difference between a bulk action that is
+ * safe and one that quietly loses work:
+ *
+ * 1. **It never throws for a single row.** A failure becomes a `failed` outcome carrying its
+ *    message and the loop continues. The alternative — one bad id aborting the batch — leaves the
+ *    caller unable to tell which of the other rows were written before it blew up.
+ *
+ * 2. **It re-reads the rows first and SKIPS any that already carry the step.** See
+ *    `bulkStepAlreadyRecorded`: re-stamping would reassign an earlier admin's attestation to
+ *    whoever ran the bulk. The skip is reported, never silent.
+ *
+ * 3. **Each row keeps its OWN audit row**, because it delegates to `recordMailboxOffboardingStep`
+ *    rather than reimplementing the write. One opaque "bulk recorded 40" entry would destroy the
+ *    per-person trail that is the entire point of the register.
+ *
+ * 4. **Concurrency is capped at four.** A Supabase client request that times out at 15s still
+ *    commits, so a flood of parallel writes can leave a half-applied state that no single response
+ *    describes. Four keeps a 200-row batch well inside the window while still finishing quickly.
+ */
+export async function recordMailboxOffboardingStepsBulk(
+  input: RecordMailboxStepsBulkInput,
+  actor: string,
+): Promise<MailboxBulkOutcome[]> {
+  const taskIds = Array.from(new Set(input.taskIds.filter((id) => typeof id === "string" && id.trim())));
+  if (taskIds.length === 0) return [];
+  if (taskIds.length > MAILBOX_BULK_MAX) {
+    throw new Error(`A bulk recording is limited to ${MAILBOX_BULK_MAX} rows at a time.`);
+  }
+
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase.from("mailbox_offboarding_tasks").select(TASK_COLUMNS).in("id", taskIds);
+  if (error) throw new Error(mailboxOffboardingErrorMessage(error));
+
+  const rows = (data ?? []) as TaskRow[];
+  const byId = new Map(rows.map((row) => [row.id, row]));
+
+  // An id the caller named that the register does not hold. Reported, never silently dropped.
+  const outcomes: MailboxBulkOutcome[] = taskIds
+    .filter((id) => !byId.has(id))
+    .map((id) => ({
+      taskId: id,
+      employeeName: "Unknown",
+      workEmail: "",
+      result: "failed" as const,
+      status: null,
+      error: "No such task in the register.",
+    }));
+
+  const pending: TaskRow[] = [];
+  for (const row of rows) {
+    if (bulkStepAlreadyRecorded(row, input.step)) {
+      outcomes.push({
+        taskId: row.id,
+        employeeName: row.employee_name,
+        workEmail: row.work_email,
+        result: "skipped",
+        status: row.status,
+        error: null,
+      });
+      continue;
+    }
+    pending.push(row);
+  }
+
+  let cursor = 0;
+  async function worker(): Promise<void> {
+    for (;;) {
+      const index = cursor;
+      cursor += 1;
+      const row = pending[index];
+      if (!row) return;
+      try {
+        const status = await recordMailboxOffboardingStep(
+          {
+            taskId: row.id,
+            step: input.step,
+            disposition: input.disposition ?? null,
+            forwardingTo: input.forwardingTo ?? null,
+            forwardingExpiresOn: input.forwardingExpiresOn ?? null,
+            reason: null,
+            note: input.note ?? null,
+          },
+          actor,
+        );
+        outcomes.push({
+          taskId: row.id,
+          employeeName: row.employee_name,
+          workEmail: row.work_email,
+          result: "recorded",
+          status,
+          error: null,
+        });
+      } catch (rowError) {
+        outcomes.push({
+          taskId: row.id,
+          employeeName: row.employee_name,
+          workEmail: row.work_email,
+          result: "failed",
+          status: row.status,
+          error: mailboxOffboardingErrorMessage(rowError),
+        });
+      }
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.min(BULK_CONCURRENCY, pending.length) }, () => worker()));
+  return outcomes;
+}
+
+/** The steps a BULK caller may name. Narrower than `isMailboxStep` — corrections are excluded. */
+export function isMailboxBulkStep(value: unknown): value is MailboxBulkStep {
+  return value === "password_reset" || value === "app_passwords_cleared" || value === "disposition";
 }

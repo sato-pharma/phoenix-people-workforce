@@ -127,3 +127,39 @@ export type RecordMailboxStepInput = {
   reason?: string | null;
   note?: string | null;
 };
+
+/**
+ * The steps a BULK recording may name, which is deliberately fewer than `MailboxStep`.
+ *
+ * `not_applicable` and `reopen` are excluded on purpose. Both are corrections, both demand a
+ * written reason, and a reason shared across a selection is not a reason — it is a shrug applied
+ * to several people at once. The three that remain are the three an admin genuinely performs in
+ * one pass through the Turbify control panel, so recording them in one pass matches the work.
+ */
+export type MailboxBulkStep = "password_reset" | "app_passwords_cleared" | "disposition";
+
+export type RecordMailboxStepsBulkInput = {
+  taskIds: string[];
+  step: MailboxBulkStep;
+  disposition?: MailboxDisposition | null;
+  forwardingTo?: string | null;
+  forwardingExpiresOn?: string | null;
+  note?: string | null;
+};
+
+/**
+ * What became of ONE row in a bulk recording.
+ *
+ * `skipped` is a first-class outcome, not a quiet nothing: selecting 40 people and having 12
+ * already carry the step is the normal case, and a summary that reported "40 recorded" would be
+ * claiming 12 writes that never happened. `failed` carries the message rather than throwing,
+ * because one bad row must never cost the other 39 their recording.
+ */
+export type MailboxBulkOutcome = {
+  taskId: string;
+  employeeName: string;
+  workEmail: string;
+  result: "recorded" | "skipped" | "failed";
+  status: MailboxTaskStatus | null;
+  error: string | null;
+};

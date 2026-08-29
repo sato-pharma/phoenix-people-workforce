@@ -558,6 +558,7 @@ import { runEmployeeAccessProvisioningTests } from "./employee-access-provisioni
 import { runHrFunctionGovernanceTests } from "./hr-function-governance.test.ts";
 import { runHrClearanceRetentionTests } from "./hr-clearance-retention.test.ts";
 import { runMailboxOffboardingTests } from "./mailbox-offboarding.test.ts";
+import { runMailboxBulkRecordingTests } from "./mailbox-bulk-recording.test.ts";
 import { runHrCommandCenterTests } from "./hr-command-center.test.ts";
 import { runHrJobWorkbookTests } from "./hr-job-workbook.test.ts";
 import { runHrOperationsCompanyScopeTests } from "./hr-operations-company-scope.test.ts";
@@ -1942,6 +1943,12 @@ await runTest(
   + "password change, so revoked requires the app passwords cleared too, or the mailbox deleted "
   + "or suspended; pinned in the plpgsql, where a page cannot bypass it)",
   runMailboxOffboardingTests,
+);
+await runTest(
+  "mailbox bulk recording (a correction is never applied to a selection - not_applicable and "
+  + "reopen each need their own written reason, so the bulk guard is a NARROWER predicate than "
+  + "isMailboxStep; and the batch cap is enforced before any database client is opened)",
+  runMailboxBulkRecordingTests,
 );
 await runTest("organogram hardening", runOrganogramHardeningTests);
 await runTest("vacancy report / organogram consistency", runVacancyReportOrganogramConsistencyTests);
