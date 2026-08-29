@@ -275,6 +275,13 @@ function otherDeductionsFormula(
 ) {
   const baseSalary = cellRef(rowNumber, 11);
   const hireDate = cellRef(rowNumber, 10);
+  // Net = Base + Extra Cost of Living + Fuel, read from the row's own cells
+  // (columns 11, 18, 19) rather than the Net Salary column, so the formula
+  // states the three components it actually prorates. The joiner branch below
+  // divides THIS, per the owner's 2026-08-29 rule; the leaver branch still
+  // divides Base alone. Mirrors calculateNetJoinerProrationDeduction and
+  // calculateBaseLifecycleProrationDeduction respectively.
+  const netSalary = `(${baseSalary}+${cellRef(rowNumber, 18)}+${cellRef(rowNumber, 19)})`;
   // Must match payrollDaysInMonth exactly: the workbook recalculates these
   // formulas client-side, so a server-only fix would leave the downloaded sheet
   // disagreeing with the figure Ready Payroll stored.
@@ -290,7 +297,10 @@ function otherDeductionsFormula(
     return `ROUND(MAX(0,${baseSalary}-((${baseSalary}/${daysInMonth})*MAX(0,${endDay}-IF(AND(ISNUMBER(${hireDate}),YEAR(${hireDate})=${year},MONTH(${hireDate})=${month}),DAY(${hireDate}),1)+1))),2)`;
   }
 
-  return `IF(AND(ISNUMBER(${hireDate}),YEAR(${hireDate})=${year},MONTH(${hireDate})=${month}),ROUND(MAX(0,${baseSalary}-((${baseSalary}/${daysInMonth})*MAX(0,${daysInMonth}-DAY(${hireDate})+1))),2),0)`;
+  // Joiner branch — prorates NET, so the deducted shortfall covers the base and
+  // both allowances together and Month Salary lands on Net x days worked / days
+  // in month. The allowance columns keep their full contractual figures.
+  return `IF(AND(ISNUMBER(${hireDate}),YEAR(${hireDate})=${year},MONTH(${hireDate})=${month}),ROUND(MAX(0,${netSalary}-((${netSalary}/${daysInMonth})*MAX(0,${daysInMonth}-DAY(${hireDate})+1))),2),0)`;
 }
 
 function monthName(month: number) {
@@ -569,7 +579,7 @@ async function buildUploadRows(month: number, year: number): Promise<PayrollTemp
       });
       const extraCostOfLiving = settlement.extraCostOfLiving;
       const fuelAllowance = settlement.fuelAllowance;
-      const otherDeductions = settlement.baseProrationDeduction;
+      const otherDeductions = settlement.prorationDeduction;
       // Net Salary = base + the SETTLEMENT allowances (0 for a leaver who keeps none), matching
       // the col-13 formula base+ECOL+Fuel exactly. fixedSalary.netSalary carries the full
       // standard allowances, which the row's own ECOL/Fuel=0 cells would then contradict.
@@ -1260,7 +1270,7 @@ function upsertWorkingDaysCalcSheet(workbook: ExcelJS.Workbook, month: number, y
     ["Policy note", "", "", "", "", "", "", ""],
     ["Change Year/Month in B3:B4. Month days and weekday names recalculate automatically.", "", "", "", "", "", "", ""],
     ["Change First Day / Last Day in B14:C16. Working days and totals recalculate immediately.", "", "", "", "", "", "", ""],
-    [`Ready payroll prorates on the actual calendar days in the month (${payrollDaysInMonth(month, year)} this month). Partial-month hire deduction is calculated on Base Salary only and is written into Other Deductions.`, "", "", "", "", "", "", ""],
+    [`Ready payroll prorates on the actual calendar days in the month (${payrollDaysInMonth(month, year)} this month). Partial-month hire deduction is calculated on Net Salary (Base Salary plus Extra Cost of Living plus Fuel Allowance) and is written into Other Deductions.`, "", "", "", "", "", "", ""],
   ]);
   sheet.mergeCells("A19:H19");
   sheet.mergeCells("A20:H20");
@@ -1309,7 +1319,7 @@ function upsertSalaryPolicySheet(workbook: ExcelJS.Workbook) {
     ["Basic Salary", `Base Salary x ${basicSalaryRatePercentLabel}.`],
     ["Gross Salary", "Base Salary + Social Insurance + Employment Income Tax."],
     ["Ready Sheet Formulas", "Ready payroll rows use Excel formulas for Gross Salary, Net Salary, Total Additions, Governmental Deductions, Other Deductions proration, Total Deductions, Month Salary, First Part, and Second Part."],
-    ["Partial Month Hires", "Payroll prorates on the actual calendar days in the payroll month (28, 29, 30 or 31). If Hire Date is inside the payroll month, Other Deductions auto-calculates Base Salary - ((Base Salary / days in month) x eligible days). Hire day is included. Extra Cost of Living and Fuel Allowance are paid in full to a new hire."],
+    ["Partial Month Hires", "Payroll prorates on the actual calendar days in the payroll month (28, 29, 30 or 31). If Hire Date is inside the payroll month, Other Deductions auto-calculates Net Salary - ((Net Salary / days in month) x eligible days), where Net Salary is Base Salary plus Extra Cost of Living plus Fuel Allowance. Hire day is included. Extra Cost of Living and Fuel Allowance are prorated along with Base Salary, so a new hire is paid the same fraction of every component."],
     ["Resignations", "Last Working Date on or before the 25th: Base Salary is prorated to the days worked, and Extra Cost of Living and Fuel Allowance are both 0. Last Working Date after the 25th: Base Salary is paid in FULL and both Extra Cost of Living and Fuel Allowance are paid in full, with no proration."],
     ["First Part", `One Part: Month Salary minus Expenses and Incentive. Two Parts: MIN(Month Salary minus Expenses and Incentive, Base Salary x ${basicSalaryRatePercentLabel}, Base Salary - Other Deductions) so low final dues are paid fully in First Part.`],
     ["Second Part", "Expenses and Incentive always pay in Second Part. Two Parts also includes any remaining Month Salary after First Part. Never below 0."],
@@ -1564,7 +1574,7 @@ async function buildReadyRows(
       const fingerPrint = 0;
       const unpaidVacations = 0;
       const loans = 0;
-      const otherDeductions = settlement.baseProrationDeduction;
+      const otherDeductions = settlement.prorationDeduction;
       const totalAdditions = money(
         expenses + incentive + overtime + bonus + extraCostOfLiving + fuelAllowance + otherAdditions,
       );

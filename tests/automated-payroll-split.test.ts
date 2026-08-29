@@ -44,7 +44,9 @@ export function runAutomatedPayrollSplitTests() {
   const regular = regularEffective();
   assert.deepEqual(regular, { base: BASE, ecol: ECOL, fuel: FUEL, net: NET, lifecycle: "regular" });
 
-  // ---- effectiveSalary: joiner hired on/before the 15th → full ECoL/Fuel ----
+  // ---- effectiveSalary: a joiner prorates EVERY component by the days worked,
+  // ECoL and Fuel included (owner instruction 2026-08-29 — the >15th halving
+  // that used to sit here is retired) -----------------------------------------
   const joinerEarly = effectiveSalary({
     baseSalary: BASE,
     extraCostOfLiving: ECOL,
@@ -55,12 +57,17 @@ export function runAutomatedPayrollSplitTests() {
     hireDate: "2026-06-10", // worked 30-10+1 = 21 days
   });
   assert.equal(joinerEarly.base, 21000); // 1000/day × 21
-  assert.equal(joinerEarly.ecol, ECOL); // full
-  assert.equal(joinerEarly.fuel, FUEL); // full
-  assert.equal(joinerEarly.net, 22500);
+  assert.equal(joinerEarly.ecol, 700); // 1000 × 21/30 — was paid whole under the retired rule
+  assert.equal(joinerEarly.fuel, 350); // 500 × 21/30
+  assert.equal(joinerEarly.net, 22050); // = 31,500 net × 21/30
   assert.equal(joinerEarly.lifecycle, "joiner");
 
-  // ---- joiner hired AFTER the 15th → HALF ECoL/Fuel -------------------------
+  // ---- joiner hired the day after the old cliff. The figures below are the
+  // one case where the retired rule and this one AGREE: hired on the 16th of a
+  // 30-day month is exactly half the month, so "half the allowance" and "the
+  // allowance × 15/30" are the same number. That is a coincidence of this
+  // fixture, not the rule surviving — joinerEarly above is what tells them
+  // apart. -------------------------------------------------------------------
   const joinerLate = effectiveSalary({
     baseSalary: BASE,
     extraCostOfLiving: ECOL,
@@ -71,9 +78,9 @@ export function runAutomatedPayrollSplitTests() {
     hireDate: "2026-06-16", // worked 30-16+1 = 15 days
   });
   assert.equal(joinerLate.base, 15000);
-  assert.equal(joinerLate.ecol, 500); // half
-  assert.equal(joinerLate.fuel, 250); // half
-  assert.equal(joinerLate.net, 15750);
+  assert.equal(joinerLate.ecol, 500); // 1000 × 15/30
+  assert.equal(joinerLate.fuel, 250); // 500 × 15/30
+  assert.equal(joinerLate.net, 15750); // = 31,500 net × 15/30
 
   // ---- leaver on/before the 25th → Base-only proration, no ECoL/Fuel --------
   const leaverEarly = effectiveSalary({
@@ -168,8 +175,8 @@ export function runAutomatedPayrollSplitTests() {
     15750,
   );
 
-  // joinerEarly: prorated base=21000, net=22500. Full-base Basic = 21000 still
-  // caps it: min(21000, 22500) = 21000. The old buggy anchor
+  // joinerEarly: prorated base=21000, net=22050. Full-base Basic = 21000 still
+  // caps it: min(21000, 22050) = 21000. The old buggy anchor
   // (0.70×21000=14700) would have produced 14700 instead — again wrong.
   assert.equal(
     freezeFirstPart({ effective: joinerEarly, fullBaseSalary: BASE, paymentMode: "two_parts", fingerprint: 0 }),

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 
 import {
   calculateBaseLifecycleProrationDeduction,
-  calculateBaseProrationDeduction,
+  calculateNetJoinerProrationDeduction,
   payrollDaysInMonth,
   prorationEffectiveEndDay,
   prorationEndDay,
@@ -13,9 +13,14 @@ import {
 /**
  * Behavioural cover for Ready-Payroll partial-month proration.
  *
- * The rule (owner-confirmed): the daily rate is always
- * `Base Salary ÷ actual calendar days in the month`, and an employee present
- * for the whole calendar month is deducted nothing.
+ * TWO rules, one per lifecycle branch, both owner-confirmed:
+ *   JOINER — daily rate is `Net Salary ÷ actual calendar days`, Net being
+ *            Base + ECOL + Fuel (owner instruction 2026-08-29).
+ *   LEAVER — daily rate stays `Base Salary ÷ actual calendar days`, with
+ *            Resignation Rule 1 governing the allowances.
+ * Either way, an employee present for the whole calendar month is deducted
+ * nothing. The tests below assert the two rates stay DIFFERENT: collapsing them
+ * into one would silently rewrite whichever rule lost.
  *
  * The bug this exists to stop: the arithmetic hardcoded a 30-day month, so the
  * "worked the whole month" guard (`endDay >= 30`) could never be true in a 28-
@@ -24,6 +29,16 @@ import {
  * was a source-regex assertion that matched the buggy literal and declared the
  * fixed-30 month correct.
  */
+
+/**
+ * Money to the piastre. The assertions below reconstruct a take-home figure as
+ * `base + ECOL + fuel - deduction`, and IEEE-754 leaves a tail on that
+ * subtraction (33,500 - 20,532.26 lands on 12,967.740000000002). The payroll
+ * sheet shows two decimals, so compare at two decimals — an unrounded compare
+ * fails on the arithmetic rather than on the rule being tested.
+ */
+const money = (value: number) => Math.round(value * 100) / 100;
+
 export function runReadyPayrollProrationTests() {
   // ── The headline regression: a full February must cost nothing ──────────────
   assert.equal(
@@ -53,9 +68,9 @@ export function runReadyPayrollProrationTests() {
       `Leaving on the last calendar day of ${year}-${month} is a full month and must deduct nothing.`,
     );
     assert.equal(
-      calculateBaseProrationDeduction(10_000, `${lastDay.slice(0, 8)}01`, month, year),
+      calculateNetJoinerProrationDeduction(10_000, 2_000, 500, `${lastDay.slice(0, 8)}01`, month, year),
       0,
-      `Being hired on day 1 of ${year}-${month} is a full month and must deduct nothing.`,
+      `Being hired on day 1 of ${year}-${month} is a full month and must deduct nothing — allowances included.`,
     );
   }
 
@@ -96,16 +111,34 @@ export function runReadyPayrollProrationTests() {
     "With no last working date the employee is present to the real end of the month.",
   );
 
-  // ── Joiners ────────────────────────────────────────────────────────────────
-  // Hired 15 Feb 2026: paid 15-28 = 14 days, so 14 unworked days are deducted.
+  // ── Joiners: the rate is NET, not base ─────────────────────────────────────
+  // Owner instruction 2026-08-29. Hired 15 Feb 2026 on 10,000 + 2,000 + 500:
+  // Net 12,500, paid 15-28 = 14 of 28 days, so exactly half of NET is deducted.
   assert.equal(
-    calculateBaseProrationDeduction(10_000, "2026-02-15", 2, 2026),
+    calculateNetJoinerProrationDeduction(10_000, 2_000, 500, "2026-02-15", 2, 2026),
+    6_250,
+    "A mid-February joiner is charged the unworked days against NET — half of 12,500, not half of the 10,000 base.",
+  );
+
+  // The same row under the RETIRED base-only rule deducted 5,000. Pinning the
+  // gap keeps a future session from quietly reverting to the old rate: these two
+  // numbers must never be equal again.
+  assert.notEqual(
+    calculateNetJoinerProrationDeduction(10_000, 2_000, 500, "2026-02-15", 2, 2026),
     5_000,
-    "A mid-February joiner must be charged the unworked days at the February day rate.",
+    "the joiner deduction must NOT fall back to the base-only figure — that is the rule the owner replaced",
+  );
+
+  // Allowances of zero collapse the two rules onto the same number, which is the
+  // only case where they may agree.
+  assert.equal(
+    calculateNetJoinerProrationDeduction(10_000, 0, 0, "2026-02-15", 2, 2026),
+    5_000,
+    "with no allowances there is nothing extra to prorate, so net and base proration coincide",
   );
 
   assert.equal(
-    calculateBaseProrationDeduction(10_000, "2026-03-10", 2, 2026),
+    calculateNetJoinerProrationDeduction(10_000, 2_000, 500, "2026-03-10", 2, 2026),
     0,
     "A hire date outside the payroll month must not prorate at all.",
   );
@@ -162,7 +195,7 @@ export function runReadyPayrollProrationTests() {
   const late = settle("2026-07-28", null, 7, 2026);
   assert.equal(late.branch, "leaver_after_25", "the 28th is after the 25th");
   assert.equal(
-    late.baseProrationDeduction,
+    late.prorationDeduction,
     0,
     "a leaver after the 25th is paid base IN FULL — the sheet used to dock 2,903.23 of a 30,000 base",
   );
@@ -181,7 +214,7 @@ export function runReadyPayrollProrationTests() {
   const onBoundary = settle("2026-07-25", null, 7, 2026);
   assert.equal(onBoundary.branch, "leaver_on_or_before_25", "the 25th falls in the prorated branch");
   assert.equal(
-    onBoundary.baseProrationDeduction,
+    onBoundary.prorationDeduction,
     5_806.45,
     "a leaver on the 25th of a 31-day month is charged the 6 unworked days at 30000/31",
   );
@@ -190,18 +223,18 @@ export function runReadyPayrollProrationTests() {
 
   const justAfter = settle("2026-07-26", null, 7, 2026);
   assert.equal(justAfter.branch, "leaver_after_25", "the 26th crosses into the full-pay branch");
-  assert.equal(justAfter.baseProrationDeduction, 0, "one day past the boundary flips base to full pay");
+  assert.equal(justAfter.prorationDeduction, 0, "one day past the boundary flips base to full pay");
 
   // February: the >25th rule and the real month length must both hold at once.
   const feb = settle("2026-02-26", null, 2, 2026);
   assert.equal(feb.branch, "leaver_after_25", "26 Feb is after the 25th even in a 28-day month");
-  assert.equal(feb.baseProrationDeduction, 0, "and is paid in full");
+  assert.equal(feb.prorationDeduction, 0, "and is paid in full");
   assert.equal(feb.extraCostOfLiving, ecol, "with ECOL in full");
 
   // A full-month February leaver stays at zero — the bug #1931 fixed must not regress.
   const febFullMonth = settle("2026-02-28", null, 2, 2026);
   assert.equal(
-    febFullMonth.baseProrationDeduction,
+    febFullMonth.prorationDeduction,
     0,
     "a 28 Feb leaver who worked every day is deducted nothing (the fixed-30 bug)",
   );
@@ -212,7 +245,7 @@ export function runReadyPayrollProrationTests() {
   const hiredAndLeft = settle("2026-07-28", "2026-07-10", 7, 2026);
   assert.equal(hiredAndLeft.branch, "leaver_after_25", "still the after-25 branch");
   assert.equal(
-    hiredAndLeft.baseProrationDeduction,
+    hiredAndLeft.prorationDeduction,
     8_709.68,
     "someone HIRED this month and leaving after the 25th must still pay for the days before their hire date — " +
       "'base in full' waives the leaving end, it does not gift a month that was never worked",
@@ -232,7 +265,7 @@ export function runReadyPayrollProrationTests() {
     "a non-resignation leaver after the 25th is NOT the full-pay branch",
   );
   assert.equal(
-    dismissedLate.baseProrationDeduction,
+    dismissedLate.prorationDeduction,
     2_903.23,
     "a dismissal on the 28th of a 31-day month is charged the 3 unworked days at 30000/31 — the >25th waiver does not apply",
   );
@@ -248,10 +281,10 @@ export function runReadyPayrollProrationTests() {
   // FLAG, not the date, moves the money. Break the gate and this divergence collapses.
   const resignedLate = settle("2026-07-28", null, 7, 2026, true);
   assert.equal(resignedLate.branch, "leaver_after_25", "the identical date as a resignation IS the full-pay branch");
-  assert.equal(resignedLate.baseProrationDeduction, 0, "…and pays base in full");
+  assert.equal(resignedLate.prorationDeduction, 0, "…and pays base in full");
   assert.notEqual(
-    dismissedLate.baseProrationDeduction,
-    resignedLate.baseProrationDeduction,
+    dismissedLate.prorationDeduction,
+    resignedLate.prorationDeduction,
     "resignation vs dismissal on the SAME late date must produce different base pay — the whole point of the gate",
   );
 
@@ -260,8 +293,8 @@ export function runReadyPayrollProrationTests() {
   const dismissedEarly = settle("2026-07-20", null, 7, 2026, false);
   assert.equal(dismissedEarly.branch, "leaver_non_resignation", "still the non-resignation branch");
   assert.equal(
-    dismissedEarly.baseProrationDeduction,
-    settle("2026-07-20", null, 7, 2026, true).baseProrationDeduction,
+    dismissedEarly.prorationDeduction,
+    settle("2026-07-20", null, 7, 2026, true).prorationDeduction,
     "on or before the 25th, dismissal and resignation prorate base identically — the gate only changes the >25th tail",
   );
   assert.equal(dismissedEarly.extraCostOfLiving, 0, "no ECOL");
@@ -272,27 +305,63 @@ export function runReadyPayrollProrationTests() {
     "a dismissal row's comment must not claim to be a resignation",
   );
 
-  // ── Joiner: owner decision 2026-08-09 — ECOL and Fuel stay FULL ────────────
-  // computeJoinerPay halves them after the 15th; the Ready sheet deliberately does not,
-  // because adopting it would REDUCE a real person's pay. Pinned so it is not "fixed".
+  // ── Joiner: the whole NET is prorated (owner instruction 2026-08-29) ───────
+  // Hired 20 July on 30,000 + 3,000 + 500 = 33,500 net: 12 of 31 days worked, so
+  // 19 unworked days of NET are deducted — 33,500 x 19/31 = 20,532.26.
   const lateJoiner = settle(null, "2026-07-20", 7, 2026);
   assert.equal(lateJoiner.branch, "joiner", "a hire inside the month is a joiner row");
   assert.equal(
+    lateJoiner.prorationDeduction,
+    20_532.26,
+    "a joiner is charged the unworked days against NET (base + ECOL + fuel), not against base alone",
+  );
+
+  // The allowance COLUMNS still show the full contractual figures. That is not the
+  // old "allowances paid in full" rule surviving — the proration is carried entirely
+  // by the deduction line, so what the employee is actually PAID is the net share.
+  // Asserting the resulting month salary is what distinguishes the two.
+  assert.equal(
     lateJoiner.extraCostOfLiving,
     ecol,
-    "a joiner keeps FULL extra cost of living — the owner declined the post-15th halving on this sheet",
+    "the ECOL column keeps its contractual monthly figure — the proration lives in the deduction line",
   );
-  assert.equal(lateJoiner.fuelAllowance, fuel, "and FULL fuel allowance, for the same reason");
+  assert.equal(lateJoiner.fuelAllowance, fuel, "and so does the fuel column");
   assert.equal(
-    lateJoiner.baseProrationDeduction,
-    18_387.1,
-    "…while base is still prorated from the hire date on the month's real calendar days",
+    money(base + ecol + fuel - lateJoiner.prorationDeduction),
+    12_967.74,
+    "…so the row actually PAYS net x days worked / days in month: 33,500 x 12/31",
+  );
+
+  // ── The headline case the owner priced by hand ─────────────────────────────
+  // Yasmine El Safoury, hired 24 Aug 2026: base 16,000 + ECOL 1,500 + fuel 500.
+  // His arithmetic was 18,000 / 31 x 8 = 4,645.16, and this is the rule that
+  // produces it. The two RETIRED rules paid 5,129.03 and 6,129.03 respectively.
+  const augustHire = resolveReadyLifecycleSettlement({
+    baseSalary: 16_000,
+    extraCostOfLiving: 1_500,
+    fuelAllowance: 500,
+    hireDate: "2026-08-24",
+    isResignation: false,
+    lastWorkingDate: null,
+    month: 8,
+    year: 2026,
+  });
+  assert.equal(augustHire.branch, "joiner", "a 24 August hire is a joiner row in August");
+  assert.equal(
+    augustHire.prorationDeduction,
+    13_354.84,
+    "23 unworked days of an 18,000 net in a 31-day month",
+  );
+  assert.equal(
+    money(16_000 + 1_500 + 500 - augustHire.prorationDeduction),
+    4_645.16,
+    "a 24 August hire on 18,000 net is paid 18,000 / 31 x 8 = 4,645.16 — the owner's own figure",
   );
 
   // ── An ordinary full-month row is untouched ───────────────────────────────
   const ordinary = settle(null, null, 7, 2026);
   assert.equal(ordinary.branch, "none", "no hire and no leaving date inside the month");
-  assert.equal(ordinary.baseProrationDeduction, 0, "and nothing is deducted");
+  assert.equal(ordinary.prorationDeduction, 0, "and nothing is deducted");
   assert.equal(ordinary.extraCostOfLiving, ecol, "allowances pass through untouched");
   assert.equal(ordinary.fuelAllowance, fuel, "both of them");
 
@@ -325,6 +394,16 @@ export function runReadyPayrollProrationTests() {
     String(readyLifecycleComment(onBoundary)),
     /no cost of living/i,
     "a ≤25th row must say the allowances are withheld",
+  );
+  assert.match(
+    String(readyLifecycleComment(lateJoiner)),
+    /net salary/i,
+    "a joiner row's comment must say NET is prorated — this sentence ships inside the workbook and is read as the policy",
+  );
+  assert.doesNotMatch(
+    String(readyLifecycleComment(lateJoiner)),
+    /paid in full/i,
+    "…and must no longer claim the allowances are paid in full, which is precisely the rule the owner replaced",
   );
   assert.equal(readyLifecycleComment(ordinary), null, "an ordinary row has no lifecycle sentence to add");
 }

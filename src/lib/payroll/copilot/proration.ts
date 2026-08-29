@@ -5,10 +5,23 @@ import type { CopilotPeriod } from "./types.ts";
 /**
  * Pure proration/settlement math for joiners, leavers, and unpaid leave.
  *
- * Universal principle (owner-confirmed): any daily rate is always
- * `Base Salary ÷ actual calendar days in the month` — ECOL and Fuel are
- * "extras," never part of the rate, in any scenario. Deterministic and
- * I/O-free so it's trivially unit-testable, mirroring statutory/calculator.ts.
+ * TWO DAY-RATES, one per lifecycle branch. Both owner-confirmed, and they are
+ * deliberately different — do not "unify" them.
+ *
+ *  - JOINER (owner instruction, 2026-08-29): the rate is
+ *    `Net Salary ÷ actual calendar days in the month`, Net being
+ *    Base + ECOL + Fuel. ECOL and Fuel are prorated alongside the base instead
+ *    of being paid as whole-month extras. This REPLACED the previous joiner
+ *    rule; computeJoinerPay records what changed and why.
+ *
+ *  - LEAVER: unchanged — the rate stays `Base Salary ÷ calendar days`, with
+ *    Resignation Rule 1 governing the allowances (≤25th: neither paid; >25th:
+ *    both in full, base unprorated). The owner changed the JOINER rule only.
+ *    Folding allowances into the leaver rate would silently rewrite a separate
+ *    confirmed rule, so it is not done here.
+ *
+ * Deterministic and I/O-free so it's trivially unit-testable, mirroring
+ * statutory/calculator.ts.
  */
 
 export function calendarDaysInMonth(period: CopilotPeriod): number {
@@ -123,9 +136,31 @@ export type JoinerPay = {
 };
 
 /**
- * Joiner ECOL/Fuel rule (owner-confirmed): hired on/before the 15th → full
- * ECOL+Fuel; hired after the 15th → half. Base always follows the universal
- * day-rate proration; the hire date itself counts as a paid day.
+ * JOINER PAY — owner instruction, 2026-08-29, in his words: "change this rule
+ * to prorate also the cost of living and fuel allowance. So when you are
+ * dividing, you divide the net salary, not [the base]."
+ *
+ * Every component is prorated by the same day share, so the month's pay is
+ * exactly `Net ÷ calendar days × days worked`. The hire date itself counts as a
+ * paid day.
+ *
+ * WHY THE >15th HALVING IS GONE, and why restoring it would be a bug. The
+ * previous rule prorated Base only and paid ECOL+Fuel whole when hired on or
+ * before the 15th, half after — a step function approximating "you were only
+ * here for part of the month". Prorating the allowances by actual days measures
+ * that same thing exactly, so keeping the halving on top would charge a
+ * late-month joiner twice for one absence. It is deliberately not carried over.
+ *
+ * The owner chose this with the alternatives in front of him. For a hire on
+ * 24 August 2026 with Base 16,000 + ECOL 1,500 + Fuel 500, the old automated
+ * rule paid 5,129.03 and the old Ready-sheet rule paid 6,129.03; this rule pays
+ * 18,000 ÷ 31 × 8 = 4,645.16. He was told it reduces pay for every mid-month
+ * joiner and confirmed it anyway.
+ *
+ * netForMonth is the sum of the three ROUNDED components, not a separately
+ * rounded `Net × share`. Consumers (automated-payroll/recommend.ts) add the
+ * components up themselves to display a total, so deriving it any other way
+ * could render a row whose parts visibly fail to add up to its own total.
  */
 export function computeJoinerPay(input: JoinerPayInput): JoinerPay | null {
   const hireDay = dayOfMonth(input.hireDate);
@@ -133,10 +168,11 @@ export function computeJoinerPay(input: JoinerPayInput): JoinerPay | null {
 
   const totalDays = calendarDaysInMonth(input.period);
   const daysWorked = Math.max(0, Math.min(totalDays, totalDays - hireDay + 1));
-  const baseForMonth = roundCurrency(dailyRate(input.baseSalary, input.period) * daysWorked);
-  const fullEcolFuel = hireDay <= 15;
-  const ecolPaid = roundCurrency(fullEcolFuel ? input.extraCostOfLiving : input.extraCostOfLiving / 2);
-  const fuelPaid = roundCurrency(fullEcolFuel ? input.fuelAllowance : input.fuelAllowance / 2);
+  const workedShare = totalDays > 0 ? daysWorked / totalDays : 0;
+
+  const baseForMonth = roundCurrency(input.baseSalary * workedShare);
+  const ecolPaid = roundCurrency(input.extraCostOfLiving * workedShare);
+  const fuelPaid = roundCurrency(input.fuelAllowance * workedShare);
   return {
     daysWorked,
     baseForMonth,
