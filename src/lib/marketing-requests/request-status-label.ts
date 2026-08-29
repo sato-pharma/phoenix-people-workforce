@@ -22,6 +22,16 @@
 /** The step code of the execution rung — the one that is not an approval. */
 const EXECUTION_STEP_CODE = "finance_execution";
 
+/**
+ * A held request needs its own words, because the fall-through is actively wrong.
+ *
+ * `finance_hold` reached the reader as the bare de-underscored "finance hold", which reads like a
+ * queue a request is waiting in rather than a decision someone took. It is the opposite: every
+ * approval has been given and the money is committed — a human has deliberately frozen the request
+ * because the invoice never arrived.
+ */
+const HELD_LABEL = "approved · held by finance";
+
 /** Turn a stored status into the words shown to a human. */
 export function marketingRequestStatusLabel(params: {
   /** `stepCode` of the rung currently holding the request, or null when nothing holds it. */
@@ -32,5 +42,6 @@ export function marketingRequestStatusLabel(params: {
   if (status === "pending_approval" && params.currentStepCode === EXECUTION_STEP_CODE) {
     return "approved · with finance";
   }
+  if (status === "finance_hold") return HELD_LABEL;
   return status.replace(/_/g, " ");
 }

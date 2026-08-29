@@ -27,6 +27,10 @@ import { getEmployeeDirectoryRows, type EmployeeDirectoryRow } from "@/lib/emplo
 import { resolveJobFunctionRole } from "@/lib/employees/job-function";
 import { forbiddenError, validationError } from "@/lib/http/api-errors";
 import { buildCaseFileDecisionBar } from "@/lib/marketing-requests/case-file-decision-bar";
+import {
+  canPlaceMarketingRequestOnFinanceHold,
+  MARKETING_FINANCE_HOLD_STATUS,
+} from "@/lib/marketing-requests/finance-hold";
 import { marketingRequestStatusLabel } from "@/lib/marketing-requests/request-status-label";
 import {
   caseFileNotApplicable,
@@ -37,6 +41,7 @@ import {
   type MarketingCaseFileChain,
   type MarketingCaseFileChainRung,
   type MarketingCaseFileCustomer,
+  type MarketingCaseFileFinanceHold,
   type MarketingCaseFileHistory,
   type MarketingCaseFileLazySection,
   type MarketingCaseFileMoney,
@@ -242,6 +247,21 @@ export function describeLifecycleStage(input: {
     case "rejected":
       return "Refused. No money was committed, and nothing here counts towards company spend.";
     case "awaiting_approval":
+      // A held request is NOT awaiting an approval, and the generic sentence below said it was.
+      //
+      // `resolveRoiLifecycleStage` files `finance_hold` under `awaiting_approval` deliberately —
+      // that stage decides whether the money counts as committed in the ROI pipeline, and a frozen
+      // request must not be counted as spend. So the STAGE is correct and is left exactly as it is.
+      // What was wrong is only the prose: it read "Awaiting a decision. Nothing is committed until
+      // the chain finishes." on a request whose chain HAD finished and whose money IS committed —
+      // the reader's obvious conclusion being that it still sat with an approver.
+      //
+      // Fixed here rather than in the stage set on purpose: changing that set would silently move
+      // held money between the committed and uncommitted buckets on every ROI screen.
+      if (input.status === "finance_hold") {
+        return "Approved and committed, then frozen by finance — the invoice is outstanding. "
+          + "It stays frozen until someone releases it by hand.";
+      }
       return input.currentStepName
         ? `Awaiting a decision at ${input.currentStepName}. Nothing is committed until the chain finishes.`
         : input.status === "draft"
@@ -694,6 +714,8 @@ export async function getMarketingRequestCaseFile(
     ),
   ]);
 
+  const financeHold = await loadFinanceHoldBlock(supabase, requestUuid, request.status, nameOf);
+
   const chainBlock = buildChainBlock(steps, displayRows, viewerHrId);
   const targetPharmacies = pharmaciesResult.state === "ok" ? pharmaciesResult.value : null;
 
@@ -749,6 +771,7 @@ export async function getMarketingRequestCaseFile(
   return {
     chain: chainBlock,
     customer: customerResult,
+    financeHold,
     generatedAt,
     header: {
       closedAt: request.closedAt,
@@ -794,6 +817,40 @@ export async function getMarketingRequestCaseFile(
       canSeeCustomerPii,
     }),
     warnings,
+  };
+}
+
+/**
+ * The finance hold, read from the row that actually stores it.
+ *
+ * `marketing_request_finance_requirements` is a different table from `marketing_requests`, which is
+ * why the hold reason was invisible: the case file never touched it. The reason lives in `notes`.
+ *
+ * Returns null for any request that is not held, so the caller renders nothing rather than an empty
+ * panel. A read failure also returns null — a case file must still open when one optional panel
+ * cannot be read, exactly as the overlaps loader does.
+ */
+async function loadFinanceHoldBlock(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  requestUuid: string,
+  status: string,
+  nameOf: (hrId: string | null | undefined) => string,
+): Promise<MarketingCaseFileFinanceHold | null> {
+  if (status !== "finance_hold") return null;
+  const { data, error } = await supabase
+    .from("marketing_request_finance_requirements")
+    .select("finance_reviewer_hr_id, invoice_status, notes, reviewed_at")
+    .eq("request_id", requestUuid)
+    .maybeSingle();
+  if (error || !data) return null;
+  const heldByHrId = (data.finance_reviewer_hr_id as string | null) ?? null;
+  return {
+    heldAt: (data.reviewed_at as string | null) ?? null,
+    heldByHrId,
+    // nameOf falls back to "" for an unknown id; the hr_id is more use to a reader than a blank.
+    heldByName: heldByHrId ? nameOf(heldByHrId) || heldByHrId : null,
+    invoiceStatus: (data.invoice_status as string | null) ?? null,
+    reason: (data.notes as string | null) ?? null,
   };
 }
 
@@ -1381,6 +1438,10 @@ function buildViewer(
   // gating step their row is attached to is the CURRENT one. Affordance only — that route
   // re-checks it before writing anything.
   const currentGating = steps.find((step) => step.status === "current" && !step.isCc) ?? null;
+
+  // Mirrors assertMarketingFinanceHoldAccess exactly. Affordance only: the route re-checks it
+  // before any write, so a viewer who somehow reached this with the flag set still cannot hold.
+  const canManageFinanceHold = access.role === "Super Admin" || access.scope === "system";
   const canComment = Boolean(
     viewerHrId &&
       currentGating &&
@@ -1403,6 +1464,14 @@ function buildViewer(
     can: {
       comment: canComment,
       decide: canDecide,
+      // Mirrors assertMarketingFinanceHoldAccess exactly. Affordance only: the route re-checks it
+      // before any write, so a viewer who somehow reached this with the flag set still cannot hold.
+      manageFinanceHold: canManageFinanceHold,
+      // Role AND a freezable status, from the domain's own predicate rather than a second list.
+      placeFinanceHold:
+        canManageFinanceHold
+        && request.status !== MARKETING_FINANCE_HOLD_STATUS
+        && canPlaceMarketingRequestOnFinanceHold(request.status),
       resubmit: Boolean(
         viewerHrId && request.status === "returned" && normalizeHrId(request.requesterHrId) === viewerHrId,
       ),

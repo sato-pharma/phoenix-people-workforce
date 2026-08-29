@@ -1078,6 +1078,7 @@ import { runExpenseClaimsRefreshTests } from "./expense-claims-refresh.test.ts";
 import { runMarketingFinanceRequirementOnApprovalTests } from "./marketing-finance-requirement-on-approval.test.ts";
 import { runMarketingInvoiceOverdueMarkerTests } from "./marketing-invoice-overdue-marker.test.ts";
 import { runMarketingFinanceHoldTests } from "./marketing-finance-hold.test.ts";
+import { runMarketingFinanceHoldUiTests } from "./marketing-finance-hold-ui.test.ts";
 import { runMarketingInvoiceOverdueNudgeTests } from "./marketing-invoice-overdue-nudge.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
@@ -3252,6 +3253,14 @@ await runTest(
     + "someone chose, and the reason is written before the status so a 15s timeout can never freeze a request "
     + "with no recorded why)",
   runMarketingFinanceHoldTests,
+);
+await runTest(
+  "marketing finance hold, the reader's half (the endpoint shipped with no caller at all, so a hold could "
+    + "only be placed by running the domain code by hand: the Case File now says a held request was frozen "
+    + "rather than 'awaiting a decision, nothing is committed', surfaces the reason that lived only in "
+    + "finance_requirements.notes, and offers a gated hold/release control — while leaving the ROI stage "
+    + "exactly where it was, because that is what decides whether the money counts as committed)",
+  runMarketingFinanceHoldUiTests,
 );
 await runTest(
   "marketing invoice overdue nudge (the requester hears about their own, finance gets one digest, "

@@ -3,6 +3,7 @@ import type {
   MarketingCaseFileChain,
   MarketingCaseFileCustomer,
   MarketingCaseFileDecisionAction,
+  MarketingCaseFileFinanceHold,
   MarketingCaseFileHistory,
   MarketingCaseFileProducts,
   MarketingCaseFileTargetPharmacies,
@@ -17,6 +18,7 @@ import {
 import { cairoDateTime, plainDate } from "@/lib/marketing-requests/request-report-columns";
 import type { MarketingRequestStatus } from "@/lib/marketing-requests/types";
 import { MarketingCaseFileGoDeeper } from "@/components/marketing-requests/marketing-case-file-go-deeper";
+import { MarketingFinanceHoldControl } from "@/components/marketing-requests/marketing-finance-hold-control";
 import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
 
 /* ────────────────────────────────────────────────────────────────────────────
@@ -142,6 +144,54 @@ function decisionClasses(decision: MarketingCaseFileDecisionAction["decision"]) 
   if (decision === "approve") return "border-emerald-600 bg-emerald-600 text-white hover:bg-emerald-700";
   if (decision === "return") return "border-amber-300 bg-white text-amber-800 hover:bg-amber-50";
   return "border-rose-300 bg-white text-rose-700 hover:bg-rose-50";
+}
+
+/**
+ * The finance hold, stated where the request is read.
+ *
+ * Everything shown here was already stored and displayed NOWHERE. The reason in particular sat in
+ * `marketing_request_finance_requirements.notes`: a Super Admin froze committed money, wrote down
+ * why, and the why reached no screen at all. A frozen request whose reason is invisible is one the
+ * next reader can only guess at — and the next reader is usually the owner, weeks later.
+ *
+ * Rendered as a banner above the fold rather than a field further down, because the hold is the
+ * single most important fact about a request that has one.
+ */
+function FinanceHoldPanel({
+  canManage,
+  hold,
+  requestId,
+}: {
+  canManage: boolean;
+  hold: MarketingCaseFileFinanceHold;
+  requestId: string;
+}) {
+  return (
+    <div className="border-b border-amber-300 bg-amber-50 px-6 py-4">
+      <p className="text-phx-xs font-semibold uppercase tracking-[0.16em] text-amber-800">
+        Frozen by finance
+      </p>
+      <p className="mt-1 text-phx-md font-medium leading-5 text-slate-800">
+        Every approval was given and the money is committed. It stays frozen until a Super Admin
+        releases it by hand.
+      </p>
+      {hold.reason ? (
+        <p className="mt-2 whitespace-pre-wrap text-phx-sm leading-5 text-slate-700">{hold.reason}</p>
+      ) : (
+        <p className="mt-2 text-phx-sm leading-5 text-slate-500">No reason was recorded.</p>
+      )}
+      <p className="mt-2 text-phx-xs text-slate-600">
+        {hold.heldByName ? `Held by ${hold.heldByName}` : "Holder not recorded"}
+        {hold.heldAt ? ` · ${cairoDateTime(hold.heldAt)}` : ""}
+        {/* `hold` means the overdue marker is paused. Anything else means the invoice was already
+            settled when the hold was placed, which is correct and worth saying rather than hiding. */}
+        {hold.invoiceStatus && hold.invoiceStatus !== "hold"
+          ? ` · invoice ${hold.invoiceStatus}`
+          : ""}
+      </p>
+      {canManage ? <MarketingFinanceHoldControl held requestId={requestId} /> : null}
+    </div>
+  );
 }
 
 /**
@@ -549,8 +599,29 @@ function Customer({ customer, canSeePii }: { customer: MarketingCaseFileCustomer
 /* ── the page view ────────────────────────────────────────────────────────── */
 
 export function MarketingRequestCaseFileView({ caseFile }: { caseFile: MarketingRequestCaseFile }) {
-  const { chain, customer, header, history, lazySections, money, outcome, products, targetPharmacies, viewer, warnings } =
-    caseFile;
+  const {
+    chain,
+    customer,
+    financeHold,
+    header,
+    history,
+    lazySections,
+    money,
+    outcome,
+    products,
+    targetPharmacies,
+    viewer,
+    warnings,
+  } = caseFile;
+
+  // The PLACE half. Without it the Case File could only ever RELEASE a hold someone else had
+  // placed from outside the product, which is how this feature spent its whole life so far.
+  //
+  // Decided on the server (`buildViewer`), never here: which statuses may be frozen is a domain
+  // rule, and a component re-listing it would be a second copy of that rule. This module has
+  // already paid for a second copy of a rule once — two definitions of "overdue" on the same
+  // money path — which is precisely what the shared obligation module was created to end.
+  const canPlaceHold = viewer.can.placeFinanceHold;
 
   return (
     <main className="mx-auto w-full max-w-3xl px-4 py-8">
@@ -564,6 +635,27 @@ export function MarketingRequestCaseFileView({ caseFile }: { caseFile: Marketing
           {/* One sentence: where it is and what happens next. Never a bare status code. */}
           <p className="mt-1.5 text-phx-md leading-5 text-slate-300">{header.lifecycleSentence}</p>
         </div>
+
+        {financeHold ? (
+          <FinanceHoldPanel
+            canManage={viewer.can.manageFinanceHold}
+            hold={financeHold}
+            requestId={header.requestId}
+          />
+        ) : null}
+
+        {canPlaceHold ? (
+          <div className="border-b border-slate-200 bg-slate-50 px-6 py-4">
+            <p className="text-phx-xs font-semibold uppercase tracking-[0.16em] text-slate-600">
+              Finance hold
+            </p>
+            <p className="mt-1 text-phx-md leading-5 text-slate-700">
+              Freeze this request if the invoice has not arrived. It stops the overdue marker and
+              records why, but pays nobody and reverses nothing.
+            </p>
+            <MarketingFinanceHoldControl held={false} requestId={header.requestId} />
+          </div>
+        ) : null}
 
         {viewer.decision ? <DecisionBar decision={viewer.decision} /> : null}
 
