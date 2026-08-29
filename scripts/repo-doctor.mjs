@@ -378,7 +378,13 @@ for (const r of live) {
   const status = git(["-C", r.dir, "status", "--porcelain"]);
   const dirty = status === null ? null : status.split("\n").filter(Boolean).length;
   const unpushed = unpushedCount(r.dir); // null = could not determine
-  if (pr) merged.push({ ...r, branch, pr, dirty, unpushed });
+  // The tip is read HERE, at the gate, and reused verbatim on the printed push line. Never re-read
+  // it at deletion time from the branch NAME: a parallel session can delete the branch between this
+  // scan and the moment a human copies the commands, and a push spelled by name then fails with the
+  // work already unreachable. Measured 2026-08-29 - a branch vanished inside a 2-minute window and
+  // its archive survived only because the push carried the SHA rather than the name.
+  const tip = git(["-C", r.dir, "rev-parse", "HEAD"]); // null = could not determine
+  if (pr) merged.push({ ...r, branch, pr, dirty, unpushed, tip });
 }
 
 if (merged.length) {
@@ -395,6 +401,19 @@ if (merged.length) {
     const note = warn.length ? `  -- ${warn.join(" + ")}, review before removing` : "";
     console.log(`  PR #${m.pr}  ${m.branch}${note}`);
     console.log(`    git worktree remove "${m.dir}"`);
+    // Archive OFF this laptop before the delete, and in that order. `git update-ref
+    // refs/deleted-branches/...` is what this repo reached for historically, but that ref lives in
+    // this checkout only: a sweep on 2026-08-29 found 17 of 129 such archives existing nowhere
+    // else at all. AGENTS.md section 2.1 is explicit that refs/backups/* on ORIGIN is the only copy
+    // that survives losing this machine, so that is what gets printed here.
+    if (m.tip) {
+      console.log(
+        `    git push origin ${m.tip}:refs/backups/${m.branch}    # archive OFF-laptop FIRST - by SHA, never by name`,
+      );
+    } else {
+      console.log("    # STOP - cannot read this worktree's tip SHA, so no archive line can be");
+      console.log("    #        printed. Resolve that by hand BEFORE deleting anything.");
+    }
     console.log(`    git branch -D ${m.branch}    # -D: a squash merge is never an ancestor of main`);
     if (m.unpushed === null) {
       console.log("    # ^^ STOP — cannot determine what is pushed here. Verify by hand first.");
@@ -800,6 +819,94 @@ let autoloadedIndexBytes = null;
     for (const f of broken) console.log("  BROKEN  " + f + "  (pointed at by an index, file does not exist)");
 
     for (const line of memoryReachabilityLines({ relocated, orphans, broken })) console.log(line);
+  }
+}
+
+// ── BRANCH ARCHIVES THAT EXIST ONLY ON THIS LAPTOP (read-only) ─────────────────────
+//
+// A deleted branch is archived with `git update-ref refs/deleted-branches/<name>` — the deliberate
+// step AGENTS.md section 2.1 exists to insist on, because a plain `git branch -D` archives NOTHING.
+// What that rule ALSO says, and what practice quietly drifted from, is that the local ref is not a
+// backup: refs/backups/* on ORIGIN is the only copy that survives losing this machine.
+//
+// Measured 2026-08-29 — 17 of 129 archives existed nowhere but this disk. One of them was a branch
+// a parallel session deleted about ninety seconds before the only off-laptop copy was pushed, and
+// that copy landed only because the push carried the SHA instead of the branch name.
+//
+// Nothing else measures this. Local archive refs are invisible to `git branch`, refs/backups/* is
+// not in the default fetch refspec so they are never pulled back by accident, and CI cannot see a
+// local ref at all. The gap is silent by construction, which is why it gets a section.
+//
+// READ-ONLY, and it never touches the exit code — the same reasoning as the two sections above. A
+// missing archive is a backlog item, not a broken repo, and a command that fails is one people
+// stop running.
+{
+  console.log("");
+  console.log("BRANCH ARCHIVES (local archive refs with no copy on origin)");
+
+  const archiveRefs = (
+    git([
+      "for-each-ref",
+      "--format=%(objectname) %(refname)",
+      "refs/deleted-branches/*",
+      "refs/heads/rescue/*",
+    ]) ?? ""
+  )
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => {
+      const gap = line.indexOf(" ");
+      return { sha: line.slice(0, gap), ref: line.slice(gap + 1) };
+    });
+
+  if (archiveRefs.length === 0) {
+    console.log("  -> no local archive refs to check.");
+  } else {
+    // `?? null`, never `?? ""` — the trap this file already documents four times over. git()
+    // returns null when the command FAILED and "" when it succeeded with no output, so collapsing
+    // the two renders an unreachable remote as "every archive is safely backed up". That inversion
+    // would make this check worse than not having it. Not knowing must read LOUDER than clean.
+    const remote = git(["ls-remote", "origin"], { timeout: 60000 });
+
+    if (remote === null) {
+      console.log(
+        `  ${num(archiveRefs.length)} local archive ref(s) found, but ORIGIN COULD NOT BE READ.`,
+      );
+      console.log("  -> CANNOT DETERMINE whether any of them exist off this laptop. Re-run when the");
+      console.log("     remote is reachable. Do NOT read this as clean.");
+    } else {
+      const onOrigin = new Set(
+        remote
+          .split("\n")
+          .map((line) => line.split("\t")[0])
+          .filter(Boolean),
+      );
+      const stranded = archiveRefs.filter((entry) => !onOrigin.has(entry.sha));
+      console.log(
+        `  ${num(archiveRefs.length)} local archive ref(s), ${num(stranded.length)} with no copy on origin`,
+      );
+
+      if (stranded.length === 0) {
+        console.log("  -> none. Every archived tip also exists on origin.");
+      } else {
+        // Own constant: the MEMORY INDEX section's LIST_LIMIT is block-scoped to that block.
+        const ARCHIVE_LIST_LIMIT = 20;
+        const shown = deep ? stranded : stranded.slice(0, ARCHIVE_LIST_LIMIT);
+        for (const entry of shown) {
+          const leaf = entry.ref.replace("refs/deleted-branches/", "").replace("refs/heads/", "");
+          console.log(`    git push origin ${entry.sha}:refs/backups/${leaf}`);
+        }
+        if (stranded.length > shown.length) {
+          console.log(
+            "    ... and " +
+              num(stranded.length - shown.length) +
+              " more not listed — re-run with --deep for the full list.",
+          );
+        }
+        console.log("  -> these commits exist on this disk ONLY. The lines above are ADDITIVE and");
+        console.log("     safe: each creates a new ref on origin and changes no branch, no history.");
+      }
+    }
   }
 }
 
