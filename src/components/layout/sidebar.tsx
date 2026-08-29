@@ -53,6 +53,7 @@ import { usePathname, useSearchParams } from "next/navigation";
 import { type CSSProperties, Fragment, useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
 
+import { ApprovalNavBadge } from "@/components/layout/nav-badge";
 import {
   getNavigationSections,
   navigationHomePathByMode,
@@ -71,7 +72,6 @@ import {
   type PermissionLookup,
 } from "@/lib/navigation/active-path";
 import { applyPersonalLayout, type PersonalNavigationLayout } from "@/lib/navigation/personal-layout";
-import { subscribeNavBadge } from "@/lib/nav-badge-store";
 import { cn } from "@/lib/utils";
 
 // ── Shared admin palette — matches the top navigation bar exactly ────────────
@@ -80,6 +80,10 @@ const ADMIN_SIDEBAR_BORDER = "border-[#1a1a1a]";
 
 // ── Public types ─────────────────────────────────────────────────────────────
 export type { PermissionLookup };
+// Re-exported for the employee-portal shell, which imports NavBadge from here. The definition
+// moved to ./nav-badge on 2026-08-29 so the horizontal nav rows could use it without pulling
+// this whole module (dnd-kit, the layout editor) into their bundle.
+export { NavBadge } from "@/components/layout/nav-badge";
 
 const EMPTY_PERMISSION_LOOKUP: PermissionLookup = {};
 
@@ -325,80 +329,6 @@ function parseItemOrder(raw: string): Record<string, string[]> | null {
     return result;
   } catch {
     return null;
-  }
-}
-
-// ── Pending-count badge for the Action Center nav item ───────────────────────
-// Exported: reused verbatim by the employee-portal sidebar (employee-portal-layout.tsx) so both
-// shells share the exact same polling client (src/lib/nav-badge-store.ts) — no separate portal
-// badge mechanism.
-export function NavBadge({ compact = false, src }: { compact?: boolean; src: string }): ReactNode {
-  const [count, setCount] = useState<number | null>(null);
-  const [overdue, setOverdue] = useState(false);
-  useEffect(
-    () =>
-      subscribeNavBadge(src, (nextCount, nextOverdue) => {
-        setCount(nextCount);
-        setOverdue(nextOverdue);
-      }),
-    [src],
-  );
-  if (!count) return null;
-  // Graduated urgency: once any awaiting item breaches its SLA, the pump switches from
-  // orange to a faster, redder alarm — see APPROVALS_SLA_THRESHOLDS and isXAwaitingOverdue.
-  const alarmClass = overdue ? "nav-badge-alarm-overdue bg-red-600" : "nav-badge-alarm bg-orange-500";
-  const label = `${count} pending — action required${overdue ? ", overdue" : ""}`;
-  if (compact) {
-    // Icon-rail mode has no room for a label + count pill — a pumping dot on the
-    // icon itself is the only way a pending item is visible when collapsed.
-    return (
-      <span
-        aria-label={label}
-        className={cn("absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full ring-2 ring-slate-900", alarmClass)}
-        role="status"
-      />
-    );
-  }
-  return (
-    // min-w/px tightened 2026-08-10: a badge row leaves the label only ~98px, and this pill was
-    // spending 32px of it to show a 1-2 digit count. 18px still fits "99+" at 10px/900.
-    <span
-      aria-label={label}
-      className={cn("ml-auto min-w-[18px] rounded-full px-1 py-0.5 text-center text-phx-2xs font-black leading-none text-white", alarmClass)}
-      role="status"
-    >
-      {count > 99 ? "99+" : count}
-    </span>
-  );
-}
-
-// Shared between the expanded label row and the collapsed icon-rail so both
-// surfaces recognize the same set of navBadge values without duplicating the switch.
-function ApprovalNavBadge({ compact, navBadge }: { compact: boolean; navBadge: NavigationSectionItem["navBadge"] }): ReactNode {
-  switch (navBadge) {
-    case "approvals-hub-pending":
-      return <NavBadge compact={compact} src="/api/approvals-hub/pending-count" />;
-    case "vacation-approvals-pending":
-      return <NavBadge compact={compact} src="/api/approvals/vacation/pending-count" />;
-    case "excuse-approvals-pending":
-      return <NavBadge compact={compact} src="/api/approvals/excuse/pending-count" />;
-    case "plan-approvals-pending":
-      return <NavBadge compact={compact} src="/api/approvals/plan/pending-count" />;
-    // The ONE Direct Orders row. Sums the approval queue and Finance's unbooked queue because a
-    // nav item carries one badge and the two audiences barely overlap — see the endpoint's note.
-    case "direct-orders-needs-action":
-      return <NavBadge compact={compact} src="/api/direct-orders/needs-action-count" />;
-    case "direct-orders-approvals-pending":
-      return <NavBadge compact={compact} src="/api/approvals/direct-orders/pending-count" />;
-    // Approved orders with no sales month — Finance's queue, not an approval queue. Rides the same
-    // batched poll (BATCH_KEY_BY_SRC) and the same overdue alarm as its siblings; the threshold is
-    // APPROVALS_SLA_THRESHOLDS.directOrderMonth.
-    case "direct-orders-unbooked":
-      return <NavBadge compact={compact} src="/api/direct-orders/unbooked-count" />;
-    case "marketing-approvals-pending":
-      return <NavBadge compact={compact} src="/api/marketing-requests/pending-count" />;
-    default:
-      return null;
   }
 }
 
