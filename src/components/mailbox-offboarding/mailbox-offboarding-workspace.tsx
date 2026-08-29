@@ -17,6 +17,13 @@
  * NO `window.prompt` OR `window.confirm`. Reasons are captured inline, against the row they are
  * about.
  *
+ * THE ROW IS THE UNIT OF WORK ON DESKTOP. All three steps are recorded from inside the row, and
+ * nothing opens anywhere else. This replaced an expander whose panel rendered underneath the whole
+ * table: with ~50 people in the backlog that meant scrolling down to act and back up to find the
+ * next one, once per person. The owner`s words were the specification — everything in the same row,
+ * no jumping down and up. Only the two rare corrections (reopen, no-mailbox) need typing, and their
+ * box opens in the last cell of that same row.
+ *
  * THE PAGE LEADS WITH THE HALF-REVOKED COUNT, not with the overdue count, and the standing notice
  * above the table explains why in one sentence. A password reset is the step everyone believes
  * finishes the job; Yahoo app passwords survive it, so a reset-only mailbox is still reachable
@@ -405,6 +412,246 @@ function StepPanel({
   );
 }
 
+/**
+ * The draft every in-row editor opens. One shape, built in one place, because three separate call
+ * sites each spelling out six fields is how one of them quietly ends up missing `forwardingTo`.
+ */
+function makeDraft(task: MailboxOffboardingTask, kind: DraftKind): Draft {
+  return {
+    taskId: task.id,
+    kind,
+    disposition: task.disposition ?? "deleted",
+    forwardingTo: task.forwardingTo ?? "",
+    forwardingExpiresOn: task.forwardingExpiresOn ?? "",
+    reason: "",
+  };
+}
+
+/** Steps 1 and 2: one click, recorded in place. Nothing to fill in, so nothing to open. */
+function StepCell({
+  busy,
+  danger,
+  doneAt,
+  doneBy,
+  label,
+  locked,
+  onRecord,
+}: {
+  busy: boolean;
+  danger?: boolean;
+  doneAt: string | null;
+  doneBy: string | null;
+  label: string;
+  locked: boolean;
+  onRecord: () => void;
+}) {
+  if (doneAt) {
+    return (
+      <span
+        className="inline-block whitespace-nowrap border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.1em] text-emerald-800"
+        title={doneBy ? `Recorded by ${doneBy}` : undefined}
+      >
+        Done
+      </span>
+    );
+  }
+  if (locked) {
+    return <span className="text-[12px] font-semibold text-slate-300">—</span>;
+  }
+  return (
+    <button
+      className={`whitespace-nowrap border px-3 py-1 text-[10px] font-black uppercase tracking-[0.1em] disabled:opacity-50 ${
+        danger
+          ? "border-rose-400 bg-rose-50 text-rose-800 hover:bg-rose-100"
+          : "border-slate-300 bg-white text-slate-700 hover:bg-slate-100"
+      }`}
+      disabled={busy}
+      onClick={onRecord}
+      type="button"
+    >
+      {label}
+    </button>
+  );
+}
+
+/** Step 3: needs a value, so the picker opens inside the cell rather than anywhere else. */
+function DispositionCell({
+  busy,
+  draft,
+  locked,
+  onCancel,
+  onChange,
+  onOpen,
+  onSubmit,
+  task,
+}: {
+  busy: boolean;
+  draft: Draft | null;
+  locked: boolean;
+  onCancel: () => void;
+  onChange: (patch: Partial<Draft>) => void;
+  onOpen: () => void;
+  onSubmit: () => void;
+  task: MailboxOffboardingTask;
+}) {
+  const editing = draft !== null && draft.taskId === task.id && draft.kind === "disposition";
+
+  if (editing && draft) {
+    return (
+      <div className="min-w-[210px] space-y-1">
+        <select
+          className="block w-full border border-slate-300 px-2 py-1 text-[12px] font-semibold text-slate-900"
+          onChange={(event) => onChange({ disposition: event.target.value as MailboxDisposition })}
+          value={draft.disposition}
+        >
+          {(Object.keys(DISPOSITION_LABEL) as MailboxDisposition[]).map((key) => (
+            <option key={key} value={key}>
+              {DISPOSITION_LABEL[key]}
+            </option>
+          ))}
+        </select>
+        {draft.disposition === "forwarding" ? (
+          <div className="space-y-1">
+            <input
+              className="block w-full border border-slate-300 px-2 py-1 text-[12px] font-semibold text-slate-900"
+              onChange={(event) => onChange({ forwardingTo: event.target.value })}
+              placeholder="manager@satopharma.com"
+              type="email"
+              value={draft.forwardingTo}
+            />
+            <input
+              className="block w-full border border-slate-300 px-2 py-1 text-[12px] font-semibold text-slate-900"
+              onChange={(event) => onChange({ forwardingExpiresOn: event.target.value })}
+              type="date"
+              value={draft.forwardingExpiresOn}
+            />
+          </div>
+        ) : null}
+        <div className="flex gap-1">
+          <button
+            className="whitespace-nowrap border border-slate-900 bg-slate-900 px-2 py-1 text-[10px] font-black uppercase tracking-[0.1em] text-white hover:bg-slate-800 disabled:opacity-50"
+            disabled={busy}
+            onClick={onSubmit}
+            type="button"
+          >
+            Save
+          </button>
+          <button
+            className="whitespace-nowrap border border-slate-300 bg-white px-2 py-1 text-[10px] font-black uppercase tracking-[0.1em] text-slate-700 hover:bg-slate-100"
+            onClick={onCancel}
+            type="button"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (task.disposition) {
+    return (
+      <span
+        className="whitespace-nowrap text-[12px] font-semibold text-slate-700"
+        title={task.dispositionByName ?? task.dispositionBy ?? undefined}
+      >
+        {DISPOSITION_LABEL[task.disposition]}
+        {task.forwardingTo ? ` → ${task.forwardingTo}` : ""}
+      </span>
+    );
+  }
+
+  if (locked) return <span className="text-[12px] font-semibold text-slate-300">—</span>;
+
+  return (
+    <button
+      className="whitespace-nowrap border border-slate-300 bg-white px-3 py-1 text-[10px] font-black uppercase tracking-[0.1em] text-slate-700 hover:bg-slate-100 disabled:opacity-50"
+      disabled={busy}
+      onClick={onOpen}
+      type="button"
+    >
+      Set
+    </button>
+  );
+}
+
+/**
+ * Reopen, and "there is no mailbox to revoke". Both need a written reason — a reopen is the only
+ * correction path a revoked row has, so the reason is the whole audit value — and both are rare,
+ * which is why they sit at the end of the row rather than competing with the three steps.
+ */
+function ReasonCell({
+  busy,
+  draft,
+  onCancel,
+  onChange,
+  onOpen,
+  onSubmit,
+  readOnly,
+  settled,
+  task,
+}: {
+  busy: boolean;
+  draft: Draft | null;
+  onCancel: () => void;
+  onChange: (patch: Partial<Draft>) => void;
+  onOpen: (kind: DraftKind) => void;
+  onSubmit: () => void;
+  readOnly: boolean;
+  settled: boolean;
+  task: MailboxOffboardingTask;
+}) {
+  const editing =
+    draft !== null &&
+    draft.taskId === task.id &&
+    (draft.kind === "reopen" || draft.kind === "not_applicable");
+
+  if (readOnly) return null;
+
+  if (editing && draft) {
+    return (
+      <div className="min-w-[210px] space-y-1 text-left">
+        <textarea
+          className="block w-full border border-slate-300 px-2 py-1 text-[12px] font-semibold text-slate-900"
+          onChange={(event) => onChange({ reason: event.target.value })}
+          placeholder={
+            draft.kind === "reopen" ? "Why this is being reopened" : "Why there is nothing to revoke"
+          }
+          rows={2}
+          value={draft.reason}
+        />
+        <div className="flex gap-1">
+          <button
+            className="whitespace-nowrap border border-slate-900 bg-slate-900 px-2 py-1 text-[10px] font-black uppercase tracking-[0.1em] text-white hover:bg-slate-800 disabled:opacity-50"
+            disabled={busy}
+            onClick={onSubmit}
+            type="button"
+          >
+            Save
+          </button>
+          <button
+            className="whitespace-nowrap border border-slate-300 bg-white px-2 py-1 text-[10px] font-black uppercase tracking-[0.1em] text-slate-700 hover:bg-slate-100"
+            onClick={onCancel}
+            type="button"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <button
+      className="whitespace-nowrap border border-slate-300 bg-white px-3 py-1 text-[10px] font-black uppercase tracking-[0.1em] text-slate-700 hover:bg-slate-100 disabled:opacity-50"
+      disabled={busy}
+      onClick={() => onOpen(settled ? "reopen" : "not_applicable")}
+      type="button"
+    >
+      {settled ? "Reopen" : "No mailbox"}
+    </button>
+  );
+}
+
 export function MailboxOffboardingWorkspace({
   initialData,
   initialError,
@@ -630,94 +877,120 @@ export function MailboxOffboardingWorkspace({
         </p>
       ) : null}
 
-      {/* DESKTOP — the table. Horizontally scrollable so nothing is ever cut off. */}
+      {/* DESKTOP — the table. Every step is recorded from INSIDE the row.
+          This used to be an expander whose panel rendered underneath the whole table, which meant
+          scrolling down, acting, and scrolling back for each of ~50 people. The work here is one
+          pass down a backlog, so the row is the unit of work and nothing may leave it. */}
       <div className="mt-5 hidden overflow-x-auto md:block">
-        <table className="w-full min-w-[900px] border-collapse">
+        <table className="w-full min-w-[1180px] border-collapse">
           <thead>
             <tr className="border-b border-slate-300 bg-slate-50">
-              {["Person", "Mailbox", "Last day", "State", "", ""].map((heading, index) => (
-                <th
-                  className="whitespace-nowrap px-3 py-2 text-left text-[9px] font-black uppercase tracking-[0.14em] text-slate-500"
-                  key={`${heading}-${index}`}
-                  scope="col"
-                >
-                  {heading}
-                </th>
-              ))}
+              {["Person", "Mailbox", "Last day", "1 · Password", "2 · App passwords", "3 · Mailbox", "State", ""].map(
+                (heading, index) => (
+                  <th
+                    className="whitespace-nowrap px-3 py-2 text-left text-[9px] font-black uppercase tracking-[0.14em] text-slate-500"
+                    key={`${heading}-${index}`}
+                    scope="col"
+                  >
+                    {heading}
+                  </th>
+                ),
+              )}
             </tr>
           </thead>
           <tbody>
-            {visible.map((task) => (
-              <tr className="border-b border-slate-200 align-top" key={task.id}>
-                <td className="whitespace-nowrap px-3 py-3 text-[12px] font-black text-slate-900">
-                  {task.employeeName}
-                  {task.jobTitle ? (
-                    <span className="ml-2 text-[10px] font-bold uppercase tracking-[0.1em] text-slate-400">
-                      {task.jobTitle}
-                    </span>
-                  ) : null}
-                </td>
-                <td className="whitespace-nowrap px-3 py-3 text-[12px] font-semibold text-slate-700">
-                  {task.workEmail}
-                </td>
-                <td className="whitespace-nowrap px-3 py-3 text-[12px] font-semibold tabular-nums text-slate-700">
-                  {formatDate(task.lastWorkingDate)}
-                </td>
-                <td className="whitespace-nowrap px-3 py-3">
-                  <StatusChip task={task} />
-                </td>
-                <td className="whitespace-nowrap px-3 py-3">
-                  <OverdueFlag task={task} />
-                </td>
-                <td className="whitespace-nowrap px-3 py-3 text-right">
-                  <button
-                    className="whitespace-nowrap border border-slate-300 bg-white px-3 py-1 text-[10px] font-black uppercase tracking-[0.1em] text-slate-700 hover:bg-slate-100"
-                    onClick={() => setExpandedId(expandedId === task.id ? null : task.id)}
-                    type="button"
-                  >
-                    {expandedId === task.id ? "Close" : "Steps"}
-                  </button>
-                </td>
-              </tr>
-            ))}
+            {visible.map((task) => {
+              const settled = task.status === "revoked" || task.status === "not_applicable";
+              const locked = !canRecord || settled;
+              return (
+                <tr className="border-b border-slate-200 align-top" key={task.id}>
+                  <td className="whitespace-nowrap px-3 py-3 text-[12px] font-black text-slate-900">
+                    {task.employeeName}
+                    {task.jobTitle ? (
+                      <span className="ml-2 text-[10px] font-bold uppercase tracking-[0.1em] text-slate-400">
+                        {task.jobTitle}
+                      </span>
+                    ) : null}
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-3 text-[12px] font-semibold text-slate-700">
+                    {task.workEmail}
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-3 text-[12px] font-semibold tabular-nums text-slate-700">
+                    {formatDate(task.lastWorkingDate)}
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-3">
+                    <StepCell
+                      busy={busy}
+                      doneAt={task.passwordResetAt}
+                      doneBy={task.passwordResetByName ?? task.passwordResetBy}
+                      label="Reset"
+                      locked={locked}
+                      onRecord={() => recordStep(task, "password_reset")}
+                    />
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-3">
+                    <StepCell
+                      busy={busy}
+                      /* Rose only when the password is already reset and this is not: that is the
+                         half-revoked mailbox, the one that looks finished and is not. */
+                      danger={task.isHalfRevoked}
+                      doneAt={task.appPasswordsClearedAt}
+                      doneBy={task.appPasswordsClearedByName ?? task.appPasswordsClearedBy}
+                      label="Clear"
+                      locked={locked}
+                      onRecord={() => recordStep(task, "app_passwords_cleared")}
+                    />
+                  </td>
+                  <td className="px-3 py-3">
+                    <DispositionCell
+                      busy={busy}
+                      draft={draft}
+                      locked={locked}
+                      onCancel={() => setDraft(null)}
+                      onChange={(patch) => setDraft((current) => (current ? { ...current, ...patch } : current))}
+                      onOpen={() => setDraft(makeDraft(task, "disposition"))}
+                      onSubmit={submitDraft}
+                      task={task}
+                    />
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-3">
+                    <div className="flex flex-wrap items-center gap-1">
+                      <StatusChip task={task} />
+                      <OverdueFlag task={task} />
+                    </div>
+                  </td>
+                  <td className="px-3 py-3 text-right">
+                    <ReasonCell
+                      busy={busy}
+                      draft={draft}
+                      onCancel={() => setDraft(null)}
+                      onChange={(patch) => setDraft((current) => (current ? { ...current, ...patch } : current))}
+                      onOpen={(kind) => setDraft(makeDraft(task, kind))}
+                      onSubmit={submitDraft}
+                      readOnly={!canRecord}
+                      settled={settled}
+                      task={task}
+                    />
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
+        {data ? (
+          <p className="mt-2 text-[11px] font-semibold text-slate-500">
+            Do the work in Turbify, then record it here.{" "}
+            <a
+              className="font-black text-slate-700 underline"
+              href={data.controlPanelUrl}
+              rel="noreferrer noopener"
+              target="_blank"
+            >
+              Open the control panel
+            </a>
+          </p>
+        ) : null}
       </div>
-
-      {/* The expanded panel sits outside the table on desktop too, so the table never reflows. */}
-      {expandedId && data ? (
-        <div className="mt-3 hidden md:block">
-          {visible
-            .filter((task) => task.id === expandedId)
-            .map((task) => (
-              <div className="border border-slate-300 bg-white" key={task.id}>
-                <StepPanel
-                  busy={busy}
-                  controlPanelUrl={data.controlPanelUrl}
-                  draft={draft}
-                  onCancelDraft={() => setDraft(null)}
-                  onDraftChange={(patch) =>
-                    setDraft((current) => (current ? { ...current, ...patch } : current))
-                  }
-                  onOpenDraft={(target, kind) =>
-                    setDraft({
-                      taskId: target.id,
-                      kind,
-                      disposition: target.disposition ?? "deleted",
-                      forwardingTo: target.forwardingTo ?? "",
-                      forwardingExpiresOn: target.forwardingExpiresOn ?? "",
-                      reason: "",
-                    })
-                  }
-                  onRecord={recordStep}
-                  onSubmitDraft={submitDraft}
-                  readOnly={!canRecord}
-                  task={task}
-                />
-              </div>
-            ))}
-        </div>
-      ) : null}
 
       {/* MOBILE — cards, never the table. The owner's standing rule. */}
       <div className="mt-5 space-y-3 md:hidden">
