@@ -13,6 +13,7 @@
  *   node scripts/cronjob-sync.mjs                       # dry run - list what differs, change nothing
  *   node scripts/cronjob-sync.mjs --job <key>           # narrow to one declaration
  *   node scripts/cronjob-sync.mjs --job <key> --apply   # create or patch that one job
+ *   node scripts/cronjob-sync.mjs --job <key> --apply --hold   # ...create it switched OFF
  *
  * WHY IT IS DELIBERATELY NOT A BULK SYNC, and must not be turned into one.
  * The cron-job.org REST API allows **100 requests per DAY** across the whole account. Past the cap
@@ -55,6 +56,17 @@ const TZ = "Africa/Cairo";
 const PROD = "https://phoenix-hr.satopharma.com";
 
 const APPLY = process.argv.includes("--apply");
+/**
+ * Create the job switched OFF.
+ *
+ * For the case where a job must EXIST before it may FIRE: its id has to be written into
+ * `docs/observability.md` in the same pull request that makes the route safe to run on a cadence,
+ * and that id cannot be known until the job is created. Creating it live would mean the first fire
+ * lands before the fix that made it worth scheduling. So `--hold` creates it disabled, and the
+ * plain `--apply` afterwards is the arming step: a held job reads as DRIFT "disabled", which the
+ * existing patch path corrects. There is no `--unhold` for that reason — arming is the default.
+ */
+const HOLD = process.argv.includes("--hold");
 const JOB_FILTER = (() => {
   const i = process.argv.indexOf("--job");
   return i === -1 ? null : process.argv[i + 1] ?? null;
@@ -86,6 +98,18 @@ const JOBS = {
     // service itself. Steady state is one indexed scan — the read-only reconciliation over a full
     // 12-month window measured 1.19s — so the 30s platform cut is not expected to bite. 300 matches
     // what the rest of the account sets; the platform still cuts at 30 regardless (see header).
+    requestTimeout: 300,
+  },
+  "reconciliation-check": {
+    title: "Phoenix — nightly reconciliation harness",
+    path: "/api/cron/reconciliation-check",
+    // 04:40 Cairo. After the 03:20 re-stamp has settled the geography the CRM checks read, and well
+    // before the 06:36 daily notification run — so a breach is found and paged while there is still
+    // a morning left to act on it. Nothing else in the account runs at :40.
+    schedule: { hours: [4], minutes: [40], mdays: [-1], months: [-1], wdays: [-1] },
+    // 16 checks, entirely read-only, measured end to end at 15.6s against production — inside the
+    // 30s platform cut with room to spare. 300 matches the rest of the account; the platform still
+    // cuts at 30 regardless (see header).
     requestTimeout: 300,
   },
 };
@@ -220,7 +244,7 @@ async function main() {
       const created = await api(key, "/jobs", {
         body: JSON.stringify({
           job: {
-            enabled: true,
+            enabled: !HOLD,
             // The bearer the route's assertCronAuthorized will check on every fire. Without it the
             // job runs perfectly and Phoenix answers 401 every night.
             extendedData: { headers: { Authorization: authHeader } },
@@ -249,6 +273,9 @@ async function main() {
       // Stated separately because a job missing ONLY its header looks completely healthy here and
       // in the web UI, and fails with a 401 nobody reads.
       console.log(`  auth header: ${auth ? `present, length ${String(auth).length}` : "MISSING — this job will 401"}`);
+      if (HOLD) {
+        console.log(`  HELD — created disabled, so it fires nothing yet. Re-run without --hold to arm it.`);
+      }
       continue;
     }
 

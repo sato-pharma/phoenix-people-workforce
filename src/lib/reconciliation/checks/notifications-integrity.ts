@@ -8,6 +8,7 @@ import {
   PERSONAL_BELL_CATEGORIES,
 } from "@/lib/notifications/recipients";
 import { formatCount, formatList } from "@/lib/reconciliation/compare";
+import { partitionLoginsWithoutEmployeeRow } from "@/lib/reconciliation/logins-without-employee-row";
 import type { ReconciliationCheck, ReconciliationOutcome } from "@/lib/reconciliation/types";
 import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -119,6 +120,11 @@ const sentInAppMustBeBellRenderable: ReconciliationCheck = {
  * ACCOUNT. Two logins for one person therefore survive dedupe as two distinct recipients, and that
  * human receives every system notification twice, forever, with nothing to announce it.
  *
+ * A login with no HR_ID at all breaches only when `partitionLoginsWithoutEmployeeRow` does not
+ * account for it: this check is scheduled nightly, and a check that alarms every night on a
+ * condition ruled permanent is one nobody reads within a week — including on the night it is
+ * telling the truth.
+ *
  * The probe uses a real production event shape (attendance's ingestion-stalled alert, whose
  * strategy is permission_based and therefore walks the full active-account list). It reads only.
  */
@@ -143,7 +149,12 @@ const fanoutHasNoDuplicateHuman: ReconciliationCheck = {
       byHuman.set(human, [...(byHuman.get(human) ?? []), String(account.login_id ?? "").trim()]);
     }
     const sharedHrIds = [...byHuman.entries()].filter(([, logins]) => logins.length > 1);
-    const accountsWithoutHuman = accounts.filter((account) => !String(account.hr_id ?? "").trim()).length;
+    const loginsWithoutHuman = accounts
+      .filter((account) => !String(account.hr_id ?? "").trim())
+      .map((account) => String(account.login_id ?? "").trim())
+      .filter(Boolean);
+    const { explained: explainedWithoutHuman, unexplained: unexplainedWithoutHuman } =
+      partitionLoginsWithoutEmployeeRow(loginsWithoutHuman);
 
     // The probe needs a real subject: permissionBasedRecipients returns nobody at all when there
     // is no subject to scope against, which would make this check quietly vacuous.
@@ -171,12 +182,21 @@ const fanoutHasNoDuplicateHuman: ReconciliationCheck = {
     for (const [human, logins] of sharedHrIds) {
       problems.push(`${human} holds ${formatCount(logins.length, "active login")} (${logins.join(", ")}) — every system notification reaches them once per login`);
     }
-    if (accountsWithoutHuman > 0) {
+    if (unexplainedWithoutHuman.length > 0) {
       problems.push(
-        `${formatCount(accountsWithoutHuman, "active login")} carry no HR_ID, so their deliveries can never be attributed to a person`,
+        `${formatCount(unexplainedWithoutHuman.length, "active login")} carry no HR_ID (${unexplainedWithoutHuman.join(", ")}), so their deliveries can never be attributed to a person`,
       );
     }
     problems.push(...probeDuplicates);
+
+    // Named even when everything holds: an exception nobody can see stops being an exception and
+    // becomes a silent hole, and the next reader has no way to tell the two apart.
+    const explained =
+      explainedWithoutHuman.length === 0
+        ? ""
+        : ` Carrying no HR_ID by design, and excluded: ${explainedWithoutHuman
+            .map(({ login, reason }) => `${login} — ${reason}`)
+            .join("; ")}.`;
 
     return {
       left: {
@@ -190,8 +210,8 @@ const fanoutHasNoDuplicateHuman: ReconciliationCheck = {
       holds: problems.length === 0,
       detail:
         problems.length === 0
-          ? `${formatCount(accounts.length, "active login")} map one-to-one onto ${formatCount(byHuman.size, "person", "people")}, and the resolver returns one recipient per person.`
-          : formatList(problems),
+          ? `${formatCount(accounts.length, "active login")} map one-to-one onto ${formatCount(byHuman.size, "person", "people")}, and the resolver returns one recipient per person.${explained}`
+          : `${formatList(problems)}${explained}`,
     };
   },
 };

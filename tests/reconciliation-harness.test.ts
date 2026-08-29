@@ -14,6 +14,7 @@ import {
   summarizeReconciliationResults,
 } from "../src/lib/reconciliation/compare.ts";
 import { findDuplicateEmployeeDays } from "../src/lib/reconciliation/duplicate-days.ts";
+import { partitionLoginsWithoutEmployeeRow } from "../src/lib/reconciliation/logins-without-employee-row.ts";
 import { retryOnceIfBreached } from "../src/lib/reconciliation/retry.ts";
 import { buildReconciliationAlertMessage, runReconciliationCheckList } from "../src/lib/reconciliation/runner.ts";
 import type {
@@ -486,5 +487,30 @@ export async function runReconciliationHarnessTests() {
     ]),
     [],
     "a candidate whose days a reviewer cleared to none claims nothing, and must not collide with anything",
+  );
+
+  // ── The one login allowed to carry no HR_ID, and only that one ───────────────────────────────
+  // This check is scheduled nightly. `admin-HR` is the break-glass Super Admin, production holds
+  // no employees row for it, and the standing rule is that one must never be created — so without
+  // this allowance the job alarms every night on a condition ruled permanent, which is how a job
+  // becomes one nobody reads.
+  const liveShape = partitionLoginsWithoutEmployeeRow(["admin-HR"]);
+  assert.deepEqual(
+    liveShape.unexplained,
+    [],
+    "admin-HR is spelled mixed-case in production — an exact-match allowlist would breach nightly while still reading, in source, as though it were handled",
+  );
+  assert.equal(liveShape.explained.length, 1, "the allowed login must still be accounted for, not dropped");
+  assert.match(
+    liveShape.explained[0].reason,
+    /break-glass Super Admin/,
+    "the exception has to carry its reason into the report — an allowance nobody can see becomes folklore",
+  );
+
+  const withAStranger = partitionLoginsWithoutEmployeeRow(["admin-HR", "ZZ-TOUR"]);
+  assert.deepEqual(
+    withAStranger.unexplained,
+    ["ZZ-TOUR"],
+    "a SECOND account with no HR_ID is the thing worth paging on — allowlisting the class instead of the one login would hide exactly that",
   );
 }

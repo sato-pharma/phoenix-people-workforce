@@ -231,6 +231,7 @@ policy):
    | `phoenix-direct-orders-probation` | `27 2 * * *` | 2h | cron-job.org job `8313177` |
    | `phoenix-db-health-snapshot` | `17 */6 * * *` | 2h | cron-job.org job `8242721` |
    | `phoenix-territory-restamp` | `20 3 * * *` | 2h | cron-job.org job `8350721` |
+   | `phoenix-reconciliation-check` | `40 4 * * *` | 2h | cron-job.org job `8350984` |
    | `phoenix-ireports360-live-poll` | **Simple**, period `5m` | 15m | the in-process poller, every tick |
    | `phoenix-ireports360-sync` | `0 6-21/3 * * *` | 2h | the in-process poller, when due |
    | `phoenix-reconcile-visits` | `0 4 * * 0` | 12h | the in-process poller, when due |
@@ -360,7 +361,21 @@ dashboard that red is the normal colour. Checked against the live cron-job.org a
 | Route | State |
 |---|---|
 | `/api/cron/marketing-assignment-backfill` | **Unwired on purpose, and its work is already watched elsewhere.** `backfillMissingMarketingAssignmentEmails()` runs as a sub-job of the daily notification run (PR #2211), so it is already covered by `phoenix-notify-daily`. This route exists only so the same sweep can be driven by hand in production without firing every other daily notification alongside it. Leave it alone. |
-| `/api/cron/reconciliation-check` | **Wired to `phoenix-reconciliation-check`, but nothing calls it.** Read-only harness that compares each domain service against an independent derivation. Harmless to leave unscheduled — but the wiring implies a watch that does not exist, so do not read its slug as evidence anything is being reconciled on a cadence. |
+
+`/api/cron/reconciliation-check` left this table on 2026-08-30, and what had to happen first is the
+part worth keeping. It had been wired to `phoenix-reconciliation-check` and called by nothing, so
+its slug read as a watch that did not exist. Scheduling it was not, however, a matter of creating
+the job: run against production as it stood, the harness reported two breaches, and one of them —
+an active login carrying no `HR_ID` — was `admin-HR`, the break-glass Super Admin that has no
+`employees` row **by standing rule** and must never be given one. Arming it in that state would
+have paged a human every night about a condition ruled permanent, which is the fastest way to
+manufacture a dashboard nobody reads. So the allowance landed first
+(`src/lib/reconciliation/logins-without-employee-row.ts`, pinned by
+`tests/reconciliation-harness.test.ts`) and the job was created **held** — `cronjob-sync.mjs
+--hold`, disabled, firing nothing — so that its id could be written into the table above in the
+same pull request that made it safe to run. The plain `--apply` afterwards is the arming step.
+**The generalisation: a check is not ready to be scheduled the day it is written, but the day its
+expected exceptions are expressed in code.** Until then, scheduling it is worse than leaving it off.
 
 `/api/cron/brevo-keepalive` was in this table for a few hours on 2026-08-23 and left it the same way
 the rotations did: it was wired to `phoenix-brevo-keepalive` and called by **nothing at all**, so
