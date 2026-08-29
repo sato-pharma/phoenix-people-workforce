@@ -1397,3 +1397,64 @@ export async function getMappedAgentHrIds(
   }
   return Array.from(present);
 }
+
+/** The `(hr id, crm id)` pairs a mirror row carries, both sides of a double visit. */
+export type CrmAgentIdentityRow = {
+  agent_hr_id: string | null;
+  agent_crm_id: string | null;
+  double_hr_id: string | null;
+  double_crm_id: string | null;
+};
+
+/** Cap for one identity lookup. Generous: a single rep's own history runs to a
+ * few thousand rows, and the read is bounded to a handful of hr ids. */
+const IDENTITY_ROW_LIMIT = 2000;
+
+/**
+ * The identity pairs the feed itself carries for these hr ids, newest first, read
+ * from visits strictly BEFORE `beforeDate`. Callers interpret the pairs — this
+ * returns rows, not a verdict.
+ *
+ * Answers "what crm id did iReports360 know this person by", which is recoverable
+ * from history even when the employee record no longer says: on resignation the CRM
+ * account is deactivated and `employees.crm_id` is cleared, while the mirror keeps
+ * every row that person ever generated.
+ *
+ * Deliberately WITHOUT the departed-agent exclusion, for the same reason as
+ * {@link scanVisitsForRangeIncludingDeparted}: every caller asks this about somebody
+ * BECAUSE they resigned, so applying the exclusion would hide precisely the person
+ * being looked up. Safe as a carve-out because it reads history only, and only
+ * identity columns — never the period under judgement, and never anything that could
+ * add a departed agent's activity to a coverage, scoring, or reporting read.
+ *
+ * Queries `agent_hr_id` and `double_hr_id` separately rather than as one `.or()`:
+ * a district manager appears on the mirror as the double and never as the agent, so
+ * an agent-only filter leaves every manager unrecoverable — and a hand-built `.or()`
+ * string is the shape that silently returns nothing instead of erroring. Both legs
+ * expand mixed-case hr ids ({@link expandHrIdFilterValues}), without which a plain
+ * `.in` under-returns. Returns `[]` if the mirror schema is missing.
+ */
+export async function getAgentCrmIdentityRows(
+  hrIds: readonly string[],
+  options: { beforeDate?: string; limit?: number } = {},
+): Promise<CrmAgentIdentityRow[]> {
+  if (hrIds.length === 0) return [];
+  const supabase = getSupabaseAdmin();
+  const filterValues = expandHrIdFilterValues(hrIds);
+  const limit = options.limit ?? IDENTITY_ROW_LIMIT;
+  const rows: CrmAgentIdentityRow[] = [];
+  for (const column of ["agent_hr_id", "double_hr_id"] as const) {
+    let query = supabase
+      .from(CRM_VISITS_TABLE)
+      .select("agent_hr_id, agent_crm_id, double_hr_id, double_crm_id")
+      .in(column, filterValues);
+    if (options.beforeDate) query = query.lt("visit_date", options.beforeDate);
+    const { data, error } = await query.order("visit_date", { ascending: false }).limit(limit);
+    if (error) {
+      if (isCrmSchemaMissingError(error)) return [];
+      throw new Error(error.message);
+    }
+    rows.push(...((data ?? []) as unknown as CrmAgentIdentityRow[]));
+  }
+  return rows;
+}
