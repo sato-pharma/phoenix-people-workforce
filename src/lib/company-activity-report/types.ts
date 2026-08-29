@@ -46,7 +46,13 @@ export type CompanyActivityDayOutcome =
   | "no_entry"
   | "weekly_off"
   | "holiday"
-  | "future";
+  | "future"
+  /** A day strictly after a TERMINAL employee's own lastWorkingDate — see reconcile.ts. Distinct
+   * from no_entry/no_signal on purpose: those read as "nothing recorded" or "no way to observe
+   * them", both of which wrongly imply this person still works here. This outcome says plainly
+   * that they do not, and it is excluded from every working-day rollup (summary.ts), never counted
+   * as an absence or a gap. */
+  | "after_exit";
 
 export type CompanyActivityVisitDetail = {
   visitType: number | null;
@@ -81,7 +87,10 @@ export type CompanyActivityDayRow = {
   employeeHrId: string;
   dateIso: string;
   weekday: string;
-  dayType: "working" | "weekly_off" | "holiday" | "future";
+  /** "after_exit" — a day strictly after a terminal employee's own lastWorkingDate — is excluded
+   * from working-day rollups exactly like weekly_off/holiday/future are, via the same `dayType !==
+   * "working"` check every consumer already uses (summary.ts, reconcile.ts's conflict flag). */
+  dayType: "working" | "weekly_off" | "holiday" | "future" | "after_exit";
   outcome: CompanyActivityDayOutcome;
   /** Human-readable explanation — always populated, including for no_entry. */
   reason: string;

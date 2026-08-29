@@ -28,6 +28,10 @@ export function summarizeCompanyActivityEmployee(
     campaignVisits += day.crmCampaignVisitCount;
     if (day.crmCampaignVisitCount > 0) campaignVisitDays += 1;
     if (day.conflict) conflictDays += 1;
+    // Skips weekly_off/holiday/future AND "after_exit" (a day strictly after a terminal employee's
+    // own lastWorkingDate — see reconcile.ts) alike: none of them are a working day expectation for
+    // this employee, so none of them should inflate workingDays or fall into the outcome switch
+    // below and get counted as a no_entry/no_signal gap against someone who no longer works here.
     if (day.dayType !== "working") continue;
     workingDays += 1;
     switch (day.outcome) {

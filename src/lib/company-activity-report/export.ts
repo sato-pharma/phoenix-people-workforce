@@ -66,6 +66,7 @@ export const ALL_COMPANY_ACTIVITY_DAY_OUTCOMES: readonly CompanyActivityDayOutco
   "weekly_off",
   "holiday",
   "future",
+  "after_exit",
 ];
 
 // Exported so a registered test can iterate ALL_COMPANY_ACTIVITY_DAY_OUTCOMES and assert both
@@ -82,6 +83,7 @@ export const OUTCOME_LABEL: Record<CompanyActivityDayOutcome, string> = {
   weekly_off: "Weekly Off",
   holiday: "Holiday",
   future: "Future",
+  after_exit: "No Longer Employed",
 };
 
 /** office_present / crm_field_visit deliberately map to WHITE — "no need to out-shout a normal
@@ -102,6 +104,10 @@ export const OUTCOME_FILL: Record<CompanyActivityDayOutcome, string> = {
   weekly_off: INFO_FILL,
   holiday: INFO_FILL,
   future: INFO_FILL,
+  // Quiet gray, same tier as weekly_off/holiday/device_outage — this is informational, not an
+  // alarm: the employee simply does not work here any more on this date, which is not their fault
+  // and not a gap in coverage that needs attention the way no_entry's red does.
+  after_exit: INFO_FILL,
 };
 
 // The text partner for each OUTCOME_FILL — a colored fill with matching text reads as a real badge
@@ -118,6 +124,7 @@ export const OUTCOME_FONT: Record<CompanyActivityDayOutcome, string> = {
   weekly_off: MUTED,
   holiday: MUTED,
   future: MUTED,
+  after_exit: MUTED,
 };
 
 /** Overrides the outcome's own fill — a conflict needs to stand out regardless of which outcome
@@ -379,6 +386,7 @@ function addNotesSheet(workbook: ExcelJS.Workbook, report: CompanyActivityReport
     ["Device Outage", "A company-wide fingerprint device/sync outage was detected for this date — no punch data is available for ANYONE that day, so an empty punch record here is not necessarily this employee's absence."],
     ["Conflict", "This day shows evidence of BOTH physical presence (an office punch or a real CRM field visit) AND a leave signal (CRM leave or a Phoenix leave request) covering the same date. Surfaced for review, never auto-resolved — this report exists to show what actually happened, not to make a payroll judgment."],
     ["Weekly Off / Holiday", "Not counted as a working day for the No Entry / No Signal tallies, but still listed in Daily Detail so the day-by-day picture is never missing a row."],
+    ["No Longer Employed", "This employee's employment ended before this date (their own last working date falls before it). Not counted as a working day, a No Entry, or a No Signal day for this employee — a leaver does not get judged on whether they showed up somewhere they no longer work. Still listed in Daily Detail for every day in range, and any real punch/CRM/leave data actually recorded on the date (a rare late-sync edge case) is still shown in the row's own detail columns."],
     ["Severity banding (Summary)", "No Entry / No Signal / Conflict Days in the per-employee table are banded green (0), amber (1-2), or red (3+) — a per-employee scale. The same totals company-wide, on Cover, are not banded the same way: a company-wide sum banded on a per-employee threshold would read as red almost regardless of the real distribution."],
     ["Data freshness", "The CRM (iReports360) mirror can lag live field activity by up to roughly two days — a just-elapsed date showing No Entry is not yet a confirmed gap."],
     ["Scope", "This report is NOT a payroll report. It exists for awareness and accuracy review only; it does not drive any deduction, incentive, or leave-balance calculation."],

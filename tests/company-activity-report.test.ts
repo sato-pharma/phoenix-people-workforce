@@ -117,6 +117,7 @@ function dayInputs(overrides: Partial<CompanyActivityDayInputs> = {}): CompanyAc
     hasAttendanceChannel: true,
     hasCrmChannel: true,
     hasOutage: false,
+    isAfterExit: false,
     leave: undefined,
     punches: undefined,
     ...overrides,
