@@ -14,7 +14,8 @@ import {
   listMessages,
   testMailboxConnection,
 } from "@/lib/mailbox-monitor/imap-client";
-import { failureDetail, normalizeAppPassword } from "@/lib/mailbox-monitor/imap-error";
+import { failureDetail, failureReason, normalizeAppPassword } from "@/lib/mailbox-monitor/imap-error";
+import { logError } from "@/lib/observability/log";
 import { loadConfiguredMailboxes } from "@/lib/recruitment/inbound/email-mailboxes-config";
 import type {
   AddMailboxMonitorInput,
@@ -53,10 +54,21 @@ type MonitorRow = {
 
 export class MailboxMonitorError extends Error {
   readonly statusCode: number;
-  constructor(message: string, statusCode = 400) {
+  /**
+   * True when this failure has a cause worth investigating — an IMAP rejection, an unreachable
+   * host, a database error — as opposed to a user input mistake (a typo'd address, a mailbox
+   * already monitored). Only a diagnostic failure is forwarded to the error monitor; routing
+   * every 400 there would bury the real ones under ordinary form validation.
+   *
+   * The distinction lives on the error rather than being re-derived from the status code at each
+   * catch site, so the decision is made once, where the cause is actually known.
+   */
+  readonly diagnostic: boolean;
+  constructor(message: string, statusCode = 400, options: { diagnostic?: boolean } = {}) {
     super(message);
     this.name = "MailboxMonitorError";
     this.statusCode = statusCode;
+    this.diagnostic = options.diagnostic ?? false;
   }
 }
 
@@ -104,7 +116,7 @@ async function resolveEmployeeNames(hrIds: string[]): Promise<Map<string, string
 }
 
 /** Append one access-log row. Best-effort: a logging failure must never break the read itself,
- *  but we still surface nothing to the caller — the audit trail is a side effect. */
+ *  but it must not be INVISIBLE either — see the note on the insert below. */
 async function logAccess(entry: {
   monitorId: string | null;
   emailAddress: string | null;
@@ -115,7 +127,7 @@ async function logAccess(entry: {
   detail?: Record<string, unknown> | null;
 }): Promise<void> {
   try {
-    await db()
+    const { error } = await db()
       .from(ACCESS_LOG_TABLE)
       .insert({
         action: entry.action,
@@ -126,14 +138,30 @@ async function logAccess(entry: {
         message_uid: entry.messageUid == null ? null : String(entry.messageUid),
         monitor_id: entry.monitorId,
       });
-  } catch {
-    /* audit is best-effort; never block a read on it */
+    // supabase-js RESOLVES a rejected write with `{ error }` rather than throwing it, so the catch
+    // below never sees a refused row — an RLS denial, a constraint, a `detail` payload postgres
+    // will not accept as jsonb. Until this branch existed the row simply did not appear and nothing
+    // said so, which is the same "it failed and we cannot say why" hole the `reason` field was
+    // added to close, one layer further down. Report it; never rethrow.
+    if (error) {
+      logError("Failed to write a mailbox monitor access-log row", {
+        error,
+        labels: { action: entry.action, event: "mailbox_monitor_access_log_insert_failed" },
+      });
+    }
+  } catch (loggingError) {
+    // A THROWN failure — a dropped socket, or the client's own 15s abort. Still never block the
+    // operation being audited on it.
+    logError("Mailbox monitor access-log write threw", {
+      error: loggingError,
+      labels: { action: entry.action, event: "mailbox_monitor_access_log_write_threw" },
+    });
   }
 }
 
 async function loadRow(id: string): Promise<MonitorRow> {
   const { data, error } = await db().from(MONITORS_TABLE).select("*").eq("id", id).maybeSingle();
-  if (error) throw new MailboxMonitorError(error.message, 500);
+  if (error) throw new MailboxMonitorError(error.message, 500, { diagnostic: true });
   if (!data) throw new MailboxMonitorError("Mailbox monitor not found.", 404);
   return data as MonitorRow;
 }
@@ -149,6 +177,15 @@ function connectionFromRow(row: MonitorRow): MailboxConnection {
   };
 }
 
+/**
+ * Update a monitor's health columns.
+ *
+ * Best-effort, deliberately: this is metadata ABOUT an operation, never the operation the caller
+ * asked for. The supabase client turns its own 15s abort into a thrown "Supabase request timed
+ * out." (src/lib/supabase/server.ts), so an unguarded call here could replace a clean 502 carrying
+ * the IMAP reason with an opaque timeout — and, worse, pre-empt the access-log row that is the only
+ * durable record of why the read failed. A slow database is exactly when that record matters most.
+ */
 async function markHealth(
   id: string,
   patch: { status?: MailboxMonitorStatus; ok?: boolean; error?: string | null },
@@ -160,8 +197,54 @@ async function markHealth(
     update.last_ok_at = now;
     update.last_error = null;
   }
-  if (patch.error !== undefined) update.last_error = patch.error;
-  await db().from(MONITORS_TABLE).update(update).eq("id", id);
+  // Through the SAME gate as the audit reason. This column is the copy the admin dashboard
+  // renders, on a single non-wrapping line, so leaving it uncapped meant the one protection the
+  // cap was written for was missing from the one place a human reads.
+  if (patch.error !== undefined) update.last_error = failureReason(patch.error);
+  try {
+    const { error } = await db().from(MONITORS_TABLE).update(update).eq("id", id);
+    if (error) {
+      logError("Failed to update mailbox monitor health", {
+        error,
+        labels: { event: "mailbox_monitor_health_update_failed", monitorId: id },
+      });
+    }
+  } catch (healthError) {
+    logError("Mailbox monitor health update threw", {
+      error: healthError,
+      labels: { event: "mailbox_monitor_health_update_threw", monitorId: id },
+    });
+  }
+}
+
+/**
+ * Refuse an enrolment: record WHY in the access log, then throw.
+ *
+ * One helper rather than a log-then-throw pair repeated at each guard, because the pairs drifted —
+ * only the connection-test refusal was ever audited, so an address typo, a too-short password and
+ * a mailbox already monitored each left NO row at all. That is strictly worse than the bare
+ * `failed: true` this module set out to improve on: it cannot even be counted. Every refusal now
+ * leaves the same shape, and adding a guard cannot silently skip the audit.
+ *
+ * `reason` is what the audit stores and `message` is what the browser sees; they differ on the
+ * connection test, where the client message wraps the IMAP reason in context the log already has.
+ */
+async function refuseAdd(input: {
+  actorHrId: string | null;
+  diagnostic?: boolean;
+  email: string;
+  message: string;
+  reason?: unknown;
+  statusCode: number;
+}): Promise<never> {
+  await logAccess({
+    action: "add",
+    actorHrId: input.actorHrId,
+    detail: failureDetail(input.reason ?? input.message, { emailAddress: input.email }),
+    emailAddress: input.email,
+    monitorId: null,
+  });
+  throw new MailboxMonitorError(input.message, input.statusCode, { diagnostic: input.diagnostic ?? false });
 }
 
 // ---------------------------------------------------------------------------
@@ -173,7 +256,7 @@ export async function listMonitors(): Promise<MailboxMonitor[]> {
     .from(MONITORS_TABLE)
     .select("*")
     .order("created_at", { ascending: false });
-  if (error) throw new MailboxMonitorError(error.message, 500);
+  if (error) throw new MailboxMonitorError(error.message, 500, { diagnostic: true });
   const rows = (data ?? []) as MonitorRow[];
   const names = await resolveEmployeeNames(rows.map((r) => r.employee_hr_id ?? ""));
   return rows.map((row) => rowToMonitor(row, row.employee_hr_id ? names.get(row.employee_hr_id) ?? null : null));
@@ -189,30 +272,37 @@ export async function addMonitor(input: AddMailboxMonitorInput, actorHrId: strin
   // Strip ALL whitespace, not just the ends: Yahoo/Turbify shows an app password as four
   // space-separated blocks, but the IMAP LOGIN needs the 16 characters with no spaces.
   const appPassword = normalizeAppPassword(input.appPassword ?? "");
-  if (!isEmail(email)) throw new MailboxMonitorError("Enter a valid mailbox email address.");
-  if (appPassword.length < 6) throw new MailboxMonitorError("Paste the mailbox app password.");
+  if (!isEmail(email)) {
+    await refuseAdd({ actorHrId, email, message: "Enter a valid mailbox email address.", statusCode: 400 });
+  }
+  if (appPassword.length < 6) {
+    await refuseAdd({ actorHrId, email, message: "Paste the mailbox app password.", statusCode: 400 });
+  }
 
   const host = (input.imapHost ?? "").trim() || DEFAULT_IMAP_HOST;
   const port = Number.isFinite(input.imapPort) && Number(input.imapPort) > 0 ? Number(input.imapPort) : DEFAULT_IMAP_PORT;
   const secure = input.imapSecure === undefined ? true : Boolean(input.imapSecure);
 
   const { data: existing } = await db().from(MONITORS_TABLE).select("id").eq("email_address", email).maybeSingle();
-  if (existing) throw new MailboxMonitorError("That mailbox is already being monitored.", 409);
+  if (existing) {
+    await refuseAdd({ actorHrId, email, message: "That mailbox is already being monitored.", statusCode: 409 });
+  }
 
   // Prove the credential works before we store it.
   const connection: MailboxConnection = { host, password: appPassword, port, secure, user: email };
   const test = await testMailboxConnection(connection);
   if (!test.ok) {
-    // The reason has nowhere else to live: no monitor row was created, so there is no last_error,
-    // and the 422 below is never reported to the error monitor. Lose it here and it is lost.
-    await logAccess({
-      action: "add",
+    // The reason has nowhere else to live: no monitor row was created, so there is no last_error to
+    // fall back on. Marked diagnostic, so it also reaches the error monitor — the surface a human
+    // actually watches — instead of dying with the 422's HTTP response.
+    await refuseAdd({
       actorHrId,
-      detail: failureDetail(test.error, { emailAddress: email }),
-      emailAddress: email,
-      monitorId: null,
+      diagnostic: true,
+      email,
+      message: `Could not connect to that mailbox: ${test.error}`,
+      reason: test.error,
+      statusCode: 422,
     });
-    throw new MailboxMonitorError(`Could not connect to that mailbox: ${test.error}`, 422);
   }
 
   const now = new Date().toISOString();
@@ -233,7 +323,7 @@ export async function addMonitor(input: AddMailboxMonitorInput, actorHrId: strin
     })
     .select("*")
     .single();
-  if (error) throw new MailboxMonitorError(error.message, 500);
+  if (error) throw new MailboxMonitorError(error.message, 500, { diagnostic: true });
 
   const row = data as MonitorRow;
   await logAccess({ action: "add", actorHrId, emailAddress: email, monitorId: row.id });
@@ -322,18 +412,15 @@ export async function deleteMonitor(id: string, actorHrId: string | null): Promi
   const row = await loadRow(id);
   await logAccess({ action: "delete", actorHrId, emailAddress: row.email_address, monitorId: id });
   const { error } = await db().from(MONITORS_TABLE).delete().eq("id", id);
-  if (error) throw new MailboxMonitorError(error.message, 500);
+  if (error) throw new MailboxMonitorError(error.message, 500, { diagnostic: true });
 }
 
 /** Re-test a monitor's credential and update its health. Returns the refreshed monitor. */
 export async function recheckMonitor(id: string, actorHrId: string | null): Promise<MailboxMonitor> {
   const row = await loadRow(id);
   const test = await testMailboxConnection(connectionFromRow(row));
-  if (test.ok) {
-    await markHealth(id, { ok: true, status: "active" });
-  } else {
-    await markHealth(id, { error: test.error, status: "failing" });
-  }
+  // The audit row goes FIRST. It carries the reason; the health columns carry only a summary of it,
+  // so if one of the two writes has to be the one that survives a bad moment, it is this one.
   await logAccess({
     action: "connect_test",
     actorHrId,
@@ -341,6 +428,11 @@ export async function recheckMonitor(id: string, actorHrId: string | null): Prom
     emailAddress: row.email_address,
     monitorId: id,
   });
+  if (test.ok) {
+    await markHealth(id, { ok: true, status: "active" });
+  } else {
+    await markHealth(id, { error: test.error, status: "failing" });
+  }
   const refreshed = await loadRow(id);
   const names = await resolveEmployeeNames([refreshed.employee_hr_id ?? ""]);
   return rowToMonitor(refreshed, refreshed.employee_hr_id ? names.get(refreshed.employee_hr_id) ?? null : null);
@@ -370,7 +462,9 @@ async function withMonitorRead<T>(
     return result;
   } catch (error) {
     const message = error instanceof Error ? error.message : "Mailbox read failed.";
-    await markHealth(id, { error: message, status: "failing" });
+    // The audit row goes FIRST, ahead of the health update. markHealth is best-effort now, but
+    // ordering is the defence that does not depend on it staying that way — and this row is the
+    // only place the reason survives once the 502 below has been read and the tab closed.
     await logAccess({
       action,
       actorHrId,
@@ -380,9 +474,11 @@ async function withMonitorRead<T>(
       messageUid: meta.messageUid ?? null,
       monitorId: id,
     });
+    await markHealth(id, { error: message, status: "failing" });
     throw new MailboxMonitorError(
       `Could not read the mailbox — it may have been closed or the app password revoked. (${message})`,
       502,
+      { diagnostic: true },
     );
   }
 }

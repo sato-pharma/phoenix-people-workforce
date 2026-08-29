@@ -1,17 +1,19 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 import { assertPermission } from "@/lib/auth/permissions";
-import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import { resolveAccessContext } from "@/lib/auth/server";
+import {
+  mailboxMonitorErrorResponse,
+  type MailboxMonitorRouteAccess,
+} from "@/lib/mailbox-monitor/route-errors";
 import {
   addMonitor,
   importConfiguredMailboxes,
   listImportableMailboxes,
   listMonitors,
-  MailboxMonitorError,
 } from "@/lib/mailbox-monitor/service";
-import { assertApiRateLimit, isApiRateLimitError, rateLimitIdentity } from "@/lib/security/api-rate-limit";
+import { assertApiRateLimit, rateLimitIdentity } from "@/lib/security/api-rate-limit";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
-import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -20,17 +22,23 @@ export const dynamic = "force-dynamic";
 // boundary). imapflow needs the Node runtime.
 
 export async function GET(request: NextRequest) {
+  // Hoisted out of the try so the catch can say WHO hit the failure. Resolved inside, a throw at or
+  // before this line would leave the recorded row with no actor — and "someone, somewhere" is the
+  // state this logging exists to end.
+  let access: MailboxMonitorRouteAccess = null;
   try {
-    const access = await resolveAccessContext(request);
+    access = await resolveAccessContext(request);
     await assertPermission(access, "mailbox_monitor", "read");
     const [monitors, importable] = await Promise.all([listMonitors(), listImportableMailboxes()]);
     return NextResponse.json({ importable, monitors });
   } catch (error) {
-    if (isForbiddenError(error)) return NextResponse.json({ message: (error as Error).message }, { status: 403 });
-    return NextResponse.json(
-      { message: clientSafeErrorMessage(error, "Failed to load monitored mailboxes.") },
-      { status: 500 },
-    );
+    return mailboxMonitorErrorResponse({
+      access,
+      error,
+      fallbackMessage: "Failed to load monitored mailboxes.",
+      request,
+      route: "/api/admin/mailbox-monitor",
+    });
   }
 }
 
@@ -48,11 +56,12 @@ type AddBody = {
 };
 
 export async function POST(request: NextRequest) {
+  let access: MailboxMonitorRouteAccess = null;
   try {
     const csrf = assertSameOriginMutation(request);
     if (csrf) return csrf;
 
-    const access = await resolveAccessContext(request);
+    access = await resolveAccessContext(request);
     await assertPermission(access, "mailbox_monitor", "update");
 
     await assertApiRateLimit({
@@ -85,19 +94,12 @@ export async function POST(request: NextRequest) {
     );
     return NextResponse.json({ monitor, ok: true });
   } catch (error) {
-    if (isApiRateLimitError(error)) {
-      return NextResponse.json(
-        { message: "Too many attempts — slow down.", retryAfterSeconds: error.retryAfterSeconds },
-        { status: 429 },
-      );
-    }
-    if (isForbiddenError(error)) return NextResponse.json({ message: (error as Error).message }, { status: 403 });
-    if (error instanceof MailboxMonitorError) {
-      return NextResponse.json({ message: error.message }, { status: error.statusCode });
-    }
-    return NextResponse.json(
-      { message: clientSafeErrorMessage(error, "Failed to add the mailbox.") },
-      { status: 500 },
-    );
+    return mailboxMonitorErrorResponse({
+      access,
+      error,
+      fallbackMessage: "Failed to add the mailbox.",
+      request,
+      route: "/api/admin/mailbox-monitor",
+    });
   }
 }
