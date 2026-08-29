@@ -2014,6 +2014,17 @@ export type MedicalRepPortalData = {
       extraCostOfLiving: number;
     };
   sales: {
+    /**
+     * What the VIEWER is entitled to see — not a statement about the figures below.
+     *
+     * `getSalesScope` has no switch arm for roles that do not sell, so the two HR seats and
+     * Financial Advisor all fall to its NONE default. A NONE viewer is then fail-closed to empty
+     * line/region/area sets, which means every sales number in this block is a legitimate zero
+     * rather than a measurement of anything. The dashboard reads this field to decide whether to
+     * render the sales panels at all, because a zeroed strip reading "Achievement Rate 0.0% —
+     * Needs attention" on an HR coordinator's home page is not empty space, it is an accusation.
+     */
+    viewerSalesScope: BusinessScope;
     achievementPercent: number;
     currentMonthLabel: string;
     currentMonthSales: number;
@@ -2396,6 +2407,13 @@ export async function getPayslipPortalData(access: AccessContext): Promise<Medic
       extraCostOfLiving: fixedSalary.extraCostOfLiving,
     },
     sales: {
+      // This payload is built for the payslips pages and carries NO sales data by construction —
+      // every figure below is a hard-coded zero. NONE is therefore the honest answer, not a
+      // restriction: were the overview dashboard ever rendered from it, the fail-closed gate would
+      // correctly hide panels that could only display zeros. The three callers today
+      // (app/payslips, app/employee-portals/payslips, the workspace payslips page) render the
+      // payroll section alone, so nothing reads this field yet.
+      viewerSalesScope: "NONE",
       achievementPercent: 0,
       currentMonthLabel: "No period",
       currentMonthSales: 0,
@@ -3850,6 +3868,9 @@ export async function getMedicalRepPortalData(
       extraCostOfLiving: fixedSalary.extraCostOfLiving,
     },
     sales: {
+      // Resolved at the top of this function from the viewer's own auth row, so an explicit
+      // sales_scope_override is honoured here exactly as every other consumer honours it.
+      viewerSalesScope: salesScope,
       achievementPercent: Number.isFinite(achievementPercent) ? achievementPercent : 0,
       currentMonthLabel: latestTrend ? toPeriodLabel(latestTrend.period) : "No period",
       currentMonthSales,

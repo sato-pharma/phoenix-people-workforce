@@ -249,6 +249,9 @@ export const employeePortalDevPreviewData = {
     totalDeductions: 8100,
   },
   sales: {
+    // A medical rep previews their own numbers, so SELF — the preview is meant to show the full
+    // dashboard, and a NONE scope here would hide the very panels this fixture exists to render.
+    viewerSalesScope: "SELF",
     achievementPercent: 106.8,
     currentMonthLabel: "May 2026",
     currentMonthSales: 1260000,
