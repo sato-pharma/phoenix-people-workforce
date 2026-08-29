@@ -43,6 +43,33 @@ export function layoutKeyFor(hrId: string | null | undefined): string | null {
 }
 
 /**
+ * The one row every account falls back to when it has saved no layout of its own.
+ *
+ * It is a RESERVED KEY in the same table -- not a second table, and not a migration.
+ * `nav_personal_layout` is keyed by a bare `hr_id text primary key` with NO foreign key to
+ * `employees` (checked: one lowercase CHECK and two jsonb shape CHECKs, nothing referential), so a
+ * reserved key is a legal row today and this whole feature ships without touching the schema of a
+ * live payroll database.
+ *
+ * The double underscores put it outside the space of real hr_ids and login ids, it is already
+ * lowercase so it satisfies the table's CHECK, and `layoutOwnerKey` refuses to return it -- so no
+ * person can ever resolve to this row, and the personal save route is structurally incapable of
+ * writing it. Changing it to a company default goes through its own Super-Admin-gated route.
+ */
+export const COMPANY_DEFAULT_LAYOUT_KEY = "__company_default__";
+
+/**
+ * Where a rendered layout actually came from. `null` means the code-defined sidebar.
+ *
+ * Declared HERE rather than beside the reader that produces it because the layout editor is a
+ * "use client" component that needs the type, and personal-layout-store imports the service-role
+ * Supabase client. A type-only import erases at build, but the import specifier is still a live
+ * edge in the module graph that a later value import silently turns into a real leak — so the type
+ * lives in the module that has no server dependencies at all.
+ */
+export type LayoutSource = "personal" | "company" | null;
+
+/**
  * The identity a layout is stored under: hr_id when there is one, otherwise the login id.
  *
  * WHY THE FALLBACK EXISTS — it is not a nicety. Production has exactly one account with a NULL
@@ -71,7 +98,14 @@ export function layoutOwnerKey(access: {
   hrId?: string | null;
   loginId?: string | null;
 }): string | null {
-  return layoutKeyFor(access.hrId) ?? layoutKeyFor(access.loginId);
+  const key = layoutKeyFor(access.hrId) ?? layoutKeyFor(access.loginId);
+  // A PERSON CAN NEVER RESOLVE TO THE COMPANY-DEFAULT ROW. Nothing in production carries an hr_id or
+  // a login id shaped like the sentinel, so this is defence in depth rather than a live case -- but
+  // improbable is not impossible, and the failure it forecloses is one account silently rewriting
+  // everybody's navigation from the screen that promises it "changes your own navigation and nobody
+  // else's". Returning null here means that account saves nowhere, which is loud; returning the
+  // sentinel would mean it saves everywhere, which is silent.
+  return key === COMPANY_DEFAULT_LAYOUT_KEY ? null : key;
 }
 
 /** A section in a saved layout. `label` is the owner's own name for it; `id` ties back to the
@@ -618,4 +652,35 @@ export function unpinHrefFromRows(
     lowerRow: without(base.lowerRow),
     moduleRows,
   };
+}
+
+/**
+ * A generous ceiling that still stops the jsonb column being used as free storage.
+ *
+ * SHARED, not copied. Both write routes — the personal one and the Super-Admin company-default one —
+ * import this pair. A second hand-written copy of a rule is how Capture Evidence shipped rejecting
+ * 59 of the 65 customers it existed for: the union, the constraint and the classifier all agreed,
+ * and one local duplicate of the list did not.
+ */
+export const MAX_LAYOUT_HREFS = 2000;
+
+// Takes the whole layout type rather than a structural subset on purpose: a new zone added to
+// PersonalNavigationLayout that this function forgets is a hole in the cap, and a structural
+// parameter would keep compiling happily while the count silently ran low.
+export function countLayoutHrefs(layout: PersonalNavigationLayout): number {
+  // Every per-module override carries its own pair of rows, so this is the one part of the document
+  // that grows with the number of modules rather than being bounded by the number of pages. It is
+  // exactly why the cap counts it: 40 modules × two full rows is what the ceiling is protecting.
+  const moduleRowHrefs = Object.values(layout.moduleRows ?? {}).reduce(
+    (total, rows) => total + rows.upperRow.length + rows.lowerRow.length,
+    0,
+  );
+  return (
+    layout.strip.length +
+    (layout.upperRow?.length ?? 0) +
+    (layout.lowerRow?.length ?? 0) +
+    moduleRowHrefs +
+    layout.hidden.length +
+    layout.sections.reduce((total, section) => total + section.items.length, 0)
+  );
 }

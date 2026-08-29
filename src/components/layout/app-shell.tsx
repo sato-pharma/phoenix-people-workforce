@@ -15,7 +15,7 @@ import {
 import { resolveAccessContextFromPage, resolveViewerIdentityFromPage } from "@/lib/auth/server";
 import { formatHrIdForDisplay } from "@/lib/hr-id";
 import { layoutOwnerKey } from "@/lib/navigation/personal-layout";
-import { loadPersonalLayout } from "@/lib/navigation/personal-layout-store";
+import { loadEffectiveLayout } from "@/lib/navigation/personal-layout-store";
 import { CommandPalette } from "@/components/layout/command-palette";
 import { DocumentTitleSync } from "@/components/layout/document-title-sync";
 import { HorizontalNavProvider, LowerNavRow, UpperNavRow } from "@/components/layout/horizontal-nav-rows";
@@ -76,11 +76,16 @@ export async function AppShell({
     }
   }
 
-  // This viewer's own sidebar arrangement. Never throws and returns null on any problem — a
-  // missing table (before the migration is applied), an unreadable row, a layout written by a
-  // future version — and null means the sidebar renders exactly as the code defines it. A cosmetic
-  // preference must never be able to break navigation for someone trying to do their job.
-  const personalLayout = await loadPersonalLayout(layoutOwnerKey(access));
+  // What this viewer's navigation renders from: their own saved arrangement if they have one,
+  // otherwise the company default, otherwise nothing. ONE database round trip for both — this is on
+  // every admin page render and every call from here crosses the Atlantic, so a sequential fallback
+  // would tax exactly the people who have arranged nothing, i.e. almost everyone.
+  //
+  // Never throws and returns null on any problem — a missing table (before the migration is
+  // applied), an unreadable row, a layout written by a future version — and null means the sidebar
+  // renders exactly as the code defines it. A cosmetic preference must never be able to break
+  // navigation for someone trying to do their job.
+  const { layout: personalLayout } = await loadEffectiveLayout(layoutOwnerKey(access));
 
   const viewer = showTopbar
     ? await resolveViewerIdentityFromPage(access)
