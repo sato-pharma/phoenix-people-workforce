@@ -30,6 +30,7 @@ export type FinanceWelcomeProfile = {
   roleLabel: string;
   hrId: string | null;
   imageUrl?: string | null;
+  initials?: string;
 };
 
 // ── Formatters ───────────────────────────────────────────────────────────────
@@ -610,6 +611,7 @@ export function FinanceCommandCenter({
             flushToEdges
             fullName={welcome.fullName}
             imageUrl={welcome.imageUrl}
+            initials={welcome.initials}
             roleLabel={welcome.roleLabel}
             subGreeting={null}
           />

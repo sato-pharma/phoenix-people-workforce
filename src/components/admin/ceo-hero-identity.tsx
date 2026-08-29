@@ -41,6 +41,7 @@ export function CeoHeroIdentity({
   fullName,
   roleLabel,
   imageUrl,
+  initials,
   /**
    * The CEO's personal hero: his own greeting and the note written for him. Off by default so a
    * new viewer of this component can never inherit either by accident — the SFE Manager was
@@ -70,6 +71,12 @@ export function CeoHeroIdentity({
   fullName: string;
   roleLabel: string;
   imageUrl?: string | null;
+  /**
+   * Fallback shown in the portrait's place when there is no photo on file yet — e.g. a seat that
+   * just opened and has not uploaded one at /admin/profile. Two initials, ready-made by
+   * resolveViewerIdentityFromPage. Omit to keep the old behaviour (no photo -> nothing rendered).
+   */
+  initials?: string;
   personal?: boolean;
   subGreeting?: string | null;
   flushToEdges?: boolean;
@@ -102,6 +109,7 @@ export function CeoHeroIdentity({
         };
 
   const showPhoto = Boolean(imageUrl) && !imgError;
+  const showInitials = !showPhoto && Boolean(initials);
 
   return (
     <>
@@ -109,6 +117,7 @@ export function CeoHeroIdentity({
         className={cn(
           "flex flex-col gap-6 sm:flex-row sm:items-start",
           showPhoto && "sm:pr-[34%] lg:pr-[30%]",
+          showInitials && "sm:pr-36 lg:pr-40",
         )}
       >
         {/* ── Identity + greeting ───────────────────────────────────────────── */}
@@ -184,6 +193,28 @@ export function CeoHeroIdentity({
                 "[filter:contrast(1.07)_saturate(1.1)_brightness(1.05)] [mask-image:linear-gradient(to_right,transparent_0%,rgba(0,0,0,0.35)_10%,#000_34%),linear-gradient(to_bottom,#000_0%,#000_80%,rgba(0,0,0,0.5)_92%,transparent_100%)] [mask-composite:intersect] [-webkit-mask-composite:source-in]",
             )}
           />
+        </div>
+      ) : null}
+
+      {/* ── Initials medallion — the placeholder when no photo is on file yet. A vertically
+          centred badge rather than a bled portrait: there is no image to bleed, and forcing two
+          letters to fill a portrait's footprint would look like a broken image, not a design. It
+          disappears the moment the seat uploads a real photo at /admin/profile — showPhoto then
+          takes over and this block never renders again. */}
+      {showInitials ? (
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute right-6 top-1/2 hidden -translate-y-1/2 sm:right-10 sm:flex lg:right-14"
+        >
+          <span
+            aria-hidden="true"
+            className="absolute inset-0 -m-4 rounded-full bg-[radial-gradient(circle_at_center,rgba(249,115,22,0.22)_0%,rgba(249,115,22,0.06)_55%,transparent_75%)] blur-xl"
+          />
+          <div className="relative flex h-24 w-24 items-center justify-center rounded-full border border-orange-400/40 bg-gradient-to-br from-orange-500/30 via-orange-400/10 to-white/5 shadow-[0_16px_40px_rgba(249,115,22,0.28)] sm:h-28 sm:w-28 lg:h-32 lg:w-32">
+            <span className="text-3xl font-black tracking-tight text-orange-50 sm:text-4xl lg:text-[2.75rem]">
+              {initials}
+            </span>
+          </div>
         </div>
       ) : null}
     </>

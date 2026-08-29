@@ -63,6 +63,8 @@ async function FinanceCommandContent({ access }: { access: AccessContext }) {
         // already resolves it, and CeoHeroIdentity self-hides on a load error, so passing it
         // through costs nothing when a viewer has none.
         imageUrl: viewer.imageUrl,
+        // Falls back to an initials medallion when there is no photo (uploaded or bundled) yet.
+        initials: viewer.initials,
         roleLabel: viewer.roleLabel,
       }}
     />
