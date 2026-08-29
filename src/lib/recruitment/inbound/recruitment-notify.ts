@@ -296,19 +296,33 @@ export async function notifyInboundWhatsAppTextOnly(input: {
   wamid: string;
   asked: boolean;
   alreadyApplied: boolean;
+  askedAboutTheJob?: boolean;
 }): Promise<void> {
   const recipientHrIds = await hrIdsForRoles(recruitmentManageRoles);
   if (recipientHrIds.length === 0) return;
 
-  // Two genuinely different situations, and the phone alert has to distinguish them without being
-  // opened: someone who has never applied and needs a CV, versus someone chasing a CV they already
-  // sent. Answering the second as though it were the first is how an applicant gets told to send a
-  // document they already sent.
-  const title = input.alreadyApplied ? "Applicant followed up on WhatsApp" : "New WhatsApp message — no CV attached";
+  // Three genuinely different situations, and the phone alert has to distinguish them without being
+  // opened: someone who has never applied and needs a CV, someone chasing a CV they already sent,
+  // and someone who asked us a question. Answering the second as though it were the first is how an
+  // applicant gets told to send a document they already sent.
+  //
+  // The third earns its own title because the reply Phoenix sends to a question CREATES AN
+  // OBLIGATION — it says the recruitment team will send the details for their area. That promise is
+  // kept by a human or not at all, so an alert rendering it as an ordinary "no CV attached" is how it
+  // goes silently unkept. Deliberately NOT a higher `priority`: this channel already pages on every
+  // arrival, and raising one class above the rest trains the others to be ignored.
+  const askedAboutTheJob = input.askedAboutTheJob === true && !input.alreadyApplied;
+  const title = input.alreadyApplied
+    ? "Applicant followed up on WhatsApp"
+    : askedAboutTheJob
+      ? "Someone asked about the job on WhatsApp"
+      : "New WhatsApp message — no CV attached";
   const trailer = input.alreadyApplied
     ? "They already sent a CV in the last 24 hours, so Phoenix did not ask again."
     : input.asked
-      ? "Phoenix has asked them to send it as a file."
+      ? askedAboutTheJob
+        ? "Phoenix answered that we are hiring Medical Representatives and asked for their CV as a file. They were told the team sends the details for their area — that part needs a human."
+        : "Phoenix has asked them to send it as a file."
       : "Phoenix did NOT reply — the automatic reply is switched off.";
 
   await createSystemNotificationForRecipients(
@@ -320,6 +334,7 @@ export async function notifyInboundWhatsAppTextOnly(input: {
       metadata: {
         alreadyApplied: input.alreadyApplied,
         asked: input.asked,
+        askedAboutTheJob,
         idempotencyKey: `whatsapp-text-only:${input.wamid}`,
         wamid: input.wamid,
       },

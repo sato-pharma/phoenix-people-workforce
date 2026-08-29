@@ -138,6 +138,96 @@ export function isTextOnlyReplyEnabled(): boolean {
   return String(process.env.RECRUITMENT_WHATSAPP_TEXT_REPLY_ENABLED ?? "true").trim().toLowerCase() !== "false";
 }
 
+/** Whether this message asked us something, or merely opened a conversation. */
+export type TextOnlyEnquiry = "asked_about_the_job" | "plain";
+
+/**
+ * Arabic written on a phone is not one spelling. Normalising before matching is the difference
+ * between catching "التفاصيل" and missing "التفاصيل" typed with a different alef or a stray
+ * diacritic — both of which arrive here constantly.
+ *
+ * Strips Arabic diacritics and tatweel, folds the alef/ya/ta-marbuta variants, drops the Arabic
+ * comma, collapses whitespace, and lowercases so one keyword list covers both languages.
+ */
+function normalizeEnquiryText(body: string | null | undefined): string {
+  return String(body ?? "")
+    .replace(/[ً-ْـ]/g, "")
+    .replace(/[أإآٱ]/g, "ا")
+    .replace(/ة/g, "ه")
+    .replace(/ى/g, "ي")
+    .replace(/،/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+/**
+ * Strong signals that the sender ASKED something rather than just saying hello.
+ *
+ * Grounded in the real corpus, not imagined: of the first ten messages this channel recorded
+ * (2026-08-29/30), SEVEN were pure greetings — "السلام عليكم", "مساء الخير", "Hello" — one named a
+ * role and area ("MR Gharbia1 Tanta"), one announced an attachment, and exactly ONE asked a
+ * question: "قريت الاعلان ... وكنت عايز اعرف التفاصيل ايه". That one got told to send a CV as a
+ * file, which answered a question he had not asked and ignored the one he had.
+ *
+ * Deliberately keyword-based rather than AI: this composes a message sent to a member of the public
+ * in their own thread, the OpenAI key on this project has been observed 401ing and falling back
+ * silently, and an intent call that changes what a stranger is told must be inspectable in a diff
+ * and pinned by a test. Cheap, total, and offline.
+ */
+const ENQUIRY_MARKERS = [
+  // Arabic — asking for detail, terms, money, place, or simply "I want to know".
+  "تفاصيل",
+  "استفسار",
+  "عايز اعرف",
+  "عاوز اعرف",
+  "عايزه اعرف",
+  "عاوزه اعرف",
+  "ممكن اعرف",
+  "حابب اعرف",
+  "اريد ان اعرف",
+  "معلومات",
+  "المرتب",
+  "الراتب",
+  "مرتب",
+  "راتب",
+  "شروط",
+  "المطلوب",
+  "الوظيفه ايه",
+  "ايه الوظيفه",
+  "فين المكان",
+  "المنطقه ايه",
+  // English.
+  "detail",
+  "salary",
+  "package",
+  "requirement",
+  "qualification",
+  "more info",
+  "information",
+  "tell me about",
+  "what is the",
+  "what are the",
+  "how much",
+  "where is",
+  "which area",
+];
+
+/**
+ * Did they ask us something?
+ *
+ * Biased deliberately TOWARDS answering. A false positive costs a few extra lines in a message that
+ * still carries the CV instruction verbatim; a false negative is the exact defect being fixed —
+ * someone asks a question and is answered with an instruction. Given that asymmetry, a bare
+ * question mark counts.
+ */
+export function classifyTextOnlyEnquiry(body: string | null | undefined): TextOnlyEnquiry {
+  const text = normalizeEnquiryText(body);
+  if (text.length === 0) return "plain";
+  if (text.includes("?") || text.includes("؟")) return "asked_about_the_job";
+  return ENQUIRY_MARKERS.some((marker) => text.includes(marker)) ? "asked_about_the_job" : "plain";
+}
+
 /**
  * What the applicant is told.
  *
@@ -148,12 +238,39 @@ export function isTextOnlyReplyEnabled(): boolean {
  * It names the file formats on purpose. `ignored_unsupported_attachment` is 20 events from 5 people
  * — CVs photographed rather than attached, which the extractor cannot read — so "as a file, not a
  * photo" is not padding, it is the second-largest loss on this channel after silence itself.
+ *
+ * WHEN THEY ASKED A QUESTION the reply answers it first and asks second. What it may truthfully say
+ * is bounded by what this system actually knows, and that is deliberately little: `ats_requisitions`
+ * held five rows on 2026-08-30 and not one open Medical Representative, so the live Gharbia-1
+ * campaign exists nowhere in the database. The advert runs outside Phoenix. **Never fabricate a
+ * salary, a deadline or a requirement into this message** — it is sent to a member of the public in
+ * the company's name. So it states only what is true and verifiable: the role being hired, that
+ * hiring is per-area, and that a human sends the specifics. If a real vacancy feed ever lands in
+ * `ats_requisitions`, this is the function that should read it.
  */
-export function textOnlyReplyText(): string {
+export function textOnlyReplyText(enquiry: TextOnlyEnquiry = "plain"): string {
+  // The ⚠️ line is identical in both variants on purpose: it is the one instruction that recovers a
+  // photographed CV, and it must not vary with how the question was phrased.
+  const cannotBeProcessed = "‏⚠️ الصورة الفوتوغرافية أو الرسالة المكتوبة لا يمكن معالجتها.";
+
+  if (enquiry === "asked_about_the_job") {
+    return [
+      "‏شكراً لتواصلك مع ساتو فارما 🌟",
+      "‏إحنا بندوّر على *مندوبين دعاية طبية (Medical Representative)* في أكتر من منطقة.",
+      "‏تفاصيل المنطقة كاملة بيبعتهالك فريق التوظيف لو سيرتك الذاتية مناسبة لمكان متاح.",
+      "‏عشان نبدأ، من فضلك أرسل السيرة الذاتية هنا *كملف* (PDF أو Word).",
+      cannotBeProcessed,
+      "",
+      "Thanks for contacting Sato Pharma.",
+      "We are hiring *Medical Representatives* in several areas. Our recruitment team will send you the full details for your area if your CV matches an open position.",
+      "To start, please send your CV here as a *file* (PDF or Word). A photo or a typed message cannot be processed.",
+    ].join("\n");
+  }
+
   return [
     "‏شكراً لتواصلك مع ساتو فارما 🌟",
     "‏للتقديم على الوظيفة، من فضلك أرسل السيرة الذاتية هنا *كملف* (PDF أو Word).",
-    "‏⚠️ الصورة الفوتوغرافية أو الرسالة المكتوبة لا يمكن معالجتها.",
+    cannotBeProcessed,
     "",
     "Thanks for contacting Sato Pharma.",
     "To apply, please send your CV here as a *file* (PDF or Word). A photo or a typed message cannot be processed.",
@@ -265,11 +382,21 @@ export async function recordTextOnlyMessage(input: {
   throw error;
 }
 
-/** Sends the reply. Never throws — an unsent reply must not cost us the record of the applicant. */
-export async function askForCvFile(input: { waId: string; phoneNumberId: string | null }): Promise<boolean> {
+/**
+ * Sends the reply. Never throws — an unsent reply must not cost us the record of the applicant.
+ *
+ * Takes what they wrote, not a pre-computed variant: classifying at the point of sending is what
+ * stops a future caller from wiring the reply up and silently getting the greeting version for
+ * everybody, which is the defect this parameter exists to fix.
+ */
+export async function askForCvFile(input: {
+  waId: string;
+  phoneNumberId: string | null;
+  body?: string | null;
+}): Promise<boolean> {
   const result = await sendWhatsAppText({
     phoneNumberId: input.phoneNumberId,
-    text: textOnlyReplyText(),
+    text: textOnlyReplyText(classifyTextOnlyEnquiry(input.body)),
     toWaId: input.waId,
   }).catch((error) => {
     logError("WhatsApp text-only reply threw", {
@@ -353,7 +480,10 @@ export async function handleTextOnlyMessage(input: {
     if (!recorded) return { asked: false, reason: "duplicate" };
 
     const withinBudget = input.repliesSent < MAX_TEXT_ONLY_REPLIES_PER_DELIVERY;
-    const asked = action.ask && withinBudget ? await askForCvFile({ phoneNumberId: input.deliveredToPhoneNumberId, waId: input.waId }) : false;
+    const asked =
+      action.ask && withinBudget
+        ? await askForCvFile({ body: input.body, phoneNumberId: input.deliveredToPhoneNumberId, waId: input.waId })
+        : false;
 
     if (action.notify) {
       // Best-effort: a notification failure must not cost us the record or the reply that already
@@ -361,6 +491,7 @@ export async function handleTextOnlyMessage(input: {
       await notifyInboundWhatsAppTextOnly({
         alreadyApplied: action.reason === "already_applied",
         asked,
+        askedAboutTheJob: classifyTextOnlyEnquiry(input.body) === "asked_about_the_job",
         preview: previewInboundText(input.body),
         senderLabel: textOnlySenderLabel(input.contactName, phone),
         wamid: input.wamid,
