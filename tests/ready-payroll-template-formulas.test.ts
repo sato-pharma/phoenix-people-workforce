@@ -178,7 +178,7 @@ export function runReadyPayrollTemplateFormulaTests() {
   // divide the same thing calculateNetJoinerProrationDeduction divides. If it reverted to
   // base-only, the downloaded sheet would quietly restate every new hire's pay upward and
   // disagree with the figure Ready Payroll stored — the exact class of drift this file exists
-  // to catch. The leaver branch is deliberately excluded: it still divides Base alone.
+  // to catch. Since 2026-08-29 the LEAVER branch divides the same net, pinned below.
   assert.match(
     templateRouteSource,
     /const netSalary = `\(\$\{baseSalary\}\+\$\{cellRef\(rowNumber, 18\)\}\+\$\{cellRef\(rowNumber, 19\)\}\)`/,
@@ -193,6 +193,24 @@ export function runReadyPayrollTemplateFormulaTests() {
     templateRouteSource,
     /\$\{baseSalary\}-\(\(\$\{baseSalary\}\/\$\{daysInMonth\}\)\*MAX\(0,\$\{daysInMonth\}-DAY\(\$\{hireDate\}\)\+1\)\)/,
     "the joiner branch must NOT divide Base alone — that is the retired rule, and it pays a mid-month hire more than the owner set",
+  );
+
+  // The LEAVER branch, same reasoning, opposite direction of harm. It divides net
+  // as of 2026-08-29 ("in the resignations, prorate the full net salary, not the
+  // base"). Reverting it to base-only would make the downloaded workbook restate a
+  // resigning employee's final pay DOWNWARD on recalc — deducting only the base
+  // shortfall from a row that still carries full ECOL and Fuel pays them a whole
+  // month of allowances, which the stored figure does not, and the two disagree by
+  // the allowances every time.
+  assert.match(
+    templateRouteSource,
+    /\$\{netSalary\}-\(\(\$\{netSalary\}\/\$\{daysInMonth\}\)\*MAX\(0,\$\{endDay\}-IF\(/,
+    "the leaver branch must prorate NET across the real month length, matching resolveReadyLifecycleSettlement",
+  );
+  assert.doesNotMatch(
+    templateRouteSource,
+    /\$\{baseSalary\}-\(\(\$\{baseSalary\}\/\$\{daysInMonth\}\)\*MAX\(0,\$\{endDay\}/,
+    "the leaver branch must NOT divide Base alone — retired 2026-08-29, and restoring it silently cuts a resigning employee's final pay",
   );
 
   assert.match(

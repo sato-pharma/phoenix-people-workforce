@@ -53,8 +53,15 @@ export function runPayrollCopilotProrationTests() {
   assert.equal(dailyRate(30000, JUNE), 1000);
   assert.equal(dailyRate(31000, JULY), 1000);
 
-  // --- resignation Rule 1: last working day <= 25th -> Base-only proration,
-  // NO ECOL/Fuel, minus unpaid-leave days inside the span ---------------------
+  // --- resignation Rule 1: last working day <= 25th -> NET proration, every
+  // component at the same day share, minus unpaid-leave days inside the span --
+  //
+  // CHANGED 2026-08-29 on the owner's instruction ("in the resignations, prorate
+  // the full net salary, not the base"). This branch used to pay ECOL and Fuel
+  // as a flat 0, so these two assertions are the record of what he replaced: a
+  // leaver on the 20th took 18/30 of base and nothing else. Restoring the zeros
+  // would cut an affected leaver's pay, silently, so both figures are asserted
+  // as exact values rather than "greater than zero".
   const before25 = computeResignationSettlement({
     baseSalary: 30000,
     extraCostOfLiving: 1000,
@@ -69,9 +76,10 @@ export function runPayrollCopilotProrationTests() {
   assert.equal(before25.branch, "on_or_before_25");
   assert.equal(before25.daysWorked, 18); // 20 - 2 unpaid days
   assert.equal(before25.baseForMonth, 18000); // 1000/day * 18
-  assert.equal(before25.ecolPaid, 0);
-  assert.equal(before25.fuelPaid, 0);
-  assert.equal(before25.total, 18000);
+  assert.equal(before25.ecolPaid, 600, "ECOL prorates with the base now — it is no longer withheld"); // 1000 * 18/30
+  assert.equal(before25.fuelPaid, 300, "Fuel prorates with the base now — it is no longer withheld"); // 500 * 18/30
+  assert.equal(before25.netForMonth, 18900); // = 31,500 net * 18/30
+  assert.equal(before25.total, 18900);
 
   // exact boundary: day 25 itself takes the "on or before" branch
   const boundary25 = computeResignationSettlement({
@@ -87,6 +95,29 @@ export function runPayrollCopilotProrationTests() {
   assert.ok(boundary25);
   assert.equal(boundary25.branch, "on_or_before_25");
   assert.equal(boundary25.baseForMonth, 25000);
+  assert.equal(boundary25.ecolPaid, 833.33); // 1000 * 25/30
+  assert.equal(boundary25.fuelPaid, 416.67); // 500 * 25/30
+  assert.equal(boundary25.netForMonth, 26250); // = 31,500 net * 25/30
+
+  // The two branches must stay far apart at the boundary — one day later is a
+  // FULL month, not a 26/30 one. That step is the rule, not a rounding edge.
+  const boundary26 = computeResignationSettlement({
+    baseSalary: 30000,
+    extraCostOfLiving: 1000,
+    fuelAllowance: 500,
+    lastWorkingDate: "2026-06-26",
+    period: JUNE,
+    unpaidDaysInSpan: 0,
+    otherAdditions: 0,
+    otherDeductions: 0,
+  });
+  assert.ok(boundary26);
+  assert.equal(boundary26.branch, "after_25", "the 26th crosses into the full-pay branch");
+  assert.equal(
+    boundary26.netForMonth,
+    31500,
+    "one day past the boundary pays the WHOLE net — prorating the net must not have softened the >25th waiver into a 26/30 share",
+  );
 
   // --- resignation Rule 1: last working day > 25th -> Base/ECOL/Fuel in FULL,
   // no proration at all, +additions -deductions on top -----------------------
@@ -194,21 +225,21 @@ export function runPayrollCopilotProrationTests() {
   });
   assert.ok(resignRow);
   assert.equal(resignRow.baseSalary, 18000, "row.baseSalary reflects the prorated settlement for this month");
-  assert.equal(resignRow.extraCostOfLiving, 0);
-  assert.equal(resignRow.fuelAllowance, 0);
-  assert.equal(resignRow.netSalary, 18000);
+  assert.equal(resignRow.extraCostOfLiving, 600, "the row carries the PRORATED ECOL, not a withheld zero");
+  assert.equal(resignRow.fuelAllowance, 300, "the row carries the PRORATED Fuel, not a withheld zero");
+  assert.equal(resignRow.netSalary, 18900);
   assert.equal(resignRow.medicalInsurance, 300, "F: medical insurance still applies in full on a resignation row");
-  // total payable = 18000 - 300 medical insurance = 17700; basic anchor = 30000*0.7=21000
-  // 17700 < 21000 -> Part1 absorbs everything, paid once
-  assert.equal(resignRow.firstPart, 17700);
+  // total payable = 18900 - 300 medical insurance = 18600; basic anchor = 30000*0.7=21000
+  // 18600 < 21000 -> Part1 absorbs everything, paid once
+  assert.equal(resignRow.firstPart, 18600);
   assert.equal(resignRow.secondPart, 0);
-  assert.equal(resignRow.monthSalary, 17700);
+  assert.equal(resignRow.monthSalary, 18600);
 
   // --- D': leaver with an approved expense — the reimbursement must be PAID in
   // the settlement, not just displayed. Regression for the bug where
   // settlementAdditions excluded expenses, so a departing employee lost any
   // approved outstation expense from their final pay. Same row as above (leaver
-  // 2026-06-20, net 18000, medical 300) plus an 800 approved expense.
+  // 2026-06-20, net 18900, medical 300) plus an 800 approved expense.
   const resignWithExpense = buildRowForEmployee({
     employee: testEmployee({ medicalInsurance: 300 }),
     source: testSource(),
@@ -221,9 +252,9 @@ export function runPayrollCopilotProrationTests() {
   });
   assert.ok(resignWithExpense);
   assert.equal(resignWithExpense.expenses, 800, "the approved expense shows on the leaver's row");
-  // total payable = 18000 net + 800 expense - 300 medical = 18500; basic anchor 21000 -> Part1 absorbs all
-  assert.equal(resignWithExpense.monthSalary, 18500, "leaver's expense is actually PAID, not dropped from the settlement");
-  assert.equal(resignWithExpense.firstPart, 18500);
+  // total payable = 18900 net + 800 expense - 300 medical = 19400; basic anchor 21000 -> Part1 absorbs all
+  assert.equal(resignWithExpense.monthSalary, 19400, "leaver's expense is actually PAID, not dropped from the settlement");
+  assert.equal(resignWithExpense.firstPart, 19400);
   assert.equal(resignWithExpense.secondPart, 0);
 
   // --- D full integration: resignation, after_25 branch, one_part mode -------
