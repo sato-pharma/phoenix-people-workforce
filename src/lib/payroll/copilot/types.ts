@@ -8,7 +8,6 @@ export type CopilotRunStatus = "assembling" | "negotiating" | "drafted" | "cance
 /** The "not green" rules. See flags.ts for the exact signal per rule. */
 export type CopilotFlagRule =
   | "joiner_leaver"
-  | "attendance_conflict"
   | "salary_role_change"
   | "unpaid_leave"
   | "off_system"
@@ -122,7 +121,6 @@ export type RecurringAdjustment = {
 /** Normalized per-employee feeder signals for the period (see feeders.ts). */
 export type EmployeeFeederState = {
   unpaidLeaveDays: number;
-  attendanceDeductionPending: boolean;
   leaverLastWorkingDate: string | null;
   /** Unpaid-leave days overlapping [period start, leaverLastWorkingDate] only — resignation Rule 1. */
   unpaidDaysBeforeLastWorkingDate: number;

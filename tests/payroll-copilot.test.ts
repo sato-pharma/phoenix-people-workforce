@@ -285,30 +285,12 @@ export function runPayrollCopilotTests() {
         source: makeSource(),
         feeder: {
           unpaidLeaveDays: 3,
-          attendanceDeductionPending: false,
           leaverLastWorkingDate: null,
           unpaidDaysBeforeLastWorkingDate: 0,
         },
       }),
     ).includes("unpaid_leave"),
   );
-
-  // attendance conflict
-  const feederRules = rulesOf(
-    evaluateEmployeeFlags({
-      ...base,
-      row: makeRow({ grossSalary: 6000, netSalary: 5000, baseSalary: 5000 }),
-      employee: makeEmp(),
-      source: makeSource(),
-      feeder: {
-        unpaidLeaveDays: 0,
-        attendanceDeductionPending: true,
-        leaverLastWorkingDate: null,
-        unpaidDaysBeforeLastWorkingDate: 0,
-      },
-    }),
-  );
-  assert.ok(feederRules.includes("attendance_conflict"));
 
   // salary/role change
   assert.ok(
