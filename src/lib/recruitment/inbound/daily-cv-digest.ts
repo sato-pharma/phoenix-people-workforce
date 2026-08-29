@@ -19,20 +19,52 @@ import { isUnreviewedCandidateStatus } from "@/lib/recruitment/candidate-status"
 import { recruitmentDb } from "@/lib/recruitment/db";
 import { cairoDateKey, cairoHour } from "@/lib/recruitment/inbound/whatsapp-health";
 
+/** Why one arriving CV still earns its own alert, or `null` when the digest covers it. */
+export type InboundCvAlertReason = "no_file" | "applicant";
+
 /**
  * Whether ONE arriving CV still deserves its own alert now that the day is summarised here.
  *
- * The answer is no for a CV that arrived normally — that is what the digest is for. It stays YES for
- * a CV whose file could not be attached, because that is not routine arrival: it is a candidate
- * record with no CV behind it, needing a human to open the original message, and it is rare enough
- * to never become noise. Same reasoning this module's siblings already apply to the dead-letter and
- * spike alerts — the exception pages, the routine accumulates.
+ * It stays YES for a CV whose file could not be attached: that is not routine arrival, it is a
+ * candidate record with no CV behind it, needing a human to open the original message.
+ *
+ * It is also YES for a CV a REAL APPLICANT sent, and that half was missing until 2026-08-30. The
+ * measurement behind the original rule counted 628 deliveries over 30 days and concluded the
+ * per-CV alert was noise. Re-measured on production 2026-08-29, that number splits in two and the
+ * halves are nothing alike: of 437 WhatsApp arrivals in 30 days, **427 were the owner forwarding
+ * his own pile** from the advertised handset — 330 of them in a single evening — and **10 were
+ * members of the public answering the advert.** The flood was never applicants. Suppressing the
+ * forwards alone removes ~98% of the volume, and what is left is a handful a day.
+ *
+ * The cost of getting this wrong was measured the same night. A text with no CV fired
+ * `recruitment_whatsapp_text_only` and reached the owner's Telegram in ONE second; the applicant's
+ * actual CV, twenty-five seconds later, produced no notification row at all. He described it exactly
+ * as it looks from the outside — "when someone sends the text and then sends the CV, the CV does not
+ * appear" — because the least important event on the line was the loud one.
+ *
+ * `bulkArrival` is that distinction and nothing else: an import sender (a forwarding handset, not
+ * the applicant) or a coexistence history replay, which would otherwise page a human once for every
+ * CV of the last two months the moment a handset is linked. The daily digest still counts every
+ * arrival either way — this decides only what interrupts someone NOW.
  *
  * It lives here rather than beside the notification it gates so it can be tested as a pure rule,
  * without loading the notification pipeline.
  */
-export function shouldAlertImmediatelyForInboundCv(input: { fileAttached: boolean }): boolean {
-  return !input.fileAttached;
+export function inboundCvAlertReason(input: {
+  fileAttached: boolean;
+  bulkArrival?: boolean;
+}): InboundCvAlertReason | null {
+  if (!input.fileAttached) return "no_file";
+  if (input.bulkArrival) return null;
+  return "applicant";
+}
+
+/** Boolean form of {@link inboundCvAlertReason}, kept for call sites that only gate on it. */
+export function shouldAlertImmediatelyForInboundCv(input: {
+  fileAttached: boolean;
+  bulkArrival?: boolean;
+}): boolean {
+  return inboundCvAlertReason(input) !== null;
 }
 
 /**

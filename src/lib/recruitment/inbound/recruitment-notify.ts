@@ -13,7 +13,7 @@ import type { InboundCvChannel } from "@/lib/recruitment/inbound/cv-intake-servi
 import {
   dailyCvDigestMessage,
   dailyCvDigestTitle,
-  shouldAlertImmediatelyForInboundCv,
+  inboundCvAlertReason,
   type DailyCvDigest,
 } from "@/lib/recruitment/inbound/daily-cv-digest";
 import { cairoDateKey, type WhatsAppIntakeHealth } from "@/lib/recruitment/inbound/whatsapp-health";
@@ -44,11 +44,15 @@ export async function notifyTalentAcquisitionOfInboundCv(input: {
   // auto-apply has usually already written several of those, so reporting them would announce work
   // that is already done.
   fieldsAwaitingReview?: number;
+  // A forwarding handset or a coexistence history replay rather than the applicant themselves.
+  // Counted by the daily digest like any other arrival; it just never interrupts anyone.
+  bulkArrival?: boolean;
 }): Promise<void> {
-  // The routine arrival is reported once a day by notifyDailyCvDigest instead of once per CV.
-  // Checked BEFORE the recipient lookup so the ordinary path costs no database round trip at all —
-  // this runs on every single inbound CV.
-  if (!shouldAlertImmediatelyForInboundCv(input)) return;
+  // A bulk forward is reported once a day by notifyDailyCvDigest instead of once per CV. Checked
+  // BEFORE the recipient lookup so that path costs no database round trip at all — it runs on every
+  // single inbound CV, and 427 of the last 437 WhatsApp arrivals were exactly that.
+  const reason = inboundCvAlertReason(input);
+  if (!reason) return;
 
   const recipientHrIds = await hrIdsForRoles(recruitmentManageRoles);
   if (recipientHrIds.length === 0) return;
@@ -58,10 +62,14 @@ export async function notifyTalentAcquisitionOfInboundCv(input: {
     ? ` (matched by ${input.matchReason === "national_id" ? "National ID" : input.matchReason})`
     : "";
   const awaiting = input.fieldsAwaitingReview ?? 0;
-  // Only the no-file case reaches this line, so the message says exactly that instead of branching
-  // on fileAttached — a ternary whose other half can never run reads like a live path and is how a
-  // later change quietly resurrects the per-CV flood.
-  const message = `${input.fullName} reached out via ${channelLabel}${matchLabel}, but their CV file could not be attached — check the candidate record.`;
+  // Two genuinely different events share this notification, so each says its own thing. The applicant
+  // wording leads with the CV being ON FILE, because the whole point of the alert is that somebody
+  // applied and can be opened right now — not that something needs repairing.
+  const reviewNote = awaiting > 0 ? ` ${awaiting} field${awaiting === 1 ? "" : "s"} need a quick review.` : "";
+  const message =
+    reason === "no_file"
+      ? `${input.fullName} reached out via ${channelLabel}${matchLabel}, but their CV file could not be attached — check the candidate record.`
+      : `${input.fullName} sent a CV on ${channelLabel}${matchLabel}. It is on their candidate record now.${reviewNote}`;
 
   await createSystemNotificationForRecipients(
     {
@@ -71,6 +79,8 @@ export async function notifyTalentAcquisitionOfInboundCv(input: {
       eventType: "recruitment_inbound_cv",
       message,
       metadata: {
+        alertReason: reason,
+        bulkArrival: input.bulkArrival === true,
         candidateId: input.candidateId,
         channel: input.channel,
         created: input.created,
@@ -80,7 +90,7 @@ export async function notifyTalentAcquisitionOfInboundCv(input: {
       },
       module: "recruitment",
       priority: "normal",
-      title: "Inbound CV arrived with no file",
+      title: reason === "no_file" ? "Inbound CV arrived with no file" : "New CV received",
     },
     recipientHrIds,
   );
