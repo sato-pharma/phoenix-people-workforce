@@ -29,12 +29,18 @@
 // "Delta (3)", so until these five governorates were re-filed, filtering the pool on her district
 // returned nothing while her own candidates sat under Delta (1), Delta (2) and Others.
 //
-// This file moves FIRST, on purpose. The matching change to the SALES geography — repointing those
-// areas in au.line_area_map and au.canonical_areas — must wait until the August closing has been
-// published, because the closing resolves each area's region using TODAY's map (see AGENTS.md §4),
-// so moving them early would split a month of Anti Infective sales into a district that did not
-// own them. Recruitment touches neither sales nor the closing, so it is safe to be correct here
-// before the sales side catches up. Until it does, the two deliberately disagree about Sharkia.
+// This file moved FIRST, and the reason it gave has since been OVERTAKEN — do not act on the old
+// one. It said the sales geography "must wait until the August closing has been published, because
+// the closing resolves each area's region using TODAY's map". That was true when written on
+// 2026-08-28 and false about 28 hours later: #2613 gave the closing org-chart history and #2608 made
+// it resolve at the PERIOD END, not the run date. The sales change then went in on 2026-08-29 as a
+// dated PAIR — old row closed at `effective_to = '2026-09-01'`, a `D3` row open from it — so the two
+// halves no longer disagree and NOTHING is waiting on the August closing.
+//
+// Read that carefully before "finishing" anything: an August closing published in September or
+// October still resolves on 2026-08-31 and still contains no Delta (3) at all. That is the owner's
+// golden rule, stated 2026-08-29 — "whenever I publish it, whenever I do it, it does not contain
+// Delta three" — and AGENTS.md §4 carries it with the four checks that prove it is already enforced.
 //
 // Held as a static reviewed map rather than a live query: the areas are named for SELLING territory
 // ("Dokki - Mohandseen - Bolak"), not for governorates, so deriving this at runtime would mean
@@ -214,19 +220,32 @@ export function candidateRegionLabelForGovernorate(raw: string | null | undefine
 
 // ── The AREA rows the apply flow shows under each region ───────────────────────────────────────────
 // Question 3's area LIST is read live from the SALES geography (`au.canonical_areas`, via
-// `au_v_canonical_areas`). That map still files five areas — Qalubeya, Sharkia 1, Sharkia 2, Suez and
-// Ismailia — under their OLD districts (Delta (1), Delta (2) and Others), because the sales half of
-// the Delta (3) split is deliberately deferred until the August closing is published (see the D3 note
-// above and AGENTS.md §4). It also carries no Delta (3) row at all, so without an override an
-// applicant who picks "Delta (3)" is shown an EMPTY area list.
+// `au_v_canonical_areas`), which exposes OPEN rows only — "who owns this area today". Today, in
+// August, that is still Delta (1), Delta (2) and Others for Qalubeya, Sharkia 1, Sharkia 2, Suez and
+// Ismailia, and it carries no Delta (3) row at all — so without an override an applicant who picks
+// "Delta (3)" is shown an EMPTY area list.
+//
+// NOTHING IS PENDING ON THE SALES SIDE, and this comment used to say otherwise. The Delta (3) move is
+// not deferred awaiting the August closing: it was applied as a migration on 2026-08-29 and written as
+// a DATED PAIR — the old row closed at `effective_to = '2026-09-01'`, a `D3` row open from that date.
+// The date does the work, and AGENTS.md §4 forbids re-applying, re-dating or "finishing" it.
 //
 // The region MAP above already calls those five governorates Delta (3), so without this the apply
 // flow contradicts itself: the same five areas still appear under Delta (1)/(2)/Others, and someone
 // from Sharkia who taps the region where they SEE their area is filed under Delta (2) — the exact
 // mis-file the region move was made to prevent. This map overrides the sales grouping for
 // RECRUITMENT ONLY: it moves nothing in the database and is invisible to sales, the closing and every
-// other consumer of `au.canonical_areas`. When the sales side finally repoints these areas to Delta
-// (3), each override becomes a no-op (sales already says D3) and this map can be emptied.
+// other consumer of `au.canonical_areas`.
+//
+// 🔒 THIS MAP IS PERMANENT — DO NOT EMPTY IT, and the instruction to do so is what this note replaces.
+// Delta (3) is ANTI-INFECTIVE ONLY (owner-confirmed 2026-08-29, verified against production the same
+// day). From 1 September the five areas flip to `D3` on `anti_infective` and on NO other line: on CNS
+// and Pedia they keep their districts for good — Qalubeya stays Delta (1), Sharkia 1/2 stay Delta (2),
+// Suez and Ismailia stay Others, in both months. Sales therefore never "catches up" for those lines
+// and these overrides never become no-ops. The apply flow asks role, then region, then area, and has
+// no concept of a product line, so one unconditional grouping is all it can express — and Delta (3) is
+// the right one, because that is the district being staffed (`area_state = 'vacant_will_hire'`), which
+// is what an applicant is being routed towards.
 //
 // Keyed by the EXACT `area_name` in `au.canonical_areas` (verified against production 2026-08-29). A
 // rename there would silently drop the override, so the registered test pins these five names.
