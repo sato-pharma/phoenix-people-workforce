@@ -2309,7 +2309,17 @@ export const attendanceManagementPageItems: readonly AdminToolsPageItem[] = [
     // policy setup. Without it her Attendance sidebar row opened a hub listing 0 of 12 items, and a
     // permanently empty hub reads to its owner as a broken page rather than as a boundary. The page
     // admits her already (employees:read, which she holds); nothing about its gate changes here.
-    roles: ["CEO", "Super Admin", "HR Operations", "HR Advisory"],
+    //
+    // CEO removed 2026-08-29: a name that never rendered a row. This page gates on employees:read
+    // and nothing else — unlike Fingerprint Report above, there is no CEO branch — and `employees`
+    // is a HARD BOUNDARY that returns [] for CEO (permissions.ts hardBoundaryAllowedActions), so
+    // the name was ANDed against a permission he cannot hold. Deleting it changes what no user has
+    // ever seen. And it cannot be repaired by granting instead: tests/ceo-account-contract.test.ts
+    // pins `isRolePermissionWithinHardBoundary("CEO", "employees", "read") === false` — "CEO must
+    // not be grantable employees:read by role overrides" — in the required CI validate job. Giving
+    // the CEO this page means moving that boundary and re-pinning that contract, which is an owner
+    // decision about segregation of duties, not a navigation fix.
+    roles: ["Super Admin", "HR Operations", "HR Advisory"],
   },
   {
     href: "/attendance/analytics",

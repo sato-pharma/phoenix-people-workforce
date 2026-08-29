@@ -770,7 +770,15 @@ const defaultPermissionMatrix: PermissionMap = {
     // Retained by owner decision: CEO approves leave (and excuses, modeled under leave)
     // for their own direct reports. The decide path binds the actor to the active approval
     // step, so this stays scoped to the CEO's chain and does not over-grant.
-    leave: ["read", "approve", "export"],
+    //
+    // `create` added 2026-08-29 (owner, asked directly). The CEO is an employee and files his own
+    // vacation like everyone else. Without it, /leave-management/vacation-request named him in its
+    // `roles:` list while the ANDed `leave:create` clause hid the row — and the page itself carries
+    // no permission gate at all, so he could always submit a request by typing the address and was
+    // simply never offered the link. Narrow by construction: the only route keyed on leave:create
+    // is the attachment upload for the caller's own request. `approve` is untouched, so the
+    // segregation of duties above still holds — he creates his own and decides his reports'.
+    leave: ["read", "create", "approve", "export"],
     // SoD: read/approve/export only — the CEO is the final approver of direct orders but
     // never creates/edits them (the decide path binds the actor to the active CEO step).
     direct_orders: ["read", "approve", "export"],

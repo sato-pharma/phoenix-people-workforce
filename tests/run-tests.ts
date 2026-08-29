@@ -16,6 +16,7 @@ import { runWeeklySystemHealthDigestTests } from "./weekly-system-health-digest.
 import { runMailboxComplianceMonitorTests } from "./mailbox-compliance-monitor.test.ts";
 import { runNavigationActivePathTests } from "./navigation-active-path.test.ts";
 import { runNavSingleGateNoBypassTests } from "./nav-single-gate-no-bypass.test.ts";
+import { runNavRolesNameOnlyPermissionHoldersTests } from "./nav-roles-name-only-permission-holders.test.ts";
 import { runPermissionLookupTotalityTests } from "./permission-lookup-totality.test.ts";
 import { runNavigationRuling11AnalyticsTests } from "./navigation-ruling-11-analytics.test.ts";
 import { runHrUrlNamespaceTests } from "./hr-url-namespace.test.ts";
@@ -1091,6 +1092,10 @@ await runTest("gcp-metrics service health reader (availability/latency/instances
 await runTest("weekly system health digest", runWeeklySystemHealthDigestTests);
 await runTest("navigation active path", runNavigationActivePathTests);
 await runTest("nav single gate no bypass", runNavSingleGateNoBypassTests);
+await runTest(
+  "nav roles name only permission holders (a roles: name the matrix refuses grants nothing and must not be written)",
+  runNavRolesNameOnlyPermissionHoldersTests,
+);
 await runTest(
   "navigation permission lookup is total (union == runtime array, no hand-rolled copies, fail-open unreachable)",
   runPermissionLookupTotalityTests,
