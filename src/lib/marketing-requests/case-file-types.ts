@@ -463,10 +463,11 @@ export type MarketingCaseFileLazySection = {
 export type MarketingCaseFileFinanceHold = {
   /** ISO. Render in Africa/Cairo. Null on a hold placed before the column was written. */
   heldAt: string | null;
-  /** `hr_id` AS STORED (mixed case) — the employees FK, not the normalized key. */
-  heldByHrId: string | null;
-  /** The person, by name. Falls back to the hr_id when the employee row cannot be read. */
-  heldByName: string | null;
+  // WHO held it is deliberately NOT carried here — owner instruction 2026-08-30, and the reason
+  // is worth keeping: this panel is read by the requester, so naming the person who froze their
+  // money turns a process state into a personal one. The holder is still recorded in
+  // `marketing_request_finance_requirements.finance_reviewer_hr_id` for audit; it simply never
+  // enters the page payload, so it cannot be rendered, logged, or leaked by a future edit.
   /**
    * Whether the invoice obligation is paused. A held request normally reads `hold`, which is what
    * stops the overdue marker counting days against a request whose lateness is the acknowledged
@@ -474,7 +475,12 @@ export type MarketingCaseFileFinanceHold = {
    * of the hold — that is correct, not a defect.
    */
   invoiceStatus: string | null;
-  /** Why it was held, in the holder's own words. */
+  /**
+   * Why it was held, in the holder's own words — and ONLY for a viewer who can act on the hold.
+   * It is withheld at the SELECT for everyone else, so null here means either "not recorded" or
+   * "not yours to see", and the panel must not render a "none recorded" message without checking
+   * `canManage` first.
+   */
   reason: string | null;
 };
 

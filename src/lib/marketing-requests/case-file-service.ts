@@ -259,8 +259,7 @@ export function describeLifecycleStage(input: {
       // Fixed here rather than in the stage set on purpose: changing that set would silently move
       // held money between the committed and uncommitted buckets on every ROI screen.
       if (input.status === "finance_hold") {
-        return "Approved and committed, then frozen by finance — the invoice is outstanding. "
-          + "It stays frozen until someone releases it by hand.";
+        return "Approved and committed, then frozen by finance — the invoice is outstanding.";
       }
       return input.currentStepName
         ? `Awaiting a decision at ${input.currentStepName}. Nothing is committed until the chain finishes.`
@@ -714,7 +713,16 @@ export async function getMarketingRequestCaseFile(
     ),
   ]);
 
-  const financeHold = await loadFinanceHoldBlock(supabase, requestUuid, request.status, nameOf);
+  // The reason is for the people who can act on the hold, not for the requester whose money it is.
+  // Same test the viewer's manageFinanceHold flag uses, resolved here so the reason can be withheld
+  // at the QUERY rather than in the markup.
+  const canSeeHoldReason = access.role === "Super Admin" || access.scope === "system";
+  const financeHold = await loadFinanceHoldBlock(
+    supabase,
+    requestUuid,
+    request.status,
+    canSeeHoldReason,
+  );
 
   const chainBlock = buildChainBlock(steps, displayRows, viewerHrId);
   const targetPharmacies = pharmaciesResult.state === "ok" ? pharmaciesResult.value : null;
@@ -830,27 +838,41 @@ export async function getMarketingRequestCaseFile(
  * panel. A read failure also returns null — a case file must still open when one optional panel
  * cannot be read, exactly as the overlaps loader does.
  */
-async function loadFinanceHoldBlock(
+/**
+ * Exported for `tests/marketing-finance-hold-ui.test.ts`, which drives it with a stub client. A
+ * string check on this file could not prove the reason is actually withheld; calling it can.
+ */
+export async function loadFinanceHoldBlock(
   supabase: ReturnType<typeof getSupabaseAdmin>,
   requestUuid: string,
   status: string,
-  nameOf: (hrId: string | null | undefined) => string,
+  canSeeReason: boolean,
 ): Promise<MarketingCaseFileFinanceHold | null> {
   if (status !== "finance_hold") return null;
+  // TWO fields are withheld at the SELECT, and that is the point — a column that never leaves the
+  // database cannot be rendered by a later edit to the panel.
+  //
+  // `finance_reviewer_hr_id` is never selected: naming the person who froze a request, on a page
+  // the requester opens about their own money, turns a process decision into a personal grievance.
+  //
+  // `notes` is the reason, and it is selected ONLY for a viewer who can act on the hold. The reason
+  // is written by a human in free text, so it can name anyone — today's says "held on the owner's
+  // instruction". No wording rule can prevent that; withholding the column can. Owner call
+  // 2026-08-30, asked directly.
+  const columns = canSeeReason
+    ? "invoice_status, notes, reviewed_at"
+    : "invoice_status, reviewed_at";
   const { data, error } = await supabase
     .from("marketing_request_finance_requirements")
-    .select("finance_reviewer_hr_id, invoice_status, notes, reviewed_at")
+    .select(columns)
     .eq("request_id", requestUuid)
     .maybeSingle();
   if (error || !data) return null;
-  const heldByHrId = (data.finance_reviewer_hr_id as string | null) ?? null;
+  const row = data as { invoice_status?: string | null; notes?: string | null; reviewed_at?: string | null };
   return {
-    heldAt: (data.reviewed_at as string | null) ?? null,
-    heldByHrId,
-    // nameOf falls back to "" for an unknown id; the hr_id is more use to a reader than a blank.
-    heldByName: heldByHrId ? nameOf(heldByHrId) || heldByHrId : null,
-    invoiceStatus: (data.invoice_status as string | null) ?? null,
-    reason: (data.notes as string | null) ?? null,
+    heldAt: row.reviewed_at ?? null,
+    invoiceStatus: row.invoice_status ?? null,
+    reason: canSeeReason ? row.notes ?? null : null,
   };
 }
 
