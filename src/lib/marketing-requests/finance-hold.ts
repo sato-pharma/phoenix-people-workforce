@@ -1,4 +1,5 @@
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
+import { resolveCanonicalActorHrId } from "@/lib/auth/canonical-actor";
 import { resolveEmployeeIdentityId, type AccessContext } from "@/lib/auth/permissions";
 import { conflictError, forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
 import { resolveMarketingInvoiceObligation } from "@/lib/marketing-requests/invoice-obligation";
@@ -98,12 +99,28 @@ function assertMarketingFinanceHoldAccess(access: AccessContext) {
   }
 }
 
-function assertHoldActor(access: AccessContext): string {
-  const actorHrId = resolveEmployeeIdentityId(access);
-  if (!actorHrId) {
+/**
+ * The actor written to both columns must be the hr_id AS STORED, not the normalized key.
+ *
+ * `finance_reviewer_hr_id` and `updated_by_hr_id` both carry a foreign key to `employees(hr_id)`,
+ * and that column is MIXED CASE in production — 178 of 179 rows carry an uppercase letter.
+ * `resolveEmployeeIdentityId` lowercases, so writing its result matched essentially nobody and the
+ * database refused the write outright.
+ *
+ * That is not a hypothetical. Running this exact path against production on 2026-08-29 failed with
+ * `23503 ... Key (finance_reviewer_hr_id)=(b-10) is not present in table "employees"` — the
+ * owner's own id, stored `B-10`. The feature was reachable by nobody until this line existed.
+ *
+ * `resolveCanonicalActorHrId` is the repo's answer and its docblock says so: the single source of
+ * truth every workflow decision write-path funnels through. It also maps a login token such as the
+ * shared `admin-HR` to the real employee behind it, which a normalized id cannot do.
+ */
+async function assertHoldActor(access: AccessContext): Promise<string> {
+  const identity = resolveEmployeeIdentityId(access);
+  if (!identity) {
     throw validationError("A linked HR ID is required to place or release a finance hold.", "missing_actor_hr_id");
   }
-  return actorHrId;
+  return resolveCanonicalActorHrId(String(access.hrId ?? access.loginId ?? identity));
 }
 
 export type MarketingFinanceHoldCandidate = {
@@ -336,7 +353,7 @@ export async function placeMarketingRequestOnFinanceHold(params: {
   requestId: string;
 }): Promise<{ requestCode: string | null; requestId: string; status: string }> {
   assertMarketingFinanceHoldAccess(params.access);
-  const actorHrId = assertHoldActor(params.access);
+  const actorHrId = await assertHoldActor(params.access);
 
   const requestId = String(params.requestId ?? "").trim();
   if (!requestId) throw validationError("Request ID is required.");
@@ -407,7 +424,7 @@ export async function releaseMarketingRequestFromFinanceHold(params: {
   requestId: string;
 }): Promise<{ requestCode: string | null; requestId: string; status: string }> {
   assertMarketingFinanceHoldAccess(params.access);
-  const actorHrId = assertHoldActor(params.access);
+  const actorHrId = await assertHoldActor(params.access);
 
   const requestId = String(params.requestId ?? "").trim();
   if (!requestId) throw validationError("Request ID is required.");

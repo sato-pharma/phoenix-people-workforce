@@ -124,6 +124,28 @@ export function runMarketingFinanceHoldTests() {
     );
   }
 
+  // ── The actor is written in the casing the database stores ────────────
+  //
+  // Both writes land in columns with a foreign key to employees(hr_id), and that column is MIXED
+  // CASE: 178 of 179 production rows carry an uppercase letter. resolveEmployeeIdentityId lowercases,
+  // so its result matches essentially nobody and the database refuses the write.
+  //
+  // This is measured, not predicted. Running the real path against production on 2026-08-29 failed
+  // with `23503 ... Key (finance_reviewer_hr_id)=(b-10) is not present in table "employees"` -- the
+  // owner's own id, stored `B-10`. The feature shipped green, deployed cleanly, and could be used by
+  // nobody; only exercising it end to end found that, which is why this assertion exists rather than
+  // a comment saying to be careful.
+  assert.ok(
+    source.includes("resolveCanonicalActorHrId"),
+    "the actor must be resolved to its STORED hr_id casing -- a normalized id fails the employees "
+    + "foreign key for 178 of 179 people",
+  );
+  const actorFn = source.slice(source.indexOf("async function assertHoldActor"));
+  assert.ok(
+    actorFn.slice(0, actorFn.indexOf("\n}")).includes("resolveCanonicalActorHrId"),
+    "assertHoldActor itself must return the canonical hr_id, not the normalized identity",
+  );
+
   // ── Nothing here moves a request on its own ────────────────────────────────────
   //
   // The owner rejected auto-holding explicitly: the system flags, a human decides. The status is
