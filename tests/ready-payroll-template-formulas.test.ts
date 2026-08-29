@@ -27,8 +27,13 @@ export function runReadyPayrollTemplateFormulaTests() {
 
   assert.match(
     readyProrationSource,
+    /export function calculateNetJoinerProrationDeduction/,
+    "Ready payroll must calculate the joiner proration deduction against NET (owner instruction 2026-08-29).",
+  );
+  assert.doesNotMatch(
+    readyProrationSource,
     /export function calculateBaseProrationDeduction/,
-    "Ready payroll must calculate a cached base-salary proration deduction.",
+    "the retired base-only joiner deduction must stay deleted — leaving it beside the live one is how the old rule gets called back into service",
   );
 
   assert.match(
@@ -167,6 +172,27 @@ export function runReadyPayrollTemplateFormulaTests() {
     templateRouteSource,
     /IF\(AND\(ISNUMBER\(\$\{hireDate\}\),YEAR\(\$\{hireDate\}\)=\$\{year\},MONTH\(\$\{hireDate\}\)=\$\{month\}\)/,
     "Ready payroll Other Deductions must contain the hire-month proration formula.",
+  );
+
+  // The workbook recalculates client-side, so the JOINER branch of the formula has to
+  // divide the same thing calculateNetJoinerProrationDeduction divides. If it reverted to
+  // base-only, the downloaded sheet would quietly restate every new hire's pay upward and
+  // disagree with the figure Ready Payroll stored — the exact class of drift this file exists
+  // to catch. The leaver branch is deliberately excluded: it still divides Base alone.
+  assert.match(
+    templateRouteSource,
+    /const netSalary = `\(\$\{baseSalary\}\+\$\{cellRef\(rowNumber, 18\)\}\+\$\{cellRef\(rowNumber, 19\)\}\)`/,
+    "the formula's Net must be built from Base (col 11) + Extra Cost of Living (col 18) + Fuel (col 19)",
+  );
+  assert.match(
+    templateRouteSource,
+    /\$\{netSalary\}-\(\(\$\{netSalary\}\/\$\{daysInMonth\}\)\*MAX\(0,\$\{daysInMonth\}-DAY\(\$\{hireDate\}\)\+1\)\)/,
+    "the joiner branch must prorate NET across the real month length",
+  );
+  assert.doesNotMatch(
+    templateRouteSource,
+    /\$\{baseSalary\}-\(\(\$\{baseSalary\}\/\$\{daysInMonth\}\)\*MAX\(0,\$\{daysInMonth\}-DAY\(\$\{hireDate\}\)\+1\)\)/,
+    "the joiner branch must NOT divide Base alone — that is the retired rule, and it pays a mid-month hire more than the owner set",
   );
 
   assert.match(
