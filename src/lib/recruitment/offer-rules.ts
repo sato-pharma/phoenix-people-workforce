@@ -8,9 +8,12 @@ import type { ApplicationStage, RecruitmentActionKey } from "./types";
  * the registry cannot express: whether the terms are complete enough to ask for approval, and
  * whether an offer is allowed to reach a candidate yet.
  *
- * That second question is the important one. The registry lists app_offer_sent as reachable from
- * offer_initiated as well as offer_generated -- a shortcut straight past the approval step. The
- * owner's rule is one approval before anything is sent, so offerSendBlockReason is what closes it.
+ * That second question is the important one. The owner's rule is one approval before anything is
+ * sent, and offerSendBlockReason is what delivers it. The registry USED to list app_offer_sent as
+ * reachable from offer_initiated as well as offer_generated -- a shortcut straight past approval --
+ * and this guard is why that was never exploitable. The entry was retired in
+ * 20260829234500_retire_offer_initiated_send_shortcut.sql, so the two now agree; the guard stays
+ * because the registry is runtime-editable and could gain the entry back at any time.
  */
 
 export type OfferTerms = {
@@ -56,8 +59,10 @@ export function isOfferReadyToSubmit(terms: OfferTerms): boolean {
 /**
  * Why this offer may not be sent yet, or null if it may.
  *
- * Approval is the gate, not the stage: reading approvedAt rather than trusting the stage is what
- * makes the registry's offer_initiated -> offer_sent shortcut unreachable in practice.
+ * Approval is the gate, not the stage. Reading approvedAt rather than trusting the stage is what
+ * made the registry's old offer_initiated -> offer_sent shortcut unreachable, and it is what keeps
+ * any future re-widening of that action harmless -- the registry is editable at runtime, so it can
+ * never be the thing that decides this.
  */
 export function offerSendBlockReason(offer: (OfferTerms & OfferApprovalTrail) | null): string | null {
   if (!offer) return "There is no offer on this application yet — prepare one first.";

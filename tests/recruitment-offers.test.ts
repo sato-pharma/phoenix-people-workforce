@@ -68,9 +68,12 @@ export function runRecruitmentOffersTests() {
 
   // ── THE HEADLINE: an unapproved offer can never be sent ──────────────────────────────────────
   // The owner chose "one approval before sending". The workflow registry alone does NOT deliver
-  // that: it lists app_offer_sent as reachable from offer_initiated as well as offer_generated, so
-  // the stage machine on its own would let an offer reach a candidate having never been approved.
-  // This is the guard that closes that path, which is why it reads approvedAt and not the stage.
+  // that, and cannot: it is runtime-editable configuration. It listed app_offer_sent as reachable
+  // from offer_initiated as well as offer_generated until that entry was retired in
+  // 20260829234500_retire_offer_initiated_send_shortcut.sql -- so the stage machine on its own
+  // would have let an offer reach a candidate having never been approved. This is the guard that
+  // closed that path and still closes it if the entry ever comes back, which is why it reads
+  // approvedAt and not the stage.
   assert.equal(
     canSendOffer(trail({ approvedAt: null })),
     false,
