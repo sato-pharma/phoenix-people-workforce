@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 
 import {
   PortalDesktopTable,
@@ -13,6 +13,7 @@ import { ExportXlsxButton } from "@/components/ui/export-xlsx-button";
 import { SortableTh, TableSearchInput } from "@/components/ui/sortable-table";
 import { useSortableTable } from "@/components/ui/use-sortable-table";
 import {
+  PLAN_DOCTORS_ANCHOR_ID,
   PLAN_STATUS_AREA_MANAGER_VERIFIED,
   PLAN_STATUS_NEW,
   planPeriodText,
@@ -356,7 +357,9 @@ export function PlanListTable({
           </PortalRecordCard>
         )}
         renderTable={() => (
-          <PortalDesktopTable className="text-xs" minWidth="1080px">
+          {/* 1080 -> 1240: the Action column now carries two buttons, and the owner's standing rule is
+              that nothing wraps. The table side-scrolls instead. */}
+          <PortalDesktopTable className="text-xs" minWidth="1240px">
             <thead>
               <tr className="bg-slate-900 text-left">
                 <SortableTh className={THEAD} label="Medical rep" onSort={table.toggleSort} sort={table.sort} sortKey="repName" />
@@ -368,27 +371,57 @@ export function PlanListTable({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {table.rows.map((plan) => (
-                <tr
-                  className={`whitespace-nowrap hover:bg-slate-50 ${
-                    selectedPlanId === plan.crmPlanId ? "bg-orange-50" : "bg-white"
-                  }`}
-                  key={plan.crmPlanId}
-                >
-                  <td className="px-3 py-2 font-semibold text-slate-900">
-                    <button className="text-left hover:text-orange-600" onClick={() => open(plan)} type="button">
-                      {plan.repName}
-                    </button>
-                  </td>
-                  <td className="px-3 py-2 text-slate-600">{planPeriodText(plan)}</td>
-                  <td className="px-3 py-2 font-black text-slate-900">{plan.contacts}</td>
-                  <td className="px-3 py-2 text-slate-600">{plan.entries}</td>
-                  <td className={`px-3 py-2 font-black ${statusClass(plan.status)}`}>{planStatusLabel(plan.status)}</td>
-                  <td className="px-3 py-2">
-                    <VerifyButton canVerify={canVerify} plan={plan} />
-                  </td>
-                </tr>
-              ))}
+              {table.rows.map((plan) => {
+                const showing = selectedPlanId === plan.crmPlanId;
+                return (
+                  <tr
+                    className={`whitespace-nowrap hover:bg-slate-50 ${showing ? "bg-orange-50" : "bg-white"}`}
+                    key={plan.crmPlanId}
+                  >
+                    {/* The accent bar is on the cell, not the row: a border on a <tr> does not paint in
+                        a border-collapse table. It is transparent when unselected rather than absent,
+                        so opening a plan never shifts the column by 4px. */}
+                    <td
+                      className={`border-l-4 px-3 py-2 font-semibold text-slate-900 ${
+                        showing ? "border-orange-500" : "border-transparent"
+                      }`}
+                    >
+                      {/* Underlined and pointer-cursored because it is the primary way into a plan and
+                          a bare <button> renders as plain text with a default arrow — nothing about it
+                          said "press me". */}
+                      <button
+                        className="cursor-pointer text-left underline decoration-slate-300 underline-offset-4 hover:text-orange-600 hover:decoration-orange-500"
+                        onClick={() => open(plan)}
+                        type="button"
+                      >
+                        {plan.repName}
+                      </button>
+                    </td>
+                    <td className="px-3 py-2 text-slate-600">{planPeriodText(plan)}</td>
+                    <td className="px-3 py-2 font-black text-slate-900">{plan.contacts}</td>
+                    <td className="px-3 py-2 text-slate-600">{plan.entries}</td>
+                    <td className={`px-3 py-2 font-black ${statusClass(plan.status)}`}>{planStatusLabel(plan.status)}</td>
+                    <td className="px-3 py-2">
+                      <div className="flex items-center gap-2">
+                        {/* The same button the mobile card has always carried. Desktop had none, so the
+                            only way in was to guess that the rep's name was pressable. */}
+                        <button
+                          className={`h-8 border px-3 text-phx-2xs font-black uppercase tracking-[0.1em] ${
+                            showing
+                              ? "border-orange-400 bg-orange-500 text-white"
+                              : "border-slate-300 bg-white text-slate-700 hover:border-orange-400"
+                          }`}
+                          onClick={() => open(plan)}
+                          type="button"
+                        >
+                          {showing ? "Showing doctors" : "Show doctors"}
+                        </button>
+                        <VerifyButton canVerify={canVerify} plan={plan} />
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </PortalDesktopTable>
         )}
@@ -425,7 +458,45 @@ const ENTRY_COLS = [
   { accessor: (r: PlanEntryRow) => r.frequency ?? 0, key: "frequency", type: "number" as const },
 ];
 
+/** How much of the page above the doctors section stays visible when a plan opens. */
+const PLAN_LANDING_GAP = 12;
+
 export function PlanDoctorsTable({ kind, plan, rows }: { kind: PlanKind; plan: PlanSummary; rows: PlanEntryRow[] }) {
+  const landingRef = useRef<HTMLDivElement | null>(null);
+  /**
+   * Bring the doctors into view when a plan opens.
+   *
+   * Without this the board looked broken rather than merely awkward. This section renders BELOW the
+   * whole plans list, so pressing a rep sent the manager to content already off the bottom of the
+   * screen while the viewport never moved — and the only cue at the click site was a bg-orange-50
+   * row, which is #fff7ed and reads as white. The owner's entire report was "I press on the rep name
+   * nothing happens". The click had always worked; there was nothing on screen to say so.
+   *
+   * Instant, and computed from the section's own box, both copied deliberately from the identical fix
+   * in recruitment-workspace.tsx (2026-08-21): Chrome ABANDONS a programmatic smooth scroll over a
+   * long distance, which is exactly this case — a manager with forty reps has a very tall table above
+   * this point. A smooth call would reproduce the original bug on the boards that suffer most, while
+   * looking perfect on any small one.
+   *
+   * Keyed on the plan id, so it fires when a plan is opened or switched — not on every re-render,
+   * which would yank the page back each time he sorted or searched the doctors below.
+   */
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    // The anchor is the whole SECTION, which the server half wraps — landing on this component's own
+    // box would scroll the "<rep> — <period>" heading off the top, and that heading is the only thing
+    // naming which plan just opened. The ref is the fallback and cannot be null, so the scroll still
+    // happens if that wrapper is ever removed.
+    const section = document.getElementById(PLAN_DOCTORS_ANCHOR_ID) ?? landingRef.current;
+    if (!section) return;
+    // After paint — the box is only real once the new section has been laid out.
+    const frame = requestAnimationFrame(() => {
+      const top = section.getBoundingClientRect().top + window.scrollY;
+      window.scrollTo({ behavior: "auto", top: Math.max(0, top - PLAN_LANDING_GAP) });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [plan.crmPlanId]);
+
   const table = useSortableTable(rows, {
     columns: ENTRY_COLS,
     initialSort: kind === "weekly" ? { dir: "asc", key: "planDate" } : { dir: "asc", key: "contactName" },
@@ -451,7 +522,7 @@ export function PlanDoctorsTable({ kind, plan, rows }: { kind: PlanKind; plan: P
   }));
 
   return (
-    <div className="space-y-3 p-5">
+    <div className="space-y-3 p-5" ref={landingRef}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <TableSearchInput
           onChange={table.setQuery}
