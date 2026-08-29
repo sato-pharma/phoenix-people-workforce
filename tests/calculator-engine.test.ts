@@ -280,6 +280,17 @@ export function runCalculatorEngineTests() {
     "the copy button must copy state.entry — the plain value — never the grouped display text",
   );
 
+  // The header is the drag handle AND it holds copy/paste/close. setPointerCapture retargets the
+  // pointerup to the capturing element, so the browser fires `click` on the common ancestor — the
+  // header — and the button's own onClick never runs. Measured live on 2026-08-29: all three
+  // header buttons were dead to a real mouse while a scripted .click() still worked, which is
+  // precisely why no test above caught it. The guard is what keeps them clickable.
+  assert.ok(
+    /handleDragStart[\s\S]{0,900}?closest\("button"\)\) return;/.test(WIDGET_SOURCE),
+    "handleDragStart must bail when the press began on a header button, or pointer capture eats "
+      + "that button's click and copy/paste/close all stop responding to a real mouse",
+  );
+
   // ── 12. It is actually mounted, in the admin chrome ─────────────────────────────────────────
   // A component nothing renders is the most expensive kind of green test.
   assert.ok(
