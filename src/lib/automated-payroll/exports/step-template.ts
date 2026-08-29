@@ -11,7 +11,7 @@ import {
 } from "@/lib/sales/sales-workbook-kit";
 
 import { monthLabel } from "../notify.ts";
-import { stepDefinition } from "../step-definitions.ts";
+import { stepDefinition, stepFieldsTotal } from "../step-definitions.ts";
 import type { MonthlySalaryRun, StepKey, StepRow } from "../types.ts";
 
 /**
@@ -51,6 +51,14 @@ export function stepTemplateColumns(stepKey: StepKey): { label: string; editable
     }
     columns.push({ label: field.label, editable: true, money: field.kind === "money" });
   }
+  // The step's live total sits after the fields it sums, mirroring the card.
+  // Read-only: step-parser.ts matches editable `field.label`s only, so this
+  // column is never parsed back on re-upload and can never become a second,
+  // competing source of truth for the money. Declared AFTER the fields and
+  // BEFORE Reason so the sheet reads in the same order as the screen.
+  if (definition.fieldsTotal) {
+    columns.push({ label: definition.fieldsTotal.label, editable: false, money: true });
+  }
   if (definition.hasReason) columns.push({ label: "Reason", editable: true, money: false });
   return columns;
 }
@@ -69,6 +77,9 @@ function cellValueForColumn(stepKey: StepKey, row: StepRow, label: string): stri
     return value == null ? "" : (value as string | number);
   }
   if (label === "Reason") return row.reason ?? "";
+  if (definition.fieldsTotal && definition.fieldsTotal.label === label) {
+    return stepFieldsTotal(definition, row.values);
+  }
   const recommendedField = definition.fields.find((field) => `Recommended ${field.label}` === label);
   if (recommendedField) return row.recommended[recommendedField.key] ?? 0;
   const editField = definition.fields.find((field) => field.label === label);

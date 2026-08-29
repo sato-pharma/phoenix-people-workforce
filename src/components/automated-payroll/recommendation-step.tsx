@@ -11,7 +11,7 @@ import {
   enteredOnThisStepAmount,
   hasDoubleDeductionConflict,
 } from "@/lib/automated-payroll/conflicts";
-import { stepDefinition, stepWindowLabel } from "@/lib/automated-payroll/step-definitions";
+import { stepDefinition, stepFieldsTotal, stepWindowLabel } from "@/lib/automated-payroll/step-definitions";
 import type {
   ManualRowCandidate,
   PayrollPeriod,
@@ -899,6 +899,26 @@ export function RecommendationStep({
                         )}
                       </label>
                     ))}
+
+                    {/* Live total of the editable money fields above it (owner request
+                        2026-08-29, New hires). Summed here from `row.values` rather than
+                        read from `row.context` on purpose: context is computed once on
+                        the server and never recomputed as HR types, so a context total
+                        would freeze at the loaded figure and disagree with the boxes the
+                        moment one is edited — exactly when the total is being read. */}
+                    {definition.fieldsTotal ? (
+                      <div className="mt-0.5 flex items-center justify-between gap-3 border-t border-slate-200 pt-2 text-sm">
+                        <span className="overflow-hidden whitespace-nowrap font-semibold text-slate-600">
+                          {definition.fieldsTotal.label}
+                        </span>
+                        <span
+                          dir="ltr"
+                          className="shrink-0 overflow-hidden whitespace-nowrap font-black tabular-nums text-slate-900"
+                        >
+                          {money(stepFieldsTotal(definition, row.values))}
+                        </span>
+                      </div>
+                    ) : null}
 
                     {definition.hasReason ? (
                       <label className="flex flex-col gap-1 text-sm">

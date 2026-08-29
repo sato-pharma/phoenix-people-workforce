@@ -308,6 +308,31 @@ export type StepContextColumn = {
   money?: boolean;
 };
 
+/**
+ * A read-only live TOTAL of several of a step's own editable money fields,
+ * rendered directly beneath them on the card and emitted as a matching
+ * read-only column in the step's xlsx.
+ *
+ * Owner request 2026-08-29, on the New hires screen: the three figures a joiner
+ * is actually paid this month (prorated Base, Extra Cost of Living and Fuel)
+ * sat in three separate boxes with nothing adding them up, so checking a
+ * revised figure meant adding them by hand.
+ *
+ * Deliberately NOT a context column. `StepRow.context` is computed once on the
+ * server and never recomputed as HR types — `setValue` in the grid writes to
+ * `StepRow.values` alone — so a context column showing this sum freezes at the
+ * value it was loaded with and stops agreeing with the boxes the moment one is
+ * edited. That is precisely the case this total exists to serve, so it is
+ * summed on the client from the live `values`.
+ */
+export type StepFieldsTotal = {
+  /** Column/row label, e.g. "Total (month)". Must not collide with a field label — the
+   *  re-upload parser matches editable columns by header name. */
+  label: string;
+  /** `StepFieldSpec.key`s to sum. Money fields only; a missing value counts as 0. */
+  fieldKeys: string[];
+};
+
 /** A field editable within a step (drives the grid + the xlsx template columns). */
 export type StepFieldSpec = {
   key: string;
@@ -356,6 +381,12 @@ export type StepDefinition = {
   /** Read-only context columns shown before the editable fields. */
   contextColumns: StepContextColumn[];
   fields: StepFieldSpec[];
+  /**
+   * Optional read-only live total of some of `fields`, shown under them on the
+   * card and as an extra read-only column in the xlsx. See StepFieldsTotal for
+   * why this is not a context column.
+   */
+  fieldsTotal?: StepFieldsTotal;
   /** Whether this step carries a per-employee free-text reason column. */
   hasReason: boolean;
   /** Whether this is a hold-review step (toggle + reason, no recommendation feeder). */

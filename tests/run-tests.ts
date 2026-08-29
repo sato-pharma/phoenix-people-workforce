@@ -836,6 +836,7 @@ import { runSecretPinsCheckTests } from "./secret-pins-check.test.ts";
 import { runSqlBackupPlacementTests } from "./sql-backup-placement.test.ts";
 import { runAutomatedPayrollStepDetailTests } from "./automated-payroll-step-detail.test.ts";
 import { runAutomatedPayrollNewHireNetColumnsTests } from "./automated-payroll-new-hire-net-columns.test.ts";
+import { runAutomatedPayrollNewHireWorkingDaysTotalTests } from "./automated-payroll-new-hire-working-days-total.test.ts";
 import { runMigrationsCairoDateGuardTests } from "./migrations-cairo-date-guard.test.ts";
 import { runAutomatedPayrollRejectedExpensesTests } from "./automated-payroll-rejected-expenses.test.ts";
 import { runAutomatedPayrollExpenseResyncTests } from "./automated-payroll-expense-resync.test.ts";
@@ -2277,6 +2278,7 @@ await runTest("secret pins check (catches the version pinning that 401'd every c
 await runTest("sql backup placement (catches snapshot tables created in the anon-readable public schema)", runSqlBackupPlacementTests);
 await runTest("automated payroll step detail (breakdown foots to the row total; the 3 Part-2 windows stay distinct)", runAutomatedPayrollStepDetailTests);
 await runTest("automated payroll new hire net columns (full month shown beside this month, and the two reconcile)", runAutomatedPayrollNewHireNetColumnsTests);
+await runTest("automated payroll new hire working-days total (live sum of the three paid figures, on card and in xlsx)", runAutomatedPayrollNewHireWorkingDaysTotalTests);
 await runTest("migrations Cairo date guard (no unzoned current_date in new SQL function bodies)", runMigrationsCairoDateGuardTests);
 await runTest("automated payroll rejected expenses (an HR rejection must not be reimbursed; pending still flows)", runAutomatedPayrollRejectedExpensesTests);
 await runTest("automated payroll expense resync (an approval changed after the step was confirmed must reach payroll)", runAutomatedPayrollExpenseResyncTests);
