@@ -10,6 +10,7 @@
  * MultiSelectFilter's own semantics: an EMPTY selection means "All" (no narrowing).
  */
 
+import { isTerminalEmploymentStatus } from "@/lib/auth/session-lifecycle";
 import type { EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import type { CompanyActivityFilters, CompanyActivityMultiSelectMode } from "@/lib/company-activity-report/types";
 
@@ -93,13 +94,27 @@ function matchesMultiSelect(value: string | null, selected: string[], mode: Comp
 }
 
 /** Narrows the roster to the filtered set. Called once, server-side, before the heavy service
- * call — never applied to result rows after the fact. */
+ * call — never applied to result rows after the fact.
+ *
+ * `startDateIso` bounds resigned/terminated employees to the range they could actually have
+ * worked, the same rule proven correct in attendance/roster.ts's getAttendanceRoster: a leaver
+ * whose last working date falls before the report's start date is dropped entirely, so choosing
+ * "this week" for someone who left last month no longer produces a row of manufactured absences
+ * for a person who does not work here any more. A leaver is still fully visible for a range that
+ * reaches back into the days they actually worked — this only stops them outliving their exit
+ * date, it never hides real history. Optional so any other caller of this pure function is
+ * unaffected until it opts in. */
 export function filterCompanyActivityEmployees(
   roster: EmployeeDirectoryRow[],
   filters: CompanyActivityFilters,
+  startDateIso?: string,
 ): EmployeeDirectoryRow[] {
   const needle = filters.query.trim().toLowerCase();
   return roster.filter((employee) => {
+    if (startDateIso && isTerminalEmploymentStatus(employee.employmentStatus)) {
+      // Exited before the reported range starts (or exit date unknown) — not expected at all.
+      if (!employee.lastWorkingDate || employee.lastWorkingDate < startDateIso) return false;
+    }
     if (!matchesMultiSelect(employee.lineName, filters.lineNames, filters.lineMode)) return false;
     if (!matchesMultiSelect(employee.teamName, filters.teamNames, filters.teamMode)) return false;
     if (!matchesMultiSelect(employee.areaName, filters.areaNames, filters.areaMode)) return false;

@@ -80,7 +80,7 @@ export async function GET(request: Request) {
     // screen shows, never a superset or a subset of it.
     const filters = parseCompanyActivityFilters(url.searchParams);
     const roster = await getEmployeeDirectoryRows({ includeInactive: true });
-    const employees = filterCompanyActivityEmployees(roster, filters);
+    const employees = filterCompanyActivityEmployees(roster, filters, startDate);
     const report = await getCompanyActivityReport({ employees, endDate, startDate });
     const filterNote = describeCompanyActivityFilters(filters);
 
