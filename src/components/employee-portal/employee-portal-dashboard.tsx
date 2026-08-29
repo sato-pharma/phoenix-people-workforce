@@ -61,6 +61,7 @@ import { PHOENIX_BUSINESS_TIME_ZONE } from "@/lib/i18n/format";
 import { calculateIncentive2026 } from "@/lib/incentives/scheme-2026";
 import { toPeriodLabel } from "@/lib/employee-portal/period";
 import { shouldShowEmployeePortalMarketingQuickAction } from "@/lib/employee-portal/navigation";
+import { shouldRenderSalesPanels } from "@/lib/employee-portal/sales-scope";
 import type { EmployeePortalShellData, MedicalRepPortalData } from "@/lib/employee-portal/service";
 import { canonicalHrIdKey, formatHrIdForDisplay } from "@/lib/hr-id";
 import { SearchableSelect } from "@/components/ui/searchable-select";
@@ -3855,10 +3856,26 @@ export function MedicalRepOverviewPage({
     );
   }
 
+  // A VIEWER WITH NO SALES SCOPE GETS NO SALES PANELS, on either surface.
+  //
+  // getSalesScope has no switch arm for a role that does not sell, so the two HR seats and
+  // Financial Advisor fall to its NONE default and are then fail-closed to empty line/region/area
+  // sets. Every sales figure in `data.sales` is therefore a zero that measures nothing — and a
+  // zeroed panel does not read as "not for you", it reads as "you sold nothing". Three of the
+  // panels below already hide themselves on an empty array; the rest render their heading and a
+  // zero regardless, which is what put "Sales · Target · Achievement Rate 0.0% · Needs attention"
+  // at the top of an HR coordinator's home page the day her account went live.
+  //
+  // My Actions and Quick Actions are not sales panels and stay for everyone.
+  const showSalesPanels = shouldRenderSalesPanels(data.sales.viewerSalesScope);
+
   // Employee-portal dashboard is a minimal command center: the identity hero (rendered by the
   // page) plus the performance trend only — nothing else. The admin-shell workspace surface keeps
   // the full operational dashboard below (so every panel stays in use; nothing is orphaned).
   if (surface === "employee-portal") {
+    // The hero is the page's own, so a NONE viewer still gets their identity card — just not a
+    // trend chart of zeros underneath it.
+    if (!showSalesPanels) return null;
     return (
       <div className="space-y-6">
         <OverviewPerformanceChart data={data} />
@@ -3870,7 +3887,7 @@ export function MedicalRepOverviewPage({
 
   return (
     <div className="space-y-6">
-      <ExecutiveCommandStrip data={data} />
+      {showSalesPanels ? <ExecutiveCommandStrip data={data} /> : null}
       {/* Manager-first: daily to-dos and team operations lead the page. */}
       <div className="grid gap-5 xl:grid-cols-2">
         <MyActionsPanel data={data} surface={surface} />
@@ -3878,23 +3895,27 @@ export function MedicalRepOverviewPage({
         {showTeamLeaveAndStructurePanels ? <TeamStructurePanel data={data} /> : null}
         {showTeamLeaveAndStructurePanels ? <EmployeesOnLeaveTodayPanel data={data} /> : null}
       </div>
-      {/* Team performance + actionable signals, surfaced high for managers. */}
-      <div className="grid items-start gap-5 xl:grid-cols-2">
-        <TeamRankComparisonWidget data={data} />
-        <OverviewInsightsAlerts data={data} />
-      </div>
-      <OverviewPerformanceChart data={data} />
-      <div className="grid items-start gap-5 xl:grid-cols-2">
-        <div className="space-y-5">
-          <TerritoryComparisonChart data={data} />
-          <LinePerformanceBreakdown data={data} />
-          <ToReachTargetWidget data={data} />
-        </div>
-        <div className="space-y-5">
-          <ProductFamilyBreakdown data={data} />
-          <OverviewTopProducts data={data} />
-        </div>
-      </div>
+      {showSalesPanels ? (
+        <>
+          {/* Team performance + actionable signals, surfaced high for managers. */}
+          <div className="grid items-start gap-5 xl:grid-cols-2">
+            <TeamRankComparisonWidget data={data} />
+            <OverviewInsightsAlerts data={data} />
+          </div>
+          <OverviewPerformanceChart data={data} />
+          <div className="grid items-start gap-5 xl:grid-cols-2">
+            <div className="space-y-5">
+              <TerritoryComparisonChart data={data} />
+              <LinePerformanceBreakdown data={data} />
+              <ToReachTargetWidget data={data} />
+            </div>
+            <div className="space-y-5">
+              <ProductFamilyBreakdown data={data} />
+              <OverviewTopProducts data={data} />
+            </div>
+          </div>
+        </>
+      ) : null}
     </div>
   );
 }

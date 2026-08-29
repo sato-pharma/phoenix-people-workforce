@@ -495,6 +495,7 @@ import { runWorkflowControlMigrationReadinessTests } from "./workflow-control-mi
 import { runWorkflowControlServicesTests } from "./workflow-control-services.test.ts";
 import { runWorkflowControlApiRoutesTests } from "./workflow-control-api-routes.test.ts";
 import { runEmployeePortalSalesScopeTests } from "./employee-portal-sales-scope.test.ts";
+import { runWorkspaceSalesPanelsScopeTests } from "./workspace-sales-panels-scope.test.ts";
 import { runCoachingPermissionTests } from "./coaching-permissions.test.ts";
 import { runCoachingInAppNotificationTests } from "./coaching-in-app-notifications.test.ts";
 import { runRlsGapClosureTests } from "./rls-gap-closure.test.ts";
@@ -1824,6 +1825,7 @@ await runTest("outstation notifications", runOutstationNotificationsTests);
 await runTest("outstation employee-lookup status (isActive cosmetic field)", runOutstationEmployeeLookupStatusTests);
 await runTest("medical rep expenses", runMedicalRepExpensesTests);
 await runTest("employee portal sales scope", runEmployeePortalSalesScopeTests);
+await runTest("workspace dashboard hides sales panels from non-selling roles", runWorkspaceSalesPanelsScopeTests);
 await runTest("employee portal navigation", runEmployeePortalNavigationTests);
 await runTest("portal nav acting DM follows app access role, not job title", runPortalNavActingDmUsesAppRoleTests);
 await runTest("employee portal bottom nav", runEmployeePortalBottomNavTests);

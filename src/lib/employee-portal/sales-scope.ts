@@ -1,5 +1,7 @@
 import { canonicalSalesLine } from "../sales/others.ts";
 
+import type { BusinessScope } from "../auth/permissions.ts";
+
 type LineScopedEntity = {
   line?: string | null;
   lineId?: number | null;
@@ -102,4 +104,23 @@ export function salesRecordMatchesPortalSalesScope(
 ) {
   if (!record.line || scope.lineCandidates.length === 0) return true;
   return lineMatchesPortalSalesScope(record.line, scope);
+}
+
+/**
+ * The scopes that mean the viewer actually sells something. Anything else — NONE, or a value this
+ * build does not recognise — is not a selling viewer.
+ */
+const SELLING_SALES_SCOPES = new Set<BusinessScope>(["SELF", "TEAM", "HIERARCHY", "LINE", "COMPANY"]);
+
+/**
+ * Whether a dashboard should render its sales panels at all.
+ *
+ * DELIBERATELY FAIL-CLOSED: this asks for membership of the selling set rather than `!== "NONE"`,
+ * so an absent or unrecognised scope hides the panels instead of showing them. The two failures
+ * are not symmetric. A rep who loses their dashboard says so within the hour; a non-selling viewer
+ * shown a zeroed one is told silently, every day, that their achievement is 0.0% and needs
+ * attention. That second failure is the one this function exists to end, so it takes the safe side.
+ */
+export function shouldRenderSalesPanels(viewerSalesScope: BusinessScope | null | undefined): boolean {
+  return viewerSalesScope ? SELLING_SALES_SCOPES.has(viewerSalesScope) : false;
 }
