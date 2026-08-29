@@ -28,9 +28,20 @@ const EXECUTION_STEP_CODE = "finance_execution";
  * `finance_hold` reached the reader as the bare de-underscored "finance hold", which reads like a
  * queue a request is waiting in rather than a decision someone took. It is the opposite: every
  * approval has been given and the money is committed — a human has deliberately frozen the request
- * because the invoice never arrived.
+ * because the invoice never arrived. Hence the `approved ·` prefix, matching the sibling label
+ * one line above.
+ *
+ * LENGTH IS LOAD-BEARING HERE, and was measured rather than guessed. This badge sits in a
+ * `shrink-0` cell beside the requester's name in a `min-w-0 flex-1` cell, so every character it
+ * gains is a pixel the name loses. At 375px with the longest real employee name (52 chars,
+ * measured in production) the first draft of this label — "approved · held by finance", 26 chars
+ * — crushed the name cell to 41px. This wording costs 139px against the 167px the already-shipped
+ * "approved · with finance" costs, so it leaves the name MORE room than the status quo, not less.
+ *
+ * Keep it at or under 18 characters. The full story is in the banner and the lifecycle sentence,
+ * which have a whole row each; the badge only has to name the state.
  */
-const HELD_LABEL = "approved · held by finance";
+const HELD_LABEL = "approved · on hold";
 
 /** Turn a stored status into the words shown to a human. */
 export function marketingRequestStatusLabel(params: {

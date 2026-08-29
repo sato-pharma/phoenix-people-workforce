@@ -27,10 +27,25 @@ export function runMarketingFinanceHoldUiTests() {
   // request is waiting rather than a decision someone took.
   const heldLabel = marketingRequestStatusLabel({ currentStepCode: null, status: "finance_hold" });
   assert.ok(
-    heldLabel.includes("held"),
+    /hold|held|frozen|froze/.test(heldLabel),
     `a held request must say it was held, got "${heldLabel}"`,
   );
+  assert.ok(
+    heldLabel.includes("approved"),
+    `every approval is already in — the label must not read as though one is still pending, got "${heldLabel}"`,
+  );
   assert.notEqual(heldLabel, "finance hold", "the bare de-underscored fall-through is what this replaces");
+
+  // LENGTH IS LOAD-BEARING, and this assertion is the only thing that will say so to the next
+  // session. The badge sits in a `shrink-0` cell beside the requester's name in a `min-w-0 flex-1`
+  // cell, so every character it gains is a pixel the name loses — and nothing about that is
+  // visible from the source. Measured at 375px against the longest real employee name (52 chars):
+  // a 26-character label left the name 41px; this budget leaves it 86px.
+  assert.ok(
+    heldLabel.length <= 18,
+    `the badge shares its row with the requester's name at 375px — keep it to 18 characters or `
+      + `fewer, got ${heldLabel.length} ("${heldLabel}")`,
+  );
 
   // The other statuses must be untouched — this is a money module's shared label function.
   assert.equal(
