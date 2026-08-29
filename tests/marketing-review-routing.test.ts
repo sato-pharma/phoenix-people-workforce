@@ -187,11 +187,17 @@ export async function runMarketingReviewRoutingTests() {
       section.items.some((item) => item.href === "/workspace/marketing-requests"),
     ),
   );
-  const guardAdmits = allRoles.filter(
-    (role) =>
+  // resolveNavigationMode asks about a VIEWER, not a role name — it reads .source and .scope as
+  // well as .role, so it has to be handed a real context. A bare role string does not typecheck
+  // (TS2345), and `pnpm run test` strips types, so nothing local can see that: only the PR's
+  // typecheck job answers, which is exactly how this line first shipped red.
+  const guardAdmits = allRoles.filter((role) => {
+    const viewer = createAccessContext({ hrId: "NAV-1", role });
+    return (
       canAccessAdminShellEmployeeWorkspacePage(role, workspaceMarketingRoles) &&
-      resolveNavigationMode(role) === "admin",
-  );
+      resolveNavigationMode(viewer) === "admin"
+    );
+  });
   assert.deepEqual(
     [...seesRow].sort(),
     [...guardAdmits].sort(),
