@@ -47,6 +47,13 @@ export type CvLibraryRow = {
   regionLabel: string;
   /** True when the applicant chose the region themselves rather than it being read off the CV. */
   regionDeclared: boolean;
+  /**
+   * The country, when the address on the CV is outside Egypt. Empty for everyone else.
+   *
+   * A foreign address has no region code and never will, so without this it looks identical to a
+   * candidate whose CV gave no address at all — and the two want completely different handling.
+   */
+  regionForeignCountry: string;
   /** The area they asked for, in their own words. Empty for anyone who was never asked. */
   preferredArea: string;
   cvFileName: string;
@@ -123,6 +130,7 @@ export function cvLibraryRowFromCandidate(candidate: Candidate): CvLibraryRow {
     preferredArea: text(facts.area?.value),
     regionCode: facts.region?.value.code ?? null,
     regionDeclared: facts.region?.value.declared ?? false,
+    regionForeignCountry: text(facts.region?.value.foreignCountry),
     regionLabel: text(facts.region?.value.label),
     medicalSales: medicalSalesStatus(candidate),
     medicalSalesDuration: months === null ? "" : formatDurationMonths(months),

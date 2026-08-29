@@ -38,6 +38,8 @@ import {
   candidateRegionCodes,
   candidateRegionForGovernorate,
   candidateRegionLabels,
+  foreignCountryForGovernorate,
+  foreignRegionLabel,
   type CandidateRegionCode,
 } from "@/lib/recruitment/candidate-region";
 import { candidateRoleFamilyOrNull, type CandidateRoleFamily } from "@/lib/recruitment/candidate-role-family";
@@ -106,8 +108,12 @@ export type CandidateScreeningFacts = {
    * `code` is null for a region somebody TYPED that maps to nothing we recognise. The label still
    * shows their words; the code stays null so the Region filter files them under Unknown rather
    * than quietly dropping them into whichever region sorts first.
+   *
+   * `foreignCountry` is set only when the address is outside Egypt, and the code is null there for
+   * the same reason — the person is real and placed, they are just not in a Phoenix region. It is
+   * what lets a screen separate them from the people we simply have no address for.
    */
-  region: ScreeningFact<{ code: string | null; declared: boolean; label: string }> | null;
+  region: ScreeningFact<{ code: string | null; declared: boolean; foreignCountry?: string; label: string }> | null;
   roleTitle: ScreeningFact<string> | null;
   years: ScreeningFact<number> | null;
 };
@@ -194,6 +200,11 @@ export function candidateScreeningFacts(candidate: ScreeningFactsCandidateRow): 
 
   const governorate = pick(text(candidate.governorate), text(cv.governorate));
   const derivedRegionCode = governorate ? candidateRegionForGovernorate(governorate.value) : null;
+  // Asked only where the governorate map already came up empty, so no Egyptian address can reach
+  // it. It exists so that "lives in Dubai" stops reading as the same blank as "no address on the
+  // CV": one is a fact about the person, the other is a gap in what we hold, and a recruiter
+  // scanning the people with no region needs to know which of the two they are looking at.
+  const foreignCountry = governorate && !derivedRegionCode ? foreignCountryForGovernorate(governorate.value) : null;
   const asked = declaredRegion(candidate);
   const areaName = text(candidate.preferredAreaName);
 
@@ -212,6 +223,10 @@ export function candidateScreeningFacts(candidate: ScreeningFactsCandidateRow): 
     // The applicant's own answer, then the CV. Note the asymmetry in `confirmed`: a declared
     // region is always settled, because a person tapped it, whereas a derived one inherits the
     // governorate's confidence and stays hedged when the CV reader was hedging.
+    // A foreign address keeps `code: null`, exactly as an unrecognised one does — it is genuinely
+    // not one of the company's regions, and filing it under Others would claim somebody covers a
+    // territory nobody confirmed. What changes is only that it now SAYS so instead of rendering an
+    // empty cell.
     region: asked
       ? { confirmed: true, value: asked }
       : derivedRegionCode
@@ -219,7 +234,12 @@ export function candidateScreeningFacts(candidate: ScreeningFactsCandidateRow): 
             confirmed: governorate!.confirmed,
             value: { code: derivedRegionCode, declared: false, label: candidateRegionLabels[derivedRegionCode] },
           }
-        : null,
+        : foreignCountry
+          ? {
+              confirmed: governorate!.confirmed,
+              value: { code: null, declared: false, foreignCountry, label: foreignRegionLabel },
+            }
+          : null,
     roleTitle: pick(text(candidate.currentJobTitle), text(cv.currentJobTitle)),
     years: pick(years(candidate.yearsExperience), years(cv.yearsExperience)),
   };

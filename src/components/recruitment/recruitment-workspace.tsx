@@ -68,6 +68,7 @@ import {
 import {
   candidateRegionCodes,
   candidateRegionLabels,
+  foreignRegionLabel,
   type CandidateRegionCode,
 } from "@/lib/recruitment/candidate-region";
 import {
@@ -2916,7 +2917,7 @@ function CandidatesTab({
   // three spell it "manger" and six are titled "District Sales Manager". Both filters read a
   // domain classifier rather than the raw column, so the misspelling and the variant both land.
   const [roleFilter, setRoleFilter] = useState<CandidateRoleFamily | "" | "unknown">("");
-  const [regionFilter, setRegionFilter] = useState<CandidateRegionCode | "" | "unknown">("");
+  const [regionFilter, setRegionFilter] = useState<CandidateRegionCode | "" | "unknown" | "foreign">("");
   // 132 of the 555 rows in production share a person with another row — the same CV forwarded twice,
   // or the same applicant applying again. The flag was already computed; there was no way to ask for
   // just those rows, which is the only way anyone is going to work through them.
@@ -3049,7 +3050,17 @@ function CandidatesTab({
         }
         if (regionFilter) {
           const region = facts.region?.value.code ?? null;
-          if (regionFilter === "unknown" ? region !== null : region !== regionFilter) return false;
+          const foreign = Boolean(facts.region?.value.foreignCountry);
+          // Three buckets, not two. A null code means either "we do not know where they live" or
+          // "we do, and it is not in Egypt" — asking for the second under a heading that says the
+          // first would misdescribe a person we actually have an address for.
+          if (regionFilter === "foreign") {
+            if (!foreign) return false;
+          } else if (regionFilter === "unknown") {
+            if (region !== null || foreign) return false;
+          } else if (region !== regionFilter) {
+            return false;
+          }
         }
       }
       // Three-way, not a checkbox: null is a real and common answer here (66 rows), and it means
@@ -3499,7 +3510,7 @@ function CandidatesTab({
               <select
                 className={poolFilterSelectClass}
                 value={regionFilter}
-                onChange={(e) => setRegionFilter(e.target.value as CandidateRegionCode | "" | "unknown")}
+                onChange={(e) => setRegionFilter(e.target.value as CandidateRegionCode | "" | "unknown" | "foreign")}
               >
                 <option value="">Any region</option>
                 {candidateRegionCodes.map((code) => (
@@ -3507,6 +3518,7 @@ function CandidatesTab({
                     {candidateRegionLabels[code]}
                   </option>
                 ))}
+                <option value="foreign">{foreignRegionLabel}</option>
                 <option value="unknown">No governorate on file</option>
               </select>
             </label>

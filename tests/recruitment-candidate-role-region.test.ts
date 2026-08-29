@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import {
   candidateRegionForGovernorate,
   candidateRegionLabels,
+  foreignCountryForGovernorate,
+  foreignRegionLabel,
   normalizeGovernorate,
   recruitmentAreaRegionOverrides,
   recruitmentRegionForArea,
@@ -186,6 +188,46 @@ export function runCandidateRoleRegionTests() {
   assert.equal(candidateRegionForGovernorate("Damietta"), "D2", "Delta (2) keeps Damietta");
   assert.equal(candidateRegionForGovernorate("Hurghada"), "OT", "Others keeps Hurghada");
   assert.equal(candidateRegionForGovernorate("North Sinai"), "OT", "Others keeps North Sinai");
+
+  // --- The seven the map could not place, taken verbatim from production 2026-08-29. Five are
+  // --- real Egyptian governorates the CV reader spelled a way the map did not list, so the person
+  // --- was missing from their own region's filter entirely. These are the exact strings, not
+  // --- tidied ones: the point is that THESE arrive.
+  assert.equal(candidateRegionForGovernorate("Sharqiya"), "D3", "Sharqiya is the Sharkia spelling with a y");
+  assert.equal(candidateRegionForGovernorate("Al Sharqiyah"), "D3", "and the same again with a trailing h");
+  assert.equal(
+    candidateRegionForGovernorate("Elsharkia"),
+    "D3",
+    "the article written onto the name, which normalizeGovernorate cannot strip without a space",
+  );
+  assert.equal(candidateRegionForGovernorate("Dakahliya"), "D2", "Dakahliya is Dakahlia");
+  assert.equal(candidateRegionForGovernorate("El Menia"), "UE", "El Menia is Minya, so Upper Egypt");
+
+  // The article-stripping is the reason "Elsharkia" needed its own key. Spelled with a space it
+  // never reaches the map at all, so a key written "el sharkia" would be dead on arrival — which is
+  // what several already in the map are. Pin the mechanism so the next person spells theirs closed
+  // up rather than adding another key that can never match.
+  assert.equal(normalizeGovernorate("El Sharkia"), "sharkia", "a spaced article is stripped before lookup");
+  assert.equal(normalizeGovernorate("Elsharkia"), "elsharkia", "an attached one survives and must be a key");
+
+  // --- The other two are not in Egypt. They must NOT acquire a region: Others is a real selling
+  // --- region with real areas, and filing Dubai there would claim somebody covers a territory
+  // --- nobody confirmed. What they get instead is a country, so a screen can say which of the two
+  // --- reasons for a blank region it is looking at.
+  assert.equal(candidateRegionForGovernorate("Dubai"), null, "Dubai is not one of the company's regions");
+  assert.equal(candidateRegionForGovernorate("Gauteng"), null, "nor is Gauteng");
+  assert.equal(foreignCountryForGovernorate("Dubai"), "United Arab Emirates");
+  assert.equal(foreignCountryForGovernorate("Gauteng"), "South Africa", "Gauteng is South Africa, not a governorate");
+  assert.equal(foreignCountryForGovernorate("Riyadh, Saudi Arabia"), "Saudi Arabia", "a city with its country appended");
+  assert.equal(foreignRegionLabel, "Outside Egypt", "what every screen calls a foreign address");
+
+  // The two questions must not answer each other. An Egyptian governorate is never foreign, and a
+  // blank is neither — if this ever flips, a real Egyptian candidate is quietly filed as abroad.
+  for (const gov of ["Cairo", "Giza", "Sohag", "Suez", "Ismailia", "Port Said", "Aswan", "Beni Suef"]) {
+    assert.equal(foreignCountryForGovernorate(gov), null, `${gov} is in Egypt`);
+  }
+  assert.equal(foreignCountryForGovernorate(""), null, "a blank address is unknown, not abroad");
+  assert.equal(foreignCountryForGovernorate(null), null);
 
   // --- Delta (3), the AREA side. The region map above moves the GOVERNORATES; this moves the five
   // AREA rows the WhatsApp apply flow shows, which are read from the SALES geography and still sit

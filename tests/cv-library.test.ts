@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-import { cvLibraryRowFromCandidate, summarizeCvLibrary } from "../src/lib/cv/cv-library.ts";
+import { cvLibraryRowFromCandidate, summarizeCvLibrary, type CvLibraryRow } from "../src/lib/cv/cv-library.ts";
 import { candidateScreeningFacts } from "../src/lib/recruitment/candidate-screening-facts.ts";
 import type { Candidate } from "../src/lib/recruitment/types.ts";
 
@@ -228,6 +228,20 @@ export function runCvLibraryTests() {
     "the CV Database stopped distinguishing a region the applicant chose from one read off their CV",
   );
 
+  // The Region filter has THREE buckets that answer to a null code, not two. Somebody living in
+  // Dubai will never have a region and somebody with no address on their CV might have any, so
+  // offering only "Region not known" describes the first group wrongly and buries them in the
+  // second. Both halves are asserted: the option has to exist, and the unknown bucket has to push
+  // the foreign rows back out again — an option that selects nothing distinct is decoration.
+  assert.ok(
+    /value="foreign"/.test(managerCode),
+    "the CV Database dropped the Outside Egypt filter, so a foreign address reads as a missing one",
+  );
+  assert.ok(
+    /regionFilter === "unknown"[\s\S]{0,200}foreign/.test(managerCode),
+    "the CV Database's unknown bucket no longer excludes foreign rows, so it claims we have no address for them",
+  );
+
   // THE EXPORT — three parallel lists. If they ever stop being the same length, a column silently
   // writes its neighbour's values into the file, which is worse than a missing column because it
   // still looks like a full spreadsheet.
@@ -313,6 +327,28 @@ export function runCvLibraryTests() {
   assert.equal(unplaceable.regionLabel, "Anywhere in Egypt", "their own words must survive to the screen");
   assert.equal(unplaceable.regionDeclared, true);
 
+  // An address outside Egypt. Two people in production have one, and both used to render exactly
+  // like somebody whose CV gave no address at all — same blank cell, same filter bucket. They keep
+  // a null code, because Others is a real selling region and filing Dubai there would claim a
+  // territory nobody confirmed; what they gain is a label that SAYS so and the country behind it.
+  const abroad = cvLibraryRowFromCandidate(candidate({ governorate: "Dubai" }));
+  assert.equal(abroad.regionCode, null, "a foreign address is not one of the company's regions");
+  assert.equal(abroad.regionLabel, "Outside Egypt", "and it must say so rather than render blank");
+  assert.equal(abroad.regionForeignCountry, "United Arab Emirates", "the country is what separates it from a gap");
+  assert.equal(abroad.regionDeclared, false, "nobody chose this — it was read off the CV");
+  assert.equal(abroad.governorate, "Dubai", "the place itself still shows, in its own column");
+
+  // The distinction has to hold in BOTH directions, or the screen swaps one wrong answer for
+  // another: an Egyptian candidate must never pick up a country, and a candidate we know nothing
+  // about must never be described as being abroad.
+  const egyptian = cvLibraryRowFromCandidate(candidate({ governorate: "Assiut" }));
+  assert.equal(egyptian.regionForeignCountry, "", "an Egyptian governorate carries no country");
+  assert.equal(
+    cvLibraryRowFromCandidate(candidate({})).regionForeignCountry,
+    "",
+    "an empty row is unknown, not abroad",
+  );
+
   // A stored code that is not one of ours must fall back to the CV rather than blank the cell.
   const junk = cvLibraryRowFromCandidate(candidate({ governorate: "Cairo", preferredRegionCode: "ZZ" }));
   assert.equal(junk.regionCode, "CA", "an unrecognised code must not erase what the CV knows");
@@ -348,4 +384,59 @@ export function runCvLibraryTests() {
       "the CV Database and the recruitment pool disagree about the area this candidate asked for",
     );
   }
+
+  // ---------------------------------------------------------------------------
+  // The Region filter partitions the pool into three buckets — no gaps, no double counting.
+  // ---------------------------------------------------------------------------
+  // Mirrors the predicate inside CvDatabaseManager, which lives in a client component and cannot
+  // be imported here; the two regex guards above pin the component to this same shape. The
+  // property being asserted is the one the Source filter's 561-vs-562 defect broke: every row must
+  // be reachable by EXACTLY one option, or a candidate silently exists in the table and in no
+  // filter. A two-bucket region filter passes "no gaps" and fails "no double counting", because a
+  // foreign row answers to both "Outside Egypt" and "Region not known".
+  function matchesRegion(row: Pick<CvLibraryRow, "regionCode" | "regionForeignCountry">, filter: string): boolean {
+    if (!filter) return true;
+    const region = row.regionCode;
+    const foreign = Boolean(row.regionForeignCountry);
+    if (filter === "foreign") return foreign;
+    if (filter === "unknown") return region === null && !foreign;
+    return region === filter;
+  }
+
+  // Production's shape on 2026-08-29, scaled down: two placed, two abroad, one with no address.
+  const regionPool = [
+    cvLibraryRowFromCandidate(candidate({ governorate: "Sharqiya" })),
+    cvLibraryRowFromCandidate(candidate({ governorate: "El Menia" })),
+    cvLibraryRowFromCandidate(candidate({ governorate: "Dubai" })),
+    cvLibraryRowFromCandidate(candidate({ governorate: "Gauteng" })),
+    cvLibraryRowFromCandidate(candidate({})),
+  ];
+
+  const regionOptions = ["D3", "UE", "foreign", "unknown"];
+  for (const row of regionPool) {
+    const matching = regionOptions.filter((option) => matchesRegion(row, option));
+    assert.equal(
+      matching.length,
+      1,
+      `a row matched ${matching.length} region options, expected exactly 1 (matched: ${matching.join(", ")})`,
+    );
+  }
+
+  // Each bucket returns the people it claims to, and only those.
+  assert.deepEqual(
+    regionPool.filter((row) => matchesRegion(row, "foreign")).map((row) => row.regionForeignCountry),
+    ["United Arab Emirates", "South Africa"],
+    "the Outside Egypt bucket must hold exactly the two foreign addresses",
+  );
+  assert.equal(
+    regionPool.filter((row) => matchesRegion(row, "unknown")).length,
+    1,
+    "only the candidate with no address at all belongs in Region not known",
+  );
+  assert.deepEqual(
+    regionPool.filter((row) => matchesRegion(row, "D3")).map((row) => row.governorate),
+    ["Sharqiya"],
+    "Sharqiya must be reachable through the Delta (3) option — this is the defect being fixed",
+  );
+  assert.equal(regionPool.filter((row) => matchesRegion(row, "")).length, regionPool.length);
 }
