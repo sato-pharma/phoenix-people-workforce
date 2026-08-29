@@ -230,6 +230,7 @@ policy):
    | `phoenix-direct-orders-expire-held` | `17 2 * * *` | 2h | cron-job.org job `8313165` |
    | `phoenix-direct-orders-probation` | `27 2 * * *` | 2h | cron-job.org job `8313177` |
    | `phoenix-db-health-snapshot` | `17 */6 * * *` | 2h | cron-job.org job `8242721` |
+   | `phoenix-territory-restamp` | `20 3 * * *` | 2h | cron-job.org job `8350721` |
    | `phoenix-ireports360-live-poll` | **Simple**, period `5m` | 15m | the in-process poller, every tick |
    | `phoenix-ireports360-sync` | `0 6-21/3 * * *` | 2h | the in-process poller, when due |
    | `phoenix-reconcile-visits` | `0 4 * * 0` | 12h | the in-process poller, when due |
