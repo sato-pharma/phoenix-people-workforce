@@ -16,9 +16,10 @@ import {
   PHARMACY_LICENSE_BUCKET,
   type PharmacyLicenseContentType,
 } from "@/lib/venues/pharmacy-license";
-import { normalizeVenueType } from "@/lib/venues/venue-type";
+import { normalizeVenueType, venueRequiresDistributorCode, venueTypeLabel, type VenueType } from "@/lib/venues/venue-type";
 import {
   VENUE_LOCATION_REQUIRED_MESSAGE,
+  venueAdminRouteEvidenceGapMessage,
   venueIdentityGapMessage,
 } from "@/lib/venues/venue-validation-rule";
 
@@ -69,6 +70,16 @@ export type DirectOrderValidationRow = {
   pharmacyId: string;
   pharmacyName: string;
   phoenixPharmacyCode: string;
+  /**
+   * `pharmacy` or `nursery` — what the desk is actually deciding about.
+   *
+   * Everything on this screen was worded for a pharmacy: it offers a match against the distributor
+   * master database, it names the pharmacy licence, and it explains an absent licence in terms of
+   * distributor codes. None of that is true of a nursery, and until 2026-08-29 the desk had no way
+   * to know it was looking at one — so an admin was shown three pharmacy sentences and one button
+   * that would refuse him.
+   */
+  venueType: VenueType;
   requestId: string | null;
   requestedByHrId: string;
   requestedByName: string;
@@ -534,7 +545,12 @@ export async function suggestDirectOrderPharmacies(
   }));
 }
 
-type ValidationPharmacyRow = { pharmacy_name: string; phoenix_pharmacy_code: string };
+type ValidationPharmacyRow = {
+  pharmacy_name: string;
+  phoenix_pharmacy_code: string;
+  /** Nullable because every row written before the column existed reads back NULL — see `normalizeVenueType`. */
+  venue_type?: string | null;
+};
 
 /**
  * One validation row, fully resolved (signed photo URL, area proximity, requester name).
@@ -597,6 +613,9 @@ async function mapValidationRow(
     pharmacyId: String(row.pharmacy_id),
     pharmacyName: pharmacy?.pharmacy_name ?? "(pharmacy missing)",
     phoenixPharmacyCode: pharmacy?.phoenix_pharmacy_code ?? "—",
+    // `normalizeVenueType`, not `parseVenueTypeChoice`: this reads a STORED column, and a row
+    // written before it existed is a pharmacy, which is what it was.
+    venueType: normalizeVenueType(pharmacy?.venue_type),
     requestId: row.request_id ? String(row.request_id) : null,
     requestedByHrId: hr,
     requestedByName: requesterName || hr,
@@ -681,10 +700,10 @@ export async function listDirectOrderPharmacyValidations(
   const pharmacyIds = Array.from(new Set(rows.map((r) => String(r.pharmacy_id))));
   const { data: pharmacies } = await supabase
     .from("direct_order_pharmacies")
-    .select("id, pharmacy_name, phoenix_pharmacy_code")
+    .select("id, pharmacy_name, phoenix_pharmacy_code, venue_type")
     .in("id", pharmacyIds);
   const pharmacyById = new Map(
-    ((pharmacies ?? []) as Array<{ id: string; pharmacy_name: string; phoenix_pharmacy_code: string }>).map((p) => [p.id, p]),
+    ((pharmacies ?? []) as Array<{ id: string } & ValidationPharmacyRow>).map((p) => [p.id, p]),
   );
 
   const hrIds = Array.from(new Set(rows.map((r) => String(r.requested_by_hr_id ?? "")).filter(Boolean)));
@@ -775,7 +794,7 @@ export async function getDirectOrderPharmacyValidationForRequest(
 
   const { data: pharmacyRow } = await supabase
     .from("direct_order_pharmacies")
-    .select("pharmacy_name, phoenix_pharmacy_code")
+    .select("pharmacy_name, phoenix_pharmacy_code, venue_type")
     .eq("id", pharmacyId)
     .maybeSingle();
 
@@ -962,20 +981,57 @@ export async function decideDirectOrderPharmacyValidation(
   // The existing codes are re-checked rather than assumed absent, because a pharmacy can already
   // carry a real code and still arrive here — approving it is then legitimate and must not be
   // refused for want of a document it does not need.
+  // Read once, above the branches, because the venue type decides which decisions are even
+  // MEANINGFUL here and not merely how one of them is judged.
+  //
+  // `normalizeVenueType`, not `parseVenueTypeChoice`: this reads a STORED column, and a row written
+  // before the column existed is a pharmacy, which is what it was.
+  const { data: venueRow } = await supabase
+    .from("direct_order_pharmacies")
+    .select("venue_type")
+    .eq("id", pharmacyId)
+    .maybeSingle();
+  const venueType = normalizeVenueType((venueRow as { venue_type?: string | null } | null)?.venue_type);
+
+  // `match` IS THE FORGERY PATH FOR A VENUE WITH NO DISTRIBUTOR ACCOUNT, and it was the one door
+  // left open. Matching inserts a real distributor/customer pair into
+  // `direct_order_pharmacy_distributor_codes` for this venue — which is exactly the shape the whole
+  // venue-type feature exists to prevent. Registration already refuses to write a code onto a
+  // nursery (`src/lib/direct-orders/service.ts`), the master database already refuses to identify
+  // one by a code it holds, and this desk was still able to attach one with a click.
+  //
+  // It is not a hypothetical: three invented nursery codes reached production before the venue type
+  // existed and two were written into `source_of_sales_customer_map`, where a fabricated code
+  // resolves `exact` forever. Matching would produce the same row from the other direction, and a
+  // code arriving by this path would look MORE trustworthy than those did, because the pair really
+  // does resolve — it just belongs to somebody else.
+  if (input.decision === "match" && !venueRequiresDistributorCode(venueType)) {
+    badRequest(
+      `A ${venueTypeLabel(venueType).toLowerCase()} has no distributor account, so it cannot be matched to a distributor customer — ` +
+        `the code would belong to a different business. Approve it on its location and photo, or reject it.`,
+    );
+  }
+
   if (input.decision === "approve") {
-    const { data: venueRow } = await supabase
-      .from("direct_order_pharmacies")
-      .select("venue_type")
-      .eq("id", pharmacyId)
-      .maybeSingle();
     const gap = venueIdentityGapMessage({
       codesInOurDatabase: await countVenueCodesInMasterDatabase(supabase, pharmacyId),
       hasLicenseOnFile: licenseOnFile,
-      // `normalizeVenueType`, not `parseVenueTypeChoice`: this reads a STORED column, and a row
-      // written before the column existed is a pharmacy, which is what it was.
-      venueType: normalizeVenueType((venueRow as { venue_type?: string | null } | null)?.venue_type),
+      venueType,
     });
     if (gap) badRequest(gap);
+
+    // And the admin route's own gate — for a venue with no distributor account the location and the
+    // live photo are the whole evidence base, so they have to actually be on the row. Both are
+    // already refused at capture, so this fires on nothing a rep can send; it exists so the rule
+    // cannot be satisfied by a claim that carries neither. See `venueAdminRouteEvidenceGapMessage`.
+    const evidenceGap = venueAdminRouteEvidenceGapMessage({
+      venueType,
+      hasLocationOnFile:
+        (row as { captured_latitude?: number | null }).captured_latitude != null &&
+        (row as { captured_longitude?: number | null }).captured_longitude != null,
+      hasLivePhotoOnFile: Boolean((row as { storage_path?: string | null }).storage_path),
+    });
+    if (evidenceGap) badRequest(evidenceGap);
   }
 
   if (input.decision === "match") {

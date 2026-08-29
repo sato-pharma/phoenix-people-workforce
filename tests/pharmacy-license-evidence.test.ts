@@ -272,21 +272,28 @@ export async function runPharmacyLicenseEvidenceTests() {
       false,
       "a pharmacy with a distributor code is already vouched for by that distributor",
     );
-    // REVERSED 2026-08-26, deliberately, and this assertion is the record of what it cost. It read
-    // `false` here — "a nursery has no distributor account BY ITS NATURE, so prompting there asks
-    // for a document that does not exist" — which was true about the document and wrong about the
-    // consequence. No code of a nursery's can ever be in the master database, so the licence is the
-    // only identity route it has; exempting it left the one venue type that can never pass by code
-    // prompted for nothing at all, and two nurseries were approved on a photograph alone.
+    // This assertion has been both values and the round trip is the record, so all of it in order.
+    // It read `false` originally — "a nursery has no distributor account BY ITS NATURE, so prompting
+    // there asks for a document that does not exist". It was flipped `true` on 2026-08-26 because no
+    // code of a nursery's can ever be in the master database, making the licence look like the only
+    // identity route it had. The owner settled it on 2026-08-29: "Nursery does not have distributor
+    // code or license. So nursery, they are validated by location and live photo, and then it's
+    // approval depends on the admin."
+    //
+    // The 08-26 step was right that a nursery has no code and wrong about what follows. BOTH routes
+    // of leg 3 are pharmacy-trade documents; a venue outside that trade has neither, and the answer
+    // is that it is not judged by documents at all. Asking anyway produced a prompt nobody could
+    // satisfy standing beside a gate nobody could pass — validation 05c97d18 arrived with a 20m pin
+    // and a live photo and could not be approved, so its direct order stayed held.
     assert.equal(
       pharmacyLicenseFillsTheIdentityGap({ distributorCodeCount: 0, venueType: "nursery" }),
-      true,
-      "a nursery can NEVER satisfy the code route, so the licence is not optional for it",
+      false,
+      "a nursery has no licence to attach, so the licence is not the gap it is short of",
     );
     assert.equal(
       pharmacyLicenseFillsTheIdentityGap({ distributorCodeCount: 1, venueType: "nursery" }),
-      true,
-      "and a code written against a nursery is an INVENTED one — three reached production — so it must not buy an exemption",
+      false,
+      "and a code written against a nursery is an INVENTED one — it changes nothing either way",
     );
 
     assert.equal(
@@ -300,14 +307,20 @@ export async function runPharmacyLicenseEvidenceTests() {
     assert.ok(comparing && /shop sign/.test(comparing), "with one on file, it names the comparison to make");
     assert.notEqual(asking, comparing, "the two states must not say the same sentence");
 
-    // A nursery is told the truth about itself. "No distributor code in any distributor" reads as a
-    // gap somebody could go and close, and for a nursery there is nothing to close.
-    const nursery = pharmacyLicensePrompt({ distributorCodeCount: 0, hasLicenseOnFile: false, venueType: "nursery" });
-    assert.ok(nursery && /nursery/i.test(nursery), "the nursery prompt names the venue it is talking about");
-    assert.ok(
-      nursery && !/in any distributor/.test(nursery),
-      "and must not offer a nursery the pharmacy sentence about a code it never had",
-    );
+    // A NURSERY IS ASKED FOR NOTHING (owner, 2026-08-29). It is told neither the pharmacy sentence
+    // about a code it never had, nor the nursery sentence that used to sit here telling it to attach
+    // a licence it does not have. "Attach it before sending" is a bad instruction to print beside a
+    // file input when the document does not exist and nothing will refuse the submission for its
+    // absence — and it is the sentence a rep reads just before deciding Phoenix is broken.
+    for (const hasLicenseOnFile of [false, true]) {
+      for (const distributorCodeCount of [0, 1, 2]) {
+        assert.equal(
+          pharmacyLicensePrompt({ distributorCodeCount, hasLicenseOnFile, venueType: "nursery" }),
+          null,
+          `a nursery (${distributorCodeCount} code(s), licence ${hasLicenseOnFile}) must be prompted for nothing`,
+        );
+      }
+    }
   }
 
   // ── 5. Marketing: stored in the licence bucket, indexed as a licence ─────────────────────────

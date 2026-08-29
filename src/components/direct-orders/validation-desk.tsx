@@ -8,6 +8,7 @@ import { EvidenceReading } from "@/components/direct-orders/evidence-reading";
 import type { DirectOrderValidationRow } from "@/lib/direct-orders/pharmacy-validation";
 import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
 import { PharmacyLicenseEvidence } from "@/components/venues/pharmacy-license-evidence";
+import { venueRequiresDistributorCode, venueTypeLabel } from "@/lib/venues/venue-type";
 
 type Props = { rows: DirectOrderValidationRow[] };
 
@@ -67,11 +68,14 @@ export function ValidationDesk({ rows }: Props) {
       });
       const data = (await res.json().catch(() => ({}))) as { success?: boolean; message?: string };
       if (!res.ok || !data.success) throw new Error(data.message || "Could not record the decision.");
+      // Named by what it IS. "The pharmacy is on probation" said about a nursery is a small lie that
+      // travels — it is the sentence the admin repeats when asked what he approved.
+      const decided = venueTypeLabel(row.venueType);
       setOk(
         decision === "match"
-          ? "Matched to the existing customer. The pharmacy is trusted and its held orders are moving."
+          ? `Matched to the existing customer. The ${decided.toLowerCase()} is trusted and its held orders are moving.`
           : decision === "approve"
-            ? "Approved as new. The pharmacy is on 90-day probation and its held orders are moving."
+            ? `Approved as new. The ${decided.toLowerCase()} is on 90-day probation and its held orders are moving.`
             : "Rejected. The order stays held.",
       );
       setOpenId(null);
@@ -99,6 +103,12 @@ export function ValidationDesk({ rows }: Props) {
 
       {rows.map((row) => {
         const isOpen = openId === row.id;
+        // Everything below that talks about codes, licences and matching is a PHARMACY conversation.
+        // A venue with no distributor account has none of those things, and showing them anyway is
+        // how an admin ends up hunting for a document that does not exist — or clicking Match,
+        // which the server refuses because the code would belong to somebody else's business.
+        const isDistributorVenue = venueRequiresDistributorCode(row.venueType);
+        const venueLabel = venueTypeLabel(row.venueType);
         // An unknown distance must read as unknown — never as "inside".
         const proximity =
           row.areaDistanceKm == null
@@ -157,7 +167,21 @@ export function ValidationDesk({ rows }: Props) {
                     places, and putting the licence in a separate panel would mean scrolling between
                     the two halves of a single comparison. */}
                 <div className="mt-2 border border-[#eef1f3] p-2">
-                  {row.licenseUrl ? (
+                  {!isDistributorVenue ? (
+                    /* Not the licence panel at all. Saying "no licence attached" about a venue that
+                       has no licence to attach reads as a missing document, and an admin acts on
+                       that reading — so this states the basis the decision actually rests on
+                       (owner, 2026-08-29) rather than reporting the absence of a thing that was
+                       never expected. */
+                    <>
+                      <p className="text-phx-xs font-black uppercase tracking-wider text-slate-500">
+                        {venueLabel} · location and live photo
+                      </p>
+                      <p className="mt-1 border border-sky-200 bg-sky-50 px-2 py-1.5 text-phx-sm font-semibold text-sky-900">
+                        {`A ${venueLabel.toLowerCase()} has no distributor account, so it has no distributor code and no licence. The pin and the photo above are the whole check — the decision is yours.`}
+                      </p>
+                    </>
+                  ) : row.licenseUrl ? (
                     <>
                       {/* Shared with the two approval screens, so the PDF-versus-image decision is
                           made in exactly one place. A licence that renders as a broken image on one
@@ -207,29 +231,36 @@ export function ValidationDesk({ rows }: Props) {
 
                 {isOpen ? (
                   <div className="space-y-2 border-t border-[#eef1f3] pt-2">
-                    <div>
-                      <label className="block text-phx-xs font-black uppercase tracking-wider text-slate-500">
-                        Is it already in the database? Search and pick it
-                      </label>
-                      {match[row.id] ? (
-                        <div className="mt-1 flex items-center justify-between gap-2 border border-emerald-300 bg-emerald-50 px-2 py-1.5">
-                          <span className="text-phx-sm font-bold text-slate-800" dir="auto">
-                            {match[row.id]?.customerName ?? match[row.id]?.customerCode}
-                            <span className="ml-1 font-normal text-slate-500">
-                              {match[row.id]?.distributorCode} · {match[row.id]?.customerCode}
+                    {/* MATCHING IS A PHARMACY QUESTION. The picker searches the distributor master
+                        database, and a venue with no distributor account cannot be any row in it —
+                        picking one would attach another business's code to this venue, which is the
+                        forgery the venue type exists to stop. The server refuses it; this is why
+                        the control is not offered in the first place. */}
+                    {isDistributorVenue ? (
+                      <div>
+                        <label className="block text-phx-xs font-black uppercase tracking-wider text-slate-500">
+                          Is it already in the database? Search and pick it
+                        </label>
+                        {match[row.id] ? (
+                          <div className="mt-1 flex items-center justify-between gap-2 border border-emerald-300 bg-emerald-50 px-2 py-1.5">
+                            <span className="text-phx-sm font-bold text-slate-800" dir="auto">
+                              {match[row.id]?.customerName ?? match[row.id]?.customerCode}
+                              <span className="ml-1 font-normal text-slate-500">
+                                {match[row.id]?.distributorCode} · {match[row.id]?.customerCode}
+                              </span>
                             </span>
-                          </span>
-                          <button type="button" className="text-phx-xs font-bold text-orange-600" onClick={() => setMatch((p) => ({ ...p, [row.id]: null }))}>
-                            Change
-                          </button>
-                        </div>
-                      ) : (
-                        <PharmacyComboBox
-                          inputClassName="mt-1 w-full border border-slate-300 px-3 py-2 text-sm focus:border-orange-500 focus:outline-none"
-                          onSelect={(hit) => setMatch((p) => ({ ...p, [row.id]: hit }))}
-                        />
-                      )}
-                    </div>
+                            <button type="button" className="text-phx-xs font-bold text-orange-600" onClick={() => setMatch((p) => ({ ...p, [row.id]: null }))}>
+                              Change
+                            </button>
+                          </div>
+                        ) : (
+                          <PharmacyComboBox
+                            inputClassName="mt-1 w-full border border-slate-300 px-3 py-2 text-sm focus:border-orange-500 focus:outline-none"
+                            onSelect={(hit) => setMatch((p) => ({ ...p, [row.id]: hit }))}
+                          />
+                        )}
+                      </div>
+                    ) : null}
                     {/* Recorded, never required. Leaving it alone stores null — "nobody was asked"
                         — rather than a verdict, and no decision is blocked either way (the system
                         flags, it never rejects). Only offered when there IS a licence to judge. */}
@@ -285,11 +316,13 @@ export function ValidationDesk({ rows }: Props) {
                       dir="auto"
                     />
                     <div className="flex flex-wrap gap-2">
-                      <button type="button" disabled={busy === row.id} onClick={() => decide(row, "match")} className="bg-emerald-600 px-3 py-1.5 text-phx-sm font-black uppercase tracking-wider text-white hover:bg-emerald-700 disabled:bg-slate-300">
-                        Match to this customer
-                      </button>
+                      {isDistributorVenue ? (
+                        <button type="button" disabled={busy === row.id} onClick={() => decide(row, "match")} className="bg-emerald-600 px-3 py-1.5 text-phx-sm font-black uppercase tracking-wider text-white hover:bg-emerald-700 disabled:bg-slate-300">
+                          Match to this customer
+                        </button>
+                      ) : null}
                       <button type="button" disabled={busy === row.id} onClick={() => decide(row, "approve")} className="bg-slate-900 px-3 py-1.5 text-phx-sm font-black uppercase tracking-wider text-white hover:bg-slate-800 disabled:bg-slate-300">
-                        Approve as new (90-day probation)
+                        {isDistributorVenue ? "Approve as new (90-day probation)" : `Approve this ${venueLabel.toLowerCase()} (90-day probation)`}
                       </button>
                       <button type="button" disabled={busy === row.id} onClick={() => decide(row, "reject")} className="border border-rose-300 px-3 py-1.5 text-phx-sm font-black uppercase tracking-wider text-rose-700 hover:bg-rose-50 disabled:opacity-50">
                         Reject

@@ -13,6 +13,19 @@
  * account? — and everything else follows from `venueRequiresDistributorCode`. Keep that predicate
  * the single source of truth: re-deriving it inline (`type === "nursery"`) is what lets the next
  * venue type get added in one place and missed in five.
+ *
+ * AND THE VOCABULARY IS NOT ABOUT WHAT THE VENUE IS. `nursery` reads as a kind of shop and means
+ * "no distributor account". The owner files a doctor's clinic that buys direct from Phoenix as
+ * one, and said so plainly on 2026-08-29: "it is a clinic that only takes direct orders from the
+ * company. It doesn't have a pharmacy that has a code. So it is the same situation exactly as a
+ * nursery. I am the one who told him to submit it like this." So a clinic on a `nursery` row is
+ * CORRECT — never a mistyping to sweep, and never a reason to add a third member to `VENUE_TYPES`.
+ *
+ * A THIRD MEMBER WOULD BUY NOTHING AND COST SOMETHING. Every predicate below asks the same binary
+ * question, so a third answer to a two-answer question is exactly how `venueRequiresDistributorCode`
+ * stops being the single source of truth — each caller would grow a second axis, and the register
+ * would carry two labels for one rule. Add a member only if a venue type ever needs DIFFERENT
+ * evidence, not because a label reads oddly on a register.
  */
 
 export const VENUE_TYPES = ["pharmacy", "nursery"] as const;
