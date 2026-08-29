@@ -9,6 +9,7 @@
 // not-applicable for field roles. Best-effort: a missing/renamed source degrades gracefully.
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { compactDeductionsHrId } from "@/lib/deductions/candidate-key";
 
 export type HrMetric = {
   key: string;
@@ -53,12 +54,31 @@ export async function buildHrEvidence(
       .ilike("employee_hr_id", hrId),
   );
 
-  const deductionCount = await safeCount(() =>
-    supabase
-      .from("deduction_decisions")
-      .select("id", { count: "exact", head: true })
-      .ilike("employee_hr_id", hrId),
-  );
+  // Deduction decisions come from the UNIFIED Deductions module. The legacy governance tables
+  // (deduction_candidates/deduction_decisions) stopped receiving new rows once the Track C cutover
+  // (mossy-ocean) moved the last live writer onto deductions_candidates/deductions_decisions, so a
+  // count off the legacy table silently freezes at the pre-cutover total and undercounts forever.
+  //
+  // deductions_decisions keys by candidate_id, not the employee — the employee lives on the
+  // candidate's employee_hr_id_compact. compactDeductionsHrId lower-cases and strips the HR id the
+  // same way that column is derived, so the compact-to-compact match is alias-aware (a plain
+  // .eq/.ilike on the mixed-case raw HR id under-returns). We count this employee's LIVE
+  // (non-superseded) candidates whose paired decision is an ACTUAL decision: every candidate gets a
+  // "Pending" decision row at collection time ("detected", not "decided"), so Pending is excluded.
+  const deductionCompact = compactDeductionsHrId(hrId);
+  const deductionCount = deductionCompact
+    ? await safeCount(() =>
+        supabase
+          .from("deductions_decisions")
+          .select("id, deductions_candidates!inner(employee_hr_id_compact, superseded_at)", {
+            count: "exact",
+            head: true,
+          })
+          .eq("deductions_candidates.employee_hr_id_compact", deductionCompact)
+          .is("deductions_candidates.superseded_at", null)
+          .neq("decision_status", "Pending"),
+      )
+    : null;
 
   const metrics: HrMetric[] = [
     // Auto signals relevant to field roles.

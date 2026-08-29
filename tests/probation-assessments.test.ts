@@ -128,6 +128,23 @@ export function runProbationAssessmentsTests() {
   const hrEv = src("src/lib/probation/intelligence/hr-evidence.ts");
   assert.match(hrEv, /not applicable to field roles/, "fingerprint attendance marked N/A for field roles");
   assert.match(hrEv, /HR judgment \(manual entry\)/, "conduct/documentation/warnings are manual HR judgment");
+  // Deduction decisions read the UNIFIED module post-cutover, NOT the legacy governance table.
+  // A regression back to `deduction_decisions` would silently freeze the count at the pre-cutover
+  // total (see the Track C / mossy-ocean cutover), so pin the repoint hard.
+  assert.doesNotMatch(hrEv, /\.from\("deduction_decisions"\)/,
+    "deduction count must not read the legacy deduction_decisions table");
+  assert.match(hrEv, /\.from\("deductions_decisions"\)/,
+    "deduction count reads the unified deductions_decisions table");
+  // Employee is keyed by the alias-aware COMPACT key on the joined candidate — a plain .eq/.ilike on
+  // the mixed-case raw HR id under-returns.
+  assert.match(hrEv, /compactDeductionsHrId\(hrId\)/, "deduction count resolves the alias-aware compact HR key");
+  assert.match(hrEv, /deductions_candidates!inner\(/, "deduction count inner-joins its candidate");
+  assert.match(hrEv, /employee_hr_id_compact/, "deduction count filters candidates by employee_hr_id_compact");
+  // Only ACTUAL decisions count — a fresh candidate's auto "Pending" row is "detected", not "decided".
+  assert.match(hrEv, /\.neq\("decision_status", "Pending"\)/, "Pending decisions excluded from the count");
+  // Superseded (corrected/retired) candidates are excluded so a re-collect cannot double-count.
+  assert.match(hrEv, /\.is\("deductions_candidates\.superseded_at", null\)/,
+    "only live (non-superseded) candidates counted");
 
   // Routes gate + CSRF.
   const sfeRoute = src("app/api/probation/cases/[caseId]/assessments/sfe/route.ts");
