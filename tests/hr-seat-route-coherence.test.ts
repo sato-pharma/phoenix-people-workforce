@@ -16,6 +16,14 @@ import {
   type PhoenixRole,
 } from "../src/lib/auth/permissions.ts";
 import { getSections, type PermissionLookup } from "../src/lib/navigation/active-path.ts";
+import {
+  blankOut,
+  hasEntryExit,
+  isShellGated,
+  pageFileFor as resolvePageFile,
+  permissionGateKeys,
+  roleSetGates,
+} from "./support/page-gate-reader.ts";
 
 /**
  * HR SEAT ROUTE COHERENCE — "nothing they are offered will bounce them".
@@ -46,61 +54,6 @@ import { getSections, type PermissionLookup } from "../src/lib/navigation/active
  */
 
 const REPO_ROOT = path.resolve(import.meta.dirname, "..");
-
-/**
- * Comments and string CONTENTS replaced by spaces, LENGTH PRESERVED, so offsets computed on the
- * blanked text still index the original. Without this a brace inside a string or a comment ends a
- * handler body early and its assertions land under the wrong HTTP method.
- */
-function blankOut(source: string): string {
-  const chars = source.split("");
-  const n = source.length;
-  let i = 0;
-  while (i < n) {
-    const c = source[i];
-    if (c === "/" && source[i + 1] === "/") {
-      while (i < n && source[i] !== "\n") {
-        chars[i] = " ";
-        i += 1;
-      }
-      continue;
-    }
-    if (c === "/" && source[i + 1] === "*") {
-      while (i < n && !(source[i] === "*" && source[i + 1] === "/")) {
-        if (source[i] !== "\n") chars[i] = " ";
-        i += 1;
-      }
-      if (i < n) {
-        chars[i] = " ";
-        chars[i + 1] = " ";
-        i += 2;
-      }
-      continue;
-    }
-    if (c === '"' || c === "'" || c === "`") {
-      chars[i] = " ";
-      i += 1;
-      while (i < n) {
-        if (source[i] === "\\") {
-          chars[i] = " ";
-          if (i + 1 < n && source[i + 1] !== "\n") chars[i + 1] = " ";
-          i += 2;
-          continue;
-        }
-        if (source[i] === c) {
-          chars[i] = " ";
-          i += 1;
-          break;
-        }
-        if (source[i] !== "\n") chars[i] = " ";
-        i += 1;
-      }
-      continue;
-    }
-    i += 1;
-  }
-  return chars.join("");
-}
 
 type Handler = { method: string; body: string };
 
@@ -190,16 +143,9 @@ function heldKeys(seat: HrBundleName): Set<string> {
   return keys;
 }
 
+/** The HR shell mounts these pages under /hr, so the prefix is stripped before resolving. */
 function pageFileFor(href: string): string | null {
-  const rest = href.startsWith("/hr/") ? href.slice(3) : href === "/hr" ? "/" : href;
-  const rel = rest.replace(/^\//, "");
-  for (const candidate of [
-    path.join(REPO_ROOT, "app", "(admin)", rel, "page.tsx"),
-    path.join(REPO_ROOT, "app", rel, "page.tsx"),
-  ]) {
-    if (existsSync(candidate)) return candidate;
-  }
-  return null;
+  return resolvePageFile(href, { repoRoot: REPO_ROOT, stripHrPrefix: true });
 }
 
 /**
@@ -213,64 +159,12 @@ function pageFileFor(href: string): string | null {
 const NAV_SEP = String.fromCharCode(10) + "  ";
 
 /**
- * An ENTRY gate, not a capability flag. `if (!(await canAccess(...))) redirect(...)` decides whether
- * the page opens at all; `const canDelete = await canAccess(...)` is a prop passed to a component
- * and must NOT be counted — treating one as the other reports a page as closed when it merely hides
- * a button. The optional `(` matters: the real shape in this codebase is `!(await canAccess(…))`,
- * and a pattern that only allowed `!await` read 8 gated pages where there are 12.
+ * The gate patterns and both readers now live in tests/support/page-gate-reader.ts. They moved there
+ * on 2026-08-29 because every-offered-link-opens.test.ts had grown a second, weaker copy: measured
+ * across the 377 page files, this reader saw a gate on 157 pages and that one on 86. Its misses were
+ * fail-OPEN — a gate it could not parse read as "this page needs no grant" — so the two parsers
+ * disagreeing was not a tidiness problem. See that module's header for the full account.
  */
-const PAGE_ENTRY_GATE = /!\(?\s*await\s+canAccess\(\s*access\s*,\s*"([a-z_]+)"\s*,\s*"([a-z_]+)"\s*\)/g;
-const PAGE_ENTRY_ASSERT = /await\s+assertPermission\(\s*access\s*,\s*"([a-z_]+)"\s*,\s*"([a-z_]+)"\s*\)/g;
-
-/**
- * A hard-coded ROLE SET gate — `VIEW_ROLES.has(access.role)`, `ALLOWED.includes(access.role)`. This
- * is the shape a permission cannot express and therefore the shape the sidebar cannot reason about,
- * which is exactly why it is worth reading: /hr/admin/deductions admits {Super Admin, CEO} by name
- * and redirects everyone else, so offering that row on `deductions:read` handed HR Operations a link
- * that bounced her on arrival. Nothing in the permission matrix could have shown that.
- */
-const PAGE_ROLE_SET_MEMBER = /"([^"]+)"/g;
-/** `const VIEW_ROLES = new Set([...])` / `const ALLOWED = [...]` — the set is almost never inline. */
-const PAGE_ROLE_SET_BINDING = /const\s+([A-Za-z_$][\w$]*)\s*=\s*(?:new Set\(\s*)?\[([^\]]*)\]/g;
-/** `!VIEW_ROLES.has(access.role)` — negated only: an un-negated test is a deny list or a flag. */
-const PAGE_ROLE_SET_USE = /!\s*([A-Za-z_$][\w$]*)\s*\.\s*(?:has|includes)\(\s*access\.role\s*\)/g;
-/** The same thing written inline, `!new Set([...]).has(access.role)`. Rare, but free to cover. */
-const PAGE_ROLE_SET_INLINE =
-  /!\s*(?:new Set\(\s*)?\[([^\]]*)\]\)?\s*\.\s*(?:has|includes)\(\s*access\.role\s*\)/g;
-
-function literalStrings(body: string): string[] {
-  const names: string[] = [];
-  PAGE_ROLE_SET_MEMBER.lastIndex = 0;
-  let member: RegExpExecArray | null;
-  while ((member = PAGE_ROLE_SET_MEMBER.exec(body))) names.push(member[1]!);
-  return names;
-}
-
-/** Every hard-coded admit-list the page's entry gate tests `access.role` against. */
-function roleSetGates(source: string): string[][] {
-  const bindings = new Map<string, string[]>();
-  PAGE_ROLE_SET_BINDING.lastIndex = 0;
-  let binding: RegExpExecArray | null;
-  while ((binding = PAGE_ROLE_SET_BINDING.exec(source))) {
-    const names = literalStrings(binding[2]!);
-    if (names.length) bindings.set(binding[1]!, names);
-  }
-
-  const gates: string[][] = [];
-  PAGE_ROLE_SET_USE.lastIndex = 0;
-  let use: RegExpExecArray | null;
-  while ((use = PAGE_ROLE_SET_USE.exec(source))) {
-    const names = bindings.get(use[1]!);
-    if (names) gates.push(names);
-  }
-  PAGE_ROLE_SET_INLINE.lastIndex = 0;
-  let inline: RegExpExecArray | null;
-  while ((inline = PAGE_ROLE_SET_INLINE.exec(source))) {
-    const names = literalStrings(inline[1]!);
-    if (names.length) gates.push(names);
-  }
-  return gates;
-}
 
 /**
  * Pages an HR seat is offered whose entry gate this file cannot read, each hand-verified on
@@ -311,20 +205,16 @@ const GATE_SHAPE_NOT_MACHINE_READABLE: Record<string, string> = {
 };
 
 /**
- * The SHELL gate: `if (resolveNavigationMode(access) === "employee-portal") redirect(...)`. It asks
- * which shell the viewer belongs in, not what they may do, so it is satisfied or not by the seat's
- * role alone — and this file settles it by CALLING resolveNavigationMode rather than assuming both
- * seats are admin-shell roles. If either ever stopped being one, every page carrying this line would
- * close at once and the sidebar would go on offering all of them.
+ * The SHELL gate (`isShellGated`) asks which shell the viewer belongs in, not what they may do, so
+ * it is satisfied or not by the seat's role alone — and this file settles it by CALLING
+ * resolveNavigationMode rather than assuming both seats are admin-shell roles. If either ever
+ * stopped being one, every page carrying that line would close at once and the sidebar would go on
+ * offering all of them.
+ *
+ * `hasEntryExit` is what separates "carries no entry gate at all" from "gated in a shape the reader
+ * cannot parse". A page with no redirect and no notFound is not a defect: the admin shell is the
+ * gate for those, and the row only renders for a seat the navigation already admitted.
  */
-const PAGE_SHELL_GATE = /resolveNavigationMode\(\s*access\s*\)\s*===\s*"employee-portal"/;
-
-/**
- * Pages offered to an HR seat that carry NO entry gate at all — no redirect, no notFound. Not a
- * defect and not an omission to chase: the admin shell itself is the gate for these, and the row
- * only renders for a seat the navigation already admitted.
- */
-const PAGE_ENTRY_EXIT = /\b(?:redirect|notFound)\(/;
 
 export async function runHrSeatRouteCoherenceTests() {
   const apiRoot = path.join(REPO_ROOT, "app", "api");
@@ -445,17 +335,12 @@ export async function runHrSeatRouteCoherenceTests() {
       }
       const source = readFileSync(file, "utf8");
 
-      const needs = new Set<string>();
-      for (const re of [PAGE_ENTRY_GATE, PAGE_ENTRY_ASSERT]) {
-        re.lastIndex = 0;
-        let match: RegExpExecArray | null;
-        while ((match = re.exec(source))) needs.add(`${match[1]}:${match[2]}`);
-      }
+      const needs = permissionGateKeys(source);
 
       // A role-set gate admits by NAME, so the seat is either in the literal or it is redirected.
       const roleSets = roleSetGates(source);
 
-      const shellGated = PAGE_SHELL_GATE.test(source);
+      const shellGated = isShellGated(source);
       if (shellGated && resolveNavigationMode(accessFor(seat)) === "employee-portal") {
         navFailures.push(
           `${seat}: "${row.label}" (${row.href}) is in the sidebar, but the page sends anyone whose ` +
@@ -467,7 +352,7 @@ export async function runHrSeatRouteCoherenceTests() {
       // predicate gate underneath (probation does), so letting it satisfy the classification would
       // quietly drop that page out of the hand-verified list while its real gate stayed unread.
       if (needs.size || roleSets.length) gatedPages += 1;
-      else if (PAGE_ENTRY_EXIT.test(source)) unreadable.add(row.href);
+      else if (hasEntryExit(source)) unreadable.add(row.href);
 
       const missing = [...needs].filter((key) => !keys.has(key));
       if (missing.length) {

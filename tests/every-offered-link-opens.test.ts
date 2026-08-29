@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { existsSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 
 import { getNavigationSections } from "../src/config/system-navigation.ts";
 import { getSections, type PermissionLookup } from "../src/lib/navigation/active-path.ts";
@@ -18,6 +19,10 @@ import {
   resolveEmployeePortalNavVisibility,
   type EmployeePortalNavVisibility,
 } from "../src/lib/employee-portal/navigation.ts";
+import {
+  pageFileFor as resolvePageFile,
+  permissionGateKeys,
+} from "./support/page-gate-reader.ts";
 
 /**
  * EVERY LINK A ROLE IS OFFERED MUST OPEN FOR THAT ROLE.
@@ -147,30 +152,35 @@ function portalOfferedHrefs(role: PhoenixRole, registry: readonly PortalEntry[])
  * Resolve a nav href to the page file serving it. `(admin)` is a route group: part of the path
  * on disk, absent from the URL. Everything else maps directly under app/.
  */
+const REPO_ROOT = path.resolve(import.meta.dirname, "..");
+
 function pageFileFor(href: string): string | null {
-  if (!href.startsWith("/")) return null;
-  return [`app/(admin)${href}/page.tsx`, `app${href}/page.tsx`].find((candidate) => existsSync(candidate)) ?? null;
+  return resolvePageFile(href, { repoRoot: REPO_ROOT });
 }
 
 /**
- * Extract the unconditional page-scope gates. Anchored to two-space indentation on purpose:
- * that is the body of the exported page function. A deeper indent means the gate sits inside a
- * branch this reader cannot evaluate, so it is deliberately not treated as unconditional.
+ * Extract the page-scope entry gates, via the SHARED reader in tests/support/page-gate-reader.ts.
+ *
+ * This function used to carry its own patterns, and they were weaker than the ones in
+ * hr-seat-route-coherence.test.ts in two ways: they matched `!await canAccess(` but not the
+ * `!(await canAccess(…))` form this codebase actually writes, and they anchored to a two-space
+ * indent so a gate one level deeper was dropped. Measured on 2026-08-29 across the 377 page files:
+ * this reader saw a gate on 86 pages, the shared one sees 157.
+ *
+ * That gap mattered here more than anywhere, because of the DIRECTION of the miss. A gate this
+ * function cannot see becomes an empty grant list, and an empty grant list means "no role can be
+ * bounced by this page" — so 72 gated pages were being reported as safe for every role without
+ * anything ever being checked. The test was green on them because it had nothing to compare.
  */
 function requiredGrantsFor(file: string): RequiredGrant[] {
   const source = readFileSync(file, "utf8");
   const grants: RequiredGrant[] = [];
-  const patterns = [
-    /^ {2}await assertPermission\(\s*[A-Za-z_$][\w$]*\s*,\s*"([a-z_]+)"\s*,\s*"([a-z_]+)"/gm,
-    /^ {2}if \(!await canAccess\(\s*[A-Za-z_$][\w$]*\s*,\s*"([a-z_]+)"\s*,\s*"([a-z_]+)"/gm,
-  ];
-  for (const pattern of patterns) {
-    for (const [, resource, action] of source.matchAll(pattern)) {
-      // Anything outside the real unions is ignored: a renamed resource must surface as a type
-      // error in the source, never as a silent miss here.
-      if (resourceSet.has(resource) && actionSet.has(action)) {
-        grants.push({ resource: resource as PermissionResource, action: action as PermissionAction });
-      }
+  for (const key of permissionGateKeys(source)) {
+    const [resource, action] = key.split(":");
+    // Anything outside the real unions is ignored: a renamed resource must surface as a type
+    // error in the source, never as a silent miss here.
+    if (resource && action && resourceSet.has(resource) && actionSet.has(action)) {
+      grants.push({ resource: resource as PermissionResource, action: action as PermissionAction });
     }
   }
   return grants;
@@ -215,7 +225,8 @@ export function runEveryOfferedLinkOpensTests() {
         if (!roleHolds(role, grant)) {
           deadLinks.push(
             `${role} (${mode}) is offered ${href} — the page demands ` +
-              `${grant.resource}:${grant.action}, which ${role} does not hold  [${file}]`,
+              `${grant.resource}:${grant.action}, which ${role} does not hold  ` +
+              `[${path.relative(REPO_ROOT, file).split(path.sep).join("/")}]`,
           );
         }
       }

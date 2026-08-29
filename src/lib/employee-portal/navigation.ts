@@ -459,13 +459,29 @@ export function resolveEmployeePortalNavVisibility(
     // there — the missing `vacancies` grant (added to defaultPermissionMatrix) and this flag were
     // the only two things keeping it unreachable. Same shape as the Probation/Organogram/Team
     // Coaching RM fixes above.
+    //
+    // "Manager" is excluded for the same reason showMyCandidatesTab below excludes it, and the
+    // exclusion has to be written out because it arrives here indirectly: line 292 folds Manager
+    // into isDistrictManager, which is showTeamPerformanceTab, which is the first disjunct above.
+    // Manager is the one manager-tier role holding no `vacancies` grant at all, so the page's own
+    // `canAccess(access, "vacancies", "read")` gate redirected it on arrival — a rail row that
+    // bounced. Found 2026-08-29 by every-offered-link-opens.test.ts, once it was reading gates
+    // through tests/support/page-gate-reader.ts; its own parser could not see that gate's shape.
+    //
+    // Removing the row rather than granting the permission is what the matrix says to do: Manager
+    // is a strict SUBSET of District Manager — measured the same day, it holds 0 permissions DM
+    // lacks, while DM holds 6 resources it lacks (crm_plans, direct_orders, early_birds,
+    // organogram, vacancies, weekly_sales) and strictly more actions on 3 others. A difference
+    // that runs one way on every single resource is a deliberate narrowing, not an oversight, so
+    // `vacancies` is withheld on purpose and granting it here would widen real access.
     showVacanciesTab:
-      showTeamPerformanceTab ||
-      showMedRepsPerformanceTab ||
-      isRegionalManager ||
-      isProductManager ||
-      isGroupProductManager ||
-      isMarketingManager,
+      (showTeamPerformanceTab ||
+        showMedRepsPerformanceTab ||
+        isRegionalManager ||
+        isProductManager ||
+        isGroupProductManager ||
+        isMarketingManager) &&
+      resolvedRole !== "Manager",
     // Mirrors the roles that actually hold `hiring_interviews: ["read","update"]` in
     // defaultPermissionMatrix (the page's own canAccess gate is the enforcing check), and the same
     // set the command-palette entry in system-navigation.ts already declares. "Manager" is
