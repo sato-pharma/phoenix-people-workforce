@@ -188,4 +188,56 @@ export async function runExpenseClaimsRefreshTests() {
       "the interlock must be raised BEFORE the delete — after it, the linkage is already gone",
     );
   }
+
+  // A DELETE with no WHERE clause is unrunnable through PostgREST — and ONLY through PostgREST.
+  //
+  // PostgREST connects as `authenticator`, which on this project preloads the `safeupdate` library
+  // (measured: session_preload_libraries = "supautils, safeupdate"). It refuses any unqualified
+  // DELETE or UPDATE. A direct SQL session does NOT preload it, so a bare delete here works in
+  // psql, in the Supabase SQL editor and over MCP — every way a human has ever run this function —
+  // while failing on every single scheduled call with `DELETE requires a WHERE clause`.
+  //
+  // That is not hypothetical: it is what the first production request after the cron route shipped
+  // did, at 2026-08-29 18:25:35.711 UTC. The route reported an opaque 500 and the mirror silently
+  // went un-rebuilt. SECURITY DEFINER does not rescue it — the library is preloaded per SESSION,
+  // not per function owner.
+  //
+  // `authenticator` also carries statement_timeout = 8s, and that cap applies on the HTTP path
+  // alone, so the function must set its own or it will keep working by hand while failing hourly
+  // the moment the rebuild outgrows eight seconds.
+  {
+    const migrationsDir = new URL("../supabase/migrations/", import.meta.url);
+    const newest = readdirSync(migrationsDir)
+      .filter((name) => name.endsWith(".sql"))
+      .sort()
+      .map((name) => ({ name, sql: readFileSync(new URL(name, migrationsDir), "utf8") }))
+      .filter((file) => file.sql.includes("function public.phx_refresh_expense_claims"))
+      .pop();
+
+    assert(newest, "at least one migration must define phx_refresh_expense_claims");
+
+    const bareDeletes = newest.sql
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => /^delete\s+from\s+[\w.]+\s*;$/i.test(line));
+
+    assert.deepEqual(
+      bareDeletes,
+      [],
+      `${newest.name} issues DELETE(s) with no WHERE clause, which PostgREST's authenticator role refuses outright: ${bareDeletes.join(" | ")}`,
+    );
+
+    // Scan real DDL lines, not the whole file. This migration EXPLAINS the clause in its header
+    // comment, so a plain substring search over the source also passes on a migration that merely
+    // mentions statement_timeout without actually setting it — measured: deleting the real clause
+    // left that weaker check green.
+    const setsTimeout = newest.sql
+      .split("\n")
+      .some((line) => !line.trim().startsWith("--") && /^\s*set\s+statement_timeout\s+to\b/i.test(line));
+
+    assert(
+      setsTimeout,
+      `${newest.name} must set its own statement_timeout — authenticator caps statements at 8s, and only on the HTTP path`,
+    );
+  }
 }
