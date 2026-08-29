@@ -923,14 +923,36 @@ function recommendFingerprint(
  * (see DEDUCTION_DETAIL_COLUMNS in step-definitions.ts). Built from the same
  * lines the bucket total was summed from, so the panel always foots to the row.
  */
+/**
+ * The line's own reason, plus the arithmetic when the charge is not simply one-day-per-date.
+ *
+ * Without this the breakdown shows 3.5 days against 4 dates and says nothing about the gap, which
+ * is the state the owner hit on 2026-08-30: two screens quoting different numbers for the same
+ * span and no way to tell from either which one was right. Today the only cause is his own
+ * 2026-08-02 rule that Thursday is a half day.
+ */
+function deductionLineReason(line: DeductionLine): string {
+  const base = line.reason || "—";
+  if (line.chargeableDays === line.days) return base;
+  const suffix = `${line.days} days flagged, ${line.chargeableDays} chargeable — Thursday is a half day`;
+  return base === "—" ? suffix : `${base} · ${suffix}`;
+}
+
 function deductionDetailLines(lines: DeductionLine[]): StepRowDetail[] {
   return lines.map((line) => ({
     Category: deductionsCategoryLabel(line.category),
     Dates: line.dates.length ? formatDateRange(line.dates[0], line.dates[line.dates.length - 1]) : "—",
-    Days: line.days,
+    // The CHARGEABLE count, because this column sits beside Amount and a reader checks one
+    // against the other. Showing the flagged count here instead makes correct money look wrong:
+    // 4 days beside a 3.5-day charge reads as an error in the amount.
+    //
+    // It stays a bare number on purpose — this column is numeric and the owner's standing rule
+    // is that nothing in the UI wraps or truncates, so the explanation goes to Reason, which is
+    // already prose, and only when there is something to explain.
+    Days: line.chargeableDays,
     Amount: line.amount,
     Status: line.status,
-    Reason: line.reason || "—",
+    Reason: deductionLineReason(line),
   }));
 }
 
@@ -1429,7 +1451,10 @@ function recommendCrm(
     const draft = drafts.get(member.compact);
     if (value === 0 && draft?.crm == null) continue;
 
-    const days = roundCurrency(lines.reduce((sum, line) => sum + line.days, 0));
+    // CHARGEABLE days — this field carries `autoCalcMoneyKey: "crm"`, so the moment anyone
+    // touches the row the amount is recomputed as day-rate x this number. The flagged count
+    // would charge a Thursday in full and silently overwrite the module's weighted amount.
+    const days = roundCurrency(lines.reduce((sum, line) => sum + line.chargeableDays, 0));
     const row = baseRow(member);
     row.context = {
       "Hire Date": member.employee.hireDate ?? "",
@@ -1615,7 +1640,10 @@ function recommendP1Crm(
     // retyping a figure they had already confirmed elsewhere.
     const lines = linesFor(deductions, member.compact, "crm");
     const confirmedValue = roundCurrency(deductions.get(member.compact)?.buckets.crm ?? 0);
-    const confirmedDays = roundCurrency(lines.reduce((sum, line) => sum + line.days, 0));
+    // CHARGEABLE days — `p1odCrmDays` carries `autoCalcMoneyKey: "p1odCrmValue"`, so this number
+    // becomes the money multiplier as soon as the row is edited. Same Thursday weighting the
+    // module already applied when it priced the candidate.
+    const confirmedDays = roundCurrency(lines.reduce((sum, line) => sum + line.chargeableDays, 0));
 
     const nonWorkingDays = pick(draft?.p1odCrmDays, confirmedDays);
     row.recommended = {
@@ -1722,15 +1750,25 @@ function recommendResignationCrm(
     // working days, but a leaver's settlement is the one place an off-by-one
     // cannot be corrected afterwards, so the cap stays as a final guard.
     const crmLines = linesFor(deductions, member.compact, "crm");
+    // CHARGEABLE days, not flagged days. The module weights a Thursday at half (owner rule
+    // 2026-08-02) when it prices the candidate; this figure is what the day rate below gets
+    // multiplied by, so reading the unweighted count charged a Thursday in full. B-3, August
+    // 2026: 4 flagged days (Wed 5, Thu 6, Sat 8, Sun 9) = 3.5 chargeable.
     const recommendedNonWorking = Math.min(
       daysWorked,
-      roundCurrency(crmLines.reduce((sum, line) => sum + line.days, 0)),
+      roundCurrency(crmLines.reduce((sum, line) => sum + line.chargeableDays, 0)),
     );
-    // The module's own confirmed amount is the money; the day-rate formula is
-    // only the fallback when a confirmed line carries no amount of its own.
-    const confirmedCrm = roundCurrency(deductions.get(member.compact)?.buckets.crm ?? 0);
-    const recommendedValue =
-      confirmedCrm > 0 ? confirmedCrm : leaverDayDeduction(basis, recommendedNonWorking);
+    // ONE RATE, ONE SOURCE — and they are different sources on purpose:
+    //   the Deductions module decides WHICH days are chargeable (owner rule 2026-08-04),
+    //   the leaver rule decides what a day is WORTH (owner rule 2026-08-30: "in the CRM, it
+    //   must prorate the net salary").
+    //
+    // This used to hand back the module's own confirmed amount whenever it had one. That amount
+    // is priced off the BASE salary, so the moment a candidate was approved the row showed a
+    // base-rate recommendation beside a net-rate charge — the same figure disagreeing with itself
+    // on one line. Deriving both from the day count is what makes the recommendation and the
+    // charge the same number again.
+    const recommendedValue = leaverDayDeduction(basis, recommendedNonWorking);
 
     // Trust a saved day count only if it is within the valid span. A stored
     // value greater than days worked can only be the old whole-month bug (e.g.

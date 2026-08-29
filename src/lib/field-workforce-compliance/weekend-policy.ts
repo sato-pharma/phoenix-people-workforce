@@ -84,6 +84,30 @@ export function sumFieldWorkforceDeductionDayWeights(
 }
 
 /**
+ * Weighted day-count for dates that have ALREADY passed the weekly-off filter — a STORED
+ * candidate's `dates`, not a raw calendar span.
+ *
+ * Title-free on purpose, and that is the whole reason it exists separately from
+ * `sumFieldWorkforceDeductionDayWeights`. That function needs the title for exactly one decision:
+ * whether a SATURDAY is a working day (it is, but only for a Friday-only title — medical rep,
+ * district manager). A stored date has already been through that test at detection time, and the
+ * consumers here — the payroll wizard's deduction steps — hold no job title at all. Calling the
+ * title-aware version with `undefined` would therefore re-classify every surviving Saturday as a
+ * day off and silently weight it 0, deleting real money from a charge that was correctly raised.
+ * A live example: B-3's August flagged days are Wed 5, Thu 6, Sat 8, Sun 9 — two thirds of that
+ * charge is Saturday and Sunday.
+ *
+ * So the only weight that can legitimately apply to a surviving date is the Thursday half.
+ */
+export function sumDetectedDeductionDayWeights(dates: readonly string[]) {
+  let total = 0;
+  for (const dateIso of dates) total += isFieldWorkforceThursday(dateIso) ? 0.5 : 1;
+  // Half-days only ever produce .0 or .5, so two decimals is exact — this just clears any
+  // floating-point dust before the figure is multiplied by a salary.
+  return Math.round(total * 100) / 100;
+}
+
+/**
  * One date's share expressed in HALF-DAY UNITS (Thursday 1, full day 2, weekly off 0).
  *
  * Lets a breakdown panel split an amount in proportion to each date's weight while reusing the

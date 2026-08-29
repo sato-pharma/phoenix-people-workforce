@@ -4,6 +4,7 @@ import {
 } from "@/lib/deductions/calculations";
 import { listCandidatesForMonth } from "@/lib/deductions/service";
 import type { DeductionsCandidateWithDecision, DeductionsCategory } from "@/lib/deductions/types";
+import { sumDetectedDeductionDayWeights } from "@/lib/field-workforce-compliance/weekend-policy";
 import { logError } from "@/lib/observability/log";
 import { roundCurrency } from "@/lib/payroll/money";
 
@@ -113,7 +114,23 @@ export type DeductionLine = {
   category: DeductionsCategory;
   /** The days actually charged (already narrowed to the reviewer's selection). */
   dates: string[];
+  /**
+   * The number of dates flagged — the EVIDENCE. Four no-activity dates read 4 here whatever
+   * any of them is worth. Display this; never multiply a salary by it.
+   */
   days: number;
+  /**
+   * The same span expressed as CHARGEABLE days — the multiplier the money is derived from.
+   * Differs from `days` whenever a flagged date is worth less than a whole one, which today
+   * means a Thursday (the owner's 2026-08-02 half-day rule).
+   *
+   * The two are separate because the module keeps evidence and charge separately auditable, and
+   * the payroll wizard needs the charge: every CRM day field on the sheet drives an
+   * `autoCalcMoneyKey`, so whatever number sits in it gets multiplied by a day rate the moment
+   * anyone touches the row. Feeding it `days` charges a Thursday as a full day — measured across
+   * August 2026's seven CRM candidates, 1,758.06 EGP of over-deduction against six leavers.
+   */
+  chargeableDays: number;
   amount: number;
   reason: string;
   status: string;
@@ -207,6 +224,36 @@ export function chargedDeductionDays(candidate: DeductionsCandidateWithDecision)
 }
 
 /**
+ * The same candidate expressed in CHARGEABLE days — what a day rate may be multiplied by.
+ *
+ * `chargedDeductionDays` counts flagged days; this weights them. Today the only weight is the
+ * owner's 2026-08-02 rule that THURSDAY IS A HALF DAY for the field workforce ("thursday am or
+ * meeting or health day only"), which the CRM connector already applies when it prices
+ * `estimatedAmount` — see `buildLeaverCrmCandidate`. Payroll never did, so the module and the
+ * sheet disagreed about the same span: August 2026's B-3 was 4 flagged days priced by the module
+ * at 3.5 and by the wizard at 4.
+ *
+ * SCOPED TO CRM DELIBERATELY. The Thursday half-day is a field-workforce ACTIVITY rule — it says a
+ * rep is only expected to be in the field for half of a Thursday. It says nothing about a
+ * fingerprint/attendance day, an unpaid vacation day, or a loan instalment, and halving one of
+ * those would invent a discount nobody granted. Widen this only on an explicit owner rule.
+ *
+ * An explicitly stated `appliedValue` still wins, unweighted: that is a number a human typed after
+ * looking at the row, and second-guessing it is how a reviewer's correction gets silently halved.
+ */
+export function chargeableDeductionDays(candidate: DeductionsCandidateWithDecision): number {
+  const stated = candidate.decision?.appliedValue;
+  if (stated != null && Number.isFinite(stated)) return stated;
+  if (candidate.category !== "crm") return chargedDeductionDays(candidate);
+
+  const kept = resolveAppliedDeductionDates(candidate);
+  // No dates to weigh — a candidate carrying a day count but no calendar (hand-entered, or a
+  // connector that reports a total). Fall back rather than returning a confident 0.
+  if (kept.length === 0) return chargedDeductionDays(candidate);
+  return sumDetectedDeductionDayWeights(kept);
+}
+
+/**
  * One candidate's payable amount. Returns 0 rather than null for an
  * unresolvable row: the candidate passed the module's eligibility gate, so it
  * belongs on the sheet, and a null here would silently drop it instead.
@@ -252,6 +299,7 @@ export function buildDeductionBuckets(
       // and the step sums these into the Deduction Days column, so a 0.13-day
       // late arrival must not be reported to HR as a whole day off.
       days: candidate.unit === "days" ? chargedDeductionDays(candidate) : 0,
+      chargeableDays: candidate.unit === "days" ? chargeableDeductionDays(candidate) : 0,
       amount,
       reason: candidate.reason ?? "",
       status: candidate.decision?.decisionStatus ?? "Pending",
