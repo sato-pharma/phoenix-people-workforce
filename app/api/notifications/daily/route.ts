@@ -10,7 +10,6 @@ import { runHolidayConfirmationReminder } from "@/app/api/notifications/holiday-
 import { runVacationSlaDaily } from "@/lib/vacation/service";
 import { runFieldWorkforceComplianceDeductionsAutoSync } from "@/lib/deductions-governance/connectors/field-workforce-compliance";
 import { backfillMissingMarketingAssignmentEmails, runMarketingSlaDaily } from "@/lib/marketing-requests/service";
-import { runMarketingFieldCaptureNudge } from "@/lib/marketing-requests/field-capture-backlog";
 import { runRecruitmentDailyNotifications } from "@/lib/recruitment/notifications";
 import { expireStaleHeldNotifications } from "@/lib/notifications/confidence-gate";
 import { remindHeldNotifications } from "@/lib/notifications/held-notification-alert";
@@ -82,6 +81,14 @@ async function runDailyNotifications(request: Request) {
     holidayConfirmationResponse,
     vacationSla,
     marketingSla,
+    // Was MISSING until 2026-08-29, which had silently re-broken the same off-by-one the
+    // comment above records from 2026-07-18. This entry exists in the Promise.all — the
+    // marketing assignment backfill, added by #2211 — but carried no name here, so every
+    // result from this position down was captured one place off: `recruitment` actually held
+    // the backfill, `telegramDigest` held recruitment, and the last two entries fell off the
+    // end of the list entirely. The jobs themselves always ran (each has its own .catch());
+    // only this diagnostic JSON reported the wrong one.
+    marketingAssignmentBackfill,
     recruitment,
     telegramDigest,
     weeklySystemHealthDigest,
@@ -103,7 +110,6 @@ async function runDailyNotifications(request: Request) {
     notificationRetention,
     activityRetention,
     sosMonthlyReportCheck,
-    marketingFieldCapture,
     // Must stay LAST and in the same position as its Promise.all entry — the 2026-07-18
     // off-by-one noted above happened exactly here, by adding a job without its name.
     heldNotificationReminder,
@@ -210,20 +216,6 @@ async function runDailyNotifications(request: Request) {
         errors: [{ period: "unknown", error: message }],
       })),
     ),
-    // Tells each rep which of THEIR marketing customers still show a validated status with no
-    // field capture behind them (139 customers to 64 people, measured 2026-08-24). Reuses the badge's own
-    // `customerFieldEvidenceGap`, so the list a rep is sent can never disagree with the badge he
-    // sees. In-app/Telegram/push only — bulk email is never fired from this system, and 64
-    // recipients is bulk by any reading.
-    runMarketingFieldCaptureNudge().catch(
-      onJobFailure("daily-marketing-field-capture", (message) => ({
-        customersCovered: 0,
-        notified: 0,
-        skipped: 0,
-        unassignedCustomers: 0,
-        error: message,
-      })),
-    ),
     // Keeps asking while any email sits held at /admin/notification-confidence. The hold-time
     // alert fires once and never repeats, which is how 30 held emails — including 8 password
     // resets and 4 account-setup links — went undelivered for up to 15 days (measured
@@ -250,8 +242,8 @@ async function runDailyNotifications(request: Request) {
   // the dead-man's-switch ping (which only proves the route executed) — is the signal to alert on:
   // `event="cron_run_summary" job="notifications/daily" failedCount>0`.
   // Hand-maintained: bump this whenever a sub-job is added above, or the run summary silently
-  // under-reports (25 since held-notification-expiry joined on 2026-08-28).
-  const totalJobs = 25;
+  // under-reports (24 since the marketing field-capture nudge moved to its own cron on 2026-08-29).
+  const totalJobs = 24;
   if (failures.length > 0) {
     logError(
       `Daily notification run completed with ${failures.length} of ${totalJobs} sub-job(s) FAILED: ${failures.map((f) => f.job).join(", ")}`,
@@ -293,7 +285,7 @@ async function runDailyNotifications(request: Request) {
     fieldWorkforceComplianceDeductionsAutoSync,
     heldNotificationReminder,
     holidayConfirmation,
-    marketingFieldCapture,
+    marketingAssignmentBackfill,
     marketingSla,
     notificationRetention,
     outstationGeocodeWarmup,
