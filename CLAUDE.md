@@ -89,9 +89,10 @@ owner approves that specific change in the conversation.
 
 **This lock is now behavioral ONLY — no prompt backs it any more.** On 2026-08-14 the owner
 instructed that `permissions.ask` be emptied in `.claude/settings.json` (the `deny` list was cleared
-that day too, then its one block on the untrusted `mcp__b345e47e-…` connector restored per
-AGENTS.md §8 — a silent hard block, not a prompt), so the three file paths above no longer have an
-entry there and **no dialog will fire on any of them.** (`office-allocation.ts` was never in that
+that day too, then restored per AGENTS.md §8 — it holds TWO entries, not one: the untrusted
+`mcp__b345e47e-…` connector and, since 2026-08-23, the owner's own `mcp__45bb6356-…` one, both
+verified live 2026-08-29. A `deny` is a silent hard block, not a prompt), so the three
+file paths above no longer have an entry there and **no dialog will fire on any of them.** (`office-allocation.ts` was never in that
 list — it has the CI lock instead, which is untouched and still turns a PR red.) `permissions.defaultMode` is **`auto`** in user-level settings,
 read live 2026-08-14, and auto mode auto-approves a great deal on its own. So nothing except the
 agent's own compliance now stands between a request and an edit to a protected file. **Never read
