@@ -846,6 +846,15 @@ export async function countCandidatesForMonth(input: {
 }
 
 /**
+ * The month the unified Deductions module became the system of record — the first month it holds
+ * HR-decided candidates (production has none before it). From here on the module owns every month,
+ * so `describeUnifiedDeductionsConflict` refuses the legacy sheet path for these months structurally,
+ * not merely when candidate rows happen to exist yet. `YYYY-MM`, compared lexically — safe because the
+ * month is zero-padded, so string order matches chronological order across years.
+ */
+export const DEDUCTIONS_CUTOVER_MONTH_KEY = "2026-07";
+
+/**
  * Guard for a payroll path that does NOT read this module.
  *
  * WHY. Two deduction systems shipped side by side with table names one letter apart —
@@ -856,9 +865,13 @@ export async function countCandidatesForMonth(input: {
  * HR actually approved here. `startRun` refuses once a salary batch exists for the period — but no
  * July batch exists, so today nothing refuses.
  *
- * Returns a human-readable refusal when this module holds live candidates for the period (HR is
- * working here, so this module is the system of record for that month), or null when there is
- * nothing to conflict with.
+ * Refusal has TWO tiers. From the cutover month (`DEDUCTIONS_CUTOVER_MONTH_KEY`) onward this module
+ * is the system of record for EVERY month, so the legacy sheet path is refused STRUCTURALLY — whether
+ * or not that month's collection has run yet. The old row-count-only rule could not do this: an
+ * untouched cutover month (the state on the 1st, before collection) counts zero live candidates and
+ * would wave the legacy sheet through in exactly the window it is most dangerous. For pre-cutover
+ * months, which predate this module, the row-count rule stands as a safety net — refuse only if a
+ * candidate was ever backfilled there, otherwise there is genuinely nothing to conflict with.
  *
  * DELIBERATELY NOT APPLIED to Automated Payroll's own publish path: that one already reads this
  * module through `loadConfirmedDeductions`, and it never reads `deductions_publications` at all —
@@ -871,6 +884,21 @@ export async function describeUnifiedDeductionsConflict(input: {
   year: number;
 }): Promise<string | null> {
   const monthKey = normalizeMonthKey(`${input.year}-${String(input.month).padStart(2, "0")}`);
+
+  // Structural refusal (mossy-ocean C4). Month keys are zero-padded `YYYY-MM`, so a lexical `>=`
+  // orders them correctly across years. From the cutover the module owns the month unconditionally,
+  // so an empty September must refuse just as a populated July does.
+  if (monthKey >= DEDUCTIONS_CUTOVER_MONTH_KEY) {
+    return (
+      `The Deductions module is the system of record for ${monthKey} — every month from ` +
+      `${DEDUCTIONS_CUTOVER_MONTH_KEY} onward is decided there, whether or not its collection has run. ` +
+      "This screen reads the older deductions tables, so generating a sheet here would charge figures " +
+      "that were never reviewed in the Deductions workspace. Use Automated Payroll for this month."
+    );
+  }
+
+  // Pre-cutover safety net: those months predate the module and legacy was legitimate there, but
+  // still refuse if a candidate was ever backfilled into this module for one of them.
   const liveCandidates = await countCandidatesForMonth({ monthKey });
   if (liveCandidates === 0) return null;
   return (
