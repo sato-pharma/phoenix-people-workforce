@@ -20,6 +20,13 @@
  * It also aged badly. Sharkia 1 (`D24`) and Sharkia 2 (`D25`) move INTO Delta (3) on 2026-09-01,
  * so from that date the old wording carved a hole out of the middle of a Delta 3 rep's own patch.
  *
+ * PLAIN WORDS ON PURPOSE. The clause says "daily allowance", not "per-diem". The owner read the
+ * first version and asked what per diem meant — which settles it: a job candidate reading their own
+ * offer has less context than he does, and a term somebody has to look up is a term that does not
+ * belong on a letter they are being asked to sign. The engine calls the same thing an allowance,
+ * so the plain wording matches the screens as well. The RULE is unchanged: a flat daily amount,
+ * paid without receipts, distinct from the real costs that are still reimbursed.
+ *
  * THE FIX IS THE IMPORTS, NOT THE WORDS. The distance and the excluded governorate are read from
  * the engine's own constants, so the letter cannot claim a threshold the engine does not enforce.
  * Change the policy minimum in one place and every offer letter says the new number. The clause is
@@ -42,4 +49,4 @@ export const OFFER_OUTSTATION_CLAUSE_TEXT =
   + `travel exceeding ${OFFICIAL_OUTSTATION_MINIMUM_DISTANCE_KM} km. Travel to a destination inside `
   + "your own governorate of residence does not qualify. Travel to "
   + `${CAIRO_ALLOWANCE_EXCLUDED_GOVERNORATE} is reimbursed for transport and other actual costs, but `
-  + "does not earn a per-diem allowance.";
+  + "does not earn a daily allowance.";

@@ -100,8 +100,10 @@ export function runOfferOutstationClauseTests() {
     );
     assert.match(
       OFFER_OUTSTATION_CLAUSE_TEXT,
-      /per-diem/i,
-      "the Cairo sentence must say what is actually withheld — the per-diem, not the whole claim",
+      /daily allowance/i,
+      "the Cairo sentence must say what is actually withheld — the daily allowance, not the whole "
+        + "claim — and must say it in plain words: the owner asked what 'per diem' meant, so a "
+        + "candidate signing the letter would have to look it up too",
     );
   }
 
