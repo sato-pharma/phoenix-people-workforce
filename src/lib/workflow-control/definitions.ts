@@ -568,8 +568,11 @@ export const WORKFLOW_CONTROL_DOMAINS: readonly WorkflowControlDomain[] = [
   // token, no expiry job, and no email to the candidate at any point. Owner decision 2026-08-21 —
   // no automatic applicant email; the offer goes out however letters go out today and a recruiter
   // records the answer they were given. `job_offers` / `job_offer_audit_logs` were never created
-  // and are not planned; `src/config/offer-approval.ts` (salary thresholds, CEO caps) still has
-  // zero call sites. The candidate-driven steps below are kept as specification, not description.
+  // and are not planned. `src/config/offer-approval.ts` (salary thresholds, CEO caps, always-approve
+  // roles) was DELETED on 2026-08-29 by owner decision: it had zero call sites since 16 June and only
+  // described an approval chain nobody had agreed to. Approval is one Super-Admin step at any figure;
+  // a threshold chain is a fresh decision if it is ever wanted, not a file to revive.
+  // The candidate-driven steps below are kept as specification, not description.
   {
     key: "offer-hiring",
     name: "Offer & Hiring",
@@ -642,7 +645,7 @@ export const WORKFLOW_CONTROL_DOMAINS: readonly WorkflowControlDomain[] = [
         gaps: [
           "NOT BUILT: nothing candidate-facing — no accept/reject link, no token, and no email to the applicant at any step. Owner decision 2026-08-21: the answer is recorded by the recruiter who heard it.",
           "NOT BUILT: offer_expired is recorded by hand. There is no expiry date on an offer and no job that lapses one.",
-          "src/config/offer-approval.ts (salary thresholds, CEO caps, always-approve roles) still has zero call sites — approval is a single Super-Admin step regardless of the figure.",
+          "BY DESIGN: approval is a single Super-Admin step regardless of the figure — there is no salary threshold, no CEO cap and no Finance step. src/config/offer-approval.ts held exactly that policy, unused, and was deleted 2026-08-29 by owner decision; a threshold chain is a new decision to take, not a file to restore.",
         ],
       },
       {
@@ -687,7 +690,8 @@ export const WORKFLOW_CONTROL_DOMAINS: readonly WorkflowControlDomain[] = [
           },
         ],
         gaps: [
-          "NOT BUILT: nothing converts an accepted offer into an employee, and there is no approver — src/config/offer-approval.ts (salary thresholds, CEO caps, always-approve roles) has zero call sites outside its own file.",
+          "PARTIALLY BUILT: nothing CREATES an employee from an accepted offer and there is no approver step, but the hire itself is wired. The employee is added through the normal HR Add Employee flow first; markApplicationHired (src/lib/recruitment/applications.ts, POST /api/recruitment/applications/[id]/convert) then links the application to that HR_ID, closes the requisition and best-effort seeds probation.",
+          "NOT ENFORCED: that handoff is manual and unchecked in both directions — app_hire does not require an accepted offer to exist, and nothing compares the created employee's job title, salary or start date against the terms the Super Admin approved. An offer approved at one figure can be hired at another, silently.",
         ],
       },
       {
@@ -708,7 +712,7 @@ export const WORKFLOW_CONTROL_DOMAINS: readonly WorkflowControlDomain[] = [
           },
         ],
         gaps: [
-          "NOT BUILT: no offer ever fills a vacancy — seats are opened and closed by the HR employee lifecycle, never by this flow.",
+          "BY DESIGN, NOT RESIDUE: no offer ever fills a vacancy — seats are opened and closed by the HR employee lifecycle, never by this flow. tests/recruitment-vacancy-close-invariant.test.ts pins it: markApplicationHired and the requisition service must not touch position_vacancies, and closeVacancyOnHire (src/lib/employees/vacancy-closer.ts) is the only closer. Wiring this subflow up would turn that suite red — do not 'finish' it.",
         ],
       },
       {
