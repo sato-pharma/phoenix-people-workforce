@@ -683,7 +683,32 @@ Phoenix business rules, and the index line at its cliff is the wrong place for t
   `a-minimized-window-makes-every-browser-test-lie`
 - **Click by TEXT — blind coordinate clicks once fired a real production collection run.**
   `blind-coordinate-clicks-fired-a-production-collection-run`
-- **Dev login is `GET /api/dev-auth?role=`** — it is header-only and the Browser pane cannot use it.
+- **Dev login is `GET /api/dev-auth?role=<Role>`, and it DOES role-switch the Browser pane.** This
+  line said the opposite until 2026-08-29 — "it is header-only and the Browser pane cannot use it" —
+  and that sentence is true only of the SEPARATE `x-phoenix-role` / `x-phoenix-hr-id` request-header
+  path (`isLocalDevHeaderRequest`, gated on `PHOENIX_ENABLE_DEV_AUTH_HEADERS=true`), which the pane
+  genuinely cannot set. The cookie route is a different mechanism: `app/api/dev-auth/route.ts` sets an
+  httpOnly `phoenix_dev_preview` cookie and 302s to the role's landing page, and
+  `accessContextFromDevPreviewToken` is consulted BEFORE the header path — so no proxy and no `hrId`
+  are needed. Measured in the pane on 2026-08-29 by navigating to the URL three times:
+
+  | Navigated to | Landed on | `/admin` links | `/employee-portals` links |
+  | --- | --- | --- | --- |
+  | `?role=Super Admin` | `/admin` | present | — |
+  | `?role=Medical Rep` | `/employee-portals` | 0 | 69 |
+  | `?role=Super Admin` | `/admin` | 79 | 0 |
+
+  So it is a genuine round-trip switch, not merely a first login. The memory file had carried this
+  correction since 2026-08-09 and re-stated it on 2026-08-28; what stayed wrong was its frontmatter
+  `description` and both auto-loaded copies — which is the failure mode AGENTS.md 2.2 warns about,
+  since the description is what decides whether a memory is recalled at all. It also closes the one
+  question that file left explicitly open: a 2026-08-28 attempt left the pane on `/` reading
+  "Loading workspace" and was recorded as proving nothing either way. It proves nothing because that
+  string is a known false signal — `document.body.textContent` read 166,998 chars of real admin
+  content on exactly such a page here. **Role SWEEPS still use the headers**, for the reason stated
+  further up this file: each cookie switch replaces the browser's session, so sweeping N roles
+  through the cookie clobbers it N times. The slug below is now a misnomer; the file it names leads
+  with the correction.
   **A HIDDEN pane also mixes correct rects with 0×0 ones** inside one measuring sweep, so a layout
   reading taken while it is hidden is part real and part garbage. Re-measure with the pane visible;
   do NOT retract the number — the 125px read was REAL and the repo MODEL of it was wrong (#2353).
