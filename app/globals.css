@@ -1007,3 +1007,449 @@ html:has(.admin-shell) {
     animation: none;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   ADMIN SHELL — ONE IDENTITY. Scoped; the employee portal is untouched.
+   ═══════════════════════════════════════════════════════════════════════════
+
+   THE PROBLEM. The admin shell was running four visual identities at once. The
+   `--phx-*` tokens are warm (paper #f7f6f3 is -4 on blue-minus-red, the hairline
+   #e0dcd4 is -12, the accent is orange). Against them sat 12,015 `slate-*`
+   utilities, which are cool (+14 at slate-200), on a cool #F3F6FA ground. Card
+   edge against card edge that is a 26-point temperature swing, which is what
+   reads as "mismatched" — not any one screen being wrong, but two families of
+   grey disagreeing about which way is warm on the same page.
+
+   WHY THIS IS CSS AND NOT A SWEEP. `src/components/admin/admin-design-system.tsx`
+   is not admin-only despite its name: 52 of the employee portal's 114 pages render
+   it (AdminPageHero alone has 130 users, 15 of them portal-reachable). Editing it,
+   or sweeping the slate classes out of the components, would restyle the portal —
+   which the owner has ruled out. Tailwind v4 compiles `bg-slate-50` to
+   `background-color: var(--color-slate-50)`, so redefining that variable under
+   `.admin-shell` retints the admin shell and CANNOT reach the portal: the portal
+   renders under `.employee-portal-shell` (EmployeePortalServerShell), never under
+   `.admin-shell`, which is stamped in exactly two admin-only files — app-shell.tsx
+   and app-shell-loading.tsx. The safety is structural, not a matter of discipline.
+
+   It also fixes the enforcement gap for good. There was no lint rule and no test
+   guarding named palette classes (`tests/design-tokens-contract.test.ts` checks
+   token DEFINITIONS, never usage), which is why #2545 and #2553 each removed
+   thousands of arbitrary hex classes while leaving slate at net zero. A new
+   `text-slate-500` merged tomorrow now renders warm automatically.
+
+   `html:has(.admin-shell)` carries the same values to anything rendered through
+   createPortal(…, document.body) — 16 components do that, and they would otherwise
+   escape the shell and stay cool. That selector is already the established pattern
+   in this file (see the scrollbar rules above).
+
+   The `:not(:has(.employee-portal-shell))` half is not decoration. app/payslips/page.tsx
+   branches between BOTH chromes — <AppShell navigationMode="admin"> on two paths and
+   EmployeePortalChrome on a third — so a document can in principle hold both. Without
+   the guard the document-level rule would win there and repaint the portal subtree warm.
+   Caught by measuring computed styles in a browser, not by reading the selector: the
+   first version of this block turned the portal's slate-500 warm in exactly that case.
+   With the guard, a mixed document warms only the `.admin-shell` subtree, which is right.
+
+   NOTHING BELOW OVERRIDES THE LOCKED RULES. Square corners, the flat-black table
+   header and the orange cell hairline are untouched.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.admin-shell,
+html:has(.admin-shell):not(:has(.employee-portal-shell)) {
+  /* The warm-graphite ramp. Lightness is copied EXACTLY from Tailwind's slate,
+     so every contrast ratio in the admin shell is preserved (measured: no pair
+     moves by more than 0.08). Only hue and chroma change — 257deg (blue) becomes
+     72-92deg (warm), at a chroma that tapers into the darks to match --phx-ink.
+     The result lands on the app's own tokens rather than merely near them:
+     slate-50 -> #fbfaf7 is --phx-surface-2 (#fbfaf8), slate-400 -> #a59f93 sits
+     at --phx-ink-faint's lightness, slate-700 -> #453f37 at --phx-ink-2's. */
+  --color-slate-50 : oklch(98.4% 0.004 92); /* was slate -> #fbfaf7 */
+  --color-slate-100: oklch(96.8% 0.006 90); /* was slate -> #f6f4f0 */
+  --color-slate-200: oklch(92.9% 0.011 86); /* was slate -> #ebe7df */
+  --color-slate-300: oklch(86.9% 0.015 85); /* was slate -> #d8d3c9 */
+  --color-slate-400: oklch(70.4% 0.018 82); /* was slate -> #a59f93 */
+  --color-slate-500: oklch(55.4% 0.019 80); /* was slate -> #797266 */
+  --color-slate-600: oklch(44.6% 0.018 78); /* was slate -> #5a5349 */
+  --color-slate-700: oklch(37.2% 0.016 76); /* was slate -> #453f37 */
+  --color-slate-800: oklch(27.9% 0.013 74); /* was slate -> #2d2822 */
+  --color-slate-900: oklch(20.8% 0.011 73); /* was slate -> #1b1712 */
+  --color-slate-950: oklch(12.9% 0.009 72); /* was slate -> #090704 */
+
+  /* gray / zinc / neutral / stone are the same neutral intent expressed four other
+     ways (74 hits between them against slate's 12,015). Aliasing them onto the one
+     ramp means a future `bg-gray-100` cannot reintroduce a second temperature. */
+  --color-gray-50 : var(--color-slate-50);
+  --color-gray-100: var(--color-slate-100);
+  --color-gray-200: var(--color-slate-200);
+  --color-gray-300: var(--color-slate-300);
+  --color-gray-400: var(--color-slate-400);
+  --color-gray-500: var(--color-slate-500);
+  --color-gray-600: var(--color-slate-600);
+  --color-gray-700: var(--color-slate-700);
+  --color-gray-800: var(--color-slate-800);
+  --color-gray-900: var(--color-slate-900);
+  --color-gray-950: var(--color-slate-950);
+
+  --color-zinc-50 : var(--color-slate-50);
+  --color-zinc-100: var(--color-slate-100);
+  --color-zinc-200: var(--color-slate-200);
+  --color-zinc-300: var(--color-slate-300);
+  --color-zinc-400: var(--color-slate-400);
+  --color-zinc-500: var(--color-slate-500);
+  --color-zinc-600: var(--color-slate-600);
+  --color-zinc-700: var(--color-slate-700);
+  --color-zinc-800: var(--color-slate-800);
+  --color-zinc-900: var(--color-slate-900);
+  --color-zinc-950: var(--color-slate-950);
+
+  --color-neutral-50 : var(--color-slate-50);
+  --color-neutral-100: var(--color-slate-100);
+  --color-neutral-200: var(--color-slate-200);
+  --color-neutral-300: var(--color-slate-300);
+  --color-neutral-400: var(--color-slate-400);
+  --color-neutral-500: var(--color-slate-500);
+  --color-neutral-600: var(--color-slate-600);
+  --color-neutral-700: var(--color-slate-700);
+  --color-neutral-800: var(--color-slate-800);
+  --color-neutral-900: var(--color-slate-900);
+  --color-neutral-950: var(--color-slate-950);
+
+  --color-stone-50 : var(--color-slate-50);
+  --color-stone-100: var(--color-slate-100);
+  --color-stone-200: var(--color-slate-200);
+  --color-stone-300: var(--color-slate-300);
+  --color-stone-400: var(--color-slate-400);
+  --color-stone-500: var(--color-slate-500);
+  --color-stone-600: var(--color-slate-600);
+  --color-stone-700: var(--color-slate-700);
+  --color-stone-800: var(--color-slate-800);
+  --color-stone-900: var(--color-slate-900);
+  --color-stone-950: var(--color-slate-950);
+
+  /* The ink ramp was the other half of the split: --phx-ink and its three
+     companions sit at hue 255-260 (cool) while paper and line sit at 84-91
+     (warm), so the app's own tokens disagreed with each other before any slate
+     class was involved. Same lightness, warm hue — text weight is unchanged. */
+  --phx-ink: oklch(17.2% 0.010 74);
+  --phx-ink-2: oklch(35.8% 0.014 76);
+  --phx-ink-soft: oklch(54.4% 0.017 79);
+  --phx-ink-faint: oklch(70.3% 0.018 82);
+}
+
+/* The ground. `adminShellBackgroundClassName` is the literal `bg-[#F3F6FA]`, an
+   arbitrary value, so the variable remap above cannot reach it — it is the one
+   cool surface that has to be named directly. Warm paper, matching --phx-paper. */
+.admin-shell {
+  background-color: var(--phx-paper) !important;
+}
+
+/* ── NO HORIZONTAL PAGE SCROLL ────────────────────────────────────────────────
+   `overflow-x: clip` on the shell makes a sideways page scroll impossible. It is
+   `clip` rather than `hidden` deliberately: clip does not create a scroll
+   container, so `overflow-y` stays `visible` and every `position: sticky` header
+   in the shell keeps working. Wide content then has to scroll inside its own box
+   rather than dragging the page, which is what the next rule provides — 13
+   components render a <table> with no scrolling wrapper of their own.
+
+   Note what this does NOT do: it never wraps or truncates text. The owner's rule
+   against ellipses and wrapped labels stands, so a wide table scrolls within its
+   frame with every label intact. */
+.admin-shell {
+  overflow-x: clip;
+}
+
+.admin-shell :has(> table) {
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+
+.admin-shell :where(img, svg, video, canvas, iframe) {
+  max-width: 100%;
+}
+
+.admin-shell :where(pre) {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+/* Flex and grid children default to `min-width: auto`, which refuses to shrink
+   below their content — the single commonest way a long cell drags a whole page
+   sideways. `:where()` keeps specificity at zero so any component can override. */
+.admin-shell :where(.flex, .grid) > * {
+  min-width: 0;
+}
+
+/* ── POLISH ───────────────────────────────────────────────────────────────────
+   Figures line up. In a payroll and sales product almost every table column is
+   numeric, and proportional digits make columns of money visibly ragged. */
+.admin-shell :where(table) {
+  font-variant-numeric: tabular-nums;
+}
+
+/* A readable row under the cursor, warm, and quiet enough not to fight the
+   orange hairline. */
+.admin-shell tbody tr {
+  transition: background-color 120ms ease;
+}
+
+.admin-shell tbody tr:hover {
+  background-color: color-mix(in oklab, var(--phx-accent) 5%, transparent);
+}
+
+/* Keyboard focus in the brand accent rather than the browser default. */
+.admin-shell :where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--phx-accent);
+  outline-offset: 2px;
+}
+
+.admin-shell ::selection {
+  background-color: color-mix(in oklab, var(--phx-accent) 24%, transparent);
+  color: var(--phx-ink);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .admin-shell tbody tr {
+    transition: none;
+  }
+}
+
+/* -- The arbitrary-hex residue --------------------------------------------------
+   The variable remap above cannot reach a literal. `border-[#DDE6F1]` compiles straight
+   to `border-color:#DDE6F1` with no variable in between, so 264 hits across 23 blue-cast
+   greys would have stayed cool -- small islands of the old temperature sitting on warm
+   cards, which is more conspicuous than the original uniform coolness. Most of them are
+   input and card hairlines already sitting beside warm tokens (`border-[#D7E0EA]` next
+   to `text-phx-ink-soft` and `hover:bg-phx-paper`), plus dark-hero text sitting beside
+   the orange `#F8B56B` hover. Same rule as the ramp above: OKLCH lightness is preserved
+   exactly and only hue and chroma move, so every contrast ratio survives -- the largest
+   change anywhere in this block is 0.07, which is imperceptible.
+
+   Chroma is damped to 62% and capped at 1.6x the ramp's own chroma at that lightness,
+   because equal chroma reads far stronger at yellow than at blue. Carried over verbatim
+   #1E293B lands on #342613, a brown; damped it lands on #2F271D, warm graphite.
+
+   DELIBERATELY EXCLUDED -- do not "finish the job" by adding these. Saturated cool
+   colours (chroma >= 0.045) are semantic or brand: the link blue #1D4ED8, the success
+   greens, WhatsApp #25D366. So are eight pale tints that look neutral by chroma but are
+   halves of a blue TONE PAIR -- #EFF6FF carries #1D4ED8 text and a #BFDBFE ring, #F0F9FF
+   is the ground inside a #E0F2FE border, #EEF2FF carries #3730A3. Warming one half of a
+   pair and leaving the other is worse than leaving both alone.
+
+   Two mechanical traps, both hit while writing this. Class selectors are case-sensitive
+   and this codebase writes the hex BOTH ways -- `bg-[#FCFDFE]` in admin-design-tokens.ts,
+   `border-[#1f2937]` elsewhere -- so every spelling found in source gets its own selector;
+   matching only the lowercase form silently misses most of these. And `divide-*` compiles
+   to `> :not(:last-child)` in Tailwind 4.3.3, so a divide override written against the
+   element itself paints the wrong box. */
+
+.admin-shell .bg-\[\#020617\] {
+  background-color: #0a0603;
+}
+
+.admin-shell .border-\[\#020617\] {
+  border-color: #0a0603;
+}
+
+.admin-shell .bg-\[\#FCFDFE\] {
+  background-color: #fdfdfc;
+}
+
+.admin-shell .border-\[\#eef1f3\],
+.admin-shell .divide-\[\#eef1f3\] > :not(:last-child) {
+  border-color: #f1f0ef;
+}
+
+.admin-shell .border-\[\#DDE6F1\] {
+  border-color: #e8e5dd;
+}
+
+.admin-shell .bg-\[\#EEF2F7\] {
+  background-color: #f3f1ee;
+}
+
+.admin-shell .border-\[\#EEF2F7\],
+.admin-shell .divide-\[\#EEF2F7\] > :not(:last-child) {
+  border-color: #f3f1ee;
+}
+
+.admin-shell .border-\[\#D7E0EA\] {
+  border-color: #e2dfd7;
+}
+
+.admin-shell .bg-\[\#1E293B\] {
+  background-color: #2f271d;
+}
+
+.admin-shell .border-\[\#1E293B\] {
+  border-color: #2f271d;
+}
+
+.admin-shell .border-\[\#E5EAF1\],
+.admin-shell .divide-\[\#E5EAF1\] > :not(:last-child) {
+  border-color: #ebe9e5;
+}
+
+.admin-shell .text-\[\#D4DDE8\] {
+  color: #dfdcd4;
+}
+
+.admin-shell .border-\[\#E8EDF3\] {
+  border-color: #eeece8;
+}
+
+.admin-shell .border-\[\#d8dee3\] {
+  border-color: #dfddd9;
+}
+
+.admin-shell .bg-\[\#FBFCFD\] {
+  background-color: #fcfcfb;
+}
+
+.admin-shell .border-\[\#1F2937\],
+.admin-shell .border-\[\#1f2937\] {
+  border-color: #2e271e;
+}
+
+.admin-shell .bg-\[\#F3F6FA\] {
+  background-color: #f7f6f3;
+}
+
+.admin-shell .text-\[\#111827\] {
+  color: #1d170f;
+}
+
+.admin-shell .border-\[\#f1f4f6\] {
+  border-color: #f4f3f2;
+}
+
+.admin-shell .bg-\[\#08111f\] {
+  background-color: #151009;
+}
+
+.admin-shell .text-\[\#7C8DA3\] {
+  color: #938a7b;
+}
+
+.admin-shell .text-\[\#5A6B80\] {
+  color: #71685a;
+}
+
+.admin-shell .bg-\[\#070b12\] {
+  background-color: #0e0a06;
+}
+
+.admin-shell .text-\[\#5A6678\] {
+  color: #6b6459;
+}
+
+.admin-shell .bg-\[\#FBFCFE\] {
+  background-color: #fcfcfb;
+}
+
+.admin-shell .border-\[\#EEF2F6\] {
+  border-color: #f3f1ee;
+}
+
+/* -- Chart furniture drawn as SVG presentation attributes ----------------------
+   Recharts writes `<CartesianGrid stroke="#e2e8f0">` and `<text fill="#64748b">` as SVG
+   presentation ATTRIBUTES, not classes, so neither the variable remap nor the class
+   overrides above touch them: 53 gridlines, axis lines and axis labels stayed cool
+   blue on the warm ground. A CSS rule beats a presentation attribute (which carries no
+   specificity at all), so the attribute selector reaches them without editing a single
+   chart -- which matters here, because these components are shared with the employee
+   portal and the `.admin-shell` prefix is what keeps the portal's charts untouched.
+
+   Only neutral greys move, on the same lightness-preserving rule as the ramp. Anything
+   at chroma >= 0.045 is a real data series and is left alone -- recolouring a series
+   changes what a chart MEANS, which is a different and much worse class of bug than an
+   off-temperature gridline. No !important: if a chart ever sets the colour through an
+   inline style instead, the attribute is absent, so this simply does not match.
+
+   These literals are Tailwind v3 hexes, so a value here can land a hair off the ramp's own
+   warm value for the SAME shade -- #94A3B8 is slate-400 but sits at L 71.1, where the v4
+   ramp puts slate-400 at L 70.4. Snapping to the ramp would move lightness by 0.7 and break
+   the one invariant that carries contrast, so each literal is translated from its OWN
+   lightness. The sub-unit difference is imperceptible; do not "unify" them. */
+
+.admin-shell [fill="#cbd5e1"],
+.admin-shell [fill="#CBD5E1"] {
+  fill: #d7d3cb;
+}
+
+.admin-shell [fill="#64748b"],
+.admin-shell [fill="#64748B"] {
+  fill: #7b7263;
+}
+
+.admin-shell [fill="#e2e8f0"],
+.admin-shell [fill="#E2E8F0"] {
+  fill: #eae7e2;
+}
+
+.admin-shell [fill="#94a3b8"],
+.admin-shell [fill="#94A3B8"] {
+  fill: #a9a193;
+}
+
+.admin-shell [stroke="#f1f5f9"],
+.admin-shell [stroke="#F1F5F9"] {
+  stroke: #f6f4f1;
+}
+
+.admin-shell [stroke="#94a3b8"],
+.admin-shell [stroke="#94A3B8"] {
+  stroke: #a9a193;
+}
+
+.admin-shell [stroke="#e2e8f0"],
+.admin-shell [stroke="#E2E8F0"] {
+  stroke: #eae7e2;
+}
+
+.admin-shell [stroke="#0f172a"],
+.admin-shell [stroke="#0F172A"] {
+  stroke: #1d170f;
+}
+
+.admin-shell [stroke="#64748b"],
+.admin-shell [stroke="#64748B"] {
+  stroke: #7b7263;
+}
+
+.admin-shell [stroke="#cbd5e1"],
+.admin-shell [stroke="#CBD5E1"] {
+  stroke: #d7d3cb;
+}
+
+.admin-shell [stroke="#e5e7eb"],
+.admin-shell [stroke="#E5E7EB"] {
+  stroke: #e8e7e4;
+}
+
+.admin-shell [stroke="#eef2f7"],
+.admin-shell [stroke="#EEF2F7"] {
+  stroke: #f3f1ee;
+}
+
+.admin-shell [stroke="#1e293b"],
+.admin-shell [stroke="#1E293B"] {
+  stroke: #2f271d;
+}
+
+/* Gradient stops are furniture too. React writes `stopColor` as the `stop-color` presentation
+   attribute, which the fill/stroke sweep above does not match, so the soft fade under an admin
+   chart line stayed cool slate while its own gridlines went warm -- the mismatch made visible
+   inside a single chart. Same two tests as everything else: neutral only, lightness held. The
+   orange stops (#f97316 and friends, 22 sites) are the brand accent used as a series fill and
+   are deliberately untouched. */
+
+.admin-shell [stop-color="#64748b"],
+.admin-shell [stop-color="#64748B"] {
+  stop-color: #7b7263;
+}
+
+.admin-shell [stop-color="#94a3b8"],
+.admin-shell [stop-color="#94A3B8"] {
+  stop-color: #a9a193;
+}
