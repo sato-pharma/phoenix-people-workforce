@@ -1176,12 +1176,21 @@ function EmployeeSummaryPanel({
             {formatNumberValue(totals.employeeCount)} employees
           </span>
         </div>
+        {/* Both money figures, never one. `claimed` spans every trip on screen; `approved` spans
+            only the approved ones — so a single total here reads as whichever the viewer assumed,
+            and the two are not comparable (their difference is not the trim). Each chip is
+            whitespace-nowrap so a label never breaks mid-phrase; the row itself may wrap. */}
         <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-phx-xs font-bold">
-          <span className="text-amber-300">{formatNumberValue(totals.pendingCount)} pending</span>
-          <span className="text-emerald-300">
+          <span className="whitespace-nowrap text-slate-300">{egp(totals.claimedTotal)} claimed</span>
+          <span className="whitespace-nowrap text-amber-300">
+            {formatNumberValue(totals.pendingCount)} pending
+          </span>
+          <span className="whitespace-nowrap text-emerald-300">
             {formatNumberValue(totals.approvedCount)} approved · {egp(totals.approvedValue)}
           </span>
-          <span className="text-rose-300">{formatNumberValue(totals.rejectedCount)} rejected</span>
+          <span className="whitespace-nowrap text-rose-300">
+            {formatNumberValue(totals.rejectedCount)} rejected
+          </span>
         </div>
       </div>
 

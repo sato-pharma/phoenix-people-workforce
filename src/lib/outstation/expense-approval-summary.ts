@@ -122,12 +122,21 @@ function tripTime(date: string): number {
   return Number.isNaN(parsed.getTime()) ? 0 : parsed.getTime();
 }
 
-/** Company-wide line for the summary header, so the per-person rows have something to add up to. */
+/**
+ * Company-wide line for the summary header, so the per-person rows have something to add up to.
+ *
+ * Carries BOTH money figures on purpose. `claimedTotal` is what staff asked for across every trip;
+ * `approvedValue` is what the approved trips actually pay. A header quoting only one of them is
+ * ambiguous exactly where it matters, and the two are not interchangeable — they cover different
+ * sets of trips, so their difference is NOT the approval trim (the queue's own "below the claim"
+ * card is the figure for that). Showing both side by side is what stops one being read as the other.
+ */
 export function totalExpenseApprovalSummary(
   summaries: ReadonlyArray<ExpenseApprovalEmployeeSummary>,
 ): {
   approvedCount: number;
   approvedValue: number;
+  claimedTotal: number;
   employeeCount: number;
   pendingCount: number;
   rejectedCount: number;
@@ -136,10 +145,18 @@ export function totalExpenseApprovalSummary(
     (running, summary) => ({
       approvedCount: running.approvedCount + summary.approvedCount,
       approvedValue: running.approvedValue + summary.approvedValue,
+      claimedTotal: running.claimedTotal + summary.claimedTotal,
       employeeCount: running.employeeCount + 1,
       pendingCount: running.pendingCount + summary.pendingCount,
       rejectedCount: running.rejectedCount + summary.rejectedCount,
     }),
-    { approvedCount: 0, approvedValue: 0, employeeCount: 0, pendingCount: 0, rejectedCount: 0 },
+    {
+      approvedCount: 0,
+      approvedValue: 0,
+      claimedTotal: 0,
+      employeeCount: 0,
+      pendingCount: 0,
+      rejectedCount: 0,
+    },
   );
 }
