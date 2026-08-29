@@ -212,30 +212,33 @@ jobs:
         # exploitable).
         run: pnpm audit --audit-level=high --prod
 
-      # MEASURED DEAD END, left as-is on purpose. The obvious "fix" here is the documented
-      # Next.js CI pattern: cache `.next/cache` with restore-keys instead of all of `.next`
-      # under an exact key. It was tried on this branch and does NOTHING for this project —
-      # run 30508669485 attempt 2 restored the key successfully and reported
-      # `Cache Size: ~0 MB (37626 B)`: `.next/cache` is essentially EMPTY after `next build`
-      # here (Next 16 does not populate it the way the classic webpack pattern assumes), and
-      # the build was 148s warm vs 143s cold — i.e. no effect. Do not re-attempt without
-      # first checking the restored cache size.
+      # THE .next BUILD CACHE WAS DELETED HERE ON 2026-08-29. Do not re-add it.
       #
-      # The block below is therefore the ORIGINAL. Note it is also effectively dead, just
-      # harmlessly so: the exact-match key hashes app/**+src/**, so it can only hit on a
-      # re-run of an identical commit and misses on every real PR. Making the build faster
-      # needs a different lever (e.g. `next build --turbopack`), which is NOT done here
-      # because it would make CI's build differ from the production Docker build, weakening
-      # the guarantee that a green CI reflects what actually ships.
-      - name: Restore .next build cache
-        if: needs.changes.outputs.docs_only != 'true'
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: .next
-          # Must include every file that can change build output, not just app/src —
-          # a change to next.config.ts or proxy.ts (CSP/security headers!) that isn't
-          # hashed here would silently restore a stale cache instead of rebuilding.
-          key: nextjs-build-${{ hashFiles('app/**', 'src/**', 'public/**', 'pnpm-lock.yaml', 'next.config.ts', 'proxy.ts', 'tailwind.config.ts', 'postcss.config.mjs', 'tsconfig.json') }}
+      # It restored fine, it hit more often than the note that used to sit here claimed, and it
+      # saved nothing. Measured from both directions. The `.next/cache` variant was tried on run
+      # 30508669485 and restored `~0 MB (37626 B)` — Next 16 does not populate that directory the
+      # way the classic webpack pattern assumes — against a build of 148s warm vs 143s cold. The
+      # whole-`.next` variant that lived here got a genuine 221 MB cache HIT on run 33247025928
+      # and the build still took 190s, of which 167s is compilation that no output cache reaches.
+      #
+      # It was not free. It cost 10-15s of every validate run, and — the reason it had to go — its
+      # 221 MB entries had reached 15.92 GB across 74 keys: 97% of a 16.47 GB repository cache
+      # budget, which GitHub evicts least-recently-used. A cache proven to save nothing had all but
+      # taken the budget over, crowding out the pnpm (289 MB) and Playwright browser (269 MB)
+      # caches, which do save time. Count the entries by PAGINATING /actions/caches — the first
+      # reading here said 41 keys / 8.85 GB because it read only the first page of 165, and
+      # /actions/cache/usage is no help: it still reported the pre-purge 16.47 GB long after the
+      # deletions landed. The 74 were purged 2026-08-29, taking the repo from 16.47 GB to 0.56 GB.
+      # Removing it is also strictly safer: a stale restore was the failure mode the old comment
+      # here warned about, and a build that always starts clean cannot have one.
+      #
+      # The only real lever on the 167s is the bundler, and the old objection to it was wrong as
+      # written. `next build --turbopack` was rejected here because it "would make CI's build
+      # differ from the production Docker build" — but the Dockerfile runs `pnpm run build`, the
+      # same script CI runs, so changing that script moves both together and nothing diverges. It
+      # stays undone for a different reason: swapping the production bundler puts
+      # `output: "standalone"` and outputFileTracingIncludes at risk (see the canvas note below),
+      # so it needs a staging deploy and the owner's approval, not a quiet CI edit.
 
       - name: Test
         if: needs.changes.outputs.docs_only != 'true'
