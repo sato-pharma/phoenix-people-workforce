@@ -65,11 +65,28 @@ const expectedByRole: Record<PhoenixRole, {
     isSuperAdmin: true,
     scope: "SUPER_ADMIN",
   },
-  // Both HR seats, and both expected to be IDENTICAL here. The application-layer split gives HR
-  // Advisory recruiting and HR Operations personnel records, but neither is a legacy DB role and
-  // private.phx_current_scope() returns SELF for both, so canManageEmployees stays FALSE even for
-  // the seat that maintains employee records - that authority is application-scoped, enforced by
-  // assertPermission, and never by RLS. Asserting both is what catches someone "fixing" that.
+  // The two HR seats, IDENTICAL here except for `scope`. The application-layer split gives HR
+  // Advisory recruiting and HR Operations personnel records, and neither is a legacy DB role, so
+  // canManageEmployees stays FALSE even for the seat that maintains employee records - that
+  // authority is application-scoped, enforced by assertPermission, and never by RLS. Asserting both
+  // is what catches someone "fixing" that.
+  //
+  // `scope` diverged on 2026-08-29 (#2619, owner's ruling that HR Operations carries company
+  // scope). It is the ONE field that moved, and the reason it moves alone is worth keeping: this
+  // block's other six fields are answered by role-based functions, not scope-based ones -
+  // current_access_can_manage_employees() is `role = 'Super Admin'`,
+  // current_access_can_manage_payroll() is `role in ('Finance Manager','Super Admin')`,
+  // current_access_is_company_reader() is `role in ('CEO','SFE Manager','Super Admin')`, and
+  // current_access_is_hr() is hard-wired `select false`. Only private.phx_current_scope() /
+  // current_access_scope() read user_access_profiles.scope_type, and NO RLS policy calls either
+  // (measured on production 2026-08-29: 402 policies, 0 referencing current_access_scope). So her
+  // DB-layer scope moving to COMPANY_READ widened nothing - if a future field here starts tracking
+  // the scope instead of the role, that is the change to look at twice.
+  //
+  // This expectation is read back from the DATABASE, so the production row has to agree with it:
+  // user_access_profiles.scope_type is written at provisioning by
+  // mapPhoenixRoleToAccessScopeType, and HR-009's row was re-stamped to COMPANY_READ on
+  // 2026-08-29. A seat provisioned before that date keeps whatever it was given.
   "HR Advisory": {
     accessRole: "employee",
     canManageEmployees: false,
@@ -88,7 +105,7 @@ const expectedByRole: Record<PhoenixRole, {
     isFinance: false,
     isHr: false,
     isSuperAdmin: false,
-    scope: "SELF",
+    scope: "COMPANY_READ",
   },
   "Finance Manager": {
     accessRole: "finance",
