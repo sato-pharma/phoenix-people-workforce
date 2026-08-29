@@ -1,34 +1,12 @@
 import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
+import { DEFAULT_STATUTORY_CONFIG } from "./defaults.ts";
 import type { StatutoryConfig, TaxBracket } from "./types.ts";
 
-/**
- * The confirmed 2026 Egyptian parameters (Law 7/2024 brackets + EGP 20,000
- * exemption; Social Insurance Law 148/2019, 2026 caps 2,700 / 16,700). Used as a
- * fallback when the payroll_statutory_config table has no matching row, so the
- * calculator is never left without parameters. The DB row (same values) is the
- * editable source of truth once present.
- */
-export const DEFAULT_STATUTORY_CONFIG: StatutoryConfig = {
-  effectiveFrom: "2026-01-01",
-  personalExemptionAnnual: 20000,
-  disabledExemptionAnnual: 30000,
-  taxBrackets: [
-    { upTo: 40000, rate: 0.0 },
-    { upTo: 55000, rate: 0.1 },
-    { upTo: 70000, rate: 0.15 },
-    { upTo: 200000, rate: 0.2 },
-    { upTo: 400000, rate: 0.225 },
-    { upTo: 1200000, rate: 0.25 },
-    { upTo: null, rate: 0.275 },
-  ],
-  taxableRoundingStep: 10,
-  siEmployeeRate: 0.11,
-  siEmployerRate: 0.1875,
-  siMinMonthlyWage: 2700,
-  siMaxMonthlyWage: 16700,
-};
+/** Re-exported so existing importers keep working; defined in defaults.ts. */
+export { DEFAULT_STATUTORY_CONFIG };
+
 
 function parseBrackets(value: unknown): TaxBracket[] {
   if (!Array.isArray(value)) return DEFAULT_STATUTORY_CONFIG.taxBrackets;

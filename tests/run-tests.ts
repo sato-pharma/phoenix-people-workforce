@@ -725,6 +725,7 @@ import { runApprovalsHubCompletionTests } from "./approvals-hub-completion.test.
 import { runStaleDeployRecoveryTests } from "./stale-deploy-recovery.test.ts";
 import { runPayrollCopilotTests } from "./payroll-copilot.test.ts";
 import { runPayrollStatutoryTests } from "./payroll-statutory.test.ts";
+import { runEmployeeSalaryAutofillTests } from "./employee-salary-autofill.test.ts";
 import { runPayrollCopilotProrationTests } from "./payroll-copilot-proration.test.ts";
 import { runPayrollCopilotDeductionsReviewTests } from "./payroll-copilot-deductions-review.test.ts";
 import { runPayrollCopilotUnifiedDeductionsGuardTests } from "./payroll-copilot-refuses-unified-deductions.test.ts";
@@ -2143,6 +2144,10 @@ await runTest("approvals hub completion (deep-link render + canonical actor + hi
 await runTest("stale-deploy chunk-error recovery", runStaleDeployRecoveryTests);
 await runTest("payroll copilot (assemble + flags + validator + parser)", runPayrollCopilotTests);
 await runTest("payroll statutory (Egypt tax + social insurance)", runPayrollStatutoryTests);
+await runTest(
+  "employee master salary auto-fill (type the net; base/basic/net and the tax stay put, the gross moves)",
+  runEmployeeSalaryAutofillTests,
+);
 await runTest("payroll copilot proration (resignation/joiner/unpaid-leave day-rate rules)", runPayrollCopilotProrationTests);
 await runTest("payroll copilot deductions review (cycle window + month-key resolution)", runPayrollCopilotDeductionsReviewTests);
 await runTest("payroll copilot refuses a sheet while the unified Deductions module owns the month (and Automated Payroll stays ungated)", runPayrollCopilotUnifiedDeductionsGuardTests);
