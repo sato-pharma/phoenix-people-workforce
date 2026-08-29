@@ -71,14 +71,22 @@ export const STEP_DEFINITIONS: Record<StepKey, StepDefinition> = {
       { key: "Hire Date", label: "Hire Date" },
       { key: "Days Worked", label: "Days Worked" },
       // Owner request 2026-08-29: show the FULL month's net beside the prorated
-      // one. A joiner's card previously showed only what he is paid THIS month,
-      // so there was nothing on screen to check it against — now the arithmetic
-      // is visible: Full Month Net / calendar days x Days Worked = This Month
-      // Net. "Net Salary" is the same key the other seven steps already use for
-      // a full month's net; only the LABEL is specialised here, so recommend.ts,
-      // the xlsx template and this grid keep one name per number.
+      // figures. A joiner's card previously showed only what he is paid THIS
+      // month, so there was nothing on screen to check it against — now the
+      // arithmetic is visible: Full Month Net / calendar days x Days Worked =
+      // the Total (month) below. "Net Salary" is the same key the other seven
+      // steps already use for a full month's net; only the LABEL is specialised
+      // here, so recommend.ts, the xlsx template and this grid keep one name per
+      // number.
       { key: "Net Salary", label: "Full Month Net", money: true },
-      { key: "Net (month)", label: "This Month Net", money: true },
+      // There was a second context column here, "This Month Net" (key
+      // "Net (month)"), showing the prorated total. The owner had it removed the
+      // same day the live total below replaced it, and it must NOT come back:
+      // it was a CONTEXT value, computed once on the server, while the grid's
+      // setValue writes only to StepRow.values — so it froze at the figure it
+      // was loaded with and stopped agreeing with the boxes the moment one was
+      // edited. Two lines showing the same quantity, one of them silently stale,
+      // is worse on a payroll screen than one line that is always right.
     ],
     fields: [
       { key: "baseForMonth", label: "Base (month)", kind: "money" },
@@ -90,11 +98,11 @@ export const STEP_DEFINITIONS: Record<StepKey, StepDefinition> = {
     // are what the joiner is actually paid this month; nothing on the card added
     // them up, so a revised set had to be totalled by hand.
     //
-    // It is a live sum of the three boxes, not a context column, so it follows
-    // an edit immediately — "This Month Net" above is computed on the server and
-    // stays at the loaded figure until the step is saved and reloaded. Both
-    // exist on purpose: that one is what is currently SAVED, this one is what
-    // the boxes currently say.
+    // It is a live sum of the three boxes, NOT a context column, and that is the
+    // whole point: context is computed once on the server and never recomputed
+    // as HR types, so a context total would freeze at the loaded figure and stop
+    // agreeing with the boxes exactly when someone is revising them. That is why
+    // the retired "This Month Net" column above is not coming back.
     fieldsTotal: { label: "Total (month)", fieldKeys: ["baseForMonth", "ecolPaid", "fuelPaid"] },
     hasReason: false,
     isHoldStep: false,

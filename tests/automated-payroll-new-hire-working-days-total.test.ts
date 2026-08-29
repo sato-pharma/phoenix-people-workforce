@@ -14,13 +14,13 @@ import type { MonthlySalaryRun, StepRow } from "../src/lib/automated-payroll/typ
  * added them up, so checking a revised set meant adding three numbers by hand.
  *
  * The one thing that makes this total worth having is that it follows an EDIT.
- * "This Month Net" sits above it and shows the same quantity, but it is a
- * CONTEXT value: `StepRow.context` is computed once on the server and the grid's
- * `setValue` writes only to `StepRow.values`, so it freezes at the figure it was
- * loaded with. A total that did the same would agree with the boxes right up
- * until the moment someone edited one — exactly when it is being read. So this
- * test's headline assertion is that the total is summed from `values`, and that
- * it disagrees with a stale context figure rather than echoing it.
+ * A "This Month Net" CONTEXT column used to show the same quantity and was
+ * removed on the owner's instruction the same day: `StepRow.context` is computed
+ * once on the server and the grid's `setValue` writes only to `StepRow.values`,
+ * so it froze at the figure it was loaded with and disagreed with the boxes the
+ * moment one was edited — exactly when it was being read. This total must never
+ * acquire that defect, so the headline assertion here is that it is summed from
+ * the live `values` and MOVES when one of them is edited.
  */
 export async function runAutomatedPayrollNewHireWorkingDaysTotalTests() {
   const definition = STEP_DEFINITIONS.p1_new_hires;
@@ -73,23 +73,34 @@ export async function runAutomatedPayrollNewHireWorkingDaysTotalTests() {
     "a field with no value counts as zero, matching how the grid renders an empty money box",
   );
 
-  // ---- 4. THE HEADLINE: the total follows the edit, not the stale context ----
+  // ---- 4. THE HEADLINE: the total moves with the edit -----------------------
 
-  // A row as it looks after HR has typed a correction but before saving: the
-  // boxes hold the new figures, "This Month Net" still holds the loaded one.
-  const edited = buildRow({ baseForMonth: 9000, ecolPaid: 500, fuelPaid: 250 });
-  edited.context["Net (month)"] = 4645.16; // what the server computed at load
+  // The row as loaded, then as it looks after HR has typed a correction into the
+  // Base box but before saving anything.
+  const loaded = buildRow({ baseForMonth: 2322.58, ecolPaid: 217.74, fuelPaid: 72.58 });
+  const onLoad = stepFieldsTotal(definition, loaded.values);
+
+  const edited = { ...loaded.values, baseForMonth: 9000 };
+  const afterEdit = stepFieldsTotal(definition, edited);
 
   assert.equal(
-    stepFieldsTotal(definition, edited.values),
-    9750,
-    "the total must be summed from the EDITABLE values — reading it from context would freeze it at the loaded figure",
+    afterEdit,
+    9290.32,
+    "the total must be summed from the EDITABLE values — 9000 + 217.74 + 72.58",
   );
   assert.notEqual(
-    stepFieldsTotal(definition, edited.values),
-    edited.context["Net (month)"],
-    "an edited row's total must move away from the stale context figure — if the two are equal the total is not live, " +
-      "and it is worthless precisely when HR is revising",
+    afterEdit,
+    onLoad,
+    "the total must MOVE when a box is edited — a total that stays at the loaded figure is worthless precisely when " +
+      "HR is revising, which is why the server-computed 'This Month Net' column was retired",
+  );
+
+  // And it must not be reachable from context, which is the shape that went stale.
+  assert.equal(
+    definition.contextColumns.some((column) => column.key === "Net (month)"),
+    false,
+    "the retired stale column must not come back beside the live total — two figures for the same money, one of them " +
+      "frozen, is what this replaced",
   );
 
   // ---- 5. the xlsx matches the screen ---------------------------------------
@@ -120,9 +131,9 @@ function buildRow(values: Record<string, number>): StepRow {
     fullName: "Test Joiner",
     jobTitle: "Medical Rep",
     line: "CNS",
-    context: { "Hire Date": "2026-08-24", "Days Worked": 8, "Net Salary": 18000, "Net (month)": 4645.16 },
+    context: { "Hire Date": "2026-08-24", "Days Worked": 4, "Net Salary": 18000 },
     values,
-    recommended: { baseForMonth: 4129.03, ecolPaid: 387.1, fuelPaid: 129.03 },
+    recommended: { baseForMonth: 2322.58, ecolPaid: 217.74, fuelPaid: 72.58 },
     reason: null,
     onHold: false,
   };
