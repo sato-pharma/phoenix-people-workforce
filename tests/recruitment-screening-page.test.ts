@@ -163,7 +163,16 @@ export async function runRecruitmentScreeningPageTests() {
 
   // The overlay button survives alongside it on purpose: it carries every filter on the toolbar
   // exactly, which a URL cannot, while the link is bookmarkable. Losing either is a regression.
-  assert.match(workspaceSource, /setScreeningQueue\(visibleCandidates\)/, "the in-place screening button must remain");
+  assert.match(workspaceSource, /setScreeningQueue\(filteredCandidates\)/, "the in-place screening button must remain");
+  // It hands over the list BEFORE the red split, and that argument IS the assertion — not a
+  // detail. The queue owns its own Active/Red tabs, so passing the already-split list would give
+  // it a Red-flagged tab that read zero however many red CVs the toolbar had actually turned up.
+  // This pin read `visibleCandidates` until the split was built; the rename is deliberate.
+  assert.match(
+    workspaceSource,
+    /initialCvTab=\{cvTab\}/,
+    "the overlay must open on the pile the pool is showing, or the queue disagrees with its own launch button",
+  );
 
   // ── 5 · The client/server line, which cost a build the first time ─────────
   //

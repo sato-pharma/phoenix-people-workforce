@@ -107,6 +107,13 @@ import {
   nonEgyptianFlagTitle,
 } from "@/lib/recruitment/nationality";
 import { NOT_A_CV_LABEL, NOT_A_CV_TITLE, isNotACv } from "@/lib/recruitment/not-a-cv";
+import {
+  candidateCvTabDescriptions,
+  candidateCvTabLabels,
+  candidateCvTabs,
+  partitionCandidatesByRedFlag,
+  type CandidateCvTab,
+} from "@/lib/recruitment/red-flag";
 import { interviewOutcomes, interviewScorecardCriteria, summarizeScorecard } from "@/lib/recruitment/scorecards";
 import type { VacancyReportRow } from "@/lib/reports/vacancies";
 import { cn } from "@/lib/utils";
@@ -2903,6 +2910,16 @@ function CandidatesTab({
   // or the same applicant applying again. The flag was already computed; there was no way to ask for
   // just those rows, which is the only way anyone is going to work through them.
   const [duplicatesOnly, setDuplicatesOnly] = useState(false);
+  // The pool, split in two. Red means one thing on this screen and has since the flags were built:
+  // this person cannot be hired — the CV states a nationality that is not Egyptian, or somebody has
+  // already rejected them. Both were visible as a pill and neither could be asked for, so the CVs
+  // worth acting on were read past every time somebody came back to see what had arrived.
+  //
+  // A tab rather than another checkbox on the toolbar, and rather than a filter that defaults to
+  // hiding them. The owner's standing rule across this platform is that the system FLAGS and never
+  // rejects: both piles are counted in the tab strip, both open in one click, and every action works
+  // identically in either. Nothing is hidden — it is put in the other pile and the pile is labelled.
+  const [cvTab, setCvTab] = useState<CandidateCvTab>("active");
   // "What is sitting with the Giza District Sales Manager?" — a question the pool could not answer
   // at all before 2026-08-27, because a push recorded only a manager NAME and the list stayed one
   // flat column ordered by arrival. Off by default: the pool is a pool first, and 370 of the 434
@@ -2976,7 +2993,7 @@ function CandidatesTab({
   );
 
   const q = query.trim().toLowerCase();
-  const visibleCandidates = candidates
+  const filteredCandidates = candidates
     .filter((c) => {
       if (
         q &&
@@ -3045,6 +3062,13 @@ function CandidatesTab({
     // Newest first, always. The pool grew by 152 rows in the last 7 days; anything else buries the
     // CV that arrived an hour ago under one from March.
     .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime());
+
+  // The split, taken AFTER every other filter, so each tab counts what is actually on screen: a
+  // search for "Ahmed" that turns up two rejected people says "Red-flagged 2", not the pool total.
+  // Both sides are built in one pass over one predicate — two filters here would be two places for
+  // the definition of red to drift apart from each other and from the pill on the row.
+  const cvTabCandidates = partitionCandidatesByRedFlag(filteredCandidates);
+  const visibleCandidates = cvTabCandidates[cvTab];
 
   // Grouped by the manager each CV was SENT to, and only ever over what is already on screen — so
   // narrowing to "this week" narrows the piles too, rather than showing groups that disagree with
@@ -3354,9 +3378,46 @@ function CandidatesTab({
 
       <AdminTableShell
         title="Candidate pool"
-        description={`${visibleCandidates.length} of ${candidates.length} shown, newest first. Every applicant stays here — even rejected ones.`}
+        description={`${visibleCandidates.length} of ${candidates.length} shown, newest first. Every applicant stays here — the red tab holds them, it never removes them.`}
       >
         <div className="space-y-3 p-3">
+          {/* The two piles, before anything else on the toolbar — because which pile you are in
+              changes what every control below it is filtering. Counts are live and reflect the
+              filters underneath, so "Red-flagged 2" on a search means two in THAT search.
+
+              Both tabs always render, even at zero. A tab that disappears when it empties is a
+              tab that reads as a bug the day it comes back, and "0 red-flagged" is the single
+              most useful thing this strip can say. */}
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+            <div className="inline-flex overflow-hidden rounded-md border border-phx-line">
+              {candidateCvTabs.map((key) => {
+                const isActive = cvTab === key;
+                return (
+                  <button
+                    aria-pressed={isActive}
+                    className={cn(
+                      "inline-flex h-9 items-center gap-1.5 whitespace-nowrap px-3 text-xs font-semibold transition",
+                      key === "red" ? "border-l border-phx-line" : "",
+                      isActive
+                        ? key === "red"
+                          ? "bg-rose-50 text-rose-700"
+                          : "bg-orange-50 text-phx-accent-press"
+                        : "bg-white text-slate-600 hover:bg-slate-50",
+                    )}
+                    key={key}
+                    onClick={() => setCvTab(key)}
+                    title={candidateCvTabDescriptions[key]}
+                    type="button"
+                  >
+                    {key === "red" ? <span aria-hidden className="h-2 w-2 shrink-0 rounded-full bg-rose-500" /> : null}
+                    {candidateCvTabLabels[key]}
+                    <span className="tabular-nums opacity-70">{cvTabCandidates[key].length}</span>
+                  </button>
+                );
+              })}
+            </div>
+            <p className="text-xs text-slate-500">{candidateCvTabDescriptions[cvTab]}</p>
+          </div>
           <Input
             placeholder="Search name, applying for, email, phone, status, source"
             value={query}
@@ -3496,7 +3557,7 @@ function CandidatesTab({
                 It takes the queue EXACTLY as filtered and ordered on screen, so narrowing to
                 "District Manager · Alex-BHR" and pressing this is a session with an end. */}
             {visibleCandidates.length > 0 ? (
-              <Button onClick={() => setScreeningQueue(visibleCandidates)}>
+              <Button onClick={() => setScreeningQueue(filteredCandidates)}>
                 Screen {visibleCandidates.length} {visibleCandidates.length === 1 ? "CV" : "CVs"}
               </Button>
             ) : null}
@@ -4435,6 +4496,11 @@ function CandidatesTab({
           {screeningQueue ? (
             <CandidateScreeningSession
               candidates={screeningQueue}
+              // Deliberately the list BEFORE the red split, with the pool's current tab passed
+              // through. The queue owns its own tab strip, so handing it the already-split list
+              // would leave it with a Red-flagged tab that read zero however many red CVs the
+              // search had actually turned up.
+              initialCvTab={cvTab}
               // `canManage` is the pool's own `recruitment: update` gate, and it is the same grant
               // the send route enforces — so a reader who cannot send simply gets no picker here,
               // exactly as on the standalone page.
