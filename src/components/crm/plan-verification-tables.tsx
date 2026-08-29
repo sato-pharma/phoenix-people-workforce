@@ -357,9 +357,9 @@ export function PlanListTable({
           </PortalRecordCard>
         )}
         renderTable={() => (
-          {/* 1080 -> 1240: the Action column now carries two buttons, and the owner's standing rule is
-              that nothing wraps. The table side-scrolls instead. */}
           <PortalDesktopTable className="text-xs" minWidth="1240px">
+            {/* 1080 -> 1240: the Action column now carries two buttons, and the owner's standing rule
+                is that nothing wraps. The table side-scrolls instead. */}
             <thead>
               <tr className="bg-slate-900 text-left">
                 <SortableTh className={THEAD} label="Medical rep" onSort={table.toggleSort} sort={table.sort} sortKey="repName" />
