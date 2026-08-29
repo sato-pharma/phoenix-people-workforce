@@ -17,6 +17,7 @@ import { runMailboxComplianceMonitorTests } from "./mailbox-compliance-monitor.t
 import { runNavigationActivePathTests } from "./navigation-active-path.test.ts";
 import { runNavSingleGateNoBypassTests } from "./nav-single-gate-no-bypass.test.ts";
 import { runNavRolesNameOnlyPermissionHoldersTests } from "./nav-roles-name-only-permission-holders.test.ts";
+import { runNavigationGrantedButUnreachableTests } from "./navigation-granted-but-unreachable.test.ts";
 import { runPermissionLookupTotalityTests } from "./permission-lookup-totality.test.ts";
 import { runNavigationRuling11AnalyticsTests } from "./navigation-ruling-11-analytics.test.ts";
 import { runHrUrlNamespaceTests } from "./hr-url-namespace.test.ts";
@@ -1095,6 +1096,10 @@ await runTest("nav single gate no bypass", runNavSingleGateNoBypassTests);
 await runTest(
   "nav roles name only permission holders (a roles: name the matrix refuses grants nothing and must not be written)",
   runNavRolesNameOnlyPermissionHoldersTests,
+);
+await runTest(
+  "navigation granted but unreachable (report mode — a page a role can open that nothing links to)",
+  runNavigationGrantedButUnreachableTests,
 );
 await runTest(
   "navigation permission lookup is total (union == runtime array, no hand-rolled copies, fail-open unreachable)",

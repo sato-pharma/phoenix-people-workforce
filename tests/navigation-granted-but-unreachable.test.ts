@@ -1,0 +1,359 @@
+import assert from "node:assert/strict";
+import { readdirSync, readFileSync } from "node:fs";
+import path from "node:path";
+
+import {
+  getNavigationSections,
+  hubPageItemGroups,
+} from "@/config/system-navigation";
+import {
+  buildPermissionLookup,
+  createAccessContext,
+  permissionMatrix,
+  phoenixRoles,
+  resolveNavigationMode,
+  type PhoenixRole,
+} from "@/lib/auth/permissions";
+import { resolveEmployeePortalNavVisibility } from "@/lib/employee-portal/navigation";
+import { getSections, navigationItemVisible } from "@/lib/navigation/active-path";
+
+import {
+  isShellGated,
+  permissionGateKeys,
+  portalTwinRedirect,
+  roleSetGates,
+  unreadableGatePredicates,
+} from "./support/page-gate-reader";
+
+/**
+ * THE REVERSE GUARD — a page a role can open, that no surface offers it a link to.
+ *
+ * Every other navigation test in this repository asks the forward question: *is every link I am
+ * offered one I can actually open?* This asks the other one, and the two fail in opposite
+ * directions. A forward failure is loud — you click and bounce. A reverse failure is silent: the
+ * page serves perfectly, the permission is real, and nobody ever finds it. `AGENTS.md` records the
+ * shape as its own hard-learned rule — *"a feature can ship green, deploy cleanly, and be reachable
+ * by NOBODY — and zero usage is what both look like."*
+ *
+ * ## Report mode, deliberately
+ *
+ * This test asserts only the anti-vacuity floors and the bucket totals. It does not fail on a
+ * finding. That is not timidity — it is the only honest way to introduce a guard whose day-one
+ * output is 50 routes: a check that goes red on merge day gets muted within a week, and a muted
+ * check is worth less than none. The list is printed into the CI log, triaged in B5, and only the
+ * buckets that reach zero get ratcheted shut.
+ *
+ * ## What counts as OFFERED — five layers, and each one was found the hard way
+ *
+ * The measurement was run five times and each pass found a link layer the previous model could not
+ * see. Every one of them had the same symptom: **a page doing its job read as orphaned.** They are
+ * written down here because the next person to extend this will otherwise rediscover them one
+ * false accusation at a time.
+ *
+ *   1. The sidebar — `getSections(getNavigationSections(mode), …)`, both shells.
+ *   2. Hub cards, admin shell only. `command-palette.tsx:55-63` folds `hubPageItemGroups` into Cmd+K
+ *      for `navigationMode === "admin"` and nothing else, so a hub card is offered to an admin-shell
+ *      role whether or not the hub page that contains it is itself reachable. That is what makes the
+ *      plan's "fixpoint, 3 passes" unnecessary — there is no reachability precondition to converge.
+ *   3. The portal registry, portal shell only, filtered by `resolveEmployeePortalNavVisibility`.
+ *   4. **Links written by hand in components.** `app/(admin)/recruitment/screening/page.tsx` says in
+ *      its own docstring: *"Deliberately NOT a card on the Recruitment & Hiring hub … a route and a
+ *      link from the pool already"*. Its absence from the nav is a recorded decision, and a guard
+ *      that cannot see in-page links calls it a defect. This layer subsumes the three
+ *      command-center tile files the plan named separately — a tile is a literal href like any
+ *      other, so one sweep covers them and cannot go stale when a fourth hand-written surface
+ *      appears.
+ *   5. **Deep links in notification payloads.** `deepLinkHref: "/admin/email-notifications"` in
+ *      `src/lib/notifications/email-control-center.ts` is the only thing that reaches that page. A
+ *      notification you click is a link; that it is spelled with a different key is not the user's
+ *      problem. Hence the field name is matched as `[A-Za-z]*[Hh]ref`, which covers `href`,
+ *      `ctaHref`, `deepLinkHref`, `seeAllHref` and `reportHref` — 654 sites in total.
+ *
+ * ## What is NOT a finding, and the number that proves it
+ *
+ * `canOpen ∧ ¬offered` computed per (route, role) reports **1,107 pairs across 151 routes**, and
+ * almost all of it is deliberate. 106 nav entries carry a `roles:` list narrower than the set of
+ * roles holding their permission — **1,048 (entry, role) pairs of product curation**. A guard
+ * reporting those is a guard nobody reads.
+ *
+ * So the question this test asks is the sharper one: **is the route offered to ANYBODY?** A route
+ * curated away from one role is a decision. A route nothing links from anywhere is an orphan.
+ */
+
+const APP_DIR = path.resolve(process.cwd(), "app");
+const SRC_DIR = path.resolve(process.cwd(), "src");
+const PORTAL_REGISTRY = path.join(
+  SRC_DIR,
+  "components/employee-portal/employee-portal-nav-registry.ts",
+);
+
+/** The delisted analytics module — one owner ruling, recorded once, covering 29 routes. */
+const DELISTED_PREFIXES = ["/admin/analytics", "/employee-portals/sales-analytics"] as const;
+
+type GapKind =
+  | "delisted-by-ruling"
+  | "shell-mirror-of-a-linked-route"
+  | "linked-from-a-component"
+  | "second-gate-unreadable"
+  | "no-link-anywhere";
+
+type RouteGate = {
+  href: string;
+  needs: string[];
+  roleSets: string[][];
+  shellGated: boolean;
+  portalTwin: string | null;
+  unreadable: string[];
+  readable: boolean;
+};
+
+function walk(dir: string, matches: (name: string) => boolean, out: string[] = []): string[] {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) walk(full, matches, out);
+    else if (matches(entry.name)) out.push(full);
+  }
+  return out;
+}
+
+/** Every static route in `app/`, with the gate its page puts in front of a visitor. */
+function readRouteGates(): RouteGate[] {
+  const gates: RouteGate[] = [];
+  for (const file of walk(APP_DIR, (name) => name === "page.tsx")) {
+    const relative = path.relative(APP_DIR, file).replace(/\\/g, "/").replace(/\/page\.tsx$/, "");
+    const segments = relative.split("/").filter((s) => s && !/^\(.*\)$/.test(s));
+    // A dynamic segment has no single href to be offered a link to, so the question does not apply.
+    if (segments.some((segment) => segment.includes("["))) continue;
+
+    const source = readFileSync(file, "utf8");
+    const needs = [...permissionGateKeys(source)];
+    const roleSets = roleSetGates(source);
+    const shellGated = isShellGated(source);
+    const portalTwin = portalTwinRedirect(source);
+    gates.push({
+      href: `/${segments.join("/")}`,
+      needs,
+      roleSets,
+      shellGated,
+      portalTwin,
+      unreadable: unreadableGatePredicates(source),
+      readable: needs.length > 0 || roleSets.length > 0 || shellGated || portalTwin !== null,
+    });
+  }
+  return gates;
+}
+
+/**
+ * Can this role get through the page's own gate?
+ *
+ * Both shell directions matter and they are not the same check. `shellGated` is an ADMIN page
+ * refusing portal-shell roles; `portalTwin` is a PORTAL page bouncing admin-shell roles to its
+ * admin twin. Modelling only the first — which is all the shared reader knew until this test was
+ * written — makes every portal twin look open to all 17 roles.
+ */
+function canOpen(
+  gate: RouteGate,
+  role: PhoenixRole,
+  lookup: Record<string, boolean>,
+  mode: string,
+): boolean {
+  if (gate.shellGated && mode === "employee-portal") return false;
+  if (gate.portalTwin !== null && mode === "admin") return false;
+  for (const key of gate.needs) if (!lookup[key]) return false;
+  for (const set of gate.roleSets) if (!set.includes(role)) return false;
+  return true;
+}
+
+/** Layer 3: the portal registry, parsed for href and the visibility flags that gate each entry. */
+function readPortalRegistry(): { href: string; flags: string[] }[] {
+  const entries: { href: string; flags: string[] }[] = [];
+  for (const line of readFileSync(PORTAL_REGISTRY, "utf8").split("\n")) {
+    const href = /href:\s*"(\/[^"]+)"/.exec(line)?.[1];
+    if (!href) continue;
+    const flagBlock = /flags:\s*\[([^\]]*)\]/.exec(line)?.[1] ?? "";
+    entries.push({ href, flags: [...flagBlock.matchAll(/"([^"]+)"/g)].map((m) => m[1]!) });
+  }
+  return entries;
+}
+
+/** Layers 4 and 5: every literal route href written anywhere in `src/` or `app/`. */
+function readHandWrittenLinks(): Map<string, string[]> {
+  const patterns = [
+    /[A-Za-z]*[Hh]ref\s*:\s*"(\/[^"]*)"/g, // href, ctaHref, deepLinkHref, seeAllHref, reportHref
+    /href="(\/[^"]*)"/g, // plain JSX
+    /\brouter\.push\(\s*"(\/[^"]*)"/g,
+    /\bredirect\(\s*"(\/[^"]*)"\s*\)/g, // a page that sends you somewhere is a link to there
+  ];
+  const linkedFrom = new Map<string, string[]>();
+  const files = [
+    ...walk(SRC_DIR, (name) => /\.tsx?$/.test(name)),
+    ...walk(APP_DIR, (name) => /\.tsx?$/.test(name)),
+  ];
+  for (const file of files) {
+    const source = readFileSync(file, "utf8");
+    const from = path.relative(process.cwd(), file).replace(/\\/g, "/");
+    for (const pattern of patterns) {
+      for (const match of source.matchAll(pattern)) {
+        const href = match[1]!.split("?")[0]!.replace(/\/$/, "") || "/";
+        linkedFrom.set(href, [...(linkedFrom.get(href) ?? []), from]);
+      }
+    }
+  }
+  return linkedFrom;
+}
+
+export async function runNavigationGrantedButUnreachableTests(): Promise<void> {
+  const gates = readRouteGates();
+  const portalRegistry = readPortalRegistry();
+  const linkedFrom = readHandWrittenLinks();
+
+  // ── what each role is OFFERED ────────────────────────────────────────────────
+  const offeredByRole = new Map<PhoenixRole, { hrefs: Set<string>; mode: string }>();
+  for (const role of phoenixRoles) {
+    const lookup = buildPermissionLookup(permissionMatrix, role);
+    const mode = resolveNavigationMode(createAccessContext({ role }));
+    const hrefs = new Set<string>();
+    for (const section of getSections(getNavigationSections(mode), mode, lookup, role)) {
+      for (const item of section.items) hrefs.add(item.href);
+    }
+    if (mode === "admin") {
+      // Cmd+K offers every hub card the role passes, with no requirement that the hub page
+      // containing it is itself reachable — command-palette.tsx:55-63.
+      for (const group of hubPageItemGroups) {
+        for (const item of group.items) {
+          if (navigationItemVisible(item, lookup, role)) hrefs.add(item.href);
+        }
+      }
+    } else {
+      const visibility = resolveEmployeePortalNavVisibility(null, role) as Record<string, unknown>;
+      for (const entry of portalRegistry) {
+        if (entry.flags.length === 0 || entry.flags.some((flag) => Boolean(visibility[flag]))) {
+          hrefs.add(entry.href);
+        }
+      }
+    }
+    offeredByRole.set(role, { hrefs, mode });
+  }
+
+  const offeredToAnyone = new Set<string>();
+  for (const role of phoenixRoles) {
+    for (const href of offeredByRole.get(role)!.hrefs) offeredToAnyone.add(href);
+  }
+
+  // ── the orphans: openable by someone, offered to nobody ──────────────────────
+  const orphans = new Map<string, PhoenixRole[]>();
+  for (const role of phoenixRoles) {
+    const { hrefs, mode } = offeredByRole.get(role)!;
+    const lookup = buildPermissionLookup(permissionMatrix, role);
+    for (const gate of gates) {
+      if (!gate.readable) continue; // an unreadable gate cannot support a conclusion either way
+      if (!canOpen(gate, role, lookup, mode)) continue;
+      if (hrefs.has(gate.href) || offeredToAnyone.has(gate.href)) continue;
+      orphans.set(gate.href, [...(orphans.get(gate.href) ?? []), role]);
+    }
+  }
+
+  // ── bucket mechanically; only `no-link-anywhere` needs a human ───────────────
+  const byHref = new Map(gates.map((gate) => [gate.href, gate]));
+  const findings = [...orphans.entries()].map(([href, roles]) => {
+    const gate = byHref.get(href)!;
+    const linkers = (linkedFrom.get(href) ?? []).filter(
+      (file) => !file.endsWith(`app${href}/page.tsx`) && !file.includes("system-navigation"),
+    );
+    let kind: GapKind;
+    if (DELISTED_PREFIXES.some((prefix) => href.startsWith(prefix))) kind = "delisted-by-ruling";
+    else if (gate.portalTwin !== null && offeredToAnyone.has(gate.portalTwin)) {
+      kind = "shell-mirror-of-a-linked-route";
+    } else if (linkers.length > 0) kind = "linked-from-a-component";
+    else if (gate.unreadable.length > 0) kind = "second-gate-unreadable";
+    else kind = "no-link-anywhere";
+    return { href, roles, kind, gate, linkers };
+  });
+
+  const byKind = new Map<GapKind, typeof findings>();
+  for (const finding of findings) {
+    byKind.set(finding.kind, [...(byKind.get(finding.kind) ?? []), finding]);
+  }
+
+  // ── the report ───────────────────────────────────────────────────────────────
+  const pairs = findings.reduce((total, finding) => total + finding.roles.length, 0);
+  const lines = [
+    `navigation reachability — ${orphans.size} routes openable by someone and offered to nobody (${pairs} role-pairs)`,
+  ];
+  for (const kind of [...byKind.keys()].sort()) {
+    const rows = byKind.get(kind)!;
+    lines.push(`  ${kind}: ${rows.length} routes`);
+    for (const row of [...rows].sort((a, b) => b.roles.length - a.roles.length)) {
+      const note =
+        row.gate.portalTwin !== null
+          ? ` -> ${row.gate.portalTwin}`
+          : row.linkers.length > 0
+            ? ` <- ${row.linkers[0]}`
+            : row.gate.unreadable.length > 0
+              ? ` (gated on ${row.gate.unreadable.join(", ")})`
+              : "";
+      lines.push(`      ${String(row.roles.length).padStart(2)} roles  ${row.href}${note}`);
+    }
+  }
+  console.log(lines.join("\n"));
+
+  // ── anti-vacuity: every input this verdict rests on must be non-trivial ──────
+  // Measured 2026-08-29. Floors sit below the real numbers so ordinary growth does not trip them,
+  // but far enough above zero that a reader returning nothing cannot pass. A guard whose inputs
+  // silently emptied would otherwise report a clean bill of health, which is the failure mode this
+  // whole program exists to remove.
+  assert.ok(gates.length >= 300, `expected 300+ static routes, read ${gates.length} (344)`);
+  assert.ok(
+    gates.filter((gate) => gate.readable).length >= 150,
+    `expected 150+ gate-readable routes, read ${gates.filter((g) => g.readable).length} (202)`,
+  );
+  assert.equal(phoenixRoles.length, 17, "the role list changed — re-measure every floor below");
+  assert.ok(
+    offeredByRole.get("Super Admin" as PhoenixRole)!.hrefs.size >= 100,
+    `Super Admin should be offered 100+ links, got ${offeredByRole.get("Super Admin" as PhoenixRole)!.hrefs.size} (171)`,
+  );
+  assert.ok(portalRegistry.length >= 50, `portal registry read ${portalRegistry.length} entries (61)`);
+  assert.ok(
+    linkedFrom.size >= 250,
+    `hand-written link sweep found ${linkedFrom.size} route targets (334) — a collapse here would
+     silently reclassify every component-linked page as an orphan`,
+  );
+  // Both shell directions must be seen. Until 2026-08-29 the reader knew only the first, and every
+  // portal twin therefore read as open to all 17 roles.
+  assert.ok(
+    gates.filter((gate) => gate.shellGated).length >= 50,
+    `expected 50+ admin pages carrying the shell gate, read ${gates.filter((g) => g.shellGated).length} (69)`,
+  );
+  assert.ok(
+    gates.filter((gate) => gate.portalTwin !== null).length >= 50,
+    `expected 50+ portal twins, read ${gates.filter((g) => g.portalTwin !== null).length} (63)`,
+  );
+
+  // ── the buckets, as measured. Report mode: these move when the code moves. ───
+  // Ratcheted one-sided so the picture cannot silently get worse, and re-measured when it improves.
+  const kindCount = (kind: GapKind) => (byKind.get(kind) ?? []).length;
+  // A BACKSTOP, deliberately looser than everything above it. Break-testing found that every
+  // mutation big enough to move this total trips a more specific floor first — dropping the
+  // hub-card layer takes Super Admin from 171 offered links to 50 and is caught there, not here.
+  // It is kept for the shape nothing else covers: several new orphans accumulating one at a time,
+  // each too small to trip a floor of its own.
+  assert.ok(
+    orphans.size <= 55,
+    `orphan routes rose to ${orphans.size}; the 2026-08-29 baseline is 52. A new page reachable from
+     nowhere is the finding this test exists for — give it a link, or record why it has none.`,
+  );
+  assert.ok(
+    kindCount("no-link-anywhere") <= 2,
+    `${kindCount("no-link-anywhere")} routes are linked from nowhere at all; the 2026-08-29 baseline
+     is 2, and both are portal twins pointing at /overview, which the nav offers to nobody:
+       /employee/outstation/new  — no content of its own; it reads the caller's expense state and
+                                   forwards to one of three pages, so nothing SHOULD link it.
+       /employee-portals/calendar — a real page with a real gate that nothing anywhere links to.
+                                   This is the genuine finding of the whole sweep.`,
+  );
+  assert.ok(
+    kindCount("delisted-by-ruling") <= 29,
+    `${kindCount("delisted-by-ruling")} delisted analytics routes; baseline 29. This bucket should
+     only ever shrink — it is a module retired on purpose, not a place to file new orphans.`,
+  );
+}
