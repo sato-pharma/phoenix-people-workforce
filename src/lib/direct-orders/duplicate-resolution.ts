@@ -250,6 +250,126 @@ export function groupDuplicatePharmacies(pharmacies: ReadonlyArray<PharmacyForDe
   return proposals.sort((a, b) => a.survivorCode.localeCompare(b.survivorCode));
 }
 
+// ── Look-alike venues the merge rule cannot prove ────────────────────────────
+//
+// WHY THIS IS SEPARATE, AND WHY IT PROPOSES NOTHING.
+//
+// `groupDuplicatePharmacies` answers one question — "can I PROVE these are one venue?" — and its
+// two passes deliberately partition the input: the code pass sees only records carrying an identity
+// key, the name+area pass only records carrying none. That partition is what stops a resemblance
+// from diluting a distributor-proven fact, and it is right.
+//
+// It also has a blind spot, and the blind spot is occupied. Two live pairs share an exact
+// Arabic-normalized name AND an area while sitting on opposite sides of that partition:
+//
+//   محمد فتحي أبو زيد  · AB5 · DOP-000040 (no code) + DOP-000041 (PS/0001576761)
+//   المنصورية الجديدة · GZ3 · DOP-000009 (no code) + DOP-000049 (PS/0001539236)
+//
+// Each is one coded record beside one codeless one, so neither pass can see the pair at all: the
+// code pass has nothing to compare the codeless row against, and the name pass excludes the coded
+// row by design. Measured 2026-08-29 by running the real rule over live production rows — the one
+// other exact name+area pair, "433106" in GZ1, IS already proposed (both rows are digit-named, so
+// both pick up the same two name-code candidates and union normally).
+//
+// NONE OF THIS IS A MERGE PROPOSAL, which is the whole reason it is a separate function rather
+// than a wider `groupDuplicatePharmacies`. Every group it can find has approved orders on at least
+// one side, and the owner's rule of 2026-08-29 is that a venue row carrying confirmed orders is
+// never touched: "If rejected, do this. If confirmed, don't ever touch." Widening the merge pass to
+// reach these would put rows with committed money behind a checkbox that is ticked by default, and
+// `confirmDirectOrderCleanup` repoints requests with no status filter — so a merge moves approved
+// orders too, silently. So this returns a REVIEW LIST: what looks alike, why the system will not
+// rule on it, and what is at stake on each side. A human decides, and acts elsewhere.
+
+/** Why the merge rule will not rule on a look-alike pair. */
+export type VenueLookAlikeBlocker = "one-side-has-a-code" | "different-codes";
+
+export type VenueLookAlikeGroup = {
+  normalizedName: string;
+  areaCode: string;
+  /** Every record in the group, strongest-ranked first — the same order a merge would survive in. */
+  memberIds: string[];
+  blocker: VenueLookAlikeBlocker;
+  /** Why the system is not deciding this itself, in words a reviewer can act on. */
+  explanation: string;
+};
+
+const LOOK_ALIKE_EXPLANATION: Record<VenueLookAlikeBlocker, string> = {
+  "one-side-has-a-code":
+    "One record carries a distributor code and the other carries none. The code check has nothing " +
+    "to compare the codeless record against, and the name check deliberately ignores any record " +
+    "that already has a code — so neither one can see this pair.",
+  "different-codes":
+    "Both records carry distributor codes, and the codes are different. A distributor customer " +
+    "belongs to one venue, so the system will not call two different customers one venue on the " +
+    "strength of a matching name.",
+};
+
+/**
+ * Exact name+area matches that `groupDuplicatePharmacies` did not already cluster.
+ *
+ * Exact, never fuzzy, and anchored on the area — the same caution the merge rule runs on. A
+ * reviewer reading this list is being asked to look, not to approve a write, but a list padded with
+ * coincidences is one nobody reads twice.
+ */
+export function findLookAlikeVenues(
+  pharmacies: ReadonlyArray<PharmacyForDedupe>,
+  proposals: ReadonlyArray<PharmacyMergeProposal>,
+): VenueLookAlikeGroup[] {
+  const clusterOf = new Map<string, string>();
+  for (const proposal of proposals) {
+    for (const id of [proposal.survivorId, ...proposal.mergedIds]) clusterOf.set(id, proposal.survivorId);
+  }
+
+  const byNameKey = new Map<string, PharmacyForDedupe[]>();
+  for (const pharmacy of pharmacies) {
+    const name = pharmacy.normalizedName.trim();
+    const area = String(pharmacy.areaCode ?? "").trim().toUpperCase();
+    if (!name || !area) continue;
+    const key = `${name}|${area}`;
+    const bucket = byNameKey.get(key) ?? [];
+    bucket.push(pharmacy);
+    byNameKey.set(key, bucket);
+  }
+
+  const groups: VenueLookAlikeGroup[] = [];
+  for (const [key, members] of byNameKey) {
+    if (members.length < 2) continue;
+
+    // Already one merge proposal? The desk is handling it, and listing it here too would ask the
+    // same question twice and invite two different answers.
+    const clusters = new Set(members.map((member) => clusterOf.get(member.id) ?? `unclustered:${member.id}`));
+    if (clusters.size === 1 && clusterOf.has(members[0].id)) continue;
+
+    // A wholly codeless group belongs to the name+area pass, which has already clustered it and so
+    // was caught above. Reaching here means the group is mixed or wholly coded.
+    const coded = members.filter((member) => pharmacyIdentityKeys(member).length > 0);
+    if (coded.length === 0) continue;
+
+    const blocker: VenueLookAlikeBlocker =
+      coded.length === members.length ? "different-codes" : "one-side-has-a-code";
+    const [normalizedName, areaCode] = key.split("|");
+    groups.push({
+      normalizedName,
+      areaCode,
+      memberIds: [...members].sort((a, b) => compareRanks(survivorRank(a), survivorRank(b))).map((m) => m.id),
+      blocker,
+      explanation: LOOK_ALIKE_EXPLANATION[blocker],
+    });
+  }
+
+  // Still-live confusion first — a pair whose records are both active is one a rep can pick the
+  // wrong half of today; a pair with one record already closed is history worth consolidating but
+  // is not misleading anybody right now. Ties broken on area then name so the screen is stable.
+  const liveCount = (group: VenueLookAlikeGroup) =>
+    group.memberIds.filter((id) => pharmacies.find((pharmacy) => pharmacy.id === id)?.active).length;
+  return groups.sort(
+    (a, b) =>
+      liveCount(b) - liveCount(a) ||
+      a.areaCode.localeCompare(b.areaCode) ||
+      a.normalizedName.localeCompare(b.normalizedName),
+  );
+}
+
 // ── Duplicate REQUESTS ───────────────────────────────────────────────────────
 
 /**
