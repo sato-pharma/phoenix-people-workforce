@@ -7,6 +7,7 @@ import type { AccessContext } from "@/lib/auth/permissions";
 import { defaultCvPositionKey, LEGACY_CV_POSITION_KEYS } from "@/lib/recruitment/cv-field-schemas";
 import { CvExtractionError, extractCandidateFieldsFromCv } from "@/lib/recruitment/cv-extraction";
 import { type ExtractedCandidateFields, isEmptyExtractedField } from "@/lib/recruitment/cv-extraction-fields";
+import { cvRereadOpsMarker } from "@/lib/recruitment/ops-marker";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Re-read the CVs that were read with the OLD, NARROW schema.
@@ -70,7 +71,10 @@ import { type ExtractedCandidateFields, isEmptyExtractedField } from "@/lib/recr
 //                     so reading them is spend that changes nothing on screen.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const OPS_MARKER = "ops:cv-reread-legacy-schema-20260824";
+// Same rule as the batch beside it: the run's own Cairo day, resolved once. This one happened to
+// still be honest — it has only ever been run on 2026-08-24 — which is exactly why it was worth
+// fixing before a second run made it a lie too.
+const OPS_MARKER = cvRereadOpsMarker("legacy-schema");
 
 // Serial on purpose, same reasoning as the 2026-08-16 batch: these are model calls against
 // multi-megabyte PDFs on a 16 GB laptop already running other sessions. Concurrency buys minutes

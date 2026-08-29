@@ -20,6 +20,7 @@ import {
   selectReadCandidateIds,
   selectRulesOnlyCandidateIds,
 } from "@/lib/recruitment/cv-reread-target-sets";
+import { cvRereadOpsMarker } from "@/lib/recruitment/ops-marker";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Re-read the CVs the AI never read.
@@ -39,8 +40,10 @@ import {
 //   called here, so applied_fields stays null and the review queue still shows these as
 //   awaiting a human.
 //
-//   Every row it writes is stamped created_by = OPS_MARKER, so a re-read is distinguishable
-//   from a Talent Acquisition review forever after. Do not "clean up" that marker.
+//   Every row it writes is stamped created_by = OPS_MARKER — `ops:cv-reread-<this run's Cairo
+//   day>` — so a re-read is distinguishable from a Talent Acquisition review forever after, and
+//   one run is distinguishable from the next. Do not "clean up" that marker, and do not freeze
+//   it back into a literal: src/lib/recruitment/ops-marker.ts records what that cost last time.
 //
 // TARGET IS PRODUCTION. .env.local points at the production Supabase project, which is where
 // the candidates and their stored CVs actually are. That is deliberate, not an accident.
@@ -118,7 +121,9 @@ import {
 //                      exactly the set the page shows as "Not stated".
 // ─────────────────────────────────────────────────────────────────────────────
 
-const OPS_MARKER = "ops:cv-reread-20260816";
+// Resolved once, at module load, so one run stamps one day even if it crosses Cairo midnight —
+// which these long serial batches routinely do. Every row still carries its own created_at.
+const OPS_MARKER = cvRereadOpsMarker();
 
 // Serial on purpose. These are high-reasoning calls against 2 MB PDFs on a 16 GB laptop that
 // is running other sessions; concurrency buys minutes and risks both an OpenAI rate limit and

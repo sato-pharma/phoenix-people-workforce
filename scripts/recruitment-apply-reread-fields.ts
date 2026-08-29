@@ -5,6 +5,7 @@ import { createClient } from "@supabase/supabase-js";
 
 import { selectAutoApplyFields, type AutoApplyExtractedFields } from "@/lib/recruitment/cv-auto-apply";
 import { getCandidate, updateCandidate } from "@/lib/recruitment/candidates";
+import { isCvRereadMarker } from "@/lib/recruitment/ops-marker";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Apply the high-confidence fields from the CV re-read onto the candidates.
@@ -43,8 +44,6 @@ import { getCandidate, updateCandidate } from "@/lib/recruitment/candidates";
 //        --experimental-loader ./tests/alias-loader.mjs \
 //        scripts/recruitment-apply-reread-fields.ts [--dry-run]
 // ─────────────────────────────────────────────────────────────────────────────
-
-const OPS_MARKER = "ops:cv-reread-20260816";
 
 type Plan = {
   candidateId: string;
@@ -103,7 +102,10 @@ async function main(): Promise<void> {
   // A candidate can hold several extraction rows; the latest wins.
   const latestByCandidate = new Map<string, (typeof extractionRows)[number]>();
   for (const row of extractionRows ?? []) latestByCandidate.set(String(row.candidate_id), row);
-  const fromReread = [...latestByCandidate.values()].filter((row) => row.created_by === OPS_MARKER).length;
+  // Prefix, never an exact marker. This line used to compare against a hardcoded
+  // `ops:cv-reread-20260816`, which is the reason the writer could never be allowed to move: the
+  // two were kept in agreement only by both being frozen.
+  const fromReread = [...latestByCandidate.values()].filter((row) => isCvRereadMarker(row.created_by)).length;
   console.log(`Extractions         : ${(extractionRows ?? []).length} rows, ${latestByCandidate.size} candidates`);
   console.log(`  of which re-read  : ${fromReread}`);
 
