@@ -381,29 +381,76 @@ export function runNavigationPersonalLayoutTests() {
     assert.ok(/moduleRows/.test(editor), "the editor must be able to write a per-module arrangement");
   }
 
-  // ── THE ROWS ARE ACTUALLY RENDERED ──────────────────────────────────────────────────────────
+  // ── THE ROWS ARE ACTUALLY RENDERED, AND FROZEN ──────────────────────────────────────────────
   // applyPersonalLayout returning the right items proves nothing on its own: the feature is
-  // invisible unless something renders them, and the "exactly one copy of the lower row" rule is
-  // CSS, which no unit test can execute. Source pins, by pattern rather than a byte window.
+  // invisible unless something renders them. The owner's rule (2026-08-29) is that both rows stay
+  // FIXED in every module — pinned while the page scrolls, and in the same place on every page.
+  // That is a DOM-shape property no unit test can execute, so it is pinned at the source: each
+  // module must keep both rows inside one sticky container, and no page surface may render a copy
+  // of its own. A row rendered inside a page hero can never be frozen — `position: sticky` is
+  // bounded by its containing block, so such a row unpins the instant the hero scrolls away.
   {
     const shell = readFileSync("src/components/layout/app-shell.tsx", "utf8");
-    assert.ok(/<HorizontalNavProvider/.test(shell), "AppShell must mount the horizontal-nav provider");
-    assert.ok(/<UpperNavRow\s*\/>/.test(shell), "AppShell must render zone 2 — this is what reaches every page");
-    assert.ok(/<LowerNavRow placement="fallback"/.test(shell), "AppShell must render the zone-3 fallback");
-    assert.ok(/phx-navrow-scope/.test(shell), "the fallback must sit inside the scope the CSS rule keys on");
+    assert.ok(shell.includes("<HorizontalNavProvider"), "AppShell must mount the horizontal-nav provider");
+    assert.ok(shell.includes("phx-navrow-scope"), "the rows must sit inside the navrow scope");
 
+    // The freeze itself: the Topbar and BOTH rows share one sticky container. Two stickies at the
+    // same offset do not stack — they overlap — so splitting this block is what breaks the pin.
+    // Find the block by SHAPE, not by its exact class string. Pinning the literal would mean any
+    // restyle (a different z-index, an added class) silently matched nothing, and every assertion
+    // below would then fire about a missing row when the row had never moved.
+    const shellSticky = /<div className="(sticky top-0[^"]*)">/.exec(shell);
+    assert.ok(shellSticky, "AppShell must pin its chrome in a sticky container at the top of the viewport");
+    const afterSticky = shell.slice(shellSticky.index + shellSticky[0].length);
+    const frozen = afterSticky.slice(0, afterSticky.indexOf("</div>"));
+    assert.ok(frozen.includes("<Topbar"), "the Topbar must travel inside the frozen block");
+    assert.ok(frozen.includes("<UpperNavRow />"), "zone 2 must be frozen with it — this is what reaches every page");
+    assert.ok(frozen.includes("<LowerNavRow />"), "zone 3 must be frozen with it, not left to scroll away");
+
+    // Its counterpart: the Topbar must NOT also be sticky on its own. A second sticky at top-0
+    // inside the first pins nothing and adds a stacking context the row dropdowns must escape.
+    // Read the <header>'s own leading class string, not the whole file: the prose above that
+    // element names `sticky top-0` to say why it must not come back, and a whole-file substring
+    // check would match that comment and pass for the wrong reason.
+    const topbar = readFileSync("src/components/layout/topbar.tsx", "utf8");
+    const afterHeader = topbar.split("<header className={")[1] ?? "";
+    const headerClasses = afterHeader.slice(0, afterHeader.indexOf("$"));
+    assert.ok(afterHeader.length > 0, "topbar must still render a <header> with a class expression");
+    assert.ok(!headerClasses.includes("sticky"), "the Topbar is pinned BY AppShell and must not be sticky itself");
+
+    // The negative pin, and the one that catches the regression: no page surface may render a row.
     const hero = readFileSync("src/components/admin/admin-design-system.tsx", "utf8");
     assert.ok(
-      /<LowerNavRow[\s\S]{0,200}placement="in-page"/.test(hero),
-      "AdminPageHero must render zone 3 in-page — it is the shared page title for the bulk of the admin surface",
+      !hero.includes("<LowerNavRow"),
+      "AdminPageHero must NOT render zone 3 — a row inside this hero cannot be frozen at all, because sticky is bounded by its containing block",
     );
 
-    // The dedup rule. Without it the fallback and the in-page copy both render on every page that
-    // uses the hero, which is the majority of the admin surface.
+    // The portal freezes the same way, under its own FIXED header. The offset is not free: it has
+    // to equal that header's height, which the shell also pads by. Change the header and this pin
+    // fires, instead of the rows silently floating over the page or leaving a gap under it.
+    const portal = readFileSync("src/components/employee-portal/employee-portal-layout.tsx", "utf8");
+    const portalSticky = /<div className="(sticky top-\[(\d+)px\][^"]*lg:top-\[(\d+)px\][^"]*)">/.exec(portal);
+    assert.ok(portalSticky, "the portal must pin its rows in a sticky block offset at both sizes");
+    const afterPortalSticky = portal.slice(portalSticky.index + portalSticky[0].length);
+    const portalFrozen = afterPortalSticky.slice(0, afterPortalSticky.indexOf("</div>"));
+    assert.ok(portalFrozen.includes("<UpperNavRow"), "the portal must freeze zone 2");
+    assert.ok(portalFrozen.includes("<LowerNavRow"), "the portal must freeze zone 3 beside it");
+    const offsets = [portalSticky[2], portalSticky[3]];
+    const padded = /pt-\[(\d+)px\] lg:pt-\[(\d+)px\]/.exec(portal);
+    assert.ok(padded, "the portal shell must still pad by its fixed header's height");
+    const padding = [padded[1], padded[2]];
+    assert.deepEqual(
+      offsets,
+      padding,
+      "the portal rows must pin at exactly the fixed header's height — the same pair the shell pads by",
+    );
+
+    // And with one copy per module there is nothing to deduplicate, so the :has() rule that hid
+    // the duplicate is gone. Leaving it behind would be dead CSS keyed on markers no row carries.
     const css = readFileSync("app/globals.css", "utf8");
     assert.ok(
-      /\.phx-navrow-scope:has\(\.phx-navrow--inpage\)\s+\.phx-navrow--fallback\s*\{\s*display:\s*none/.test(css),
-      "globals.css must hide the fallback row whenever a page placed the row itself",
+      !css.includes(":has(.phx-navrow--inpage)"),
+      "the dedup rule must go with the second placement — a rule keyed on markers no row carries any more is dead",
     );
   }
 

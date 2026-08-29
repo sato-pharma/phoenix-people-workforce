@@ -11,17 +11,19 @@
 // — I want this to be the shape of the system".
 //
 // ── Where each row is rendered ──────────────────────────────────────────────
-//   Zone 2 (upper) — in AppShell, directly under the Topbar. One place, so it
-//                    reaches all 243 pages with no per-page edit.
-//   Zone 3 (lower) — under the page title. There is no single page-title
-//                    component in this app (37 pages write their own <h1>, 206
-//                    render one from a client component), so this row is
-//                    emitted by the two shared surfaces that DO cover a large
-//                    share of them — AdminPageHero and the employee-pages shell
-//                    — and AppShell renders a FALLBACK copy for everything else.
-//                    `.phx-navrow-scope:has(.phx-navrow--inpage)` in
-//                    app/globals.css hides the fallback whenever a page placed
-//                    the row itself, so exactly one copy ever renders.
+//   Both rows render in ONE place per module, inside a sticky container that
+//   also holds that module's header — AppShell for admin and HR, the portal
+//   chrome for the employee portal. That container is what freezes them: the
+//   rows stay put while the page scrolls, and they sit in the SAME place on
+//   every page (owner, 2026-08-29: "I want both new navs to be freezed in every
+//   module fixed when ever i change the page they are fixed").
+//
+//   Zone 3 used to be emitted instead by each shared page-title surface, with a
+//   fallback copy in AppShell and a :has() rule in app/globals.css hiding
+//   whichever was the duplicate. That is retired. A sticky element is bounded
+//   by its containing block, so a row rendered inside a page hero unpins the
+//   instant the hero scrolls off — "below the page title" and "frozen" cannot
+//   both be true, and the owner asked for frozen.
 //
 // Both rows render NOTHING at all for an account that has never saved a layout,
 // which is all but two accounts today — this stays invisible until somebody
@@ -52,7 +54,6 @@ import { createContext, useContext, useMemo, type ReactNode } from "react";
 
 import { ApprovalNavBadge } from "@/components/layout/nav-badge";
 import { NavRowAddButton } from "@/components/layout/nav-row-add-button";
-import { useDarkSurface } from "@/components/ui/surface-context";
 import {
   getNavigationSections,
   type NavigationSection,
@@ -324,10 +325,11 @@ export function UpperNavRow({ className }: { className?: string } = {}) {
     <NavRowStrip
       activeHref={activeHref}
       ariaLabel="Upper navigation"
-      // Deliberately NOT sticky. The Topbar above it is `sticky top-0 z-20`; a second sticky at
-      // top-0 does not stack under it, it slides to the same offset and the two overlap. Pinning
-      // this row would mean hard-coding the Topbar's rendered height, which changes with the
-      // viewport — so the row scrolls with the page instead.
+      // Never `sticky` on its own — the HOST pins it. AppShell wraps the Topbar and both rows in
+      // one sticky container so the whole block travels as a unit, which is what lets it freeze
+      // without anyone hard-coding the Topbar's rendered height. Two separate stickies at top-0
+      // would not stack: they slide to the same offset and overlap. That is why the pinning lives
+      // in the host and this row only ever describes its own frame.
       className={cn(
         className ??
           cn(
@@ -353,50 +355,40 @@ export function UpperNavRow({ className }: { className?: string } = {}) {
 }
 
 /**
- * ZONE 3 — the horizontal row below the page title.
+ * ZONE 3 — the second horizontal row, pinned directly beneath ZONE 2.
  *
- * `placement="in-page"` is what a page (or a shared page surface such as AdminPageHero) renders
- * directly under its own title. `placement="fallback"` is AppShell's copy for the pages that have
- * no shared title surface; the CSS in app/globals.css hides it whenever an in-page copy exists, so
- * the two can never both appear.
+ * It used to have two placements: an `in-page` copy that a page's own title surface rendered, and
+ * a `fallback` copy in AppShell for pages with no such surface, deduped by a `:has()` rule in
+ * app/globals.css. Both are gone. The owner asked for the rows to be FROZEN in every module, and a
+ * row rendered inside a page's hero can never be: `position: sticky` is bounded by its containing
+ * block, so a row inside a short hero unpins the moment that hero scrolls away, whatever classes
+ * it carries. The shell's sticky header is the only place a row CAN be frozen from — and putting
+ * it there also lands the row in the same spot on every page, which the two placements never did.
+ *
+ * `className` replaces the row's whole frame, so each host dresses it for its own surface: the
+ * admin chrome gives it a full-bleed dark bar, the employee portal a rounded translucent card.
  */
-export function LowerNavRow({
-  className,
-  placement,
-}: {
-  /** The host's own frame for the row (padding, divider). Only the in-page copy uses this: each
-   *  host sits on a different surface, and the row must vanish WITH its frame when the viewer has
-   *  put nothing in it — which is why the frame is these classes rather than a wrapping element. */
-  className?: string;
-  placement: "in-page" | "fallback";
-}) {
+export function LowerNavRow({ className }: { className?: string } = {}) {
   const { lowerRow, activeHref, alwaysOfferAdd, canAdd, dark, hasSavedLayout, lowerAddable } =
     useContext(HorizontalNavContext);
-  // The in-page copy takes its palette from the surface it was dropped onto, not from the shell:
-  // inside AdminPageHero that surface is black (AdminHeroFrame provides `true`), while a page that
-  // places the row on its own light header gets the light palette. The fallback follows the shell.
-  const onDarkSurface = useDarkSurface();
-  const inPage = placement === "in-page";
-  const rowDark = inPage ? onDarkSurface : dark;
   return (
     <NavRowStrip
       activeHref={activeHref}
       ariaLabel="Lower navigation"
       className={cn(
-        inPage
-          ? cn("phx-navrow--inpage", className ?? "mt-3")
-          : cn(
-              "phx-navrow--fallback border-b px-3 py-1.5 sm:px-6",
-              dark ? "border-[#1a1a1a] bg-[#050505]" : "border-phx-line bg-white/95",
-            ),
+        className ??
+          cn(
+            "border-b px-3 py-1.5 sm:px-6",
+            dark ? "border-[#1a1a1a] bg-[#050505]" : "border-phx-line bg-white/95",
+          ),
       )}
-      dark={rowDark}
+      dark={dark}
       items={lowerRow}
       keepWhenEmpty={canAdd && (hasSavedLayout || alwaysOfferAdd)}
       trailing={
         canAdd ? (
           <NavRowAddButton
-            dark={rowDark}
+            dark={dark}
             pinned={lowerRow}
             sections={lowerAddable}
             target="lowerRow"

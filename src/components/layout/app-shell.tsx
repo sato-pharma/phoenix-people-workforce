@@ -136,23 +136,17 @@ export async function AppShell({
             personalLayout={personalLayout}
           />
           <div className="flex min-w-0 flex-1 flex-col">
-            {showTopbar && (
-              <Topbar
-                currentRole={access.role}
-                navigationMode={resolvedNavigationMode}
-                permissionLookup={permissionLookup}
-                personalLayout={personalLayout}
-                scope={access.scope}
-                source={access.source}
-                viewer={viewer}
-              />
-            )}
-            {/* The two horizontal navigation rows. Zone 2 sits here, above every page title, and
-                reaches all 243 pages from this one place. Zone 3 belongs BELOW the page title, so
-                the copy rendered here is the fallback for pages with no shared title surface — the
-                `.phx-navrow-scope:has(.phx-navrow--inpage)` rule in app/globals.css hides it the
-                moment a page places the row itself. Both render nothing until the viewer has put a
-                tab in them, which is every account until somebody arranges one. */}
+            {/* FROZEN CHROME. The Topbar and both navigation rows travel as ONE sticky block, so
+                the rows stay put while the page scrolls and land in the same place on every page.
+                It has to be a single container: two stickies at top-0 do not stack, they slide to
+                the same offset and overlap, and stacking them by hand would mean hard-coding the
+                Topbar's rendered height, which changes with the viewport. Wrapping avoids that
+                arithmetic entirely. Zone 2 reaches all 243 pages from here and zone 3 sits directly
+                under it — zone 3 no longer has an in-page copy, because a row rendered inside a
+                page's hero cannot be frozen at all: sticky is bounded by its containing block, so
+                such a row unpins the moment the hero scrolls away. Both rows render nothing until
+                the viewer has put a tab in them, which is every account until somebody arranges
+                one, and the Topbar keeps rendering either way. */}
             <HorizontalNavProvider
               currentRole={access.role}
               isSystemAdministratorWorkspace={isSystemAdministratorWorkspace}
@@ -161,8 +155,21 @@ export async function AppShell({
               personalLayout={personalLayout}
             >
               <div className="phx-navrow-scope flex min-w-0 flex-1 flex-col">
-                <UpperNavRow />
-                <LowerNavRow placement="fallback" />
+                <div className="sticky top-0 z-30">
+                  {showTopbar && (
+                    <Topbar
+                      currentRole={access.role}
+                      navigationMode={resolvedNavigationMode}
+                      permissionLookup={permissionLookup}
+                      personalLayout={personalLayout}
+                      scope={access.scope}
+                      source={access.source}
+                      viewer={viewer}
+                    />
+                  )}
+                  <UpperNavRow />
+                  <LowerNavRow />
+                </div>
                 <main className="min-w-0 flex-1 px-3 py-4 sm:px-4 sm:py-5 lg:px-6 lg:py-6 xl:px-8">
                   <div
                     className={`w-full ${
