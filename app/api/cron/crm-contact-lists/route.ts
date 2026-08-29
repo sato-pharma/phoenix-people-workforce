@@ -9,6 +9,7 @@ import {
   selectContactSyncSlice,
   syncCrmContactLists,
 } from "@/lib/crm/contacts-sync";
+import { pingDeadMansSwitch } from "@/lib/observability/dead-mans-switch";
 import { logError } from "@/lib/observability/log";
 import { writeAuditLog } from "@/lib/admin/audit";
 import { assertCronAuthorized } from "@/lib/security/cron-auth";
@@ -20,6 +21,27 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 800;
 
 const JOB_NAME = "crm-contact-lists";
+const JOB_SLUG = "phoenix-crm-contact-lists";
+
+/**
+ * WHAT THE DEAD-MAN'S SWITCH TREATS AS A FAILURE HERE, and why it is not everything it could be.
+ *
+ * Pinged directly rather than through `withDeadMansSwitch` because this route catches its error
+ * and answers 500 without throwing — the wrapper would report a false success on the one outcome
+ * worth catching.
+ *
+ * It pings /fail on three things only: the connection being unconfigured, an exception, and a tick
+ * that refreshed NO agent at all. That last one is the shape that matters — a roster read that
+ * comes back empty, or a vendor session that rejects every agent, leaves the mirror rotting while
+ * the job returns 200 twelve times a day.
+ *
+ * It deliberately does NOT fail on partial degradation. `agentsRefusedEmpty` is the designed
+ * safety (an agent whose lists come back empty keeps yesterday's rows rather than being emptied),
+ * and a handful of `agentsFailed` or `skipped` is an ordinary vendor hiccup on one twelfth of the
+ * roster. Twelve ticks a day means anything flappy here pages daily until it is muted, and a muted
+ * check is worth less than no check. Those counts are carried in the ping DETAIL on every tick, so
+ * they are visible to anyone reading the check, and the per-tick audit row remains the record.
+ */
 
 /**
  * How long this handler may spend fetching before it stops starting new agents.
@@ -55,6 +77,7 @@ export async function GET(request: Request) {
   if (denied) return denied;
 
   if (!isIReports360Configured()) {
+    await pingDeadMansSwitch(JOB_SLUG, "fail", "iReports360 is not configured — the contact mirror is not being refreshed");
     return NextResponse.json(
       { error: "The iReports360 connection is not configured in this environment.", skipped: true },
       { status: 503 },
@@ -129,6 +152,15 @@ export async function GET(request: Request) {
       summary,
     });
 
+    await pingDeadMansSwitch(
+      JOB_SLUG,
+      result.agents === 0 ? "fail" : "success",
+      `slice ${slice + 1}/${sliceOf}: ${result.agents} agent(s) refreshed, ${result.upserted} row(s) upserted` +
+        (result.agentsRefusedEmpty ? `, ${result.agentsRefusedEmpty} kept unchanged (empty answer)` : "") +
+        (result.agentsFailed ? `, ${result.agentsFailed} failed` : "") +
+        (result.skipped ? `, ${result.skipped} out of time` : ""),
+    );
+
     return NextResponse.json(
       {
         agents: result.agents,
@@ -148,6 +180,7 @@ export async function GET(request: Request) {
     );
   } catch (error) {
     logError("CRM contact list sync failed", { error, labels: { event: "cron_failed", job: JOB_NAME } });
+    await pingDeadMansSwitch(JOB_SLUG, "fail", error instanceof Error ? `${error.name}: ${error.message}` : String(error));
     return NextResponse.json(
       { error: clientSafeErrorMessage(error, "The CRM contact list sync failed.") },
       { status: 500 },
