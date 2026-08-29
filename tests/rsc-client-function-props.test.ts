@@ -108,6 +108,34 @@ function exportedComponentNames(text: string): Set<string> {
   return names;
 }
 
+/**
+ * A JSX tag name: starts uppercase AND carries a lowercase letter. The second half matters —
+ * without it SCREAMING_SNAKE constants like PLAN_STATUS_NEW read as components, and the check
+ * below would wave through exactly the imports it exists to catch.
+ */
+function isComponentName(name: string): boolean {
+  return /^[A-Z]/.test(name) && /[a-z]/.test(name);
+}
+
+/**
+ * Everything a module exports that is NOT component-shaped — helpers and constants, the things a
+ * call site uses rather than a JSX tag. Imported into a server module from a "use client" file,
+ * every one of these is the second RSC failure, described at the assertion that uses this.
+ */
+function exportedValueNames(text: string): Set<string> {
+  const names = new Set<string>();
+  const patterns = [
+    /export\s+(?:async\s+)?function\s+([A-Za-z_$][\w$]*)/g,
+    /export\s+(?:const|let|var)\s+([A-Za-z_$][\w$]*)/g,
+  ];
+  for (const pattern of patterns) {
+    for (const match of text.matchAll(pattern)) {
+      if (!isComponentName(match[1])) names.add(match[1]);
+    }
+  }
+  return names;
+}
+
 /** Resolve an import specifier to a repo-relative path, or null when it is a package. */
 function resolveSpecifier(fromPath: string, specifier: string, known: Map<string, SourceFile>): string | null {
   let base: string;
@@ -464,8 +492,11 @@ export function runRscClientFunctionPropTests() {
   const byPath = new Map(files.map((file) => [file.path, file]));
 
   const clientExports = new Map<string, Set<string>>();
+  const clientValueExports = new Map<string, Set<string>>();
   for (const file of files) {
-    if (isClientModule(file.text)) clientExports.set(file.path, exportedComponentNames(file.text));
+    if (!isClientModule(file.text)) continue;
+    clientExports.set(file.path, exportedComponentNames(file.text));
+    clientValueExports.set(file.path, exportedValueNames(file.text));
   }
 
   const serverRendered = serverRenderedModules(files, byPath);
@@ -547,5 +578,77 @@ export function runRscClientFunctionPropTests() {
       "",
       ...violations,
     ].join("\n"),
+  );
+
+  // ── The SAME boundary, crossed the other way ────────────────────────────────────────────────
+  //
+  // Everything above catches a server module HANDING a function to a client component. It does not
+  // catch a server module IMPORTING a plain helper out of a "use client" file and calling it, and
+  // that is a distinct production failure with a distinct message:
+  //
+  //   ⨯ Error: Attempted to call planPeriodText() from the server but planPeriodText is on the
+  //     client. It's not possible to invoke a client function from the server, it can only be
+  //     rendered as a Component or passed to props of a Client Component.
+  //     digest: '1800222950'
+  //
+  // Live on production 2026-08-29 on /admin/plan-verification. plan-verification-tables.tsx is
+  // "use client" and exported planPeriodText; plan-verification-board.tsx is a server component and
+  // imported it for the selected plan's title. The board LISTED plans perfectly — the call sat on
+  // the selected-plan branch — so the page looked healthy until a manager clicked a plan, and then
+  // every plan returned "Admin workspace unavailable". Shipped 25 minutes before it was reported.
+  //
+  // Next turns every export of a client module into a client reference, so this applies to
+  // constants as much as functions: what the server receives is a marker object, never the value.
+  // Importing a COMPONENT is the one legitimate case, which is why isComponentName decides, and why
+  // it insists on a lowercase letter — SCREAMING_SNAKE constants are values, not tags.
+  //
+  // The fix is never "use client" on the server file. It is to move the helper into a module with
+  // no directive, which both sides may call — src/lib/crm/plan-verification.ts is the worked
+  // example, and it takes a structural parameter so the shared module gains no data dependency.
+  const callViolations: string[] = [];
+
+  for (const file of files) {
+    if (!serverRendered.has(file.path)) continue;
+    if (isClientModule(file.text)) continue;
+
+    for (const { specifier, names } of importedBindings(file.text)) {
+      const resolved = resolveSpecifier(file.path, specifier, byPath);
+      if (!resolved) continue;
+      const valueExports = clientValueExports.get(resolved);
+      if (!valueExports) continue;
+
+      const smuggled = names.filter((name) => valueExports.has(name));
+      if (smuggled.length === 0) continue;
+
+      callViolations.push(
+        `${file.path} — imports ${smuggled.map((name) => `\`${name}\``).join(", ")} from ${resolved}, which is "use client"`,
+      );
+    }
+  }
+
+  assert.deepEqual(
+    callViolations,
+    [],
+    [
+      "A server-rendered module is importing a non-component value out of a \"use client\" module.",
+      "On the server that binding is a client reference, not the thing itself, so calling it throws",
+      '"Attempted to call X() from the server but X is on the client" and the page renders the error',
+      "boundary. Move the helper to a module with no directive and import it from both sides.",
+      "",
+      ...callViolations,
+    ].join("\n"),
+  );
+
+  // Self-check, same reasoning as the anchors above: prove the new detector can SEE a violation,
+  // or it passes vacuously the moment exportedValueNames or the import parser stops working.
+  const anchor = files.find((file) => file.path === "src/components/crm/plan-verification-tables.tsx");
+  assert.ok(anchor && isClientModule(anchor.text), "plan-verification-tables.tsx must still be a client module");
+  assert.ok(
+    exportedValueNames(
+      ['"use client";', "export function helperThing() {}", "export const SOME_CONST = 1;", "export function Widget() {}"].join(
+        "\n",
+      ),
+    ).size === 2,
+    "exportedValueNames must see a camelCase helper and a SCREAMING_SNAKE constant, and must not see a component",
   );
 }
