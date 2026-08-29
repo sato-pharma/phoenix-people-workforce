@@ -393,9 +393,11 @@ export async function askForCvFile(input: {
   waId: string;
   phoneNumberId: string | null;
   body?: string | null;
+  inboundWamid?: string | null;
 }): Promise<boolean> {
   const result = await sendWhatsAppText({
     phoneNumberId: input.phoneNumberId,
+    logContext: { detail: { enquiry: classifyTextOnlyEnquiry(input.body) }, inboundWamid: input.inboundWamid ?? null },
     text: textOnlyReplyText(classifyTextOnlyEnquiry(input.body)),
     toWaId: input.waId,
   }).catch((error) => {
@@ -482,7 +484,12 @@ export async function handleTextOnlyMessage(input: {
     const withinBudget = input.repliesSent < MAX_TEXT_ONLY_REPLIES_PER_DELIVERY;
     const asked =
       action.ask && withinBudget
-        ? await askForCvFile({ body: input.body, phoneNumberId: input.deliveredToPhoneNumberId, waId: input.waId })
+        ? await askForCvFile({
+            body: input.body,
+            inboundWamid: input.wamid,
+            phoneNumberId: input.deliveredToPhoneNumberId,
+            waId: input.waId,
+          })
         : false;
 
     if (action.notify) {
