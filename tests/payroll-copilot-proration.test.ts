@@ -117,8 +117,9 @@ export function runPayrollCopilotProrationTests() {
   const belowBasic = applyResignationPartsSplit({ totalPayable: 15000, basicSalary: 21000 });
   assert.deepEqual(belowBasic, { firstPart: 15000, secondPart: 0 });
 
-  // --- joiner: hired on/before the 15th -> ECOL+Fuel in FULL; hire date itself
-  // counts as a paid day ------------------------------------------------------
+  // --- joiner: EVERY component prorates by the same day share (owner
+  // instruction 2026-08-29 — "you divide the net salary"). The hire date itself
+  // still counts as a paid day. ------------------------------------------------
   const joinerEarly = computeJoinerPay({
     baseSalary: 31000,
     extraCostOfLiving: 1000,
@@ -129,10 +130,11 @@ export function runPayrollCopilotProrationTests() {
   assert.ok(joinerEarly);
   assert.equal(joinerEarly.daysWorked, 22); // 31 - 10 + 1, hire date inclusive
   assert.equal(joinerEarly.baseForMonth, 22000); // 1000/day * 22
-  assert.equal(joinerEarly.ecolPaid, 1000);
-  assert.equal(joinerEarly.fuelPaid, 500);
+  assert.equal(joinerEarly.ecolPaid, 709.68); // 1000 * 22/31 — no longer paid whole
+  assert.equal(joinerEarly.fuelPaid, 354.84); // 500 * 22/31
+  assert.equal(joinerEarly.netForMonth, 23064.52); // = 32,500 net * 22/31
 
-  // hired after the 15th -> ECOL+Fuel at HALF
+  // hired after the 15th: the SAME rule, with no halving cliff
   const joinerLate = computeJoinerPay({
     baseSalary: 31000,
     extraCostOfLiving: 1000,
@@ -143,21 +145,38 @@ export function runPayrollCopilotProrationTests() {
   assert.ok(joinerLate);
   assert.equal(joinerLate.daysWorked, 12); // 31 - 20 + 1
   assert.equal(joinerLate.baseForMonth, 12000);
-  assert.equal(joinerLate.ecolPaid, 500);
-  assert.equal(joinerLate.fuelPaid, 250);
+  assert.equal(joinerLate.ecolPaid, 387.1); // 1000 * 12/31, NOT the retired 500 half
+  assert.equal(joinerLate.fuelPaid, 193.55); // 500 * 12/31, NOT the retired 250
+  assert.equal(joinerLate.netForMonth, 12580.65); // = 32,500 net * 12/31
 
-  // exact boundary: hired ON the 15th takes the "full" branch
-  const joinerBoundary = computeJoinerPay({
+  // The >15th halving is GONE, and this is what proves it: the 15th and the 16th
+  // must now differ by exactly ONE day of net. Under the retired rule the 16th
+  // lost half of BOTH allowances at a stroke, making this gap 1,750.00 instead of
+  // 1,048.39. Reintroduce the halving and this assertion fails.
+  const netDayRate = 32500 / 31;
+  const on15th = computeJoinerPay({
     baseSalary: 31000,
     extraCostOfLiving: 1000,
     fuelAllowance: 500,
     hireDate: "2026-07-15",
     period: JULY,
   });
-  assert.ok(joinerBoundary);
-  assert.equal(joinerBoundary.daysWorked, 17); // 31 - 15 + 1
-  assert.equal(joinerBoundary.ecolPaid, 1000);
-  assert.equal(joinerBoundary.fuelPaid, 500);
+  const on16th = computeJoinerPay({
+    baseSalary: 31000,
+    extraCostOfLiving: 1000,
+    fuelAllowance: 500,
+    hireDate: "2026-07-16",
+    period: JULY,
+  });
+  assert.ok(on15th);
+  assert.ok(on16th);
+  assert.equal(on15th.daysWorked, 17); // 31 - 15 + 1
+  assert.equal(on16th.daysWorked, 16);
+  assert.equal(
+    Math.round((on15th.netForMonth - on16th.netForMonth) * 100) / 100,
+    Math.round(netDayRate * 100) / 100,
+    "crossing the 15th must cost exactly one day of NET — the retired rule dropped half of both allowances here",
+  );
 
   // ===========================================================================
   // Integration through buildRowForEmployee
@@ -238,9 +257,9 @@ export function runPayrollCopilotProrationTests() {
   });
   assert.ok(joinerRow);
   assert.equal(joinerRow.baseSalary, 12000); // prorated for 12 days
-  assert.equal(joinerRow.extraCostOfLiving, 500); // half (hired after the 15th)
-  assert.equal(joinerRow.fuelAllowance, 250);
-  assert.equal(joinerRow.netSalary, 12750);
+  assert.equal(joinerRow.extraCostOfLiving, 387.1); // 1000 * 12/31 — prorated, not halved
+  assert.equal(joinerRow.fuelAllowance, 193.55); // 500 * 12/31
+  assert.equal(joinerRow.netSalary, 12580.65); // = 32,500 net * 12/31
   assert.equal(joinerRow.medicalInsurance, 300, "F: medical insurance still applies in full on a joiner row");
 
   // --- C: unpaid leave (continuing employee) uses Base-only day-rate, ECOL/Fuel

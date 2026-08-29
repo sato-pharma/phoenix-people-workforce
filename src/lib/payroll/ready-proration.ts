@@ -5,10 +5,24 @@ import { roundCurrency } from "@/lib/payroll/money";
 /**
  * Ready-Payroll partial-month proration for joiners and leavers.
  *
- * THE RULE (owner-confirmed, and already stated in
- * src/lib/payroll/copilot/proration.ts): any daily rate is always
- * `Base Salary ÷ actual calendar days in the month`. ECOL and Fuel are extras,
- * never part of the rate.
+ * THE RULES (owner-confirmed, and mirrored in
+ * src/lib/payroll/copilot/proration.ts). There are TWO rates, one per lifecycle
+ * branch, and they are deliberately different:
+ *
+ *   JOINER — `Net Salary ÷ actual calendar days in the month`, Net being
+ *   Base + ECOL + Fuel. Owner instruction 2026-08-29: the allowances are
+ *   prorated along with the base, so a partial-month hire is paid exactly the
+ *   fraction of Net that matches the days worked.
+ *
+ *   LEAVER — `Base Salary ÷ actual calendar days`, unchanged. ECOL and Fuel
+ *   remain extras here, governed by Resignation Rule 1 below. The owner changed
+ *   the joiner rule only; do not fold the allowances into the leaver rate.
+ *
+ * A joiner's whole proration is carried by the Other Deductions line rather
+ * than by writing down the ECOL and Fuel columns. That keeps the sheet showing
+ * each employee's contractual monthly allowances while one line states the
+ * proration, and it is arithmetically identical: Month Salary lands on
+ * Net × days worked ÷ days in month either way.
  *
  * WHY THIS MODULE EXISTS: this arithmetic used to sit inline in
  * app/api/payroll/template/route.ts and hardcoded a 30-day month. That silently
@@ -68,11 +82,27 @@ export function prorationEndDay(lastWorkingDate: string | null, month: number, y
 }
 
 /**
- * Hire-month-only proration deduction (Base Salary only), written into Other
- * Deductions. Returns 0 when the employee was not hired inside this month.
+ * JOINER proration deduction, on NET — the whole month's shortfall in one line,
+ * written into Other Deductions. Returns 0 when the employee was not hired
+ * inside this month.
+ *
+ * Owner instruction 2026-08-29: a partial-month hire is paid
+ * `Net ÷ calendar days × days worked`, Net being Base + ECOL + Fuel. Deducting
+ *   (Base + ECOL + Fuel) − Net × (days worked ÷ days in month)
+ * from a row that still carries its full Base, ECOL and Fuel leaves Month
+ * Salary at exactly that figure, which is why the allowance COLUMNS are left
+ * alone (see the module header).
+ *
+ * REPLACED calculateBaseProrationDeduction, which prorated Base only and
+ * encoded the retired joiner rule. It was deleted rather than left in place:
+ * this is the file a session reads to learn what the rule IS, and a dead
+ * function stating the old rule beside the live one is how the wrong rule gets
+ * called back into service.
  */
-export function calculateBaseProrationDeduction(
+export function calculateNetJoinerProrationDeduction(
   baseSalary: number,
+  extraCostOfLiving: number,
+  fuelAllowance: number,
   hireDate: string | null,
   month: number,
   year: number,
@@ -84,7 +114,8 @@ export function calculateBaseProrationDeduction(
 
   const daysInMonth = payrollDaysInMonth(month, year);
   const eligibleDays = Math.max(0, daysInMonth - hireDay + 1);
-  return roundCurrency(Math.max(0, baseSalary - (baseSalary / daysInMonth) * eligibleDays));
+  const netSalary = baseSalary + extraCostOfLiving + fuelAllowance;
+  return roundCurrency(Math.max(0, netSalary - (netSalary / daysInMonth) * eligibleDays));
 }
 
 /**
@@ -152,8 +183,12 @@ export type ReadyLifecycleBranch =
 
 export type ReadyLifecycleSettlement = {
   branch: ReadyLifecycleBranch;
-  /** Goes into Other Deductions. Base Salary only — never touches allowances. */
-  baseProrationDeduction: number;
+  /**
+   * Goes into Other Deductions. What it prorates depends on the branch, and the
+   * two are deliberately different: a JOINER row deducts against Net
+   * (Base + ECOL + Fuel), a LEAVER row against Base Salary only.
+   */
+  prorationDeduction: number;
   /** Post-rule ECOL for this row. */
   extraCostOfLiving: number;
   /** Post-rule Fuel for this row. */
@@ -231,7 +266,7 @@ export function resolveReadyLifecycleSettlement(input: {
     // non-resignations so it can no longer overpay a late-month dismissal.
     return {
       branch: "leaver_non_resignation",
-      baseProrationDeduction: calculateBaseLifecycleProrationDeduction(
+      prorationDeduction: calculateBaseLifecycleProrationDeduction(
         baseSalary,
         hireDate,
         lastWorkingDate,
@@ -265,14 +300,14 @@ export function resolveReadyLifecycleSettlement(input: {
       const effectiveEndDay = prorationEffectiveEndDay(lastWorkingDate, month, year);
       const startDay = prorationStartDay(hireDate, month, year);
       const eligibleDays = Math.max(0, effectiveEndDay - startDay + 1);
-      const baseProrationDeduction =
+      const prorationDeduction =
         startDay <= 1 && effectiveEndDay >= daysInMonth
           ? 0
           : roundCurrency(Math.max(0, baseSalary - (baseSalary / daysInMonth) * eligibleDays));
 
       return {
         branch: paidToMonthEnd ? "leaver_after_25" : "leaver_on_or_before_25",
-        baseProrationDeduction,
+        prorationDeduction,
         effectiveEndDay,
         extraCostOfLiving: settlement.ecolPaid,
         fuelAllowance: settlement.fuelPaid,
@@ -280,16 +315,32 @@ export function resolveReadyLifecycleSettlement(input: {
     }
   }
 
-  // Joiner, or an ordinary full-month row. Allowances pass through untouched.
+  // Joiner, or an ordinary full-month row. The allowance COLUMNS pass through
+  // untouched either way: for a joiner the entire proration — base and
+  // allowances alike — is carried by the deduction line, so the sheet keeps
+  // showing the contractual monthly ECOL and Fuel while one figure states the
+  // shortfall. An ordinary row has no hire date in this month and deducts 0.
+  //
+  // A row that both joined AND left this month never reaches here: the leaver
+  // branches above return first, and they keep the base-only leaver rate.
   return {
     branch: joiningThisMonth ? "joiner" : "none",
-    baseProrationDeduction: calculateBaseLifecycleProrationDeduction(
-      baseSalary,
-      hireDate,
-      lastWorkingDate,
-      month,
-      year,
-    ),
+    prorationDeduction: joiningThisMonth
+      ? calculateNetJoinerProrationDeduction(
+          baseSalary,
+          extraCostOfLiving,
+          fuelAllowance,
+          hireDate,
+          month,
+          year,
+        )
+      : calculateBaseLifecycleProrationDeduction(
+          baseSalary,
+          hireDate,
+          lastWorkingDate,
+          month,
+          year,
+        ),
     effectiveEndDay: prorationEndDay(lastWorkingDate, month, year),
     extraCostOfLiving: roundCurrency(extraCostOfLiving),
     fuelAllowance: roundCurrency(fuelAllowance),
@@ -317,7 +368,7 @@ export function readyLifecycleComment(settlement: ReadyLifecycleSettlement): str
     case "leaver_non_resignation":
       return "Termination/deactivation payroll row (not a resignation): base salary prorated to the last working day; no cost of living and no fuel.";
     case "joiner":
-      return "Partial-month hire. Base salary prorated from the hire date on the month's real calendar days; cost of living and fuel paid in full.";
+      return "Partial-month hire. Net salary (base plus cost of living and fuel) prorated from the hire date on the month's real calendar days; the hire day counts as worked.";
     default:
       return null;
   }
