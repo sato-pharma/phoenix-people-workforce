@@ -146,17 +146,26 @@ export const AUTOLOAD_FOOTPRINT_BUDGET = 150_000;
  * gate is answering a different question, "is this commit inside budget", and that answer must not
  * depend on whose checkout ran it.
  *
- * `.gitattributes` here pins `* text=auto eol=lf`, so git itself cannot hand anyone a CRLF copy of
- * a `.md` — measured 2026-08-29, CLAUDE.md and AGENTS.md carry zero CR bytes in both the primary
- * checkout and a worktree. The exposure is a local tool rewriting a file with CRLF: that same
- * `eol=lf` normalisation means git reports the file as UNMODIFIED afterwards, so nothing flags it
- * and the gate would silently start scoring ~1 byte per line higher than the commit it is judging.
- * One byte a line is ~1,100 on AGENTS.md alone — a number that moves while the content does not.
+ * THIS IS NOT HYPOTHETICAL — a CRLF copy was live on this machine while the code was being written.
+ * Measured 2026-08-29 in node, counting bytes 13/10 on a Buffer so no shell or encoding layer is in
+ * the path: `.claude/worktrees/eloquent-moser-9c576c/CLAUDE.md` was 6,924 bytes with 106 CRLF pairs
+ * against a 6,818-byte blob, while the primary checkout and this worktree both read 6,818 with zero
+ * CR. `git status --porcelain -- CLAUDE.md` on that copy is EMPTY.
+ *
+ * `.gitattributes` pinning `* text=auto eol=lf` is what makes it invisible rather than what
+ * prevents it. That governs what git WRITES on checkout; it does not govern what a local tool
+ * writes afterwards, and the same rule normalises on READ before comparing — so the file reports
+ * clean forever. The tell that it is a writer and not a checkout: it is selective. Three tracked
+ * files in that worktree carry CR while `AGENTS.md` beside them is clean at 101,859/CR=0.
+ *
+ * Ungated, the gate would score ~1 byte per line it is not judging — ~1,100 on AGENTS.md alone, a
+ * number that moves while the content does not.
  *
  * Counted byte-wise rather than via a string replace so a 112KB file is not re-encoded to measure
- * it, and so a LONE CR (a genuine byte) still counts. Credit to the parallel session that raised
- * the working-copy-versus-blob hazard; the premise was a CRLF checkout, which cannot happen here,
- * but the failure it describes can arrive by the other route.
+ * it, and so a LONE CR (a genuine byte) still counts. Raised by the parallel session cutting
+ * AGENTS.md §2.2; this session first dismissed it as an MSYS artifact — MSYS `grep -c $'\r'` really
+ * does report a match on every line of a pure-LF file — and was wrong. The shell reading was
+ * garbage AND the CRLF copy was real.
  *
  * @param {Buffer | Uint8Array | string} contents the file as read from disk
  * @returns {number} bytes, with the CR of each CRLF pair discounted

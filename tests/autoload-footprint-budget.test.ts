@@ -133,9 +133,10 @@ export function runAutoloadFootprintBudgetTests() {
   // that ARE in the repo past their room. This is the check that would have gone red while §2.1 was
   // climbing to 57,982 bytes, which nothing did.
   // Measured with CRLF discounted, so the gate scores the COMMIT and not the checkout that ran it.
-  // `.gitattributes` pins `* text=auto eol=lf`, so git cannot hand anyone a CRLF `.md` — but that
-  // same normalisation means a local tool rewriting one with CRLF leaves git reporting it
-  // UNMODIFIED, and the gate would quietly start counting ~1 byte per line it is not judging.
+  // A CRLF copy of CLAUDE.md was live in a sibling worktree while this was written — 6,924 bytes
+  // against a 6,818-byte blob, with `git status` reporting it clean, because `.gitattributes`
+  // normalises on read before comparing. Without this the gate counts ~1 byte per line it is not
+  // judging. See `autoloadedFileBytes` for the full measurement.
   const repoShare = AUTOLOAD_FOOTPRINT_BUDGET - MEMORY_INDEX_READ_CEILING;
   const live = parts(
     ["CLAUDE.md", autoloadedFileBytes(readFileSync("CLAUDE.md"))],
