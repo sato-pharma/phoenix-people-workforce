@@ -1070,6 +1070,7 @@ import { runNotificationOutboxBatchWindowTests } from "./notification-outbox-bat
 import { runNotificationDrainStarvationGuardTests } from "./notification-drain-starvation-guard.test.ts";
 import { runExpenseClaimsRefreshTests } from "./expense-claims-refresh.test.ts";
 import { runMarketingFinanceRequirementOnApprovalTests } from "./marketing-finance-requirement-on-approval.test.ts";
+import { runMarketingFinanceHoldTests } from "./marketing-finance-hold.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -3219,6 +3220,12 @@ await runTest(
     + "in the same transaction, dated in Cairo from the deadline setting nothing had ever read — and DO NOTHING, "
     + "so an invoice already delivered is never rewritten back to pending)",
   runMarketingFinanceRequirementOnApprovalTests,
+);
+await runTest(
+  "marketing finance hold (a status the lifecycle declared for three months and could never enter: the flag "
+    + "never fires on an invoice already delivered, only an approved request can be held, and the reason is "
+    + "written before the status so a 15s timeout can never freeze a request with no recorded why)",
+  runMarketingFinanceHoldTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);

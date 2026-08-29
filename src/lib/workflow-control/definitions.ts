@@ -966,11 +966,45 @@ export const WORKFLOW_CONTROL_DOMAINS: readonly WorkflowControlDomain[] = [
         // The "approval does not create the finance requirement" half is FIXED — migration
         // 20260829180000 makes the decision RPC insert the row in the same transaction as the
         // approval, with the deadline read from the finance_invoice_deadline_days control setting.
-        // What remains is the other end of that obligation: the deadline is recorded and then
-        // nothing ever acts on it. invoice_status is only ever written as 'pending' (at approval)
-        // or 'submitted' (when evidence is uploaded) — no job, query or view moves a requirement to
-        // 'overdue' once its date passes, even though the status constraint has always allowed it.
-        gaps: ["Nothing marks a finance requirement overdue: the invoice deadline is recorded at approval, but no job or view ever moves invoice_status from 'pending' to 'overdue' once that date passes."],
+        //
+        // The other end — "the deadline is recorded and then nothing ever acts on it" — is now
+        // handled by the Finance Hold subflow below, but NOT in the way this gap used to predict.
+        // invoice_status is still never written as 'overdue', deliberately: lateness is DERIVED live
+        // from invoice_deadline_date against today in Cairo, so there is no stored flag to go stale
+        // and no job to keep running. Do not "finish" this by adding one.
+        gaps: ["Placing or releasing a finance hold notifies nobody. The requester is not told that their approved request has been frozen, or that it has been let go again — the hold is visible only to someone already looking at the request. Who should receive that is an owner decision, not a default to assume."],
+      },
+      {
+        key: "finance-hold",
+        name: "Finance Hold",
+        summary: "An approved request whose invoice never arrived — flagged by the system, decided by a human.",
+        steps: [
+          {
+            id: "flag_overdue",
+            name: "Flag an approved request whose invoice is late",
+            actor: "System",
+            role: "System",
+            statusProduced: "(no status change)",
+            notificationRecipients: [],
+            emailRecipients: [],
+            sideEffects:
+              "Read-only. loadMarketingFinanceHoldQueue derives lateness live from the obligation's invoice_deadline_date against today in Africa/Cairo and never writes anything. An invoice already submitted or cleared is never flagged — flagging one would freeze a request that owes nothing.",
+            routesTo: "Super Admin, who decides whether to hold. Nothing happens without him.",
+          },
+          {
+            id: "hold_release",
+            name: "Super Admin places or releases the hold",
+            actor: "Super Admin",
+            role: "Super Admin",
+            statusProduced: "finance_hold (held) | approved or active (released)",
+            notificationRecipients: [],
+            emailRecipients: [],
+            sideEffects:
+              "Records the reason on the finance requirement BEFORE flipping the status, so a client request that times out — which still commits — can never leave a request frozen with no recorded why. The status write is a compare-and-set so two admins on the same queue cannot silently overwrite each other, and phx_capture_marketing_request_event records actor, from and to. A release returns the request to the status the event log says it was held from, never a guess.",
+            fallbackEscalation:
+              "None, deliberately. The system never holds or releases on its own — owner rule 2026-08-29, the same rule expenses run under: the system flags, a human decides. Do not add a cron or an auto-hold-once-overdue convenience.",
+          },
+        ],
       },
       {
         key: "notifications",
