@@ -184,6 +184,7 @@ import { runRecruitmentPortalCvViewTests } from "./recruitment-portal-cv-view.te
 import { runRecruitmentInboundCvIntakeTests } from "./recruitment-inbound-cv-intake.test.ts";
 import { runRecruitmentIntakeFinalizePatchTests } from "./recruitment-intake-finalize-patch.test.ts";
 import { runCandidateRoleRegionTests } from "./recruitment-candidate-role-region.test.ts";
+import { runRecruitmentDeclaredPreferencesTests } from "./recruitment-declared-preferences.test.ts";
 import { runRecruitmentRedFlagTests } from "./recruitment-red-flag.test.ts";
 import { runCandidateScreeningFactsTests } from "./recruitment-candidate-screening-facts.test.ts";
 import { runCvFileChoiceTests } from "./recruitment-cv-file-choice.test.ts";
@@ -1393,6 +1394,10 @@ await runTest("recruitment inbound cv intake", runRecruitmentInboundCvIntakeTest
 await runTest("recruitment intake finalize patch (a late throw must not erase the candidate it recorded)", runRecruitmentIntakeFinalizePatchTests);
 await runTest("recruitment email intake", runRecruitmentEmailIntakeTests);
 await runTest("recruitment candidate role and region filters", runCandidateRoleRegionTests);
+await runTest(
+  "recruitment declared preferences (an applicant's own WhatsApp answer outranks the CV address, and resolves with no address at all)",
+  runRecruitmentDeclaredPreferencesTests,
+);
 await runTest(
   "recruitment candidate screening facts (a hedged CV read never outranks a recorded one, and the row and the filter resolve the same role family)",
   runCandidateScreeningFactsTests,
