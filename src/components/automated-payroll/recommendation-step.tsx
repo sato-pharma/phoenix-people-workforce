@@ -15,7 +15,9 @@ import { stepDefinition, stepFieldsTotal, stepWindowLabel } from "@/lib/automate
 import type {
   ManualRowCandidate,
   PayrollPeriod,
+  StepDefinition,
   StepEditInput,
+  StepFieldSpec,
   StepImportPreview,
   StepKey,
   StepRow,
@@ -214,6 +216,19 @@ function AddEmployeePanel({
   );
 }
 
+/**
+ * A step's spec for one field key — the auto-calc rules live on the field, not
+ * at the call site.
+ *
+ * Module-level on purpose. As a closure over `definition` inside the component
+ * it made the React Compiler treat `definition` as possibly-mutated, which
+ * invalidated the existing useCallback/useMemo below it (`react-hooks/
+ * preserve-manual-memoization`, an error in this repo).
+ */
+function fieldSpecOf(definition: StepDefinition, key: string): StepFieldSpec | undefined {
+  return definition.fields.find((candidate) => candidate.key === key);
+}
+
 export function RecommendationStep({
   runId,
   stepKey,
@@ -377,30 +392,51 @@ export function RecommendationStep({
   };
 
   /**
-   * Editing a "days" field auto-calculates its paired money field via
-   * Base Salary / divisor × days.
+   * One "days" field can drive SEVERAL money fields, each a day-share of its own
+   * monthly amount: `amount / divisor × days`.
    *
-   * The divisor defaults to 30 (the owner's day-rate rule for deductions) but a
-   * field can name a context column to read instead — resignation proration
-   * divides by the month's ACTUAL calendar days, so a 31-day month would
-   * otherwise compute the wrong settlement.
+   *   amount  — the context column named by `autoCalcAmountContextKey`, default
+   *             "Base Salary". The Resignations CRM tab names "Net Salary"
+   *             (owner rule 2026-08-30: a no-activity day must cost exactly one
+   *             day of the pay it cancels, and that pay is prorated off the net).
+   *   divisor — the context column named by `autoCalcDivisorContextKey`, default
+   *             30 (the owner's deduction day-rate). Resignation proration
+   *             divides by the month's ACTUAL calendar days, so a 31-day month
+   *             would otherwise settle the wrong amount.
+   *
+   * `autoCalcCompanionMoneyKeys` is what makes the Resignations step's Days
+   * Worked move Extra Cost of Living and Fuel alongside Base. Before 2026-08-30
+   * it moved Base alone, so correcting the days left the allowances on the old
+   * count and quietly undid the "prorate the whole net" rule of the day before.
+   *
+   * Mirrors resolveLeaverBasis/prorateLeaverNet on the server. The server is
+   * authoritative — this exists so the grid agrees with it while HR types.
    */
-  const setDaysValue = (
-    hrId: string,
-    field: string,
-    autoCalcMoneyKey: string | undefined,
+  const applyAutoCalc = (
+    row: StepRow,
+    values: Record<string, number>,
+    spec: StepFieldSpec | undefined,
     days: number,
-    divisorContextKey?: string,
   ) => {
+    if (!spec?.autoCalcMoneyKey) return;
+    const divisorKey = spec.autoCalcDivisorContextKey;
+    const divisor = divisorKey ? Number(row.context[divisorKey] ?? 0) || 30 : 30;
+    const share = (amountContextKey: string) => {
+      const amount = Number(row.context[amountContextKey] ?? 0);
+      return Math.round(((amount / divisor) * days + Number.EPSILON) * 100) / 100;
+    };
+    values[spec.autoCalcMoneyKey] = share(spec.autoCalcAmountContextKey ?? "Base Salary");
+    for (const companion of spec.autoCalcCompanionMoneyKeys ?? []) {
+      values[companion.key] = share(companion.amountContextKey);
+    }
+  };
+
+  const setDaysValue = (hrId: string, field: string, days: number) => {
     setRows((prev) =>
       prev.map((row) => {
         if (row.hrId !== hrId) return row;
         const values = { ...row.values, [field]: days };
-        if (autoCalcMoneyKey) {
-          const baseSalary = Number(row.context["Base Salary"] ?? 0);
-          const divisor = divisorContextKey ? Number(row.context[divisorContextKey] ?? 0) || 30 : 30;
-          values[autoCalcMoneyKey] = Math.round(((baseSalary / divisor) * days + Number.EPSILON) * 100) / 100;
-        }
+        applyAutoCalc(row, values, fieldSpecOf(definition, field), days);
         return { ...row, values };
       }),
     );
@@ -412,15 +448,13 @@ export function RecommendationStep({
    * Days, owner request 2026-07-25) that must always sum to a fixed total:
    * editing either one clamps it to [0, total] and sets the OTHER to
    * (total - value). Whichever field separately declares `autoCalcMoneyKey`
-   * then recomputes its money field from its OWN (possibly just-derived) day
-   * count.
+   * then recomputes its money field(s) from its OWN (possibly just-derived) day
+   * count, via applyAutoCalc above.
    *
-   * The money divisor is per-field: DEFAULT /30 (the deduction day-rate), unless
-   * the field names an `autoCalcDivisorContextKey` — the Resignations CRM tab
-   * (owner rule 2026-07-26) reads the month's ACTUAL calendar days there to
-   * unify with the settlement rate. This is a DIFFERENT context key from
-   * `totalContextKey` (the complement CAP): the cap bounds the day count, the
-   * divisor sets money-per-day. Conflating them would silently change the
+   * `totalContextKey` is the CAP and is a THIRD, independent thing from the
+   * amount and the divisor: on the Resignations CRM tab the cap is the leaver's
+   * confirmed Days Worked, the divisor is the month's calendar days, and the
+   * amount is his monthly net. Conflating any two of them silently changes the
    * deduction (see StepFieldSpec.complementTotalContextKey's doc comment).
    */
   const setComplementaryDaysValue = (
@@ -437,22 +471,8 @@ export function RecommendationStep({
         const clamped = Math.min(Math.max(0, rawValue), total);
         const complementValue = Math.max(0, total - clamped);
         const values = { ...row.values, [field]: clamped, [complementField]: complementValue };
-
-        const spec = definition.fields.find((candidate) => candidate.key === field);
-        const complementSpec = definition.fields.find((candidate) => candidate.key === complementField);
-        const baseSalary = Number(row.context["Base Salary"] ?? 0);
-        const divisorFor = (candidate: typeof spec) => {
-          const key = candidate?.autoCalcDivisorContextKey;
-          return key ? Number(row.context[key] ?? 0) || 30 : 30;
-        };
-        if (spec?.autoCalcMoneyKey) {
-          values[spec.autoCalcMoneyKey] =
-            Math.round(((baseSalary / divisorFor(spec)) * clamped + Number.EPSILON) * 100) / 100;
-        }
-        if (complementSpec?.autoCalcMoneyKey) {
-          values[complementSpec.autoCalcMoneyKey] =
-            Math.round(((baseSalary / divisorFor(complementSpec)) * complementValue + Number.EPSILON) * 100) / 100;
-        }
+        applyAutoCalc(row, values, fieldSpecOf(definition, field), clamped);
+        applyAutoCalc(row, values, fieldSpecOf(definition, complementField), complementValue);
         return { ...row, values };
       }),
     );
@@ -889,7 +909,7 @@ export function RecommendationStep({
                               if (field.kind === "days" && field.complementFieldKey) {
                                 setComplementaryDaysValue(row.hrId, field.key, field.complementFieldKey, field.complementTotalContextKey, raw);
                               } else if (field.kind === "days") {
-                                setDaysValue(row.hrId, field.key, field.autoCalcMoneyKey, raw, field.autoCalcDivisorContextKey);
+                                setDaysValue(row.hrId, field.key, raw);
                               } else {
                                 setValue(row.hrId, field.key, raw);
                               }

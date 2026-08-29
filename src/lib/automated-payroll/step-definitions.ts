@@ -111,7 +111,7 @@ export const STEP_DEFINITIONS: Record<StepKey, StepDefinition> = {
     key: "p1_resignations",
     phase: "part1",
     title: "Resignations",
-    subtitle: "Leavers this month, with the recommended Base/ECoL/Fuel settlement. Last working day on or before the 25th: the whole NET salary is prorated to the days worked — base, cost of living and fuel all at the same day share (owner rule 2026-08-29). After the 25th: everything paid in full. CRM no-activity and Unpaid Vacation deductions moved to their own dedicated tabs (owner request 2026-07-25) — edit them there; they still net against this leaver's own Second Part first, then First Part if Second isn't enough. Edit or confirm.",
+    subtitle: "Leavers this month, with the recommended Base/ECoL/Fuel settlement. Last working day on or before the 25th: the whole NET salary is prorated to the days worked — base, cost of living and fuel all at the same day share (owner rule 2026-08-29). After the 25th: everything paid in full. Days Worked is the ONE figure: correct it here and Base, Cost of Living and Fuel all re-prorate together, and the Resignations CRM tab reads the very same number (owner rule 2026-08-30 — the rule is set once, not per tab). CRM no-activity and Unpaid Vacation deductions moved to their own dedicated tabs (owner request 2026-07-25) — edit them there; they still net against this leaver's own Second Part first, then First Part if Second isn't enough. Edit or confirm.",
     contextColumns: [
       { key: "Hire Date", label: "Hire Date" },
       { key: "Last Working Date", label: "Last Working Date" },
@@ -127,15 +127,30 @@ export const STEP_DEFINITIONS: Record<StepKey, StepDefinition> = {
       // Days Worked is EDITABLE (owner 2026-07-25): the system can only count
       // CALENDAR days from the 1st to the last working date, which is routinely
       // wrong — a leaver hired and resigned the same day showed 7, someone who
-      // actually worked 4.5 days showed 12. HR types the true figure and Base
-      // (month) recalculates as Base / calendar-days-in-month × days, matching
-      // the locked proration formula exactly (verified: 14000/31×9 = 4064.52).
+      // actually worked 4.5 days showed 12. HR types the true figure and all
+      // three paid components recalculate at Amount / calendar-days-in-month ×
+      // days, matching the locked proration formula exactly (verified:
+      // 14000/31×9 = 4064.52).
+      //
+      // IT DRIVES ALL THREE since 2026-08-30, not just Base. The owner ruled on
+      // 2026-08-29 that a resignation prorates the whole NET, but this field
+      // still recalculated Base alone — so the moment anyone used it, Extra Cost
+      // of Living and Fuel silently kept the figures belonging to the wrong day
+      // count and the new rule stopped applying. It is also now a PERSISTED
+      // column of its own (DraftRow.daysWorked), which is what lets the
+      // Resignations CRM tab read the very same number instead of recounting the
+      // calendar and disagreeing with this screen.
       {
         key: "daysWorked",
         label: "Days Worked",
         kind: "days",
         autoCalcMoneyKey: "baseForMonth",
+        autoCalcAmountContextKey: "Base Salary",
         autoCalcDivisorContextKey: "Days In Month",
+        autoCalcCompanionMoneyKeys: [
+          { key: "ecolPaid", amountContextKey: "Extra Cost Of Living" },
+          { key: "fuelPaid", amountContextKey: "Fuel Allowance" },
+        ],
       },
       { key: "baseForMonth", label: "Base (month)", kind: "money" },
       { key: "ecolPaid", label: "Extra Cost of Living", kind: "money" },
@@ -204,7 +219,7 @@ export const STEP_DEFINITIONS: Record<StepKey, StepDefinition> = {
     phase: "part1",
     title: "Resignations CRM",
     subtitle:
-      "CRM no-activity deduction for this month's RESIGNATIONS only — dedicated to leavers so its rules never collide with the normal CRM tab (owner request 2026-07-26). Everything here uses the SAME daily rate as the resignation settlement: Base ÷ the month's ACTUAL calendar days (e.g. 14,000 ÷ 31 = 451.61 in July), NOT ÷30. Working Days + Non-Working Days always sum to the employee's DAYS WORKED this month (his employment span — 9 for someone who left on the 9th), never the whole month, so he can never be deducted for days after he left. Edit either day field and the other adjusts; the deduction is Base ÷ month-days × Non-Working Days. Value/days are pre-filled from his real CRM activity in the days he actually worked. Reason is optional.",
+      "CRM no-activity deduction for this month's RESIGNATIONS only — dedicated to leavers so its rules never collide with the normal CRM tab (owner request 2026-07-26). Everything here uses the SAME daily rate as the resignation settlement: NET (Base + Cost of Living + Fuel) ÷ the month's ACTUAL calendar days, NOT the Base and NOT ÷30 — so one no-activity day costs exactly one day of the pay it cancels (owner rule 2026-08-30). Working Days + Non-Working Days sum to the DAYS WORKED you confirmed on the Resignations step — that same number, never a fresh count of the calendar — so he can never be deducted for a day he was not employed, nor for a day you already said he did not work. Edit either day field and the other adjusts. Days and value are pre-filled from the deductions you APPROVED FOR PAYROLL in the Deductions module; anything still awaiting your decision there is worth 0.00 here and is listed in the row's breakdown so you can see what is being held back. Reason is optional.",
     contextColumns: [
       { key: "Hire Date", label: "Hire Date" },
       { key: "Net Salary", label: "Net Salary" },
@@ -227,13 +242,22 @@ export const STEP_DEFINITIONS: Record<StepKey, StepDefinition> = {
         key: "resignationCrmDays",
         label: "Non-Working Days",
         kind: "days",
-        // Deduction divisor is the month's ACTUAL calendar days (unified with the
-        // resignation settlement rate) — NOT the default /30. This is a DIFFERENT
-        // context key from complementTotalContextKey ("Days Worked", the cap):
-        // the cap bounds the day count, the divisor sets the money per day. The
-        // key IS the DraftRow column, so the generic persist-loop writes it —
-        // no run-service remap needed. See StepFieldSpec doc comments.
+        // THREE separate context keys, and they must stay separate:
+        //   autoCalcAmountContextKey  — WHAT is prorated: the month's NET.
+        //   autoCalcDivisorContextKey — the month's ACTUAL calendar days, not /30.
+        //   complementTotalContextKey — the CAP on the day count: days worked.
+        // Every time two of these have been folded together in this module the
+        // money moved without anyone noticing. See StepFieldSpec's doc comments.
+        //
+        // The amount became NET on 2026-08-30 (owner: "in the CRM, it must
+        // prorate the net salary"). It was the Base, which since the 2026-08-29
+        // net-proration rule meant a no-activity day was charged LESS than the
+        // day of pay it cancels — the two halves of one day valued differently.
+        //
+        // The key IS the DraftRow column, so the generic persist-loop writes it —
+        // no run-service remap needed.
         autoCalcMoneyKey: "crm",
+        autoCalcAmountContextKey: "Net Salary",
         autoCalcDivisorContextKey: "Days In Month",
         complementFieldKey: "resigCrmWorkingDays",
         complementTotalContextKey: "Days Worked",

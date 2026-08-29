@@ -819,6 +819,7 @@ import { runAutomatedPayrollNotifyGovernanceTests } from "./automated-payroll-no
 import { runAutomatedPayrollNotifyPart1ReviewTests } from "./automated-payroll-notify-part1-review.test.ts";
 import { runAutomatedPayrollUnconfirmPart1Tests } from "./automated-payroll-unconfirm-part1.test.ts";
 import { runAutomatedPayrollResignationCrmTests } from "./automated-payroll-resignation-crm.test.ts";
+import { runAutomatedPayrollLeaverBasisTests } from "./automated-payroll-leaver-basis.test.ts";
 import { runAutomatedPayrollCibSheetTests } from "./automated-payroll-cib-sheet.test.ts";
 import { runAutomatedPayrollExecutiveSummaryTests } from "./automated-payroll-executive-summary.test.ts";
 import { runAutomatedPayrollAssembleTests } from "./automated-payroll-assemble.test.ts";
@@ -1218,6 +1219,7 @@ await runTest("automated payroll notify governance (authorizedRecipient fix)", r
 await runTest("automated payroll notify Part 1 review email (To Adel+Ahmed, Cc Anwar)", runAutomatedPayrollNotifyPart1ReviewTests);
 await runTest("automated payroll unconfirm Part 1 (phase guard, clear frozen values, audit)", runAutomatedPayrollUnconfirmPart1Tests);
 await runTest("automated payroll Resignations CRM deduction (unified month-days rate)", runAutomatedPayrollResignationCrmTests);
+await runTest("automated payroll leaver basis (ONE confirmed days-worked + ONE net day rate, shared by the Resignations and Resignations CRM tabs)", runAutomatedPayrollLeaverBasisTests);
 await runTest("automated payroll CIB bank-transfer sheet (schema + filtering + styling)", runAutomatedPayrollCibSheetTests);
 await runTest("automated payroll Executive Summary Dashboard (headcount + value vs last month)", runAutomatedPayrollExecutiveSummaryTests);
 await runTest("automated payroll assembleRows + reconcile (each deduction counted exactly once)", runAutomatedPayrollAssembleTests);

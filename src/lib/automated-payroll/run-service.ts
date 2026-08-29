@@ -88,6 +88,10 @@ export type { StepEditInput } from "./types.ts";
  */
 
 const NUMERIC_FIELDS: (keyof DraftRowPatch)[] = [
+  // The Resignations step's Days Worked. A real persisted column since
+  // 2026-08-30 so every leaver tab reads ONE confirmed figure — see
+  // DraftRow.daysWorked and leaver-basis.ts for what it replaced.
+  "daysWorked",
   "baseForMonth",
   "ecolPaid",
   "fuelPaid",

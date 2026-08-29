@@ -115,6 +115,21 @@ export type DraftRow = {
   employeeHrId: string;
   employeeHrIdCompact: string;
   // New-hire / resignation confirmed settlement (null = accept computed proration).
+  /**
+   * Days worked this month as CONFIRMED by HR on the Resignations step — the
+   * single source of truth for every Part 1 tab that needs a leaver's day count
+   * (owner, 2026-08-30: "the rule must be synced everywhere in the module").
+   *
+   * It has a column of its own precisely so nothing re-derives it. Until
+   * 2026-08-30 only `baseForMonth` persisted, and the two tabs that needed the
+   * days each reconstructed them differently — the Resignations tab by dividing
+   * the saved money back out, the Resignations CRM tab by recounting the
+   * calendar — so confirming a correction on one screen changed nothing on the
+   * other. Never reintroduce a derivation: read this, through resolveLeaverBasis.
+   *
+   * null = nobody has confirmed a figure; fall back to the computed settlement.
+   */
+  daysWorked: number | null;
   baseForMonth: number | null;
   ecolPaid: number | null;
   fuelPaid: number | null;
@@ -353,6 +368,35 @@ export type StepFieldSpec = {
    * there would pay the wrong amount in any 31-day month.
    */
   autoCalcDivisorContextKey?: string;
+  /**
+   * For a "days" field: the context column holding the MONTHLY amount the money
+   * is a day-share of. Defaults to "Base Salary".
+   *
+   * Added 2026-08-30 because a leaver's CRM deduction must now be priced off the
+   * NET, not the Base (owner: "in the CRM, it must prorate the net salary") —
+   * one no-activity day has to cost exactly one day of the pay it cancels, and
+   * that pay has been Net ÷ calendar days since 2026-08-29. Separate from
+   * `autoCalcDivisorContextKey` for the same reason that key is separate from
+   * `complementTotalContextKey`: WHAT is being divided, HOW MANY it is divided
+   * by, and the CAP on the day count are three independent rules, and every time
+   * two of them have been folded together here the money moved silently.
+   */
+  autoCalcAmountContextKey?: string;
+  /**
+   * For a "days" field: FURTHER money fields the same day count drives, each
+   * from its own monthly amount. The field's own `autoCalcMoneyKey` covers the
+   * first; these cover the rest.
+   *
+   * The Resignations step is the reason (owner-reported 2026-08-30). Its Days
+   * Worked field recalculated Base and nothing else, so correcting the days left
+   * Extra Cost of Living and Fuel at the figures belonging to the UNCORRECTED
+   * count — silently reverting the owner's 2026-08-29 rule that a resignation
+   * prorates the whole net. It is visible in the live August run: leavers whose
+   * base matches a 3- and 12-day settlement carry hand-rounded allowances that
+   * match neither. One edit must move all three, or the rule only holds while
+   * nobody uses the field.
+   */
+  autoCalcCompanionMoneyKeys?: { key: string; amountContextKey: string }[];
   /**
    * For a "days" field: the key of ANOTHER "days" field on the same row that
    * this one complements to a fixed total (e.g. Working Days + Non-Working

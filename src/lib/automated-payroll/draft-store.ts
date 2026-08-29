@@ -72,6 +72,7 @@ function mapDraftRow(row: RunRow): DraftRow {
     runId: String(row.run_id),
     employeeHrId: String(row.employee_hr_id ?? ""),
     employeeHrIdCompact: String(row.employee_hr_id_compact ?? ""),
+    daysWorked: numeric(row.days_worked),
     baseForMonth: numeric(row.base_for_month),
     ecolPaid: numeric(row.ecol_paid),
     fuelPaid: numeric(row.fuel_paid),
@@ -268,6 +269,7 @@ function draftPatchToDb(runId: string, patch: DraftRowPatch): Record<string, unk
   ) => {
     if (patch[field] !== undefined) db[column] = patch[field];
   };
+  num("daysWorked", "days_worked");
   num("baseForMonth", "base_for_month");
   num("ecolPaid", "ecol_paid");
   num("fuelPaid", "fuel_paid");
