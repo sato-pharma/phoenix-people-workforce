@@ -112,6 +112,12 @@ export type PermissionResource =
   | "report_it"
   | "attendance"
   | "crm_visits"
+  // Plan Verification (District Manager page, tab two). SEPARATE from `crm_visits` on purpose.
+  // `crm_visits:update` exists for the Doctor Coverage visit-norms singleton and is held only by
+  // Super Admin and SFE Manager; reusing it here would have forced one of two wrong outcomes —
+  // either the district managers this feature is FOR cannot verify, or granting them the verify
+  // hands them company-wide visit norms as well. A plan approval is its own authority.
+  | "crm_plans"
   | "early_birds"
   | "user_activity"
   | "synthetic_journeys"
@@ -160,6 +166,11 @@ export const permissionResources: PermissionResource[] = [
   "report_it",
   "attendance",
   "crm_visits",
+  // MUST be in this runtime array as well as the union, for the fail-open reason spelled out on
+  // early_birds directly below: an unseen key makes the sidebar's permission lookup SUCCEED, so
+  // omitting it would offer Plan Verification — a button that writes into the customer's CRM — to
+  // every role in the company.
+  "crm_plans",
   // MUST live in this runtime array, not only in the union above. The sidebar's permission lookup
   // FAILS OPEN on a key it has never seen, so omitting it here would show the Early Birds tab to
   // every role — Finance Manager, HR Operations, Employee — silently and with no test failure.
@@ -346,6 +357,33 @@ export function assertCompanyVacationReportReadAccess(
   workspace = "the company vacation report",
 ) {
   if (!canReadCompanyVacationReport(context)) {
+    throw new Error(`Forbidden: ${context.role} cannot access ${workspace}.`);
+  }
+}
+
+/**
+ * Who may READ the Company Activity Report (/admin/company-activity-report) — the day-by-day
+ * account of what every employee actually did over a freely chosen date range (CRM field/campaign
+ * visits, office attendance, leave activity, and gaps). Deliberately the SAME two roles as the
+ * Company Vacation Report above, and its own named set for the same reason: reading an org-wide
+ * report and administering the system are different privileges and must be able to diverge later
+ * without one silently dragging the other along.
+ *
+ * Owner-confirmed 2026-08-28: this is NOT a payroll report — it exists purely for awareness and
+ * accuracy review. It has no write path at all, so READING is all this ever grants.
+ */
+export const companyActivityReportReaderRoles = ["Super Admin", "SFE Manager"] as const satisfies readonly PhoenixRole[];
+const companyActivityReportReaderRoleSet = new Set<PhoenixRole>(companyActivityReportReaderRoles);
+
+export function canReadCompanyActivityReport(context: Pick<AccessContext, "role" | "scope">): boolean {
+  return context.scope === "system" || companyActivityReportReaderRoleSet.has(context.role);
+}
+
+export function assertCompanyActivityReportReadAccess(
+  context: Pick<AccessContext, "role" | "scope">,
+  workspace = "the company activity report",
+) {
+  if (!canReadCompanyActivityReport(context)) {
     throw new Error(`Forbidden: ${context.role} cannot access ${workspace}.`);
   }
 }
@@ -597,6 +635,7 @@ const defaultPermissionMatrix: PermissionMap = {
     // (/admin/doctor-coverage-settings). It gates ONLY that policy singleton — the CRM visit
     // mirror itself stays read-only everywhere, since it is a vendor mirror nothing may write.
     crm_visits: ["read", "update"],
+    crm_plans: ["read", "approve"],
     early_birds: ["read", "approve"],
     communication: allActions,
     overview: ["read"],
@@ -651,6 +690,11 @@ const defaultPermissionMatrix: PermissionMap = {
     // workflows. It may read/export attendance but not create/update/delete records.
     attendance: ["read", "export"],
     crm_visits: ["read"],
+    // Read but NOT approve, the same segregation of duties as the line above: verifying a plan
+    // writes into the customer's CRM and cannot be undone from Phoenix, so it is an irreversible
+    // workflow and this account stays observational on it. The Plans board opens; the button does
+    // not render and the route refuses it.
+    crm_plans: ["read"],
     early_birds: ["read"],
     overview: ["read"],
     imports: ["read"], // Bulk user-admin preview only — see Super Admin's `imports` note above.
@@ -884,6 +928,10 @@ const defaultPermissionMatrix: PermissionMap = {
     direct_orders: ["read", "create", "update", "approve", "export"],
     attendance: ["read", "create", "update", "delete", "export"],
     crm_visits: ["read"],
+    // The seat this feature was built for. `approve` verifies a rep's plan straight into the CRM;
+    // it is narrowed AGAIN, below the matrix, to the reps actually beneath this manager in the org
+    // tree — the permission says he may verify a plan, not that he may verify anyone's.
+    crm_plans: ["read", "approve"],
     early_birds: ["read", "approve"],
     overview: [],
     employee_documents: ["read", "export"],
@@ -910,6 +958,10 @@ const defaultPermissionMatrix: PermissionMap = {
     direct_orders: ["read", "create", "update", "approve", "export"],
     attendance: ["read", "create", "update", "delete", "export"],
     crm_visits: ["read"],
+    // Sits directly above the district manager in the same tree, so a plan a DM may verify is
+    // already inside this seat's subtree. Granted so a plan is not stranded whenever a district
+    // seat is vacant — which is exactly when someone above has to act.
+    crm_plans: ["read", "approve"],
     early_birds: ["read"],
     overview: [],
     // NO `deductions` grant (owner instruction, 2026-08-06: "everyone can only see his deductions

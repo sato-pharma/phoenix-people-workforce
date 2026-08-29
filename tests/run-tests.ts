@@ -274,10 +274,14 @@ import { runCrmCheckinCoordGuardTests } from "./crm-checkin-coord-guard.test.ts"
 import { runCrmAmpmNormalizationTests } from "./crm-ampm-normalization.test.ts";
 import { runCrmVisitTypeLabelTests } from "./crm-visit-type-labels.test.ts";
 import { runCrmRepDoctorListsTests } from "./crm-rep-doctor-lists.test.ts";
+import { runCrmContactListsTests } from "./crm-contact-lists.test.ts";
+import { runCrmPlanVerificationTests } from "./crm-plan-verification.test.ts";
 import { runCrmRepDoctorTrendTests } from "./crm-rep-doctor-trend.test.ts";
 import { runLocationIqGeocodeConfidenceTests } from "./locationiq-geocode-confidence.test.ts";
 import { runPrivateCalendarTests } from "./private-calendar.test.ts";
 import { runWeeklyPlanApproverUiParityTests } from "./weekly-plan-approver-ui-parity.test.ts";
+import { runWeeklyPlanMovePeriodTests } from "./weekly-plan-move-period.test.ts";
+import { runWeeklyPlanErrorBannerToneTests } from "./weekly-plan-error-banner-tone.test.ts";
 import { runTerminationTruthTests } from "./termination-truth.test.ts";
 import { runResignationCompletionVacancyTests } from "./resignation-completion-vacancy.test.ts";
 import { runCairoLeaveTodayTests } from "./cairo-leave-today.test.ts";
@@ -289,6 +293,7 @@ import { runFieldWorkforceComplianceLiveSnapshotsTests } from "./field-workforce
 import { runFieldWorkforceComplianceScorecardsTests } from "./field-workforce-compliance-scorecards.test.ts";
 import { runCompanyVacationReportTests } from "./company-vacation-report.test.ts";
 import { runSfeVacationSourceReportTests } from "./sfe-vacation-source-report.test.ts";
+import { runCompanyActivityReportTests } from "./company-activity-report.test.ts";
 import { runNsmTeamCalendarTests } from "./nsm-team-calendar.test.ts";
 import { runCompanyHolidaysTests } from "./company-holidays.test.ts";
 import { runLeaveSourceOfTruthTests } from "./leave-source-of-truth.test.ts";
@@ -533,6 +538,7 @@ import { runEmployeeAccessProvisioningTests } from "./employee-access-provisioni
 import { runHrFunctionGovernanceTests } from "./hr-function-governance.test.ts";
 import { runHrClearanceRetentionTests } from "./hr-clearance-retention.test.ts";
 import { runHrCommandCenterTests } from "./hr-command-center.test.ts";
+import { runHrJobWorkbookTests } from "./hr-job-workbook.test.ts";
 import { runHrSeatRouteCoherenceTests } from "./hr-seat-route-coherence.test.ts";
 import { runTitlePermissionGovernanceTests } from "./title-permission-governance.test.ts";
 import { runOrganogramHardeningTests } from "./organogram-hardening.test.ts";
@@ -1386,6 +1392,7 @@ await runTest("field workforce compliance live snapshots", runFieldWorkforceComp
 await runTest("field workforce compliance scorecards", runFieldWorkforceComplianceScorecardsTests);
 await runTest("company vacation report (CRM signal classification)", runCompanyVacationReportTests);
 await runTest("sfe manager vacation source report (read-only + Phoenix vs CRM)", runSfeVacationSourceReportTests);
+await runTest("company activity report (reconciliation, summary, filters, range, role gate)", runCompanyActivityReportTests);
 await runTest("nsm team calendar (manager grouping)", runNsmTeamCalendarTests);
 await runTest("company holidays", runCompanyHolidaysTests);
 await runTest("deductions governance foundation", runDeductionsGovernanceFoundationTests);
@@ -1526,6 +1533,8 @@ await runTest(
 await runTest("LocationIQ geocode confidence (reverse/forward scoring + LocationIQ-first/Google-fallback wiring)", runLocationIqGeocodeConfidenceTests);
 await runTest("private calendar", runPrivateCalendarTests);
 await runTest("weekly plan approver UI parity (no buttons the server rejects; comments gated on participation)", runWeeklyPlanApproverUiParityTests);
+await runTest("weekly plan move to another period (HR re-dates a plan the employee filed on the wrong week)", runWeeklyPlanMovePeriodTests);
+await runTest("weekly plan error banner tone (a rejection must not look like a confirmation)", runWeeklyPlanErrorBannerToneTests);
 await runTest("termination truth (company exits are not announced as resignations; complete actually terminates)", runTerminationTruthTests);
 await runTest("resignation completion vacancy (completing a resignation leaves exactly one open vacancy for the seat — never zero, never two)", runResignationCompletionVacancyTests);
 await runTest("Cairo leave today (entitlements reference date + excuse month allowance)", runCairoLeaveTodayTests);
@@ -1827,6 +1836,11 @@ await runTest(
   "HR command centre (every tile on a seat's landing dashboard links to a row that seat is "
   + "offered, so no figure leads to a page it cannot open)",
   runHrCommandCenterTests,
+);
+await runTest(
+  "HR job workbook (all 66 responsibility lines from both job descriptions map to a real screen "
+  + "the seat is actually offered, none left blank, and the owner's own sentences stay verbatim)",
+  runHrJobWorkbookTests,
 );
 await runTest(
   "HR clearance & retention (both resources registered in the RUNTIME array as well as the union "
@@ -2554,6 +2568,28 @@ await runTest(
   + "\"Forbidden: Talent Acquisition cannot read probation\" errors across 8 route variants on "
   + "2026-07-25/26 before 41c24ede added the missing line)",
   runEveryOfferedLinkOpensTests,
+);
+
+await runTest(
+  "crm contact lists (the rep's ASSIGNED doctor list, mirrored from the CRM web app the Reporting "
+  + "API has no endpoint for — the only place a doctor assigned and never touched appears at all. "
+  + "`t=Pharmacy` never `t=PH`, because an unknown list type returns HTTP 200 and a well-formed "
+  + "EMPTY grid; a drifted grid throws and names the missing columns while a genuinely empty one "
+  + "parses to []; and an empty fetch against a non-empty mirror is REFUSED rather than applied, so "
+  + "an expired session degrades to yesterday's list instead of \"this rep has no doctors\")",
+  runCrmContactListsTests,
+);
+
+await runTest(
+  "crm plan verification (the ONLY thing Phoenix writes back into the customer's CRM — a district "
+  + "manager signs off one rep's weekly or monthly plan. The vendor does NOT range-check the status "
+  + "it is sent, proven live against a phantom plan id, so the refusal to lower an area manager's "
+  + "signature is ours alone; 11% of weekly plans straddle a month, so a plan belongs WHOLE to the "
+  + "month it starts in and must not appear in both; a seat with no reports resolves to a SENTENCE "
+  + "and never to an empty `.in()`, which renders identically to \"my reps filed nothing\"; and "
+  + "`crm_plans` is asserted present in the RUNTIME permissionResources array, where an unseen key "
+  + "makes the sidebar's lookup fail OPEN and offers a CRM-writing button to every role)",
+  runCrmPlanVerificationTests,
 );
 
 await runTest(

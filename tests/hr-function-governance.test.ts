@@ -96,6 +96,12 @@ const FILES_NAMING_AN_HR_SEAT: readonly string[] = [
   "src/lib/employees/access-provisioning.ts",
   "src/lib/excuses/service.ts",
   "src/lib/hiring-documents/service.ts",
+  // The job workbook. It names both seats because it IS the two job descriptions, one per seat —
+  // but it grants nothing: every field is prose and an href, there is no permission, no gate and
+  // no branch on the seat name anywhere in it. tests/hr-job-workbook.test.ts asserts the opposite
+  // direction, that every screen it names is one the seat's own sidebar already offers, so the
+  // workbook can only ever describe access the matrix has already decided.
+  "src/lib/hr/job-workbook.ts",
   "src/lib/notifications/role-recipients.ts",
   "src/lib/probation/feedback-service.ts",
   "src/lib/probation/service.ts",

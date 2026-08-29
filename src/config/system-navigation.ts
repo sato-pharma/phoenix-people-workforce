@@ -2,6 +2,7 @@ import {
   Activity,
   Archive,
   BellRing,
+  BookUser,
   BriefcaseBusiness,
   Building2,
   CalendarCheck,
@@ -721,6 +722,23 @@ const adminNavigationSectionSeeds = [
     ],
     label: "Vacation Sources",
   },
+  // Owner request (2026-08-28): the SFE Manager also gets the Company Activity Report — a
+  // day-by-day account of what every employee actually did (CRM visits, office attendance, leave,
+  // gaps) over a freely chosen date range. Deliberately its OWN section, not merged into
+  // vacation-sources above — the owner was explicit this is a separate module from anything
+  // vacation- or Private-Calendar-related, and a section resolving to a single visible item
+  // renders headerless, matching how vacation-sources itself renders for him.
+  //
+  // excludedRoles, not `roles` alone — same reasoning as vacation-sources: Super Admin's sidebar
+  // bypasses role gating entirely and already reaches this page as a card on the Admin Tools hub;
+  // without the exclusion he would see the same page twice.
+  {
+    id: "company-activity-report",
+    items: [
+      { href: "/admin/company-activity-report", icon: Activity, label: "Activity Report", permissions: [{ resource: "leave", action: "read" }], roles: ["SFE Manager"], excludedRoles: ["Super Admin", "CEO"] },
+    ],
+    label: "Company Activity Report",
+  },
   // Collapsed to a single standalone sidebar button that opens the Payroll
   // Management hub (app/(admin)/admin/payroll-management/page.tsx, items in
   // payrollManagementPageItems below) — same pattern as the other consolidated
@@ -857,6 +875,14 @@ const adminNavigationSectionSeeds = [
       // RETIRED 2026-08-28 (owner): the "Rep Doctor Lists" row sat here too. See the retirement
       // note on crmPageItems below — do not re-add it.
       { href: "/admin/reps-plans", icon: Gauge, label: "Reps Plans", roles: ["Super Admin"] },
+      // Doctor List joins them for the same reason: Super Admin is excluded from the hub that
+      // renders the crmPageItems cards, so without this row the account would have no route to it.
+      // Every other role reaches both rows as cards on the hub, so nothing moves for anyone else.
+      //
+      // These two are the District Manager page's two tabs, and they are listed as two rows rather
+      // than one because they are two routes — each re-runs its own server-side gate on entry.
+      { href: "/admin/doctor-list", icon: BookUser, label: "Doctor List", roles: ["Super Admin"] },
+      { href: "/admin/plan-verification", icon: ClipboardCheck, label: "Plan Verification", roles: ["Super Admin"] },
     ],
     label: "CRM",
   },
@@ -1397,6 +1423,12 @@ const hrNavigationSectionSeeds = [
   {
     id: "hr-people",
     items: [
+      // Gated on `update`, not `read`, ON PURPOSE. The page behind it renders the full editing UI
+      // unconditionally - EmployeeManagement takes no capability props - so offering it on `read`
+      // would hand HR Advisory Save buttons the API then refuses. HR Operations holds
+      // create/update/import here, and nine lines of her job description are done on this screen;
+      // until this row existed she held the grant with no way to reach the page.
+      { href: "/hr/employees", icon: UsersRound, label: "Employee Directory", permissions: [{ resource: "employees", action: "update" }] },
       { href: "/hr/employee-360", icon: IdCard, label: "Employee 360", permissions: [{ resource: "employee_profile", action: "read" }] },
       { href: "/hr/organogram", icon: Network, label: "Organogram", permissions: [{ resource: "organogram" }] },
       { href: "/hr/probation", icon: Hourglass, label: "Probation", permissions: [{ resource: "probation" }] },
@@ -1882,8 +1914,8 @@ export const adminToolsPageItems: readonly AdminToolsPageItem[] = [
   {
     href: "/admin/sidebar-layout",
     icon: LayoutGrid,
-    label: "Sidebar Layout",
-    description: "Drag any page into any module, or up into the top strip. Changes your own sidebar only.",
+    label: "Navigation Layout",
+    description: "Put any page in the row above the page title, the row below it, the top strip, or any module. Changes your own navigation only.",
     roles: ["Super Admin"],
   },
   {
@@ -2582,7 +2614,11 @@ export const peopleManagementPageItems: readonly AdminToolsPageItem[] = [
     label: "Employees",
     description: "Full employee directory and records.",
     permissions: [{ resource: "employees" }],
-    roles: ["Super Admin"],
+    // HR Operations added alongside the Super Admin: she holds employees create/update/import, and
+    // nine responsibilities of her job description are carried out on this screen. HR Advisory is
+    // deliberately NOT here - she is read/export only, and the page ships an editing UI that takes
+    // no capability props, so admitting her would show Save buttons the API refuses.
+    roles: ["Super Admin", "HR Operations"],
   },
   // Organogram/Probation moved to direct sidebar links — see the
   // people-management section in adminNavigationSectionSeeds above.
@@ -2645,6 +2681,14 @@ export const peopleManagementPageItems: readonly AdminToolsPageItem[] = [
     icon: FileSpreadsheet,
     label: "Company Vacation Report",
     description: "Every HR-approved leave request alongside unverified CRM/attendance leave signals, org-wide.",
+    permissions: [{ resource: "leave" }],
+    roles: ["Super Admin"],
+  },
+  {
+    href: "/admin/company-activity-report",
+    icon: Activity,
+    label: "Company Activity Report",
+    description: "Day-by-day CRM visits, office attendance, and leave for any employee slice and date range — not a payroll report.",
     permissions: [{ resource: "leave" }],
     roles: ["Super Admin"],
   },
@@ -2890,14 +2934,52 @@ export const crmPageItems: readonly AdminToolsPageItem[] = [
     roles: ["Super Admin", "SFE Manager", "CEO"],
   },
   {
+    // TAB ONE of the District Manager page. WIDENED 2026-08-28 from Super Admin alone, once the
+    // reps-per-manager scope landed: a district manager now sees his own reps and nobody else's,
+    // and the SAME scope filters the rep picker, which is the half that was missing when the owner
+    // caught the fault on Doctor Coverage that same day. The enforcing gate is canAccessDoctorList
+    // (src/lib/crm/doctor-list-access.ts) plus crm_visits:read, both asked by the page; this list
+    // is UX only and must be kept in step with that file.
+    //
+    // It does NOT bring the retired "Rep Doctor Lists" board back under a new name. That one was
+    // built from the CRM PLAN and scored visits against it, so it could only ever show a doctor
+    // somebody had already planned. This one mirrors the CRM's own contact list, which is the only
+    // place a doctor assigned to a rep and never touched appears at all — 448 of them on the first
+    // sweep. That is the assignment itself, and it survives the retirement for that reason.
+    href: "/admin/doctor-list",
+    icon: BookUser,
+    label: "Doctor List",
+    description: "Every doctor on a rep's CRM list, with specialty, grade and address — the assignment itself, not the activity against it.",
+    roles: ["Super Admin", "CEO", "National Sales Manager", "SFE Manager", "Regional Manager", "District Manager"],
+  },
+  {
+    // TAB TWO of the District Manager page — the plans a manager verifies.
+    //
+    // A SHORTER role list than Doctor List directly above, deliberately: this page carries the only
+    // button in Phoenix that writes into the customer's CRM, and the National Sales Manager and SFE
+    // Manager do not supervise a named rep. Reading a rep's list and signing his plan are not the
+    // same authority, which is why the two lists live in two files
+    // (src/lib/crm/plan-verification-access.ts) rather than being shared.
+    //
+    // The enforcing gate is canAccessPlanVerification plus `crm_plans` — READ to open the page,
+    // APPROVE to press Verify, which is how the CEO appears on this list and still cannot sign
+    // anything. `crm_plans` is its own resource rather than a reuse of `crm_visits` precisely
+    // because a district manager holds crm_visits:read only, and granting him update there would
+    // have handed him the company-wide Doctor Coverage visit-norms editor too. This list is UX only.
+    href: "/admin/plan-verification",
+    icon: ClipboardCheck,
+    label: "Plan Verification",
+    description: "Weekly and monthly plans as the reps filed them — verify one and the approval is written straight back into the CRM.",
+    roles: ["Super Admin", "CEO", "Regional Manager", "District Manager"],
+  },
+  {
     // SUPER ADMIN ONLY — it names every rep and prints how much of their reported work nothing can
-    // prove, so it stays on one account. (The "Rep Doctor Lists" card that used to sit directly
-    // above, and carried the same reasoning, was retired 2026-08-28 — see the note above.) The
-    // enforcing gate is
+    // prove, so it stays on one account. ("Rep Doctor Lists", which carried the same reasoning and
+    // stood in this group, was retired 2026-08-28 — see the note above.) The enforcing gate is
     // canAccessRepsPlans (src/lib/crm/reps-plans-access.ts) plus crm_visits:read, both asked by the
     // page; this list is UX only.
     //
-    // Sits beside Rep Doctor Lists rather than under "Weekly / Monthly Plans" (/admin/weekly-plans,
+    // Sits in the CRM group rather than under "Weekly / Monthly Plans" (/admin/weekly-plans,
     // Phoenix's own planning module) because it scores the CRM's recorded visits, not Phoenix's plans.
     href: "/admin/reps-plans",
     icon: Gauge,

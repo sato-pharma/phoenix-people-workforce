@@ -7,6 +7,7 @@ import { getNavigationSections } from "@/config/system-navigation";
 import { getPermissionMatrix, permissionActions, permissionResources } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { getSections, type PermissionLookup } from "@/lib/navigation/active-path";
+import { layoutOwnerKey } from "@/lib/navigation/personal-layout";
 import { loadPersonalLayout } from "@/lib/navigation/personal-layout-store";
 
 export const dynamic = "force-dynamic";
@@ -51,16 +52,16 @@ export default async function SidebarLayoutPage() {
     items: section.items.map((item) => ({ href: item.href, label: item.label })),
   }));
 
-  const savedLayout = await loadPersonalLayout(access.hrId);
+  const savedLayout = await loadPersonalLayout(layoutOwnerKey(access));
   const pageCount = catalogue.reduce((total, section) => total + section.items.length, 0);
 
   return (
     <div className="space-y-6">
       <AdminPageHero
-        description="Drag any page into any module, or up into the top strip. This changes your own sidebar and nobody else's."
+        description="Put any page in the row above the page title, the row below it, the top strip, or any module — press Move to on the page, or drag it. This changes your own navigation and nobody else's."
         eyebrow="Personal"
         icon={<LayoutGrid className="h-3.5 w-3.5" />}
-        title="Sidebar Layout"
+        title="Navigation Layout"
       />
       <SidebarLayoutEditor
         catalogue={catalogue}

@@ -72,5 +72,16 @@ export const OUTSTATION_NO_HOLD_GATE_MESSAGE =
   "Complete — a National Sales Manager's outstation expense is never held, so neither the photo evidence nor the trip workload blocks this request from payroll.";
 
 /** The approval reason stamped on a request accepted the moment it was submitted. */
+/**
+ * The same rule reached through the admin's manual-entry form.
+ *
+ * Kept as its own constant rather than reusing the one above: the reason column is what a person
+ * reads in the queue months later, and "he submitted it" and "an admin typed it in for him" are
+ * different facts about the same money. Both are accepted on the spot; only the wording differs.
+ */
+export const OUTSTATION_NO_HOLD_ADMIN_APPROVAL_REASON =
+  "Accepted on creation — entered by an admin on behalf of a National Sales Manager, whose " +
+  "outstation expense is accepted as soon as it is submitted and is never held.";
+
 export const OUTSTATION_NO_HOLD_APPROVAL_REASON =
   "Accepted on submission — a National Sales Manager's outstation expense is accepted as soon as it is submitted and is never held.";

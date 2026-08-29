@@ -28,6 +28,14 @@ export type AuditEntityType =
   // that hands back personal contact details in bulk, so who took the list is recorded.
   | "organogram_contact_export"
   | "crm_plan_sync"
+  // A manager verifying a rep's plan. The ONLY thing Phoenix writes back into the customer's CRM,
+  // so who signed off which plan is recorded on our side rather than being recoverable only from
+  // the vendor's system. Entity id is the CRM plan id.
+  | "crm_plan_verification"
+  // Daily refresh of each rep's assigned doctor list from the CRM web app. One row per run,
+  // keyed on the Cairo date, naming any agent refused or failed — the two outcomes that mean
+  // the mirror is older than the board claims.
+  | "crm_contact_list_sync"
   | "sos_raw_template_export"
   | "deduction_export"
   | "deduction_finalization"
@@ -102,6 +110,10 @@ export type AuditEntityType =
   | "system_cleanup"
   | "user"
   | "user_activity_access"
+  // The Company Activity Report export (day-by-day CRM/attendance/leave, not payroll). Named with
+  // the "company_" prefix on purpose — "activity_report" alone would sit too close to
+  // user_activity_access above, a different and unrelated concept.
+  | "company_activity_report_export"
   | "vacation_report_export"
   | "vacation_request"
   | "vacation_retention_purge"

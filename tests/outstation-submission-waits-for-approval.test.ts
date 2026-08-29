@@ -24,6 +24,11 @@ import { expenseApprovalState } from "../src/lib/outstation/approval-state.ts";
 // and he runs no doctor list. Everything below still holds for every other role, and each
 // assertion now also pins that the exception is exactly one role wide.
 //
+// WIDENED the same day, by PATH not by role: the owner extended it to createManagerExpenseAsAdmin
+// too. His claim was instant when he filed it himself and queued when an admin filed it for him,
+// which is the same money treated two ways for a reason that has nothing to do with him. The
+// exception is still exactly ONE role; what changed is that both of his filing routes honour it.
+//
 // This pins the three things that have to stay true for that to hold. All by source inspection —
 // the submit paths need Supabase, storage and a live geocoder, so the assertable surface is the
 // wiring itself, the same approach outstation-expense-gate.test.ts takes for the payroll gate.
@@ -111,15 +116,52 @@ export function runOutstationSubmissionWaitsForApprovalTests() {
     /heldForReview: !noHoldRole,/,
     "the alert tells the truth on both sides of the rule: still 'waiting for you' for every role except the exempt one",
   );
-  for (const signature of submitPaths.filter((path) => !path.includes("submitOutstationRequest"))) {
+  // The paths that honour the role rule, and the paths that have no exception at all.
+  const noHoldPaths = submitPaths.filter(
+    (path) => path.includes("submitOutstationRequest") || path.includes("createManagerExpenseAsAdmin"),
+  );
+  const strictPaths = submitPaths.filter((path) => !noHoldPaths.includes(path));
+  assert.equal(
+    noHoldPaths.length,
+    2,
+    "exactly two filing routes honour the rule — the employee's own submission and the admin's manual entry",
+  );
+  assert.ok(strictPaths.length > 0, "at least one submit path must remain with no exception at all");
+  for (const signature of strictPaths) {
     assert.match(
       functionSlice(service, signature),
       /heldForReview:\s*true/,
-      `${signature} has no exception — an admin typing a trip in on someone's behalf still waits for the amount to be confirmed`,
+      `${signature} has no exception — it waits for a human whoever the claim belongs to`,
     );
   }
+  for (const signature of noHoldPaths) {
+    assert.match(
+      functionSlice(service, signature),
+      // No trailing comma in the pattern: one path builds the options object across
+      // several lines and the other on one, and the difference is formatting, not meaning.
+      /heldForReview: !noHoldRole[,\s}]/,
+      `${signature} must derive the alert from the role rule, never hard-code it either way`,
+    );
+  }
+  // The admin path resolves the role ONCE and judges the claim against the same value it stores.
+  const adminSlice = functionSlice(service, "export async function createManagerExpenseAsAdmin");
+  assert.match(
+    adminSlice,
+    /const noHoldRole = isOutstationNoHoldRole\(employeeRole\);/,
+    "the admin path's exception must come from the rule module, like the submit path's",
+  );
+  assert.match(
+    adminSlice,
+    /const adminWorkflowStatus = noHoldRole \? "accepted_by_system" : "submitted";/,
+    "an admin-created claim still lands in the pending queue for every role but the exempt one",
+  );
+  assert.match(
+    adminSlice,
+    /employee_role: employeeRole,/,
+    "the row must store the SAME role the rule was tested against — a second resolution can drift",
+  );
 
-  // The one submit path that now moves money does it through the release function, which re-reads
+  // The submit paths that now move money do it through the release function, which re-reads
   // the request and re-resolves the gate — and it must be reachable ONLY through the role rule.
   // An unguarded call here is the 2026-08-08 defect returning by another name.
   assert.match(
@@ -127,7 +169,12 @@ export function runOutstationSubmissionWaitsForApprovalTests() {
     /if \(noHoldRole\) \{[\s\S]{0,240}releaseOutstationRequestToPayrollIfReady\(/,
     "the payroll release at submit must sit behind the National Sales Manager rule and nothing else",
   );
-  for (const signature of submitPaths.filter((path) => !path.includes("submitOutstationRequest"))) {
+  assert.match(
+    adminSlice,
+    /if \(noHoldRole\) \{[\s\S]{0,320}releaseOutstationRequestToPayrollIfReady\(/,
+    "the admin path's payroll release must sit behind the role rule and nothing else",
+  );
+  for (const signature of strictPaths) {
     assert.doesNotMatch(
       functionSlice(service, signature),
       /releaseOutstationRequestToPayrollIfReady\(/,
