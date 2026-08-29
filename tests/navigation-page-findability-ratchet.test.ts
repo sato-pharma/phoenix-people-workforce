@@ -4,6 +4,8 @@ import path from "node:path";
 
 import { hrNamespaceRemainder, isHrRewritablePath, toHrNamespacePath } from "@/lib/navigation/shell-headers";
 
+import { literalScanFindabilityRecordedRoutes } from "./navigation-reachability-backlog";
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Every nav test in this repo checks the same direction: nav -> route. Given a
 // sidebar link, does a page exist? (`sfe-manager-nav-dead-links`,
@@ -48,12 +50,12 @@ import { hrNamespaceRemainder, isHrRewritablePath, toHrNamespacePath } from "@/l
 // tree at eccf0920 the count is still 11, exactly as it was without it. The
 // alias moves nothing that was already counted honestly.
 //
-// WHAT THIS CANNOT SEE, AND WHY THE BASELINE IS A CEILING NOT A CENSUS
+// WHAT THIS CANNOT SEE, AND WHY THE RECORDED SET IS A CEILING NOT A CENSUS
 // A route assembled at runtime is invisible to a literal scan: 63 files build
 // hrefs as template literals, and `direct-orders-workspace.tsx` builds its eight
 // desk routes by concatenating suffix fragments ("/held", "/pharmacies", …) onto
 // a base path, so those full routes appear nowhere as literals. Every such page
-// is reachable in the product while looking unreachable here. The baseline is
+// is reachable in the product while looking unreachable here. The recorded set is
 // therefore an upper bound on a real problem, never a list of dead pages — do
 // not "clean up" anything on the strength of this test alone.
 //
@@ -62,34 +64,31 @@ import { hrNamespaceRemainder, isHrRewritablePath, toHrNamespacePath } from "@/l
 // /dev/** and /auth/**. Dynamic segments ([id]) are not directly linkable. The
 // employee portal builds its own sidebar and is out of scope.
 //
-// This RATCHETS, in the idiom of no-ellipsis-truncation-ratchet.test.ts: the
-// count may fall and may never rise.
+// This asserts BY IDENTITY, in the idiom of no-ellipsis-truncation-ratchet.test.ts
+// but sharper: the live set of unreachable admin pages must equal exactly the set
+// recorded in the shared backlog. A plain count let a page that gained a link and
+// a page that lost one cancel out — 10 in, 10 out, green, with a real strand
+// hidden inside. Identity does not: a new strand and a stale record both fail.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Counted 2026-08-28 on commit eccf0920, before the navigation restructure.
+ * The recorded set of admin routes no literal string reaches now lives in the shared
+ * navigation-reachability backlog (tests/navigation-reachability-backlog.ts), consolidated there on
+ * 2026-08-29 with the reverse guard's 52 findings and the portal-catalog omissions so there is one
+ * list to read and one place to record a reason. This guard owns the `invisible-to-literal-scan`
+ * slice — routes reachable only via a runtime-assembled href a literal scan is blind to — plus the
+ * one genuine no-link admin page (/employee/outstation/new), which the reverse guard records as a
+ * no-link-anywhere row and this guard reads from there rather than duplicating.
  *
- * The eleven that nothing references. Several are plausibly reached from
- * outside the codebase or by a runtime-assembled href — /whatsapp-connect reads
- * like an external OAuth landing — so this is a watermark, not a to-do list.
- *
- * Lower it when a page is genuinely wired up or genuinely deleted. Never raise
- * it to make a red run go green: a rise means the restructure just stranded a
- * page that used to be reachable, which is the single failure mode this file
- * exists to catch.
- *
- * 11 -> 10 on 2026-08-28, and NOT because anything was delisted. Retiring Doctor
- * Coverage and Rep Doctor Lists turned two pages into bare redirect stubs, which
- * isRetiredRedirectStub now excludes on the reasoning documented at that helper.
- * Applying that rule found a THIRD such stub that had been in this count all
- * along: /admin/workflow-registry, seven lines forwarding to
- * /admin/workflow-control. It was never a stranded page — it renders nothing to
- * strand — so the honest figure was always 10, and the two retirements net to
- * zero. That is why this moves DOWN in the same change that removed two pages
- * from the nav, which would otherwise look like exactly the accounting trick the
- * paragraph above forbids.
+ * Counted 2026-08-28 on commit eccf0920 the total was 10: the nine runtime-href pages, plus that one
+ * forwarder. Several are plausibly reached from outside the codebase — /whatsapp-connect is an
+ * external OAuth landing — so the set is a watermark of a real problem, never a list of dead pages;
+ * do not "clean up" anything on the strength of this test alone. Lower it (remove a row from the
+ * backlog) only when a page is genuinely wired up or genuinely deleted. Add to it only with a written
+ * reason in the backlog, and never to make a red run go green — a new strand is the single failure
+ * mode this file exists to catch.
  */
-const BASELINE = 10;
+const RECORDED_UNREACHABLE = [...literalScanFindabilityRecordedRoutes()].sort();
 
 const ROOTS = ["app", "src"];
 
@@ -135,10 +134,10 @@ function routeOf(file: string): string | null {
  * did strand. This regex cannot be argued with: it matches only a file reduced to an import, an
  * optional dynamic export, and one redirect call — no JSX, no branches, no logic of any kind. And
  * it self-maintains. The moment real content returns to such a file it stops matching, re-enters
- * the count, and the ratchet fires again if nothing links to it.
+ * the set, and the guard fires again if nothing links to it.
  *
- * This is deliberately NOT a raise of BASELINE, which this file forbids and is right to forbid. A
- * raise would assert 'two more pages are unreachable, accept it'. This asserts something narrower
+ * This is deliberately NOT a new row in the backlog, which would assert 'two more pages are
+ * unreachable, accept it' — the thing this guard exists to refuse. This asserts something narrower
  * and checkable: those two routes no longer render a page at all.
  */
 const REDIRECT_STUB_BODY =
@@ -223,20 +222,24 @@ export function runNavigationPageFindabilityRatchetTests() {
     .map(([route]) => route)
     .sort();
 
-  const count = unreachable.length;
+  const newlyStranded = unreachable.filter((route) => !RECORDED_UNREACHABLE.includes(route));
+  const nowReachable = RECORDED_UNREACHABLE.filter((route) => !unreachable.includes(route));
 
-  assert.ok(
-    count <= BASELINE,
-    `${count - BASELINE} admin page(s) just became unreachable — the count went ${BASELINE} -> ${count}.\n` +
+  assert.deepEqual(
+    unreachable,
+    RECORDED_UNREACHABLE,
+    `the set of admin pages no literal string reaches has changed — this asserts identities, not a count, ` +
+      `so a page that gained a link and a page that lost one no longer cancel out.\n` +
+      (newlyStranded.length
+        ? `Newly unreachable (a page lost its only literal link — give it one in the sidebar rail or on a ` +
+          `hub page, or record why it has none under invisible-to-literal-scan in ` +
+          `tests/navigation-reachability-backlog.ts):\n  ${newlyStranded.join("\n  ")}\n`
+        : "") +
+      (nowReachable.length
+        ? `Good news, now reachable (a page gained a link or was deleted — remove it from the backlog so ` +
+          `the ground that was won cannot be given back):\n  ${nowReachable.join("\n  ")}\n`
+        : "") +
       `A page with no link anywhere still builds, still deploys, and still serves — it simply stops ` +
-      `existing for every user. If a restructure moved these, give each one a home in the sidebar rail ` +
-      `or on a hub page.\n` +
-      `Unreachable now:\n  ${unreachable.join("\n  ")}`,
-  );
-
-  assert.ok(
-    count >= BASELINE,
-    `Good news: unreachable admin pages dropped ${BASELINE} -> ${count}. Lower BASELINE in this file ` +
-      `to ${count} so the ground that was won cannot be given back.`,
+      `existing for every user.`,
   );
 }
