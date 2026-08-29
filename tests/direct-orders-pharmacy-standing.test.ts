@@ -119,8 +119,8 @@ export function runDirectOrdersPharmacyStandingTests() {
   const trustedNoCode = describeDirectOrderPharmacyStanding({ trustState: "trusted", probationStartedAt: null });
   assert.match(
     trustedNoCode.noCodeNote,
-    /^This pharmacy has no distributor customer code on file/,
-    "an established pharmacy's no-code message must be unchanged — this fix must not make every " +
+    /^This venue has no distributor customer code on file/,
+    "an established venue's no-code message must be unchanged — this fix must not make every " +
       "ordinary pharmacy look suspicious",
   );
   assert.doesNotMatch(
@@ -196,7 +196,7 @@ export function runDirectOrdersPharmacyStandingTests() {
   );
   assert.doesNotMatch(
     detailSource,
-    /This pharmacy has no distributor customer code on file, so its retail sales cannot be\s*\n?\s*matched\. Register it/,
+    /This venue has no distributor customer code on file, so its retail sales cannot be\s*\n?\s*matched\. Register it/,
     "the hand-rolled no-code paragraph must be gone — it is the branch that hid the probation state",
   );
 

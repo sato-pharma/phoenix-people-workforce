@@ -365,10 +365,10 @@ export async function requestDirectOrderPharmacyValidation(
   const supabase = getSupabaseAdmin();
   const { data: pharmacy } = await supabase
     .from("direct_order_pharmacies")
-    .select("id, area_code, verification_status")
+    .select("id, area_code, verification_status, venue_type")
     .eq("id", pharmacyId)
     .maybeSingle();
-  if (!pharmacy) throw notFoundError("Pharmacy not found.");
+  if (!pharmacy) throw notFoundError("Venue not found.");
 
   const areaCode = (pharmacy as { area_code?: string | null }).area_code ?? null;
   // Resolved SERVER-SIDE from the stored geography — never taken from the browser, which is the
@@ -472,8 +472,15 @@ export async function requestDirectOrderPharmacyValidation(
   // assists is not an assist.
   //
   // A null column means "no answer", never "passed" — the desk renders it as such.
+  // The venue type decides WHICH question the photo is read against. Without it every photo was
+  // judged "is this a pharmacy", so a clinic filed (correctly) as a nursery came back a red
+  // "does not look like a pharmacy" on evidence that was never wrong.
   try {
-    const evidenceCheck = await checkDirectOrderStorefrontEvidence({ bytes, claimedPharmacyName: claimedName });
+    const evidenceCheck = await checkDirectOrderStorefrontEvidence({
+      bytes,
+      claimedPharmacyName: claimedName,
+      venueType: normalizeVenueType((pharmacy as { venue_type?: string | null }).venue_type),
+    });
     if (evidenceCheck) {
       await supabase
         .from("direct_order_pharmacy_validations")

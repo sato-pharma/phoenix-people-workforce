@@ -395,27 +395,27 @@ export function runDirectOrdersApprovalDetailNamesTests() {
     // The old combined "Brick / Area" cell is what forced the bare-code format; it must be gone.
     assert.ok(!labels.includes("Brick / Area"), "brick and area must be separate fields");
 
-    assert.equal(valueOf("Pharmacy"), "El Ezaby (DOP-000123)");
+    assert.equal(valueOf("Venue"), "El Ezaby (DOP-000123)");
     assert.equal(valueOf("Doctor"), "Dr Nour");
     assert.equal(valueOf("Medical rep"), "Sara Hassan");
 
     // Owner rule: never skip a detail. The company's own codes get their OWN labelled fields
     // rather than living only inside a parenthesis on another field's value.
-    assert.equal(valueOf("Sato pharmacy code"), "DOP-000123");
+    assert.equal(valueOf("Sato venue code"), "DOP-000123");
     assert.equal(valueOf("Sato product code"), "CN001");
     assert.equal(valueOf("Deal type"), "Bonus");
     // A NAME, not the bare HR-ID (owner rule, 2026-08-08 — "show human-readable names, never raw
     // codes"). This asserted "HR-100" until then, which is exactly what the owner objected to on
     // screen. The id remains the fallback when the directory has no name for it, checked below.
-    assert.equal(valueOf("Pharmacy registered by"), "Mahmoud Adel");
+    assert.equal(valueOf("Venue registered by"), "Mahmoud Adel");
     assert.equal(
       buildDirectOrderDetailFields(detail({ pharmacyRegisteredByName: null })).find(
-        (field) => field.label === "Pharmacy registered by",
+        (field) => field.label === "Venue registered by",
       )?.value,
       "HR-100",
       "with no resolved name the HR_ID must still show — a blank would hide who registered the pharmacy",
     );
-    assert.equal(valueOf("Pharmacy status"), "Active");
+    assert.equal(valueOf("Venue status"), "Active");
 
     // BOTH prices are always present, each stating whether it priced THIS deal — an approver
     // should never have to infer the basis from which field happens to be missing.
@@ -461,7 +461,7 @@ export function runDirectOrdersApprovalDetailNamesTests() {
     }
 
     // Long free text is marked full-width so it never has to squeeze into the grid.
-    assert.equal(fields.find((field) => field.label === "Pharmacy address")?.layout, "full");
+    assert.equal(fields.find((field) => field.label === "Venue address")?.layout, "full");
   }
   {
     // Unmapped geography degrades to the bare code, never to "undefined".
@@ -993,7 +993,7 @@ export function runDirectOrdersApprovalDetailNamesTests() {
     const ackIdx = serviceSource.indexOf("export async function acknowledgeDirectOrderPharmacy(");
     const ackBody = topLevelBlock(serviceSource, ackIdx);
     assert.match(ackBody, /access\.scope === "system" \|\| access\.role === "Super Admin"/);
-    assert.match(ackBody, /Forbidden: only a System Admin can acknowledge a pharmacy\./);
+    assert.match(ackBody, /Forbidden: only a System Admin can acknowledge a venue\./);
     assert.ok(
       !/export async function markDirectOrderPharmacyVerified\(/.test(serviceSource),
       "the unguarded pharmacy write must stay module-private, never exported",
@@ -1223,7 +1223,7 @@ export function runDirectOrdersApprovalDetailNamesTests() {
     );
     const metricValue = (label: string) => metrics.find((metric) => metric.label === label)?.value ?? "";
     assert.equal(metricValue("Distributor codes"), "Ibn Sina: 1234567; Overseas: 7654321");
-    assert.equal(metricValue("Pharmacy"), "El Ezaby (DOP-000123)");
+    assert.equal(metricValue("Venue"), "El Ezaby (DOP-000123)");
     assert.equal(metricValue("Medical rep"), "Sara Hassan");
     assert.equal(metricValue("Area"), "Cairo East (CA-07)");
   }
@@ -1387,7 +1387,7 @@ export function runDirectOrdersApprovalDetailNamesTests() {
     const metricsBody = topLevelBlock(fieldsSource, metricsIdx);
     assert.match(
       metricsBody,
-      /none on file — distributor sales cannot be linked to this pharmacy/,
+      /none on file — distributor sales cannot be linked to this venue/,
       "the notification must name an absent distributor code rather than dashing it",
     );
     assert.doesNotMatch(

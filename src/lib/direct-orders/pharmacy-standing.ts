@@ -93,9 +93,9 @@ export function describeDirectOrderPharmacyStanding(input: {
 
   if (trustState === "phantom_suspected") {
     const reported =
-      `this pharmacy finished its ${windowDays}-day probation with no distributor sales and no ` +
+      `this venue finished its ${windowDays}-day probation with no distributor sales and no ` +
       "payment, and has been reported as a suspected phantom. Treat this order as unverified " +
-      "until someone confirms the pharmacy exists";
+      "until someone confirms the venue exists";
     return {
       trustState,
       probationDay,
@@ -108,9 +108,9 @@ export function describeDirectOrderPharmacyStanding(input: {
   if (trustState === "provisional") {
     const unproved =
       probationDay === null
-        ? "new pharmacy, still provisional. Its probation clock was never started, so nothing will " +
+        ? "new venue, still provisional. Its probation clock was never started, so nothing will " +
           "promote or flag it on its own"
-        : `new pharmacy, probation day ${probationDay} of ${windowDays}. It is approved but not yet ` +
+        : `new venue, probation day ${probationDay} of ${windowDays}. It is approved but not yet ` +
           "proved: no distributor has invoiced it and no collection has been paid";
     return {
       trustState,
@@ -133,10 +133,10 @@ export function describeDirectOrderPharmacyStanding(input: {
     probationDay,
     windowDays,
     noHistoryNote:
-      "No distributor sales found for this pharmacy's customer codes. The pharmacy is established, " +
+      "No distributor sales found for this venue's customer codes. The venue is established, " +
       "so this means it has not bought in the months on record — not that it is unknown.",
     noCodeNote:
-      "This pharmacy has no distributor customer code on file, so its retail sales cannot be " +
+      "This venue has no distributor customer code on file, so its retail sales cannot be " +
       `matched. ${registerTheCode}`,
   };
 }

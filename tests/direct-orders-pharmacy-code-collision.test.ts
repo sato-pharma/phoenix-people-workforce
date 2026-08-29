@@ -283,7 +283,7 @@ export function runDirectOrdersPharmacyCodeCollisionTests() {
     "a pharmacy carrying an APPROVED order of this person's counts as theirs, including ones they " +
       "picked from the catalogue and never created",
   );
-  assert.match(form, /My pharmacies/, "the tab must exist");
+  assert.match(form, /My venues/, "the tab must exist");
   assert.match(
     form,
     /\(pharmacyMode !== "mine" \|\| !!pickedMine\)/,

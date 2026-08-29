@@ -75,7 +75,7 @@ const NARRATIVE_TONE: Record<DirectOrderApprovalNarrativeStep["state"], string> 
 // SAME buildDirectOrderDetailFields() output — the domain field list itself is untouched.
 const HERO_LABELS = new Set(["Sales value", "Quantity"]);
 // Present elsewhere on screen already, in a form that makes the plain-grid copy redundant rather
-// than informative: the code rides in the Product/Pharmacy field's own "(CODE)" suffix
+// than informative: the code rides in the Product/Venue field's own "(CODE)" suffix
 // (codeNameLabel), Discount % repeats the hero tile above verbatim, and the two prices get their
 // own colour-coded PriceUsageField instead of a plain grid row. Still present in
 // buildDirectOrderDetailFields()'s OWN output — the notification email and the completeness test
@@ -83,7 +83,7 @@ const HERO_LABELS = new Set(["Sales value", "Quantity"]);
 // screen's grid only.
 const GRID_HIDDEN_LABELS = new Set([
   "Sato product code",
-  "Sato pharmacy code",
+  "Sato venue code",
   "Discount %",
   "Pharmacy price",
   "Public price",
@@ -103,16 +103,16 @@ const PRODUCT_GROUP_LABELS = new Set([
   "Public price",
   "Discount %",
 ]);
-const PHARMACY_GROUP_LABELS = new Set([
-  "Pharmacy",
-  "Sato pharmacy code",
+const VENUE_GROUP_LABELS = new Set([
+  "Venue",
+  "Sato venue code",
   "Doctor",
   "Brick",
   "Area",
   "Region",
   "Medical rep",
-  "Pharmacy status",
-  "Pharmacy registered by",
+  "Venue status",
+  "Venue registered by",
 ]);
 
 export function DirectOrderRequestDetail({
@@ -339,7 +339,7 @@ export function DirectOrderRequestDetail({
           <FieldTable
             title="Pharmacy & geography"
             rows={gridFields
-              .filter((field) => PHARMACY_GROUP_LABELS.has(field.label) && !GRID_HIDDEN_LABELS.has(field.label))
+              .filter((field) => VENUE_GROUP_LABELS.has(field.label) && !GRID_HIDDEN_LABELS.has(field.label))
               .map((field) => ({ label: field.label, value: field.value }))}
           />
           <FieldTable
@@ -349,7 +349,7 @@ export function DirectOrderRequestDetail({
                 (field) =>
                   !HERO_LABELS.has(field.label) &&
                   !PRODUCT_GROUP_LABELS.has(field.label) &&
-                  !PHARMACY_GROUP_LABELS.has(field.label) &&
+                  !VENUE_GROUP_LABELS.has(field.label) &&
                   !GRID_HIDDEN_LABELS.has(field.label),
               )
               .map((field) => ({ label: field.label, value: field.value }))}

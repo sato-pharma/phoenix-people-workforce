@@ -1088,7 +1088,7 @@ export async function createDirectOrderPharmacy(
 ): Promise<DirectOrderPharmacy> {
   await assertPermission(access, "direct_orders", "create");
   const name = input.pharmacyName?.trim();
-  if (!name) badRequest("Pharmacy name is required.");
+  if (!name) badRequest("Venue name is required.");
   // NOT `normalizeVenueType`: absent means unanswered here, not "pharmacy". Reads keep the
   // forgiving version for rows written before the column existed — a REGISTRATION does not get it.
   const venueTypeChoice = parseVenueTypeChoice(input.venueType);
@@ -1105,7 +1105,7 @@ export async function createDirectOrderPharmacy(
   const doctorName = input.doctorName?.trim();
   if (!doctorName) badRequest("Doctor name is required.");
   const pharmacyAddress = input.pharmacyAddress?.trim();
-  if (!pharmacyAddress) badRequest("Pharmacy address is required.");
+  if (!pharmacyAddress) badRequest("Venue address is required.");
 
   // Distributor + customer code are OPTIONAL (owner rule, 2026-08-04). A submitter who does not
   // know the distributor, or the code, or either, can still register the pharmacy and keep
@@ -1236,7 +1236,7 @@ export async function createDirectOrderPharmacy(
         ? "no distributor or customer code was given"
         : unresolved.length > 0
           ? `${unresolved.length} customer code(s) are not in the distributor's own list`
-          : "the pharmacy was typed in by hand rather than picked from Phoenix";
+          : "the venue was typed in by hand rather than picked from Phoenix";
 
   await writeRequiredAuditLog({
     actorLoginId: access.loginId ?? access.hrId,
@@ -1251,7 +1251,7 @@ export async function createDirectOrderPharmacy(
         (claim) => `${claim.distributorCode}:${claim.customerCode} held by ${claim.heldByPharmacyCode}`,
       ),
     },
-    summary: `Direct-order pharmacy "${name}" registered by hand — awaiting SFE validation and System Admin acknowledgment (${reviewReason}).`,
+    summary: `Direct-order venue "${name}" registered by hand — awaiting SFE validation and System Admin acknowledgment (${reviewReason}).`,
   });
 
   // Catch the wrong-box case at the source (owner rule, 2026-08-08). If the name that was just typed
@@ -1446,7 +1446,7 @@ export async function acknowledgeDirectOrderPharmacy(
   input: { pharmacyId: string },
 ): Promise<void> {
   if (!(access.scope === "system" || access.role === "Super Admin")) {
-    throw new Error("Forbidden: only a System Admin can acknowledge a pharmacy.");
+    throw new Error("Forbidden: only a System Admin can acknowledge a venue.");
   }
   await markDirectOrderPharmacyVerified(access, input);
   pingDirectOrderSheet("pharmacy_verified");
@@ -1474,10 +1474,10 @@ export async function rejectDirectOrderPharmacy(
   input: { pharmacyId: string; reason: string },
 ): Promise<{ pharmacyId: string; ordersRejected: number }> {
   if (!(access.scope === "system" || access.role === "Super Admin")) {
-    throw new Error("Forbidden: only a System Admin can reject a pharmacy as false.");
+    throw new Error("Forbidden: only a System Admin can reject a venue as false.");
   }
   const reason = input.reason?.trim();
-  if (!reason) badRequest("Say why this pharmacy is being rejected — the reason is the record.");
+  if (!reason) badRequest("Say why this venue is being rejected — the reason is the record.");
 
   const supabase = getSupabaseAdmin();
   const { data: before } = await supabase
@@ -1485,9 +1485,9 @@ export async function rejectDirectOrderPharmacy(
     .select("id, pharmacy_name, phoenix_pharmacy_code, verification_status, active")
     .eq("id", input.pharmacyId)
     .maybeSingle();
-  if (!before) badRequest("Pharmacy not found.");
+  if (!before) badRequest("Venue not found.");
   const previous = String((before as { verification_status?: string }).verification_status ?? "");
-  if (previous === "rejected") badRequest("This pharmacy is already rejected.");
+  if (previous === "rejected") badRequest("This venue is already rejected.");
 
   // Deactivating is what actually removes it from the picker, the directory search and the
   // probation sweep — twelve query sites filter on `active` and none filter on verification_status.
@@ -1513,7 +1513,7 @@ export async function rejectDirectOrderPharmacy(
       requestId: order.id,
       actorHrId: access.hrId,
       eventType: "rejected",
-      message: `Pharmacy rejected as false: ${reason}`,
+      message: `Venue rejected as false: ${reason}`,
     });
   }
 
@@ -1553,7 +1553,7 @@ async function markDirectOrderPharmacyVerified(
     .select("pharmacy_name, verification_status")
     .eq("id", input.pharmacyId)
     .maybeSingle();
-  if (!before) badRequest("Pharmacy not found.");
+  if (!before) badRequest("Venue not found.");
 
   // A pharmacy that was examined and found false cannot be confirmed back into existence. Without
   // this, acknowledging one would flip it to `verified` AND revive every order parked on it —
@@ -1580,7 +1580,7 @@ async function markDirectOrderPharmacyVerified(
     entityId: `pharmacy:${input.pharmacyId}`,
     oldValues: { verificationStatus: (before as { verification_status?: string }).verification_status ?? null },
     newValues: { verificationStatus: "verified" },
-    summary: `Direct-order pharmacy acknowledged by ${access.hrId ?? "unknown"}.`,
+    summary: `Direct-order venue acknowledged by ${access.hrId ?? "unknown"}.`,
   });
 
   // Validation is the ONE door out of `held` (spec B6). Every order parked on this pharmacy
@@ -2210,13 +2210,13 @@ export async function expireStaleHeldDirectOrders(
       entityId: request.id,
       oldValues: { status: "held" },
       newValues: { status: "expired" },
-      summary: `Direct order expired — held ${holdDays} days without a valid pharmacy (requester ${request.requesterHrId}).`,
+      summary: `Direct order expired — held ${holdDays} days without a valid venue (requester ${request.requesterHrId}).`,
     });
     await insertEvent({
       requestId: request.id,
       actorHrId: null,
       eventType: "expired",
-      message: `Held ${holdDays} days without pharmacy validation — expired automatically.`,
+      message: `Held ${holdDays} days without venue validation — expired automatically.`,
     });
 
     const requesterDisplayName = resolveName(request.requesterHrId) ?? request.requesterHrId;
@@ -2224,7 +2224,7 @@ export async function expireStaleHeldDirectOrders(
     const notifyContext = await buildNotifyContext(request, requesterDisplayName, pharmacy);
     await notifyDirectOrder({
       recipients: [request.requesterHrId, ...(await ccRecipients())],
-      title: "Direct order expired — no valid pharmacy code was provided",
+      title: "Direct order expired — the venue was never validated",
       message:
         `${buildDirectOrderNotificationLine(notifyContext)} ` +
         `This request stayed held for ${holdDays} days without the pharmacy passing validation, so it expired. ` +
@@ -2579,7 +2579,7 @@ export async function sendHeldDirectOrderNotices(
     await notifyDirectOrder({
       // To the requester; CC SFE + direct manager + CEO (the envelope keeps this ONE email).
       recipients: [request.requesterHrId, ...sfeHolders, managerHrId, ...ceoHolders],
-      title: "Direct order held — a valid pharmacy code is required",
+      title: "Direct order held — the venue must be validated",
       message:
         `${requesterName}, your direct order — ${request.productName} × ${request.qty} — is held ` +
         "and has not entered the approval flow, because your pharmacy is not in the master " +
@@ -2630,7 +2630,7 @@ function canManagePharmacyRegistry(access: AccessContext): boolean {
 
 function assertPharmacyRegistryAccess(access: AccessContext): void {
   if (!canManagePharmacyRegistry(access)) {
-    throw new Error("Forbidden: only a System Admin or the SFE Manager can manage the pharmacy registry.");
+    throw new Error("Forbidden: only a System Admin or the SFE Manager can manage the venue registry.");
   }
 }
 
@@ -2731,14 +2731,14 @@ export async function ensureDirectOrderPharmacyFromDirectory(
       .eq("active", true)
       .maybeSingle();
     if (error) throw error;
-    if (!existing) badRequest("That pharmacy is no longer active in Phoenix — search again.");
+    if (!existing) badRequest("That venue is no longer active in Phoenix — search again.");
     return mapPharmacyRow(existing as Record<string, unknown>);
   }
 
   const distributorCode = String(input.distributorCode ?? "").trim();
   const customerCode = String(input.customerCode ?? "").trim();
   if (!distributorCode || !customerCode) {
-    badRequest("Pick a pharmacy from the list — by its Phoenix code, or a distributor customer.");
+    badRequest("Pick a venue from the list — by its Phoenix code, or a distributor customer.");
   }
 
   // The map row is the source of truth for every field. Fail closed if it is not there: the UI
@@ -2805,7 +2805,7 @@ export async function ensureDirectOrderPharmacyFromDirectory(
     entityId: `pharmacy:${pharmacy.id}`,
     oldValues: null,
     newValues: { distributorCode, customerCode, source: "directory_combo" },
-    summary: `Direct-order pharmacy materialized from the distributor directory (${distributorCode}/${customerCode}) by ${access.hrId ?? "unknown"}.`,
+    summary: `Direct-order venue materialized from the distributor directory (${distributorCode}/${customerCode}) by ${access.hrId ?? "unknown"}.`,
   });
 
   return pharmacy;
@@ -2840,7 +2840,7 @@ export async function registerDirectOrderPharmacy(
 ): Promise<DirectOrderPharmacy> {
   assertPharmacyRegistryAccess(access);
   const name = input.pharmacyName?.trim();
-  if (!name) badRequest("Pharmacy name is required.");
+  if (!name) badRequest("Venue name is required.");
   // The admin registry never sent a venue type, so every pharmacy registered here was defaulted
   // into being a pharmacy without anyone being asked. Being the System Admin is authority over the
   // approval chain, not knowledge of whether a given address is a nursery.
@@ -2898,7 +2898,7 @@ export async function registerDirectOrderPharmacy(
       registeredBy: access.role,
       distributorCodes: Array.from(byDistributor.entries()).map(([d, c]) => `${d}:${c}`),
     },
-    summary: `Direct-order pharmacy "${name}" pre-registered and confirmed by ${access.hrId ?? "unknown"} (${access.role}).`,
+    summary: `Direct-order venue "${name}" pre-registered and confirmed by ${access.hrId ?? "unknown"} (${access.role}).`,
   });
 
   const pharmacy = mapPharmacyRow(pharmacyRow as Record<string, unknown>);
@@ -2926,7 +2926,7 @@ export async function updateDirectOrderPharmacyDetails(
     .select("pharmacy_name, brick_id, area_code, region_code, doctor_name, pharmacy_address")
     .eq("id", input.pharmacyId)
     .maybeSingle();
-  if (!before) badRequest("Pharmacy not found.");
+  if (!before) badRequest("Venue not found.");
 
   // Patch semantics, not replace: the UI sends only the fields it edited, and an absent key must
   // never blank a column. `null` is a real value here (clear the doctor) and is distinguished from
@@ -2934,7 +2934,7 @@ export async function updateDirectOrderPharmacyDetails(
   const patch: Record<string, unknown> = {};
   if (input.pharmacyName !== undefined) {
     const name = input.pharmacyName?.trim();
-    if (!name) badRequest("Pharmacy name cannot be empty.");
+    if (!name) badRequest("Venue name cannot be empty.");
     patch.pharmacy_name = name;
   }
   if (input.brickId !== undefined) patch.brick_id = input.brickId || null;
@@ -2953,7 +2953,7 @@ export async function updateDirectOrderPharmacyDetails(
     entityId: `pharmacy:${input.pharmacyId}`,
     oldValues: before as Record<string, unknown>,
     newValues: patch,
-    summary: `Direct-order pharmacy details updated by ${access.hrId ?? "unknown"}.`,
+    summary: `Direct-order venue details updated by ${access.hrId ?? "unknown"}.`,
   });
 }
 
@@ -2980,7 +2980,7 @@ export async function replaceDirectOrderPharmacyCodes(
     .select("id, pharmacy_name")
     .eq("id", input.pharmacyId)
     .maybeSingle();
-  if (!pharmacy) badRequest("Pharmacy not found.");
+  if (!pharmacy) badRequest("Venue not found.");
 
   const byDistributor = normalizeDistributorCodePairs(input.distributorCodes, await distributorNameResolver());
   const { data: previous } = await supabase
@@ -3017,7 +3017,7 @@ export async function replaceDirectOrderPharmacyCodes(
         mapByKey.has(`${d}::${c}`),
       ).length,
     },
-    summary: `Direct-order pharmacy distributor codes replaced by ${access.hrId ?? "unknown"}.`,
+    summary: `Direct-order venue distributor codes replaced by ${access.hrId ?? "unknown"}.`,
   });
 }
 
@@ -3580,7 +3580,7 @@ export async function submitDirectOrder(
   // existence probe this replaced no longer carries enough.
   let pharmacies = await loadPharmaciesByIds([input.pharmacyId]);
   let pharmacy = pharmacies.get(input.pharmacyId) ?? null;
-  if (!pharmacy) badRequest("Pharmacy not found — pick an existing one or add a new pharmacy first.");
+  if (!pharmacy) badRequest("Venue not found — pick an existing one or add a new venue first.");
 
   // Repair BEFORE deciding (owner rule, 2026-08-08). Pharmacies registered before auto-link exists
   // still carry their code in the name field; without this they would keep failing the hold test on
@@ -3722,7 +3722,7 @@ export async function submitDirectOrder(
     // state and the way out; the Held Desk (and its bulk notice button) is the pressure valve.
     await notifyDirectOrder({
       recipients: [actorHrId],
-      title: "Direct order held — pharmacy not in the master database",
+      title: "Direct order held — venue not in the master database",
       message:
         `${buildDirectOrderNotificationLine(notifyContext)} ` +
         "This request is HELD and has not entered the approval flow. It will move only after the " +
@@ -6340,7 +6340,7 @@ export type PharmacyGeoVariance = {
 export async function listPharmacyGeoVariances(
   access: AccessContext,
 ): Promise<{ rows: PharmacyGeoVariance[]; canResolve: boolean }> {
-  if (!canViewGeoVariances(access)) throw new Error("Forbidden: you are not allowed to view pharmacy variances.");
+  if (!canViewGeoVariances(access)) throw new Error("Forbidden: you are not allowed to view venue variances.");
   const supabase = getSupabaseAdmin();
   const { data } = await supabase
     .from("direct_order_pharmacies")
@@ -6408,7 +6408,7 @@ export async function resolvePharmacyGeoVariance(
     entityType: "direct_order_request",
     entityId: `pharmacy-variance:${input.pharmacyId}`,
     newValues: { action: input.action },
-    summary: `Pharmacy geo variance ${input.action} by ${access.hrId ?? "unknown"}.`,
+    summary: `Venue geo variance ${input.action} by ${access.hrId ?? "unknown"}.`,
   });
 }
 

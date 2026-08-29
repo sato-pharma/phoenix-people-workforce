@@ -43,7 +43,7 @@ export function PharmacyVarianceManager({ rows, canResolve }: { rows: PharmacyGe
         <table className="w-full min-w-[860px] border-collapse text-sm">
           <thead className="bg-slate-900 text-white">
             <tr className="text-left text-phx-xs font-black uppercase tracking-wider">
-              <th className="px-3 py-2">Pharmacy</th>
+              <th className="px-3 py-2">Venue</th>
               <th className="px-3 py-2">Submitted brick</th>
               <th className="px-3 py-2">System-mapped brick</th>
               <th className="px-3 py-2">Distributor codes</th>

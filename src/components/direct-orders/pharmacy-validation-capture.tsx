@@ -16,7 +16,12 @@ import {
   pharmacyLicenseFillsTheIdentityGap,
   pharmacyLicensePrompt,
 } from "@/lib/venues/pharmacy-license";
-import { DEFAULT_VENUE_TYPE, type VenueType } from "@/lib/venues/venue-type";
+import {
+  DEFAULT_VENUE_TYPE,
+  venueRequiresDistributorCode,
+  venueTypeLabel,
+  type VenueType,
+} from "@/lib/venues/venue-type";
 import { VENUE_LOCATION_REQUIRED_MESSAGE } from "@/lib/venues/venue-validation-rule";
 
 type Props = {
@@ -108,6 +113,15 @@ export function PharmacyValidationCapture({
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [license, setLicense] = useState<{ dataUrl: string; fileName: string; isPdf: boolean } | null>(null);
 
+  // What this venue is CALLED on its own screen. A rep registering a nursery was reading the word
+  // "pharmacy" in every label, and on 2026-08-22 one of them typed صيدليه (pharmacy) into a
+  // nursery's name because the field above the box said "Pharmacy name". The screen taught him.
+  const venueLabel = venueTypeLabel(venueType);
+  const venueWord = venueLabel.toLowerCase();
+  // A venue with no distributor account has no pharmacy trade licence to produce, so the panel is
+  // not shown at all rather than shown and marked optional. The desk refuses it nothing; asking
+  // for a document that does not exist is what this whole change is undoing.
+  const licenseApplies = venueRequiresDistributorCode(venueType);
   const licenseFillsTheGap = pharmacyLicenseFillsTheIdentityGap({ distributorCodeCount, venueType });
   const licenseNote = pharmacyLicensePrompt({
     distributorCodeCount,
@@ -164,7 +178,7 @@ export function PharmacyValidationCapture({
         await videoRef.current.play();
       }
       setCameraReady(true);
-      setMessage("Camera ready. Point at the pharmacy sign.");
+      setMessage(`Camera ready. Point at the ${venueWord} sign.`);
     } catch (cameraError) {
       const name = cameraError instanceof DOMException ? cameraError.name : "CameraError";
       setError(
@@ -248,7 +262,7 @@ export function PharmacyValidationCapture({
       capturedAt: takenAt,
       locationCapturedAt: capture.capturedAt,
       locationLines: capture.location?.lines ?? [],
-      title: "Pharmacy validation live evidence",
+      title: `${venueLabel} validation live evidence`,
     });
     ctx.font = `${fontSize}px Arial, Helvetica, sans-serif`;
     // Wrapped, never truncated: a long Egyptian street address is exactly the caption most worth
@@ -319,8 +333,8 @@ export function PharmacyValidationCapture({
     // Leg 1 of the venue rule, said here as well as on the server so the rep learns it while still
     // standing in front of the shop rather than after a round trip. Same sentence both ends.
     if (capture.latitude == null || capture.longitude == null) return setError(VENUE_LOCATION_REQUIRED_MESSAGE);
-    if (!name.trim()) return setError("Pharmacy name is required.");
-    if (!reason.trim()) return setError("Say why this pharmacy is not in the master database.");
+    if (!name.trim()) return setError(`${venueLabel} name is required.`);
+    if (!reason.trim()) return setError(`Say why this ${venueWord} is not in the master database.`);
     setBusy(true);
     try {
       const res = await fetch("/api/direct-orders/pharmacy-validations", {
@@ -362,21 +376,21 @@ export function PharmacyValidationCapture({
   return (
     <section className="border border-phx-line bg-white">
       <header className="border-b border-phx-line bg-slate-900 px-4 py-2.5">
-        <h3 className="text-phx-xs font-black uppercase tracking-[0.14em] text-white">Validate this pharmacy</h3>
+        <h3 className="text-phx-xs font-black uppercase tracking-[0.14em] text-white">Validate this {venueWord}</h3>
       </header>
       <div className="space-y-3 px-4 py-4">
         <p className="border border-amber-300 bg-amber-50 px-3 py-2 text-phx-sm font-semibold text-amber-900">
-          This pharmacy is not in the master database. To move your order, capture your location and
-          a live photo of the pharmacy sign. A System Admin reviews it.
+          This {venueWord} is not in the master database. To move your order, capture your location
+          and a live photo of the {venueWord} sign. A System Admin reviews it.
         </p>
 
         <div>
-          <label className={labelClass}>Pharmacy name *</label>
+          <label className={labelClass}>{venueLabel} name *</label>
           <input className={inputClass} value={name} onChange={(e) => setName(e.target.value)} dir="auto" />
           {suggestions.length > 0 ? (
             <div className="mt-2 border border-sky-300 bg-sky-50 px-3 py-2">
               <p className="text-phx-sm font-black text-sky-900">
-                Phoenix already knows {suggestions.length === 1 ? "a pharmacy" : "pharmacies"} with a similar name:
+                Phoenix already knows {suggestions.length === 1 ? "a venue" : "venues"} with a similar name:
               </p>
               <ul className="mt-1 space-y-1">
                 {suggestions.map((s) => (
@@ -388,7 +402,7 @@ export function PharmacyValidationCapture({
                 ))}
               </ul>
               <p className="mt-1.5 text-phx-xs font-semibold text-sky-800">
-                If one of these is your pharmacy, go back and pick it — your order goes through
+                If one of these is your {venueWord}, go back and pick it — your order goes through
                 immediately with no validation needed.
               </p>
             </div>
@@ -446,77 +460,85 @@ export function PharmacyValidationCapture({
           ) : null}
         </div>
 
-        {/* The pharmacy licence (رخصة الصيدلية). Always offered, never required — a rep who has it
-            can settle the identity question on the spot instead of waiting for the desk to ask.
-            Highlighted only when it is the proof this venue is genuinely short of: no distributor
-            code anywhere. A nursery is skipped entirely — it has no distributor account by its
-            nature and no pharmacy trade licence to produce. */}
-        <div className={`border p-3 ${licenseFillsTheGap && !license ? "border-amber-300 bg-amber-50" : "border-[#eef1f3]"}`}>
-          <p className="text-phx-xs font-black uppercase tracking-wider text-slate-500">
-            Pharmacy licence · رخصة الصيدلية {licenseFillsTheGap ? "" : "(optional)"}
-          </p>
-          {licenseNote ? (
-            <p className="mt-1 text-phx-sm font-semibold text-amber-900" dir="auto">{licenseNote}</p>
-          ) : (
-            <p className="mt-1 text-phx-sm font-medium text-slate-500">
-              Attach it if you have it — the reviewer checks the trade name on the licence against the
-              name on the shop sign.
+        {/* The pharmacy licence (رخصة الصيدلية). Always offered to a PHARMACY, never required — a rep
+            who has it can settle the identity question on the spot instead of waiting for the desk
+            to ask. Highlighted only when it is the proof this venue is genuinely short of: no
+            distributor code anywhere.
+
+            NOT RENDERED AT ALL for a venue with no distributor account, which is what "a nursery is
+            skipped entirely" was always supposed to mean. Until 2026-08-29 this comment said so
+            while the panel underneath it rendered anyway, captioned "(optional)" — a nursery was
+            being offered a pharmacy trade licence it cannot obtain, on the same screen whose gate
+            had just stopped demanding one. An optional field for a document that does not exist is
+            still the screen asking a question with no answer. */}
+        {licenseApplies ? (
+          <div className={`border p-3 ${licenseFillsTheGap && !license ? "border-amber-300 bg-amber-50" : "border-[#eef1f3]"}`}>
+            <p className="text-phx-xs font-black uppercase tracking-wider text-slate-500">
+              Pharmacy licence · رخصة الصيدلية {licenseFillsTheGap ? "" : "(optional)"}
             </p>
-          )}
-          <input
-            accept={PHARMACY_LICENSE_ACCEPT_ATTRIBUTE}
-            capture="environment"
-            className="hidden"
-            onChange={(e) => readLicenseFile(e.target.files?.[0])}
-            ref={licenseCameraRef}
-            type="file"
-          />
-          <input
-            accept={PHARMACY_LICENSE_ACCEPT_ATTRIBUTE}
-            className="hidden"
-            onChange={(e) => readLicenseFile(e.target.files?.[0])}
-            ref={licenseFileRef}
-            type="file"
-          />
-          <div className="mt-2 flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={() => licenseCameraRef.current?.click()}
-              className="border border-slate-300 bg-white px-3 py-1.5 text-phx-sm font-bold text-slate-700 hover:bg-slate-50"
-            >
-              Photograph licence
-            </button>
-            <button
-              type="button"
-              onClick={() => licenseFileRef.current?.click()}
-              className="border border-slate-300 bg-white px-3 py-1.5 text-phx-sm font-bold text-slate-700 hover:bg-slate-50"
-            >
-              Choose file
-            </button>
-            <span className="text-phx-xs font-medium text-slate-400">JPEG, PNG or PDF · up to 5 MB</span>
-          </div>
-          {license ? (
-            <div className="mt-2 border border-emerald-300 bg-emerald-50 px-3 py-2">
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-phx-sm font-bold text-emerald-900" dir="auto">{license.fileName}</span>
-                <button type="button" onClick={clearLicense} className="text-phx-xs font-bold text-orange-600">
-                  Remove
-                </button>
-              </div>
-              {/* A PDF gets its name and nothing else — an inline preview would need a viewer, and
-                  the reviewer opens it on the desk anyway. An image is shown, because a rep who
-                  photographed the wrong page should find that out here rather than at the desk. */}
-              {license.isPdf ? null : (
-                <ZoomablePhoto
-                  alt="Pharmacy licence"
-                  caption="Pharmacy licence · رخصة الصيدلية"
-                  className="mt-2 w-full max-w-md border border-emerald-200"
-                  src={license.dataUrl}
-                />
-              )}
+            {licenseNote ? (
+              <p className="mt-1 text-phx-sm font-semibold text-amber-900" dir="auto">{licenseNote}</p>
+            ) : (
+              <p className="mt-1 text-phx-sm font-medium text-slate-500">
+                Attach it if you have it — the reviewer checks the trade name on the licence against the
+                name on the shop sign.
+              </p>
+            )}
+            <input
+              accept={PHARMACY_LICENSE_ACCEPT_ATTRIBUTE}
+              capture="environment"
+              className="hidden"
+              onChange={(e) => readLicenseFile(e.target.files?.[0])}
+              ref={licenseCameraRef}
+              type="file"
+            />
+            <input
+              accept={PHARMACY_LICENSE_ACCEPT_ATTRIBUTE}
+              className="hidden"
+              onChange={(e) => readLicenseFile(e.target.files?.[0])}
+              ref={licenseFileRef}
+              type="file"
+            />
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => licenseCameraRef.current?.click()}
+                className="border border-slate-300 bg-white px-3 py-1.5 text-phx-sm font-bold text-slate-700 hover:bg-slate-50"
+              >
+                Photograph licence
+              </button>
+              <button
+                type="button"
+                onClick={() => licenseFileRef.current?.click()}
+                className="border border-slate-300 bg-white px-3 py-1.5 text-phx-sm font-bold text-slate-700 hover:bg-slate-50"
+              >
+                Choose file
+              </button>
+              <span className="text-phx-xs font-medium text-slate-400">JPEG, PNG or PDF · up to 5 MB</span>
             </div>
-          ) : null}
-        </div>
+            {license ? (
+              <div className="mt-2 border border-emerald-300 bg-emerald-50 px-3 py-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-phx-sm font-bold text-emerald-900" dir="auto">{license.fileName}</span>
+                  <button type="button" onClick={clearLicense} className="text-phx-xs font-bold text-orange-600">
+                    Remove
+                  </button>
+                </div>
+                {/* A PDF gets its name and nothing else — an inline preview would need a viewer, and
+                    the reviewer opens it on the desk anyway. An image is shown, because a rep who
+                    photographed the wrong page should find that out here rather than at the desk. */}
+                {license.isPdf ? null : (
+                  <ZoomablePhoto
+                    alt="Pharmacy licence"
+                    caption="Pharmacy licence · رخصة الصيدلية"
+                    className="mt-2 w-full max-w-md border border-emerald-200"
+                    src={license.dataUrl}
+                  />
+                )}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
 
         {message ? <p className="text-phx-sm font-semibold text-slate-600">{message}</p> : null}
         {error ? <p className="text-sm font-semibold text-rose-600">{error}</p> : null}

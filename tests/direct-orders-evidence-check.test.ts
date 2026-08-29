@@ -94,8 +94,14 @@ export function runDirectOrderEvidenceCheckTests() {
   );
   assert.match(
     evidenceReading,
-    /Could not tell whether this is a pharmacy\./,
+    /Could not tell whether this is \$\{subject\}\./,
     "a null isPharmacy must render as could-not-tell, never fall through to the positive branch",
+  );
+  assert.match(
+    evidenceReading,
+    /venueRequiresDistributorCode\(venueType\)/,
+    "the subject of that sentence must follow the VENUE TYPE: a nursery is not judged on whether " +
+      "it looks like a pharmacy, and reading it as one is what made a nursery unapprovable",
   );
   assert.match(
     evidenceReading,

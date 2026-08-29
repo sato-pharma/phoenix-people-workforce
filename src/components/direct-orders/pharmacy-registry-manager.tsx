@@ -196,7 +196,7 @@ export function PharmacyRegistryManager({
     <div className="space-y-4">
       {!canManage ? (
         <p className="border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-800">
-          View-only. Only a System Admin or the SFE Manager can register or edit pharmacies.
+          View-only. Only a System Admin or the SFE Manager can register or edit venues.
         </p>
       ) : null}
       {error ? <p className="text-sm font-semibold text-rose-600">{error}</p> : null}
@@ -205,7 +205,7 @@ export function PharmacyRegistryManager({
       {/* What is worth acting on, said as counts rather than left for the eye to find. */}
       <div className="flex flex-wrap gap-3 text-phx-sm">
         <span className="border border-slate-200 bg-white px-3 py-1.5 font-bold text-slate-700">
-          {rows.length.toLocaleString("en-US")} pharmacies
+          {rows.length.toLocaleString("en-US")} venues
         </span>
         {pendingCount > 0 ? (
           <span className="border border-rose-200 bg-rose-50 px-3 py-1.5 font-bold text-rose-800">
@@ -222,7 +222,7 @@ export function PharmacyRegistryManager({
       <div className="flex flex-wrap items-center gap-3">
         <input
           className="w-72 border border-slate-300 px-3 py-1.5 text-sm"
-          placeholder="Search by pharmacy, Phoenix code, distributor or customer code…"
+          placeholder="Search by venue, Phoenix code, distributor or customer code…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
@@ -235,16 +235,16 @@ export function PharmacyRegistryManager({
               setEditingId(null);
             }}
           >
-            {adding ? "Cancel" : "+ Register a pharmacy"}
+            {adding ? "Cancel" : "+ Register a venue"}
           </button>
         ) : null}
       </div>
 
       {adding && canManage ? (
         <section className="border border-orange-200 bg-orange-50/40 p-4">
-          <h3 className="mb-1 text-phx-xs font-black uppercase tracking-wider text-slate-600">Register a pharmacy</h3>
+          <h3 className="mb-1 text-phx-xs font-black uppercase tracking-wider text-slate-600">Register a venue</h3>
           <p className="mb-3 text-phx-sm text-slate-600">
-            A pharmacy registered here counts as confirmed — you are the authority the approval chain
+            A venue registered here counts as confirmed — you are the authority the approval chain
             would otherwise wait for. An order placed on it later takes the ordinary route:
             SFE → managers → CEO, with no System Admin step.
           </p>
@@ -316,7 +316,7 @@ export function PharmacyRegistryManager({
               className={`${inputClass} md:col-span-2`}
               value={newAddress}
               onChange={(e) => setNewAddress(e.target.value)}
-              placeholder="Pharmacy address"
+              placeholder="Venue address"
             />
           </div>
 
@@ -364,7 +364,7 @@ export function PharmacyRegistryManager({
         <table className="w-full min-w-[1100px] border-collapse text-sm">
           <thead className="bg-slate-900 text-white">
             <tr className="text-left text-phx-xs font-black uppercase tracking-wider">
-              <th className="px-3 py-2">Pharmacy</th>
+              <th className="px-3 py-2">Venue</th>
               <th className="px-3 py-2">Geography</th>
               <th className="px-3 py-2">Doctor</th>
               <th className="px-3 py-2">Distributor codes</th>
@@ -377,7 +377,7 @@ export function PharmacyRegistryManager({
             {visible.length === 0 ? (
               <tr>
                 <td colSpan={canManage ? 7 : 6} className="px-3 py-6 text-center text-slate-500">
-                  {term ? "No pharmacy matches that search." : "No pharmacies registered yet."}
+                  {term ? "No venue matches that search." : "No venues registered yet."}
                 </td>
               </tr>
             ) : null}
@@ -428,7 +428,7 @@ export function PharmacyRegistryManager({
                           className="block bg-slate-900 px-2 py-1 text-phx-xs font-bold text-white hover:bg-slate-700 disabled:opacity-50"
                           onClick={() => run(() => post({ action: "confirm", pharmacyId: row.id }), `Confirmed ${row.pharmacyName}.`)}
                         >
-                          Confirm this pharmacy
+                          Confirm this venue
                         </button>
                       ) : null}
                     </div>
@@ -520,7 +520,7 @@ export function PharmacyRegistryManager({
                   </p>
                 ) : null}
                 <div className="grid gap-2 md:grid-cols-2">
-                  <input className={inputClass} value={editName} onChange={(e) => setEditName(e.target.value)} placeholder="Pharmacy name *" />
+                  <input className={inputClass} value={editName} onChange={(e) => setEditName(e.target.value)} placeholder="Venue name *" />
                   <input className={inputClass} value={editDoctor} onChange={(e) => setEditDoctor(e.target.value)} placeholder="Doctor name" />
                   <select
                     className={inputClass}
@@ -549,7 +549,7 @@ export function PharmacyRegistryManager({
                     className={`${inputClass} md:col-span-2`}
                     value={editAddress}
                     onChange={(e) => setEditAddress(e.target.value)}
-                    placeholder="Pharmacy address"
+                    placeholder="Venue address"
                   />
                 </div>
 

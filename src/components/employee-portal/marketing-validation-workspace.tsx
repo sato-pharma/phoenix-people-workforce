@@ -523,10 +523,10 @@ function pendingBlockReason(rows: MarketingValidationReportRow[]): string {
     return "The location you captured is in a different governorate from the one this distributor code is registered in, so it needs a check before release.";
   }
   if (customerShort && pharmacyShort) {
-    return "The live photo and location are incomplete on both the customer and the pharmacy.";
+    return "The live photo and location are incomplete on both the customer and the venue.";
   }
   if (customerShort) return "The customer's live photo and location are incomplete.";
-  if (pharmacyShort) return "The pharmacy's live photo and location are incomplete.";
+  if (pharmacyShort) return "The venue's live photo and location are incomplete.";
   return "Waiting for a Super Admin or the CEO to release it.";
 }
 
@@ -544,7 +544,7 @@ function pendingBlockLabel(rows: MarketingValidationReportRow[]): string {
   if (hasGovernorateHold(rows) && !customerShort && !pharmacyShort) return "Code location mismatch";
   if (customerShort && pharmacyShort) return "Both captures incomplete";
   if (customerShort) return "Customer capture incomplete";
-  if (pharmacyShort) return "Pharmacy capture incomplete";
+  if (pharmacyShort) return "Venue capture incomplete";
   return "Awaiting release";
 }
 
@@ -870,14 +870,14 @@ function ReusablePharmacyPicker({
 
   return (
     <div className="space-y-3">
-      <Field label="Pharmacy Already Validated">
+      <Field label="Venue Already Validated">
         <SearchableSelect
           className="h-10 w-full rounded-sm border-slate-200 bg-white text-phx-md"
           onValueChange={onSelect}
-          placeholder="Search by pharmacy name, code, or area"
+          placeholder="Search by venue name, code, or area"
           value={selectedId}
         >
-          <option value="">Choose a pharmacy</option>
+          <option value="">Choose a venue</option>
           {options.map((option) => (
             <option key={option.id} value={option.id}>
               {[
@@ -1454,11 +1454,11 @@ function ValidatedPharmaciesModal({
   }, [onClose]);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label={`Pharmacies linked to ${group.customerName}`}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label={`Venues linked to ${group.customerName}`}>
       <div className="max-h-[88vh] w-full max-w-3xl overflow-hidden rounded-sm border border-slate-200 bg-white shadow-2xl" ref={focusTrapRef}>
         <div className="flex items-start justify-between gap-4 border-b border-slate-100 px-5 py-4">
           <div className="min-w-0">
-            <p className="text-phx-2xs font-black uppercase tracking-[0.14em] text-orange-600">Linked pharmacies</p>
+            <p className="text-phx-2xs font-black uppercase tracking-[0.14em] text-orange-600">Linked venues</p>
             <h3 className="mt-1 text-lg font-black text-slate-900">{group.customerName}</h3>
           </div>
           <Button
@@ -1506,7 +1506,7 @@ function ValidatedPharmaciesModal({
               <table className="w-full border-collapse text-left">
                 <thead className="bg-slate-50 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">
                   <tr>
-                    <th className="border-r border-slate-100 px-3 py-2.5">Pharmacy</th>
+                    <th className="border-r border-slate-100 px-3 py-2.5">Venue</th>
                     <th className="border-r border-slate-100 px-3 py-2.5">Area</th>
                     <th className="border-r border-slate-100 px-3 py-2.5">Governorate</th>
                     <th className="px-3 py-2.5">Vendor Codes</th>
@@ -2998,9 +2998,9 @@ export function MarketingValidationWorkspace() {
                     <div className="min-w-0 lg:col-span-6">
                       <div className="flex flex-col gap-3 border-t border-slate-100 pt-4 sm:flex-row sm:items-center sm:justify-between">
                         <div className="min-w-0 overflow-x-auto">
-                          <p className="whitespace-nowrap text-phx-2xs font-black uppercase tracking-[0.14em] text-orange-600">Pharmacy Validation</p>
+                          <p className="whitespace-nowrap text-phx-2xs font-black uppercase tracking-[0.14em] text-orange-600">Venue Validation</p>
                           <p className="mt-0.5 whitespace-nowrap text-phx-sm font-medium text-slate-500">
-                            Capture a new pharmacy, or attach one you already validated.
+                            Capture a new venue, or attach one you already validated.
                           </p>
                         </div>
                         <Button
@@ -3013,7 +3013,7 @@ export function MarketingValidationWorkspace() {
                           type="button"
                         >
                           <Plus className="h-3.5 w-3.5" />
-                          Add Pharmacy
+                          Add Venue
                         </Button>
                       </div>
                     </div>
@@ -3033,10 +3033,10 @@ export function MarketingValidationWorkspace() {
                               <div className="flex h-7 w-7 items-center justify-center rounded-sm bg-white text-orange-600 ring-1 ring-orange-100">
                                 <Store className="h-3.5 w-3.5" />
                               </div>
-                              <p className="text-phx-md font-bold text-slate-800">Pharmacy {index + 1}</p>
+                              <p className="text-phx-md font-bold text-slate-800">Venue {index + 1}</p>
                             </div>
                             <button
-                              aria-label="Remove pharmacy"
+                              aria-label="Remove venue"
                               className="flex h-7 w-7 items-center justify-center rounded-sm border border-slate-200 bg-white text-slate-400 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600"
                               disabled={customer.pharmacies.length === 1}
                               onClick={() =>
@@ -3061,14 +3061,14 @@ export function MarketingValidationWorkspace() {
                               active={pharmacy.source === "new"}
                               onClick={() => updatePharmacy(customer.key, pharmacy.key, { source: "new" })}
                             >
-                              Validate New Pharmacy
+                              Validate New Venue
                             </PharmacySourceTab>
                             <PharmacySourceTab
                               active={pharmacy.source === "existing"}
                               disabled={workspace.reusablePharmacies.length === 0}
                               onClick={() => updatePharmacy(customer.key, pharmacy.key, { source: "existing" })}
                             >
-                              My Pharmacies ({workspace.reusablePharmacies.length})
+                              My Venues ({workspace.reusablePharmacies.length})
                             </PharmacySourceTab>
                           </div>
 
@@ -3485,7 +3485,7 @@ export function MarketingValidationWorkspace() {
                         <th className="border-r border-slate-100 px-3 py-2.5">Customer</th>
                         <th className="border-r border-slate-100 px-3 py-2.5">Blocked By</th>
                         <th className="border-r border-slate-100 px-3 py-2.5">Area</th>
-                        <th className="border-r border-slate-100 px-3 py-2.5 text-center">Pharmacies</th>
+                        <th className="border-r border-slate-100 px-3 py-2.5 text-center">Venues</th>
                         <th className="px-3 py-2.5 text-center">Action</th>
                       </tr>
                     </thead>
@@ -3620,7 +3620,7 @@ export function MarketingValidationWorkspace() {
                         <th className="border-r border-slate-100 px-3 py-2.5">Customer</th>
                         <th className="border-r border-slate-100 px-3 py-2.5">Area</th>
                         <th className="border-r border-slate-100 px-3 py-2.5">Governorate</th>
-                        <th className="px-3 py-2.5 text-center">Pharmacies</th>
+                        <th className="px-3 py-2.5 text-center">Venues</th>
                       </tr>
                     </thead>
                     <tbody className="bg-white text-phx-md">

@@ -84,7 +84,7 @@ export function runDirectOrderReportColumnsTests() {
   // 39 -> 43 (held clock) -> 44 (evidence link) -> 45 (decided by) on 2026-08-05. Adding is fine and expected; this assertion
   // exists to make a REMOVAL impossible to do quietly, so update it deliberately or not at all.
   assert.equal(DIRECT_ORDER_REPORT_COLUMNS.length, 45, "the Direct Orders report is a 45-column report");
-  for (const promised of ["Status", "Sales value (EGP)", "Pharmacy name", "Held at", "Days to expiry", "Decided by"]) {
+  for (const promised of ["Status", "Sales value (EGP)", "Venue name", "Held at", "Days to expiry", "Decided by"]) {
     assert.ok(
       directOrderReportColumnIndex(promised) >= 0,
       `"${promised}" must still be a column — the count alone would let a swap slip through`,
@@ -179,7 +179,7 @@ export function runDirectOrderReportColumnsTests() {
   assert.equal(at("Status"), "approved");
   assert.equal(at("Sales value (EGP)"), 3346.5);
   assert.equal(at("Pharmacy price"), 66.93);
-  assert.equal(at("Pharmacy name"), "ريهام", "Arabic pharmacy names must survive unmangled");
+  assert.equal(at("Venue name"), "ريهام", "Arabic pharmacy names must survive unmangled");
   assert.equal(at("Qty (units)"), 50);
   assert.equal(at("Bonus (units)"), 7);
   assert.equal(at("Request ID"), "req-1");
