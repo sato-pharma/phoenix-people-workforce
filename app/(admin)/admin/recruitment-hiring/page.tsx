@@ -4,9 +4,14 @@ import { ArrowRight, BriefcaseBusiness } from "lucide-react";
 
 import { AdminPageHero } from "@/components/admin/admin-design-system";
 import { recruitmentHiringPageItems } from "@/config/system-navigation";
-import { getPermissionMatrix, isHrAuthorityRole, permissionActions, permissionResources, resolveNavigationMode } from "@/lib/auth/permissions";
+import {
+  buildPermissionLookup,
+  getPermissionMatrix,
+  isHrAuthorityRole,
+  resolveNavigationMode,
+} from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
-import { permissionAllowed, roleAllowed, roleNotExcluded, type PermissionLookup } from "@/lib/navigation/active-path";
+import { permissionAllowed, roleAllowed, roleNotExcluded } from "@/lib/navigation/active-path";
 
 export const dynamic = "force-dynamic";
 
@@ -21,13 +26,7 @@ export default async function RecruitmentHiringPage() {
   }
 
   const matrix = await getPermissionMatrix();
-  const permissionLookup: PermissionLookup = {};
-  for (const resource of permissionResources) {
-    for (const action of permissionActions) {
-      const key = `${resource}:${action}` as const;
-      permissionLookup[key] = matrix[access.role]?.[resource]?.includes(action) ?? false;
-    }
-  }
+  const permissionLookup = buildPermissionLookup(matrix, access.role);
   const isSystemAdministratorWorkspace = access.scope === "system" || access.role === "Super Admin";
 
   const visibleTools = isSystemAdministratorWorkspace

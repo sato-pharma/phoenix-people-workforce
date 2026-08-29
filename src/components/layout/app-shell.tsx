@@ -4,9 +4,8 @@ import { headers } from "next/headers";
 
 import { adminShellBackgroundClassName } from "@/components/admin/admin-design-tokens";
 import {
+  buildPermissionLookup,
   getPermissionMatrix,
-  permissionActions,
-  permissionResources,
   resolveNavigationMode,
   usesHrNamespace,
   type AccessContext,
@@ -24,7 +23,6 @@ import { Sidebar } from "@/components/layout/sidebar";
 import { Topbar } from "@/components/layout/topbar";
 import { SessionSecurityGuard } from "@/components/auth/session-security-guard";
 import { OneSignalProvider } from "@/components/notifications/onesignal-provider";
-import type { PermissionLookup } from "@/components/layout/sidebar";
 import { usesAdminChrome } from "@/lib/navigation/active-path";
 import { PATH_HEADER, SHELL_HEADER, toHrNamespacePath } from "@/lib/navigation/shell-headers";
 
@@ -104,14 +102,7 @@ export async function AppShell({
     requestHeaders.get(SHELL_HEADER) === "hr" ? "hr" : navigationMode ?? resolveNavigationMode(access);
   const isSystemAdministratorWorkspace = access.scope === "system" || access.role === "Super Admin";
 
-  const permissionLookup: PermissionLookup = {};
-  for (const resource of permissionResources) {
-    for (const action of permissionActions) {
-      const key = `${resource}:${action}` as const;
-      const allowed = matrix[access.role]?.[resource]?.includes(action) ?? false;
-      permissionLookup[key] = allowed;
-    }
-  }
+  const permissionLookup = buildPermissionLookup(matrix, access.role);
 
   const isAdminMode = usesAdminChrome(resolvedNavigationMode);
 

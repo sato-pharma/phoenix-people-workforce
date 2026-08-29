@@ -4,9 +4,9 @@ import { ArrowRight, ShieldCheck } from "lucide-react";
 
 import { AdminPageHero } from "@/components/admin/admin-design-system";
 import { accessCommunicationPageItems } from "@/config/system-navigation";
-import { canAccess, getPermissionMatrix, permissionActions, permissionResources } from "@/lib/auth/permissions";
+import { buildPermissionLookup, canAccess, getPermissionMatrix } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
-import { permissionAllowed, roleAllowed, roleNotExcluded, type PermissionLookup } from "@/lib/navigation/active-path";
+import { permissionAllowed, roleAllowed, roleNotExcluded } from "@/lib/navigation/active-path";
 
 export const dynamic = "force-dynamic";
 
@@ -18,13 +18,7 @@ export default async function AccessCommunicationPage() {
   }
 
   const matrix = await getPermissionMatrix();
-  const permissionLookup: PermissionLookup = {};
-  for (const resource of permissionResources) {
-    for (const action of permissionActions) {
-      const key = `${resource}:${action}` as const;
-      permissionLookup[key] = matrix[access.role]?.[resource]?.includes(action) ?? false;
-    }
-  }
+  const permissionLookup = buildPermissionLookup(matrix, access.role);
   const isSystemAdministratorWorkspace = access.scope === "system" || access.role === "Super Admin";
 
   const visibleTools = isSystemAdministratorWorkspace

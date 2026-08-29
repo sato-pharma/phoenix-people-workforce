@@ -4,9 +4,9 @@ import { LayoutGrid } from "lucide-react";
 import { AdminPageHero } from "@/components/admin/admin-design-system";
 import { SidebarLayoutEditor } from "@/components/admin/sidebar-layout-editor";
 import { getNavigationSections } from "@/config/system-navigation";
-import { getPermissionMatrix, permissionActions, permissionResources } from "@/lib/auth/permissions";
+import { buildPermissionLookup, getPermissionMatrix } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
-import { getSections, type PermissionLookup } from "@/lib/navigation/active-path";
+import { getSections } from "@/lib/navigation/active-path";
 import { layoutOwnerKey } from "@/lib/navigation/personal-layout";
 import { loadCompanyDefaultLayout, loadEffectiveLayout } from "@/lib/navigation/personal-layout-store";
 
@@ -29,13 +29,7 @@ export default async function SidebarLayoutPage() {
   if (access.source === "guest") redirect("/login");
 
   const matrix = await getPermissionMatrix();
-  const permissionLookup: PermissionLookup = {};
-  for (const resource of permissionResources) {
-    for (const action of permissionActions) {
-      const key = `${resource}:${action}` as const;
-      permissionLookup[key] = matrix[access.role]?.[resource]?.includes(action) ?? false;
-    }
-  }
+  const permissionLookup = buildPermissionLookup(matrix, access.role);
   const isSystemAdministratorWorkspace = access.scope === "system" || access.role === "Super Admin";
 
   const gated = getSections(

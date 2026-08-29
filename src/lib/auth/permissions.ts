@@ -125,6 +125,21 @@ export type PermissionResource =
   | "clearance"
   | "retention";
 
+/**
+ * The runtime twin of the `PermissionResource` union above. Both lists must hold exactly the same
+ * names, and since 2026-08-29 that is CHECKED rather than merely asked for: the set-equality
+ * assertion the three notes below used to request by hand now lives in
+ * tests/permission-lookup-totality.test.ts, which runs in the required CI `validate` job.
+ *
+ * Why a name missing from THIS array is dangerous while the union still lists it. The union is a
+ * compile-time type; `buildPermissionLookup` iterates the array. A resource present in one and not
+ * the other therefore produces a lookup with no key for it — and `permissionAllowed` in
+ * navigation/active-path.ts treats an unseen key as PERMITTED. The result is not a broken link or
+ * an error: it is the module quietly offered to every role in the company.
+ *
+ * The per-resource notes further down record which specific modules that would expose. They are
+ * kept because the reasoning is worth reading; the mechanism is stated once, here.
+ */
 export const permissionResources: PermissionResource[] = [
   "admin",
   "overview",
@@ -166,24 +181,18 @@ export const permissionResources: PermissionResource[] = [
   "report_it",
   "attendance",
   "crm_visits",
-  // MUST be in this runtime array as well as the union, for the fail-open reason spelled out on
-  // early_birds directly below: an unseen key makes the sidebar's permission lookup SUCCEED, so
-  // omitting it would offer Plan Verification — a button that writes into the customer's CRM — to
-  // every role in the company.
+  // Omitting this from the array would offer Plan Verification — a button that writes into the
+  // customer's CRM — to every role in the company. Mechanism at the head of this array.
   "crm_plans",
-  // MUST live in this runtime array, not only in the union above. The sidebar's permission lookup
-  // FAILS OPEN on a key it has never seen, so omitting it here would show the Early Birds tab to
-  // every role — Finance Manager, HR Operations, Employee — silently and with no test failure.
+  // Omitting this would show the Early Birds tab to every role — Finance Manager, HR Operations,
+  // Employee. "with no test failure" was true when this was written; it no longer is.
   "early_birds",
   "user_activity",
   "synthetic_journeys",
-  // Mailbox compliance monitor — Super Admin only (hard boundary below). MUST be in this runtime
-  // array too: the sidebar permission lookup FAILS OPEN on an unseen key, so omitting it would leak
+  // Mailbox compliance monitor — Super Admin only (hard boundary below). Omitting this would leak
   // the tab to every role.
   "mailbox_monitor",
-  // Phase 6 (2026-08-28). Both MUST be listed here as well as in the union above, for the
-  // fail-open reason spelled out on early_birds: an unseen key makes the sidebar's permission
-  // lookup succeed, so a missing entry would offer Clearance and the Retention Register to every
+  // Phase 6 (2026-08-28). Omitting either would offer Clearance and the Retention Register to every
   // role in the company - including the leaver's own colleagues, and Retention holds what people
   // said in confidence about their manager and their pay.
   "clearance",
@@ -235,6 +244,40 @@ export type AccessContext = {
 };
 
 export type PermissionMap = Record<PhoenixRole, Partial<Record<PermissionResource, PermissionAction[]>>>;
+
+/**
+ * A viewer's whole permission surface, flattened to `resource:action` -> boolean.
+ *
+ * TOTAL by construction: every resource crossed with every action, `false` where the matrix does
+ * not grant it. Totality is the point. `permissionAllowed` in navigation/active-path.ts treats a
+ * MISSING key as permitted (UX-only, and every destination re-asserts server-side), so a lookup
+ * with holes in it silently shows links rather than hiding them. Building it in one place is what
+ * makes that branch unreachable.
+ *
+ * This replaces 21 hand-written copies of the same nested loop across app/ and src/. They were
+ * byte-identical in substance and all correct — which is exactly the problem: nothing forced them
+ * to stay that way, and a 22nd copy written slightly differently is invisible until a link appears
+ * for someone who should not see it. tests/permission-lookup-totality.test.ts pins both halves:
+ * that this returns a total lookup, and that no copy has grown back.
+ *
+ * Kept here rather than beside the type in navigation/active-path.ts on purpose: the resource and
+ * action arrays live in this module, and active-path.ts states in its own header that it stays free
+ * of runtime dependencies so it can be unit-tested and imported by client components. Every one of
+ * the 21 call sites is a server component that already imports from this file, so this adds no new
+ * import edge anywhere — it removes two per page.
+ */
+export type NavigationPermissionLookup = Partial<Record<`${PermissionResource}:${PermissionAction}`, boolean>>;
+
+export function buildPermissionLookup(matrix: PermissionMap, role: PhoenixRole): NavigationPermissionLookup {
+  const lookup: NavigationPermissionLookup = {};
+  for (const resource of permissionResources) {
+    for (const action of permissionActions) {
+      lookup[`${resource}:${action}`] = matrix[role]?.[resource]?.includes(action) ?? false;
+    }
+  }
+  return lookup;
+}
+
 type PermissionDbOverrideRow = {
   role_name: string | null;
   resource: string | null;

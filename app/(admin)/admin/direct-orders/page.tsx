@@ -6,14 +6,9 @@ import { DirectOrdersWorkspace } from "@/components/direct-orders/workspace/dire
 import { directOrdersPageItems } from "@/config/system-navigation";
 import { loadDirectOrderWorkspaceView, resolveDirectOrderWorkspaceTab } from "@/lib/direct-orders/workspace-data";
 import { resolveDirectOrderStatusGroup } from "@/lib/direct-orders/operational-query";
-import {
-  getPermissionMatrix,
-  permissionActions,
-  permissionResources,
-  resolveNavigationMode,
-} from "@/lib/auth/permissions";
+import { buildPermissionLookup, getPermissionMatrix, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
-import { permissionAllowed, roleAllowed, type PermissionLookup } from "@/lib/navigation/active-path";
+import { permissionAllowed, roleAllowed } from "@/lib/navigation/active-path";
 import { assertDirectOrdersPageAccess } from "@/lib/direct-orders/page-access";
 
 export const dynamic = "force-dynamic";
@@ -73,13 +68,7 @@ export default async function AdminDirectOrdersWorkspacePage({
   // The admin desks, gated exactly as the existing hub page gates them — same
   // lookup, same helpers. This component owns no permission rule of its own.
   const matrix = await getPermissionMatrix();
-  const permissionLookup: PermissionLookup = {};
-  for (const resource of permissionResources) {
-    for (const action of permissionActions) {
-      permissionLookup[`${resource}:${action}`] =
-        matrix[access.role]?.[resource]?.includes(action) ?? false;
-    }
-  }
+  const permissionLookup = buildPermissionLookup(matrix, access.role);
   const isSystemAdministratorWorkspace = access.scope === "system" || access.role === "Super Admin";
   const adminTools = (
     isSystemAdministratorWorkspace
