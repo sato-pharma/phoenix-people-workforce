@@ -29,7 +29,12 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import { assessMemoryIndexSize, memoryIndexBudgetLines } from "../../scripts/memory-index-budget.mjs";
+import {
+  assessAutoloadFootprint,
+  assessMemoryIndexSize,
+  autoloadFootprintLines,
+  memoryIndexBudgetLines,
+} from "../../scripts/memory-index-budget.mjs";
 
 const projectDir = process.argv[2] || process.cwd();
 
@@ -76,43 +81,110 @@ function memoryDirFor(root) {
 const roots = [primaryRootFor(projectDir), projectDir].filter(Boolean);
 const memoryDir = roots.map(memoryDirFor).find(Boolean) ?? null;
 
-if (memoryDir === null) process.exit(0);
-
-let bytes = 0;
-try {
-  bytes = fs.statSync(path.join(memoryDir, "MEMORY.md")).size;
-} catch {
-  bytes = 0; // -> "unknown", never "ok"
+/** Bytes of `MEMORY.md`, or 0 when it cannot be measured — which both graders read as "unknown". */
+function indexBytes() {
+  try {
+    return fs.statSync(path.join(memoryDir, "MEMORY.md")).size;
+  } catch {
+    return 0; // -> "unknown", never "ok"
+  }
 }
 
-const verdict = assessMemoryIndexSize(bytes);
+const verdict = memoryDir === null ? null : assessMemoryIndexSize(indexBytes());
 
-// The figures and the sentence describing them both come from the shared module, so this hook and
+/**
+ * Size a file that is auto-loaded into every request.
+ *
+ * ENOENT is a different fact from a failed measurement: the first says this checkout does not have
+ * the file, the second says it has one we could not size. Collapsing them would let a permissions
+ * error read as a SMALLER footprint, which is the one direction this must never fail in.
+ */
+function measureAutoloaded(file) {
+  try {
+    return { present: true, bytes: fs.statSync(file).size };
+  } catch (err) {
+    return err?.code === "ENOENT" ? { present: false, bytes: 0 } : { present: true, bytes: null };
+  }
+}
+
+// THE TWO INSTRUCTION FILES ARE RESOLVED FROM THE SESSION'S OWN DIRECTORY, and the index is not.
+// That asymmetry is deliberate and is the whole point of the section: `CLAUDE.md` and `AGENTS.md`
+// are loaded from the tree this session is sitting in, so a worktree holding a half-finished
+// AGENTS.md edit is occupying THIS session's context and the primary's copy would under-report it.
+// There is only ever one memory index, so that keeps resolving from the primary as before.
+const footprintParts = [];
+for (const label of ["CLAUDE.md", "AGENTS.md"]) {
+  const measured = measureAutoloaded(path.join(projectDir, label));
+  if (measured.present) footprintParts.push({ label, bytes: measured.bytes });
+}
+// Reuse the index's own figure rather than measuring the file a second time, so the two verdicts in
+// one report can never disagree about `MEMORY.md`. A directory with no readable index contributes a
+// zero here, which `assessAutoloadFootprint` grades as unmeasured — matching the UNKNOWN it makes
+// the index report, instead of quietly totalling a footprint that is missing a file it knows about.
+if (verdict !== null) footprintParts.push({ label: "MEMORY.md", bytes: verdict.bytes });
+
+const footprint = assessAutoloadFootprint(footprintParts);
+
+// Silence, and only here: no index and no instruction files means this is CI, a fresh clone, or
+// someone else's machine, and there is no fact to report.
+if (verdict === null && footprint.status === "not_applicable") process.exit(0);
+
+// Every figure and the sentence describing it come from the shared module, so this hook and
 // repo-doctor can never disagree about what a given size means.
-const detail = memoryIndexBudgetLines(verdict)
-  .map((line) => line.trim())
-  .join("\n");
+const flatten = (lines) => lines.map((line) => line.trim()).join("\n");
 
-const context = [
-  "MEMORY INDEX BUDGET (AGENTS.md 2.2)",
-  detail,
-  "The index is displacement-only: before adding a hook line, retire a resolved one or relocate it "
-    + "into AGENTS.md, which auto-loads in full and has no cliff. Route by KIND of fact: a session "
-    + "or tooling trap to 2.1, a production or approval hook to 2.3, an owner product rule to 4.",
-].join("\n");
+const sections = [];
+
+if (verdict !== null) {
+  sections.push(
+    [
+      "MEMORY INDEX BUDGET (AGENTS.md 2.2)",
+      flatten(memoryIndexBudgetLines(verdict)),
+      // The old wording ended at "auto-loads in full and has no cliff", full stop — which is true
+      // and, on its own, is the advice that let AGENTS.md reach 146,898 bytes. A session following
+      // it was moving bytes out of the only counter that was watching them, into a file loaded on
+      // exactly the same terms. The clause after the dash is the correction.
+      "The index is displacement-only: before adding a hook line, retire a resolved one or relocate "
+        + "it into AGENTS.md, which auto-loads in full and has no cliff of its OWN — but it is inside "
+        + "the footprint budget below, so a relocation buys scannability, never context. Route by "
+        + "KIND of fact: a session or tooling trap to 2.1, a production or approval hook to 2.3, an "
+        + "owner product rule to 4. Put the ACCOUNT in docs/, never in AGENTS.md.",
+    ].join("\n"),
+  );
+}
+
+const footprintDetail = flatten(autoloadFootprintLines(footprint));
+if (footprintDetail) {
+  sections.push(["AUTO-LOADED CONTEXT FOOTPRINT (AGENTS.md 2.2)", footprintDetail].join("\n"));
+}
 
 const result = {
-  hookSpecificOutput: { hookEventName: "SessionStart", additionalContext: context },
+  hookSpecificOutput: { hookEventName: "SessionStart", additionalContext: sections.join("\n\n") },
 };
 
 // The human is interrupted only when something is due. The session is told every time, because the
-// number is what decides whether its next append is safe to make.
-if (verdict.status === "unknown") {
-  result.systemMessage = "MEMORY.md could not be measured — treat the memory index as UNKNOWN, not healthy.";
-} else if (verdict.status !== "ok") {
+// numbers are what decide whether its next append is safe to make.
+const alarms = [];
+
+if (verdict?.status === "unknown") {
+  alarms.push("MEMORY.md could not be measured — treat the memory index as UNKNOWN, not healthy.");
+} else if (verdict !== null && verdict.status !== "ok") {
   const headline = verdict.status === "over_ceiling" ? "OVER THE LOADER CLIFF" : "over budget";
-  result.systemMessage = `Memory index ${verdict.bytes} bytes — ${headline}, free ${verdict.mustFree} bytes.`;
+  alarms.push(`Memory index ${verdict.bytes} bytes — ${headline}, free ${verdict.mustFree} bytes.`);
 }
+
+if (footprint.status === "unknown") {
+  alarms.push(
+    `Auto-loaded footprint UNKNOWN — could not measure ${footprint.unmeasured.join(", ")}.`,
+  );
+} else if (footprint.status === "over_budget") {
+  alarms.push(
+    `Auto-loaded footprint ${footprint.bytes} bytes — over budget, free ${footprint.mustFree} bytes `
+      + "by moving detail into docs/.",
+  );
+}
+
+if (alarms.length > 0) result.systemMessage = alarms.join(" ");
 
 process.stdout.write(JSON.stringify(result));
 process.exit(0);
