@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 import { runMailboxOffboardingSweep } from "@/lib/mailbox-offboarding/sweep";
+import { pingDeadMansSwitch } from "@/lib/observability/dead-mans-switch";
 import { logError } from "@/lib/observability/log";
 import { assertCronAuthorized } from "@/lib/security/cron-auth";
 
@@ -19,11 +20,17 @@ export const maxDuration = 60;
  * alive. Nothing but this sweep will ever surface that third case: it looks finished in the
  * Turbify control panel and there is no API to ask.
  *
- * NOT wired to the dead-man's switch yet, unlike the held-order sweep above it. That is a
- * deliberate omission, not an oversight: a switch needs a Healthchecks check created for it, and
- * creating one is an external change to the owner's monitoring account. Wire it the moment this
- * job has a schedule on cron-job.org — an unwatched nightly cron is exactly the failure this
- * repository has already paid for twice.
+ * Watched by the dead-man's switch as `phoenix-mailbox-offboarding-sweep`, wired 2026-08-29 once
+ * the job actually had a schedule (cron-job.org `8350624`, daily 08:15 Cairo). The switch is the
+ * only thing that can report this sweep STOPPING: a cron that dies, or starts 401ing after a
+ * CRON_SECRET rotation, goes quiet rather than red — and quiet here is indistinguishable from
+ * "no leavers left to chase", which is the reassuring reading. Its schedule, timezone and channels
+ * come from the table in docs/observability.md via scripts/healthchecks-sync.mjs; the defaults a
+ * check auto-provisions with are 1-day/1-hour and ZERO channels, which notifies nobody.
+ *
+ * The ping is sent directly rather than through withDeadMansSwitch, for the reason that helper's
+ * own docstring gives: this sweep never throws on a partial failure, so throw/no-throw does not
+ * mean what the switch would read into it. See the call site.
  *
  * Deliberately runs on GET. A POST to any /api/** path returns 403 even when the route exists, so
  * a POST-only cron endpoint is indistinguishable from a missing one when it is probed.
@@ -33,8 +40,23 @@ export async function GET(request: Request) {
   if (denied) return denied;
   try {
     const result = await runMailboxOffboardingSweep();
+    // Keyed on the error COUNT, not on whether this threw. The sweep catches its own failures and
+    // carries on (sweep.ts) — including the worst case, where it could not read the register at all
+    // and returns errors: 1. A switch driven by throw/no-throw would call that run green, and green
+    // here reads as "no leaver is holding a live mailbox", which is precisely the false comfort the
+    // whole register exists to remove.
+    await pingDeadMansSwitch(
+      "phoenix-mailbox-offboarding-sweep",
+      result.errors > 0 ? "fail" : "success",
+      result.errors > 0 ? `${result.errors} error(s) during the sweep` : undefined,
+    );
     return NextResponse.json({ success: true, ...result });
   } catch (error) {
+    await pingDeadMansSwitch(
+      "phoenix-mailbox-offboarding-sweep",
+      "fail",
+      error instanceof Error ? `${error.name}: ${error.message}` : String(error),
+    );
     logError("Mailbox offboarding sweep failed", {
       labels: { event: "cron_failed", job: "mailbox-offboarding-sweep" },
       error,
