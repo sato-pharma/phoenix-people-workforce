@@ -169,6 +169,60 @@ export function runSessionStartMemoryIndexGuardTests() {
     mkdirSync(config, { recursive: true });
     const none = runHook(project, config);
     assert.equal(none.raw.trim(), "", "a checkout with no memory directory (CI, a fresh clone) must say nothing");
+
+    // 8. THE WHOLE AUTO-LOADED FOOTPRINT REACHES THE SESSION, not just the index.
+    //
+    // This is the wiring property, and it is the one that was missing for as long as the budget has
+    // existed: the guard policed a ~21KB file and said nothing about the ~112KB loaded beside it, so
+    // AGENTS.md §2.2's own advice — relocate a hook into AGENTS.md, which "auto-loads in full and
+    // has no cliff" — moved bytes out of the only counter watching them into a file loaded on
+    // exactly the same terms. Asserting the arithmetic in `autoload-footprint-budget.test.ts` proves
+    // nothing about whether a session is ever told, which is how the worktree exit guard's
+    // SessionEnd leg sat silent for a full day with the script still on disk and still registered.
+    //
+    // Seeded with NO memory directory on purpose. It proves two things at once: the footprint is
+    // reported on its own merits, and case 6's silence really was "nothing to report" rather than an
+    // early exit that would now swallow the instruction files too.
+    writeFileSync(join(project, "CLAUDE.md"), "c".repeat(7_000));
+    writeFileSync(join(project, "AGENTS.md"), "a".repeat(112_000));
+    const repoOnly = runHook(project, config);
+    assert.match(contextOf(repoOnly.out), /AUTO-LOADED/, "the footprint must reach the session's context");
+    assert.match(contextOf(repoOnly.out), /AGENTS\.md/, "and it must name where the bytes are, not just a total");
+    assert.equal(
+      repoOnly.out?.systemMessage,
+      undefined,
+      "a footprint inside budget must not interrupt the human, exactly as a healthy index does not",
+    );
+
+    // Now with the index too: all three must be in ONE number, or the total under-reports by
+    // whichever file the report forgot.
+    seedIndex(config, project, 20_000);
+    const all = runHook(project, config);
+    assert.match(
+      contextOf(all.out),
+      /CLAUDE\.md[\s\S]*AGENTS\.md[\s\S]*MEMORY\.md/,
+      "all three auto-loaded files must appear in the breakdown, in load order",
+    );
+    // 139,000 bytes / 1024 = 135.7KB. The figure is asserted as the reader sees it, so a change to
+    // the formatter cannot quietly alter what the number means.
+    assert.match(contextOf(all.out), /135\.7KB/, "the total must be the sum of all three (7,000 + 112,000 + 20,000)");
+
+    // 9. OVER THE FOOTPRINT BUDGET — and the remedy must NOT be the index's remedy. When the index
+    // is over, relocating a hook into AGENTS.md is right. When the TOTAL is over it buys nothing,
+    // because both files are already inside the number, and a session told to relocate would do the
+    // very thing that caused the problem. The index here is deliberately HEALTHY, so the only thing
+    // that can raise the alarm is the footprint.
+    writeFileSync(join(project, "AGENTS.md"), "a".repeat(130_000));
+    const fat = runHook(project, config);
+    assert.match(contextOf(fat.out), /OVER FOOTPRINT BUDGET/, "an over-budget footprint must say so");
+    assert.match(contextOf(fat.out), /does NOT help/, "it must say relocating into AGENTS.md does not help here");
+    assert.match(contextOf(fat.out), /docs\//, "and it must name the remedy that does");
+    assert.match(contextOf(fat.out), /2000 bytes of budget left/, "the healthy index must still report normally");
+    assert.match(
+      fat.out?.systemMessage ?? "",
+      /footprint 157000 bytes/,
+      "the human must be interrupted by the footprint even when the index is fine",
+    );
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

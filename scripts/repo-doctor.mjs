@@ -97,7 +97,12 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import { assessMemoryIndexSize, memoryIndexBudgetLines } from "./memory-index-budget.mjs";
+import {
+  assessAutoloadFootprint,
+  assessMemoryIndexSize,
+  autoloadFootprintLines,
+  memoryIndexBudgetLines,
+} from "./memory-index-budget.mjs";
 import { classifyMemoryReachability, memoryReachabilityLines } from "./memory-index-reachability.mjs";
 import { countUnpushedCommits } from "./repo-doctor-unpushed.mjs";
 
@@ -702,6 +707,11 @@ function memoryDirFor(projectRoot) {
 // about what is still true, and that belongs to a person — the same report-don't-act stance the
 // husk and orphan-auth sections take. It also never changes the exit code: an orphan is a backlog,
 // not a broken repo, and failing the command would make people stop running it.
+// Declared out here so the footprint section below can reuse the very figure the index section
+// graded, instead of measuring MEMORY.md a second time. Two numbers for one file in one report is
+// how a reader ends up trusting whichever they read first.
+let autoloadedIndexBytes = null;
+
 {
   console.log("");
   console.log("MEMORY INDEX (memory files with no pointer, and pointers with no file)");
@@ -772,6 +782,7 @@ function memoryDirFor(projectRoot) {
     console.log("  memory: " + memoryDir);
     console.log("  " + num(memoryFiles.length) + " memory files, " + num(linked.size) + " index pointers");
     for (const line of memoryIndexBudgetLines(assessMemoryIndexSize(indexBytes))) console.log(line);
+    autoloadedIndexBytes = indexBytes;
 
     // No silent caps: when the list is long the count that was not printed is stated out loud, and
     // so is the flag that prints the rest. A truncated list that does not say it was truncated
@@ -789,6 +800,68 @@ function memoryDirFor(projectRoot) {
     for (const f of broken) console.log("  BROKEN  " + f + "  (pointed at by an index, file does not exist)");
 
     for (const line of memoryReachabilityLines({ relocated, orphans, broken })) console.log(line);
+  }
+}
+
+// THE SECTION ABOVE POLICED A ~21KB FILE AND SAID NOTHING ABOUT THE ~112KB LOADED BESIDE IT.
+//
+// `CLAUDE.md` pulls `AGENTS.md` in via `@AGENTS.md` in full, so all three of these are re-sent to
+// the model on every single request. Only `MEMORY.md` had a budget — and AGENTS.md section 2.2
+// prescribes AGENTS.md as the RELIEF VALVE for an over-budget index, on the grounds that it
+// "auto-loads in full and has no cliff". Both land in the same context window, so that relocation
+// frees nothing: it moves the bytes past the only counter that was watching them. AGENTS.md went
+// 32,243 bytes on 2026-08-19 to 146,898 on 2026-08-29 with nothing reporting it.
+//
+// READ-ONLY and it never touches the exit code, for the same reason as the section above: a
+// footprint over budget is a backlog to work off, not a broken repo, and a command that fails is a
+// command people stop running.
+{
+  console.log("");
+  console.log("AUTO-LOADED CONTEXT FOOTPRINT (re-sent to the model on every request)");
+
+  const parts = [];
+  for (const label of ["CLAUDE.md", "AGENTS.md"]) {
+    try {
+      parts.push({ label, bytes: fs.statSync(path.join(primaryRoot, label)).size });
+    } catch (err) {
+      // ENOENT means this checkout does not have the file, which is silence. Anything else means it
+      // has one we could not size, which must poison the total rather than shrink it.
+      if (err?.code !== "ENOENT") parts.push({ label, bytes: null });
+    }
+  }
+  if (autoloadedIndexBytes !== null) parts.push({ label: "MEMORY.md", bytes: autoloadedIndexBytes });
+
+  const lines = autoloadFootprintLines(assessAutoloadFootprint(parts));
+  if (lines.length === 0) {
+    console.log("  SKIPPED — this checkout has no auto-loaded instruction files.");
+  } else {
+    for (const line of lines) console.log(line);
+  }
+
+  // THE FIGURE ABOVE IS THE PRIMARY CHECKOUT'S, AND THE PRIMARY IS OFTEN BEHIND.
+  //
+  // Every section of this report reads primaryRoot, which is right — memory belongs to the project,
+  // not to the worktree a session sits in. But a footprint is the one verdict where a stale tree
+  // produces a confident, actionable, WRONG answer: measured 2026-08-29 the primary sat 3 commits
+  // behind on the pre-#2620 AGENTS.md and this section printed OVER BUDGET for a condition that was
+  // not true of `main`. A tired session at 4am acts on that and starts cutting a file that is
+  // already inside budget. Naming the commit costs one line and makes the number checkable.
+  //
+  // Read from the LOCAL remote-tracking ref — no fetch, so this stays offline and cheap, and it
+  // under-claims staleness rather than over-claiming it when the ref itself is old.
+  const head = git(["rev-parse", "--short", "HEAD"], { cwd: primaryRoot });
+  const behind = git(["rev-list", "--count", "HEAD..origin/main"], { cwd: primaryRoot });
+  if (head) {
+    const suffix = behind && behind !== "0" ? ` — ${behind} commit(s) BEHIND origin/main` : "";
+    console.log(`  measured on the primary checkout at ${head}${suffix}.`);
+    if (behind && behind !== "0") {
+      console.log("  The figure above is that tree's, NOT main's. Pull before acting on it.");
+    }
+  }
+  // Named out loud rather than left to inference: a total quietly missing the index reads as a
+  // smaller footprint, and under-reporting is the one direction nobody checks.
+  if (autoloadedIndexBytes === null) {
+    console.log("  MEMORY.md is NOT counted above — this checkout has no session memory directory.");
   }
 }
 
