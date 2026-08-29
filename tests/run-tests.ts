@@ -1064,6 +1064,7 @@ import { runRecruitmentPoolFilterTests } from "./recruitment-pool-filters.test.t
 import { runNotificationDrainHealthAlertTests } from "./notification-drain-health-alert.test.ts";
 import { runNotificationOutboxBatchWindowTests } from "./notification-outbox-batch-window.test.ts";
 import { runNotificationDrainStarvationGuardTests } from "./notification-drain-starvation-guard.test.ts";
+import { runExpenseClaimsRefreshTests } from "./expense-claims-refresh.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -3194,6 +3195,7 @@ await runTest(
     + "panel contract: portal-mounted, no backdrop, no document listener, no outside-click dismiss)",
   runCalculatorEngineTests,
 );
+await runTest("expense claims mirror refresh (an interlock refusal is never success; parity read is bounded)", runExpenseClaimsRefreshTests);
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
