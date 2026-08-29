@@ -1,8 +1,8 @@
 # Outstation & Expenses — Proposed Target Architecture
 
 **This is a proposal, not a spec.** Nothing here is built. It follows
-[`OUTSTATION_EXPENSES_AUDIT.md`](OUTSTATION_EXPENSES_AUDIT.md) (the forensic audit) and
-[`OUTSTATION_EXPENSES_REAUDIT.md`](OUTSTATION_EXPENSES_REAUDIT.md) (proof the audit describes
+[`outstation-expenses-audit.md`](outstation-expenses-audit.md) (the forensic audit) and
+[`outstation-expenses-reaudit.md`](outstation-expenses-reaudit.md) (proof the audit describes
 production `fe60edc0`). Every design choice below traces to a finding in those documents.
 
 | | |
