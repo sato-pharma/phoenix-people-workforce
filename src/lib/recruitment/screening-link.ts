@@ -56,13 +56,22 @@ export function parseScreeningFilters(filters: ScreeningQueueFilters = {}): Scre
 }
 
 /**
- * The link that opens the screening queue, optionally on only what this person has never read.
+ * The link that opens the screening queue, optionally narrowed to only what this person has never
+ * read and/or to a single status — "screen only New" is a link exactly the same way "screen only
+ * unseen" already is.
  *
  * A function rather than a string constant because the two shells sit at different prefixes and a
  * hard-coded `/recruitment/screening` in the portal would bounce a Talent Acquisition user out
  * through the (admin) group's redirect the moment they clicked it.
  */
-export function screeningHref(basePath: string, options: { unseenOnly?: boolean } = {}): string {
+export function screeningHref(
+  basePath: string,
+  options: { unseenOnly?: boolean; status?: CandidateStatus | null } = {},
+): string {
   const base = `${basePath.replace(/\/$/, "")}/screening`;
-  return options.unseenOnly ? `${base}?unseen=1` : base;
+  const params = new URLSearchParams();
+  if (options.unseenOnly) params.set("unseen", "1");
+  if (options.status) params.set("status", options.status);
+  const query = params.toString();
+  return query ? `${base}?${query}` : base;
 }

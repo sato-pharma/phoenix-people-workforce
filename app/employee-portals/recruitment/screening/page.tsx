@@ -93,6 +93,9 @@ async function ScreeningContent({
       openVacancies={queue.openVacancies}
       poolHref="/employee-portals/recruitment"
       positionSuggestions={queue.positionSuggestions}
+      status={queue.status}
+      totalCount={queue.candidates.length + queue.filteredOut}
+      unseenOnly={queue.unseenOnly}
     />
   );
 }
