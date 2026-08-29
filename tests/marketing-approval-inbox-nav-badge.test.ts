@@ -232,11 +232,12 @@ export function runMarketingApprovalInboxNavBadgeTests() {
   );
 
   // ── 10. Both shells render it through the ONE shared NavBadge pump ──────────
-  const sidebar = readFileSync("src/components/layout/sidebar.tsx", "utf8");
+  // ONE switch, shared by the sidebar and the horizontal nav rows since 2026-08-29.
+  const navBadge = readFileSync("src/components/layout/nav-badge.tsx", "utf8");
   assert.match(
-    sidebar,
+    navBadge,
     /case "marketing-approvals-pending":\s*\n\s*return <NavBadge compact=\{compact\} src="\/api\/marketing-requests\/pending-count" \/>;/,
-    "10: the admin sidebar must resolve the marketing badge to its count API",
+    "10: the shared badge switch must resolve the marketing badge to its count API",
   );
   const portalLayout = readFileSync("src/components/employee-portal/employee-portal-layout.tsx", "utf8");
   assert.match(

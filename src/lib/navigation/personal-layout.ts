@@ -502,12 +502,26 @@ export function applyPersonalLayout<TItem extends LayoutItemLike>(
   };
 }
 
+/** The document a "+" writes into when the viewer has never saved a layout at all. */
+function emptyLayout(): PersonalNavigationLayout {
+  return {
+    version: PERSONAL_LAYOUT_VERSION,
+    strip: [],
+    upperRow: [],
+    lowerRow: [],
+    moduleRows: {},
+    sections: [],
+    hidden: [],
+  };
+}
+
 /**
- * Pin a page into the Upper nav row — the write behind the row's own "+" control.
+ * Pin a page into one of the two horizontal nav rows — the write behind the "+" on each row.
  *
  * The owner's ask, 2026-08-28: a plus sign at the end of the row, which opens the list of modules,
  * and whatever he picks is "embedded like the organogram" — meaning fixed in EVERY module, not just
- * the one he happened to be standing in when he pressed it.
+ * the one he happened to be standing in when he pressed it. `target` is which row; the upper row's
+ * "+" passes "upperRow" and the lower row's passes "lowerRow".
  *
  * That phrase is the whole reason this is not a one-line append, and it is why the rule lives here
  * rather than in the button:
@@ -518,28 +532,22 @@ export function applyPersonalLayout<TItem extends LayoutItemLike>(
  *     the strip entry in the same write. This is the same contradiction the editor's guard exists to
  *     stop; the "+" is a second door into the same document and needs the same lock.
  *  2. A MODULE OVERRIDE REPLACES THE DEFAULTS — it does not merge with them. So appending only to
- *     the default `upperRow` would put the page in every module EXCEPT the ones carrying their own
- *     rows, which is precisely backwards: those are the modules the owner has already taken the
- *     trouble to arrange. Every existing override therefore gets the href too.
- *  3. A page cannot sit in both rows, so the lower row releases it as well.
+ *     the default row would put the page in every module EXCEPT the ones carrying their own rows,
+ *     which is precisely backwards: those are the modules the owner has already taken the trouble to
+ *     arrange. Every existing override therefore gets the href too.
+ *  3. A page cannot sit in both rows, so the OTHER row releases it. This is also what makes the
+ *     lower row's "+" a MOVE rather than a duplicate when the page is already up top.
  *
  * `sections` is deliberately left alone. A page in a row has already been taken by the time
  * `applyPersonalLayout` reaches the sections, so its section entry is inert — and keeping it means
- * removing the page from the row later returns it to where it came from rather than losing it.
+ * `unpinHrefFromRows` returns the page to where it came from rather than losing it.
  */
-export function pinHrefToUpperRow(
+export function pinHrefToRow(
   layout: PersonalNavigationLayout | null,
   href: string,
+  target: keyof PersonalLayoutRowSet = "upperRow",
 ): PersonalNavigationLayout {
-  const base: PersonalNavigationLayout = layout ?? {
-    version: PERSONAL_LAYOUT_VERSION,
-    strip: [],
-    upperRow: [],
-    lowerRow: [],
-    moduleRows: {},
-    sections: [],
-    hidden: [],
-  };
+  const base = layout ?? emptyLayout();
 
   // Append-if-absent rather than a blind push: pressing "+" twice on the same page must not put two
   // identical tabs in the row, and re-adding a page already there must not move it to the end.
@@ -548,18 +556,66 @@ export function pinHrefToUpperRow(
   const withHref = (list: readonly string[] | undefined): string[] =>
     (list ?? []).includes(href) ? [...(list ?? [])] : [...(list ?? []), href];
 
+  // Written out per branch rather than with a computed key, so the returned object is a
+  // PersonalLayoutRowSet by construction and needs no cast to become one.
+  const place = (set: Partial<PersonalLayoutRowSet> | undefined): PersonalLayoutRowSet =>
+    target === "upperRow"
+      ? { upperRow: withHref(set?.upperRow), lowerRow: without(set?.lowerRow) }
+      : { upperRow: without(set?.upperRow), lowerRow: withHref(set?.lowerRow) };
+
   const moduleRows: Record<string, PersonalLayoutRowSet> = {};
   for (const [moduleId, set] of Object.entries(base.moduleRows ?? {})) {
-    moduleRows[moduleId] = { upperRow: withHref(set.upperRow), lowerRow: without(set.lowerRow) };
+    moduleRows[moduleId] = place(set);
   }
+
+  const rootRows = place({ upperRow: base.upperRow, lowerRow: base.lowerRow });
 
   return {
     ...base,
     version: PERSONAL_LAYOUT_VERSION,
     strip: without(base.strip),
-    upperRow: withHref(base.upperRow),
-    lowerRow: without(base.lowerRow),
+    upperRow: rootRows.upperRow,
+    lowerRow: rootRows.lowerRow,
     moduleRows,
     hidden: without(base.hidden),
+  };
+}
+
+/**
+ * Take a page OFF both horizontal rows — the write behind the tick in the same "+" panel.
+ *
+ * Without this the "+" was a one-way door: the only way back out of a row was /admin/sidebar-layout,
+ * which is exactly the trip the "+" exists to save. Removal has to reach the module overrides for
+ * the same reason trap 2 above does — a page pinned "in every module" wrote itself into every
+ * override, so clearing only the default rows would leave it stuck inside every module the owner has
+ * arranged, and nowhere else.
+ *
+ * What it deliberately does NOT do:
+ *  - It never adds to `hidden`. Removing a tab from a row means "put it back where it came from",
+ *    not "make it unreachable" — `applyPersonalLayout` appends any unplaced gated page to its origin
+ *    section, so the page reappears in the sidebar the moment the row releases it.
+ *  - It never restores `strip`. Pinning released the strip entry (trap 1) and that is not
+ *    reconstructable from here — the document does not record where an href came from. The strip is
+ *    two pinned items by the owner's own ruling, so the editor is the right place to put one back.
+ */
+export function unpinHrefFromRows(
+  layout: PersonalNavigationLayout | null,
+  href: string,
+): PersonalNavigationLayout {
+  const base = layout ?? emptyLayout();
+  const without = (list: readonly string[] | undefined): string[] =>
+    (list ?? []).filter((entry) => entry !== href);
+
+  const moduleRows: Record<string, PersonalLayoutRowSet> = {};
+  for (const [moduleId, set] of Object.entries(base.moduleRows ?? {})) {
+    moduleRows[moduleId] = { upperRow: without(set.upperRow), lowerRow: without(set.lowerRow) };
+  }
+
+  return {
+    ...base,
+    version: PERSONAL_LAYOUT_VERSION,
+    upperRow: without(base.upperRow),
+    lowerRow: without(base.lowerRow),
+    moduleRows,
   };
 }
