@@ -22,7 +22,6 @@ import {
   Building2,
   ChartColumnBig,
   FileCheck2,
-  FileSignature,
   FilePlus2,
   ClipboardList,
   ShieldCheck,
@@ -37,8 +36,6 @@ import {
   IdCard,
   CalendarDays,
   Headphones,
-  HeartPulse,
-  MailCheck,
   ChevronsLeft,
   ChevronsRight,
   ChevronDown,
@@ -67,6 +64,7 @@ import { HorizontalNavProvider, LowerNavRow, UpperNavRow } from "@/components/la
 import type { NavigationSection } from "@/config/system-navigation";
 import type { PersonalNavigationLayout } from "@/lib/navigation/personal-layout";
 import { resolveDeepestActiveHref } from "@/lib/navigation/active-path";
+import { hardNavigate } from "@/lib/navigation/browser-navigation";
 import { systemAssets } from "@/config/system-settings";
 
 const EMPLOYEE_SIDEBAR_COLLAPSED_KEY = "phoenix-employee-sidebar-collapsed";
@@ -649,7 +647,7 @@ export function EmployeePortalTopNav({
     try {
       await fetch("/api/auth/logout", { method: "POST" });
     } finally {
-      window.location.href = "/login";
+      hardNavigate("/login");
     }
   };
 
@@ -919,7 +917,7 @@ export function EmployeePortalSidebar({
     try {
       await fetch("/api/auth/logout", { method: "POST" });
     } finally {
-      window.location.href = "/login";
+      hardNavigate("/login");
     }
   };
 

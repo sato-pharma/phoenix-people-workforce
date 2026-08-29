@@ -80,7 +80,6 @@ const REP_COLS = [
 // board ships and this board can point at it again.
 
 export function BrickCoverageRepTable({
-  month,
   monthLabel,
   rows,
 }: {
@@ -324,7 +323,7 @@ export function BrickCoverageBlindSpotTable({ monthLabel, rows }: { monthLabel: 
  * feed simply stopped would either vanish from the page or, far worse, appear at 0% coverage. It
  * names them, says why, and keeps them out of every total above.
  */
-export function BrickCoverageUnmeasuredTable({ month, rows }: { month: string; rows: BrickCoverageUnmeasured[] }) {
+export function BrickCoverageUnmeasuredTable({ rows }: { month: string; rows: BrickCoverageUnmeasured[] }) {
   if (rows.length === 0) return null;
   return (
     <div className="p-5">

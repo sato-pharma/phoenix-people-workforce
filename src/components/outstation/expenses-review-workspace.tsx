@@ -8,6 +8,7 @@ import { AdminCallout, AdminPageHero } from "@/components/admin/admin-design-sys
 import { buildExpenseAnalysis, ExpenseReport } from "@/components/outstation/expense-report";
 import { payrollMonths } from "@/components/payroll/dashboard/shared";
 import { formatCurrencyValue } from "@/lib/i18n/format";
+import { hardNavigate } from "@/lib/navigation/browser-navigation";
 import type {
   ExpenseAnalysisResult,
   ExpenseTripRecord,
@@ -367,7 +368,7 @@ export function ExpensesReviewWorkspace() {
           .join(" "),
       );
       window.setTimeout(() => {
-        window.location.href = `/payroll?batchId=${payload.targetBatch.id}`;
+        hardNavigate(`/payroll?batchId=${payload.targetBatch.id}`);
       }, 700);
     } catch (error) {
       setExpenseAnalysisError(expensesRequestErrorMessage(error, "Unable to import outstation expenses to payroll."));

@@ -17,7 +17,6 @@ import {
 } from "../src/lib/auth/permissions.ts";
 import {
   resolveEmployeePortalNavVisibility,
-  type EmployeePortalNavVisibility,
 } from "../src/lib/employee-portal/navigation.ts";
 import {
   pageFileFor as resolvePageFile,

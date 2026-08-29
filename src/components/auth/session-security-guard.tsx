@@ -7,6 +7,7 @@ import {
   markSessionInvalidated,
   phoenixSessionTimeoutReason,
 } from "@/lib/auth/client-session";
+import { hardNavigate } from "@/lib/navigation/browser-navigation";
 import { logoutOneSignal } from "@/lib/notifications/onesignal-client";
 
 // No client-side inactivity clock (owner decision 2026-07-23): a session used to be
@@ -35,7 +36,7 @@ export function SessionSecurityGuard() {
             loggingOutRef.current = true;
             logoutOneSignal();
             clearSessionActivity();
-            window.location.assign(`/login?reason=${phoenixSessionTimeoutReason}`);
+            hardNavigate(`/login?reason=${phoenixSessionTimeoutReason}`);
           }
         }
       } catch {

@@ -59,6 +59,7 @@ import type {
   SalaryBatch,
   SalaryRecord,
 } from "@/lib/payroll/types";
+import { hardNavigate } from "@/lib/navigation/browser-navigation";
 import { cn, formatEmployeeDisplayName } from "@/lib/utils";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 
@@ -3419,7 +3420,7 @@ export function PayrollDashboard({
         setSalaryUploadError(payrollPayloadMessage(payload, "Payroll upload succeeded but did not return a batch id."));
         return;
       }
-      window.location.href = `/payroll?batchId=${batchId}`;
+      hardNavigate(`/payroll?batchId=${batchId}`);
     } catch (error) {
       setSalaryUploadError(payrollRequestErrorMessage(error, "Payroll upload request failed before the server responded."));
     } finally {
@@ -3474,7 +3475,7 @@ export function PayrollDashboard({
       }
 
       setWorkflowMessage({ text: "Payroll workflow updated.", type: "success" });
-      window.location.href = `/payroll?batchId=${payload.data?.id ?? activeBatch.id}`;
+      hardNavigate(`/payroll?batchId=${payload.data?.id ?? activeBatch.id}`);
     } catch (error) {
       setWorkflowMessage({ text: payrollRequestErrorMessage(error, "Network error."), type: "error" });
     } finally {
@@ -3507,7 +3508,7 @@ export function PayrollDashboard({
       }
 
       setWorkflowMessage({ text: "Payroll upload deleted.", type: "success" });
-      window.location.href = "/payroll";
+      hardNavigate("/payroll");
     } catch (error) {
       setWorkflowMessage({ text: payrollRequestErrorMessage(error, "Network error."), type: "error" });
     } finally {
@@ -3567,7 +3568,7 @@ export function PayrollDashboard({
         setSalaryUploadError(payrollPayloadMessage(payload, "Payroll replacement succeeded but did not return a batch id."));
         return false;
       }
-      window.location.href = `/payroll?batchId=${batchId}`;
+      hardNavigate(`/payroll?batchId=${batchId}`);
       return true;
     } catch (error) {
       setSalaryUploadError(payrollRequestErrorMessage(error, "Unable to replace payroll upload."));

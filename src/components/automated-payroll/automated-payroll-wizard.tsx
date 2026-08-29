@@ -28,6 +28,7 @@ import {
   type PayrollDataIssue,
   type PayrollDataQualityReport,
 } from "@/lib/automated-payroll/data-quality";
+import { downloadFromApiRoute } from "@/lib/navigation/browser-navigation";
 import { cn } from "@/lib/utils";
 
 import { NonEmployeesPanel } from "./non-employees-panel";
@@ -908,7 +909,7 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
                 size="sm"
                 disabled={activeStepDirty}
                 title={activeStepDirty ? "Save or confirm the open step first — the sheet reads saved values only." : undefined}
-                onClick={() => (window.location.href = `/api/automated-payroll/runs/${run.id}/sheet?variant=part1`)}
+                onClick={() => downloadFromApiRoute(`/api/automated-payroll/runs/${run.id}/sheet?variant=part1`)}
               >
                 Part 1 sheet
               </Button>
@@ -917,7 +918,7 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
                 size="sm"
                 disabled={activeStepDirty}
                 title={activeStepDirty ? "Save or confirm the open step first — the sheet reads saved values only." : undefined}
-                onClick={() => (window.location.href = `/api/automated-payroll/runs/${run.id}/sheet?variant=full`)}
+                onClick={() => downloadFromApiRoute(`/api/automated-payroll/runs/${run.id}/sheet?variant=full`)}
               >
                 Full sheet
               </Button>

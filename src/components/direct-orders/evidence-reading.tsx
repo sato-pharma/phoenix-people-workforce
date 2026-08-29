@@ -1,5 +1,5 @@
 import type { DirectOrderEvidenceCheck } from "@/lib/direct-orders/evidence-check";
-import { DEFAULT_VENUE_TYPE, venueRequiresDistributorCode, venueTypeLabel, type VenueType } from "@/lib/venues/venue-type";
+import { DEFAULT_VENUE_TYPE, venueRequiresDistributorCode, type VenueType } from "@/lib/venues/venue-type";
 
 /**
  * What the storefront photo was read to say (spec E2).

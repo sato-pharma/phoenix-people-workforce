@@ -51,7 +51,6 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { type CSSProperties, Fragment, useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import type { ReactNode } from "react";
 
 import { ApprovalNavBadge } from "@/components/layout/nav-badge";
 import {
