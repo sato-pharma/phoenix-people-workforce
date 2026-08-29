@@ -445,6 +445,26 @@ and never `docs/`, and four of §4's slugs exist nowhere else, so moving one orp
   1 September is not a deadline to report as missed. **Two residues remain open:** the recruitment
   map's area menus (`src/lib/recruitment/inbound/whatsapp-classify-place-hints.ts`) still list these
   five under Delta (1)/(2), separately tracked.
+- 🔒 **THE AUGUST / DELTA (3) GOLDEN RULE — the August closing NEVER contains Delta (3), whenever it
+  is published.** Owner 2026-08-29, who said "golden rule, no negotiation" twice in one breath: *"The
+  closing of August will not include Delta three, but starting from September closing, it will include
+  Delta three ... whenever I publish it, whenever I do it, it does not contain Delta three."* This is
+  **already enforced — do not rebuild it**, verified live 2026-08-29 at four levels:
+  `closingRegionsAsOfDate("2026-08")` returns `2026-08-31` from the PERIOD STRING alone (the loader
+  takes the period as a REQUIRED argument precisely because it once defaulted to `new Date()`);
+  `au.f_line_area_map_asof` windows on `effective_from <= p_asof and (effective_to is null or
+  effective_to > p_asof)`, called with `v_period_end`; production returns **no `D3` row at all** as of
+  `2026-08-31` and all five as of `2026-09-30`; and `runClosingPeriodDatingTests` pins both months
+  **and proves it discriminates**, by re-resolving at run dates `2026-09-01`, `2026-09-15` and
+  `2026-10-03` and asserting each would have wrongly credited August's sales to Delta (3). It is
+  registered in `tests/run-tests.ts` and runs in the required CI `validate` job, so breaking it turns
+  a PR red. **Never resolve closing geography at the run date**, and never offer to publish August
+  "now that the move is live" as though the date were a problem — it is the mechanism.
+- 🔒 **Delta (3) is ANTI-INFECTIVE ONLY — owner-confirmed 2026-08-29.** All five areas move to `D3` on
+  `anti_infective` in September. On **CNS and Pedia they do not move at all**: `D11` stays Delta (1),
+  `D24`/`D25` stay Delta (2), `OT2`/`OT9` stay Others, in BOTH months. So a sweep that finds these five
+  "half-migrated" across lines is reading the **CORRECT** state — never extend the move to CNS or Pedia
+  to make the map look consistent.
 - 🔒 **THE CLOSING GOLDEN RULE — a closing is never done or sent during the month it covers.** In his
   words: *"no closing is ever done or sent during the month. Closing after the month closes."* The
   closing for `YYYY-MM` becomes publishable on the **first day of the following month, Africa/Cairo**
