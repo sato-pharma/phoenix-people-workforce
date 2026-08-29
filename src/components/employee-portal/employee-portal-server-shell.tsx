@@ -7,6 +7,8 @@ import { assertPermission, type AccessContext } from "@/lib/auth/permissions";
 import { isForbiddenError } from "@/lib/auth/server";
 import { resolveEmployeePortalNavVisibility } from "@/lib/employee-portal/navigation";
 import { getEmployeePortalShellData } from "@/lib/employee-portal/service";
+import { layoutOwnerKey, type PersonalNavigationLayout } from "@/lib/navigation/personal-layout";
+import { loadEffectiveLayout } from "@/lib/navigation/personal-layout-store";
 import { logPortalFailure } from "@/lib/observability/portal-logging";
 
 type EmployeePortalServerShellProps = {
@@ -40,10 +42,17 @@ export async function EmployeePortalServerShell({
 
   let data = null;
   let hasDeviceMapping = false;
+  // The viewer's saved row arrangement, or the company default when they have saved nothing.
+  // Read INSIDE the existing Promise.all rather than after it: every query from here crosses the
+  // Atlantic to Frankfurt, and this runs on every portal page render. loadEffectiveLayout resolves
+  // both keys in ONE round trip and never rejects — a failed read degrades to "nothing arranged",
+  // which is the same thing every account sees today.
+  let navLayout: PersonalNavigationLayout | null = null;
   try {
-    [data, hasDeviceMapping] = await Promise.all([
+    [data, hasDeviceMapping, navLayout] = await Promise.all([
       getEmployeePortalShellData(access),
       access.hrId ? employeeHasActiveDeviceMapping(access.hrId).catch(() => false) : Promise.resolve(false),
+      loadEffectiveLayout(layoutOwnerKey(access)).then((result) => result.layout),
     ]);
   } catch (error) {
     logPortalFailure(
@@ -75,6 +84,7 @@ export async function EmployeePortalServerShell({
     <EmployeePortalChrome
       data={data}
       disableSessionGuard={disableSessionGuard}
+      personalLayout={navLayout}
       visibility={visibility}
     >
       {children}

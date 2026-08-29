@@ -43,6 +43,22 @@ export function usesAdminChrome(mode: NavigationMode | undefined): boolean {
   return mode === "admin" || mode === "hr";
 }
 
+/**
+ * Surfaces that carry the arrangeable horizontal nav rows.
+ *
+ * DELIBERATELY WIDER THAN `usesAdminChrome`, which is a PALETTE question — the portal carries rows
+ * and is light, so the two cannot be the same predicate. Keeping them separate is what stops the
+ * portal rows inheriting the dark admin chrome.
+ *
+ * One stored layout document serves all three modes, and that is safe by construction rather than
+ * by luck: each mode's sections carry disjoint href prefixes — `/admin/...`, `/hr/...`,
+ * `/employee-portals/...` — so an href from one mode matches nothing in another mode's `byHref` map
+ * and `applyPersonalLayout` simply drops it. The modes cannot collide.
+ */
+export function carriesNavRows(mode: NavigationMode | undefined): boolean {
+  return usesAdminChrome(mode) || mode === "employee-portal";
+}
+
 /** The URL prefix every link in this mode is served under. Empty for admin and the portal. */
 export function navigationPathPrefix(mode: NavigationMode | undefined): string {
   return mode === "hr" ? "/hr" : "";

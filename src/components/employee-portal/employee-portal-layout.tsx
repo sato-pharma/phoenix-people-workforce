@@ -63,6 +63,9 @@ import { PageTransition } from "@/components/ui/page-transition";
 import type { EmployeePortalShellData } from "@/lib/employee-portal/service";
 import type { EmployeePortalNavVisibility } from "@/lib/employee-portal/navigation";
 import { isEmployeePortalOwnedRoute } from "@/lib/employee-portal/routes";
+import { HorizontalNavProvider, LowerNavRow, UpperNavRow } from "@/components/layout/horizontal-nav-rows";
+import type { NavigationSection } from "@/config/system-navigation";
+import type { PersonalNavigationLayout } from "@/lib/navigation/personal-layout";
 import { resolveDeepestActiveHref } from "@/lib/navigation/active-path";
 import { systemAssets } from "@/config/system-settings";
 
@@ -1032,17 +1035,52 @@ export function EmployeePortalSidebar({
   );
 }
 
+/**
+ * The portal's own nav tree, in the shape the shared horizontal row understands.
+ *
+ * ONE source, deliberately. `buildEmployeePortalSections` is already what the sidebar, the top nav
+ * and the bottom nav read, so the row offers exactly the tabs the portal itself offers and cannot
+ * drift from them. A second hand-written copy of a list is how Capture Evidence shipped rejecting
+ * 59 of the 65 customers it existed for.
+ *
+ * The gate travels with the list. These sections are already filtered by
+ * EmployeePortalNavVisibility, and `applyPersonalLayout` can only ever emit hrefs drawn from the
+ * set handed to it — so no arrangement, personal or company-wide, can put a portal page in front of
+ * someone who may not open it.
+ */
+function portalNavigationSections(visibility: EmployeePortalNavVisibility): NavigationSection[] {
+  return buildEmployeePortalSections(visibility)
+    .filter((section) => section.items.length > 0)
+    .map((section) => ({
+      id: section.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, ""),
+      label: section.title,
+      items: section.items.map((item) => ({
+        href: item.href as `/${string}`,
+        icon: item.icon,
+        label: item.label,
+        ...(item.navBadge ? { navBadge: item.navBadge } : {}),
+      })),
+    }));
+}
+
 export function EmployeePortalChrome({
   activePathOverride,
   children,
   data,
   disableSessionGuard = false,
+  personalLayout = null,
   visibility,
 }: {
   activePathOverride?: string;
   children: ReactNode;
   data: EmployeePortalShellData;
   disableSessionGuard?: boolean;
+  /**
+   * The viewer's own saved arrangement, or the company default when they have saved nothing —
+   * resolved server-side by EmployeePortalServerShell. Null means "nothing arranged", which renders
+   * an empty row carrying only its "+".
+   */
+  personalLayout?: PersonalNavigationLayout | null;
   visibility: EmployeePortalNavVisibility;
 }) {
   return (
@@ -1060,9 +1098,31 @@ export function EmployeePortalChrome({
         />
         <div className="relative mx-auto flex w-full max-w-[1580px] items-start gap-4 px-3 py-4 sm:px-4 sm:py-5 lg:gap-7 lg:px-8 lg:py-7">
           <EmployeePortalSidebar activePathOverride={activePathOverride} visibility={visibility} />
-          <main className="employee-portal-mobile-safe min-w-0 flex-1 space-y-5 pb-24 lg:space-y-7 lg:pb-0">
-            <PageTransition>{children}</PageTransition>
-          </main>
+          {/* The two horizontal rows, now on the portal as well — 116 accounts, 72% of everyone
+              with a login, and until this the only workspace with no arrangeable row at all. The
+              sections are handed in rather than read from system-navigation.ts because the portal
+              builds its own tree; see portalNavigationSections above. Both rows render nothing but
+              their "+" until the viewer puts a tab in them. */}
+          <HorizontalNavProvider
+            navigationMode="employee-portal"
+            personalLayout={personalLayout}
+            sections={portalNavigationSections(visibility)}
+          >
+            <div className="phx-navrow-scope flex min-w-0 flex-1 flex-col">
+              {/* The portal is a light card layout, so the row takes the sidebar's own frame —
+                  same rounded edge, border, translucent white and ring — rather than the admin
+                  chrome's full-bleed bar. The shadow is lighter because this one is a thin strip,
+                  not a full-height panel. */}
+              <UpperNavRow className="mb-4 rounded-sm border border-slate-200/90 bg-white/96 px-3 py-1.5 shadow-[0_10px_30px_rgba(15,23,42,0.08)] ring-1 ring-white/80 backdrop-blur sm:px-4" />
+              <main className="employee-portal-mobile-safe min-w-0 flex-1 space-y-5 pb-24 lg:space-y-7 lg:pb-0">
+                <LowerNavRow
+                  className="rounded-sm border border-slate-200/90 bg-white/96 px-3 py-1.5 shadow-[0_10px_30px_rgba(15,23,42,0.08)] ring-1 ring-white/80 backdrop-blur sm:px-4"
+                  placement="in-page"
+                />
+                <PageTransition>{children}</PageTransition>
+              </main>
+            </div>
+          </HorizontalNavProvider>
         </div>
         <EmployeePortalBottomNav activePathOverride={activePathOverride} visibility={visibility} />
       </div>

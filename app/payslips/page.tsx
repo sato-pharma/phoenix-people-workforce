@@ -14,6 +14,8 @@ import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions"
 import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
 import { resolveEmployeePortalNavVisibility } from "@/lib/employee-portal/navigation";
 import { getPayslipPortalData } from "@/lib/employee-portal/service";
+import { layoutOwnerKey } from "@/lib/navigation/personal-layout";
+import { loadEffectiveLayout } from "@/lib/navigation/personal-layout-store";
 
 export const dynamic = "force-dynamic";
 
@@ -91,8 +93,13 @@ export default async function PayslipsPage() {
     );
   }
 
+  // This page renders the portal chrome itself rather than going through EmployeePortalServerShell,
+  // so it has to read the layout too. Without this, someone who arranged their row would find it
+  // emptied on exactly one page — which reads as the feature breaking, not as a page that forgot.
+  const { layout: navLayout } = await loadEffectiveLayout(layoutOwnerKey(access));
+
   return (
-    <EmployeePortalChrome data={data} visibility={visibility}>
+    <EmployeePortalChrome data={data} personalLayout={navLayout} visibility={visibility}>
             <EmployeePortalPageShell
         description="Review your monthly compensation with clarity and confidence."
         title="My Earnings"
