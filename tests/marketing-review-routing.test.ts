@@ -2,20 +2,19 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import {
+  buildPermissionLookup,
   canAccess,
   createAccessContext,
   getExpensesScope,
   getPayrollScope,
   getSalesScope,
   isAdminShellEmployeeRole,
-  permissionActions,
   permissionMatrix,
-  permissionResources,
   resolveNavigationMode,
   type PhoenixRole,
 } from "../src/lib/auth/permissions.ts";
 import { adminNavigationSections } from "../src/config/system-navigation.ts";
-import { getSections, type PermissionLookup } from "../src/lib/navigation/active-path.ts";
+import { getSections } from "../src/lib/navigation/active-path.ts";
 import { resolveLandingPathForRole } from "../src/lib/auth/landing.ts";
 import {
   canAccessAdminShellEmployeeWorkspacePage,
@@ -175,16 +174,14 @@ export async function runMarketingReviewRoutingTests() {
   // A row NARROWER than the guard is the bug #2713 existed to close — a page reachable by nobody
   // reads exactly like a page nobody uses. A row WIDER than the guard is the other failure this
   // module has already paid for: a button that redirects the viewer straight back out.
-  const lookupFor = (role: PhoenixRole): PermissionLookup => {
-    const lookup: PermissionLookup = {};
-    for (const resource of permissionResources) {
-      for (const action of permissionActions) {
-        lookup[`${resource}:${action}`] = permissionMatrix[role][resource]?.includes(action) ?? false;
-      }
-    }
-    return lookup;
-  };
+  //
+  // buildPermissionLookup, never a hand-rolled double loop over permissionResources:
+  // tests/permission-lookup-totality.test.ts RATCHETS the number of hand-built copies in the tree
+  // (20 when that guard was written) and this file was briefly the 21st. The shared builder is also
+  // the only version guaranteed TOTAL — a lookup missing a key reads as fail-OPEN in
+  // permissionAllowed, which would quietly widen the very thing this block is here to measure.
   const allRoles = Object.keys(permissionMatrix) as PhoenixRole[];
+  const lookupFor = (role: PhoenixRole) => buildPermissionLookup(permissionMatrix, role);
   const seesRow = allRoles.filter((role) =>
     getSections(adminNavigationSections, "admin", lookupFor(role), role).some((section) =>
       section.items.some((item) => item.href === "/workspace/marketing-requests"),
