@@ -21,8 +21,9 @@
 // Nothing that could be written before can no longer be written — it just no longer has to be.
 
 import { Bold, Braces, Code2, Eraser, Italic, Link2, List, ListOrdered, Underline } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import type { ClipboardEvent } from "react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { offerHintClassName, offerTextareaClassName } from "@/components/offers/offer-ui";
 import { OFFER_PLACEHOLDERS } from "@/lib/offers/placeholders";
@@ -49,6 +50,24 @@ const TOKEN_LABELS: ReadonlyMap<string, string> = new Map(
 
 const toolbarButtonClassName =
   "flex h-8 w-8 items-center justify-center rounded-lg border border-transparent text-phx-ink-2 transition hover:border-phx-accent-line hover:bg-phx-accent-soft hover:text-phx-accent-press disabled:cursor-not-allowed disabled:opacity-40";
+
+/**
+ * The toolbar, as data rather than as closures.
+ *
+ * Deliberately OUTSIDE the component. Built inside it, every entry would close over `run`, which
+ * reads the editor ref — and mapping over that while rendering is what `react-hooks/refs` refuses,
+ * because a ref read during render is not guaranteed to be the value React is rendering against.
+ * These are plain descriptors; the ref is touched in the click handler, which is where it is real.
+ */
+const TOOLBAR_BUTTONS: ReadonlyArray<{ command: string; icon: LucideIcon; label: string }> = [
+  { command: "bold", icon: Bold, label: "Bold" },
+  { command: "italic", icon: Italic, label: "Italic" },
+  { command: "underline", icon: Underline, label: "Underline" },
+  { command: "insertUnorderedList", icon: List, label: "Bulleted list" },
+  { command: "insertOrderedList", icon: ListOrdered, label: "Numbered list" },
+  { command: "link", icon: Link2, label: "Link" },
+  { command: "removeFormat", icon: Eraser, label: "Clear formatting" },
+];
 
 export function OfferRichText({
   canManage,
@@ -193,19 +212,6 @@ export function OfferRichText({
     [emit, rememberSelection],
   );
 
-  const actions = useMemo(
-    () => [
-      { icon: Bold, label: "Bold", run: () => run("bold") },
-      { icon: Italic, label: "Italic", run: () => run("italic") },
-      { icon: Underline, label: "Underline", run: () => run("underline") },
-      { icon: List, label: "Bulleted list", run: () => run("insertUnorderedList") },
-      { icon: ListOrdered, label: "Numbered list", run: () => run("insertOrderedList") },
-      { icon: Link2, label: "Link", run: addLink },
-      { icon: Eraser, label: "Clear formatting", run: () => run("removeFormat") },
-    ],
-    [addLink, run],
-  );
-
   return (
     <div className="rounded-xl border border-phx-line bg-white/95 shadow-sm">
       <style>{`
@@ -224,13 +230,13 @@ export function OfferRichText({
       `}</style>
 
       <div className="flex flex-wrap items-center gap-1 border-b border-phx-line px-2 py-1.5">
-        {actions.map((action) => (
+        {TOOLBAR_BUTTONS.map((action) => (
           <button
             aria-label={action.label}
             className={toolbarButtonClassName}
             disabled={!canManage || showSource}
             key={action.label}
-            onClick={action.run}
+            onClick={() => (action.command === "link" ? addLink() : run(action.command))}
             onMouseDown={(event) => event.preventDefault()}
             title={action.label}
             type="button"
