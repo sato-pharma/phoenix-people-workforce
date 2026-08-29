@@ -79,7 +79,7 @@ export const STEP_DEFINITIONS: Record<StepKey, StepDefinition> = {
       // that all three fields carry PRORATED amounts it reads as this month's,
       // which is exactly the confusion the owner raised on the New hires screen
       // the same day. The key is unchanged, so nothing downstream moves.
-      { key: "Net Salary", label: "Full Month Net" },
+      { key: "Net Salary", label: "Full Month Net", money: true },
     ],
     fields: [
       // Days Worked is EDITABLE (owner 2026-07-25): the system can only count
