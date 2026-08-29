@@ -856,9 +856,20 @@ const adminNavigationSectionSeeds = [
     // Super Admin's direct link to the workspace, restored 2026-08-08 — before the 2026-08-02 SFE
     // rebuild this section was exactly this one row, Super-Admin-only, opening the workspace with
     // no hub in between. The hub below keeps every other role (including the SFE Manager, who owns
-    // CRM) on the 2026-08-02 behaviour, so nobody's route is withdrawn. Super Admin is excluded
-    // from the hub by name because the system-administrator workspace ignores `roles`/permissions
-    // but honours excludedRoles — without it he would see two "CRM" rows.
+    // CRM) on the 2026-08-02 behaviour, so nobody's route is withdrawn.
+    //
+    // Super Admin is excluded from the hub BY NAME, and that is the 2026-08-08 rule rather than a
+    // quirk: the SFE Manager keeps the flat sidebar WITH hub buttons, and every other role gets
+    // those hubs EXPANDED into their own rows instead. Pinned in exactly those words by
+    // tests/sidebar-role-scoped-headings.test.ts — "Super Admin must not see a hub button beside
+    // the expanded rows it duplicates".
+    //
+    // So the Super-Admin-only rows below are not workarounds for the exclusion. They ARE the
+    // pattern, the same way the four probation rows are, and the list must stay COMPLETE: every
+    // card in crmPageItems needs one, or that page is reachable by the owner only through Cmd+K.
+    // It was incomplete for a long time and four cards were stranded — see the note on the last
+    // four rows. tests/crm-hub-cards-are-reachable-by-the-roles-they-name.test.ts now fails if a
+    // new card is added without its row, which is what stops that recurring.
     items: [
       { href: "/admin/crm", icon: Database, label: "CRM", roles: ["Super Admin"] },
       // Finance Manager excluded 2026-08-10 (owner). crm_visits:read is what admitted him, and
@@ -866,23 +877,31 @@ const adminNavigationSectionSeeds = [
       // read it — so the row is removed by name. /admin/crm above is Super-Admin-only, so the
       // whole "CRM" section leaves his sidebar.
       { href: "/admin/crm-tools", icon: Database, label: "CRM", permissions: [{ resource: "crm_visits" }, { resource: "double_visit_analytics" }, { resource: "hr_calendar" }], excludedRoles: ["Super Admin", "Finance Manager"] },
-      // Reps Plans is a card in crmPageItems, which ONLY /admin/crm-tools renders — and the row
-      // above excludes Super Admin from that hub by name, while the card is roles: ["Super Admin"].
-      // So the only role allowed to open it had no route to it: /admin/crm is the workspace, not a
-      // card hub, and Cmd+K was the sole way in. This row is that missing route. Every other role
-      // keeps reaching it as a card on the hub, so nothing moves for anyone else.
-      //
       // RETIRED 2026-08-28 (owner): the "Rep Doctor Lists" row sat here too. See the retirement
       // note on crmPageItems below — do not re-add it.
       { href: "/admin/reps-plans", icon: Gauge, label: "Reps Plans", roles: ["Super Admin"] },
-      // Doctor List joins them for the same reason: Super Admin is excluded from the hub that
-      // renders the crmPageItems cards, so without this row the account would have no route to it.
-      // Every other role reaches both rows as cards on the hub, so nothing moves for anyone else.
-      //
-      // These two are the District Manager page's two tabs, and they are listed as two rows rather
-      // than one because they are two routes — each re-runs its own server-side gate on entry.
+      // Doctor List and Plan Verification are the District Manager page's two tabs, listed as two
+      // rows rather than one because they are two routes — each re-runs its own gate on entry.
       { href: "/admin/doctor-list", icon: BookUser, label: "Doctor List", roles: ["Super Admin"] },
       { href: "/admin/plan-verification", icon: ClipboardCheck, label: "Plan Verification", roles: ["Super Admin"] },
+      // ── The four that completed the expansion, 2026-08-29 (owner, asked directly) ──────────
+      // Each of these is a crmPageItems card naming Super Admin, rendered ONLY by /admin/crm-tools,
+      // which excludes him — so for months the one role permitted to open them reached them by
+      // nothing but a typed URL. They had been recorded as a known blind spot rather than fixed,
+      // because "give him the hub instead" looked like the cheaper answer; it is not, because the
+      // hub's nine cards include five pages he already has rows for, which is the duplication the
+      // 2026-08-08 restoration removed.
+      //
+      // Labels are the card labels verbatim, except Double Visit Data Integrity. Measured in the
+      // real headless Chromium on 2026-08-29, that string renders at 160px against this shell's
+      // 157px plain-row budget — 3px over, so it would have been the first label in the admin rail
+      // to clip. "Double Visit Integrity" measures 129px. Never model these widths: the app
+      // resolves to Aptos and a per-character estimate was once off by 9px against ~5px of slack.
+      // scripts/measure-sidebar-labels.ts regenerates tests/fixtures/sidebar-label-widths.json.
+      { href: "/admin/crm-integrity", icon: MapPinned, label: "CRM Integrity", roles: ["Super Admin"] },
+      { href: "/admin/brick-coverage", icon: MapPinned, label: "Brick Coverage", roles: ["Super Admin"] },
+      { href: "/admin/double-visit-analytics", icon: UsersRound, label: "Double Visit Analytics", roles: ["Super Admin"] },
+      { href: "/admin/double-visit-data-integrity", icon: TriangleAlert, label: "Double Visit Integrity", roles: ["Super Admin"] },
     ],
     label: "CRM",
   },
