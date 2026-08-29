@@ -93,10 +93,133 @@ export function memoryIndexBudgetLines(verdict) {
     return [
       "  " + scale,
       `  OVER BUDGET — free ${verdict.mustFree} bytes. Only ${verdict.headroomToCeiling} left before the loader`,
-      "  starts dropping the tail silently. Retire a resolved hook or relocate one to AGENTS.md;",
-      "  do not add a new line until this is back inside budget (AGENTS.md 2.2).",
+      "  starts dropping the tail silently. Retire a resolved hook, or relocate one to AGENTS.md and",
+      "  its ACCOUNT to docs/ — AGENTS.md has no cliff of its own but is inside the footprint budget.",
+      "  Do not add a new line until this is back inside budget (AGENTS.md 2.2).",
     ];
   }
 
   return ["  " + scale + ` — ${verdict.headroomToBudget} bytes of budget left`];
+}
+
+// ─── THE WHOLE AUTO-LOADED FOOTPRINT ──────────────────────────────────────────────────────────────
+//
+// THE INDEX BUDGET ABOVE POLICED THE WRONG FILE, ALONE. `MEMORY.md` is capped at 22,000 bytes and a
+// SessionStart hook enforces it. `AGENTS.md` had no budget at all — and AGENTS.md 2.2 prescribes it
+// as the RELIEF VALVE for an over-budget index, on the stated grounds that it "auto-loads in full
+// and has no cliff". Both files load into the same context window, so a relocation frees nothing.
+// It moves the bytes past the only counter that was watching them.
+//
+// WHAT THAT COST, MEASURED. `AGENTS.md` went 32,243 bytes on 2026-08-19 to 146,898 on 2026-08-29 —
+// 4.6x in ten days, +54KB on one day. Section 2.1 alone reached 57,982, and every byte of it was
+// re-sent on every single request, because `CLAUDE.md` pulls the file in via `@AGENTS.md` in full.
+// That is roughly 15,000 tokens of fixed occupancy taken out of the working space the conversation
+// had left, and compaction fired proportionally sooner. #2620 moved 2.1's detail into
+// `docs/agents-session-traps.md` and brought the total 176,363 -> 139,898. This budget is what keeps
+// it there; without one the same growth resumes, and nothing reports it until sessions feel slow.
+//
+// THERE IS DELIBERATELY NO CLIFF HERE, AND INVENTING ONE WOULD BE A LIE. The index's 24,400 is a
+// real loader limit: cross it and bytes genuinely stop existing. The constraint on the total is the
+// model's context window — soft, model-dependent, and shared with tool output and the conversation
+// itself. So this grades against a budget only. A caller must not print a "ceiling" for the
+// footprint, because there is no number to honestly put there.
+//
+// WHY 150,000. A judgement, not a measurement, and worth saying so. It leaves ~10KB of slack over
+// the post-#2620 total — about 40 hooks at AGENTS.md's own ~230-byte average — which is enough that
+// several parallel sessions can append before anyone must act. Same "budget, not fire alarm"
+// reasoning as the 2,400-byte index gap, scaled to a file whose entries are larger.
+//
+// THE REMEDY IS NOT THE INDEX'S REMEDY. When the INDEX is over, the answer is to relocate a hook
+// into `AGENTS.md`, and that is still right — it buys scannability at no cost to the index. When the
+// TOTAL is over, relocation buys nothing at all, because both files are already inside the number.
+// The only thing that helps is moving detail OUT of the auto-loaded set into `docs/`, read on
+// demand. Any caller that prints this verdict must say so, or a session will do the very thing that
+// caused the problem while believing it is following the rule.
+export const AUTOLOAD_FOOTPRINT_BUDGET = 150_000;
+
+/**
+ * Grade the total bytes auto-loaded into every request against the footprint budget.
+ *
+ * Takes the parts rather than a total so the report can name WHERE the bytes are — a number with no
+ * breakdown tells a session it is over without telling it what to move.
+ *
+ * @param {Array<{ label: string, bytes: number | null }>} parts one entry per auto-loaded file;
+ *   a non-positive or non-finite `bytes` means present-but-unmeasurable and poisons the verdict
+ * @returns {{
+ *   status: "not_applicable" | "unknown" | "ok" | "over_budget",
+ *   bytes: number, budget: number, headroomToBudget: number, mustFree: number,
+ *   parts: Array<{ label: string, bytes: number | null }>, unmeasured: string[],
+ * }}
+ */
+export function assessAutoloadFootprint(parts) {
+  const list = Array.isArray(parts) ? parts : [];
+  const base = { budget: AUTOLOAD_FOOTPRINT_BUDGET, parts: list };
+
+  // NOTHING TO GRADE is not the same as a failed measurement. A checkout with no auto-loaded
+  // instruction files (a fresh clone, someone else's machine) should say nothing at all, exactly as
+  // the hook already stays silent when there is no memory directory. Reporting "unknown" there
+  // would cry wolf on every such session and train the reader to skip the line that matters.
+  if (list.length === 0) {
+    return { ...base, status: "not_applicable", bytes: 0, headroomToBudget: 0, mustFree: 0, unmeasured: [] };
+  }
+
+  const unmeasured = list.filter((p) => !Number.isFinite(p.bytes) || p.bytes <= 0).map((p) => p.label);
+  const bytes = list.reduce((sum, p) => sum + (Number.isFinite(p.bytes) && p.bytes > 0 ? p.bytes : 0), 0);
+
+  // ONE-WAY, as above. A file we know is loaded but could not size makes the TOTAL unknowable, and a
+  // partial sum graded "ok" is how the real figure drifts while the report reads clean.
+  if (unmeasured.length > 0) {
+    return { ...base, status: "unknown", bytes, headroomToBudget: 0, mustFree: 0, unmeasured };
+  }
+
+  return {
+    ...base,
+    status: bytes > AUTOLOAD_FOOTPRINT_BUDGET ? "over_budget" : "ok",
+    bytes,
+    headroomToBudget: AUTOLOAD_FOOTPRINT_BUDGET - bytes,
+    mustFree: Math.max(0, bytes - AUTOLOAD_FOOTPRINT_BUDGET),
+    unmeasured: [],
+  };
+}
+
+/**
+ * The lines a caller prints for the footprint. Beside the arithmetic for the same reason as
+ * `memoryIndexBudgetLines`: the figure and the sentence explaining what to do about it must not be
+ * able to drift apart.
+ *
+ * @param {ReturnType<typeof assessAutoloadFootprint>} verdict
+ * @returns {string[]} empty when there is nothing to say
+ */
+export function autoloadFootprintLines(verdict) {
+  if (verdict.status === "not_applicable") return [];
+
+  const kb = (n) => (n / 1024).toFixed(1) + "KB";
+  const size = (b) => (Number.isFinite(b) && b > 0 ? kb(b) : "UNMEASURED");
+  const breakdown = verdict.parts.map((p) => `${p.label} ${size(p.bytes)}`).join(" + ");
+
+  if (verdict.status === "unknown") {
+    return [
+      `  AUTO-LOADED FOOTPRINT: ${breakdown}`,
+      `  Could not measure ${verdict.unmeasured.join(", ")} — treat the footprint as UNKNOWN, not healthy.`,
+    ];
+  }
+
+  const scale = `AUTO-LOADED EVERY REQUEST: ${breakdown} = ${kb(verdict.bytes)} — budget ${kb(verdict.budget)}`;
+
+  if (verdict.status === "over_budget") {
+    return [
+      "  " + scale,
+      `  OVER FOOTPRINT BUDGET — free ${verdict.mustFree} bytes. These files are re-sent on EVERY`,
+      "  request, so this is context the conversation never gets and compaction arrives sooner.",
+      "  Relocating a hook from MEMORY.md into AGENTS.md does NOT help here — both are already inside",
+      "  this number. Move the DETAIL out of the auto-loaded set into docs/, read on demand, leaving a",
+      "  one-line hook behind (docs/agents-session-traps.md is the worked example).",
+    ];
+  }
+
+  // "bytes of slack", NOT "bytes of budget left". The index's healthy line owns that phrasing, and
+  // `tests/session-start-memory-index-guard.test.ts` asserts a worktree session never sees it — the
+  // decoy that assertion exists to catch is an index misread as healthy. Two different figures
+  // wearing one sentence is how that check would start passing for the wrong reason.
+  return ["  " + scale + ` — ${verdict.headroomToBudget} bytes of slack`];
 }

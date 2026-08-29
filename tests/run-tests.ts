@@ -1033,6 +1033,7 @@ import { runWorktreeExitGuardPreRemovalTests } from "./worktree-exit-guard-pre-r
 import { runMemoryIndexBudgetTests } from "./memory-index-budget.test.ts";
 import { runMemoryIndexReachabilityTests } from "./memory-index-reachability.test.ts";
 import { runSessionStartMemoryIndexGuardTests } from "./session-start-memory-index-guard.test.ts";
+import { runAutoloadFootprintBudgetTests } from "./autoload-footprint-budget.test.ts";
 import { runRepoDoctorUnpushedCommitsTests } from "./repo-doctor-unpushed-commits.test.ts";
 
 import { runCvRereadAppliesWhatItReadsTests } from "./cv-reread-applies-what-it-reads.test.ts";
@@ -3006,6 +3007,15 @@ await runTest(
   + "ceiling-only rule was silent 335 bytes from silent truncation, mustFree closes the gap exactly, "
   + "and an index it cannot measure reports unknown rather than healthy)",
   runMemoryIndexBudgetTests,
+);
+
+await runTest(
+  "The WHOLE auto-loaded footprint is budgeted, not just the memory index (CLAUDE.md + AGENTS.md + "
+  + "MEMORY.md are graded against one number, so relocating a hook into AGENTS.md can no longer move "
+  + "bytes past the only counter watching them; nothing to measure is silent while something it "
+  + "cannot measure is loud; and the repo's own share is enforced live against CLAUDE.md and "
+  + "AGENTS.md, which is the half CI can actually see)",
+  runAutoloadFootprintBudgetTests,
 );
 
 await runTest(
