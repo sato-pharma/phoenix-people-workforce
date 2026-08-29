@@ -1087,6 +1087,8 @@ import { runMarketingFinanceHoldUiTests } from "./marketing-finance-hold-ui.test
 import { runMarketingInvoiceOverdueNudgeTests } from "./marketing-invoice-overdue-nudge.test.ts";
 
 import { runLeaverRosterExclusionTests } from "./leaver-roster-exclusion.test.ts";
+import { runMarketingApprovedCustomerNameTests } from "./marketing-approved-customer-name.test.ts";
+
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -3291,6 +3293,7 @@ await runTest(
 );
 
 await runTest("leaver roster exclusion (resigned/terminated never reach a picker, recipient search or account template)", runLeaverRosterExclusionTests);
+await runTest("marketing finance table never labels a request with a raw customer id", runMarketingApprovedCustomerNameTests);
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
