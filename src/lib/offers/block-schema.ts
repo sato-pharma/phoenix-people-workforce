@@ -13,7 +13,17 @@ import type { OfferBlockType } from "@/lib/offers/types";
  * each section has.
  */
 
-export type OfferFieldKind = "color" | "html" | "text" | "textarea" | "toggle";
+/**
+ * `prose` and `html` both hold markup, and the difference between them is the whole point.
+ *
+ * `prose` is the letter's own writing — edited on a canvas that looks like the page, where the
+ * words are words and a placeholder is a chip. It is limited to the tags BOTH renderers can draw,
+ * because prose appears in the PDF and in the email body alike.
+ *
+ * `html` is the escape hatch: typed exactly as written, PDF only, no canvas. Turning it into a
+ * canvas too would take away the one field whose purpose is to accept anything.
+ */
+export type OfferFieldKind = "color" | "html" | "prose" | "text" | "textarea" | "toggle";
 
 export type OfferFieldDef = {
   hint?: string;
@@ -97,9 +107,17 @@ export const OFFER_BLOCK_DEFS: OfferBlockDef[] = [
     type: "heading",
   },
   {
-    description: "Free paragraphs. Simple HTML is allowed; {{tokens}} are filled per offer.",
+    description:
+      "The letter's own writing — the greeting and the paragraphs under it. Type straight onto the page.",
     fields: [
-      { key: "html", kind: "html", label: "Body" },
+      {
+        hint:
+          "Click anywhere and type. Use the toolbar to bold, italicise or list; click a placeholder " +
+          "below to drop it in. Source shows the underlying HTML if you want it.",
+        key: "html",
+        kind: "prose",
+        label: "The letter",
+      },
       t("avatar", "Initials disc", "Usually {{initials}}. Leave blank for plain paragraphs."),
     ],
     label: "Paragraphs",

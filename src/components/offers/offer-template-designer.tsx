@@ -57,6 +57,7 @@ import {
   OFFER_DEFAULT_FONT_SIZE_PT,
   OFFER_DEFAULT_THEME,
 } from "@/lib/offers/default-template";
+import { OfferRichText, type OfferTokenTarget } from "@/components/offers/offer-rich-text";
 import {
   offerHintClassName,
   offerInputClassName,
@@ -169,11 +170,12 @@ export function OfferTemplateDesigner({
    * holds the box that had the caret a moment earlier, which is the one the person means. It also
    * must not trigger a re-render: re-rendering on every focus would rebuild the field being typed
    * into.
+   *
+   * It carries an `insert` closure rather than the element and a setter, because a plain box and
+   * the prose canvas write a placeholder in genuinely different ways — one splices a string at
+   * `selectionStart`, the other inserts a chip at a DOM range. Both are still one click.
    */
-  const lastField = useRef<{
-    element: HTMLInputElement | HTMLTextAreaElement;
-    onChange: (value: unknown) => void;
-  } | null>(null);
+  const lastField = useRef<OfferTokenTarget | null>(null);
 
   // Switching template loads its design. Everything unsaved on the previous one is discarded, and
   // the Save button says so — an autosave here would write half-finished edits to a letter that
@@ -392,19 +394,7 @@ export function OfferTemplateDesigner({
         }
         return;
       }
-      const { element, onChange } = target;
-      const start = element.selectionStart ?? element.value.length;
-      const end = element.selectionEnd ?? start;
-      onChange(`${element.value.slice(0, start)}${token}${element.value.slice(end)}`);
-      // React rewrites the value on the next render and the caret jumps to the end with it. Put it
-      // back just past what was inserted, so a second placeholder lands where the first one ended
-      // and typing carries on from the right place.
-      const caret = start + token.length;
-      requestAnimationFrame(() => {
-        if (!element.isConnected) return;
-        element.focus();
-        element.setSelectionRange(caret, caret);
-      });
+      target.insert(token);
     },
     [canManage, onReport],
   );
@@ -426,10 +416,54 @@ export function OfferTemplateDesigner({
         </label>
       );
     }
+    /**
+     * Splice `{{token}}` into a plain box at the caret, then put the caret back.
+     *
+     * React rewrites the value on the next render and the caret jumps to the end with it, so
+     * without the restore a second placeholder lands at the end of the box rather than beside the
+     * first — and typing carries on from the wrong place.
+     */
+    const spliceToken = (element: HTMLInputElement | HTMLTextAreaElement) => (token: string) => {
+      const start = element.selectionStart ?? element.value.length;
+      const end = element.selectionEnd ?? start;
+      onChange(`${element.value.slice(0, start)}${token}${element.value.slice(end)}`);
+      const caret = start + token.length;
+      requestAnimationFrame(() => {
+        if (!element.isConnected) return;
+        element.focus();
+        element.setSelectionRange(caret, caret);
+      });
+    };
+
+    const label = (
+      <label className={offerLabelClassName} htmlFor={field.kind === "prose" ? undefined : id}>
+        {field.label}
+      </label>
+    );
+
+    // The letter's own writing, on a canvas that looks like the page. Everything else on this
+    // screen is a label or a value; this is the only field that is a document.
+    if (field.kind === "prose") {
+      return (
+        <div className="md:col-span-2" key={field.key}>
+          {label}
+          <OfferRichText
+            canManage={canManage}
+            onChange={(html) => onChange(html)}
+            onFocusProse={(target) => {
+              lastField.current = target;
+            }}
+            value={String(value ?? "")}
+          />
+          {field.hint ? <p className={offerHintClassName}>{field.hint}</p> : null}
+        </div>
+      );
+    }
+
     const multiline = field.kind === "textarea" || field.kind === "html";
     return (
       <div key={field.key}>
-        <label className={offerLabelClassName} htmlFor={id}>{field.label}</label>
+        {label}
         {multiline ? (
           <textarea
             className={offerTextareaClassName}
@@ -437,7 +471,8 @@ export function OfferTemplateDesigner({
             id={id}
             onChange={(event) => onChange(event.target.value)}
             onFocus={(event) => {
-              lastField.current = { element: event.currentTarget, onChange };
+              const element = event.currentTarget;
+              lastField.current = { element, insert: spliceToken(element) };
             }}
             rows={field.kind === "html" ? 8 : 3}
             value={String(value ?? "")}
@@ -449,7 +484,8 @@ export function OfferTemplateDesigner({
             id={id}
             onChange={(event) => onChange(event.target.value)}
             onFocus={(event) => {
-              lastField.current = { element: event.currentTarget, onChange };
+              const element = event.currentTarget;
+              lastField.current = { element, insert: spliceToken(element) };
             }}
             value={String(value ?? "")}
           />
