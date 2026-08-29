@@ -1,6 +1,7 @@
 import ExcelJS from "exceljs";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 
+import { PHOENIX_BUSINESS_TIME_ZONE } from "@/lib/i18n/format";
 import type { PrivateCalendarEmployeeOption, PrivateCalendarSeverity, PrivateCalendarWorkspace } from "@/lib/private-calendar/logic";
 import { privateCalendarItemOccursOn, privateCalendarSourceLabels } from "@/lib/private-calendar/logic";
 
@@ -82,8 +83,19 @@ function formatDayName(iso: string): string {
   return new Intl.DateTimeFormat("en", { weekday: "short", timeZone: "UTC" }).format(d);
 }
 
+// Unlike formatDate/formatDayName above — which pin UTC deliberately, because they render a
+// date-only literal anchored at T00:00:00Z — this one formats a real INSTANT. It runs on the
+// server, whose clock is UTC, so without an explicit zone the "Generated" stamp on every exported
+// sheet and PDF read 2-3 hours before the export was actually taken.
 function formatStamp(date: Date): string {
-  return date.toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+  return date.toLocaleString("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: PHOENIX_BUSINESS_TIME_ZONE,
+  });
 }
 
 type ExportDayRow = {
