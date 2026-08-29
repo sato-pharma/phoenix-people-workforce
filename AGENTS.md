@@ -442,9 +442,14 @@ and never `docs/`, and four of §4's slugs exist nowhere else, so moving one orp
   closing can see the superseded half), so a forward-dated geography change is now safe to leave live
   across a closing. Keep the rollback pre-image `delta3_defer_backup_20260829.line_area_map_pre`.
   Nobody knows WHEN the August closing publishes — it waits on distributor data, not the calendar, so
-  1 September is not a deadline to report as missed. **Two residues remain open:** the recruitment
-  map's area menus (`src/lib/recruitment/inbound/whatsapp-classify-place-hints.ts`) still list these
-  five under Delta (1)/(2), separately tracked.
+  1 September is not a deadline to report as missed. **The recruitment side is now CLOSED** — PR #2665
+  (commit `65652ac34`, live in prod 2026-08-29) overrides the five areas to Delta (3) in the WhatsApp
+  apply-flow area menu via `recruitmentAreaRegionOverrides` (`candidate-region.ts`), so picking Delta
+  (3) shows them and Delta (1)/(2)/Others no longer do; the region map and hints were already correct
+  (#2509). **One residue remains:** the SALES geography — `au.canonical_areas.code_region_code` still
+  files the five under the old districts, and because `au_v_canonical_areas` is a plain passthrough
+  with NO date logic this will NOT self-flip on 1 September; a session must repoint that column after
+  the August closing publishes, at which point the recruitment override becomes a harmless no-op.
 - 🔒 **THE AUGUST / DELTA (3) GOLDEN RULE — the August closing NEVER contains Delta (3), whenever it
   is published.** Owner 2026-08-29, who said "golden rule, no negotiation" twice in one breath: *"The
   closing of August will not include Delta three, but starting from September closing, it will include
