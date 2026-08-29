@@ -14,7 +14,7 @@
 // written.
 
 import { logError, logWarning } from "@/lib/observability/log";
-import { candidateRegionLabels, type CandidateRegionCode } from "@/lib/recruitment/candidate-region";
+import { candidateRegionLabels, recruitmentRegionForArea, type CandidateRegionCode } from "@/lib/recruitment/candidate-region";
 import { candidateRoleFamilyLabels, type CandidateRoleFamily } from "@/lib/recruitment/candidate-role-family";
 import { recruitmentDb, textOrNull } from "@/lib/recruitment/db";
 import {
@@ -140,8 +140,12 @@ async function loadAreasByRegion(): Promise<Map<string, string[]>> {
   const byRegion = new Map<string, string[]>();
   for (const raw of (data ?? []) as Array<{ area_name: string | null; code_region_code: string | null }>) {
     const name = textOrNull(raw.area_name);
-    const region = textOrNull(raw.code_region_code);
-    if (!name || !region) continue;
+    const salesRegion = textOrNull(raw.code_region_code);
+    if (!name || !salesRegion) continue;
+    // Recruitment moved five areas to Delta (3) ahead of the sales geography, so an applicant who
+    // picks Delta (3) sees them and Delta (1)/(2)/Others no longer do. Everything else passes
+    // through unchanged. See recruitmentRegionForArea in candidate-region.ts.
+    const region = recruitmentRegionForArea(name, salesRegion);
     const list = byRegion.get(region);
     if (list) list.push(name);
     else byRegion.set(region, [name]);

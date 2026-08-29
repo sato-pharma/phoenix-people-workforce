@@ -211,3 +211,38 @@ export function candidateRegionLabelForGovernorate(raw: string | null | undefine
   const code = candidateRegionForGovernorate(raw);
   return code ? candidateRegionLabels[code] : null;
 }
+
+// ── The AREA rows the apply flow shows under each region ───────────────────────────────────────────
+// Question 3's area LIST is read live from the SALES geography (`au.canonical_areas`, via
+// `au_v_canonical_areas`). That map still files five areas — Qalubeya, Sharkia 1, Sharkia 2, Suez and
+// Ismailia — under their OLD districts (Delta (1), Delta (2) and Others), because the sales half of
+// the Delta (3) split is deliberately deferred until the August closing is published (see the D3 note
+// above and AGENTS.md §4). It also carries no Delta (3) row at all, so without an override an
+// applicant who picks "Delta (3)" is shown an EMPTY area list.
+//
+// The region MAP above already calls those five governorates Delta (3), so without this the apply
+// flow contradicts itself: the same five areas still appear under Delta (1)/(2)/Others, and someone
+// from Sharkia who taps the region where they SEE their area is filed under Delta (2) — the exact
+// mis-file the region move was made to prevent. This map overrides the sales grouping for
+// RECRUITMENT ONLY: it moves nothing in the database and is invisible to sales, the closing and every
+// other consumer of `au.canonical_areas`. When the sales side finally repoints these areas to Delta
+// (3), each override becomes a no-op (sales already says D3) and this map can be emptied.
+//
+// Keyed by the EXACT `area_name` in `au.canonical_areas` (verified against production 2026-08-29). A
+// rename there would silently drop the override, so the registered test pins these five names.
+export const recruitmentAreaRegionOverrides: Record<string, CandidateRegionCode> = {
+  Qalubeya: "D3",
+  "Sharkia 1": "D3",
+  "Sharkia 2": "D3",
+  Suez: "D3",
+  Ismailia: "D3",
+};
+
+/**
+ * The region an area belongs to IN RECRUITMENT: the sales region it carries in `au.canonical_areas`,
+ * unless it is one of the five areas the Delta (3) recruitment split has already moved. Pure — it is
+ * handed the sales region rather than reading the database, so the grouping stays testable.
+ */
+export function recruitmentRegionForArea(areaName: string, salesRegionCode: string): string {
+  return recruitmentAreaRegionOverrides[areaName] ?? salesRegionCode;
+}

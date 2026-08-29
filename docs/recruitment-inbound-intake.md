@@ -186,14 +186,18 @@ Sharqia, Suez and Ismailia onto Delta (3) in `governorateRegions` while delibera
 recruitment pool search on — it decides whether a candidate is ever found. A registered assertion
 pins all eight moves, so the next such change cannot land in only one of the two files.
 
-**Residue this leaves, worth knowing before it surprises someone.** Until the sales half lands, the
-AREA list behind Delta (1) still offers *Qalubeya*, and Delta (2) still offers *Sharkia 1/2* — so an
-applicant who ignores the bracket and taps Delta (1) can still file themselves as Qalyubia-under-D1.
-The bracket is what steers them to Delta (3), where the typed-area escape takes their answer. This
-resolves itself when `au.line_area_map` / `au.canonical_areas` move; nothing needs doing here first.
-One disagreement is left standing deliberately: **Matrouh** is Others in the recruitment map, but its
-bricks sit inside AREA *Alex West*, so Alex-BHR is the only row whose area list can reach that job —
-AB therefore keeps مطروح.
+**The AREA list is overridden to match, so the two questions can no longer disagree.** The area list
+in question 3 is read from `au_v_canonical_areas`, which still files those five areas under the old
+districts — and carries no Delta (3) row at all, so a bare read would show an EMPTY area list under
+Delta (3) while *Qalubeya* still sat under Delta (1). `recruitmentAreaRegionOverrides`
+(`candidate-region.ts`) re-files exactly those five areas onto Delta (3) for the apply flow only:
+picking Delta (3) now shows Qalubeya, Sharkia 1/2, Suez and Ismailia, and Delta (1)/(2)/Others no
+longer offer them, so an applicant can no longer file themselves as Qalyubia-under-D1. This moves
+nothing in the database — sales, the closing and every other reader of `au.canonical_areas` are
+untouched — and it becomes a no-op the day the sales side finally repoints those areas to Delta (3).
+A registered assertion pins the five names. One disagreement is left standing deliberately:
+**Matrouh** is Others in the recruitment map, but its bricks sit inside AREA *Alex West*, so Alex-BHR
+is the only row whose area list can reach that job — AB therefore keeps مطروح.
 
 **Regenerating both sets.** Measured against production 2026-08-28: Source of Sales carries a brick
 on 316,406 of 317,801 rows (99.6%, 615 distinct bricks). Everything attributes to **today's**
