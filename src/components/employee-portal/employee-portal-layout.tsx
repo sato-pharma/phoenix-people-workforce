@@ -50,7 +50,6 @@ import {
   CalendarRange,
   CalendarCheck2,
   MapPinned,
-  Stethoscope,
   Waypoints,
 } from "lucide-react";
 import { EmployeePortalBottomNav } from "@/components/employee-portal/employee-portal-bottom-nav";
@@ -196,7 +195,6 @@ function buildEmployeePortalSections({
   showTeamPerformanceTab = false,
   showMedRepsPerformanceTab = false,
   showMedicalRepExpensesTab = false,
-  showDoctorCoverageTab = false,
   showDsmsPerformanceTab = false,
   showTeamCalendarTab = false,
   showTeamExpensesTab = false,
@@ -301,7 +299,6 @@ function buildEmployeePortalSections({
         ...(showMonthlyClosingTab ? [{ href: "/employee-portals/monthly-closing", label: "Monthly Closing", icon: CalendarRange }] : []),
         ...(showSalesAnalyticsTab ? [{ href: "/employee-portals/sales-analytics", label: "Sales Analytics", icon: Activity }] : []),
         ...(showBusinessReviewTab ? [{ href: "/employee-portals/business-review", label: "Business Review", icon: ChartColumnBig }] : []),
-        ...(showDoctorCoverageTab ? [{ href: "/employee-portals/doctor-coverage", label: "Doctor Coverage", icon: Stethoscope }] : []),
         ...(showTerritoryDrilldownTab ? [{ href: "/employee-portals/territory-drilldown", label: "Sales Drilldown", icon: MapPinned }] : []),
         // Territory Management (brick allocation + rep-residence map) — a DIFFERENT module from the
         // Drilldown above. The page and its API routes already existed and were scope-guarded, but

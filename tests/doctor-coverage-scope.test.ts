@@ -209,19 +209,24 @@ export function runDoctorCoverageScopeTests() {
     "day 1 clamps to one elapsed day rather than dividing the bar to zero",
   );
 
-  // ── the sidebar list may not drift from the role list ─────────────────────────────────────────
+  // ── RETIRED 2026-08-28: the portal sidebar entry is gone, and that is now what is pinned ──────
+  // This block used to hold the sidebar's role list identical to DOCTOR_COVERAGE_PORTAL_ROLES.
   // Both were maintained by hand before 2026-08-08 and disagreed with the page gates, which is how
-  // "everyone sees everyone" survived: nothing forced the two to match.
-  const portalEntry = employeePortalNavigationSections
-    .flatMap((section) => section.items)
-    .find((item) => item.href === "/employee-portals/doctor-coverage");
-  assert.ok(portalEntry, "the portal sidebar still registers a Doctor Coverage entry");
-  assert.deepEqual(
-    [...(portalEntry?.roles ?? [])].sort(),
-    [...DOCTOR_COVERAGE_PORTAL_ROLES].sort(),
-    "the portal sidebar's role list is exactly DOCTOR_COVERAGE_PORTAL_ROLES — widening one without the other is the drift that hid the original leak",
+  // "everyone sees everyone" survived: nothing forced the two to match. The owner retired the board
+  // itself on 2026-08-28, so the entry no longer exists and the assertion is inverted — it proves
+  // the retirement is still in force. When the replacement ships it gets its own entry, and the
+  // drift check comes back with it.
+  assert.equal(
+    employeePortalNavigationSections
+      .flatMap((section) => section.items)
+      .find((item) => item.href === "/employee-portals/doctor-coverage"),
+    undefined,
+    "the portal sidebar must NOT offer Doctor Coverage — the owner retired the board on 2026-08-28",
   );
-  for (const role of portalEntry?.roles ?? []) {
+  // The role list itself is untouched, and the scope library stays in place for the rebuild to draw
+  // on. Every role in it must still resolve to a real scope: one that resolves to nothing is the
+  // silent-empty-board failure this whole module exists to prevent.
+  for (const role of DOCTOR_COVERAGE_PORTAL_ROLES) {
     assert.ok(
       canSeeDoctorCoverage(role),
       `${role} is offered the sidebar link, so it must resolve to a real scope rather than an empty board`,

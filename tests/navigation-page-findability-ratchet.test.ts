@@ -77,8 +77,19 @@ import { hrNamespaceRemainder, isHrRewritablePath, toHrNamespacePath } from "@/l
  * it to make a red run go green: a rise means the restructure just stranded a
  * page that used to be reachable, which is the single failure mode this file
  * exists to catch.
+ *
+ * 11 -> 10 on 2026-08-28, and NOT because anything was delisted. Retiring Doctor
+ * Coverage and Rep Doctor Lists turned two pages into bare redirect stubs, which
+ * isRetiredRedirectStub now excludes on the reasoning documented at that helper.
+ * Applying that rule found a THIRD such stub that had been in this count all
+ * along: /admin/workflow-registry, seven lines forwarding to
+ * /admin/workflow-control. It was never a stranded page — it renders nothing to
+ * strand — so the honest figure was always 10, and the two retirements net to
+ * zero. That is why this moves DOWN in the same change that removed two pages
+ * from the nav, which would otherwise look like exactly the accounting trick the
+ * paragraph above forbids.
  */
-const BASELINE = 11;
+const BASELINE = 10;
 
 const ROOTS = ["app", "src"];
 
@@ -114,6 +125,41 @@ function routeOf(file: string): string | null {
   return `/${segments.join("/")}`;
 }
 
+/**
+ * A page whose entire body is a redirect is not a page anyone can be stranded on — it holds no
+ * content to reach, and its only job is to forward a bookmark or a history hit somewhere real. Two
+ * such stubs appeared on 2026-08-28, when the owner retired Doctor Coverage and Rep Doctor Lists.
+ *
+ * They are skipped STRUCTURALLY rather than by path, for two reasons. A hardcoded list of routes
+ * would have to be taken on trust, and would be the obvious place to quietly park a page someone
+ * did strand. This regex cannot be argued with: it matches only a file reduced to an import, an
+ * optional dynamic export, and one redirect call — no JSX, no branches, no logic of any kind. And
+ * it self-maintains. The moment real content returns to such a file it stops matching, re-enters
+ * the count, and the ratchet fires again if nothing links to it.
+ *
+ * This is deliberately NOT a raise of BASELINE, which this file forbids and is right to forbid. A
+ * raise would assert 'two more pages are unreachable, accept it'. This asserts something narrower
+ * and checkable: those two routes no longer render a page at all.
+ */
+const REDIRECT_STUB_BODY =
+  /^(?:export const dynamic = "force-dynamic";)? ?export default async function \w+\(\) \{ redirect\("\/[a-z0-9/_-]*"\); \}$/i;
+
+function isRetiredRedirectStub(file: string): boolean {
+  let source: string;
+  try {
+    source = readFileSync(file, "utf8");
+  } catch {
+    return false;
+  }
+  const stripped = source
+    .replace(/\/\*[\s\S]*?\*\//g, " ")
+    .replace(/^\s*\/\/.*$/gm, " ")
+    .replace(/^\s*import[^;]*;/gm, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return REDIRECT_STUB_BODY.test(stripped);
+}
+
 export function runNavigationPageFindabilityRatchetTests() {
   const files = ROOTS.flatMap((root) => walk(root));
 
@@ -129,6 +175,7 @@ export function runNavigationPageFindabilityRatchetTests() {
     if (unix.startsWith("app/employee-portals/")) continue;
     const route = routeOf(file);
     if (!route || NEVER_IN_NAV.some((re) => re.test(route))) continue;
+    if (isRetiredRedirectStub(unix)) continue;
     pageFileOf.set(route, unix);
   }
 

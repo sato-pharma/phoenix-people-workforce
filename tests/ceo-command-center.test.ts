@@ -7,8 +7,10 @@ import {
   canReadCompanyWorkforceAggregates,
 } from "../src/lib/platform/metrics.ts";
 
-// The sfe skeleton-title array must contain the Doctor coverage section title (titles must track
-// rendered sections — see PHASE_B_SKELETON_TITLES's own comment in ceo-phase-b.tsx).
+// RETIRED 2026-08-28 (owner): the sfe skeleton-title array must NOT contain the Doctor coverage
+// title any more. Titles must track RENDERED sections (see PHASE_B_SKELETON_TITLES's own comment
+// in ceo-phase-b.tsx), and that section is gone — a skeleton row with nothing behind it reads as a
+// load that never finishes. The regex is kept and its use inverted, so the pin still bites.
 const PHASE_B_SKELETON_TITLES_SFE_SOURCE_CHECK = /sfe: \[[^\]]*"Doctor coverage & frequency"[^\]]*\]/;
 
 export function runCeoCommandCenterTests() {
@@ -472,14 +474,14 @@ export function runCeoCommandCenterTests() {
     /includeWeeklyTrend: isSfe/,
     "the SFE overview must load the real weekly sales series",
   );
-  assert.match(
+  assert.doesNotMatch(
     ceoPhaseBSource,
     /includeDoctorCoverage: isSfe/,
-    "the SFE overview must load the doctor coverage board — and ONLY the SFE variant pays for it",
+    "the SFE overview must NOT request doctor coverage — the board is retired, so asking for it bills a query nothing renders",
   );
   assert.ok(
-    PHASE_B_SKELETON_TITLES_SFE_SOURCE_CHECK.test(ceoPhaseBSource),
-    "the SFE skeleton must announce the Doctor coverage section — a rendered section with no skeleton row reads as a stuck load",
+    !PHASE_B_SKELETON_TITLES_SFE_SOURCE_CHECK.test(ceoPhaseBSource),
+    "the SFE skeleton must NOT announce a Doctor coverage section — it is retired, and a skeleton row with no section behind it reads as a stuck load",
   );
   assert.match(
     ceoComponentSource,

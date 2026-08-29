@@ -1,110 +1,27 @@
-// Doctor Coverage & Frequency — employee-portal twin of /admin/doctor-coverage.
+// RETIRED 2026-08-28, by the owner, in the conversation.
 //
-// Who reaches it here, and whose reps they see, is decided entirely by
-// src/lib/crm/doctor-coverage-scope.ts — never by a role list in this file. Until 2026-08-08 this
-// page hardcoded `access.role !== "National Sales Manager"` and then handed the board a
-// company-wide dataset, so the one role allowed in was reading every other line's reps, while the
-// District Manager and Medical Rep — the only people who can actually act on a lapsed doctor —
-// could not open it at all. Owner decision 2026-08-08: DM sees own reps, Medical Rep own panel,
-// RM own region, NSM/PM/GPM their line, MM/SFE/Super Admin company-wide.
-import { EmployeePortalEmptyState, EmployeePortalPageShell } from "@/components/employee-portal/enterprise-shell";
-import { DoctorCoverageBoard } from "@/components/crm/doctor-coverage-board";
-import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
-import {
-  coverageSelectionIsActive,
-  pruneCoverageSelection,
-  repKeysMatching,
-  resolveCoverageSelection,
-  restrictCoverageFilterTree,
-} from "@/lib/crm/coverage-filters";
-import { loadCoverageFilterTree } from "@/lib/crm/coverage-filters-data";
-import { getDoctorCoverageScope } from "@/lib/crm/doctor-coverage-scope";
-import { getSfeDoctorCoverage, resolveCoverageMonth } from "@/lib/crm/sfe-doctor-coverage";
+// Doctor Coverage & Frequency — the portal twin of the admin board.
+//
+// Both this board and Rep Doctor Lists read the same iReports360 plan mirror and answered the same
+// question with two different, disagreeing measures. This one scored each doctor against the GRADE
+// norm (A=2/B=1/C=1) instead of the number of calls the rep's own plan asked for. Measured on
+// production for August 2026 that is the wrong target on 6,307 of 8,635 graded doctors — 73%. It
+// flattered (a grade-B doctor turned green after one visit while the plan asked for more than one
+// on 77% of them) and it punished (on 1,496 grade-A doctors the plan asked for a single visit and
+// the board demanded two), and it passed over-visiting as green, which the owner has ruled is a
+// deviation rather than a win.
+//
+// The owner's instruction was to retire both modules and rebuild from the beginning. Every
+// navigation entry is withdrawn (src/config/system-navigation.ts) and the CEO Command Center embed
+// is gone; this stub closes the last door — a bookmark or a browser-history hit. The library code
+// under src/lib/crm/ is deliberately left in place for the rebuild to draw on, and is deleted with
+// the replacement.
+//
+// DO NOT restore this page, and do not repair the scoring in place. The rebuild is the fix.
+import { redirect } from "next/navigation";
 
-export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// Filters ride in the URL, like the month, so every change re-runs the server-side access gate
-// instead of narrowing a payload already delivered to the browser.
-type PageProps = {
-  searchParams?: Promise<{
-    area?: string;
-    grade?: string;
-    kind?: string;
-    line?: string;
-    month?: string;
-    region?: string;
-    rep?: string;
-    search?: string;
-    status?: string;
-  }>;
-};
-
-export default async function PortalDoctorCoveragePage({ searchParams }: PageProps) {
-  const access = await resolveAuthenticatedPageAccess();
-  const scope = await getDoctorCoverageScope(access);
-
-  const shell = (children: React.ReactNode) => (
-    <EmployeePortalPageShell
-      badge="CRM Intelligence"
-      description="Doctor visit frequency vs coverage norms — who to see next, and who has lapsed."
-      title="Doctor Coverage"
-    >
-      {children}
-    </EmployeePortalPageShell>
-  );
-
-  if (scope.kind === "none") {
-    return shell(<EmployeePortalEmptyState message={scope.reason} title="Not available for your role" />);
-  }
-
-  const params = await searchParams;
-  const month = resolveCoverageMonth(params?.month);
-
-  // Fetch and JSX stay separated (react-hooks/error-boundaries: no JSX inside try/catch).
-  let board: Awaited<ReturnType<typeof getSfeDoctorCoverage>> | null = null;
-  let tree: Awaited<ReturnType<typeof loadCoverageFilterTree>> | null = null;
-  let territory = resolveCoverageSelection({
-    area: params?.area,
-    line: params?.line,
-    region: params?.region,
-    rep: params?.rep,
-  });
-  let loadError: string | null = null;
-  try {
-    // Narrowed to THIS viewer, because the tree is read company-wide and cached under one key. This
-    // is the portal twin, so it is where the widest audience sat: a Medical Rep was being offered
-    // every region, line, area and rep NAME in the company in his own filter bar.
-    tree = restrictCoverageFilterTree(
-      await loadCoverageFilterTree(),
-      scope.kind === "agents" ? scope.agentHrIds : null,
-    );
-    territory = pruneCoverageSelection(tree, territory);
-
-    const filters = {
-      grade: params?.grade,
-      kind: params?.kind,
-      search: params?.search,
-      status: params?.status,
-      // The cascade narrows WITHIN the access scope — it is applied after it, so a Regional Manager
-      // filtering to another region still sees only their own reps, and gets an empty board rather
-      // than someone else's numbers.
-      ...(coverageSelectionIsActive(territory) ? { repKeys: [...repKeysMatching(tree, territory)] } : {}),
-    };
-    board = await getSfeDoctorCoverage({ filters, month, scope, viewerHrId: access.hrId });
-  } catch (error) {
-    loadError = error instanceof Error ? error.message : "Doctor coverage data is unavailable.";
-  }
-
-  if (!board || !tree) {
-    return shell(<EmployeePortalEmptyState message={loadError ?? ""} title="Doctor coverage could not load" />);
-  }
-  return shell(
-    <DoctorCoverageBoard
-      board={board}
-      monthBasePath="/employee-portals/doctor-coverage"
-      scope={territory}
-      tree={tree}
-    />,
-  );
+export default async function PortalDoctorCoveragePage() {
+  redirect("/employee-portals");
 }

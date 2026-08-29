@@ -866,13 +866,14 @@ const adminNavigationSectionSeeds = [
       // read it — so the row is removed by name. /admin/crm above is Super-Admin-only, so the
       // whole "CRM" section leaves his sidebar.
       { href: "/admin/crm-tools", icon: Database, label: "CRM", permissions: [{ resource: "crm_visits" }, { resource: "double_visit_analytics" }, { resource: "hr_calendar" }], excludedRoles: ["Super Admin", "Finance Manager"] },
-      // Rep Doctor Lists and Reps Plans are cards in crmPageItems, which ONLY /admin/crm-tools
-      // renders — and the row above excludes Super Admin from that hub by name, while both cards are
-      // roles: ["Super Admin"]. So the only role allowed to open either page had no route to it:
-      // /admin/crm is the workspace, not a card hub, and Cmd+K was the sole way in. These two rows
-      // are that missing route. Every other role keeps reaching them as cards on the hub, so nothing
-      // moves for anyone else.
-      { href: "/admin/rep-doctor-lists", icon: ClipboardList, label: "Rep Doctor Lists", roles: ["Super Admin"] },
+      // Reps Plans is a card in crmPageItems, which ONLY /admin/crm-tools renders — and the row
+      // above excludes Super Admin from that hub by name, while the card is roles: ["Super Admin"].
+      // So the only role allowed to open it had no route to it: /admin/crm is the workspace, not a
+      // card hub, and Cmd+K was the sole way in. This row is that missing route. Every other role
+      // keeps reaching it as a card on the hub, so nothing moves for anyone else.
+      //
+      // RETIRED 2026-08-28 (owner): the "Rep Doctor Lists" row sat here too. See the retirement
+      // note on crmPageItems below — do not re-add it.
       { href: "/admin/reps-plans", icon: Gauge, label: "Reps Plans", roles: ["Super Admin"] },
       // Doctor List joins them for the same reason: Super Admin is excluded from the hub that
       // renders the crmPageItems cards, so without this row the account would have no route to it.
@@ -1180,17 +1181,12 @@ const employeePortalNavigationSectionSeeds = [
       // The real gate is the access map in src/lib/business-review/portal-scope.ts; this list is
       // UX only, and a role here with no seat in that map still resolves to no access.
       { href: "/employee-portals/business-review", icon: LayoutDashboard, label: "Business Review", permissions: [{ resource: "sales" }], roles: ["District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager"] },
-      // Portal twin of /admin/doctor-coverage. SFE Manager, CEO and Super Admin use the admin entry,
-      // since that is the shell they land in (same split as Business Review above).
-      // The real gate is doctor-coverage-scope.ts, which also decides WHOSE reps each viewer sees;
-      // this list is UX only, and is held identical to DOCTOR_COVERAGE_PORTAL_ROLES by
-      // tests/doctor-coverage-scope.test.ts — it cannot be widened here without the test failing.
-      { href: "/employee-portals/doctor-coverage", icon: Stethoscope, label: "Doctor Coverage", permissions: [{ resource: "crm_visits" }], roles: ["Medical Rep", "District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager"] },
-      // The norms editor, portal twin of /admin/doctor-coverage-settings. Only the portal-mode
-      // roles holding crm_visits:update: PM, GPM and Marketing Manager are redirected out of the
-      // admin shell, so the admin route is unreachable for them. Super Admin and SFE Manager use
-      // the admin entry instead.
-      { href: "/employee-portals/doctor-coverage-settings", icon: SlidersHorizontal, label: "Doctor Coverage Settings", permissions: [{ action: "update", resource: "crm_visits" }], roles: ["Product Manager", "Group Product Manager", "Marketing Manager"] },
+      // RETIRED 2026-08-28 (owner's instruction, in the conversation): "Doctor Coverage" and
+      // "Doctor Coverage Settings" were listed here for the seven portal-mode sales roles. Both are
+      // withdrawn along with the admin twins — see the retirement note on crmPageItems below for
+      // why. DO NOT RE-ADD either row: the board they point at scores every doctor against the
+      // GRADE norm instead of the rep's own planned call count, which the owner has ruled is the
+      // wrong measure. A replacement is being built; it gets its own entry when it ships.
       // All four sales roles now shipped (Medical Rep, District Manager, Regional Manager,
       // National Sales Manager) — see TERRITORY_DRILLDOWN_ROLES in
       // src/lib/sales/territory/service.ts, the server-side gate this list must match.
@@ -2906,51 +2902,36 @@ export const crmPageItems: readonly AdminToolsPageItem[] = [
     description: "Data-integrity checks for double-visit records.",
     roles: ["Super Admin", "SFE Manager"],
   },
+  // ── RETIRED 2026-08-28, BY THE OWNER, IN THE CONVERSATION ──────────────────────────────────
+  //
+  // Three cards stood here: "Doctor Coverage" (/admin/doctor-coverage), "Doctor Coverage Settings"
+  // (/admin/doctor-coverage-settings) and "Rep Doctor Lists" (/admin/rep-doctor-lists). All three
+  // are withdrawn, along with the two portal rows above and the CEO Command Center embed.
+  //
+  // WHY, so nobody restores them as an apparent oversight: both boards read the same iReports360
+  // plan mirror and answer the same question with two different, disagreeing measures. Doctor
+  // Coverage scored each doctor against the GRADE norm (A=2/B=1/C=1) rather than against the
+  // number of calls the rep's own plan asked for. Measured on production for August 2026, that is
+  // the wrong number on 6,307 of 8,635 graded doctors — 73%. It flatters (a grade-B doctor turns
+  // green after one visit, while the plan asked for more than one on 77% of them) and it punishes
+  // (on 1,496 grade-A doctors the plan asked for a single visit and the board demanded two). It
+  // also passes over-visiting as green, which the owner has ruled is a deviation, not a win.
+  //
+  // The owner's instruction was to retire both modules and rebuild from the beginning. The library
+  // code and the routes still exist and are dormant; they are deleted once the replacement ships.
+  // DO NOT re-add these cards, and do not "fix" the scoring in place — the rebuild is the fix.
   {
-    // Admin-mode roles only. Every other role with a seat (Medical Rep, DM, RM, NSM, PM, GPM,
-    // Marketing Manager) reaches the identical board via the portal twin at
-    // /employee-portals/doctor-coverage — portal-mode roles never enter the (admin) shell.
-    href: "/admin/doctor-coverage",
-    icon: Stethoscope,
-    label: "Doctor Coverage",
-    description: "Doctor visit frequency vs norms — a prioritised call list, plus covered, under-visited and lapsed panels per rep.",
-    roles: ["Super Admin", "SFE Manager", "CEO"],
-  },
-  {
-    // Same audience and the SAME enforcing gate as Doctor Coverage above: both pages ask
-    // getDoctorCoverageScope, so this entry cannot grant sight of a rep that board would hide.
-    // Listing it here is UX only — src/lib/crm/brick-coverage.ts is reached through that scope.
+    // Brick Coverage SURVIVES the 2026-08-28 retirement above: it measures which Source-of-Sales
+    // bricks a rep reaches against the bricks carrying his sales, and never uses the grade norm
+    // that the retired board was scored on. It still asks getDoctorCoverageScope for WHOSE reps a
+    // viewer sees, so this entry cannot grant sight of a rep that scope would hide; listing it
+    // here is UX only — src/lib/crm/brick-coverage.ts is reached through that scope.
     href: "/admin/brick-coverage",
     icon: MapPinned,
     label: "Brick Coverage",
     description:
       "Which Source-of-Sales bricks each rep actually reaches, against the bricks that carry his sales — weighted by selling units, with the blind spots named.",
     roles: ["Super Admin", "SFE Manager", "CEO"],
-  },
-  {
-    // Visit-norms editor. CEO is excluded on purpose: that account is observational on policy, and
-    // this page changes what every role's coverage % means. Gate is crm_visits:update, held only by
-    // Super Admin and SFE Manager — the same gate the page and the API route assert.
-    href: "/admin/doctor-coverage-settings",
-    icon: SlidersHorizontal,
-    label: "Doctor Coverage Settings",
-    description: "Visits required per month by grade — set separately for doctors and for pharmacies, hospitals and contract accounts.",
-    roles: ["Super Admin", "SFE Manager"],
-  },
-  {
-    // SUPER ADMIN ONLY — the owner's instruction 2026-08-21, "in admin account only for now". This
-    // names every rep and exactly which doctors on their own list they never reached, so it stays
-    // on one account until he decides who else should see it. The enforcing gate is
-    // canAccessRepDoctorLists (src/lib/crm/rep-doctor-lists-access.ts), asked by both the page and
-    // the sync route; this list is UX only.
-    //
-    // NOT the same thing as "Weekly / Monthly Plans" (/admin/weekly-plans), which is Phoenix's own
-    // in-app planning module. This one mirrors the CRM vendor's plan.
-    href: "/admin/rep-doctor-lists",
-    icon: ClipboardList,
-    label: "Rep Doctor Lists",
-    description: "Each rep's assigned doctor list from the CRM plan, and which of those doctors they actually visited.",
-    roles: ["Super Admin"],
   },
   {
     // TAB ONE of the District Manager page. WIDENED 2026-08-28 from Super Admin alone, once the
@@ -2960,10 +2941,11 @@ export const crmPageItems: readonly AdminToolsPageItem[] = [
     // (src/lib/crm/doctor-list-access.ts) plus crm_visits:read, both asked by the page; this list
     // is UX only and must be kept in step with that file.
     //
-    // NOT a duplicate of Rep Doctor Lists above. That board is built from the CRM PLAN and scores
-    // visits against it, so it can only show a doctor somebody planned. This one mirrors the CRM's
-    // own contact list, which is the only place a doctor assigned to a rep and never touched
-    // appears at all — 448 of them on the first sweep.
+    // It does NOT bring the retired "Rep Doctor Lists" board back under a new name. That one was
+    // built from the CRM PLAN and scored visits against it, so it could only ever show a doctor
+    // somebody had already planned. This one mirrors the CRM's own contact list, which is the only
+    // place a doctor assigned to a rep and never touched appears at all — 448 of them on the first
+    // sweep. That is the assignment itself, and it survives the retirement for that reason.
     href: "/admin/doctor-list",
     icon: BookUser,
     label: "Doctor List",
@@ -2991,12 +2973,13 @@ export const crmPageItems: readonly AdminToolsPageItem[] = [
     roles: ["Super Admin", "CEO", "Regional Manager", "District Manager"],
   },
   {
-    // SUPER ADMIN ONLY, same reasoning as Rep Doctor Lists directly above: it names every rep and
-    // prints how much of their reported work nothing can prove. The enforcing gate is
+    // SUPER ADMIN ONLY — it names every rep and prints how much of their reported work nothing can
+    // prove, so it stays on one account. ("Rep Doctor Lists", which carried the same reasoning and
+    // stood in this group, was retired 2026-08-28 — see the note above.) The enforcing gate is
     // canAccessRepsPlans (src/lib/crm/reps-plans-access.ts) plus crm_visits:read, both asked by the
     // page; this list is UX only.
     //
-    // Sits beside Rep Doctor Lists rather than under "Weekly / Monthly Plans" (/admin/weekly-plans,
+    // Sits in the CRM group rather than under "Weekly / Monthly Plans" (/admin/weekly-plans,
     // Phoenix's own planning module) because it scores the CRM's recorded visits, not Phoenix's plans.
     href: "/admin/reps-plans",
     icon: Gauge,
