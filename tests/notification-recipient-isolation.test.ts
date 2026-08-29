@@ -37,6 +37,11 @@ export function runNotificationRecipientIsolationTests() {
   // 5. Invalid PHASE/fixture/email recipients never grant access.
   assert.equal(isValidRecipientHrId("PHASE17_MPBRQEFJ_521DF68E_VAC"), false, "PHASE id is not a valid recipient");
   assert.equal(isValidRecipientHrId("user@satopharma.com"), false, "email is not a valid recipient");
+  // A4 fail-open tripwire — keep permanently. normalizeNotificationHrId delegates to
+  // canonicalHrIdForDisplay, which KEEPS the "@", so an email token stays invalid. If a future
+  // change delegated to normalizeHrIdForAccess instead it would strip "a@b.com" to "abcom", the
+  // includes("@") guard would miss it, and this fail-closed check would silently flip to true.
+  assert.equal(isValidRecipientHrId("a@b.com"), false, "a@b.com email token is never a valid recipient (fail-closed)");
   assert.equal(isValidRecipientHrId(""), false, "empty is not a valid recipient");
   assert.equal(isValidRecipientHrId("FIXTURE-1"), false, "fixture id is not a valid recipient");
   assert.equal(isValidRecipientHrId("A-1"), true, "real HR_ID is a valid recipient");
