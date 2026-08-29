@@ -232,6 +232,9 @@ policy):
    | `phoenix-db-health-snapshot` | `17 */6 * * *` | 2h | cron-job.org job `8242721` |
    | `phoenix-territory-restamp` | `20 3 * * *` | 2h | cron-job.org job `8350721` |
    | `phoenix-reconciliation-check` | `40 4 * * *` | 2h | cron-job.org job `8350984` |
+   | `phoenix-crm-contact-lists` | `*/5 5 * * *` | 10m | cron-job.org job `8344730` |
+   | `phoenix-expense-claims-refresh` | `51 * * * *` | 1h | cron-job.org job `8350207` |
+   | `phoenix-recruitment-cv-digest` | `47 0,6,12,18 * * *` | 1h | cron-job.org job `8334658` |
    | `phoenix-ireports360-live-poll` | **Simple**, period `5m` | 15m | the in-process poller, every tick |
    | `phoenix-ireports360-sync` | `0 6-21/3 * * *` | 2h | the in-process poller, when due |
    | `phoenix-reconcile-visits` | `0 4 * * 0` | 12h | the in-process poller, when due |
@@ -243,6 +246,24 @@ policy):
    cron-job.org clock.
    Reformat the table freely, but re-run `pnpm run test` — a parser that silently matches nothing
    turns the sync into a no-op that reports success.
+
+   🔴 **THE ACCOUNT IS FULL AT 20 CHECKS, AND THE LAST THREE ROWS ARE DECLARED BUT NOT CREATED.**
+   Measured 2026-08-30: `GET /api/v3/checks/` returns exactly **20**, every one of them declared
+   here and legitimate, and `POST /checks/` for a 21st returns **HTTP 403 with an empty body** —
+   the free tier's ceiling. So `phoenix-crm-contact-lists`, `phoenix-expense-claims-refresh` and
+   `phoenix-recruitment-cv-digest` are wired in their routes and declared above, and the sync
+   reports them `FAILED: HTTP 403` on every run until capacity exists. **That is the honest state,
+   not a bug to re-diagnose** — do not spend time on the 403, and do not delete a row to make the
+   sync go green, which would only hide three unwatched jobs again. It resolves one of two ways,
+   both of them the owner's call: raise the plan, or retire an existing check to free a slot. The
+   moment either happens, a plain `node scripts/healthchecks-sync.mjs --apply` creates all three
+   with no further edit — the declaration above is already correct.
+
+   ⚠️ **A ping to an uncreated slug is best-effort and silent, which is the trap here.**
+   `pingDeadMansSwitch` never throws and swallows its own failure into a `logWarning`, so these
+   three routes will ping into nothing and carry on working normally. Nothing breaks; nothing is
+   watched either. **Absence of a red check is not evidence of a healthy job when the check was
+   never created** — that is precisely how these three came to be unwatched in the first place.
 
    🔴 **A check created through the management API is stored with an EMPTY slug unless one is sent
    explicitly** — and the app pings by slug (`hc-ping.com/<ping-key>/<slug>?create=1`), never by name.

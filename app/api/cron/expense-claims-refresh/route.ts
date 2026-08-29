@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
+import { pingDeadMansSwitch } from "@/lib/observability/dead-mans-switch";
 import { logError } from "@/lib/observability/log";
 import { refreshExpenseClaims } from "@/lib/outstation/claims-refresh";
 import { assertCronAuthorized } from "@/lib/security/cron-auth";
@@ -8,6 +9,8 @@ import { assertCronAuthorized } from "@/lib/security/cron-auth";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
+
+const JOB_SLUG = "phoenix-expense-claims-refresh";
 
 /**
  * Rebuild the `expense_claims` read mirror from the legacy outstation tables.
@@ -35,6 +38,15 @@ export const maxDuration = 120;
  * parity verdict is reported in the response body on every path and mirrored into the logs on both
  * failure paths — `railway logs | grep expense_claims_refresh` is the detection that actually works
  * here, since cron-job.org's job list returns an empty body.
+ *
+ * THE DEAD-MAN'S SWITCH IS PINGED DIRECTLY, NOT VIA `withDeadMansSwitch`, and the three status
+ * codes above are exactly why. Two of them — 409 and the parity-dirty 500 — are returned WITHOUT
+ * throwing, so the generic wrapper would see a clean resolve and ping "success" on both: green on
+ * a mirror that is no longer being rebuilt, which is the precise failure this route was written to
+ * end. All three non-clean outcomes therefore ping /fail with the reason as detail. A 409 counts
+ * as a failure even though nothing is broken: an interlock refusal is persistent, and while it
+ * stands the schedule's guarantee is not being kept — which is the drift that once hid 31 approved
+ * claims worth EGP 15,294.74 from the approvals queue for ten days.
  */
 export async function GET(request: Request) {
   const denied = assertCronAuthorized(request, "cron/expense-claims-refresh");
@@ -48,6 +60,7 @@ export async function GET(request: Request) {
         labels: { event: "cron_blocked", job: "expense-claims-refresh" },
         error: new Error(result.reason),
       });
+      await pingDeadMansSwitch(JOB_SLUG, "fail", `interlock refused the rebuild: ${result.reason}`);
       return NextResponse.json(
         { success: false, error: "expense_claims_refresh_blocked", message: result.reason },
         { status: 409 },
@@ -70,18 +83,25 @@ export async function GET(request: Request) {
           `${result.parity.drifted} of ${result.parity.total} claim(s) drifted after rebuild: ${result.parity.driftedRefs.join(", ")}`,
         ),
       });
+      await pingDeadMansSwitch(
+        JOB_SLUG,
+        "fail",
+        `parity still dirty after rebuild: ${result.parity.drifted} of ${result.parity.total} claim(s)`,
+      );
       return NextResponse.json(
         { ...body, success: false, error: "expense_claims_refresh_parity_dirty" },
         { status: 500 },
       );
     }
 
+    await pingDeadMansSwitch(JOB_SLUG, "success", `${result.claims} claim(s) rebuilt, parity clean`);
     return NextResponse.json(body);
   } catch (error) {
     logError("Expense claims refresh failed", {
       labels: { event: "cron_failed", job: "expense-claims-refresh" },
       error,
     });
+    await pingDeadMansSwitch(JOB_SLUG, "fail", error instanceof Error ? `${error.name}: ${error.message}` : String(error));
     const message = clientSafeErrorMessage(error, "Expense claims refresh failed.");
     return NextResponse.json({ error: "expense_claims_refresh_failed", message }, { status: 500 });
   }
