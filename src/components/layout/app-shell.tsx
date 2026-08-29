@@ -100,7 +100,6 @@ export async function AppShell({
   // own permission server-side, so being wrong here shows the right page under the wrong nav.
   const resolvedNavigationMode: NavigationMode =
     requestHeaders.get(SHELL_HEADER) === "hr" ? "hr" : navigationMode ?? resolveNavigationMode(access);
-  const isSystemAdministratorWorkspace = access.scope === "system" || access.role === "Super Admin";
 
   const permissionLookup = buildPermissionLookup(matrix, access.role);
 
@@ -114,14 +113,12 @@ export async function AppShell({
         <DocumentTitleSync mode={resolvedNavigationMode} />
         <CommandPalette
           currentRole={access.role}
-          isSystemAdministratorWorkspace={isSystemAdministratorWorkspace}
           navigationMode={resolvedNavigationMode}
           permissionLookup={permissionLookup}
         />
         <div className="flex min-h-screen">
           <Sidebar
             currentRole={access.role}
-            isSystemAdministratorWorkspace={isSystemAdministratorWorkspace}
             navigationMode={resolvedNavigationMode}
             permissionLookup={permissionLookup}
             personalLayout={personalLayout}
@@ -140,7 +137,6 @@ export async function AppShell({
                 one, and the Topbar keeps rendering either way. */}
             <HorizontalNavProvider
               currentRole={access.role}
-              isSystemAdministratorWorkspace={isSystemAdministratorWorkspace}
               navigationMode={resolvedNavigationMode}
               permissionLookup={permissionLookup}
               personalLayout={personalLayout}

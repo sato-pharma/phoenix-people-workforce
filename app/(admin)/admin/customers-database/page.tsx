@@ -6,7 +6,7 @@ import { AdminPageHero } from "@/components/admin/admin-design-system";
 import { customersDatabasePageItems } from "@/config/system-navigation";
 import { buildPermissionLookup, canAccess, getPermissionMatrix, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
-import { permissionAllowed, roleAllowed, roleNotExcluded } from "@/lib/navigation/active-path";
+import { navigationItemVisible } from "@/lib/navigation/active-path";
 
 export const dynamic = "force-dynamic";
 
@@ -28,16 +28,10 @@ export default async function CustomersDatabasePage() {
 
   const matrix = await getPermissionMatrix();
   const permissionLookup = buildPermissionLookup(matrix, access.role);
-  const isSystemAdministratorWorkspace = access.scope === "system" || access.role === "Super Admin";
 
-  const visibleTools = isSystemAdministratorWorkspace
-    ? customersDatabasePageItems
-    : customersDatabasePageItems.filter(
-        (item) =>
-          permissionAllowed(permissionLookup, item.permissions) &&
-          roleAllowed(access.role, item.roles) &&
-          roleNotExcluded(access.role, item.excludedRoles),
-      );
+  const visibleTools = customersDatabasePageItems.filter((item) =>
+    navigationItemVisible(item, permissionLookup, access.role),
+  );
 
   return (
     <div className="space-y-6">

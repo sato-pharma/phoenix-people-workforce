@@ -6,7 +6,7 @@ import { AdminPageHero } from "@/components/admin/admin-design-system";
 import { pharmacovigilancePageItems } from "@/config/system-navigation";
 import { buildPermissionLookup, getPermissionMatrix, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
-import { permissionAllowed, roleAllowed, roleNotExcluded } from "@/lib/navigation/active-path";
+import { navigationItemVisible } from "@/lib/navigation/active-path";
 
 export const dynamic = "force-dynamic";
 
@@ -16,16 +16,10 @@ export default async function PharmacovigilancePage() {
 
   const matrix = await getPermissionMatrix();
   const permissionLookup = buildPermissionLookup(matrix, access.role);
-  const isSystemAdministratorWorkspace = access.scope === "system" || access.role === "Super Admin";
 
-  const visibleTools = isSystemAdministratorWorkspace
-    ? pharmacovigilancePageItems
-    : pharmacovigilancePageItems.filter(
-        (item) =>
-          permissionAllowed(permissionLookup, item.permissions) &&
-          roleAllowed(access.role, item.roles) &&
-          roleNotExcluded(access.role, item.excludedRoles),
-      );
+  const visibleTools = pharmacovigilancePageItems.filter((item) =>
+    navigationItemVisible(item, permissionLookup, access.role),
+  );
 
   // No page-level gate beyond the layout's own auth check: "Report It" has no
   // role restriction of its own, so any authenticated admin-shell viewer

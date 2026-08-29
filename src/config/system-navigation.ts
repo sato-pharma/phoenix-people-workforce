@@ -465,7 +465,7 @@ const adminNavigationSectionSeeds = [
       // Hardcoded role (not permissions:[{resource:"admin"}]) — matches the strictest of the
       // tools it replaces (System Cleanup/Data Backup/Modules Control/Workflow Control were
       // always Super-Admin-only, never override-eligible) and keeps the entry point robust to
-      // a stale permission-cache read even without the isSystemAdministratorWorkspace bypass
+      // a stale permission-cache read even without a system-administrator waiver
       // (see the "navigation active path" test suite).
       { href: "/admin/admin-tools", icon: Wrench, label: "Admin Tools", roles: ["Super Admin"] },
     ],
@@ -1166,9 +1166,12 @@ const employeePortalNavigationSectionSeeds = [
       // (not deleted) — tests/employee-portal-nav-catalog-sync.test.ts (M12) requires every href
       // the portal layout renders to be either catalogued or in KNOWN_UNCURATABLE, and that
       // allowlist is for permanently-VISIBLE pages, the opposite of this one. `roles: []` hides it
-      // from the normal role-gated path; `excludedRoles: ["Super Admin"]` closes the
-      // isSystemAdministratorWorkspace bypass in getSections, which skips `roles` entirely and
-      // only honours excludedRoles (same pattern as the Probation SFE-Manager row above).
+      // from every role (roleAllowed reads an EMPTY array as "nobody", distinct from an absent
+      // one meaning "no constraint"); `excludedRoles: ["Super Admin"]` is what stops
+      // navigationItemVisible resurfacing it, since that helper waives the `roles` gate for the
+      // system administrator and honours excludedRoles for everybody. BOTH HALVES ARE REQUIRED —
+      // dropping either one puts this page back on somebody's rail. Same pattern as the Probation
+      // SFE-Manager row above.
       { href: "/employee-portals/sales-analytics", icon: Activity, label: "Sales Analytics", permissions: [{ resource: "sales" }], roles: [], excludedRoles: ["Super Admin"] },
       // Sales vs Target — catalogued (rather than listed as intentionally uncuratable) so an admin
       // can hide it per role from Modules Control. Roles mirror showSalesVsTargetTab in

@@ -140,12 +140,67 @@ export function roleNotExcluded(role: PhoenixRole | undefined, excludedRoles?: r
   return !role || !excludedRoles.includes(role);
 }
 
+/**
+ * The three gate fields, structurally. Both `NavigationSectionItem` (sidebar rows) and
+ * `AdminToolsPageItem` (hub cards) carry them, and both are gated by the same rule — which is
+ * the whole point of `navigationItemVisible` below.
+ */
+export type GatedNavigationItem = {
+  excludedRoles?: readonly PhoenixRole[];
+  permissions?: readonly NavigationPermission[];
+  roles?: readonly PhoenixRole[];
+};
+
+/** The role that holds every seat. Named once so the rule below is greppable. */
+export const SYSTEM_ADMINISTRATOR_ROLE: PhoenixRole = "Super Admin";
+
+/**
+ * Is this item offered to this role? THE one place the answer lives.
+ *
+ * Three gates, and exactly one exception:
+ *
+ *   excludedRoles — never waived, for anybody. It says "this item is not FOR you", which is a
+ *                   different claim from "you lack rights", and it is the only way to say it.
+ *   permissions   — never waived. The role must hold the grant.
+ *   roles         — waived for the system administrator.
+ *
+ * WHY the exception is stated here rather than in the config. Super Admin holds every seat, so a
+ * `roles:` list is never the mechanism that keeps them out of a module — `excludedRoles` is.
+ * Measured when this replaced the old bypass: 44 config entries across the three modes (7 admin,
+ * 35 employee-portal, 2 hr) are visible to Super Admin only because this waiver exists, rendering
+ * as 41 rail rows once dedupeSectionsByHref has run. The alternative was naming "Super Admin" in
+ * all 44 `roles` arrays, and that regenerates the defect — every future entry with a `roles` list
+ * has to remember, and the one that forgets fails silently and invisibly.
+ *
+ * This is TIGHTER than the `isSystemAdministratorWorkspace` bypass it replaces, deliberately.
+ * That bypass skipped `permissions` as well, so a Super Admin sidebar row outlived the grant
+ * behind it and the rail could contradict the server. Measured at the time of the change:
+ * 0 of those 44 entries were permission-blocked, so nothing moved — but a grant removed tomorrow
+ * now reaches the rail instead of being silently ignored there.
+ *
+ * `roles: []` still means NOBODY (roleAllowed distinguishes it from `undefined`), and the one
+ * item using it — the delisted portal Sales Analytics — pairs it with `excludedRoles:
+ * ["Super Admin"]`, so the waiver above cannot resurface it. That pairing is load-bearing: keep
+ * both halves.
+ */
+export function navigationItemVisible(
+  item: GatedNavigationItem,
+  lookup: PermissionLookup,
+  role?: PhoenixRole,
+): boolean {
+  if (!roleNotExcluded(role, item.excludedRoles)) return false;
+  if (!permissionAllowed(lookup, item.permissions)) return false;
+  return role === SYSTEM_ADMINISTRATOR_ROLE || roleAllowed(role, item.roles);
+}
+
 // Some hrefs are intentionally listed in more than one section with mutually-exclusive
 // role/excludedRoles gates (e.g. Organogram: CEO-only in Command Center, everyone-else
-// in People Management) so exactly one copy is visible to any given role. The system
-// administrator workspace bypasses that gating entirely so Super Admin can reach every
-// item — which would otherwise surface both copies at once. Dedupe by href, keeping
-// each href's first (highest-tier) occurrence.
+// in People Management) so exactly one copy is visible to any given role. That per-role gating
+// is what normally leaves exactly one copy standing — and `navigationItemVisible` waives the
+// `roles` half of it for the system administrator, so without this both copies would surface on
+// their sidebar. Runs unconditionally: measured across all 17 roles x 3 modes, no other role
+// renders a duplicate href, so for everyone else it is a no-op. Keeps each href's first
+// (highest-tier) occurrence.
 function dedupeSectionsByHref(sections: readonly NavigationSection[]): NavigationSection[] {
   const seen = new Set<string>();
   return sections
@@ -165,33 +220,18 @@ export function getSections(
   mode: NavigationMode,
   lookup: PermissionLookup,
   role?: PhoenixRole,
-  isSystemAdministratorWorkspace = false,
 ): NavigationSection[] {
-  // The system-administrator workspace bypasses permission/role gating so Super Admin can reach
-  // every module — but `excludedRoles` is still honoured. It expresses "this item is not FOR you",
-  // not "you lack rights": another role's personal command center is noise on a Super Admin's
-  // sidebar, and the bypass silently overrode the one mechanism for saying so. No item excluded
-  // Super Admin before this, so honouring it hides nothing that used to show.
-  const gated = isSystemAdministratorWorkspace
-    ? dedupeSectionsByHref(
-        sections
-          .map((section) => ({
-            ...section,
-            items: section.items.filter((item) => roleNotExcluded(role, item.excludedRoles)),
-          }))
-          .filter((section) => section.items.length > 0),
-      )
-    : sections
-        .map((section) => ({
-          ...section,
-          items: section.items.filter(
-            (item) =>
-              permissionAllowed(lookup, item.permissions) &&
-              roleAllowed(role, item.roles) &&
-              roleNotExcluded(role, item.excludedRoles),
-          ),
-        }))
-        .filter((section) => section.items.length > 0);
+  // One gating path for every role. The `isSystemAdministratorWorkspace` parameter that used to
+  // select a second path is gone: the rule it encoded now lives inside navigationItemVisible,
+  // where the 20 hub pages and the command palette read the same copy of it.
+  const gated = dedupeSectionsByHref(
+    sections
+      .map((section) => ({
+        ...section,
+        items: section.items.filter((item) => navigationItemVisible(item, lookup, role)),
+      }))
+      .filter((section) => section.items.length > 0),
+  );
 
   // Per-role item label overrides (`labelByRole`), resolved once here so every downstream
   // consumer of getSections — sidebar, search and the command palette — agrees
@@ -210,10 +250,6 @@ export function getSections(
   const visible = usesFlatSidebar(role)
     ? relabelled.map((section) => ({ ...section, label: "" }))
     : relabelled;
-
-  if (isSystemAdministratorWorkspace) {
-    return visible.filter((section) => section.items.length > 0);
-  }
 
   return visible;
 }

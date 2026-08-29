@@ -540,8 +540,8 @@ export function runNavigationActivePathTests() {
     "Super Admin must see full governance modules",
   );
   // The Finance-Manager-only rows added 2026-08-10 use `roles: ["Finance Manager"]`, which the
-  // system-administrator workspace bypasses (isSystemAdministratorWorkspace ignores `roles` but
-  // still honours excludedRoles — see getSections) — so both rows carry excludedRoles naming
+  // system administrator's waiver skips (navigationItemVisible ignores `roles` for that role but
+  // still honours excludedRoles) — so both rows carry excludedRoles naming
   // Super Admin explicitly. Without it, Super Admin would see a second "Leave Management" row
   // alongside his own /leave-management, and "Report It" as a direct row alongside the
   // Pharmacovigilance hub he already keeps.

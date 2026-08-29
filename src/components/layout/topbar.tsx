@@ -60,7 +60,6 @@ export function Topbar({
       <MobileSidebar
         navigationMode={navigationMode}
         currentRole={currentRole}
-        isSystemAdministratorWorkspace={scope === "system" || currentRole === "Super Admin"}
         onClose={() => setMenuOpen(false)}
         open={menuOpen}
         permissionLookup={permissionLookup}
