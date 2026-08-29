@@ -481,6 +481,7 @@ import { runSupportRequestsNotificationsTests } from "./support-requests-notific
 import { runOrganogramEmptyDiagnosticTests } from "./organogram-empty-diagnostic.test.ts";
 import { runPositionVacancyStatusIntegrityTests } from "./position-vacancy-status-integrity.test.ts";
 import { runReconcileStaleVacancyAreaGuardTests } from "./reconcile-stale-vacancy-area-guard.test.ts";
+import { runVacancyAutofillOnBecomingEligibleTests } from "./vacancy-autofill-on-becoming-eligible.test.ts";
 import { runSalaryAllowancePolicyTests } from "./salary-allowance-policy.test.ts";
 import { runWorkforceClassificationTests } from "./workforce-classification.test.ts";
 import { runWorkforceLifecycleSeatTests } from "./workforce-lifecycle-seat.test.ts";
@@ -1808,6 +1809,7 @@ await runTest("support requests notifications", runSupportRequestsNotificationsT
 await runTest("organogram empty diagnostic", runOrganogramEmptyDiagnosticTests);
 await runTest("position vacancy status integrity", runPositionVacancyStatusIntegrityTests);
 await runTest("reconcile stale-replacement vacancy area + single-seat guard", runReconcileStaleVacancyAreaGuardTests);
+await runTest("vacancy autofill runs again when a hire becomes eligible", runVacancyAutofillOnBecomingEligibleTests);
 await runTest("salary allowance policy", runSalaryAllowancePolicyTests);
 await runTest("workforce classification", runWorkforceClassificationTests);
 await runTest("workforce lifecycle seat", runWorkforceLifecycleSeatTests);

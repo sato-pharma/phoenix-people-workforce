@@ -117,7 +117,8 @@ Two other schedulers still point at production and neither works:
 `src/lib/cron-control/*` (the `/admin/cron-control` dashboard) is a UI over the dead GCP scheduler
 and is inert.
 
-**Full job inventory, read out of the account 2026-08-23 — 17 jobs, 12 enabled.** This is a
+**Full job inventory. Re-read live 2026-08-29 — 20 jobs, 15 enabled;** the table below lists the
+long-standing ones and not every job in the account. This is a
 snapshot of a place nobody can see from git, so re-read it rather than trusting the age of this
 table. Times are Cairo, as the account is set to `Africa/Cairo` throughout.
 
