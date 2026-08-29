@@ -43,8 +43,9 @@ name: CI
 # spare key under the mat, and which of the two GitHub resolves for the merge button is a race.
 #
 # GitHub path filters cannot express "ONLY these paths changed", which is why the split existed at
-# all. So the question is answered INSIDE the workflow instead, by the `changes` job below, and the
-# expensive STEPS are what get skipped rather than the jobs. Every required name is now produced by
+# all. So the question is answered INSIDE the workflow instead — by a step at the top of each job
+# (it was a separate `changes` job until 2026-08-29; see the note on that step in `validate` for
+# why it was folded in), and the expensive STEPS are what get skipped rather than the jobs. Every required name is now produced by
 # exactly one job, always, and a docs-only PR still costs seconds rather than four minutes.
 on:
   pull_request:
@@ -95,29 +96,44 @@ env:
   COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
 
 jobs:
-  # Does this PR touch anything but documentation?
+  # Structural checks + unit tests + build + login smoke test, in one job. The smoke test
+  # lives here (rather than in a downstream job) purely to avoid shipping .next between
+  # runners — see note 1 in the header. Everything it used to verify, it still verifies.
   #
-  # FAILS TOWARD MORE CHECKING, ALWAYS. Every branch that cannot answer confidently — a push rather
-  # than a PR, a head that is not a merge commit, a git command that errors, an empty file list —
-  # answers `false` and the full suite runs. The costly mistake here is skipping work on a PR that
-  # changed code; running lint on a typo fix costs two minutes and nothing else.
-  #
-  # No third-party action: this repo pins first-party `actions/*` by SHA and adding a marketplace
-  # dependency to the gate that guards every merge would be a poor trade for ten lines of shell.
-  changes:
+  # THE JOB ALWAYS RUNS AND ALWAYS REPORTS. `needs: changes` sequences it; it is never `if`-ed out,
+  # because a skipped job reports no status and a required check with no status blocks a PR
+  # forever — the exact breakage ci-docs-fallback.yml was invented to paper over. Only the
+  # expensive steps below are conditional.
+  validate:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
-    outputs:
-      docs_only: ${{ steps.detect.outputs.docs_only }}
+    timeout-minutes: 20
+
     steps:
-      # depth 2 is enough: for a pull_request, GitHub checks out the MERGE commit, whose first
-      # parent is the base branch. `HEAD^1..HEAD` is therefore exactly this PR's changed files,
-      # with no need to fetch the base branch separately.
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          # depth 2 is enough: for a pull_request, GitHub checks out the MERGE commit, whose
+          # first parent is the base branch. `HEAD^1..HEAD` is therefore exactly this PR's
+          # changed files, with no need to fetch the base branch separately.
           fetch-depth: 2
 
+      # WHY EACH JOB ANSWERS THIS ITSELF rather than depending on a shared `changes` job:
+      # GitHub bills every job a MINIMUM OF ONE MINUTE. A separate job to answer one yes/no
+      # question cost a full billed minute on 100% of runs to do 8 seconds of work, and it could
+      # not save the job minutes it was meant to save — the three jobs below are deliberately
+      # never `if`-ed out (see the note on `validate`), so they spin a runner regardless and only
+      # their expensive STEPS are skipped. Measured 2026-08-29 over 44 runs: docs_only answered
+      # true on 1 of them, 2.3%, so the shared job cost far more than it ever returned. Each job
+      # already checks out the repo, so answering inline is free.
+      #
+      # FAILS TOWARD MORE CHECKING, ALWAYS. Every branch that cannot answer confidently — a push
+      # rather than a PR, a head that is not a merge commit, a git command that errors, an empty
+      # file list — answers `false` and the full suite runs. The costly mistake here is skipping
+      # work on a PR that changed code; running lint on a typo fix costs a minute and nothing else.
+      #
+      # No third-party action: this repo pins first-party `actions/*` by SHA, and adding a
+      # marketplace dependency to the gate that guards every merge would be a poor trade for ten
+      # lines of shell.
       - name: Detect whether this PR is documentation only
         id: detect
         env:
@@ -139,34 +155,17 @@ jobs:
           fi
           answer true "documentation only"
 
-  # Structural checks + unit tests + build + login smoke test, in one job. The smoke test
-  # lives here (rather than in a downstream job) purely to avoid shipping .next between
-  # runners — see note 1 in the header. Everything it used to verify, it still verifies.
-  #
-  # THE JOB ALWAYS RUNS AND ALWAYS REPORTS. `needs: changes` sequences it; it is never `if`-ed out,
-  # because a skipped job reports no status and a required check with no status blocks a PR
-  # forever — the exact breakage ci-docs-fallback.yml was invented to paper over. Only the
-  # expensive steps below are conditional.
-  validate:
-    needs: changes
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-
-    steps:
-      - name: Check out repository
-        if: needs.changes.outputs.docs_only != 'true'
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       # corepack must be enabled BEFORE setup-node runs: with `cache: pnpm`,
       # setup-node invokes `pnpm store path` during its own execution, and the
       # pnpm shim only exists once corepack is enabled. corepack then reads the
       # exact pnpm version from package.json's `packageManager` field.
       - name: Enable Corepack (pnpm)
-        if: needs.changes.outputs.docs_only != 'true'
+        if: steps.detect.outputs.docs_only != 'true'
         run: corepack enable
 
       - name: Set up Node.js
-        if: needs.changes.outputs.docs_only != 'true'
+        if: steps.detect.outputs.docs_only != 'true'
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
         with:
           node-version: ${{ env.CI_NODE_VERSION }}
@@ -177,19 +176,19 @@ jobs:
           cache: pnpm
 
       - name: Install dependencies
-        if: needs.changes.outputs.docs_only != 'true'
+        if: steps.detect.outputs.docs_only != 'true'
         run: pnpm install --frozen-lockfile
 
       - name: Check routes
-        if: needs.changes.outputs.docs_only != 'true'
+        if: steps.detect.outputs.docs_only != 'true'
         run: pnpm run check:routes
 
       - name: Check migrations
-        if: needs.changes.outputs.docs_only != 'true'
+        if: steps.detect.outputs.docs_only != 'true'
         run: pnpm run check:migrations
 
       - name: Check no snapshot tables land in the anon-readable public schema
-        if: needs.changes.outputs.docs_only != 'true'
+        if: steps.detect.outputs.docs_only != 'true'
         run: pnpm run check:sql-backups
 
       # Runs as its own process, NOT inside `pnpm run test`. The aggregated runner
@@ -198,15 +197,15 @@ jobs:
       # test (PR #1596 took `validate` from ~3m30s to 20m17s, twice). Here the
       # client dies with the process and cannot leak.
       - name: Check the deductions write contract (what reaches the wire)
-        if: needs.changes.outputs.docs_only != 'true'
+        if: steps.detect.outputs.docs_only != 'true'
         run: pnpm run check:deductions-write-contract
 
       - name: Check no stale Vercel domains/deps in shipped source
-        if: needs.changes.outputs.docs_only != 'true'
+        if: steps.detect.outputs.docs_only != 'true'
         run: pnpm run check:no-stale-domains
 
       - name: Dependency audit (fail on high+ vulnerabilities)
-        if: needs.changes.outputs.docs_only != 'true'
+        if: steps.detect.outputs.docs_only != 'true'
         # GHSA-mh99-v99m-4gvg is ignored via pnpm-workspace.yaml's auditConfig — see the
         # comment there for why (forcing a fix broke eslint; the app's real exposure isn't
         # exploitable).
@@ -253,11 +252,11 @@ jobs:
       # AGENTS.md §2.3. CI was the only safe place to ask, and it has now answered.
 
       - name: Test
-        if: needs.changes.outputs.docs_only != 'true'
+        if: steps.detect.outputs.docs_only != 'true'
         run: pnpm run test
 
       - name: Build
-        if: needs.changes.outputs.docs_only != 'true'
+        if: steps.detect.outputs.docs_only != 'true'
         run: pnpm run build
 
       # The ONE thing a PR could not previously answer. #2299 shipped a canvas fix that was correct
@@ -266,11 +265,11 @@ jobs:
       # That was only observable in a Railway boot log, i.e. after it reached production. This asks
       # the built artifact the production question directly, so the answer arrives on the PR.
       - name: Verify @napi-rs/canvas is reachable inside .next/standalone
-        if: needs.changes.outputs.docs_only != 'true'
+        if: steps.detect.outputs.docs_only != 'true'
         run: node scripts/verify-standalone-canvas.mjs
 
       - name: Cache Playwright browsers
-        if: needs.changes.outputs.docs_only != 'true'
+        if: steps.detect.outputs.docs_only != 'true'
         id: playwright-cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -279,11 +278,11 @@ jobs:
           restore-keys: playwright-
 
       - name: Install Playwright browsers
-        if: needs.changes.outputs.docs_only != 'true'
+        if: steps.detect.outputs.docs_only != 'true'
         run: pnpm exec playwright install chromium
 
       - name: Install Playwright system dependencies
-        if: needs.changes.outputs.docs_only != 'true' && (steps.playwright-cache.outputs.cache-hit != 'true')
+        if: steps.detect.outputs.docs_only != 'true' && (steps.playwright-cache.outputs.cache-hit != 'true')
         run: pnpm exec playwright install-deps chromium
 
       # Runs against the .next produced by the Build step above. playwright.config.ts's
@@ -291,7 +290,7 @@ jobs:
       # production bundle — exactly what the old preview-smoke job did after downloading
       # it, minus the transfer.
       - name: Run Playwright login smoke test
-        if: needs.changes.outputs.docs_only != 'true'
+        if: steps.detect.outputs.docs_only != 'true'
         run: pnpm run test:e2e:smoke
         env:
           NODE_ENV: test
@@ -323,7 +322,7 @@ jobs:
       # runs `pnpm run synthetic:test` to generate the report BEFORE this step. Kept
       # continue-on-error + guarded so a missing report or missing creds can never fail CI.
       - name: Ingest synthetic-journey report (best-effort, never fails CI)
-        if: needs.changes.outputs.docs_only != 'true'
+        if: steps.detect.outputs.docs_only != 'true'
         continue-on-error: true
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
@@ -344,7 +343,7 @@ jobs:
           pnpm run synthetic:save-report
 
       - name: Upload Playwright report on failure
-        if: needs.changes.outputs.docs_only != 'true' && (failure())
+        if: steps.detect.outputs.docs_only != 'true' && (failure())
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: playwright-report
@@ -355,29 +354,55 @@ jobs:
   # in front of it. eslint keeps its own incremental --cache; the restore-keys fallback
   # matters more than the exact key here, since a partial cache still skips most files.
   lint:
-    needs: changes
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
     steps:
       - name: Check out repository
-        if: needs.changes.outputs.docs_only != 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          # depth 2 is enough: for a pull_request, GitHub checks out the MERGE commit, whose
+          # first parent is the base branch. `HEAD^1..HEAD` is therefore exactly this PR's
+          # changed files, with no need to fetch the base branch separately.
+          fetch-depth: 2
+
+      # Answered inline, per job — see the note on this step in `validate`.
+      - name: Detect whether this PR is documentation only
+        id: detect
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -u
+          answer() { echo "docs_only=$1" >> "$GITHUB_OUTPUT"; echo "docs_only=$1 ($2)"; exit 0; }
+
+          [ "$EVENT_NAME" = "pull_request" ] || answer false "not a pull_request — always run everything"
+          git rev-parse --verify HEAD^2 >/dev/null 2>&1 || answer false "HEAD is not a merge commit; cannot identify the PR's files"
+
+          files="$(git diff --name-only HEAD^1 HEAD)" || answer false "git diff failed"
+          [ -n "$files" ] || answer false "no files resolved; refusing to assume docs-only"
+
+          echo "Changed files:"; echo "$files" | sed 's/^/  /'
+          # One non-doc path is enough to need the full suite. Mirrors the old paths-ignore list.
+          if echo "$files" | grep -qvE '(\.md$|^docs/|^\.github/ISSUE_TEMPLATE/|^\.github/PULL_REQUEST_TEMPLATE/)'; then
+            answer false "code or config changed"
+          fi
+          answer true "documentation only"
+
 
       # corepack must be enabled BEFORE setup-node runs — see the note in `validate`.
       - name: Enable Corepack (pnpm)
-        if: needs.changes.outputs.docs_only != 'true'
+        if: steps.detect.outputs.docs_only != 'true'
         run: corepack enable
 
       - name: Set up Node.js
-        if: needs.changes.outputs.docs_only != 'true'
+        if: steps.detect.outputs.docs_only != 'true'
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
         with:
           node-version: ${{ env.CI_NODE_VERSION }}
           cache: pnpm
 
       - name: Install dependencies
-        if: needs.changes.outputs.docs_only != 'true'
+        if: steps.detect.outputs.docs_only != 'true'
         run: pnpm install --frozen-lockfile
 
       # STRATEGY MATTERS MORE THAN THE KEY HERE, and it is not obvious from the logs.
@@ -393,7 +418,7 @@ jobs:
       # change would download and extract a cache they must then throw away, and still log
       # "Cache restored successfully". Renaming the key retires the old entries by letting them expire.
       - name: Restore ESLint cache
-        if: needs.changes.outputs.docs_only != 'true'
+        if: steps.detect.outputs.docs_only != 'true'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .eslintcache
@@ -401,42 +426,68 @@ jobs:
           restore-keys: eslintcache-content-
 
       - name: Lint
-        if: needs.changes.outputs.docs_only != 'true'
+        if: steps.detect.outputs.docs_only != 'true'
         run: pnpm run lint
 
   # Split out of the old lint-typecheck job — see the note on `lint`.
   typecheck:
-    needs: changes
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
     steps:
       - name: Check out repository
-        if: needs.changes.outputs.docs_only != 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          # depth 2 is enough: for a pull_request, GitHub checks out the MERGE commit, whose
+          # first parent is the base branch. `HEAD^1..HEAD` is therefore exactly this PR's
+          # changed files, with no need to fetch the base branch separately.
+          fetch-depth: 2
+
+      # Answered inline, per job — see the note on this step in `validate`.
+      - name: Detect whether this PR is documentation only
+        id: detect
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -u
+          answer() { echo "docs_only=$1" >> "$GITHUB_OUTPUT"; echo "docs_only=$1 ($2)"; exit 0; }
+
+          [ "$EVENT_NAME" = "pull_request" ] || answer false "not a pull_request — always run everything"
+          git rev-parse --verify HEAD^2 >/dev/null 2>&1 || answer false "HEAD is not a merge commit; cannot identify the PR's files"
+
+          files="$(git diff --name-only HEAD^1 HEAD)" || answer false "git diff failed"
+          [ -n "$files" ] || answer false "no files resolved; refusing to assume docs-only"
+
+          echo "Changed files:"; echo "$files" | sed 's/^/  /'
+          # One non-doc path is enough to need the full suite. Mirrors the old paths-ignore list.
+          if echo "$files" | grep -qvE '(\.md$|^docs/|^\.github/ISSUE_TEMPLATE/|^\.github/PULL_REQUEST_TEMPLATE/)'; then
+            answer false "code or config changed"
+          fi
+          answer true "documentation only"
+
 
       # corepack must be enabled BEFORE setup-node runs — see the note in `validate`.
       - name: Enable Corepack (pnpm)
-        if: needs.changes.outputs.docs_only != 'true'
+        if: steps.detect.outputs.docs_only != 'true'
         run: corepack enable
 
       - name: Set up Node.js
-        if: needs.changes.outputs.docs_only != 'true'
+        if: steps.detect.outputs.docs_only != 'true'
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
         with:
           node-version: ${{ env.CI_NODE_VERSION }}
           cache: pnpm
 
       - name: Install dependencies
-        if: needs.changes.outputs.docs_only != 'true'
+        if: steps.detect.outputs.docs_only != 'true'
         run: pnpm install --frozen-lockfile
 
       - name: Generate Next.js route types
-        if: needs.changes.outputs.docs_only != 'true'
+        if: steps.detect.outputs.docs_only != 'true'
         run: pnpm exec next typegen
 
       - name: Typecheck
-        if: needs.changes.outputs.docs_only != 'true'
+        if: steps.detect.outputs.docs_only != 'true'
         # tsc --noEmit over this many files can exceed Node's default old-space
         # heap ceiling on the standard GitHub-hosted runner and crash with an
         # OOM before reporting any diagnostics (not a type error). Raise the
