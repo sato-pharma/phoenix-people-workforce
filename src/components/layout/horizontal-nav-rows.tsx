@@ -23,17 +23,23 @@
 //                    app/globals.css hides the fallback whenever a page placed
 //                    the row itself, so exactly one copy ever renders.
 //
-// Both rows render NOTHING at all when the viewer has not put anything in them,
-// which is every account today — this ships invisible until somebody arranges a
-// tab into a row on /admin/sidebar-layout.
+// Both rows render NOTHING at all for an account that has never saved a layout,
+// which is all but two accounts today — this stays invisible until somebody
+// arranges a tab into a row, either on /admin/sidebar-layout or with the "+".
 //
 // ── The "+" ─────────────────────────────────────────────────────────────────
-// Zone 2 ends in a "+" (2026-08-28, owner: "it have a plus sign at the end. I
+// Each row ends in a "+" (2026-08-28, owner: "it have a plus sign at the end. I
 // press at the plus sign. The list of modules appear to me. I choose. It is
 // embedded like the organogram"). It is a shortcut into the same stored layout
-// the editor writes, for the case the editor is clumsy for — pinning one page
-// without leaving the page you are on. It appears only on a row that already
-// has a tab, so the invisibility promise above still holds.
+// the editor writes, for the case the editor is clumsy for — arranging one page
+// without leaving the page you are on.
+//
+// It shows on an EMPTY row too, but only for an account that has saved a layout
+// at some point. That is the difference between the two failure modes: a lone
+// "+" on all 243 pages for 158 people who never asked for any of this would
+// break the invisibility promise above, while withholding it from someone who
+// emptied their own row leaves them no way back in except the editor — which is
+// the exact trip the "+" exists to save.
 //
 // Like the sidebar, this is UX and never the security boundary: the items come
 // from `getSections` (already permission- and role-filtered) and are only
@@ -44,6 +50,7 @@ import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { createContext, useContext, useMemo, type ReactNode } from "react";
 
+import { ApprovalNavBadge } from "@/components/layout/nav-badge";
 import { NavRowAddButton } from "@/components/layout/nav-row-add-button";
 import { useDarkSurface } from "@/components/ui/surface-context";
 import {
@@ -68,10 +75,14 @@ type ResolvedRows = {
   lowerRow: readonly NavigationSectionItem[];
   activeHref: string | null;
   dark: boolean;
-  /** Everything the viewer may reach that is NOT already on the upper row — what the "+" offers. */
-  addable: readonly NavigationSection[];
-  /** Whether to render the "+" at all. Admin chrome only, same restriction as the layout itself. */
+  /** Everything the viewer may reach that is NOT already on the UPPER row — what its "+" offers. */
+  upperAddable: readonly NavigationSection[];
+  /** The same for the lower row. */
+  lowerAddable: readonly NavigationSection[];
+  /** Whether to render a "+" at all. Admin chrome only, the same restriction as the layout itself. */
   canAdd: boolean;
+  /** Has this viewer ever saved a layout? The one case where an EMPTY row still shows its "+". */
+  hasSavedLayout: boolean;
 };
 
 const EMPTY_ROWS: ResolvedRows = {
@@ -79,8 +90,10 @@ const EMPTY_ROWS: ResolvedRows = {
   lowerRow: [],
   activeHref: null,
   dark: true,
-  addable: [],
+  upperAddable: [],
+  lowerAddable: [],
   canAdd: false,
+  hasSavedLayout: false,
 };
 
 /**
@@ -129,31 +142,42 @@ export function HorizontalNavProvider({
     const active = getActiveHref(pathname, gated, activeTab);
     const activeModuleId =
       gated.find((section) => section.items.some((entry) => entry.href === active))?.id ?? null;
-    // ADMIN MODE ONLY — the same restriction the sidebar applies, and for the same reason: one
-    // layout document is stored per person, and the employee portal builds its own navigation
-    // entirely, so applying this to both surfaces would let a portal render fight the admin one.
-    const applied = applyPersonalLayout(
-      gated,
-      navigationMode === "admin" ? personalLayout : null,
-      activeModuleId,
-    );
-    // What the "+" offers: the gated sections with anything already on the row taken out, so the
-    // list never proposes a page that is sitting two centimetres to its left. Built from `gated`
-    // for the same reason `activeModuleId` is — it is the permission-filtered set, so the picker
-    // inherits the gate rather than re-deciding it, and can no more introduce an href than
-    // `applyPersonalLayout` can.
-    const pinned = new Set(applied.upperRow.map((entry) => entry.href));
-    const addable = gated
-      .map((section) => ({
-        ...section,
-        items: section.items.filter((entry) => !pinned.has(entry.href)),
-      }))
-      .filter((section) => section.items.length > 0);
+    // ADMIN CHROME ONLY — admin and HR, the two workspaces that share this shell. The employee
+    // portal builds its navigation entirely separately, so applying a layout there would let a
+    // portal render fight this one. Widened from admin-only on 2026-08-29: `usesAdminChrome` was
+    // already what decided the row's palette, so the HR workspace was getting the dark chrome of a
+    // surface that carries rows, with no rows and no way to add any.
+    //
+    // One stored document serves both, and that is safe by construction rather than by luck: an
+    // hr-mode `getSections` returns `/hr/...` hrefs, so an `/admin/...` href in the layout matches
+    // nothing in `byHref` and `applyPersonalLayout` simply drops it. The two modes cannot collide.
+    const layout = usesAdminChrome(navigationMode) ? personalLayout : null;
+    const applied = applyPersonalLayout(gated, layout, activeModuleId);
+    // What each "+" offers: the gated sections with the pages already on THAT row taken out, so the
+    // list never proposes a page sitting two centimetres to its left. Deliberately scoped to one
+    // row rather than both — a page on the lower row IS offered by the upper "+", and pinning it
+    // there releases the lower row, which makes that press a MOVE. That is the owner's "freely able
+    // to exchange tabs that appeared either above or either down", reachable without the editor.
+    //
+    // Built from `gated` for the same reason `activeModuleId` is: it is the permission-filtered
+    // set, so the picker inherits the gate rather than re-deciding it, and can no more introduce an
+    // href than `applyPersonalLayout` can.
+    const addableFor = (row: readonly NavigationSectionItem[]): readonly NavigationSection[] => {
+      const onRow = new Set(row.map((entry) => entry.href));
+      return gated
+        .map((section) => ({
+          ...section,
+          items: section.items.filter((entry) => !onRow.has(entry.href)),
+        }))
+        .filter((section) => section.items.length > 0);
+    };
     return {
       upperRow: applied.upperRow,
       lowerRow: applied.lowerRow,
-      addable,
-      canAdd: navigationMode === "admin",
+      upperAddable: addableFor(applied.upperRow),
+      lowerAddable: addableFor(applied.lowerRow),
+      canAdd: usesAdminChrome(navigationMode),
+      hasSavedLayout: layout !== null,
       // Resolved against the FULL gated set, not just the rows, so a tab stays lit on its child
       // routes and the deepest match still wins over a shallower one sitting in another zone.
       activeHref: active,
@@ -184,6 +208,7 @@ function NavRowStrip({
   dark,
   items,
   activeHref,
+  keepWhenEmpty = false,
   trailing,
 }: {
   activeHref: string | null;
@@ -191,14 +216,16 @@ function NavRowStrip({
   className?: string;
   dark: boolean;
   items: readonly NavigationSectionItem[];
-  /** Rendered after the last tab. Used by zone 2 for the "+" that adds a page to the row. */
+  /** Render the row even with no tabs in it, so its "+" survives being emptied. See the header. */
+  keepWhenEmpty?: boolean;
+  /** Rendered after the last tab. The "+" that adds a page to this row. */
   trailing?: ReactNode;
 }) {
-  // An EMPTY row still renders nothing — including its "+". That keeps the promise made at the top
-  // of this file: the bar stays invisible for every account that has not arranged anything, rather
-  // than a lone "+" appearing on all 243 pages for everyone. /admin/sidebar-layout is the way in
-  // for a row that is empty; the "+" is the shortcut once a row exists.
-  if (items.length === 0) return null;
+  // An empty row renders nothing — unless `keepWhenEmpty` says this viewer has a layout of their
+  // own, in which case the lone "+" is their way back in. That keeps the promise made at the top of
+  // this file: the bar stays invisible for every account that has never arranged anything, rather
+  // than a "+" appearing on all 243 pages for everyone.
+  if (items.length === 0 && !keepWhenEmpty) return null;
 
   return (
     <nav aria-label={ariaLabel} className={className}>
@@ -230,6 +257,11 @@ function NavRowStrip({
               >
                 <Icon aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
                 <span>{item.label}</span>
+                {/* The same pending count the sidebar shows on the same page, from the same
+                    polling client — a tab pinned up here must not be the one place a queue of 54
+                    waiting approvals is invisible. `compact={false}` is the pill; the icon-rail
+                    dot would have nothing to sit on here. */}
+                <ApprovalNavBadge compact={false} navBadge={item.navBadge} />
               </Link>
             );
           })}
@@ -242,7 +274,8 @@ function NavRowStrip({
 
 /** ZONE 2 — the horizontal bar above the page title. Rendered once, by AppShell. */
 export function UpperNavRow() {
-  const { upperRow, activeHref, addable, canAdd, dark } = useContext(HorizontalNavContext);
+  const { upperRow, activeHref, upperAddable, canAdd, dark, hasSavedLayout } =
+    useContext(HorizontalNavContext);
   return (
     <NavRowStrip
       activeHref={activeHref}
@@ -257,7 +290,17 @@ export function UpperNavRow() {
       )}
       dark={dark}
       items={upperRow}
-      trailing={canAdd ? <NavRowAddButton dark={dark} sections={addable} /> : null}
+      keepWhenEmpty={canAdd && hasSavedLayout}
+      trailing={
+        canAdd ? (
+          <NavRowAddButton
+            dark={dark}
+            pinned={upperRow}
+            sections={upperAddable}
+            target="upperRow"
+          />
+        ) : null
+      }
     />
   );
 }
@@ -280,12 +323,14 @@ export function LowerNavRow({
   className?: string;
   placement: "in-page" | "fallback";
 }) {
-  const { lowerRow, activeHref, dark } = useContext(HorizontalNavContext);
+  const { lowerRow, activeHref, canAdd, dark, hasSavedLayout, lowerAddable } =
+    useContext(HorizontalNavContext);
   // The in-page copy takes its palette from the surface it was dropped onto, not from the shell:
   // inside AdminPageHero that surface is black (AdminHeroFrame provides `true`), while a page that
   // places the row on its own light header gets the light palette. The fallback follows the shell.
   const onDarkSurface = useDarkSurface();
   const inPage = placement === "in-page";
+  const rowDark = inPage ? onDarkSurface : dark;
   return (
     <NavRowStrip
       activeHref={activeHref}
@@ -298,8 +343,19 @@ export function LowerNavRow({
               dark ? "border-[#1a1a1a] bg-[#050505]" : "border-phx-line bg-white/95",
             ),
       )}
-      dark={inPage ? onDarkSurface : dark}
+      dark={rowDark}
       items={lowerRow}
+      keepWhenEmpty={canAdd && hasSavedLayout}
+      trailing={
+        canAdd ? (
+          <NavRowAddButton
+            dark={rowDark}
+            pinned={lowerRow}
+            sections={lowerAddable}
+            target="lowerRow"
+          />
+        ) : null
+      }
     />
   );
 }

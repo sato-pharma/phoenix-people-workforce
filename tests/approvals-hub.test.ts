@@ -204,8 +204,14 @@ export function runApprovalsHubTests() {
   assert.match(portalLayout, /import \{ NavBadge \} from "@\/components\/layout\/sidebar";/, "portal reuses the exact same NavBadge polling client as admin, not a new mechanism");
   assert.match(portalLayout, /<NavBadge src="\/api\/approvals\/vacation\/pending-count" \/>/, "portal vacation badge points at the same count API as admin");
   assert.match(portalLayout, /<NavBadge src="\/api\/approvals\/excuse\/pending-count" \/>/, "portal excuse badge points at the same count API as admin");
+  // NavBadge's definition moved to ./nav-badge on 2026-08-29, so the horizontal nav rows could use
+  // it without pulling the whole sidebar module (dnd-kit, the layout editor) into their bundle.
+  // sidebar.tsx re-exports it, which is what keeps the portal's import asserted above resolving —
+  // both halves are pinned here, so neither the shared definition nor the re-export can quietly go.
   const sidebarSource = readFileSync("src/components/layout/sidebar.tsx", "utf8");
-  assert.match(sidebarSource, /export function NavBadge/, "NavBadge is exported so the portal layout can reuse it verbatim");
+  const navBadgeSource = readFileSync("src/components/layout/nav-badge.tsx", "utf8");
+  assert.match(navBadgeSource, /export function NavBadge/, "NavBadge is exported so the portal layout can reuse it verbatim");
+  assert.ok(sidebarSource.includes('export { NavBadge } from "@/components/layout/nav-badge";'), "and sidebar.tsx re-exports it, so the portal's own import keeps resolving");
 
   // ── Phase 2.4: history filter + export, type enrichment without touching shared code ─
   assert.match(svc, /export type ResponderHistoryItem = HistoricalApprovalItem & \{ subtype: string \| null \}/, "history items carry an enrichment-only subtype field, not on the shared type");
@@ -545,7 +551,7 @@ export function runApprovalsHubTests() {
   const navBadgeStore = readFileSync("src/lib/nav-badge-store.ts", "utf8");
   assert.match(navBadgeStore, /type Listener = \(count: number \| null, overdue: boolean\) => void;/, "the badge poll store threads overdue through to listeners");
 
-  assert.match(sidebarSource, /nav-badge-alarm-overdue/, "NavBadge switches to the overdue alarm class once any awaiting item breaches its SLA");
+  assert.match(navBadgeSource, /nav-badge-alarm-overdue/, "NavBadge switches to the overdue alarm class once any awaiting item breaches its SLA");
 
   // ── Stuck approvals — needs reassignment (HR / Super Admin only, Part C) ──────
   assert.match(

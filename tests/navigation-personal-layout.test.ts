@@ -9,13 +9,14 @@ import {
   layoutKeyFor,
   layoutOwnerKey,
   PERSONAL_LAYOUT_VERSION,
-  pinHrefToUpperRow,
+  pinHrefToRow,
   placementOf,
   resolveRowSet,
   resolveStripConflicts,
   rowsWithout,
   stripRowConflicts,
   stripWithout,
+  unpinHrefFromRows,
   type PersonalNavigationLayout,
 } from "../src/lib/navigation/personal-layout.ts";
 
@@ -727,14 +728,14 @@ export function runNavigationPersonalLayoutTests() {
     );
   }
 
-  // ── The row's "+" — pinHrefToUpperRow ────────────────────────────────────────────────────────
+  // ── The rows' "+" — pinHrefToRow and unpinHrefFromRows ───────────────────────────────────────
   // Owner, 2026-08-28: pressing "+" and choosing a page makes it "embedded like the organogram",
-  // i.e. fixed in EVERY module. Each assertion below is one of the three ways a naive append would
-  // have produced a 200 OK that changed nothing on screen.
+  // i.e. fixed in EVERY module. Each assertion below is one of the ways a naive append would have
+  // produced a 200 OK that changed nothing on screen.
 
   // Nothing saved yet: the function has to invent a whole valid document, not patch a null.
   {
-    const next = pinHrefToUpperRow(null, "/admin/organogram");
+    const next = pinHrefToRow(null, "/admin/organogram");
     assert.equal(next.version, PERSONAL_LAYOUT_VERSION, "a fresh document carries the current version");
     assert.deepEqual(next.upperRow, ["/admin/organogram"], "the page lands in the upper row");
     assert.ok(
@@ -746,7 +747,7 @@ export function runNavigationPersonalLayoutTests() {
   // TRAP 1 — the strip outranks the row. Adding to the row without releasing the strip entry saves
   // cleanly and renders nothing new; this is the failure the owner actually hit.
   {
-    const next = pinHrefToUpperRow(layout({ strip: ["/admin/organogram", "/admin/sales"] }), "/admin/organogram");
+    const next = pinHrefToRow(layout({ strip: ["/admin/organogram", "/admin/sales"] }), "/admin/organogram");
     assert.deepEqual(next.strip, ["/admin/sales"], "the strip releases the page");
     assert.deepEqual(next.upperRow, ["/admin/organogram"], "and the row takes it");
     assert.deepEqual(
@@ -759,7 +760,7 @@ export function runNavigationPersonalLayoutTests() {
   // TRAP 2 — a module override REPLACES the defaults. Appending only to the default upperRow would
   // skip exactly the modules the viewer had already arranged.
   {
-    const next = pinHrefToUpperRow(
+    const next = pinHrefToRow(
       layout({
         upperRow: ["/admin/sales"],
         moduleRows: {
@@ -790,7 +791,7 @@ export function runNavigationPersonalLayoutTests() {
 
   // TRAP 3 — a page cannot sit in both rows, and a hidden page must come back when pinned.
   {
-    const next = pinHrefToUpperRow(
+    const next = pinHrefToRow(
       layout({ lowerRow: ["/admin/organogram", "/admin/targets"], hidden: ["/admin/organogram"] }),
       "/admin/organogram",
     );
@@ -801,8 +802,8 @@ export function runNavigationPersonalLayoutTests() {
 
   // Pressing "+" twice on the same page must not put two identical tabs in the row.
   {
-    const once = pinHrefToUpperRow(layout({ upperRow: ["/admin/sales"] }), "/admin/organogram");
-    const twice = pinHrefToUpperRow(once, "/admin/organogram");
+    const once = pinHrefToRow(layout({ upperRow: ["/admin/sales"] }), "/admin/organogram");
+    const twice = pinHrefToRow(once, "/admin/organogram");
     assert.deepEqual(twice.upperRow, ["/admin/sales", "/admin/organogram"], "no duplicate, and no reordering");
     assert.deepEqual(twice, once, "the second press is a no-op on the whole document");
   }
@@ -811,7 +812,7 @@ export function runNavigationPersonalLayoutTests() {
   // section copy is inert while pinned, and is where the page returns to if it comes off the row.
   {
     const before = layout({ sections: [{ id: "people", label: "People", items: ["/admin/organogram"] }] });
-    const next = pinHrefToUpperRow(before, "/admin/organogram");
+    const next = pinHrefToRow(before, "/admin/organogram");
     assert.deepEqual(next.sections, before.sections, "the section entry survives the pin");
     const rendered = applyPersonalLayout(gated, next);
     assert.deepEqual(
@@ -826,14 +827,103 @@ export function runNavigationPersonalLayoutTests() {
     );
   }
 
-  // ── The "+" must be wired to that function, and offer only gated pages ───────────────────────
+  // The LOWER row's "+" writes the same document through the same function, and pinning DOWN a page
+  // that is currently up top is a MOVE, not a duplicate — the owner's "freely able to exchange tabs
+  // that appeared either above or either down", now reachable without opening the editor.
+  {
+    const down = pinHrefToRow(
+      layout({
+        upperRow: ["/admin/organogram"],
+        moduleRows: { sales: { upperRow: ["/admin/organogram"], lowerRow: [] } },
+      }),
+      "/admin/organogram",
+      "lowerRow",
+    );
+    assert.deepEqual(down.lowerRow, ["/admin/organogram"], "the lower row takes it");
+    assert.deepEqual(down.upperRow, [], "and the upper row releases it — a move, not a copy");
+    assert.deepEqual(
+      down.moduleRows?.sales,
+      { upperRow: [], lowerRow: ["/admin/organogram"] },
+      "including inside a module override, which would otherwise keep the old placement",
+    );
+    const rendered = applyPersonalLayout(gated, down);
+    assert.deepEqual(rendered.lowerRow.map((i) => i.href), ["/admin/organogram"], "it renders below");
+    assert.deepEqual(rendered.upperRow, [], "and no longer above");
+  }
+
+  // ── Removal — the tick in the same panel ────────────────────────────────────────────────────
+  // Without this the "+" was a one-way door: the only way back out of a row was /admin/sidebar-layout,
+  // which is the exact trip the "+" exists to save.
+  {
+    const on = pinHrefToRow(
+      layout({
+        moduleRows: {
+          people: { upperRow: ["/admin/employees"], lowerRow: [] },
+          sales: { upperRow: [], lowerRow: ["/admin/targets"] },
+        },
+      }),
+      "/admin/organogram",
+    );
+    const off = unpinHrefFromRows(on, "/admin/organogram");
+    assert.deepEqual(off.upperRow, [], "the default row releases it");
+    assert.deepEqual(off.hidden, [], "removal never HIDES a page — it puts it back, it does not bury it");
+    for (const moduleId of [null, "people", "sales", "nonexistent"]) {
+      const applied = applyPersonalLayout(gated, off, moduleId);
+      const inRows = [...applied.upperRow, ...applied.lowerRow].some((i) => i.href === "/admin/organogram");
+      assert.ok(!inRows, `still on a row in module ${moduleId ?? "(none)"} — pinning wrote every override, so removal must clear every one`);
+      assert.ok(
+        applied.sections.some((s) => s.items.some((i) => i.href === "/admin/organogram")),
+        `the page vanished entirely in module ${moduleId ?? "(none)"} — taking a tab off a row must return it to the sidebar, never make it unreachable`,
+      );
+    }
+  }
+
+  // It clears the lower row too, and leaves that row's other tabs alone.
+  {
+    const off = unpinHrefFromRows(
+      layout({ lowerRow: ["/admin/organogram", "/admin/targets"] }),
+      "/admin/organogram",
+    );
+    assert.deepEqual(off.lowerRow, ["/admin/targets"], "only the named page comes off");
+  }
+
+  // Pin-then-unpin is NOT a full round trip, deliberately: the strip entry pinning released (trap 1)
+  // is not reconstructable, because the document does not record where an href came from. Documented
+  // in unpinHrefFromRows — the page is still reachable, in the sidebar.
+  {
+    const after = unpinHrefFromRows(
+      pinHrefToRow(layout({ strip: ["/admin/organogram"] }), "/admin/organogram"),
+      "/admin/organogram",
+    );
+    assert.deepEqual(after.strip, [], "the strip entry stays released");
+    assert.ok(
+      applyPersonalLayout(gated, after).sections.some((s) =>
+        s.items.some((i) => i.href === "/admin/organogram"),
+      ),
+      "and the page is back in the sidebar, so nothing was lost",
+    );
+  }
+
+  // A null layout cannot happen from the panel (you can only remove what is pinned) but must still
+  // produce a document the PUT route accepts rather than throwing.
+  {
+    const off = unpinHrefFromRows(null, "/admin/organogram");
+    assert.ok(isPersonalNavigationLayout(off), "a valid empty document");
+    assert.deepEqual(off.upperRow, [], "with nothing in it");
+  }
+
+  // ── The "+" must be wired to those functions, and offer only gated pages ─────────────────────
   // Source-pinned for the same reason as the editor checks above: both components are JSX, which
   // the runner's type stripping cannot import.
   {
     const button = readFileSync("src/components/layout/nav-row-add-button.tsx", "utf8");
     assert.ok(
-      /pinHrefToUpperRow\(body\?\.data \?\? null, href\)/.test(button),
-      "the + must write through pinHrefToUpperRow, or it re-opens all three traps above",
+      /pinHrefToRow\(current, href, target\)/.test(button),
+      "the + must write through pinHrefToRow, or it re-opens all three traps above",
+    );
+    assert.ok(
+      /unpinHrefFromRows\(current, href\)/.test(button),
+      "and the tick must write through unpinHrefFromRows, or removal misses the module overrides",
     );
     assert.ok(
       /method: "PUT"/.test(button) && /router\.refresh\(\)/.test(button),
@@ -842,16 +932,82 @@ export function runNavigationPersonalLayoutTests() {
 
     const rows = readFileSync("src/components/layout/horizontal-nav-rows.tsx", "utf8");
     assert.ok(
-      /const addable = gated\b/.test(rows),
+      /const addableFor = \(row: readonly NavigationSectionItem\[\]\)/.test(rows),
       "the picker must be built from the GATED sections, so it can no more introduce an href than applyPersonalLayout can",
     );
     assert.ok(
-      /canAdd: navigationMode === "admin"/.test(rows),
-      "admin chrome only, the same restriction the layout itself carries",
+      /canAdd: usesAdminChrome\(navigationMode\)/.test(rows),
+      "admin chrome — admin AND hr, the two workspaces that share this shell",
     );
     assert.ok(
-      /if \(items\.length === 0\) return null;/.test(rows),
-      "an empty row still renders nothing at all, + included",
+      /const layout = usesAdminChrome\(navigationMode\) \? personalLayout : null;/.test(rows),
+      "the layout itself must reach the same two modes, or hr gets a + with nothing behind it",
     );
+    assert.ok(
+      /if \(items\.length === 0 && !keepWhenEmpty\) return null;/.test(rows),
+      "an empty row renders nothing UNLESS this viewer has a layout — otherwise a lone + appears on 243 pages for 158 people who never asked for it",
+    );
+    assert.equal(
+      (rows.match(/keepWhenEmpty=\{canAdd && hasSavedLayout\}/g) ?? []).length,
+      2,
+      "both rows must survive being emptied, or the one you emptied has no way back",
+    );
+    assert.ok(
+      /target="upperRow"/.test(rows) && /target="lowerRow"/.test(rows),
+      "each row's + writes its OWN row",
+    );
+    assert.ok(
+      /<ApprovalNavBadge compact=\{false\} navBadge=\{item\.navBadge\} \/>/.test(rows),
+      "a tab pinned into a row must not be the one place a pending count is invisible",
+    );
+  }
+
+  // ── ONE badge switch, not a copy per surface ─────────────────────────────────────────────────
+  // The sidebar, the nav rows and (next) the portal all read the same map from navBadge value to
+  // counting endpoint. A hand-written second copy is how #2237's Capture Evidence shipped green and
+  // rejected 59 of its 65 customers: one omitted entry in one duplicated list, no error anywhere.
+  {
+    const badge = readFileSync("src/components/layout/nav-badge.tsx", "utf8");
+    assert.ok(
+      /export function NavBadge\(/.test(badge) && /export function ApprovalNavBadge\(/.test(badge),
+      "both live in the shared module",
+    );
+    const sidebar = readFileSync("src/components/layout/sidebar.tsx", "utf8");
+    assert.ok(
+      !/function ApprovalNavBadge\(/.test(sidebar),
+      "the sidebar must IMPORT the switch, never redeclare one of its own",
+    );
+    assert.ok(
+      /from "@\/components\/layout\/nav-badge"/.test(sidebar),
+      "and it must import it from the shared module",
+    );
+
+    // Completeness: every navBadge value the navigation config declares has a case in the switch.
+    // Without this the omission is silent — the badge simply never renders, which is indistinguishable
+    // from a queue that happens to be empty.
+    // Completeness, keyed on the TYPE UNION rather than on today's declarations. Two of the eight
+    // values are currently assignable but unused (`direct-orders-approvals-pending` and
+    // `direct-orders-unbooked`, both folded into the one Direct Orders row), so a check driven by
+    // the seeds alone would pass while a case for either was deleted — measured: it did.
+    // Without this the omission is silent either way. The badge simply never renders, which is
+    // indistinguishable from a queue that happens to be empty.
+    const navConfig = readFileSync("src/config/system-navigation.ts", "utf8");
+    const union = navConfig.match(/navBadge\?:\s*((?:"[a-z0-9-]+"\s*\|\s*)*"[a-z0-9-]+")\s*;/);
+    assert.ok(union, "the navBadge union is no longer where this test reads it from");
+    const allowed = Array.from(union[1].matchAll(/"([a-z0-9-]+)"/g), (m) => m[1]);
+    assert.ok(
+      allowed.length >= 8,
+      `only ${allowed.length} navBadge values parsed out of the union — the regex has stopped matching, so the loop below proves nothing`,
+    );
+    for (const value of allowed) {
+      assert.ok(
+        badge.includes(`case "${value}":`),
+        `nav-badge.tsx has no case for navBadge "${value}" — that tab would show no count at all, on every surface`,
+      );
+    }
+    // And nothing is assigned that the union does not allow, which is what keeps the check honest.
+    for (const [, value] of navConfig.matchAll(/navBadge:\s*"([a-z0-9-]+)"/g)) {
+      assert.ok(allowed.includes(value), `a nav item declares navBadge "${value}", which is not in the union`);
+    }
   }
 }

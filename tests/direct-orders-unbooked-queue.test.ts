@@ -31,7 +31,7 @@ import type { DirectOrderReportRow } from "../src/lib/direct-orders/types.ts";
 const REPORT_FILTERS_PATH = "src/lib/direct-orders/report-filters.ts";
 const SERVICE_PATH = "src/lib/direct-orders/service.ts";
 const NAVIGATION_PATH = "src/config/system-navigation.ts";
-const SIDEBAR_PATH = "src/components/layout/sidebar.tsx";
+const NAV_BADGE_PATH = "src/components/layout/nav-badge.tsx";
 const BADGE_STORE_PATH = "src/lib/nav-badge-store.ts";
 const BADGE_COUNTS_ROUTE_PATH = "app/api/approvals/badge-counts/route.ts";
 const DASHBOARD_PATH = "src/components/admin/finance-command-center.tsx";
@@ -165,9 +165,9 @@ export function runDirectOrdersUnbookedQueueTests() {
     "the Direct Orders sidebar row must carry the needs-action badge",
   );
   assert.match(
-    read(SIDEBAR_PATH),
+    read(NAV_BADGE_PATH),
     /case "direct-orders-needs-action":[\s\S]{0,260}\/api\/direct-orders\/needs-action-count/,
-    "the sidebar badge switch must resolve the new key to its endpoint",
+    "the shared badge switch must resolve the new key to its endpoint",
   );
   assert.match(
     read(BADGE_STORE_PATH),
