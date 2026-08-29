@@ -524,10 +524,18 @@ rules, so §4 is their home. Reach is identical; only scannability changed. Each
 holding the full account, under
 `C:\Users\satoh\.claude\projects\F--Phoenix-Workforce-phoenix-workforce\memory\`.
 
-- 🔒 **Venue validation is GPS + a live picture ALWAYS, and THEN either the registered code or the
-  licence.** Owner rule, 2026-08-26. The licence is a **fallback identity route** for when the code
-  is not in our database — it is *never* evidence in its own right. This governs the direct-order
-  desk only (#2434), **not** marketing.
+- 🔒 **Venue validation is GPS + a live picture ALWAYS — and leg 3 (the registered code, else the
+  licence) is a PHARMACY rule ONLY.** Owner rule 2026-08-26, **amended 2026-08-29**: *"Nursery does
+  not have distributor code or license. So nursery, they are validated by location and live photo,
+  and then it's approval depends on the admin."* Both of leg 3's routes are pharmacy-trade documents,
+  so a venue outside that trade is judged by no route at all — `resolveVenueIdentityRoute` answers
+  **`admin`**, never `none`. Demanding the licence anyway is a **permanent refusal worded as an
+  instruction**, and it stranded a real held order for a nursery carrying a 20 m pin and a live
+  photo. **Do not over-apply the amendment:** a codeless PHARMACY is still refused, the code route is
+  still closed to a nursery (a code that RESOLVES for one is the forgery signature), and `match` is
+  now refused for one — it would attach another business's real code. The licence is a **fallback
+  identity route**, *never* evidence in its own right. Direct-order desk only (#2434), **not**
+  marketing — and when marketing wires leg 3, scope it by venue type or it repeats this from scratch.
   `venue-validation-rule-gps-photo-then-code-or-licence`
 - 🔴 **Marketing pharmacies are TERRITORIAL, and a NULL `area_id` makes one invisible.** Seeded rows
   carry no area and so appear nowhere at all. **Owner rule: the REGISTERED CODE beats live GPS.**

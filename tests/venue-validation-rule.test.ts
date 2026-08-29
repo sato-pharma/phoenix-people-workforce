@@ -9,6 +9,7 @@ import { VENUE_TYPES } from "../src/lib/venues/venue-type.ts";
 import {
   VENUE_LOCATION_REQUIRED_MESSAGE,
   resolveVenueIdentityRoute,
+  venueAdminRouteEvidenceGapMessage,
   venueIdentityGapMessage,
   venueIdentityIsEstablished,
 } from "../src/lib/venues/venue-validation-rule.ts";
@@ -80,15 +81,30 @@ function testEitherRouteIdentifiesAVenueAndNeitherIsAGap() {
   // database is not enough by itself: two invented nursery codes were written INTO that database and
   // resolve there exactly like real ones, so a nursery holding a "valid" code is the signature of the
   // very forgery this rule exists to stop, not evidence of identity.
+  //
+  // This survives the 2026-08-29 amendment unchanged and it is the half that must never be softened.
+  // The answer moved from `none` to `admin`, but for the same reason and with the same consequence:
+  // the code beside it still buys it nothing.
   assert.equal(
     resolveVenueIdentityRoute({ codesInOurDatabase: 1, hasLicenseOnFile: false, venueType: "nursery" }),
-    "none",
-    "a nursery cannot hold a real distributor code, so a resolving one must not buy it a pass",
+    "admin",
+    "a nursery cannot hold a real distributor code, so a resolving one must never take the code route",
   );
   assert.equal(
     resolveVenueIdentityRoute({ codesInOurDatabase: 1, hasLicenseOnFile: true, venueType: "nursery" }),
     "licence",
-    "and its licence is what identifies it, never the code beside it",
+    "and a document, on the rare venue that has one, is still what the row records",
+  );
+
+  // AND `none` IS UNREACHABLE FOR IT. This is the assertion the amendment turns on: the ordinary
+  // nursery — no code, no licence, a pin and a photograph — is a POSITIVE answer, not a gap. Were
+  // this to read `none` again, `venueIdentityGapMessage` would refuse it, and refusing a venue that
+  // can never produce a document is refusing it permanently. That is not a hypothetical regression:
+  // it is the state that stranded validation 05c97d18 and its held order on 2026-08-29.
+  assert.equal(
+    resolveVenueIdentityRoute({ codesInOurDatabase: 0, hasLicenseOnFile: false, venueType: "nursery" }),
+    "admin",
+    "a nursery with neither is the admin's judgement on the pin and the photo, never an unidentified venue",
   );
 
   // EITHER/OR, never both. A venue that resolves by code must never be asked for a licence as well
@@ -105,55 +121,49 @@ function testEitherRouteIdentifiesAVenueAndNeitherIsAGap() {
 }
 
 /**
- * A nursery has ONE route, and it must be told so in its own words.
+ * HEADLINE — a nursery is never refused for a document, and the pharmacy rule is untouched.
  *
- * A nursery has no distributor account by its nature, so no code of its can ever be in the master
- * database. The licence is therefore not optional for it — it is the only thing left. That is not a
- * technicality: three invented nursery codes reached production, written by people who had no other
- * way to register a venue, and two of those codes were later written into
- * `source_of_sales_customer_map` where a fabricated code resolves forever.
+ * The owner, 2026-08-29: "pharmacy is the one that have distributor and distributor code. Nursery
+ * does not have distributor code or license. So nursery, they are validated by location and live
+ * photo, and then it's approval depends on the admin."
+ *
+ * Both routes of leg 3 are documents of the pharmacy trade. A venue outside that trade holds
+ * NEITHER, so the answer to "it has no route" is that it is not judged by routes — not that the
+ * route it cannot take becomes mandatory. The previous reading demanded a licence of the one venue
+ * type that has none, which is a permanent refusal worded as an instruction: validation 05c97d18
+ * arrived with a 20m pin and a live photo, could not be approved, and its direct order stayed held.
+ *
+ * The second half matters as much as the first. This amendment is about VENUES WITH NO DISTRIBUTOR
+ * ACCOUNT and nothing else — a codeless pharmacy must still be refused, or the change quietly
+ * repeals the rule it is amending.
  */
-function testANurseryCanOnlyEverPassByLicence() {
-  const gap = venueIdentityGapMessage({
-    codesInOurDatabase: 0,
-    hasLicenseOnFile: false,
-    venueType: "nursery",
-  });
-  assert.ok(gap, "a nursery with no licence has not established who it is");
-  assert.match(gap!, /licence/i, "and the way out it is offered is the licence");
-  assert.doesNotMatch(
-    gap!,
-    /Match it to the real customer/,
-    "never the pharmacy sentence — there is no real customer for a nursery to match to",
+function testANurseryIsJudgedOnItsEvidenceAndNeverOnADocument() {
+  assert.equal(
+    venueIdentityGapMessage({ codesInOurDatabase: 0, hasLicenseOnFile: false, venueType: "nursery" }),
+    null,
+    "the ordinary nursery — no code, no licence — must be approvable, or its orders stay held forever",
   );
-
   assert.equal(
     venueIdentityGapMessage({ codesInOurDatabase: 0, hasLicenseOnFile: true, venueType: "nursery" }),
     null,
-    "with the licence on file a nursery is identified and nothing more may be demanded",
+    "and a nursery that happens to carry a document is no more identified and no less",
+  );
+  assert.equal(
+    venueIdentityGapMessage({ codesInOurDatabase: 1, hasLicenseOnFile: false, venueType: "nursery" }),
+    null,
+    "nor is one carrying an invented code refused — the code buys it nothing, but it costs it nothing either",
   );
 
-  // A nursery carrying a code is not merely unidentified — it is the forgery signature, and the desk
-  // is told so in those terms rather than being left to wonder why a resolving code did not count.
-  const invented = venueIdentityGapMessage({
-    codesInOurDatabase: 1,
-    hasLicenseOnFile: false,
-    venueType: "nursery",
-  });
-  assert.ok(invented, "a nursery is not identified by a code however well that code resolves");
-  assert.match(invented!, /invented/i, "and the desk is told WHY the code beside it does not count");
-
+  // THE PHARMACY RULE IS UNTOUCHED. If this ever goes null, the amendment has been over-applied and
+  // leg 3 has been repealed rather than scoped.
   const pharmacyGap = venueIdentityGapMessage({
     codesInOurDatabase: 0,
     hasLicenseOnFile: false,
     venueType: "pharmacy",
   });
-  assert.ok(pharmacyGap, "a codeless pharmacy has not established who it is either");
-  assert.notEqual(
-    pharmacyGap,
-    gap,
-    "the two venue types have different ways out, so they must not be handed the same sentence",
-  );
+  assert.ok(pharmacyGap, "a codeless pharmacy has still not established who it is");
+  assert.match(pharmacyGap!, /licence/i, "and it is still offered both of its ways out");
+  assert.match(pharmacyGap!, /Match it to the real customer/);
 
   assert.equal(
     venueIdentityGapMessage({ codesInOurDatabase: 1, hasLicenseOnFile: false, venueType: "pharmacy" }),
@@ -163,13 +173,73 @@ function testANurseryCanOnlyEverPassByLicence() {
 }
 
 /**
+ * HEADLINE — what replaces leg 3 for a nursery has to be REAL: the two legs it can satisfy.
+ *
+ * "Validated by location and live photo" is the whole of the owner's rule for this venue, so a desk
+ * that would approve one carrying neither is not applying that rule — it is applying nothing. This
+ * is the guard that keeps the amendment from reading as "nurseries are waved through".
+ *
+ * It must also stay silent for a pharmacy: a pharmacy's identity is the code or the licence, and a
+ * second gate here would refuse venues `venueIdentityGapMessage` has already cleared.
+ */
+function testTheAdminRouteStillDemandsTheTwoLegsItRestsOn() {
+  assert.equal(
+    venueAdminRouteEvidenceGapMessage({
+      venueType: "nursery",
+      hasLocationOnFile: true,
+      hasLivePhotoOnFile: true,
+    }),
+    null,
+    "the ordinary nursery submission — pin and photo — passes",
+  );
+
+  const noPhoto = venueAdminRouteEvidenceGapMessage({
+    venueType: "nursery",
+    hasLocationOnFile: true,
+    hasLivePhotoOnFile: false,
+  });
+  assert.ok(noPhoto, "a nursery with no photo has nothing an admin could be judging");
+  assert.match(noPhoto!, /live photo/i);
+
+  const noPin = venueAdminRouteEvidenceGapMessage({
+    venueType: "nursery",
+    hasLocationOnFile: false,
+    hasLivePhotoOnFile: true,
+  });
+  assert.ok(noPin, "and a nursery with no pin is a photograph of somewhere");
+  assert.match(noPin!, /location/i);
+  assert.notEqual(noPin, noPhoto, "the two say which one is actually missing");
+
+  // Never a licence. The whole point is that this venue is not short of a document, and a message
+  // that mentions one sends the admin looking for it again.
+  for (const message of [noPhoto!, noPin!]) {
+    assert.doesNotMatch(message, /licence/i, "the admin route must never send anyone after a document");
+  }
+
+  // Silent for a pharmacy, at every combination — including the one that looks alarming.
+  for (const hasLocationOnFile of [true, false]) {
+    for (const hasLivePhotoOnFile of [true, false]) {
+      assert.equal(
+        venueAdminRouteEvidenceGapMessage({ venueType: "pharmacy", hasLocationOnFile, hasLivePhotoOnFile }),
+        null,
+        "a pharmacy is identified by its code or its licence — this gate is not about it",
+      );
+    }
+  }
+}
+
+/**
  * THE DRIFT CHECK. Nothing may be refused that was never asked for.
  *
  * `pharmacyLicenseFillsTheIdentityGap` decides what the capture screen SAYS; `venueIdentityGapMessage`
  * decides what the approval desk REFUSES. They are two halves of one check, and a gate that bites
  * where nothing was ever asked is how a rep gets blocked for a document nobody mentioned. This is
- * the assertion that caught the nursery exemption: the prompt exempted nurseries while the rule left
- * them exactly one route.
+ * the assertion that caught the nursery exemption in 2026-08-26, when the prompt exempted nurseries
+ * while the rule left them exactly one route.
+ *
+ * It holds through the 2026-08-29 amendment by moving in the other direction: the desk refuses no
+ * nursery, so the form asks no nursery for anything. The check is not "both mention the licence" —
+ * it is "nothing is refused that was never asked", and both readings satisfy it.
  */
 function testThePromptAsksForEverythingTheDeskWillRefuse() {
   // Counted, because a loop whose body never runs passes and proves nothing — and every assertion
@@ -198,9 +268,11 @@ function testThePromptAsksForEverythingTheDeskWillRefuse() {
     }
   }
 
-  // A codeless pharmacy and a nursery at each of the three code counts: four refusals, and a nursery
-  // is refused however many codes are written against it, because every one of them is invented.
-  assert.equal(refusals, 4, "the desk must actually refuse something, or this test asserts nothing");
+  // ONE refusal: the codeless pharmacy. It was FOUR until 2026-08-29, and the three that went were
+  // the nursery at each code count — the amendment, counted. Asserted as a number rather than left
+  // implicit because every assertion in the loop sits behind a `continue`, so a version of this
+  // test that refuses nothing at all would pass in silence and prove nothing.
+  assert.equal(refusals, 1, "the desk must actually refuse something, or this test asserts nothing");
 
   // The reverse direction is NOT asserted, and deliberately. The prompt may ask where the desk would
   // not refuse — a pharmacy whose only code is `not_found` is worth a licence and is still approvable
@@ -300,10 +372,56 @@ function testApprovingANewVenueRefusesWithoutAnIdentityRoute() {
   );
 }
 
+/**
+ * HEADLINE — `match` is closed to a venue with no distributor account, and the admin route is gated.
+ *
+ * MATCH IS THE FORGERY PATH, and it was the door left open when the venue type shipped. Matching
+ * inserts a real distributor/customer pair into `direct_order_pharmacy_distributor_codes` for this
+ * venue — a nursery holding a distributor code, which is the exact shape the venue type exists to
+ * prevent. Registration already refuses to write one; the master database already refuses to
+ * identify a nursery by one; this desk could still attach one with a click.
+ *
+ * Worse than the three invented codes it resembles: a code arriving this way RESOLVES, because it
+ * genuinely belongs to a real customer — somebody else's. It would look more trustworthy than the
+ * fabrications, not less.
+ *
+ * Pinned in the source because the refusal is a server-side branch with no pure function to call:
+ * losing it fails silently and looks exactly like success.
+ */
+function testMatchingIsClosedToAVenueWithNoDistributorAccount() {
+  const source = code(PHARMACY_VALIDATION);
+
+  assert.match(
+    source,
+    /if \(input\.decision === "match" && !venueRequiresDistributorCode\(venueType\)\)/,
+    `${PHARMACY_VALIDATION}: matching must be refused for a venue that cannot hold a distributor code`,
+  );
+
+  // It must sit ABOVE the match branch that does the insert, or it refuses nothing.
+  const guardAt = source.indexOf('if (input.decision === "match" && !venueRequiresDistributorCode(venueType))');
+  const matchAt = source.indexOf('if (input.decision === "match") {');
+  assert.ok(guardAt >= 0 && matchAt >= 0, "both the guard and the match branch must still exist");
+  assert.ok(guardAt < matchAt, `${PHARMACY_VALIDATION}: the guard must run before the code is written`);
+
+  // And the admin route's evidence gate is actually consulted at the desk, not merely exported.
+  assert.match(
+    source,
+    /venueAdminRouteEvidenceGapMessage\(\{/,
+    `${PHARMACY_VALIDATION}: the desk must check the two legs a nursery approval rests on`,
+  );
+  assert.match(
+    source,
+    /if \(evidenceGap\) badRequest\(evidenceGap\)/,
+    `${PHARMACY_VALIDATION}: consulting it and not refusing on it is a report, not a gate`,
+  );
+}
+
 export function runVenueValidationRuleTests() {
   testEitherRouteIdentifiesAVenueAndNeitherIsAGap();
-  testANurseryCanOnlyEverPassByLicence();
+  testANurseryIsJudgedOnItsEvidenceAndNeverOnADocument();
+  testTheAdminRouteStillDemandsTheTwoLegsItRestsOn();
   testThePromptAsksForEverythingTheDeskWillRefuse();
   testCaptureRefusesAVenueWithNoLocation();
   testApprovingANewVenueRefusesWithoutAnIdentityRoute();
+  testMatchingIsClosedToAVenueWithNoDistributorAccount();
 }

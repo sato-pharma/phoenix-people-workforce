@@ -135,24 +135,29 @@ export function parsePharmacyLicenseDataUrl(dataUrl: unknown): ParsedPharmacyLic
  * TRUE when the venue is one that normally carries a distributor account and this one names no
  * code — the case the owner asked for on 2026-08-25.
  *
- * ALSO TRUE FOR A NURSERY SINCE 2026-08-26, which reverses what this function used to say. It
- * returned FALSE for a nursery on the reasoning that a *pharmacy trade* licence is a document a
- * nursery does not have, so asking for one was asking for nothing. That reasoning was about the
- * document's name and it missed the consequence: a nursery has no distributor account, so no code of
- * its can ever be in the master database, so the licence is the ONLY identity route it will ever
- * have — and the one venue type that could never pass by code was the one type prompted for nothing
- * at all. Three invented nursery codes were written by people who had no other way to register a
- * venue, and two nurseries were approved on a photograph alone.
+ * FALSE FOR A VENUE WITH NO DISTRIBUTOR ACCOUNT. This reads back and forth across three dates, so
+ * the whole of it in order: it was FALSE for a nursery originally, because a *pharmacy trade*
+ * licence is a document a nursery does not have; it was flipped TRUE on 2026-08-26 on the reasoning
+ * that a nursery has no code either, so the licence was the only route it had left; and the owner
+ * settled it on 2026-08-29 — "Nursery does not have distributor code or license. So nursery, they
+ * are validated by location and live photo, and then it's approval depends on the admin."
+ *
+ * The 08-26 reasoning was sound about the code and wrong about what follows from it. Both routes of
+ * leg 3 are pharmacy-trade documents; a venue outside that trade has NEITHER, and the answer to
+ * "it has no route" is that it is not judged by routes at all, not that the route it cannot take
+ * becomes mandatory. Asking anyway produced a prompt that could not be satisfied standing next to a
+ * gate that could not be passed.
  *
  * STILL A PROMPT — callers use it to decide what to SAY. What refuses is
  * `venueIdentityGapMessage` at the approval desk, and the two must agree: a gate that bites where
- * nothing was ever asked is how a rep gets blocked for a document nobody mentioned.
+ * nothing was ever asked is how a rep gets blocked for a document nobody mentioned. They agree in
+ * the other direction now — the desk refuses no nursery, so the form asks no nursery for anything.
  */
 export function pharmacyLicenseFillsTheIdentityGap(input: {
   distributorCodeCount: number;
   venueType: VenueType;
 }): boolean {
-  if (!venueRequiresDistributorCode(input.venueType)) return true;
+  if (!venueRequiresDistributorCode(input.venueType)) return false;
   return input.distributorCodeCount === 0;
 }
 
@@ -167,17 +172,12 @@ export function pharmacyLicensePrompt(input: {
   hasLicenseOnFile: boolean;
   venueType: VenueType;
 }): string | null {
+  // A venue with no distributor account returns here, silently, on the line above — the gap this
+  // document fills is not one it has. The two nursery sentences that used to sit at this point were
+  // removed on 2026-08-29 with the rule they belonged to: both told a nursery to attach a licence,
+  // and "attach it before sending" is a bad instruction to print beside a file input when the
+  // document does not exist and nothing will refuse the submission for its absence.
   if (!pharmacyLicenseFillsTheIdentityGap(input)) return null;
-
-  // A nursery is told the truth about itself rather than the pharmacy sentence. "No distributor code
-  // in any distributor" reads as a gap somebody could go and close, and for a nursery there is
-  // nothing to close — it never had one and never will, which is exactly why the licence is not
-  // optional for it.
-  if (!venueRequiresDistributorCode(input.venueType)) {
-    return input.hasLicenseOnFile
-      ? "A nursery has no distributor code, so the licence is the identity check — compare the name on it against the name on the sign."
-      : "A nursery has no distributor code, so the licence is the only thing that can say who this venue is. Attach it before sending.";
-  }
 
   return input.hasLicenseOnFile
     ? "No distributor code — check the trade name on the licence against the name on the shop sign."
