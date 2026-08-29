@@ -1,6 +1,7 @@
 import {
   PlanDoctorsTable,
   PlanListTable,
+  PlanMissingRepsTable,
   PlanVerificationFilters,
 } from "@/components/crm/plan-verification-tables";
 // planPeriodText comes from the lib, NOT from plan-verification-tables above. That file is
@@ -94,7 +95,7 @@ export function PlanVerificationBoardView({
   canVerify: boolean;
   years: number[];
 }) {
-  const { kind, month, plans, scopeLabel, scopeReason, selected, year } = board;
+  const { kind, missingReps, month, plans, rosterKnown, scopeLabel, scopeReason, selected, year } = board;
   const filters = (
     <PlanVerificationFilters basePath={basePath} kind={kind} month={month} year={year} years={years} />
   );
@@ -139,7 +140,7 @@ export function PlanVerificationBoardView({
     <div className="border border-slate-200">
       <Section action={filters} description={description} title="Plans">
         <div className="space-y-4 p-5">
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
             <Tile
               label="Awaiting you"
               sub={pending.length === 0 ? "nothing to verify" : "not verified yet"}
@@ -148,6 +149,22 @@ export function PlanVerificationBoardView({
             />
             <Tile label="Verified" sub={`of ${plans.length} plans`} tone="emerald" value={String(verified)} />
             <Tile label="Reps with a plan" sub="in this period" value={String(reps)} />
+            {/* The counterweight to the tile above it. "Reps with a plan: 12" reads as complete
+                whether the true roster is 12 or 30, because a board built from plans cannot show a
+                rep who filed none — he is absent, not flagged. A dash rather than a zero when the
+                roster is unknown: a false all-clear is the one wrong answer here. */}
+            <Tile
+              label="Filed nothing"
+              sub={
+                !rosterKnown
+                  ? "roster unavailable"
+                  : missingReps.length === 0
+                    ? "everyone filed"
+                    : "reps in your reach"
+              }
+              tone={!rosterKnown ? undefined : missingReps.length === 0 ? "emerald" : "rose"}
+              value={rosterKnown ? String(missingReps.length) : "—"}
+            />
             <Tile label="Planned calls" sub="across every plan shown" value={String(plannedCalls)} />
             <Tile
               label="Plan type"
@@ -165,6 +182,27 @@ export function PlanVerificationBoardView({
             </p>
           ) : null}
         </div>
+      </Section>
+
+      {/* Placed ABOVE the plans table on purpose. A manager reads this page top-down to clear a
+          backlog, and the reps who filed nothing are the ones he will never be reminded of by
+          anything else on it — there is no pending row for them to sit in. Below the table, on a
+          manager with thirty reps, it would be off the bottom of the screen. */}
+      <Section
+        description={
+          rosterKnown
+            ? "Reps whose doctor list the CRM holds, but who filed no plan at all for this period. Nothing here can be verified — there is nothing to verify."
+            : "The CRM's assigned-doctor mirror returned nobody, so this board cannot say who is missing."
+        }
+        title={rosterKnown ? `Filed nothing — ${missingReps.length}` : "Filed nothing"}
+      >
+        <PlanMissingRepsTable
+          kind={kind}
+          month={month}
+          reps={missingReps}
+          rosterKnown={rosterKnown}
+          year={year}
+        />
       </Section>
 
       <Section
