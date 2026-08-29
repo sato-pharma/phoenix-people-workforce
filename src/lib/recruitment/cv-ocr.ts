@@ -36,7 +36,6 @@
 // the file at langPath GZIPPED and named exactly "<lang>.traineddata.gz"; handed the uncompressed
 // file it reports ENOENT for the .gz that is not there.
 
-import { readFile } from "node:fs/promises";
 import path from "node:path";
 
 import { logError } from "@/lib/observability/log";

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 
 import { getNavigationSections } from "../src/config/system-navigation.ts";
@@ -133,14 +133,6 @@ function lookupForSeat(seat: HrBundleName): PermissionLookup {
 function accessFor(seat: HrBundleName): AccessContext {
   const role = seat as unknown as PhoenixRole;
   return { role, scope: scopeForRole(role), hrId: "HR-SEAT-TEST", source: "session" } as AccessContext;
-}
-
-function heldKeys(seat: HrBundleName): Set<string> {
-  const keys = new Set<string>();
-  for (const [resource, actions] of Object.entries(hrBundleGrants(seat))) {
-    for (const action of actions ?? []) keys.add(`${resource}:${action}`);
-  }
-  return keys;
 }
 
 /** The HR shell mounts these pages under /hr, so the prefix is stripped before resolving. */

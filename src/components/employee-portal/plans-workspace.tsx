@@ -39,6 +39,7 @@ import { MovePlanPeriod } from "@/components/employee-portal/move-plan-period";
 import { PlanConversationThread } from "@/components/weekly-planning/plan-conversation-thread";
 import type { AccessContext } from "@/lib/auth/permissions";
 import { hrIdsMatch } from "@/lib/hr-id";
+import { downloadFromApiRoute } from "@/lib/navigation/browser-navigation";
 import {
   approvedRegionsForSeats,
   canonicalPlanningRegionName,
@@ -1950,7 +1951,7 @@ export function PlansWorkspace({
               </Link>
               <button
                 className="inline-flex h-11 items-center justify-center gap-1.5 border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 active:bg-slate-50"
-                onClick={() => window.location.assign("/api/weekly-plans/export?format=xlsx")}
+                onClick={() => downloadFromApiRoute("/api/weekly-plans/export?format=xlsx")}
                 type="button"
               >
                 <Download className="h-4 w-4" />
@@ -1958,7 +1959,7 @@ export function PlansWorkspace({
               </button>
               <button
                 className="inline-flex h-11 items-center justify-center gap-1.5 border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 active:bg-slate-50"
-                onClick={() => window.location.assign("/api/weekly-plans/export?format=pdf")}
+                onClick={() => downloadFromApiRoute("/api/weekly-plans/export?format=pdf")}
                 type="button"
               >
                 <Download className="h-4 w-4" />
@@ -2339,7 +2340,7 @@ export function PlansWorkspace({
                 <div className="flex flex-wrap gap-2">
                   <button
                     className="inline-flex h-9 items-center gap-1.5 rounded-sm border border-white/15 bg-white/10 px-3 text-xs font-black text-slate-100 transition hover:border-orange-400/70 hover:text-orange-200"
-                    onClick={() => window.location.assign("/api/weekly-plans/export?format=xlsx")}
+                    onClick={() => downloadFromApiRoute("/api/weekly-plans/export?format=xlsx")}
                     type="button"
                   >
                     <Download className="h-3.5 w-3.5" />
@@ -2347,7 +2348,7 @@ export function PlansWorkspace({
                   </button>
                   <button
                     className="inline-flex h-9 items-center gap-1.5 rounded-sm border border-white/15 bg-white/10 px-3 text-xs font-black text-slate-100 transition hover:border-orange-400/70 hover:text-orange-200"
-                    onClick={() => window.location.assign("/api/weekly-plans/export?format=pdf")}
+                    onClick={() => downloadFromApiRoute("/api/weekly-plans/export?format=pdf")}
                     type="button"
                   >
                     <Download className="h-3.5 w-3.5" />
@@ -2358,7 +2359,7 @@ export function PlansWorkspace({
                       <button
                         className="inline-flex h-9 items-center gap-1.5 rounded-sm border border-orange-400/45 bg-orange-500/15 px-3 text-xs font-black text-orange-100 transition hover:border-orange-300"
                         onClick={() =>
-                          window.location.assign(
+                          downloadFromApiRoute(
                             `/api/weekly-plans/export?format=xlsx&planId=${encodeURIComponent(plan.id)}`,
                           )
                         }
@@ -2370,7 +2371,7 @@ export function PlansWorkspace({
                       <button
                         className="inline-flex h-9 items-center gap-1.5 rounded-sm border border-orange-400/45 bg-orange-500/15 px-3 text-xs font-black text-orange-100 transition hover:border-orange-300"
                         onClick={() =>
-                          window.location.assign(
+                          downloadFromApiRoute(
                             `/api/weekly-plans/export?format=pdf&planId=${encodeURIComponent(plan.id)}`,
                           )
                         }

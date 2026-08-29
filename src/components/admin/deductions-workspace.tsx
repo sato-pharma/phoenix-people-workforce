@@ -1487,7 +1487,6 @@ function LeaverSettlementPanel({ monthKey }: { monthKey: string }) {
   useEffect(() => {
     const term = query.trim();
     if (term.length < 2 || picked) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setMatches([]);
       return;
     }

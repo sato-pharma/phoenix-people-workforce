@@ -174,11 +174,9 @@ function useOfflineQueue(onReplay: (payload: unknown) => Promise<void>) {
         const cutoff = Date.now() - MARKETING_DRAFT_EVIDENCE_MAX_AGE_MS;
         const usable = entries.filter((entry) => Number(entry.timestamp) >= cutoff);
         if (usable.length > 0) {
-          // eslint-disable-next-line react-hooks/set-state-in-effect
           setQueue(usable);
         }
         if (usable.length < entries.length) {
-          // eslint-disable-next-line react-hooks/set-state-in-effect
           setExpiredCount(entries.length - usable.length);
         }
       }

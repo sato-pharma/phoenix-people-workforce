@@ -17,6 +17,7 @@ import { type AccessContext, type NavigationMode, type PhoenixRole } from "@/lib
 import type { PermissionLookup } from "@/components/layout/sidebar";
 import type { ViewerIdentity } from "@/lib/auth/server";
 import { usesAdminChrome } from "@/lib/navigation/active-path";
+import { hardNavigate } from "@/lib/navigation/browser-navigation";
 import { useDismissOnOutsideInteraction } from "@/hooks/use-dismiss-on-outside-interaction";
 
 export function Topbar({
@@ -25,7 +26,6 @@ export function Topbar({
   viewer,
   currentRole,
   personalLayout = null,
-  scope,
 }: {
   currentRole?: PhoenixRole;
   navigationMode?: NavigationMode;
@@ -50,7 +50,7 @@ export function Topbar({
     logoutOneSignal();
     try {
       await fetch("/api/auth/logout", { method: "POST" });
-      window.location.href = "/login";
+      hardNavigate("/login");
     } catch (error) {
       console.error("Logout failed:", error);
     }

@@ -1,3 +1,5 @@
+import { hardNavigate } from "@/lib/navigation/browser-navigation";
+
 export const phoenixLastActivityStorageKey = "phoenix_last_activity_at";
 export const phoenixSessionTimeoutReason = "session-timeout";
 
@@ -32,7 +34,7 @@ export function handlePossibleSessionDeath(response: Pick<Response, "status">): 
   const looksSessionDead = response.status === 401 || (response.status === 403 && isSessionInvalidated());
   if (!looksSessionDead) return false;
 
-  window.location.assign(`/login?reason=${phoenixSessionTimeoutReason}`);
+  hardNavigate(`/login?reason=${phoenixSessionTimeoutReason}`);
   return true;
 }
 

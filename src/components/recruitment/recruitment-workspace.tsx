@@ -50,6 +50,7 @@ import {
   managerSeatLabel,
   type ManagerGroup,
 } from "@/lib/recruitment/manager-grouping";
+import { downloadFromApiRoute } from "@/lib/navigation/browser-navigation";
 import { screeningHref } from "@/lib/recruitment/screening-link";
 import {
   applicationStageLabel,
@@ -3312,7 +3313,7 @@ function CandidatesTab({
               >
                 <UserPlus className="mr-1.5 h-4 w-4" /> Add candidate
               </Button>
-              <Button variant="secondary" onClick={() => { window.location.href = "/api/recruitment/candidates/template"; }}>
+              <Button variant="secondary" onClick={() => downloadFromApiRoute("/api/recruitment/candidates/template")}>
                 Download import template
               </Button>
               {canImport ? (

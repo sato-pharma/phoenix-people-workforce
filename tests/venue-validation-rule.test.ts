@@ -7,7 +7,6 @@ import {
 } from "../src/lib/venues/pharmacy-license.ts";
 import { VENUE_TYPES } from "../src/lib/venues/venue-type.ts";
 import {
-  VENUE_LOCATION_REQUIRED_MESSAGE,
   resolveVenueIdentityRoute,
   venueAdminRouteEvidenceGapMessage,
   venueIdentityGapMessage,

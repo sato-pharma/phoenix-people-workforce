@@ -6,6 +6,7 @@ import { type FormEvent, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { hardNavigate } from "@/lib/navigation/browser-navigation";
 
 type FieldState = {
   show: boolean;
@@ -67,7 +68,7 @@ export function ChangePasswordForm() {
       // Session could not be refreshed in-place; redirect to login so the user
       // authenticates fresh with the new password.
       if (data.requiresRelogin) {
-        window.location.href = "/login?reason=password_changed";
+        hardNavigate("/login?reason=password_changed");
         return;
       }
 

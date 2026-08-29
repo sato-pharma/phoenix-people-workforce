@@ -20,6 +20,7 @@ import type {
   StepKey,
   StepRow,
 } from "@/lib/automated-payroll/types";
+import { downloadFromApiRoute } from "@/lib/navigation/browser-navigation";
 import { cn } from "@/lib/utils";
 
 type Props = {
@@ -648,7 +649,7 @@ export function RecommendationStep({
             disabled={busy}
             onClick={async () => {
               if (dirty) await save();
-              window.location.href = `/api/automated-payroll/runs/${runId}/steps/${stepKey}/export`;
+              downloadFromApiRoute(`/api/automated-payroll/runs/${runId}/steps/${stepKey}/export`);
             }}
           >
             Download xlsx

@@ -38,9 +38,6 @@ const toneAccent = (metric: Metric, pct: number): "amber" | "emerald" | "rose" =
 const pctOf = (point: RepDoctorTrendPoint, metric: Metric): number =>
   metric === "coverage" ? point.coveragePct : point.frequencyPct;
 
-const deltaOf = (point: RepDoctorTrendPoint, metric: Metric): number | null =>
-  metric === "coverage" ? point.coverageDelta : point.frequencyDelta;
-
 /** Short month label for a column head — "Jan" from "January 2026". Never truncated with an
  * ellipsis, and never wrapped (owner's standing rule): the head is already three letters. */
 function shortMonth(monthLabel: string): string {

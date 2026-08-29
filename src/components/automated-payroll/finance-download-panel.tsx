@@ -7,6 +7,7 @@ import { Banknote, Building2, Landmark, ShieldCheck } from "lucide-react";
 import { AdminCallout, AdminPageHero, AdminTableShell } from "@/components/admin/admin-design-system";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { downloadFromApiRoute } from "@/lib/navigation/browser-navigation";
 
 import { SelectField } from "./select-field";
 
@@ -55,15 +56,17 @@ export function FinanceDownloadPanel({ initialMonth, initialYear }: { initialMon
   }, [month, year]);
 
   const download = (scope: "part1" | "full") => {
-    window.location.href = `/api/automated-payroll/finance/download?month=${month}&year=${year}&scope=${scope}`;
+    downloadFromApiRoute(`/api/automated-payroll/finance/download?month=${month}&year=${year}&scope=${scope}`);
   };
 
   const downloadFab = (scope: "part1" | "part2") => {
-    window.location.href = `/api/automated-payroll/finance/fab-download?month=${month}&year=${year}&scope=${scope}&valueDate=${fabValueDate}`;
+    downloadFromApiRoute(
+      `/api/automated-payroll/finance/fab-download?month=${month}&year=${year}&scope=${scope}&valueDate=${fabValueDate}`,
+    );
   };
 
   const downloadCib = (scope: "part1" | "part2") => {
-    window.location.href = `/api/automated-payroll/finance/cib-download?month=${month}&year=${year}&scope=${scope}`;
+    downloadFromApiRoute(`/api/automated-payroll/finance/cib-download?month=${month}&year=${year}&scope=${scope}`);
   };
 
   // Rebuilt 2026-08-10. It was a single 768px column of stacked full-width bands: hero, then a
