@@ -103,7 +103,7 @@ export function RepCountersTable({ data }: Props) {
               <th className="px-3 py-2">Expired</th>
               {/* The proven outcome, next to the pending ones. Before this existed, a module that
                   had been cleaned up read as a module where nothing had ever happened. */}
-              <th className="px-3 py-2">Rejected pharmacies</th>
+              <th className="px-3 py-2">Rejected venues</th>
               <th className="px-3 py-2">Orders rejected</th>
               <th className="px-3 py-2">Evidence sent</th>
               <th className="px-3 py-2">Existed after all</th>

@@ -167,7 +167,7 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
   //   · Area was too narrow; the scope is now the submitter's REGION.
   //
   // And the question it could never ask at all: is the CODE already taken? That one used to surface
-  // as "Could not create the pharmacy." AFTER a codeless duplicate had already been committed.
+  // as "Could not create the venue." AFTER a codeless duplicate had already been committed.
   const [preflight, setPreflight] = useState<DirectOrderPharmacyPreflight>({ codeConflicts: [], nameMatches: [] });
   const [nameMatchDismissed, setNameMatchDismissed] = useState(false);
   /**
@@ -448,11 +448,11 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
     // deliberately no server round trip: the id came from a list the server itself just scoped to
     // this person. This is the path the other two exist to funnel people into.
     if (pharmacyMode === "mine") {
-      if (!pickedMine) throw new Error("Pick one of your pharmacies, or search the full database.");
+      if (!pickedMine) throw new Error("Pick one of your venues, or search the full database.");
       return pickedMine.id;
     }
     if (pharmacyMode === "picked") {
-      if (!pickedHit) throw new Error("Search for the pharmacy and pick it from the list.");
+      if (!pickedHit) throw new Error("Search for the venue and pick it from the list.");
       // The body carries only POINTERS at the trusted row — the server copies every stored
       // field from the catalogue, nothing from this form (spec A1/B3).
       const res = await fetch("/api/direct-orders/pharmacies/from-directory", {
@@ -465,12 +465,12 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
         }),
       });
       const data = (await res.json().catch(() => ({}))) as { success?: boolean; message?: string; pharmacy?: DirectOrderPharmacy };
-      if (!res.ok || !data.success || !data.pharmacy) throw new Error(data.message || "Could not resolve the selected pharmacy.");
+      if (!res.ok || !data.success || !data.pharmacy) throw new Error(data.message || "Could not resolve the selected venue.");
       return data.pharmacy.id;
     }
-    if (!newName.trim()) throw new Error("New pharmacy name is required.");
+    if (!newName.trim()) throw new Error(`${venueTypeChoiceLabel(newVenueType)} name is required.`);
     if (!newDoctor.trim()) throw new Error("Doctor name is required.");
-    if (!newAddress.trim()) throw new Error("Pharmacy address is required.");
+    if (!newAddress.trim()) throw new Error(`${venueTypeChoiceLabel(newVenueType)} address is required.`);
     // readyToSubmit blocks this first. Repeated here for the same reason as the half-filled row
     // above — so the client cannot send a venue with no stated type if that gate is ever bypassed,
     // and so the type below narrows without an assertion.
@@ -500,13 +500,13 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
         // type switch would 400 the whole registration rather than being quietly ignored.
         distributorCodes: venueRequiresDistributorCode(newVenueType) ? pairs : [],
         venueType: newVenueType,
-        // "No, mine is a different pharmacy." The server re-checks the collision and records the
+        // "No, mine is a different venue." The server re-checks the collision and records the
         // contested claim; it never takes this flag as permission to claim the code.
         acknowledgedCodeConflict,
       }),
     });
     const data = (await res.json().catch(() => ({}))) as { success?: boolean; message?: string; pharmacy?: DirectOrderPharmacy };
-    if (!res.ok || !data.success || !data.pharmacy) throw new Error(data.message || "Could not create the pharmacy.");
+    if (!res.ok || !data.success || !data.pharmacy) throw new Error(data.message || "Could not create the venue.");
     return data.pharmacy.id;
   }
 
@@ -591,7 +591,7 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
               medical rep can reach, which this module already shipped once with the validation
               capture. It only ever proposes: nothing below moves until a line is accepted. */}
           <InvoiceCapture
-            customerHint="Choose this pharmacy below to use it."
+            customerHint="Choose this venue below to use it."
             onApply={(payload) => {
               setProductCode(payload.productCode);
               setQty(payload.qty);
@@ -834,7 +834,7 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
 
           {/* Pharmacy — combo box over the master database (spec B1/B2/B3), now behind three tabs. */}
           <div className="border-t border-[#eef1f3] pt-3">
-            <label className={labelClass()}>Pharmacy *</label>
+            <label className={labelClass()}>Venue *</label>
 
             {/* Three ways in, ordered by what each one costs the rep AND what it costs the data.
                 "My pharmacies" is first because it is the only one that cannot create anything:
@@ -844,9 +844,9 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
             <div className="mt-1 flex overflow-x-auto border border-[#eef1f3]">
               {(
                 [
-                  { mode: "mine", label: "My pharmacies" },
+                  { mode: "mine", label: "My venues" },
                   { mode: "picked", label: "Search" },
-                  { mode: "new", label: "New pharmacy" },
+                  { mode: "new", label: "New venue" },
                 ] as const
               ).map((tab) => (
                 <button
@@ -865,18 +865,18 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
             {pharmacyMode === "mine" ? (
               <div className="mt-1.5">
                 {myPharmacies === null ? (
-                  <p className="text-phx-sm font-semibold text-slate-500">Loading your pharmacies…</p>
+                  <p className="text-phx-sm font-semibold text-slate-500">Loading your venues…</p>
                 ) : myPharmaciesError ? (
                   // An empty list and a failed load must never read the same. One says "you have
                   // none yet"; the other says "we do not know", and only the second is a reason to
                   // go and search rather than trust the emptiness.
                   <p className="border border-amber-300 bg-amber-50 px-3 py-2 text-phx-sm font-bold text-amber-800">
-                    Your pharmacies could not be loaded. Use Search before adding a new pharmacy — do
+                    Your venues could not be loaded. Use Search before adding a new venue — do
                     not retype one you have ordered on before.
                   </p>
                 ) : myPharmacies.length === 0 ? (
                   <p className="border border-[#eef1f3] px-3 py-2 text-phx-sm font-semibold text-slate-500">
-                    No approved pharmacies yet. A pharmacy lands here once one of your orders on it is
+                    No approved venues yet. A venue lands here once one of your orders on it is
                     approved, and from then on it is one click.
                   </p>
                 ) : (
@@ -950,7 +950,7 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
                     className="text-phx-sm font-semibold text-slate-500 underline hover:text-slate-700"
                     onClick={() => setPharmacyMode("new")}
                   >
-                    My pharmacy is not in the database…
+                    My venue is not in the database…
                   </button>
                 </div>
               )
@@ -958,8 +958,8 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
               <div className="mt-1 space-y-2">
                 <div className="border border-amber-300 bg-amber-50 px-3 py-2">
                   <p className="text-phx-sm font-bold text-amber-800">
-                    This pharmacy is not in the master database, so the request will NOT enter the
-                    approval flow until the pharmacy is validated. Search first — most pharmacies
+                    This venue is not in the master database, so the request will NOT enter the
+                    approval flow until the venue is validated. Search first — most venues
                     are already there under a slightly different spelling.
                   </p>
                   <button
@@ -1050,7 +1050,7 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
                 {!nameMatchDismissed && preflight.nameMatches.length > 0 ? (
                   <div className="border border-sky-300 bg-sky-50 px-3 py-2">
                     <p className="text-phx-sm font-bold text-sky-800">
-                      Did you mean one of these? A pharmacy with this name is already registered in
+                      Did you mean one of these? A venue with this name is already registered in
                       your region.
                     </p>
                     <div className="mt-1 space-y-1">
@@ -1089,7 +1089,7 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
                       className="mt-1 text-phx-sm font-semibold text-slate-500 hover:text-slate-700"
                       onClick={() => setNameMatchDismissed(true)}
                     >
-                      No, mine is a different pharmacy
+                      No, mine is a different venue
                     </button>
                   </div>
                 ) : null}
@@ -1108,7 +1108,7 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
                   <p className="text-phx-xs font-black uppercase tracking-wider text-slate-500">Distributor customer codes</p>
                   <p className="mb-1 text-phx-xs font-semibold text-slate-500">
                     Optional. Leave it empty if you do not know them — but the order cannot be
-                    finalized until the pharmacy passes validation.
+                    finalized until the venue passes validation.
                   </p>
                   {distRows.map((row, index) => (
                     <DistributorCustomerPicker
@@ -1132,7 +1132,7 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
 
                 {/* The code is already taken (owner, 2026-08-13).
                     This is the question that used to be a dead end. The code went to the server, the
-                    unique index refused it, and the rep read "Could not create the pharmacy." — after
+                    unique index refused it, and the rep read "Could not create the venue." — after
                     a codeless duplicate of her pharmacy had ALREADY been committed by the untransacted
                     half of the insert. She then either re-typed the pharmacy again or invented a code
                     ("000000" is in production twice) to get past it.
@@ -1214,7 +1214,7 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
                   </div>
                 ) : null}
 
-                <p className="text-phx-xs text-slate-400">Phoenix auto-generates a stable code for this pharmacy so you can reuse it next time.</p>
+                <p className="text-phx-xs text-slate-400">Phoenix auto-generates a stable code for this venue so you can reuse it next time.</p>
               </div>
             )}
           </div>
@@ -1281,7 +1281,7 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
                   <th className="px-3 py-2 text-right">Qty</th>
                   <th className="px-3 py-2 text-right">Bonus</th>
                   <th className="px-3 py-2 text-right">Value</th>
-                  <th className="px-3 py-2">Pharmacy</th>
+                  <th className="px-3 py-2">Venue</th>
                   <th className="px-3 py-2">Status</th>
                   <th className="px-3 py-2">Waiting on</th>
                   <th className="px-3 py-2" />

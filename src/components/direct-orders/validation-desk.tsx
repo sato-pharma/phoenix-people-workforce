@@ -50,7 +50,7 @@ export function ValidationDesk({ rows }: Props) {
     setOk(null);
     const picked = match[row.id] ?? null;
     if (decision === "match" && (!picked || !picked.distributorCode || !picked.customerCode)) {
-      setError("Search and pick the real customer this pharmacy matches.");
+      setError("Search and pick the real customer this venue matches.");
       return;
     }
     setBusy(row.id);
@@ -90,8 +90,8 @@ export function ValidationDesk({ rows }: Props) {
   if (rows.length === 0) {
     return (
       <section className="border border-phx-line bg-white px-4 py-8 text-center">
-        <p className="text-sm font-bold text-slate-600">No pharmacy validations waiting.</p>
-        <p className="mt-1 text-phx-sm text-slate-400">Every submitted order is on a pharmacy the master database recognises.</p>
+        <p className="text-sm font-bold text-slate-600">No venue validations waiting.</p>
+        <p className="mt-1 text-phx-sm text-slate-400">Every submitted order is on a venue the master database recognises.</p>
       </section>
     );
   }
@@ -150,7 +150,7 @@ export function ValidationDesk({ rows }: Props) {
                     ADVISORY ONLY — it sits beside the evidence, never on the decision buttons, and
                     an absent or unreadable answer says so rather than staying quiet. Silence here
                     would be read as "nothing wrong", which is the one thing it must never mean. */}
-                <EvidenceReading check={row.evidenceCheck} claimedName={row.claimedPharmacyName} />
+                <EvidenceReading check={row.evidenceCheck} claimedName={row.claimedPharmacyName} venueType={row.venueType} />
                 {row.capturedLatitude != null ? (
                   <a
                     className="mt-1 block text-phx-xs font-bold text-orange-600 underline"

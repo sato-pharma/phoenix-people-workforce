@@ -11,7 +11,7 @@ import { readFileSync } from "node:fs";
  * `overflow-x-auto` box instead. That is correct on its own, but the pharmacy card sat in a grid
  * item with the default `min-width: auto`, so the moment a rep picked a pharmacy the card's widest
  * line ("Validated by <full employee name>") sized the single mobile column to ~618px inside a
- * 390px viewport. The whole card — including the "Validate New Pharmacy" / "My Pharmacies" tab row
+ * 390px viewport. The whole card — including the "Validate New Venue" / "My Venues" tab row
  * — was pushed off the right edge and clipped by an ancestor `overflow-hidden`, so on a phone the
  * rep could no longer see or reach the tabs. Measured on a real Chrome at 390x844.
  *
@@ -63,22 +63,22 @@ export function runMarketingValidationPharmacyCardMinWidthTests() {
   //    not overflowing its OWN box, so `text-overflow` had nothing to act on. `text-ellipsis` is
   //    the wrong treatment here regardless — the owner's rule is scroll, never truncate.
   const sectionHeader = source.match(
-    /<div className="([^"]*)">\s*<div className="flex flex-col gap-3 border-t border-slate-100 pt-4[^"]*">\s*<div className="([^"]+)">\s*<p className="[^"]*">Pharmacy Validation<\/p>\s*<p className="([^"]+)">/,
+    /<div className="([^"]*)">\s*<div className="flex flex-col gap-3 border-t border-slate-100 pt-4[^"]*">\s*<div className="([^"]+)">\s*<p className="[^"]*">Venue Validation<\/p>\s*<p className="([^"]+)">/,
   );
   assert.ok(
     sectionHeader,
-    `${WORKSPACE}: could not find the "Pharmacy Validation" section header — has it been restructured?`,
+    `${WORKSPACE}: could not find the "Venue Validation" section header — has it been restructured?`,
   );
   assert.ok(
     sectionHeader[1].split(/\s+/).includes("min-w-0"),
-    `${WORKSPACE}: the Pharmacy Validation section's grid item is "${sectionHeader[1]}" — it is ` +
+    `${WORKSPACE}: the Venue Validation section's grid item is "${sectionHeader[1]}" — it is ` +
       `missing "min-w-0". Without it the item sizes to its subtitle's min-content width (335px) ` +
       `inside a 330px phone track, and the customer card's "overflow-hidden" cuts the sentence ` +
       `mid-word with no ellipsis to show anything is missing.`,
   );
   assert.ok(
     sectionHeader[2].split(/\s+/).includes("overflow-x-auto"),
-    `${WORKSPACE}: the Pharmacy Validation subtitle's wrapper is "${sectionHeader[2]}" — it is ` +
+    `${WORKSPACE}: the Venue Validation subtitle's wrapper is "${sectionHeader[2]}" — it is ` +
       `missing "overflow-x-auto", so the nowrap sentence has nowhere to scroll on a phone.`,
   );
   assert.ok(

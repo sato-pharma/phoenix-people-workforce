@@ -160,7 +160,7 @@ export function PharmacyComboBox({ onSelect, inputClassName, distributorCode }: 
             setOpen(false);
           }
         }}
-        placeholder="Type the pharmacy name or its customer code…"
+        placeholder="Type the venue name or its customer code…"
         dir="auto"
         autoComplete="off"
       />

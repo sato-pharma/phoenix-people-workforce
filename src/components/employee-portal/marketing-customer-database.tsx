@@ -490,13 +490,13 @@ export function MarketingCustomerDatabase() {
       <PortalSection
         actions={<Badge variant="neutral">{workspace.rows.length} rows</Badge>}
         eyebrow="Customer Database"
-        title="Customer, pharmacy, and vendor rows"
+        title="Customer, venue, and vendor rows"
       >
         <PortalResponsiveDataList
           empty={
             !isLoading ? (
               <PortalEmptyState
-                message="Validated customer, pharmacy, and vendor rows will appear here once requests are approved."
+                message="Validated customer, venue, and vendor rows will appear here once requests are approved."
                 title="No customer database rows yet"
               />
             ) : (
@@ -520,16 +520,16 @@ export function MarketingCustomerDatabase() {
                 <th className="px-4 py-3">Customer Phone</th>
                 <th className="px-4 py-3">Customer Address</th>
                 <th className="px-4 py-3">Customer Validation Photo</th>
-                <th className="px-4 py-3">Pharmacy ID</th>
-                <th className="px-4 py-3">Pharmacy Name</th>
-                <th className="px-4 py-3">Pharmacy Area</th>
-                <th className="px-4 py-3">Pharmacy Governorate</th>
-                <th className="px-4 py-3">Pharmacy Address</th>
+                <th className="px-4 py-3">Venue ID</th>
+                <th className="px-4 py-3">Venue Name</th>
+                <th className="px-4 py-3">Venue Area</th>
+                <th className="px-4 py-3">Venue Governorate</th>
+                <th className="px-4 py-3">Venue Address</th>
                 <th className="px-4 py-3">Venue Type</th>
                 <th className="px-4 py-3">Licence vs Sign</th>
                 <th className="px-4 py-3">Vendor ID</th>
                 <th className="px-4 py-3">Vendor</th>
-                <th className="px-4 py-3">Vendor Pharmacy Code</th>
+                <th className="px-4 py-3">Vendor Venue Code</th>
                 <th className="px-4 py-3">Vendor Code Row ID</th>
                 <th className="px-4 py-3">Status</th>
               </tr>

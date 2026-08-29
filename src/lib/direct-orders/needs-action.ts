@@ -207,8 +207,8 @@ export function buildDirectOrderNeedsAction(
     groups.push(
       group(
         "verify_customer",
-        `${held.length} of your ${plural(held.length, "order needs", "orders need")} the pharmacy verified before anyone can approve it`,
-        "Verify pharmacy",
+        `${held.length} of your ${plural(held.length, "order needs", "orders need")} the venue verified before anyone can approve it`,
+        "Verify venue",
         held,
         basePath,
         `${basePath}?view=needs-action&queue=verify_customer`,
@@ -254,8 +254,8 @@ export function buildDirectOrderNeedsAction(
       kind: "decide_customer",
       headline: `${input.pendingCustomerValidations} ${plural(
         input.pendingCustomerValidations,
-        "pharmacy is",
-        "pharmacies are",
+        "venue is",
+        "venues are",
       )} waiting for you to confirm they exist`,
       actionLabel: "Open validation desk",
       count: input.pendingCustomerValidations,

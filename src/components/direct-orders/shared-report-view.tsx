@@ -136,7 +136,7 @@ export function SharedDirectOrderReport({ token }: Props) {
             <tr className="border-b border-[#eef1f3] bg-slate-50 text-phx-xs font-black uppercase tracking-wider text-slate-500">
               <th className="px-3 py-2">Status</th>
               <th className="px-3 py-2">Requester</th>
-              <th className="px-3 py-2">Pharmacy</th>
+              <th className="px-3 py-2">Venue</th>
               <th className="px-3 py-2">Product</th>
               <th className="px-3 py-2 text-right">Qty</th>
               <th className="px-3 py-2 text-right">Value</th>

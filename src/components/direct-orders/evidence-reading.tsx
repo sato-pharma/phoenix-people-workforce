@@ -1,4 +1,5 @@
 import type { DirectOrderEvidenceCheck } from "@/lib/direct-orders/evidence-check";
+import { DEFAULT_VENUE_TYPE, venueRequiresDistributorCode, venueTypeLabel, type VenueType } from "@/lib/venues/venue-type";
 
 /**
  * What the storefront photo was read to say (spec E2).
@@ -23,9 +24,15 @@ import type { DirectOrderEvidenceCheck } from "@/lib/direct-orders/evidence-chec
 export function EvidenceReading({
   check,
   claimedName,
+  venueType = DEFAULT_VENUE_TYPE,
 }: {
   check: DirectOrderEvidenceCheck | null;
   claimedName: string;
+  /**
+   * Defaults to `pharmacy`, which is what every caller meant before this prop existed and what
+   * every stored reading was produced against.
+   */
+  venueType?: VenueType;
 }) {
   if (!check) {
     return (
@@ -44,12 +51,17 @@ export function EvidenceReading({
           ? "border-emerald-200 bg-emerald-50 text-emerald-800"
           : "border-slate-200 bg-slate-50 text-slate-500";
 
+  // A nursery was reading "This does not look like a pharmacy." in rose over a photograph that
+  // was never wrong — it was never claiming to be one. The verdict now names what was asked.
+  const subject = venueRequiresDistributorCode(venueType)
+    ? "a pharmacy"
+    : "the real premises of a business";
   const headline =
     check.isPharmacy === false
-      ? "This does not look like a pharmacy."
+      ? `This does not look like ${subject}.`
       : check.isPharmacy === true
-        ? "This looks like a pharmacy."
-        : "Could not tell whether this is a pharmacy.";
+        ? `This looks like ${subject}.`
+        : `Could not tell whether this is ${subject}.`;
 
   return (
     <div className={`mt-2 space-y-0.5 border px-3 py-2 text-phx-sm ${tone}`}>
