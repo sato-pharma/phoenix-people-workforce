@@ -112,12 +112,17 @@ export function groupOverdueInvoicesByRequester(
     if (held) held.invoices.push(invoice);
     else byRequester.set(key, { hrId: invoice.requesterHrId, invoices: [invoice] });
   }
-  return Array.from(byRequester.values())
-    .map((requester) => ({
+  // Sort on the MAP KEY, not on a re-normalized hrId: `normalizeHrId` returns `string | null`, and
+  // re-running it here throws away the `if (!key) continue` narrowing above for no gain — the key is
+  // the same normalized value, already proven non-null.
+  return Array.from(byRequester.entries())
+    .map(([key, requester]) => ({
+      key,
       hrId: requester.hrId,
       invoices: [...requester.invoices].sort((left, right) => right.daysOverdue - left.daysOverdue),
     }))
-    .sort((left, right) => normalizeHrId(left.hrId).localeCompare(normalizeHrId(right.hrId)));
+    .sort((left, right) => left.key.localeCompare(right.key))
+    .map(({ hrId, invoices }) => ({ hrId, invoices }));
 }
 
 /** "EGP 5,500", or an empty string when the request carries no amount at all. */

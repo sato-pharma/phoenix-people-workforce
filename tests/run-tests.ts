@@ -3239,6 +3239,8 @@ await runTest(
     + "someone chose, and the reason is written before the status so a 15s timeout can never freeze a request "
     + "with no recorded why)",
   runMarketingFinanceHoldTests,
+);
+await runTest(
   "marketing invoice overdue nudge (the requester hears about their own, finance gets one digest, "
     + "never by email, and finance gets no link because no screen shows him one)",
   runMarketingInvoiceOverdueNudgeTests,
