@@ -5,6 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useRef, useState } from "react";
 
+import { CalculatorWidget } from "@/components/layout/calculator-widget";
 import { COMMAND_PALETTE_EVENT } from "@/components/layout/command-palette";
 import { InAppNotificationsBell } from "@/components/layout/in-app-notifications-bell";
 import { InternalMessagesMenu } from "@/components/layout/internal-messages-menu";
@@ -118,6 +119,9 @@ export function Topbar({
           >
             <Search className="h-5 w-5" />
           </button>
+          {/* Admin chrome only, which is where the owner asked for it. The panel it opens is a
+              portal, not a dropdown — see calculator-widget.tsx for why that matters here. */}
+          {isAdminMode ? <CalculatorWidget isAdminMode={isAdminMode} /> : null}
           <InAppNotificationsBell isAdminMode={isAdminMode} />
           <InternalMessagesMenu isAdminMode={isAdminMode} />
           <div className="relative" ref={userMenuRef}>

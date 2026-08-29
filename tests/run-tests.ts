@@ -14,6 +14,7 @@ import { runErrorMonitorUserAttemptsTests } from "./error-monitor-user-attempts.
 import { runGcpMetricsTests } from "./gcp-metrics.test.ts";
 import { runWeeklySystemHealthDigestTests } from "./weekly-system-health-digest.test.ts";
 import { runMailboxComplianceMonitorTests } from "./mailbox-compliance-monitor.test.ts";
+import { runCalculatorEngineTests } from "./calculator-engine.test.ts";
 import { runNavigationActivePathTests } from "./navigation-active-path.test.ts";
 import { runNavSingleGateNoBypassTests } from "./nav-single-gate-no-bypass.test.ts";
 import { runNavRolesNameOnlyPermissionHoldersTests } from "./nav-roles-name-only-permission-holders.test.ts";
@@ -3168,6 +3169,13 @@ await runTest(
   "mailbox compliance monitor (app-password seal round-trips and detects tampering, and the "
     + "mailbox_monitor resource plus every route is locked to Super Admin, audited, and CSRF-guarded)",
   runMailboxComplianceMonitorTests,
+);
+
+await runTest(
+  "topbar calculator (exact decimal arithmetic on the sums binary floats get wrong, desk-calculator "
+    + "percent and repeat-equals, paste sanitising that refuses ambiguity, and the non-blocking "
+    + "panel contract: portal-mounted, no backdrop, no document listener, no outside-click dismiss)",
+  runCalculatorEngineTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
