@@ -655,6 +655,25 @@ function recommendNewHires(
     row.context = {
       "Hire Date": member.employee.hireDate ?? "",
       "Days Worked": joiner.daysWorked,
+      // Owner request 2026-08-29: the FULL month's net, shown beside the
+      // prorated one so the proration can be checked on sight.
+      //
+      // Built from the SAME three components the proration divides, NOT from
+      // employees.net_salary, so Full / calendar-days x Days Worked always
+      // reconciles to "Net (month)" exactly. A net_salary column that disagreed
+      // with its own components would make a CORRECT proration look wrong —
+      // the opposite of what this column exists to do.
+      //
+      // Blank ("—") rather than 0 when HR has entered no figure at all: such a
+      // person is priced at nothing (see hasAnyRawCompensationFigure), and a
+      // "0.00" full-month salary reads as a real zero rather than missing data.
+      "Net Salary": source?.hasAnyRawCompensationFigure
+        ? roundCurrency(
+            roundCurrency(source.baseSalary ?? 0) +
+              roundCurrency(source.extraCostOfLiving ?? 0) +
+              roundCurrency(source.fuelAllowance ?? 0),
+          )
+        : "—",
       "Net (month)": pick(draft?.baseForMonth, joiner.baseForMonth) + pick(draft?.ecolPaid, joiner.ecolPaid) + pick(draft?.fuelPaid, joiner.fuelPaid),
     };
     row.recommended = { baseForMonth: joiner.baseForMonth, ecolPaid: joiner.ecolPaid, fuelPaid: joiner.fuelPaid };

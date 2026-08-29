@@ -47,7 +47,15 @@ export const STEP_DEFINITIONS: Record<StepKey, StepDefinition> = {
     contextColumns: [
       { key: "Hire Date", label: "Hire Date" },
       { key: "Days Worked", label: "Days Worked" },
-      { key: "Net (month)", label: "Net (month)" },
+      // Owner request 2026-08-29: show the FULL month's net beside the prorated
+      // one. A joiner's card previously showed only what he is paid THIS month,
+      // so there was nothing on screen to check it against — now the arithmetic
+      // is visible: Full Month Net / calendar days x Days Worked = This Month
+      // Net. "Net Salary" is the same key the other seven steps already use for
+      // a full month's net; only the LABEL is specialised here, so recommend.ts,
+      // the xlsx template and this grid keep one name per number.
+      { key: "Net Salary", label: "Full Month Net", money: true },
+      { key: "Net (month)", label: "This Month Net", money: true },
     ],
     fields: [
       { key: "baseForMonth", label: "Base (month)", kind: "money" },

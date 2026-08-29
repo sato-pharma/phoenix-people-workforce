@@ -817,14 +817,29 @@ export function RecommendationStep({
                   </div>
 
                   <div className="flex flex-col gap-2">
-                    {bodyContextColumns.map((column) => (
-                      <div key={column.key} className="flex items-center justify-between gap-3 text-sm">
-                        <span className="overflow-hidden whitespace-nowrap text-slate-500">{column.label}</span>
-                        <span className="shrink-0 overflow-hidden whitespace-nowrap font-medium text-slate-700">
-                          {String(row.context[column.key] ?? "")}
-                        </span>
-                      </div>
-                    ))}
+                    {bodyContextColumns.map((column) => {
+                      const contextValue = row.context[column.key];
+                      return (
+                        <div key={column.key} className="flex items-center justify-between gap-3 text-sm">
+                          <span className="overflow-hidden whitespace-nowrap text-slate-500">{column.label}</span>
+                          <span
+                            dir={column.money ? "ltr" : "auto"}
+                            className={cn(
+                              "shrink-0 overflow-hidden whitespace-nowrap font-medium text-slate-700",
+                              column.money && "tabular-nums",
+                            )}
+                          >
+                            {/* A money column can still carry a non-numeric marker — an em dash
+                                when HR has entered no salary figure at all — and running that
+                                through money() would print "NaN" on a payroll screen. Only real
+                                numbers get formatted; anything else renders as written. */}
+                            {column.money && typeof contextValue === "number"
+                              ? money(contextValue)
+                              : String(contextValue ?? "")}
+                          </span>
+                        </div>
+                      );
+                    })}
 
                     {definition.isHoldStep ? (
                       <div className="flex items-center justify-between gap-3 text-sm">
