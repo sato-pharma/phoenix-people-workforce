@@ -985,6 +985,7 @@ import { runAutomatedPayrollExcludedMembersTests } from "./automated-payroll-exc
 import { runDirectOrderEvidenceVisibilityTests } from "./direct-orders-evidence-visibility.test.ts";
 import { runDirectOrderHoldReleaseTests } from "./direct-orders-hold-release.test.ts";
 import { runDirectOrderDuplicateCleanupTests } from "./direct-orders-duplicate-cleanup.test.ts";
+import { runDirectOrderVenueLookAlikeTests } from "./direct-orders-venue-look-alikes.test.ts";
 import { runNsmCrmComplianceTests } from "./nsm-crm-compliance.test.ts";
 import { runCrmCampaignAccountTests } from "./crm-campaign-account.test.ts";
 import { runEarlyBirdsPeriodTests } from "./early-birds-period.test.ts";
@@ -2781,6 +2782,10 @@ await runTest(
 await runTest(
   "direct order duplicate cleanup (one pharmacy entered twice, one order submitted twice — and neither merges on a name)",
   runDirectOrderDuplicateCleanupTests,
+);
+await runTest(
+  "direct order look-alike venues (one coded record beside one codeless one reaches a human, and the list can never become a merge)",
+  runDirectOrderVenueLookAlikeTests,
 );
 await runTest(
   "NSM/RM CRM First Visit board (GPS-first ranking, a clockless submission still ranks, first 10 early birds, and passing the cap never returns you to the red list)",

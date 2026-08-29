@@ -35,8 +35,10 @@ import {
   canonicalPharmacyMap,
   DEDUPE_OPEN_STATUSES,
   findDuplicateRequestGroups,
+  findLookAlikeVenues,
   groupDuplicatePharmacies,
   type PharmacyMergeEvidence,
+  type VenueLookAlikeBlocker,
 } from "@/lib/direct-orders/duplicate-resolution";
 import {
   customerCodesMatch,
@@ -1464,15 +1466,24 @@ export async function acknowledgeDirectOrderPharmacy(
  * recorded as `pending_review` — "awaiting a look" — because the schema had no other word, and the
  * work had to be done in raw SQL against production.
  *
- * Rejecting also refuses every order still open on the pharmacy. Leaving them behind would strand
+ * Rejecting also refuses every order still OPEN on the pharmacy. Leaving them behind would strand
  * orders on a pharmacy nobody can ever confirm: `held` has no exit but the 14-day clock once
  * validation is impossible, and `pending_approval` would keep asking approvers to judge an order
  * whose customer has already been ruled fictional.
+ *
+ * It does NOT touch an APPROVED order (owner, 2026-08-29). Those are returned in
+ * `approvedOrdersKept` so the caller can say so out loud. See the comment on the update itself.
  */
 export async function rejectDirectOrderPharmacy(
   access: AccessContext,
   input: { pharmacyId: string; reason: string },
-): Promise<{ pharmacyId: string; ordersRejected: number }> {
+): Promise<{
+  pharmacyId: string;
+  ordersRejected: number;
+  /** Approved orders deliberately left standing — money committed, reversible only by a person. */
+  approvedOrdersKept: number;
+  approvedValueKept: number;
+}> {
   if (!(access.scope === "system" || access.role === "Super Admin")) {
     throw new Error("Forbidden: only a System Admin can reject a venue as false.");
   }
@@ -1499,14 +1510,37 @@ export async function rejectDirectOrderPharmacy(
     .eq("id", input.pharmacyId);
   if (updateError) throw updateError;
 
+  // AN APPROVED ORDER IS NOT TOUCHED. Owner's rule, 2026-08-29: "I don't want any confirmed order
+  // and accepted from our workflow to be lost." `approved` was in this list until then, so the
+  // first venue rejection carrying committed money would have reversed it automatically — from a
+  // button whose subject is the VENUE, with no human ever deciding to reverse the ORDER, and with
+  // the order's own approval surviving only as an event. That is the same shape the module already
+  // refuses elsewhere: the system flags, a person decides.
+  //
+  // The other four stay, because leaving THOSE behind is what strands them: `held` has no exit but
+  // the 14-day clock once validation is impossible, and `pending_approval` would keep asking
+  // approvers to judge an order whose customer has been ruled fictional. None of the four is a
+  // decision already taken — `approved` is the only one that is.
   const { data: openOrders, error: ordersError } = await supabase
     .from("direct_order_requests")
     .update({ status: "rejected" })
     .eq("pharmacy_id", input.pharmacyId)
-    .in("status", ["held", "pending_approval", "returned", "draft", "approved"])
+    .in("status", ["held", "pending_approval", "returned", "draft"])
     .select("id");
   if (ordersError) throw ordersError;
   const affected = (openOrders ?? []) as Array<{ id: string }>;
+
+  // What is still standing, read AFTER the refusal above so it cannot count anything this call just
+  // closed. Returned rather than merely skipped: a venue ruled false while carrying approved orders
+  // is the case that most needs a person to look, and silence would leave the admin to discover it.
+  const { data: standing, error: standingError } = await supabase
+    .from("direct_order_requests")
+    .select("id, sales_value")
+    .eq("pharmacy_id", input.pharmacyId)
+    .eq("status", "approved");
+  if (standingError) throw standingError;
+  const approvedKept = (standing ?? []) as Array<{ id: string; sales_value: number | null }>;
+  const approvedValueKept = approvedKept.reduce((sum, row) => sum + Number(row.sales_value ?? 0), 0);
 
   for (const order of affected) {
     await insertEvent({
@@ -1522,14 +1556,28 @@ export async function rejectDirectOrderPharmacy(
     entityType: "direct_order_request",
     entityId: `pharmacy:${input.pharmacyId}`,
     oldValues: { verificationStatus: previous, active: true },
-    newValues: { verificationStatus: "rejected", active: false, ordersRejected: affected.length },
+    newValues: {
+      verificationStatus: "rejected",
+      active: false,
+      ordersRejected: affected.length,
+      approvedOrdersKept: approvedKept.length,
+    },
     summary:
       `Direct-order pharmacy ${String((before as { phoenix_pharmacy_code?: string }).phoenix_pharmacy_code ?? "")} ` +
-      `rejected as FALSE by ${access.hrId ?? "unknown"} — ${reason}. ${affected.length} order(s) refused with it.`,
+      `rejected as FALSE by ${access.hrId ?? "unknown"} — ${reason}. ${affected.length} order(s) refused with it.` +
+      (approvedKept.length > 0
+        ? ` ${approvedKept.length} APPROVED order(s) worth ${approvedValueKept.toFixed(2)} EGP were NOT refused ` +
+          "and are still standing — approved money is reversed by a person, never by rejecting the venue."
+        : ""),
   });
 
   pingDirectOrderSheet("pharmacy_rejected");
-  return { pharmacyId: input.pharmacyId, ordersRejected: affected.length };
+  return {
+    pharmacyId: input.pharmacyId,
+    ordersRejected: affected.length,
+    approvedOrdersKept: approvedKept.length,
+    approvedValueKept,
+  };
 }
 
 /**
@@ -6836,6 +6884,19 @@ export type DirectOrderCleanupPharmacySummary = {
   createdByName: string;
   linkedCodes: string[];
   openRequestCount: number;
+  /**
+   * Approved orders sitting on this record, and what they are worth.
+   *
+   * Counted SEPARATELY from `openRequestCount` because the two are governed by different rules and
+   * the screen must not blur them. `openRequestCount` comes from `loadCleanupRequestSummaries`,
+   * which is filtered to `DEDUPE_OPEN_STATUSES` — so before this field existed the desk could say
+   * "0 open request(s)" about a record carrying a quarter of a million EGP of approved business,
+   * while `confirmDirectOrderCleanup` repoints requests with NO status filter and would move every
+   * one of them. A reviewer has to be able to see what a merge actually touches (owner's rule,
+   * 2026-08-29: a row with confirmed orders is never touched).
+   */
+  approvedRequestCount: number;
+  approvedRequestValue: number;
 };
 
 export type DirectOrderCleanupMerge = {
@@ -6871,6 +6932,21 @@ export type DirectOrderCleanupRelease = {
   requests: DirectOrderCleanupRequestSummary[];
 };
 
+/**
+ * Two venue records that look like one another and that the merge rule will NOT rule on.
+ *
+ * Review-only, and deliberately shaped so it cannot become a write: it carries no survivor, no
+ * `mergedIds`, and nothing on the confirm payload reads it. See `findLookAlikeVenues` for why —
+ * every group it can produce has approved orders on at least one side.
+ */
+export type DirectOrderCleanupLookAlike = {
+  normalizedName: string;
+  areaCode: string;
+  blocker: VenueLookAlikeBlocker;
+  explanation: string;
+  members: DirectOrderCleanupPharmacySummary[];
+};
+
 export type DirectOrderCleanupPlan = {
   /** Pharmacy records proven to be one real pharmacy (owner rule 4). */
   merges: DirectOrderCleanupMerge[];
@@ -6880,6 +6956,8 @@ export type DirectOrderCleanupPlan = {
   repairs: DirectOrderCleanupRepair[];
   /** Held requests that resolution would release (owner rule 2). */
   releases: DirectOrderCleanupRelease[];
+  /** Same name, same area, not provable — shown for a human to judge, never applied. */
+  lookAlikes: DirectOrderCleanupLookAlike[];
   /** Empty when there is nothing to do — the screen says so rather than showing a blank page. */
   isEmpty: boolean;
 };
@@ -6945,6 +7023,32 @@ async function loadCleanupRequestSummaries(): Promise<DirectOrderCleanupRequestS
 }
 
 /**
+ * Approved orders per venue record — count and value.
+ *
+ * A second query rather than a widening of `loadCleanupRequestSummaries`, because that function
+ * feeds the duplicate-cancel proposal and MUST stay filtered to `DEDUPE_OPEN_STATUSES`: an approved
+ * order is money committed and is never a cancellation candidate. What the screen needs is the
+ * opposite thing — to SHOW the approved orders it must never offer to touch.
+ */
+async function loadApprovedTotalsByPharmacy(): Promise<Map<string, { count: number; value: number }>> {
+  const supabase = getSupabaseAdmin();
+  const rows = await fetchAllRows<Record<string, unknown>>(
+    () => supabase.from("direct_order_requests").select("id, pharmacy_id, sales_value").eq("status", "approved"),
+    "id",
+  );
+  const totals = new Map<string, { count: number; value: number }>();
+  for (const row of rows) {
+    const pharmacyId = String(row.pharmacy_id ?? "");
+    if (!pharmacyId) continue;
+    const current = totals.get(pharmacyId) ?? { count: 0, value: 0 };
+    current.count += 1;
+    current.value += Number(row.sales_value ?? 0);
+    totals.set(pharmacyId, current);
+  }
+  return totals;
+}
+
+/**
  * What the cleanup would do, and why — computed fresh, never stored.
  *
  * Storing proposals would let a stale plan be confirmed against data that has since moved: a request
@@ -6981,7 +7085,11 @@ export async function getDirectOrderCleanupPlan(access: AccessContext): Promise<
     candidatesById.set(pharmacy.id, await findPossibleDistributorMatchesByPharmacyName(pharmacy.pharmacyName));
   }
 
-  const [nameOf, allRequests] = await Promise.all([nameLookup(), loadCleanupRequestSummaries()]);
+  const [nameOf, allRequests, approvedTotals] = await Promise.all([
+    nameLookup(),
+    loadCleanupRequestSummaries(),
+    loadApprovedTotalsByPharmacy(),
+  ]);
   const requestsByPharmacy = new Map<string, DirectOrderCleanupRequestSummary[]>();
   for (const request of allRequests) {
     const bucket = requestsByPharmacy.get(request.pharmacyId) ?? [];
@@ -7001,6 +7109,8 @@ export async function getDirectOrderCleanupPlan(access: AccessContext): Promise<
     createdByName: nameOf(pharmacy.createdByHrId) ?? pharmacy.createdByHrId,
     linkedCodes: (pharmacy.distributorCodes ?? []).map((pair) => `${pair.distributorName}: ${pair.customerCode}`),
     openRequestCount: (requestsByPharmacy.get(pharmacy.id) ?? []).length,
+    approvedRequestCount: approvedTotals.get(pharmacy.id)?.count ?? 0,
+    approvedRequestValue: approvedTotals.get(pharmacy.id)?.value ?? 0,
   });
 
   // Arabic-normalized names for the name+area fallback (owner, 2026-08-13) — computed via
@@ -7022,27 +7132,29 @@ export async function getDirectOrderCleanupPlan(access: AccessContext): Promise<
   );
 
   // ── 4. Which records are one pharmacy? ──────────────────────────────────────────────────
-  const mergeProposals = groupDuplicatePharmacies(
-    pharmacies.map((pharmacy) => ({
-      id: pharmacy.id,
-      phoenixPharmacyCode: pharmacy.phoenixPharmacyCode,
-      pharmacyName: pharmacy.pharmacyName,
-      brickId: pharmacy.brickId,
-      areaCode: pharmacy.areaCode,
-      verificationStatus: pharmacy.verificationStatus,
-      active: pharmacy.active,
-      createdAt: createdAtById.get(pharmacy.id) ?? null,
-      linkedCodes: (pharmacy.distributorCodes ?? []).map((pair) => ({
-        distributorCode: pair.distributorCode,
-        customerCode: pair.customerCode,
-      })),
-      nameCodeCandidates: (candidatesById.get(pharmacy.id) ?? []).map((match) => ({
-        distributorCode: match.distributorCode,
-        customerCode: match.customerCode,
-      })),
-      normalizedName: normalizedNameById.get(pharmacy.id) ?? "",
+  // Built once and shared: `findLookAlikeVenues` below must judge the SAME rows against the SAME
+  // identity keys the merge pass used, or it could report a pair as unprovable that the merge pass
+  // had in fact already clustered.
+  const dedupeInput = pharmacies.map((pharmacy) => ({
+    id: pharmacy.id,
+    phoenixPharmacyCode: pharmacy.phoenixPharmacyCode,
+    pharmacyName: pharmacy.pharmacyName,
+    brickId: pharmacy.brickId,
+    areaCode: pharmacy.areaCode,
+    verificationStatus: pharmacy.verificationStatus,
+    active: pharmacy.active,
+    createdAt: createdAtById.get(pharmacy.id) ?? null,
+    linkedCodes: (pharmacy.distributorCodes ?? []).map((pair) => ({
+      distributorCode: pair.distributorCode,
+      customerCode: pair.customerCode,
     })),
-  );
+    nameCodeCandidates: (candidatesById.get(pharmacy.id) ?? []).map((match) => ({
+      distributorCode: match.distributorCode,
+      customerCode: match.customerCode,
+    })),
+    normalizedName: normalizedNameById.get(pharmacy.id) ?? "",
+  }));
+  const mergeProposals = groupDuplicatePharmacies(dedupeInput);
 
   const merges: DirectOrderCleanupMerge[] = [];
   for (const proposal of mergeProposals) {
@@ -7149,11 +7261,29 @@ export async function getDirectOrderCleanupPlan(access: AccessContext): Promise<
     });
   }
 
+  // ── Same name, same area, and NOT provable. Shown, never proposed. ──────────────────────
+  const lookAlikes: DirectOrderCleanupLookAlike[] = findLookAlikeVenues(dedupeInput, mergeProposals).map(
+    (group) => ({
+      normalizedName: group.normalizedName,
+      areaCode: group.areaCode,
+      blocker: group.blocker,
+      explanation: group.explanation,
+      members: group.memberIds
+        .map((id) => byId.get(id))
+        .filter((pharmacy): pharmacy is DirectOrderPharmacy => Boolean(pharmacy))
+        .map(summarize),
+    }),
+  );
+
   return {
     merges,
     duplicates,
     repairs,
     releases,
+    lookAlikes,
+    // `lookAlikes` is deliberately NOT part of this. "Empty" means there is nothing to APPLY, and a
+    // look-alike is never applied — a page showing only look-alikes still renders (the component
+    // checks both), but the confirm bar must not offer to write nothing.
     isEmpty: merges.length === 0 && duplicates.length === 0 && repairs.length === 0 && releases.length === 0,
   };
 }

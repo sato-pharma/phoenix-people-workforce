@@ -82,10 +82,41 @@ export function runDirectOrderPharmacyRejectedTests() {
     /verification_status: "rejected", active: false/,
     "REJECTING MUST DEACTIVATE: twelve query sites filter on `active` and none filter on verification_status, so a rejected-but-active pharmacy would still appear in the picker, the search and the probation sweep",
   );
+  // ── An APPROVED order is never swept up by rejecting its venue ───────────────────────────
+  //
+  // ASSERTED FIRST, DELIBERATELY. `runTest` rethrows, so whichever assertion in this block fires
+  // first is the message a developer reads. The exact-match on the status list below would also go
+  // red if `approved` were put back, but it would report "the list changed" — true, and the wrong
+  // headline for money being reversed. This one has to be the one that speaks.
+  //
+  // `approved` sat inside that list until 2026-08-29. Rejecting a venue therefore reversed money
+  // that had already cleared the entire approval chain — automatically, from a button whose subject
+  // is the VENUE, with nobody deciding to reverse the ORDER, and with the audit row written about
+  // the venue rather than the order. Owner's rule that day: "I don't want any confirmed order and
+  // accepted from our workflow to be lost."
+  //
+  // It had never fired in production (0 cascade events, and audit_logs held no direct_order_request
+  // row ever leaving `approved`), so this pins a hole that was closed before it cost anything —
+  // which is exactly the kind that comes back, because nothing in the history argues against it.
+  assert.doesNotMatch(
+    block,
+    /\.in\("status", \[[^\]]*"approved"[^\]]*\]\)/,
+    "AN APPROVED ORDER MUST NEVER BE REFUSED BY REJECTING ITS VENUE: that is committed money reversed with no person deciding to reverse it (owner, 2026-08-29)",
+  );
   assert.match(
     block,
-    /\.in\("status", \["held", "pending_approval", "returned", "draft", "approved"\]\)/,
-    "every order still open on the pharmacy must be refused with it — otherwise they strand on a pharmacy nobody can ever confirm",
+    /\.in\("status", \["held", "pending_approval", "returned", "draft"\]\)/,
+    "every order still OPEN on the pharmacy must be refused with it — otherwise they strand on a pharmacy nobody can ever confirm",
+  );
+  assert.match(
+    block,
+    /\.eq\("status", "approved"\)/,
+    "the approved orders left standing must be counted — a venue ruled FALSE while carrying committed money is the case that most needs a person to look, and silence leaves the admin to discover it",
+  );
+  assert.match(
+    block,
+    /approvedOrdersKept: approvedKept\.length/,
+    "the count must reach the caller and the audit row, not just be computed and dropped",
   );
 
   // ── A rejection cannot be undone by pressing "confirm" ───────────────────────────────────

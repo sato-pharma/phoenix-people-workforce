@@ -4,6 +4,8 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import type {
+  DirectOrderCleanupLookAlike,
+  DirectOrderCleanupMerge,
   DirectOrderCleanupPlan,
   DirectOrderCleanupRequestSummary,
 } from "@/lib/direct-orders/service";
@@ -57,6 +59,82 @@ function OrderLine({ request }: { request: DirectOrderCleanupRequestSummary }) {
         {cairoStamp(request.submittedAt)}
       </div>
     </div>
+  );
+}
+
+/**
+ * Approved orders a merge would repoint — the losing records' already-committed business.
+ *
+ * Read off the losers only, never the survivor: the survivor's own approved orders do not move.
+ * The plan's `requestsMoved` cannot answer this, because it is built from the OPEN-status query
+ * that feeds the cancellation proposal, while the merge write repoints every request regardless of
+ * status. Two different questions, and conflating them is what let the screen under-report.
+ */
+const approvedMoving = (merge: DirectOrderCleanupMerge) =>
+  merge.merged.reduce((sum, entry) => sum + entry.approvedRequestCount, 0);
+
+/**
+ * Same name, same area — and the system will NOT rule on it.
+ *
+ * Review-only by construction, not by convention: this renders no checkbox and no radio, and
+ * nothing it displays is wired to the confirm payload. Every pair it can show has approved orders
+ * on at least one side, and the owner's rule of 2026-08-29 is that a venue row carrying confirmed
+ * orders is never touched — so offering a default-ticked merge here would be offering exactly the
+ * write that rule forbids. What a reviewer gets instead is both records side by side, what each is
+ * carrying, and why the system is staying out of it.
+ */
+function LookAlikes({ groups }: { groups: DirectOrderCleanupLookAlike[] }) {
+  if (groups.length === 0) return null;
+  return (
+    <section className="mt-5 border border-amber-300 bg-white">
+      <header className="border-b border-amber-300 bg-amber-50 px-4 py-2.5">
+        <p className="text-phx-xs font-black uppercase tracking-wider text-amber-800">
+          Look-alike venues — your judgement
+        </p>
+        <p className="text-phx-sm text-amber-900">
+          {groups.length} pair(s) share a name and an area, and the system will not merge them on its own. Nothing
+          here is applied by the confirm button — read them and decide.
+        </p>
+      </header>
+      <div className="space-y-3 p-3">
+        {groups.map((group) => (
+          <article key={`${group.normalizedName}|${group.areaCode}`} className="border border-phx-line p-3">
+            <p className="text-sm font-black text-slate-900" dir="auto">
+              {group.members[0]?.pharmacyName} — area {group.areaCode}
+            </p>
+            <p className="mt-0.5 text-phx-sm text-slate-600">{group.explanation}</p>
+            <div className="mt-2 space-y-1.5">
+              {group.members.map((member) => (
+                <div key={member.pharmacyId} className="border border-[#eef1f3] bg-white px-2 py-1.5">
+                  <p className="text-phx-sm font-bold text-slate-900" dir="auto">
+                    {member.pharmacyName} ({member.pharmacyCode})
+                    <span
+                      className={`ml-1 text-phx-2xs font-black uppercase ${
+                        member.active ? "text-emerald-700" : "text-slate-500"
+                      }`}
+                    >
+                      {member.active ? "active" : "closed"}
+                    </span>
+                  </p>
+                  <p className="text-phx-xs text-slate-600">
+                    {member.linkedCodes.length > 0 ? member.linkedCodes.join(" · ") : "no distributor code linked"}
+                    {" · "}
+                    {member.openRequestCount} open request(s) · registered by {member.createdByName} on{" "}
+                    {cairoStamp(member.createdAt)}
+                  </p>
+                  {member.approvedRequestCount > 0 ? (
+                    <p className="text-phx-xs font-bold text-amber-700">
+                      {member.approvedRequestCount} approved order(s) · {money(member.approvedRequestValue)} already
+                      committed — this record cannot be closed while that stands
+                    </p>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          </article>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -170,257 +248,284 @@ export function DirectOrderCleanupDesk({ plan }: Props) {
 
   if (plan.isEmpty) {
     return (
-      <section className="border border-phx-line bg-white px-4 py-8 text-center">
-        <p className="text-sm font-bold text-slate-800">Nothing to clean up.</p>
-        <p className="mt-1 text-phx-sm text-slate-500">
-          No venue is registered twice, no order is submitted twice, and every distributor code is in its
-          own column. This page checks live data each time it loads.
-        </p>
-      </section>
+      <>
+        <section className="border border-phx-line bg-white px-4 py-8 text-center">
+          <p className="text-sm font-bold text-slate-800">
+            {plan.lookAlikes.length > 0 ? "Nothing the system can fix on its own." : "Nothing to clean up."}
+          </p>
+          <p className="mt-1 text-phx-sm text-slate-500">
+            {plan.lookAlikes.length > 0 ? (
+              <>
+                No order is submitted twice and every distributor code is in its own column. What is left is{" "}
+                {plan.lookAlikes.length} look-alike pair(s) below that only a person can rule on. This page checks
+                live data each time it loads.
+              </>
+            ) : (
+              <>
+                No venue is registered twice, no order is submitted twice, and every distributor code is in its own
+                column. This page checks live data each time it loads.
+              </>
+            )}
+          </p>
+        </section>
+        <LookAlikes groups={plan.lookAlikes} />
+      </>
     );
   }
 
   return (
-    <section className="border border-phx-line bg-white">
-      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-phx-line bg-slate-900 px-4 py-2.5">
-        <div>
-          <p className="text-phx-xs font-black uppercase tracking-wider text-orange-400">Proposed cleanup</p>
-          <p className="text-phx-sm text-slate-300">
-            {changeCount.total} change(s) selected — everything is on by default; untick anything you disagree with.
-          </p>
-        </div>
-      </header>
+    <>
+      <section className="border border-phx-line bg-white">
+        <header className="flex flex-wrap items-center justify-between gap-3 border-b border-phx-line bg-slate-900 px-4 py-2.5">
+          <div>
+            <p className="text-phx-xs font-black uppercase tracking-wider text-orange-400">Proposed cleanup</p>
+            <p className="text-phx-sm text-slate-300">
+              {changeCount.total} change(s) selected — everything is on by default; untick anything you disagree with.
+            </p>
+          </div>
+        </header>
 
-      {error ? <p className="border-b border-rose-200 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-700">{error}</p> : null}
-      {ok ? <p className="border-b border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700">{ok}</p> : null}
+        {error ? <p className="border-b border-rose-200 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-700">{error}</p> : null}
+        {ok ? <p className="border-b border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700">{ok}</p> : null}
 
-      {/* ── One pharmacy, two records ─────────────────────────────────────────── */}
-      {plan.merges.length > 0 ? (
-        <div className="border-b border-phx-line p-3">
-          <p className="mb-2 text-phx-xs font-black uppercase tracking-wider text-slate-500">
-            Same venue, entered more than once
-          </p>
-          <div className="space-y-3">
-            {plan.merges.map((merge) => {
-              const key = merge.survivor.pharmacyId;
-              const on = !offMerges.has(key);
-              const chosen = survivorChoice[key] ?? merge.survivor.pharmacyId;
-              const everyone = [merge.survivor, ...merge.merged];
-              return (
-                <article key={key} className={`border p-3 ${on ? "border-phx-line" : "border-slate-200 bg-slate-50 opacity-60"}`}>
-                  <label className="flex items-start gap-2">
-                    <input type="checkbox" checked={on} onChange={() => toggle(setOffMerges)(key)} className="mt-1" />
-                    <span className="min-w-0">
-                      <span className="block text-sm font-black text-slate-900">
-                        {everyone.length} records are one venue
-                      </span>
-                      <span className="block text-phx-sm text-slate-600">
-                        {merge.provenBy.kind === "code" ? (
-                          <>
-                            Proven by the same distributor customer: {merge.provenBy.distributorCode} /{" "}
-                            {merge.provenBy.customerCode}. A distributor customer cannot belong to two venues.
-                          </>
-                        ) : (
-                          <>
-                            Same name, same area ({merge.provenBy.areaCode}) — neither record carries a distributor
-                            code, so this is a resemblance, not a distributor-proven fact. Check the names below
-                            before merging.
-                          </>
-                        )}
-                      </span>
-                    </span>
-                  </label>
-
-                  <div className="mt-2 space-y-1.5">
-                    {everyone.map((pharmacy) => (
-                      <label
-                        key={pharmacy.pharmacyId}
-                        className={`flex items-start gap-2 border px-2 py-1.5 ${
-                          pharmacy.pharmacyId === chosen ? "border-emerald-300 bg-emerald-50" : "border-[#eef1f3] bg-white"
-                        }`}
-                      >
-                        <input
-                          type="radio"
-                          name={`survivor-${key}`}
-                          checked={pharmacy.pharmacyId === chosen}
-                          onChange={() => setSurvivorChoice((prev) => ({ ...prev, [key]: pharmacy.pharmacyId }))}
-                          disabled={!on}
-                          className="mt-1"
-                        />
-                        <span className="min-w-0">
-                          <span className="block text-phx-sm font-bold text-slate-900" dir="auto">
-                            {pharmacy.pharmacyName} ({pharmacy.pharmacyCode})
-                            {pharmacy.pharmacyId === chosen ? (
-                              <span className="ml-1 text-phx-2xs font-black uppercase text-emerald-700">keeps everything</span>
-                            ) : (
-                              <span className="ml-1 text-phx-2xs font-black uppercase text-rose-700">will be closed</span>
-                            )}
-                          </span>
-                          <span className="block text-phx-xs text-slate-600">
-                            {pharmacy.linkedCodes.length > 0 ? pharmacy.linkedCodes.join(" · ") : "no distributor code linked"}
-                            {" · "}
-                            {pharmacy.openRequestCount} open request(s) · registered by {pharmacy.createdByName} on{" "}
-                            {cairoStamp(pharmacy.createdAt)}
-                          </span>
+        {/* ── One pharmacy, two records ─────────────────────────────────────────── */}
+        {plan.merges.length > 0 ? (
+          <div className="border-b border-phx-line p-3">
+            <p className="mb-2 text-phx-xs font-black uppercase tracking-wider text-slate-500">
+              Same venue, entered more than once
+            </p>
+            <div className="space-y-3">
+              {plan.merges.map((merge) => {
+                const key = merge.survivor.pharmacyId;
+                const on = !offMerges.has(key);
+                const chosen = survivorChoice[key] ?? merge.survivor.pharmacyId;
+                const everyone = [merge.survivor, ...merge.merged];
+                return (
+                  <article key={key} className={`border p-3 ${on ? "border-phx-line" : "border-slate-200 bg-slate-50 opacity-60"}`}>
+                    <label className="flex items-start gap-2">
+                      <input type="checkbox" checked={on} onChange={() => toggle(setOffMerges)(key)} className="mt-1" />
+                      <span className="min-w-0">
+                        <span className="block text-sm font-black text-slate-900">
+                          {everyone.length} records are one venue
                         </span>
-                      </label>
-                    ))}
-                  </div>
-                  <p className="mt-1.5 text-phx-xs text-slate-500">
-                    Kept because {merge.reason}. {merge.requestsMoved.length} request(s) move across; nothing is
-                    deleted and the closed record keeps a pointer to the one that survived.
-                  </p>
-                </article>
-              );
-            })}
-          </div>
-        </div>
-      ) : null}
-
-      {/* ── One order, two submissions ────────────────────────────────────────── */}
-      {plan.duplicates.length > 0 ? (
-        <div className="border-b border-phx-line p-3">
-          <p className="mb-2 text-phx-xs font-black uppercase tracking-wider text-slate-500">
-            Same order, submitted more than once
-          </p>
-          <div className="space-y-3">
-            {plan.duplicates.map((group) => {
-              const key = group.keeper.requestId;
-              const on = !offDuplicates.has(key);
-              const doubled = group.duplicates.reduce((sum, request) => sum + request.salesValue, 0);
-              return (
-                <article key={key} className={`border p-3 ${on ? "border-phx-line" : "border-slate-200 bg-slate-50 opacity-60"}`}>
-                  <label className="flex items-start gap-2">
-                    <input type="checkbox" checked={on} onChange={() => toggle(setOffDuplicates)(key)} className="mt-1" />
-                    <span className="min-w-0">
-                      <span className="block text-sm font-black text-slate-900">
-                        {money(doubled)} counted twice — {group.duplicates.length} copy(ies) to cancel
-                      </span>
-                      <span className="block text-phx-sm text-slate-600">
-                        Same venue, product, quantity, deal terms and collection date.
-                      </span>
-                    </span>
-                  </label>
-
-                  <div className="mt-2 space-y-1.5">
-                    <div className="border border-emerald-300 bg-emerald-50 px-2 py-1.5">
-                      <p className="text-phx-2xs font-black uppercase text-emerald-700">Kept — {group.reason}</p>
-                      <OrderLine request={group.keeper} />
-                    </div>
-                    {group.duplicates.map((request) => (
-                      <div key={request.requestId} className="border border-rose-200 bg-rose-50 px-2 py-1.5">
-                        <p className="text-phx-2xs font-black uppercase text-rose-700">
-                          Cancelled as a duplicate, linked to the one above
-                        </p>
-                        <OrderLine request={request} />
-                      </div>
-                    ))}
-                  </div>
-                </article>
-              );
-            })}
-          </div>
-        </div>
-      ) : null}
-
-      {/* ── Codes in the wrong field ──────────────────────────────────────────── */}
-      {plan.repairs.length > 0 ? (
-        <div className="border-b border-phx-line p-3">
-          <p className="mb-2 text-phx-xs font-black uppercase tracking-wider text-slate-500">
-            Distributor code typed into the venue name
-          </p>
-          <div className="space-y-2">
-            {plan.repairs.map((repair) => {
-              const on = !offRepairs.has(repair.pharmacyId);
-              return (
-                <label
-                  key={repair.pharmacyId}
-                  className={`flex items-start gap-2 border p-2.5 ${on ? "border-phx-line" : "border-slate-200 bg-slate-50 opacity-60"}`}
-                >
-                  <input type="checkbox" checked={on} onChange={() => toggle(setOffRepairs)(repair.pharmacyId)} className="mt-1" />
-                  <span className="min-w-0">
-                    <span className="block text-phx-sm font-bold text-slate-900" dir="auto">
-                      {repair.pharmacyName} ({repair.pharmacyCode})
-                    </span>
-                    <span className="block text-phx-xs text-slate-600">
-                      Move {repair.distributorName} / {repair.customerCode} into the distributor-code column
-                      {repair.renameTo ? `, and correct the name to "${repair.renameTo}"` : ""}. This unlocks the
-                      pharmacy&apos;s retail sales history, which cannot be matched without the code.
-                    </span>
-                  </span>
-                </label>
-              );
-            })}
-          </div>
-        </div>
-      ) : null}
-
-      {/* ── Held requests that resolution frees ───────────────────────────────── */}
-      {plan.releases.length > 0 ? (
-        <div className="border-b border-phx-line p-3">
-          <p className="mb-2 text-phx-xs font-black uppercase tracking-wider text-slate-500">
-            Held requests these fixes release
-          </p>
-          <div className="space-y-2">
-            {plan.releases.map((release) => {
-              const on = !offReleases.has(release.pharmacyId);
-              return (
-                <label
-                  key={release.pharmacyId}
-                  className={`flex items-start gap-2 border p-2.5 ${on ? "border-phx-line" : "border-slate-200 bg-slate-50 opacity-60"}`}
-                >
-                  <input type="checkbox" checked={on} onChange={() => toggle(setOffReleases)(release.pharmacyId)} className="mt-1" />
-                  <span className="min-w-0">
-                    <span className="block text-phx-sm font-bold text-slate-900" dir="auto">
-                      {release.pharmacyName} ({release.pharmacyCode}) — {release.requests.length} held request(s)
-                    </span>
-                    <span className="block text-phx-xs text-slate-600">
-                      Once this venue is resolved, every one of its held requests enters the approval chain at
-                      step 1 (SFE Manager) — not just one of them. Releasing is not skipping review.
-                    </span>
-                    <span className="mt-1 block space-y-1">
-                      {release.requests.map((request) => (
-                        <span key={request.requestId} className="block border border-[#eef1f3] bg-white px-2 py-1">
-                          <OrderLine request={request} />
+                        <span className="block text-phx-sm text-slate-600">
+                          {merge.provenBy.kind === "code" ? (
+                            <>
+                              Proven by the same distributor customer: {merge.provenBy.distributorCode} /{" "}
+                              {merge.provenBy.customerCode}. A distributor customer cannot belong to two venues.
+                            </>
+                          ) : (
+                            <>
+                              Same name, same area ({merge.provenBy.areaCode}) — neither record carries a distributor
+                              code, so this is a resemblance, not a distributor-proven fact. Check the names below
+                              before merging.
+                            </>
+                          )}
                         </span>
+                      </span>
+                    </label>
+
+                    <div className="mt-2 space-y-1.5">
+                      {everyone.map((pharmacy) => (
+                        <label
+                          key={pharmacy.pharmacyId}
+                          className={`flex items-start gap-2 border px-2 py-1.5 ${
+                            pharmacy.pharmacyId === chosen ? "border-emerald-300 bg-emerald-50" : "border-[#eef1f3] bg-white"
+                          }`}
+                        >
+                          <input
+                            type="radio"
+                            name={`survivor-${key}`}
+                            checked={pharmacy.pharmacyId === chosen}
+                            onChange={() => setSurvivorChoice((prev) => ({ ...prev, [key]: pharmacy.pharmacyId }))}
+                            disabled={!on}
+                            className="mt-1"
+                          />
+                          <span className="min-w-0">
+                            <span className="block text-phx-sm font-bold text-slate-900" dir="auto">
+                              {pharmacy.pharmacyName} ({pharmacy.pharmacyCode})
+                              {pharmacy.pharmacyId === chosen ? (
+                                <span className="ml-1 text-phx-2xs font-black uppercase text-emerald-700">keeps everything</span>
+                              ) : (
+                                <span className="ml-1 text-phx-2xs font-black uppercase text-rose-700">will be closed</span>
+                              )}
+                            </span>
+                            <span className="block text-phx-xs text-slate-600">
+                              {pharmacy.linkedCodes.length > 0 ? pharmacy.linkedCodes.join(" · ") : "no distributor code linked"}
+                              {" · "}
+                              {pharmacy.openRequestCount} open request(s) · registered by {pharmacy.createdByName} on{" "}
+                              {cairoStamp(pharmacy.createdAt)}
+                            </span>
+                            {pharmacy.approvedRequestCount > 0 ? (
+                              <span className="block text-phx-xs font-bold text-amber-700">
+                                {pharmacy.approvedRequestCount} approved order(s) · {money(pharmacy.approvedRequestValue)}{" "}
+                                already committed — a merge moves these onto the surviving record
+                              </span>
+                            ) : null}
+                          </span>
+                        </label>
                       ))}
+                    </div>
+                    <p className="mt-1.5 text-phx-xs text-slate-500">
+                      Kept because {merge.reason}. {merge.requestsMoved.length} open request(s)
+                      {approvedMoving(merge) > 0
+                        ? ` and ${approvedMoving(merge)} approved order(s) move across`
+                        : " move across"}
+                      ; nothing is deleted and the closed record keeps a pointer to the one that survived.
+                    </p>
+                  </article>
+                );
+              })}
+            </div>
+          </div>
+        ) : null}
+
+        {/* ── One order, two submissions ────────────────────────────────────────── */}
+        {plan.duplicates.length > 0 ? (
+          <div className="border-b border-phx-line p-3">
+            <p className="mb-2 text-phx-xs font-black uppercase tracking-wider text-slate-500">
+              Same order, submitted more than once
+            </p>
+            <div className="space-y-3">
+              {plan.duplicates.map((group) => {
+                const key = group.keeper.requestId;
+                const on = !offDuplicates.has(key);
+                const doubled = group.duplicates.reduce((sum, request) => sum + request.salesValue, 0);
+                return (
+                  <article key={key} className={`border p-3 ${on ? "border-phx-line" : "border-slate-200 bg-slate-50 opacity-60"}`}>
+                    <label className="flex items-start gap-2">
+                      <input type="checkbox" checked={on} onChange={() => toggle(setOffDuplicates)(key)} className="mt-1" />
+                      <span className="min-w-0">
+                        <span className="block text-sm font-black text-slate-900">
+                          {money(doubled)} counted twice — {group.duplicates.length} copy(ies) to cancel
+                        </span>
+                        <span className="block text-phx-sm text-slate-600">
+                          Same venue, product, quantity, deal terms and collection date.
+                        </span>
+                      </span>
+                    </label>
+
+                    <div className="mt-2 space-y-1.5">
+                      <div className="border border-emerald-300 bg-emerald-50 px-2 py-1.5">
+                        <p className="text-phx-2xs font-black uppercase text-emerald-700">Kept — {group.reason}</p>
+                        <OrderLine request={group.keeper} />
+                      </div>
+                      {group.duplicates.map((request) => (
+                        <div key={request.requestId} className="border border-rose-200 bg-rose-50 px-2 py-1.5">
+                          <p className="text-phx-2xs font-black uppercase text-rose-700">
+                            Cancelled as a duplicate, linked to the one above
+                          </p>
+                          <OrderLine request={request} />
+                        </div>
+                      ))}
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          </div>
+        ) : null}
+
+        {/* ── Codes in the wrong field ──────────────────────────────────────────── */}
+        {plan.repairs.length > 0 ? (
+          <div className="border-b border-phx-line p-3">
+            <p className="mb-2 text-phx-xs font-black uppercase tracking-wider text-slate-500">
+              Distributor code typed into the venue name
+            </p>
+            <div className="space-y-2">
+              {plan.repairs.map((repair) => {
+                const on = !offRepairs.has(repair.pharmacyId);
+                return (
+                  <label
+                    key={repair.pharmacyId}
+                    className={`flex items-start gap-2 border p-2.5 ${on ? "border-phx-line" : "border-slate-200 bg-slate-50 opacity-60"}`}
+                  >
+                    <input type="checkbox" checked={on} onChange={() => toggle(setOffRepairs)(repair.pharmacyId)} className="mt-1" />
+                    <span className="min-w-0">
+                      <span className="block text-phx-sm font-bold text-slate-900" dir="auto">
+                        {repair.pharmacyName} ({repair.pharmacyCode})
+                      </span>
+                      <span className="block text-phx-xs text-slate-600">
+                        Move {repair.distributorName} / {repair.customerCode} into the distributor-code column
+                        {repair.renameTo ? `, and correct the name to "${repair.renameTo}"` : ""}. This unlocks the
+                        pharmacy&apos;s retail sales history, which cannot be matched without the code.
+                      </span>
                     </span>
-                  </span>
-                </label>
-              );
-            })}
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+        ) : null}
+
+        {/* ── Held requests that resolution frees ───────────────────────────────── */}
+        {plan.releases.length > 0 ? (
+          <div className="border-b border-phx-line p-3">
+            <p className="mb-2 text-phx-xs font-black uppercase tracking-wider text-slate-500">
+              Held requests these fixes release
+            </p>
+            <div className="space-y-2">
+              {plan.releases.map((release) => {
+                const on = !offReleases.has(release.pharmacyId);
+                return (
+                  <label
+                    key={release.pharmacyId}
+                    className={`flex items-start gap-2 border p-2.5 ${on ? "border-phx-line" : "border-slate-200 bg-slate-50 opacity-60"}`}
+                  >
+                    <input type="checkbox" checked={on} onChange={() => toggle(setOffReleases)(release.pharmacyId)} className="mt-1" />
+                    <span className="min-w-0">
+                      <span className="block text-phx-sm font-bold text-slate-900" dir="auto">
+                        {release.pharmacyName} ({release.pharmacyCode}) — {release.requests.length} held request(s)
+                      </span>
+                      <span className="block text-phx-xs text-slate-600">
+                        Once this venue is resolved, every one of its held requests enters the approval chain at
+                        step 1 (SFE Manager) — not just one of them. Releasing is not skipping review.
+                      </span>
+                      <span className="mt-1 block space-y-1">
+                        {release.requests.map((request) => (
+                          <span key={request.requestId} className="block border border-[#eef1f3] bg-white px-2 py-1">
+                            <OrderLine request={request} />
+                          </span>
+                        ))}
+                      </span>
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+        ) : null}
+
+        {/* ── Confirm ───────────────────────────────────────────────────────────── */}
+        <div className="p-3">
+          <label className="block text-phx-xs font-black uppercase tracking-wider text-slate-500" htmlFor="cleanup-reason">
+            Why you are applying this
+          </label>
+          <textarea
+            id="cleanup-reason"
+            value={reason}
+            onChange={(event) => setReason(event.target.value)}
+            rows={2}
+            placeholder="Reviewed the pairs against the distributor master — same venue, same order."
+            className="mt-1 w-full border border-phx-line px-2 py-1.5 text-sm"
+          />
+          <div className="mt-2 flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={confirm}
+              disabled={busy || changeCount.total === 0}
+              className="bg-slate-900 px-4 py-2 text-phx-sm font-black uppercase tracking-wider text-white disabled:opacity-50"
+            >
+              {busy ? "Applying…" : `Confirm ${changeCount.total} change(s)`}
+            </button>
+            <p className="text-phx-xs text-slate-500">
+              {changeCount.merges} merge(s) · {changeCount.duplicates} cancellation(s) · {changeCount.repairs} code
+              repair(s) · {changeCount.releases} release(s)
+            </p>
           </div>
         </div>
-      ) : null}
-
-      {/* ── Confirm ───────────────────────────────────────────────────────────── */}
-      <div className="p-3">
-        <label className="block text-phx-xs font-black uppercase tracking-wider text-slate-500" htmlFor="cleanup-reason">
-          Why you are applying this
-        </label>
-        <textarea
-          id="cleanup-reason"
-          value={reason}
-          onChange={(event) => setReason(event.target.value)}
-          rows={2}
-          placeholder="Reviewed the pairs against the distributor master — same venue, same order."
-          className="mt-1 w-full border border-phx-line px-2 py-1.5 text-sm"
-        />
-        <div className="mt-2 flex flex-wrap items-center gap-3">
-          <button
-            type="button"
-            onClick={confirm}
-            disabled={busy || changeCount.total === 0}
-            className="bg-slate-900 px-4 py-2 text-phx-sm font-black uppercase tracking-wider text-white disabled:opacity-50"
-          >
-            {busy ? "Applying…" : `Confirm ${changeCount.total} change(s)`}
-          </button>
-          <p className="text-phx-xs text-slate-500">
-            {changeCount.merges} merge(s) · {changeCount.duplicates} cancellation(s) · {changeCount.repairs} code
-            repair(s) · {changeCount.releases} release(s)
-          </p>
-        </div>
-      </div>
-    </section>
+      </section>
+      <LookAlikes groups={plan.lookAlikes} />
+    </>
   );
 }
