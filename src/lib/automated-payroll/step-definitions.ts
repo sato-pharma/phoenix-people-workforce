@@ -38,6 +38,29 @@ export const DEDUCTION_DETAIL_COLUMNS: StepDetailColumn[] = [
   { key: "Reason", label: "Reason" },
 ];
 
+/**
+ * The value behind a step's `fieldsTotal` column: the sum of the named editable
+ * fields, rounded to cents.
+ *
+ * Lives here, beside the declaration it reads, so the grid card and the xlsx
+ * template can never disagree about what the total is — the same reason
+ * `contextColumns` and `fields` are declared once for all three consumers.
+ * A field with no value counts as 0, matching how the grid renders an empty
+ * money box. Returns 0 when the step declares no total.
+ */
+export function stepFieldsTotal(
+  definition: StepDefinition,
+  values: Record<string, number> | undefined,
+): number {
+  const spec = definition.fieldsTotal;
+  if (!spec) return 0;
+  let sum = 0;
+  for (const key of spec.fieldKeys) sum += values?.[key] ?? 0;
+  // Cents, not raw float: three prorated amounts summed straight would print
+  // 4645.159999999999 on a payroll screen.
+  return Math.round(sum * 100) / 100;
+}
+
 export const STEP_DEFINITIONS: Record<StepKey, StepDefinition> = {
   p1_new_hires: {
     key: "p1_new_hires",
@@ -62,6 +85,17 @@ export const STEP_DEFINITIONS: Record<StepKey, StepDefinition> = {
       { key: "ecolPaid", label: "Extra Cost of Living", kind: "money" },
       { key: "fuelPaid", label: "Fuel Allowance", kind: "money" },
     ],
+    // Owner request 2026-08-29: "add the total of the working days net ...
+    // instead of me [having] to revise [it] manual[ly]". The three figures above
+    // are what the joiner is actually paid this month; nothing on the card added
+    // them up, so a revised set had to be totalled by hand.
+    //
+    // It is a live sum of the three boxes, not a context column, so it follows
+    // an edit immediately — "This Month Net" above is computed on the server and
+    // stays at the loaded figure until the step is saved and reloaded. Both
+    // exist on purpose: that one is what is currently SAVED, this one is what
+    // the boxes currently say.
+    fieldsTotal: { label: "Total (month)", fieldKeys: ["baseForMonth", "ecolPaid", "fuelPaid"] },
     hasReason: false,
     isHoldStep: false,
   },
