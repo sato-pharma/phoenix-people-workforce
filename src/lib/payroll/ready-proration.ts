@@ -224,10 +224,15 @@ export type ReadyLifecycleSettlement = {
  * ordinary leaver (hired long ago) that is exactly "base in full"; for the rare
  * hired-and-left-in-one-month row it is the honest number instead of a windfall.
  *
- * JOINER ECOL/FUEL: owner decision 2026-08-09 — the Ready sheet keeps paying
- * BOTH IN FULL. The canonical computeJoinerPay halves them after the 15th, and
- * this module deliberately does NOT adopt that here, because it would reduce a
- * real person's pay. Revisit only on an explicit owner instruction.
+ * JOINER ECOL/FUEL: SUPERSEDED 2026-08-29 on the owner's explicit instruction.
+ * The two engines had disagreed since 2026-08-09 — the canonical
+ * computeJoinerPay halved both allowances after the 15th while this module paid
+ * both in full, a divergence kept deliberately because adopting the halving
+ * "would reduce a real person's pay". The owner has now replaced BOTH rules
+ * with one: every component prorates by the days worked (see
+ * calculateNetJoinerProrationDeduction above). He was shown that it pays a
+ * mid-month joiner less than either retired rule did, and confirmed it. The two
+ * engines now agree, so do not reintroduce a Ready-sheet-only joiner rule.
  *
  * RESIGNATION ONLY (owner ruling 2026-08-14): Rule 1's >25th generosity — base
  * paid in full, both allowances kept — applies ONLY to genuine resignations.
