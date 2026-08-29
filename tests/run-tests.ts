@@ -1069,6 +1069,7 @@ import { runNotificationDrainStarvationGuardTests } from "./notification-drain-s
 import { runExpenseClaimsRefreshTests } from "./expense-claims-refresh.test.ts";
 import { runMarketingFinanceRequirementOnApprovalTests } from "./marketing-finance-requirement-on-approval.test.ts";
 import { runMarketingInvoiceOverdueMarkerTests } from "./marketing-invoice-overdue-marker.test.ts";
+import { runMarketingInvoiceOverdueNudgeTests } from "./marketing-invoice-overdue-nudge.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -3219,6 +3220,11 @@ await runTest(
     + "Approved Requests tab and in the export, the deadline day itself is not late, a submitted or "
     + "held obligation never is — and both readers go through the one module, so export matches screen)",
   runMarketingInvoiceOverdueMarkerTests,
+);
+await runTest(
+  "marketing invoice overdue nudge (the requester hears about their own, finance gets one digest, "
+    + "never by email, and finance gets no link because no screen shows him one)",
+  runMarketingInvoiceOverdueNudgeTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);

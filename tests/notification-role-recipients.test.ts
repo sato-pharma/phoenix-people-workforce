@@ -55,14 +55,20 @@ const EXPECTED: Record<string, { roles: string[]; enabled: boolean }> = {
   // (0 recipients, every channel skipped — 8 + 1 events in production, all NULL employee_hr_id).
   // Owner-set audience: company-scope holders of the payroll permission.
   payroll_workflow_alert: { roles: ["Super Admin", "CEO", "Finance Manager"], enabled: true },
+  // 17th key, added 2026-08-29. #2686 made an overdue marketing invoice visible on the Approved
+  // Requests tab and in the export; this is the push behind it. Owner, asked directly and answered
+  // in three words: "the requester and finance". Only the FINANCE half is a role list — the
+  // requester is always told about their own request and is not configurable, which is why the
+  // roles here name the Finance Manager alone rather than including a requester-shaped entry.
+  marketing_invoice_overdue_alert: { roles: ["Finance Manager"], enabled: true },
 };
 
 export function runNotificationRoleRecipientsTests() {
-  assert.equal(notificationRoleKeys.length, 16, "expected exactly the 16 confirmed notification-role keys");
+  assert.equal(notificationRoleKeys.length, 17, "expected exactly the 17 confirmed notification-role keys");
   assert.deepEqual(
     [...notificationRoleKeys].sort(),
     Object.keys(EXPECTED).sort(),
-    "notificationRoleKeys set does not match the confirmed 16 keys",
+    "notificationRoleKeys set does not match the confirmed 17 keys",
   );
 
   for (const key of notificationRoleKeys) {
