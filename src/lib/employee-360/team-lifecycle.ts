@@ -183,10 +183,14 @@ async function fetchFieldDiscipline(
     const flagged = new Set<string>();
     for (let i = 0; i < compactKeys.length; i += 100) {
       const batch = compactKeys.slice(i, i + 100);
+      // Unified Deductions module. Legacy governance filed field-workforce discipline
+      // under source_module = "FIELD_WORKFORCE"; here it splits into two categories —
+      // `no_records_activity` (the old deduction_type = "no_activity") and `crm`. Both
+      // count toward a flagged rep; only `no_records_activity` counts as no-activity days.
       const { data } = await getSupabaseAdmin()
-        .from("deduction_candidates")
-        .select("employee_hr_id_compact, deduction_type, dates")
-        .eq("source_module", "FIELD_WORKFORCE")
+        .from("deductions_candidates")
+        .select("employee_hr_id_compact, category, dates")
+        .in("category", ["no_records_activity", "crm"])
         .is("superseded_at", null)
         .in("employee_hr_id_compact", batch)
         .in("month_key", monthKeys);
@@ -195,7 +199,7 @@ async function fetchFieldDiscipline(
         const key = compactToKey.get(String(r.employee_hr_id_compact ?? ""));
         if (!key) continue;
         flagged.add(key);
-        if (String(r.deduction_type ?? "") === "no_activity") {
+        if (String(r.category ?? "") === "no_records_activity") {
           noActivityDays += Array.isArray(r.dates) ? Math.max(1, r.dates.length) : 1;
         }
       }
