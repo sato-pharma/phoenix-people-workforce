@@ -3,6 +3,7 @@
 // pays a flat /30. This is the legacy fallback path for policy groups with
 // required_minutes IS NULL - 2 of 15 groups, so it is live money.
 import { calculateDeductionAmountFromBaseSalary } from "@/lib/deductions/calculations.ts";
+import { canonicalHrIdForDisplay } from "@/lib/hr-id.ts";
 
 export const standardAttendanceDayMs = 8 * 60 * 60 * 1000;
 
@@ -81,8 +82,9 @@ export type PolicyAttendanceStatusResult = {
 };
 
 export function normalizeAttendanceHrId(value: string | null | undefined) {
-  const normalized = String(value ?? "").trim().toUpperCase();
-  return normalized.length > 0 ? normalized : null;
+  // Delegates to the one canonical HR_ID normaliser (src/lib/hr-id.ts) so the legacy
+  // aaa -> AA alias is folded here too. Same contract as before: trim, uppercase, null when empty.
+  return canonicalHrIdForDisplay(value);
 }
 
 export function attendanceDeviceUserKey(deviceId: string, deviceUserId: string) {
