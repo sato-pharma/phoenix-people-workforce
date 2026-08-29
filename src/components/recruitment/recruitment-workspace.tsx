@@ -2717,17 +2717,28 @@ function CandidatePoolCard({
             : []),
           // The company's region over the governorate it came from, same as the row: the map is
           // the company's own, so the reader has to be able to see the working.
-          ...(facts.governorate
+          //
+          // The gate is the REGION, not the governorate, and that is the fix rather than a tidy-up.
+          // An applicant who tapped a region and an area on WhatsApp but whose CV carries no
+          // address had `facts.governorate` null, so this whole block was skipped and the card
+          // showed nothing at all about where they want to work — while holding their exact answer.
+          ...(facts.region || facts.governorate
             ? [
                 {
-                  label: facts.governorate.confirmed ? "Region" : "Region (from CV)",
+                  label: facts.region?.value.declared
+                    ? "Region (asked)"
+                    : (facts.region ? facts.region.confirmed : Boolean(facts.governorate?.confirmed))
+                      ? "Region"
+                      : "Region (from CV)",
                   value: (
                     <>
                       {shown(
-                        facts.region ? facts.region.value.label : facts.governorate.value,
-                        facts.governorate.confirmed,
+                        facts.region ? facts.region.value.label : facts.governorate!.value,
+                        facts.region ? facts.region.confirmed : facts.governorate!.confirmed,
                       )}
-                      {facts.region ? (
+                      {facts.area ? (
+                        <div className="mt-0.5 text-phx-2xs font-semibold text-slate-600">{facts.area.value}</div>
+                      ) : facts.region && facts.governorate ? (
                         <div className="mt-0.5 text-phx-2xs font-semibold text-slate-500">
                           {facts.governorate.value}
                         </div>
@@ -3758,7 +3769,12 @@ function CandidatesTab({
                   ) : null}
                   <th className="px-3 py-2.5">Candidate</th>
                   <th className="px-3 py-2.5">Role</th>
-                  <th className="px-3 py-2.5">Region</th>
+                  <th
+                    className="px-3 py-2.5"
+                    title="Where they want to work. A second line naming an AREA is the applicant&apos;s own answer from WhatsApp; a second line naming a governorate is the address read off their CV."
+                  >
+                    Region
+                  </th>
                   <th className="px-3 py-2.5">Experience</th>
                   <th className="px-3 py-2.5">Status</th>
                   <th className="px-3 py-2.5">Received</th>
@@ -3954,19 +3970,36 @@ function CandidatesTab({
                           <span
                             className={`block truncate font-semibold ${facts.region.confirmed ? "text-slate-800" : "italic font-normal text-slate-500"}`}
                             title={
-                              facts.region.confirmed
-                                ? `Company region for ${facts.governorate?.value ?? ""}.`
-                                : `${UNCONFIRMED_FACT_TITLE}\n\nRead off the CV as: "${facts.governorate?.value ?? ""}"`
+                              facts.region.value.declared
+                                ? `The applicant chose this themselves when they applied on WhatsApp.${
+                                    facts.governorate ? ` Their CV gives the address as "${facts.governorate.value}".` : ""
+                                  }`
+                                : facts.region.confirmed
+                                  ? `Company region for ${facts.governorate?.value ?? ""}.`
+                                  : `${UNCONFIRMED_FACT_TITLE}\n\nRead off the CV as: "${facts.governorate?.value ?? ""}"`
                             }
                           >
                             {facts.region.value.label}
                           </span>
                         ) : null}
-                        {facts.governorate ? (
+                        {/* The area they asked for outranks the governorate on their CV, and only one
+                            of the two fits: it answers the same question more precisely, and it is
+                            the only line on this row the applicant wrote himself. The governorate is
+                            not lost — it moves into the tooltip on both lines. */}
+                        {facts.area ? (
+                          <div
+                            className="mt-0.5 truncate text-phx-xs text-slate-600"
+                            title={`Asked to work in ${facts.area.value}.${
+                              facts.governorate ? ` CV address: ${facts.governorate.value}.` : ""
+                            }`}
+                          >
+                            {facts.area.value}
+                          </div>
+                        ) : facts.governorate ? (
                           <div className="mt-0.5 truncate text-phx-xs text-slate-500" title={facts.governorate.value}>
                             {facts.governorate.value}
                           </div>
-                        ) : (
+                        ) : facts.region ? null : (
                           <span className="text-slate-300">Not on file</span>
                         )}
                       </td>

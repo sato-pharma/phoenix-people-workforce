@@ -34,7 +34,12 @@
 // italic grey since 2026-08-21. This extends the same, already-understood convention to the other
 // four facts rather than inventing a second vocabulary for the same idea.
 
-import { candidateRegionForGovernorate, candidateRegionLabels } from "@/lib/recruitment/candidate-region";
+import {
+  candidateRegionCodes,
+  candidateRegionForGovernorate,
+  candidateRegionLabels,
+  type CandidateRegionCode,
+} from "@/lib/recruitment/candidate-region";
 import { candidateRoleFamilyOrNull, type CandidateRoleFamily } from "@/lib/recruitment/candidate-role-family";
 import { cleanEmployerName } from "@/lib/recruitment/employer-name";
 
@@ -67,16 +72,42 @@ export type ScreeningFactsCandidateRow = {
   cvUnconfirmed?: CandidateUnconfirmedCvFacts | null;
   governorate?: string | null;
   hasMedicalRepExperience?: boolean | null;
+  /** The area the applicant tapped or typed on WhatsApp. There is no other source for this. */
+  preferredAreaName?: string | null;
+  /** The region code the applicant TAPPED — one of `candidateRegionCodes`, or nothing. */
+  preferredRegionCode?: string | null;
+  /** What they TYPED when their region was not on the list. A place name, not a region label. */
+  preferredRegionName?: string | null;
   yearsExperience?: number | null;
 };
 
 export type CandidateScreeningFacts = {
+  /**
+   * The area the applicant asked to work in, in their own words.
+   *
+   * There is no second source for this and no way to derive it: a CV states where somebody LIVES,
+   * never which of the company's areas they want. So this is present only for an applicant who
+   * answered the WhatsApp questions, and absent for everyone else — which is a true statement
+   * about what we know, not a gap to fill with a guess.
+   */
+  area: ScreeningFact<string> | null;
   employer: ScreeningFact<string> | null;
   governorate: ScreeningFact<string> | null;
   /** Worked as a medical rep. `false` is an answer, not an absence — see the boolean note below. */
   pharmaRep: ScreeningFact<boolean> | null;
-  /** The region the governorate belongs to, by the company's own map — never geography's. */
-  region: ScreeningFact<{ code: string; label: string }> | null;
+  /**
+   * The company region to file this candidate under, by the company's own map — never geography's.
+   *
+   * `declared` is the difference between "they told us" and "we worked it out from the address on
+   * their CV". Both are shown the same way, because both are the best answer available, but the
+   * tooltip has to be able to say which — a screener who cannot tell an applicant's own choice
+   * from an inference has no way to know which one is safe to act on.
+   *
+   * `code` is null for a region somebody TYPED that maps to nothing we recognise. The label still
+   * shows their words; the code stays null so the Region filter files them under Unknown rather
+   * than quietly dropping them into whichever region sorts first.
+   */
+  region: ScreeningFact<{ code: string | null; declared: boolean; label: string }> | null;
   roleTitle: ScreeningFact<string> | null;
   years: ScreeningFact<number> | null;
 };
@@ -115,6 +146,43 @@ function years(raw: number | null | undefined): number | null {
 }
 
 /**
+ * The region the applicant asked for in their own words, or null when they never answered.
+ *
+ * THIS OUTRANKS EVERYTHING ELSE, and the reason is worth stating plainly: every other source for
+ * a candidate's region answers a different question. A CV's governorate says where somebody LIVES;
+ * this says where they want to WORK, which is the question a screener is actually asking. A person
+ * living in Cairo who asked for Alex-BHR is an Alex-BHR candidate, and inferring Cairo from their
+ * address would contradict the only party who knows.
+ *
+ * Two shapes arrive, because the menu has an escape. A TAPPED region is a code straight off
+ * `candidateRegionCodes` and needs no interpretation. A TYPED one is free text from "My region is
+ * not listed", and in production it is a PLACE — "Minya", "Minia Government ( Minia North )" — not
+ * a region label, so it goes through the same governorate map the CV path uses, which resolves both
+ * of those to Upper Egypt. Where that map has no answer the code stays null and their words are
+ * shown verbatim: the Region filter then files them under Unknown, which is true, instead of
+ * guessing a region for somebody who told us theirs was not on our list.
+ *
+ * The stored code is validated rather than trusted. It is a plain text column, so a value that is
+ * not a live region code would otherwise index `candidateRegionLabels` to undefined and render an
+ * empty cell that looks exactly like "no answer".
+ */
+function declaredRegion(
+  candidate: ScreeningFactsCandidateRow,
+): { code: string | null; declared: boolean; label: string } | null {
+  const tapped = text(candidate.preferredRegionCode);
+  if (tapped && (candidateRegionCodes as readonly string[]).includes(tapped)) {
+    const code = tapped as CandidateRegionCode;
+    return { code, declared: true, label: candidateRegionLabels[code] };
+  }
+  const typed = text(candidate.preferredRegionName);
+  if (!typed) return null;
+  const recovered = candidateRegionForGovernorate(typed);
+  return recovered
+    ? { code: recovered, declared: true, label: candidateRegionLabels[recovered] }
+    : { code: null, declared: true, label: typed };
+}
+
+/**
  * Everything the screening row and the profile header show, resolved once.
  *
  * Booleans get their own branch because `false` is a real answer here — "has not worked as a medical
@@ -125,20 +193,33 @@ export function candidateScreeningFacts(candidate: ScreeningFactsCandidateRow): 
   const cv = candidate.cvUnconfirmed ?? {};
 
   const governorate = pick(text(candidate.governorate), text(cv.governorate));
-  const regionCode = governorate ? candidateRegionForGovernorate(governorate.value) : null;
+  const derivedRegionCode = governorate ? candidateRegionForGovernorate(governorate.value) : null;
+  const asked = declaredRegion(candidate);
+  const areaName = text(candidate.preferredAreaName);
 
   const confirmedPharma = typeof candidate.hasMedicalRepExperience === "boolean" ? candidate.hasMedicalRepExperience : null;
   const unconfirmedPharma = typeof cv.hasMedicalRepExperience === "boolean" ? cv.hasMedicalRepExperience : null;
 
   return {
+    // Always settled when present: a person tapped or typed it, and there is nothing to hedge
+    // against because no other source offers an area at all.
+    area: areaName ? { confirmed: true, value: areaName } : null,
     // Both sides go through the same guard. A junk value typed into the column is still junk on
     // the card: the confirmed/hedged split says how SURE we are of a fact, not whether it is one.
     employer: pick(cleanEmployerName(candidate.currentEmployer), cleanEmployerName(cv.currentEmployer)),
     governorate,
     pharmaRep: pick<boolean>(confirmedPharma, unconfirmedPharma),
-    region: regionCode
-      ? { confirmed: governorate!.confirmed, value: { code: regionCode, label: candidateRegionLabels[regionCode] } }
-      : null,
+    // The applicant's own answer, then the CV. Note the asymmetry in `confirmed`: a declared
+    // region is always settled, because a person tapped it, whereas a derived one inherits the
+    // governorate's confidence and stays hedged when the CV reader was hedging.
+    region: asked
+      ? { confirmed: true, value: asked }
+      : derivedRegionCode
+        ? {
+            confirmed: governorate!.confirmed,
+            value: { code: derivedRegionCode, declared: false, label: candidateRegionLabels[derivedRegionCode] },
+          }
+        : null,
     roleTitle: pick(text(candidate.currentJobTitle), text(cv.currentJobTitle)),
     years: pick(years(candidate.yearsExperience), years(cv.yearsExperience)),
   };

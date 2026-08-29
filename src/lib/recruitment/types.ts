@@ -228,6 +228,14 @@ export type Candidate = {
   militaryStatus: string | null;
   address: string | null;
   governorate: string | null;
+  // What the applicant answered on WhatsApp when asked where they want to WORK — a different
+  // question from `governorate` above, which is where their CV says they LIVE. Written by the
+  // apply flow only, so null for everyone who arrived before it existed or never replied.
+  // A tapped region is a `candidateRegionCodes` value; a typed one lands in the name field.
+  preferredRegionCode: string | null;
+  preferredRegionName: string | null;
+  preferredAreaName: string | null;
+  preferencesDeclaredAt: string | null;
   // The candidate's OWN current/most recent job title as written on their CV — never the vacancy
   // they applied to. This is the field that makes CV extraction work for any job title.
   currentJobTitle: string | null;
