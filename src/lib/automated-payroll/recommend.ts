@@ -11,20 +11,28 @@ import { lookupSource } from "@/lib/payroll/copilot/assemble.ts";
 // module HR actually confirms in — see deductions-source.ts for why, and for
 // the production numbers that proved the two systems had never been connected.
 import { buildFeederStates, compactHrKey } from "@/lib/payroll/copilot/feeders.ts";
-import {
-  computeJoinerPay,
-  computeResignationSettlement,
-  isInPeriod,
-} from "@/lib/payroll/copilot/proration.ts";
+// computeResignationSettlement is no longer called here: resolveLeaverBasis in
+// leaver-basis.ts owns it now, so both leaver tabs read one settlement instead
+// of each computing its own.
+import { computeJoinerPay, isInPeriod } from "@/lib/payroll/copilot/proration.ts";
 import { listUnpaidVacationCandidates } from "@/lib/payroll/copilot/vacation-settlement.ts";
 import type { DeductionInboxRow } from "@/lib/deductions-governance/service";
 import { deductionsCategoryLabel } from "@/lib/deductions/calculations";
 import {
   linesFor,
   loadConfirmedDeductions,
+  pendingLinesFor,
   type DeductionLine,
   type EmployeeDeductions,
 } from "./deductions-source.ts";
+// The ONE leaver rule — days worked and the day rate — shared by the
+// Resignations and Resignations CRM steps so they can never disagree again
+// (owner, 2026-08-30: "the rule must be synced everywhere in the module").
+import {
+  leaverDayDeduction,
+  prorateLeaverNet,
+  resolveLeaverBasis,
+} from "./leaver-basis.ts";
 import {
   calculateDeductionAmountFromBaseSalary,
   resolveDayBasedDeductionAmount,
@@ -712,56 +720,76 @@ async function recommendResignations(
   for (const member of leavers) {
     if (!member.lastWorkingDate) continue;
     const source = lookupSource(sources, member.employee.hrId);
-    const settlement = computeResignationSettlement({
-      baseSalary: roundCurrency(source?.baseSalary ?? 0),
-      extraCostOfLiving: roundCurrency(source?.extraCostOfLiving ?? 0),
-      fuelAllowance: roundCurrency(source?.fuelAllowance ?? 0),
+    const draft = drafts.get(member.compact);
+    // ONE resolver, shared with the Resignations CRM tab (leaver-basis.ts). Both
+    // tabs now read the same day count from the same place; before 2026-08-30
+    // each reconstructed it separately and they disagreed for 7 of the 20
+    // settled leavers on the live August run.
+    const basis = resolveLeaverBasis({
+      source,
       lastWorkingDate: member.lastWorkingDate,
       period,
       unpaidDaysInSpan: member.unpaidDaysInSpan,
-      otherAdditions: 0,
-      otherDeductions: 0,
+      draft,
     });
-    if (!settlement) continue;
-    const draft = drafts.get(member.compact);
-    const baseSalary = roundCurrency(source?.baseSalary ?? 0);
+    if (!basis) continue;
+    const { settlement } = basis;
 
     const row = baseRow(member);
     row.context = {
       "Hire Date": member.employee.hireDate ?? "",
       "Last Working Date": member.lastWorkingDate,
-      // Divisor for the client-side Days Worked -> Base (month) auto-calc. Must
-      // be the month's ACTUAL calendar days to match dailyRate() in proration.ts;
-      // the default 30 used for deduction day-rates would overpay in a 31-day month.
-      "Days In Month": daysInPeriodMonth(period),
-      // "Base Salary" is kept in context (NOT in this step's displayed contextColumns —
-      // see step-definitions.ts) purely because the client-side Days→Value auto-calc
-      // reads row.context["Base Salary"]. "Net Salary" is what HR actually sees
-      // displayed (owner request 2026-07-25).
-      "Base Salary": baseSalary,
-      "Net Salary": roundCurrency(source?.netSalary ?? 0),
+      // Divisor for the client-side Days Worked -> money auto-calc. Must be the
+      // month's ACTUAL calendar days to match dailyRate() in proration.ts; the
+      // default 30 used for deduction day-rates would overpay in a 31-day month.
+      "Days In Month": basis.monthDays,
+      // The three monthly amounts the Days Worked field prorates. All three are
+      // in context (NOT in this step's displayed contextColumns — see
+      // step-definitions.ts) purely to feed that auto-calc: since the owner's
+      // 2026-08-29 rule a resignation prorates the whole NET, so editing the
+      // days has to move Extra Cost of Living and Fuel too, not just Base.
+      "Base Salary": basis.baseSalary,
+      "Extra Cost Of Living": basis.extraCostOfLiving,
+      "Fuel Allowance": basis.fuelAllowance,
+      // What HR actually sees displayed, labelled "Full Month Net" (owner
+      // request 2026-07-25). Same quantity as Base + ECoL + Fuel above —
+      // calculateNetSalary in policy.ts is exactly that sum.
+      "Net Salary": basis.netSalary,
     };
-    // Days Worked has no column of its own in the DB — Base (month) is what
-    // persists. So when HR has already overridden the settlement, derive the day
-    // count back OUT of the saved amount, otherwise the two would disagree on
-    // reload (days showing the system's calendar count, base showing HR's edit).
-    const perDay = daysInPeriodMonth(period) > 0 ? baseSalary / daysInPeriodMonth(period) : 0;
-    const displayedDaysWorked =
-      draft?.baseForMonth != null && perDay > 0
-        ? Math.round((draft.baseForMonth / perDay) * 100) / 100
-        : settlement.daysWorked;
+
+    // Days Worked is now a persisted column of its own, so what HR confirmed is
+    // read back verbatim rather than divided back out of the saved money. The
+    // old reverse-derivation could only ever recover a BASE-shaped day count,
+    // which stopped being the whole story the moment the allowances began
+    // prorating too.
+    const daysWorked = basis.daysWorked;
+    // A settled >25th leaver is paid in full and has no day share to recompute
+    // (computeResignationSettlement's other branch), so his figures come from
+    // the settlement untouched.
+    const prorated =
+      settlement.branch === "on_or_before_25"
+        ? prorateLeaverNet(basis, daysWorked)
+        : {
+            baseForMonth: settlement.baseForMonth,
+            ecolPaid: settlement.ecolPaid,
+            fuelPaid: settlement.fuelPaid,
+          };
 
     row.recommended = {
-      daysWorked: settlement.daysWorked,
+      daysWorked: basis.recommendedDaysWorked,
       baseForMonth: settlement.baseForMonth,
       ecolPaid: settlement.ecolPaid,
       fuelPaid: settlement.fuelPaid,
     };
     row.values = {
-      daysWorked: displayedDaysWorked,
-      baseForMonth: pick(draft?.baseForMonth, settlement.baseForMonth),
-      ecolPaid: pick(draft?.ecolPaid, settlement.ecolPaid),
-      fuelPaid: pick(draft?.fuelPaid, settlement.fuelPaid),
+      daysWorked,
+      // A saved money figure still wins over the day-share — HR may deliberately
+      // settle an amount that is not a clean multiple of a day, and overwriting
+      // that with arithmetic would silently discard a decision. `prorated` is
+      // what the confirmed day count is WORTH, and it is the fallback.
+      baseForMonth: pick(draft?.baseForMonth, prorated.baseForMonth),
+      ecolPaid: pick(draft?.ecolPaid, prorated.ecolPaid),
+      fuelPaid: pick(draft?.fuelPaid, prorated.fuelPaid),
     };
     rows.push(row);
   }
@@ -881,7 +909,10 @@ function recommendFingerprint(
       fingerprintDays: pick(draft?.fingerprintDays, days),
       fingerprintValue: pick(draft?.fingerprintValue, value),
     };
-    row.details = deductionDetailLines(lines);
+    row.details = [
+      ...deductionDetailLines(lines),
+      ...pendingDeductionDetailLines(pendingLinesFor(deductions, member.compact, "fingerprint")),
+    ];
     rows.push(row);
   }
   return rows;
@@ -900,6 +931,29 @@ function deductionDetailLines(lines: DeductionLine[]): StepRowDetail[] {
     Amount: line.amount,
     Status: line.status,
     Reason: line.reason || "—",
+  }));
+}
+
+/**
+ * Detected-but-undecided lines, in the same breakdown shape — what the payroll
+ * gate is holding back from this row's figure.
+ *
+ * These deliberately do NOT foot to the row: they are worth 0.00 to payroll and
+ * every one of them is a decision the owner has not made yet (his rule of
+ * 2026-08-03 — only what he confirmed is deducted). Showing them is what stops a
+ * correct 0.00 from reading as "the system found nothing", which is precisely
+ * how it read to him on 2026-08-30: "the CRM deduction is not reading any
+ * deduction", while 7 undecided CRM candidates worth 14,032.26 EGP sat in the
+ * Deductions module.
+ *
+ * The amount is shown because the missing NUMBER is the useful part, and the
+ * status is rewritten to say plainly that it is not being charged — a bare
+ * "Pending" beside a real figure is the ambiguity, not the cure.
+ */
+function pendingDeductionDetailLines(lines: DeductionLine[]): StepRowDetail[] {
+  return deductionDetailLines(lines).map((line) => ({
+    ...line,
+    Status: `${line.Status} — not charged, awaiting your approval in Deductions`,
   }));
 }
 
@@ -1313,7 +1367,10 @@ function recommendVacation(
       // auto-calc (recommendation-step.tsx setDaysValue) reads it directly.
       "Base Salary": roundCurrency(source?.baseSalary ?? 0),
     };
-    row.details = deductionDetailLines(lines);
+    row.details = [
+      ...deductionDetailLines(lines),
+      ...pendingDeductionDetailLines(pendingLinesFor(deductions, member.compact, "unpaidVacation")),
+    ];
     row.recommended = { p2VacationDays: days, unpaidVacations: amount };
     row.values = {
       p2VacationDays: days,
@@ -1379,7 +1436,10 @@ function recommendCrm(
       "Confirmed Lines": lines.length,
       "Base Salary": roundCurrency(source?.baseSalary ?? 0),
     };
-    row.details = deductionDetailLines(lines);
+    row.details = [
+      ...deductionDetailLines(lines),
+      ...pendingDeductionDetailLines(pendingLinesFor(deductions, member.compact, "crm")),
+    ];
     row.recommended = { p2CrmDays: days, crm: value };
     row.values = { p2CrmDays: days, crm: pick(draft?.crm, value) };
     rows.push(row);
@@ -1447,7 +1507,21 @@ function recommendManualDeductions(
       manualOtherDeductions: pick(draft?.manualOtherDeductions, confirmed),
     };
     row.reason = draft?.manualReason ?? null;
-    row.details = deductionDetailLines(lines);
+    // Undecided lines are listed for the same population the charged ones are —
+    // an employee settled in Part 1 takes loan/other on the Part 1 tab, so
+    // surfacing his withheld lines HERE would show the same decision on two
+    // screens and invite it being made twice.
+    row.details = [
+      ...deductionDetailLines(lines),
+      ...pendingDeductionDetailLines(
+        settledInPart1
+          ? []
+          : [
+              ...pendingLinesFor(deductions, member.compact, "loan"),
+              ...pendingLinesFor(deductions, member.compact, "other"),
+            ],
+      ),
+    ];
     return row;
   });
 }
@@ -1544,7 +1618,10 @@ function recommendP1Crm(
       p1odCrmValue: pick(draft?.p1odCrmValue, confirmedValue),
     };
     row.reasons = { p1odCrmReason: draft?.p1odCrmReason ?? "" };
-    row.details = deductionDetailLines(lines);
+    row.details = [
+      ...deductionDetailLines(lines),
+      ...pendingDeductionDetailLines(pendingLinesFor(deductions, member.compact, "crm")),
+    ];
     rows.push(row);
   }
   return rows;
@@ -1552,14 +1629,25 @@ function recommendP1Crm(
 
 /**
  * Leaver CRM deduction rate — UNIFIED with the resignation settlement (owner
- * rule 2026-07-26): Base ÷ the month's ACTUAL calendar days × days, NOT the /30
- * used for continuing employees. One no-activity day therefore costs exactly one
- * day of his prorated pay. Exported for direct unit testing (pure/deterministic).
+ * rule 2026-07-26): ÷ the month's ACTUAL calendar days × days, NOT the /30 used
+ * for continuing employees.
+ *
+ * `monthlyAmount` is the leaver's NET for a whole month — Base + Extra Cost of
+ * Living + Fuel. It was the BASE alone until 2026-08-30, which broke the very
+ * unification this function exists for: the owner moved the settlement to
+ * prorate the whole net on 2026-08-29, so from that day a no-activity day cost
+ * strictly LESS than the day of pay it was meant to cancel. He named it the next
+ * day — *"in the CRM, it must prorate the net salary"* — and this is that rule.
+ *
+ * Callers should not compute the amount themselves: `leaverDayDeduction` in
+ * leaver-basis.ts wraps this over the one resolved basis, and is what the step
+ * uses. This stays exported because it is pure and deterministic, so the rule
+ * can be pinned directly by a unit test.
  */
-export function resignationCrmDeduction(baseSalary: number, days: number, period: PayrollPeriod): number {
+export function resignationCrmDeduction(monthlyAmount: number, days: number, period: PayrollPeriod): number {
   const monthDays = daysInPeriodMonth(period);
-  if (baseSalary <= 0 || days <= 0 || monthDays <= 0) return 0;
-  return roundCurrency((baseSalary / monthDays) * days);
+  if (monthlyAmount <= 0 || days <= 0 || monthDays <= 0) return 0;
+  return roundCurrency((monthlyAmount / monthDays) * days);
 }
 
 /**
@@ -1586,29 +1674,31 @@ function recommendResignationCrm(
 ): StepRow[] {
   const leavers = members.filter((member) => member.lifecycle === "leaver" && member.lastWorkingDate);
   if (leavers.length === 0) return [];
-  const daysInMonth = daysInPeriodMonth(period);
 
   const rows: StepRow[] = [];
   for (const member of leavers) {
     if (!member.lastWorkingDate) continue;
     const source = lookupSource(sources, member.employee.hrId);
-    const baseSalary = roundCurrency(source?.baseSalary ?? 0);
     const draft = drafts.get(member.compact);
 
-    // Days worked = the paid-days count from the settlement — the cap for his
-    // Working + Non-Working CRM days. He can never be marked non-working for a
-    // day he was no longer employed.
-    const settlement = computeResignationSettlement({
-      baseSalary,
-      extraCostOfLiving: roundCurrency(source?.extraCostOfLiving ?? 0),
-      fuelAllowance: roundCurrency(source?.fuelAllowance ?? 0),
+    // THE SAME resolver the Resignations step uses (leaver-basis.ts). Days
+    // worked is whatever HR CONFIRMED there, and only falls back to the
+    // settlement's calendar count when nobody has confirmed anything.
+    //
+    // This is the fix for the owner's 2026-08-30 report. This step used to call
+    // computeResignationSettlement itself and take its calendar count, never
+    // looking at the draft — so a leaver confirmed at 12 days on the
+    // Resignations step arrived here as 28, and the cap below then allowed 28
+    // non-working days against a man who worked 12.
+    const basis = resolveLeaverBasis({
+      source,
       lastWorkingDate: member.lastWorkingDate,
       period,
       unpaidDaysInSpan: member.unpaidDaysInSpan,
-      otherAdditions: 0,
-      otherDeductions: 0,
+      draft,
     });
-    const daysWorked = Math.max(0, settlement?.daysWorked ?? 0);
+    if (!basis) continue;
+    const daysWorked = basis.daysWorked;
 
     // The leaver's CRM no-activity days come from the Deductions module, like
     // every other deduction in this wizard (owner rule 2026-08-04: "the
@@ -1629,7 +1719,7 @@ function recommendResignationCrm(
     // only the fallback when a confirmed line carries no amount of its own.
     const confirmedCrm = roundCurrency(deductions.get(member.compact)?.buckets.crm ?? 0);
     const recommendedValue =
-      confirmedCrm > 0 ? confirmedCrm : resignationCrmDeduction(baseSalary, recommendedNonWorking, period);
+      confirmedCrm > 0 ? confirmedCrm : leaverDayDeduction(basis, recommendedNonWorking);
 
     // Trust a saved day count only if it is within the valid span. A stored
     // value greater than days worked can only be the old whole-month bug (e.g.
@@ -1639,12 +1729,34 @@ function recommendResignationCrm(
     const storedDays = draft?.resignationCrmDays;
     const nonWorking =
       storedDays != null && storedDays >= 0 && storedDays <= daysWorked ? storedDays : recommendedNonWorking;
-    const value = resignationCrmDeduction(baseSalary, nonWorking, period);
+    const value = leaverDayDeduction(basis, nonWorking);
 
     const row = part1ManualDeductionBaseRow(member, source);
-    row.context["Days In Month"] = daysInMonth; // deduction divisor (Base ÷ actual month days)
+    row.context["Days In Month"] = basis.monthDays; // deduction divisor (Net ÷ actual month days)
     row.context["Days Worked"] = daysWorked; // complement cap for Working/Non-Working
+    // The monthly amount the day-rate is a share of. NET since 2026-08-30, so
+    // the client-side auto-calc charges a no-activity day exactly what the
+    // settlement pays for a worked one. part1ManualDeductionBaseRow already put
+    // "Net Salary" in context for display; the field spec names it as the
+    // auto-calc amount, which is what makes the two agree.
+    row.context["Net Salary"] = basis.netSalary;
 
+    // WHY A ZERO CAN BE HONEST HERE, and why it must never be silent. Payroll
+    // pays only what the owner has explicitly decided in the Deductions module
+    // ("Approved for Payroll" — his rule of 2026-08-03), while that module's own
+    // Overview counts a CRM row as soon as it is detected. So a leaver can show
+    // a real deduction there and 0.00 here, which is exactly what the owner hit
+    // on 2026-08-30: "the CRM deduction is not reading any deduction" — all 7 of
+    // August's CRM candidates, 14,032.26 EGP, were sitting Pending.
+    //
+    // The gate is right and stays. The SILENCE was the defect: the row showed a
+    // bare 0.00 with nothing saying a decision was outstanding. Undecided lines
+    // now appear in the row's own breakdown carrying their real status, so the
+    // zero always arrives with its reason attached.
+    row.details = [
+      ...deductionDetailLines(crmLines),
+      ...pendingDeductionDetailLines(pendingLinesFor(deductions, member.compact, "crm")),
+    ];
     row.recommended = {
       resigCrmWorkingDays: Math.max(0, daysWorked - recommendedNonWorking),
       resignationCrmDays: recommendedNonWorking,
@@ -1706,7 +1818,10 @@ function recommendP1UnpaidVacation(
       p1odVacationValue: pick(isLeaver ? draft?.unpaidVacations : draft?.p1odVacationValue, value),
     };
     row.reasons = { p1odVacationReason: draft?.p1odVacationReason ?? "" };
-    row.details = deductionDetailLines(lines);
+    row.details = [
+      ...deductionDetailLines(lines),
+      ...pendingDeductionDetailLines(pendingLinesFor(deductions, member.compact, "unpaidVacation")),
+    ];
     rows.push(row);
   }
   return rows;
@@ -1764,10 +1879,16 @@ function recommendP1OtherDeductions(
       p1odLoanReason: draft?.p1odLoanReason ?? "",
       p1odOtherReason: draft?.p1odOtherReason ?? "",
     };
-    row.details = deductionDetailLines([
-      ...linesFor(deductions, member.compact, "loan"),
-      ...linesFor(deductions, member.compact, "other"),
-    ]);
+    row.details = [
+      ...deductionDetailLines([
+        ...linesFor(deductions, member.compact, "loan"),
+        ...linesFor(deductions, member.compact, "other"),
+      ]),
+      ...pendingDeductionDetailLines([
+        ...pendingLinesFor(deductions, member.compact, "loan"),
+        ...pendingLinesFor(deductions, member.compact, "other"),
+      ]),
+    ];
     rows.push(row);
   }
   return rows;

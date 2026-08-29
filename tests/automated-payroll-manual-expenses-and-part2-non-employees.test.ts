@@ -79,6 +79,7 @@ function draft(hrId: string, patch: Partial<DraftRow>): DraftRow {
     runId: "run-1",
     employeeHrId: hrId,
     employeeHrIdCompact: hrId.toLowerCase().replace(/[^a-z0-9]+/g, ""),
+    daysWorked: null,
     baseForMonth: null,
     ecolPaid: null,
     fuelPaid: null,

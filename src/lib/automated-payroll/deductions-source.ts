@@ -122,6 +122,24 @@ export type DeductionLine = {
 export type EmployeeDeductions = {
   buckets: DeductionBuckets;
   lines: DeductionLine[];
+  /**
+   * Candidates the month DETECTED for this employee that the payroll gate did
+   * NOT let through — everything still Pending, Needs Follow-up, Disputed or Do
+   * Not Take Action. They contribute NOTHING to `buckets`, by design: the owner's
+   * 2026-08-03 rule is that only what he confirmed reaches payroll, and that is
+   * not in question here.
+   *
+   * They are carried so a zero can explain itself. The Deductions module's own
+   * Overview counts a CRM row from the moment it is detected, while payroll waits
+   * for the decision — so the two screens legitimately disagree, and until
+   * 2026-08-30 payroll showed a bare 0.00 with nothing saying why. The owner hit
+   * exactly that: "the CRM deduction is not reading any deduction", with all 7 of
+   * August's CRM candidates (14,032.26 EGP) sitting undecided.
+   *
+   * A step renders these as breakdown lines carrying their real status. Never sum
+   * them into a figure, and never let one reach a `values` entry.
+   */
+  pendingLines: DeductionLine[];
 };
 
 export function emptyBuckets(): DeductionBuckets {
@@ -220,19 +238,16 @@ export function buildDeductionBuckets(
   const byCompact = new Map<string, EmployeeDeductions>();
   for (const candidate of candidates) {
     if (candidate.supersededAt) continue;
-    if (!isConfirmedForPayroll(candidate)) continue;
     const compact = candidate.employeeHrIdCompact;
     if (!compact) continue;
 
+    const confirmed = isConfirmedForPayroll(candidate);
     const amount = candidateAmount(candidate);
-    const entry = byCompact.get(compact) ?? { buckets: emptyBuckets(), lines: [] };
-    const bucket = bucketFor(candidate.category);
-    entry.buckets[bucket] = roundCurrency(entry.buckets[bucket] + amount);
+    const entry = byCompact.get(compact) ?? { buckets: emptyBuckets(), lines: [], pendingLines: [] };
 
-    const dates = resolveAppliedDeductionDates(candidate);
-    entry.lines.push({
+    const line: DeductionLine = {
       category: candidate.category,
-      dates,
+      dates: resolveAppliedDeductionDates(candidate),
       // The charged DAYS, not `dates.length` — same unit error the amount had,
       // and the step sums these into the Deduction Days column, so a 0.13-day
       // late arrival must not be reported to HR as a whole day off.
@@ -240,7 +255,18 @@ export function buildDeductionBuckets(
       amount,
       reason: candidate.reason ?? "",
       status: candidate.decision?.decisionStatus ?? "Pending",
-    });
+    };
+
+    if (confirmed) {
+      const bucket = bucketFor(candidate.category);
+      entry.buckets[bucket] = roundCurrency(entry.buckets[bucket] + amount);
+      entry.lines.push(line);
+    } else {
+      // NOT added to any bucket — see EmployeeDeductions.pendingLines. This is
+      // recorded so a legitimate 0.00 can say why it is 0.00, never so it can
+      // become a figure.
+      entry.pendingLines.push(line);
+    }
     byCompact.set(compact, entry);
   }
   return byCompact;
@@ -291,4 +317,20 @@ export function linesFor(
   bucket: keyof DeductionBuckets,
 ): DeductionLine[] {
   return (deductions.get(compact)?.lines ?? []).filter((line) => bucketFor(line.category) === bucket);
+}
+
+/**
+ * This employee's DETECTED-but-undecided lines for one bucket — the ones the
+ * payroll gate is holding back. Display only: they are worth 0.00 to payroll
+ * until the owner decides them in the Deductions module, and that is the point.
+ * A step shows them so its zero is never mistaken for "nothing was found".
+ */
+export function pendingLinesFor(
+  deductions: Map<string, EmployeeDeductions>,
+  compact: string,
+  bucket: keyof DeductionBuckets,
+): DeductionLine[] {
+  return (deductions.get(compact)?.pendingLines ?? []).filter(
+    (line) => bucketFor(line.category) === bucket,
+  );
 }
