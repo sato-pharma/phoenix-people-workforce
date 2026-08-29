@@ -36,6 +36,7 @@ import {
   Waypoints,
 } from "lucide-react";
 
+import type { NavigationPermission } from "@/config/system-navigation";
 import type { EmployeePortalNavVisibility } from "@/lib/employee-portal/navigation";
 
 export type PortalNavEntry = {
@@ -47,6 +48,14 @@ export type PortalNavEntry = {
   icon: LucideIcon;
   /** Visible if ANY listed flag is truthy. Omitted/empty = always visible. */
   flags?: (keyof EmployeePortalNavVisibility)[];
+  /**
+   * The single permission the linked page enforces at its entry gate, mirrored here so the two
+   * cannot drift. Derived mechanically from the page's own `assertPermission`/`canAccess` gate;
+   * `employee-portal-nav-permission-matches-page.test.ts` re-derives it and fails if this copy
+   * disagrees. Omitted where the page has no machine-readable single-permission gate (its entry is
+   * decided by a role set, an unreadable predicate, or a computed visibility flag alone).
+   */
+  permission?: NavigationPermission;
 };
 
 /**
@@ -57,54 +66,54 @@ export type PortalNavEntry = {
  */
 export const PORTAL_NAV_REGISTRY: PortalNavEntry[] = [
   // My Workspace
-  { label: "Incentive", fullLabel: "Incentive", href: "/employee-portals/incentive", icon: Gift, flags: ["showIncentiveTab"] },
-  { label: "Coaching", fullLabel: "Coaching Reports", href: "/employee-portals/coaching", icon: ClipboardCheck, flags: ["showMyCoachingTab", "showTeamCoachingTab"] },
+  { label: "Incentive", fullLabel: "Incentive", href: "/employee-portals/incentive", icon: Gift, flags: ["showIncentiveTab"], permission: { resource: "employee_profile", action: "read" } },
+  { label: "Coaching", fullLabel: "Coaching Reports", href: "/employee-portals/coaching", icon: ClipboardCheck, flags: ["showMyCoachingTab", "showTeamCoachingTab"], permission: { resource: "coaching", action: "read" } },
   { label: "Plans", fullLabel: "Weekly / Monthly Plan", href: "/employee-portals/plans", icon: CalendarDays, flags: ["showPlansTab"] },
-  { label: "Planning", fullLabel: "Planning Calendar", href: "/employee-portals/plans/calendar", icon: CalendarClock, flags: ["showPlanningCalendarTab"] },
+  { label: "Planning", fullLabel: "Planning Calendar", href: "/employee-portals/plans/calendar", icon: CalendarClock, flags: ["showPlanningCalendarTab"], permission: { resource: "weekly_plans", action: "read" } },
   { label: "Vacation", fullLabel: "Leave Approvals", href: "/employee-portals/approvals/vacation", icon: CalendarDays, flags: ["showVacationApprovalsTab"] },
   { label: "Excuses", fullLabel: "Excuse Approvals", href: "/employee-portals/approvals/excuse", icon: CalendarClock, flags: ["showExcuseApprovalsTab"] },
   { label: "Plan Appr", fullLabel: "Plan Approvals", href: "/employee-portals/approvals/plan", icon: CalendarRange, flags: ["showPlanApprovalsTab"] },
   { label: "Approvals", fullLabel: "Other Approvals", href: "/employee-portals/approvals-hub", icon: Inbox, flags: ["showActionsTab"] },
-  { label: "Payslips", fullLabel: "Payslips", href: "/employee-portals/payslips", icon: FileText },
-  { label: "Deductions", fullLabel: "Deductions", href: "/employee-portals/deductions", icon: ReceiptText },
-  { label: "360", fullLabel: "Employee 360", href: "/employee-portals/employee-360", icon: IdCard },
-  { label: "Analytics", fullLabel: "Attendance Analytics", href: "/employee-portals/fingerprint-analytics", icon: Fingerprint, flags: ["showFingerprintReportTab"] },
+  { label: "Payslips", fullLabel: "Payslips", href: "/employee-portals/payslips", icon: FileText, permission: { resource: "payslips", action: "read" } },
+  { label: "Deductions", fullLabel: "Deductions", href: "/employee-portals/deductions", icon: ReceiptText, permission: { resource: "employee_profile", action: "read" } },
+  { label: "360", fullLabel: "Employee 360", href: "/employee-portals/employee-360", icon: IdCard, permission: { resource: "employee_profile", action: "read" } },
+  { label: "Analytics", fullLabel: "Attendance Analytics", href: "/employee-portals/fingerprint-analytics", icon: Fingerprint, flags: ["showFingerprintReportTab"], permission: { resource: "attendance", action: "read" } },
   // Sales Intelligence (Product / Group Product Managers)
   // Sales vs Target leads the sales group: it is the field force's daily dashboard and the only
   // sales destination a Medical Rep can open, so it must be reachable from the phone bottom bar
   // rather than the desktop sidebar alone.
-  { label: "vs Target", fullLabel: "Sales vs Target", href: "/employee-portals/sales-vs-target", icon: Gauge, flags: ["showSalesVsTargetTab"] },
+  { label: "vs Target", fullLabel: "Sales vs Target", href: "/employee-portals/sales-vs-target", icon: Gauge, flags: ["showSalesVsTargetTab"], permission: { resource: "sales", action: "read" } },
   { label: "ROI", fullLabel: "ROI Intelligence", href: "/employee-portals/roi", icon: Target, flags: ["showRoiIntelligenceTab"] },
-  { label: "SoS", fullLabel: "Source of Sales", href: "/employee-portals/source-of-sales", icon: ChartColumnBig, flags: ["showSourceOfSalesTab"] },
+  { label: "SoS", fullLabel: "Source of Sales", href: "/employee-portals/source-of-sales", icon: ChartColumnBig, flags: ["showSourceOfSalesTab"], permission: { resource: "sales", action: "read" } },
   // The three sales destinations below plus My Visits/Team Calendar further down were in the
   // sidebar but never in this registry, so the mobile bottom bar and the profile quick-nav grid
   // could not reach them at all — for a Regional Manager that meant a default bottom bar with zero
   // sales tabs. The sync test only checked registry -> sidebar, so the reverse drift stayed silent;
   // it now checks both directions.
-  { label: "Weekly", fullLabel: "Weekly Sales", href: "/employee-portals/weekly-sales", icon: CalendarRange, flags: ["showWeeklyTab"] },
-  { label: "Closing", fullLabel: "Monthly Closing", href: "/employee-portals/monthly-closing", icon: CalendarRange, flags: ["showMonthlyClosingTab"] },
-  { label: "Sales", fullLabel: "Sales Analytics", href: "/employee-portals/sales-analytics", icon: Activity, flags: ["showSalesAnalyticsTab"] },
+  { label: "Weekly", fullLabel: "Weekly Sales", href: "/employee-portals/weekly-sales", icon: CalendarRange, flags: ["showWeeklyTab"], permission: { resource: "sales", action: "read" } },
+  { label: "Closing", fullLabel: "Monthly Closing", href: "/employee-portals/monthly-closing", icon: CalendarRange, flags: ["showMonthlyClosingTab"], permission: { resource: "sales", action: "read" } },
+  { label: "Sales", fullLabel: "Sales Analytics", href: "/employee-portals/sales-analytics", icon: Activity, flags: ["showSalesAnalyticsTab"], permission: { resource: "sales", action: "read" } },
   { label: "Review", fullLabel: "Business Review", href: "/employee-portals/business-review", icon: ChartColumnBig, flags: ["showBusinessReviewTab"] },
   // Two DIFFERENT modules whose full names both start with "Territory" — the short `label` is all
   // the bottom nav shows, so they must not both read "Territory" there. Drilldown is the
   // geography-rooted sales tree; Management is the brick-allocation / rep-residence map.
-  { label: "Drilldown", fullLabel: "Sales Drilldown", href: "/employee-portals/territory-drilldown", icon: MapPinned, flags: ["showTerritoryDrilldownTab"] },
-  { label: "CRM", fullLabel: "CRM", href: "/employee-portals/crm", icon: Database, flags: ["showCrmMasterTab"] },
-  { label: "Territory", fullLabel: "Territory Management", href: "/employee-portals/territory-management", icon: Waypoints, flags: ["showTerritoryManagementTab"] },
-  { label: "Targets", fullLabel: "Targets", href: "/employee-portals/targets", icon: Target, flags: ["showTargetsTab"] },
+  { label: "Drilldown", fullLabel: "Sales Drilldown", href: "/employee-portals/territory-drilldown", icon: MapPinned, flags: ["showTerritoryDrilldownTab"], permission: { resource: "sales", action: "read" } },
+  { label: "CRM", fullLabel: "CRM", href: "/employee-portals/crm", icon: Database, flags: ["showCrmMasterTab"], permission: { resource: "crm_visits", action: "read" } },
+  { label: "Territory", fullLabel: "Territory Management", href: "/employee-portals/territory-management", icon: Waypoints, flags: ["showTerritoryManagementTab"], permission: { resource: "sales", action: "read" } },
+  { label: "Targets", fullLabel: "Targets", href: "/employee-portals/targets", icon: Target, flags: ["showTargetsTab"], permission: { resource: "sales", action: "read" } },
   { label: "ROI Tracker", fullLabel: "Marketing ROI Tracker", href: "/employee-portals/roi-tracker", icon: Target, flags: ["showMarketingRoiTrackingTab"] },
   { label: "Direct Order", fullLabel: "Direct Orders", href: "/employee-portals/direct-orders", icon: ReceiptText, flags: ["showDirectOrdersTab"] },
-  { label: "Visits", fullLabel: "My Visits", href: "/employee-portals/visits", icon: MapPinned, flags: ["showMyVisitsTab"] },
+  { label: "Visits", fullLabel: "My Visits", href: "/employee-portals/visits", icon: MapPinned, flags: ["showMyVisitsTab"], permission: { resource: "crm_visits", action: "read" } },
   { label: "Calendar", fullLabel: "Team Calendar", href: "/employee-portals/team-calendar", icon: CalendarRange, flags: ["showTeamCalendarTab"] },
-  { label: "Coaching", fullLabel: "Coaching Analytics", href: "/employee-portals/coaching-analytics", icon: ChartColumnBig, flags: ["showCoachingAnalyticsTab"] },
-  { label: "Double Visit", fullLabel: "Double-Visit Analytics", href: "/employee-portals/double-visit-analytics", icon: Activity, flags: ["showDoubleVisitAnalyticsTab"] },
-  { label: "DV Planner", fullLabel: "DV Planner", href: "/employee-portals/dv-planner", icon: CalendarCheck2, flags: ["showDoubleVisitReportTab"] },
-  { label: "DV Report", fullLabel: "Double Visit Report", href: "/employee-portals/double-visit-report", icon: FileSpreadsheet, flags: ["showDoubleVisitReportTab"] },
+  { label: "Coaching", fullLabel: "Coaching Analytics", href: "/employee-portals/coaching-analytics", icon: ChartColumnBig, flags: ["showCoachingAnalyticsTab"], permission: { resource: "coaching", action: "read" } },
+  { label: "Double Visit", fullLabel: "Double-Visit Analytics", href: "/employee-portals/double-visit-analytics", icon: Activity, flags: ["showDoubleVisitAnalyticsTab"], permission: { resource: "double_visit_analytics", action: "read" } },
+  { label: "DV Planner", fullLabel: "DV Planner", href: "/employee-portals/dv-planner", icon: CalendarCheck2, flags: ["showDoubleVisitReportTab"], permission: { resource: "double_visit_analytics", action: "read" } },
+  { label: "DV Report", fullLabel: "Double Visit Report", href: "/employee-portals/double-visit-report", icon: FileSpreadsheet, flags: ["showDoubleVisitReportTab"], permission: { resource: "double_visit_analytics", action: "read" } },
   // Training Manager
   { label: "Overview", fullLabel: "TM Overview", href: "/employee-portals/training-manager", icon: Home, flags: ["showTrainingManagerDashboardTab"] },
-  { label: "Coaching", fullLabel: "Coaching Dashboard", href: "/employee-portals/training-manager/coaching", icon: ChartColumnBig, flags: ["showTrainingManagerDashboardTab"] },
-  { label: "New report", fullLabel: "Create Coaching Report", href: "/employee-portals/training-manager/create-coaching-report", icon: FilePlus2, flags: ["showTrainingManagerCreateCoachingTab"] },
-  { label: "Field", fullLabel: "Field Coaching", href: "/employee-portals/training-manager/field-coaching", icon: ClipboardCheck, flags: ["showTrainingManagerFieldCoachingTab"] },
+  { label: "Coaching", fullLabel: "Coaching Dashboard", href: "/employee-portals/training-manager/coaching", icon: ChartColumnBig, flags: ["showTrainingManagerDashboardTab"], permission: { resource: "coaching", action: "read" } },
+  { label: "New report", fullLabel: "Create Coaching Report", href: "/employee-portals/training-manager/create-coaching-report", icon: FilePlus2, flags: ["showTrainingManagerCreateCoachingTab"], permission: { resource: "coaching", action: "create" } },
+  { label: "Field", fullLabel: "Field Coaching", href: "/employee-portals/training-manager/field-coaching", icon: ClipboardCheck, flags: ["showTrainingManagerFieldCoachingTab"], permission: { resource: "coaching", action: "read" } },
   // Marketing Requests
   { label: "Validation", fullLabel: "Customer Validation", href: "/employee-portals/marketing-requests/validation", icon: ShieldCheck, flags: ["showMarketingRequestsTab"] },
   { label: "Marketing", fullLabel: "Marketing Requests", href: "/employee-portals/marketing-requests", icon: Send, flags: ["showMarketingRequestsTab"] },
@@ -119,27 +128,27 @@ export const PORTAL_NAV_REGISTRY: PortalNavEntry[] = [
   { label: "Excuses", fullLabel: "Excuses", href: "/employee-portals/excuses", icon: CalendarClock, flags: ["showExcusesTab"] },
   { label: "Report It", fullLabel: "Report It", href: "/employee-portals/report-it", icon: FileText, flags: ["showReportItTab", "showReportItDashboardTab"] },
   // Team Performance
-  { label: "Team", fullLabel: "Team Performance", href: "/employee-portals/team-performance", icon: Trophy, flags: ["showTeamPerformanceTab"] },
-  { label: "MRs", fullLabel: "MRs Performance", href: "/employee-portals/med-reps-performance", icon: ChartColumnBig, flags: ["showMedRepsPerformanceTab"] },
-  { label: "DSMs", fullLabel: "DSMs Performance", href: "/employee-portals/dsms-performance", icon: Users, flags: ["showDsmsPerformanceTab"] },
-  { label: "Team exp", fullLabel: "Team Expenses", href: "/employee-portals/team-expenses", icon: WalletCards, flags: ["showTeamExpensesTab"] },
+  { label: "Team", fullLabel: "Team Performance", href: "/employee-portals/team-performance", icon: Trophy, flags: ["showTeamPerformanceTab"], permission: { resource: "sales", action: "read" } },
+  { label: "MRs", fullLabel: "MRs Performance", href: "/employee-portals/med-reps-performance", icon: ChartColumnBig, flags: ["showMedRepsPerformanceTab"], permission: { resource: "sales", action: "read" } },
+  { label: "DSMs", fullLabel: "DSMs Performance", href: "/employee-portals/dsms-performance", icon: Users, flags: ["showDsmsPerformanceTab"], permission: { resource: "sales", action: "read" } },
+  { label: "Team exp", fullLabel: "Team Expenses", href: "/employee-portals/team-expenses", icon: WalletCards, flags: ["showTeamExpensesTab"], permission: { resource: "expenses", action: "read" } },
   // Team Operations
-  { label: "Vacancies", fullLabel: "Vacancies", href: "/employee-portals/vacancies", icon: BriefcaseBusiness, flags: ["showVacanciesTab"] },
-  { label: "Candidates", fullLabel: "My Candidates", href: "/employee-portals/recruitment-candidates", icon: UsersRound, flags: ["showMyCandidatesTab"] },
-  { label: "Probation", fullLabel: "Probation Tracker", href: "/employee-portals/probation", icon: ClipboardCheck, flags: ["showProbationTab"] },
-  { label: "Org", fullLabel: "Organogram", href: "/employee-portals/organogram", icon: Building2, flags: ["showOrganogramTab"] },
+  { label: "Vacancies", fullLabel: "Vacancies", href: "/employee-portals/vacancies", icon: BriefcaseBusiness, flags: ["showVacanciesTab"], permission: { resource: "vacancies", action: "read" } },
+  { label: "Candidates", fullLabel: "My Candidates", href: "/employee-portals/recruitment-candidates", icon: UsersRound, flags: ["showMyCandidatesTab"], permission: { resource: "hiring_interviews", action: "read" } },
+  { label: "Probation", fullLabel: "Probation Tracker", href: "/employee-portals/probation", icon: ClipboardCheck, flags: ["showProbationTab"], permission: { resource: "probation", action: "read" } },
+  { label: "Org", fullLabel: "Organogram", href: "/employee-portals/organogram", icon: Building2, flags: ["showOrganogramTab"], permission: { resource: "organogram", action: "read" } },
   // Expenses
-  { label: "Expenses", fullLabel: "My Outstation Expenses", href: "/employee-portals/expenses", icon: ReceiptText, flags: ["showMedicalRepExpensesTab"] },
-  { label: "Expenses", fullLabel: "Expense Dashboard", href: "/employee-portals/expense-dashboard", icon: CircleDollarSign, flags: ["showExpenseDashboardTab"] },
-  { label: "My claims", fullLabel: "Expense Submissions", href: "/employee-portals/expense-submissions", icon: ReceiptText, flags: ["showExpenseDashboardTab"] },
-  { label: "Submit exp", fullLabel: "Submit Expense", href: "/employee-portals/submit-expense", icon: Send, flags: ["showExpenseActionTab"] },
+  { label: "Expenses", fullLabel: "My Outstation Expenses", href: "/employee-portals/expenses", icon: ReceiptText, flags: ["showMedicalRepExpensesTab"], permission: { resource: "expenses", action: "read" } },
+  { label: "Expenses", fullLabel: "Expense Dashboard", href: "/employee-portals/expense-dashboard", icon: CircleDollarSign, flags: ["showExpenseDashboardTab"], permission: { resource: "expenses", action: "read" } },
+  { label: "My claims", fullLabel: "Expense Submissions", href: "/employee-portals/expense-submissions", icon: ReceiptText, flags: ["showExpenseDashboardTab"], permission: { resource: "expenses", action: "read" } },
+  { label: "Submit exp", fullLabel: "Submit Expense", href: "/employee-portals/submit-expense", icon: Send, flags: ["showExpenseActionTab"], permission: { resource: "outstation", action: "create" } },
   // Support
-  { label: "Support", fullLabel: "Request Support", href: "/employee-portals/contact-hr-support", icon: Headphones, flags: ["showSupportTab"] },
+  { label: "Support", fullLabel: "Request Support", href: "/employee-portals/contact-hr-support", icon: Headphones, flags: ["showSupportTab"], permission: { resource: "support_requests", action: "create" } },
 ];
 
 /** Fixed anchors of the bottom nav — always present, not user-removable. */
-export const HOME_ENTRY: PortalNavEntry = { label: "Home", fullLabel: "Home", href: "/employee-portals", icon: Home };
-export const PROFILE_ENTRY: PortalNavEntry = { label: "Profile", fullLabel: "Profile", href: "/employee-portals/profile", icon: User };
+export const HOME_ENTRY: PortalNavEntry = { label: "Home", fullLabel: "Home", href: "/employee-portals", icon: Home, permission: { resource: "employee_profile", action: "read" } };
+export const PROFILE_ENTRY: PortalNavEntry = { label: "Profile", fullLabel: "Profile", href: "/employee-portals/profile", icon: User, permission: { resource: "employee_profile", action: "read" } };
 
 /** Max user-pinned shortcuts between Home and Profile in the bottom bar. */
 export const MAX_BOTTOM_NAV_CUSTOM = 4;
