@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
 
-import { logCronUnauthorized, logError, logInfo } from "@/lib/observability/log";
+import { logError, logInfo } from "@/lib/observability/log";
 import { withDeadMansSwitch } from "@/lib/observability/dead-mans-switch";
 import { drainInboundIntake } from "@/lib/recruitment/inbound/intake-worker";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
-import { bearerSecretMatches } from "@/lib/security/constant-time";
+import { assertCronAuthorized } from "@/lib/security/cron-auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -14,20 +14,9 @@ export const maxDuration = 300;
 // poller only ENQUEUE; this worker does the media download + AI + candidate creation, with retries
 // and dead-lettering. Runs frequently so a queued CV becomes a candidate within a couple of
 // minutes. A clean no-op when the queue is empty.
-function isAuthorized(request: Request) {
-  const secret = process.env.CRON_SECRET;
-  // An unset CRON_SECRET may ONLY be bypassed on a real developer machine. Anything less
-  // would leave this route callable unauthenticated wherever CRON_SECRET is unset —
-  // including staging, which is a 1:1 clone of production data.
-  if (!secret) return process.env.NODE_ENV === "development";
-  return bearerSecretMatches(request.headers.get("authorization"), secret);
-}
-
 export async function GET(request: Request) {
-  if (!isAuthorized(request)) {
-    logCronUnauthorized("cron/inbound-intake", request);
-    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  }
+  const denied = assertCronAuthorized(request, "cron/inbound-intake");
+  if (denied) return denied;
   try {
     const limit = Number(new URL(request.url).searchParams.get("limit"));
     const maxItems = Number.isFinite(limit) && limit > 0 ? Math.min(25, Math.floor(limit)) : undefined;

@@ -104,9 +104,15 @@ export function runEmailTemplatesTriggersTests() {
   // bearerSecretMatches (src/lib/security/constant-time.ts, timingSafeEqual). Matching the new
   // call keeps the original intent — the drain route must authenticate cron via CRON_SECRET —
   // while also making a silent regression back to `===` fail here.
+  //
+  // Repointed 2026-08-29 (A2). The comparison moved one level down: the route now calls
+  // assertCronAuthorized, which calls bearerSecretMatches. The `===` regression this line was
+  // written to catch is now caught at the source by tests/cron-auth-single-guard.test.ts, which
+  // fails if ANY route under app/api compares a secret itself. What stays here is this route's
+  // own half — that the drain is guarded, under its own job slug.
   assert.match(
     processRoute,
-    /bearerSecretMatches\(\s*request\.headers\.get\("authorization"\)\s*,\s*secret\s*\)/,
+    /assertCronAuthorized\(request, "notifications\/process"/,
     "the drain route must authenticate cron via CRON_SECRET, compared in constant time",
   );
   

@@ -106,7 +106,9 @@ export async function runCvIntakeDigest6hTests() {
 
   // --- source code contract: the cron route exists and gates with CRON_SECRET ---
   const routeSource = read("app/api/cron/recruitment-cv-digest/route.ts");
-  assert.match(routeSource, /bearerSecretMatches/, "route gates with bearerSecretMatches");
+  // Repointed 2026-08-29 (A2): the comparison moved into src/lib/security/cron-auth.ts. Asserting
+  // the guard is called still proves what this line was for — the route is not an open endpoint.
+  assert.match(routeSource, /assertCronAuthorized/, "route gates with assertCronAuthorized");
   assert.match(routeSource, /sendCvIntakeDigest6h/, "route calls the service");
 
   // --- source code contract: the access registry includes the route ---

@@ -586,6 +586,7 @@ import { runVacationOverlapWarningsTests } from "./vacation-overlap-warnings.tes
 import { runVacationReportFilterEquivalenceTests } from "./vacation-report-filter-equivalence.test.ts";
 import { runCsrfRouteCoverageTests } from "./csrf-route-coverage.test.ts";
 import { runContractRenewalHardeningTests } from "./contract-renewal-hardening.test.ts";
+import { runCronAuthSingleGuardTests } from "./cron-auth-single-guard.test.ts";
 import { runContractNonRenewalTerminalTests } from "./contract-non-renewal-terminal.test.ts";
 import { runContractNonRenewalMigrationReadinessTests } from "./contract-non-renewal-migration-readiness.test.ts";
 import { runResignationScopeCheckTests } from "./resignation-scope-check.test.ts";
@@ -1947,6 +1948,10 @@ await runTest(
 );
 await runTest("csrf route coverage", runCsrfRouteCoverageTests);
 await runTest("contract renewal hardening", runContractRenewalHardeningTests);
+await runTest(
+  "cron auth policy lives in exactly one module (no route restates the unset-secret rule)",
+  runCronAuthSingleGuardTests,
+);
 await runTest("contract non-renewal terminal lifecycle", runContractNonRenewalTerminalTests);
 await runTest("contract non-renewal migration readiness", runContractNonRenewalMigrationReadinessTests);
 await runTest("resignation employee scope check", runResignationScopeCheckTests);

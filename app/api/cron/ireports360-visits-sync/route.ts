@@ -8,7 +8,7 @@ import { syncProbationDvDays } from "@/lib/probation/intelligence/dv-sync";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { runScheduledIReports360Sync } from "@/lib/crm/sync";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
-import { bearerSecretMatches } from "@/lib/security/constant-time";
+import { assertCronAuthorized } from "@/lib/security/cron-auth";
 
 const JOB_NAME = "ireports360-visits-sync";
 
@@ -23,18 +23,6 @@ export const maxDuration = 300;
 // Double Visit Analytics has no separate sync step of its own (it reads ireports360_visits
 // live), so this only drives the probation DV auto-tick over the same just-refreshed range.
 const DV_TICK_LOOKBACK_DAYS = 10;
-
-function isAuthorized(request: Request) {
-  const secret = process.env.CRON_SECRET;
-  // An unset CRON_SECRET may ONLY be bypassed on a real developer machine. This used to be
-  // `!isProductionRuntime()`, which is true for ANY non-production APP_ENV — including staging,
-  // a 1:1 clone of production. With CRON_SECRET unset there, all three iReports360 cron routes
-  // would have been callable unauthenticated by anyone, driving vendor syncs and mirror writes
-  // against production-grade data. Requiring NODE_ENV === "development" makes the bypass
-  // impossible anywhere it is actually deployed.
-  if (!secret) return process.env.NODE_ENV === "development";
-  return bearerSecretMatches(request.headers.get("authorization"), secret);
-}
 
 function isoDaysAgo(days: number) {
   const date = new Date();
@@ -94,9 +82,10 @@ async function runSync() {
 }
 
 export async function GET(request: Request) {
-  if (!isAuthorized(request)) {
-    return NextResponse.json({ error: "unauthorized", message: "iReports360 visits sync is not authorized." }, { status: 401 });
-  }
+  const denied = assertCronAuthorized(request, "cron/ireports360-visits-sync", {
+    message: "iReports360 visits sync is not authorized.",
+  });
+  if (denied) return denied;
   try {
     // Scheduled at 9:07/12:07/19:07 Africa/Cairo via Google Cloud Scheduler's --time-zone flag
     // (see scripts/setup-gcp-cron.sh), which is genuinely DST-aware — the trigger stays pinned
