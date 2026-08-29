@@ -536,6 +536,13 @@ holding the full account, under
   now refused for one — it would attach another business's real code. The licence is a **fallback
   identity route**, *never* evidence in its own right. Direct-order desk only (#2434), **not**
   marketing — and when marketing wires leg 3, scope it by venue type or it repeats this from scratch.
+  **`nursery` is the venue type for ANY venue with no distributor account, and that is the OWNER'S
+  OWN FILING** (2026-08-29): *"it is a clinic that only takes direct orders from the company. It
+  doesn't have a pharmacy that has a code. So it is the same situation exactly as a nursery. I am
+  the one who told him to submit it like this."* So a clinic filed as a nursery is **correct, not a
+  data-quality defect** — never "fix" one, never flag it in a sweep, and do not add a third venue
+  type. The register reading `Nursery` for a clinic is expected. The vocabulary is not about what
+  the venue IS; it is about whether a distributor vouches for it.
   `venue-validation-rule-gps-photo-then-code-or-licence`
 - 🔴 **Marketing pharmacies are TERRITORIAL, and a NULL `area_id` makes one invisible.** Seeded rows
   carry no area and so appear nowhere at all. **Owner rule: the REGISTERED CODE beats live GPS.**
