@@ -82,7 +82,10 @@ export function runAutomatedPayrollSplitTests() {
   assert.equal(joinerLate.fuel, 250); // 500 × 15/30
   assert.equal(joinerLate.net, 15750); // = 31,500 net × 15/30
 
-  // ---- leaver on/before the 25th → Base-only proration, no ECoL/Fuel --------
+  // ---- leaver on/before the 25th → NET proration, every component at the same
+  // day share. Owner instruction 2026-08-29, the second of two that day: the
+  // zeros this used to assert were the retired rule, which withheld both
+  // allowances from a leaver outright. ---------------------------------------
   const leaverEarly = effectiveSalary({
     baseSalary: BASE,
     extraCostOfLiving: ECOL,
@@ -90,13 +93,20 @@ export function runAutomatedPayrollSplitTests() {
     netSalary: NET,
     period: JUNE,
     lifecycle: "leaver",
-    lastWorkingDate: "2026-06-20", // 20 days
+    // Was the 20th. Moved to the 18th when the rule changed on 2026-08-29: on
+    // net, the 20th pays 31,500 × 20/30 = 21,000, which is exactly the Basic
+    // anchor — and every freezeFirstPart case below this one is built on this
+    // fixture being a leaver whose settlement is BELOW Basic. Landing on the
+    // equality boundary would have left those cases passing while no longer
+    // testing the shape they are named for.
+    lastWorkingDate: "2026-06-18", // 18 days
     unpaidDaysInSpan: 0,
   });
-  assert.equal(leaverEarly.base, 20000);
-  assert.equal(leaverEarly.ecol, 0);
-  assert.equal(leaverEarly.fuel, 0);
-  assert.equal(leaverEarly.net, 20000);
+  assert.equal(leaverEarly.base, 18000); // 1000/day × 18
+  assert.equal(leaverEarly.ecol, 600, "ECoL prorates with the base now — it is no longer withheld"); // 1000 × 18/30
+  assert.equal(leaverEarly.fuel, 300, "Fuel prorates with the base now — it is no longer withheld"); // 500 × 18/30
+  assert.equal(leaverEarly.net, 18900); // = 31,500 net × 18/30
+  assert.ok(leaverEarly.net < BASIC, "this fixture must stay BELOW the Basic anchor — the freezeFirstPart cases below depend on it");
 
   // ---- leaver after the 25th → full Base + ECoL + Fuel ----------------------
   const leaverLate = effectiveSalary({
@@ -146,10 +156,10 @@ export function runAutomatedPayrollSplitTests() {
   );
 
   // ---- freezeFirstPart: leaver whose prorated net < Basic → net − FP --------
-  // leaverEarly net = 20000 < Basic 21000 → firstPart = min(21000, 20000) − FP.
+  // leaverEarly net = 18900 < Basic 21000 → firstPart = min(21000, 18900) − FP.
   assert.equal(
     freezeFirstPart({ effective: leaverEarly, fullBaseSalary: BASE, paymentMode: "two_parts", fingerprint: 0 }),
-    20000,
+    18900,
   );
 
   // ---- freezeFirstPart never goes negative ---------------------------------
@@ -228,8 +238,8 @@ export function runAutomatedPayrollSplitTests() {
   // Part that may not exist — a leaver has no next month to recover an
   // un-netted medical insurance amount via carry-forward. ---------------------
 
-  // Real case: leaverEarly's settlement (net=20000) already exactly equals its
-  // own Basic-anchor first part (min(21000,20000)=20000), so provisional Second
+  // Real case: leaverEarly's settlement (net=18900) already exactly equals its
+  // own Basic-anchor first part (min(21000,18900)=18900), so provisional Second
   // headroom is ALREADY ZERO before any deduction — the exact "gets it all in
   // First Part, no Second Part" shape (Amany/Eman). Medical insurance must now
   // come straight out of First Part, not vanish into an unrecoverable residual.
@@ -241,7 +251,7 @@ export function runAutomatedPayrollSplitTests() {
       fingerprint: 0,
       medicalInsurance: 400,
     }),
-    19600, // 20000 - 400, headroom was already 0
+    18500, // 18900 - 400, headroom was already 0
   );
 
   // Medical insurance ADDS to CRM/vacation in the same shortfall pool, not a
@@ -255,7 +265,7 @@ export function runAutomatedPayrollSplitTests() {
       leaverDeduction: 2000,
       medicalInsurance: 400,
     }),
-    17600, // 20000 - 2000 - 400
+    16500, // 18900 - 2000 - 400
   );
 
   // leaverLate has real Second-Part headroom (10500) — medical insurance that
@@ -297,7 +307,7 @@ export function runAutomatedPayrollSplitTests() {
       fingerprint: 0,
       medicalInsurance: 400,
     }),
-    19600, // 20000 - 400, taken directly — same number, but via the OTHER path
+    18500, // 18900 - 400, taken directly — same number, but via the OTHER path
   );
 
   // Continuing (non-leaver) two-part employees are UNCHANGED: medical insurance
