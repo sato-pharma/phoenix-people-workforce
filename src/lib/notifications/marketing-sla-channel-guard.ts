@@ -20,7 +20,14 @@ import type { SystemNotificationChannel } from "@/lib/notifications/system";
 // request_returned, request_completed) are untouched -- only the 2 SLA reminder
 // types lose email.
 
-const MARKETING_SLA_EMAIL_BLOCKED_EVENT_TYPES = new Set(["due_date_reminder", "overdue_reminder"]);
+// `invoice_overdue` joined the set 2026-08-29. It is the same class of thing the owner banned from
+// email in 2026-07-25 — a marketing_requests reminder that something is late — and it is emitted by
+// a daily cron, so the failure mode is identical: a recurring mail nobody can action. Blocking it
+// here as well as at the call site is deliberate. The call site passes an explicit channel list, but
+// the Telegram-failure fallback re-enters the pipeline with ["email","in_app"] of its own accord, and
+// Telegram failing is the EXPECTED case for anyone not yet linked — so the call site alone is not a
+// guarantee, and this post-filter is.
+const MARKETING_SLA_EMAIL_BLOCKED_EVENT_TYPES = new Set(["due_date_reminder", "overdue_reminder", "invoice_overdue"]);
 const MARKETING_REQUESTS_MODULE = "marketing_requests";
 
 export function isMarketingSlaEventType(module: string | null | undefined, eventType: string | null | undefined): boolean {

@@ -124,6 +124,12 @@ const policyTable: Record<string, Partial<NotificationPolicy>> = {
   // basePolicyChannels via enforceMarketingSlaEmailBlock (marketing-sla-channel-guard.ts), same
   // two-layer pattern as payroll.payslip_available below.
   "marketing_requests.due_date_reminder": { channels: ["in_app", "telegram", "push"], priority: "high", recipientStrategy: ["assigned_approver", "request_owner"], telegramAllowed: true },
+  // The invoice obligation, not the approval SLA above it: this fires on an APPROVED request whose
+  // invoice deadline has passed. `role_based` because the finance-side audience is a configured role
+  // list (marketing_invoice_overdue_alert) resolved to explicit HR IDs by the caller; `request_owner`
+  // because the requester is always told about their own. No email — enforced independently by
+  // marketing-sla-channel-guard.ts, so a later edit to this line cannot restore it.
+  "marketing_requests.invoice_overdue": { channels: ["in_app", "telegram", "push"], priority: "high", recipientStrategy: ["request_owner", "role_based"], telegramAllowed: true },
   "marketing_requests.overdue_reminder": { channels: ["in_app", "telegram", "push"], priority: "high", recipientStrategy: ["assigned_approver", "request_owner"], telegramAllowed: true },
   "marketing_requests.request_approved": { channels: ["in_app", "email", "telegram", "push"], recipientStrategy: ["request_owner", "workflow_step_approver"], telegramAllowed: true },
   "marketing_requests.request_assigned": { channels: ["in_app", "email", "telegram", "push"], priority: "high", recipientStrategy: ["assigned_approver", "cc"], telegramAllowed: true },
