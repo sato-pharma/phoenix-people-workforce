@@ -1,0 +1,115 @@
+name: Turbopack build trial (one-off measurement)
+
+# ONE-OFF. Triggers only on a push to codex/turbopack-trial, so it runs once and never again.
+# This branch is NOT intended to merge — it exists to answer, on CI's own hardware, whether
+# `next build --turbopack` is meaningfully faster than the webpack build AND whether it produces
+# a standalone tree that still resolves @napi-rs/canvas and carries every traced asset.
+#
+# WHY NOT MEASURE THIS ON STAGING: a branch cannot be staged on Railway without shipping it.
+# `railway service source connect` is service-level, not environment-scoped — on 2026-08-28 a
+# staging-only source change repointed PRODUCTION to an unmerged branch at full traffic. See
+# AGENTS.md 2.3. CI is the only place this question can be asked safely.
+
+on:
+  push:
+    branches: [codex/turbopack-trial]
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  CI_NODE_VERSION: "24"
+  COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+
+jobs:
+  compare:
+    name: webpack vs turbopack
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Enable Corepack (pnpm)
+        run: corepack enable
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        with:
+          node-version: ${{ env.CI_NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # ---------- A: webpack, exactly what ships today ----------
+      - name: "A - webpack build"
+        run: |
+          start=$(date +%s)
+          pnpm run build
+          echo $(( $(date +%s) - start )) > /tmp/webpack.seconds
+          echo "webpack build: $(cat /tmp/webpack.seconds)s"
+
+      - name: "A - canvas resolution gate"
+        id: canvas_a
+        continue-on-error: true
+        run: node scripts/verify-standalone-canvas.mjs
+
+      - name: "A - snapshot standalone tree"
+        run: |
+          bash scripts/turbo-trial-snapshot.sh webpack
+
+      - name: Reset between builds
+        run: rm -rf .next
+
+      # ---------- B: turbopack ----------
+      - name: "B - turbopack build"
+        id: turbo_build
+        continue-on-error: true
+        run: |
+          start=$(date +%s)
+          pnpm exec next build --turbopack
+          echo $(( $(date +%s) - start )) > /tmp/turbopack.seconds
+          echo "turbopack build: $(cat /tmp/turbopack.seconds)s"
+
+      - name: "B - canvas resolution gate"
+        id: canvas_b
+        continue-on-error: true
+        run: node scripts/verify-standalone-canvas.mjs
+
+      - name: "B - snapshot standalone tree"
+        continue-on-error: true
+        run: |
+          bash scripts/turbo-trial-snapshot.sh turbopack
+
+      # ---------- verdict ----------
+      - name: Verdict
+        if: always()
+        run: |
+          echo "=================== TURBOPACK TRIAL ==================="
+          w=$(cat /tmp/webpack.seconds 2>/dev/null || echo "")
+          t=$(cat /tmp/turbopack.seconds 2>/dev/null || echo "")
+          echo "webpack build   : ${w:-DID NOT COMPLETE}s"
+          echo "turbopack build : ${t:-DID NOT COMPLETE}s"
+          if [ -n "$w" ] && [ -n "$t" ] && [ "$t" -gt 0 ]; then
+            echo "speedup         : $(awk "BEGIN{printf \"%.2fx\", $w/$t}")   saving: $(( w - t ))s per build"
+          fi
+          echo "canvas gate  webpack : ${{ steps.canvas_a.outcome }}"
+          echo "canvas gate  turbopack: ${{ steps.canvas_b.outcome }}"
+          echo "turbopack build step : ${{ steps.turbo_build.outcome }}"
+          echo
+          echo "--------- traced artefacts, side by side ---------"
+          for f in /tmp/webpack.manifest /tmp/turbopack.manifest; do
+            echo "### $f"
+            cat "$f" 2>/dev/null || echo "  (missing - that build did not produce a standalone tree)"
+            echo
+          done
+          echo "--------- files present in webpack but MISSING from turbopack ---------"
+          if [ -f /tmp/webpack.files ] && [ -f /tmp/turbopack.files ]; then
+            comm -23 /tmp/webpack.files /tmp/turbopack.files | head -60
+            echo "(total missing: $(comm -23 /tmp/webpack.files /tmp/turbopack.files | wc -l))"
+          else
+            echo "  (cannot compare - one side has no file list)"
+          fi
