@@ -146,6 +146,7 @@ import { runProbationLegacyWritesToCasesTests } from "./probation-legacy-writes-
 import { runRecruitmentScorecardsTests } from "./recruitment-scorecards.test.ts";
 import { runRecruitmentDriveStorageTests } from "./recruitment-drive-storage.test.ts";
 import { runRecruitmentVacancyCloseInvariantTests } from "./recruitment-vacancy-close-invariant.test.ts";
+import { runRecruitmentHireOfferGuardTests } from "./recruitment-hire-offer-guard.test.ts";
 import { runRecruitmentInterviewNotificationsTests } from "./recruitment-interview-notifications.test.ts";
 import { runRecruitmentNsmRmCeoScopingTests } from "./recruitment-nsm-rm-ceo-scoping.test.ts";
 import { runRecruitmentCvExtractionFieldsTests } from "./recruitment-cv-extraction-fields.test.ts";
@@ -1274,6 +1275,7 @@ await runTest("probation legacy decision write-through to cases (dashboard/email
 await runTest("recruitment scorecards", runRecruitmentScorecardsTests);
 await runTest("recruitment drive storage", runRecruitmentDriveStorageTests);
 await runTest("recruitment vacancy close invariant", runRecruitmentVacancyCloseInvariantTests);
+await runTest("recruitment hire offer guard", runRecruitmentHireOfferGuardTests);
 await runTest("recruitment interview notifications", runRecruitmentInterviewNotificationsTests);
 await runTest("recruitment NSM/RM/CEO scoping (interview type by role, hierarchy/line scope wiring)", runRecruitmentNsmRmCeoScopingTests);
 await runTest("recruitment cv extraction fields", runRecruitmentCvExtractionFieldsTests);
