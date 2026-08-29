@@ -544,6 +544,19 @@ and never `docs/`, and four of §4's slugs exist nowhere else, so moving one orp
   created browser-only, from inside each mailbox. Employee mailboxes are therefore **unmonitorable at
   scale**, and it is SETTLED — costed at ~$420/month for 60 seats on 2026-08-28, answered *"NO LEAVE
   ME AS I AM NOW."* `turbify-cannot-issue-app-passwords-centrally-owner-stays`
+- 🔴 **A password reset does NOT revoke a Turbify mailbox — the app passwords survive it.** Yahoo
+  keeps every third-party app password alive across a password change, so a reset locks a leaver out
+  of the WEB mailbox and nothing else: each phone and Outlook client they ever configured keeps
+  sending and receiving company mail, and **the control panel shows nothing wrong** — no screen lists
+  live app passwords and there is no API to ask. **Both steps are required** — reset AND delete the
+  app passwords, or delete/suspend the mailbox outright; `forwarding` and `retained` leave it fully
+  alive. Never tell the owner (or write in a UI) that a reset closes a leaver's mail access: a
+  reset-only mailbox is worse than an untouched one, because it manufactures a false belief that the
+  door is shut — and that was his own first framing of this work, so it is precisely the gap. Tracked
+  in `public.mailbox_offboarding_tasks`, where the `revoked` rule lives in plpgsql so no page can
+  call a reset-only mailbox closed; a row is an **attestation** — a named admin said they did a step
+  — never an observation, because Phoenix cannot see Turbify.
+  `a-password-reset-does-not-revoke-a-turbify-mailbox`
 ### 4.1 Marketing customer, venue and licence validation (relocated from `MEMORY.md`, 2026-08-28)
 
 **Relocated because the index crossed its cliff — three times in one morning.** `MEMORY.md` is the
