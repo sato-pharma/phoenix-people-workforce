@@ -1066,6 +1066,7 @@ import { runNotificationDrainHealthAlertTests } from "./notification-drain-healt
 import { runNotificationOutboxBatchWindowTests } from "./notification-outbox-batch-window.test.ts";
 import { runNotificationDrainStarvationGuardTests } from "./notification-drain-starvation-guard.test.ts";
 import { runExpenseClaimsRefreshTests } from "./expense-claims-refresh.test.ts";
+import { runMarketingFinanceRequirementOnApprovalTests } from "./marketing-finance-requirement-on-approval.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -3204,6 +3205,12 @@ await runTest(
   runCalculatorEngineTests,
 );
 await runTest("expense claims mirror refresh (an interlock refusal is never success; parity read is bounded)", runExpenseClaimsRefreshTests);
+await runTest(
+  "marketing finance requirement on approval (the final approval records the invoice obligation it creates, "
+    + "in the same transaction, dated in Cairo from the deadline setting nothing had ever read — and DO NOTHING, "
+    + "so an invoice already delivered is never rewritten back to pending)",
+  runMarketingFinanceRequirementOnApprovalTests,
+);
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
