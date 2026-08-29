@@ -690,7 +690,7 @@ export const WORKFLOW_CONTROL_DOMAINS: readonly WorkflowControlDomain[] = [
           },
         ],
         gaps: [
-          "PARTIALLY BUILT: nothing CREATES an employee from an accepted offer and there is no approver step, but the hire itself is wired. The employee is added through the normal HR Add Employee flow first; markApplicationHired (src/lib/recruitment/applications.ts, POST /api/recruitment/applications/[id]/convert) then links the application to that HR_ID, closes the requisition and best-effort seeds probation.",
+          "NOT BUILT: nothing CREATES an employee from an accepted offer, and there is no approver step. The hire itself IS wired, though: the employee is added through the normal HR Add Employee flow first, and markApplicationHired (src/lib/recruitment/applications.ts, POST /api/recruitment/applications/[id]/convert) then links the application to that HR_ID, closes the requisition and best-effort seeds probation.",
           "NOT ENFORCED: that handoff is manual and unchecked in both directions — app_hire does not require an accepted offer to exist, and nothing compares the created employee's job title, salary or start date against the terms the Super Admin approved. An offer approved at one figure can be hired at another, silently.",
         ],
       },
@@ -712,7 +712,7 @@ export const WORKFLOW_CONTROL_DOMAINS: readonly WorkflowControlDomain[] = [
           },
         ],
         gaps: [
-          "BY DESIGN, NOT RESIDUE: no offer ever fills a vacancy — seats are opened and closed by the HR employee lifecycle, never by this flow. tests/recruitment-vacancy-close-invariant.test.ts pins it: markApplicationHired and the requisition service must not touch position_vacancies, and closeVacancyOnHire (src/lib/employees/vacancy-closer.ts) is the only closer. Wiring this subflow up would turn that suite red — do not 'finish' it.",
+          "NOT BUILT, AND DELIBERATELY SO — this is not residue: no offer ever fills a vacancy. Seats are opened and closed by the HR employee lifecycle, never by this flow. tests/recruitment-vacancy-close-invariant.test.ts pins it: markApplicationHired and the requisition service must not touch position_vacancies, and closeVacancyOnHire (src/lib/employees/vacancy-closer.ts) is the only closer. Wiring this subflow up would turn that suite red — do not 'finish' it.",
         ],
       },
       {
