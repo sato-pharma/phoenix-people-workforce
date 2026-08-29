@@ -51,8 +51,16 @@ const BROADER_BYPASS = /if \(\s*!\w+\s*\)\s*return !isProductionRuntime\(\);/;
 /** A hand-rolled constant-time comparison — what the two token routes did before A2. */
 const HAND_ROLLED_COMPARE = /timingSafeEqual\(/;
 
-/** A local authorization helper reading the shared cron secret. */
-const LOCAL_CRON_HELPER = /function is(?:Cron)?Authorized\s*\([^)]*\)[^{]*\{[^}]*CRON_SECRET/s;
+/**
+ * A local authorization helper reading the shared cron secret.
+ *
+ * Deliberately NO `s` flag. tsconfig targets ES2017 and dotAll is ES2018, so it is a hard
+ * TS1501 build error — and it buys nothing here, because every "any character" role in this
+ * pattern is a negated class (`[^)]`, `[^{]`, `[^}]`) and those match newlines on their own.
+ * The local suite cannot catch this: --experimental-strip-types drops the types and Node's
+ * own regex engine accepts the flag happily. Only the PR's typecheck job sees it. Do not add one.
+ */
+const LOCAL_CRON_HELPER = /function is(?:Cron)?Authorized\s*\([^)]*\)[^{]*\{[^}]*CRON_SECRET/;
 
 function listRouteFiles(dir: string, found: string[] = []): string[] {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
