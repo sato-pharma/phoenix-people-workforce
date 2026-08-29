@@ -133,6 +133,25 @@ const PAGE_ROLE_SET_INLINE =
  */
 export const PAGE_SHELL_GATE = /resolveNavigationMode\(\s*access\s*\)\s*===\s*"employee-portal"/;
 
+/**
+ * The MIRROR IMAGE of the shell gate: `resolveNavigationMode(access) !== "employee-portal"`, which
+ * a page under `app/employee-portals/` uses to send admin-shell roles to its admin twin —
+ * `app/employee-portals/cv-database/page.tsx` redirects them to `/cv-database`, same loader, same
+ * rows, different shell.
+ *
+ * Added 2026-08-29 by the reverse guard (navigation-granted-but-unreachable). `PAGE_SHELL_GATE`
+ * above is deliberately one-directional and its callers are right to want it that way, but a reader
+ * that knows only that direction believes a portal twin opens for EVERYONE — so the CEO and Super
+ * Admin read as able to open `/employee-portals/cv-database` when the page bounces them on the
+ * first statement. Measured across `app/`: 69 pages carry the `===` form and **63 the `!==` form**,
+ * so this is a systematic pairing, not a one-off.
+ *
+ * Kept as a separate export rather than folded into `isShellGated`, whose two existing callers ask
+ * "does this admin page refuse portal roles" and would silently change meaning.
+ */
+export const PAGE_PORTAL_TWIN_GATE =
+  /resolveNavigationMode\(\s*access\s*\)\s*!==\s*"employee-portal"/;
+
 /** Does the page refuse anyone at all? Used to tell "ungated" from "gated in an unreadable shape". */
 export const PAGE_ENTRY_EXIT = /\b(?:redirect|notFound)\(/;
 
@@ -183,6 +202,62 @@ export function roleSetGates(source: string): string[][] {
 
 export function isShellGated(source: string): boolean {
   return PAGE_SHELL_GATE.test(source);
+}
+
+/**
+ * Where a portal twin sends an admin-shell role, or `null` if the page is not one.
+ *
+ * Read POSITIONALLY — the first `redirect("…")` at or after the twin-gate condition — because a
+ * twin usually carries a second, unrelated redirect underneath it. `app/employee-portals/employees`
+ * is the worked example:
+ *
+ *     if (resolveNavigationMode(access) !== "employee-portal") redirect("/employees");   // the twin
+ *     if (!(await canAccess(access, "employees", "read")))     redirect("/employee-portals");
+ *
+ * A first attempt demanded that every redirect in the file agree on one target, so that page
+ * resolved to `null` and read as an orphan when it is a plain twin of `/employees`. Requiring
+ * unanimity is the wrong shape: the twin gate and the permission gate are different questions and
+ * naturally send you to different places.
+ *
+ * The gate itself still has to be present, which is what keeps a DENIAL exit out —
+ * `app/(admin)/admin/email-notifications/page.tsx` redirects to `/employee-portals` too, but its
+ * condition is `!(await canAccess(…))`, and reading that as a twin would report a genuinely
+ * unlinked page as reachable.
+ */
+export function portalTwinRedirect(source: string): string | null {
+  const gate = PAGE_PORTAL_TWIN_GATE.exec(source);
+  if (!gate) return null;
+  const redirects = /\bredirect\(\s*"(\/[^"]*)"\s*\)/g;
+  redirects.lastIndex = gate.index;
+  const match = redirects.exec(source);
+  return match ? match[1]! : null;
+}
+
+/**
+ * Predicates in an entry gate that this reader cannot evaluate — `!isAllVacationVisibility(access)`,
+ * `!canAccessFingerprintReport(access)`. The page refuses on them and nothing here can say who for.
+ *
+ * `/admin/approvals/stuck` is why this exists. Its readable gates are empty, so a caller computing
+ * "who can open this" answers *seven roles*, while the page's own comment says "HR / Super Admin
+ * only" and `isAllVacationVisibility` enforces it. A reader that reports the empty set without this
+ * signal does not merely miss a gate — it states a confident wrong answer, which is the fail-open
+ * direction this whole module exists to close.
+ *
+ * The known names are excluded because the reader parses those itself; anything else is a predicate
+ * a caller must treat as "cannot conclude" rather than "no gate".
+ */
+const PAGE_UNREADABLE_PREDICATE = /!\s*\(?\s*(?:await\s+)?([A-Za-z_$][\w$]*)\s*\(\s*access\b/g;
+const PREDICATES_THIS_READER_PARSES = new Set(["canAccess", "assertPermission", "resolveNavigationMode"]);
+
+export function unreadableGatePredicates(source: string): string[] {
+  const found = new Set<string>();
+  PAGE_UNREADABLE_PREDICATE.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = PAGE_UNREADABLE_PREDICATE.exec(source))) {
+    const name = match[1]!;
+    if (!PREDICATES_THIS_READER_PARSES.has(name)) found.add(name);
+  }
+  return [...found].sort();
 }
 
 export function hasEntryExit(source: string): boolean {
