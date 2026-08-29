@@ -20,7 +20,7 @@ import {
   planStatusLabel,
   type PlanKind,
 } from "@/lib/crm/plan-verification";
-import type { PlanEntryRow, PlanSummary } from "@/lib/crm/plan-board";
+import type { PlanEntryRow, PlanMissingRep, PlanSummary } from "@/lib/crm/plan-board";
 
 // Client half of Plan Verification. Styling copies doctor-list-tables.tsx verbatim — flat borders,
 // slate-900 header rows, orange accent — because this is tab two of the same District Manager page
@@ -426,6 +426,142 @@ export function PlanListTable({
           </PortalDesktopTable>
         )}
       />
+    </div>
+  );
+}
+
+const MISSING_COLS = [
+  { accessor: (r: PlanMissingRep) => r.name, defaultDir: "asc" as const, key: "name", type: "string" as const },
+  { accessor: (r: PlanMissingRep) => r.pmCount, key: "pmCount", type: "number" as const },
+];
+
+/**
+ * The reps in the viewer's reach who filed NO plan for the period.
+ *
+ * A separate table rather than rows in the plans table on purpose: these have no plan id, no status
+ * and nothing to verify, so every column that table sorts and searches on would be blank for them,
+ * and a verify button beside a plan that does not exist is worse than no row at all.
+ *
+ * `rosterKnown` false means the CRM contact mirror came back empty, which is a different statement
+ * from "everybody filed" — see the note on the field. The board renders the unavailable message
+ * instead of an all-clear.
+ */
+export function PlanMissingRepsTable({
+  kind,
+  month,
+  reps,
+  rosterKnown,
+  year,
+}: {
+  kind: PlanKind;
+  month: number;
+  reps: PlanMissingRep[];
+  rosterKnown: boolean;
+  year: number;
+}) {
+  const table = useSortableTable(reps, {
+    columns: MISSING_COLS,
+    initialSort: { dir: "asc", key: "name" },
+    searchAccessors: [(r) => r.name],
+  });
+
+  if (!rosterKnown) {
+    return (
+      <div className="px-5 py-6">
+        <p className="text-sm font-semibold text-slate-700">The rep roster could not be read.</p>
+        <p className="mt-1 text-phx-xs text-slate-500">
+          This list is built from the CRM&rsquo;s own assigned-doctor mirror, and it returned nobody. That is not
+          the same as every rep having filed — until the mirror refreshes, this board cannot tell you who is
+          missing.
+        </p>
+      </div>
+    );
+  }
+
+  const exportRows = table.rows.map((rep) => ({
+    doctors: rep.pmCount,
+    rep: rep.name,
+    status: "No plan filed",
+  }));
+
+  return (
+    <div className="space-y-3 p-5">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <TableSearchInput
+          onChange={table.setQuery}
+          onClear={table.clearQuery}
+          placeholder="Search rep…"
+          value={table.query}
+        />
+        <ExportXlsxButton
+          columns={[
+            { key: "rep", label: "Medical rep" },
+            { key: "doctors", label: "Doctors on his list" },
+            { key: "status", label: "Status" },
+          ]}
+          rows={exportRows}
+          sheetName="Filed nothing"
+          subtitle={`${kind === "weekly" ? "Weekly" : "Monthly"} plans · ${MONTH_NAMES[month - 1]} ${year}`}
+          title="Reps with no plan"
+        />
+      </div>
+      <PortalResponsiveDataList
+        empty={
+          <p className="px-3 py-6 text-center text-xs text-emerald-700">
+            Every rep in your reach filed a {kind} plan for this period.
+          </p>
+        }
+        getKey={(rep) => String(rep.agentCrmId)}
+        items={table.rows}
+        renderCard={(rep) => (
+          <PortalRecordCard
+            accent="rose"
+            meta={`${rep.pmCount} doctors on his list`}
+            status={
+              <span className="text-phx-2xs font-black uppercase tracking-[0.1em] text-rose-700">No plan filed</span>
+            }
+            title={rep.name}
+          >
+            <PortalRecordFields fields={[{ label: "CRM account", value: String(rep.agentCrmId) }]} />
+          </PortalRecordCard>
+        )}
+        renderTable={() => (
+          <PortalDesktopTable className="text-xs" minWidth="720px">
+            <thead>
+              <tr className="bg-slate-900 text-left">
+                <SortableTh className={THEAD} label="Medical rep" onSort={table.toggleSort} sort={table.sort} sortKey="name" />
+                <SortableTh
+                  className={THEAD}
+                  label="Doctors on his list"
+                  onSort={table.toggleSort}
+                  sort={table.sort}
+                  sortKey="pmCount"
+                />
+                <th className={THEAD}>Status</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {table.rows.map((rep) => (
+                <tr className="whitespace-nowrap bg-white hover:bg-slate-50" key={rep.agentCrmId}>
+                  <td className="border-l-4 border-rose-400 px-3 py-2 font-semibold text-slate-900">{rep.name}</td>
+                  {/* The list size is here as evidence the account is a working one. A rep carrying 0
+                      doctors has nothing to plan against, so his silence means something different
+                      from the silence of a rep carrying 118. */}
+                  <td className="px-3 py-2 font-black text-slate-900">{rep.pmCount}</td>
+                  <td className="px-3 py-2 font-black text-rose-700">No plan filed</td>
+                </tr>
+              ))}
+            </tbody>
+          </PortalDesktopTable>
+        )}
+      />
+      {/* Said out loud because the alternative is a manager reading this as a complete census. It is
+          built from the reps whose doctor list the CRM has mirrored, and the CRM plans for more reps
+          than that — so this is a floor. Nobody here is falsely accused; some may be absent. */}
+      <p className="text-phx-2xs text-slate-400">
+        Built from the reps whose doctor list the CRM has mirrored. A rep the mirror does not hold yet cannot
+        appear here, so treat this as the reps it can prove, not as every rep alive.
+      </p>
     </div>
   );
 }

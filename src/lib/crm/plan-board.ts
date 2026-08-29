@@ -28,8 +28,9 @@
  */
 
 import { CRM_PLAN_ENTRIES_TABLE } from "@/lib/crm/tables";
-import { getAgentContactList } from "@/lib/crm/contact-lists";
+import { getAgentContactList, getDoctorListRepSummaries } from "@/lib/crm/contact-lists";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { isTerminalEmploymentStatus } from "@/lib/auth/session-lifecycle";
 import { PLAN_STATUS_NEW, type PlanKind } from "@/lib/crm/plan-verification";
 import { scopeAllowsAgent, type PlanVerificationScope } from "@/lib/crm/plan-verification-access";
 
@@ -431,10 +432,50 @@ export async function getPlanForVerification(crmPlanId: number): Promise<{
   };
 }
 
+/** A rep in the viewer's reach who filed no plan at all for the period. */
+export type PlanMissingRep = {
+  agentCrmId: number;
+  hrId: string | null;
+  name: string;
+  /** His assigned PM list size — evidence this is a working account rather than a dormant one. */
+  pmCount: number;
+};
+
+/**
+ * Which reps in reach have no plan this period.
+ *
+ * Pure, so the rule is testable without a database. Matching is on the numeric CRM agent id, NEVER
+ * on `hr_id`: hr ids are mixed case in this database, so a case-sensitive comparison silently
+ * under-matches and would report a rep who DID file as having filed nothing — an accusation, and the
+ * worst possible direction for this particular error to fall in.
+ */
+export function repsWithNoPlan(input: {
+  plans: readonly Pick<PlanSummary, "agentCrmId">[];
+  roster: readonly PlanMissingRep[];
+}): PlanMissingRep[] {
+  const filed = new Set(input.plans.map((plan) => plan.agentCrmId));
+  return input.roster
+    .filter((rep) => !filed.has(rep.agentCrmId))
+    .sort((left, right) => left.name.localeCompare(right.name));
+}
+
 export type PlanVerificationBoard = {
   kind: PlanKind;
+  /**
+   * Reps in reach with NO plan for this period. The board otherwise cannot show them at all: it is
+   * built from plans that exist, so a rep who filed nothing is absent rather than flagged, and
+   * "reps with a plan: 12" reads as complete whether the true roster is 12 or 30.
+   */
+  missingReps: PlanMissingRep[];
   month: number;
   plans: PlanSummary[];
+  /**
+   * False when the CRM contact-list mirror returned no reps at all — it is scraped from the CRM's web
+   * app, so it can be empty or stale for reasons that have nothing to do with planning. The board
+   * then says the roster is unavailable rather than reporting zero missing, which would be a false
+   * all-clear indistinguishable from a healthy month.
+   */
+  rosterKnown: boolean;
   /** The plan whose doctors are on screen, with its rows. Null when none is chosen or in scope. */
   selected: { plan: PlanSummary; rows: PlanEntryRow[] } | null;
   /** What the viewer's reach is, in words — shown so a short list is never mistaken for a quiet CRM. */
@@ -461,8 +502,10 @@ export async function getPlanVerificationBoard(input: {
 }): Promise<PlanVerificationBoard> {
   const base = {
     kind: input.kind,
+    missingReps: [] as PlanMissingRep[],
     month: input.month,
     plans: [] as PlanSummary[],
+    rosterKnown: false,
     selected: null,
     scopeLabel: input.scope.kind === "none" ? "No reach" : input.scope.label,
     scopeReason: input.scope.kind === "none" ? input.scope.reason : null,
@@ -514,7 +557,75 @@ export async function getPlanVerificationBoard(input: {
   // address lives on the rep's assigned list, which is keyed by agent.
   const selected = chosen ? { plan: chosen, rows: await getPlanEntries(chosen.crmPlanId, chosen.agentCrmId) } : null;
 
-  return { ...base, plans, selected };
+  // WHO SHOULD HAVE FILED comes from the same source tab one uses for its rep picker — the CRM's own
+  // assigned-contact mirror, filtered by the same scopeAllowsAgent. Sharing tab one's source means
+  // the two tabs of one page can never disagree about who a manager's reps are.
+  //
+  // The two rejected alternatives, both measured against production on 2026-08-29 rather than
+  // reasoned about:
+  //
+  // A JOB-TITLE match on the employee directory. `job_title ilike '%medical rep%'` returns ZERO rows
+  // in production — the titles simply are not spelled that way — and the same inconsistency once hid
+  // 9 of 27 district managers from a search. A roster that quietly omits a rep produces exactly the
+  // silence this feature exists to break.
+  //
+  // The UNION of the mirror with everyone who filed a plan in the preceding three months. It sounds
+  // strictly better and is much worse: for August it produced 23 names against the mirror's 3, and
+  // of the 20 extra, 18 were CRM accounts with no employee row at all and 2 were reps who had
+  // resigned. Twenty rows of noise would bury three real ones on the screen a manager is meant to
+  // act from.
+  //
+  // What the mirror costs, stated honestly: it held 68 agents while 79 filed an August plan, so 14
+  // agents the CRM plans for are absent from it. Those cannot appear here. That direction is the
+  // safe one — an absent agent is never falsely accused — but it does mean this list is a floor, not
+  // a complete census, and it grows as the contact mirror is scraped for more reps.
+  const roster = (await getDoctorListRepSummaries())
+    .filter((rep) => scopeAllowsAgent(input.scope, rep.hrId))
+    .map<PlanMissingRep>((rep) => ({
+      agentCrmId: rep.agentCrmId,
+      hrId: rep.hrId,
+      name: rep.name,
+      pmCount: rep.pmCount,
+    }));
+  // Names AND employment status, in one read of its own rather than by topping up the map built for
+  // the plans above: a reused CRM slot puts two agent ids on one hr id, so "already resolved" is not
+  // a safe reason to skip an id here.
+  const missingBeforeNames = repsWithNoPlan({ plans, roster });
+  const missingHrIds = [...new Set(missingBeforeNames.map((rep) => rep.hrId).filter((id): id is string => Boolean(id)))];
+  const employeeByHrId = new Map<string, { name: string; status: string | null }>();
+  for (let from = 0; from < missingHrIds.length; from += IN_CHUNK) {
+    const chunk = missingHrIds.slice(from, from + IN_CHUNK);
+    const { data, error } = await getSupabaseAdmin()
+      .from("employees")
+      .select("hr_id, full_name, employment_status")
+      .in("hr_id", chunk);
+    if (error) throw new Error(`Could not read rep names: ${error.message}`);
+    for (const row of data ?? []) {
+      employeeByHrId.set(row.hr_id as string, {
+        name: (row.full_name as string) ?? "",
+        status: (row.employment_status as string | null) ?? null,
+      });
+    }
+  }
+
+  const missingReps = missingBeforeNames
+    // A LEAVER IS NOT A DEFAULTER. The mirror is a scrape of the CRM's live contact grid, and the CRM
+    // admin deactivates a resigned rep's account rather than deleting it — so a rep who left mid-month
+    // can sit in the mirror with no plan for the period through no fault of anyone. Naming him on a
+    // screen headed "Filed nothing" is an accusation the data does not support. `isTerminal` treats an
+    // unknown or missing status as NOT terminal, so an unresolvable CRM account is still shown and
+    // labelled, exactly as the plans table shows one rather than hiding it.
+    // Measured 2026-08-29: all 68 agents in the mirror resolve to an active employee, so this filter
+    // removes nobody today. It exists for the month one of them resigns.
+    .filter((rep) => !isTerminalEmploymentStatus(rep.hrId ? employeeByHrId.get(rep.hrId)?.status : null))
+    .map((rep) => ({
+      ...rep,
+      name:
+        (rep.hrId ? employeeByHrId.get(rep.hrId)?.name : "") || `CRM account ${rep.agentCrmId} — not on the roster`,
+    }))
+    .sort((left, right) => left.name.localeCompare(right.name));
+
+  return { ...base, missingReps, plans, rosterKnown: roster.length > 0, selected };
 }
 
 /** Re-exported so a caller holding a scope and an agent can ask the one question without importing
