@@ -292,6 +292,22 @@ export type StepDetailColumn = {
   money?: boolean;
 };
 
+/**
+ * One read-only context column shown above a step's editable fields, keyed to
+ * whatever recommend.ts puts in each `StepRow.context`.
+ *
+ * `money` exists because context values were previously stringified raw, so a
+ * salary rendered as `4645.16` on a payroll screen. It is OPT-IN per column and
+ * must stay that way — "Days Worked" and "Hire Date" are context columns too,
+ * and currency-formatting either of them would be wrong.
+ */
+export type StepContextColumn = {
+  key: string;
+  label: string;
+  /** Currency-format in the grid card and the xlsx template. */
+  money?: boolean;
+};
+
 /** A field editable within a step (drives the grid + the xlsx template columns). */
 export type StepFieldSpec = {
   key: string;
@@ -338,7 +354,7 @@ export type StepDefinition = {
   title: string;
   subtitle: string;
   /** Read-only context columns shown before the editable fields. */
-  contextColumns: { key: string; label: string }[];
+  contextColumns: StepContextColumn[];
   fields: StepFieldSpec[];
   /** Whether this step carries a per-employee free-text reason column. */
   hasReason: boolean;

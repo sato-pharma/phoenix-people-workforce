@@ -32,7 +32,11 @@ export function stepTemplateColumns(stepKey: StepKey): { label: string; editable
     { label: "Full Name", editable: false, money: false },
   ];
   for (const context of definition.contextColumns) {
-    columns.push({ label: context.label, editable: false, money: false });
+    // Honour the column's own `money` flag so the sheet formats a salary the way
+    // the screen does — an export must match the screen. Still read-only either
+    // way: context columns are never parsed back on re-upload (step-parser.ts
+    // matches editable `field.label`s only).
+    columns.push({ label: context.label, editable: false, money: context.money ?? false });
   }
   if (definition.isHoldStep) {
     columns.push({ label: "Hold?", editable: true, money: false });
