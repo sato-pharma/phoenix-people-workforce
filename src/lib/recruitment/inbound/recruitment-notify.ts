@@ -320,3 +320,52 @@ export async function notifyInboundWhatsAppTextOnly(input: {
     recipientHrIds,
   );
 }
+
+/**
+ * A real person sent an attachment and it never became a candidate.
+ *
+ * Paged rather than digested, and that is the whole point: the daily digest deliberately absorbs
+ * the ROUTINE arrival, and this is the opposite of routine — it is the one case where a human has
+ * to open the original message by eye, because the system has already admitted it cannot read it.
+ * Same reasoning shouldAlertImmediatelyForInboundCv applies to a CV whose file would not attach.
+ *
+ * It reports what happened and never what it means. "Could not be read" is the honest ceiling: the
+ * picture may be a certificate, or a photographed CV the model called wrong, and only the person
+ * opening it can tell. Saying "not a CV" here would launder a machine guess into a fact and, at the
+ * measured accuracy of that check, would eventually throw away a real applicant.
+ */
+export async function notifyInboundWhatsAppUnreadableCv(input: {
+  senderLabel: string;
+  filename: string | null;
+  cause: "not_recognised" | "too_large";
+  wamid: string;
+  asked: boolean;
+}): Promise<void> {
+  const recipientHrIds = await hrIdsForRoles(recruitmentManageRoles);
+  if (recipientHrIds.length === 0) return;
+
+  const what = input.cause === "too_large" ? "sent a file too large to open" : "sent something we could not read as a CV";
+  const named = String(input.filename ?? "").trim();
+  const trailer = input.asked
+    ? "Phoenix has asked them to resend it as a PDF or Word file."
+    : "Phoenix did NOT reply — the automatic reply is switched off.";
+
+  await createSystemNotificationForRecipients(
+    {
+      actionUrl: "/recruitment",
+      channels: ["in_app", "telegram", "push"],
+      eventType: "recruitment_whatsapp_unreadable_cv",
+      message: `${input.senderLabel} ${what}${named ? ` (${named})` : ""} — ${trailer} The original is still on WhatsApp, so it can be opened by eye.`,
+      metadata: {
+        asked: input.asked,
+        cause: input.cause,
+        idempotencyKey: `whatsapp-unreadable-cv:${input.wamid}`,
+        wamid: input.wamid,
+      },
+      module: "recruitment",
+      priority: "normal",
+      title: "WhatsApp CV could not be read",
+    },
+    recipientHrIds,
+  );
+}

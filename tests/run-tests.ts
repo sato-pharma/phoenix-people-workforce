@@ -195,6 +195,7 @@ import { runWhatsAppSelfClassificationTests } from "./whatsapp-self-classificati
 import { runWhatsAppOwnerMirrorTests } from "./whatsapp-owner-mirror.test.ts";
 import { runWhatsAppCoexistenceHistoryTests } from "./recruitment-whatsapp-coexistence-history.test.ts";
 import { runWhatsAppTextOnlyApplicantTests } from "./whatsapp-text-only-applicant.test.ts";
+import { runWhatsAppUnreadableCvTests } from "./whatsapp-unreadable-cv.test.ts";
 import {
   runRecruitmentWhatsAppHealthTests,
   runWhatsAppWebhookRoutingTests,
@@ -1415,6 +1416,7 @@ await runTest(
 await runTest("recruitment whatsapp intake", runRecruitmentWhatsAppIntakeTests);
 await runTest("whatsapp self-classification menus and replies", runWhatsAppSelfClassificationTests);
 await runTest("whatsapp text-only applicant recovery", runWhatsAppTextOnlyApplicantTests);
+await runTest("whatsapp unreadable CV recovery", runWhatsAppUnreadableCvTests);
   await runTest("whatsapp owner conversation mirror", runWhatsAppOwnerMirrorTests);
 await runTest(
   "recruitment whatsapp coexistence history (the backlog Meta replays)",
