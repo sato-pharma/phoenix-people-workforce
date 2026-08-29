@@ -11,7 +11,13 @@ import {
   isPlanVerified,
   planStatusLabel,
 } from "../src/lib/crm/plan-verification.ts";
-import { PLAN_STRADDLE_MARGIN_DAYS, monthBounds, summarisePlans } from "../src/lib/crm/plan-board.ts";
+import {
+  PLAN_STRADDLE_MARGIN_DAYS,
+  monthBounds,
+  repsWithNoPlan,
+  summarisePlans,
+  type PlanMissingRep,
+} from "../src/lib/crm/plan-board.ts";
 import { resolveTeamScope, scopeAllowsAgent } from "../src/lib/crm/manager-scope.ts";
 import {
   PLAN_VERIFICATION_ROLES,
@@ -390,5 +396,62 @@ export function runCrmPlanVerificationTests() {
   assert.ok(
     tablesSource.includes("underline decoration-slate-300"),
     "the rep name is the primary way into a plan and must look pressable, not like plain text",
+  );
+
+  // ── 9. A rep who filed NOTHING must still be on the board ─────────────────────────────────────
+  //
+  // The board is built from plans that exist, so a rep who filed none is not "shown as zero" — he is
+  // absent entirely, and "Reps with a plan: 12" reads as complete whether the true roster is 12 or
+  // 30. That is the one question this screen could not answer.
+
+  function missing(agentCrmId: number, name: string, hrId: string | null = `SA-${agentCrmId}`): PlanMissingRep {
+    return { agentCrmId, hrId, name, pmCount: 100 };
+  }
+
+  // (a) The match is on the numeric CRM agent id, never on hr_id. Hr ids are MIXED CASE in this
+  // database, so a case-sensitive comparison under-matches — and every under-match here falls in the
+  // worst possible direction: it reports a rep who DID file as having filed nothing, which is an
+  // accusation rather than a gap. This fixture is the exact shape that trap takes.
+  assert.deepEqual(
+    repsWithNoPlan({
+      plans: [{ agentCrmId: 500 }],
+      roster: [missing(500, "Filed", "sa-0500"), missing(501, "Did not file", "SA-0501")],
+    }).map((rep) => rep.name),
+    ["Did not file"],
+    "a rep whose plan exists must never be listed as missing, whatever case his hr id carries",
+  );
+
+  // (b) An empty roster yields an empty list — the arithmetic is sound — which is precisely why the
+  // board must NOT read that as an all-clear. The mirror is scraped from the CRM's web app and can
+  // come back empty for reasons that have nothing to do with planning, so `rosterKnown` carries that
+  // distinction and the board renders an "unavailable" message instead of a green zero.
+  assert.deepEqual(repsWithNoPlan({ plans: [{ agentCrmId: 1 }], roster: [] }), []);
+  assert.ok(
+    boardSource.includes("rosterKnown"),
+    "the board must distinguish an empty roster from a complete one — a false all-clear is the one wrong answer here",
+  );
+  assert.ok(
+    tablesSource.includes("could not be read"),
+    "an unreadable roster must say so in words, not render as zero reps missing",
+  );
+
+  // (c) A LEAVER IS NOT A DEFAULTER. The CRM admin deactivates a resigned rep's account rather than
+  // deleting it, so his row can outlive him in the mirror; naming him under "Filed nothing" is an
+  // accusation the data does not support. Pinned on the shared helper rather than a local status
+  // list, because that helper treats an UNKNOWN status as non-terminal — which is what keeps an
+  // unresolvable CRM account visible and labelled instead of silently dropped.
+  const planBoardSource = readFileSync(`${repoRoot}src/lib/crm/plan-board.ts`, "utf8");
+  assert.ok(
+    planBoardSource.includes("isTerminalEmploymentStatus"),
+    "a rep who has left the company must not be listed as having failed to file",
+  );
+
+  // (d) Sorted by name. The list is read top-down by a manager deciding who to chase, and an
+  // arbitrary order makes the same list look different on every refresh.
+  assert.deepEqual(
+    repsWithNoPlan({ plans: [], roster: [missing(3, "Zaki"), missing(1, "Adel"), missing(2, "Mostafa")] }).map(
+      (rep) => rep.name,
+    ),
+    ["Adel", "Mostafa", "Zaki"],
   );
 }
