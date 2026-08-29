@@ -96,6 +96,11 @@ export type InboundCvIntakeInput = {
   // would dedupe to ignored_duplicate and the failed upload/extract would never actually re-run.
   // A row that already SUCCEEDED (candidate_created/matched) is still never re-claimed.
   reclaim?: boolean;
+  // True when this CV came from a forwarding handset (an import sender) or a coexistence history
+  // replay rather than from the applicant. It changes NOTHING about capture — the candidate, the
+  // file and the daily digest are identical either way — only whether the arrival interrupts a
+  // human immediately. Set by the worker, the only layer that knows the sender's role.
+  bulkArrival?: boolean;
 };
 
 export type InboundCvIntakeOutcome =
@@ -498,6 +503,9 @@ export async function ingestInboundCv(input: InboundCvIntakeInput): Promise<Inbo
         outcome: "error",
       });
       await notifyTalentAcquisitionOfInboundCv({
+        // Passed but not decisive: a candidate with no CV behind it needs a human whoever sent it,
+        // so the no-file reason is answered before bulkArrival is ever consulted.
+        bulkArrival: input.bulkArrival === true,
         candidateId: candidate.id,
         channel: input.channel,
         created,
@@ -589,6 +597,11 @@ export async function ingestInboundCv(input: InboundCvIntakeInput): Promise<Inbo
     settled = { candidateId: candidate.id, fileId, matchReason, outcome };
 
     await notifyTalentAcquisitionOfInboundCv({
+      // The one field that decides whether this interrupts a human now or waits for the 18:00
+      // digest. False for a member of the public answering the advert — that is the alert whose
+      // absence the owner reported on 2026-08-29, when the applicant's TEXT pinged his Telegram in
+      // one second and the CV twenty-five seconds later produced no notification row at all.
+      bulkArrival: input.bulkArrival === true,
       candidateId: candidate.id,
       channel: input.channel,
       created,

@@ -118,10 +118,15 @@ async function processWhatsAppRow(payload: WhatsAppQueuePayload): Promise<Inboun
     });
   }
 
-  const result = await ingestInboundCv({ channel: "whatsapp", ...input, reclaim: true });
+  // Resolved BEFORE the ingest, not after, because intake now needs it: it is what separates a
+  // member of the public answering the advert (alert a human immediately) from the owner forwarding
+  // his own pile off the advertised handset (the 18:00 digest). The gates below read the same value.
+  const isImport = isWhatsAppImportSender(payload.from, importSenders);
+  const bulkArrival = isImport || payload.historical === true;
+
+  const result = await ingestInboundCv({ channel: "whatsapp", ...input, bulkArrival, reclaim: true });
   if (result.outcome === "error") throw new IntakeErrorOutcome("WhatsApp");
 
-  const isImport = isWhatsAppImportSender(payload.from, importSenders);
   // Consume the sender's buffered messages once a direct applicant's CV produced/matched a
   // candidate, so a later CV from the same number doesn't re-inherit stale context.
   if (!isImport && (result.outcome === "candidate_created" || result.outcome === "candidate_matched")) {
@@ -209,6 +214,9 @@ async function processEmailRow(payload: EmailQueuePayload): Promise<InboundCvInt
         finalInput = { ...input, attachment: { bytes: fetched.bytes, fileName: fetched.fileName, mimeType: fetched.mimeType } };
       }
     }
+    // No bulkArrival: email has no forwarding-handset equivalent — a CV in the careers inbox came
+    // from the applicant or an agency acting for one, so it alerts. Measured 2026-08-29 at 2-8 a
+    // day over the last three weeks, the one 135-message day being a deliberate one-off backfill.
     const result = await ingestInboundCv({ channel: "email", ...finalInput, reclaim: true });
     if (result.outcome === "error") throw new IntakeErrorOutcome("Email");
     last = result;

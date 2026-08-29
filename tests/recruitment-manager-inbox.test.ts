@@ -13,6 +13,7 @@ import {
   dailyCvDigestTitle,
   isDailyCvDigestHour,
   isDailyCvDigestTime,
+  inboundCvAlertReason,
   shouldAlertImmediatelyForInboundCv,
   type DailyCvDigestRow,
 } from "../src/lib/recruitment/inbound/daily-cv-digest.ts";
@@ -293,21 +294,60 @@ export async function runRecruitmentManagerInboxTests() {
     "an empty digest must not be sent",
   );
 
-  // The per-CV flood stops — except for the one case that is not routine arrival at all.
+  // The per-CV flood stops for the FORWARDS, which is all it ever really was: 427 of the last 437
+  // WhatsApp arrivals came off the owner's own handset. An applicant's CV is not the flood and is
+  // alerted immediately — this assertion was inverted until 2026-08-30 and pinned the defect.
+  assert.equal(
+    shouldAlertImmediatelyForInboundCv({ bulkArrival: true, fileAttached: true }),
+    false,
+    "a forwarded CV is reported in the daily digest, not as its own alert",
+  );
   assert.equal(
     shouldAlertImmediatelyForInboundCv({ fileAttached: true }),
-    false,
-    "a CV that arrived normally is reported in the daily digest, not as its own alert",
+    true,
+    "but a CV a real applicant sent pages a human NOW — the digest is up to 24 hours away",
   );
   assert.equal(
     shouldAlertImmediatelyForInboundCv({ fileAttached: false }),
     true,
     "a candidate record with no CV behind it needs a human now — that is not routine arrival",
   );
+  // no_file wins over bulkArrival: whoever forwarded it, a candidate with no CV needs repairing.
+  assert.equal(inboundCvAlertReason({ bulkArrival: true, fileAttached: false }), "no_file");
+  assert.equal(inboundCvAlertReason({ fileAttached: true }), "applicant");
+  assert.equal(inboundCvAlertReason({ bulkArrival: true, fileAttached: true }), null);
   assert.match(
     notify,
-    /if \(!shouldAlertImmediatelyForInboundCv\(input\)\) return;[\s\S]{0,200}?hrIdsForRoles/,
+    /const reason = inboundCvAlertReason\(input\);\s*\n\s*if \(!reason\) return;[\s\S]{0,200}?hrIdsForRoles/,
     "the gate must come BEFORE the recipient lookup — this runs on every single inbound CV",
+  );
+  // The two events share one notification, so neither may inherit the other's words. An applicant
+  // being told their CV "could not be attached" is the failure this guards.
+  assert.match(notify, /reason === "no_file"[\s\S]{0,400}?could not be attached/);
+  assert.match(notify, /sent a CV on \$\{channelLabel\}/, "the arrival says the CV is ON FILE");
+
+  // THE WIRING. A correct rule nobody calls is what made the owner say "the CV does not appear" —
+  // the last two intake fixes were both a working handler that no branch reached. bulkArrival has
+  // to survive three hops: worker -> ingestInboundCv -> notifyTalentAcquisitionOfInboundCv.
+  const worker = read("src/lib/recruitment/inbound/intake-worker.ts");
+  assert.match(
+    worker,
+    /const bulkArrival = isImport \|\| payload\.historical === true;/,
+    "the worker derives bulkArrival from the forwarding handset AND the history replay",
+  );
+  const derived = worker.indexOf("const bulkArrival =");
+  const ingested = worker.indexOf('ingestInboundCv({ channel: "whatsapp"');
+  assert.ok(derived > 0 && ingested > derived, "and derives it BEFORE the ingest that consumes it");
+  assert.match(
+    worker.slice(ingested, ingested + 160),
+    /bulkArrival/,
+    "and actually passes it — deriving it and dropping it is the silent half of this bug",
+  );
+  const service = read("src/lib/recruitment/inbound/cv-intake-service.ts");
+  assert.equal(
+    (service.match(/bulkArrival: input\.bulkArrival === true/g) ?? []).length,
+    2,
+    "BOTH notify call sites forward it — the successful arrival and the failed upload",
   );
 
   // The throttle. Six cron ticks fall inside the digest hour; the Cairo-dated idempotency key is
