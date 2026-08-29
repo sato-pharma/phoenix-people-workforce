@@ -117,7 +117,7 @@ Two other schedulers still point at production and neither works:
 `src/lib/cron-control/*` (the `/admin/cron-control` dashboard) is a UI over the dead GCP scheduler
 and is inert.
 
-**Full job inventory. Re-read live 2026-08-29 — 20 jobs, 15 enabled;** the table below lists the
+**Full job inventory. Re-read live 2026-08-29 — 23 jobs, 18 enabled;** the table below lists the
 long-standing ones and not every job in the account. This is a
 snapshot of a place nobody can see from git, so re-read it rather than trusting the age of this
 table. Times are Cairo, as the account is set to `Africa/Cairo` throughout.
@@ -127,6 +127,7 @@ table. Times are Cairo, as the account is set to `Africa/Cairo` throughout.
 | `phoenix-notify-daily` | 6:36 AM daily | `/api/notifications/daily` | Birthdays, contract renewals, vacation/marketing/outstation SLA, recruitment, resignation SLA, weekly-plan drift, Telegram HR digest |
 | `phoenix-marketing-field-capture-nudge` | 6:50 AM daily | `/api/cron/marketing-field-capture-nudge` | Tells each rep which of their marketing customers still show a validated status with no field capture behind them (**new 2026-08-29** — split off `phoenix-notify-daily`, which it had pushed past the 30 s cap) |
 | `phoenix-marketing-invoice-overdue-nudge` | 7:05 AM daily | `/api/cron/marketing-invoice-overdue-nudge` | Tells the requester, and finance, that an approved marketing request's invoice has passed its deadline (**new 2026-08-29**, owner: "the requester and finance"). In-app/Telegram/push only, never email. cron-job.org job `8350529`, created 2026-08-29 |
+| `phoenix-mailbox-offboarding-sweep` | 8:15 AM daily | `/api/cron/mailbox-offboarding-sweep` | Re-alerts Super Admin and HR Operations about leaver mailboxes whose Turbify revocation is still open, with the age of each (**new 2026-08-29**). In-app/Telegram only, never email — the owner has not been asked who would receive it. Turbify publishes no email API, so this watches the **register**, never the mailbox itself. cron-job.org job `8350624`, created 2026-08-29, watched by `phoenix-mailbox-offboarding-sweep` |
 | `phoenix-process-notifications` | every 5 min | `/api/notifications/process?limit=50` | Drains the notification outbox, probation reminders, deferred/Telegram retries |
 | `phoenix-inbound-intake` | every 2 min | `/api/cron/inbound-intake` | Inbound mail/message intake |
 | `phoenix-recruitment-email-intake` | every 10 min, at :04 | `/api/cron/recruitment-email-intake` | Pulls CVs out of the recruitment mailbox |
