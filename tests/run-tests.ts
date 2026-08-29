@@ -338,7 +338,11 @@ import { runCustomerMappingTests } from "./sales-customer-mapping.test.ts";
 import { runMonthlyClosingComparisonTests } from "./monthly-closing-comparison.test.ts";
 import { runMonthlyClosingExportScopeTests } from "./monthly-closing-export-scope.test.ts";
 import { runPortalClosingLineChoiceTests } from "./portal-closing-line-choice.test.ts";
-import { runClosingOrganogramRegionsTests, runClosingPeriodDatingTests } from "./closing-organogram-regions.test.ts";
+import {
+  runClosingOrganogramRegionsTests,
+  runClosingPeriodDatingTests,
+  runClosingRegionHistoryTests,
+} from "./closing-organogram-regions.test.ts";
 import { runDirectChannelTests } from "./direct-channel.test.ts";
 import { runDirectOrdersLandOnTheirOwnAreaTests } from "./direct-orders-land-on-their-own-area.test.ts";
 import { runSosResolveBrickPrecedenceTests } from "./sos-resolve-brick-precedence.test.ts";
@@ -1595,6 +1599,7 @@ await runTest("monthly closing export scope (filter reaches every sheet)", runMo
 await runTest("portal closing line choice (a requested line is honoured or refused, never swapped)", runPortalClosingLineChoiceTests);
 await runTest("closing organogram regions (areas follow the org chart, per line)", runClosingOrganogramRegionsTests);
 await runTest("closing resolves the org chart at the month being closed, not the run date", runClosingPeriodDatingTests);
+await runTest("closing reads the org chart WITH history, so a dated territory move resolves", runClosingRegionHistoryTests);
 await runTest("employee template Area->Team dropdown (builder and Excel resolve the same range)", runEmployeeTemplateTeamDropdownTests);
 await runTest("direct channel", runDirectChannelTests);
 await runTest("direct orders land on their own area", runDirectOrdersLandOnTheirOwnAreaTests);

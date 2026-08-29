@@ -302,11 +302,17 @@ export function allocateDirectToOperationalRegions(
 }
 
 /**
- * Builds the area -> region map out of raw `au_v_line_area_map` rows, effective-dated at `asOf`.
+ * Builds the area -> region map out of raw `au_v_line_area_map_all` rows, effective-dated at `asOf`.
  *
  * Split out of the loader so the dating rule can be tested without a database. This is the exact
  * predicate `au.f_line_area_map_asof` uses — `effective_from <= asOf`, with `effective_to`
  * EXCLUSIVE — so a row that ends on the day its successor begins never double-maps its area.
+ *
+ * Rows arrive UNORDERED, and once history is exposed one area can legitimately have several of
+ * them, so the winner is picked explicitly: the latest `effective_from` still covering `asOf`,
+ * matching `f_line_area_map_asof`'s `distinct on … order by effective_from desc`. Without that
+ * tie-break the answer would depend on the order PostgREST happened to return rows in — a bug that
+ * would surface once, in production, in the month a territory move lands.
  *
  * An area with no row covering `asOf` is simply absent, and `applyOperationalRegions` then leaves
  * it on its geographic region: a missing mapping must never cost the matrix a row of sales.
@@ -317,7 +323,7 @@ export function buildOperationalRegionMap(
   regionNames: Map<string, string>,
 ): LineOperationalRegionMap | null {
   const regionByArea = new Map<string, OperationalRegion>();
-  const regionCodes = new Set<string>();
+  const winningFrom = new Map<string, string>();
   rows.forEach((row) => {
     const areaCode = up(row.area_code as string | null);
     const regionCode = up(row.operational_region_code as string | null);
@@ -329,9 +335,16 @@ export function buildOperationalRegionMap(
     // Already superseded. EXCLUSIVE, matching the database: a row closed on 2026-09-01 covers
     // 2026-08-31 and not 2026-09-01, which is the day its successor opens.
     if (to && to <= asOf) return;
+    // ISO dates order correctly as plain strings; "" (a missing effective_from) loses to any date.
+    const incumbent = winningFrom.get(areaCode);
+    if (incumbent !== undefined && incumbent >= from) return;
+    winningFrom.set(areaCode, from);
     regionByArea.set(areaCode, { regionCode, regionName: regionNames.get(regionCode) ?? regionCode });
-    regionCodes.add(regionCode);
   });
+  // Collected after the winners settle, so a superseded row cannot leave its region in the filter
+  // list — the region picker would otherwise offer a district that owns nothing this month.
+  const regionCodes = new Set<string>();
+  regionByArea.forEach((region) => regionCodes.add(region.regionCode));
   return regionByArea.size > 0 ? { regionByArea, regionCodes } : null;
 }
 
@@ -363,6 +376,8 @@ export function closingRegionsAsOfDate(period: string | null | undefined): strin
   return `${match[1]}-${match[2]}-${String(lastDay).padStart(2, "0")}`;
 }
 
+const LINE_AREA_MAP_COLUMNS = "area_code,operational_region_code,effective_from,effective_to";
+
 /**
  * The organogram's area -> region map for one line, as of the month being closed.
  *
@@ -371,11 +386,18 @@ export function closingRegionsAsOfDate(period: string | null | undefined): strin
  * landed on the month before it the moment that month was closed. Pass null only where there is
  * genuinely no month yet — the empty skeleton — never as a shortcut.
  *
- * The owner's standing rule that SoS sales attribute to TODAY's structure and never as-was still
- * holds, and is not what this dates. Only rows that are still open (`effective_to is null`) reach
- * here, because that is all `au_v_line_area_map` exposes, so a past reorganisation still re-cuts
- * the history. What the period stops is the opposite direction: a FUTURE structure reaching back
- * into a month that closed before it took effect.
+ * Reads `au_v_line_area_map_all`, the ONLY caller that does. Every other consumer stays on
+ * `au_v_line_area_map`, which exposes open rows only and answers "who owns this area today" — the
+ * owner's standing rule that SoS sales attribute to today's structure, never as-was, still governs
+ * them. The closing is the one place that has to ask the other question, "who owned it in the month
+ * I am closing", and it cannot be answered from open rows alone: a territory move is written as a
+ * PAIR, so while it is still in the future the current-only view shows NEITHER half — the old row
+ * has an `effective_to`, the new one has not started — and the area silently falls back to its
+ * geographic region. That is what the history view exists to close.
+ *
+ * Falls back to `au_v_line_area_map` if the history view is missing, so this is safe to deploy
+ * before its migration is applied. On today's data the two agree exactly: 3 of 150 rows are closed,
+ * no area has more than one row, and every 2026 month-end resolves identically either way.
  *
  * Fails SOFT. A null return means "no organogram view of this line" and the caller keeps the
  * geographic grouping it has always used — which is also the right answer for Head Office, a
@@ -389,13 +411,15 @@ export async function loadLineOperationalRegions(
   if (!lineCode) return null;
   try {
     const supabase = getSupabaseAdmin();
-    const [mapResult, regionResult] = await Promise.all([
-      supabase
-        .from("au_v_line_area_map")
-        .select("area_code,operational_region_code,effective_from,effective_to")
-        .eq("line_code", lineCode),
+    const [historyResult, regionResult] = await Promise.all([
+      supabase.from("au_v_line_area_map_all").select(LINE_AREA_MAP_COLUMNS).eq("line_code", lineCode),
       supabase.from("au_v_regions").select("region_code,region_name"),
     ]);
+    // Only the history view's absence is worth a second round trip; a fallback that also masked a
+    // real outage would hand the closing a half-built map, which is worse than no map at all.
+    const mapResult = historyResult.error
+      ? await supabase.from("au_v_line_area_map").select(LINE_AREA_MAP_COLUMNS).eq("line_code", lineCode)
+      : historyResult;
     if (mapResult.error || !mapResult.data) return null;
 
     const regionNames = new Map<string, string>();
