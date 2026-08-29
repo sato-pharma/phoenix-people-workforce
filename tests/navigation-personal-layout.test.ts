@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import type { NavigationSection, NavigationSectionItem } from "../src/config/system-navigation.ts";
+import { carriesNavRows, usesAdminChrome } from "../src/lib/navigation/active-path.ts";
 import {
   applyPersonalLayout,
   COMPANY_DEFAULT_LAYOUT_KEY,
@@ -947,20 +948,28 @@ export function runNavigationPersonalLayoutTests() {
       /const addableFor = \(row: readonly NavigationSectionItem\[\]\)/.test(rows),
       "the picker must be built from the GATED sections, so it can no more introduce an href than applyPersonalLayout can",
     );
+    // REPOINTED when the row reached the employee portal. The property these two pin is unchanged
+    // — the "+" and the layout behind it must reach exactly the surfaces that carry rows, and the
+    // same predicate must decide both, or a mode gets a "+" with nothing behind it. What changed is
+    // that the predicate is no longer `usesAdminChrome`: that one answers a PALETTE question, and
+    // the portal carries rows without wearing admin chrome. Written with `includes` rather than a
+    // regex so the pin has no escaping to get wrong.
     assert.ok(
-      /canAdd: usesAdminChrome\(navigationMode\)/.test(rows),
-      "admin chrome — admin AND hr, the two workspaces that share this shell",
+      rows.includes("canAdd: carriesNavRows(navigationMode),"),
+      "the + reaches every surface that carries rows — admin, hr, and the employee portal",
     );
     assert.ok(
-      /const layout = usesAdminChrome\(navigationMode\) \? personalLayout : null;/.test(rows),
-      "the layout itself must reach the same two modes, or hr gets a + with nothing behind it",
+      rows.includes("const layout = carriesNavRows(navigationMode) ? personalLayout : null;"),
+      "the layout itself must reach the same modes on the same test, or a surface gets a + with nothing behind it",
     );
     assert.ok(
       /if \(items\.length === 0 && !keepWhenEmpty\) return null;/.test(rows),
       "an empty row renders nothing UNLESS this viewer has a layout — otherwise a lone + appears on 243 pages for 158 people who never asked for it",
     );
+    // Also repointed: `alwaysOfferAdd` was added beside `hasSavedLayout` for the portal, which has
+    // no editor page and so has no other way to a first layout. Same property, one more way in.
     assert.equal(
-      (rows.match(/keepWhenEmpty=\{canAdd && hasSavedLayout\}/g) ?? []).length,
+      rows.split("keepWhenEmpty={canAdd && (hasSavedLayout || alwaysOfferAdd)}").length - 1,
       2,
       "both rows must survive being emptied, or the one you emptied has no way back",
     );
@@ -1209,6 +1218,103 @@ export function runNavigationPersonalLayoutTests() {
       editor.includes('fetch("/api/navigation/company-layout", {') &&
         editor.includes('fetch("/api/navigation/company-layout", { method: "DELETE" })'),
       "publish and withdraw must both go to the company-layout route, never the personal one",
+    );
+  }
+
+  // ── The row reaches the EMPLOYEE PORTAL ────────────────────────────────────────────────────
+  // 116 accounts, 72% of everyone with a login, and until now the only workspace with no
+  // arrangeable row at all.
+  {
+    // `carriesNavRows` and `usesAdminChrome` must stay two different questions. The first asks
+    // whether a surface HAS rows; the second is a PALETTE question. The portal answers yes to one
+    // and no to the other, so collapsing them would either paint the portal black or take its rows
+    // away — and both read as a styling slip rather than the wiring mistake they would be.
+    assert.equal(carriesNavRows("employee-portal"), true, "the portal carries rows");
+    assert.equal(usesAdminChrome("employee-portal"), false, "…and is NOT dark chrome");
+    for (const mode of ["admin", "hr"] as const) {
+      assert.equal(carriesNavRows(mode), true, `${mode} carries rows`);
+      assert.equal(usesAdminChrome(mode), true, `${mode} wears admin chrome`);
+    }
+    assert.equal(carriesNavRows(undefined), false, "an unset mode carries no rows");
+
+    // THE SECURITY PROPERTY, tested rather than reasoned about. The portal hands its own gated
+    // sections in, and a layout naming anything outside that set — an admin page, or a portal page
+    // this viewer's visibility flags withheld — must render nothing. It is the same guarantee the
+    // admin row has, and it is what makes ONE stored document safe across every mode.
+    const portalGated: readonly NavigationSection[] = [
+      { id: "my-workspace", label: "My Workspace", items: [item("/employee-portals", "Command Center")] },
+    ];
+    const portalApplied = applyPersonalLayout(
+      portalGated,
+      layout({ upperRow: ["/employee-portals", "/admin/employees", "/employee-portals/payslips"] }),
+      null,
+    );
+    assert.deepEqual(
+      portalApplied.upperRow.map((entry) => entry.href),
+      ["/employee-portals"],
+      "a portal row may carry only hrefs from the sections handed in — never an admin page, never a withheld portal page",
+    );
+  }
+
+  // The portal's wiring: one section source, one round trip, and the "+" that has to be there.
+  {
+    const portalShell = readFileSync("src/components/employee-portal/employee-portal-server-shell.tsx", "utf8");
+    // ONE round trip. Every query from here crosses the Atlantic to Frankfurt and this runs on
+    // EVERY portal page render, so the read belongs inside the Promise.all already being awaited.
+    // Pinned by position: a call that merely exists somewhere in the file would satisfy an
+    // "includes" check while costing a second serial round trip on 116 accounts' every page view.
+    const parallelRead = `    [data, hasDeviceMapping, navLayout] = await Promise.all([
+      getEmployeePortalShellData(access),
+      access.hrId ? employeeHasActiveDeviceMapping(access.hrId).catch(() => false) : Promise.resolve(false),
+      loadEffectiveLayout(layoutOwnerKey(access)).then((result) => result.layout),
+    ]);`;
+    assert.ok(
+      portalShell.includes(parallelRead),
+      "the portal shell must read the effective layout INSIDE the existing Promise.all, not after it",
+    );
+    assert.ok(
+      portalShell.includes("personalLayout={navLayout}"),
+      "…and hand it to the chrome, or the row renders empty for everyone",
+    );
+
+    // /payslips mounts the portal chrome DIRECTLY instead of going through the server shell, so it
+    // is the one page that can silently miss the read. The symptom would be a row that looks
+    // emptied on exactly one page, which reads as the feature breaking rather than as a page that
+    // was forgotten — so it is pinned rather than left to a reviewer to notice.
+    const payslipsPage = readFileSync("app/payslips/page.tsx", "utf8");
+    assert.ok(
+      payslipsPage.includes("const { layout: navLayout } = await loadEffectiveLayout(layoutOwnerKey(access));") &&
+        payslipsPage.includes("personalLayout={navLayout}"),
+      "the payslips page mounts the portal chrome itself and must read the same effective layout",
+    );
+
+    const portalLayout = readFileSync("src/components/employee-portal/employee-portal-layout.tsx", "utf8");
+    assert.ok(
+      portalLayout.includes('navigationMode="employee-portal"'),
+      'the portal must declare its own mode — "admin" is the provider default and would gate on admin hrefs',
+    );
+    assert.ok(
+      portalLayout.includes("sections={portalNavigationSections(visibility)}"),
+      "the portal must hand its own gated sections in; getSections has nothing to gate here",
+    );
+    // ONE list. buildEmployeePortalSections is what the sidebar, the top nav and the bottom nav
+    // already read, so the row cannot drift from them. A hand-copied second list is how Capture
+    // Evidence shipped rejecting 59 of the 65 customers it existed for.
+    assert.ok(
+      portalLayout.includes("return buildEmployeePortalSections(visibility)"),
+      "portalNavigationSections must derive from the one section builder, never a second list",
+    );
+
+    // THE PORTAL HAS NO LAYOUT EDITOR. /admin/sidebar-layout is admin-only and a null layout
+    // resolves to EMPTY rows — so without this the portal's "+" would appear only for someone who
+    // already had a layout, which in the portal is nobody, ever. The feature would be dead on
+    // arrival, and from outside zero usage looks exactly like zero adoption. Admin and HR keep the
+    // rule as shipped, where the editor page is the entry point. (`canAdd` and the two
+    // `keepWhenEmpty` sites are pinned once, above, beside the rest of the "+" wiring.)
+    const rows = readFileSync("src/components/layout/horizontal-nav-rows.tsx", "utf8");
+    assert.ok(
+      rows.includes('alwaysOfferAdd: navigationMode === "employee-portal",'),
+      "the portal must always offer its +, having no editor page to arrange a layout from",
     );
   }
 }
