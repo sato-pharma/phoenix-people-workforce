@@ -1074,6 +1074,7 @@ import { runExpenseClaimsRefreshTests } from "./expense-claims-refresh.test.ts";
 import { runMarketingFinanceRequirementOnApprovalTests } from "./marketing-finance-requirement-on-approval.test.ts";
 import { runMarketingInvoiceOverdueMarkerTests } from "./marketing-invoice-overdue-marker.test.ts";
 import { runMarketingFinanceHoldTests } from "./marketing-finance-hold.test.ts";
+import { runMarketingInvoiceOverdueNudgeTests } from "./marketing-invoice-overdue-nudge.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -3238,6 +3239,9 @@ await runTest(
     + "someone chose, and the reason is written before the status so a 15s timeout can never freeze a request "
     + "with no recorded why)",
   runMarketingFinanceHoldTests,
+  "marketing invoice overdue nudge (the requester hears about their own, finance gets one digest, "
+    + "never by email, and finance gets no link because no screen shows him one)",
+  runMarketingInvoiceOverdueNudgeTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
