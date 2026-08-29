@@ -232,13 +232,25 @@ jobs:
       # Removing it is also strictly safer: a stale restore was the failure mode the old comment
       # here warned about, and a build that always starts clean cannot have one.
       #
-      # The only real lever on the 167s is the bundler, and the old objection to it was wrong as
-      # written. `next build --turbopack` was rejected here because it "would make CI's build
-      # differ from the production Docker build" — but the Dockerfile runs `pnpm run build`, the
-      # same script CI runs, so changing that script moves both together and nothing diverges. It
-      # stays undone for a different reason: swapping the production bundler puts
-      # `output: "standalone"` and outputFileTracingIncludes at risk (see the canvas note below),
-      # so it needs a staging deploy and the owner's approval, not a quiet CI edit.
+      # AND THERE IS NO BUNDLER LEVER LEFT EITHER — `next build --turbopack` IS A NO-OP HERE.
+      # It was listed in this comment for a long time as the way to attack the compile time. Next
+      # 16.2.11 already builds with Turbopack BY DEFAULT. Measured on run 33248502283, which ran
+      # both forms back to back on one runner: plain `next build` and `next build --turbopack`
+      # each printed `▲ Next.js 16.2.11 (Turbopack)`, took 175s and 174s, and produced
+      # byte-identical standalone trees — 19,237 files, 413,308,053 bytes, 0 files differing, and
+      # the real verify-standalone-canvas.mjs gate passed on both. The identical byte count is the
+      # tell that they were one bundler run twice: two different bundlers cannot produce that.
+      #
+      # So validate's ~186s of compilation is already Turbopack's own time. The objection that used
+      # to stand here — that the flag was avoided because it "would make CI's build differ from the
+      # production Docker build" — was wrong twice over: the Dockerfile runs `pnpm run build`, the
+      # same script CI runs, so changing that script would have moved both together anyway.
+      # DO NOT RE-RUN THIS EXPERIMENT. It costs ~10 CI minutes to re-derive a settled answer.
+      #
+      # It also could not have been trialled on staging first, which is the obvious next thought: a
+      # branch cannot be staged on Railway without shipping it, because
+      # `railway service source connect` is service-level rather than environment-scoped. See
+      # AGENTS.md §2.3. CI was the only safe place to ask, and it has now answered.
 
       - name: Test
         if: needs.changes.outputs.docs_only != 'true'
