@@ -3985,19 +3985,25 @@ function CandidatesTab({
                         {/* The area they asked for outranks the governorate on their CV, and only one
                             of the two fits: it answers the same question more precisely, and it is
                             the only line on this row the applicant wrote himself. The governorate is
-                            not lost — it moves into the tooltip on both lines. */}
-                        {facts.area ? (
+                            not lost — it moves into the tooltip.
+
+                            ONE element, not a branch into two, and that is the no-ellipsis ratchet
+                            rather than a style preference: this second line already truncates, and
+                            two sibling elements each carrying the class would count as two sites and
+                            raise a baseline that is only ever allowed to fall. Choosing the CONTENT
+                            of the existing line leaves the count where it was. */}
+                        {facts.area || facts.governorate ? (
                           <div
-                            className="mt-0.5 truncate text-phx-xs text-slate-600"
-                            title={`Asked to work in ${facts.area.value}.${
-                              facts.governorate ? ` CV address: ${facts.governorate.value}.` : ""
-                            }`}
+                            className={`mt-0.5 truncate text-phx-xs ${facts.area ? "text-slate-600" : "text-slate-500"}`}
+                            title={
+                              facts.area
+                                ? `Asked to work in ${facts.area.value}.${
+                                    facts.governorate ? ` CV address: ${facts.governorate.value}.` : ""
+                                  }`
+                                : facts.governorate!.value
+                            }
                           >
-                            {facts.area.value}
-                          </div>
-                        ) : facts.governorate ? (
-                          <div className="mt-0.5 truncate text-phx-xs text-slate-500" title={facts.governorate.value}>
-                            {facts.governorate.value}
+                            {facts.area ? facts.area.value : facts.governorate!.value}
                           </div>
                         ) : facts.region ? null : (
                           <span className="text-slate-300">Not on file</span>
