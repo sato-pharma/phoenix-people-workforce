@@ -19,8 +19,8 @@ export default async function AdminCompanyCalendarPage() {
   const access = await resolveAccessContextFromPage();
   if (!access.loginId && !access.hrId) redirect("/login");
   if (resolveNavigationMode(access) === "employee-portal") redirect("/employee-portals");
-  // Role gate only — the portal equivalent (app/employee-portals/calendar) requires no
-  // resource permission either (the workspace is company-visible by design), and the CEO
+  // Role gate only — this page requires no resource permission (the workspace is
+  // company-visible by design), and the CEO
   // role does not hold hr_calendar in the effective permission matrix. Mutations still go
   // through /api/calendar, which enforces its own checks.
   //
