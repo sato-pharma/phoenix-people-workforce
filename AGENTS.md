@@ -446,10 +446,18 @@ and never `docs/`, and four of §4's slugs exist nowhere else, so moving one orp
   (commit `65652ac34`, live in prod 2026-08-29) overrides the five areas to Delta (3) in the WhatsApp
   apply-flow area menu via `recruitmentAreaRegionOverrides` (`candidate-region.ts`), so picking Delta
   (3) shows them and Delta (1)/(2)/Others no longer do; the region map and hints were already correct
-  (#2509). **One residue remains:** the SALES geography — `au.canonical_areas.code_region_code` still
-  files the five under the old districts, and because `au_v_canonical_areas` is a plain passthrough
-  with NO date logic this will NOT self-flip on 1 September; a session must repoint that column after
-  the August closing publishes, at which point the recruitment override becomes a harmless no-op.
+  (#2509). **The SALES geography is DELIBERATELY LEFT ALONE — owner chose this 2026-08-29 (Option A),
+  reversing the earlier note here that said to repoint it.** `au.canonical_areas.code_region_code`, its
+  twin `source_of_sales_areas.region_code`, and the stamped `source_of_sales_fact_rollup.region_code`
+  all still file the five under the old districts D1/D2/OT and **STAY there**. The anti-infective →
+  Delta (3) move is carried ENTIRELY by `line_area_map` (dated, anti-infective only), so no geographic
+  repoint is needed for sales — geography and per-line territory are decoupled BY DESIGN, exactly as the
+  GZ6/Beni Suef split established (Beni Suef kept geographic GZ while operating UE-2 on anti-infective).
+  **Do NOT repoint `code_region_code`** after the closing: repointing canonical ALONE diverges it from
+  the region the sales rows carry, and the seat-scope prefetch (`portal-sos-dashboard.ts` →
+  `seat-area-scope.ts`) fetches a DM's rows by that region — a divergence that can silently hide a
+  district manager's own sales. `recruitmentAreaRegionOverrides` (`candidate-region.ts`, test-pinned) is
+  **PERMANENT** — it is what shows the five under Delta (3) in recruitment, not a temporary shim to retire.
 - 🔒 **THE AUGUST / DELTA (3) GOLDEN RULE — the August closing NEVER contains Delta (3), whenever it
   is published.** Owner 2026-08-29, who said "golden rule, no negotiation" twice in one breath: *"The
   closing of August will not include Delta three, but starting from September closing, it will include
