@@ -17,16 +17,24 @@ name: Synthetic Journeys (production smoke)
 # sets. See tests/synthetic/README.md.
 #
 # COST. Each run performs one real Super Admin login against production, so it writes one row to
-# auth_login_attempts per run. Hourly during Cairo working hours keeps that noise bounded; a
-# 15-minute cadence would put ~96 admin logins a day into production audit data for little extra
-# signal.
+# auth_login_attempts per run. A three-hourly cadence during Cairo working hours keeps that noise
+# bounded at ~6 admin logins a day; a 15-minute cadence would put ~96 into production audit data
+# for little extra signal.
 
 on:
   schedule:
-    # Hourly at :17 past, 02:00-18:00 UTC = 05:00-21:00 Africa/Cairo. Overnight is deliberately
-    # skipped: nobody is using the app, and a failure at 03:00 Cairo is not actionable until
-    # morning anyway. The :17 offset keeps it off the shared firing minute of the other jobs.
-    - cron: "17 2-18 * * *"
+    # Every 3h at :17 past, 02:00-17:00 UTC = 05:00-20:00 Africa/Cairo (6 runs/day). Overnight is
+    # deliberately skipped: nobody is using the app, and a failure at 03:00 Cairo is not actionable
+    # until morning anyway. The :17 offset keeps it off the shared firing minute of the other jobs.
+    #
+    # CADENCE (2026-08-29). Was hourly, "17 2-18 * * *" = 17 runs/day. Measured that week: Actions
+    # billed ~32,600 min/month on a private repo, and this workflow ran 217 times in 7 days. Going
+    # three-hourly cuts it to ~6/day and cuts the production auth_login_attempts noise noted above
+    # by the same factor. TRADE-OFF, stated plainly because it is not free: this suite is the only
+    # automated "is production actually up?" signal since GCP alerting died, so worst-case
+    # detection latency goes from ~1h to ~3h. If that proves too slow, the middle setting is
+    # "17 2-18/2 * * *" (2-hourly, 9 runs/day) rather than a return to hourly.
+    - cron: "17 2-18/3 * * *"
   workflow_dispatch:
     inputs:
       base_url:
