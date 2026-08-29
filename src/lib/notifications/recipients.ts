@@ -12,8 +12,15 @@
  * this viewer see this notification".
  */
 
+import { canonicalHrIdForDisplay } from "@/lib/hr-id.ts";
+
 export function normalizeNotificationHrId(value: string | null | undefined): string {
-  return String(value ?? "").trim().toUpperCase();
+  // One canonical HR_ID normaliser (src/lib/hr-id.ts): folds the legacy aaa -> AA alias and
+  // uppercases. `?? ""` preserves this function's non-null string contract. Deliberately NOT
+  // normalizeHrIdForAccess — that strips every non-alphanumeric, which would erase the "@" the
+  // isValidRecipientHrId guard below relies on to reject an email token, turning a fail-closed
+  // check fail-open.
+  return canonicalHrIdForDisplay(value) ?? "";
 }
 
 /**
