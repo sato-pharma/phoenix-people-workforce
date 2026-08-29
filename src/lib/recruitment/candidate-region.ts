@@ -119,6 +119,11 @@ const governorateRegions: Record<string, CandidateRegionCode> = {
   // Delta (2)
   dakahlia: "D2",
   "el dakahlia": "D2",
+  dakahliya: "D2",
+  dakahleya: "D2",
+  daqahlia: "D2",
+  daqahliya: "D2",
+  eldakahlia: "D2",
   mansoura: "D2",
   damietta: "D2",
   domiat: "D2",
@@ -135,6 +140,15 @@ const governorateRegions: Record<string, CandidateRegionCode> = {
   sharqia: "D3",
   sharkia: "D3",
   "el sharqia": "D3",
+  sharqiya: "D3",
+  sharqiyah: "D3",
+  sharkiya: "D3",
+  sharkiyah: "D3",
+  // Article written ONTO the name, so `normalizeGovernorate` never sees the space it strips on. A
+  // key with a space after the article — "el sharqia" above — is unreachable for the same reason;
+  // spell any new one closed up, the way it arrived.
+  elsharkia: "D3",
+  elsharqia: "D3",
   zagazig: "D3",
   suez: "D3",
   "el suez": "D3",
@@ -150,6 +164,10 @@ const governorateRegions: Record<string, CandidateRegionCode> = {
   minia: "UE",
   "el minya": "UE",
   "al minya": "UE",
+  menia: "UE",
+  menya: "UE",
+  elmenia: "UE",
+  elminia: "UE",
   qena: "UE",
   qina: "UE",
   sohag: "UE",
@@ -170,6 +188,58 @@ const governorateRegions: Record<string, CandidateRegionCode> = {
   "south sinai": "OT",
   sinai: "OT",
   arish: "OT",
+};
+
+/**
+ * Places that are not in Egypt, and the country they are in.
+ *
+ * These exist so that "we know where this person lives and it is not a Phoenix region" stops being
+ * indistinguishable from "the map has a gap". Both used to answer null, so both showed the same
+ * blank cell and both landed in the same filter bucket — which meant a recruiter looking at people
+ * with no region could not tell which were data problems worth fixing.
+ *
+ * Recruitment is Egyptian nationals only, so this is not a foreign-hire list: it is Egyptians whose
+ * CV gives an address abroad, overwhelmingly the Gulf, where a great many Egyptian pharmacists and
+ * medical reps spend part of a career. Dubai and Gauteng are what production holds today; the rest
+ * are the neighbours they arrive with, on the same "spellings seen plus the obvious variants"
+ * standard the governorate map above is built to.
+ *
+ * These deliberately do NOT resolve to "Others". Others is a real selling region with real areas in
+ * it, and filing Dubai there would claim somebody covers a territory nobody has confirmed — the
+ * same reason `candidateRegionForGovernorate` returns null rather than guessing.
+ */
+const foreignPlaces: Record<string, string> = {
+  // United Arab Emirates
+  dubai: "United Arab Emirates",
+  "abu dhabi": "United Arab Emirates",
+  abudhabi: "United Arab Emirates",
+  sharjah: "United Arab Emirates",
+  ajman: "United Arab Emirates",
+  uae: "United Arab Emirates",
+  "united arab emirates": "United Arab Emirates",
+  // Saudi Arabia
+  riyadh: "Saudi Arabia",
+  jeddah: "Saudi Arabia",
+  dammam: "Saudi Arabia",
+  khobar: "Saudi Arabia",
+  makkah: "Saudi Arabia",
+  mecca: "Saudi Arabia",
+  medina: "Saudi Arabia",
+  ksa: "Saudi Arabia",
+  "saudi arabia": "Saudi Arabia",
+  saudi: "Saudi Arabia",
+  // The rest of the Gulf
+  kuwait: "Kuwait",
+  doha: "Qatar",
+  qatar: "Qatar",
+  manama: "Bahrain",
+  bahrain: "Bahrain",
+  muscat: "Oman",
+  oman: "Oman",
+  // Elsewhere, as production actually spells it
+  gauteng: "South Africa",
+  johannesburg: "South Africa",
+  "south africa": "South Africa",
 };
 
 /**
@@ -216,6 +286,32 @@ export function candidateRegionForGovernorate(raw: string | null | undefined): C
 export function candidateRegionLabelForGovernorate(raw: string | null | undefined): string | null {
   const code = candidateRegionForGovernorate(raw);
   return code ? candidateRegionLabels[code] : null;
+}
+
+/** What a screen calls someone whose address is outside Egypt, so it never reads as a blank. */
+export const foreignRegionLabel = "Outside Egypt";
+
+/**
+ * The country an address names when it is not in Egypt, or null.
+ *
+ * Asked only once `candidateRegionForGovernorate` has already answered null, so an Egyptian
+ * governorate can never reach it and the existing region answers are untouched by this file's
+ * foreign list. Kept as its own question rather than folded into the region lookup because the two
+ * answers mean different things: one is which of the company's regions somebody works, the other is
+ * that the question does not apply to them.
+ */
+export function foreignCountryForGovernorate(raw: string | null | undefined): string | null {
+  const key = normalizeGovernorate(raw);
+  if (!key) return null;
+  const direct = foreignPlaces[key];
+  if (direct) return direct;
+  // "Dubai, UAE" and "Riyadh - Saudi Arabia" both reach here; the first recognised word wins, the
+  // same fallback the governorate lookup uses.
+  for (const part of key.split(" ")) {
+    const hit = foreignPlaces[part];
+    if (hit) return hit;
+  }
+  return null;
 }
 
 // ── The AREA rows the apply flow shows under each region ───────────────────────────────────────────

@@ -20,6 +20,7 @@ import { CV_LIBRARY_BLANK, summarizeCvLibrary, type CvLibraryRow } from "@/lib/c
 import {
   candidateRegionCodes,
   candidateRegionLabels,
+  foreignRegionLabel,
   type CandidateRegionCode,
 } from "@/lib/recruitment/candidate-region";
 import {
@@ -78,6 +79,19 @@ function experienceCardAccent(status: CvExperienceStatus) {
 
 /** Shown on a region the applicant chose, so an inference is never read as a statement. */
 const DECLARED_REGION_TITLE = "The applicant chose this themselves when they applied on WhatsApp.";
+
+/**
+ * What the Region cell explains on hover, or nothing when there is nothing to explain.
+ *
+ * Two different things can want saying and they never both apply: either a person chose this
+ * region, or they live somewhere the company has no region for. Naming the country matters because
+ * "Outside Egypt" on its own reads like a shrug, and the reader would have no way to tell it from
+ * a gap in our data without looking at the Governorate column and knowing world geography.
+ */
+function regionTitle(row: CvLibraryRow): string | undefined {
+  if (row.regionForeignCountry) return `This CV gives an address in ${row.regionForeignCountry}.`;
+  return row.regionDeclared ? DECLARED_REGION_TITLE : undefined;
+}
 
 const headCellClassName = "whitespace-nowrap px-4 py-3";
 const cellClassName = "whitespace-nowrap px-4 py-4 align-top text-phx-ink-soft";
@@ -200,7 +214,7 @@ export function CvDatabaseManager({ rows }: { rows: CvLibraryRow[] }) {
   // and "district manager" is a family spelled three different ways in this pool, so both read a
   // domain classifier rather than the stored string.
   const [roleFilter, setRoleFilter] = React.useState<CandidateRoleFamily | "" | "unknown">("");
-  const [regionFilter, setRegionFilter] = React.useState<CandidateRegionCode | "" | "unknown">("");
+  const [regionFilter, setRegionFilter] = React.useState<CandidateRegionCode | "" | "unknown" | "foreign">("");
 
   const summary = React.useMemo(() => summarizeCvLibrary(rows), [rows]);
 
@@ -229,7 +243,18 @@ export function CvDatabaseManager({ rows }: { rows: CvLibraryRow[] }) {
         // the CV address. Re-deriving it here from the governorate is what made this screen
         // disagree with the recruitment pool about the same person.
         const region = row.regionCode;
-        if (regionFilter === "unknown" ? region !== null : region !== regionFilter) return false;
+        const foreign = Boolean(row.regionForeignCountry);
+        // Three buckets, not two, because a null code has two very different causes. Somebody
+        // living in Dubai is placed and will never have a region; somebody with no address on
+        // their CV might have any. "Region not known" would be a lie about the first, so the
+        // foreign rows are asked for on their own and excluded from the unknown bucket.
+        if (regionFilter === "foreign") {
+          if (!foreign) return false;
+        } else if (regionFilter === "unknown") {
+          if (region !== null || foreign) return false;
+        } else if (region !== regionFilter) {
+          return false;
+        }
       }
       if (!normalizedQuery) return true;
 
@@ -383,7 +408,7 @@ export function CvDatabaseManager({ rows }: { rows: CvLibraryRow[] }) {
             <select
               className={selectClassName}
               id="cv-database-region"
-              onChange={(event) => setRegionFilter(event.target.value as CandidateRegionCode | "" | "unknown")}
+              onChange={(event) => setRegionFilter(event.target.value as CandidateRegionCode | "" | "unknown" | "foreign")}
               value={regionFilter}
             >
               <option value="">Any region</option>
@@ -392,6 +417,7 @@ export function CvDatabaseManager({ rows }: { rows: CvLibraryRow[] }) {
                   {candidateRegionLabels[code]}
                 </option>
               ))}
+              <option value="foreign">{foreignRegionLabel}</option>
               <option value="unknown">Region not known</option>
             </select>
             {governorateOptions.length > 1 ? (
@@ -515,7 +541,7 @@ export function CvDatabaseManager({ rows }: { rows: CvLibraryRow[] }) {
                     <StackedCell
                       primary={emptyText(row.regionLabel)}
                       secondary={row.preferredArea}
-                      title={row.regionDeclared ? DECLARED_REGION_TITLE : undefined}
+                      title={regionTitle(row)}
                     />
                     <StackedCell primary={emptyText(row.governorate)} />
                     <StackedCell primary={emptyText(row.education)} />

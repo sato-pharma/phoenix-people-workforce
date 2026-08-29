@@ -89,6 +89,23 @@ export function runRecruitmentPoolFilterTests() {
     "the option list went back to dropping blank sources",
   );
 
+  // The Region filter answers a null code with THREE buckets, not two. "Lives in Dubai" and "we
+  // have no address" both leave the code null, but they are not the same person to a recruiter:
+  // one is placed and will never have a Phoenix region, the other might have any. Filing the first
+  // under "No governorate on file" states something untrue about a CV that gives an address.
+  //
+  // Pinned on the POOL as well as the CV Database because the two screens showing the same person
+  // differently is the exact defect the shared resolver was introduced to end — a bucket added to
+  // one screen and not the other re-opens it.
+  assert.ok(
+    /value="foreign"/.test(workspace),
+    "the pool dropped the Outside Egypt filter, so a foreign address reads as a missing one",
+  );
+  assert.ok(
+    /regionFilter === "unknown"[\s\S]{0,200}foreign/.test(workspace),
+    "the pool's unknown bucket no longer excludes foreign rows, so it claims we have no address for them",
+  );
+
   // #10: an explicit order, never Object.keys() of the label map.
   assert.ok(
     /const poolDateFilterOrder: readonly PoolDateFilter\[\] = \["all", "today", "week", "month"\]/.test(workspace),
