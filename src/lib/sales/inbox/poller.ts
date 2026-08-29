@@ -172,7 +172,7 @@ async function pollFolder(
     // continues, the CURSOR stops at the first failure. It lives in its own module so a test can
     // drive it directly rather than read it — `cursor-advance.ts` carries the full reasoning and
     // the two incidents behind it.
-    const cursor = createCursorTracker(plan.baselineUid);
+    const tracker = createCursorTracker(plan.baselineUid);
 
     for (const uid of plan.uids) {
       summary.messagesSeen += 1;
@@ -207,20 +207,20 @@ async function pollFolder(
             else {
               // The bytes were never parked. Hold the cursor so this message is tried again.
               summary.failures += 1;
-              cursor.failed(uid);
+              tracker.failed(uid);
             }
           }
         }
-        cursor.succeeded(uid);
+        tracker.succeeded(uid);
       } catch {
         summary.failures += 1;
-        cursor.failed(uid);
+        tracker.failed(uid);
       }
     }
-    const stalledAtUid = cursor.stalledAtUid();
+    const stalledAtUid = tracker.stalledAtUid();
     if (stalledAtUid !== null) summary.stalledAtUid = stalledAtUid;
 
-    await saveCursor(target.cursorLabel, mailbox.uidValidity, cursor.lastProcessedUid());
+    await saveCursor(target.cursorLabel, mailbox.uidValidity, tracker.lastProcessedUid());
   } catch (error) {
     summary.error = error instanceof Error ? error.message : `Poll of ${target.folderPath} failed.`;
   } finally {
