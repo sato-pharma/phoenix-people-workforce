@@ -31,7 +31,7 @@ export async function GET(
     sheet.addRow(headers);
     sheet.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" } };
     sheet.getRow(1).fill = {
-      fgColor: { argb: "FFFF6B00" },
+      fgColor: { argb: "FFF97316" },
       pattern: "solid",
       type: "pattern",
     };

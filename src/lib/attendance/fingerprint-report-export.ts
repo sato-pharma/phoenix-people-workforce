@@ -3,7 +3,7 @@ import ExcelJS from "exceljs";
 import { systemDocuments } from "@/config/system-settings";
 import type { FingerprintReportData, FingerprintReportRow } from "@/lib/attendance/fingerprint-report";
 
-const phoenixOrange = "FFC2410C";
+const phoenixOrange = "FFF97316";
 const phoenixSlate = "FF0F172A";
 const softBorder = "FFE2E8F0";
 

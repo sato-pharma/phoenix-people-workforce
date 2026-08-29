@@ -33,7 +33,7 @@ import { describePeriods } from "./coverage";
 import { periodColumnLabel } from "./period-format";
 import type { AreaSummary, DmSummary, ReviewCompany, ReviewDataset } from "./types";
 
-const ORANGE = "FFC2410C";
+const ORANGE = "FFF97316";
 const SLATE = "FF0F172A";
 const SOFT = "FFE2E8F0";
 const HAIR = "FFF1F5F9";
