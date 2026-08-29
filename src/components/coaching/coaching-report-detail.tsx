@@ -2,6 +2,7 @@
 import type { ReactNode } from "react";
 
 import { formatDateOnly } from "@/lib/date-only";
+import { PHOENIX_BUSINESS_TIME_ZONE } from "@/lib/i18n/format";
 
 import {
   AdminSectionHeader,
@@ -70,11 +71,15 @@ function formatDateTime(value: string | null | undefined) {
   if (!value) return "Not available";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
+  // This renders on the SERVER, whose clock is UTC — without an explicit zone every coaching
+  // timestamp read 2-3 hours earlier than the event actually happened. The sibling formatDate
+  // above already routes through formatDateOnly for the same reason; this one was missed.
   return new Intl.DateTimeFormat("en-US", {
     day: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
     month: "short",
+    timeZone: PHOENIX_BUSINESS_TIME_ZONE,
     year: "numeric",
   }).format(date);
 }
