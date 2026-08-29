@@ -13,6 +13,7 @@
 // Pure: no DB and no React, so the mapping is testable on its own and the page stays a thin loader.
 
 import { formatDurationMonths, monthsBetween, type CvExperienceStatus } from "@/lib/cv/cv-database";
+import { candidateScreeningFacts } from "@/lib/recruitment/candidate-screening-facts";
 import { cairoDayKey } from "@/lib/recruitment/candidate-stats";
 import type { Candidate } from "@/lib/recruitment/types";
 
@@ -28,7 +29,26 @@ export type CvLibraryRow = {
   medicalSalesDuration: string;
   medicalSalesEmployer: string;
   education: string;
+  /** Where their CV says they LIVE. */
   governorate: string;
+  /**
+   * Where they will WORK, which is a different question and the one this screen filters on.
+   *
+   * Resolved through `candidateScreeningFacts`, the same function the recruitment pool reads, so
+   * the two screens cannot answer it differently. Before this, the pool honoured the applicant's
+   * own WhatsApp answer and this screen re-derived a region from the governorate — so the same
+   * person could sit in Giza on one screen and nowhere at all on the other.
+   *
+   * `regionCode` is null both when nothing is known AND when somebody typed a region we cannot
+   * place; `regionLabel` still carries their words in the second case, which is why the two are
+   * separate fields rather than one.
+   */
+  regionCode: string | null;
+  regionLabel: string;
+  /** True when the applicant chose the region themselves rather than it being read off the CV. */
+  regionDeclared: boolean;
+  /** The area they asked for, in their own words. Empty for anyone who was never asked. */
+  preferredArea: string;
   cvFileName: string;
 };
 
@@ -91,6 +111,8 @@ function medicalSalesStatus(candidate: Candidate): CvExperienceStatus {
 export function cvLibraryRowFromCandidate(candidate: Candidate): CvLibraryRow {
   const months = medicalSalesMonths(candidate);
   const years = candidate.yearsExperience;
+  // The recruitment pool's own resolver, not a second copy of the rule.
+  const facts = candidateScreeningFacts(candidate);
   return {
     cvFileName: text(candidate.cvReferenceName),
     currentEmployer: text(candidate.currentEmployer),
@@ -98,6 +120,10 @@ export function cvLibraryRowFromCandidate(candidate: Candidate): CvLibraryRow {
     education: educationLine(candidate),
     governorate: text(candidate.governorate),
     id: candidate.id,
+    preferredArea: text(facts.area?.value),
+    regionCode: facts.region?.value.code ?? null,
+    regionDeclared: facts.region?.value.declared ?? false,
+    regionLabel: text(facts.region?.value.label),
     medicalSales: medicalSalesStatus(candidate),
     medicalSalesDuration: months === null ? "" : formatDurationMonths(months),
     medicalSalesEmployer: text(candidate.medicalRepEmployer),
