@@ -4465,7 +4465,11 @@ export function buildMarketingApprovedRequestRows(params: {
 
     return {
       contactForMoneyTransfer: requester?.displayName ?? request.requesterHrId,
-      customerName: customer?.displayName ?? request.customerId,
+      // NEVER the customer id. A raw UUID in this cell is not a degraded name, it is an unreadable
+      // one, and the owner's standing rule is that the UI shows human-readable names and never raw
+      // codes or ids. The loader resolves deactivated customers by id so this fallback should now
+      // only fire when the customer row is genuinely gone; when it does, say so in words.
+      customerName: customer?.displayName ?? "Unknown customer",
       financeProofFileName: finance?.moneyTransferProofOriginalFileName ?? null,
       financeProofStoragePath: finance?.moneyTransferProofStoragePath ?? null,
       id: request.id,
@@ -7185,6 +7189,37 @@ export async function getMarketingRequestDraftWorkspace(access: AccessContext): 
   }
   const allCustomerRows = (customersResult.data ?? []) as MarketingCustomerDbRow[];
   const allCustomers = allCustomerRows.map(mapCustomer);
+  // A customer DEACTIVATED after its request was approved falls out of the list above, which is
+  // filtered `active.is.null,active.eq.true`. That filter is RIGHT for the create form — nobody
+  // should be able to aim a new request at a retired customer — but this same list also labels the
+  // finance table, which shows requests approved weeks or months ago. The row then fell back to
+  // printing the raw customer UUID at the Finance Manager, breaking the rule that the UI shows
+  // human-readable names and never raw ids. Measured on production 2026-08-30: 1 of the 4 rows on
+  // his screen, on an EGP 11,200 request.
+  //
+  // Resolved BY ID, so it costs one extra query only when such a request actually exists, and it
+  // cannot widen the picker: `customers` below is still built from allCustomerRows alone. The
+  // finance-evidence upload path already resolves its customer this way (see the .eq("id", ...)
+  // fetch beside the other buildMarketingApprovedRequestRows call) — which is why uploading a file
+  // made the name appear and a reload made it vanish again.
+  const knownCustomerIds = new Set(allCustomerRows.map((row) => row.id));
+  const approvedOnlyCustomerIds = Array.from(
+    new Set(
+      approvedRequests
+        .map((request) => request.customerId)
+        .filter((id): id is string => Boolean(id) && !knownCustomerIds.has(id)),
+    ),
+  );
+  const approvedRowCustomers = approvedOnlyCustomerIds.length > 0
+    ? [
+      ...allCustomers,
+      ...(await fetchRowsByIds<MarketingCustomerDbRow>(
+        supabase,
+        "marketing_customers",
+        approvedOnlyCustomerIds,
+      )).map(mapCustomer),
+    ]
+    : allCustomers;
   const draftViewerAreaId = viewerAreaIdFor(access, employeeRows);
   const customers = allCustomerRows
     .filter((row) => validatedCustomerIds.has(row.id))
@@ -7193,7 +7228,7 @@ export async function getMarketingRequestDraftWorkspace(access: AccessContext): 
 
   return {
     approvedRequests: buildMarketingApprovedRequestRows({
-      customers: allCustomers,
+      customers: approvedRowCustomers,
       employeeRows,
       financeRequirements: ((financeRequirementsResult.data ?? []) as MarketingRequestFinanceRequirementDbRow[]).map(mapFinanceRequirement),
       requests: approvedRequests,
