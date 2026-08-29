@@ -1031,6 +1031,7 @@ import { runRecruitmentExtractionRecordsIsCvTests } from "./recruitment-extracti
 import { runRecruitmentRereadNotACvSkipsTests } from "./recruitment-reread-not-a-cv-skips.test.ts";
 import { runWorktreeExitGuardPreRemovalTests } from "./worktree-exit-guard-pre-removal.test.ts";
 import { runMemoryIndexBudgetTests } from "./memory-index-budget.test.ts";
+import { runMemoryIndexReachabilityTests } from "./memory-index-reachability.test.ts";
 import { runSessionStartMemoryIndexGuardTests } from "./session-start-memory-index-guard.test.ts";
 import { runRepoDoctorUnpushedCommitsTests } from "./repo-doctor-unpushed-commits.test.ts";
 
@@ -3005,6 +3006,15 @@ await runTest(
   + "ceiling-only rule was silent 335 bytes from silent truncation, mustFree closes the gap exactly, "
   + "and an index it cannot measure reports unknown rather than healthy)",
   runMemoryIndexBudgetTests,
+);
+
+await runTest(
+  "A memory relocated into AGENTS.md is REACHABLE, not an orphan (the old index-only rule called "
+  + "all six of the 2026-08-29 relocations orphans and told the next session to re-add the index "
+  + "lines, undoing the relocation; a genuine orphan is still reported, a file that is both linked "
+  + "and named counts once, and an AGENTS.md it cannot read falls back to the old answer rather "
+  + "than claiming reachability it did not prove)",
+  runMemoryIndexReachabilityTests,
 );
 
 await runTest(
