@@ -97,7 +97,7 @@ up. **Adding a trap? Put the hook here and the account in the doc — never the 
 
 - **`grep -r` hangs on this checkout — use `git grep` or `rg`.** `shell-grep-unusable-use-git-grep-or-rg`
 - **`pnpm run <script>` PURGES `node_modules`** when the lockfile moved. Invoke `node scripts/…` directly. `pnpm-run-tries-to-purge-node-modules-when-the-lockfile-moved`
-- **`git show <ref>:<path>` returns EMPTY under MSYS** — use the PowerShell tool. `git-ref-colon-path-is-mangled-by-msys-returns-empty`
+- **`git show <ref>:<path>` returns EMPTY under MSYS**, and **`grep -c $'\r'` matches EVERY line of a pure-LF file** — use the PowerShell tool, or count raw bytes in node. A CRLF working copy can read as CLEAN too: git normalises before comparing. `git-ref-colon-path-is-mangled-by-msys-returns-empty`
 - **A role probe cannot trust the HTTP status code**, and **a POST to ANY `/api/**` path returns 403 even when the route does not exist** — probe with GET. `a-role-probe-cannot-trust-the-http-status-code` · `a-post-to-any-api-path-returns-403-even-if-it-does-not-exist`
 - **`curl -d "@-"` creates NOTHING on Windows** — write the JSON to a file and pass `-d @file.json`. `cron-job-org-is-managed-by-a-rest-api-not-just-the-web-ui`
 - **Reads of `.env*` are auto-approved deliberately, for EVERY key** — licence to inspect, never to propagate. Do not re-litigate or narrow it. `env-file-reads-fully-auto-approved-2026-08-09`

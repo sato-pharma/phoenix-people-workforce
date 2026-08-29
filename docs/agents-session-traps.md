@@ -45,6 +45,30 @@ file holding the full account, under
   `pnpm-run-tries-to-purge-node-modules-when-the-lockfile-moved`
 - **`git show <ref>:<path>` returns EMPTY under MSYS** — the colon path is mangled. Use the PowerShell
   tool. `git-ref-colon-path-is-mangled-by-msys-returns-empty`
+- **`grep -c $'\r'` under MSYS reports a match on EVERY line of a pure-LF file, and a working copy can
+  carry CRLF that `git status` calls clean.** Two separate faults that present as one argument, and
+  between them they cost two sessions two rounds on 2026-08-29. The instrument first: MSYS translates
+  line endings on read, so the `\r` pattern matches everywhere and the count equals the line count —
+  it cannot distinguish LF from CRLF and its answer is always "CRLF". Never settle a line-ending
+  question with a shell tool here; count bytes 13 and 10 from a raw Buffer in node
+  (`fs.readFileSync(p)` — no encoding argument, so no text-mode translation) or use the PowerShell
+  tool. The second fault is the one the bad instrument hid. `.gitattributes` pins `* text=auto eol=lf`,
+  which governs what git **writes on checkout** — it does not govern what a local tool writes
+  afterwards, and git then normalises on **read** before comparing, so the modification is invisible:
+  `git status --porcelain -- CLAUDE.md` was EMPTY against a working copy of **6,924 bytes with 106 CRLF
+  pairs** while the blob was **6,818 with zero CR**. It is selective, which is the tell that a writer
+  and not a checkout is responsible: in that worktree `CLAUDE.md`, `.claude/agents/role-sweeper.md` and
+  `.claude/hooks/bash-guard.mjs` carried CR while `AGENTS.md` beside them did not. **This moves a real
+  number** — auto-loaded context is measured in bytes, so the same file legitimately has two honest
+  sizes, one for the commit and one for what a given machine actually loads; a byte-budget gate should
+  answer for the commit and discount the CR of a CRLF pair, while a reporter should say what the
+  machine in front of it loads. Neither figure is wrong, and making them agree by lying about the
+  second is. **The generalisable half is about method, not line endings: a wrong instrument tells you
+  nothing about the conclusion.** Both readings here were true at once — the `grep` evidence was
+  genuinely garbage *and* the CRLF copy was genuinely real — so dismissing the claim on the strength of
+  the broken tool was the actual mistake. When you catch a tool lying, that discredits the tool and
+  returns the question to open, not to answered-in-your-favour. **No memory file holds this trap, and
+  this account is the record.**
 - **A role probe cannot trust the HTTP status code**, and **a POST to ANY `/api/**` path returns 403
   even when the route does not exist** — probe a deploy with GET and read 404/405/403.
   `a-role-probe-cannot-trust-the-http-status-code` ·
