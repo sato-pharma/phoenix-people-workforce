@@ -7,11 +7,12 @@ import {
   Loader2,
   Lock,
   LockOpen,
+  Mail,
   SkipForward,
   UploadCloud,
   X,
 } from "lucide-react";
-import { useMemo, useRef, useState, useCallback } from "react";
+import { useMemo, useRef, useState, useCallback, useEffect } from "react";
 
 import { AdminCallout } from "@/components/admin/admin-design-system";
 import { Button } from "@/components/ui/button";
@@ -19,6 +20,7 @@ import { Card } from "@/components/ui/card";
 import type { PreviewResult } from "@/components/sales/import-preview-modal";
 import { ProductAddForm, CustomerBrickAddForm, TerritoryAddForm } from "@/components/sales/source-of-sales-mapping-tab";
 import { formatCurrency, formatNumber } from "@/lib/sales/format";
+import type { SalesInboxArrival } from "@/lib/sales/inbox/arrivals";
 import type { DistributorSalesValidationIssue, DistributorSalesValidationResult } from "@/lib/sales/monthly-distributor-import";
 import type { MonthlySalesRun, MonthlySalesStep } from "@/lib/sales/monthly-sales-run";
 import { cn } from "@/lib/utils";
@@ -26,6 +28,7 @@ import { cn } from "@/lib/utils";
 type RunResponse = { success: boolean; data?: MonthlySalesRun; error?: string; code?: string };
 type ValidateResponse = { success: boolean; data?: DistributorSalesValidationResult; error?: string };
 type PreviewResponse = { success: boolean; data?: PreviewResult; error?: string };
+type ArrivalsResponse = { success: boolean; data?: SalesInboxArrival[]; error?: string };
 
 const OFFICE = "OFFICE";
 
@@ -115,6 +118,24 @@ async function readJson<T>(response: Response, fallback: T): Promise<T> {
   try { return JSON.parse(text) as T; } catch { return fallback; }
 }
 
+/** An IMAP INTERNALDATE is a real instant, so it is formatted in Africa/Cairo like every other
+ *  time this system shows — a distributor file that says it landed at 03:12 when the mailbox shows
+ *  05:12 is a file the reader stops trusting. */
+const ARRIVED_AT_CAIRO = new Intl.DateTimeFormat("en-GB", {
+  day: "2-digit", hour: "2-digit", minute: "2-digit", month: "short", timeZone: "Africa/Cairo",
+});
+
+function arrivedAtLabel(iso: string | null): string {
+  if (!iso) return "unknown time";
+  const at = new Date(iso);
+  return Number.isNaN(at.getTime()) ? "unknown time" : ARRIVED_AT_CAIRO.format(at);
+}
+
+function fileSizeLabel(bytes: number): string {
+  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+}
+
 export function MonthlySalesWizard({
   products = [],
   bricks = [],
@@ -136,9 +157,23 @@ export function MonthlySalesWizard({
   // even if the user accidentally triggers the file picker again between Preview and Confirm.
   const previewFileRef = useRef<File | null>(null);
   const [selectedFileName, setSelectedFileName] = useState<string | null>(null);
+
+  // ── Files that arrived by email ────────────────────────────────────────────────────────────────
+  // The intake poller parks distributor workbooks in the same `sales-imports` bucket the browser
+  // uploads to, so an arrival is byte-identical to a hand-picked file and imports down the same
+  // preview/commit path. It is offered here, on the open step, because a file recorded somewhere
+  // nobody looks is a file nobody imports — this panel is the whole point of the poller.
+  const [arrivals, setArrivals] = useState<SalesInboxArrival[]>([]);
+  const [arrivalsKey, setArrivalsKey] = useState(0);
+  // The arrival chosen as this step's source. Mutually exclusive with the file picker: whichever
+  // was touched last wins, so Preview can never be ambiguous about what it is about to read.
+  const [pickedArrival, setPickedArrival] = useState<SalesInboxArrival | null>(null);
   const onFileChange = useCallback(() => {
     setSelectedFileName(fileRef.current?.files?.[0]?.name ?? null);
+    setPickedArrival(null);
   }, []);
+  // Captured at preview time for the same reason previewFileRef above is.
+  const previewArrivalRef = useRef<SalesInboxArrival | null>(null);
 
   const activeStep = useMemo(() => {
     if (!run) return null;
@@ -147,6 +182,44 @@ export function MonthlySalesWizard({
   }, [run, activeCode]);
 
   const isOfficeStep = activeStep ? activeStep.distributorCode.toUpperCase() === OFFICE : false;
+  const activeDistributorCode = activeStep?.distributorCode ?? null;
+
+  // Arrivals for the OPEN step only, narrowed server-side by the detected distributor. A workbook
+  // whose distributor could not be detected is deliberately not offered here — attaching an
+  // unidentified file to whichever step happens to be open is how the wrong distributor's sales get
+  // imported, and this pipeline feeds the monthly closing.
+  //
+  // Every setState sits inside the async callback behind the `alive` guard, never in the effect
+  // body — that is a lint error in this repo which typecheck does not catch.
+  useEffect(() => {
+    let alive = true;
+
+    const loadArrivals = async () => {
+      if (!activeDistributorCode || isOfficeStep) {
+        if (alive) setArrivals([]);
+        return;
+      }
+      try {
+        const res = await fetch(
+          `/api/sales/inbox-arrivals?distributor=${encodeURIComponent(activeDistributorCode)}`,
+          { cache: "no-store" },
+        );
+        const payload = await readJson<ArrivalsResponse>(res, { success: false });
+        if (!alive) return;
+        // A failure here is silent on purpose. The panel is a shortcut, not the import path — the
+        // file picker beside it still works, and an error banner over a working screen would be
+        // the feature costing time rather than saving it.
+        setArrivals(payload.success && payload.data ? payload.data : []);
+      } catch {
+        if (alive) setArrivals([]);
+      }
+    };
+
+    void loadArrivals();
+    return () => {
+      alive = false;
+    };
+  }, [activeDistributorCode, isOfficeStep, arrivalsKey]);
 
   function applyRun(next: MonthlySalesRun) {
     setRun(next);
@@ -168,18 +241,34 @@ export function MonthlySalesWizard({
   // Step 1 — validate WITHOUT persisting, then render the preview. Mirrors the Office step and the
   // Uploaded Sheets tab: nothing is written until the user reviews and confirms.
   async function distributorPreview() {
-    if (!activeStep || !fileRef.current?.files?.[0]) { setMessage({ type: "error", text: "Choose a file to upload." }); return; }
+    const pickedFile = fileRef.current?.files?.[0] ?? null;
+    if (!activeStep || (!pickedFile && !pickedArrival)) {
+      setMessage({ type: "error", text: "Choose a file to upload." });
+      return;
+    }
     setBusy(true); setMessage(null); setPreview(null);
     try {
-      const form = new FormData();
-      form.set("file", fileRef.current.files[0]);
-      form.set("distributorCode", activeStep.distributorCode);
-      form.set("period", period);
-      const res = await fetch("/api/sales/monthly-import/preview", { method: "POST", body: form });
+      // An emailed arrival is already an object in the `sales-imports` bucket, so it takes the
+      // JSON `storagePath` transport the large-file browser upload uses — the same resolver, the
+      // same validation, the same preview. Nothing about the import path is new here.
+      const res = pickedArrival
+        ? await fetch("/api/sales/monthly-import/preview", {
+            body: JSON.stringify({ distributorCode: activeStep.distributorCode, period, storagePath: pickedArrival.storagePath }),
+            headers: { "content-type": "application/json" },
+            method: "POST",
+          })
+        : await (async () => {
+            const form = new FormData();
+            form.set("file", pickedFile as File);
+            form.set("distributorCode", activeStep.distributorCode);
+            form.set("period", period);
+            return fetch("/api/sales/monthly-import/preview", { body: form, method: "POST" });
+          })();
       const payload = await readJson<PreviewResponse>(res, { success: false });
       if (payload.data) {
         setPreview(payload.data);
-        previewFileRef.current = fileRef.current?.files?.[0] ?? null;
+        previewFileRef.current = pickedArrival ? null : pickedFile;
+        previewArrivalRef.current = pickedArrival;
       }
       if (!payload.data) {
         setMessage({ type: "error", text: payload.error ?? "Preview failed." });
@@ -192,7 +281,8 @@ export function MonthlySalesWizard({
   }
 
   // A "Map now" save closes the modal and re-runs the SAME preview in place — never a page navigation,
-  // never a re-pick of the file (fileRef still holds it from the original Preview click).
+  // never a re-pick of the file (fileRef still holds it from the original Preview click; an emailed
+  // arrival re-reads from storage, which preview never deletes — only commit does).
   async function handleMappingSaved() {
     setMapNowGroup(null);
     await distributorPreview();
@@ -204,28 +294,86 @@ export function MonthlySalesWizard({
   // Uses previewFileRef (captured at preview time) rather than re-reading fileRef.current.files[0],
   // so a stale file picker state between Preview and Confirm cannot commit the wrong file.
   async function distributorConfirm() {
-    if (!activeStep || !previewFileRef.current || preview?.status !== "validated") return;
+    const reviewedArrival = previewArrivalRef.current;
+    if (!activeStep || (!previewFileRef.current && !reviewedArrival) || preview?.status !== "validated") return;
     setBusy(true); setMessage(null);
     try {
-      const form = new FormData();
-      form.set("file", previewFileRef.current);
-      form.set("distributorCode", activeStep.distributorCode);
-      form.set("period", period);
-      // Carry the reviewed diff + unmapped details so a coverage snapshot is recorded on commit.
-      if (preview.previewDiff) form.set("previewDiff", JSON.stringify(preview.previewDiff));
-      if (preview.unmappedCustomers?.length) form.set("unmappedCustomers", JSON.stringify(preview.unmappedCustomers));
-      const res = await fetch("/api/sales/monthly-import/commit", { method: "POST", body: form });
+      const res = reviewedArrival
+        ? await fetch("/api/sales/monthly-import/commit", {
+            body: JSON.stringify({
+              distributorCode: activeStep.distributorCode,
+              period,
+              previewDiff: preview.previewDiff ?? undefined,
+              storagePath: reviewedArrival.storagePath,
+              unmappedCustomers: preview.unmappedCustomers?.length ? preview.unmappedCustomers : undefined,
+            }),
+            headers: { "content-type": "application/json" },
+            method: "POST",
+          })
+        : await (async () => {
+            const form = new FormData();
+            form.set("file", previewFileRef.current as File);
+            form.set("distributorCode", activeStep.distributorCode);
+            form.set("period", period);
+            // Carry the reviewed diff + unmapped details so a coverage snapshot is recorded on commit.
+            if (preview.previewDiff) form.set("previewDiff", JSON.stringify(preview.previewDiff));
+            if (preview.unmappedCustomers?.length) form.set("unmappedCustomers", JSON.stringify(preview.unmappedCustomers));
+            return fetch("/api/sales/monthly-import/commit", { body: form, method: "POST" });
+          })();
       const payload = await readJson<PreviewResponse>(res, { success: false });
       if (!payload.success || !payload.data?.batchId) {
         setMessage({ type: "error", text: payload.error ?? "Import failed." });
         return;
       }
+      // Commit DELETES the storage object it read, so an arrival left open would keep being
+      // offered while pointing at a file that no longer exists. Claiming it is what closes it out.
+      if (reviewedArrival) {
+        await claimArrivalRow(reviewedArrival.id, payload.data.batchId ?? null);
+      }
       await confirmStep(activeStep.distributorCode, payload.data.batchId ?? null);
       previewFileRef.current = null;
+      previewArrivalRef.current = null;
+      setPickedArrival(null);
       setPreview(null);
       setMessage({ type: "success", text: `${activeStep.distributorName} imported and confirmed.` });
       if (fileRef.current) fileRef.current.value = "";
       setSelectedFileName(null);
+    } finally { setBusy(false); }
+  }
+
+  /** Close out an emailed arrival. Failure is reported but never reverses the import — the sales
+   *  rows are already written, and a red banner claiming otherwise would be worse than a stale row
+   *  in the panel, which a person can dismiss. */
+  async function claimArrivalRow(id: string, batchId: string | null) {
+    try {
+      const res = await fetch("/api/sales/inbox-arrivals", {
+        body: JSON.stringify({ action: "claim", batchId, id, period }),
+        headers: { "content-type": "application/json" },
+        method: "POST",
+      });
+      if (!res.ok) throw new Error("claim failed");
+    } catch {
+      setMessage({ type: "error", text: "Imported — but the emailed file stayed in the list. Dismiss it there." });
+    } finally {
+      setArrivalsKey((key) => key + 1);
+    }
+  }
+
+  /** A person saying this is not a sales file worth importing, or is a second send of one already
+   *  imported. Removes the stored object with it. */
+  async function dismissArrivalRow(arrival: SalesInboxArrival) {
+    const reason = window.prompt(`Why is "${arrival.fileName}" not being imported?`)?.trim();
+    if (!reason) return;
+    setBusy(true);
+    try {
+      const res = await fetch("/api/sales/inbox-arrivals", {
+        body: JSON.stringify({ action: "dismiss", id: arrival.id, reason }),
+        headers: { "content-type": "application/json" },
+        method: "POST",
+      });
+      if (!res.ok) { setMessage({ type: "error", text: "Could not dismiss that file." }); return; }
+      if (pickedArrival?.id === arrival.id) setPickedArrival(null);
+      setArrivalsKey((key) => key + 1);
     } finally { setBusy(false); }
   }
 
@@ -420,13 +568,72 @@ export function MonthlySalesWizard({
 
                 {!run.locked ? (
                   <div className="flex flex-col gap-3">
+                    {/* Files that arrived by email for THIS distributor. Absent when the mailbox is
+                        not configured, or when nothing has arrived — never an empty-state box, so a
+                        screen that has always worked without this does not grow a permanent blank. */}
+                    {arrivals.length > 0 ? (
+                      <div className="flex flex-col gap-2 rounded-xl border border-sky-200 bg-sky-50 p-3">
+                        <p className="text-xs font-black uppercase tracking-wide text-sky-800">
+                          Arrived by email · {arrivals.length} file{arrivals.length === 1 ? "" : "s"}
+                        </p>
+                        {arrivals.map((arrival) => (
+                          <div
+                            key={arrival.id}
+                            className={cn(
+                              "flex flex-wrap items-center gap-3 rounded-lg border bg-white px-3 py-2",
+                              pickedArrival?.id === arrival.id ? "border-sky-500 ring-1 ring-sky-500" : "border-phx-line",
+                            )}
+                          >
+                            <Mail className="h-4 w-4 shrink-0 text-sky-600" />
+                            <div className="flex min-w-0 flex-1 flex-col">
+                              <span className="whitespace-nowrap text-sm font-bold text-slate-800">{arrival.fileName}</span>
+                              <span className="whitespace-nowrap text-xs font-semibold text-slate-500">
+                                {arrival.fromName || arrival.fromAddress || "unknown sender"} · {arrivedAtLabel(arrival.receivedAt)} · {fileSizeLabel(arrival.fileSizeBytes)}
+                              </span>
+                            </div>
+                            {arrival.detectionConfidence === "low" || arrival.detectionAmbiguous ? (
+                              <span className="whitespace-nowrap rounded-full border border-amber-200 bg-amber-100 px-2 py-0.5 text-xs font-black uppercase text-amber-800">
+                                Check the distributor
+                              </span>
+                            ) : null}
+                            <Button
+                              className="gap-2 rounded-lg font-black"
+                              disabled={busy}
+                              onClick={() => {
+                                // Selecting an arrival clears the file picker, so Preview is never
+                                // ambiguous about which of the two it is about to read.
+                                if (fileRef.current) fileRef.current.value = "";
+                                setSelectedFileName(null);
+                                setPreview(null);
+                                setPickedArrival(pickedArrival?.id === arrival.id ? null : arrival);
+                              }}
+                              size="sm"
+                              variant={pickedArrival?.id === arrival.id ? "default" : "secondary"}
+                            >
+                              {pickedArrival?.id === arrival.id ? "Selected" : "Use this file"}
+                            </Button>
+                            <Button
+                              className="rounded-lg font-black"
+                              disabled={busy}
+                              onClick={() => void dismissArrivalRow(arrival)}
+                              size="sm"
+                              variant="ghost"
+                            >
+                              <X className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
                     {/* File picker — must select before any action button works */}
                     <label className="flex cursor-pointer items-center gap-3 rounded-xl border-2 border-dashed border-phx-line bg-slate-50 px-4 py-3 transition-colors hover:border-orange-400 hover:bg-orange-50">
                       <UploadCloud className="h-5 w-5 shrink-0 text-slate-400" />
                       <span className="flex-1 text-sm">
                         {selectedFileName
                           ? <span className="font-bold text-slate-800">{selectedFileName}</span>
-                          : <span className="text-slate-500">Click here to choose the Excel file (.xlsx)</span>}
+                          : pickedArrival
+                            ? <span className="text-slate-500">Using the emailed file above — click here to upload a different one instead</span>
+                            : <span className="text-slate-500">Click here to choose the Excel file (.xlsx)</span>}
                       </span>
                       <input ref={fileRef} type="file" accept=".xls,.xlsx" className="sr-only" onChange={onFileChange} />
                     </label>
@@ -442,7 +649,7 @@ export function MonthlySalesWizard({
                         </>
                       ) : (
                         <>
-                          <Button className="gap-2 rounded-xl font-black" disabled={busy || !selectedFileName} onClick={() => void distributorPreview()} variant="secondary">
+                          <Button className="gap-2 rounded-xl font-black" disabled={busy || (!selectedFileName && !pickedArrival)} onClick={() => void distributorPreview()} variant="secondary">
                             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <UploadCloud className="h-4 w-4" />} Preview
                           </Button>
                           <Button className="gap-2 rounded-xl font-black" disabled={busy || !preview || preview.status !== "validated"} onClick={() => void distributorConfirm()}>

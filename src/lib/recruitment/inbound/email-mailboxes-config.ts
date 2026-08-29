@@ -4,7 +4,12 @@
 // env var, matching this repo's existing precedent for multi-entry config-in-one-var (e.g.
 // PHOENIX_RLS_TEST_USERS_JSON). Defensive by design: a missing or malformed value must never
 // crash the poller — it just means no mailboxes are configured yet.
+//
+// The connection fields (label/host/port/secure/user/password) and their defaults are parsed by
+// the shared `@/lib/email-intake/mailbox-config`, which the sales mailbox intake uses too. Only
+// `cvGate` is recruitment's own, and it is layered on below.
 
+import { parseMailboxesConfig } from "@/lib/email-intake/mailbox-config";
 import { parseInboxCvGate, resolveInboxCvGate, type InboxCvGate } from "@/lib/recruitment/inbound/inbox-cv-gate";
 
 export type RecruitmentMailboxConfig = {
@@ -20,52 +25,16 @@ export type RecruitmentMailboxConfig = {
   cvGate: InboxCvGate;
 };
 
-function isNonEmptyString(value: unknown): value is string {
-  return typeof value === "string" && value.trim().length > 0;
-}
-
-function parseOneMailbox(raw: unknown): RecruitmentMailboxConfig | null {
-  if (!raw || typeof raw !== "object") return null;
-  const entry = raw as Record<string, unknown>;
-  if (!isNonEmptyString(entry.label) || !isNonEmptyString(entry.host) || !isNonEmptyString(entry.user) || !isNonEmptyString(entry.password)) {
-    return null;
-  }
-  const port = Number(entry.port);
-  const label = entry.label.trim();
-  return {
-    cvGate: resolveInboxCvGate(label, parseInboxCvGate(entry.cvGate)),
-    host: entry.host.trim(),
-    label,
-    password: entry.password,
-    port: Number.isFinite(port) && port > 0 ? port : 993,
-    secure: entry.secure === undefined ? true : Boolean(entry.secure),
-    user: entry.user.trim(),
-  };
-}
-
 /**
  * Parses RECRUITMENT_EMAIL_INBOXES_JSON. Never throws — invalid JSON, a non-array value, or an
  * entry missing a required field is simply dropped (and the whole result is `[]` for invalid
  * JSON), so a misconfigured env var disables email intake instead of crashing the cron job.
  */
 export function parseRecruitmentEmailInboxesConfig(json: string | undefined | null): RecruitmentMailboxConfig[] {
-  const trimmed = (json ?? "").trim();
-  if (!trimmed) return [];
-
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(trimmed);
-  } catch {
-    return [];
-  }
-  if (!Array.isArray(parsed)) return [];
-
-  const mailboxes: RecruitmentMailboxConfig[] = [];
-  for (const entry of parsed) {
-    const mailbox = parseOneMailbox(entry);
-    if (mailbox) mailboxes.push(mailbox);
-  }
-  return mailboxes;
+  return parseMailboxesConfig<RecruitmentMailboxConfig>(json, (base, entry) => ({
+    ...base,
+    cvGate: resolveInboxCvGate(base.label, parseInboxCvGate(entry.cvGate)),
+  }));
 }
 
 export function loadConfiguredMailboxes(): RecruitmentMailboxConfig[] {
