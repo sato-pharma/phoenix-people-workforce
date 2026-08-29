@@ -1,5 +1,6 @@
 import { OFFER_DEFAULT_THEME } from "@/lib/offers/default-template";
 import { buildOfferTokens, fillOfferTokens } from "@/lib/offers/render";
+import { safeOfferStyle } from "@/lib/offers/rich-text";
 import type { OfferBlock, OfferFields, OfferTheme } from "@/lib/offers/types";
 
 /**
@@ -37,29 +38,100 @@ function textOf(html: string): string {
   return html
     .replace(/<br\s*\/?>/gi, "\n")
     .replace(/<\/p>/gi, "\n\n")
+    // Before the blanket tag strip, so a bulleted list still reads as a list once the markup is
+    // gone. Only the OPENING tag is given the dash — both filters that call this measure the
+    // inside of an `<li>`, never the tag itself, so an empty bullet stays empty here.
+    .replace(/<li\b[^>]*>/gi, "\n- ")
+    .replace(/<\/(ul|ol)>/gi, "\n")
     .replace(/<[^>]+>/g, "")
     .replace(/&nbsp;/g, " ")
     .replace(/[ \t]+\n/g, "\n")
     .trim();
 }
 
-/** Author HTML → email-safe paragraphs. Keeps <strong>/<em>; drops layout markup and classes. */
-function safeRichText(html: string, theme: Required<OfferTheme>): string {
-  const paragraphs = html
-    .split(/<\/p>/i)
-    .map((chunk) => chunk.replace(/<p[^>]*>/gi, "").trim())
-    .filter((chunk) => textOf(chunk).length > 0);
-
-  return paragraphs
-    .map((chunk) => {
-      const inline = chunk
-        .replace(/<(?!\/?(strong|b|em|i|u|a)\b)[^>]*>/gi, "")
-        .replace(/\sclass="[^"]*"/gi, "");
+/**
+ * Inline markup an email client can be trusted with.
+ *
+ * The set is the same one `src/lib/offers/rich-text.ts` lets the designer's prose canvas store, and
+ * the two have to stay that way: anything the canvas can produce but this drops would print on the
+ * attached PDF and quietly go missing from the email body, so the letter a candidate reads would
+ * differ from the letter they sign. `tests/offer-rich-text.test.ts` asserts the agreement.
+ *
+ * `<span>` and `<a>` are rebuilt before the generic pass so they carry only a sanitised `style` and,
+ * for a link, a target the letter is willing to send somebody to. `safeOfferStyle` is the SAME
+ * function the canvas stores through, which is what keeps the two ends in agreement by
+ * construction rather than by two lists somebody has to remember to update together.
+ */
+function inlineSafe(chunk: string): string {
+  return chunk
+    .replace(/<(span|a)\b([^>]*)>/gi, (_tag, name: string, attributes: string) => {
+      const styleMatch = /style\s*=\s*("([^"]*)"|'([^']*)')/i.exec(attributes);
+      const style = safeOfferStyle(styleMatch?.[2] ?? styleMatch?.[3] ?? "");
+      const hrefMatch = /href\s*=\s*("([^"]*)"|'([^']*)')/i.exec(attributes);
+      const href = (hrefMatch?.[2] ?? hrefMatch?.[3] ?? "").trim();
+      // A refused link keeps the anchor and loses the target: the words a candidate is reading
+      // matter more than the click, and a missing sentence is the worse failure by far.
+      const linked = name.toLowerCase() === "a" && /^(https?:\/\/|mailto:)/i.test(href);
       return (
-        `<p style="margin:0 0 10px;color:${theme.body};font-size:14px;line-height:1.6">${inline}</p>`
+        `<${name.toLowerCase()}` +
+        (linked ? ` href="${href.replace(/"/g, "&quot;")}"` : "") +
+        (style ? ` style="${style}"` : "") +
+        ">"
       );
     })
+    .replace(/<(?!\/?(strong|b|em|i|u|a|br|span)\b)[^>]*>/gi, "")
+    .replace(/\sclass\s*=\s*("[^"]*"|'[^']*')/gi, "");
+}
+
+/** The paragraphs between — or either side of — any list. */
+function safeParagraphs(html: string, theme: Required<OfferTheme>): string {
+  return html
+    .split(/<\/p>/i)
+    .map((chunk) => chunk.replace(/<p[^>]*>/gi, "").trim())
+    .filter((chunk) => textOf(chunk).length > 0)
+    .map(
+      (chunk) =>
+        `<p style="margin:0 0 10px;color:${theme.body};font-size:14px;line-height:1.6">${inlineSafe(chunk)}</p>`,
+    )
     .join("");
+}
+
+/**
+ * A bulleted or numbered list.
+ *
+ * The indent is set on the list rather than left to the client's own default: Outlook's Word
+ * renderer indents lists far harder than every other client, so an unstyled list is the one thing
+ * on the page that visibly moves depending on who opens it.
+ */
+function safeList(tag: "ol" | "ul", inner: string, theme: Required<OfferTheme>): string {
+  const items = [...inner.matchAll(/<li\b[^>]*>([\s\S]*?)<\/li>/gi)]
+    .map((match) => inlineSafe(match[1]).trim())
+    .filter((item) => textOf(item).length > 0);
+  if (items.length === 0) return "";
+
+  return (
+    `<${tag} style="margin:0 0 10px;padding-left:22px;color:${theme.body};font-size:14px;line-height:1.6">` +
+    items.map((item) => `<li style="margin:0 0 4px">${item}</li>`).join("") +
+    `</${tag}>`
+  );
+}
+
+/** Author HTML → email-safe blocks. Keeps emphasis, links, line breaks, colour and lists. */
+function safeRichText(html: string, theme: Required<OfferTheme>): string {
+  const out: string[] = [];
+  let cursor = 0;
+
+  // Lists are lifted out first so the paragraph splitter never sees one. Splitting on `</p>` while a
+  // list is still in the string folds every bullet into whichever paragraph came before it.
+  for (const match of html.matchAll(/<(ul|ol)\b[^>]*>([\s\S]*?)<\/\1>/gi)) {
+    const index = match.index ?? 0;
+    out.push(safeParagraphs(html.slice(cursor, index), theme));
+    out.push(safeList(match[1].toLowerCase() as "ol" | "ul", match[2], theme));
+    cursor = index + match[0].length;
+  }
+  out.push(safeParagraphs(html.slice(cursor), theme));
+
+  return out.join("");
 }
 
 function cell(content: string, style: string): string {

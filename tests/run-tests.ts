@@ -665,6 +665,7 @@ import { runOfferPdfRuntimeTests } from "./offer-pdf-runtime.test.ts";
 import { runOfferDatesTests } from "./offer-dates.test.ts";
 import { runOfferDraftCheckTests } from "./offer-draft-checks.test.ts";
 import { runOfferPlaceholderTests } from "./offer-placeholders.test.ts";
+import { runOfferRichTextTests } from "./offer-rich-text.test.ts";
 import { runOfferReferenceTests } from "./offer-reference.test.ts";
 import { runOfferTitleTemplateTests } from "./offer-title-template.test.ts";
 import { runSalesNullVsZeroTests } from "./sales-null-vs-zero.test.ts";
@@ -2082,6 +2083,13 @@ await runTest(
     + "past the highest rather than filling a withdrawn offer's gap, keeps each title and year on "
     + "its own run, and ignores anything typed in another shape)",
   runOfferReferenceTests,
+);
+await runTest(
+  "offer letter prose round trip (the greeting survives canvas editing byte for byte, class and "
+    + "all; a placeholder inside an attribute is never turned into a chip; an unsupported tag loses "
+    + "the tag and never the words; and every tag the canvas can produce reaches the EMAIL as well "
+    + "as the PDF, so the letter a candidate reads matches the one they sign)",
+  runOfferRichTextTests,
 );
 await runTest(
   "offer draft warnings (a correctly filled offer raises nothing at all, each wrong pair of dates "
