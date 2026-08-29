@@ -31,7 +31,6 @@ import type { AccessContext } from "@/lib/auth/permissions";
 import type { CeoCommandCenterData, CeoAttentionTone, CeoWeeklyTrendPoint } from "@/lib/ceo/command-center";
 import { getCeoLandingDeferred } from "@/lib/ceo/command-center";
 import { formatStartMinutes, type SfeCrmFieldAnalytics } from "@/lib/crm/sfe-field-analytics";
-import type { SfeDoctorCoverageBoard } from "@/lib/crm/sfe-doctor-coverage";
 import type { SfeImsContribution, SfeImsRow, SfeTargetPerformance } from "@/lib/sales/sfe-performance";
 
 function egp(v: number) {
@@ -584,76 +583,6 @@ function StartTimeTable({
   );
 }
 
-// Compact SFE-overview render of the Doctor Coverage board: tiles + the two lists a manager acts
-// on (worst rep panels, freshest lapses). Server-only — the full doctors array never serializes
-// to the client; the Full Board action link carries the rest.
-function DoctorCoverageEmbed({ data }: { data: SfeDoctorCoverageBoard }) {
-  const worstReps = data.reps.slice(0, 8);
-  const freshLapses = data.doctors
-    .filter((doctor) => doctor.status === "red")
-    .sort((a, b) => ((a.lastVisitDate ?? "") < (b.lastVisitDate ?? "") ? 1 : -1))
-    .slice(0, 8);
-  return (
-    <div className="space-y-5 p-5">
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
-        {[
-          { label: "Coverage", sub: data.isCurrentMonth ? "month to date" : data.monthLabel, value: `${data.totals.coveragePct}%` },
-          { label: "Active panel", sub: "graded doctors", value: String(data.totals.activePanel) },
-          { label: "Covered", sub: "met their target", value: String(data.totals.green) },
-          { label: "Under-visited", sub: "short of target", value: String(data.totals.yellow) },
-          { label: "Not visited", sub: "on the list, none this month", value: String(data.totals.red) },
-          { label: "Ungraded seen", sub: "no vendor grade", value: String(data.totals.ungradedContacts) },
-        ].map((tile) => (
-          <div key={tile.label} className="border border-slate-200 px-3 py-2.5">
-            <p className="text-phx-3xs font-black uppercase tracking-[0.14em] text-slate-400">{tile.label}</p>
-            <p className="mt-0.5 text-lg font-black text-slate-900">{tile.value}</p>
-            <p className="text-phx-2xs text-slate-400">{tile.sub}</p>
-          </div>
-        ))}
-      </div>
-      {data.totals.activePanel === 0 ? (
-        <p className="text-xs text-slate-400">
-          No graded doctor panel yet this month — grades arrive from iReports360 (supplied since 2026-07-24).
-        </p>
-      ) : (
-        <div className="grid gap-5 lg:grid-cols-2">
-          <div>
-            <p className="mb-2 text-phx-3xs font-black uppercase tracking-[0.16em] text-slate-400">Lowest coverage — reps to coach</p>
-            <div className="divide-y divide-slate-100 border border-slate-200">
-              {worstReps.map((rep, index) => (
-                <div key={rep.repKey} className="flex items-center gap-3 px-3 py-2">
-                  <span className="w-5 shrink-0 text-phx-xs font-black text-slate-300">#{index + 1}</span>
-                  <span className="flex-1 text-sm font-medium text-slate-700">{rep.repName}</span>
-                  <span className="w-16 text-right text-phx-2xs text-slate-400">{rep.panelSize} panel</span>
-                  <span className={`w-12 text-right text-sm font-black ${rep.coveragePct >= 80 ? "text-emerald-700" : rep.coveragePct >= 50 ? "text-amber-700" : "text-rose-700"}`}>
-                    {rep.coveragePct}%
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-          <div>
-            <p className="mb-2 text-phx-3xs font-black uppercase tracking-[0.16em] text-slate-400">Freshest lapses — doctors to win back</p>
-            {freshLapses.length === 0 ? (
-              <p className="text-xs text-slate-400">No lapsed doctors this month.</p>
-            ) : (
-              <div className="divide-y divide-slate-100 border border-slate-200">
-                {freshLapses.map((doctor) => (
-                  <div key={doctor.contactCrmId} className="flex items-center gap-3 px-3 py-2">
-                    <span className="w-5 shrink-0 text-phx-xs font-black text-rose-300">{doctor.gradeRaw}</span>
-                    <span className="flex-1 text-sm font-medium text-slate-700">{doctor.contactName}</span>
-                    <span className="w-24 text-right text-phx-2xs text-slate-400">last {doctor.lastVisitDate ?? "—"}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
 function CrmFieldWidget({ data }: { data: SfeCrmFieldAnalytics }) {
   const n = (v: number) => Math.round(v).toLocaleString("en-US");
   const classified = data.amVisits + data.pmVisits;
@@ -868,7 +797,7 @@ function SmartNavGrid({ access, variant }: { access: AccessContext; variant: "ce
 // partition that never arrives reads as a stuck load.
 const PHASE_B_SKELETON_TITLES = {
   ceo: ["Risk signals & payroll", "Company health", "Trends", "Double-Visit Intelligence", "Monthly Sales Intelligence", "Expense Snapshot", "ROI Signal", "Attendance & Leave"],
-  sfe: ["Company health", "Targets", "IMS contribution", "Weekly sales trend", "Trends", "Double-Visit Intelligence", "Monthly Sales Intelligence", "ROI Signal", "CRM field activity", "Doctor coverage & frequency"],
+  sfe: ["Company health", "Targets", "IMS contribution", "Weekly sales trend", "Trends", "Double-Visit Intelligence", "Monthly Sales Intelligence", "ROI Signal", "CRM field activity"],
 } as const;
 
 export function CeoPhaseBSkeleton({ variant = "ceo" }: { variant?: "ceo" | "sfe" }) {
@@ -915,7 +844,6 @@ export async function CeoPhaseBWidgets({
     includeCrmField: isSfe,
     includeWeeklyTrend: isSfe,
     includeSfePerformance: isSfe,
-    includeDoctorCoverage: isSfe,
   });
   const unavailableSources = Array.from(
     new Set(landing.dataUnavailable.filter((source) => !isSfe || isSfeDataSource(source))),
@@ -1171,25 +1099,10 @@ export async function CeoPhaseBWidgets({
         )}
       </Section> : null}
 
-      {/* ── Doctor coverage & frequency (SFE) ─────────────────────────────── */}
-      {isSfe ? <Section
-        title="Doctor coverage & frequency"
-        description="Current month, regular customer visits only — A doctors need 2 visits, B/C need 1; lapsed = seen in the prior 2 months, none this month."
-        action={
-          <Link
-            href="/admin/doctor-coverage"
-            className="inline-flex items-center gap-1.5 border border-white/20 bg-white/10 px-3 py-1.5 text-phx-2xs font-bold text-white hover:bg-white/20"
-          >
-            Full Board <ArrowRight className="h-3 w-3" />
-          </Link>
-        }
-      >
-        {landing.doctorCoverage ? (
-          <DoctorCoverageEmbed data={landing.doctorCoverage} />
-        ) : (
-          <UnavailableChip label="Doctor coverage" />
-        )}
-      </Section> : null}
+      {/* RETIRED 2026-08-28 (owner): a "Doctor coverage & frequency" section stood here for the
+          SFE Manager, summarising /admin/doctor-coverage. Its own description gave the measure away
+          — "A doctors need 2 visits, B/C need 1" — which is the grade norm, not the rep's planned
+          call count. Withdrawn with the board itself; do not restore it ahead of the replacement. */}
 
       {/* ── Smart Navigation Grid ─────────────────────────────────────────── */}
       <Section title="Quick Navigation" description="Every module, one click away.">

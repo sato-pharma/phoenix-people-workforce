@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 
 import {
   PortalDesktopTable,
@@ -76,10 +75,9 @@ const REP_COLS = [
  * reps by bare `canonicalHrIdKey`, Doctor Coverage by `hr:<lowercased id>`. See `repsMatching` in
  * coverage-filters.ts — the same seam, in the other direction.
  */
-function contactListHref(repKey: string, month: string) {
-  const params = new URLSearchParams({ month, rep: `hr:${repKey}` });
-  return `/admin/doctor-coverage?${params.toString()}`;
-}
+// RETIRED 2026-08-28: contactListHref() built the drill-through into /admin/doctor-coverage, which
+// the owner withdrew along with Rep Doctor Lists. The rep name is plain text until the replacement
+// board ships and this board can point at it again.
 
 export function BrickCoverageRepTable({
   month,
@@ -156,11 +154,7 @@ export function BrickCoverageRepTable({
             status={
               <span className={`text-sm font-black ${toneOf(row.salesCoveragePct).text}`}>{row.salesCoveragePct}%</span>
             }
-            title={
-              <Link className="hover:text-orange-600 hover:underline" href={contactListHref(row.repKey, month)}>
-                {row.repName}
-              </Link>
-            }
+            title={row.repName}
           >
             <PortalRecordFields
               fields={[
@@ -201,9 +195,7 @@ export function BrickCoverageRepTable({
               {table.rows.map((row) => (
                 <tr className="bg-white hover:bg-slate-50" key={row.repKey}>
                   <td className="whitespace-nowrap px-3 py-2 font-semibold text-slate-900">
-                    <Link className="hover:text-orange-600 hover:underline" href={contactListHref(row.repKey, month)}>
-                      {row.repName}
-                    </Link>
+                    {row.repName}
                     <span className="ml-2 text-phx-2xs font-normal text-slate-400">{row.areaNames}</span>
                   </td>
                   <td className="whitespace-nowrap px-3 py-2 text-slate-600">{row.line}</td>
@@ -344,11 +336,7 @@ export function BrickCoverageUnmeasuredTable({ month, rows }: { month: string; r
           <PortalRecordCard
             accent="amber"
             meta={`${row.line} · ${row.areaNames}`}
-            title={
-              <Link className="hover:text-orange-600 hover:underline" href={contactListHref(row.repKey, month)}>
-                {row.repName}
-              </Link>
-            }
+            title={row.repName}
           >
             <PortalRecordFields
               fields={[{ label: "Why not scored", value: <span className="text-amber-700">{row.reason}</span> }]}
@@ -369,9 +357,7 @@ export function BrickCoverageUnmeasuredTable({ month, rows }: { month: string; r
               {rows.map((row) => (
                 <tr className="bg-white hover:bg-slate-50" key={row.repKey}>
                   <td className="whitespace-nowrap px-3 py-2 font-semibold text-slate-900">
-                    <Link className="hover:text-orange-600 hover:underline" href={contactListHref(row.repKey, month)}>
-                      {row.repName}
-                    </Link>
+                    {row.repName}
                   </td>
                   <td className="whitespace-nowrap px-3 py-2 text-slate-600">{row.line}</td>
                   <td className="whitespace-nowrap px-3 py-2 text-slate-600">{row.areaNames}</td>

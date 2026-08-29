@@ -79,10 +79,6 @@ export function runCrmHubCardReachabilityTests() {
     superAdminHrefs.has("/admin/reps-plans"),
     "Super Admin is the ONLY role Reps Plans admits, and he cannot see the hub that lists it — he must have his own sidebar row",
   );
-  assert.ok(
-    superAdminHrefs.has("/admin/rep-doctor-lists"),
-    "Super Admin is the ONLY role Rep Doctor Lists admits, and he cannot see the hub that lists it — he must have his own sidebar row",
-  );
 
   // The exclusion that caused it is deliberate and must stay: without it he sees two "CRM" rows.
   assert.ok(
@@ -91,27 +87,25 @@ export function runCrmHubCardReachabilityTests() {
   );
 
   // ── 2. The rest of the hub: Super Admin's OWN blind spot, recorded exactly ──────────────────
-  // The two rows above fix the cards NOBODY could reach. They are not the whole story: every card
-  // in crmPageItems names Super Admin, and he sees none of them, because the hub row that renders
-  // them all excludes him. For the cards below that is a milder fault than the two above — SFE
-  // Manager and CEO still reach them through the hub, so the page is not lost to the product, only
-  // to the owner's own account. Two of the entries are asserted to be unreachable by the very
-  // comments in system-navigation.ts that describe them: /admin/doctor-coverage says "SFE Manager,
-  // CEO and Super Admin use the admin entry", and /admin/doctor-coverage-settings says "Super Admin
-  // and SFE Manager use the admin entry instead". There is no admin entry for him.
+  // The row above fixes the card NOBODY could reach. It is not the whole story: every card in
+  // crmPageItems names Super Admin, and he sees none of them, because the hub row that renders them
+  // all excludes him. For the cards below that is a milder fault — SFE Manager and CEO still reach
+  // them through the hub, so the page is not lost to the product, only to the owner's own account.
   //
   // This list is pinned EXACTLY, not as a floor. Fixing one fails this test and asks you to remove
   // it from the list; a NEW stranded card fails it too. The fix for these is a design decision the
-  // owner has to make and has not yet been asked — six more sidebar rows is not obviously better
-  // than letting him see the hub under a distinct label — so the gap is recorded here rather than
+  // owner has to make and has not yet been asked — more sidebar rows is not obviously better than
+  // letting him see the hub under a distinct label — so the gap is recorded here rather than
   // silently widened or silently closed.
+  //
+  // /admin/doctor-coverage and /admin/doctor-coverage-settings stood in this list until 2026-08-28,
+  // when the owner retired the board; their cards no longer exist, so they leave the list by being
+  // deleted rather than by being reached.
   const KNOWN_STRANDED_FROM_SUPER_ADMIN = [
     "/admin/crm-integrity",
     "/admin/double-visit-analytics",
     "/admin/double-visit-data-integrity",
-    "/admin/doctor-coverage",
     "/admin/brick-coverage",
-    "/admin/doctor-coverage-settings",
   ];
 
   const superAdminCannotReach = crmPageItems
@@ -144,8 +138,10 @@ export function runCrmHubCardReachabilityTests() {
   );
 
   // ── 3. Nobody else's route changed ───────────────────────────────────────────────────────────
-  // The two new rows are Super-Admin-only, so every other role must still reach these pages the
-  // way it always did: as cards on the hub, with no direct row of its own.
+  // The Reps Plans row is Super-Admin-only, so every other role must still reach its page the way
+  // it always did: as a card on the hub, with no direct row of its own. /admin/rep-doctor-lists is
+  // absent for a second reason since 2026-08-28 — the owner retired it, so there is no row for any
+  // role and no card either.
   for (const role of ["SFE Manager", "CEO", "National Sales Manager"] as const) {
     const hrefs = adminHrefsFor(role);
     assert.ok(hrefs.has(CRM_HUB_HREF), `${role} still reaches the CRM hub`);

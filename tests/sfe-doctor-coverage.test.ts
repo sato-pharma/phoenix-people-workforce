@@ -331,42 +331,31 @@ export function runSfeDoctorCoverageTests() {
     "CRM date strings are Cairo wall-clock — Date parsing would shift them (same rule as sfe-field-analytics)",
   );
 
-  // ── Page gates. Both twins delegate to doctor-coverage-scope.ts and keep NO role list of their
-  // own. Before 2026-08-08 each page carried its own hardcoded set and NEITHER scoped the data, so
-  // every seat that got in read all 205 agents company-wide. Pinning "no local role list" is what
-  // stops that returning — a page that re-adds one has re-created the drift. ───────────────────
-  // A "the code must not do X" assertion has to read CODE. Both pages explain the old hardcoded
-  // gate in their header comment — quoting the defect is how the next reader knows not to redo it —
-  // and an unstripped regex matches that prose and fails on the explanation itself.
-  const codeOnly = (source: string) =>
-    source
-      .split("\n")
-      .filter((line) => !line.trim().startsWith("//"))
-      .join("\n");
-
-  const adminPage = readFileSync("app/(admin)/admin/doctor-coverage/page.tsx", "utf8");
-  assert.match(adminPage, /getDoctorCoverageScope/, "the admin twin must resolve its viewer scope from the shared resolver");
-  assert.match(adminPage, /scope\.kind === "none"/, "the admin twin must gate on the resolved scope");
-  assert.match(adminPage, /redirect\(/, "the admin page must fail closed with a redirect");
-  assert.doesNotMatch(
-    codeOnly(adminPage),
-    /ALLOWED_ROLES|new Set\(\[/,
-    "the admin page must not reintroduce a local role list — doctor-coverage-roles.ts is the single source",
-  );
-  assert.doesNotMatch(
-    codeOnly(adminPage),
-    /"National Sales Manager"/,
-    "NSM on the admin page would be dead code — the (admin) layout redirects portal-mode roles first",
-  );
-
-  const portalPage = readFileSync("app/employee-portals/doctor-coverage/page.tsx", "utf8");
-  assert.match(portalPage, /getDoctorCoverageScope/, "the portal twin must resolve its viewer scope from the shared resolver");
-  assert.match(portalPage, /EmployeePortalPageShell/, "the portal twin must render inside the portal shell");
-  assert.doesNotMatch(
-    codeOnly(portalPage),
-    /access\.role !==/,
-    "the portal page must not hardcode a role comparison — that check is what limited this board to the NSM while scoping nothing",
-  );
+  // ── RETIRED 2026-08-28: both page twins are redirect stubs, and THAT is what is pinned ────────
+  // This block used to pin the page gates: both twins delegated to doctor-coverage-scope.ts and
+  // kept NO role list of their own, because before 2026-08-08 each page carried its own hardcoded
+  // set and NEITHER scoped the data, so every seat that got in read all 205 agents company-wide.
+  // The owner retired the board itself on 2026-08-28, so there is no gate left to pin — the pages
+  // redirect and render nothing. The assertion is inverted to hold the retirement in place.
+  //
+  // The service below is deliberately NOT retired: the scope resolver and the builder stay intact
+  // for the rebuild to draw on, and their own assertions in this file still run.
+  for (const page of [
+    "app/(admin)/admin/doctor-coverage/page.tsx",
+    "app/employee-portals/doctor-coverage/page.tsx",
+  ]) {
+    const source = readFileSync(page, "utf8");
+    assert.match(
+      source,
+      /export default async function \w+\(\) \{\s*redirect\("[^"]+"\);\s*\}/,
+      `${page} must be a bare redirect stub — the owner retired this board on 2026-08-28`,
+    );
+    assert.doesNotMatch(
+      source,
+      /getSfeDoctorCoverage|DoctorCoverageBoardView|loadCoverageFilterTree/,
+      `${page} must not build or render the retired board — a bookmark reaching it is the door this stub closes`,
+    );
+  }
   // The board is only reachable with a scope, so no caller can fall back to company-wide data.
   assert.match(
     serviceSource,

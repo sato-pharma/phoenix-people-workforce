@@ -544,19 +544,11 @@ export function runDoctorCoverageDistrictTests() {
     "a row with no panel must sort as MISSING, not as 0 — the hook sinks a missing value in both directions, and a plain 0 puts every rep with no list back at the top of a worst-first table",
   );
 
-  // Both twins must hand the service the viewer's identity, or the walk silently climbs to the top
-  // again for every scoped seat. The page is the only place that holds an AccessContext, so a
-  // missing argument here cannot be caught anywhere downstream.
-  for (const page of [
-    "app/(admin)/admin/doctor-coverage/page.tsx",
-    "app/employee-portals/doctor-coverage/page.tsx",
-  ]) {
-    assert.match(
-      readFileSync(page, "utf8"),
-      /viewerHrId:\s*access\.hrId/,
-      `${page} must pass the viewer's own hr id — from the live AccessContext, never from a search param`,
-    );
-  }
+  // A source pin stood here requiring both doctor-coverage pages to hand the service the viewer's
+  // identity, since the page is the only place holding an AccessContext and a missing argument
+  // cannot be caught downstream. The owner retired that board on 2026-08-28 and both pages are now
+  // redirect stubs, so there is nothing left to pin — the behavioural assertions above still cover
+  // the walk itself, and the rebuild re-pins its own pages when it ships.
 
   const boardSource = readFileSync("src/components/crm/doctor-coverage-board.tsx", "utf8");
   assert.match(boardSource, /title="Coverage by district"/, "the board must carry a district section");

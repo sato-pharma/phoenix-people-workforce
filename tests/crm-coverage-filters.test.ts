@@ -315,11 +315,12 @@ function testRestrictionNarrowsThePickerToTheViewersOwnReps() {
     "a hand-typed URL pointing at somebody else's territory is pruned away, not honoured into an empty board",
   );
 
-  // Both boards share this tree, so both pages must apply the restriction — and both must take the
-  // allow-list from the access SCOPE, never from anything the browser sent.
+  // Every page that renders this tree must apply the restriction, and must take the allow-list from
+  // the access SCOPE, never from anything the browser sent. The two doctor-coverage pages carried
+  // the same pin until 2026-08-28, when the owner retired that board and both became redirect
+  // stubs; Brick Coverage survives and still has to narrow the tree. Any page the rebuild adds
+  // belongs in this list on the day it ships.
   for (const page of [
-    "app/(admin)/admin/doctor-coverage/page.tsx",
-    "app/employee-portals/doctor-coverage/page.tsx",
     "app/(admin)/admin/brick-coverage/page.tsx",
   ]) {
     const source = readFileSync(page, "utf8");
