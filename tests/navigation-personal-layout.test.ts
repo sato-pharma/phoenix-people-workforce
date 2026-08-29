@@ -454,6 +454,88 @@ export function runNavigationPersonalLayoutTests() {
     );
   }
 
+  // ── The sidebar must out-rank the frozen chrome ───────────────────────────────────────────────
+  // The rail toggle hangs 12px PAST the sidebar's right edge (`-right-3`) and the rail tooltips are
+  // `fixed`, so both cross into the column the nav rows occupy. `position: sticky` with a z-index
+  // makes the sidebar a stacking context, which traps those children at the ASIDE's own level however
+  // high their own z-index climbs — the toggle's z-40 and the tooltip's z-[70] are each worth exactly
+  // the sidebar's number when measured from outside it. Both the sidebar and the chrome were z-30, so
+  // the tie broke on DOM order and the nav block wins that by being written second: measured in a
+  // browser, the toggle's outer 11px were painted over by the row. Comparing the two NUMBERS is the
+  // assertion, rather than pinning either literal, so a future restyle of either surface still has to
+  // keep the relationship that makes the toggle clickable.
+  {
+    const sidebarSource = readFileSync("src/components/layout/sidebar.tsx", "utf8");
+    const shellSource = readFileSync("src/components/layout/app-shell.tsx", "utf8");
+
+    const asideZ = /"sticky top-0 z-(\d+) hidden h-screen/.exec(sidebarSource);
+    assert.ok(asideZ, "the desktop sidebar must still be a sticky, z-indexed <aside>");
+    const chromeZ = /<div className="sticky top-0 z-(\d+)">/.exec(shellSource);
+    assert.ok(chromeZ, "AppShell must still pin its chrome in a sticky, z-indexed container");
+    assert.ok(
+      Number(asideZ[1]) > Number(chromeZ[1]),
+      `the sidebar (z-${asideZ[1]}) must stack ABOVE the frozen chrome (z-${chromeZ[1]}). At an equal or ` +
+        `lower number the nav rows paint over the rail toggle's 12px overhang, because they are written ` +
+        `later in the DOM and an equal z-index breaks on document order.`,
+    );
+
+    // Raising the sidebar must not bury the two surfaces that have to cover it.
+    assert.ok(
+      sidebarSource.includes("fixed inset-0 z-50"),
+      "the mobile drawer must stay above the sidebar it replaces",
+    );
+    const palette = /z-\[(\d+)\]/.exec(readFileSync("src/components/layout/command-palette.tsx", "utf8"));
+    assert.ok(
+      palette && Number(palette[1]) > Number(asideZ[1]),
+      "the command palette must still open above the sidebar",
+    );
+  }
+
+  // ── The employee portal's rows are untouched ──────────────────────────────────────────────────
+  // Owner, 2026-08-29: "DONOT TOUCH THE EMPLOYEE PORTAL I AM TALKING ON ADMIN SHELL". Both rows are
+  // SHARED components, so every visual change had to land in the `dark` branch — `usesAdminChrome`,
+  // which is admin and HR. This pins that split from both ends: the light class strings carry none of
+  // the new utilities, and the scroll-shadow CSS is scoped to `.admin-shell` rather than sitting on
+  // the bare `.phoenix-navrow-scroll` the portal's rows also carry.
+  {
+    const rows = readFileSync("src/components/layout/horizontal-nav-rows.tsx", "utf8");
+    // Pinned VERBATIM rather than by slicing out a "light branch" and scanning it for banned
+    // utilities. Slicing fails OPEN on exactly the change it exists to catch: the slice has to be
+    // anchored on one of these strings, so editing that string makes the anchor miss, the slice
+    // collapse to nothing, and the scan pass over an empty haystack. A literal check cannot fail
+    // that way round — any edit to a portal class string breaks its own match.
+    for (const shipped of [
+      '"bg-phx-accent-soft text-phx-accent"',
+      '"text-phx-ink-soft hover:bg-phx-paper hover:text-phx-ink"',
+      '"border-phx-line bg-white"',
+      '"border-phx-line bg-white/95"',
+    ]) {
+      assert.ok(
+        rows.includes(shipped),
+        `the employee portal's nav-row classes must stay exactly as shipped — ${shipped} is no longer present verbatim`,
+      );
+    }
+
+    const rowCss = readFileSync("app/globals.css", "utf8");
+    assert.ok(
+      rowCss.includes(".admin-shell .phoenix-navrow-scroll"),
+      "the overflow affordance must exist — a row with a hidden scrollbar and no edge shadow gives no sign it scrolls",
+    );
+    const bare = /\n\.phoenix-navrow-scroll \{([^}]*)\}/.exec(rowCss);
+    assert.ok(bare, "the unscoped .phoenix-navrow-scroll rule must still exist for the hidden scrollbar");
+    assert.ok(
+      !bare[1].includes("background"),
+      "the scroll shadows must NOT sit on the unscoped .phoenix-navrow-scroll — the portal's rows carry that class too",
+    );
+
+    // The arrow-key walk finds its tabs by attribute. Rendering one name and querying another leaves
+    // keyboard navigation silently dead, with nothing visible to notice: the row still looks right.
+    assert.ok(
+      rows.includes('data-navrow-tab=""') && rows.includes("a[data-navrow-tab]"),
+      "the arrow-key walk must query the same attribute the tabs render",
+    );
+  }
+
   // ── The storage key is always lowercased ────────────────────────────────────────────────────
   // hr_id casing is inconsistent in this database — a raw .eq() once hid 28% of reps' own orders.
   {

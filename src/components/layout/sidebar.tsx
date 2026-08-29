@@ -1367,8 +1367,19 @@ export function Sidebar({
 
   return (
     <aside
+      // z-40, ABOVE the shell's frozen chrome at z-30. Not cosmetic: the rail toggle below hangs
+      // 12px past this element's right edge (`-right-3`) and the rail tooltips are `fixed`, so both
+      // cross into the column the nav rows occupy. `position: sticky` with a z-index creates a
+      // stacking context, which traps those children at the ASIDE's level however high their own
+      // z-index climbs — the toggle's z-40 and the tooltip's z-[70] both resolve to 30 from outside.
+      // At an equal 30 the tie broke on DOM order, and the nav block is written after the sidebar,
+      // so it won: measured in a browser, the toggle's outer 11px were painted over by the row.
+      // Raising the whole aside is what lifts its children with it. Safe in the other direction
+      // because the two never overlap anywhere else — the sidebar ends exactly where the nav column
+      // begins — and the surfaces that must still cover the sidebar are all above 40: the mobile
+      // drawer at z-50 and the command palette at z-[60].
       className={cn(
-        "sticky top-0 z-30 hidden h-screen shrink-0 flex-col lg:flex",
+        "sticky top-0 z-40 hidden h-screen shrink-0 flex-col lg:flex",
         transitionsReady && "transition-[width] duration-200",
         isAdmin
           ? cn("border-r text-slate-100", ADMIN_SIDEBAR_BORDER, ADMIN_SIDEBAR_BG)

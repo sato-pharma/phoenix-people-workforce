@@ -50,7 +50,13 @@
 
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { createContext, useContext, useMemo, type ReactNode } from "react";
+import {
+  createContext,
+  useContext,
+  useMemo,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type ReactNode,
+} from "react";
 
 import { ApprovalNavBadge } from "@/components/layout/nav-badge";
 import { NavRowAddButton } from "@/components/layout/nav-row-add-button";
@@ -263,8 +269,56 @@ function NavRowStrip({
   // than a "+" appearing on all 243 pages for everyone.
   if (items.length === 0 && !keepWhenEmpty) return null;
 
+  // Bring the LIT tab into view when the row is wider than the space it has. A ref callback rather
+  // than an effect, for two reasons: `setState` inside `useEffect` is a lint error in this repo, and
+  // this needs no state at all — the callback fires with the node the moment it is in the DOM, which
+  // is exactly when the measurement becomes possible. It re-fires on navigation for free, because a
+  // DIFFERENT node receives the ref when the active href changes; nothing has to watch the pathname.
+  //
+  // It moves the SCROLLER and never the page. `scrollIntoView` would walk up to the document and
+  // scroll the whole shell to reach a tab sitting inside frozen chrome, which is the one thing this
+  // bar must never do. It also returns early when the tab is already fully visible, so it cannot
+  // fight a viewer who has just dragged the row sideways by hand.
+  const centreActiveTab = (node: HTMLAnchorElement | null) => {
+    if (!node) return;
+    const scroller = node.parentElement;
+    if (!scroller) return;
+    const overflow = scroller.scrollWidth - scroller.clientWidth;
+    if (overflow <= 0) return;
+    const left = node.offsetLeft;
+    if (left >= scroller.scrollLeft && left + node.offsetWidth <= scroller.scrollLeft + scroller.clientWidth) {
+      return;
+    }
+    const centred = left - (scroller.clientWidth - node.offsetWidth) / 2;
+    scroller.scrollLeft = Math.max(0, Math.min(centred, overflow));
+  };
+
+  // Arrow keys walk the row; Home and End jump to its ends. Without this a tab that has scrolled out
+  // of sight is unreachable without a mouse — the row is a horizontal strip with a hidden scrollbar,
+  // so there is nothing else to grab. Focus MOVES and nothing is activated, so it can never navigate
+  // by accident. The tabs are read from the DOM at press time rather than from `items`, which keeps
+  // it correct whatever else a host decides to render into the row.
+  const moveFocus = (event: ReactKeyboardEvent<HTMLElement>) => {
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight" && event.key !== "Home" && event.key !== "End") {
+      return;
+    }
+    const tabs = Array.from(event.currentTarget.querySelectorAll<HTMLAnchorElement>("a[data-navrow-tab]"));
+    const current = tabs.indexOf(document.activeElement as HTMLAnchorElement);
+    if (tabs.length === 0 || current === -1) return;
+    event.preventDefault();
+    const next =
+      event.key === "Home"
+        ? 0
+        : event.key === "End"
+          ? tabs.length - 1
+          : event.key === "ArrowLeft"
+            ? (current - 1 + tabs.length) % tabs.length
+            : (current + 1) % tabs.length;
+    tabs[next]?.focus();
+  };
+
   return (
-    <nav aria-label={ariaLabel} className={className}>
+    <nav aria-label={ariaLabel} className={className} onKeyDown={moveFocus}>
       {/* Two nested flex rows, not one. The tabs scroll sideways when they outgrow the viewport,
           but `trailing` has to sit OUTSIDE that scroller: a container with `overflow-x: auto`
           resolves its `overflow-y` to `auto` as well, so the "+" panel would be clipped by the
@@ -280,18 +334,40 @@ function NavRowStrip({
                 aria-current={active ? "page" : undefined}
                 className={cn(
                   "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-phx-sm font-semibold tracking-[-0.01em] transition-colors",
+                  // EVERY visual change here sits in the `dark` branch, which is `usesAdminChrome`
+                  // — admin and HR. The light strings below are the employee portal's and are left
+                  // byte-identical on purpose (owner, 2026-08-29: "DONOT TOUCH THE EMPLOYEE PORTAL
+                  // I AM TALKING ON ADMIN SHELL"). The behaviour added above — arrow-key focus and
+                  // centring the lit tab — is shared, because neither moves a pixel at rest.
+                  //
+                  // The active tab was a flat grey chip, which on a black bar reads as a hover
+                  // state rather than a selection. It now carries the warm accent on a tinted
+                  // ground with a hairline inset ring, so "where am I" survives a row of twelve
+                  // tabs. `transition-[…]` replaces the base `transition-colors` through
+                  // tailwind-merge so the ring animates too; the light branch keeps the original.
                   dark
                     ? active
-                      ? "bg-[#1a1a1a] text-[#F8B56B]"
-                      : "text-[#D4DDE8] hover:bg-[#141414] hover:text-[#F8B56B]"
+                      ? "group relative bg-[#17120c] text-[#F8B56B] shadow-[inset_0_0_0_1px_#33261a,inset_0_1px_0_rgba(248,181,107,0.12)] transition-[background-color,color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#F8B56B]/70"
+                      : "group relative text-[#C9D4E2] hover:bg-[#131313] hover:text-[#F0D5B0] hover:shadow-[inset_0_0_0_1px_#1f1f1f] transition-[background-color,color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#F8B56B]/70"
                     : active
                       ? "bg-phx-accent-soft text-phx-accent"
                       : "text-phx-ink-soft hover:bg-phx-paper hover:text-phx-ink",
                 )}
+                data-navrow-tab=""
                 href={item.href}
                 key={item.href}
+                // Only the ACTIVE tab carries the ref, so exactly one node per row asks to be
+                // centred and the callback re-fires when that identity changes. See above.
+                ref={active ? centreActiveTab : undefined}
               >
-                <Icon aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
+                <Icon
+                  aria-hidden="true"
+                  className={cn(
+                    "h-3.5 w-3.5 shrink-0",
+                    // An idle icon at full strength competes with its own label. Dark only.
+                    dark && !active && "opacity-70 transition-opacity group-hover:opacity-100",
+                  )}
+                />
                 <span>{item.label}</span>
                 {/* The same pending count the sidebar shows on the same page, from the same
                     polling client — a tab pinned up here must not be the one place a queue of 54
@@ -334,7 +410,10 @@ export function UpperNavRow({ className }: { className?: string } = {}) {
         className ??
           cn(
             "border-b px-3 py-1.5 sm:px-6",
-            dark ? "border-[#1a1a1a] bg-[#000000]" : "border-phx-line bg-white",
+            // `phx-navrow-upper` only tells the stylesheet what colour this row's ground is, so the
+            // scroll-shadow gradients in app/globals.css can mask themselves against it. It is not
+            // a `--` marker of the retired in-page/fallback kind and nothing keys a `:has()` on it.
+            dark ? "phx-navrow-upper border-[#1c1c1c] bg-[#000000]" : "border-phx-line bg-white",
           ),
       )}
       dark={dark}
@@ -379,7 +458,13 @@ export function LowerNavRow({ className }: { className?: string } = {}) {
         className ??
           cn(
             "border-b px-3 py-1.5 sm:px-6",
-            dark ? "border-[#1a1a1a] bg-[#050505]" : "border-phx-line bg-white/95",
+            // #050505 against the upper row's #000000 was a 5/255 step — invisible, so the two rows
+            // read as one tall slab and neither looked deliberate. #080808 plus a 1px top highlight
+            // separates them at a glance while staying unmistakably black. Same masking role for
+            // `phx-navrow-lower` as its sibling above.
+            dark
+              ? "phx-navrow-lower border-[#1c1c1c] bg-[#080808] shadow-[inset_0_1px_0_rgba(255,255,255,0.035)]"
+              : "border-phx-line bg-white/95",
           ),
       )}
       dark={dark}

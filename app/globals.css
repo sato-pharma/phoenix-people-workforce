@@ -341,6 +341,54 @@ body {
   width: 0;
 }
 
+/* ── Does this row have more tabs off-screen? ────────────────────────────────
+   Hiding the scrollbar above costs the row the only signal it had. Tabs are cut
+   flush at the container edge, which reads as "that is the last one" rather than
+   "there are six more" — and with the scrollbar gone there is nothing to drag,
+   so a viewer with no mouse wheel cannot even discover the rest. (The arrow-key
+   walk in horizontal-nav-rows.tsx is the other half of that answer.)
+
+   These are the four-layer scroll shadows: two gradients painted in the row's
+   OWN ground colour that travel WITH the content (`local`), and two accent
+   glows fixed to the container (`scroll`). At either end the local layer sits
+   exactly over the glow beneath it and hides it, so each side appears only when
+   there is genuinely something to scroll to. No JavaScript, no state, no
+   measurement — which matters here because `setState` inside `useEffect` is a
+   lint error in this repo, and a ResizeObserver would be a lot of machinery for
+   a hint.
+
+   ADMIN CHROME ONLY (`.admin-shell`). The employee portal mounts the same rows
+   and keeps its bar exactly as shipped — owner, 2026-08-29. The `--` free class
+   names are deliberate: the retired `.phx-navrow--inpage` / `--fallback` markers
+   are gone for good and nothing here keys a `:has()` on anything. */
+.admin-shell .phx-navrow-upper {
+  --phx-navrow-ground: #000000;
+}
+
+.admin-shell .phx-navrow-lower {
+  --phx-navrow-ground: #080808;
+}
+
+.admin-shell .phoenix-navrow-scroll {
+  background-attachment: local, local, scroll, scroll;
+  background-image:
+    linear-gradient(to right, var(--phx-navrow-ground, #000000), rgba(0, 0, 0, 0)),
+    linear-gradient(to left, var(--phx-navrow-ground, #000000), rgba(0, 0, 0, 0)),
+    radial-gradient(farthest-side at 0 50%, rgba(248, 181, 107, 0.22), rgba(248, 181, 107, 0)),
+    radial-gradient(farthest-side at 100% 50%, rgba(248, 181, 107, 0.22), rgba(248, 181, 107, 0));
+  background-position:
+    0 0,
+    100% 0,
+    0 0,
+    100% 0;
+  background-repeat: no-repeat;
+  background-size:
+    32px 100%,
+    32px 100%,
+    14px 100%,
+    14px 100%;
+}
+
 /* Page (document) scrollbar on admin pages — mirrors the sidebar scrollbar exactly
    (thin slate thumb, transparent track, orange on hover). Scoped with :has so the
    employee portal and login pages keep their default browser scrollbar. */
