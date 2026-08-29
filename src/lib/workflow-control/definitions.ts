@@ -961,10 +961,16 @@ export const WORKFLOW_CONTROL_DOMAINS: readonly WorkflowControlDomain[] = [
           },
         ],
         // Approval-step rows ARE written consistently — measured in production 2026-08-29: 123 rows
-        // covering all 23 requests, none missing. That half of this gap was stale and has been removed.
-        // The finance half is real and still open: 3 of the 4 approved requests have no finance
-        // requirement row, so an approval does not reliably raise the invoice/deadline obligation.
-        gaps: ["Finance-hold transitions are not implemented: approving a request does not reliably create its finance requirement (invoice / deadline)."],
+        // covering all 23 requests, none missing.
+        //
+        // The "approval does not create the finance requirement" half is FIXED — migration
+        // 20260829180000 makes the decision RPC insert the row in the same transaction as the
+        // approval, with the deadline read from the finance_invoice_deadline_days control setting.
+        // What remains is the other end of that obligation: the deadline is recorded and then
+        // nothing ever acts on it. invoice_status is only ever written as 'pending' (at approval)
+        // or 'submitted' (when evidence is uploaded) — no job, query or view moves a requirement to
+        // 'overdue' once its date passes, even though the status constraint has always allowed it.
+        gaps: ["Nothing marks a finance requirement overdue: the invoice deadline is recorded at approval, but no job or view ever moves invoice_status from 'pending' to 'overdue' once that date passes."],
       },
       {
         key: "notifications",
