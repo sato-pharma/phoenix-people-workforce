@@ -216,6 +216,7 @@ policy):
    | Check slug | Cron expression | Suggested grace | What actually pings it |
    |---|---|---|---|
    | `phoenix-notify-daily` | `36 6 * * *` | 1h | cron-job.org job `8200909` |
+   | `phoenix-marketing-field-capture-nudge` | `50 6 * * *` | 1h | cron-job.org — job created after the deploy that ships the route, not before (a check auto-provisions on its first ping, so scheduling it early would only produce red) |
    | `phoenix-process-notifications` | `*/5 * * * *` | 10m | cron-job.org job `8200914` |
    | `phoenix-background-jobs` | `0 3 * * 5` | 2h | cron-job.org job `8200915` |
    | `phoenix-inbound-intake` | `*/2 * * * *` | 10m | cron-job.org job `8200920` |

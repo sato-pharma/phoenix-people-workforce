@@ -124,6 +124,7 @@ table. Times are Cairo, as the account is set to `Africa/Cairo` throughout.
 | Job | Schedule (Cairo) | Endpoint | Purpose |
 |---|---|---|---|
 | `phoenix-notify-daily` | 6:36 AM daily | `/api/notifications/daily` | Birthdays, contract renewals, vacation/marketing/outstation SLA, recruitment, resignation SLA, weekly-plan drift, Telegram HR digest |
+| `phoenix-marketing-field-capture-nudge` | 6:50 AM daily | `/api/cron/marketing-field-capture-nudge` | Tells each rep which of their marketing customers still show a validated status with no field capture behind them (**new 2026-08-29** — split off `phoenix-notify-daily`, which it had pushed past the 30 s cap) |
 | `phoenix-process-notifications` | every 5 min | `/api/notifications/process?limit=50` | Drains the notification outbox, probation reminders, deferred/Telegram retries |
 | `phoenix-inbound-intake` | every 2 min | `/api/cron/inbound-intake` | Inbound mail/message intake |
 | `phoenix-recruitment-email-intake` | every 10 min, at :04 | `/api/cron/recruitment-email-intake` | Pulls CVs out of the recruitment mailbox |
@@ -161,6 +162,18 @@ the work (routes carry `maxDuration = 300`, and `withDeadMansSwitch` pings at th
 Healthchecks.io still sees success). `phoenix-notify-daily` logs a 30 s timeout every morning and is
 **not** failing. Never diagnose a cron from the cron-job.org status alone — check
 `ireports360_visits_sync_runs` or the outbox instead.
+
+**Why `phoenix-notify-daily` crossed that cap, and what was done about it (2026-08-29).** It had
+been a 5-9 second job all month. The marketing field-capture nudge joined the bundle in #2360 at
+24 Aug 00:23 Cairo; the 06:36 run that same morning took 28.8 s, and by 29 Aug it was 34.1 s —
+two consecutive red mornings. Those failures were false: Healthchecks recorded `success` on all
+36 pings from 26 July to 29 August, and the daily route pings **last**, after every sub-job
+resolves. The cost was never a missed notification; it was the alarm, because a permanently red
+job is one nobody reads — which is exactly how the outbox drain hid for 13 days behind a green
+HTTP 200. The nudge now has its own route and its own clock
+(`/api/cron/marketing-field-capture-nudge`), putting the daily run back under the cap. **Prefer
+this to tolerating the red:** "the status lies" is true, and still a worse place to be than a job
+whose red means something.
 
 ## Environment Variables
 
