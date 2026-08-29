@@ -1,8 +1,8 @@
-import { timingSafeEqual } from "crypto";
 import { NextResponse } from "next/server";
 
 import { routeAttendancePunch } from "@/lib/attendance/metrics";
-import { ApiError, toApiError, unauthorizedError, validationError } from "@/lib/http/api-errors";
+import { toApiError, unauthorizedError, validationError } from "@/lib/http/api-errors";
+import { requiredTokenAuthorized } from "@/lib/security/cron-auth";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
@@ -100,21 +100,6 @@ function validatePunch(input: unknown, index: number): ValidatedPunch {
     raw_payload: rawPayload ?? {},
     source_run_id: compact(field(raw, "source_run_id", "sourceRunId")),
   };
-}
-
-function isAuthorized(request: Request) {
-  const expected = process.env.ATTENDANCE_AGENT_TOKEN?.trim();
-  if (!expected) {
-    throw new ApiError(500, "attendance_agent_token_missing", "ATTENDANCE_AGENT_TOKEN is required.");
-  }
-
-  const authorization = request.headers.get("authorization") ?? "";
-  const actual = authorization.startsWith("Bearer ") ? authorization.slice("Bearer ".length).trim() : "";
-  if (!actual) return false;
-
-  const expectedBuffer = Buffer.from(expected);
-  const actualBuffer = Buffer.from(actual);
-  return expectedBuffer.length === actualBuffer.length && timingSafeEqual(expectedBuffer, actualBuffer);
 }
 
 function mapKey(input: Pick<ValidatedPunch, "device_id" | "device_user_id">) {
@@ -353,7 +338,15 @@ async function insertPunches(punches: ValidatedPunch[]) {
 
 export async function POST(request: Request) {
   try {
-    if (!isAuthorized(request)) {
+    // No dev bypass, deliberately: an unset ATTENDANCE_AGENT_TOKEN is a misconfiguration, not an
+    // invitation, so requiredTokenAuthorized throws 500 rather than returning false.
+    const authorized = requiredTokenAuthorized(
+      request,
+      process.env.ATTENDANCE_AGENT_TOKEN,
+      "attendance_agent_token_missing",
+      "ATTENDANCE_AGENT_TOKEN is required.",
+    );
+    if (!authorized) {
       throw unauthorizedError("Attendance agent token is invalid.");
     }
 

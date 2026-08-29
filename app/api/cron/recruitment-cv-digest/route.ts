@@ -1,27 +1,16 @@
 import { NextResponse } from "next/server";
 
-import { logCronUnauthorized, logError, logInfo } from "@/lib/observability/log";
-import { bearerSecretMatches } from "@/lib/security/constant-time";
+import { logError, logInfo } from "@/lib/observability/log";
 import { sendCvIntakeDigest6h } from "@/lib/recruitment/inbound/cv-intake-digest-6h";
+import { assertCronAuthorized } from "@/lib/security/cron-auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-function isAuthorized(request: Request) {
-  const secret = process.env.CRON_SECRET;
-  // An unset CRON_SECRET may ONLY be bypassed on a real developer machine. Anything less
-  // would leave this route callable unauthenticated wherever CRON_SECRET is unset —
-  // including staging, which is a 1:1 clone of production data.
-  if (!secret) return process.env.NODE_ENV === "development";
-  return bearerSecretMatches(request.headers.get("authorization"), secret);
-}
-
 export async function GET(request: Request) {
-  if (!isAuthorized(request)) {
-    logCronUnauthorized("cron/recruitment-cv-digest", request);
-    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  }
+  const denied = assertCronAuthorized(request, "cron/recruitment-cv-digest");
+  if (denied) return denied;
 
   try {
     const result = await sendCvIntakeDigest6h();

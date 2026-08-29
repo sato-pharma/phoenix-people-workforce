@@ -140,7 +140,9 @@ export function runDirectOrdersHeldLaneTests() {
     new URL("../app/api/cron/direct-orders-expire-held/route.ts", import.meta.url),
     "utf8",
   );
-  assert.match(cronSource, /process\.env\.CRON_SECRET/, "the expiry sweep must be CRON_SECRET-guarded");
+  // Repointed 2026-08-29 (A2): CRON_SECRET is now read inside assertCronAuthorized rather than by
+  // the route, so the guard call is what proves the sweep is not an open endpoint.
+  assert.match(cronSource, /assertCronAuthorized/, "the expiry sweep must be CRON_SECRET-guarded");
   assert.match(cronSource, /expireStaleHeldDirectOrders\(systemAccessContext\)/, "the sweep runs as the system context");
 
   // ── The Held Desk notice (spec C3): To the requester BY NAME, CC SFE + manager + CEO ────

@@ -3,22 +3,13 @@ import { NextResponse } from "next/server";
 import { systemAccessContext } from "@/lib/auth/permissions";
 import { expireStaleHeldDirectOrders } from "@/lib/direct-orders/service";
 import { withDeadMansSwitch } from "@/lib/observability/dead-mans-switch";
-import { logCronUnauthorized, logError } from "@/lib/observability/log";
+import { logError } from "@/lib/observability/log";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
-import { bearerSecretMatches } from "@/lib/security/constant-time";
+import { assertCronAuthorized } from "@/lib/security/cron-auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
-
-function isAuthorized(request: Request) {
-  const secret = process.env.CRON_SECRET;
-  // An unset CRON_SECRET may ONLY be bypassed on a real developer machine. Anything less
-  // would leave this route callable unauthenticated wherever CRON_SECRET is unset —
-  // including staging, which is a 1:1 clone of production data.
-  if (!secret) return process.env.NODE_ENV === "development";
-  return bearerSecretMatches(request.headers.get("authorization"), secret);
-}
 
 /**
  * The held-order 14-day clock (spec B6 — docs/specs/direct-orders-v2.md).
@@ -39,10 +30,8 @@ function isAuthorized(request: Request) {
  * workflow cannot report on: the request never reaching this handler at all.
  */
 export async function GET(request: Request) {
-  if (!isAuthorized(request)) {
-    logCronUnauthorized("cron/direct-orders-expire-held", request);
-    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  }
+  const denied = assertCronAuthorized(request, "cron/direct-orders-expire-held");
+  if (denied) return denied;
   try {
     const result = await withDeadMansSwitch("phoenix-direct-orders-expire-held", () =>
       expireStaleHeldDirectOrders(systemAccessContext),

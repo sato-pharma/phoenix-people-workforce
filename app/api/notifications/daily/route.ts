@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { logCronUnauthorized, logError, logInfo } from "@/lib/observability/log";
+import { logError, logInfo } from "@/lib/observability/log";
 import { pingDeadMansSwitch } from "@/lib/observability/dead-mans-switch";
 
 import { purgeOldActivityEvents } from "@/lib/activity/service";
@@ -25,27 +25,19 @@ import { pruneExpiredRateLimitBuckets } from "@/lib/security/api-rate-limit";
 import { pruneOldAppErrorEvents } from "@/lib/error-monitor/service";
 import { runSosMonthlyClosingReportCheck } from "@/lib/sales/sos-report-delivery";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
-import { bearerSecretMatches } from "@/lib/security/constant-time";
+import { assertCronAuthorized } from "@/lib/security/cron-auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
-function isAuthorized(request: Request) {
-  const secret = process.env.CRON_SECRET;
-  // An unset CRON_SECRET may ONLY be bypassed on a real developer machine. Anything less
-  // would leave this route callable unauthenticated wherever CRON_SECRET is unset —
-  // including staging, which is a 1:1 clone of production data.
-  if (!secret) return process.env.NODE_ENV === "development";
-  return bearerSecretMatches(request.headers.get("authorization"), secret);
-}
-
 type DailyJobFailure = { job: string; message: string };
 
 async function runDailyNotifications(request: Request) {
-  if (!isAuthorized(request)) {
-    return NextResponse.json({ error: "unauthorized", message: "Daily notification run is not authorized." }, { status: 401 });
-  }
+  const denied = assertCronAuthorized(request, "notifications/daily", {
+    message: "Daily notification run is not authorized.",
+  });
+  if (denied) return denied;
 
   // Truthful reporting for the 22 sub-jobs below (owner report 2026-07-25: "it says success even
   // when it's broken"). Each job keeps its own .catch() and fallback so one failure can never abort
@@ -309,10 +301,10 @@ async function runDailyNotifications(request: Request) {
 }
 
 export async function GET(request: Request) {
-  if (!isAuthorized(request)) {
-    logCronUnauthorized("notifications/daily", request);
-    return NextResponse.json({ error: "unauthorized", message: "Daily notification run is not authorized." }, { status: 401 });
-  }
+  const denied = assertCronAuthorized(request, "notifications/daily", {
+    message: "Daily notification run is not authorized.",
+  });
+  if (denied) return denied;
   try {
     return await runDailyNotifications(request);
   } catch (error) {

@@ -1,23 +1,14 @@
 import { NextResponse } from "next/server";
 
-import { logCronUnauthorized, logError } from "@/lib/observability/log";
+import { logError } from "@/lib/observability/log";
 import { withDeadMansSwitch } from "@/lib/observability/dead-mans-switch";
 import { pingBrevoApiKey } from "@/lib/email/brevo-keepalive";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
-import { bearerSecretMatches } from "@/lib/security/constant-time";
+import { assertCronAuthorized } from "@/lib/security/cron-auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
-
-function isAuthorized(request: Request) {
-  const secret = process.env.CRON_SECRET;
-  // An unset CRON_SECRET may ONLY be bypassed on a real developer machine. Anything less
-  // would leave this route callable unauthenticated wherever CRON_SECRET is unset —
-  // including staging, which is a 1:1 clone of production data.
-  if (!secret) return process.env.NODE_ENV === "development";
-  return bearerSecretMatches(request.headers.get("authorization"), secret);
-}
 
 /**
  * Resets Brevo's 90-day inactivity expiry on the email FAILOVER key, and doubles as a liveness
@@ -34,10 +25,8 @@ function isAuthorized(request: Request) {
  * BREVO_API_KEY at all) is a legitimate unconfigured state and stays green.
  */
 export async function GET(request: Request) {
-  if (!isAuthorized(request)) {
-    logCronUnauthorized("cron/brevo-keepalive", request);
-    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  }
+  const denied = assertCronAuthorized(request, "cron/brevo-keepalive");
+  if (denied) return denied;
 
   try {
     const result = await withDeadMansSwitch("phoenix-brevo-keepalive", async () => {

@@ -2,8 +2,8 @@ import { NextResponse } from "next/server";
 
 import { rotateMarketingSheetToken } from "@/lib/marketing-requests/sheet-token-rotation";
 import { pingDeadMansSwitch } from "@/lib/observability/dead-mans-switch";
-import { logCronUnauthorized, logError } from "@/lib/observability/log";
-import { bearerSecretMatches } from "@/lib/security/constant-time";
+import { logError } from "@/lib/observability/log";
+import { assertCronAuthorized } from "@/lib/security/cron-auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -20,15 +20,6 @@ export const maxDuration = 60;
  * day the exposure that motivated this rotation path was found, and never rotated again.
  */
 const JOB_SLUG = "phoenix-marketing-requests-rotate-sheet-token";
-
-function isAuthorized(request: Request) {
-  const secret = process.env.CRON_SECRET;
-  // An unset CRON_SECRET may ONLY be bypassed on a real developer machine. Anything less
-  // would leave this route callable unauthenticated wherever CRON_SECRET is unset —
-  // including staging, which is a 1:1 clone of production data.
-  if (!secret) return process.env.NODE_ENV === "development";
-  return bearerSecretMatches(request.headers.get("authorization"), secret);
-}
 
 /**
  * Rotate the marketing live sheet's feed token — the counterpart to
@@ -59,10 +50,8 @@ function isAuthorized(request: Request) {
  * evidence photographs, and it is the one that was found publicly readable on 2026-08-05.
  */
 export async function GET(request: Request) {
-  if (!isAuthorized(request)) {
-    logCronUnauthorized("cron/marketing-requests-rotate-sheet-token", request);
-    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  }
+  const denied = assertCronAuthorized(request, "cron/marketing-requests-rotate-sheet-token");
+  if (denied) return denied;
   try {
     const result = await rotateMarketingSheetToken();
     await pingDeadMansSwitch(
