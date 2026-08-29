@@ -65,6 +65,17 @@ export function runWorkflowControlTests() {
     assert.ok(domainKeys.includes(required), `domain "${required}" exists`);
   }
 
+  // Marketing Requests is LIVE in production — 23 real requests as of 2026-08-29, every one submitted,
+  // 4 approved and 5 rejected. It sat badged "Draft" + Beta from the day the file was written because
+  // nobody revisited the label once the module went into service. Both badges tell a Super Admin the
+  // module is a trial whose numbers should not be trusted, which is the opposite of true. The loop
+  // further down already stops it claiming "Partially implemented" (reserved for offer-hiring); this
+  // pins the other end, so the label cannot quietly rot back to Draft or Beta while the module is live.
+  const marketingDomain = getWorkflowDomain("marketing");
+  assert.ok(marketingDomain, "marketing domain resolves");
+  assert.notEqual(marketingDomain?.status, "Draft", "Marketing Requests is live in production — it must not be badged Draft");
+  assert.notEqual(marketingDomain?.beta, true, "Marketing Requests is live in production — it must not be flagged Beta");
+
   // Fragmented technical workflows are NOT top-level cards anymore.
   for (const notTopLevel of ["expense", "outstation", "vacation", "probation", "contract", "resignation", "payslip", "payroll-payslip", "offers"]) {
     assert.equal(domainKeys.includes(notTopLevel), false, `"${notTopLevel}" must NOT be a top-level domain`);

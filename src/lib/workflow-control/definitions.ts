@@ -892,15 +892,24 @@ export const WORKFLOW_CONTROL_DOMAINS: readonly WorkflowControlDomain[] = [
   },
 
   // ===========================================================================
-  // 7. Marketing Requests (Beta)
+  // 7. Marketing Requests
   // ===========================================================================
   {
     key: "marketing",
     name: "Marketing Requests",
-    status: "Draft",
-    beta: true,
+    // LIVE, not "Draft". Production held 23 real requests on 2026-08-29 — created from 2026-08-02 and
+    // still arriving that day, every one of them submitted, 4 approved and 5 rejected. It carried
+    // "Draft" + beta only because nobody revisited the label once the module went into service, and a
+    // Draft/Beta badge on a live, money-adjacent approval flow tells a Super Admin not to trust figures
+    // he should be trusting.
+    //
+    // NOT "Partially implemented": that status is reserved for offer-hiring, whose subflows are
+    // specification only, and the test below pins that no other domain may claim it. Every marketing
+    // subflow really runs. The one incomplete behaviour is the finance leg, and that belongs in the
+    // approval subflow's `gaps` — where the UI already surfaces it per subflow — not in the domain badge.
+    status: "Active",
     riskLevel: "High",
-    summary: "HCP/pharmacy marketing requests with validation and approval (Beta).",
+    summary: "HCP/pharmacy marketing requests with validation and approval. Live and carrying real requests.",
     modulesAffected: n("marketing_requests", "marketing_request_approval_steps", "marketing_request_finance_requirements"),
     subflows: [
       {
@@ -956,7 +965,11 @@ export const WORKFLOW_CONTROL_DOMAINS: readonly WorkflowControlDomain[] = [
             sideEffects: "On approval creates the finance requirement (invoice/deadline).",
           },
         ],
-        gaps: ["Approval-step rows are not consistently written; finance-hold transitions are not implemented."],
+        // Approval-step rows ARE written consistently — measured in production 2026-08-29: 123 rows
+        // covering all 23 requests, none missing. That half of this gap was stale and has been removed.
+        // The finance half is real and still open: 3 of the 4 approved requests have no finance
+        // requirement row, so an approval does not reliably raise the invoice/deadline obligation.
+        gaps: ["Finance-hold transitions are not implemented: approving a request does not reliably create its finance requirement (invoice / deadline)."],
       },
       {
         key: "notifications",
