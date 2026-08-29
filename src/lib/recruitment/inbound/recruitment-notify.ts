@@ -260,3 +260,63 @@ export async function notifyInboundIntakeSpike(
     recipientHrIds,
   );
 }
+
+/**
+ * Tells Talent Acquisition that a real person messaged the advertised WhatsApp line and did NOT
+ * attach a CV — the arrival that produced no signal at all until 2026-08-29.
+ *
+ * This is the notification the owner asked for in his own words: "I must be able to know when I
+ * receive a message." Before this, a text-only message reached the buffer, the buffer was swept
+ * after 24 hours, and no human was ever told — so an advertised line looked quiet when it was
+ * merely deaf.
+ *
+ * ONE per sender per day, not one per message. The throttle is the caller's, not a key here: the
+ * decision function only sets `notify` on a sender's FIRST text-only message inside the window
+ * (see decideTextOnlyAction), so a chatty applicant sending eight lines is one notification. The
+ * idempotencyKey below is the second belt — it collapses a Meta redelivery of the same wamid.
+ *
+ * Channels are in-app + Telegram + push and NEVER email, matching the owner's standing rule for
+ * every "someone applied" notice. Enforced twice, here and in recruitment-cv-channel-guard.ts,
+ * for the reason that guard documents: an explicit call-site list is not the last word, because the
+ * Telegram-failure fallback can re-enter the pipeline carrying email.
+ */
+export async function notifyInboundWhatsAppTextOnly(input: {
+  senderLabel: string;
+  preview: string;
+  wamid: string;
+  asked: boolean;
+  alreadyApplied: boolean;
+}): Promise<void> {
+  const recipientHrIds = await hrIdsForRoles(recruitmentManageRoles);
+  if (recipientHrIds.length === 0) return;
+
+  // Two genuinely different situations, and the phone alert has to distinguish them without being
+  // opened: someone who has never applied and needs a CV, versus someone chasing a CV they already
+  // sent. Answering the second as though it were the first is how an applicant gets told to send a
+  // document they already sent.
+  const title = input.alreadyApplied ? "Applicant followed up on WhatsApp" : "New WhatsApp message — no CV attached";
+  const trailer = input.alreadyApplied
+    ? "They already sent a CV in the last 24 hours, so Phoenix did not ask again."
+    : input.asked
+      ? "Phoenix has asked them to send it as a file."
+      : "Phoenix did NOT reply — the automatic reply is switched off.";
+
+  await createSystemNotificationForRecipients(
+    {
+      actionUrl: "/recruitment",
+      channels: ["in_app", "telegram", "push"],
+      eventType: "recruitment_whatsapp_text_only",
+      message: `${input.senderLabel} wrote: "${input.preview}" — ${trailer}`,
+      metadata: {
+        alreadyApplied: input.alreadyApplied,
+        asked: input.asked,
+        idempotencyKey: `whatsapp-text-only:${input.wamid}`,
+        wamid: input.wamid,
+      },
+      module: "recruitment",
+      priority: "normal",
+      title,
+    },
+    recipientHrIds,
+  );
+}

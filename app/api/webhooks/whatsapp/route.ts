@@ -9,6 +9,7 @@ import {
   startClassification,
 } from "@/lib/recruitment/inbound/whatsapp-classify-session";
 import { bufferWhatsAppMessage, takeRecentWhatsAppMessages } from "@/lib/recruitment/inbound/whatsapp-message-buffer";
+import { handleTextOnlyMessage } from "@/lib/recruitment/inbound/whatsapp-text-only-applicant";
 import {
   isWhatsAppImportSender,
   parseWhatsAppImportSenders,
@@ -84,6 +85,9 @@ export async function POST(request: Request) {
   const importSenders = parseWhatsAppImportSenders(process.env.RECRUITMENT_WHATSAPP_IMPORT_SENDERS);
   const outcomes: Array<{ wamid: string; outcome: string }> = [];
   let classifyPromptsSent = 0;
+  // Bounded exactly like classifyPromptsSent, and for the same reason: each reply is a Graph round
+  // trip inside a request whose job is to ack fast.
+  let textOnlyRepliesSent = 0;
 
   // (The text-buffer retention sweep runs on the inbound-intake cron tick now, not here — keeping
   // the webhook's work minimal so it acks even faster.)
@@ -153,10 +157,27 @@ export async function POST(request: Request) {
         });
       }
 
-      // Only a CV-carrying document is queued for processing. A message with no document is
-      // ignored here (no queue row, no event) — text is already buffered above.
+      // A message with no document. Until 2026-08-29 this line simply dropped it: buffered above,
+      // no queue row, no intake event, nobody told — and the buffer's own 24-hour retention sweep
+      // then erased it. That was the single largest loss on this channel. It is now recorded, the
+      // applicant is asked for the file, and a human is notified; every guard (import senders, a
+      // history replay, someone mid-conversation, a repeat message today) lives in
+      // decideTextOnlyAction, not here. Best-effort by construction — this must never turn into a
+      // non-200, because Meta would then retry the whole payload and re-ask the same person.
       if (!message.document) {
-        outcomes.push({ outcome: message.text ? "buffered" : "ignored", wamid: message.wamid });
+        const textOnly = await handleTextOnlyMessage({
+          body: message.text,
+          contactName: message.contactName,
+          deliveredToDisplayNumber: message.deliveredToDisplayNumber,
+          deliveredToPhoneNumberId: message.deliveredToPhoneNumberId,
+          historical: message.historical,
+          importSenders,
+          repliesSent: textOnlyRepliesSent,
+          waId: message.from,
+          wamid: message.wamid,
+        });
+        if (textOnly.asked) textOnlyRepliesSent += 1;
+        outcomes.push({ outcome: `text_only_${textOnly.reason}`, wamid: message.wamid });
         continue;
       }
 
