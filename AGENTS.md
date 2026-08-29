@@ -1165,42 +1165,45 @@ These are the owner's own decisions, stated across many sessions. They are not s
 - Marketing Manager is hidden from the portal Incentive tab; GPM still sees it.
 - The Organogram / AU seat model is the source of truth for org-structure and vacancy data.
 - All SoS sales, historical and future, attribute to **today's** geography — never as-was.
-- **Delta (3) territory move — APPLIED 2026-08-28, then DEFERRED 2026-08-29 at the owner's
-  instruction. There is no `D3` row in `au.line_area_map` today, and that is deliberate.** The five
-  areas (`D11` Qalubeya, `D24` Sharkia 1, `D25` Sharkia 2, `OT2` Suez, `OT9` Ismailia) sit on their
-  pre-split regions — `OT` for four, `D2` for D24 — open-ended, exactly as they did before the split
-  was built. **Do not re-apply it until the August closing is published**, and do not read the absent
-  `D3` rows as a half-finished job to tidy up.
-  **Why the first attempt was unsafe — this is the part worth keeping.** The move went in by hand,
-  directly in production, with no migration file and no ledger row, as a correctly forward-dated PAIR
-  per area: the pre-split row closed with `effective_to = '2026-09-01'` and a new
-  `operational_region_code = 'D3'` row opened at that same date. It was verified with
-  `au.f_line_area_map_asof()` (2026-08-31 → pre-split, 2026-09-01 → `D3`) and called safe "by
-  construction". **That check was against the wrong resolver.** The Monthly Closing does not use
-  `f_line_area_map_asof` — it calls `loadLineOperationalRegions()`
-  (`src/lib/sales/closing-organogram-regions.ts`), which filters `effective_from`/`effective_to`
-  against **the date the closing is RUN**, not the month being closed, and both call sites in
-  `monthly-distributor-import.ts` pass no period at all. Because the closing golden rule below means
-  August cannot publish before 1 September, **every possible August run date would have resolved all
-  five areas to `D3`** — crediting August's Anti Infective sales to Delta (3), which is exactly what
-  the owner has said at least ten times must not happen. The migration that created the region and
-  seats, `20260828064500_anti_infective_delta_3_district.sql`, states in its own header that it
-  deliberately does NOT move the territory, and warns that a date-stamped switch "would STILL pull
-  August onto Delta (3)". The hand-applied pair went past that warning.
-  **What was reverted, and how to put it back.** On 2026-08-29 the five `D3` rows were deleted and
-  the five pre-split rows reopened (`effective_to = null`), in one transaction with row-count
-  assertions. Verified after: run dates 2026-08-31, 09-01, 09-15 and 10-01 all resolve the five to
-  their pre-split regions; `f_line_area_map_asof()` returns zero `D3` rows for both 2026-08-31 and
-  2026-09-30; zero `D3` rows remain in `au.line_area_map` on any line. The 10-row pre-image is kept
-  in `delta3_defer_backup_20260829.line_area_map_pre` — **re-apply the move from that table once the
-  August closing is published**, rather than hand-typing it again. Nothing else was touched: the
-  `D3` region, its five seats and vacancy `VAC-D3-AIF` all remain, so the organogram can go on
-  showing the plan; and nothing else needed touching — the SoS side never carried a Delta (3) region
-  or area, and `au.direct_region_allocation` has no `D3` row.
-  **The resolver gap itself is still open.** Until `loadLineOperationalRegions` takes the period
-  being closed instead of the run date, NO forward-dated geography change is safe to leave live
-  across a closing — the same trap catches the next one.
-  `src/lib/sales/master-map/load.ts:122` already notes this and defers it.
+- **Delta (3) territory move — LIVE, dated 2026-09-01, applied as a migration 2026-08-29.** The
+  five areas (`D11` Qalubeya, `D24` Sharkia 1, `D25` Sharkia 2, `OT2` Suez, `OT9` Ismailia) now sit
+  on a correctly dated PAIR: the pre-split row closed at `effective_to = '2026-09-01'` and a `D3`
+  row open from that date under `SEAT-AIF-DM-D3`. Verified on production the day it was applied —
+  July and August resolve `D11=OT, D24=D2, D25=OT, OT2=OT, OT9=OT`, September and October resolve
+  all five to `D3`, on both the closing's view and `au.f_line_area_map_asof()`. **Nothing is owed on
+  1 September** — the date does the work, so do not re-apply, re-date, or "finish" anything.
+  **It took two attempts, and the reason is the part worth keeping.** The move first went in by
+  hand on 2026-08-28, directly in production, with no migration file and no ledger row. It was
+  verified with `au.f_line_area_map_asof()` and called safe "by construction" — **but that is not
+  the resolver the closing uses.** The Monthly Closing calls `loadLineOperationalRegions()`
+  (`src/lib/sales/closing-organogram-regions.ts`), and it was wrong in TWO independent ways, either
+  of which alone would have mis-stated August:
+  **(1) it dated on the run date.** It filtered against **the day the closing is RUN**, not the
+  month being closed, and neither call site in `monthly-distributor-import.ts` passed a period at
+  all. Because the closing golden rule below means August cannot publish before 1 September, every
+  possible August run date would have resolved all five areas to `D3`. Fixed by #2608
+  (`d3871a69`): the loader takes the period and resolves at the month END.
+  **(2) it could not see the closed half of the pair.** `au_v_line_area_map` filters
+  `effective_to is null`, so a superseded row is invisible to the app. While a move is still in the
+  future the closing therefore sees NEITHER half — the old row has an `effective_to`, the new one
+  has not started — and `applyOperationalRegions()` silently leaves the area on its **geographic**
+  region. Reproduced on staging: through the old view, August resolved to **nothing** for all five.
+  Nothing errors; the number just moves. Fixed by #2613 (`13d0b33d`), which added
+  `public.au_v_line_area_map_all` — the same view without the filter, `service_role` only — and
+  pointed the closing at it. **Additive on purpose:** every other caller stays on
+  `au_v_line_area_map` and keeps answering "who owns this area today", so the owner's
+  today's-geography rule still governs them. Measured a no-op on live data before and after: 3 of
+  150 rows are closed and no `(line, area)` has more than one row, so all twelve 2026 month-ends
+  resolve identically either way.
+  **So the resolver gap named here until 2026-08-29 is CLOSED, in both directions**, and a
+  forward-dated geography change is now safe to leave live across a closing. `#2613` also made the
+  row choice deterministic (latest `effective_from` covering the date, not whichever row PostgREST
+  returned last) and rebuilt the region filter list after the winners settle, so a superseded
+  district cannot linger in the picker.
+  **The rollback pre-image is still there and should stay:**
+  `delta3_defer_backup_20260829.line_area_map_pre`, 10 rows, the state either side of the
+  2026-08-29 deferral. Nothing else was ever touched — the SoS side never carried a Delta (3)
+  region or area, and `au.direct_region_allocation` has no `D3` row.
   One caution the older bullets here carried that is still true on its own: nobody knows WHEN the
   August closing itself will publish — it waits on distributor data, not a calendar date, so
   1 September is not a deadline to report as missed.
