@@ -32,6 +32,7 @@ export const notificationRoleKeys = [
   "resignation_workflow_alert",
   "employee_import_alert",
   "payroll_workflow_alert",
+  "marketing_invoice_overdue_alert",
 ] as const;
 
 export type NotificationRoleKey = (typeof notificationRoleKeys)[number];
@@ -168,6 +169,14 @@ export const DEFAULT_NOTIFICATION_ROLE_POLICIES: Record<NotificationRoleKey, Not
     description:
       "Who is told when a payroll batch changes state (approve/reject/lock/etc.) or a salary upload is imported. Both are ops events about a batch, not a specific employee, so there is no subject to infer an audience from — recipients are exactly this role list.",
     roles: ["Super Admin", "CEO", "Finance Manager"],
+    enabled: true,
+  },
+  marketing_invoice_overdue_alert: {
+    key: "marketing_invoice_overdue_alert",
+    label: "Marketing invoice overdue alert",
+    description:
+      "Who is told when an approved marketing request's invoice passes its deadline. The REQUESTER is always notified about their own request and is not configurable here — this list is the finance-side audience, defaulting to the Finance Manager, who holds the finance_execution rung on the marketing approval chain and is the person chasing the invoice.",
+    roles: ["Finance Manager"],
     enabled: true,
   },
   marketing_sla_reminder: {

@@ -976,10 +976,25 @@ export const WORKFLOW_CONTROL_DOMAINS: readonly WorkflowControlDomain[] = [
         // goes stale the moment a deadline is corrected forward). The 'overdue' value the CHECK
         // constraint allows therefore stays unused in the database on purpose.
         //
-        // What is genuinely still missing is the push: an overdue invoice is visible to anyone who
-        // opens the tab or the export, and nobody is told. The audience is the owner's call — a
-        // recipient list is never guessed here — so this stays recorded rather than assumed.
-        gaps: ["An overdue invoice is shown but nobody is notified: the marker appears on the Approved Requests tab and in the report export, and no notification, email or digest tells the requester or Finance that a deadline has passed. Recipient list needs the owner's decision before it is wired."],
+        // The push is wired too. Owner decision 2026-08-29, asked directly: "the requester and
+        // finance". `/api/cron/marketing-invoice-overdue-nudge` tells each requester about their
+        // OWN overdue invoices and sends finance one digest of all of them — in-app, Telegram and
+        // push, never email (marketing lateness reminders lost email on 2026-07-25, and
+        // marketing-sla-channel-guard.ts now blocks this event type too).
+        //
+        // The finance half is addressed through the `marketing_invoice_overdue_alert` audience, so
+        // the owner can retarget or silence it at /admin/notification-recipients without a deploy.
+        // The requester half deliberately is NOT configurable: being told your own invoice is late
+        // is not an audience question.
+        //
+        // The one thing left is a SCREEN for finance. The Finance Manager holds the
+        // `finance_execution` rung but is not in `marketingAdminWorkflowRoles`, so the only page
+        // rendering the Invoice due column redirects him away, and the marketing inbox he can open
+        // lists requests awaiting a decision — which excludes an approved one by definition. His
+        // notification therefore carries the full facts and no link, rather than a button leading
+        // somewhere that cannot show the thing it is about. Granting him that page is an access
+        // decision and belongs to the owner, so it is recorded here rather than assumed.
+        gaps: ["Finance is told about an overdue invoice but has no screen showing one: the Finance Manager is not in marketingAdminWorkflowRoles, so /admin/marketing-requests (the only page with the Invoice due column) redirects him away and the marketing inbox he can open excludes approved requests. His alert carries the facts and no link. Granting him that page needs the owner's decision."],
       },
       {
         key: "finance-hold",

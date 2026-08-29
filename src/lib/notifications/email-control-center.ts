@@ -60,6 +60,7 @@ const SYSTEM_HEALTH_MODULE = "System Health & Digests";
 const ROLE_RECIPIENTS_HYBRID_NOTICE: Partial<Record<NotificationRoleKey, string>> = {
   vacation_sla_hr_escalation: "The manager-stage recipient is always the specific request's manager-of-manager and isn't affected by this list.",
   probation_weekly_dv_digest: "The probationer's own manager, NSM chain, and line-matched PM/GPM are always included and aren't affected by this list.",
+  marketing_invoice_overdue_alert: "The requester is always told about their own overdue invoice and isn't affected by this list — it is the finance-side audience only.",
 };
 
 const ROLE_RECIPIENTS_NOT_CONFIGURABLE: Partial<Record<NotificationRoleKey, string>> = {
@@ -83,6 +84,7 @@ const ROLE_RECIPIENTS_MODULE: Record<NotificationRoleKey, string> = {
   resignation_workflow_alert: "Resignations",
   employee_import_alert: "Employees",
   payroll_workflow_alert: "Payroll",
+  marketing_invoice_overdue_alert: "Marketing Requests",
 };
 
 const EMAIL_NOTIFICATIONS_MODULE: Record<EmailNotificationType, string> = {
