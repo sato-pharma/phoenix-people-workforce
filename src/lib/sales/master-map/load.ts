@@ -119,8 +119,9 @@ function reportOrganogramFailure(cause: unknown): Organogram {
  * TODAY IS CAIRO'S TODAY, not the server's. This was `new Date().toISOString()`, which is UTC, and
  * Cairo runs two to three hours ahead of it — so between midnight and about 03:00 Cairo the sheet
  * was still applying yesterday's structure, and a reorganisation taking effect today would not
- * show until mid-morning. (`loadLineOperationalRegions` in the Monthly Closing still defaults to
- * the UTC date and has the same narrow window; it is a separate change.)
+ * show until mid-morning. (The Monthly Closing had the same UTC window and no longer does — but it
+ * does not resolve at "today" at all any more: `loadLineOperationalRegions` now takes the month
+ * being closed, because a closing computes a specific month's money and this sheet shows now.)
  *
  * THREE READS, NOT ONE, BECAUSE THE NAME IS THREE HOPS AWAY: the map holds a seat id, the org tree
  * says who occupies that seat, and only `employees` knows the person's name. All three are tiny

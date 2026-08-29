@@ -71,7 +71,7 @@ export function runClosingRegionGroupingPerLineTests() {
     "both the empty-skeleton path and the loaded-month path must gate the organogram fetch — a skeleton grouped differently from its own month would change the region filter's options mid-session",
   );
   assert.ok(
-    !/(?<!usesOrganogramRegions\([A-Za-z]+\)\s*\?\s*)loadLineOperationalRegions\(targetLineCode\)(?!\s*:)/.test(importer)
+    !/(?<!usesOrganogramRegions\([A-Za-z]+\)\s*\?\s*)loadLineOperationalRegions\(targetLineCode,/.test(importer)
       || gatedFetches.length === 2,
     "no ungated call may remain",
   );
