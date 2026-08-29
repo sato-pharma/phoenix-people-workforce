@@ -53,7 +53,11 @@ export function runPayrollCopilotUnifiedDeductionsGuardTests() {
     assert.ok(guardAt < assembleAt, "the guard must run BEFORE assembleDraft inside materializeRun");
   }
 
-  // 3. The guard's own rule: live candidates in the unified module mean it owns the month.
+  // 3. The guard's own rule is STRUCTURAL, not a bare row count (mossy-ocean C4). From the cutover
+  //    month the Deductions module owns EVERY month, so an untouched cutover month — the state on the
+  //    1st, before collection has run — must still refuse. A row-count-only rule counts zero there and
+  //    would wave the legacy sheet through in exactly the window it is most dangerous. Pre-cutover
+  //    months predate the module and keep the row-count rule as a safety net.
   {
     const service = readFileSync(new URL("../src/lib/deductions/service.ts", import.meta.url), "utf8");
     assert.match(
@@ -63,8 +67,18 @@ export function runPayrollCopilotUnifiedDeductionsGuardTests() {
     );
     assert.match(
       service,
+      /export const DEDUCTIONS_CUTOVER_MONTH_KEY = "\d{4}-\d{2}";/,
+      "the cutover boundary must be a named, exported constant so this test — and readers — can see it",
+    );
+    assert.match(
+      service,
+      /if \(monthKey >= DEDUCTIONS_CUTOVER_MONTH_KEY\) \{/,
+      "the guard must refuse STRUCTURALLY from the cutover month on, not only when live candidates exist",
+    );
+    assert.match(
+      service,
       /if \(liveCandidates === 0\) return null;/,
-      "no live candidates means nothing to conflict with — the guard must not block an untouched month",
+      "pre-cutover months keep the row-count safety net — an untouched pre-cutover month has nothing to conflict with",
     );
   }
 
