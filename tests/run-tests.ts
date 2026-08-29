@@ -1072,6 +1072,7 @@ import { runNotificationDrainStarvationGuardTests } from "./notification-drain-s
 import { runExpenseClaimsRefreshTests } from "./expense-claims-refresh.test.ts";
 import { runMarketingFinanceRequirementOnApprovalTests } from "./marketing-finance-requirement-on-approval.test.ts";
 import { runMarketingInvoiceOverdueMarkerTests } from "./marketing-invoice-overdue-marker.test.ts";
+import { runMarketingFinanceHoldTests } from "./marketing-finance-hold.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -3228,6 +3229,13 @@ await runTest(
     + "Approved Requests tab and in the export, the deadline day itself is not late, a submitted or "
     + "held obligation never is — and both readers go through the one module, so export matches screen)",
   runMarketingInvoiceOverdueMarkerTests,
+);
+await runTest(
+  "marketing finance hold (a status the lifecycle declared for three months and could never enter: only an "
+    + "approved request can be held, holding it silences the overdue marker rather than nagging about a pause "
+    + "someone chose, and the reason is written before the status so a 15s timeout can never freeze a request "
+    + "with no recorded why)",
+  runMarketingFinanceHoldTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);

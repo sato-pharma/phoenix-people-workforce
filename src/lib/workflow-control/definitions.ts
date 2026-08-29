@@ -982,6 +982,39 @@ export const WORKFLOW_CONTROL_DOMAINS: readonly WorkflowControlDomain[] = [
         gaps: ["An overdue invoice is shown but nobody is notified: the marker appears on the Approved Requests tab and in the report export, and no notification, email or digest tells the requester or Finance that a deadline has passed. Recipient list needs the owner's decision before it is wired."],
       },
       {
+        key: "finance-hold",
+        name: "Finance Hold",
+        summary: "An approved request whose invoice never arrived — flagged by the system, decided by a human.",
+        steps: [
+          {
+            id: "flag_overdue",
+            name: "Flag an approved request whose invoice is late",
+            actor: "System",
+            role: "System",
+            statusProduced: "(no status change)",
+            notificationRecipients: [],
+            emailRecipients: [],
+            sideEffects:
+              "Read-only. loadMarketingFinanceHoldQueue asks resolveMarketingInvoiceObligation — the same module the Approved Requests tab and the export read — whether each obligation is late today in Africa/Cairo, and writes nothing. Lateness is defined in one place only, so the queue an admin acts on can never disagree with the screen he read it on. An invoice already submitted or cleared is never flagged: flagging one would freeze a request that owes nothing.",
+            routesTo: "Super Admin, who decides whether to hold. Nothing happens without him.",
+          },
+          {
+            id: "hold_release",
+            name: "Super Admin places or releases the hold",
+            actor: "Super Admin",
+            role: "Super Admin",
+            statusProduced: "finance_hold (held) | approved or active (released)",
+            notificationRecipients: [],
+            emailRecipients: [],
+            sideEffects:
+              "Records the reason on the finance requirement BEFORE flipping the status, so a client request that times out — which still commits — can never leave a request frozen with no recorded why. The same write pauses the invoice obligation (pending to hold, and back on release), which is what silences the Overdue marker while a request is held rather than nagging about a pause someone chose; an invoice already submitted is left exactly as it is, in both directions. Both writes are compare-and-set, so two admins on the same queue cannot silently overwrite each other, and phx_capture_marketing_request_event records actor, from and to. A release returns the request to the status the event log says it was held from, never a guess.",
+            fallbackEscalation:
+              "None, deliberately. The system never holds or releases on its own — owner rule 2026-08-29, the same rule expenses run under: the system flags, a human decides. Do not add a cron or an auto-hold-once-overdue convenience.",
+          },
+        ],
+        gaps: ["Placing or releasing a finance hold notifies nobody. The requester is not told that their approved request has been frozen, or that it has been let go again — the hold is visible only to someone already looking at the request, or at the hold queue. Who should receive that is an owner decision, not a default to assume."],
+      },
+      {
         key: "notifications",
         name: "Notifications & Emails",
         steps: [
