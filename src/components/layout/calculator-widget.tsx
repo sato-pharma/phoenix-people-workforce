@@ -255,6 +255,13 @@ export function CalculatorWidget({ isAdminMode }: { isAdminMode: boolean }) {
 
   const handleDragStart = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.pointerType === "mouse" && event.button !== 0) return;
+    // The copy/paste/close buttons live INSIDE this header. setPointerCapture below retargets the
+    // pointerup to the header, and the browser then fires `click` on the common ancestor of the
+    // down and up targets — the header, not the button. So capturing a press that began on a
+    // control silently eats that control's click: the button takes focus and nothing happens.
+    // Measured in the browser on 2026-08-29 — copy, paste and close were all dead to a real mouse
+    // while still working from a scripted .click(), which is exactly how this hid.
+    if ((event.target as HTMLElement | null)?.closest("button")) return;
     const rect = panelRef.current?.getBoundingClientRect();
     if (!rect) return;
     dragOffsetRef.current = { x: event.clientX - rect.left, y: event.clientY - rect.top };
@@ -387,7 +394,7 @@ export function CalculatorWidget({ isAdminMode }: { isAdminMode: boolean }) {
             M
           </span>
         ) : null}
-        <div className="ml-auto flex shrink-0 items-center gap-1">
+        <div className="ml-auto flex shrink-0 cursor-default items-center gap-1">
           <button
             aria-label="Paste a number into the calculator"
             className={cn("inline-flex h-6 w-6 items-center justify-center rounded", tone.muted, isAdminMode ? "hover:bg-[#1a1a1a]" : "hover:bg-phx-paper")}
