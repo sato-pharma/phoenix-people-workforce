@@ -138,12 +138,17 @@ export function runWorkflowControlTests() {
   const addToPayrollStep = getWorkflowSubflow("expenses-outstation", "payroll-queue")?.steps.find((s) => s.id === "add_to_payroll");
   assert.notEqual(addToPayrollStep?.notificationGap, true, "add-to-payroll is intentionally silent (not a gap)");
   assert.equal(domainHasNotificationGap(getWorkflowDomain("expenses-outstation")!), false, "expenses-outstation has no unimplemented notification gaps");
-  // The payslip publish notification remains a genuine, unwired gap.
+  // The payslip publish notification is WIRED: notifyEmployeesPayslipAvailable
+  // (app/api/payroll/[id]/workflow/route.ts) fires on the "approve" transition — the moment payslips
+  // become visible — one notification per employee in the batch. The register went on declaring it
+  // unimplemented long after it shipped, which is the failure mode these assertions now guard: a
+  // stale "not built" badge sends the owner rebuilding something that already runs. The producer
+  // itself is pinned by tests/payroll-workflow.test.ts.
   const payslipStep = getWorkflowSubflow("payroll", "payslip-notification")?.steps.find((s) => s.id === "publish");
-  assert.equal(payslipStep?.notificationGap, true, "payslip publish is flagged as a notification gap");
-  assert.equal(domainHasNotificationGap(getWorkflowDomain("payroll")!), true, "payroll domain still has a notification gap (payslip publish)");
+  assert.notEqual(payslipStep?.notificationGap, true, "payslip publish is NOT a notification gap — the producer is live");
+  assert.equal(domainHasNotificationGap(getWorkflowDomain("payroll")!), false, "payroll domain has no notification gap (the payslip producer is wired)");
   assert.equal(domainHasNotificationGap(getWorkflowDomain("leave")!), false, "leave domain has no notification gap (producers wired)");
-  assert.ok(domainGaps(getWorkflowDomain("payroll")!).length > 0, "payroll domain surfaces open gaps");
+  assert.equal(domainGaps(getWorkflowDomain("payroll")!).length, 0, "payroll domain surfaces no open gaps — both it declared were stale");
   // The map renders the notification-gap and the action-required grouping.
   const mapGapSrc = readFileSync(new URL("../src/components/workflow-control/workflow-map.tsx", import.meta.url), "utf8");
   assert.match(mapGapSrc, /Notification gap: not implemented yet/, "map renders the notification-gap label");
@@ -190,10 +195,11 @@ export function runWorkflowControlTests() {
   assert.ok(sim.steps.some((s) => s.notificationRecipients.length > 0), "simulator returns in-app notification recipients");
   assert.ok(sim.warnings.some((w) => /runtime editing is disabled in phase 1/i.test(w)), "simulator warns runtime editing is disabled in Phase 1");
 
-  // Expenses-outstation is fully wired now; the payslip publish notification remains a
-  // declared-but-unimplemented producer the simulator must still warn about.
+  // Expenses-outstation is fully wired, and so is the payslip publish notification — so the
+  // simulator must NOT warn about a producer that exists. It warned here for as long as the
+  // register carried the stale flag.
   const gapSim = simulateWorkflow({ domainKey: "payroll", subflowKey: "payslip-notification" });
-  assert.ok(gapSim.warnings.some((w) => /no in-app notification producer/i.test(w)), "simulator warns about a missing notification producer");
+  assert.ok(!gapSim.warnings.some((w) => /no in-app notification producer/i.test(w)), "simulator does not warn about a notification producer that is live");
 
   const readOnlySim = simulateWorkflow({ domainKey: "notifications", subflowKey: "recipient-resolver" });
   assert.ok(readOnlySim.warnings.some((w) => /read-only map only/i.test(w)), "simulator warns a cross-cutting domain is read-only map only");
@@ -422,9 +428,22 @@ export function runWorkflowControlTests() {
   assert.ok(vEmail.warnings.some((w) => /email enabled but no email recipients/i.test(w)), "missing email recipient warning fires");
   assert.equal(typeof vEmail.publishBlocked, "string", "validation surfaces a publish-blocked message");
   assert.match(vEmail.publishBlocked, /Phase 3/, "publish-blocked references Phase 3");
-  const payslipGapSteps = getWorkflowSubflow("payroll", "payslip-notification")?.steps ?? [];
-  const payslipGapId = payslipGapSteps.find((s) => s.id === "publish")?.id ?? "publish";
-  const vGap = validateWorkflowDraft(payslipGapSteps, { [payslipGapId]: { description: "edit" } });
+  // No step in the live register carries notificationGap any more — the last three were stale — so
+  // the validator's gap warning is exercised against a synthetic step instead. Keeping the
+  // assertion matters more than keeping its subject: this warning is what stops someone editing a
+  // step whose producer was never built.
+  const syntheticGapStep = {
+    actor: "System",
+    emailRecipients: [],
+    id: "publish",
+    name: "Synthetic unwired step",
+    notificationGap: true,
+    notificationRecipients: [],
+    role: "System",
+    sideEffects: "None — fixture for the validator's notification-gap warning.",
+    statusProduced: "(none)",
+  };
+  const vGap = validateWorkflowDraft([syntheticGapStep], { publish: { description: "edit" } });
   assert.ok(vGap.warnings.some((w) => /notification producer is not implemented/i.test(w)), "validation surfaces a notification gap warning on an edited gap step");
 
   // Editor UX: comparison summary, Reset Draft, draft-only label, local-preview note.
