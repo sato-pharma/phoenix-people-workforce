@@ -1042,6 +1042,7 @@ import { runCrmBrickCoverageTests } from "./crm-brick-coverage.test.ts";
 import { runRecruitmentCvReadHonestyTests } from "./recruitment-cv-read-honesty.test.ts";
 import { runRecruitmentCvRereadTargetSetsTests } from "./recruitment-cv-reread-target-sets.test.ts";
 import { runRecruitmentRereadModelConstantsTests } from "./recruitment-reread-model-constants.test.ts";
+import { runRecruitmentOpsMarkerTests } from "./recruitment-ops-marker.test.ts";
 import { runRecruitmentExtractionRecordsIsCvTests } from "./recruitment-extraction-records-is-cv.test.ts";
 import { runRecruitmentRereadNotACvSkipsTests } from "./recruitment-reread-not-a-cv-skips.test.ts";
 import { runWorktreeExitGuardPreRemovalTests } from "./worktree-exit-guard-pre-removal.test.ts";
@@ -3008,6 +3009,12 @@ await runTest(
   "CV re-read hold-back is built from the exported model constants (an OCR-only row must not count "
     + "as a real model read and freeze that candidate out of every future re-read)",
   runRecruitmentRereadModelConstantsTests,
+);
+await runTest(
+  "CV re-read ops marker carries the run's own Africa/Cairo day (a hardcoded literal stamped 579 "
+    + "rows across 14 days as one batch, and the reader's === against that same literal is what kept "
+    + "the writer frozen — the pair only ever agreed by both being wrong)",
+  runRecruitmentOpsMarkerTests,
 );
 await runTest(
   "CV re-read target sets (a free rules row FOLLOWED by a model read is not 'rules-only' — counting "
