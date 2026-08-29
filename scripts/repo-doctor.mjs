@@ -43,7 +43,8 @@
 //   node scripts/repo-doctor.mjs --strip-idle=480    # ...only if idle 8h+ (default 120 minutes)
 //   node scripts/repo-doctor.mjs --fix --force   # skip the concurrent-session guard
 //   node scripts/repo-doctor.mjs --no-auth   # skip the orphan-auth-user check (offline / no creds)
-//   node scripts/repo-doctor.mjs --deep      # ...also lists every unlinked memory file, not the first 20
+//   node scripts/repo-doctor.mjs --deep      # ...also names every unlinked memory file, not the
+//                                            #    first 20, and every one reachable via AGENTS.md
 //
 // THE ORPHAN AUTH USER CHECK. Added 2026-08-19 after four Supabase `auth.users` rows were
 // found with no Phoenix account behind them — two duplicate employee entries from 20 May, a
@@ -59,6 +60,16 @@
 // Only MEMORY.md loads automatically, so an unlinked memory is invisible rather than merely
 // hard to find, and the next session re-derives what it already knows. Read-only, like the auth
 // check: it names the orphans and the broken pointers, and leaves the judgement to a person.
+//
+// AND AGENTS.md COUNTS AS REACHABILITY — added 2026-08-29. The check above asked only whether an
+// index points at the file, which stopped being the whole question once AGENTS.md section 2.2 made
+// RELOCATION the prescribed remedy for an over-budget index: when compression runs out, a hook
+// moves into section 2.1 / 2.3 / 4, which CLAUDE.md loads in full with no cliff. Every such move
+// therefore produced fresh "orphans" — and, far worse, the advice line told the next session to
+// give each one an index line, i.e. to undo the relocation and push MEMORY.md back over budget,
+// with this script's authority behind it. Measured the morning six hooks moved out: 7 orphans
+// reported, 6 of them relocated on purpose hours earlier. Logic and wording now live in
+// memory-index-reachability.mjs, beside each other, for the same reason the budget arithmetic does.
 //
 // WHY --strip-idle EXISTS. The 2026-08-04 cleanup was an hour of manual analysis that reclaimed
 // 727,861 paths, and every path of it was `node_modules` and `.next` — regenerable by
@@ -87,6 +98,7 @@ import os from "node:os";
 import path from "node:path";
 
 import { assessMemoryIndexSize, memoryIndexBudgetLines } from "./memory-index-budget.mjs";
+import { classifyMemoryReachability, memoryReachabilityLines } from "./memory-index-reachability.mjs";
 import { countUnpushedCommits } from "./repo-doctor-unpushed.mjs";
 
 const args = process.argv.slice(2);
@@ -717,7 +729,24 @@ function memoryDirFor(projectRoot) {
       .readdirSync(memoryDir)
       .filter((f) => f.endsWith(".md") && !INDEX_FILES.includes(f) && !f.includes(".bak"));
 
-    const orphans = memoryFiles.filter((f) => !indexText.includes("](" + f + ")")).sort();
+    // AGENTS.md is the third reachable home, per its own section 2.2. Read from primaryRoot, not
+    // from the worktree this command happens to run in — the same lookup the memory dir uses, and
+    // the one that makes this agree with 2.2's both-halves rule: a relocation is only finished when
+    // the destination is MERGED, so a hook written on an unmerged branch SHOULD still read as an
+    // orphan here. An unreadable file yields "", and every memory then falls through to the
+    // pre-2026-08-29 answer — a false orphan, never a false "reachable".
+    let agentsText = "";
+    try {
+      agentsText = fs.readFileSync(path.join(primaryRoot, "AGENTS.md"), "utf8");
+    } catch {
+      // Left empty on purpose. See above: the safe failure is to under-claim reachability.
+    }
+
+    const { relocated, orphans } = classifyMemoryReachability({
+      files: memoryFiles,
+      indexText,
+      agentsText,
+    });
 
     // A markdown pointer to a `.md` inside the memory directory. Relative links only — an index
     // line may legitimately point at a repo file or a URL, and neither is this check's business.
@@ -753,20 +782,13 @@ function memoryDirFor(projectRoot) {
     if (orphans.length > shown.length) {
       console.log("  ORPHAN  ... and " + num(orphans.length - shown.length) + " more not listed — re-run with --deep for the full list.");
     }
+    // Relocated files are named only under --deep. They are a healthy state, not a backlog, so
+    // listing them by default would grow with every relocation and train people to skim past the
+    // ORPHAN lines sitting next to them.
+    if (deep) for (const f of relocated) console.log("  AGENTS  " + f + "  (named in AGENTS.md — reachable, not an orphan)");
     for (const f of broken) console.log("  BROKEN  " + f + "  (pointed at by an index, file does not exist)");
 
-    if (orphans.length === 0 && broken.length === 0) {
-      console.log("  -> none. Every memory file is reachable and every pointer resolves.");
-    } else {
-      console.log(
-        "  -> " +
-          num(orphans.length) +
-          " orphan(s), " +
-          num(broken.length) +
-          " broken pointer(s). Nothing was changed — give each orphan a line in MEMORY.md if it is " +
-          "a live rule, or in MEMORY-ARCHIVE.md if it is depth or history.",
-      );
-    }
+    for (const line of memoryReachabilityLines({ relocated, orphans, broken })) console.log(line);
   }
 }
 
