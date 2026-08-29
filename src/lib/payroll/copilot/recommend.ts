@@ -137,17 +137,6 @@ export function recommendResolution(input: {
     };
   }
 
-  // 7) attendance_conflict (warn) — a governance deduction is still pending; the safe
-  //    default is to let that flow apply it (never double-count here).
-  if (has("attendance_conflict")) {
-    return {
-      action: { kind: "confirm", hrId, reason: "attendance deduction left to the governance flow this run" },
-      actionLabel: "Leave as-is",
-      why: "An attendance deduction is awaiting governance approval — it will be applied through that flow, not double-counted here. Recommended: accept as-is this run.",
-      confidence: "high",
-    };
-  }
-
   // Fallback: any other open warn — recommend confirm, echo the question.
   return {
     action: { kind: "confirm", hrId, reason: "confirmed as correct" },

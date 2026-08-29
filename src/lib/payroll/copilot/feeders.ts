@@ -112,7 +112,6 @@ function ensure(map: Map<string, EmployeeFeederState>, key: string): EmployeeFee
   if (!state) {
     state = {
       unpaidLeaveDays: 0,
-      attendanceDeductionPending: false,
       leaverLastWorkingDate: null,
       unpaidDaysBeforeLastWorkingDate: 0,
     };
@@ -154,21 +153,6 @@ export async function buildFeederStates(
     if (startDate && endDate) {
       unpaidLeaveRows.push({ key, startDate, endDate, days: Number.isFinite(days) ? days : 0 });
     }
-  }
-
-  // Active attendance-device deduction candidates for the period.
-  const attendance = await safeRows("attendance", () =>
-    supabase
-      .from("deduction_candidates")
-      .select("employee_hr_id_compact,source_module,superseded_at")
-      .eq("month", period.month)
-      .eq("year", period.year)
-      .is("superseded_at", null),
-  );
-  for (const row of attendance) {
-    const key = compactHrKey(String(row.employee_hr_id_compact ?? ""));
-    if (!key) continue;
-    ensure(states, key).attendanceDeductionPending = true;
   }
 
   // Leavers whose last working day falls in the period.

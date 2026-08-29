@@ -101,16 +101,6 @@ export function evaluateEmployeeFlags(input: {
     });
   }
 
-  // 3. attendance_conflict (warn) — pending attendance-device deduction.
-  if (feeder?.attendanceDeductionPending) {
-    flags.push({
-      employeeHrId: row.hrId,
-      rule: "attendance_conflict",
-      severity: "warn",
-      question: `${name} has an attendance deduction awaiting governance approval. Deduct now, wait for approval, or waive it?`,
-    });
-  }
-
   // 4. salary_role_change (warn) — base/line/role differs from last month.
   // Skipped for a joiner/leaver: their base this month is a deliberate
   // settlement figure (Rule 1/2), already explained by the joiner_leaver flag
