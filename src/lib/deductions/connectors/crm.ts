@@ -21,7 +21,8 @@
 
 import { canonicalHrIdKey } from "@/lib/hr-id.ts";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-import { expandHrIdFilterValues, scanVisitsForRange, scanVisitsForRangeIncludingDeparted } from "@/lib/crm/reads.ts";
+import { getAgentCrmIdentityRows, scanVisitsForRange, scanVisitsForRangeIncludingDeparted } from "@/lib/crm/reads.ts";
+import type { CrmAgentIdentityRow } from "@/lib/crm/reads.ts";
 import { isFieldWorkforceComplianceEligibleTitle, logsOwnCrmVisitsTitle } from "@/lib/field-workforce-compliance/eligibility.ts";
 import {
   isFieldWorkforceWeeklyOff,
@@ -521,7 +522,7 @@ async function loadZeroCrmSignalHrIdKeys(input: {
  * id wins: one match is all `isMine` needs, and an hr id appearing under several
  * crm ids is an ambiguous identity this must not silently arbitrate.
  */
-export function buildCrmIdByHrKeyFromVisits(visits: readonly LeaverVisitRow[]): Map<string, string> {
+export function buildCrmIdByHrKeyFromVisits(visits: readonly CrmAgentIdentityRow[]): Map<string, string> {
   const byHrKey = new Map<string, string>();
   for (const visit of visits) {
     const agentKey = canonicalHrIdKey(visit.agent_hr_id ?? "");
@@ -540,12 +541,12 @@ export function buildCrmIdByHrKeyFromVisits(visits: readonly LeaverVisitRow[]): 
  * History-only on purpose: the whole problem is a period that has not been
  * attributed yet, so re-reading those same days would answer nothing.
  *
- * Reads the mirror directly rather than through crm/reads' doors because every
- * one of them applies the departed-agent exclusion, which hides a resigned rep's
- * visits — and this lookup exists precisely to identify somebody BECAUSE they
- * resigned. Same carve-out, and the same reason, as
- * scanVisitsForRangeIncludingDeparted. `expandHrIdFilterValues` is reused so the
- * mirror's mixed-case hr ids still match (a plain `.in` silently under-returns).
+ * Goes through the CRM door's {@link getAgentCrmIdentityRows}, which carries the
+ * departed-agent carve-out this needs — a resigned rep's own rows must stay
+ * visible to a lookup that exists because she resigned. Reaching past the door
+ * with a raw mirror query would have worked, and is exactly what
+ * tests/crm-single-source.test.ts refuses: the exclusion is the door's to make an
+ * exception to, not a caller's to route around.
  *
  * Best-effort: on any failure it returns an empty map and every leaver simply
  * keeps the previous behaviour — this may never suppress a real finding by
@@ -557,16 +558,8 @@ async function loadLeaverHistoricalCrmIds(input: {
 }): Promise<Map<string, string>> {
   if (input.hrIds.length === 0) return new Map();
   try {
-    const supabase = getSupabaseAdmin();
-    const { data, error } = await supabase
-      .from("ireports360_visits")
-      .select("agent_hr_id,agent_crm_id,double_hr_id,double_crm_id")
-      .in("agent_hr_id", expandHrIdFilterValues(input.hrIds))
-      .lt("visit_date", input.beforeDateIso)
-      .order("visit_date", { ascending: false })
-      .limit(2000);
-    if (error) return new Map();
-    return buildCrmIdByHrKeyFromVisits((data ?? []) as unknown as LeaverVisitRow[]);
+    const rows = await getAgentCrmIdentityRows(input.hrIds, { beforeDate: input.beforeDateIso });
+    return buildCrmIdByHrKeyFromVisits(rows);
   } catch {
     return new Map();
   }
