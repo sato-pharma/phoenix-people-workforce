@@ -1,19 +1,27 @@
 // Recruitment / ATS — scheduled work. Composed into the single daily cron
 // (app/api/notifications/daily) — do NOT add a new Vercel cron (Hobby limit = 2).
 //
-// Two jobs run here:
+// Three jobs run here:
 //   - remind interviewers of interviews scheduled for the next day;
-//   - chase CVs that were sent to a hiring manager and never answered (`stale-send-check.ts`).
+//   - chase CVs that were sent to a hiring manager and never answered (`stale-send-check.ts`);
+//   - report CVs nobody has looked at yet (`triage-backlog-check.ts`).
 
 import { currentCairoDateParts } from "@/lib/i18n/format";
 import { createSystemNotification } from "@/lib/notifications/system";
 import { interviewTypeLabel } from "@/lib/recruitment/interview-notifications";
 import { listInterviewsDueForReminder } from "@/lib/recruitment/interviews";
 import { runStaleSendCheck, type StaleSendRunResult } from "@/lib/recruitment/stale-send-check";
+import { runTriageBacklogCheck, type TriageBacklogRunResult } from "@/lib/recruitment/triage-backlog-check";
 
 export type RecruitmentDailyResult =
-  | { ok: true; interviewReminders: number; staleSends: StaleSendRunResult }
-  | { ok: false; interviewReminders: 0; staleSends: StaleSendRunResult | null; error: string };
+  | { ok: true; interviewReminders: number; staleSends: StaleSendRunResult; triageBacklog: TriageBacklogRunResult }
+  | {
+      ok: false;
+      interviewReminders: 0;
+      staleSends: StaleSendRunResult | null;
+      triageBacklog: TriageBacklogRunResult | null;
+      error: string;
+    };
 
 async function sendInterviewReminders(): Promise<number> {
   const { year, month, day: cairoDay } = currentCairoDateParts();
@@ -54,14 +62,19 @@ export async function runRecruitmentDailyNotifications(): Promise<RecruitmentDai
   // errors and returns a verdict. If it ran second and the reminder loop threw, the check would be
   // skipped entirely on that day’s run — and the whole point of it is to notice silence.
   const staleSends = await runStaleSendCheck();
+  // Same reasoning, one stage earlier: it swallows its own errors and returns a verdict, so running
+  // it before the throwing reminder loop means a bad reminder cannot suppress the day’s backlog
+  // report. The two checks are independent and neither reads the other’s result.
+  const triageBacklog = await runTriageBacklogCheck();
   try {
     const interviewReminders = await sendInterviewReminders();
-    return { ok: true, interviewReminders, staleSends };
+    return { ok: true, interviewReminders, staleSends, triageBacklog };
   } catch (error) {
     return {
       ok: false,
       interviewReminders: 0,
       staleSends,
+      triageBacklog,
       error: error instanceof Error ? error.message : "Recruitment daily processing failed.",
     };
   }
