@@ -1071,6 +1071,7 @@ import { runNotificationOutboxBatchWindowTests } from "./notification-outbox-bat
 import { runNotificationDrainStarvationGuardTests } from "./notification-drain-starvation-guard.test.ts";
 import { runExpenseClaimsRefreshTests } from "./expense-claims-refresh.test.ts";
 import { runMarketingFinanceRequirementOnApprovalTests } from "./marketing-finance-requirement-on-approval.test.ts";
+import { runMarketingInvoiceOverdueMarkerTests } from "./marketing-invoice-overdue-marker.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -3221,6 +3222,12 @@ await runTest(
     + "in the same transaction, dated in Cairo from the deadline setting nothing had ever read — and DO NOTHING, "
     + "so an invoice already delivered is never rewritten back to pending)",
   runMarketingFinanceRequirementOnApprovalTests,
+);
+await runTest(
+  "marketing invoice overdue marker (a pending invoice past its Cairo deadline reads Overdue on the "
+    + "Approved Requests tab and in the export, the deadline day itself is not late, a submitted or "
+    + "held obligation never is — and both readers go through the one module, so export matches screen)",
+  runMarketingInvoiceOverdueMarkerTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);

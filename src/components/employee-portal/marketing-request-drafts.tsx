@@ -2427,6 +2427,9 @@ function MarketingRequestDraftWorkspaceInner() {
                         Amount
                       </th>
                       <th className="border-b border-r border-slate-100 px-3 py-2">
+                        Invoice due
+                      </th>
+                      <th className="border-b border-r border-slate-100 px-3 py-2">
                         Proof
                       </th>
                       <th className="border-b border-slate-100 px-3 py-2">
@@ -2461,6 +2464,20 @@ function MarketingRequestDraftWorkspaceInner() {
                         </td>
                         <td className="border-r border-slate-100 px-3 py-2 text-right font-bold text-slate-900">
                           {egp(row.sumOfAmount)}
+                        </td>
+                        {/* The invoice this approval obliges, and whether it is late. The status
+                            is derived from the deadline at read time, never read raw — see
+                            src/lib/marketing-requests/invoice-obligation.ts. */}
+                        <td className="border-r border-slate-100 px-3 py-2">
+                          {row.invoiceDaysOverdue > 0 ? (
+                            <span className="inline-block whitespace-nowrap rounded-sm border border-rose-200 bg-rose-50 px-2 py-0.5 text-phx-2xs font-bold text-rose-700">
+                              {row.invoiceDueLabel}
+                            </span>
+                          ) : (
+                            <span className="whitespace-nowrap font-medium text-slate-600">
+                              {row.invoiceDueLabel}
+                            </span>
+                          )}
                         </td>
                         <td className="border-r border-slate-100 px-3 py-2">
                           <EvidenceUpload
@@ -2504,7 +2521,7 @@ function MarketingRequestDraftWorkspaceInner() {
                       <tr>
                         <td
                           className="px-3 py-6 text-center text-phx-sm font-medium text-slate-400"
-                          colSpan={8}
+                          colSpan={9}
                         >
                           {approvedSearch
                             ? "No matching approved requests."
@@ -2556,6 +2573,18 @@ function MarketingRequestDraftWorkspaceInner() {
                         </span>
                         <span className="text-right font-bold text-slate-600">
                           {row.line ?? "-"}
+                        </span>
+                        <span className="font-medium text-slate-400">
+                          Invoice due
+                        </span>
+                        <span
+                          className={
+                            row.invoiceDaysOverdue > 0
+                              ? "whitespace-nowrap text-right font-black text-rose-700"
+                              : "whitespace-nowrap text-right font-bold text-slate-600"
+                          }
+                        >
+                          {row.invoiceDueLabel}
                         </span>
                       </div>
 

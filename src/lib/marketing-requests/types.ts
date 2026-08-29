@@ -873,7 +873,15 @@ export type MarketingApprovedRequestRow = {
   financeProofFileName: string | null;
   financeProofStoragePath: string | null;
   id: string;
+  /** Whole days past the invoice deadline; 0 when it is not overdue. */
+  invoiceDaysOverdue: number;
+  /** Approval records this (migration 20260829180000); null on rows approved before it. */
+  invoiceDeadlineDate: string | null;
+  /** Short cell label — "2 Sep", "Due today", "18d late". Never wraps, never ellipsises. */
+  invoiceDueLabel: string;
   invoiceFileName: string | null;
+  /** Derived, not the stored column: `'overdue'` where a pending deadline has passed. */
+  invoiceStatus: MarketingInvoiceStatus;
   invoiceStoragePath: string | null;
   line: string | null;
   moneyTransferDate: string | null;

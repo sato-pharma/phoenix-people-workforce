@@ -30,6 +30,10 @@ import {
   storeMarketingEvidencePhoto,
   storeMarketingPharmacyLicense,
 } from "@/lib/marketing-requests/evidence-photo-storage";
+import {
+  marketingInvoiceDueLabel,
+  resolveMarketingInvoiceObligation,
+} from "@/lib/marketing-requests/invoice-obligation";
 import { marketingRequestNotificationUrl } from "@/lib/marketing-requests/notification-link";
 // Moved out of this file (it was 6,000 lines) so the Case File can share the exact same reads
 // instead of copying them. Behaviour is unchanged for every caller below.
@@ -4452,13 +4456,27 @@ export function buildMarketingApprovedRequestRows(params: {
     const customer = customersById.get(request.customerId);
     const finance = financeByRequestId.get(request.id);
 
+    // The obligation is resolved here rather than read raw, so the row this table renders and the
+    // row the export writes agree about what "Pending" means once the deadline has passed.
+    const obligation = resolveMarketingInvoiceObligation({
+      invoiceDeadlineDate: finance?.invoiceDeadlineDate ?? null,
+      invoiceStatus: finance?.invoiceStatus ?? null,
+    });
+
     return {
       contactForMoneyTransfer: requester?.displayName ?? request.requesterHrId,
       customerName: customer?.displayName ?? request.customerId,
       financeProofFileName: finance?.moneyTransferProofOriginalFileName ?? null,
       financeProofStoragePath: finance?.moneyTransferProofStoragePath ?? null,
       id: request.id,
+      invoiceDaysOverdue: obligation.daysOverdue,
+      invoiceDeadlineDate: finance?.invoiceDeadlineDate ?? null,
+      invoiceDueLabel: marketingInvoiceDueLabel({
+        invoiceDeadlineDate: finance?.invoiceDeadlineDate ?? null,
+        invoiceStatus: finance?.invoiceStatus ?? null,
+      }),
       invoiceFileName: finance?.invoiceOriginalFileName ?? null,
+      invoiceStatus: obligation.effectiveStatus,
       invoiceStoragePath: finance?.invoiceStoragePath ?? null,
       line: requester?.lineName ?? null,
       moneyTransferDate: request.payDate,

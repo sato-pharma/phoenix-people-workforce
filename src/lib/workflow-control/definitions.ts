@@ -963,14 +963,23 @@ export const WORKFLOW_CONTROL_DOMAINS: readonly WorkflowControlDomain[] = [
         // Approval-step rows ARE written consistently — measured in production 2026-08-29: 123 rows
         // covering all 23 requests, none missing.
         //
-        // The "approval does not create the finance requirement" half is FIXED — migration
-        // 20260829180000 makes the decision RPC insert the row in the same transaction as the
-        // approval, with the deadline read from the finance_invoice_deadline_days control setting.
-        // What remains is the other end of that obligation: the deadline is recorded and then
-        // nothing ever acts on it. invoice_status is only ever written as 'pending' (at approval)
-        // or 'submitted' (when evidence is uploaded) — no job, query or view moves a requirement to
-        // 'overdue' once its date passes, even though the status constraint has always allowed it.
-        gaps: ["Nothing marks a finance requirement overdue: the invoice deadline is recorded at approval, but no job or view ever moves invoice_status from 'pending' to 'overdue' once that date passes."],
+        // Both halves of the old finance gap are now closed. Migration 20260829180000 makes the
+        // decision RPC create the obligation in the same transaction as the approval, dated from
+        // the finance_invoice_deadline_days control setting. The overdue marker then reads that
+        // deadline back: resolveMarketingInvoiceObligation (src/lib/marketing-requests/
+        // invoice-obligation.ts) is the single source of truth, used by the Approved Requests
+        // table and by the report export, so both say "Overdue" where the stored column still
+        // says 'pending'.
+        //
+        // The status is DERIVED, not stored, and that is deliberate rather than unfinished — a
+        // nightly job flipping the column could only ever be wrong (it can die silently, and it
+        // goes stale the moment a deadline is corrected forward). The 'overdue' value the CHECK
+        // constraint allows therefore stays unused in the database on purpose.
+        //
+        // What is genuinely still missing is the push: an overdue invoice is visible to anyone who
+        // opens the tab or the export, and nobody is told. The audience is the owner's call — a
+        // recipient list is never guessed here — so this stays recorded rather than assumed.
+        gaps: ["An overdue invoice is shown but nobody is notified: the marker appears on the Approved Requests tab and in the report export, and no notification, email or digest tells the requester or Finance that a deadline has passed. Recipient list needs the owner's decision before it is wired."],
       },
       {
         key: "notifications",
