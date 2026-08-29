@@ -532,6 +532,34 @@ const adminNavigationSectionSeeds = [
         navBadge: "marketing-approvals-pending",
         roles: ["CEO", "District Manager", "Super Admin", "SFE Manager", "Finance Manager"],
       },
+      // RE-OPENED 2026-08-30 on the owner's explicit instruction ("open the sidebar route"), after
+      // #2713 gave the Finance Manager an overdue-invoice figure on his dashboard and a link to the
+      // screen behind it. Read the history before removing this again, because it has been removed
+      // twice and neither removal recorded a product reason:
+      //   7aec78485 (2026-07-03) dropped it as the third bullet of an unrelated ROI-label cleanup,
+      //     with no rationale given at all;
+      //   7454dc920 a CI bot auto-reverted that, because the test then pinned the row's PRESENCE;
+      //   d5fd863e4 re-removed it and flipped the test to pin its ABSENCE, describing the removal as
+      //     "an explicit, repeated product decision" — a characterisation of 7aec78485, which does
+      //     not itself contain one.
+      // The owner's 2026-08-10 trim of this section (Marketing & ROI, ROI Tracker) is NOT that
+      // decision either: those are reporting surfaces, and he kept the rung the Finance Manager
+      // actually executes. This row is that same kind of thing — the workspace where the approved
+      // request is executed and its invoice chased — not a fifth report.
+      //
+      // roles mirrors canAccessAdminShellEmployeeWorkspacePage({ allowedRoles: workspaceMarketingRoles })
+      // EXACTLY: Super Admin implicitly, plus SFE Manager / Finance Manager / Financial Advisor / CEO.
+      // Nav roles must never exceed that guard (a row that redirects the viewer straight back out) and
+      // never fall short of it (the gap #2713 existed to close). Change one, change both.
+      {
+        href: "/workspace/marketing-requests",
+        // Matches the page's own WorkspaceFrame title, which is also why no re-measurement was
+        // needed: "Marketing Requests" is already in the admin sidebar label snapshot.
+        exact: true,
+        icon: ReceiptText,
+        label: "Marketing Requests",
+        roles: ["Super Admin", "CEO", "SFE Manager", "Finance Manager", "Financial Advisor"],
+      },
       // Company-wide register (owner instruction, 2026-08-03) — every request on the system and
       // where each one is stopped. Deliberately separate from the inbox above, which only carries
       // what is waiting on YOUR decision: an oversight role needs the ones waiting on everyone

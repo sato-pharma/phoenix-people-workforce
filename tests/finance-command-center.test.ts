@@ -298,18 +298,23 @@ function testLandingAndNavAgree() {
     "the generic Command Center row must exclude every role that has its own",
   );
   // /workspace/marketing-requests is the ONE page that shows the Finance Manager an approved
-  // request and its Invoice due column. It must stay OFF the admin sidebar — removed by an
-  // explicit, repeated product decision (d5fd863e4), which tests/marketing-review-routing.test.ts
-  // pins directly. Restated here because this file is where somebody chasing the overdue figure
-  // will look, and "add a sidebar row" is the obvious wrong fix.
+  // request and its Invoice due column, so it now has BOTH routes — a sidebar row (owner,
+  // 2026-08-30: "open the sidebar route") and the dashboard link below.
+  //
+  // This assertion said the OPPOSITE until 2026-08-30, and its comment cited d5fd863e4 as "an
+  // explicit, repeated product decision". That was too strong: the original removal (7aec78485)
+  // recorded no reason at all. Left here as a warning about the shape of the mistake rather than
+  // just the fact of it — a pinning test inherits whatever confidence its comment claims, and this
+  // one made a cleanup commit read like a product ruling for two months.
   assert.ok(
-    !/href: "\/workspace\/marketing-requests"/.test(nav),
-    "the workspace marketing pages stay off the admin sidebar by product decision — route to them from his own dashboard instead",
+    /href: "\/workspace\/marketing-requests",/.test(nav),
+    "the sidebar must carry a route to the approved-requests workspace",
   );
-  // Which is what the dashboard does, and UNCONDITIONALLY. His previous only route was a queue row
+  // The dashboard link stays too, and stays UNCONDITIONAL. His previous only route was a queue row
   // rendered while `missingPaymentProof > 0`, so the screen vanished exactly when the paperwork was
-  // tidy; the overdue queue row has the same shape, so neither can be the route. Same principle as
-  // the assertion above: an unreachable page is the same as no page.
+  // tidy; the overdue queue row has the same shape, so neither can be the sole route. Either way:
+  // an unreachable page is the same as no page, and a figure you cannot click through from is
+  // barely better — the sidebar row does not make this link redundant.
   const dashboard = read("src/components/admin/finance-command-center.tsx");
   assert.ok(
     /href="\/workspace\/marketing-requests"/.test(dashboard),
