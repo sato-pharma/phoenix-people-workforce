@@ -3,7 +3,6 @@
 import type { ReactNode } from "react";
 import { ArrowUpRight } from "lucide-react";
 
-import { LowerNavRow } from "@/components/layout/horizontal-nav-rows";
 import { Card } from "@/components/ui/card";
 import { DarkSurfaceContext, useDarkSurface } from "@/components/ui/surface-context";
 import { cn } from "@/lib/utils";
@@ -108,11 +107,12 @@ export function AdminPageHero({
         </div>
         {aside ? <div className="min-w-0 lg:justify-self-end">{aside}</div> : null}
       </div>
-      {/* ZONE 3 — the owner's lower navigation row, directly BELOW the page title, which is what
-          this hero is. Full-width under the grid rather than inside the title column, matching
-          `nav.moduledeck` in the prototype. Renders nothing (frame included) until he has actually
-          put a tab in the row, so the 67 pages using this hero are unchanged until he does. */}
-      <LowerNavRow className="relative border-t border-white/10 px-5 py-2 sm:px-6 lg:px-7" placement="in-page" />
+      {/* ZONE 3 used to render HERE, directly below the page title. It moved into AppShell's
+          frozen chrome when the owner asked for both rows to stay fixed. Do not put it back: a
+          sticky element is bounded by its containing block, so a row inside this hero unpins the
+          instant the hero scrolls off — it cannot be frozen from here at any price, whatever
+          classes it carries. The row still reaches all 67 pages that use this hero; it now reaches
+          them from the shell, in the same place as on every other page. */}
     </AdminHeroFrame>
   );
 }

@@ -1109,16 +1109,21 @@ export function EmployeePortalChrome({
             sections={portalNavigationSections(visibility)}
           >
             <div className="phx-navrow-scope flex min-w-0 flex-1 flex-col">
-              {/* The portal is a light card layout, so the row takes the sidebar's own frame —
-                  same rounded edge, border, translucent white and ring — rather than the admin
-                  chrome's full-bleed bar. The shadow is lighter because this one is a thin strip,
-                  not a full-height panel. */}
-              <UpperNavRow className="mb-4 rounded-sm border border-slate-200/90 bg-white/96 px-3 py-1.5 shadow-[0_10px_30px_rgba(15,23,42,0.08)] ring-1 ring-white/80 backdrop-blur sm:px-4" />
+              {/* FROZEN CHROME, portal edition. Both rows pin as one block directly beneath the
+                  portal's fixed header, so they stay put while the page scrolls — the same
+                  behaviour AppShell gets from its own sticky wrapper, which is what "fixed in every
+                  module" means. The offset is the header's OWN height, read off EmployeePortalTopNav
+                  (`h-[56px] lg:h-[64px]`) rather than guessed, so the rows tuck exactly under it at
+                  both sizes; the shell's `pt-[56px] lg:pt-[64px]` is the same pair of numbers. z-20
+                  keeps the block under that header (z-30) and above the page. The portal is a light
+                  card layout, so the rows take the sidebar's own frame — same rounded edge, border,
+                  translucent white and ring — rather than the admin chrome's full-bleed bar; the
+                  shadow is lighter because these are thin strips, not a full-height panel. */}
+              <div className="sticky top-[56px] z-20 lg:top-[64px]">
+                <UpperNavRow className="mb-2 rounded-sm border border-slate-200/90 bg-white/96 px-3 py-1.5 shadow-[0_10px_30px_rgba(15,23,42,0.08)] ring-1 ring-white/80 backdrop-blur sm:px-4" />
+                <LowerNavRow className="mb-4 rounded-sm border border-slate-200/90 bg-white/96 px-3 py-1.5 shadow-[0_10px_30px_rgba(15,23,42,0.08)] ring-1 ring-white/80 backdrop-blur sm:px-4" />
+              </div>
               <main className="employee-portal-mobile-safe min-w-0 flex-1 space-y-5 pb-24 lg:space-y-7 lg:pb-0">
-                <LowerNavRow
-                  className="rounded-sm border border-slate-200/90 bg-white/96 px-3 py-1.5 shadow-[0_10px_30px_rgba(15,23,42,0.08)] ring-1 ring-white/80 backdrop-blur sm:px-4"
-                  placement="in-page"
-                />
                 <PageTransition>{children}</PageTransition>
               </main>
             </div>

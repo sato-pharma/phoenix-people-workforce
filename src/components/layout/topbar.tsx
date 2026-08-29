@@ -66,7 +66,11 @@ export function Topbar({
         permissionLookup={permissionLookup}
         personalLayout={personalLayout}
       />
-      <header className={`sticky top-0 z-20 px-3 py-3 backdrop-blur-xl sm:px-6 ${
+      {/* Not sticky itself. AppShell — the only place this renders — wraps it together with both
+          navigation rows in one sticky container, so the whole chrome freezes as a unit. Restoring
+          a `sticky top-0` here would put a second sticky at the same offset inside the first, which
+          buys nothing and adds a stacking context the row dropdowns then have to escape. */}
+      <header className={`px-3 py-3 backdrop-blur-xl sm:px-6 ${
         isAdminMode
           ? "border-b border-[#1a1a1a] bg-[#000000]"
           : "border-b border-phx-line/80 bg-white/82"
