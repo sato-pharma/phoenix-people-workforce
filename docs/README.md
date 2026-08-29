@@ -57,6 +57,7 @@
 | [Repository Cleanup Plan](repository-cleanup-plan.md) | Full repo hygiene plan with phased actions |
 | [Repo Hygiene Audit](repo-hygiene-audit.md) | Binary files, clutter, cleanup recommendations |
 | [Security Audit (2026-05-09)](audit-2026-05-09.md) | Application security audit findings |
+| [Dead-on-Arrival Findings](dead-on-arrival-findings.md) | Four shipped features that were never reached, verified against production 2026-08-29 |
 | [Payroll & Payslips Guide](payroll-payslips-detailed.md) | Detailed payroll system technical guide |
 | [System Overview](system-overview.md) | High-level system overview |
 | [TODO](todo.md) | Active task tracking |
