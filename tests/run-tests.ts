@@ -1295,7 +1295,7 @@ await runTest(
 );
 await runTest("recruitment cv auto-apply (high-confidence gap-fill rules; a CREATED candidate's blank phone is filled, a MATCHED one's never is)", runRecruitmentCvAutoApplyTests);
 await runTest("recruitment contact review (the attended path for the email auto-apply refuses to write; not-a-CV proposes nothing, run-together values never reach a UNIQUE index)", runRecruitmentContactReviewTests);
-await runTest("recruitment offers (an unapproved offer can never be sent — the workflow registry allows offer_initiated -> offer_sent, and this is what closes it)", runRecruitmentOffersTests);
+await runTest("recruitment offers (an unapproved offer can never be sent — the guard reads the approval trail, not the stage, so a re-widened registry cannot reopen offer_initiated -> offer_sent)", runRecruitmentOffersTests);
 await runTest("recruitment hire draft (the CV and the offer carried into HR's Add Employee form; no salary is ever derived here — that belongs to payroll/policy.ts)", runRecruitmentHireDraftTests);
 await runTest("recruitment candidate merge (a merge fills blanks and never overwrites; it is refused outright when the database would reject it half-way)", runRecruitmentCandidateMergeTests);
 await runTest("recruitment pipeline metrics (time to hire, stalled applications, offers out vs accepted — a finished application is never counted as stalled)", runRecruitmentPipelineMetricsTests);
