@@ -24,6 +24,7 @@ import {
   roleSetGates,
   unreadableGatePredicates,
 } from "./support/page-gate-reader";
+import { reverseGuardRecordedRoutes } from "./navigation-reachability-backlog";
 
 /**
  * THE REVERSE GUARD — a page a role can open, that no surface offers it a link to.
@@ -35,13 +36,17 @@ import {
  * shape as its own hard-learned rule — *"a feature can ship green, deploy cleanly, and be reachable
  * by NOBODY — and zero usage is what both look like."*
  *
- * ## Report mode, deliberately
+ * ## From report mode to backlog-enforced
  *
- * This test asserts only the anti-vacuity floors and the bucket totals. It does not fail on a
- * finding. That is not timidity — it is the only honest way to introduce a guard whose day-one
- * output is 50 routes: a check that goes red on merge day gets muted within a week, and a muted
- * check is worth less than none. The list is printed into the CI log, triaged in B5, and only the
- * buckets that reach zero get ratcheted shut.
+ * This guard shipped in report mode — anti-vacuity floors plus loose bucket ceilings, printing its
+ * findings into the CI log but never failing on one. That was the only honest way to introduce a
+ * guard whose day-one output was 52 routes: a check that goes red on merge day gets muted within a
+ * week, and a muted check is worth less than none. B5 then did the triage the report existed to
+ * enable — every one of those 52 is now recorded, bucketed and reasoned in
+ * tests/navigation-reachability-backlog.ts — so this guard now asserts its live orphan set equals
+ * exactly that record, BY IDENTITY. A ceiling (`orphans.size <= 55`) let a page that gained a link
+ * and a newly stranded one cancel out; identity does not. A new orphan fails here, and a page that
+ * was given a link must be removed from the backlog in the same change or the stale record fails too.
  *
  * ## What counts as OFFERED — five layers, and each one was found the hard way
  *
@@ -329,31 +334,29 @@ export async function runNavigationGrantedButUnreachableTests(): Promise<void> {
     `expected 50+ portal twins, read ${gates.filter((g) => g.portalTwin !== null).length} (63)`,
   );
 
-  // ── the buckets, as measured. Report mode: these move when the code moves. ───
-  // Ratcheted one-sided so the picture cannot silently get worse, and re-measured when it improves.
-  const kindCount = (kind: GapKind) => (byKind.get(kind) ?? []).length;
-  // A BACKSTOP, deliberately looser than everything above it. Break-testing found that every
-  // mutation big enough to move this total trips a more specific floor first — dropping the
-  // hub-card layer takes Super Admin from 171 offered links to 50 and is caught there, not here.
-  // It is kept for the shape nothing else covers: several new orphans accumulating one at a time,
-  // each too small to trip a floor of its own.
-  assert.ok(
-    orphans.size <= 55,
-    `orphan routes rose to ${orphans.size}; the 2026-08-29 baseline is 52. A new page reachable from
-     nowhere is the finding this test exists for — give it a link, or record why it has none.`,
-  );
-  assert.ok(
-    kindCount("no-link-anywhere") <= 2,
-    `${kindCount("no-link-anywhere")} routes are linked from nowhere at all; the 2026-08-29 baseline
-     is 2, and both are portal twins pointing at /overview, which the nav offers to nobody:
-       /employee/outstation/new  — no content of its own; it reads the caller's expense state and
-                                   forwards to one of three pages, so nothing SHOULD link it.
-       /employee-portals/calendar — a real page with a real gate that nothing anywhere links to.
-                                   This is the genuine finding of the whole sweep.`,
-  );
-  assert.ok(
-    kindCount("delisted-by-ruling") <= 29,
-    `${kindCount("delisted-by-ruling")} delisted analytics routes; baseline 29. This bucket should
-     only ever shrink — it is a module retired on purpose, not a place to file new orphans.`,
+  // ── identity, not ceilings: the live orphan set must equal exactly what the backlog records ───
+  // Report mode is over. The 52 routes this sweep measured on 2026-08-29 are recorded, bucketed and
+  // reasoned in tests/navigation-reachability-backlog.ts; this asserts the live measurement still
+  // matches that record exactly. The old ceilings (orphans.size <= 55, no-link-anywhere <= 2,
+  // delisted-by-ruling <= 29) let a page that gained a link and a newly stranded one cancel out —
+  // identity cannot. A new orphan fails; a page given a link must be dropped from the backlog in the
+  // same change, or its now-stale record fails too.
+  const liveOrphanRoutes = [...orphans.keys()].sort();
+  const recorded = [...reverseGuardRecordedRoutes()].sort();
+  const newlyStranded = liveOrphanRoutes.filter((route) => !recorded.includes(route));
+  const nowReachable = recorded.filter((route) => !liveOrphanRoutes.includes(route));
+  assert.deepEqual(
+    liveOrphanRoutes,
+    recorded,
+    `the reverse guard's live orphan set no longer matches the recorded backlog.\n` +
+      (newlyStranded.length
+        ? `Newly openable-by-someone and offered-to-nobody — the finding this guard exists for. Give ` +
+          `each a link, or record why it has none in tests/navigation-reachability-backlog.ts:\n  ` +
+          `${newlyStranded.join("\n  ")}\n`
+        : "") +
+      (nowReachable.length
+        ? `No longer stranded (good news — a page gained a link or was removed; delete each stale row ` +
+          `from the backlog):\n  ${nowReachable.join("\n  ")}\n`
+        : ""),
   );
 }

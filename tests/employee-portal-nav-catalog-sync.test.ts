@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
+import { portalCatalogRecordedRoutes } from "./navigation-reachability-backlog";
+
 // M12: the employee portal has two independent, hand-maintained nav sources:
 //   1. the REAL nav — resolveEmployeePortalNavVisibility + buildEmployeePortalSections
 //      (src/components/employee-portal/employee-portal-layout.tsx), which is what an employee
@@ -25,24 +27,11 @@ import { readFileSync } from "node:fs";
 // Portal destinations deliberately absent from the catalog. Two groups: (a) core employee pages,
 // and (b) role-specific tabs that predate the catalog and were never added to it. Adding a new
 // portal page? Either add it to the system-navigation.ts employee-portal catalog (so it is
-// searchable and titled) or list it here — this test forces that choice.
-const KNOWN_CATALOG_OMISSIONS = new Set<string>([
-  // Always-visible core employee pages
-  "/employee-portals/payslips",
-  "/employee-portals/profile",
-  "/employee-portals/excuses",
-  "/employee-portals/vacation-request",
-  "/employee-portals/vacation-report",
-  "/employee-portals/incentive",
-  // Role-specific / performance tabs never added to the nav catalog
-  "/employee-portals/dsms-performance",
-  "/employee-portals/med-reps-performance",
-  "/employee-portals/team-performance",
-  "/employee-portals/team-calendar",
-  "/employee-portals/fingerprint-analytics",
-  "/employee-portals/plans/calendar",
-  "/employee-portals/training-manager/coaching",
-]);
+// searchable and titled) or record it in the shared navigation-reachability backlog under the
+// `absent-from-portal-catalog` kind — this test forces that choice. The list was consolidated into
+// tests/navigation-reachability-backlog.ts on 2026-08-29, alongside the reverse guard's findings and
+// the findability ratchet's, so there is one place to read a reachability gap and one to record one.
+const KNOWN_CATALOG_OMISSIONS = new Set<string>(portalCatalogRecordedRoutes());
 
 function extractPortalHrefs(source: string): string[] {
   const objectHrefs = Array.from(source.matchAll(/href:\s*"([^"]+)"/g)).map((m) => m[1]);
