@@ -665,6 +665,7 @@ import { runOfferLetterPayAndRenderTests } from "./offer-letter-pay-and-render.t
 import { runOfferPdfRuntimeTests } from "./offer-pdf-runtime.test.ts";
 import { runOfferDatesTests } from "./offer-dates.test.ts";
 import { runOfferDraftCheckTests } from "./offer-draft-checks.test.ts";
+import { runOfferOutstationClauseTests } from "./offer-outstation-clause.test.ts";
 import { runOfferPlaceholderTests } from "./offer-placeholders.test.ts";
 import { runOfferRichTextTests } from "./offer-rich-text.test.ts";
 import { runOfferReferenceTests } from "./offer-reference.test.ts";
@@ -2087,6 +2088,13 @@ await runTest(
     + "past the highest rather than filling a withdrawn offer's gap, keeps each title and year on "
     + "its own run, and ignores anything typed in another shape)",
   runOfferReferenceTests,
+);
+await runTest(
+  "offer outstation clause matches the engine (both shipped letters make the same promise, the "
+    + "distance is the one the engine enforces, the Cairo per-diem rule is stated rather than "
+    + "silently omitted, and the clause names NO governorate the outstation engine has no rule "
+    + "for — which is how \"excluding Sharkia Governorate\" reached every role in every territory)",
+  runOfferOutstationClauseTests,
 );
 await runTest(
   "offer letter prose round trip (the greeting survives canvas editing byte for byte, class and "

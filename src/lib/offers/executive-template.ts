@@ -1,4 +1,8 @@
 import type { OfferBlock, OfferTheme } from "@/lib/offers/types";
+import {
+  OFFER_OUTSTATION_CLAUSE_HEADING,
+  OFFER_OUTSTATION_CLAUSE_TEXT,
+} from "@/lib/offers/outstation-clause";
 
 /**
  * Built-in template TWO — the "Ultra Premium" executive letter the owner uploaded on 2026-08-27
@@ -177,8 +181,8 @@ export function executiveOfferBlocks(): OfferBlock[] {
             t: "Your first three months from the start date are a mutual probation period. A formal performance review will be conducted at its conclusion to confirm your appointment and agree your development priorities. During this period, the company reserves the right to terminate the contract without liability.",
           },
           {
-            h: "Outstation Expenses",
-            t: "You will be eligible for outstation expenses in accordance with company policy for business travel exceeding 60 km within your assigned territory, excluding Sharkia Governorate.",
+            h: OFFER_OUTSTATION_CLAUSE_HEADING,
+            t: OFFER_OUTSTATION_CLAUSE_TEXT,
           },
           {
             h: "Contract Duration &amp; Notice",
