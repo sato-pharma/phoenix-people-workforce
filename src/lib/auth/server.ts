@@ -27,6 +27,7 @@ import {
   evaluateEmployeeLifecycleGate,
   type SessionLifecycleGate,
 } from "@/lib/auth/session-lifecycle";
+import { uploadedEmployeePhotoUrl } from "@/lib/employees/employee-photo";
 import { employeeProfileImageForHrId } from "@/lib/employees/profile-images";
 import { formatHrIdForDisplay } from "@/lib/hr-id";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -520,6 +521,19 @@ function buildInitials(input: string) {
   return parts.map((part) => part.charAt(0).toUpperCase()).join("");
 }
 
+/**
+ * Uploaded photo first, then the bundled static portrait — the same order
+ * src/lib/employees/employee-photo.ts documents for every other surface that shows a photo.
+ * This resolver used to skip the uploaded half entirely, so a self-service upload on
+ * /admin/profile (EmployeePhotoEditor, which promises "shown across Phoenix") never reached the
+ * CEO/Finance/HR command-centre heroes — they render from this function, not from the profile
+ * page's own resolution.
+ */
+async function resolveViewerPhotoUrl(hrId: string | null | undefined): Promise<string | null> {
+  const uploaded = await uploadedEmployeePhotoUrl(hrId).catch(() => null);
+  return uploaded ?? employeeProfileImageForHrId(hrId);
+}
+
 export const resolveViewerIdentityFromPage = cache(async (accessContext?: AccessContext): Promise<ViewerIdentity> => {
   const access = accessContext ?? await resolveAccessContextFromPage();
   const fallbackName = access.loginId || formatHrIdForDisplay(access.hrId) || "User";
@@ -530,7 +544,7 @@ export const resolveViewerIdentityFromPage = cache(async (accessContext?: Access
       displayName: fallbackName,
       initials: buildInitials(fallbackName),
       roleLabel: fallbackRole,
-      imageUrl: employeeProfileImageForHrId(access.hrId),
+      imageUrl: await resolveViewerPhotoUrl(access.hrId),
     };
   }
 
@@ -562,7 +576,7 @@ export const resolveViewerIdentityFromPage = cache(async (accessContext?: Access
     displayName,
     initials: buildInitials(displayName),
     roleLabel,
-    imageUrl: employeeProfileImageForHrId(row?.hr_id ?? access.hrId),
+    imageUrl: await resolveViewerPhotoUrl(row?.hr_id ?? access.hrId),
   };
 });
 

@@ -35,6 +35,7 @@ export type CeoWelcomeProfile = {
   roleLabel: string;
   hrId: string | null;
   imageUrl?: string | null;
+  initials?: string;
 };
 
 // ── Formatters ───────────────────────────────────────────────────────────────
@@ -415,6 +416,7 @@ export function CeoCommandCenter({
             fullName={_welcome.fullName}
             roleLabel={_welcome.roleLabel}
             imageUrl={_welcome.imageUrl}
+            initials={_welcome.initials}
             personal={!isSfe}
           />
         </div>

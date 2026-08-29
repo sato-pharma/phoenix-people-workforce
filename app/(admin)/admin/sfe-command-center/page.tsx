@@ -54,6 +54,9 @@ async function SfeCommandContent({ access }: { access: Awaited<ReturnType<typeof
     // background, which is why the hero masks its left and bottom edges rather than just
     // dropping it in.
     imageUrl: "/people/sfe-khaled-bedair.png",
+    // Only ever needed if the file above 404s (CeoHeroIdentity's onError) — the medallion is the
+    // safety net, not the expected path.
+    initials: viewer.initials,
   };
   return (
     <div className="min-w-0 max-w-full overflow-x-hidden">

@@ -58,5 +58,12 @@ async function HrCommandCenterContent({
     redirect(resolveLandingPathForRole(access.role));
   }
 
-  return <HrCommandCenter data={data} viewerName={viewer.displayName} />;
+  return (
+    <HrCommandCenter
+      data={data}
+      viewerImageUrl={viewer.imageUrl}
+      viewerInitials={viewer.initials}
+      viewerName={viewer.displayName}
+    />
+  );
 }

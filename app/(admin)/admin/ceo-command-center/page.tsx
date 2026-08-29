@@ -79,12 +79,19 @@ async function CeoCommandContent({ access }: { access: AccessContext }) {
         roleLabel: "Chief Executive Officer",
         hrId: access.hrId,
         imageUrl: "/people/ceo-anwar-gaweesh-transparent.png",
+        // Only ever needed if the portrait file itself 404s (CeoHeroIdentity's onError) — the
+        // medallion is the safety net, not the expected path, for the one person on this system
+        // who always has a portrait.
+        initials: viewer.initials,
       }
     : {
         fullName: viewer.displayName,
         roleLabel: viewer.roleLabel,
         hrId: access.hrId,
         imageUrl: null,
+        // No hardcoded portrait for this branch (e.g. Super Admin viewing the CEO page) — an
+        // initials medallion instead of a blank space where a photo would otherwise be.
+        initials: viewer.initials,
       };
 
   return (
