@@ -159,7 +159,39 @@ export function runOutstationExpenseApprovalSummaryTests() {
   );
   assert.deepEqual(
     totalExpenseApprovalSummary([]),
-    { approvedCount: 0, approvedValue: 0, employeeCount: 0, pendingCount: 0, rejectedCount: 0 },
+    {
+      approvedCount: 0,
+      approvedValue: 0,
+      claimedTotal: 0,
+      employeeCount: 0,
+      pendingCount: 0,
+      rejectedCount: 0,
+    },
     "an empty summary totals to zeroes, not NaN",
+  );
+
+  // --- the header must carry BOTH money figures, and they must be different numbers ---
+  //
+  // The header used to quote approved money alone. A single total there is ambiguous exactly where
+  // it matters: a reader assumes it is whichever of the two they had in mind, and the difference
+  // between the two is NOT the approval trim, because they span different sets of trips. That
+  // confusion is not hypothetical — on 2026-08-29 a production mirror total of EGP 165,424.22
+  // (claimed) was compared against 163,795.22 (approved-preferring) taken from the same unchanged
+  // data, and the 1,629.00 formula gap was read as an overnight movement in real payroll data.
+
+  assert.equal(
+    totals.claimedTotal,
+    2800,
+    "the header's claimed money is 1000 + 1000 + 500 + 300 — every trip on screen, whatever its state",
+  );
+  assert.equal(
+    totals.claimedTotal,
+    summaries.reduce((running, summary) => running + summary.claimedTotal, 0),
+    "the header's claimed money must foot to the per-employee rows, the same way its approved money does",
+  );
+  assert.notEqual(
+    totals.claimedTotal,
+    totals.approvedValue,
+    "claimed and approved are DIFFERENT measures over DIFFERENT trips — if a fixture ever makes them equal, this test stops proving the header needs both",
   );
 }
