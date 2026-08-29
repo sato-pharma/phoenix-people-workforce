@@ -1568,7 +1568,18 @@ function part1ManualDeductionBaseRow(
     "Base Salary": roundCurrency(source?.baseSalary ?? 0),
     "Net Salary": roundCurrency(source?.netSalary ?? 0),
     // Blank for continuing (non-leaver) one-part employees — only leavers have one.
-    "Resignation Date": member.lastWorkingDate ?? "",
+    //
+    // Labelled "Last Working Date" because that is exactly what it is. Six Part 1
+    // steps used to head this same value "Resignation Date", which is a DIFFERENT
+    // column in employee_resignations: 4 of 54 live exit records have the two
+    // dates apart (Mohamed Yasser resigned 2 Aug, last worked 6 Aug; Ahmed
+    // Abdallah 28 vs 31 Aug). The exit form copies one date into all four of its
+    // date columns in the other 92.6%, which is why the wrong heading survived —
+    // and why the Resignations step (correctly headed "Last Working Date") and
+    // the Resignations CRM step looked like they disagreed when they did not.
+    // The settlement has always keyed off the last working date; only the heading
+    // was wrong. Owner-reported 2026-08-30.
+    "Last Working Date": member.lastWorkingDate ?? "",
   };
   return row;
 }
