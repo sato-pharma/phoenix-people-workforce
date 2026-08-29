@@ -1,7 +1,25 @@
 import { strict as assert } from "node:assert";
 
-import { detectSuspectDatesFromCounts, excludeSuspectDates } from "../src/lib/deductions/connectors/crm.ts";
+import {
+  buildCrmIdByHrKeyFromVisits,
+  detectSuspectDatesFromCounts,
+  excludeSuspectDates,
+} from "../src/lib/deductions/connectors/crm.ts";
+import { canonicalHrIdKey } from "../src/lib/hr-id.ts";
 import type { DeductionsCandidateDraft } from "../src/lib/deductions/types.ts";
+
+/** A visits-mirror row in the shape the leaver matcher consumes. */
+function visit(overrides: Record<string, unknown> = {}) {
+  return {
+    visit_date: "2026-04-14",
+    visit_type: 0,
+    agent_hr_id: null,
+    agent_crm_id: null,
+    double_hr_id: null,
+    double_crm_id: null,
+    ...overrides,
+  } as never;
+}
 
 function draft(overrides: Partial<DeductionsCandidateDraft> = {}): DeductionsCandidateDraft {
   return {
@@ -165,5 +183,53 @@ export async function runDeductionsModuleCrmGuardsTests(): Promise<void> {
     assert.ok(result);
     assert.equal(result!.estimatedAmount, null);
     assert.equal(result!.calculationStatus, "requires_review");
+  }
+
+  // buildCrmIdByHrKeyFromVisits — recovers the crm id a resignation cleared.
+  // Production 2026-08-29: B-147 resigned, employees.crm_id went null, and her
+  // July days were charged 4,645.16 EGP as "no activity" while carrying 9-22
+  // visits each — because agent_hr_id had not been resolved yet and the crm-id
+  // fallback had nothing to match on. Her 976 historical rows all carry 1470.
+  {
+    const recovered = buildCrmIdByHrKeyFromVisits([
+      visit({ agent_hr_id: "B-147", agent_crm_id: 1470 }),
+      visit({ agent_hr_id: "B-147", agent_crm_id: 1470 }),
+    ]);
+    assert.equal(
+      recovered.get(canonicalHrIdKey("B-147") ?? ""),
+      "1470",
+      "a leaver's crm id must be recoverable from her own historical visits",
+    );
+  }
+
+  // A district manager appears on the mirror as the DOUBLE, never the agent, so
+  // recovery must read both columns or every DM stays unrecoverable.
+  {
+    const recovered = buildCrmIdByHrKeyFromVisits([
+      visit({ agent_hr_id: "B-200", agent_crm_id: 1600, double_hr_id: "B-23", double_crm_id: 1503 }),
+    ]);
+    assert.equal(recovered.get(canonicalHrIdKey("B-23") ?? ""), "1503", "double_hr_id must recover too");
+    assert.equal(recovered.get(canonicalHrIdKey("B-200") ?? ""), "1600");
+  }
+
+  // An hr id seen under two crm ids is an ambiguous identity. First wins — this
+  // must never silently arbitrate between them.
+  {
+    const recovered = buildCrmIdByHrKeyFromVisits([
+      visit({ agent_hr_id: "B-9", agent_crm_id: 111 }),
+      visit({ agent_hr_id: "B-9", agent_crm_id: 222 }),
+    ]);
+    assert.equal(recovered.get(canonicalHrIdKey("B-9") ?? ""), "111", "first crm id seen must win");
+    assert.equal(recovered.size, 1);
+  }
+
+  // Rows carrying one half of the pair teach nothing and must not create an
+  // entry — an empty-string crm id would match nothing and read as recovered.
+  {
+    const recovered = buildCrmIdByHrKeyFromVisits([
+      visit({ agent_hr_id: "B-5", agent_crm_id: null }),
+      visit({ agent_hr_id: null, agent_crm_id: 999 }),
+    ]);
+    assert.equal(recovered.size, 0, "a half-populated row must not produce a recovery entry");
   }
 }

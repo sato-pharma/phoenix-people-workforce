@@ -21,7 +21,7 @@
 
 import { canonicalHrIdKey } from "@/lib/hr-id.ts";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-import { scanVisitsForRange, scanVisitsForRangeIncludingDeparted } from "@/lib/crm/reads.ts";
+import { expandHrIdFilterValues, scanVisitsForRange, scanVisitsForRangeIncludingDeparted } from "@/lib/crm/reads.ts";
 import { isFieldWorkforceComplianceEligibleTitle, logsOwnCrmVisitsTitle } from "@/lib/field-workforce-compliance/eligibility.ts";
 import {
   isFieldWorkforceWeeklyOff,
@@ -494,6 +494,85 @@ async function loadZeroCrmSignalHrIdKeys(input: {
 }
 
 /**
+ * The crm id that historically accompanies each hr id on the visits mirror.
+ *
+ * WHY THIS EXISTS (measured on production 2026-08-29). On resignation the CRM
+ * account is deactivated and its name stripped, and `employees.crm_id` is
+ * cleared — so a leaver reaches collectLeaverCrmCandidate with `crmId: null`.
+ * That kills the only identity fallback its `isMine` filter has. The mirror's
+ * `agent_hr_id` is resolved ASYNCHRONOUSLY at sync time and is frequently still
+ * null for recent days, while `agent_crm_id` comes straight from the CRM payload
+ * and is present from the moment the row is written. With neither route alive,
+ * every unattributed day of the settlement span reads as "no activity".
+ *
+ * What that cost in July 2026: B-147 charged 9 days / 4,645.16 EGP and B-171
+ * 4 days / 2,064.52 EGP for days on which they have 9-22 visits EACH. Their July
+ * rows only gained an `agent_hr_id` on 2026-08-09 and 2026-08-16, and crm id 1470
+ * was not mapped to B-147 in ireports360_crm_identity_resolutions until
+ * 2026-08-28 05:37 — three weeks AFTER the 2026-08-06 collection charged her.
+ * All 7 live August candidates are likewise resigned leavers with a null crm_id.
+ *
+ * History is what makes it recoverable: B-147's 976 visits all carry
+ * `agent_crm_id` 1470, and her April rows — untouched since 2026-08-02 — already
+ * named her by hr id before that collection ran. The crm id was knowable at the
+ * time; nothing looked it up.
+ *
+ * Pure, so the rule is unit-testable without a database. First crm id seen per hr
+ * id wins: one match is all `isMine` needs, and an hr id appearing under several
+ * crm ids is an ambiguous identity this must not silently arbitrate.
+ */
+export function buildCrmIdByHrKeyFromVisits(visits: readonly LeaverVisitRow[]): Map<string, string> {
+  const byHrKey = new Map<string, string>();
+  for (const visit of visits) {
+    const agentKey = canonicalHrIdKey(visit.agent_hr_id ?? "");
+    const agentCrm = String(visit.agent_crm_id ?? "").trim();
+    if (agentKey && agentCrm && !byHrKey.has(agentKey)) byHrKey.set(agentKey, agentCrm);
+    const doubleKey = canonicalHrIdKey(visit.double_hr_id ?? "");
+    const doubleCrm = String(visit.double_crm_id ?? "").trim();
+    if (doubleKey && doubleCrm && !byHrKey.has(doubleKey)) byHrKey.set(doubleKey, doubleCrm);
+  }
+  return byHrKey;
+}
+
+/**
+ * Historical crm ids for these leavers, from visits strictly BEFORE the period.
+ *
+ * History-only on purpose: the whole problem is a period that has not been
+ * attributed yet, so re-reading those same days would answer nothing.
+ *
+ * Reads the mirror directly rather than through crm/reads' doors because every
+ * one of them applies the departed-agent exclusion, which hides a resigned rep's
+ * visits — and this lookup exists precisely to identify somebody BECAUSE they
+ * resigned. Same carve-out, and the same reason, as
+ * scanVisitsForRangeIncludingDeparted. `expandHrIdFilterValues` is reused so the
+ * mirror's mixed-case hr ids still match (a plain `.in` silently under-returns).
+ *
+ * Best-effort: on any failure it returns an empty map and every leaver simply
+ * keeps the previous behaviour — this may never suppress a real finding by
+ * failing, only by succeeding.
+ */
+async function loadLeaverHistoricalCrmIds(input: {
+  hrIds: readonly string[];
+  beforeDateIso: string;
+}): Promise<Map<string, string>> {
+  if (input.hrIds.length === 0) return new Map();
+  try {
+    const supabase = getSupabaseAdmin();
+    const { data, error } = await supabase
+      .from("ireports360_visits")
+      .select("agent_hr_id,agent_crm_id,double_hr_id,double_crm_id")
+      .in("agent_hr_id", expandHrIdFilterValues(input.hrIds))
+      .lt("visit_date", input.beforeDateIso)
+      .order("visit_date", { ascending: false })
+      .limit(2000);
+    if (error) return new Map();
+    return buildCrmIdByHrKeyFromVisits((data ?? []) as unknown as LeaverVisitRow[]);
+  } catch {
+    return new Map();
+  }
+}
+
+/**
  * Continuing-employee candidates via the shared FWC recommendations engine.
  * Excludes anyone in leaverHrIdKeys — those are handled by
  * collectLeaverCrmCandidate over their own truncated settlement span instead.
@@ -712,16 +791,27 @@ export async function collectCrmCandidates(input: {
       .in("hr_id", Array.from(leaverRoster.values(), (entry) => entry.hrId));
     if (error) throw new Error(`Failed to load leaver employee records: ${error.message}`);
 
+    // Resignation clears employees.crm_id, which is the leaver matcher's only
+    // fallback while the mirror's agent_hr_id is still unresolved — see
+    // buildCrmIdByHrKeyFromVisits for the July 2026 numbers that cost.
+    const recoveredCrmIdByHrKey = await loadLeaverHistoricalCrmIds({
+      hrIds: Array.from(leaverRoster.values(), (entry) => entry.hrId),
+      beforeDateIso: periodStart,
+    });
+
     for (const employeeRow of (data ?? []) as Array<{ hr_id: string; crm_id: string | null; full_name: string | null; job_title: string | null; hire_date: string | null }>) {
       const key = canonicalHrIdKey(employeeRow.hr_id) ?? "";
       const roster = key ? leaverRoster.get(key) : undefined;
       if (!roster) continue;
       const compactKey = compactDeductionsHrId(employeeRow.hr_id);
+      // Stored crm_id wins; the recovered one only fills a cleared field.
+      const storedCrmId = employeeRow.crm_id != null ? String(employeeRow.crm_id).trim() : "";
+      const effectiveCrmId = storedCrmId || (key ? (recoveredCrmIdByHrKey.get(key) ?? null) : null);
       // No I/O left in here: pure computation over the shared scan, so the loop that
       // used to serialise 10 company-wide scans now costs nothing per leaver.
       const draft = collectLeaverCrmCandidate({
         hrId: roster.hrId,
-        crmId: employeeRow.crm_id,
+        crmId: effectiveCrmId,
         employeeName: employeeRow.full_name,
         jobTitle: employeeRow.job_title,
         hireDate: employeeRow.hire_date,
