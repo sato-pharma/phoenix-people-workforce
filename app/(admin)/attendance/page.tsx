@@ -11,7 +11,7 @@ import {
   resolveNavigationMode,
 } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
-import { permissionAllowed, roleAllowed, roleNotExcluded } from "@/lib/navigation/active-path";
+import { navigationItemVisible } from "@/lib/navigation/active-path";
 
 export const dynamic = "force-dynamic";
 
@@ -23,22 +23,20 @@ export default async function AttendanceManagementPage() {
 
   const matrix = await getPermissionMatrix();
   const permissionLookup = buildPermissionLookup(matrix, access.role);
-  const isSystemAdministratorWorkspace = access.scope === "system" || access.role === "Super Admin";
   // Fingerprint Report gets a page-scoped exception for CEO (see
   // canAccessFingerprintReport) even though the card's own gate — the
   // "employees" permission — stays Super Admin-only for every other role.
+  //
+  // That exception now governs every role, Super Admin included: the old bypass returned the whole
+  // list for them and never reached this branch. It resolves to canAccess(employees, read), which
+  // Super Admin holds, so the card still shows — and if a matrix override ever removed that grant,
+  // the card would correctly stop showing instead of lingering on the strength of the role name.
   const canViewFingerprintReport = await canAccessFingerprintReport(access);
 
-  const visibleTools = isSystemAdministratorWorkspace
-    ? attendanceManagementPageItems
-    : attendanceManagementPageItems.filter((item) => {
-        if (item.href === FINGERPRINT_REPORT_HREF) return canViewFingerprintReport;
-        return (
-          permissionAllowed(permissionLookup, item.permissions) &&
-          roleAllowed(access.role, item.roles) &&
-          roleNotExcluded(access.role, item.excludedRoles)
-        );
-      });
+  const visibleTools = attendanceManagementPageItems.filter((item) => {
+    if (item.href === FINGERPRINT_REPORT_HREF) return canViewFingerprintReport;
+    return navigationItemVisible(item, permissionLookup, access.role);
+  });
 
   return (
     <div className="space-y-6">

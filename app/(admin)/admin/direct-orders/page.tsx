@@ -8,7 +8,7 @@ import { loadDirectOrderWorkspaceView, resolveDirectOrderWorkspaceTab } from "@/
 import { resolveDirectOrderStatusGroup } from "@/lib/direct-orders/operational-query";
 import { buildPermissionLookup, getPermissionMatrix, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
-import { permissionAllowed, roleAllowed } from "@/lib/navigation/active-path";
+import { navigationItemVisible } from "@/lib/navigation/active-path";
 import { assertDirectOrdersPageAccess } from "@/lib/direct-orders/page-access";
 
 export const dynamic = "force-dynamic";
@@ -69,14 +69,11 @@ export default async function AdminDirectOrdersWorkspacePage({
   // lookup, same helpers. This component owns no permission rule of its own.
   const matrix = await getPermissionMatrix();
   const permissionLookup = buildPermissionLookup(matrix, access.role);
-  const isSystemAdministratorWorkspace = access.scope === "system" || access.role === "Super Admin";
-  const adminTools = (
-    isSystemAdministratorWorkspace
-      ? directOrdersPageItems
-      : directOrdersPageItems.filter(
-          (item) => permissionAllowed(permissionLookup, item.permissions) && roleAllowed(access.role, item.roles),
-        )
-  )
+  // navigationItemVisible also applies excludedRoles, which this call site had omitted. No item in
+  // directOrdersPageItems carries one, so that is a no-op today — and the list can no longer grow
+  // an excludedRoles this page would silently ignore.
+  const adminTools = directOrdersPageItems
+    .filter((item) => navigationItemVisible(item, permissionLookup, access.role))
     // The submit form and the report are reachable from the workspace itself, so
     // repeating them under "Admin Tools" would restate the two things the
     // workspace already does — the exact duplication this consolidation removes.
@@ -105,7 +102,12 @@ export default async function AdminDirectOrdersWorkspacePage({
         canSeeAllOrders={workspace.capabilities.canSeeAllOrders}
         reportHref={`/admin/direct-orders/report`}
         customersHref={
-          isSystemAdministratorWorkspace || access.role === "SFE Manager" ? `${BASE_PATH}/pharmacies` : null
+          // Kept verbatim from the deleted `isSystemAdministratorWorkspace` local. This is a
+          // one-off "who gets the pharmacies link" rule, not the navigation gate this change
+          // consolidates, so it keeps its own expression rather than borrowing one.
+          access.scope === "system" || access.role === "Super Admin" || access.role === "SFE Manager"
+            ? `${BASE_PATH}/pharmacies`
+            : null
         }
       />
     </div>

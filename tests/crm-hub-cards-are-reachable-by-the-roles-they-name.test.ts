@@ -57,16 +57,14 @@ function permissionLookupFor(role: PhoenixRole): PermissionLookup {
 
 /** Exactly what the admin sidebar renders for this role — the real filter, not a replica. */
 function adminHrefsFor(role: PhoenixRole): Set<string> {
-  // getSections' system-administrator branch bypasses roles/permissions and honours only
-  // excludedRoles. Super Admin takes that branch in production (app-shell.tsx), so the test must
-  // take it too — it is precisely the branch that hid the hub from him.
-  const isSystemAdministratorWorkspace = role === "Super Admin";
+  // One gating path for every role now, so the test takes exactly what production takes. The
+  // system administrator's waiver lives inside navigationItemVisible rather than in a branch
+  // the caller has to opt into, which is what makes this call identical to app-shell's.
   const sections = getSections(
     getNavigationSections("admin"),
     "admin",
     permissionLookupFor(role),
     role,
-    isSystemAdministratorWorkspace,
   );
   return new Set(sections.flatMap((section) => section.items.map((item) => item.href)));
 }

@@ -121,7 +121,6 @@ const HorizontalNavContext = createContext<ResolvedRows>(EMPTY_ROWS);
 export function HorizontalNavProvider({
   children,
   currentRole,
-  isSystemAdministratorWorkspace = false,
   navigationMode = "admin",
   permissionLookup = {},
   personalLayout = null,
@@ -129,7 +128,6 @@ export function HorizontalNavProvider({
 }: {
   children: ReactNode;
   currentRole?: PhoenixRole;
-  isSystemAdministratorWorkspace?: boolean;
   navigationMode?: NavigationMode;
   permissionLookup?: PermissionLookup;
   personalLayout?: PersonalNavigationLayout | null;
@@ -163,7 +161,6 @@ export function HorizontalNavProvider({
         navigationMode,
         permissionLookup,
         currentRole,
-        isSystemAdministratorWorkspace,
       );
     // Which module is this page in? Resolved from the GATED sections — the code-defined ones —
     // rather than from the rearranged result, because a page the viewer moved into a row has left
@@ -227,7 +224,6 @@ export function HorizontalNavProvider({
   }, [
     activeTab,
     currentRole,
-    isSystemAdministratorWorkspace,
     navigationMode,
     pathname,
     permissionLookup,

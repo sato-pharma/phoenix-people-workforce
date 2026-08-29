@@ -30,14 +30,11 @@ export default async function SidebarLayoutPage() {
 
   const matrix = await getPermissionMatrix();
   const permissionLookup = buildPermissionLookup(matrix, access.role);
-  const isSystemAdministratorWorkspace = access.scope === "system" || access.role === "Super Admin";
-
   const gated = getSections(
     getNavigationSections("admin"),
     "admin",
     permissionLookup,
     access.role,
-    isSystemAdministratorWorkspace,
   );
 
   const catalogue = gated.map((section) => ({

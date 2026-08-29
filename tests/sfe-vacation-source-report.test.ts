@@ -101,10 +101,11 @@ function lookupForRole(role: PhoenixRole): PermissionLookup {
   return lookup;
 }
 
-/** Mirrors app-shell.tsx: Super Admin / system scope bypasses role+permission gating but still
- * honours excludedRoles. */
+/** Mirrors app-shell.tsx. The system-administrator waiver is no longer a flag the caller passes —
+ * getSections applies it itself, to `roles` only, and honours excludedRoles and permissions for
+ * every role including Super Admin. Passing `role` is all a caller needs. */
 function sidebarHrefsFor(role: PhoenixRole): string[] {
-  return getSections(adminNavigationSections, "admin", lookupForRole(role), role, role === "Super Admin")
+  return getSections(adminNavigationSections, "admin", lookupForRole(role), role)
     .flatMap((section) => section.items.map((item) => item.href));
 }
 

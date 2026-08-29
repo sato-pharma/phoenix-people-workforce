@@ -137,10 +137,12 @@ export default async function AnalyticsHubPage() {
   await assertPermission(access, "sales", "read");
   if (!canViewAdminCoreAnalytics(access.role)) redirect(resolveLandingPathForRole(access.role));
   const canOpenMetabase = access.role === "CEO" || access.role === "Super Admin";
-  const isSystemAdministratorWorkspace = access.scope === "system" || access.role === "Super Admin";
-  const visibleModules = isSystemAdministratorWorkspace
-    ? MODULES
-    : MODULES.filter((mod) => (mod.roles as readonly string[]).includes(access.role));
+  // No system-administrator bypass here, and none is needed: every MODULES entry above already
+  // names "Super Admin" in its own roles list (both shared constants begin with it), so the plain
+  // filter admits them to all nine tiles. The bypass this replaces was a no-op that only looked
+  // load-bearing. These tiles carry no `permissions`, which is why they are filtered locally
+  // rather than through navigationItemVisible — see the note on the two constants above.
+  const visibleModules = MODULES.filter((mod) => (mod.roles as readonly string[]).includes(access.role));
 
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-6">

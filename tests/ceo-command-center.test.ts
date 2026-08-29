@@ -2,6 +2,9 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import { resolveLandingPathForRole } from "../src/lib/auth/landing.ts";
+import { buildPermissionLookup, permissionMatrix } from "../src/lib/auth/permissions.ts";
+import { getNavigationSections } from "../src/config/system-navigation.ts";
+import { getSections } from "../src/lib/navigation/active-path.ts";
 import {
   buildCompanyWorkforceAggregateMetrics,
   canReadCompanyWorkforceAggregates,
@@ -91,16 +94,31 @@ export function runCeoCommandCenterTests() {
   );
 
   // The SFE overview is one role's personal page and must not sit on the Super Admin's or the
-  // CEO's sidebar. `roles` alone does not achieve that: the system-administrator workspace
-  // bypasses role gating entirely, so Super Admin saw it regardless. getSections now honours
-  // excludedRoles THROUGH that bypass — assert both halves, because either one alone silently
-  // stops working.
-  const activePathSource = readFileSync("src/lib/navigation/active-path.ts", "utf8");
-  assert.match(
-    activePathSource,
-    /isSystemAdministratorWorkspace\s*\?\s*dedupeSectionsByHref\(\s*sections\s*\n?\s*\.map\(\(section\) => \(\{[\s\S]{0,220}?roleNotExcluded\(role, item\.excludedRoles\)/,
-    "the system-administrator bypass must still apply excludedRoles, or a role-personal page reappears on the Super Admin sidebar",
-  );
+  // CEO's sidebar. `roles` alone does not achieve that: the system administrator's waiver skips
+  // the `roles` gate, so Super Admin would be offered it regardless. `excludedRoles` is what stops
+  // it, and navigationItemVisible honours that for EVERY role including them — assert both halves,
+  // because either one alone silently stops working.
+  //
+  // Asked of the running code rather than of the source text. This was a regex pinned to the exact
+  // shape of the old two-branch bypass in active-path.ts, which made it a tripwire on formatting
+  // rather than on behaviour. What actually matters is that these two roles are not offered the
+  // href, so ask getSections that directly.
+  for (const role of ["Super Admin", "CEO"] as const) {
+    const offered = getSections(
+      getNavigationSections("admin"),
+      "admin",
+      buildPermissionLookup(permissionMatrix, role),
+      role,
+    )
+      .flatMap((navSection) => navSection.items)
+      .map((navItem) => navItem.href);
+    assert.ok(offered.length > 20, `sanity: ${role} should be offered a real sidebar, got ${offered.length} items`);
+    assert.equal(
+      offered.includes("/admin/sfe-command-center"),
+      false,
+      `${role} must not be offered the SFE Manager Overview — excludedRoles must survive the roles-gate waiver`,
+    );
+  }
   const sfeNavEntry = /^.*href: "\/admin\/sfe-command-center".*$/m.exec(navSource)?.[0] ?? "";
   assert.ok(sfeNavEntry.length > 0, "the SFE command-center nav entry must still be findable");
   for (const role of ["Super Admin", "CEO"]) {

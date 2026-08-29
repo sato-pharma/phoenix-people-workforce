@@ -748,14 +748,12 @@ function SidebarNav({
   mode = "admin",
   onNavigate,
   permissionLookup = EMPTY_PERMISSION_LOOKUP,
-  isSystemAdministratorWorkspace = false,
   currentRole,
   personalLayout = null,
   rail = false,
   scrollable = true,
 }: {
   currentRole?: PhoenixRole;
-  isSystemAdministratorWorkspace?: boolean;
   mode?: NavigationMode;
   onNavigate?: () => void;
   permissionLookup?: PermissionLookup;
@@ -792,11 +790,10 @@ function SidebarNav({
           mode,
           permissionLookup,
           currentRole,
-          isSystemAdministratorWorkspace,
         ),
         mode === "admin" ? personalLayout : null,
       ),
-    [currentRole, isSystemAdministratorWorkspace, mode, permissionLookup, personalLayout],
+    [currentRole, mode, permissionLookup, personalLayout],
   );
   const sections = applied.sections;
   // Layer 1 — the pages promoted out of the modules entirely. Rendered above Favourites.
@@ -1341,12 +1338,10 @@ function useSidebarRail(mode: NavigationMode) {
 export function Sidebar({
   navigationMode = "admin",
   permissionLookup = EMPTY_PERMISSION_LOOKUP,
-  isSystemAdministratorWorkspace = false,
   currentRole,
   personalLayout = null,
 }: {
   currentRole?: PhoenixRole;
-  isSystemAdministratorWorkspace?: boolean;
   navigationMode?: NavigationMode;
   permissionLookup?: PermissionLookup;
   /** This viewer's own saved arrangement, resolved server-side in AppShell. */
@@ -1403,7 +1398,6 @@ export function Sidebar({
         <SidebarIntro mode={navigationMode} />
         <SidebarNav
           currentRole={currentRole}
-          isSystemAdministratorWorkspace={isSystemAdministratorWorkspace}
           mode={navigationMode}
           permissionLookup={permissionLookup}
           personalLayout={personalLayout}
@@ -1421,12 +1415,10 @@ export function MobileSidebar({
   open,
   navigationMode = "admin",
   permissionLookup = EMPTY_PERMISSION_LOOKUP,
-  isSystemAdministratorWorkspace = false,
   currentRole,
   personalLayout = null,
 }: {
   currentRole?: PhoenixRole;
-  isSystemAdministratorWorkspace?: boolean;
   onClose: () => void;
   open: boolean;
   navigationMode?: NavigationMode;
@@ -1475,8 +1467,7 @@ export function MobileSidebar({
           <SidebarIntro mode={navigationMode} />
           <SidebarNav
             currentRole={currentRole}
-            isSystemAdministratorWorkspace={isSystemAdministratorWorkspace}
-            mode={navigationMode}
+              mode={navigationMode}
             onNavigate={onClose}
             permissionLookup={permissionLookup}
             personalLayout={personalLayout}

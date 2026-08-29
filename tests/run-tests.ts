@@ -15,6 +15,7 @@ import { runGcpMetricsTests } from "./gcp-metrics.test.ts";
 import { runWeeklySystemHealthDigestTests } from "./weekly-system-health-digest.test.ts";
 import { runMailboxComplianceMonitorTests } from "./mailbox-compliance-monitor.test.ts";
 import { runNavigationActivePathTests } from "./navigation-active-path.test.ts";
+import { runNavSingleGateNoBypassTests } from "./nav-single-gate-no-bypass.test.ts";
 import { runPermissionLookupTotalityTests } from "./permission-lookup-totality.test.ts";
 import { runNavigationRuling11AnalyticsTests } from "./navigation-ruling-11-analytics.test.ts";
 import { runHrUrlNamespaceTests } from "./hr-url-namespace.test.ts";
@@ -1088,6 +1089,7 @@ await runTest("error monitor per-user attempts (30d default window + real-accoun
 await runTest("gcp-metrics service health reader (availability/latency/instances + {available:false} guard)", runGcpMetricsTests);
 await runTest("weekly system health digest", runWeeklySystemHealthDigestTests);
 await runTest("navigation active path", runNavigationActivePathTests);
+await runTest("nav single gate no bypass", runNavSingleGateNoBypassTests);
 await runTest(
   "navigation permission lookup is total (union == runtime array, no hand-rolled copies, fail-open unreachable)",
   runPermissionLookupTotalityTests,

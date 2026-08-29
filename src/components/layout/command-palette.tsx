@@ -9,7 +9,7 @@ import type { PermissionLookup } from "@/components/layout/sidebar";
 import { announceRouteTransition } from "@/components/layout/route-transition-provider";
 import { getNavigationSections, hubPageItemGroups } from "@/config/system-navigation";
 import type { NavigationMode, PhoenixRole } from "@/lib/auth/permissions";
-import { getSections, permissionAllowed, roleAllowed, roleNotExcluded } from "@/lib/navigation/active-path";
+import { getSections, navigationItemVisible } from "@/lib/navigation/active-path";
 
 /** Custom event the topbar (or anything else) can dispatch to open the palette. */
 export const COMMAND_PALETTE_EVENT = "phoenix:command-palette";
@@ -20,11 +20,9 @@ export function CommandPalette({
   navigationMode,
   permissionLookup,
   currentRole,
-  isSystemAdministratorWorkspace = false,
 }: {
   navigationMode: NavigationMode;
   permissionLookup: PermissionLookup;
-  isSystemAdministratorWorkspace?: boolean;
   currentRole?: PhoenixRole;
 }) {
   const router = useRouter();
@@ -43,7 +41,6 @@ export function CommandPalette({
       navigationMode,
       permissionLookup,
       currentRole,
-      isSystemAdministratorWorkspace,
     ).flatMap((section) =>
       section.items.map((item) => ({ href: item.href, icon: item.icon, label: item.label, section: section.label })),
     );
@@ -59,20 +56,14 @@ export function CommandPalette({
       navigationMode === "admin"
         ? hubPageItemGroups.flatMap((group) =>
             group.items
-              .filter(
-                (item) =>
-                  isSystemAdministratorWorkspace ||
-                  (permissionAllowed(permissionLookup, item.permissions) &&
-                    roleAllowed(currentRole, item.roles) &&
-                    roleNotExcluded(currentRole, item.excludedRoles)),
-              )
+              .filter((item) => navigationItemVisible(item, permissionLookup, currentRole))
               .filter((item) => !seenHrefs.has(item.href))
               .map((item) => ({ href: item.href, icon: item.icon, label: item.label, section: group.label })),
           )
         : [];
 
     return [...sidebarItems, ...hubItems];
-  }, [currentRole, isSystemAdministratorWorkspace, navigationMode, permissionLookup]);
+  }, [currentRole, navigationMode, permissionLookup]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();

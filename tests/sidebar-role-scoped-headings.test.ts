@@ -34,17 +34,12 @@ function lookupForRole(role: PhoenixRole): PermissionLookup {
   return lookup;
 }
 
-// Mirrors app-shell.tsx exactly: `access.scope === "system" || access.role === "Super Admin"`.
-// It matters here — that bypass ignores `roles`/`permissions` but still honours `excludedRoles`,
-// which is the ONLY mechanism keeping the hub copies off Super Admin's sidebar.
+// Mirrors app-shell.tsx, which no longer passes a bypass flag: getSections waives `roles` for the
+// system administrator itself. It still matters here that `excludedRoles` is honoured for every
+// role — that is the ONLY mechanism keeping the hub copies off Super Admin's sidebar, and it is now
+// honoured alongside `permissions` rather than instead of them.
 function sectionsFor(role: PhoenixRole) {
-  return getSections(
-    adminNavigationSections,
-    "admin",
-    lookupForRole(role),
-    role,
-    role === "Super Admin",
-  );
+  return getSections(adminNavigationSections, "admin", lookupForRole(role), role);
 }
 
 function hrefsFor(role: PhoenixRole): string[] {
