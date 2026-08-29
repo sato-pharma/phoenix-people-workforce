@@ -837,6 +837,27 @@ let autoloadedIndexBytes = null;
   } else {
     for (const line of lines) console.log(line);
   }
+
+  // THE FIGURE ABOVE IS THE PRIMARY CHECKOUT'S, AND THE PRIMARY IS OFTEN BEHIND.
+  //
+  // Every section of this report reads primaryRoot, which is right — memory belongs to the project,
+  // not to the worktree a session sits in. But a footprint is the one verdict where a stale tree
+  // produces a confident, actionable, WRONG answer: measured 2026-08-29 the primary sat 3 commits
+  // behind on the pre-#2620 AGENTS.md and this section printed OVER BUDGET for a condition that was
+  // not true of `main`. A tired session at 4am acts on that and starts cutting a file that is
+  // already inside budget. Naming the commit costs one line and makes the number checkable.
+  //
+  // Read from the LOCAL remote-tracking ref — no fetch, so this stays offline and cheap, and it
+  // under-claims staleness rather than over-claiming it when the ref itself is old.
+  const head = git(["rev-parse", "--short", "HEAD"], { cwd: primaryRoot });
+  const behind = git(["rev-list", "--count", "HEAD..origin/main"], { cwd: primaryRoot });
+  if (head) {
+    const suffix = behind && behind !== "0" ? ` — ${behind} commit(s) BEHIND origin/main` : "";
+    console.log(`  measured on the primary checkout at ${head}${suffix}.`);
+    if (behind && behind !== "0") {
+      console.log("  The figure above is that tree's, NOT main's. Pull before acting on it.");
+    }
+  }
   // Named out loud rather than left to inference: a total quietly missing the index reads as a
   // smaller footprint, and under-reporting is the one direction nobody checks.
   if (autoloadedIndexBytes === null) {

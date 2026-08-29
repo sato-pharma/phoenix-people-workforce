@@ -138,6 +138,40 @@ export function memoryIndexBudgetLines(verdict) {
 export const AUTOLOAD_FOOTPRINT_BUDGET = 150_000;
 
 /**
+ * Bytes of an auto-loaded file with CRLF collapsed to LF, so the figure is a property of the
+ * CONTENT rather than of the checkout that measured it.
+ *
+ * FOR THE CI GATE ONLY, and the split is deliberate. A reporter — the SessionStart hook,
+ * repo-doctor — should say what this machine actually loads, so it measures raw bytes on disk. A
+ * gate is answering a different question, "is this commit inside budget", and that answer must not
+ * depend on whose checkout ran it.
+ *
+ * `.gitattributes` here pins `* text=auto eol=lf`, so git itself cannot hand anyone a CRLF copy of
+ * a `.md` — measured 2026-08-29, CLAUDE.md and AGENTS.md carry zero CR bytes in both the primary
+ * checkout and a worktree. The exposure is a local tool rewriting a file with CRLF: that same
+ * `eol=lf` normalisation means git reports the file as UNMODIFIED afterwards, so nothing flags it
+ * and the gate would silently start scoring ~1 byte per line higher than the commit it is judging.
+ * One byte a line is ~1,100 on AGENTS.md alone — a number that moves while the content does not.
+ *
+ * Counted byte-wise rather than via a string replace so a 112KB file is not re-encoded to measure
+ * it, and so a LONE CR (a genuine byte) still counts. Credit to the parallel session that raised
+ * the working-copy-versus-blob hazard; the premise was a CRLF checkout, which cannot happen here,
+ * but the failure it describes can arrive by the other route.
+ *
+ * @param {Buffer | Uint8Array | string} contents the file as read from disk
+ * @returns {number} bytes, with the CR of each CRLF pair discounted
+ */
+export function autoloadedFileBytes(contents) {
+  const bytes = typeof contents === "string" ? Buffer.from(contents, "utf8") : contents;
+  let total = 0;
+  for (let i = 0; i < bytes.length; i += 1) {
+    if (bytes[i] === 13 && bytes[i + 1] === 10) continue; // the CR of a CRLF pair
+    total += 1;
+  }
+  return total;
+}
+
+/**
  * Grade the total bytes auto-loaded into every request against the footprint budget.
  *
  * Takes the parts rather than a total so the report can name WHERE the bytes are — a number with no

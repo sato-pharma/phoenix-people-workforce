@@ -32,6 +32,7 @@ import {
   MEMORY_INDEX_READ_CEILING,
   assessAutoloadFootprint,
   autoloadFootprintLines,
+  autoloadedFileBytes,
 } from "../scripts/memory-index-budget.mjs";
 
 type Part = { label: string; bytes: number | null };
@@ -131,10 +132,14 @@ export function runAutoloadFootprintBudgetTests() {
   // never fails because somebody's local index grew, and it does fail when a PR grows the two files
   // that ARE in the repo past their room. This is the check that would have gone red while §2.1 was
   // climbing to 57,982 bytes, which nothing did.
+  // Measured with CRLF discounted, so the gate scores the COMMIT and not the checkout that ran it.
+  // `.gitattributes` pins `* text=auto eol=lf`, so git cannot hand anyone a CRLF `.md` — but that
+  // same normalisation means a local tool rewriting one with CRLF leaves git reporting it
+  // UNMODIFIED, and the gate would quietly start counting ~1 byte per line it is not judging.
   const repoShare = AUTOLOAD_FOOTPRINT_BUDGET - MEMORY_INDEX_READ_CEILING;
   const live = parts(
-    ["CLAUDE.md", readFileSync("CLAUDE.md").byteLength],
-    ["AGENTS.md", readFileSync("AGENTS.md").byteLength],
+    ["CLAUDE.md", autoloadedFileBytes(readFileSync("CLAUDE.md"))],
+    ["AGENTS.md", autoloadedFileBytes(readFileSync("AGENTS.md"))],
   );
   const liveBytes = live.reduce((sum, part) => sum + (part.bytes ?? 0), 0);
   assert.ok(
@@ -149,7 +154,30 @@ export function runAutoloadFootprintBudgetTests() {
   // resolved a path that does not exist, is the failure mode source-pinning tests keep repeating.
   assert.ok(liveBytes > 50_000, "the live files must actually have been read, not silently resolved to nothing");
 
-  // 8. THE DOCTOR MUST ACTUALLY BE WIRED TO THIS. Same lesson as the unpushed-commits pin next
+  // 8. THE GATE SCORES THE COMMIT, NOT THE CHECKOUT THAT RAN IT. CRLF and LF forms of identical
+  // content must produce the identical figure, or the same commit passes on one machine and fails
+  // on another for a difference nobody wrote.
+  const lf = "line one\nline two\nline three\n";
+  const crlf = lf.replace(/\n/g, "\r\n");
+  assert.equal(
+    autoloadedFileBytes(Buffer.from(crlf, "utf8")),
+    autoloadedFileBytes(Buffer.from(lf, "utf8")),
+    "CRLF and LF forms of the same content must measure the same",
+  );
+  assert.equal(autoloadedFileBytes(Buffer.from(lf, "utf8")), lf.length, "and the LF form is the true length");
+
+  // A LONE CR is a real byte and must still count — discounting every CR rather than only the one
+  // in a CRLF pair would under-report a file that genuinely contains carriage returns.
+  assert.equal(
+    autoloadedFileBytes(Buffer.from("a\rb", "utf8")),
+    3,
+    "a carriage return that is not part of a CRLF pair is a real byte",
+  );
+  // Multi-byte characters must be counted as bytes, not as characters. AGENTS.md is full of em
+  // dashes and arrows; counting `.length` on a decoded string would under-report every one of them.
+  assert.equal(autoloadedFileBytes(Buffer.from("—", "utf8")), 3, "an em dash is three bytes, not one character");
+
+  // 9. THE DOCTOR MUST ACTUALLY BE WIRED TO THIS. Same lesson as the unpushed-commits pin next
   // door: without it the module passes its own tests forever while `repo-doctor.mjs` never prints
   // the verdict, and the section that would have shown the growth simply does not exist. The
   // SessionStart half is proven end-to-end by driving the real hook in
