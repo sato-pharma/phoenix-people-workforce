@@ -28,9 +28,19 @@ function formatFullDate(dateIso: string, weekday: string) {
   return `${weekday}, ${formatted}`;
 }
 
-/** Same 11-value vocabulary export.ts colors for the Excel sheet — kept in visual sync so the
+/** The secondary "day type" badge next to the outcome chip — only for the non-working calendar/
+ * lifecycle day types, each with its own honest label so "after_exit" is never lumped in with
+ * "Company holiday" the way a two-way ternary would. */
+const DAY_TYPE_BADGE_LABEL: Partial<Record<CompanyActivityDayRow["dayType"], string>> = {
+  after_exit: "Post-exit",
+  holiday: "Company holiday",
+  weekly_off: "Non-working",
+};
+
+/** Same 12-value vocabulary export.ts colors for the Excel sheet — kept in visual sync so the
  * on-screen list and the downloaded workbook read as the same report, not two different ones. */
 const OUTCOME_STYLE: Record<CompanyActivityDayOutcome, { chip: string; label: string }> = {
+  after_exit: { chip: "border-slate-300 bg-slate-100 text-slate-600", label: "No Longer Employed" },
   crm_field_visit: { chip: "border-sky-200 bg-sky-50 text-sky-700", label: "CRM Field Visit" },
   crm_leave: { chip: "border-violet-200 bg-violet-50 text-violet-700", label: "CRM-Reported Leave" },
   device_outage: { chip: "border-slate-300 bg-slate-100 text-slate-600", label: "Device Outage" },
@@ -117,9 +127,9 @@ function DayRow({ day, hrId }: { day: CompanyActivityDayRow; hrId: string }) {
           <span className={cn("inline-flex items-center whitespace-nowrap rounded-full border px-2.5 py-0.5 text-phx-xs font-bold", style.chip)}>
             {style.label}
           </span>
-          {day.dayType !== "working" && day.dayType !== "future" ? (
+          {DAY_TYPE_BADGE_LABEL[day.dayType] ? (
             <span className="inline-flex items-center whitespace-nowrap rounded-full border border-slate-200 bg-white px-2 py-0.5 text-phx-2xs font-bold uppercase tracking-[0.06em] text-slate-400">
-              {day.dayType === "weekly_off" ? "Non-working" : "Company holiday"}
+              {DAY_TYPE_BADGE_LABEL[day.dayType]}
             </span>
           ) : null}
           {day.conflict ? (

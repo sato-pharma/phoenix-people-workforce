@@ -12,6 +12,7 @@ import { buildAttendanceCalendarContext, classifyAttendanceDay, listIsoDatesInRa
 import { loadEmployeeDayPunchMinutes } from "@/lib/attendance/punch-minutes";
 import { getCompanyWideOutageDates } from "@/lib/attendance/ingestion-health";
 import { normalizeAttendanceHrId } from "@/lib/attendance/metrics";
+import { isTerminalEmploymentStatus } from "@/lib/auth/session-lifecycle";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import { loadCompanyActivityChannels } from "@/lib/company-activity-report/channels";
 import { loadCompanyActivityCrmDetail } from "@/lib/company-activity-report/crm-detail";
@@ -20,6 +21,31 @@ import { reconcileCompanyActivityDay } from "@/lib/company-activity-report/recon
 import { summarizeCompanyActivityEmployee } from "@/lib/company-activity-report/summary";
 import type { EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import type { CompanyActivityDayRow, CompanyActivityEmployeeSummary, CompanyActivityReport } from "@/lib/company-activity-report/types";
+
+/**
+ * True when `dateIso` falls strictly after a TERMINAL employee's own lastWorkingDate — the
+ * per-day boundary reconcile.ts needs to give such a day its own "after_exit" classification
+ * instead of judging a person who no longer works here on whether they punched in that day.
+ *
+ * filterCompanyActivityEmployees (filters.ts) already drops a terminal employee from the roster
+ * entirely when their lastWorkingDate falls before the report's startDate — but that only bounds
+ * roster INCLUSION. An employee who exits PARTWAY through an already-included range still reaches
+ * this per-day loop for every date in range, including the days after they left, so that boundary
+ * has to be re-checked here at day granularity too.
+ *
+ * Exported as a pure function (no lookups, no I/O) so this exact boundary is directly unit
+ * testable without standing up the full per-employee data-loading pipeline below.
+ */
+export function isDayAfterEmployeeExit(
+  employee: Pick<EmployeeDirectoryRow, "employmentStatus" | "lastWorkingDate">,
+  dateIso: string,
+): boolean {
+  return (
+    isTerminalEmploymentStatus(employee.employmentStatus) &&
+    employee.lastWorkingDate != null &&
+    dateIso > employee.lastWorkingDate
+  );
+}
 
 export async function getCompanyActivityReport(input: {
   employees: EmployeeDirectoryRow[];
@@ -68,6 +94,7 @@ export async function getCompanyActivityReport(input: {
         hasOutage: outageDates.has(dateIso),
         hasAttendanceChannel,
         hasCrmChannel,
+        isAfterExit: isDayAfterEmployeeExit(employee, dateIso),
       });
     });
 

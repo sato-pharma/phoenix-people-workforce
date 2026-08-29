@@ -1090,6 +1090,7 @@ import { runMarketingFinanceHoldUiTests } from "./marketing-finance-hold-ui.test
 import { runMarketingInvoiceOverdueNudgeTests } from "./marketing-invoice-overdue-nudge.test.ts";
 
 import { runLeaverRosterExclusionTests } from "./leaver-roster-exclusion.test.ts";
+import { runCompanyActivityReportPostExitDaysTests } from "./company-activity-report-post-exit-days.test.ts";
 import { runMarketingApprovedCustomerNameTests } from "./marketing-approved-customer-name.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
@@ -3299,6 +3300,12 @@ await runTest(
 );
 
 await runTest("leaver roster exclusion (resigned/terminated never reach a picker, recipient search or account template)", runLeaverRosterExclusionTests);
+await runTest(
+  "company activity report post-exit days (a day strictly after a terminal employee's own last "
+    + "working date gets its own after_exit outcome instead of a fabricated no_entry/no_signal gap, "
+    + "on/before the exit date and for active employees nothing changes)",
+  runCompanyActivityReportPostExitDaysTests,
+);
 await runTest("marketing finance table never labels a request with a raw customer id", runMarketingApprovedCustomerNameTests);
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
