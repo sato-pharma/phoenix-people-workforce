@@ -27,7 +27,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       startDate: str(body.startDate),
       probationMonths: num(body.probationMonths),
     });
-    return NextResponse.json({ success: true, application: result.application, employeeHrId: result.employeeHrId });
+    return NextResponse.json({
+      success: true,
+      application: result.application,
+      employeeHrId: result.employeeHrId,
+      // Flagged, not rejected: the hire went through and a human decides what the
+      // difference means. Empty array when the employee matches the approved offer.
+      termMismatches: result.termMismatches,
+    });
   } catch (error) {
     return recruitmentApiError(error, "Failed to mark this application as hired.");
   }

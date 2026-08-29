@@ -31,6 +31,14 @@ import {
 } from "@/lib/recruitment/db";
 import { assertCanDeleteRecruitment, canSeeApplication } from "@/lib/recruitment/access";
 import {
+  assertOfferAcceptedForHire,
+  compareHireTermsToOffer,
+  describeHireTermMismatches,
+  type HireTermMismatch,
+  type HiredEmployeeTerms,
+} from "@/lib/recruitment/hire-offer-guard";
+import { getOffer } from "@/lib/recruitment/offers";
+import {
   createCandidate,
   getCandidate,
 } from "@/lib/recruitment/candidates";
@@ -380,16 +388,49 @@ export async function runApplicationTransition(
   return updated;
 }
 
+/**
+ * Look up the employee this hire is being linked to, for the terms comparison only.
+ *
+ * HR ids are mixed case — 178 of 179 in production — so a plain .eq on whatever the
+ * caller typed silently matches nothing, and "no employee found" would be
+ * indistinguishable from "the terms are fine". Hence ilike, with LIKE metacharacters
+ * escaped so an id containing one can never widen into a pattern. Anything other than
+ * exactly one match returns null, which the comparison REPORTS rather than skips.
+ */
+async function loadHiredEmployeeTerms(employeeHrId: string): Promise<HiredEmployeeTerms | null> {
+  const pattern = employeeHrId.replace(/([\\%_])/g, "\\$1");
+  const supabase = recruitmentDb();
+  const { data, error } = await supabase
+    .from("employees")
+    .select("hr_id,job_title,gross_salary,hire_date")
+    .ilike("hr_id", pattern)
+    .limit(2);
+  if (error) throw error;
+  const rows = (data ?? []) as Array<{ job_title: string | null; gross_salary: number | string | null; hire_date: string | null }>;
+  if (rows.length !== 1) return null;
+  return {
+    jobTitle: textOrNull(rows[0].job_title),
+    grossSalary: numberOrNull(rows[0].gross_salary),
+    hireDate: textOrNull(rows[0].hire_date),
+  };
+}
+
 // Stage 21 — direct hire. The employee record is created through the normal HR
 // "Add Employee" flow first (which also closes the matching position vacancy);
 // this just links the application to that employee's HR_ID, closes the
 // requisition, and best-effort seeds the initial probation window. Probation
 // creation is non-blocking: a failure never rolls back a completed hire.
+//
+// Two things guard the link (hire-offer-guard.ts explains why they differ in strength):
+// the offer must actually have been accepted, or the hire is refused before anything is
+// written; and the approved terms are compared against the employee that was created,
+// with any difference flagged — recorded on the hire's own audit event and returned to
+// the caller — never rejected.
 export async function markApplicationHired(
   id: string,
   access: AccessContext,
   input: { employeeHrId: string; startDate?: string | null; probationMonths?: number | null },
-): Promise<{ application: Application; employeeHrId: string }> {
+): Promise<{ application: Application; employeeHrId: string; termMismatches: HireTermMismatch[] }> {
   const employeeHrId = textOrNull(input.employeeHrId);
   if (!employeeHrId) throw new Error("The hired employee's HR_ID is required.");
 
@@ -402,6 +443,15 @@ export async function markApplicationHired(
     role: access.role,
     status: application.stage,
   });
+
+  // Refuse BEFORE any mutation. The registry's stage list is editable at runtime and has
+  // already drifted to admit offer_initiated, so the accepted offer is checked here in
+  // code rather than trusted to configuration.
+  const offer = await getOffer(id);
+  assertOfferAcceptedForHire(offer);
+  const acceptedOffer = offer!;
+
+  const termMismatches = compareHireTermsToOffer(acceptedOffer, await loadHiredEmployeeTerms(employeeHrId));
 
   const supabase = recruitmentDb();
   const { data, error } = await supabase
@@ -423,7 +473,14 @@ export async function markApplicationHired(
     toStage: "hired",
     action: "app_hire",
     actorHrId: access.hrId ?? null,
-    details: { employeeHrId },
+    details: {
+      employeeHrId,
+      offeredJobTitle: acceptedOffer.jobTitle,
+      offeredMonthlyGross: acceptedOffer.monthlyGross,
+      offeredStartDate: acceptedOffer.startDate,
+      termMismatches,
+      termMismatchSummary: describeHireTermMismatches(termMismatches),
+    },
   });
 
   await markRequisitionFilled(requisition.id, access);
@@ -440,7 +497,7 @@ export async function markApplicationHired(
     void probationError; // Swallow: the hire is committed; probation setup is secondary.
   }
 
-  return { application: mapApplication(data as ApplicationDbRow), employeeHrId };
+  return { application: mapApplication(data as ApplicationDbRow), employeeHrId, termMismatches };
 }
 
 // Hard-delete an application (admin cleanup; any stage). Database cascades remove
