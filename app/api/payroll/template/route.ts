@@ -835,7 +835,7 @@ function prepareTemplateRows(
 }
 
 function writeTitle(sheet: ExcelJS.Worksheet, month: number, year: number) {
-  sheet.getCell("A2").value = `⚡  PhoenixX — Payroll Sheet  |  ${monthName(month)} ${year}`;
+  sheet.getCell("A2").value = `⚡  Phoenix — Payroll Sheet  |  ${monthName(month)} ${year}`;
 }
 
 function rowValues(

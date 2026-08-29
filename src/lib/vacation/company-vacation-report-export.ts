@@ -5,7 +5,7 @@ import type { CompanyVacationReportRow } from "@/lib/vacation/company-vacation-r
 import { companyVacationLeaveTypeLabel } from "@/lib/vacation/company-vacation-report-filters";
 import { companyVacationSourceSystem } from "@/lib/vacation/company-vacation-report-source";
 
-const phoenixOrange = "FFC2410C";
+const phoenixOrange = "FFF97316";
 const phoenixSlate = "FF0F172A";
 const softBorder = "FFE2E8F0";
 

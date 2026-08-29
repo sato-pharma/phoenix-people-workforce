@@ -161,7 +161,7 @@ for (const [hrU, a] of roleOf) {
 mgr.sort((a, b) => (a.scope + a.line + a.name).localeCompare(b.scope + b.line + b.name));
 
 // ================= workbook =================
-const ORANGE = "FFC2410C", SLATE = "FF0F172A", SOFT = "FFE2E8F0";
+const ORANGE = "FFF97316", SLATE = "FF0F172A", SOFT = "FFE2E8F0";
 const GREEN = "FFECFDF5", WARM = "FFFFF7ED", COOL = "FFF8FAFC";
 const wb = new ExcelJS.Workbook();
 wb.creator = "Phoenix Workforce";

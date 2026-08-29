@@ -99,7 +99,7 @@ export async function generateDeviceMappingTemplateWorkbook() {
 
   sheet.mergeCells("A1:E1");
   sheet.getCell("A1").value = systemDocuments.titles.attendanceDeviceUserMapping;
-  sheet.getCell("A1").fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFC2410C" } };
+  sheet.getCell("A1").fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF97316" } };
   sheet.getCell("A1").font = { bold: true, color: { argb: "FFFFFFFF" }, size: 15 };
   sheet.getCell("A1").alignment = { horizontal: "center" };
 

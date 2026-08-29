@@ -7,7 +7,7 @@ import {
   type MonthlyAttendanceSummaryRow,
 } from "@/lib/attendance/monthly-summary";
 
-const phoenixOrange = "FFC2410C";
+const phoenixOrange = "FFF97316";
 const phoenixSlate = "FF0F172A";
 const softBorder = "FFE2E8F0";
 
