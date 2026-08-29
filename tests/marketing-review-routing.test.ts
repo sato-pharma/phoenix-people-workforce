@@ -8,8 +8,14 @@ import {
   getPayrollScope,
   getSalesScope,
   isAdminShellEmployeeRole,
+  permissionActions,
+  permissionMatrix,
+  permissionResources,
   resolveNavigationMode,
+  type PhoenixRole,
 } from "../src/lib/auth/permissions.ts";
+import { adminNavigationSections } from "../src/config/system-navigation.ts";
+import { getSections, type PermissionLookup } from "../src/lib/navigation/active-path.ts";
 import { resolveLandingPathForRole } from "../src/lib/auth/landing.ts";
 import {
   canAccessAdminShellEmployeeWorkspacePage,
@@ -136,14 +142,69 @@ export async function runMarketingReviewRoutingTests() {
   assert.match(migration, /assigned_role = 'Financial Advisor'/, "finance step re-points to Financial Advisor");
   assert.match(migration, /step_code = 'finance_execution'/, "finance re-point targets the finance_execution step");
 
-  // ── Workspace marketing pages are reachable, but deliberately not in the admin sidebar ──────
-  // Financial Advisor / Finance Manager / SFE Manager still land on and can use
-  // /workspace/marketing-requests(/inbox) directly (guard-level access above is unchanged,
-  // and Financial Advisor's landing path still points there) — the admin sidebar entries were
-  // removed by explicit product decision, so this only pins their absence from the nav config.
+  // ── The workspace marketing HOME is in the admin sidebar; the INBOX is deliberately not ────
+  // This assertion has now been flipped three times, so it states the current decision and its date
+  // rather than a bare expectation. Owner, 2026-08-30: "open the sidebar route" — the row's own
+  // comment in src/config/system-navigation.ts carries the full history, including why neither
+  // earlier removal recorded a product reason.
+  //
+  // The pairing is what matters and is why this lives here: the nav roles must equal the page
+  // guard. The guard-level assertions above already pin that Financial Advisor / Finance Manager /
+  // SFE Manager reach these pages; a sidebar row narrower than the guard is the gap #2713 closed,
+  // and one wider is a button that redirects the viewer straight back out.
+  const navSource = source("src/config/system-navigation.ts");
+  assert.match(
+    navSource,
+    /href: "\/workspace\/marketing-requests",/,
+    "the workspace marketing home IS linked from the admin sidebar (owner, 2026-08-30)",
+  );
+  // The /inbox sibling was removed in the same 2026-07-03 commit and the owner did NOT ask for it
+  // back. It is a second queue for a decision the Marketing Inbox row already carries, so leaving
+  // it out is the narrower reading of the instruction — deliberate, not an oversight.
   assert.doesNotMatch(
-    source("src/config/system-navigation.ts"),
-    /href: "\/workspace\/marketing-requests"/,
-    "workspace marketing pages are not linked from the admin sidebar",
+    navSource,
+    /href: "\/workspace\/marketing-requests\/inbox"/,
+    "the workspace marketing INBOX stays off the sidebar — only the home route was re-opened",
+  );
+
+  // The pairing above, asserted by BEHAVIOUR rather than by reading the roles array. Grepping the
+  // config proves a row exists; it does not prove the right people see it, because visibility also
+  // runs through resolveNavigationMode (a portal-mode role never sees the admin rail at all) and
+  // through navigationItemVisible. Both sides are resolved here and compared as sets.
+  //
+  // A row NARROWER than the guard is the bug #2713 existed to close — a page reachable by nobody
+  // reads exactly like a page nobody uses. A row WIDER than the guard is the other failure this
+  // module has already paid for: a button that redirects the viewer straight back out.
+  const lookupFor = (role: PhoenixRole): PermissionLookup => {
+    const lookup: PermissionLookup = {};
+    for (const resource of permissionResources) {
+      for (const action of permissionActions) {
+        lookup[`${resource}:${action}`] = permissionMatrix[role][resource]?.includes(action) ?? false;
+      }
+    }
+    return lookup;
+  };
+  const allRoles = Object.keys(permissionMatrix) as PhoenixRole[];
+  const seesRow = allRoles.filter((role) =>
+    getSections(adminNavigationSections, "admin", lookupFor(role), role).some((section) =>
+      section.items.some((item) => item.href === "/workspace/marketing-requests"),
+    ),
+  );
+  const guardAdmits = allRoles.filter(
+    (role) =>
+      canAccessAdminShellEmployeeWorkspacePage(role, workspaceMarketingRoles) &&
+      resolveNavigationMode(role) === "admin",
+  );
+  assert.deepEqual(
+    [...seesRow].sort(),
+    [...guardAdmits].sort(),
+    "every admin-shell role the page admits must see the sidebar row, and no role that it rejects may",
+  );
+  // Pinned by NAME too, so a future widening of workspaceMarketingRoles cannot quietly move both
+  // sides together and keep this test green while changing who reaches marketing execution.
+  assert.deepEqual(
+    [...seesRow].sort(),
+    ["CEO", "Finance Manager", "Financial Advisor", "SFE Manager", "Super Admin"],
+    "exactly five roles reach the marketing execution workspace from the sidebar",
   );
 }
