@@ -20,6 +20,7 @@ import {
 } from "../src/lib/notifications/role-recipients.ts";
 import { enforceMarketingSlaEmailBlock } from "../src/lib/notifications/marketing-sla-channel-guard.ts";
 import { resolveMarketingInvoiceObligation } from "../src/lib/marketing-requests/invoice-obligation.ts";
+import { workspaceMarketingRoles } from "../src/lib/workspace/admin-shell-employee-roles.ts";
 
 const ROOT = process.cwd();
 
@@ -102,10 +103,27 @@ export function runMarketingInvoiceOverdueNudgeTests() {
     "/admin/marketing-requests",
     "the admin page admits only the five workflow roles and bounces everyone else — a requester sent there lands on /overview",
   );
+  // This pinned `null` until 2026-08-29, on the stated ground that no screen showed finance an
+  // overdue invoice. That was wrong. Both halves of the correction are asserted, because the link is
+  // only honest while BOTH hold — the page has to open for him, AND it has to be populated for him.
   assert.equal(
     INVOICE_OVERDUE_FINANCE_URL,
-    null,
-    "finance gets NO link on purpose: there is no screen showing him an overdue invoice, and a button to a page that cannot show the item is the mistake this codebase has already paid for twice",
+    "/workspace/marketing-requests",
+    "the admin-shell workspace renders the same MarketingRequestDraftWorkspace as the portal page, and it is the shell the Finance Manager is actually in",
+  );
+  assert.ok(
+    (workspaceMarketingRoles as readonly string[]).includes("Finance Manager"),
+    "the page guard must admit him: requireAdminShellEmployeeWorkspaceAccess({ allowedRoles: workspaceMarketingRoles }) is what /workspace/marketing-requests calls, and a link to a page that redirects is the mistake this codebase has already paid for twice",
+  );
+  assert.notEqual(
+    INVOICE_OVERDUE_FINANCE_URL,
+    INVOICE_OVERDUE_REQUESTER_URL,
+    "the two audiences are in different shells — sending an admin-shell role to /employee-portals bounces him straight back out to /overview",
+  );
+  const workspaceServiceSource = readFileSync(join(ROOT, "src/lib/marketing-requests/service.ts"), "utf8");
+  assert.ok(
+    workspaceServiceSource.includes('const executesApprovedMarketingRequests = access.role === "Finance Manager"'),
+    "an OPEN page is not a POPULATED one: every personal list on that workspace is narrowed to the viewer's own submissions, and the Finance Manager has none by construction. The Approved list is widened for his role alone — remove that and this link opens an empty tab, which is worse than no link",
   );
 
   // ── Grouping: one message per person, mixed-case HR IDs collapsed ───────────────────────────
