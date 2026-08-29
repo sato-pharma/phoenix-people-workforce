@@ -60,6 +60,7 @@ import {
 } from "@/config/system-navigation";
 import { type NavigationMode, type PhoenixRole } from "@/lib/auth/permissions";
 import {
+  carriesNavRows,
   getActiveHref,
   getSections,
   normalizePathnameForMode,
@@ -79,10 +80,12 @@ type ResolvedRows = {
   upperAddable: readonly NavigationSection[];
   /** The same for the lower row. */
   lowerAddable: readonly NavigationSection[];
-  /** Whether to render a "+" at all. Admin chrome only, the same restriction as the layout itself. */
+  /** Whether to render a "+" at all — every surface that carries rows, which is wider than the chrome. */
   canAdd: boolean;
-  /** Has this viewer ever saved a layout? The one case where an EMPTY row still shows its "+". */
+  /** Has this viewer ever saved a layout? One of the two cases where an EMPTY row still shows its "+". */
   hasSavedLayout: boolean;
+  /** The other: a surface with no layout editor, where the "+" is the only way in. */
+  alwaysOfferAdd: boolean;
 };
 
 const EMPTY_ROWS: ResolvedRows = {
@@ -94,6 +97,7 @@ const EMPTY_ROWS: ResolvedRows = {
   lowerAddable: [],
   canAdd: false,
   hasSavedLayout: false,
+  alwaysOfferAdd: false,
 };
 
 /**
@@ -114,6 +118,7 @@ export function HorizontalNavProvider({
   navigationMode = "admin",
   permissionLookup = {},
   personalLayout = null,
+  sections,
 }: {
   children: ReactNode;
   currentRole?: PhoenixRole;
@@ -121,19 +126,38 @@ export function HorizontalNavProvider({
   navigationMode?: NavigationMode;
   permissionLookup?: PermissionLookup;
   personalLayout?: PersonalNavigationLayout | null;
+  /**
+   * ALREADY-GATED sections, for a surface that builds its own navigation instead of reading
+   * system-navigation.ts. The employee portal is the only such surface: it computes its tabs from
+   * EmployeePortalNavVisibility, so `getSections` has nothing to gate there and would return the
+   * portal's config seeds — a list nothing else in the portal renders.
+   *
+   * Passing them in rather than teaching this component a second way to build a list is the point:
+   * the portal keeps ONE source for its tabs (buildEmployeePortalSections), which is what the row
+   * and the sidebar both read. A duplicate list is how Capture Evidence shipped rejecting 59 of the
+   * 65 customers it existed for.
+   *
+   * The safety property is unchanged either way: whatever arrives here is the set the layout can
+   * draw from, and `applyPersonalLayout` can emit nothing outside it.
+   */
+  sections?: readonly NavigationSection[];
 }) {
   const pathname = normalizePathnameForMode(usePathname(), navigationMode);
   const searchParams = useSearchParams();
   const activeTab = searchParams.get("action") ?? searchParams.get("tab");
 
   const value = useMemo<ResolvedRows>(() => {
-    const gated = getSections(
-      getNavigationSections(navigationMode),
-      navigationMode,
-      permissionLookup,
-      currentRole,
-      isSystemAdministratorWorkspace,
-    );
+    // A surface that builds its own navigation hands its list in already gated; everything else
+    // reads the shared config and gates it here.
+    const gated =
+      sections ??
+      getSections(
+        getNavigationSections(navigationMode),
+        navigationMode,
+        permissionLookup,
+        currentRole,
+        isSystemAdministratorWorkspace,
+      );
     // Which module is this page in? Resolved from the GATED sections — the code-defined ones —
     // rather than from the rearranged result, because a page the viewer moved into a row has left
     // its section, and asking the rearranged tree would answer differently once anything was
@@ -151,7 +175,11 @@ export function HorizontalNavProvider({
     // One stored document serves both, and that is safe by construction rather than by luck: an
     // hr-mode `getSections` returns `/hr/...` hrefs, so an `/admin/...` href in the layout matches
     // nothing in `byHref` and `applyPersonalLayout` simply drops it. The two modes cannot collide.
-    const layout = usesAdminChrome(navigationMode) ? personalLayout : null;
+    // WIDENED AGAIN on 2026-08-29, to the employee portal — 116 accounts, 72% of everyone with a
+    // login, and until now the only workspace with no arrangeable row at all. `carriesNavRows` is
+    // separate from `usesAdminChrome` on purpose: the first asks whether this surface has rows, the
+    // second is a PALETTE question, and the portal answers yes to one and no to the other.
+    const layout = carriesNavRows(navigationMode) ? personalLayout : null;
     const applied = applyPersonalLayout(gated, layout, activeModuleId);
     // What each "+" offers: the gated sections with the pages already on THAT row taken out, so the
     // list never proposes a page sitting two centimetres to its left. Deliberately scoped to one
@@ -176,8 +204,14 @@ export function HorizontalNavProvider({
       lowerRow: applied.lowerRow,
       upperAddable: addableFor(applied.upperRow),
       lowerAddable: addableFor(applied.lowerRow),
-      canAdd: usesAdminChrome(navigationMode),
+      canAdd: carriesNavRows(navigationMode),
       hasSavedLayout: layout !== null,
+      // THE PORTAL HAS NO LAYOUT EDITOR. /admin/sidebar-layout is admin-only, and a null layout
+      // resolves to empty rows — so without this the portal's "+" would appear only for someone who
+      // already had a layout, which in the portal is nobody, ever. The row would be permanently
+      // invisible and the feature dead on arrival, with zero usage looking exactly like zero
+      // adoption. Admin and HR keep the shipped rule, where the editor page IS the entry point.
+      alwaysOfferAdd: navigationMode === "employee-portal",
       // Resolved against the FULL gated set, not just the rows, so a tab stays lit on its child
       // routes and the deepest match still wins over a shallower one sitting in another zone.
       activeHref: active,
@@ -191,6 +225,7 @@ export function HorizontalNavProvider({
     pathname,
     permissionLookup,
     personalLayout,
+    sections,
   ]);
 
   return <HorizontalNavContext.Provider value={value}>{children}</HorizontalNavContext.Provider>;
@@ -272,9 +307,18 @@ function NavRowStrip({
   );
 }
 
-/** ZONE 2 — the horizontal bar above the page title. Rendered once, by AppShell. */
-export function UpperNavRow() {
-  const { upperRow, activeHref, upperAddable, canAdd, dark, hasSavedLayout } =
+/**
+ * ZONE 2 — the horizontal bar above the page title. Rendered once per shell.
+ *
+ * `className` REPLACES the default frame rather than adding to it, because the two shells that
+ * mount this row sit on surfaces with nothing in common: the admin chrome is a flat black bar
+ * flush against the topbar, and the employee portal is a light card layout where a full-bleed bar
+ * with a hard bottom border would read as someone else's component. The owner's standing rule is
+ * that new UI matches the design identity of the module it lands in, so the host supplies the
+ * frame. Omitting it keeps the admin/HR frame exactly as shipped.
+ */
+export function UpperNavRow({ className }: { className?: string } = {}) {
+  const { upperRow, activeHref, upperAddable, alwaysOfferAdd, canAdd, dark, hasSavedLayout } =
     useContext(HorizontalNavContext);
   return (
     <NavRowStrip
@@ -285,12 +329,15 @@ export function UpperNavRow() {
       // this row would mean hard-coding the Topbar's rendered height, which changes with the
       // viewport — so the row scrolls with the page instead.
       className={cn(
-        "border-b px-3 py-1.5 sm:px-6",
-        dark ? "border-[#1a1a1a] bg-[#000000]" : "border-phx-line bg-white",
+        className ??
+          cn(
+            "border-b px-3 py-1.5 sm:px-6",
+            dark ? "border-[#1a1a1a] bg-[#000000]" : "border-phx-line bg-white",
+          ),
       )}
       dark={dark}
       items={upperRow}
-      keepWhenEmpty={canAdd && hasSavedLayout}
+      keepWhenEmpty={canAdd && (hasSavedLayout || alwaysOfferAdd)}
       trailing={
         canAdd ? (
           <NavRowAddButton
@@ -323,7 +370,7 @@ export function LowerNavRow({
   className?: string;
   placement: "in-page" | "fallback";
 }) {
-  const { lowerRow, activeHref, canAdd, dark, hasSavedLayout, lowerAddable } =
+  const { lowerRow, activeHref, alwaysOfferAdd, canAdd, dark, hasSavedLayout, lowerAddable } =
     useContext(HorizontalNavContext);
   // The in-page copy takes its palette from the surface it was dropped onto, not from the shell:
   // inside AdminPageHero that surface is black (AdminHeroFrame provides `true`), while a page that
@@ -345,7 +392,7 @@ export function LowerNavRow({
       )}
       dark={rowDark}
       items={lowerRow}
-      keepWhenEmpty={canAdd && hasSavedLayout}
+      keepWhenEmpty={canAdd && (hasSavedLayout || alwaysOfferAdd)}
       trailing={
         canAdd ? (
           <NavRowAddButton

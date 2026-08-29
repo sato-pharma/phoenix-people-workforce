@@ -30,6 +30,7 @@ import {
   LayoutList,
   PanelBottom,
   PanelTop,
+  Building2,
   Pin,
   RotateCcw,
   Save,
@@ -44,6 +45,7 @@ import {
   rowsWithout,
   stripRowConflicts,
   stripWithout,
+  type LayoutSource,
   type PersonalLayoutRowSet,
   type PersonalNavigationLayout,
 } from "@/lib/navigation/personal-layout";
@@ -424,16 +426,29 @@ function DropColumn({
 }
 
 export function SidebarLayoutEditor({
+  canManageCompanyDefault = false,
   catalogue,
+  companyDefaultExists = false,
+  layoutSource = null,
   pageCount,
   savedLayout,
 }: {
+  /** Super Admin only. The server checks this again on the route — this prop only hides the buttons. */
+  canManageCompanyDefault?: boolean;
   catalogue: CatalogueSection[];
+  /** Whether a company default is currently published, so the controls can say which verb applies. */
+  companyDefaultExists?: boolean;
+  /** Where the layout below came from, so "Reset" can name what it actually resets TO. */
+  layoutSource?: LayoutSource;
   pageCount: number;
   savedLayout: PersonalNavigationLayout | null;
 }) {
   const router = useRouter();
   const [state, setState] = useState<EditorState>(() => buildInitialState(catalogue, savedLayout));
+  // Tracked in state, not read from the prop, because publishing or withdrawing a default has to
+  // change the buttons immediately. router.refresh() re-renders the server component underneath,
+  // but the label would otherwise stay wrong for the whole round trip.
+  const [hasCompanyDefault, setHasCompanyDefault] = useState(companyDefaultExists);
   const [scope, setScope] = useState<Scope>(null);
   const [available, setAvailable] = useState<string[]>([]);
   const [dragging, setDragging] = useState<string | null>(null);
@@ -685,11 +700,80 @@ export function SidebarLayoutEditor({
       setState(buildInitialState(catalogue, null));
       setScope(null);
       setAvailable([]);
-      setStatus({ tone: "ok", text: "Reset. Your navigation is back to the standard arrangement." });
+      // Say what it actually resets TO. Deleting a personal row falls back to the company default
+      // when one is published, not to the code-defined menu — reporting "the standard arrangement"
+      // and then rendering something else is how a working feature reads as broken.
+      setStatus({
+        tone: "ok",
+        text: hasCompanyDefault
+          ? "Reset. Your navigation is back to the company default."
+          : "Reset. Your navigation is back to the standard arrangement.",
+      });
       setDirty(false);
       router.refresh();
     } catch (error) {
       setStatus({ tone: "error", text: error instanceof Error ? error.message : "The layout could not be reset." });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /**
+   * Publish the arrangement on screen as the company default.
+   *
+   * It does NOT touch anyone's saved layout: loadEffectiveLayout prefers a personal row whenever one
+   * exists, so this only fills the gap for accounts that have arranged nothing. That is the whole
+   * safety story for a one-click company-wide write, and it is why this needs no confirmation step
+   * beyond the button itself — the worst case is a menu that looks wrong until it is withdrawn.
+   *
+   * The route re-checks Super Admin server-side. This function being reachable proves nothing.
+   */
+  async function publishCompanyDefault() {
+    setBusy(true);
+    setStatus(null);
+    try {
+      const response = await fetch("/api/navigation/company-layout", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ layout: toLayout(state) }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload?.message ?? "The company default could not be published.");
+      setHasCompanyDefault(true);
+      setStatus({
+        tone: "ok",
+        text: "Published. Everyone who has never arranged their own navigation now sees this.",
+      });
+      router.refresh();
+    } catch (error) {
+      setStatus({
+        tone: "error",
+        text: error instanceof Error ? error.message : "The company default could not be published.",
+      });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** Withdraw the company default — everyone without a personal layout returns to the coded menu. */
+  async function withdrawCompanyDefault() {
+    setBusy(true);
+    setStatus(null);
+    try {
+      const response = await fetch("/api/navigation/company-layout", { method: "DELETE" });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload?.message ?? "The company default could not be withdrawn.");
+      setHasCompanyDefault(false);
+      setStatus({
+        tone: "ok",
+        text: "Withdrawn. Everyone without their own arrangement is back to the standard navigation.",
+      });
+      router.refresh();
+    } catch (error) {
+      setStatus({
+        tone: "error",
+        text: error instanceof Error ? error.message : "The company default could not be withdrawn.",
+      });
     } finally {
       setBusy(false);
     }
@@ -709,6 +793,14 @@ export function SidebarLayoutEditor({
         <span className="whitespace-nowrap text-phx-md text-slate-600">
           {pageCount} pages you can reach, across {catalogue.length} modules.
         </span>
+        {/* Say whose arrangement is on screen. Without this, someone who has never touched this page
+            sees a layout they did not make and reads it as their own — and then "Reset" appears to
+            do nothing, because it resets to the very thing already showing. */}
+        {layoutSource === "company" ? (
+          <span className="whitespace-nowrap bg-slate-100 px-2 py-0.5 text-phx-xs font-semibold text-slate-600">
+            Showing the company default. Save to make it yours.
+          </span>
+        ) : null}
         {dirty ? (
           <span className="whitespace-nowrap bg-[#FEF3C7] px-2 py-0.5 text-phx-xs font-semibold text-[#92400E]">
             Unsaved changes
@@ -724,6 +816,35 @@ export function SidebarLayoutEditor({
           </span>
         ) : null}
         <div className="ml-auto flex items-center gap-2">
+          {/* Super Admin only, and hidden rather than disabled for everyone else — there is nothing
+              useful a non-admin could do with a greyed-out company-wide control. The gate that
+              matters is server-side in /api/navigation/company-layout; this is only the UX half. */}
+          {canManageCompanyDefault ? (
+            <>
+              {hasCompanyDefault ? (
+                <button
+                  className="flex items-center gap-1.5 whitespace-nowrap border border-slate-300 px-3 py-1.5 text-phx-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                  disabled={busy}
+                  onClick={withdrawCompanyDefault}
+                  title="Everyone without their own arrangement returns to the standard navigation"
+                  type="button"
+                >
+                  <Building2 className="h-3.5 w-3.5" />
+                  Withdraw company default
+                </button>
+              ) : null}
+              <button
+                className="flex items-center gap-1.5 whitespace-nowrap border border-slate-300 px-3 py-1.5 text-phx-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                disabled={busy}
+                onClick={publishCompanyDefault}
+                title="Anyone who has never arranged their own navigation sees this. Nobody's saved arrangement is touched."
+                type="button"
+              >
+                <Building2 className="h-3.5 w-3.5" />
+                {hasCompanyDefault ? "Replace company default" : "Set as company default"}
+              </button>
+            </>
+          ) : null}
           <button
             className="flex items-center gap-1.5 whitespace-nowrap border border-slate-300 px-3 py-1.5 text-phx-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
             disabled={busy}
@@ -731,7 +852,7 @@ export function SidebarLayoutEditor({
             type="button"
           >
             <RotateCcw className="h-3.5 w-3.5" />
-            Reset to standard
+            {hasCompanyDefault ? "Reset to company default" : "Reset to standard"}
           </button>
           <button
             className="flex items-center gap-1.5 whitespace-nowrap bg-phx-ink px-3.5 py-1.5 text-phx-sm font-semibold text-white hover:bg-[#1E293B] disabled:opacity-50"

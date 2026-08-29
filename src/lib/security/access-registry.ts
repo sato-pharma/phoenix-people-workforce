@@ -604,6 +604,15 @@ export const accessRegistry = [
   // so the worst a bad write can do is give that one person an inconvenient menu.
   sessionApi({ methods: ["GET"], pattern: "/api/navigation/personal-layout", permission: null, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "mutation", required: false }, methods: ["PUT", "DELETE"], pattern: "/api/navigation/personal-layout", permission: null, guard: "domain-helper", csrfRequired: true }),
+  // The COMPANY DEFAULT navigation layout. Deliberately its own pattern rather than a scope flag on
+  // the personal route above: the personal route derives its key from the session and cannot name a
+  // different target, so the one write that reaches every account keeps its own URL and its own gate.
+  // Guard is "domain-helper" because the handler checks `access.role === "Super Admin"` directly —
+  // there is no navigation permission resource to assert against. Audit is classified but not
+  // required, matching the personal route: a layout only reorders links the viewer could already
+  // open, never widens access, and never overwrites a saved personal arrangement.
+  sessionApi({ methods: ["GET"], pattern: "/api/navigation/company-layout", permission: null, guard: "domain-helper" }),
+  sessionApi({ audit: { classification: "mutation", required: false }, methods: ["PUT", "DELETE"], pattern: "/api/navigation/company-layout", permission: null, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ methods: allMethods, pattern: "/api/notifications/in-app", permission: { resource: "employee_profile", action: "read" }, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ methods: ["GET"], pattern: "/api/notifications/settings", permission: { resource: "employee_profile", action: "read" } }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["PATCH"], pattern: "/api/notifications/settings", permission: { resource: "employee_profile", action: "update" } }),

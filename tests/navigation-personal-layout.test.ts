@@ -2,12 +2,16 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import type { NavigationSection, NavigationSectionItem } from "../src/config/system-navigation.ts";
+import { carriesNavRows, usesAdminChrome } from "../src/lib/navigation/active-path.ts";
 import {
   applyPersonalLayout,
+  COMPANY_DEFAULT_LAYOUT_KEY,
+  countLayoutHrefs,
   defaultLayoutFrom,
   isPersonalNavigationLayout,
   layoutKeyFor,
   layoutOwnerKey,
+  MAX_LAYOUT_HREFS,
   PERSONAL_LAYOUT_VERSION,
   pinHrefToRow,
   placementOf,
@@ -351,11 +355,16 @@ export function runNavigationPersonalLayoutTests() {
 
   // The size cap has to see the overrides too: they are the one part of the document that grows with
   // the number of MODULES, so a cap that ignored them would not be a cap.
+  //
+  // The counter MOVED on 2026-08-29, out of the personal route and into personal-layout.ts, so the
+  // company-default route could enforce the same rule instead of carrying a second copy of it. The
+  // pin follows it. That the routes actually CALL it — both of them — is asserted in the shared-cap
+  // block further down, together with a behavioural count that this source check cannot make.
   {
-    const route = readFileSync("app/api/navigation/personal-layout/route.ts", "utf8");
+    const shared = readFileSync("src/lib/navigation/personal-layout.ts", "utf8");
     assert.ok(
-      /countHrefs[\s\S]{0,600}moduleRows/.test(route),
-      "the route's size cap must count the per-module rows",
+      /countLayoutHrefs[\s\S]{0,600}moduleRows/.test(shared),
+      "the shared size cap must count the per-module rows",
     );
   }
 
@@ -476,8 +485,12 @@ export function runNavigationPersonalLayoutTests() {
       ["app/(admin)/admin/sidebar-layout/page.tsx", "the editor that loads the saved arrangement"],
     ] as const) {
       const source = readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
+      // Either loader is fine — both surfaces moved to loadEffectiveLayout on 2026-08-29 so a
+      // company default can fill in for people who have saved nothing. What is pinned is the KEY:
+      // whatever reads, it must read under layoutOwnerKey(access), the same expression the route
+      // writes under.
       assert.ok(
-        /loadPersonalLayout\(layoutOwnerKey\(access\)\)/.test(source),
+        /load(?:Personal|Effective)Layout\(layoutOwnerKey\(access\)\)/.test(source),
         `${what} must read under layoutOwnerKey(access), or it renders a layout the route never wrote`,
       );
     }
@@ -935,20 +948,28 @@ export function runNavigationPersonalLayoutTests() {
       /const addableFor = \(row: readonly NavigationSectionItem\[\]\)/.test(rows),
       "the picker must be built from the GATED sections, so it can no more introduce an href than applyPersonalLayout can",
     );
+    // REPOINTED when the row reached the employee portal. The property these two pin is unchanged
+    // — the "+" and the layout behind it must reach exactly the surfaces that carry rows, and the
+    // same predicate must decide both, or a mode gets a "+" with nothing behind it. What changed is
+    // that the predicate is no longer `usesAdminChrome`: that one answers a PALETTE question, and
+    // the portal carries rows without wearing admin chrome. Written with `includes` rather than a
+    // regex so the pin has no escaping to get wrong.
     assert.ok(
-      /canAdd: usesAdminChrome\(navigationMode\)/.test(rows),
-      "admin chrome — admin AND hr, the two workspaces that share this shell",
+      rows.includes("canAdd: carriesNavRows(navigationMode),"),
+      "the + reaches every surface that carries rows — admin, hr, and the employee portal",
     );
     assert.ok(
-      /const layout = usesAdminChrome\(navigationMode\) \? personalLayout : null;/.test(rows),
-      "the layout itself must reach the same two modes, or hr gets a + with nothing behind it",
+      rows.includes("const layout = carriesNavRows(navigationMode) ? personalLayout : null;"),
+      "the layout itself must reach the same modes on the same test, or a surface gets a + with nothing behind it",
     );
     assert.ok(
       /if \(items\.length === 0 && !keepWhenEmpty\) return null;/.test(rows),
       "an empty row renders nothing UNLESS this viewer has a layout — otherwise a lone + appears on 243 pages for 158 people who never asked for it",
     );
+    // Also repointed: `alwaysOfferAdd` was added beside `hasSavedLayout` for the portal, which has
+    // no editor page and so has no other way to a first layout. Same property, one more way in.
     assert.equal(
-      (rows.match(/keepWhenEmpty=\{canAdd && hasSavedLayout\}/g) ?? []).length,
+      rows.split("keepWhenEmpty={canAdd && (hasSavedLayout || alwaysOfferAdd)}").length - 1,
       2,
       "both rows must survive being emptied, or the one you emptied has no way back",
     );
@@ -1009,5 +1030,291 @@ export function runNavigationPersonalLayoutTests() {
     for (const [, value] of navConfig.matchAll(/navBadge:\s*"([a-z0-9-]+)"/g)) {
       assert.ok(allowed.includes(value), `a nav item declares navBadge "${value}", which is not in the union`);
     }
+  }
+  // ── The company default layout ─────────────────────────────────────────────────────────────
+  //
+  // One reserved row in nav_personal_layout holds the arrangement that everybody who has saved
+  // nothing falls back to. It ships with NO migration: the table is keyed by a bare
+  // `hr_id text primary key` with no foreign key to employees, so a reserved key is already legal.
+  //
+  // Two properties carry the whole safety story and both are pinned below:
+  //   1. No PERSON can ever resolve to that row (or a personal save rewrites everyone's nav).
+  //   2. A published default never overwrites a saved personal layout (or publishing destroys work).
+  {
+    // The table CHECKs `hr_id = lower(hr_id)`. A sentinel that fails it would make every publish
+    // die at the database with a constraint error, which is a deploy-time failure nothing catches.
+    assert.equal(
+      COMPANY_DEFAULT_LAYOUT_KEY,
+      COMPANY_DEFAULT_LAYOUT_KEY.toLowerCase(),
+      "the company-default key must be lowercase or the table's own CHECK rejects every publish",
+    );
+    assert.ok(
+      COMPANY_DEFAULT_LAYOUT_KEY.startsWith("__"),
+      "the sentinel must sit outside the space of real hr_ids and login ids",
+    );
+    // layoutKeyFor is the normaliser both reads and writes go through. If it mangled the sentinel,
+    // the writer and the reader would disagree and a published default would render for nobody.
+    assert.equal(
+      layoutKeyFor(COMPANY_DEFAULT_LAYOUT_KEY),
+      COMPANY_DEFAULT_LAYOUT_KEY,
+      "layoutKeyFor must round-trip the sentinel unchanged",
+    );
+
+    // THE GUARD THAT MATTERS. An account resolving to the sentinel would edit everybody's
+    // navigation from the screen that promises it changes nobody else's.
+    assert.equal(
+      layoutOwnerKey({ hrId: COMPANY_DEFAULT_LAYOUT_KEY, loginId: null }),
+      null,
+      "layoutOwnerKey must refuse the company-default key, not hand it back as a personal identity",
+    );
+    assert.equal(
+      layoutOwnerKey({ hrId: null, loginId: COMPANY_DEFAULT_LAYOUT_KEY.toUpperCase() }),
+      null,
+      "and it must refuse it through the login-id fallback too, in any casing",
+    );
+    // The ordinary path is untouched — a guard that also broke real accounts would be worse.
+    assert.equal(layoutOwnerKey({ hrId: "HR042", loginId: "someone" }), "hr042");
+    assert.equal(layoutOwnerKey({ hrId: null, loginId: "admin-HR" }), "admin-hr");
+  }
+
+  // The href cap is now SHARED by two write routes. A hand-copied second cap is how Capture
+  // Evidence shipped rejecting 59 of the 65 customers it existed for, so this pins both that the
+  // counter sees every zone and that neither route carries a local duplicate of it.
+  {
+    const full: PersonalNavigationLayout = {
+      version: PERSONAL_LAYOUT_VERSION,
+      strip: ["/a"],
+      upperRow: ["/b"],
+      lowerRow: ["/c"],
+      moduleRows: { people: { upperRow: ["/d"], lowerRow: ["/e"] } },
+      sections: [{ id: "s", label: "S", items: ["/f", "/g"] }],
+      hidden: ["/h"],
+    };
+    assert.equal(
+      countLayoutHrefs(full),
+      8,
+      "countLayoutHrefs must count every zone — a zone it forgets is a hole in the cap on BOTH routes",
+    );
+    // The module-row half is the part that grows with the number of modules rather than pages, so
+    // it is the half worth proving separately: dropping it would leave the ceiling silently low.
+    const withoutModules: PersonalNavigationLayout = { ...full, moduleRows: {} };
+    assert.equal(countLayoutHrefs(withoutModules), 6, "module overrides must be inside the count");
+    assert.ok(MAX_LAYOUT_HREFS >= 2000, "the shared ceiling must stay generous enough for real use");
+
+    const personalRoute = readFileSync("app/api/navigation/personal-layout/route.ts", "utf8");
+    const companyRoute = readFileSync("app/api/navigation/company-layout/route.ts", "utf8");
+    for (const [name, source] of [["personal", personalRoute], ["company", companyRoute]] as const) {
+      assert.ok(
+        source.includes("countLayoutHrefs(layout) > MAX_LAYOUT_HREFS"),
+        `the ${name} layout route must enforce the SHARED cap`,
+      );
+      assert.ok(
+        !/function countHrefs\(/.test(source),
+        `the ${name} layout route must not carry its own copy of the counter — that is the duplicate-list trap`,
+      );
+    }
+  }
+
+  // Source pins on the store. These are behaviours no unit test can reach without a database, and
+  // each one, if it broke, would fail SILENTLY — the wrong menu, or a wide write, with no error.
+  {
+    const store = readFileSync("src/lib/navigation/personal-layout-store.ts", "utf8");
+
+    // PERSONAL WINS. If this order inverted, publishing a company default would visually overwrite
+    // every arrangement anyone had ever saved, while their row still sat in the table untouched.
+    assert.ok(
+      store.includes('if (personal) return { layout: personal, source: "personal" };'),
+      "loadEffectiveLayout must return a personal layout before it ever looks at the company default",
+    );
+
+    // ONE round trip, not two. Two sequential awaits would double the shell's latency on every
+    // admin page render for exactly the people who have no personal layout — nearly everyone.
+    assert.ok(
+      store.includes('.select("hr_id, layout").in("hr_id", keys)'),
+      "loadEffectiveLayout must fetch both keys in a single query",
+    );
+    const effective = store.slice(store.indexOf("export async function loadEffectiveLayout"));
+    const body = effective.slice(0, effective.indexOf("\n}\n"));
+    assert.equal(
+      (body.match(/await getSupabaseAdmin\(\)/g) ?? []).length,
+      1,
+      "loadEffectiveLayout must make exactly one database call — a fallback read is the thing it exists to avoid",
+    );
+
+    // The second of the two independent guards against a personal save reaching everybody.
+    assert.ok(
+      store.includes("if (key === COMPANY_DEFAULT_LAYOUT_KEY) {"),
+      "savePersonalLayout must refuse the reserved key outright",
+    );
+    assert.ok(
+      store.includes("if (!key || key === COMPANY_DEFAULT_LAYOUT_KEY) return;"),
+      "clearPersonalLayout must refuse it too — otherwise a DELETE could withdraw the company default",
+    );
+  }
+
+  // The route gate, the shell wiring, and the one client-bundle hazard this feature introduced.
+  {
+    const companyRoute = readFileSync("app/api/navigation/company-layout/route.ts", "utf8");
+    // Server-side gate. Hiding the button is UX; this is the security boundary, and it is the whole
+    // difference between "a Super Admin publishes a default" and "anyone signed in can".
+    assert.ok(
+      companyRoute.includes('if (access.role !== "Super Admin") {'),
+      "the company-layout route must gate on Super Admin server-side",
+    );
+    // Guest first, or a signed-out caller gets a misleading 403 instead of 401. An unauthenticated
+    // caller resolves to role "Employee" here, never null — `!access.role` is dead code repo-wide.
+    assert.ok(
+      companyRoute.indexOf('access.source === "guest"') < companyRoute.indexOf('access.role !== "Super Admin"'),
+      "the guest check must come before the role check",
+    );
+    // Written as a real multi-line template rather than a regex: the CSRF assert has to be the
+    // FIRST statement in the try, and an "is it somewhere in the file" check would pass even if it
+    // sat after the write.
+    for (const verb of ["PUT", "DELETE"]) {
+      const opening = `export async function ${verb}(request: Request) {
+  try {
+    const csrf = assertSameOriginMutation(request);`;
+      assert.ok(
+        companyRoute.includes(opening),
+        `${verb} on the company-layout route must assert same-origin before anything else`,
+      );
+    }
+
+    // The PERSONAL route must never learn to name a target. The moment it takes a scope or an hrId
+    // from the request, the narrow route becomes the wide one and the separate gate above is moot.
+    const personalRoute = readFileSync("app/api/navigation/personal-layout/route.ts", "utf8");
+    assert.ok(
+      !/COMPANY_DEFAULT_LAYOUT_KEY|saveCompanyDefaultLayout|scope|hrId\?:/.test(personalRoute),
+      "the personal-layout route must have no way to address the company default",
+    );
+
+    // The shell must read the EFFECTIVE layout, or a published default renders for nobody.
+    const shell = readFileSync("src/components/layout/app-shell.tsx", "utf8");
+    assert.ok(
+      shell.includes("const { layout: personalLayout } = await loadEffectiveLayout(layoutOwnerKey(access));"),
+      "the app shell must resolve the effective layout, not just the personal one",
+    );
+
+    // CLIENT BUNDLE HAZARD. The editor is a "use client" component; personal-layout-store imports
+    // the service-role Supabase client. LayoutSource therefore lives in the pure module, and the
+    // editor must import it from there. A type-only import erases, but the specifier is a live
+    // module-graph edge that a later value import turns into a real server-code leak.
+    const editor = readFileSync("src/components/admin/sidebar-layout-editor.tsx", "utf8");
+    assert.ok(editor.startsWith('"use client";'), "the layout editor is a client component");
+    assert.ok(
+      !editor.includes("personal-layout-store"),
+      "the client editor must never import the layout store — it pulls the service-role client into the browser graph",
+    );
+    assert.ok(
+      editor.includes("type LayoutSource,") && editor.includes('} from "@/lib/navigation/personal-layout";'),
+      "LayoutSource must reach the editor from the server-free module",
+    );
+    // The company controls are hidden for everyone else rather than shown disabled.
+    assert.ok(
+      editor.includes("{canManageCompanyDefault ? ("),
+      "the company-default buttons must be gated on canManageCompanyDefault",
+    );
+    assert.ok(
+      editor.includes('fetch("/api/navigation/company-layout", {') &&
+        editor.includes('fetch("/api/navigation/company-layout", { method: "DELETE" })'),
+      "publish and withdraw must both go to the company-layout route, never the personal one",
+    );
+  }
+
+  // ── The row reaches the EMPLOYEE PORTAL ────────────────────────────────────────────────────
+  // 116 accounts, 72% of everyone with a login, and until now the only workspace with no
+  // arrangeable row at all.
+  {
+    // `carriesNavRows` and `usesAdminChrome` must stay two different questions. The first asks
+    // whether a surface HAS rows; the second is a PALETTE question. The portal answers yes to one
+    // and no to the other, so collapsing them would either paint the portal black or take its rows
+    // away — and both read as a styling slip rather than the wiring mistake they would be.
+    assert.equal(carriesNavRows("employee-portal"), true, "the portal carries rows");
+    assert.equal(usesAdminChrome("employee-portal"), false, "…and is NOT dark chrome");
+    for (const mode of ["admin", "hr"] as const) {
+      assert.equal(carriesNavRows(mode), true, `${mode} carries rows`);
+      assert.equal(usesAdminChrome(mode), true, `${mode} wears admin chrome`);
+    }
+    assert.equal(carriesNavRows(undefined), false, "an unset mode carries no rows");
+
+    // THE SECURITY PROPERTY, tested rather than reasoned about. The portal hands its own gated
+    // sections in, and a layout naming anything outside that set — an admin page, or a portal page
+    // this viewer's visibility flags withheld — must render nothing. It is the same guarantee the
+    // admin row has, and it is what makes ONE stored document safe across every mode.
+    const portalGated: readonly NavigationSection[] = [
+      { id: "my-workspace", label: "My Workspace", items: [item("/employee-portals", "Command Center")] },
+    ];
+    const portalApplied = applyPersonalLayout(
+      portalGated,
+      layout({ upperRow: ["/employee-portals", "/admin/employees", "/employee-portals/payslips"] }),
+      null,
+    );
+    assert.deepEqual(
+      portalApplied.upperRow.map((entry) => entry.href),
+      ["/employee-portals"],
+      "a portal row may carry only hrefs from the sections handed in — never an admin page, never a withheld portal page",
+    );
+  }
+
+  // The portal's wiring: one section source, one round trip, and the "+" that has to be there.
+  {
+    const portalShell = readFileSync("src/components/employee-portal/employee-portal-server-shell.tsx", "utf8");
+    // ONE round trip. Every query from here crosses the Atlantic to Frankfurt and this runs on
+    // EVERY portal page render, so the read belongs inside the Promise.all already being awaited.
+    // Pinned by position: a call that merely exists somewhere in the file would satisfy an
+    // "includes" check while costing a second serial round trip on 116 accounts' every page view.
+    const parallelRead = `    [data, hasDeviceMapping, navLayout] = await Promise.all([
+      getEmployeePortalShellData(access),
+      access.hrId ? employeeHasActiveDeviceMapping(access.hrId).catch(() => false) : Promise.resolve(false),
+      loadEffectiveLayout(layoutOwnerKey(access)).then((result) => result.layout),
+    ]);`;
+    assert.ok(
+      portalShell.includes(parallelRead),
+      "the portal shell must read the effective layout INSIDE the existing Promise.all, not after it",
+    );
+    assert.ok(
+      portalShell.includes("personalLayout={navLayout}"),
+      "…and hand it to the chrome, or the row renders empty for everyone",
+    );
+
+    // /payslips mounts the portal chrome DIRECTLY instead of going through the server shell, so it
+    // is the one page that can silently miss the read. The symptom would be a row that looks
+    // emptied on exactly one page, which reads as the feature breaking rather than as a page that
+    // was forgotten — so it is pinned rather than left to a reviewer to notice.
+    const payslipsPage = readFileSync("app/payslips/page.tsx", "utf8");
+    assert.ok(
+      payslipsPage.includes("const { layout: navLayout } = await loadEffectiveLayout(layoutOwnerKey(access));") &&
+        payslipsPage.includes("personalLayout={navLayout}"),
+      "the payslips page mounts the portal chrome itself and must read the same effective layout",
+    );
+
+    const portalLayout = readFileSync("src/components/employee-portal/employee-portal-layout.tsx", "utf8");
+    assert.ok(
+      portalLayout.includes('navigationMode="employee-portal"'),
+      'the portal must declare its own mode — "admin" is the provider default and would gate on admin hrefs',
+    );
+    assert.ok(
+      portalLayout.includes("sections={portalNavigationSections(visibility)}"),
+      "the portal must hand its own gated sections in; getSections has nothing to gate here",
+    );
+    // ONE list. buildEmployeePortalSections is what the sidebar, the top nav and the bottom nav
+    // already read, so the row cannot drift from them. A hand-copied second list is how Capture
+    // Evidence shipped rejecting 59 of the 65 customers it existed for.
+    assert.ok(
+      portalLayout.includes("return buildEmployeePortalSections(visibility)"),
+      "portalNavigationSections must derive from the one section builder, never a second list",
+    );
+
+    // THE PORTAL HAS NO LAYOUT EDITOR. /admin/sidebar-layout is admin-only and a null layout
+    // resolves to EMPTY rows — so without this the portal's "+" would appear only for someone who
+    // already had a layout, which in the portal is nobody, ever. The feature would be dead on
+    // arrival, and from outside zero usage looks exactly like zero adoption. Admin and HR keep the
+    // rule as shipped, where the editor page is the entry point. (`canAdd` and the two
+    // `keepWhenEmpty` sites are pinned once, above, beside the rest of the "+" wiring.)
+    const rows = readFileSync("src/components/layout/horizontal-nav-rows.tsx", "utf8");
+    assert.ok(
+      rows.includes('alwaysOfferAdd: navigationMode === "employee-portal",'),
+      "the portal must always offer its +, having no editor page to arrange a layout from",
+    );
   }
 }
