@@ -155,7 +155,7 @@ export function DirectOrderCleanupDesk({ plan }: Props) {
         return;
       }
       setOk(
-        `Done — ${data.pharmaciesMerged ?? 0} pharmacy record(s) merged, ${data.requestsMoved ?? 0} request(s) moved, ` +
+        `Done — ${data.pharmaciesMerged ?? 0} venue record(s) merged, ${data.requestsMoved ?? 0} request(s) moved, ` +
           `${data.requestsCancelled ?? 0} duplicate(s) cancelled, ${data.codesRepaired ?? 0} code(s) repaired, ` +
           `${data.requestsReleased ?? 0} held request(s) released.`,
       );
@@ -173,7 +173,7 @@ export function DirectOrderCleanupDesk({ plan }: Props) {
       <section className="border border-phx-line bg-white px-4 py-8 text-center">
         <p className="text-sm font-bold text-slate-800">Nothing to clean up.</p>
         <p className="mt-1 text-phx-sm text-slate-500">
-          No pharmacy is registered twice, no order is submitted twice, and every distributor code is in its
+          No venue is registered twice, no order is submitted twice, and every distributor code is in its
           own column. This page checks live data each time it loads.
         </p>
       </section>
@@ -198,7 +198,7 @@ export function DirectOrderCleanupDesk({ plan }: Props) {
       {plan.merges.length > 0 ? (
         <div className="border-b border-phx-line p-3">
           <p className="mb-2 text-phx-xs font-black uppercase tracking-wider text-slate-500">
-            Same pharmacy, entered more than once
+            Same venue, entered more than once
           </p>
           <div className="space-y-3">
             {plan.merges.map((merge) => {
@@ -212,13 +212,13 @@ export function DirectOrderCleanupDesk({ plan }: Props) {
                     <input type="checkbox" checked={on} onChange={() => toggle(setOffMerges)(key)} className="mt-1" />
                     <span className="min-w-0">
                       <span className="block text-sm font-black text-slate-900">
-                        {everyone.length} records are one pharmacy
+                        {everyone.length} records are one venue
                       </span>
                       <span className="block text-phx-sm text-slate-600">
                         {merge.provenBy.kind === "code" ? (
                           <>
                             Proven by the same distributor customer: {merge.provenBy.distributorCode} /{" "}
-                            {merge.provenBy.customerCode}. A distributor customer cannot belong to two pharmacies.
+                            {merge.provenBy.customerCode}. A distributor customer cannot belong to two venues.
                           </>
                         ) : (
                           <>
@@ -297,7 +297,7 @@ export function DirectOrderCleanupDesk({ plan }: Props) {
                         {money(doubled)} counted twice — {group.duplicates.length} copy(ies) to cancel
                       </span>
                       <span className="block text-phx-sm text-slate-600">
-                        Same pharmacy, product, quantity, deal terms and collection date.
+                        Same venue, product, quantity, deal terms and collection date.
                       </span>
                     </span>
                   </label>
@@ -327,7 +327,7 @@ export function DirectOrderCleanupDesk({ plan }: Props) {
       {plan.repairs.length > 0 ? (
         <div className="border-b border-phx-line p-3">
           <p className="mb-2 text-phx-xs font-black uppercase tracking-wider text-slate-500">
-            Distributor code typed into the pharmacy name
+            Distributor code typed into the venue name
           </p>
           <div className="space-y-2">
             {plan.repairs.map((repair) => {
@@ -375,7 +375,7 @@ export function DirectOrderCleanupDesk({ plan }: Props) {
                       {release.pharmacyName} ({release.pharmacyCode}) — {release.requests.length} held request(s)
                     </span>
                     <span className="block text-phx-xs text-slate-600">
-                      Once this pharmacy is resolved, every one of its held requests enters the approval chain at
+                      Once this venue is resolved, every one of its held requests enters the approval chain at
                       step 1 (SFE Manager) — not just one of them. Releasing is not skipping review.
                     </span>
                     <span className="mt-1 block space-y-1">
@@ -403,7 +403,7 @@ export function DirectOrderCleanupDesk({ plan }: Props) {
           value={reason}
           onChange={(event) => setReason(event.target.value)}
           rows={2}
-          placeholder="Reviewed the pairs against the distributor master — same pharmacy, same order."
+          placeholder="Reviewed the pairs against the distributor master — same venue, same order."
           className="mt-1 w-full border border-phx-line px-2 py-1.5 text-sm"
         />
         <div className="mt-2 flex flex-wrap items-center gap-3">

@@ -145,7 +145,7 @@ export function HeldDesk({ rows }: Props) {
       <section className="border border-phx-line bg-white px-4 py-8 text-center">
         <p className="text-sm font-bold text-slate-600">No held direct orders.</p>
         <p className="mt-1 text-phx-sm text-slate-400">
-          Every submitted request is on a pharmacy the master database recognises.
+          Every submitted request is on a venue the master database recognises.
         </p>
       </section>
     );
@@ -179,7 +179,7 @@ export function HeldDesk({ rows }: Props) {
                 <input type="checkbox" checked={allSelected} onChange={toggleAll} aria-label="Select all held requests" />
               </th>
               <th className="px-3 py-2">Requester</th>
-              <th className="px-3 py-2">Pharmacy</th>
+              <th className="px-3 py-2">Venue</th>
               <th className="px-3 py-2">Order</th>
               <th className="px-3 py-2">Value</th>
               <th className="px-3 py-2">Held since</th>

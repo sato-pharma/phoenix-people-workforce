@@ -1,4 +1,5 @@
 import { codeNameLabel } from "@/lib/direct-orders/geo-names";
+import { venueRequiresDistributorCode, venueTypeLabel } from "@/lib/venues/venue-type";
 import type {
   DirectOrderApprovalDetail,
   DirectOrderAreaRep,
@@ -107,8 +108,8 @@ export const DIRECT_ORDER_CORE_FIELD_LABELS: readonly string[] = [
   "Sato product code",
   "Status",
   "Deal type",
-  "Pharmacy",
-  "Sato pharmacy code",
+  "Venue",
+  "Sato venue code",
   "Doctor",
   "Brick",
   "Area",
@@ -116,9 +117,9 @@ export const DIRECT_ORDER_CORE_FIELD_LABELS: readonly string[] = [
   "Medical rep",
   "Collection date",
   "Sales month",
-  "Pharmacy address",
+  "Venue address",
   "Distributor codes",
-  "Pharmacy registered by",
+  "Venue registered by",
 ] as const;
 
 /**
@@ -241,8 +242,8 @@ export function buildDirectOrderDetailFields(detail: DirectOrderApprovalDetail):
   }
 
   fields.push(
-    { label: "Pharmacy", value: codeNameLabel(pharmacy?.pharmacyName, pharmacy?.phoenixPharmacyCode) },
-    { label: "Sato pharmacy code", value: text(pharmacy?.phoenixPharmacyCode) },
+    { label: "Venue", value: codeNameLabel(pharmacy?.pharmacyName, pharmacy?.phoenixPharmacyCode) },
+    { label: "Sato venue code", value: text(pharmacy?.phoenixPharmacyCode) },
     { label: "Doctor", value: text(pharmacy?.doctorName) },
     // Three separate fields, never a combined "Brick / Area" cell — cramming two geographies
     // into one value is what forced the bare-code "a / b" format this replaces.
@@ -257,8 +258,8 @@ export function buildDirectOrderDetailFields(detail: DirectOrderApprovalDetail):
     { label: "Submitted", value: dateOnly(request.createdAt) },
     // A name, not the bare HR-ID (owner rule) — falls back to the id only if the directory has
     // no name for it, same fallback shape as requesterName.
-    { label: "Pharmacy registered by", value: text(detail.pharmacyRegisteredByName ?? pharmacy?.createdByHrId) },
-    { label: "Pharmacy status", value: pharmacy ? (pharmacy.active ? "Active" : "Inactive") : DASH },
+    { label: "Venue registered by", value: text(detail.pharmacyRegisteredByName ?? pharmacy?.createdByHrId) },
+    { label: "Venue status", value: pharmacy ? (pharmacy.active ? "Active" : "Inactive") : DASH },
     // "Geography check" was REMOVED here on 2026-08-08, not merely hidden by one screen.
     //
     // It read `geoVarianceResolved` and printed "Resolved" or "Not flagged" — one string covering
@@ -287,7 +288,7 @@ export function buildDirectOrderDetailFields(detail: DirectOrderApprovalDetail):
   // Full-width: the long free text, and the distributor list (a component renders the pairs as
   // a sub-table; this string is the accessible/plain-text form of the same data).
   fields.push(
-    { label: "Pharmacy address", value: text(pharmacy?.pharmacyAddress), layout: "full" },
+    { label: "Venue address", value: text(pharmacy?.pharmacyAddress), layout: "full" },
     { label: "Distributor codes", value: text(detail.distributorCodesText), layout: "full" },
   );
 
@@ -380,7 +381,7 @@ export function buildDirectOrderNotificationMetrics(
     { label: "Quantity", value: units(request.qty) },
     { label: dealFieldLabel(request), value: formatDealValue(request) },
     { label: "Sales value", value: money(request.salesValue) },
-    { label: "Pharmacy", value: codeNameLabel(ctx.pharmacyName, ctx.pharmacyCode) },
+    { label: "Venue", value: codeNameLabel(ctx.pharmacyName, ctx.pharmacyCode) },
     { label: "Brick", value: codeNameLabel(ctx.geo.brick?.name, ctx.geo.brick?.code) },
     { label: "Area", value: codeNameLabel(ctx.geo.area?.name, ctx.geo.area?.code) },
     { label: "Region", value: codeNameLabel(ctx.geo.region?.name, ctx.geo.region?.code) },
@@ -388,7 +389,7 @@ export function buildDirectOrderNotificationMetrics(
     // Not `text(...)`: a bare dash here reads as "the email failed to include the distributor".
     // Since codes became optional (2026-08-04) an empty list is a normal state, and the approver
     // reading this on a phone has nothing else to tell them which of the two it is.
-    { label: "Distributor codes", value: ctx.distributorCodesText.trim() || "none on file — distributor sales cannot be linked to this pharmacy" },
+    { label: "Distributor codes", value: ctx.distributorCodesText.trim() || "none on file — distributor sales cannot be linked to this venue" },
     { label: "Collection date", value: dateOnly(request.collectionDate) },
   ];
 }
@@ -616,21 +617,27 @@ export function resolveDirectOrderStatusBanner(
   detail: Pick<DirectOrderApprovalDetail, "request" | "pharmacy">,
 ): DirectOrderStatusBanner | null {
   const { request, pharmacy } = detail;
+  // Say what the venue IS. An approver reading "REJECTED PHARMACY" over a nursery is the same
+  // defect one rung further up the chain: a screen naming a venue as something it is not.
+  // Falls back to the neutral word rather than to "pharmacy" when there is no venue to read.
+  const venueWord = pharmacy ? venueTypeLabel(pharmacy.venueType).toLowerCase() : "venue";
   if (request.status === "held") {
     return {
       tone: "held",
       message:
-        "HELD — this request stands outside the approval flow. Its pharmacy is not in the master " +
-        "database, so no approver has it as work and nothing can be approved here. It moves only " +
-        "when the pharmacy passes validation, and an untouched held request expires after 14 days.",
+        `HELD — this request stands outside the approval flow. Its ${venueWord} is not in the ` +
+        "master database, so no approver has it as work and nothing can be approved here. It " +
+        `moves only when the ${venueWord} passes validation, and an untouched held request ` +
+        "expires after 14 days.",
     };
   }
   if (request.status === "expired") {
     return {
       tone: "expired",
       message:
-        "EXPIRED — this request stayed held for 14 days without its pharmacy passing validation, " +
-        "and closed automatically. Resubmit with a pharmacy from the master database.",
+        `EXPIRED — this request stayed held for 14 days without its ${venueWord} passing ` +
+        `validation, and closed automatically. Resubmit with a ${venueWord} from the master ` +
+        "database.",
     };
   }
   // Proven false, not merely unreviewed. An approver must never see this as "awaiting a look" — the
@@ -640,19 +647,30 @@ export function resolveDirectOrderStatusBanner(
     return {
       tone: "pharmacy-rejected",
       message:
-        "REJECTED PHARMACY — this pharmacy was examined and found not to be real. The order " +
-        "behind it must not be approved, and the pharmacy cannot be used again.",
+        `REJECTED ${venueWord.toUpperCase()} — this ${venueWord} was examined and found not to ` +
+        `be real. The order behind it must not be approved, and the ${venueWord} cannot be used ` +
+        "again.",
     };
   }
   if (pharmacy?.verificationStatus === "pending_review") {
     return {
       tone: "pharmacy-pending-review",
+      // The distributor-code half of this warning is true ONLY OF A PHARMACY. A nursery holds no
+      // distributor account, so warning that its code might be wrong describes a code it cannot
+      // have — and hides the real reason it is unconfirmed: nobody has looked at its evidence yet.
       message:
-        "New pharmacy — Phoenix has not confirmed it yet. It was typed in by hand instead of " +
-        "being picked from the list, so nobody has checked that its distributor code is real. " +
-        "That code is what Phoenix uses to find this pharmacy's sales at the distributor, and a " +
-        "wrong one would pull another pharmacy's sales in here. The SFE Manager confirms the " +
-        "pharmacy at their own rung; until then this order cannot be finalized.",
+        pharmacy && !venueRequiresDistributorCode(pharmacy.venueType)
+          ? `New ${venueWord} — Phoenix has not confirmed it yet. A ${venueWord} has no ` +
+            "distributor account, so there is no code to check and no distributor sales will " +
+            `ever appear for it. What identifies it is the location and the live photo the rep ` +
+            "captured, and an admin has not looked at them yet. Until that decision this order " +
+            "cannot be finalized."
+          : `New ${venueWord} — Phoenix has not confirmed it yet. It was typed in by hand ` +
+            "instead of being picked from the list, so nobody has checked that its distributor " +
+            `code is real. That code is what Phoenix uses to find the sales of this ` +
+            `${venueWord} at the distributor, and a wrong one would pull the sales of another ` +
+            `${venueWord} in here. The SFE Manager confirms the ${venueWord} at their own rung; ` +
+            "until then this order cannot be finalized.",
     };
   }
   // The golden rule, stated where the money is judged (spec C2): CEO approval is a commercial

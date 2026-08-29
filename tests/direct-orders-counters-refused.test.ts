@@ -77,7 +77,7 @@ export function runDirectOrderCountersRefusedTests() {
 
   // ── It has to be visible, on both screens ────────────────────────────────────────────────
   assert.match(table, /Orders rejected/, "the desktop table must show the column");
-  assert.match(table, /Rejected pharmacies/, "the desktop table must show distinct rejected pharmacies");
+  assert.match(table, /Rejected venues/, "the desktop table must show distinct rejected venues");
   assert.match(
     table,
     /\{row\.ordersRejected\} rejected/,
