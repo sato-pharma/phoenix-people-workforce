@@ -36,6 +36,7 @@ import {
   LifeBuoy,
   Mail,
   MailCheck,
+  MailX,
   MousePointerClick,
   MapPinned,
   PauseCircle,
@@ -1465,6 +1466,10 @@ const hrNavigationSectionSeeds = [
       // sidebar does not enforce that - the route handler does - but the split is the reason a
       // reader of this file should not "helpfully" grant both to both.
       { href: "/hr/clearance", icon: ClipboardCheck, label: "Clearance", permissions: [{ resource: "clearance" }] },
+      // Gated on `clearance` rather than a resource of its own: a leaver's mailbox IS the "IT &
+      // System Access" station given a table, and a second offboarding grant is a second thing to
+      // drift out of step with the first.
+      { href: "/hr/mailbox-offboarding", icon: MailX, label: "Mailbox Revocation", permissions: [{ resource: "clearance" }] },
       { href: "/hr/retention", icon: HeartPulse, label: "Retention Register", permissions: [{ resource: "retention" }] },
       { href: "/hr/reports/vacancies", icon: BriefcaseBusiness, label: "Vacancies Report", permissions: [{ resource: "vacancies" }] },
       { href: "/hr/admin/support-requests", icon: LifeBuoy, label: "HR Support Requests", permissions: [{ resource: "support_requests" }] },
@@ -2774,6 +2779,13 @@ export const peopleManagementPageItems: readonly AdminToolsPageItem[] = [
     icon: ClipboardCheck,
     label: "Clearance & Offboarding",
     description: "Every station a leaver has to clear, and the final settlement release.",
+    permissions: [{ resource: "clearance" }],
+  },
+  {
+    href: "/mailbox-offboarding",
+    icon: MailX,
+    label: "Mailbox Revocation",
+    description: "Every leaver still holding a company mailbox, and what has been done about it.",
     permissions: [{ resource: "clearance" }],
   },
   {

@@ -73,6 +73,11 @@ export type AuditEntityType =
   // employee table afterwards. audit_logs has no CHECK on entity_type (verified against production
   // 2026-08-23, same as the note below), so this needs no migration of its own.
   | "job_offer"
+  // A step in shutting a leaver's Turbify mailbox. Turbify publishes no email API, so Phoenix
+  // cannot observe the mailbox — an audit row is the only record that a named admin claimed a
+  // step was done. Written BEFORE the state changes, carrying the old values, so a later
+  // reopen corrects the register without erasing what was previously asserted.
+  | "mailbox_offboarding"
   | "marketing_customer"
   // A venue merge is neither a customer nor a request change: it retires one physical place in
   // favour of another and moves every link between them. audit_logs has no CHECK on entity_type
