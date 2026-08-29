@@ -15,6 +15,7 @@ import { useSortableTable } from "@/components/ui/use-sortable-table";
 import {
   PLAN_STATUS_AREA_MANAGER_VERIFIED,
   PLAN_STATUS_NEW,
+  planPeriodText,
   planStatusLabel,
   type PlanKind,
 } from "@/lib/crm/plan-verification";
@@ -47,21 +48,9 @@ function gradeClass(grade: string | null): string {
   return "text-slate-500";
 }
 
-/** The period a plan covers, written out. Weekly plans have a span; monthly plans have a month. */
-export function planPeriodText(plan: PlanSummary): string {
-  if (plan.kind === "monthly") {
-    if (plan.month && plan.year) {
-      return new Intl.DateTimeFormat("en-GB", { month: "long", timeZone: "UTC", year: "numeric" }).format(
-        new Date(Date.UTC(plan.year, plan.month - 1, 1)),
-      );
-    }
-    return "No month recorded";
-  }
-  if (plan.firstDate && plan.lastDate && plan.firstDate !== plan.lastDate) {
-    return `${plan.firstDate} to ${plan.lastDate}`;
-  }
-  return plan.firstDate ?? plan.lastDate ?? "No dates recorded";
-}
+// planPeriodText used to live here. It moved to @/lib/crm/plan-verification because the SERVER half
+// of this page calls it too, and a function exported from a "use client" module cannot be called on
+// the server — it arrives there as a client reference and throws. See the note at its new home.
 
 const MONTH_NAMES = [
   "January",

@@ -55,6 +55,43 @@ export function isPlanVerified(status: number | null | undefined): boolean {
   return status === PLAN_STATUS_SUPERVISOR_VERIFIED || status === PLAN_STATUS_AREA_MANAGER_VERIFIED;
 }
 
+/**
+ * The period a plan covers, written out. Weekly plans have a span; monthly plans have a month.
+ *
+ * It lives HERE, in the module with no I/O, rather than beside the table that renders it, and that
+ * placement is the whole point. It was first written inside plan-verification-tables.tsx, which
+ * begins with "use client" — so when plan-verification-board.tsx (a SERVER component) imported it
+ * for the selected plan's title, Next handed the server a client reference rather than the
+ * function, and every plan a manager clicked returned "Admin workspace unavailable":
+ * `Attempted to call planPeriodText() from the server but planPeriodText is on the client`.
+ * A module with no directive can be called from either side, so neither half has to know where the
+ * other runs.
+ *
+ * The parameter is the SHAPE it needs rather than PlanSummary, deliberately: PlanSummary lives in
+ * plan-board.ts, which talks to Supabase, and naming it here would put a data module on the import
+ * path of a formatter the browser also loads. PlanSummary satisfies this structurally.
+ */
+export function planPeriodText(plan: {
+  firstDate: string | null;
+  kind: PlanKind;
+  lastDate: string | null;
+  month: number | null;
+  year: number | null;
+}): string {
+  if (plan.kind === "monthly") {
+    if (plan.month && plan.year) {
+      return new Intl.DateTimeFormat("en-GB", { month: "long", timeZone: "UTC", year: "numeric" }).format(
+        new Date(Date.UTC(plan.year, plan.month - 1, 1)),
+      );
+    }
+    return "No month recorded";
+  }
+  if (plan.firstDate && plan.lastDate && plan.firstDate !== plan.lastDate) {
+    return `${plan.firstDate} to ${plan.lastDate}`;
+  }
+  return plan.firstDate ?? plan.lastDate ?? "No dates recorded";
+}
+
 export type PlanVerificationDecision =
   | { allowed: true; nextStatus: number }
   | { allowed: false; reason: string };

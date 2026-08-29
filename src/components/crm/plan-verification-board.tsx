@@ -2,9 +2,11 @@ import {
   PlanDoctorsTable,
   PlanListTable,
   PlanVerificationFilters,
-  planPeriodText,
 } from "@/components/crm/plan-verification-tables";
-import { PLAN_STATUS_NEW } from "@/lib/crm/plan-verification";
+// planPeriodText comes from the lib, NOT from plan-verification-tables above. That file is
+// "use client" and this one is a server component, so importing a plain function from it hands the
+// server a client reference rather than the function, and calling it throws on every render.
+import { PLAN_STATUS_NEW, planPeriodText } from "@/lib/crm/plan-verification";
 import type { PlanVerificationBoard } from "@/lib/crm/plan-board";
 
 // Server half of Plan Verification. The Section/Tile vocabulary is copied verbatim from

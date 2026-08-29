@@ -1,3 +1,19 @@
+"use client";
+
+// The directive above is REQUIRED here, and is not a style choice. This file imports four plain
+// values — TONE_CLASSES, buildStages, headlineStatus, money — from my-expense-submissions.tsx,
+// which carries the same directive, and it CALLS three of them while rendering. Next turns every
+// export of a client module into a client reference, so without this the server would receive
+// markers rather than functions and the page would throw "Attempted to call headlineStatus() from
+// the server but headlineStatus is on the client" — the identical failure that took
+// /admin/plan-verification down on 2026-08-29. The parent
+// (app/employee-portals/outstation-review/[id]/page.tsx) IS a server component and passes one
+// serialisable prop, so a client boundary here costs nothing.
+//
+// Found by tests/rsc-client-function-props.test.ts while fixing the plan-verification instance of
+// the same defect. Never observed failing in production, because nothing reaches the log until a
+// manager actually opens the page — an unexercised path is untested, not proven.
+
 import { CalendarDays, CircleDollarSign, MapPin, Route, Wallet } from "lucide-react";
 
 import {
