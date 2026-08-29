@@ -184,6 +184,7 @@ import { runRecruitmentPortalCvViewTests } from "./recruitment-portal-cv-view.te
 import { runRecruitmentInboundCvIntakeTests } from "./recruitment-inbound-cv-intake.test.ts";
 import { runRecruitmentIntakeFinalizePatchTests } from "./recruitment-intake-finalize-patch.test.ts";
 import { runCandidateRoleRegionTests } from "./recruitment-candidate-role-region.test.ts";
+import { runRecruitmentRedFlagTests } from "./recruitment-red-flag.test.ts";
 import { runCandidateScreeningFactsTests } from "./recruitment-candidate-screening-facts.test.ts";
 import { runCvFileChoiceTests } from "./recruitment-cv-file-choice.test.ts";
 import { runRecruitmentEmployerNameTests } from "./recruitment-employer-name.test.ts";
@@ -1402,6 +1403,10 @@ await runTest(
 await runTest(
   "recruitment screening order (the queue meets field-force candidates first; nothing is hidden or auto-rejected)",
   runRecruitmentScreeningOrderTests,
+);
+await runTest(
+  "recruitment red-flag split (a blank nationality is never red, an Egyptian dual national is never red, and no CV is lost between the two tabs)",
+  runRecruitmentRedFlagTests,
 );
 await runTest(
   "recruitment employer name (the Employer cell shows a company or nothing, never wreckage)",
