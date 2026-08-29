@@ -660,9 +660,9 @@ function recommendNewHires(
       //
       // Built from the SAME three components the proration divides, NOT from
       // employees.net_salary, so Full / calendar-days x Days Worked always
-      // reconciles to "Net (month)" exactly. A net_salary column that disagreed
-      // with its own components would make a CORRECT proration look wrong —
-      // the opposite of what this column exists to do.
+      // reconciles to the card's "Total (month)" exactly. A net_salary column
+      // that disagreed with its own components would make a CORRECT proration
+      // look wrong — the opposite of what this column exists to do.
       //
       // Blank ("—") rather than 0 when HR has entered no figure at all: such a
       // person is priced at nothing (see hasAnyRawCompensationFigure), and a
@@ -674,7 +674,12 @@ function recommendNewHires(
               roundCurrency(source.fuelAllowance ?? 0),
           )
         : "—",
-      "Net (month)": pick(draft?.baseForMonth, joiner.baseForMonth) + pick(draft?.ecolPaid, joiner.ecolPaid) + pick(draft?.fuelPaid, joiner.fuelPaid),
+      // A "Net (month)" context figure — this month's prorated total — used to
+      // be computed here. It is gone with the column that displayed it (owner,
+      // 2026-08-29): the card now totals the three editable values live, so a
+      // server-side copy of the same number could only ever be the stale one.
+      // Do not reinstate it as a context key "for the export" either — the xlsx
+      // renders the same live total from the same declaration.
     };
     row.recommended = { baseForMonth: joiner.baseForMonth, ecolPaid: joiner.ecolPaid, fuelPaid: joiner.fuelPaid };
     row.values = {

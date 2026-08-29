@@ -185,6 +185,7 @@ import { runRecruitmentInboundCvIntakeTests } from "./recruitment-inbound-cv-int
 import { runRecruitmentIntakeFinalizePatchTests } from "./recruitment-intake-finalize-patch.test.ts";
 import { runCandidateRoleRegionTests } from "./recruitment-candidate-role-region.test.ts";
 import { runRecruitmentDeclaredPreferencesTests } from "./recruitment-declared-preferences.test.ts";
+import { runRecruitmentRedFlagTests } from "./recruitment-red-flag.test.ts";
 import { runCandidateScreeningFactsTests } from "./recruitment-candidate-screening-facts.test.ts";
 import { runCvFileChoiceTests } from "./recruitment-cv-file-choice.test.ts";
 import { runRecruitmentEmployerNameTests } from "./recruitment-employer-name.test.ts";
@@ -195,6 +196,7 @@ import { runWhatsAppSelfClassificationTests } from "./whatsapp-self-classificati
 import { runWhatsAppOwnerMirrorTests } from "./whatsapp-owner-mirror.test.ts";
 import { runWhatsAppCoexistenceHistoryTests } from "./recruitment-whatsapp-coexistence-history.test.ts";
 import { runWhatsAppTextOnlyApplicantTests } from "./whatsapp-text-only-applicant.test.ts";
+import { runWhatsAppUnreadableCvTests } from "./whatsapp-unreadable-cv.test.ts";
 import {
   runRecruitmentWhatsAppHealthTests,
   runWhatsAppWebhookRoutingTests,
@@ -1409,12 +1411,17 @@ await runTest(
   runRecruitmentScreeningOrderTests,
 );
 await runTest(
+  "recruitment red-flag split (a blank nationality is never red, an Egyptian dual national is never red, and no CV is lost between the two tabs)",
+  runRecruitmentRedFlagTests,
+);
+await runTest(
   "recruitment employer name (the Employer cell shows a company or nothing, never wreckage)",
   runRecruitmentEmployerNameTests,
 );
 await runTest("recruitment whatsapp intake", runRecruitmentWhatsAppIntakeTests);
 await runTest("whatsapp self-classification menus and replies", runWhatsAppSelfClassificationTests);
 await runTest("whatsapp text-only applicant recovery", runWhatsAppTextOnlyApplicantTests);
+await runTest("whatsapp unreadable CV recovery", runWhatsAppUnreadableCvTests);
   await runTest("whatsapp owner conversation mirror", runWhatsAppOwnerMirrorTests);
 await runTest(
   "recruitment whatsapp coexistence history (the backlog Meta replays)",
@@ -2282,7 +2289,7 @@ await runTest("schema shape check (catches the 2026-07-31 grant wipe AND the ske
 await runTest("secret pins check (catches the version pinning that 401'd every cron)", runSecretPinsCheckTests);
 await runTest("sql backup placement (catches snapshot tables created in the anon-readable public schema)", runSqlBackupPlacementTests);
 await runTest("automated payroll step detail (breakdown foots to the row total; the 3 Part-2 windows stay distinct)", runAutomatedPayrollStepDetailTests);
-await runTest("automated payroll new hire net columns (full month shown beside this month, and the two reconcile)", runAutomatedPayrollNewHireNetColumnsTests);
+await runTest("automated payroll new hire net columns (full month shown, the stale prorated column stays retired, and the two reconcile)", runAutomatedPayrollNewHireNetColumnsTests);
 await runTest("automated payroll new hire working-days total (live sum of the three paid figures, on card and in xlsx)", runAutomatedPayrollNewHireWorkingDaysTotalTests);
 await runTest("migrations Cairo date guard (no unzoned current_date in new SQL function bodies)", runMigrationsCairoDateGuardTests);
 await runTest("automated payroll rejected expenses (an HR rejection must not be reimbursed; pending still flows)", runAutomatedPayrollRejectedExpensesTests);

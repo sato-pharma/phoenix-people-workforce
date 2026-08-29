@@ -60,6 +60,13 @@ import {
   normalizeCandidateStatus,
   type CandidateStatus,
 } from "@/lib/recruitment/candidate-status";
+import {
+  candidateCvTabDescriptions,
+  candidateCvTabLabels,
+  candidateCvTabs,
+  partitionCandidatesByRedFlag,
+  type CandidateCvTab,
+} from "@/lib/recruitment/red-flag";
 import { primaryCvFile } from "@/lib/recruitment/cv-file-choice";
 import type { StoredCvExtraction } from "@/lib/recruitment/cv-extraction-fields";
 import type { CandidateProfile } from "@/lib/recruitment/candidates";
@@ -150,12 +157,68 @@ function formatSeenAt(value: string | null | undefined): string | null {
   return seenAtFormat.format(at);
 }
 
+/**
+ * The two piles, and how many are in each.
+ *
+ * Rendered in TWO places on purpose — under the header, and inside the "nobody in this queue" card.
+ * The empty case is the one that actually matters: a screener who works the red pile down to zero
+ * and finds a dead end with no way back is a screener who reloads the page to escape it, and the
+ * whole point of the split is that neither pile is a trap.
+ *
+ * `text-phx-2xs` and friends are joined by hand rather than through `cn()`. tailwind-merge silently
+ * drops this repo's custom named font sizes, and nothing in the test suite can see it happen — only
+ * a real browser can.
+ */
+function CvTabStrip({
+  counts,
+  onSelect,
+  tab,
+  tone,
+}: {
+  counts: Record<CandidateCvTab, number>;
+  onSelect: (next: CandidateCvTab) => void;
+  tab: CandidateCvTab;
+  /** `dark` sits on the queue's slate shell; `light` sits on the white empty-state card. */
+  tone: "dark" | "light";
+}) {
+  const frame = tone === "dark" ? "border-slate-700" : "border-slate-200";
+  const divider = tone === "dark" ? "border-slate-700" : "border-slate-200";
+  const idle =
+    tone === "dark" ? "bg-slate-800 text-slate-300 hover:bg-slate-700" : "bg-white text-slate-600 hover:bg-slate-50";
+  const activeTone = (key: CandidateCvTab) => {
+    if (key === "red") return tone === "dark" ? "bg-rose-500/20 text-rose-200" : "bg-rose-50 text-rose-700";
+    return tone === "dark" ? "bg-slate-700 text-white" : "bg-slate-900 text-white";
+  };
+
+  return (
+    <div className={`inline-flex overflow-hidden rounded-md border ${frame}`}>
+      {candidateCvTabs.map((key) => (
+        <button
+          aria-pressed={tab === key}
+          className={`inline-flex items-center gap-1.5 whitespace-nowrap px-2.5 py-1 text-xs font-bold transition ${
+            key === "red" ? `border-l ${divider}` : ""
+          } ${tab === key ? activeTone(key) : idle}`}
+          key={key}
+          onClick={() => onSelect(key)}
+          title={candidateCvTabDescriptions[key]}
+          type="button"
+        >
+          {key === "red" ? <span aria-hidden className="h-1.5 w-1.5 shrink-0 rounded-full bg-rose-400" /> : null}
+          {candidateCvTabLabels[key]}
+          <span className="tabular-nums opacity-70">{counts[key]}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export function CandidateScreeningSession({
   candidates,
   onClose,
   hiringManagers = [],
   initialViews = {},
   openVacancies = [],
+  initialCvTab = "active",
   positionSuggestions = { areas: [], jobTitles: [] },
   variant = "overlay",
 }: {
@@ -207,13 +270,33 @@ export function CandidateScreeningSession({
    * shell's own navigation.
    */
   variant?: "overlay" | "page";
+  /**
+   * Which pile to open on — the CVs still in play, or the red-flagged ones.
+   *
+   * Passed in rather than always starting on `active` because the overlay is opened FROM the pool,
+   * which has the same two tabs: pressing Screen while looking at the red pile and landing in the
+   * other one would be the queue disagreeing with the screen it was launched from.
+   */
+  initialCvTab?: CandidateCvTab;
 }) {
   // Best worth meeting first. The TABLE stays newest-first — that is a record of what arrived —
   // but only ~53 of 381 undecided CVs are field-force shaped, so meeting them in arrival order
   // means seven strangers between every real candidate. Nothing is hidden and nothing is
   // auto-rejected: every candidate is still in this queue and still gets a human decision.
-  const queue = useMemo(() => orderForScreening(candidates, describeForOrder), [candidates]);
-  const bands = useMemo(() => countByBand(candidates, describeForOrder), [candidates]);
+  // Split BEFORE ordering, and split on the prop rather than on anything decided in this sitting.
+  //
+  // Red means one thing here and it is the same thing it means on the pool: this person cannot be
+  // hired — the CV states a nationality that is not Egyptian, or somebody has already rejected
+  // them. Reading past those is most of what made coming back to the queue feel like starting over.
+  //
+  // Taken off the CANDIDATES PROP, never off `decided`, and that is deliberate. Rejecting somebody in
+  // this sitting turns them red, and moving them out of the queue at that instant would renumber
+  // every position after them under the reader's hands — the same reason this queue is a snapshot
+  // rather than a live view. They move on the next load, which is where a re-sort belongs.
+  const cvTabQueues = useMemo(() => partitionCandidatesByRedFlag(candidates), [candidates]);
+  const [cvTab, setCvTab] = useState<CandidateCvTab>(initialCvTab);
+  const queue = useMemo(() => orderForScreening(cvTabQueues[cvTab], describeForOrder), [cvTabQueues, cvTab]);
+  const bands = useMemo(() => countByBand(cvTabQueues[cvTab], describeForOrder), [cvTabQueues, cvTab]);
 
   const [views, setViews] = useState<CandidateViewMap>(initialViews);
 
@@ -242,6 +325,30 @@ export function CandidateScreeningSession({
     // behaviour for the one case it was right about; failing that, the start.
     return Math.max(0, queue.findIndex((candidate) => normalizeCandidateStatus(candidate.status) === "new"));
   });
+
+  /**
+   * Switch pile, and land on the right person in it.
+   *
+   * The tab and the position MUST move together. They are two pieces of state, so they are both set
+   * from this one handler and React applies them in a single render — an effect that corrected the
+   * index after the fact would render one frame showing candidate 41 of a queue that now has 12 in
+   * it, and `setState` inside `useEffect` is a lint error in this repository anyway.
+   *
+   * Landing rule is the mount rule, for the same reason: the first CV nobody has read yet, because
+   * arriving at the top of a pile you have already worked through is what makes a queue feel like
+   * it has forgotten you. The caches keyed by candidate id are untouched, so a CV read in one tab
+   * is still instant if you meet it again in the other.
+   */
+  const openCvTab = useCallback(
+    (next: CandidateCvTab) => {
+      if (next === cvTab) return;
+      const nextQueue = orderForScreening(cvTabQueues[next], describeForOrder);
+      const firstFresh = nextQueue.findIndex((candidate) => isFresh(candidate, views));
+      setCvTab(next);
+      setIndex(firstFresh >= 0 ? firstFresh : 0);
+    },
+    [cvTab, cvTabQueues, isFresh, views],
+  );
   const [loaded, setLoaded] = useState<Record<string, LoadedCandidate>>({});
   const [failed, setFailed] = useState<Record<string, string>>({});
   const [decided, setDecided] = useState<Record<string, CandidateStatus>>({});
@@ -274,6 +381,11 @@ export function CandidateScreeningSession({
 
   const current = queue[index] ?? null;
   const total = queue.length;
+  /** How many are in each pile, for the tab strip. Both piles, always — including the empty one. */
+  const cvTabCounts: Record<CandidateCvTab, number> = {
+    active: cvTabQueues.active.length,
+    red: cvTabQueues.red.length,
+  };
 
   // One fetch per candidate, ever — the cache is keyed by id and never evicted, so stepping back
   // through people you have already seen is instant.
@@ -624,7 +736,17 @@ export function CandidateScreeningSession({
         }
       >
         <div className="rounded-lg bg-white p-6 text-center">
-          <p className="text-sm text-slate-700">There is nobody in this queue — clear a filter and try again.</p>
+          <p className="text-sm text-slate-700">
+            {cvTab === "red"
+              ? "No red-flagged CVs in this queue — nothing here says anybody cannot be hired."
+              : "There is nobody in this queue — clear a filter and try again."}
+          </p>
+          {/* The tabs belong HERE most of all. Working a pile down to zero and finding a dead end
+              with no way across is what sends somebody back to reload the page; the split is only
+              safe if neither side can trap you. */}
+          <div className="mt-3 flex justify-center">
+            <CvTabStrip counts={cvTabCounts} onSelect={openCvTab} tab={cvTab} tone="light" />
+          </div>
           <button
             className="mt-3 rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white"
             onClick={() => onClose(0)}
@@ -753,6 +875,15 @@ export function CandidateScreeningSession({
           <X className="h-5 w-5" />
         </button>
       </header>
+
+      {/* Which pile you are reading, on its own line rather than crammed into the header above.
+          That header already carries the position, the progress bar, the name, the band chip,
+          three running totals and three buttons; a seventh item on it is how a 1366px laptop ends
+          up wrapping the one row that must not wrap. */}
+      <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-slate-800 px-4 py-1.5">
+        <CvTabStrip counts={cvTabCounts} onSelect={openCvTab} tab={cvTab} tone="dark" />
+        <p className="text-xs text-slate-400">{candidateCvTabDescriptions[cvTab]}</p>
+      </div>
 
       <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
         {/* The CV, already open. This is the single biggest change: the document is the thing a

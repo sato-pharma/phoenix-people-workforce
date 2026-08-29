@@ -20,6 +20,7 @@ import {
   mirrorWhatsAppEventToOwner,
 } from "@/lib/recruitment/inbound/whatsapp-conversation-mirror";
 import { isWhatsAppAutoReplyEnabled, sendWhatsAppCvAcknowledgement } from "@/lib/recruitment/inbound/whatsapp-reply";
+import { handleUnreadableWhatsAppCv } from "@/lib/recruitment/inbound/whatsapp-unreadable-cv";
 import { fetchAndParseEmailMessagesByUid } from "@/lib/recruitment/inbound/email-poller";
 import { fetchCvFromUrl } from "@/lib/recruitment/inbound/cv-link";
 import { ingestInboundCv, maxInboundCvBytes, type InboundCvIntakeResult } from "@/lib/recruitment/inbound/cv-intake-service";
@@ -64,7 +65,22 @@ async function processWhatsAppRow(payload: WhatsAppQueuePayload): Promise<Inboun
   try {
     downloaded = await downloadWhatsAppMedia(payload.mediaId, { maxBytes: maxInboundCvBytes() });
   } catch (error) {
-    if (error instanceof WhatsAppMediaTooLargeError) return { outcome: "ignored_unsupported_attachment" };
+    if (error instanceof WhatsAppMediaTooLargeError) {
+      // Terminal, and until 2026-08-29 also SILENT in both directions: the applicant sent their CV
+      // and heard nothing, and nobody was told. Tell them how to make it smaller, and page a human.
+      await handleUnreadableWhatsAppCv({
+        cause: "too_large",
+        contactName: payload.contactName,
+        deliveredToPhoneNumberId: payload.deliveredToPhoneNumberId,
+        filename: payload.filename,
+        historical: payload.historical === true,
+        importSenders: parseWhatsAppImportSenders(process.env.RECRUITMENT_WHATSAPP_IMPORT_SENDERS),
+        maxBytes: maxInboundCvBytes(),
+        waId: payload.from,
+        wamid: payload.wamid,
+      });
+      return { outcome: "ignored_unsupported_attachment" };
+    }
     throw error;
   }
 
@@ -149,6 +165,25 @@ async function processWhatsAppRow(payload: WhatsAppQueuePayload): Promise<Inboun
   // Best-effort — an acknowledgement must never affect the CV that was already captured.
   if (!isImport && !payload.historical && result.outcome === "candidate_created" && isWhatsAppAutoReplyEnabled()) {
     await sendWhatsAppCvAcknowledgement({ phoneNumberId: payload.deliveredToPhoneNumberId, toWaId: payload.from }).catch(() => {});
+  }
+
+  // The attachment arrived, was downloaded, was read — and produced no candidate. Measured on
+  // production 2026-08-29: four members of the public reached this since 25 July and every one of
+  // them got total silence, which is the shape the owner described as "the CV is not recognised".
+  // The verdict is only reachable here, after the read, which is why this lives in the worker and
+  // not beside the text-only branch in the webhook. Never throws; guards live in the handler.
+  if (result.outcome === "ignored_unsupported_attachment") {
+    await handleUnreadableWhatsAppCv({
+      cause: "not_recognised",
+      contactName: payload.contactName,
+      deliveredToPhoneNumberId: payload.deliveredToPhoneNumberId,
+      filename: payload.filename,
+      historical: payload.historical === true,
+      importSenders,
+      maxBytes: maxInboundCvBytes(),
+      waId: payload.from,
+      wamid: payload.wamid,
+    });
   }
   return result;
 }

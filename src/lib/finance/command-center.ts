@@ -139,6 +139,21 @@ export type FinanceCommandCenterData = {
     inApprovalCount: number;
     missingPaymentProof: number;
     missingInvoice: number;
+    /**
+     * Approved, the invoice is still owed, and its deadline has passed in Cairo.
+     *
+     * A DIFFERENT question from the three above it, which is why it is its own figure rather than
+     * a refinement of one: `dueUnexecuted` asks whether the money left, `missingInvoice` whether
+     * the file is attached. Neither reads `invoice_deadline_date`, so neither can go late. This is
+     * the population the nightly nudge (#2695) messages him about, computed from the same two
+     * conditions — see the PREDICATE PARITY note in migration 20260830003000.
+     *
+     * A held invoice is deliberately absent: `hold` means a human paused it on purpose.
+     */
+    invoiceOverdueCount: number;
+    invoiceOverdueValue: number;
+    /** The deadline outstanding longest, so the queue's age reads without opening it. */
+    invoiceOverdueOldest: string | null;
   };
   leave: { awaitingMyDecision: number };
 };
@@ -199,7 +214,8 @@ function emptyData(): FinanceCommandCenterData {
     },
     marketing: {
       approvedCount: 0, awaitingMyStep: 0, committedSpend: 0, dueOldest: null, dueUnexecutedCount: 0,
-      dueUnexecutedValue: 0, executedCount: 0, inApprovalCount: 0, missingInvoice: 0,
+      dueUnexecutedValue: 0, executedCount: 0, inApprovalCount: 0, invoiceOverdueCount: 0,
+      invoiceOverdueOldest: null, invoiceOverdueValue: 0, missingInvoice: 0,
       missingPaymentProof: 0, requiredRoi: 0,
     },
     leave: { awaitingMyDecision: 0 },

@@ -218,6 +218,7 @@ policy):
    | `phoenix-notify-daily` | `36 6 * * *` | 1h | cron-job.org job `8200909` |
    | `phoenix-marketing-field-capture-nudge` | `50 6 * * *` | 1h | cron-job.org job `8348773` |
    | `phoenix-marketing-invoice-overdue-nudge` | `5 7 * * *` | 1h | cron-job.org job `8350529` |
+   | `phoenix-mailbox-offboarding-sweep` | `15 8 * * *` | 1h | cron-job.org job `8350624` |
    | `phoenix-process-notifications` | `*/5 * * * *` | 10m | cron-job.org job `8200914` |
    | `phoenix-background-jobs` | `0 3 * * 5` | 2h | cron-job.org job `8200915` |
    | `phoenix-inbound-intake` | `*/2 * * * *` | 10m | cron-job.org job `8200920` |
@@ -229,6 +230,7 @@ policy):
    | `phoenix-direct-orders-expire-held` | `17 2 * * *` | 2h | cron-job.org job `8313165` |
    | `phoenix-direct-orders-probation` | `27 2 * * *` | 2h | cron-job.org job `8313177` |
    | `phoenix-db-health-snapshot` | `17 */6 * * *` | 2h | cron-job.org job `8242721` |
+   | `phoenix-territory-restamp` | `20 3 * * *` | 2h | cron-job.org job `8350721` |
    | `phoenix-ireports360-live-poll` | **Simple**, period `5m` | 15m | the in-process poller, every tick |
    | `phoenix-ireports360-sync` | `0 6-21/3 * * *` | 2h | the in-process poller, when due |
    | `phoenix-reconcile-visits` | `0 4 * * 0` | 12h | the in-process poller, when due |

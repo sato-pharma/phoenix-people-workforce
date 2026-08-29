@@ -61,20 +61,27 @@ export const INVOICE_OVERDUE_FINANCE_AUDIENCE = "marketing_invoice_overdue_alert
 export const INVOICE_OVERDUE_REQUESTER_URL = "/employee-portals/marketing-requests";
 
 /**
- * Finance deliberately gets NO action URL, and this is the honest answer rather than a missing one.
+ * Where FINANCE lands: the admin-shell marketing workspace.
  *
- * There is no screen today that shows the Finance Manager an overdue invoice. He is not in
- * `marketingAdminWorkflowRoles`, so `/admin/marketing-requests` — the only page rendering the
- * Invoice due column — redirects him away, and the marketing inbox he CAN open lists requests
- * awaiting a decision, which by definition excludes an already-approved request. Linking him to
- * either would repeat a mistake this codebase has already paid for twice: a notification whose
- * button leads to a 403 or to a page that cannot show the thing it is about.
+ * CORRECTING WHAT THIS COMMENT SAID BEFORE. It read "there is no screen today that shows the
+ * Finance Manager an overdue invoice", and that was wrong — measured, not argued. `/admin/
+ * marketing-requests` does bounce him, which is true and is why the requester's link is different;
+ * but that is not the only page rendering the workspace. `/workspace/marketing-requests` renders
+ * the SAME `MarketingRequestDraftWorkspace`, and `workspaceMarketingRoles` names the Finance
+ * Manager explicitly (he executes the terminal `finance_execution` rung from that shell). His own
+ * Finance Command Center has linked there since it shipped.
  *
- * So the facts travel IN the message instead — request code, customer, amount, requester, deadline,
- * days late — which is what he acts on anyway: he chases the invoice, he does not click a row.
- * Granting him that page is a real option and an access decision, which belongs to the owner.
+ * And the tab is not merely open to him — it is populated for him alone. The workspace loader
+ * narrows every personal list to the viewer's own submissions EXCEPT the Approved list,
+ * which is company-wide for exactly one role, `access.role === "Finance Manager"`, because he
+ * attaches the money-transfer proof there and can never have submitted a request himself. So the
+ * one screen he can open is the one carrying every approved request and the Invoice due column
+ * added in #2686.
+ *
+ * The facts still travel in the message — he chases an invoice by phone, not by clicking a row —
+ * but a reminder about a specific list should open that list.
  */
-export const INVOICE_OVERDUE_FINANCE_URL = null;
+export const INVOICE_OVERDUE_FINANCE_URL = "/workspace/marketing-requests";
 
 /** One overdue obligation, flattened to what either message needs. */
 export type OverdueMarketingInvoice = {
@@ -371,7 +378,7 @@ export async function runMarketingInvoiceOverdueNudge(
   for (const recipient of recipients) {
     try {
       await createSystemNotification({
-        // No actionUrl — see INVOICE_OVERDUE_FINANCE_URL. There is no screen to send him to yet.
+        actionUrl: INVOICE_OVERDUE_FINANCE_URL,
         channels: [...INVOICE_OVERDUE_CHANNELS],
         eventType: INVOICE_OVERDUE_EVENT_TYPE,
         message: digest,
