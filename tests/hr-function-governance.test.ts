@@ -91,6 +91,13 @@ const FILES_NAMING_AN_HR_SEAT: readonly string[] = [
   "src/lib/admin/access-control.ts",
   "src/lib/auth/hr-functions.ts",
   "src/lib/auth/permissions.ts",
+  // Names HR Operations in mapPhoenixRoleToAccessScopeType, which fills the access_scope COLUMN
+  // when an account is provisioned. That column is a mirror: nothing reads it back to decide
+  // access, so the string grants the seat nothing. It is listed because a mirror disagreeing with
+  // scopeForRole misleads anyone auditing user_access_profiles — keeping the two in step is for
+  // legibility, not enforcement. SFE Manager already sits that way (scope "self", mirror
+  // COMPANY_READ), which is why this is a per-seat note and not a general invariant.
+  "src/lib/auth/supabase-identity.ts",
   "src/lib/contracts/service.ts",
   "src/lib/employee-360/access.ts",
   "src/lib/employees/access-provisioning.ts",

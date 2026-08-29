@@ -143,11 +143,21 @@ export function runSfeVacationSourceReportTests() {
   assert.equal(canApproveCompanyVacationReportRow(context("Super Admin")), true, "Super Admin keeps the approve authority");
 
   // Named exhaustively over phoenixRoles so a NEW role cannot be admitted by default.
+  //
+  // HR Operations joined on 2026-08-29, by the owner's ruling that the seat carries company scope.
+  // It is a widening somebody DID ask for, which is the only reason this list moved: the guard
+  // caught the change on the first CI run and made the edit deliberate, which is what it is for.
+  // Her job description's second area is "Maintain leave balances and ensure approved leave is
+  // correctly recorded", and this report is that. Membership of companyVacationReportReaderRoles is
+  // what admits her, NOT her scope - the predicate short-circuits on scope === "system" and hers is
+  // "company", so the named set remains the only door. The approvers assertion below is unchanged,
+  // and it is the half that matters: she reads and exports this report and can turn nothing on it
+  // into a balance-deducting request.
   const readers = phoenixRoles.filter((role) => canReadCompanyVacationReport(context(role)));
   assert.deepEqual(
     [...readers].sort(),
-    ["SFE Manager", "Super Admin"],
-    "exactly two roles may read the company vacation report - a third arriving here is a widening nobody asked for",
+    ["HR Operations", "SFE Manager", "Super Admin"],
+    "exactly three roles may read the company vacation report - a fourth arriving here is a widening nobody asked for",
   );
   const approvers = phoenixRoles.filter((role) => canApproveCompanyVacationReportRow(context(role)));
   assert.deepEqual([...approvers].sort(), ["Super Admin"], "approving from this report stays Super Admin only");

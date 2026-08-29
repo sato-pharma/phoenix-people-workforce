@@ -544,6 +544,7 @@ import { runHrFunctionGovernanceTests } from "./hr-function-governance.test.ts";
 import { runHrClearanceRetentionTests } from "./hr-clearance-retention.test.ts";
 import { runHrCommandCenterTests } from "./hr-command-center.test.ts";
 import { runHrJobWorkbookTests } from "./hr-job-workbook.test.ts";
+import { runHrOperationsCompanyScopeTests } from "./hr-operations-company-scope.test.ts";
 import { runHrSeatRouteCoherenceTests } from "./hr-seat-route-coherence.test.ts";
 import { runTitlePermissionGovernanceTests } from "./title-permission-governance.test.ts";
 import { runOrganogramHardeningTests } from "./organogram-hardening.test.ts";
@@ -1848,6 +1849,13 @@ await runTest(
   "HR command centre (every tile on a seat's landing dashboard links to a row that seat is "
   + "offered, so no figure leads to a page it cannot open)",
   runHrCommandCenterTests,
+);
+await runTest(
+  "HR Operations on company scope (the owner's 2026-08-29 ruling: company scope is inert against "
+  + "the permission matrix across every resource/action pair, it satisfies all four mechanisms that "
+  + "read it, the write side stays shut, HR Advisory is untouched, and no hub either seat is offered "
+  + "opens empty)",
+  runHrOperationsCompanyScopeTests,
 );
 await runTest(
   "HR job workbook (all 66 responsibility lines from both job descriptions map to a real screen "

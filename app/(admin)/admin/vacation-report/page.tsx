@@ -48,7 +48,8 @@ export default async function AdminVacationReportPage({
 }) {
   const access = await resolveAccessContextFromPage();
   // Two separate questions, deliberately. WHO MAY OPEN this is now Super Admin + SFE Manager
-  // (owner request 2026-08-27); WHO MAY WRITE from it is still Super Admin alone. A reader who
+  // (owner request 2026-08-27) + HR Operations (owner ruling 2026-08-29); WHO MAY WRITE from it is
+  // still Super Admin alone — HR Operations administers leave, she does not decide it. A reader who
   // fails the first is sent to their own landing page rather than /admin — the SFE Manager's
   // /admin is not his home, and bouncing him somewhere he cannot use reads as a broken link.
   if (!canReadCompanyVacationReport(access)) redirect(resolveLandingPathForRole(access.role));

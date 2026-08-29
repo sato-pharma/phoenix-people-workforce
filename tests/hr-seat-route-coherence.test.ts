@@ -293,6 +293,18 @@ const GATE_SHAPE_NOT_MACHINE_READABLE: Record<string, string> = {
   "/hr/hiring-documents": "destructured Promise.all, gate is isHrAuthorityRole && employee_documents:read — true for both",
   "/hr/hiring-pack": "destructured Promise.all, gate is isHrAuthorityRole && employee_documents:read — true for both",
   "/hr/admin/payroll-management": "any-of payroll:read || payslips:read || deductions:read — both hold deductions:read",
+  // Both added 2026-08-29 with the owner's company-scope ruling, and both verified by CALLING the
+  // predicate for each seat rather than by reading it: Operations true, Advisory false, on both.
+  // Neither predicate is admitting her by scope — each short-circuits on scope === "system" only,
+  // and hers is "company" — so membership of the reader set is the whole reason, which is what
+  // makes it reviewable. The WRITE side is deliberately not moved with the read side.
+  "/hr/admin/vacation-report":
+    "canReadCompanyVacationReport(access) — true for Operations, false for Advisory; the row is " +
+    "offered to Operations only. canApproveCompanyVacationReportRow is FALSE for her, so she reads " +
+    "the report and approves nothing from it",
+  "/hr/admin/company-activity-report":
+    "canReadCompanyActivityReport(access) — true for Operations, false for Advisory; the row is " +
+    "offered to Operations only. The page is read-only, with no write path to withhold",
   "/hr/attendance": "shell gate only — no permission gate underneath it",
   "/hr/leave-management": "shell gate only — no permission gate underneath it",
   "/hr/admin/approvals-hub": "shell gate, plus a deep-link redirect that is routing rather than access",
