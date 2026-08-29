@@ -18,6 +18,8 @@
 import { logWarning } from "@/lib/observability/log";
 import type { ClassifyMenu } from "@/lib/recruitment/inbound/whatsapp-classify-menus";
 import { menuViolations } from "@/lib/recruitment/inbound/whatsapp-classify-menus";
+import type { OutboundLogContext } from "@/lib/recruitment/inbound/whatsapp-outbound-log";
+import { buildOutboundLogRow, recordOutboundMessage } from "@/lib/recruitment/inbound/whatsapp-outbound-log";
 
 const DEFAULT_GRAPH_API_VERSION = "v23.0";
 const SEND_TIMEOUT_MS = 8_000;
@@ -42,7 +44,48 @@ function resolveCredentials(phoneNumberId: string | null): { token: string; phon
   return { phoneNumberId: resolved, token };
 }
 
+/**
+ * Sends, then records what was sent. Every outbound WhatsApp message in this codebase funnels
+ * through here, so this is the one place an audit row cannot be forgotten.
+ *
+ * WHY A WRAPPER rather than a log line before each `return`. `sendToGraph` below has four exits —
+ * accepted, window closed, rejected, threw — and the failure mode of the obvious implementation is
+ * that a fifth gets added later and silently sends a message nobody records. Wrapping makes the
+ * audit structural: a new return inside `sendToGraph` is logged whether its author thought about it
+ * or not.
+ *
+ * The audit is awaited, not floated. One insert on a path that runs at most three times per webhook
+ * delivery is affordable, and a floating promise here would be a write that sometimes lands, which
+ * is worse than no write at all — an audit trail with silent gaps invites exactly the false
+ * confidence it exists to prevent.
+ */
 async function postToGraph(
+  phoneNumberId: string,
+  token: string,
+  payload: Record<string, unknown>,
+  event: string,
+  context?: OutboundLogContext | null,
+): Promise<WhatsAppSendResult> {
+  const result = await sendToGraph(phoneNumberId, token, payload, event);
+
+  // `to` is read back off the payload rather than passed separately: both callers set it from the
+  // same value, and a second parameter is a second thing that can drift out of step with what was
+  // actually addressed. recordOutboundMessage never throws, so nothing below can affect the send.
+  await recordOutboundMessage(
+    buildOutboundLogRow({
+      context,
+      event,
+      payload,
+      phoneNumberId,
+      result,
+      toWaId: typeof payload.to === "string" ? payload.to : "",
+    }),
+  );
+
+  return result;
+}
+
+async function sendToGraph(
   phoneNumberId: string,
   token: string,
   payload: Record<string, unknown>,
@@ -89,8 +132,15 @@ export async function sendClassifyMenu(input: {
   toWaId: string;
   phoneNumberId: string | null;
   menu: ClassifyMenu;
+  logContext?: OutboundLogContext | null;
 }): Promise<WhatsAppSendResult> {
   const credentials = resolveCredentials(input.phoneNumberId);
+  // Deliberately NOT audited: the two refusals in this function and the one below happen before any
+  // network call, so nothing was sent and there is no sending line to attribute a row to. The
+  // outbound log answers "what did we say", not "what did we decline to say" — the caller already
+  // sees the reason, and a text-only reply that never went out is reported to a human as
+  // "Phoenix did NOT reply". Widening this table into non-sends would make an empty row mean two
+  // different things.
   if (!credentials) return { detail: "no token or phone number id", ok: false, reason: "disabled" };
 
   // Validate before the network call. Meta rejects an over-long row title with a 400 for the whole
@@ -132,6 +182,7 @@ export async function sendClassifyMenu(input: {
       type: "interactive",
     },
     "whatsapp_classify_menu_send",
+    input.logContext,
   );
 }
 
@@ -140,6 +191,7 @@ export async function sendWhatsAppText(input: {
   toWaId: string;
   phoneNumberId: string | null;
   text: string;
+  logContext?: OutboundLogContext | null;
 }): Promise<WhatsAppSendResult> {
   const credentials = resolveCredentials(input.phoneNumberId);
   if (!credentials) return { detail: "no token or phone number id", ok: false, reason: "disabled" };
@@ -155,5 +207,6 @@ export async function sendWhatsAppText(input: {
       type: "text",
     },
     "whatsapp_classify_text_send",
+    input.logContext,
   );
 }
