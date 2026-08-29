@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { describeLifecycleStage } from "@/lib/marketing-requests/case-file-service";
+import { describeLifecycleStage, loadFinanceHoldBlock } from "@/lib/marketing-requests/case-file-service";
 import { marketingRequestStatusLabel } from "@/lib/marketing-requests/request-status-label";
 import { roiLifecycleStage } from "@/lib/marketing-requests/roi-live-stages";
 
@@ -20,7 +20,7 @@ const COMPONENT = join(process.cwd(), "src/components/marketing-requests/marketi
 const CONTROL = join(process.cwd(), "src/components/marketing-requests/marketing-finance-hold-control.tsx");
 const SERVICE = join(process.cwd(), "src/lib/marketing-requests/case-file-service.ts");
 
-export function runMarketingFinanceHoldUiTests() {
+export async function runMarketingFinanceHoldUiTests() {
   // ── The status no longer reads as a queue ──────────────────────────────────
   //
   // It fell through to `status.replace("_", " ")` → "finance hold", which reads like somewhere a
@@ -120,6 +120,104 @@ export function runMarketingFinanceHoldUiTests() {
   );
   assert.ok(service.includes("notes"), "the reason column is `notes`");
   assert.ok(component.includes("hold.reason"), "the panel must render the recorded reason");
+
+  // ── What the panel must NOT say ──────────────────────────────────────────
+  //
+  // Owner instruction 2026-08-30, on seeing the first version live: no names, no role names, no
+  // job titles, and at most a line or two. The first version named the holder and told the reader
+  // a "Super Admin" would release it — on a panel the REQUESTER opens about their own frozen
+  // money, which makes a process decision read as a personal one.
+  //
+  // These are string checks on purpose. The stronger half of the fix is that the holder's id is no
+  // longer SELECTED, so it cannot reach the page at all; these pin the rendering half.
+  // Comments are stripped first. The first version of this check read the raw file and failed on
+  // a docblock and on its own comment naming the banned phrase — the question is what RENDERS,
+  // not what the file mentions. (Line-comment stripping starts at a line boundary, so a "//" inside
+  // a URL literal survives; no assertion here depends on that.)
+  const rendered = component
+    .replace(/\{\/\*[\s\S]*?\*\/\}/g, "")
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/^[ 	]*\/\/.*$/gm, "");
+  for (const banned of ["Super Admin", "heldByName", "heldByHrId", "Held by"]) {
+    assert.ok(
+      !rendered.includes(banned),
+      `the hold panel must not render "${banned}" — owner instruction 2026-08-30`,
+    );
+  }
+  const holdType = readFileSync(
+    join(process.cwd(), "src/lib/marketing-requests/case-file-types.ts"),
+    "utf8",
+  );
+  const holdTypeCode = holdType.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^[ 	]*\/\/.*$/gm, "");
+  for (const banned of ["heldByName", "heldByHrId"]) {
+    assert.ok(
+      !holdTypeCode.includes(banned),
+      `the case-file payload must not carry "${banned}" — a field that never leaves the `
+        + `database cannot be rendered by a later edit`,
+    );
+  }
+  const serviceCode = service.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^[ 	]*\/\/.*$/gm, "");
+  assert.ok(
+    !serviceCode.includes("finance_reviewer_hr_id"),
+    "the loader must not select the holder's id — not selecting it IS the guard",
+  );
+
+  // ── The reason is withheld from a requester, proved by CALLING the loader ───────────────
+  //
+  // Owner call 2026-08-30, asked directly. The reason is free text written by a human, so it can
+  // name anyone — the reason live in production when this was written says "held on the owner's
+  // instruction". No wording rule can stop that; withholding the column can.
+  //
+  // The stub returns `notes` even when it was not asked for, on purpose: that proves the loader
+  // nulls the reason itself rather than relying on the SELECT alone.
+  const seen: { columns: string | null } = { columns: null };
+  const stub = {
+    from: () => ({
+      select: (columns: string) => {
+        seen.columns = columns;
+        return {
+          eq: () => ({
+            maybeSingle: async () => ({
+              data: {
+                invoice_status: "hold",
+                notes: "held on the owner's instruction 2026-08-29",
+                reviewed_at: "2026-08-29T20:32:00Z",
+              },
+              error: null,
+            }),
+          }),
+        };
+      },
+    }),
+  } as never;
+
+  const asRequester = await loadFinanceHoldBlock(stub, "req-1", "finance_hold", false);
+  assert.equal(
+    asRequester?.reason,
+    null,
+    "a viewer who cannot act on the hold must not receive the reason — it can name a person",
+  );
+  assert.ok(
+    seen.columns !== null && !seen.columns.includes("notes"),
+    `the reason column must not even be selected for such a viewer, got "${seen.columns}"`,
+  );
+  assert.equal(asRequester?.heldAt, "2026-08-29T20:32:00Z", "the date is still shown to everyone");
+
+  const asManager = await loadFinanceHoldBlock(stub, "req-1", "finance_hold", true);
+  assert.equal(
+    asManager?.reason,
+    "held on the owner's instruction 2026-08-29",
+    "someone who can act on the hold must still see why",
+  );
+
+  // The markup half: a requester must not be told "no reason was recorded" about their own
+  // request, which would be a lie — their payload never carried one to begin with.
+  const reasonAt = rendered.indexOf("hold.reason");
+  const gateAt = rendered.indexOf("canManage");
+  assert.ok(
+    gateAt !== -1 && gateAt < reasonAt,
+    "the reason must render behind the canManage gate",
+  );
 
   // ── The control exists, and posts the right thing ──────────────────────────
   assert.ok(

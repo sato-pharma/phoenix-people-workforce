@@ -171,24 +171,35 @@ function FinanceHoldPanel({
       <p className="text-phx-xs font-semibold uppercase tracking-[0.16em] text-amber-800">
         Frozen by finance
       </p>
-      <p className="mt-1 text-phx-md font-medium leading-5 text-slate-800">
-        Every approval was given and the money is committed. It stays frozen until a Super Admin
-        releases it by hand.
-      </p>
-      {hold.reason ? (
-        <p className="mt-2 whitespace-pre-wrap text-phx-sm leading-5 text-slate-700">{hold.reason}</p>
-      ) : (
-        <p className="mt-2 text-phx-sm leading-5 text-slate-500">No reason was recorded.</p>
-      )}
-      <p className="mt-2 text-phx-xs text-slate-600">
-        {hold.heldByName ? `Held by ${hold.heldByName}` : "Holder not recorded"}
-        {hold.heldAt ? ` · ${cairoDateTime(hold.heldAt)}` : ""}
-        {/* `hold` means the overdue marker is paused. Anything else means the invoice was already
-            settled when the hold was placed, which is correct and worth saying rather than hiding. */}
-        {hold.invoiceStatus && hold.invoiceStatus !== "hold"
-          ? ` · invoice ${hold.invoiceStatus}`
-          : ""}
-      </p>
+      {/*
+        KEEP THIS PANEL AT THE HEADING, THE REASON, AND A DATE — owner instruction 2026-08-30,
+        given on seeing the first version live. Three things came out and none of them should
+        return: the holder's NAME, the words "Super Admin", and a sentence restating what the
+        heading and the reason already say. A requester opening their own frozen request needs to
+        know it is frozen and why; who froze it makes a process decision look personal, and a role
+        name tells them nothing they can act on.
+      */}
+      {/*
+        The reason renders ONLY for someone who can act on the hold. A requester sees the heading
+        and the date and nothing else — note that "No reason was recorded." is inside this branch
+        too, because to a requester (whose payload never carried the reason) that sentence would be
+        a lie about the state of their own request.
+      */}
+      {canManage
+        ? hold.reason
+          ? <p className="mt-1 whitespace-pre-wrap text-phx-sm leading-5 text-slate-700">{hold.reason}</p>
+          : <p className="mt-1 text-phx-sm leading-5 text-slate-500">No reason was recorded.</p>
+        : null}
+      {hold.heldAt || (hold.invoiceStatus && hold.invoiceStatus !== "hold") ? (
+        <p className="mt-2 text-phx-xs text-slate-600">
+          {hold.heldAt ? cairoDateTime(hold.heldAt) : ""}
+          {/* `hold` means the overdue marker is paused. Anything else means the invoice was already
+              settled when the hold was placed, which is correct and worth saying rather than hiding. */}
+          {hold.invoiceStatus && hold.invoiceStatus !== "hold"
+            ? `${hold.heldAt ? " · " : ""}invoice ${hold.invoiceStatus}`
+            : ""}
+        </p>
+      ) : null}
       {canManage ? <MarketingFinanceHoldControl held requestId={requestId} /> : null}
     </div>
   );
