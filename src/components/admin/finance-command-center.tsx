@@ -5,6 +5,7 @@ import {
   ArrowRight,
   CalendarClock,
   CheckCircle2,
+  ClipboardList,
   Download,
   FileSpreadsheet,
   Landmark,
@@ -85,6 +86,18 @@ function daysSince(iso: string | null) {
   const then = new Date(iso).getTime();
   if (!Number.isFinite(then)) return null;
   return Math.max(0, Math.floor((Date.now() - then) / 86_400_000));
+}
+
+/**
+ * "Oldest deadline was 18 days ago" — spelled out, because this row is read on a phone at a glance
+ * and the owner's rule is that nothing in the UI truncates or wraps. Falls back to a plain sentence
+ * rather than an empty string: a queue row that renders with no explanation reads as a bug.
+ */
+function overdueInvoiceMeta(oldestDeadline: string | null) {
+  const days = daysSince(oldestDeadline);
+  if (days === null) return "The invoice was promised by a date that has passed";
+  if (days === 0) return "The deadline was today";
+  return `Oldest deadline was ${days} ${days === 1 ? "day" : "days"} ago`;
 }
 
 function ageLabel(iso: string | null, emptyText: string) {
@@ -581,6 +594,7 @@ export function FinanceCommandCenter({
     data.directOrders.awaitingCount +
     data.marketing.awaitingMyStep +
     data.marketing.dueUnexecutedCount +
+    data.marketing.invoiceOverdueCount +
     data.marketing.missingPaymentProof +
     data.leave.awaitingMyDecision;
 
@@ -706,6 +720,22 @@ export function FinanceCommandCenter({
                 meta="Carries a pay date and has never been executed"
                 tone="rose"
                 value={egpExact(data.marketing.dueUnexecutedValue)}
+              />
+            ) : null}
+            {/* The invoice is LATE, which is not the same as the invoice being absent: the row below
+                counts a missing file whether or not anything was promised by a date. This is the
+                figure the nightly nudge (#2695) messages him about, so the two now agree — before
+                this, the alert named a number his own dashboard could not show him anywhere.
+                A held invoice never reaches here: the pause was somebody's decision. */}
+            {data.marketing.invoiceOverdueCount > 0 ? (
+              <QueueRow
+                count={data.marketing.invoiceOverdueCount}
+                href="/workspace/marketing-requests"
+                icon={<Megaphone aria-hidden="true" className="h-4 w-4" />}
+                label="Marketing invoices past their deadline"
+                meta={overdueInvoiceMeta(data.marketing.invoiceOverdueOldest)}
+                tone="rose"
+                value={egpExact(data.marketing.invoiceOverdueValue)}
               />
             ) : null}
             {data.marketing.missingPaymentProof > 0 ? (
@@ -917,13 +947,34 @@ export function FinanceCommandCenter({
           workflow technicality would hide a real payable. */}
       <SectionShell
         action={
-          <Link
-            className="inline-flex items-center gap-1.5 border border-white/20 bg-white/10 px-3 py-1.5 text-phx-2xs font-bold text-white hover:bg-white/20"
-            href="/admin/marketing-requests/inbox"
-          >
-            <Megaphone aria-hidden="true" className="h-3.5 w-3.5" />
-            Approval inbox
-          </Link>
+          <div className="flex flex-wrap items-center gap-2">
+            <Link
+              className="inline-flex items-center gap-1.5 border border-white/20 bg-white/10 px-3 py-1.5 text-phx-2xs font-bold text-white hover:bg-white/20"
+              href="/admin/marketing-requests/inbox"
+            >
+              <Megaphone aria-hidden="true" className="h-3.5 w-3.5" />
+              Approval inbox
+            </Link>
+            {/* UNCONDITIONAL, and that is the point.
+                The inbox beside it holds only what is waiting on HIS decision, so a request leaves
+                it the moment he executes the finance rung — and the invoice he then has to chase
+                lives on the Approved tab of this workspace, which shows him every approved request
+                in the company (getMarketingRequestDraftWorkspace widens that one list for his role
+                alone). Until now his only route there was the "missing payment proof" queue row
+                above, which renders solely while that count is non-zero: the screen disappeared
+                exactly when the paperwork was tidy, and the overdue queue row has the same shape.
+                NOT a sidebar entry — /workspace/marketing-requests was removed from the admin
+                sidebar by an explicit, repeated product decision (d5fd863e4), pinned by
+                tests/marketing-review-routing.test.ts. This is a link on his own landing page,
+                which that decision leaves untouched and which the page already carried elsewhere. */}
+            <Link
+              className="inline-flex items-center gap-1.5 border border-white/20 bg-white/10 px-3 py-1.5 text-phx-2xs font-bold text-white hover:bg-white/20"
+              href="/workspace/marketing-requests"
+            >
+              <ClipboardList aria-hidden="true" className="h-3.5 w-3.5" />
+              Approved requests
+            </Link>
+          </div>
         }
         description="You execute the transaction after CEO approval, then attach the invoice and the transfer proof."
         title="Marketing requests"
@@ -955,6 +1006,18 @@ export function FinanceCommandCenter({
             sub="on executed spend"
             tone={data.marketing.missingInvoice > 0 ? "amber" : "slate"}
             value={n(data.marketing.missingInvoice)}
+          />
+          {/* Deliberately its own tile rather than a refinement of the one above: "missing" asks
+              whether the file is here, "overdue" whether a date was broken. A request can be either
+              without being the other, and merging them would hide the one that has a promise behind
+              it. Left outside the six-tile row on purpose — the grid already wraps at every smaller
+              breakpoint, so a seventh tile changes no layout that was signed off. */}
+          <PipelineStat
+            label="Invoice overdue"
+            muted={data.marketing.invoiceOverdueCount === 0}
+            sub="past the promised date"
+            tone={data.marketing.invoiceOverdueCount > 0 ? "rose" : "slate"}
+            value={n(data.marketing.invoiceOverdueCount)}
           />
           <PipelineStat
             label="Transfer proof missing"

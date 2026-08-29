@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import { showsAwaitingFinanceMonth } from "../src/lib/direct-orders/types.ts";
+import { resolveMarketingInvoiceObligation } from "../src/lib/marketing-requests/invoice-obligation.ts";
 
 /**
  * Guards for the Finance Manager's landing dashboard (/admin/finance-command-center).
@@ -33,6 +34,7 @@ const MIGRATION_PATHS = [
   "supabase/migrations/20260810170000_phx_finance_command_center.sql",
   "supabase/migrations/20260811010000_finance_command_center_direct_orders_marketing_depth.sql",
   "supabase/migrations/20260811020000_finance_command_center_parts_and_channels.sql",
+  "supabase/migrations/20260830003000_finance_command_center_invoice_overdue.sql",
 ] as const;
 
 /** The definition currently in the database — the last CREATE OR REPLACE wins. */
@@ -163,6 +165,67 @@ function testUnbookedPredicateMatchesTypescript() {
   );
 }
 
+/**
+ * PREDICATE PARITY, second instance — "the marketing invoice is overdue".
+ *
+ * Same failure this file already guards for the direct-order `unbooked` predicate, on a rule with a
+ * wider blast radius: `resolveMarketingInvoiceObligation` is what the Approved Requests tab, the
+ * Marketing Requests export and the nightly nudge (#2695) all call, and the dashboard figure added
+ * in 20260830003000 is the one place the same question is asked in SQL. If they disagree, finance is
+ * paged about a number his own landing page contradicts — which is worse than no number at all.
+ */
+function testInvoiceOverduePredicateMatchesTypescript() {
+  const pending = (deadline: string) => ({ invoiceDeadlineDate: deadline, invoiceStatus: "pending" });
+
+  // Condition 1 — the boundary. Strictly EARLIER than today, never `<=`.
+  assert.equal(
+    resolveMarketingInvoiceObligation(pending("2026-09-02"), "2026-09-02").isOverdue,
+    false,
+    "a deadline of the 2nd means 'by the end of the 2nd' — nobody is late on the day they are still on time",
+  );
+  assert.equal(
+    resolveMarketingInvoiceObligation(pending("2026-09-02"), "2026-09-03").isOverdue,
+    true,
+    "and late the day after — this pair is what makes the boundary assertable rather than assumed",
+  );
+
+  // Condition 2 — only a `pending` obligation can go late. `hold` is the one that matters: it is a
+  // pause a human chose, and production's single 18-day-old row is in exactly that state.
+  for (const status of ["submitted", "cleared", "not_required", "hold"]) {
+    assert.equal(
+      resolveMarketingInvoiceObligation(
+        { invoiceDeadlineDate: "2026-08-11", invoiceStatus: status },
+        "2026-08-29",
+      ).isOverdue,
+      false,
+      `an invoice marked '${status}' is never overdue, 18 days past its deadline or not`,
+    );
+  }
+
+  // The SQL must express BOTH conditions, together, in all three figures it feeds — count, value and
+  // oldest. Asserting the count alone would let a later edit fix one and leave the money figure
+  // reading a different population from the number printed beside it.
+  const migrationSql = stripSqlComments(read(MIGRATION_PATH));
+  const overdueClause =
+    /lower\(coalesce\(f\.invoice_status, ''\)\) = 'pending'\s+and f\.invoice_deadline_date is not null\s+and f\.invoice_deadline_date < \(now\(\) at time zone 'Africa\/Cairo'\)::date/g;
+  const matches = migrationSql.match(overdueClause) ?? [];
+  assert.equal(
+    matches.length,
+    3,
+    `all three overdue figures must share one predicate — status = 'pending' AND deadline < today in Cairo — found ${matches.length} of 3`,
+  );
+  assert.ok(
+    !/invoice_deadline_date\s*<=/.test(migrationSql),
+    "`<=` would call an invoice late on its own deadline day, contradicting resolveMarketingInvoiceObligation",
+  );
+  // Cairo, not the container's clock. A UTC comparison flips the figure hours early every evening,
+  // and does it silently — the count is simply wrong for part of each day.
+  assert.ok(
+    !/invoice_deadline_date\s*<\s*current_date/.test(migrationSql),
+    "the comparison must be made in Africa/Cairo, never against the server's current_date",
+  );
+}
+
 function testMigrationKeepsItsTimeoutAndLocksDownExecute() {
   // EVERY definition, not just the live one. A CREATE OR REPLACE that omits the timeout or the
   // revoke silently undoes its predecessor's, which is precisely how three protected RPCs lost
@@ -234,12 +297,35 @@ function testLandingAndNavAgree() {
     /excludedRoles: \["CEO", "SFE Manager", "Finance Manager"\]/.test(nav),
     "the generic Command Center row must exclude every role that has its own",
   );
+  // /workspace/marketing-requests is the ONE page that shows the Finance Manager an approved
+  // request and its Invoice due column. It must stay OFF the admin sidebar — removed by an
+  // explicit, repeated product decision (d5fd863e4), which tests/marketing-review-routing.test.ts
+  // pins directly. Restated here because this file is where somebody chasing the overdue figure
+  // will look, and "add a sidebar row" is the obvious wrong fix.
+  assert.ok(
+    !/href: "\/workspace\/marketing-requests"/.test(nav),
+    "the workspace marketing pages stay off the admin sidebar by product decision — route to them from his own dashboard instead",
+  );
+  // Which is what the dashboard does, and UNCONDITIONALLY. His previous only route was a queue row
+  // rendered while `missingPaymentProof > 0`, so the screen vanished exactly when the paperwork was
+  // tidy; the overdue queue row has the same shape, so neither can be the route. Same principle as
+  // the assertion above: an unreachable page is the same as no page.
+  const dashboard = read("src/components/admin/finance-command-center.tsx");
+  assert.ok(
+    /href="\/workspace\/marketing-requests"/.test(dashboard),
+    "the Finance Command Center must link to the approved-requests workspace",
+  );
+  assert.ok(
+    /Approved requests\s*<\/Link>/.test(dashboard),
+    "and that link must sit in the section header, which always renders — not inside a `count > 0` guard",
+  );
 }
 
 export function runFinanceCommandCenterTests() {
   testDeductionsComeFromCommittedPayrollOnly();
   testSingleRoundTripBudget();
   testUnbookedPredicateMatchesTypescript();
+  testInvoiceOverduePredicateMatchesTypescript();
   testMigrationKeepsItsTimeoutAndLocksDownExecute();
   testPageIsRoleGatedNotPermissionGated();
   testLandingAndNavAgree();
