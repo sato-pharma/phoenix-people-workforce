@@ -540,6 +540,7 @@ import { runEmployeePortalNavigationTests } from "./employee-portal-navigation.t
 import { runPortalNavActingDmUsesAppRoleTests } from "./portal-nav-acting-dm-uses-app-role.test.ts";
 import { runEmployeePortalBottomNavTests } from "./employee-portal-bottom-nav.test.ts";
 import { runEmployeePortalNavCatalogSyncTests } from "./employee-portal-nav-catalog-sync.test.ts";
+import { runEmployeePortalNavPermissionMatchesPageTests } from "./employee-portal-nav-permission-matches-page.test.ts";
 import { runCompanyCalendarTests } from "./company-calendar.test.ts";
 import { runPortalLoggingTests } from "./portal-logging.test.ts";
 import { runScopeBadgeTests } from "./scope-badge.test.ts";
@@ -1857,6 +1858,7 @@ await runTest("employee portal navigation", runEmployeePortalNavigationTests);
 await runTest("portal nav acting DM follows app access role, not job title", runPortalNavActingDmUsesAppRoleTests);
 await runTest("employee portal bottom nav", runEmployeePortalBottomNavTests);
 await runTest("employee portal nav catalog sync (M12)", runEmployeePortalNavCatalogSyncTests);
+await runTest("employee portal nav permission matches page gate (B6)", runEmployeePortalNavPermissionMatchesPageTests);
 await runTest("company calendar", runCompanyCalendarTests);
 await runTest("portal logging", runPortalLoggingTests);
 await runTest("scope badge", runScopeBadgeTests);
