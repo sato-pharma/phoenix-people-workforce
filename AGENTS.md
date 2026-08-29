@@ -133,6 +133,7 @@ up. **Adding a trap? Put the hook here and the account in the doc — never the 
 - **An extra SHA does not merely waste a run — it ACTIVELY KILLS the real head's.** `ci.yml`'s concurrency group is the same for every commit on a PR, so a replayed obsolete event cancels the head's run. Never push an empty commit to force a `synchronize`.
 - **`actions/runs?head_sha=` needs the FULL 40-char SHA** — an abbreviated one returns `total=0` with no error, indistinguishable from "no runs exist".
 - **A push to `main` during an outage ships to PRODUCTION with no CI run at all.** Recover with `gh workflow run ci.yml --ref main` — the rollup caveat does not apply to `main`.
+- **The GitHub repo is `phoenix-people-workforce` — the FOLDER, the npm package, `supabase/config.toml` and the dead GCP project are all `phoenix-workforce`.** A `repos/Gawish-1997/phoenix-workforce/…` path built from the checkout name 404s `Not Found`, and on `/deployments` or `/commits/<sha>` that reads as *the deploy never happened* or as API lag. Every path committed here is already correct — the wrong name comes from the folder, never from a doc. `gh repo view --json nameWithOwner` settles it in one call. No memory file; the account in the doc is the record.
 
 **Migrations**
 

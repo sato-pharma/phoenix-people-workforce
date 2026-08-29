@@ -264,6 +264,27 @@ file holding the full account, under
   2026-08-26 `ad2a0148` and `33f2b5b7` merged a minute apart and neither ever got a run. Recover
   with `gh workflow run ci.yml --ref main` — the `statusCheckRollup` caveat does NOT apply to
   `main`, which is not gated by a PR, so a dispatch is a real answer there.
+- **The GitHub repo is `phoenix-people-workforce`; almost everything local is called
+  `phoenix-workforce`.** The checkout is `F:\Phoenix Workforce\phoenix-workforce`, `package.json`
+  reads `"name": "phoenix-workforce"`, `supabase/config.toml` reads `project_id =
+  "phoenix-workforce"`, `.claude/launch.json` names the dev server `phoenix-workforce`, and the
+  dead GCP project is `phoenix-workforce-498619`. Only the GitHub remote carries the longer name.
+  A session reconstructing an API path from the folder it is sitting in therefore writes
+  `repos/Gawish-1997/phoenix-workforce/…`, and GitHub answers
+  `{"message":"Not Found","status":"404"}` — the same body a genuinely missing deployment would
+  produce. On 2026-08-29 that 404 came back for `…/commits/<sha>` on a commit that was
+  simultaneously the tip of `origin/main`, and was first read as API propagation lag. On
+  `…/deployments` the identical mistake reads as *the production deploy never happened*, which is
+  the one question that command exists to answer. **Nothing committed here has ever carried the
+  wrong name** — verified 2026-08-29 across every ref (`git log -S "Gawish-1997/phoenix-workforce"
+  --all` returns no commits), across all six `repos/…` references (`AGENTS.md` §7,
+  `docs/deployment.md`, `docs/disaster-recovery-runbook.md`, `docs/agents-incident-history.md`,
+  and two in `.claude/skills/verify-context/SKILL.md`), and across all seven worktrees. The one
+  `gh api` call in automation, `.github/workflows/deploy-cloud-run.yml:127`, interpolates
+  `repos/${{ github.repository }}` and cannot be wrong. So this is never a defect to go fix in a
+  file — it is a typo the checkout invites, and the fix is to read the name rather than infer it:
+  `gh repo view --json nameWithOwner` returns `Gawish-1997/phoenix-people-workforce`, and
+  `git remote -v` agrees.
 
 **Migrations**
 
