@@ -2,6 +2,7 @@ import type { AccessContext } from "@/lib/auth/permissions";
 import { assertPermission } from "@/lib/auth/permissions";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
+import { effectiveMarketingInvoiceStatus } from "@/lib/marketing-requests/invoice-obligation";
 import type {
   FullReportApprovalStep,
   FullReportPharmacy,
@@ -333,7 +334,13 @@ export async function loadMarketingRequestFullReport(access: AccessContext): Pro
       financeInvoiceDeadlineDate: text(financeRow, "invoice_deadline_date"),
       financeInvoiceFileName: text(financeRow, "invoice_original_file_name"),
       financeInvoiceRequired: bool(financeRow, "invoice_required"),
-      financeInvoiceStatus: text(financeRow, "invoice_status"),
+      // The DERIVED status, not the stored column. An invoice eighteen days past its deadline is
+      // still stored 'pending' by design (see invoice-obligation.ts), and an export that reported
+      // that would disagree with the screen — which is the one thing an export may never do.
+      financeInvoiceStatus: effectiveMarketingInvoiceStatus({
+        invoiceDeadlineDate: text(financeRow, "invoice_deadline_date"),
+        invoiceStatus: text(financeRow, "invoice_status"),
+      }),
       financeInvoiceUploadedAt: text(financeRow, "invoice_uploaded_at"),
       financeInvoiceUploadedByName: nameOf(directory, financeRow?.invoice_uploaded_by_hr_id),
       financeNotes: text(financeRow, "notes"),

@@ -32,8 +32,9 @@ function financeHoldApiError(error: unknown) {
 /**
  * The flag half: which approved requests have a late invoice, and which are already held.
  *
- * Read-only. `cairoTodayIso` is resolved HERE and passed down, because the domain rule takes `today`
- * as a parameter so it stays testable without a database — see `classifyMarketingInvoiceOverdue`.
+ * Read-only. `cairoTodayIso` is resolved HERE and passed down, because the shared overdue rule takes
+ * `today` as a parameter so it stays testable without a database — see
+ * `resolveMarketingInvoiceObligation`, which is the one definition of late this queue reads.
  */
 export async function GET(request: Request) {
   try {

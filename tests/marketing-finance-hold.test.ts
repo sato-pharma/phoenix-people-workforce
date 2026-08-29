@@ -5,8 +5,9 @@ import { join } from "node:path";
 import {
   canPlaceMarketingRequestOnFinanceHold,
   canReleaseMarketingRequestFromFinanceHold,
-  classifyMarketingInvoiceOverdue,
   MARKETING_FINANCE_HOLD_STATUS,
+  nextInvoiceStatusOnHold,
+  nextInvoiceStatusOnRelease,
 } from "@/lib/marketing-requests/finance-hold";
 
 // `finance_hold` was a status the lifecycle could DESCRIBE and never ENTER.
@@ -17,88 +18,14 @@ import {
 // declared statuses had ever occurred at all.
 //
 // #2680 made it decidable by creating the first invoice obligations that had ever existed (4, one
-// already 18 days late). The owner's rule for acting on them, given the same day, is the rule
-// expenses run under: the system FLAGS, a human decides.
+// already 18 days late); #2686 made lateness visible. The owner's rule for acting on it, given the
+// same day, is the rule expenses run under: the system FLAGS, a human decides.
 //
-// These pin the two things that make that rule true rather than merely intended — the flag never
-// fires on an invoice that was actually delivered, and the reason is durable before the hold is.
+// These pin what makes that rule true rather than merely intended.
 
 const MODULE_PATH = join(process.cwd(), "src/lib/marketing-requests/finance-hold.ts");
 
 export function runMarketingFinanceHoldTests() {
-  // ── The flag: late means late, and delivered never does ────────────────────────
-
-  assert.deepEqual(
-    classifyMarketingInvoiceOverdue({
-      invoiceDeadlineDate: "2026-08-11",
-      invoiceRequired: true,
-      invoiceStatus: "pending",
-      today: "2026-08-29",
-    }),
-    { daysOverdue: 18 },
-    "an invoice still owed past its deadline is overdue by whole days",
-  );
-
-  assert.equal(
-    classifyMarketingInvoiceOverdue({
-      invoiceDeadlineDate: "2026-09-02",
-      invoiceRequired: true,
-      invoiceStatus: "pending",
-      today: "2026-08-29",
-    }),
-    null,
-    "an invoice owed but not yet due is not overdue",
-  );
-
-  assert.equal(
-    classifyMarketingInvoiceOverdue({
-      invoiceDeadlineDate: "2026-08-29",
-      invoiceRequired: true,
-      invoiceStatus: "pending",
-      today: "2026-08-29",
-    }),
-    null,
-    "the deadline DAY is not yet late — a hold on the due date would be a day early",
-  );
-
-  // The dangerous direction. A request whose invoice has already been delivered must never be
-  // flagged: holding it would freeze a request that owes nothing, and the admin acting on the queue
-  // has no way to see that the flag was wrong.
-  for (const settled of ["submitted", "cleared", "not_required"]) {
-    assert.equal(
-      classifyMarketingInvoiceOverdue({
-        invoiceDeadlineDate: "2026-08-01",
-        invoiceRequired: true,
-        invoiceStatus: settled,
-        today: "2026-08-29",
-      }),
-      null,
-      `an invoice in "${settled}" has been dealt with and must never be flagged as overdue`,
-    );
-  }
-
-  assert.equal(
-    classifyMarketingInvoiceOverdue({
-      invoiceDeadlineDate: "2026-08-01",
-      invoiceRequired: false,
-      invoiceStatus: "pending",
-      today: "2026-08-29",
-    }),
-    null,
-    "a request that owes no invoice cannot be overdue on one",
-  );
-
-  assert.equal(
-    classifyMarketingInvoiceOverdue({
-      invoiceDeadlineDate: null,
-      invoiceRequired: true,
-      invoiceStatus: "pending",
-      today: "2026-08-29",
-    }),
-    null,
-    "an obligation with no deadline has nothing to be late against",
-  );
-
   // ── Which requests may be held, and which released ─────────────────────────────
 
   for (const holdable of ["approved", "active"]) {
@@ -124,6 +51,56 @@ export function runMarketingFinanceHoldTests() {
     "releasing a request that was never held would silently rewrite its status",
   );
 
+  // ── The hold silences the overdue marker, and never resurrects a settled invoice ─
+  //
+  // A hold IS a deliberate pause, which is the one state invoice-obligation.ts excludes from going
+  // overdue. Pausing the obligation is therefore what stops the tab and the export saying "18d
+  // late" about a request whose lateness is the acknowledged reason it is frozen.
+
+  assert.equal(nextInvoiceStatusOnHold("pending"), "hold", "holding pauses an invoice that is still owed");
+  assert.equal(nextInvoiceStatusOnHold("overdue"), "hold", "a stored overdue still means owed, so it pauses too");
+  assert.equal(nextInvoiceStatusOnRelease("hold"), "pending", "releasing lets the marker resume");
+
+  // The dangerous direction, and not a hypothetical one: production carries an `active` request
+  // whose invoice is already `submitted` (measured 2026-08-29). A hold placed on it for some other
+  // reason must leave that alone — and the release must not then set it to `pending`, which would
+  // manufacture a debt that had already been settled and put a paid request back on the queue.
+  for (const settled of ["submitted", "cleared", "not_required"]) {
+    assert.equal(
+      nextInvoiceStatusOnHold(settled),
+      null,
+      `a "${settled}" invoice has been dealt with — holding the request must not mark it paused`,
+    );
+    assert.equal(
+      nextInvoiceStatusOnRelease(settled),
+      null,
+      `releasing must not rewrite a "${settled}" invoice back to pending`,
+    );
+  }
+
+  assert.equal(nextInvoiceStatusOnHold("hold"), null, "an already-paused invoice needs no second pause");
+  assert.equal(nextInvoiceStatusOnRelease("pending"), null, "a live obligation is not something a release resumes");
+
+  const source = readFileSync(MODULE_PATH, "utf8");
+
+  // ── Lateness is defined in exactly ONE place ───────────────────────────────────
+  //
+  // This module had its own copy of the overdue rule before #2686 landed one. Two definitions on a
+  // money module do not fail loudly: they agree until a boundary case, and then the queue an admin
+  // acts on disagrees with the screen he read it on, with neither obviously wrong. The owner's rule
+  // that an export must match the screen is the same rule one directory up.
+  assert.ok(
+    source.includes("resolveMarketingInvoiceObligation"),
+    "the hold queue must derive lateness from the shared obligation module",
+  );
+  for (const localDateArithmetic of ["86_400_000", "Date.parse("]) {
+    assert.ok(
+      !source.includes(localDateArithmetic),
+      `finance-hold.ts must not re-derive deadlines itself (found ${localDateArithmetic}) — `
+      + "a second definition of overdue is what invoice-obligation.ts exists to prevent",
+    );
+  }
+
   // ── The reason is durable BEFORE the hold is ───────────────────────────────────
   //
   // A Supabase client request that times out at 15s still COMMITS, so a two-write mutation can
@@ -132,17 +109,16 @@ export function runMarketingFinanceHoldTests() {
   // frozen on a live money module with nobody able to say why — and nothing would report it.
   //
   // Matched on call ORDER rather than a byte window, so reformatting the file cannot false-fail it.
-  const source = readFileSync(MODULE_PATH, "utf8");
   for (const action of ["placeMarketingRequestOnFinanceHold", "releaseMarketingRequestFromFinanceHold"]) {
     const start = source.indexOf(`export async function ${action}`);
     assert.ok(start >= 0, `${action} must exist`);
     const body = source.slice(start);
-    const reasonAt = body.indexOf("recordHoldReason(");
+    const reviewAt = body.indexOf("recordFinanceReview(");
     const statusAt = body.indexOf("applyHoldStatus(");
-    assert.ok(reasonAt >= 0, `${action} must record the reason`);
+    assert.ok(reviewAt >= 0, `${action} must record the reason`);
     assert.ok(statusAt >= 0, `${action} must apply the status`);
     assert.ok(
-      reasonAt < statusAt,
+      reviewAt < statusAt,
       `${action} must write the reason BEFORE the status — reversed, a timeout leaves a request `
       + "held with no recorded reason",
     );

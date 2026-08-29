@@ -963,16 +963,23 @@ export const WORKFLOW_CONTROL_DOMAINS: readonly WorkflowControlDomain[] = [
         // Approval-step rows ARE written consistently — measured in production 2026-08-29: 123 rows
         // covering all 23 requests, none missing.
         //
-        // The "approval does not create the finance requirement" half is FIXED — migration
-        // 20260829180000 makes the decision RPC insert the row in the same transaction as the
-        // approval, with the deadline read from the finance_invoice_deadline_days control setting.
+        // Both halves of the old finance gap are now closed. Migration 20260829180000 makes the
+        // decision RPC create the obligation in the same transaction as the approval, dated from
+        // the finance_invoice_deadline_days control setting. The overdue marker then reads that
+        // deadline back: resolveMarketingInvoiceObligation (src/lib/marketing-requests/
+        // invoice-obligation.ts) is the single source of truth, used by the Approved Requests
+        // table and by the report export, so both say "Overdue" where the stored column still
+        // says 'pending'.
         //
-        // The other end — "the deadline is recorded and then nothing ever acts on it" — is now
-        // handled by the Finance Hold subflow below, but NOT in the way this gap used to predict.
-        // invoice_status is still never written as 'overdue', deliberately: lateness is DERIVED live
-        // from invoice_deadline_date against today in Cairo, so there is no stored flag to go stale
-        // and no job to keep running. Do not "finish" this by adding one.
-        gaps: ["Placing or releasing a finance hold notifies nobody. The requester is not told that their approved request has been frozen, or that it has been let go again — the hold is visible only to someone already looking at the request. Who should receive that is an owner decision, not a default to assume."],
+        // The status is DERIVED, not stored, and that is deliberate rather than unfinished — a
+        // nightly job flipping the column could only ever be wrong (it can die silently, and it
+        // goes stale the moment a deadline is corrected forward). The 'overdue' value the CHECK
+        // constraint allows therefore stays unused in the database on purpose.
+        //
+        // What is genuinely still missing is the push: an overdue invoice is visible to anyone who
+        // opens the tab or the export, and nobody is told. The audience is the owner's call — a
+        // recipient list is never guessed here — so this stays recorded rather than assumed.
+        gaps: ["An overdue invoice is shown but nobody is notified: the marker appears on the Approved Requests tab and in the report export, and no notification, email or digest tells the requester or Finance that a deadline has passed. Recipient list needs the owner's decision before it is wired."],
       },
       {
         key: "finance-hold",
@@ -988,7 +995,7 @@ export const WORKFLOW_CONTROL_DOMAINS: readonly WorkflowControlDomain[] = [
             notificationRecipients: [],
             emailRecipients: [],
             sideEffects:
-              "Read-only. loadMarketingFinanceHoldQueue derives lateness live from the obligation's invoice_deadline_date against today in Africa/Cairo and never writes anything. An invoice already submitted or cleared is never flagged — flagging one would freeze a request that owes nothing.",
+              "Read-only. loadMarketingFinanceHoldQueue asks resolveMarketingInvoiceObligation — the same module the Approved Requests tab and the export read — whether each obligation is late today in Africa/Cairo, and writes nothing. Lateness is defined in one place only, so the queue an admin acts on can never disagree with the screen he read it on. An invoice already submitted or cleared is never flagged: flagging one would freeze a request that owes nothing.",
             routesTo: "Super Admin, who decides whether to hold. Nothing happens without him.",
           },
           {
@@ -1000,11 +1007,12 @@ export const WORKFLOW_CONTROL_DOMAINS: readonly WorkflowControlDomain[] = [
             notificationRecipients: [],
             emailRecipients: [],
             sideEffects:
-              "Records the reason on the finance requirement BEFORE flipping the status, so a client request that times out — which still commits — can never leave a request frozen with no recorded why. The status write is a compare-and-set so two admins on the same queue cannot silently overwrite each other, and phx_capture_marketing_request_event records actor, from and to. A release returns the request to the status the event log says it was held from, never a guess.",
+              "Records the reason on the finance requirement BEFORE flipping the status, so a client request that times out — which still commits — can never leave a request frozen with no recorded why. The same write pauses the invoice obligation (pending to hold, and back on release), which is what silences the Overdue marker while a request is held rather than nagging about a pause someone chose; an invoice already submitted is left exactly as it is, in both directions. Both writes are compare-and-set, so two admins on the same queue cannot silently overwrite each other, and phx_capture_marketing_request_event records actor, from and to. A release returns the request to the status the event log says it was held from, never a guess.",
             fallbackEscalation:
               "None, deliberately. The system never holds or releases on its own — owner rule 2026-08-29, the same rule expenses run under: the system flags, a human decides. Do not add a cron or an auto-hold-once-overdue convenience.",
           },
         ],
+        gaps: ["Placing or releasing a finance hold notifies nobody. The requester is not told that their approved request has been frozen, or that it has been let go again — the hold is visible only to someone already looking at the request, or at the hold queue. Who should receive that is an owner decision, not a default to assume."],
       },
       {
         key: "notifications",

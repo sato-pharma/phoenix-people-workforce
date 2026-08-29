@@ -704,6 +704,7 @@ import { runAdminShellPaletteScopeTests } from "./admin-shell-palette-scope.test
 import { runDesignTokensContractTests } from "./design-tokens-contract.test.ts";
 import { runNoEllipsisTruncationRatchetTests } from "./no-ellipsis-truncation-ratchet.test.ts";
 import { runInstantFormatTimezoneRatchetTests } from "./instant-format-timezone-ratchet.test.ts";
+import { runRouteErrorShapeRatchetTests } from "./route-error-shape-ratchet.test.ts";
 import { runHrIdNormalizerRatchetTests } from "./hrid-normalizer-ratchet.test.ts";
 import { runBadgeToneContrastTests } from "./badge-tone-contrast.test.ts";
 import { runNavigationPageFindabilityRatchetTests } from "./navigation-page-findability-ratchet.test.ts";
@@ -1070,6 +1071,7 @@ import { runNotificationOutboxBatchWindowTests } from "./notification-outbox-bat
 import { runNotificationDrainStarvationGuardTests } from "./notification-drain-starvation-guard.test.ts";
 import { runExpenseClaimsRefreshTests } from "./expense-claims-refresh.test.ts";
 import { runMarketingFinanceRequirementOnApprovalTests } from "./marketing-finance-requirement-on-approval.test.ts";
+import { runMarketingInvoiceOverdueMarkerTests } from "./marketing-invoice-overdue-marker.test.ts";
 import { runMarketingFinanceHoldTests } from "./marketing-finance-hold.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
@@ -2150,6 +2152,7 @@ await runTest('design tokens contract (--phx- prefix, no globals.css collision, 
 await runTest('admin shell palette scope (warm ramp stays inside .admin-shell, lightness pinned to Tailwind slate)', runAdminShellPaletteScopeTests);
 await runTest('no-ellipsis ratchet (UI truncation sites may fall, never rise)', runNoEllipsisTruncationRatchetTests);
 await runTest('instant-format timezone ratchet (no server-side UTC stamps; client sites may fall, never rise)', runInstantFormatTimezoneRatchetTests);
+await runTest('route error-shape ratchet (inline jsonError defs may fall, never rise)', runRouteErrorShapeRatchetTests);
 await runTest('HR_ID normaliser ratchet (inline HR_ID normalisers may fall, never rise)', runHrIdNormalizerRatchetTests);
 await runTest('Badge tone contrast (every tone meets WCAG AA for small text, both themes)', runBadgeToneContrastTests);
 await runTest('Navigation findability ratchet (a page with no link anywhere may fall, never rise)', runNavigationPageFindabilityRatchetTests);
@@ -3222,9 +3225,16 @@ await runTest(
   runMarketingFinanceRequirementOnApprovalTests,
 );
 await runTest(
-  "marketing finance hold (a status the lifecycle declared for three months and could never enter: the flag "
-    + "never fires on an invoice already delivered, only an approved request can be held, and the reason is "
-    + "written before the status so a 15s timeout can never freeze a request with no recorded why)",
+  "marketing invoice overdue marker (a pending invoice past its Cairo deadline reads Overdue on the "
+    + "Approved Requests tab and in the export, the deadline day itself is not late, a submitted or "
+    + "held obligation never is — and both readers go through the one module, so export matches screen)",
+  runMarketingInvoiceOverdueMarkerTests,
+);
+await runTest(
+  "marketing finance hold (a status the lifecycle declared for three months and could never enter: only an "
+    + "approved request can be held, holding it silences the overdue marker rather than nagging about a pause "
+    + "someone chose, and the reason is written before the status so a 15s timeout can never freeze a request "
+    + "with no recorded why)",
   runMarketingFinanceHoldTests,
 );
 
