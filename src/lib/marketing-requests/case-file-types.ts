@@ -390,6 +390,18 @@ export type MarketingCaseFileViewer = {
   can: {
     comment: boolean;
     decide: boolean;
+    /**
+     * Whether this viewer may place or release the finance hold. Super Admin, matching
+     * `assertMarketingFinanceHoldAccess` — which re-checks it server-side before any write, so this
+     * is an affordance and never a data gate.
+     */
+    manageFinanceHold: boolean;
+    /**
+     * Whether this viewer may place a NEW hold on this request — role AND a status that may be
+     * frozen. Separate from `manageFinanceHold` because the role alone does not make every request
+     * holdable: a draft or rejected request carries no committed money to freeze.
+     */
+    placeFinanceHold: boolean;
     resubmit: boolean;
   };
   /**
@@ -441,9 +453,36 @@ export type MarketingCaseFileLazySection = {
 
 // ── the case file ────────────────────────────────────────────────────────────
 
+/**
+ * The finance hold, as the reader needs it — null unless the request is actually held.
+ *
+ * Every field here was already stored and shown NOWHERE. The reason in particular lives in
+ * `marketing_request_finance_requirements.notes`, which no screen read: a Super Admin froze a
+ * request, wrote down why, and the why was visible only in the database.
+ */
+export type MarketingCaseFileFinanceHold = {
+  /** ISO. Render in Africa/Cairo. Null on a hold placed before the column was written. */
+  heldAt: string | null;
+  /** `hr_id` AS STORED (mixed case) — the employees FK, not the normalized key. */
+  heldByHrId: string | null;
+  /** The person, by name. Falls back to the hr_id when the employee row cannot be read. */
+  heldByName: string | null;
+  /**
+   * Whether the invoice obligation is paused. A held request normally reads `hold`, which is what
+   * stops the overdue marker counting days against a request whose lateness is the acknowledged
+   * reason it is frozen. It reads something else when the invoice was already settled at the time
+   * of the hold — that is correct, not a defect.
+   */
+  invoiceStatus: string | null;
+  /** Why it was held, in the holder's own words. */
+  reason: string | null;
+};
+
 export type MarketingRequestCaseFile = {
   chain: CaseFileBlock<MarketingCaseFileChain>;
   customer: CaseFileBlock<MarketingCaseFileCustomer>;
+  /** Null unless the request is on finance hold. */
+  financeHold: MarketingCaseFileFinanceHold | null;
   /** ISO. Render in Africa/Cairo. */
   generatedAt: string;
   header: MarketingCaseFileHeader;
