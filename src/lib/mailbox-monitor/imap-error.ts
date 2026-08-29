@@ -63,9 +63,53 @@ export function describeImapError(error: unknown): string {
   return typeof e.message === "string" && e.message.trim() ? e.message.trim() : "IMAP connection failed.";
 }
 
-// A failure reason is capped before it reaches the audit trail: a chatty server response should not
+// A failure reason is capped before it is stored anywhere: a chatty server response should not
 // bloat the jsonb column, and 400 characters is far more than any IMAP rejection text needs.
 export const MAX_FAILURE_REASON_LENGTH = 400;
+
+/**
+ * Normalise anything a caller has in hand into ONE storable, displayable reason — or null.
+ *
+ * This is the single gate every reason passes through, because a reason has two sinks and they had
+ * drifted apart: the jsonb `detail` on an access-log row, and the `last_error` column the admin
+ * dashboard renders. Capping only the first left the copy a human actually reads uncapped.
+ *
+ * Three things happen here, and each is a real defect closed rather than tidiness:
+ *
+ * 1. CONTROL CHARACTERS become a space. Postgres refuses a NUL byte in text and in jsonb alike, so a
+ *    server response carrying one made the insert fail — and an audit write that fails is the
+ *    silence this module exists to prevent. The dashboard also renders this on a single
+ *    non-wrapping line, so a newline had nothing to do there either.
+ * 2. LONE SURROGATES are dropped. They cannot be encoded as UTF-8 and postgres rejects them as
+ *    jsonb outright. `for...of` walks code points, so a well-formed pair arrives as one character
+ *    and is untouched; a lone surrogate only appears when the input was already broken — or when a
+ *    naive `.slice()` cut a pair in half, which is why the cap below counts code points.
+ * 3. TRUNCATION IS MARKED. A silently clipped reason reads as the server's complete answer. Same
+ *    "…" convention as truncate() in src/lib/error-monitor/service.ts, and the result is never
+ *    longer than the cap.
+ */
+export function failureReason(reason: unknown): string | null {
+  const text = sanitizeReason(reasonText(reason));
+  if (!text) return null;
+  const points = [...text];
+  if (points.length <= MAX_FAILURE_REASON_LENGTH) return text;
+  return `${points.slice(0, MAX_FAILURE_REASON_LENGTH - 1).join("")}…`;
+}
+
+/** One pass over the code points — see the numbered notes on failureReason. */
+function sanitizeReason(value: string): string {
+  let out = "";
+  for (const character of value) {
+    const code = character.codePointAt(0) ?? 0;
+    if (code < 0x20 || code === 0x7f) {
+      out += " ";
+      continue;
+    }
+    if (code >= 0xd800 && code <= 0xdfff) continue;
+    out += character;
+  }
+  return out.replace(/\s+/g, " ").trim();
+}
 
 /**
  * Build the `detail` payload for an access-log row that records a failure.
@@ -79,10 +123,26 @@ export const MAX_FAILURE_REASON_LENGTH = 400;
  * `extra` is spread first so a caller can never overwrite `failed` or `reason`.
  */
 export function failureDetail(reason: unknown, extra?: Record<string, unknown>): Record<string, unknown> {
-  const text = typeof reason === "string" ? reason.trim() : "";
   return {
-    ...(extra ?? {}),
+    ...extra,
     failed: true,
-    reason: text ? text.slice(0, MAX_FAILURE_REASON_LENGTH) : null,
+    reason: failureReason(reason),
   };
+}
+
+/**
+ * Coerce whatever the caller has in hand into storable text.
+ *
+ * `reason` is typed `unknown` because the natural call from inside a catch block is
+ * `failureDetail(error)` — so that shape has to work. Dropping a non-string to null would rebuild
+ * the exact `failed: true` and nothing else state this helper exists to prevent, silently and at
+ * the one call site a maintainer is most likely to write. An object goes through
+ * describeImapError, which already reads an imapflow rejection and falls back to an Error's own
+ * message; only a genuinely absent or blank reason becomes null.
+ */
+function reasonText(reason: unknown): string {
+  if (typeof reason === "string") return reason.trim();
+  if (reason === null || reason === undefined) return "";
+  if (typeof reason === "object") return describeImapError(reason).trim();
+  return String(reason).trim();
 }
