@@ -12,6 +12,7 @@ import { formatAttendanceWorkingWeekdays } from "@/lib/attendance/work-schedule"
 import { isAttendanceTracked } from "@/lib/attendance/eligibility";
 import { loadActiveDeviceMappedHrIds } from "@/lib/attendance/device-user-mapping";
 import { cairoMidnightUtcIso } from "@/lib/attendance/timezone";
+import { isTerminalEmploymentStatus } from "@/lib/auth/session-lifecycle";
 import {
   bracketsForEventType,
   evaluateFlexibleHoursDay,
@@ -24,7 +25,7 @@ import {
 // different number. THIS file is the one the deductions Fingerprint connector reads
 // (`row.deductionValue`), so it is the load site that actually moves money.
 import { calculateDeductionAmountFromBaseSalary } from "@/lib/deductions/calculations.ts";
-import { getApprovedLeaveDayMap } from "@/lib/attendance/working-days";
+import { getApprovedLeaveDayMap, isIsoDate } from "@/lib/attendance/working-days";
 import { getApprovedExcuseDayMap } from "@/lib/attendance/approved-excuse-days";
 import { getCrmActivityDayMaps } from "@/lib/attendance/crm-day-maps";
 import { getPlanOfficeDayMap } from "@/lib/attendance/plan-office-days";
@@ -129,9 +130,11 @@ type RawPunchRow = {
 type EmployeeRow = {
   base_salary: number | null;
   department_id: number | null;
+  employment_status: string | null;
   full_name: string | null;
   hr_id: string;
   job_title: string | null;
+  last_working_date: string | null;
 };
 
 type DepartmentRow = {
@@ -537,7 +540,7 @@ export async function getFingerprintAttendanceReport(input: {
   const [employeeResult, policyRows, ruleResult, deviceMappedHrIds] = await Promise.all([
     supabase
       .from("employees")
-      .select("hr_id,full_name,job_title,department_id,base_salary")
+      .select("hr_id,full_name,job_title,department_id,base_salary,employment_status,last_working_date")
       .order("full_name"),
     loadAttendanceFlexPolicyGroups({ activeOnly: true }),
     supabase
@@ -562,6 +565,17 @@ export async function getFingerprintAttendanceReport(input: {
         jobTitle: emp.job_title,
       }),
     )
+    // Resigned/terminated employees are excluded once their last working date is
+    // behind the reported range — this is a deductions/payroll report, so a leaver
+    // must not keep generating rows (and deduction amounts) forever. Mirrors the
+    // proven-correct exclusion in attendance/roster.ts's getAttendanceRoster.
+    .filter((emp) => {
+      if (!isTerminalEmploymentStatus(emp.employment_status)) return true;
+      const lastWorkingDate = isIsoDate(emp.last_working_date) ? emp.last_working_date : null;
+      // Exited before the reported range starts (or exit date unknown) — not expected at all.
+      if (!lastWorkingDate || lastWorkingDate < effectiveDateFrom) return false;
+      return true;
+    })
     .filter((emp) => !scopeHrIds || scopeHrIds.has(normalizeHrId(emp.hr_id) ?? ""));
   const allDepartmentIds = new Set<number>();
   for (const employee of eligibleEmployees) {

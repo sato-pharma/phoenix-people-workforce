@@ -62,7 +62,7 @@ export default async function AdminCompanyActivityReportPage({
     getCompanyActivityReportFilterOptions(),
     getEmployeeDirectoryRows({ includeInactive: true }),
   ]);
-  const employees = filterCompanyActivityEmployees(roster, filters);
+  const employees = filterCompanyActivityEmployees(roster, filters, startDate);
 
   // The expensive read — CRM visits, attendance punches and leave requests across every filtered
   // employee, for every day in range — runs ONLY once the reader has actually asked for something.

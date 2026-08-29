@@ -78,6 +78,7 @@ import {
   type NavigationMode,
   type PhoenixRole,
 } from "@/lib/auth/permissions";
+import { ACTIVE_EMPLOYMENT_STATUSES_IN_LIST } from "@/lib/auth/session-lifecycle";
 import { resolveViewerAllowedLines } from "@/lib/auth/scope-visibility";
 import { pickDeliverableEmail } from "@/lib/email/email-safety";
 import { getEmployeeDirectory, type EmployeeDirectoryData, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
@@ -1374,7 +1375,10 @@ async function hrAcknowledgementRecipients() {
   const { data: employees } = await supabase
     .from("employees")
     .select("hr_id,full_name,job_title,position_title")
-    .or("job_title.ilike.%HR Manager%,job_title.ilike.%Admin HR%,position_title.ilike.%HR Manager%,position_title.ilike.%Admin HR%");
+    .or("job_title.ilike.%HR Manager%,job_title.ilike.%Admin HR%,position_title.ilike.%HR Manager%,position_title.ilike.%Admin HR%")
+    // These rows are pushed straight into the recipient list below, including ones with no auth
+    // account at all — so without this a resigned HR Manager kept receiving plan acknowledgements.
+    .or(`employment_status.is.null,employment_status.in.${ACTIVE_EMPLOYMENT_STATUSES_IN_LIST}`);
   const employeeHrIds = new Set(((employees ?? []) as Array<{ hr_id?: string | null }>).map((row) => normalizeHrId(row.hr_id)).filter(Boolean));
   const recipients = ((authRows ?? []) as AuthUserRow[])
     .filter((row) => row.role === "Super Admin" || employeeHrIds.has(normalizeHrId(row.hr_id)))

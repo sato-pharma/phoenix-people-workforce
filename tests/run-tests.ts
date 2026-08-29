@@ -1086,6 +1086,7 @@ import { runMarketingFinanceHoldTests } from "./marketing-finance-hold.test.ts";
 import { runMarketingFinanceHoldUiTests } from "./marketing-finance-hold-ui.test.ts";
 import { runMarketingInvoiceOverdueNudgeTests } from "./marketing-invoice-overdue-nudge.test.ts";
 
+import { runLeaverRosterExclusionTests } from "./leaver-roster-exclusion.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -3288,6 +3289,8 @@ await runTest(
     + "never by email, and finance gets no link because no screen shows him one)",
   runMarketingInvoiceOverdueNudgeTests,
 );
+
+await runTest("leaver roster exclusion (resigned/terminated never reach a picker, recipient search or account template)", runLeaverRosterExclusionTests);
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);

@@ -4,6 +4,7 @@ import { AttendanceExceptionsManager } from "@/components/attendance/attendance-
 import { getAttendanceExceptions } from "@/lib/attendance/exceptions";
 import { canAccessSystemAdministratorWorkspace } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { ACTIVE_EMPLOYMENT_STATUSES_IN_LIST } from "@/lib/auth/session-lifecycle";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -19,7 +20,14 @@ export default async function AttendanceExceptionsPage() {
   const supabase = getSupabaseAdmin();
   const [exceptionsResult, employeesResult] = await Promise.allSettled([
     getAttendanceExceptions({ status: "all" }),
-    supabase.from("employees").select("hr_id,full_name").order("full_name"),
+    // Leavers are excluded: this list is the picker for raising a NEW exception, and a resigned
+    // employee can never be the subject of one. A null status is legacy data and stays visible, so
+    // this can only ever hide a confirmed leaver — never newly hide an active employee.
+    supabase
+      .from("employees")
+      .select("hr_id,full_name")
+      .or(`employment_status.is.null,employment_status.in.${ACTIVE_EMPLOYMENT_STATUSES_IN_LIST}`)
+      .order("full_name"),
   ]);
 
   const initialData = exceptionsResult.status === "fulfilled" ? exceptionsResult.value : [];

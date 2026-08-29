@@ -1,5 +1,6 @@
 import type { AccessContext } from "@/lib/auth/permissions";
 import { normalizeHrId, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
+import { ACTIVE_EMPLOYMENT_STATUSES_IN_LIST } from "@/lib/auth/session-lifecycle";
 import { createSystemNotification, logNotificationSendFailure } from "@/lib/notifications/system";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -313,6 +314,10 @@ export async function searchInternalMessageRecipients(query: string, access: Acc
       .from("employees")
       .select("hr_id,full_name,work_email")
       .or(`hr_id.ilike.${normalized},full_name.ilike.${pattern},work_email.ilike.${pattern}`)
+      // The app_auth_users half above is already restricted to is_active accounts; without the
+      // same restriction here a resigned employee stayed searchable and addressable purely
+      // because their employees row still carries a work_email.
+      .or(`employment_status.is.null,employment_status.in.${ACTIVE_EMPLOYMENT_STATUSES_IN_LIST}`)
       .limit(limit),
   ]);
 

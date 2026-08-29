@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { systemDocuments } from "@/config/system-settings";
 import { getAccessControlDashboard, phoenixLines, upsertAccessUser } from "@/lib/admin/access-control";
 import { assertPermission, parseRoleStrict, phoenixRoles } from "@/lib/auth/permissions";
+import { ACTIVE_EMPLOYMENT_STATUSES_IN_LIST } from "@/lib/auth/session-lifecycle";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -56,6 +57,9 @@ async function loadEmployeeDirectoryFallback(
     .from("employees")
     .select("hr_id,full_name,job_title,line_id,manager_hr_id")
     .not("hr_id", "is", null)
+    // This directory becomes the bulk account-creation template. A leaver listed here invites an
+    // admin to create a login for somebody who has left the company.
+    .or(`employment_status.is.null,employment_status.in.${ACTIVE_EMPLOYMENT_STATUSES_IN_LIST}`)
     .order("full_name", { ascending: true });
 
   if (error) {
