@@ -62,3 +62,27 @@ export function describeImapError(error: unknown): string {
   if (e.serverResponseCode) return `the mail server returned ${e.serverResponseCode}`;
   return typeof e.message === "string" && e.message.trim() ? e.message.trim() : "IMAP connection failed.";
 }
+
+// A failure reason is capped before it reaches the audit trail: a chatty server response should not
+// bloat the jsonb column, and 400 characters is far more than any IMAP rejection text needs.
+export const MAX_FAILURE_REASON_LENGTH = 400;
+
+/**
+ * Build the `detail` payload for an access-log row that records a failure.
+ *
+ * The reason is the whole point. A failed enrolment never creates a monitor row, so there is no
+ * `last_error` column to fall back on, and a MailboxMonitorError is returned to the browser as a
+ * plain 4xx that the error monitor never sees — so without the reason here, the only surviving
+ * trace of a refused mailbox is `failed: true`, and *why* it was refused dies with the HTTP
+ * response. Measured 2026-08-28: two failed enrolments, neither recoverable afterwards.
+ *
+ * `extra` is spread first so a caller can never overwrite `failed` or `reason`.
+ */
+export function failureDetail(reason: unknown, extra?: Record<string, unknown>): Record<string, unknown> {
+  const text = typeof reason === "string" ? reason.trim() : "";
+  return {
+    ...(extra ?? {}),
+    failed: true,
+    reason: text ? text.slice(0, MAX_FAILURE_REASON_LENGTH) : null,
+  };
+}

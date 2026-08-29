@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import {
   isRolePermissionWithinHardBoundary,
@@ -7,7 +8,12 @@ import {
   phoenixRoles,
 } from "../src/lib/auth/permissions.ts";
 import { findAccessRegistryEntry } from "../src/lib/security/access-registry.ts";
-import { describeImapError, normalizeAppPassword } from "../src/lib/mailbox-monitor/imap-error.ts";
+import {
+  MAX_FAILURE_REASON_LENGTH,
+  describeImapError,
+  failureDetail,
+  normalizeAppPassword,
+} from "../src/lib/mailbox-monitor/imap-error.ts";
 import { parseRecruitmentEmailInboxesConfig } from "../src/lib/recruitment/inbound/email-mailboxes-config.ts";
 import {
   SecretBoxError,
@@ -210,4 +216,58 @@ export function runMailboxComplianceMonitorTests() {
   // Malformed or absent config disables the import instead of throwing.
   assert.deepEqual(parseRecruitmentEmailInboxesConfig(undefined), [], "no config → nothing to import");
   assert.deepEqual(parseRecruitmentEmailInboxesConfig("{not json"), [], "invalid JSON → nothing to import");
+
+  // ── failureDetail: the audit trail must record WHY, not only THAT ──────────────────
+  // Two failed enrolments on 2026-08-28 left `{ emailAddress, failed: true }` and nothing else.
+  // A refused mailbox creates no monitor row (so there is no last_error) and a MailboxMonitorError
+  // is returned as a plain 4xx the error monitor never sees — so the reason existed only inside the
+  // HTTP response, and once that browser tab was closed it was gone. This is the fix for that.
+  const addFailure = failureDetail("the mailbox rejected the app password", { emailAddress: "someone@satopharma.com" });
+  assert.equal(addFailure.failed, true, "a failure detail must still mark the row as failed");
+  assert.equal(addFailure.reason, "the mailbox rejected the app password", "the reason must reach the audit trail");
+  assert.equal(addFailure.emailAddress, "someone@satopharma.com", "caller context must survive alongside the reason");
+
+  // The describeImapError output is what gets stored, so the common rejection must be readable
+  // from the access log on its own, with no other source needed.
+  assert.equal(
+    failureDetail(describeImapError(Object.assign(new Error("Command failed"), { authenticationFailed: true }))).reason,
+    "the mailbox rejected the app password (generate a fresh app password and paste it with no spaces)",
+    "a rejected app password must be diagnosable from the access log alone",
+  );
+
+  // An absent or blank reason is stored as null — never the string "undefined", which would read
+  // like a recorded reason while carrying none.
+  assert.equal(failureDetail(undefined).reason, null, "an absent reason is null");
+  assert.equal(failureDetail("   ").reason, null, "a whitespace-only reason is null");
+  assert.equal(failureDetail(new Error("not a string")).reason, null, "a non-string reason is not coerced into text");
+
+  // A chatty server response cannot bloat the jsonb column.
+  const cappedReason = failureDetail("x".repeat(MAX_FAILURE_REASON_LENGTH + 250)).reason as string;
+  assert.equal(cappedReason.length, MAX_FAILURE_REASON_LENGTH, "the reason is capped at MAX_FAILURE_REASON_LENGTH");
+
+  // `extra` is spread first, so a caller can never blank the two fields the audit depends on.
+  const hostile = failureDetail("the real reason", { failed: false, reason: "spoofed" });
+  assert.equal(hostile.failed, true, "extra must not be able to unset failed");
+  assert.equal(hostile.reason, "the real reason", "extra must not be able to overwrite the reason");
+
+  // Source pin: the helper passing on its own proves nothing if the service stops calling it.
+  // Containment checks, not a byte window — a fixed offset false-fails the moment the file shifts.
+  const serviceSource = readFileSync(new URL("../src/lib/mailbox-monitor/service.ts", import.meta.url), "utf8");
+  assert.ok(
+    serviceSource.includes("detail: failureDetail(test.error, { emailAddress: email })"),
+    "addMonitor's connection-failure log must carry the IMAP reason",
+  );
+  assert.ok(
+    serviceSource.includes("detail: test.ok ? { ok: true } : failureDetail(test.error, { ok: false })"),
+    "recheckMonitor must record why a connection test failed",
+  );
+  assert.ok(
+    serviceSource.includes("detail: failureDetail(message)"),
+    "a failed mailbox read must record why it failed",
+  );
+  assert.equal(
+    /detail: { failed: true }/.test(serviceSource),
+    false,
+    "no access-log call may record a bare failed:true with no reason",
+  );
 }

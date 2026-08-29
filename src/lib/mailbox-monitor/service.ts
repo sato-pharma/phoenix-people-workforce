@@ -14,7 +14,7 @@ import {
   listMessages,
   testMailboxConnection,
 } from "@/lib/mailbox-monitor/imap-client";
-import { normalizeAppPassword } from "@/lib/mailbox-monitor/imap-error";
+import { failureDetail, normalizeAppPassword } from "@/lib/mailbox-monitor/imap-error";
 import { loadConfiguredMailboxes } from "@/lib/recruitment/inbound/email-mailboxes-config";
 import type {
   AddMailboxMonitorInput,
@@ -203,7 +203,15 @@ export async function addMonitor(input: AddMailboxMonitorInput, actorHrId: strin
   const connection: MailboxConnection = { host, password: appPassword, port, secure, user: email };
   const test = await testMailboxConnection(connection);
   if (!test.ok) {
-    await logAccess({ action: "add", actorHrId, detail: { emailAddress: email, failed: true }, emailAddress: email, monitorId: null });
+    // The reason has nowhere else to live: no monitor row was created, so there is no last_error,
+    // and the 422 below is never reported to the error monitor. Lose it here and it is lost.
+    await logAccess({
+      action: "add",
+      actorHrId,
+      detail: failureDetail(test.error, { emailAddress: email }),
+      emailAddress: email,
+      monitorId: null,
+    });
     throw new MailboxMonitorError(`Could not connect to that mailbox: ${test.error}`, 422);
   }
 
@@ -329,7 +337,7 @@ export async function recheckMonitor(id: string, actorHrId: string | null): Prom
   await logAccess({
     action: "connect_test",
     actorHrId,
-    detail: { ok: test.ok },
+    detail: test.ok ? { ok: true } : failureDetail(test.error, { ok: false }),
     emailAddress: row.email_address,
     monitorId: id,
   });
@@ -366,7 +374,7 @@ async function withMonitorRead<T>(
     await logAccess({
       action,
       actorHrId,
-      detail: { failed: true },
+      detail: failureDetail(message),
       emailAddress: row.email_address,
       folder: meta.folder ?? null,
       messageUid: meta.messageUid ?? null,
