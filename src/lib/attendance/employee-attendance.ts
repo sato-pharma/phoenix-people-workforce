@@ -82,14 +82,19 @@ async function getHrConfirmedDeductionDates(hrId: string): Promise<Set<string>> 
   const compactHrId = compactDeductionHrId(hrId);
   if (!compactHrId) return new Set();
 
+  // Unified Deductions module (src/lib/deductions/). The attendance-device deductions
+  // that legacy governance filed under source_module = "ATTENDANCE_DEVICE" are the
+  // `fingerprint` category here. The legacy table froze after 2026-07, so reading it
+  // left this badge dark for every current month; the unified table is where HR now
+  // decides, so it is the only table that answers "was this day's deduction approved".
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
-    .from("deduction_candidates")
-    .select("dates, deduction_decisions!inner(decision_status)")
-    .eq("source_module", "ATTENDANCE_DEVICE")
+    .from("deductions_candidates")
+    .select("dates, deductions_decisions!inner(decision_status)")
+    .eq("category", "fingerprint")
     .eq("employee_hr_id_compact", compactHrId)
     .is("superseded_at", null)
-    .eq("deduction_decisions.decision_status", "Approved for Payroll");
+    .eq("deductions_decisions.decision_status", "Approved for Payroll");
 
   if (error || !data) return new Set();
 
