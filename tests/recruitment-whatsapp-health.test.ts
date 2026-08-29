@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import {
   aggregateProbeError,
@@ -11,6 +12,7 @@ import {
   isCairoBusinessDay,
   isCairoBusinessHours,
   isNumberSilent,
+  isPublicWhatsAppArrival,
   isSilenceAlertWindow,
   resolveConfiguredPhoneNumberIds,
   type WhatsAppNumberProbe,
@@ -700,5 +702,86 @@ export function runWhatsAppPublicReachTests() {
     verdict(null).status,
     "silent",
     "when reach could not be measured the verdict must fall back, never fabricate public_channel_dead",
+  );
+}
+// A forward off the handset must never count as the public reaching us. This is the rule the
+// silence clock was missing: a forward carries TODAY's timestamp, so before this it RESET the
+// 24-hour clock and a dead public line went on reading healthy for as long as somebody kept
+// forwarding. `measurePublicReach` already had the rule; the clock had a second, weaker copy.
+export function runPublicWhatsAppArrivalTests() {
+  // Both spellings of the handset, because the env var holds the local form and the webhook
+  // records the international one.
+  const HANDSETS = ["01159888247"];
+  const row = (over: Record<string, unknown> = {}) => ({
+    created_at: "2026-08-29T06:00:00.000Z",
+    sender_identifier: "+201223476497",
+    raw_metadata: {} as Record<string, unknown>,
+    ...over,
+  });
+
+  // --- THE REGRESSION THIS SHIPS FOR ----------------------------------------------------------
+  assert.equal(
+    isPublicWhatsAppArrival(row({ sender_identifier: "+201159888247", raw_metadata: {} }), HANDSETS),
+    false,
+    "an UNSTAMPED handset message must not count - it is the case that predates the bulkImport stamp, and it is what let a forward reset the silence clock",
+  );
+
+  // A real applicant is the whole point: the rule must not be so tight that nobody qualifies.
+  assert.equal(isPublicWhatsAppArrival(row(), HANDSETS), true, "a genuine applicant must still count as reach");
+
+  // jsonb round-trips a boolean as either shape depending on how it was written, so both must lose.
+  assert.equal(
+    isPublicWhatsAppArrival(row({ raw_metadata: { bulkImport: true } }), HANDSETS),
+    false,
+    "a forwarded batch stamped with a real boolean must not count",
+  );
+  assert.equal(
+    isPublicWhatsAppArrival(row({ raw_metadata: { bulkImport: "true" } }), HANDSETS),
+    false,
+    'a forwarded batch stamped with the STRING "true" must not count either',
+  );
+
+  // A coexistence replay is the past arriving late, not somebody getting through now.
+  assert.equal(
+    isPublicWhatsAppArrival(row({ raw_metadata: { historyImport: true } }), HANDSETS),
+    false,
+    "a history backfill must not count as reach",
+  );
+
+  // The local/international mismatch is real: the env var holds 01159888247, Meta reports
+  // 201159888247. Matching on the tail is what makes those the same handset.
+  assert.equal(
+    isPublicWhatsAppArrival(row({ sender_identifier: "201159888247" }), HANDSETS),
+    false,
+    "the handset must be recognised whether it arrives in local or international form",
+  );
+
+  assert.equal(
+    isPublicWhatsAppArrival(row({ sender_identifier: "   " }), HANDSETS),
+    false,
+    "a row with no sender cannot be evidence that anyone got through",
+  );
+
+  // With no handsets configured at all, a forward is still excluded by its stamp - the two guards
+  // are independent on purpose, and neither is allowed to be the only one.
+  assert.equal(
+    isPublicWhatsAppArrival(row({ raw_metadata: { bulkImport: true } }), []),
+    false,
+    "the bulkImport stamp must stand on its own when no import senders are configured",
+  );
+
+  // --- the PostgREST trap this query cannot survive without ------------------------------------
+  // `raw_metadata->>bulkImport` is ABSENT on every ordinary row, and in SQL `NULL <> 'true'` is
+  // NULL rather than true - so a bare `neq` filter matches ZERO rows and the silence clock would
+  // read empty forever. The null branch is what makes the filter mean what it looks like.
+  const source = readFileSync(new URL("../src/lib/recruitment/inbound/whatsapp-health.ts", import.meta.url), "utf8");
+  assert.match(
+    source,
+    /raw_metadata->>bulkImport\.is\.null,raw_metadata->>bulkImport\.neq\.true/,
+    "the bulkImport exclusion must keep its is.null branch - a bare neq against an absent jsonb key matches nothing",
+  );
+  assert.ok(
+    !/\.neq\("raw_metadata->>bulkImport"/.test(source),
+    "a bare .neq() on bulkImport silently returns no rows - use the or(is.null,neq) form",
   );
 }

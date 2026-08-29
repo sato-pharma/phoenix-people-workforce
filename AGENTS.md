@@ -494,6 +494,23 @@ this file already gives them)
   cannot tell "works" from "broken" until someone touches a batch.
   `payroll-mutations-were-unaudited-until-2026-08-21`
 
+- **`cn()` SILENTLY DROPPED every `text-phx-*` size, and nothing in this repo can see it.**
+  tailwind-merge never sees Tailwind v4's CSS-first theme, so it classifies a custom-named font size
+  as a COLOUR — and any real colour class in the same `cn()` call then wins and removes it. The
+  sidebar rendered at **16px instead of 13px** and badges at **16px/900 instead of 10px**, across
+  roughly **4,800** call sites. It is invisible in source review, in lint, in typecheck and in a diff
+  audit; only `getComputedStyle` in a real browser sees it. The literal `text-[13px]` form was always
+  SAFE — **the rename to a named size is what created the bug**, so a well-meant "tidy up the class
+  names" pass is precisely the change that reintroduces it.
+  `tailwind-merge-strips-custom-named-font-sizes`
+- **`@/lib/utils` resolves to the ROOT `lib/utils.ts`, NOT `src/lib/utils.ts`.** `tsconfig.json` maps
+  `"@/*": ["./*", "./src/*"]` — the repo root is tried FIRST — and both files really exist (measured
+  2026-08-29: `lib/utils.ts` 2,993 bytes, `src/lib/utils.ts` 1,022 bytes). So editing
+  `src/lib/<x>.ts` and reloading changes NOTHING, with no error anywhere to explain why; the symptom
+  is a correct-looking edit that simply has no effect, which reads as a caching problem rather than a
+  resolution one. Before touching any `src/lib/<x>.ts` whose importers say `@/lib/<x>`, run
+  `ls <x>.ts` at the repo root first. `at-slash-lib-shadows-src-lib-via-tsconfig-paths`
+
 **Memory and this index**
 
 - **Sweep memories by CLAIM, never by filename or topic.** Every staleness sweep here has been scoped
@@ -1258,6 +1275,39 @@ account, under `C:\Users\satoh\.claude\projects\F--Phoenix-Workforce-phoenix-wor
   rank-based suppression. `territory-preview-link-must-never-show-the-line` ·
   `organogram-chart-source-is-au-seat-model-not-directory` ·
   `whatsapp-button-on-leadership-rows-is-an-owner-decision`
+
+**Four more owner decisions, relocated 2026-08-29 for the reason §2.2 gives.** `MEMORY.md` measured
+**23,797 bytes — 603 from the 24,400-byte loader cliff** — with every compression lever already spent
+(zero em-dashes, zero trailing whitespace, zero double spaces), so no trim could have freed the 1,797
+bytes it was over budget. All four are owner **decisions** rather than measurements, and decisions do
+not rot the way counts do, so each belongs in a file that auto-loads in full. Two of them are the
+mailbox-monitoring pair, which nothing else in this file covered. Each names the memory file holding
+the full account, under
+`C:\Users\satoh\.claude\projects\F--Phoenix-Workforce-phoenix-workforce\memory\`.
+
+- 🔴 **The CEO is NOT a district, and a picker is never wider than its viewer.** Owner ruling
+  2026-08-28, on two faults found together on Doctor Coverage. The org walk climbed all the way to
+  `AA` and presented the entire board's scope as the CEO's own assigned doctor panel — he holds no
+  such list — while the cached, company-wide filter tree offered a Medical Rep the names of all ~73
+  reps. **The data was never over-served; the damage is the opposite** — an EMPTY board, which reads
+  to a user as "you covered nothing" rather than as a bug, and so gets reported as a data problem.
+  Pass the viewer's scope to the PICKER as well as to the query, and never roll an org tree up to its
+  root. `the-ceo-is-not-a-district-and-a-picker-is-not-wider-than-its-viewer`
+- 🔴 **An NSM's outstation expense is NEVER held.** Owner rule 2026-08-28, in his words: *"once
+  submitted, once accepted."* The workload gate could never have cleared for him in any case — a
+  National Sales Manager has no CRM visits for it to match against — so the hold was structural
+  rather than a judgement anyone had made. **NSM only.** It does not extend to the three photo-waived
+  roles, and every other role still waits for a human. `nsm-outstation-expense-is-never-held`
+- 🔴 **The mailbox-monitor app-password entry is `___`, never "Phoenix".** Owner rule 2026-08-28:
+  the entry name an employee types into Yahoo/Turbify is three underscores, and the monitor UI must
+  never print the word Phoenix anywhere in that instruction.
+  `mailbox-monitor-app-password-entry-is-three-underscores-never-phoenix`
+- 🔒 **Turbify CANNOT issue app passwords centrally — the owner is STAYING, so do not re-pitch a
+  migration.** There is no API and there never was one (a session claimed otherwise and was wrong):
+  they are created browser-only, from inside each individual mailbox. That makes employee mailboxes
+  **unmonitorable at scale**, and it is SETTLED — he was costed roughly $420/month for 60 seats on
+  2026-08-28 and answered *"NO LEAVE ME AS I AM NOW."*
+  `turbify-cannot-issue-app-passwords-centrally-owner-stays`
 
 ### 4.1 Marketing customer, venue and licence validation (relocated from `MEMORY.md`, 2026-08-28)
 

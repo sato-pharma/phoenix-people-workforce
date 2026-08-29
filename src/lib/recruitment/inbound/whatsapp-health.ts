@@ -542,41 +542,89 @@ export async function fetchWebhookRouting(): Promise<WhatsAppWebhookRouting> {
 // evaluates to NULL (not true) for those, which would silently discard exactly the rows we want.
 const NOT_HISTORY = "raw_metadata->>historyImport.is.null,raw_metadata->>historyImport.neq.true";
 
-async function lastInboundWhatsAppAt(): Promise<Date | null> {
+// A batch forwarded off one of the handsets is not an applicant reaching us either, and it is the
+// one that actually bit: a forward carries TODAY's timestamp, so it RESETS the silence clock while
+// proving nothing about whether the public line still works. The same absent-key rule as above
+// applies — `bulkImport` is stamped only when true, so a bare `neq` would match zero rows.
+const NOT_BULK_IMPORT = "raw_metadata->>bulkImport.is.null,raw_metadata->>bulkImport.neq.true";
+
+/** One page of the newest events to sift for a public arrival. */
+const PUBLIC_ARRIVAL_PAGE = 100;
+/** How many such pages to walk before giving up. Bounds the cost on a day of heavy forwarding. */
+const PUBLIC_ARRIVAL_MAX_PAGES = 5;
+
+type IntakeEventRow = {
+  created_at?: string | null;
+  sender_identifier?: string | null;
+  raw_metadata?: Record<string, unknown> | null;
+};
+
+/**
+ * Whether one intake event represents a member of the public reaching us on WhatsApp.
+ *
+ * Extracted so the silence clock and `measurePublicReach` cannot drift apart — they were two
+ * copies of this rule and only one of them had it. The metadata flags are compared against both
+ * `true` and `"true"` because jsonb round-trips a boolean as either depending on how it was
+ * written, and the sender is checked against the import list DIRECTLY as well, so a handset
+ * message that predates the `bulkImport` stamp cannot pass as an applicant.
+ */
+export function isPublicWhatsAppArrival(row: IntakeEventRow, importSenders: readonly string[]): boolean {
+  const sender = row.sender_identifier?.trim();
+  if (!sender) return false;
+  const bulk = row.raw_metadata?.bulkImport;
+  if (bulk === true || bulk === "true") return false;
+  const history = row.raw_metadata?.historyImport;
+  if (history === true || history === "true") return false;
+  return !isWhatsAppImportSender(sender, importSenders);
+}
+
+/**
+ * Newest event that was a member of the public actually getting through, or null.
+ *
+ * `phoneNumberId` narrows to one line; omitted, it answers for the whole channel.
+ *
+ * Paged rather than `.limit(1)`: the cheap flags are excluded in SQL, but the direct import-sender
+ * check can only run in JS, so the newest row the database returns is not necessarily the newest
+ * PUBLIC one. Every page carries an explicit order and range — an unordered page boundary can
+ * repeat a row or skip one entirely.
+ */
+async function lastPublicInboundWhatsAppAt(phoneNumberId?: string): Promise<Date | null> {
   const supabase = recruitmentDb();
-  const { data, error } = await supabase
-    .from("ats_cv_intake_events")
-    .select("created_at")
-    .eq("channel", "whatsapp")
-    .or(NOT_HISTORY)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  if (error) throw error;
-  const raw = (data as { created_at?: string } | null)?.created_at;
-  if (!raw) return null;
-  const parsed = new Date(raw);
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
+  const importSenders = parseWhatsAppImportSenders(process.env.RECRUITMENT_WHATSAPP_IMPORT_SENDERS);
+  for (let page = 0; page < PUBLIC_ARRIVAL_MAX_PAGES; page += 1) {
+    let query = supabase
+      .from("ats_cv_intake_events")
+      .select("created_at, sender_identifier, raw_metadata")
+      .eq("channel", "whatsapp")
+      .or(NOT_HISTORY)
+      .or(NOT_BULK_IMPORT);
+    if (phoneNumberId) query = query.eq("raw_metadata->>deliveredToPhoneNumberId", phoneNumberId);
+    const { data, error } = await query
+      .order("created_at", { ascending: false })
+      .range(page * PUBLIC_ARRIVAL_PAGE, page * PUBLIC_ARRIVAL_PAGE + PUBLIC_ARRIVAL_PAGE - 1);
+    if (error) throw error;
+    const rows = (data ?? []) as IntakeEventRow[];
+    for (const row of rows) {
+      if (!isPublicWhatsAppArrival(row, importSenders)) continue;
+      const raw = row.created_at;
+      if (!raw) continue;
+      const parsed = new Date(raw);
+      if (!Number.isNaN(parsed.getTime())) return parsed;
+    }
+    // A short page is the end of the table — walking further would only re-ask for nothing.
+    if (rows.length < PUBLIC_ARRIVAL_PAGE) break;
+  }
+  return null;
+}
+
+async function lastInboundWhatsAppAt(): Promise<Date | null> {
+  return lastPublicInboundWhatsAppAt();
 }
 
 // Last inbound CV that arrived ON a specific line, via the deliveredToPhoneNumberId now stamped on
 // every WhatsApp intake event's raw_metadata. Returns null for a line with no such history yet.
 async function lastInboundWhatsAppAtByNumber(phoneNumberId: string): Promise<Date | null> {
-  const supabase = recruitmentDb();
-  const { data, error } = await supabase
-    .from("ats_cv_intake_events")
-    .select("created_at")
-    .eq("channel", "whatsapp")
-    .eq("raw_metadata->>deliveredToPhoneNumberId", phoneNumberId)
-    .or(NOT_HISTORY)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  if (error) throw error;
-  const raw = (data as { created_at?: string } | null)?.created_at;
-  if (!raw) return null;
-  const parsed = new Date(raw);
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
+  return lastPublicInboundWhatsAppAt(phoneNumberId);
 }
 
 /**
@@ -618,17 +666,12 @@ export async function measurePublicReach(now: Date, windowHours: number): Promis
     if (whatsapp.error || email.error) return null;
 
     const outside = new Set<string>();
-    for (const row of (whatsapp.data ?? []) as Array<{ sender_identifier?: string | null; raw_metadata?: Record<string, unknown> | null }>) {
+    for (const row of (whatsapp.data ?? []) as IntakeEventRow[]) {
+      // The same rule the silence clock uses. A coexistence backfill lands hundreds of real
+      // applicants at once, all stamped with today's timestamp, so counting either those or a
+      // forward as reach would prove the channel is open using messages that arrived while it was shut.
       const sender = row.sender_identifier?.trim();
-      if (!sender) continue;
-      const bulk = row.raw_metadata?.bulkImport;
-      if (bulk === true || bulk === "true") continue;
-      // Same reasoning as a forward: a coexistence backfill lands hundreds of real applicants at
-      // once, all stamped with today's timestamp. Counting them as reach would prove the channel
-      // is open using messages that arrived on a channel that was shut.
-      const history = row.raw_metadata?.historyImport;
-      if (history === true || history === "true") continue;
-      if (isWhatsAppImportSender(sender, importSenders)) continue;
+      if (!sender || !isPublicWhatsAppArrival(row, importSenders)) continue;
       outside.add(sender);
     }
 

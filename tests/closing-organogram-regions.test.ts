@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import {
   allocateDirectToOperationalRegions,
   applyOperationalRegions,
+  buildOperationalRegionMap,
+  closingRegionsAsOfDate,
   splitProRata,
   submitterKey,
   type LineOperationalRegionMap,
@@ -309,4 +312,283 @@ export function runClosingOrganogramRegionsTests() {
 
   // A viewer with a region nobody has must come back empty, never widened here.
   assert.equal(scopeMatrixToRegionNames(matrix, new Set(["nowhere"])).regions.length, 0, "no match means no regions");
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// WHEN a closing resolves the org chart, which is a different question from WHICH map it uses.
+//
+// The loader used to resolve at `new Date()` — the day the closing was RUN. The closing golden rule
+// says a month cannot publish before the 1st of the month after it, so a structure change dated to
+// that 1st was in force on every legal run date for the month before. The Anti Infective Delta (3)
+// split was exactly that shape: five areas dated to 2026-09-01, which would have pulled August's
+// sales onto Delta (3) the moment August was closed. The fix is to resolve at the PERIOD END.
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+const regionNames = () => new Map([
+  ["OT", "Others"],
+  ["D2", "Delta (2)"],
+  ["D3", "Delta (3)"],
+]);
+
+export function runClosingPeriodDatingTests() {
+  // ── The as-of date is the last day of the month being closed ───────────────────────────────────
+  assert.equal(closingRegionsAsOfDate("2026-08"), "2026-08-31", "August resolves on the last day of August");
+  assert.equal(closingRegionsAsOfDate("2026-02"), "2026-02-28", "a short month is not padded out to 30");
+  assert.equal(closingRegionsAsOfDate("2028-02"), "2028-02-29", "a leap February keeps its 29th");
+  assert.equal(closingRegionsAsOfDate("2026-12"), "2026-12-31", "December does not roll into the next year");
+
+  // No month picked yet (the empty skeleton) still yields a real date, never "" or "Invalid Date" —
+  // a blank would compare as less than every effective_from and silently empty the whole map.
+  for (const blank of [null, undefined, "", "   ", "2026", "2026-13", "2026-00", "not-a-period"]) {
+    assert.match(
+      closingRegionsAsOfDate(blank as string | null | undefined),
+      /^\d{4}-\d{2}-\d{2}$/,
+      `${JSON.stringify(blank)} must fall back to a real calendar date`,
+    );
+  }
+
+  // ── THE REGRESSION, in the exact production shape ──────────────────────────────────────────────
+  const delta3 = [
+    { area_code: "D11", operational_region_code: "OT", effective_from: "2026-07-13", effective_to: null },
+    { area_code: "D11", operational_region_code: "D3", effective_from: "2026-09-01", effective_to: null },
+  ];
+
+  const august = buildOperationalRegionMap(delta3, closingRegionsAsOfDate("2026-08"), regionNames());
+  assert.equal(august?.regionByArea.get("D11")?.regionCode, "OT", "closing August leaves D11 in Others");
+  assert.ok(!august?.regionCodes.has("D3"), "and Delta (3) is not even a column on the August sheet");
+
+  const september = buildOperationalRegionMap(delta3, closingRegionsAsOfDate("2026-09"), regionNames());
+  assert.equal(september?.regionByArea.get("D11")?.regionCode, "D3", "closing September does move D11 to Delta (3)");
+  assert.equal(september?.regionByArea.get("D11")?.regionName, "Delta (3)", "carrying the region's real name");
+
+  // Proof this test discriminates rather than passing for free: resolve at the day the closing is
+  // RUN — the old behaviour — and every legal August run date gives the wrong answer.
+  for (const runDate of ["2026-09-01", "2026-09-15", "2026-10-03"]) {
+    const asRun = buildOperationalRegionMap(delta3, runDate, regionNames());
+    assert.equal(
+      asRun?.regionByArea.get("D11")?.regionCode,
+      "D3",
+      `resolving at the run date ${runDate} would have credited August's sales to Delta (3)`,
+    );
+  }
+
+  // ── effective_to is EXCLUSIVE, matching au.f_line_area_map_asof ────────────────────────────────
+  // A row that closes on the day its successor opens must not still be live on that day, or the
+  // area maps twice and the answer depends on which row happens to be read last.
+  const handover = [
+    { area_code: "D24", operational_region_code: "D2", effective_from: "2026-07-13", effective_to: "2026-09-01" },
+    { area_code: "D24", operational_region_code: "D3", effective_from: "2026-09-01", effective_to: null },
+  ];
+  assert.equal(
+    buildOperationalRegionMap(handover, "2026-08-31", regionNames())?.regionByArea.get("D24")?.regionCode,
+    "D2",
+    "the day before the handover belongs to the outgoing territory",
+  );
+  assert.equal(
+    buildOperationalRegionMap(handover, "2026-09-01", regionNames())?.regionByArea.get("D24")?.regionCode,
+    "D3",
+    "and the handover day itself belongs outright to the incoming one",
+  );
+  assert.equal(
+    buildOperationalRegionMap([...handover].reverse(), "2026-08-31", regionNames())?.regionByArea.get("D24")?.regionCode,
+    "D2",
+    "row order cannot change the answer — exactly one row is ever live on a given date",
+  );
+
+  // ── An area no row covers stays absent, so the caller keeps its geography ──────────────────────
+  // Production's real case: OT3's rows on all three lines closed on 2026-07-27 with no successor.
+  const retired = [
+    { area_code: "OT3", operational_region_code: "OT", effective_from: "2026-07-13", effective_to: "2026-07-27" },
+  ];
+  assert.equal(
+    buildOperationalRegionMap(retired, "2026-08-31", regionNames()),
+    null,
+    "no covering row means no map at all — applyOperationalRegions then leaves the area where geography put it",
+  );
+
+  // ── SOURCE PIN: neither call site may quietly drop the period again ────────────────────────────
+  // The argument is required, so TypeScript catches an omission; what it cannot catch is someone
+  // passing a literal null to make the compiler happy. That is what these pin.
+  const importer = readFileSync(
+    new URL("../src/lib/sales/monthly-distributor-import.ts", import.meta.url),
+    "utf8",
+  );
+  assert.ok(
+    importer.includes("loadLineOperationalRegions(skeletonLineCode, selectedPeriod)"),
+    "the empty-skeleton path must pass the selected period",
+  );
+  assert.ok(
+    importer.includes("loadLineOperationalRegions(targetLineCode, selectedPeriod)"),
+    "the loaded-month path must pass the selected period",
+  );
+  assert.equal(
+    (importer.match(/loadLineOperationalRegions\(/g) ?? []).length,
+    2,
+    "two call sites, both pinned above — a third one needs its own review before it is added here",
+  );
+}
+
+/**
+ * The closing reads the org chart WITH its history, so an effective-dated territory move resolves
+ * on the month being closed rather than disappearing while it is still in the future.
+ *
+ * `runClosingPeriodDatingTests` above proves the dating arithmetic. These prove the other half: the
+ * rows have to actually reach the function. Through `au_v_line_area_map` — which filters
+ * `effective_to is null` — a move written as a pair is invisible from both ends until the day it
+ * starts, and the area silently falls back to its geographic region. That is the defect that made
+ * the Anti Infective Delta (3) move unsafe and had to be rolled back by hand on 2026-08-29.
+ */
+export function runClosingRegionHistoryTests() {
+  const regionNames = () =>
+    new Map([
+      ["OT", "Others"],
+      ["D2", "Delta (2)"],
+      ["D3", "Delta (3)"],
+    ]);
+
+  // ── THE REGRESSION: a forward-dated pair, seen the way the history view returns it ─────────────
+  // D11 leaves Others for the new Delta (3) district on 2026-09-01. Closing August must still say
+  // Others; closing September must say Delta (3). Before the history view the August answer was
+  // neither — the area vanished from the map and kept its geographic region instead.
+  const delta3Pair = [
+    { area_code: "D11", operational_region_code: "OT", effective_from: "2026-07-13", effective_to: "2026-09-01" },
+    { area_code: "D11", operational_region_code: "D3", effective_from: "2026-09-01", effective_to: null },
+  ];
+  assert.equal(
+    buildOperationalRegionMap(delta3Pair, "2026-08-31", regionNames())?.regionByArea.get("D11")?.regionCode,
+    "OT",
+    "August 2026 closes on the pre-split district — the whole point of dating the move to September",
+  );
+  assert.equal(
+    buildOperationalRegionMap(delta3Pair, "2026-09-30", regionNames())?.regionByArea.get("D11")?.regionCode,
+    "D3",
+    "September 2026 closes on Delta (3)",
+  );
+
+  // The region FILTER list has to move with it. A closing that still offered "Delta (3)" while
+  // closing August would show the owner a district holding nothing, which reads as lost sales.
+  const august = buildOperationalRegionMap(delta3Pair, "2026-08-31", regionNames());
+  assert.deepEqual(
+    [...(august?.regionCodes ?? [])].sort(),
+    ["OT"],
+    "a superseded row must not leave its region in the picker",
+  );
+  const september = buildOperationalRegionMap(delta3Pair, "2026-09-30", regionNames());
+  assert.deepEqual(
+    [...(september?.regionCodes ?? [])].sort(),
+    ["D3"],
+    "and the incoming region must be there once it is in force",
+  );
+  assert.equal(
+    september?.regionByArea.get("D11")?.regionName,
+    "Delta (3)",
+    "the human-readable district name comes along — the owner never reads raw codes",
+  );
+
+  // ── Row order cannot decide the answer ────────────────────────────────────────────────────────
+  // PostgREST returns these unordered. Both orders, both dates, four assertions: the tie-break is
+  // on effective_from, not on arrival.
+  ["2026-08-31", "2026-09-30"].forEach((asOf) => {
+    const forward = buildOperationalRegionMap(delta3Pair, asOf, regionNames());
+    const reversed = buildOperationalRegionMap([...delta3Pair].reverse(), asOf, regionNames());
+    assert.equal(
+      reversed?.regionByArea.get("D11")?.regionCode,
+      forward?.regionByArea.get("D11")?.regionCode,
+      `row order must not change the ${asOf} answer`,
+    );
+  });
+
+  // And if the data is genuinely overlapping — two rows both covering the date, which the seat
+  // model should never write but has no constraint preventing — the later start wins, matching
+  // au.f_line_area_map_asof's `distinct on … order by effective_from desc`.
+  const overlapping = [
+    { area_code: "OT2", operational_region_code: "OT", effective_from: "2026-07-13", effective_to: null },
+    { area_code: "OT2", operational_region_code: "D3", effective_from: "2026-08-01", effective_to: null },
+  ];
+  assert.equal(
+    buildOperationalRegionMap(overlapping, "2026-08-31", regionNames())?.regionByArea.get("OT2")?.regionCode,
+    "D3",
+    "overlapping rows resolve to the latest effective_from, deterministically",
+  );
+  assert.equal(
+    buildOperationalRegionMap([...overlapping].reverse(), "2026-08-31", regionNames())?.regionByArea.get("OT2")?.regionCode,
+    "D3",
+    "…in either arrival order",
+  );
+
+  // ── SOURCE PIN: the closing is the one caller that reads history ───────────────────────────────
+  const loader = readFileSync(
+    new URL("../src/lib/sales/closing-organogram-regions.ts", import.meta.url),
+    "utf8",
+  );
+  assert.ok(
+    loader.includes('.from("au_v_line_area_map_all")'),
+    "the closing must read the history view — on the current-only view a dated move is invisible",
+  );
+  assert.ok(
+    loader.includes('.from("au_v_line_area_map")'),
+    "and must keep the current-only view as its fallback, so it is safe to deploy before the migration",
+  );
+
+  // ── SOURCE PIN: the migrations say what they are meant to say ──────────────────────────────────
+  const viewSql = readFileSync(
+    new URL("../supabase/migrations/20260829113000_au_line_area_map_history_view.sql", import.meta.url),
+    "utf8",
+  );
+  assert.ok(
+    viewSql.includes("create or replace view public.au_v_line_area_map_all"),
+    "the history view migration must create the view the loader reads",
+  );
+  // The prose above the statement discusses the filter at length, so this reads the STATEMENT —
+  // everything from `create or replace view` to its terminating semicolon — and nothing else.
+  const viewBody = viewSql.slice(
+    viewSql.indexOf("create or replace view public.au_v_line_area_map_all"),
+  );
+  const viewStatement = viewBody.slice(0, viewBody.indexOf(";") + 1);
+  assert.ok(
+    viewStatement.includes("from au.line_area_map m"),
+    "sanity: the slice above really is the create-view statement",
+  );
+  assert.ok(
+    viewStatement.includes("m.effective_from") && viewStatement.includes("m.effective_to"),
+    "…it must SELECT both effective dates, because the loader dates every row on them",
+  );
+  assert.ok(
+    !viewStatement.includes("where"),
+    "…and it must not FILTER at all — no `where effective_to is null` is the entire difference from au_v_line_area_map",
+  );
+  assert.ok(
+    viewSql.includes("grant select on public.au_v_line_area_map_all to service_role;")
+      && viewSql.includes("revoke all on public.au_v_line_area_map_all from anon, authenticated, public;"),
+    "the seat model stays service_role only, matching au_v_line_area_map and au_v_regions",
+  );
+
+  const moveSql = readFileSync(
+    new URL("../supabase/migrations/20260829113500_anti_infective_delta_3_from_september.sql", import.meta.url),
+    "utf8",
+  );
+  assert.ok(
+    moveSql.includes("date '2026-09-01'"),
+    "the move is dated to 1 September — August must close on the pre-split structure",
+  );
+  assert.ok(
+    moveSql.includes("already applied") && moveSql.includes("HALF applied"),
+    "the move must be idempotent and must refuse to guess at a half-applied state",
+  );
+  assert.ok(
+    moveSql.includes("carries_target") && !moveSql.includes("carries_target,"),
+    "carries_target is a STORED GENERATED column — it is explained but never inserted",
+  );
+  // Counted on the CALL form, so the prose above that explains why a pair is used — and names the
+  // same resolver — cannot inflate it.
+  assert.equal(
+    moveSql.split("au.f_line_area_map_asof(date").length - 1,
+    2,
+    "the migration asserts BOTH directions in-transaction: August not D3, September all five D3",
+  );
+  assert.ok(
+    moveSql.includes("date '2026-08-31'") && moveSql.includes("date '2026-09-30'"),
+    "…and it asserts them at the month ENDS, the same dates the closing resolves at",
+  );
 }

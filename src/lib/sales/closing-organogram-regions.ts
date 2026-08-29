@@ -1,4 +1,5 @@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
 import type {
   MonthlyClosingAggregateCell,
   MonthlyClosingDirectCell,
@@ -301,11 +302,102 @@ export function allocateDirectToOperationalRegions(
 }
 
 /**
- * The organogram's area -> region map for one line, as of today.
+ * Builds the area -> region map out of raw `au_v_line_area_map_all` rows, effective-dated at `asOf`.
  *
- * "As of today" on purpose: the owner's standing rule is that SoS sales attribute to today's
- * structure, never as-was, so a reorganisation re-cuts the history rather than leaving old months
- * on the old shape.
+ * Split out of the loader so the dating rule can be tested without a database. This is the exact
+ * predicate `au.f_line_area_map_asof` uses — `effective_from <= asOf`, with `effective_to`
+ * EXCLUSIVE — so a row that ends on the day its successor begins never double-maps its area.
+ *
+ * Rows arrive UNORDERED, and once history is exposed one area can legitimately have several of
+ * them, so the winner is picked explicitly: the latest `effective_from` still covering `asOf`,
+ * matching `f_line_area_map_asof`'s `distinct on … order by effective_from desc`. Without that
+ * tie-break the answer would depend on the order PostgREST happened to return rows in — a bug that
+ * would surface once, in production, in the month a territory move lands.
+ *
+ * An area with no row covering `asOf` is simply absent, and `applyOperationalRegions` then leaves
+ * it on its geographic region: a missing mapping must never cost the matrix a row of sales.
+ */
+export function buildOperationalRegionMap(
+  rows: Array<Record<string, unknown>>,
+  asOf: string,
+  regionNames: Map<string, string>,
+): LineOperationalRegionMap | null {
+  const regionByArea = new Map<string, OperationalRegion>();
+  const winningFrom = new Map<string, string>();
+  rows.forEach((row) => {
+    const areaCode = up(row.area_code as string | null);
+    const regionCode = up(row.operational_region_code as string | null);
+    if (!areaCode || !regionCode) return;
+    const from = String(row.effective_from ?? "");
+    const to = String(row.effective_to ?? "");
+    // Not yet in force for the month being closed. This single line is the whole point of `asOf`.
+    if (from && from > asOf) return;
+    // Already superseded. EXCLUSIVE, matching the database: a row closed on 2026-09-01 covers
+    // 2026-08-31 and not 2026-09-01, which is the day its successor opens.
+    if (to && to <= asOf) return;
+    // ISO dates order correctly as plain strings; "" (a missing effective_from) loses to any date.
+    const incumbent = winningFrom.get(areaCode);
+    if (incumbent !== undefined && incumbent >= from) return;
+    winningFrom.set(areaCode, from);
+    regionByArea.set(areaCode, { regionCode, regionName: regionNames.get(regionCode) ?? regionCode });
+  });
+  // Collected after the winners settle, so a superseded row cannot leave its region in the filter
+  // list — the region picker would otherwise offer a district that owns nothing this month.
+  const regionCodes = new Set<string>();
+  regionByArea.forEach((region) => regionCodes.add(region.regionCode));
+  return regionByArea.size > 0 ? { regionByArea, regionCodes } : null;
+}
+
+/**
+ * The date a closing resolves the organogram at: the LAST DAY OF THE MONTH BEING CLOSED.
+ *
+ * Not the day the closing is run, and the difference is not academic. The closing golden rule means
+ * a month cannot publish before the 1st of the month after it, so every possible run date for
+ * August 2026 falls on or after 2026-09-01 — and a structure change dated 2026-09-01 is in force on
+ * every one of them. Resolving at the period end is what keeps a forward-dated territory move out
+ * of the month it was deliberately dated to spare. The Anti Infective Delta (3) split is the case
+ * that proved it; see AGENTS.md §4.
+ *
+ * The period end is also where `au.f_line_area_map_asof(period_end)` resolves inside the attribution
+ * engine, so the sheet and the achievement numbers cannot disagree about who owns an area.
+ *
+ * No period at all — the empty skeleton the UI renders before a month is picked — falls back to
+ * Cairo's today, the current structure, which is the right answer when no month has been chosen.
+ * Cairo's and not UTC's: Cairo runs two to three hours ahead, so a UTC date is still yesterday
+ * until about 03:00 local.
+ */
+export function closingRegionsAsOfDate(period: string | null | undefined): string {
+  const match = /^(\d{4})-(\d{2})$/.exec(String(period ?? "").trim());
+  if (!match) return currentCairoDateOnlyIso();
+  const month = Number(match[2]);
+  if (month < 1 || month > 12) return currentCairoDateOnlyIso();
+  // Day 0 of the following month is the last day of this one, leap years included.
+  const lastDay = new Date(Date.UTC(Number(match[1]), month, 0)).getUTCDate();
+  return `${match[1]}-${match[2]}-${String(lastDay).padStart(2, "0")}`;
+}
+
+const LINE_AREA_MAP_COLUMNS = "area_code,operational_region_code,effective_from,effective_to";
+
+/**
+ * The organogram's area -> region map for one line, as of the month being closed.
+ *
+ * PASS THE PERIOD, ALWAYS. It is a required argument precisely because it used to be a defaulted
+ * one: the loader resolved at `new Date()`, so a territory move dated to the 1st of next month
+ * landed on the month before it the moment that month was closed. Pass null only where there is
+ * genuinely no month yet — the empty skeleton — never as a shortcut.
+ *
+ * Reads `au_v_line_area_map_all`, the ONLY caller that does. Every other consumer stays on
+ * `au_v_line_area_map`, which exposes open rows only and answers "who owns this area today" — the
+ * owner's standing rule that SoS sales attribute to today's structure, never as-was, still governs
+ * them. The closing is the one place that has to ask the other question, "who owned it in the month
+ * I am closing", and it cannot be answered from open rows alone: a territory move is written as a
+ * PAIR, so while it is still in the future the current-only view shows NEITHER half — the old row
+ * has an `effective_to`, the new one has not started — and the area silently falls back to its
+ * geographic region. That is what the history view exists to close.
+ *
+ * Falls back to `au_v_line_area_map` if the history view is missing, so this is safe to deploy
+ * before its migration is applied. On today's data the two agree exactly: 3 of 150 rows are closed,
+ * no area has more than one row, and every 2026 month-end resolves identically either way.
  *
  * Fails SOFT. A null return means "no organogram view of this line" and the caller keeps the
  * geographic grouping it has always used — which is also the right answer for Head Office, a
@@ -314,18 +406,20 @@ export function allocateDirectToOperationalRegions(
  */
 export async function loadLineOperationalRegions(
   lineCode: string | null | undefined,
-  today: string = new Date().toISOString().slice(0, 10),
+  period: string | null | undefined,
 ): Promise<LineOperationalRegionMap | null> {
   if (!lineCode) return null;
   try {
     const supabase = getSupabaseAdmin();
-    const [mapResult, regionResult] = await Promise.all([
-      supabase
-        .from("au_v_line_area_map")
-        .select("area_code,operational_region_code,effective_from,effective_to")
-        .eq("line_code", lineCode),
+    const [historyResult, regionResult] = await Promise.all([
+      supabase.from("au_v_line_area_map_all").select(LINE_AREA_MAP_COLUMNS).eq("line_code", lineCode),
       supabase.from("au_v_regions").select("region_code,region_name"),
     ]);
+    // Only the history view's absence is worth a second round trip; a fallback that also masked a
+    // real outage would hand the closing a half-built map, which is worse than no map at all.
+    const mapResult = historyResult.error
+      ? await supabase.from("au_v_line_area_map").select(LINE_AREA_MAP_COLUMNS).eq("line_code", lineCode)
+      : historyResult;
     if (mapResult.error || !mapResult.data) return null;
 
     const regionNames = new Map<string, string>();
@@ -335,21 +429,11 @@ export async function loadLineOperationalRegions(
       if (code) regionNames.set(code, String(typed.region_name ?? "").trim() || code);
     });
 
-    const regionByArea = new Map<string, OperationalRegion>();
-    const regionCodes = new Set<string>();
-    (mapResult.data as Array<Record<string, unknown>>).forEach((row) => {
-      const areaCode = up(row.area_code as string | null);
-      const regionCode = up(row.operational_region_code as string | null);
-      if (!areaCode || !regionCode) return;
-      const from = String(row.effective_from ?? "");
-      const to = String(row.effective_to ?? "");
-      if (from && from > today) return;
-      if (to && to < today) return;
-      regionByArea.set(areaCode, { regionCode, regionName: regionNames.get(regionCode) ?? regionCode });
-      regionCodes.add(regionCode);
-    });
-
-    return regionByArea.size > 0 ? { regionByArea, regionCodes } : null;
+    return buildOperationalRegionMap(
+      mapResult.data as Array<Record<string, unknown>>,
+      closingRegionsAsOfDate(period),
+      regionNames,
+    );
   } catch {
     return null; // see "Fails SOFT" above
   }

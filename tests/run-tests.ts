@@ -190,6 +190,7 @@ import {
   runRecruitmentWhatsAppHealthTests,
   runWhatsAppWebhookRoutingTests,
   runWhatsAppPublicReachTests,
+  runPublicWhatsAppArrivalTests,
 } from "./recruitment-whatsapp-health.test.ts";
 import { runRecruitmentInboundQueueTests } from "./recruitment-inbound-queue.test.ts";
 import { runRecruitmentInboundMasteryTests } from "./recruitment-inbound-mastery.test.ts";
@@ -337,7 +338,11 @@ import { runCustomerMappingTests } from "./sales-customer-mapping.test.ts";
 import { runMonthlyClosingComparisonTests } from "./monthly-closing-comparison.test.ts";
 import { runMonthlyClosingExportScopeTests } from "./monthly-closing-export-scope.test.ts";
 import { runPortalClosingLineChoiceTests } from "./portal-closing-line-choice.test.ts";
-import { runClosingOrganogramRegionsTests } from "./closing-organogram-regions.test.ts";
+import {
+  runClosingOrganogramRegionsTests,
+  runClosingPeriodDatingTests,
+  runClosingRegionHistoryTests,
+} from "./closing-organogram-regions.test.ts";
 import { runDirectChannelTests } from "./direct-channel.test.ts";
 import { runDirectOrdersLandOnTheirOwnAreaTests } from "./direct-orders-land-on-their-own-area.test.ts";
 import { runSosResolveBrickPrecedenceTests } from "./sos-resolve-brick-precedence.test.ts";
@@ -1365,6 +1370,10 @@ await runTest(
   "recruitment whatsapp public reach (did anyone actually get through)",
   runWhatsAppPublicReachTests,
 );
+await runTest(
+  "recruitment whatsapp public arrival (a forward must not reset the silence clock)",
+  runPublicWhatsAppArrivalTests,
+);
 await runTest("recruitment inbound intake queue (backoff, dead-letter, dedupe key)", runRecruitmentInboundQueueTests);
 await runTest("recruitment inbound mastery (analytics, spike, fuzzy dedup, cv-link allowlist)", runRecruitmentInboundMasteryTests);
 await runTest("recruitment candidate source context (email subject / whatsapp first messages)", runRecruitmentCandidateSourceContextTests);
@@ -1589,6 +1598,8 @@ await runTest("monthly closing comparison", runMonthlyClosingComparisonTests);
 await runTest("monthly closing export scope (filter reaches every sheet)", runMonthlyClosingExportScopeTests);
 await runTest("portal closing line choice (a requested line is honoured or refused, never swapped)", runPortalClosingLineChoiceTests);
 await runTest("closing organogram regions (areas follow the org chart, per line)", runClosingOrganogramRegionsTests);
+await runTest("closing resolves the org chart at the month being closed, not the run date", runClosingPeriodDatingTests);
+await runTest("closing reads the org chart WITH history, so a dated territory move resolves", runClosingRegionHistoryTests);
 await runTest("employee template Area->Team dropdown (builder and Excel resolve the same range)", runEmployeeTemplateTeamDropdownTests);
 await runTest("direct channel", runDirectChannelTests);
 await runTest("direct orders land on their own area", runDirectOrdersLandOnTheirOwnAreaTests);

@@ -4426,7 +4426,7 @@ export async function loadMonthlyClosingParts(input?: {
       selectedLine ? listLineProductsForClosing(selectedLine) : Promise.resolve<SalesProductReference[]>([]),
       // Only fetched for a line that actually groups by the organogram — see the gate's own note.
       usesOrganogramRegions(skeletonLineCode)
-        ? loadLineOperationalRegions(skeletonLineCode)
+        ? loadLineOperationalRegions(skeletonLineCode, selectedPeriod)
         : Promise.resolve(null),
     ]);
     // Skeleton groups exactly as the loaded month will — including a merged Fayoum/Beni Suef row
@@ -4475,7 +4475,7 @@ export async function loadMonthlyClosingParts(input?: {
     // it must never quietly re-home an area. See CLOSING_ORGANOGRAM_REGION_LINES for the numbers
     // this gate is worth.
     usesOrganogramRegions(targetLineCode)
-      ? loadLineOperationalRegions(targetLineCode)
+      ? loadLineOperationalRegions(targetLineCode, selectedPeriod)
       : Promise.resolve(null),
     // Who booked each Direct sale, and which territory that manager runs — so a Direct row tagged
     // with a region the line has split is credited to its real owner rather than estimated.

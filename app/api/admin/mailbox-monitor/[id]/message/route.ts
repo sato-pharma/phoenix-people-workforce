@@ -1,9 +1,12 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 import { assertPermission } from "@/lib/auth/permissions";
-import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
-import { openMonitorMessage, MailboxMonitorError } from "@/lib/mailbox-monitor/service";
-import { clientSafeErrorMessage } from "@/lib/http/api-errors";
+import { resolveAccessContext } from "@/lib/auth/server";
+import {
+  mailboxMonitorErrorResponse,
+  type MailboxMonitorRouteAccess,
+} from "@/lib/mailbox-monitor/route-errors";
+import { openMonitorMessage } from "@/lib/mailbox-monitor/service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -11,8 +14,11 @@ export const dynamic = "force-dynamic";
 // Open one message (full body). Read-only / peek — opening a message here does not set \Seen in the
 // owner's mailbox, so it stays unread for them.
 export async function GET(request: NextRequest, context: { params: Promise<{ id: string }> }) {
+  // Hoisted out of the try so the catch can say WHO hit the failure — see the note on the GET in
+  // app/api/admin/mailbox-monitor/route.ts.
+  let access: MailboxMonitorRouteAccess = null;
   try {
-    const access = await resolveAccessContext(request);
+    access = await resolveAccessContext(request);
     await assertPermission(access, "mailbox_monitor", "read");
     const { id } = await context.params;
     const folder = request.nextUrl.searchParams.get("folder") || "INBOX";
@@ -24,8 +30,12 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
     if (!message) return NextResponse.json({ message: "That message no longer exists." }, { status: 404 });
     return NextResponse.json({ message });
   } catch (error) {
-    if (isForbiddenError(error)) return NextResponse.json({ message: (error as Error).message }, { status: 403 });
-    if (error instanceof MailboxMonitorError) return NextResponse.json({ message: error.message }, { status: error.statusCode });
-    return NextResponse.json({ message: clientSafeErrorMessage(error, "Failed to open the message.") }, { status: 500 });
+    return mailboxMonitorErrorResponse({
+      access,
+      error,
+      fallbackMessage: "Failed to open the message.",
+      request,
+      route: "/api/admin/mailbox-monitor/[id]/message",
+    });
   }
 }
