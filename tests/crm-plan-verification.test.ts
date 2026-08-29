@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
 import {
+  PLAN_DOCTORS_ANCHOR_ID,
   PLAN_STATUS_AREA_MANAGER_VERIFIED,
   PLAN_STATUS_NEW,
   PLAN_STATUS_SUPERVISOR_VERIFIED,
@@ -327,4 +330,65 @@ export function runCrmPlanVerificationTests() {
   // sentence the rep can read.
   assert.equal(planPeriodLabel({ kind: "weekly" }), "an unrecorded week");
   assert.equal(planPeriodLabel({ kind: "monthly" }), "an unrecorded month");
+
+  // ── 8. Opening a plan has to be VISIBLE ───────────────────────────────────────────────────────
+  // The owner's whole report was "I press on the rep name nothing happens". Nothing was broken: the
+  // click pushed the URL, the server re-rendered, and the doctors appeared in a section BELOW the
+  // entire plans table — off the bottom of the screen, with the only cue at the click site being a
+  // bg-orange-50 row, which is #fff7ed and reads as white. A working feature that gives the user no
+  // evidence it worked is indistinguishable from a dead button, and he had every reason to call it
+  // dead. These pins defend the three things that make the click legible.
+  const repoRoot = fileURLToPath(new URL("../", import.meta.url));
+  const boardSource = readFileSync(`${repoRoot}src/components/crm/plan-verification-board.tsx`, "utf8");
+  const tablesSource = readFileSync(`${repoRoot}src/components/crm/plan-verification-tables.tsx`, "utf8");
+
+  // (a) The two halves of the page agree on where to land, through the shared constant rather than
+  // two string literals that only a manual click could ever prove equal. The server half renders the
+  // anchor; the client half, which cannot see it at build time, looks it up.
+  assert.ok(
+    boardSource.includes(`id={PLAN_DOCTORS_ANCHOR_ID}`),
+    "the server half must render the scroll anchor, or opening a plan has nothing to scroll to",
+  );
+  assert.ok(
+    tablesSource.includes(`getElementById(PLAN_DOCTORS_ANCHOR_ID)`),
+    "the client half must look the anchor up by the shared constant",
+  );
+  for (const [name, source] of [
+    ["board", boardSource],
+    ["tables", tablesSource],
+  ] as const) {
+    assert.ok(
+      !source.includes(`"${PLAN_DOCTORS_ANCHOR_ID}"`),
+      `the ${name} half must use PLAN_DOCTORS_ANCHOR_ID, never a copy of the literal — two literals drift silently`,
+    );
+  }
+
+  // (b) The scroll is INSTANT. Chrome abandons a programmatic smooth scroll over a long distance,
+  // measured in this repo on 2026-08-21 against a panel 15,489px down: the smooth call moved nothing
+  // in 1.8s while the identical instant call landed. A manager with forty reps has exactly that much
+  // table above the doctors, so "improving" this to smooth restores the original bug on precisely
+  // the boards that suffer from it worst — and it would look fine on any small test board.
+  assert.ok(
+    tablesSource.includes(`behavior: "auto"`),
+    "the landing scroll must be instant",
+  );
+  // Pinned as the exact option, not the bare word: the comment above the effect explains the smooth
+  // trap in prose, and a test that forbade the word would forbid its own explanation.
+  assert.ok(
+    !tablesSource.includes(`behavior: "smooth"`),
+    "a smooth scroll is abandoned by Chrome over a long distance, which is this board's normal case",
+  );
+
+  // (c) Desktop has its own way in. The mobile card has always carried a "Show doctors" button; the
+  // desktop table had none, so the only route was to guess that the rep's name — plain, unadorned,
+  // un-underlined text — was pressable. Both renderings must offer the action.
+  const showDoctors = tablesSource.match(/Show doctors/g) ?? [];
+  assert.ok(
+    showDoctors.length >= 2,
+    `the desktop table and the mobile card must BOTH offer "Show doctors" — found ${showDoctors.length} occurrence(s)`,
+  );
+  assert.ok(
+    tablesSource.includes("underline decoration-slate-300"),
+    "the rep name is the primary way into a plan and must look pressable, not like plain text",
+  );
 }

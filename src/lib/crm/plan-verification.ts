@@ -35,6 +35,15 @@ export const PLAN_STATUS_SUPERVISOR_VERIFIED = 1;
 /** Verified by an area manager. Phoenix never writes this; it must still be displayed honestly. */
 export const PLAN_STATUS_AREA_MANAGER_VERIFIED = 2;
 
+/**
+ * The DOM id of the section holding the selected plan's doctors.
+ *
+ * Shared rather than written out in both places because the two halves of this page cannot see each
+ * other: the server component renders the anchor and the client table looks it up to scroll to it. A
+ * literal in each file would be two independent strings that only a manual click would prove equal.
+ */
+export const PLAN_DOCTORS_ANCHOR_ID = "plan-doctors";
+
 export type PlanKind = "weekly" | "monthly";
 
 /**
