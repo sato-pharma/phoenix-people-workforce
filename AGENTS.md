@@ -199,7 +199,7 @@ up. **Adding a trap? Put the hook here and the account in the doc — never the 
 - **Every retirement gate can PASS on a worktree in active use** — nothing catches a live PROCESS. Two cheap signals see what the gates cannot: the newest mtime under `.next/`, and HEAD moving between the gate read and the removal. Read the tip at the GATE and reuse that SHA, or the rescue ref captures the wrong commit. Treat any scan older than the current command as fiction.
 - **A squash-merged branch reads as "on NO origin ref" — that means BACKED UP, not stranded.** Never push a merged branch to "rescue" it; `git branch rescue/<name> <tip>` is the zero-risk move. `repo-doctor-no-origin-ref-is-usually-squash-residue`
 - **Self-removing a worktree MUTES its own session-end guard.** `self-removing-a-worktree-mutes-its-own-session-end-guard`
-- **`next dev` CANNOT run in a worktree — the junction §5 prescribes is what breaks it.** Verify against the primary checkout instead; do not burn more than one retry. `turbopack-cannot-resolve-a-junctioned-node-modules-here`
+- **`next dev` in a worktree needs the explicit `--webpack` flag** — TURBOPACK is what rejects the §5 junction, not Next. Measured 2026-08-29: `--webpack` served a junctioned worktree fine (`Ready in 1770ms`, HMR and all). With and without `--turbopack` are NOT the same as `--webpack`, and this line said "CANNOT run" off exactly that gap. `turbopack-cannot-resolve-a-junctioned-node-modules-here`
 
 **Next.js runtime**
 
