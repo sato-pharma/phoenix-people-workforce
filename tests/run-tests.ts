@@ -706,6 +706,7 @@ import { runNoEllipsisTruncationRatchetTests } from "./no-ellipsis-truncation-ra
 import { runInstantFormatTimezoneRatchetTests } from "./instant-format-timezone-ratchet.test.ts";
 import { runRouteErrorShapeRatchetTests } from "./route-error-shape-ratchet.test.ts";
 import { runHrIdNormalizerRatchetTests } from "./hrid-normalizer-ratchet.test.ts";
+import { runScheduledNotificationKeyRatchetTests } from "./scheduled-notification-key-ratchet.test.ts";
 import { runBadgeToneContrastTests } from "./badge-tone-contrast.test.ts";
 import { runNavigationPageFindabilityRatchetTests } from "./navigation-page-findability-ratchet.test.ts";
 import { runEmployeeTemplateTeamDropdownTests } from "./employee-template-team-dropdown.test.ts";
@@ -2154,6 +2155,7 @@ await runTest('no-ellipsis ratchet (UI truncation sites may fall, never rise)', 
 await runTest('instant-format timezone ratchet (no server-side UTC stamps; client sites may fall, never rise)', runInstantFormatTimezoneRatchetTests);
 await runTest('route error-shape ratchet (inline jsonError defs may fall, never rise)', runRouteErrorShapeRatchetTests);
 await runTest('HR_ID normaliser ratchet (inline HR_ID normalisers may fall, never rise)', runHrIdNormalizerRatchetTests);
+await runTest('queued-notification key ratchet (future-dated rows keyed on moving data may fall, never rise)', runScheduledNotificationKeyRatchetTests);
 await runTest('Badge tone contrast (every tone meets WCAG AA for small text, both themes)', runBadgeToneContrastTests);
 await runTest('Navigation findability ratchet (a page with no link anywhere may fall, never rise)', runNavigationPageFindabilityRatchetTests);
 await runTest('SoS mapping integrity (alias edit replaces, exact customer key detects conflicts)', runSosMappingIntegrityTests);
