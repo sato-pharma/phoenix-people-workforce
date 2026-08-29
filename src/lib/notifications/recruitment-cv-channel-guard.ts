@@ -32,10 +32,15 @@ const RECRUITMENT_MODULE = "recruitment";
 // without attaching a CV is the same class of notice — someone applied — and carries the same owner
 // rule. It matters here more than for the other two, not less: this event fires on a person's FIRST
 // contact, the moment at which a stray email would be most visibly wrong.
+// "recruitment_whatsapp_unreadable_cv" joined on 2026-08-29 alongside it, and belongs here for the
+// same reason one step further on: somebody applied, and the only thing separating it from
+// recruitment_inbound_cv is that the file could not be read. A notice about a CV we could not open
+// is still a notice that a CV arrived.
 const CV_RECEIVED_EVENT_TYPES = new Set([
   "recruitment_inbound_cv",
   "recruitment_daily_cv_digest",
   "recruitment_whatsapp_text_only",
+  "recruitment_whatsapp_unreadable_cv",
 ]);
 
 export function isRecruitmentCvReceivedEvent(
