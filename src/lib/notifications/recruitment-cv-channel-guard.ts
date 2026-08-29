@@ -28,7 +28,15 @@ const RECRUITMENT_MODULE = "recruitment";
 // src/lib/recruitment/inbound/daily-cv-digest.ts). The owner's rule is about the NOTICE, not about
 // how many CVs it covers, so the digest is inside it — and it had to be added here explicitly,
 // because the `recruitment.*` policy row it would otherwise fall through to carries email.
-const CV_RECEIVED_EVENT_TYPES = new Set(["recruitment_inbound_cv", "recruitment_daily_cv_digest"]);
+// "recruitment_whatsapp_text_only" joined on 2026-08-29: an applicant messaging the advertised line
+// without attaching a CV is the same class of notice — someone applied — and carries the same owner
+// rule. It matters here more than for the other two, not less: this event fires on a person's FIRST
+// contact, the moment at which a stray email would be most visibly wrong.
+const CV_RECEIVED_EVENT_TYPES = new Set([
+  "recruitment_inbound_cv",
+  "recruitment_daily_cv_digest",
+  "recruitment_whatsapp_text_only",
+]);
 
 export function isRecruitmentCvReceivedEvent(
   module: string | null | undefined,
