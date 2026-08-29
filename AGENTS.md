@@ -119,6 +119,15 @@ file holding the full account, under
   That is the SERVER's own auth, not the staging database, which was healthy. Route staging work
   through `mcp__supabase-production__*` passing the staging `project_id` (§8: the `project_id`
   argument is the only thing separating the two). `supabase-staging-named-server-broken-2026-08-10`
+- **The Supabase MCP returns ONLY the last result set of a multi-statement `execute_sql` — every
+  earlier one vanishes with no error.** Measured on production 2026-08-29: three `select`s in one
+  call, separated by semicolons, returned exactly one row, the third. Nothing anywhere reports that
+  two result sets were discarded. So a batch written as "count A; count B; now show C" silently
+  answers only C, and — the dangerous shape — a verification block that checks its own work in
+  statement one and prints a summary in statement two certifies whatever the summary happened to
+  say, having never shown you the check. Put every question in ONE statement (CTEs or scalar
+  subqueries, as the occupancy proof below did), or make a separate call per question.
+  `a-mock-name-generator-reproduces-real-employee-names`
 - **A Windows USER env var SHADOWS every `.env.local` in every worktree, silently.** `node --env-file`
   / `--env-file-if-exists` only FILLS IN variables that are missing — it never overwrites one already
   in the process environment. So editing `.env.local` and re-running changes nothing, with no warning.
@@ -414,6 +423,15 @@ this file already gives them)
   is lowercase — one `.eq` hid **28% of reps' own orders**, which reads as a real business finding
   rather than a query bug. `activity-events-hr-id-is-mixed-case-not-lowercase` ·
   `direct-order-hr-id-columns-are-mixed-case-and-access-hrid-is-lowercase`
+  **And the loss is not always partial — on `au.occupancy_history.occupant_canonical_hr_id` it is
+  total.** That column is entirely lowercase while `employees.hr_id` is not, so the two never meet.
+  Measured on production 2026-08-29: **120** occupancy rows, **0** carrying an uppercase character,
+  against **178 of 179** employee hr_ids that do — `join employees on hr_id = occupant_canonical_hr_id`
+  returns **0 rows**, and `on lower(hr_id) = occupant_canonical_hr_id` returns all **120**. A partial
+  loss at least looks odd; a total one does not look like a join failure at all, because an occupancy
+  row that matches nobody reads as **a vacant seat** — a plausible org-structure fact that nobody
+  re-checks, on the very model AGENTS §4 calls the source of truth for vacancy data. Lower BOTH sides
+  of any hr_id comparison. `a-mock-name-generator-reproduces-real-employee-names`
 - **The Sato logo's wordmark is WHITE, so "SATO" vanishes on white paper.** Reverse it onto a navy
   band, or recolour the near-white pixels, before any export or print.
   `sato-logo-wordmark-is-white-invisible-on-paper`
