@@ -553,6 +553,7 @@ import { runEmployeePayrollEligibilityTests } from "./employee-payroll-eligibili
 import { runEmployeeAccessProvisioningTests } from "./employee-access-provisioning.test.ts";
 import { runHrFunctionGovernanceTests } from "./hr-function-governance.test.ts";
 import { runHrClearanceRetentionTests } from "./hr-clearance-retention.test.ts";
+import { runMailboxOffboardingTests } from "./mailbox-offboarding.test.ts";
 import { runHrCommandCenterTests } from "./hr-command-center.test.ts";
 import { runHrJobWorkbookTests } from "./hr-job-workbook.test.ts";
 import { runHrOperationsCompanyScopeTests } from "./hr-operations-company-scope.test.ts";
@@ -1918,6 +1919,12 @@ await runTest(
   + "- the sidebar lookup fails open on a key it has never seen - and the two seats' grants do "
   + "not cross: clearance is HR Operations', retention is HR Advisory's)",
   runHrClearanceRetentionTests,
+);
+await runTest(
+  "mailbox offboarding (a password reset is NOT a revocation - Yahoo app passwords survive a "
+  + "password change, so revoked requires the app passwords cleared too, or the mailbox deleted "
+  + "or suspended; pinned in the plpgsql, where a page cannot bypass it)",
+  runMailboxOffboardingTests,
 );
 await runTest("organogram hardening", runOrganogramHardeningTests);
 await runTest("vacancy report / organogram consistency", runVacancyReportOrganogramConsistencyTests);

@@ -10,6 +10,7 @@ import { createSystemNotification } from "@/lib/notifications/system";
 import { resolveNotificationPersonRecipients, resolveNotificationRoleRecipients } from "@/lib/notifications/role-recipients";
 import { disableTelegramForIdentity } from "@/lib/notifications/settings";
 import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
+import { openMailboxOffboardingTask } from "@/lib/mailbox-offboarding/service";
 import { logError } from "@/lib/observability/log";
 import { computeResignationSettlement } from "@/lib/payroll/copilot/proration";
 // Read-only use of the owner-locked payroll policy: the Part-1 anchor and payment-mode
@@ -1202,6 +1203,29 @@ async function deactivateEmployeeAccessIfSupported(supabase: SupabaseClient, emp
     hrId: employeeHrId,
     reason: "Employee resigned, terminated, or deactivated.",
   });
+  await openMailboxRevocationTaskBestEffort(employeeHrId);
+}
+
+/**
+ * Opens the leaver's Turbify mailbox revocation task.
+ *
+ * BEST-EFFORT ON PURPOSE, and swallowed the same way a clearance checklist is: a mailbox task must
+ * never be the reason a resignation fails to record. A resignation that does not save is a payroll
+ * and headcount problem within the hour; a mailbox task that does not open is caught by the daily
+ * sweep, which exists precisely because this call is allowed to fail quietly.
+ *
+ * That is also why the failure is LOGGED rather than merely ignored — a swallowed exception with
+ * no log is indistinguishable from "this employee had no mailbox", which is a normal outcome here.
+ */
+async function openMailboxRevocationTaskBestEffort(employeeHrId: string) {
+  try {
+    await openMailboxOffboardingTask(employeeHrId, "system:resignation", "resignation");
+  } catch (error) {
+    logError("Mailbox revocation task could not be opened for a leaver", {
+      labels: { event: "mailbox_offboarding_open_failed", employeeHrId },
+      error,
+    });
+  }
 }
 
 /**
@@ -1559,6 +1583,10 @@ export async function resignEmployeeAndOpenVacancy(
     hrId: employeeHrId,
     reason: "Employee resigned, terminated, or deactivated.",
   });
+  // Same reasoning as the Telegram call directly above: this path runs the RPC and never reaches
+  // deactivateEmployeeAccessIfSupported, so without this line every RPC-path resignation would
+  // silently skip opening the mailbox revocation task.
+  await openMailboxRevocationTaskBestEffort(employeeHrId);
 
   const { data: existingAuditRows, error: auditLookupError } = await supabase
     .from("audit_logs")

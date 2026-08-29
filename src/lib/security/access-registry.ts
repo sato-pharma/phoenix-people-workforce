@@ -172,6 +172,7 @@ export const accessRegistry = [
   tokenApi({ authMode: "cron-secret", methods: ["GET", "POST"], pattern: "/api/cron/recruitment-email-intake", reason: "Scheduled IMAP poll for inbound recruitment CV intake, guarded by CRON_SECRET." }),
   tokenApi({ authMode: "cron-secret", methods: ["GET", "POST"], pattern: "/api/cron/inbound-intake", reason: "Durable inbound-CV intake queue worker drain, guarded by CRON_SECRET." }),
   tokenApi({ authMode: "cron-secret", methods: ["GET", "POST"], pattern: "/api/cron/recruitment-cv-digest", reason: "6-hourly email digest to each hiring manager who received candidate pushes, with their manager CC chain; guarded by CRON_SECRET." }),
+  tokenApi({ authMode: "cron-secret", methods: ["GET", "POST"], pattern: "/api/cron/mailbox-offboarding-sweep", reason: "Daily sweep of the Turbify mailbox revocation register: opens a task for any leaver still holding a mailbox and alerts on the ones nobody has shut. Turbify publishes no email API, so this sweep and the register it drives are the only way the company learns that a leaver is still reachable; guarded by CRON_SECRET." }),
   tokenApi({ authMode: "cron-secret", methods: ["GET"], pattern: "/api/cron/crm-contact-lists", reason: "Daily refresh of each rep's assigned doctor list from the CRM web app (ContactsList.aspx), which the Reporting API does not expose at all. Sole writer of ireports360_contacts and the only path by which Phoenix learns of a doctor assigned to a rep but never planned and never visited; guarded by CRON_SECRET." }),
   tokenApi({ authMode: "cron-secret", methods: ["GET", "POST"], pattern: "/api/cron/direct-orders-expire-held", reason: "Daily 14-day expiry sweep for held direct orders (spec B6), guarded by CRON_SECRET." }),
   tokenApi({ authMode: "cron-secret", methods: ["GET", "POST"], pattern: "/api/cron/direct-orders-probation", reason: "Daily 90-day probation sweep: promotes pharmacies with a footprint, reports phantoms (spec A3), guarded by CRON_SECRET." }),
@@ -748,6 +749,16 @@ export const accessRegistry = [
   // Operations may not make, and this route only records that clearance is complete.
   sessionApi({ methods: readOnly, pattern: "/api/clearance", permission: { resource: "clearance", action: "read" } }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/clearance", permission: { resource: "clearance", action: "update" }, csrfRequired: true }),
+  // Turbify mailbox revocation register. Gated on `clearance` rather than a resource of its own:
+  // a leaver's mailbox IS the "IT & System Access" clearance station given a table, and a second
+  // offboarding grant is a second thing to drift out of step with the first.
+  //
+  // The POST carries two actions and the handler asserts each separately — "open" as create,
+  // "record" as update — so, as with /api/clearance directly above, the baseline declared here is
+  // the weaker of the two. Every write is an attestation that a named admin performed a step in a
+  // system Phoenix cannot observe, so the audit row is required, not best-effort.
+  sessionApi({ methods: readOnly, pattern: "/api/mailbox-offboarding", permission: { resource: "clearance", action: "read" } }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/mailbox-offboarding", permission: { resource: "clearance", action: "update" }, csrfRequired: true }),
   // Retention register (Phase 6). The GET returns stay and exit conversations, which hold what an
   // employee said in confidence about their manager and their pay — the permission is the whole
   // protection, since RLS is disabled-by-default here like every other table in this app.
