@@ -153,13 +153,25 @@ export function runAutomatedPayrollPart1ScopeTests() {
   // (it is not itself conflict-gated) — 500 here, matching plainRow's own entry.
   assert.equal(enteredOnThisStepAmount(noRecordStep, plainRow), 500);
 
-  // ---- "Resignation Date" column, so a leaver showing up in a Part 1 manual
+  // ---- "Last Working Date" column, so a leaver showing up in a Part 1 manual
   // tab is legible (owner request 2026-07-25) ---------------------------------
+  //
+  // Headed "Resignation Date" until 2026-08-30, which was simply untrue: the
+  // value is `member.lastWorkingDate`, and `resignation_date` is a SEPARATE
+  // column that differs on 4 of 54 live exit records. The wrong heading also
+  // made the Resignations step (always correctly headed "Last Working Date")
+  // look like it disagreed with the six steps below when both showed the same
+  // number. One name for one value, everywhere.
   for (const key of part1ManualTabs) {
     assert.equal(
-      STEP_DEFINITIONS[key].contextColumns.some((column) => column.key === "Resignation Date"),
+      STEP_DEFINITIONS[key].contextColumns.some((column) => column.key === "Last Working Date"),
       true,
-      `${key} must show the Resignation Date context column`,
+      `${key} must show the Last Working Date context column`,
+    );
+    assert.equal(
+      STEP_DEFINITIONS[key].contextColumns.some((column) => column.key === "Resignation Date"),
+      false,
+      `${key} must not head the last working date "Resignation Date" — they are different dates`,
     );
   }
 

@@ -184,7 +184,7 @@ export const STEP_DEFINITIONS: Record<StepKey, StepDefinition> = {
     contextColumns: [
       { key: "Hire Date", label: "Hire Date" },
       { key: "Net Salary", label: "Net Salary" },
-      { key: "Resignation Date", label: "Resignation Date" },
+      { key: "Last Working Date", label: "Last Working Date" },
     ],
     fields: [
       // Working Days is purely derived/display — it has no DraftRow column of
@@ -223,7 +223,7 @@ export const STEP_DEFINITIONS: Record<StepKey, StepDefinition> = {
     contextColumns: [
       { key: "Hire Date", label: "Hire Date" },
       { key: "Net Salary", label: "Net Salary" },
-      { key: "Resignation Date", label: "Resignation Date" },
+      { key: "Last Working Date", label: "Last Working Date" },
       { key: "Days Worked", label: "Days Worked" },
     ],
     fields: [
@@ -277,7 +277,7 @@ export const STEP_DEFINITIONS: Record<StepKey, StepDefinition> = {
     contextColumns: [
       { key: "Hire Date", label: "Hire Date" },
       { key: "Net Salary", label: "Net Salary" },
-      { key: "Resignation Date", label: "Resignation Date" },
+      { key: "Last Working Date", label: "Last Working Date" },
       { key: "Unpaid Vacation Days", label: "Unpaid Vacation Days" },
     ],
     fields: [
@@ -297,7 +297,7 @@ export const STEP_DEFINITIONS: Record<StepKey, StepDefinition> = {
     contextColumns: [
       { key: "Hire Date", label: "Hire Date" },
       { key: "Net Salary", label: "Net Salary" },
-      { key: "Resignation Date", label: "Resignation Date" },
+      { key: "Last Working Date", label: "Last Working Date" },
     ],
     fields: [
       { key: "p1odNoRecordDays", label: "Day Without Record Days", kind: "days", autoCalcMoneyKey: "p1odNoRecordValue" },
@@ -316,7 +316,7 @@ export const STEP_DEFINITIONS: Record<StepKey, StepDefinition> = {
     contextColumns: [
       { key: "Hire Date", label: "Hire Date" },
       { key: "Net Salary", label: "Net Salary" },
-      { key: "Resignation Date", label: "Resignation Date" },
+      { key: "Last Working Date", label: "Last Working Date" },
     ],
     fields: [
       { key: "p1odLoanDays", label: "Loan Days", kind: "days", autoCalcMoneyKey: "p1odLoanValue" },
@@ -338,7 +338,7 @@ export const STEP_DEFINITIONS: Record<StepKey, StepDefinition> = {
     contextColumns: [
       { key: "Hire Date", label: "Hire Date" },
       { key: "Net Salary", label: "Net Salary" },
-      { key: "Resignation Date", label: "Resignation Date" },
+      { key: "Last Working Date", label: "Last Working Date" },
     ],
     fields: [
       {
