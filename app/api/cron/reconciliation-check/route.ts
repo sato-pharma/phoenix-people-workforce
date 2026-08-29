@@ -5,7 +5,7 @@ import { logError } from "@/lib/observability/log";
 import { withDeadMansSwitch } from "@/lib/observability/dead-mans-switch";
 import { runReconciliationChecks } from "@/lib/reconciliation/service";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
-import { bearerSecretMatches } from "@/lib/security/constant-time";
+import { assertCronAuthorized } from "@/lib/security/cron-auth";
 
 const JOB_NAME = "reconciliation-check";
 
@@ -15,15 +15,6 @@ export const dynamic = "force-dynamic";
 // sweep and the SoS dashboard fan-out). The same 300s ceiling already proven safe on the
 // iReports360 sync and reconcile routes.
 export const maxDuration = 300;
-
-function isAuthorized(request: Request) {
-  const secret = process.env.CRON_SECRET;
-  // Identical to the iReports360 cron routes: an unset CRON_SECRET may ONLY be bypassed on a real
-  // developer machine. Anything less would leave this route callable unauthenticated wherever
-  // CRON_SECRET is unset — including staging, which is a 1:1 clone of production data.
-  if (!secret) return process.env.NODE_ENV === "development";
-  return bearerSecretMatches(request.headers.get("authorization"), secret);
-}
 
 async function runReconciliation() {
   const report = await runReconciliationChecks();
@@ -42,12 +33,10 @@ async function runReconciliation() {
 }
 
 export async function GET(request: Request) {
-  if (!isAuthorized(request)) {
-    return NextResponse.json(
-      { error: "unauthorized", message: "Reconciliation check is not authorized." },
-      { status: 401 },
-    );
-  }
+  const denied = assertCronAuthorized(request, "cron/reconciliation-check", {
+    message: "Reconciliation check is not authorized.",
+  });
+  if (denied) return denied;
   try {
     // Slug matches the scheduler job name, which is what the Healthchecks dead-man's switch pings.
     return await withDeadMansSwitch("phoenix-reconciliation-check", () => runReconciliation());

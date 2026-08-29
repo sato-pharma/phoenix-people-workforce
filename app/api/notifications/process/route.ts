@@ -6,20 +6,11 @@ import { pingDeadMansSwitch } from "@/lib/observability/dead-mans-switch";
 import { describeDrainHealth } from "@/lib/notifications/drain-health";
 import { runScheduledNotificationProcessing } from "@/lib/notifications/scheduled-processing";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
-import { bearerSecretMatches } from "@/lib/security/constant-time";
+import { assertCronAuthorized } from "@/lib/security/cron-auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
-
-function isCronAuthorized(request: Request) {
-  const secret = process.env.CRON_SECRET;
-  // An unset CRON_SECRET may ONLY be bypassed on a real developer machine. Anything less
-  // would leave this route callable unauthenticated wherever CRON_SECRET is unset —
-  // including staging, which is a 1:1 clone of production data.
-  if (!secret) return process.env.NODE_ENV === "development";
-  return bearerSecretMatches(request.headers.get("authorization"), secret);
-}
 
 // Matches the live scheduler job name — the outbox drain.
 const DRAIN_JOB_SLUG = "phoenix-process-notifications";
@@ -51,13 +42,14 @@ export async function POST(request: Request) {
 }
 
 export async function GET(request: Request) {
-  if (!isCronAuthorized(request)) {
-    return NextResponse.json({ error: "unauthorized", message: "Notification processing run is not authorized." }, { status: 401 });
-  }
+  const denied = assertCronAuthorized(request, "notifications/process", {
+    message: "Notification processing run is not authorized.",
+  });
+  if (denied) return denied;
   try {
     // The Vercel cron (every ~30 min, see vercel.json) passes ?limit= so a backlog can
     // drain faster than the once-daily Vercel cron. Vercel auto-attaches the CRON_SECRET
-    // bearer (verified by isCronAuthorized above). Clamp to [1, 50]; default 50.
+    // bearer (verified by assertCronAuthorized above). Clamp to [1, 50]; default 50.
     const requested = Number(new URL(request.url).searchParams.get("limit") ?? 50);
     const limit = Number.isFinite(requested) ? Math.max(1, Math.min(50, Math.trunc(requested))) : 50;
     // Deliberately NOT withDeadMansSwitch. That wrapper pings "success" whenever the body

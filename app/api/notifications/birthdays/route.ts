@@ -6,7 +6,7 @@ import { isBirthdayEligibleEmployee } from "@/lib/notifications/birthday-eligibi
 import { createSystemNotification } from "@/lib/notifications/system";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
-import { bearerSecretMatches } from "@/lib/security/constant-time";
+import { assertCronAuthorized } from "@/lib/security/cron-auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -37,19 +37,11 @@ function cairoYear() {
   }).format(new Date());
 }
 
-function isAuthorized(request: Request) {
-  const secret = process.env.CRON_SECRET;
-  // An unset CRON_SECRET may ONLY be bypassed on a real developer machine. Anything less
-  // would leave this route callable unauthenticated wherever CRON_SECRET is unset —
-  // including staging, which is a 1:1 clone of production data.
-  if (!secret) return process.env.NODE_ENV === "development";
-  return bearerSecretMatches(request.headers.get("authorization"), secret);
-}
-
 export async function runBirthdayNotifications(request: Request) {
-  if (!isAuthorized(request)) {
-    return NextResponse.json({ error: "unauthorized", message: "Birthday notification run is not authorized." }, { status: 401 });
-  }
+  const denied = assertCronAuthorized(request, "notifications/birthdays", {
+    message: "Birthday notification run is not authorized.",
+  });
+  if (denied) return denied;
 
   const today = cairoMonthDay();
   const year = cairoYear();
@@ -132,9 +124,10 @@ export async function runBirthdayNotifications(request: Request) {
 
 export async function GET(request: Request) {
   // Only authorized cron runs are monitored, so unrelated pings don't record check-ins.
-  if (!isAuthorized(request)) {
-    return NextResponse.json({ error: "unauthorized", message: "Birthday notification run is not authorized." }, { status: 401 });
-  }
+  const denied = assertCronAuthorized(request, "notifications/birthdays", {
+    message: "Birthday notification run is not authorized.",
+  });
+  if (denied) return denied;
   try {
     return await runBirthdayNotifications(request);
   } catch (error) {

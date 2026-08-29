@@ -92,45 +92,39 @@ export function runContractRenewalHardeningTests() {
   // All 18 routes #2479 hardened, not just the 4 this file already reads for other reasons —
   // a guard over 4 of 18 lets the other 14 (including the master-map sheet, the one route that
   // was actually exploitable on staging) regress silently on a green suite.
+  //
+  // MOVED 2026-08-29 (A2). Everything above is the record of three passes — #1529, #1949,
+  // #2479 — and it is kept verbatim because it explains WHY the rule reads the way it does.
+  // What changed is only where the rule lives: it is now written once, in
+  // src/lib/security/cron-auth.ts, and the 24 routes import it. The 18-file loop that stood
+  // here is therefore not merely redundant, it is unsatisfiable — the routes no longer spell
+  // the rule out, so a loop asserting they do would fail on correct code.
+  //
+  // The loop's real job survives, split in two and strengthened:
+  //   * this block pins the rule itself, on the one file that now states it;
+  //   * tests/cron-auth-single-guard.test.ts sweeps EVERY app/api route and fails if any of
+  //     them grows its own copy again — which covers the routes the 18-name list never did.
+  // That second half matters: this list was hand-maintained, and it had already fallen behind.
+  // It named 18 of the 24 routes carrying the rule, so ireports360-visits-{sync,reconcile,
+  // live-sync}, cron/reconciliation-check, cron/crm-contact-lists and the route added on
+  // 2026-08-29 were each free to regress on a green suite. A sweep cannot fall behind.
   const birthdaysRoute = readFileSync("app/api/notifications/birthdays/route.ts", "utf8");
-  const cronAuthRouteFiles = [
-    "app/api/cron/background-jobs/route.ts",
-    "app/api/cron/brevo-keepalive/route.ts",
-    "app/api/cron/db-health-snapshot/route.ts",
-    "app/api/cron/direct-orders-expire-held/route.ts",
-    "app/api/cron/direct-orders-probation/route.ts",
-    "app/api/cron/direct-orders-rotate-sheet-token/route.ts",
-    "app/api/cron/inbound-intake/route.ts",
-    "app/api/cron/marketing-assignment-backfill/route.ts",
-    "app/api/cron/marketing-requests-rotate-sheet-token/route.ts",
-    "app/api/cron/recruitment-cv-digest/route.ts",
-    "app/api/cron/recruitment-email-intake/route.ts",
-    "app/api/cron/run-synthetic-journeys/route.ts",
-    "app/api/notifications/birthdays/route.ts",
-    "app/api/notifications/contract-renewals/route.ts",
-    "app/api/notifications/daily/route.ts",
-    "app/api/notifications/holiday-confirmation/route.ts",
-    "app/api/notifications/process/route.ts",
-    "app/api/sales/master-map/sheet/route.ts",
-  ];
-  for (const file of cronAuthRouteFiles) {
-    const source = readFileSync(file, "utf8");
-    assert.match(
-      source,
-      /if \(!secret\) return process\.env\.NODE_ENV === "development";/,
-      `${file} cron auth must fail closed everywhere except a real local dev machine`,
-    );
-    assert.doesNotMatch(
-      source,
-      /if \(!secret\) return !isProductionRuntime\(\);/,
-      `${file} cron auth must not fall back to the broader, staging-exposing !isProductionRuntime() guard`,
-    );
-    assert.doesNotMatch(
-      source,
-      /process\.env\.VERCEL\b/,
-      `${file} cron auth must not depend on Vercel-specific env vars`,
-    );
-  }
+  const cronAuthModule = readFileSync("src/lib/security/cron-auth.ts", "utf8");
+  assert.match(
+    cronAuthModule,
+    /if \(!secret\) return process\.env\.NODE_ENV === "development";/,
+    "cron auth must fail closed everywhere except a real local dev machine",
+  );
+  assert.doesNotMatch(
+    cronAuthModule,
+    /if \(!secret\) return !isProductionRuntime\(\);/,
+    "cron auth must not fall back to the broader, staging-exposing !isProductionRuntime() guard",
+  );
+  assert.doesNotMatch(
+    cronAuthModule,
+    /process\.env\.VERCEL\b/,
+    "cron auth must not depend on Vercel-specific env vars",
+  );
 
 
 

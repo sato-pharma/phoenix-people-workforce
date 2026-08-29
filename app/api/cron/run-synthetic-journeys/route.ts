@@ -2,8 +2,8 @@ import { NextResponse } from "next/server";
 
 import { pingDeadMansSwitch } from "@/lib/observability/dead-mans-switch";
 import { dispatchSyntheticJourneys } from "@/lib/observability/dispatch-synthetic-journeys";
-import { logCronUnauthorized, logError } from "@/lib/observability/log";
-import { bearerSecretMatches } from "@/lib/security/constant-time";
+import { logError } from "@/lib/observability/log";
+import { assertCronAuthorized } from "@/lib/security/cron-auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -20,15 +20,6 @@ export const maxDuration = 60;
  * .test.ts keeps the two from drifting apart.
  */
 const JOB_SLUG = "phoenix-run-synthetic-journeys";
-
-function isAuthorized(request: Request) {
-  const secret = process.env.CRON_SECRET;
-  // An unset CRON_SECRET may ONLY be bypassed on a real developer machine. Anything less
-  // would leave this route callable unauthenticated wherever CRON_SECRET is unset —
-  // including staging, which is a 1:1 clone of production data.
-  if (!secret) return process.env.NODE_ENV === "development";
-  return bearerSecretMatches(request.headers.get("authorization"), secret);
-}
 
 /**
  * Run the production synthetic journeys now, on a schedule that actually fires.
@@ -65,10 +56,8 @@ function isAuthorized(request: Request) {
  * failures — a single ping per run, carrying the truth.
  */
 export async function GET(request: Request) {
-  if (!isAuthorized(request)) {
-    logCronUnauthorized("cron/run-synthetic-journeys", request);
-    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  }
+  const denied = assertCronAuthorized(request, "cron/run-synthetic-journeys");
+  if (denied) return denied;
   try {
     const result = await dispatchSyntheticJourneys();
 

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { logCronUnauthorized, logError, logInfo } from "@/lib/observability/log";
+import { logError, logInfo } from "@/lib/observability/log";
 import { withDeadMansSwitch } from "@/lib/observability/dead-mans-switch";
 import {
   pollAllRecruitmentMailboxes,
@@ -16,7 +16,7 @@ import {
 } from "@/lib/recruitment/inbound/recruitment-notify";
 import { checkWhatsAppIntakeHealth, type WhatsAppIntakeHealth } from "@/lib/recruitment/inbound/whatsapp-health";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
-import { bearerSecretMatches } from "@/lib/security/constant-time";
+import { assertCronAuthorized } from "@/lib/security/cron-auth";
 
 const DEFAULT_SPIKE_THRESHOLD = 8;
 
@@ -79,15 +79,6 @@ export const maxDuration = 120;
 //
 // Since 2026-08-15 it also carries the daily CV digest, for the same "no new infrastructure"
 // reason — see reportDailyCvDigest below.
-function isAuthorized(request: Request) {
-  const secret = process.env.CRON_SECRET;
-  // An unset CRON_SECRET may ONLY be bypassed on a real developer machine. Anything less
-  // would leave this route callable unauthenticated wherever CRON_SECRET is unset —
-  // including staging, which is a 1:1 clone of production data.
-  if (!secret) return process.env.NODE_ENV === "development";
-  return bearerSecretMatches(request.headers.get("authorization"), secret);
-}
-
 class RecruitmentIntakePollError extends Error {
   constructor(
     readonly failures: string[],
@@ -164,10 +155,8 @@ async function reportWhatsAppIntakeHealth(): Promise<WhatsAppIntakeHealth> {
 }
 
 export async function GET(request: Request) {
-  if (!isAuthorized(request)) {
-    logCronUnauthorized("cron/recruitment-email-intake", request);
-    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  }
+  const denied = assertCronAuthorized(request, "cron/recruitment-email-intake");
+  if (denied) return denied;
 
   // Runs regardless of how the mailbox poll goes, and can never fail the request — a broken
   // health probe must not become a third failure mode on top of the two it is watching.

@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
 
 import { pingDeadMansSwitch } from "@/lib/observability/dead-mans-switch";
-import { logCronUnauthorized, logError } from "@/lib/observability/log";
+import { logError } from "@/lib/observability/log";
 import { captureQueryStatsSnapshot } from "@/lib/observability/query-stats-snapshot";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
-import { bearerSecretMatches } from "@/lib/security/constant-time";
+import { assertCronAuthorized } from "@/lib/security/cron-auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -12,15 +12,6 @@ export const maxDuration = 60;
 
 /** Healthchecks slug, `phoenix-<route>` like every other watched cron route. */
 const JOB_SLUG = "phoenix-db-health-snapshot";
-
-function isAuthorized(request: Request) {
-  const secret = process.env.CRON_SECRET;
-  // An unset CRON_SECRET may ONLY be bypassed on a real developer machine. Anything less
-  // would leave this route callable unauthenticated wherever CRON_SECRET is unset —
-  // including staging, which is a 1:1 clone of production data.
-  if (!secret) return process.env.NODE_ENV === "development";
-  return bearerSecretMatches(request.headers.get("authorization"), secret);
-}
 
 /**
  * Snapshots pg_stat_statements so slow-query history is retained and queryable.
@@ -53,10 +44,8 @@ function isAuthorized(request: Request) {
  * snapshot as a success, which is the precise failure this is meant to detect.
  */
 export async function GET(request: Request) {
-  if (!isAuthorized(request)) {
-    logCronUnauthorized("cron/db-health-snapshot", request);
-    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  }
+  const denied = assertCronAuthorized(request, "cron/db-health-snapshot");
+  if (denied) return denied;
 
   try {
     const result = await captureQueryStatsSnapshot();

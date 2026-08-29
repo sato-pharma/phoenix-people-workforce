@@ -1,25 +1,11 @@
-import { timingSafeEqual } from "node:crypto";
-
 import { NextResponse } from "next/server";
 
-import { ApiError, toApiError, unauthorizedError, validationError } from "@/lib/http/api-errors";
+import { toApiError, unauthorizedError, validationError } from "@/lib/http/api-errors";
+import { requiredTokenAuthorized } from "@/lib/security/cron-auth";
 import { ingestSyntheticJourneyReport, type JourneyResult } from "@/lib/synthetic-journeys/service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-function isAuthorized(request: Request): boolean {
-  const expected = process.env.SYNTHETIC_INGEST_TOKEN?.trim();
-  if (!expected) {
-    throw new ApiError(500, "synthetic_ingest_token_missing", "SYNTHETIC_INGEST_TOKEN is required.");
-  }
-  const authorization = request.headers.get("authorization") ?? "";
-  const actual = authorization.startsWith("Bearer ") ? authorization.slice("Bearer ".length).trim() : "";
-  if (!actual) return false;
-  const expectedBuffer = Buffer.from(expected);
-  const actualBuffer = Buffer.from(actual);
-  return expectedBuffer.length === actualBuffer.length && timingSafeEqual(expectedBuffer, actualBuffer);
-}
 
 function extractJourneyResults(payload: unknown): JourneyResult[] {
   if (Array.isArray(payload)) return payload as JourneyResult[];
@@ -34,7 +20,15 @@ function extractJourneyResults(payload: unknown): JourneyResult[] {
 
 export async function POST(request: Request) {
   try {
-    if (!isAuthorized(request)) {
+    // No dev bypass, deliberately: an unset SYNTHETIC_INGEST_TOKEN is a misconfiguration, not an
+    // invitation, so requiredTokenAuthorized throws 500 rather than returning false.
+    const authorized = requiredTokenAuthorized(
+      request,
+      process.env.SYNTHETIC_INGEST_TOKEN,
+      "synthetic_ingest_token_missing",
+      "SYNTHETIC_INGEST_TOKEN is required.",
+    );
+    if (!authorized) {
       throw unauthorizedError("Synthetic ingest token is invalid.");
     }
     const body: unknown = await request.json();

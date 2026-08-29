@@ -1054,15 +1054,14 @@ export async function runMarketingRequestServiceTests() {
    * It must be cron-secret guarded like every other cron route, never open.
    */
   const backfillRouteSource = source("app/api/cron/marketing-assignment-backfill/route.ts");
+  // Repointed 2026-08-29 (A2): both facts this asserted — the cron-secret comparison and the
+  // logged 401 — moved into src/lib/security/cron-auth.ts, where they are stated once and pinned
+  // by tests/cron-auth-single-guard.test.ts. Asserting the guard is CALLED, with this route's own
+  // job slug, keeps what this file actually cares about: that the backfill route is guarded at all.
   assert.match(
     backfillRouteSource,
-    /bearerSecretMatches\(request\.headers\.get\("authorization"\), secret\)/,
-    "the on-demand backfill route must be cron-secret guarded",
-  );
-  assert.match(
-    backfillRouteSource,
-    /logCronUnauthorized\("cron\/marketing-assignment-backfill", request\)[\s\S]{0,200}?status: 401/,
-    "an unauthorized call must be logged and refused with 401",
+    /assertCronAuthorized\(request, "cron\/marketing-assignment-backfill"\)/,
+    "the on-demand backfill route must be cron-secret guarded, and log its own slug when it refuses",
   );
   assert.match(
     backfillRouteSource,

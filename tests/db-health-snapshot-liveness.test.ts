@@ -89,8 +89,13 @@ export async function runDbHealthSnapshotLivenessTests() {
   // not the scheduler; pinging success there would let anything on the internet hold the check green,
   // and pinging fail would page on a stray scan. Staying silent there is what made the 2026-08-24
   // rotation invisible — the answer to that is a check that notices the ABSENCE, not a ping on 401.
-  const unauthorizedIndex = source.indexOf("logCronUnauthorized(");
-  assert.ok(unauthorizedIndex >= 0, `${ROUTE} must keep logging unauthorized calls`);
+  // Repointed 2026-08-29 (A2): the route no longer calls logCronUnauthorized itself — the log and
+  // the 401 are now inseparable inside assertCronAuthorized, and that they cannot come apart is
+  // pinned by tests/cron-auth-single-guard.test.ts. What this file still owns is the POSITION of
+  // the rejection relative to the try block, which is the part that governs pinging, so that is
+  // what it keeps asserting.
+  const unauthorizedIndex = source.indexOf("assertCronAuthorized(");
+  assert.ok(unauthorizedIndex >= 0, `${ROUTE} must keep rejecting and logging unauthorized calls`);
   assert.ok(
     unauthorizedIndex < tryIndex,
     `${ROUTE} must reject unauthorized callers before the try block, so no ping can be triggered by an ` +

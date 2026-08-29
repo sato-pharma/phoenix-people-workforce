@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 
-import { bearerSecretMatches } from "@/lib/security/constant-time";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 import { isIReports360Configured } from "@/lib/crm/config";
 import {
@@ -10,8 +9,9 @@ import {
   selectContactSyncSlice,
   syncCrmContactLists,
 } from "@/lib/crm/contacts-sync";
-import { logCronUnauthorized, logError } from "@/lib/observability/log";
+import { logError } from "@/lib/observability/log";
 import { writeAuditLog } from "@/lib/admin/audit";
+import { assertCronAuthorized } from "@/lib/security/cron-auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -50,20 +50,9 @@ const SLICE_BUDGET_MS = 21_000;
 // vendor outage or an expired session degrades to "yesterday's list" instead of "no doctors". See
 // the rule at the top of contacts-sync.ts.
 
-function isAuthorized(request: Request) {
-  const secret = process.env.CRON_SECRET;
-  // An unset CRON_SECRET may ONLY be bypassed on a real developer machine. `NODE_ENV` is inlined at
-  // build, so every deployed build resolves this closed regardless of how the environment is
-  // labelled — the hardened form, not the `!isProductionRuntime()` one it replaced across 18 routes.
-  if (!secret) return process.env.NODE_ENV === "development";
-  return bearerSecretMatches(request.headers.get("authorization"), secret);
-}
-
 export async function GET(request: Request) {
-  if (!isAuthorized(request)) {
-    logCronUnauthorized(`cron/${JOB_NAME}`, request);
-    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  }
+  const denied = assertCronAuthorized(request, "cron/crm-contact-lists");
+  if (denied) return denied;
 
   if (!isIReports360Configured()) {
     return NextResponse.json(

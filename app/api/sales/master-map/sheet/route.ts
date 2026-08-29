@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 
-import { logCronUnauthorized, logError } from "@/lib/observability/log";
+import { logError } from "@/lib/observability/log";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
-import { bearerSecretMatches } from "@/lib/security/constant-time";
+import { assertCronAuthorized } from "@/lib/security/cron-auth";
 import { readMasterMapStamp } from "@/lib/sales/master-map/fingerprint";
 import { getMasterMapPlan, getMasterMapSlice } from "@/lib/sales/master-map/payload";
 
@@ -30,25 +30,22 @@ export const maxDuration = 300;
  * Everything is a GET and nothing here mutates Phoenix. The only thing this endpoint can do to the
  * business is disclose the customer master, which is why it is still behind a token.
  */
-function isAuthorized(request: Request): boolean {
-  const secret = process.env.MASTER_MAP_SYNC_TOKEN;
-  // Unset in production means misconfigured, not open. An unset MASTER_MAP_SYNC_TOKEN may ONLY
-  // be bypassed on a real developer machine — anything less would leave the customer master
-  // disclosable wherever the token is unset, including staging.
-  if (!secret) return process.env.NODE_ENV === "development";
-  return bearerSecretMatches(request.headers.get("authorization"), secret);
-}
-
 function positiveInt(raw: string | null, fallback: number): number {
   const parsed = Number.parseInt(raw ?? "", 10);
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
 }
 
 export async function GET(request: Request) {
-  if (!isAuthorized(request)) {
-    logCronUnauthorized("sales/master-map/sheet", request);
-    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  }
+  // The ONLY route on a token of its own rather than CRON_SECRET, so it is the only one that
+  // passes `secret` explicitly. `assertCronAuthorized` tests `"secret" in options`, not
+  // `?? process.env.CRON_SECRET` — so an unset MASTER_MAP_SYNC_TOKEN fails closed here instead
+  // of silently authorizing anyone holding the shared cron secret. Unset in production means
+  // misconfigured, not open: anything less would leave the customer master disclosable wherever
+  // this token is unset, including staging.
+  const denied = assertCronAuthorized(request, "sales/master-map/sheet", {
+    secret: process.env.MASTER_MAP_SYNC_TOKEN,
+  });
+  if (denied) return denied;
 
   const url = new URL(request.url);
 
