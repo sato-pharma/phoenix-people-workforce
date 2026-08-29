@@ -5,11 +5,14 @@ import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { isDevelopment } from "@/lib/env";
 import {
   getMailboxOffboardingDashboardData,
+  isMailboxBulkStep,
   isMailboxOffboardingSchemaMissing,
   isMailboxStep,
   mailboxOffboardingErrorMessage,
   openMailboxOffboardingTask,
+  MAILBOX_BULK_MAX,
   recordMailboxOffboardingStep,
+  recordMailboxOffboardingStepsBulk,
 } from "@/lib/mailbox-offboarding/service";
 import type { MailboxDisposition } from "@/lib/mailbox-offboarding/types";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
@@ -63,9 +66,10 @@ export async function POST(request: Request) {
 
     const access = await resolveAccessContext(request);
     const payload = (await request.json()) as {
-      action?: "open" | "record";
+      action?: "open" | "record" | "record_bulk";
       employeeHrId?: string;
       taskId?: string;
+      taskIds?: string[];
       step?: string;
       disposition?: MailboxDisposition;
       forwardingTo?: string | null;
@@ -109,6 +113,55 @@ export async function POST(request: Request) {
         actor,
       );
       return NextResponse.json(await getMailboxOffboardingDashboardData());
+    }
+
+    /**
+     * One step, many tasks, ONE round trip.
+     *
+     * Gated on `clearance:update`, exactly like `record` — bulk is a shortcut through the same
+     * work, never a second door into it, so it must not be reachable by anyone who cannot record
+     * a single row.
+     *
+     * It answers **200 with a per-row report even when some rows failed**, because a bulk write is
+     * partial by nature: the alternative, a 500 that names one bad row, would leave the admin
+     * unable to tell which of the other rows landed. The caller reads `outcomes` and says so.
+     */
+    if (payload.action === "record_bulk") {
+      await assertPermission(access, "clearance", "update");
+      const taskIds = Array.isArray(payload.taskIds) ? payload.taskIds : [];
+      if (taskIds.length === 0 || !isMailboxBulkStep(payload.step)) {
+        return NextResponse.json(
+          { error: "missing_step", message: "At least one task and a bulk-recordable step are required." },
+          { status: 400 },
+        );
+      }
+      if (taskIds.length > MAILBOX_BULK_MAX) {
+        return NextResponse.json(
+          {
+            error: "too_many_tasks",
+            message: `A bulk recording is limited to ${MAILBOX_BULK_MAX} rows at a time.`,
+          },
+          { status: 400 },
+        );
+      }
+      if (payload.step === "disposition" && !payload.disposition) {
+        return NextResponse.json(
+          { error: "missing_disposition", message: "A mailbox outcome is required to record it in bulk." },
+          { status: 400 },
+        );
+      }
+      const outcomes = await recordMailboxOffboardingStepsBulk(
+        {
+          taskIds,
+          step: payload.step,
+          disposition: payload.disposition ?? null,
+          forwardingTo: payload.forwardingTo ?? null,
+          forwardingExpiresOn: payload.forwardingExpiresOn ?? null,
+          note: payload.note ?? null,
+        },
+        actor,
+      );
+      return NextResponse.json({ ...(await getMailboxOffboardingDashboardData()), outcomes });
     }
 
     return NextResponse.json(

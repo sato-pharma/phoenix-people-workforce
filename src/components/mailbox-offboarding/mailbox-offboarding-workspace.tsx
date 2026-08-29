@@ -44,6 +44,8 @@ import { useCallback, useMemo, useState } from "react";
 
 import { PremiumHero } from "@/components/ui/premium-hero";
 import type {
+  MailboxBulkOutcome,
+  MailboxBulkStep,
   MailboxDisposition,
   MailboxOffboardingDashboardData,
   MailboxOffboardingTask,
@@ -652,6 +654,160 @@ function ReasonCell({
   );
 }
 
+/**
+ * The bulk bar. Appears only once something is selected, and names the count in every label so the
+ * admin can never press "record" without seeing how many people it lands on.
+ *
+ * It offers the three steps that are genuinely done in one pass through the Turbify control panel
+ * and nothing else. Reopen and "no mailbox" are absent by design — both demand a written reason,
+ * and one reason spread across a selection is not a reason.
+ */
+function BulkBar({
+  busy,
+  count,
+  disposition,
+  onClear,
+  onDispositionChange,
+  onRun,
+  onStepChange,
+  step,
+}: {
+  busy: boolean;
+  count: number;
+  disposition: MailboxDisposition;
+  onClear: () => void;
+  onDispositionChange: (value: MailboxDisposition) => void;
+  onRun: (step: MailboxBulkStep) => void;
+  onStepChange: (step: MailboxBulkStep | null) => void;
+  step: MailboxBulkStep | null;
+}) {
+  if (count === 0) return null;
+
+  return (
+    <div className="mt-4 flex flex-wrap items-center gap-2 border border-slate-900 bg-slate-900 px-3 py-2">
+      <span className="whitespace-nowrap text-[11px] font-black uppercase tracking-[0.12em] text-white">
+        {count} selected
+      </span>
+
+      <button
+        className="whitespace-nowrap border border-white/30 bg-white/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.1em] text-white hover:bg-white/20 disabled:opacity-50"
+        disabled={busy}
+        onClick={() => onRun("password_reset")}
+        type="button"
+      >
+        1 · Password reset
+      </button>
+
+      <button
+        className="whitespace-nowrap border border-white/30 bg-white/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.1em] text-white hover:bg-white/20 disabled:opacity-50"
+        disabled={busy}
+        onClick={() => onRun("app_passwords_cleared")}
+        type="button"
+      >
+        2 · App passwords cleared
+      </button>
+
+      {step === "disposition" ? (
+        <span className="flex flex-wrap items-center gap-1">
+          <select
+            className="border border-white/30 bg-white px-2 py-1 text-[11px] font-bold text-slate-900"
+            onChange={(event) => onDispositionChange(event.target.value as MailboxDisposition)}
+            value={disposition}
+          >
+            {(Object.keys(DISPOSITION_LABEL) as MailboxDisposition[]).map((key) => (
+              <option key={key} value={key}>
+                {DISPOSITION_LABEL[key]}
+              </option>
+            ))}
+          </select>
+          <button
+            className="whitespace-nowrap border border-white bg-white px-3 py-1 text-[10px] font-black uppercase tracking-[0.1em] text-slate-900 hover:bg-slate-100 disabled:opacity-50"
+            disabled={busy || disposition === "forwarding"}
+            onClick={() => onRun("disposition")}
+            title={
+              disposition === "forwarding"
+                ? "Forwarding needs an address per person — record it in the row."
+                : undefined
+            }
+            type="button"
+          >
+            Apply to {count}
+          </button>
+          <button
+            className="whitespace-nowrap border border-white/30 px-2 py-1 text-[10px] font-black uppercase tracking-[0.1em] text-white hover:bg-white/10"
+            onClick={() => onStepChange(null)}
+            type="button"
+          >
+            Cancel
+          </button>
+        </span>
+      ) : (
+        <button
+          className="whitespace-nowrap border border-white/30 bg-white/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.1em] text-white hover:bg-white/20 disabled:opacity-50"
+          disabled={busy}
+          onClick={() => onStepChange("disposition")}
+          type="button"
+        >
+          3 · Mailbox…
+        </button>
+      )}
+
+      <button
+        className="ml-auto whitespace-nowrap border border-white/30 px-3 py-1 text-[10px] font-black uppercase tracking-[0.1em] text-white hover:bg-white/10"
+        onClick={onClear}
+        type="button"
+      >
+        Clear
+      </button>
+    </div>
+  );
+}
+
+/**
+ * What the last bulk recording did, per person.
+ *
+ * `skipped` is shown as loudly as `recorded`. Selecting forty people and having twelve already
+ * carry the step is the ordinary case, and a summary reading "40 recorded" would be claiming
+ * twelve writes that never happened — the exact false confidence this register exists to prevent.
+ */
+function BulkReport({ outcomes, onDismiss }: { outcomes: MailboxBulkOutcome[]; onDismiss: () => void }) {
+  if (outcomes.length === 0) return null;
+
+  const recorded = outcomes.filter((outcome) => outcome.result === "recorded");
+  const skipped = outcomes.filter((outcome) => outcome.result === "skipped");
+  const failed = outcomes.filter((outcome) => outcome.result === "failed");
+
+  return (
+    <div
+      className={`mt-3 border px-3 py-2 ${
+        failed.length > 0 ? "border-rose-300 bg-rose-50" : "border-emerald-300 bg-emerald-50"
+      }`}
+    >
+      <p className="text-[11px] font-black uppercase tracking-[0.1em] text-slate-700">
+        {recorded.length} recorded
+        {skipped.length > 0 ? ` · ${skipped.length} already done` : ""}
+        {failed.length > 0 ? ` · ${failed.length} failed` : ""}
+        <button
+          className="ml-3 border border-slate-300 bg-white px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.1em] text-slate-600 hover:bg-slate-100"
+          onClick={onDismiss}
+          type="button"
+        >
+          Dismiss
+        </button>
+      </p>
+      {failed.length > 0 ? (
+        <ul className="mt-1 space-y-0.5">
+          {failed.map((outcome) => (
+            <li className="text-[11px] font-semibold text-rose-800" key={outcome.taskId}>
+              {outcome.employeeName} — {outcome.error}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  );
+}
+
 export function MailboxOffboardingWorkspace({
   initialData,
   initialError,
@@ -669,6 +825,16 @@ export function MailboxOffboardingWorkspace({
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [busy, setBusy] = useState(false);
+  /**
+   * The selection, and the report of what the last bulk recording actually did.
+   *
+   * Held as ids rather than tasks: `data` is replaced wholesale by every mutation, so holding rows
+   * would pin stale copies of people whose status has since moved.
+   */
+  const [selected, setSelected] = useState<ReadonlySet<string>>(() => new Set());
+  const [bulkStep, setBulkStep] = useState<MailboxBulkStep | null>(null);
+  const [bulkDisposition, setBulkDisposition] = useState<MailboxDisposition>("deleted");
+  const [bulkReport, setBulkReport] = useState<MailboxBulkOutcome[] | null>(null);
 
   const post = useCallback(async (body: Record<string, unknown>) => {
     setBusy(true);
@@ -679,17 +845,20 @@ export function MailboxOffboardingWorkspace({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      const payload = (await response.json()) as MailboxOffboardingDashboardData & { message?: string };
+      const payload = (await response.json()) as MailboxOffboardingDashboardData & {
+        message?: string;
+        outcomes?: MailboxBulkOutcome[];
+      };
       if (!response.ok) {
         // The database's own refusal, verbatim. It is the only thing that knows why.
         setError(payload.message ?? "That mailbox action could not be completed.");
-        return false;
+        return null;
       }
       setData(payload);
-      return true;
+      return payload;
     } catch (fetchError) {
       setError(fetchError instanceof Error ? fetchError.message : "Network request failed.");
-      return false;
+      return null;
     } finally {
       setBusy(false);
     }
@@ -754,6 +923,75 @@ export function MailboxOffboardingWorkspace({
         return right.daysOverdue - left.daysOverdue;
       });
   }, [data, filter]);
+
+  /**
+   * Which visible rows a bulk action may touch, and therefore what "select all" means.
+   *
+   * DERIVED, never stored. Storing it would need a `setState` inside an effect to keep it in step
+   * with the filter — a lint error in this repo, and the wrong shape anyway: a selection that
+   * outlives the filter which produced it is how someone records a step against a person they can
+   * no longer see. Filtering the register narrows the selection to match, on the same render.
+   */
+  const selectableIds = useMemo(
+    () =>
+      canRecord
+        ? visible
+            .filter((task) => task.status !== "revoked" && task.status !== "not_applicable")
+            .map((task) => task.id)
+        : [],
+    [canRecord, visible],
+  );
+
+  const selectedIds = useMemo(
+    () => selectableIds.filter((id) => selected.has(id)),
+    [selectableIds, selected],
+  );
+
+  const allSelected = selectableIds.length > 0 && selectedIds.length === selectableIds.length;
+  const someSelected = selectedIds.length > 0 && !allSelected;
+
+  const toggleRow = useCallback((taskId: string) => {
+    setSelected((current) => {
+      const next = new Set(current);
+      if (next.has(taskId)) next.delete(taskId);
+      else next.add(taskId);
+      return next;
+    });
+  }, []);
+
+  /** Select-all covers the rows on screen, never the whole register hidden behind a filter. */
+  const toggleAll = useCallback(() => {
+    setSelected((current) => {
+      const everyOneOnScreenIsSelected = selectableIds.length > 0 && selectableIds.every((id) => current.has(id));
+      if (everyOneOnScreenIsSelected) return new Set();
+      return new Set(selectableIds);
+    });
+  }, [selectableIds]);
+
+  /**
+   * Records one step against everything selected, in a single request.
+   *
+   * The response carries a per-row report and this keeps it: "38 recorded" alone would hide the
+   * six that were already done and the one that failed, and the whole reason to record centrally
+   * is to know which people are actually covered.
+   */
+  const runBulk = useCallback(
+    async (step: MailboxBulkStep, disposition?: MailboxDisposition) => {
+      if (selectedIds.length === 0) return;
+      setBulkReport(null);
+      const payload = await post({
+        action: "record_bulk",
+        taskIds: selectedIds,
+        step,
+        disposition: step === "disposition" ? (disposition ?? bulkDisposition) : null,
+      });
+      if (!payload) return;
+      setBulkReport(payload.outcomes ?? []);
+      setBulkStep(null);
+      setSelected(new Set());
+    },
+    [bulkDisposition, post, selectedIds],
+  );
 
   return (
     <div className="min-w-0 max-w-full overflow-x-hidden">
@@ -877,14 +1115,46 @@ export function MailboxOffboardingWorkspace({
         </p>
       ) : null}
 
+      {/* The bulk bar and its report — desktop only, because only the table carries checkboxes.
+          A card is already one person, so selecting several of them buys nothing. */}
+      <div className="hidden md:block">
+        <BulkBar
+          busy={busy}
+          count={selectedIds.length}
+          disposition={bulkDisposition}
+          onClear={() => setSelected(new Set())}
+          onDispositionChange={setBulkDisposition}
+          onRun={(step) => void runBulk(step)}
+          onStepChange={setBulkStep}
+          step={bulkStep}
+        />
+        {bulkReport ? <BulkReport onDismiss={() => setBulkReport(null)} outcomes={bulkReport} /> : null}
+      </div>
+
       {/* DESKTOP — the table. Every step is recorded from INSIDE the row.
           This used to be an expander whose panel rendered underneath the whole table, which meant
           scrolling down, acting, and scrolling back for each of ~50 people. The work here is one
           pass down a backlog, so the row is the unit of work and nothing may leave it. */}
       <div className="mt-5 hidden overflow-x-auto md:block">
-        <table className="w-full min-w-[1180px] border-collapse">
+        <table className="w-full min-w-[1240px] border-collapse">
           <thead>
             <tr className="border-b border-slate-300 bg-slate-50">
+              <th className="w-8 px-3 py-2 text-left" scope="col">
+                {selectableIds.length > 0 ? (
+                  <input
+                    aria-label={allSelected ? "Clear the selection" : "Select every row on screen"}
+                    checked={allSelected}
+                    className="h-3.5 w-3.5 accent-slate-900"
+                    onChange={toggleAll}
+                    ref={(element) => {
+                      // A partial selection is neither on nor off. Set imperatively — React has
+                      // no attribute for `indeterminate`, only the DOM property.
+                      if (element) element.indeterminate = someSelected;
+                    }}
+                    type="checkbox"
+                  />
+                ) : null}
+              </th>
               {["Person", "Mailbox", "Last day", "1 · Password", "2 · App passwords", "3 · Mailbox", "State", ""].map(
                 (heading, index) => (
                   <th
@@ -904,6 +1174,18 @@ export function MailboxOffboardingWorkspace({
               const locked = !canRecord || settled;
               return (
                 <tr className="border-b border-slate-200 align-top" key={task.id}>
+                  <td className="px-3 py-3">
+                    {/* No checkbox on a settled row: there is nothing left to record on it. */}
+                    {locked ? null : (
+                      <input
+                        aria-label={`Select ${task.employeeName}`}
+                        checked={selected.has(task.id)}
+                        className="h-3.5 w-3.5 accent-slate-900"
+                        onChange={() => toggleRow(task.id)}
+                        type="checkbox"
+                      />
+                    )}
+                  </td>
                   <td className="whitespace-nowrap px-3 py-3 text-[12px] font-black text-slate-900">
                     {task.employeeName}
                     {task.jobTitle ? (
