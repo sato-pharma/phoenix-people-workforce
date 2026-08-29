@@ -686,6 +686,7 @@ import { runSosBackfillEmptyBrickSentinelTests } from "./sos-backfill-empty-bric
 import { runSosSeatAttributionPeriodTests } from "./sos-seat-attribution-period.test.ts";
 import { runMonthlyClosingLockTests } from "./monthly-closing-lock.test.ts";
 import { runClosingPeriodGateTests } from "./closing-period-gate.test.ts";
+import { runAdminShellPaletteScopeTests } from "./admin-shell-palette-scope.test.ts";
 import { runDesignTokensContractTests } from "./design-tokens-contract.test.ts";
 import { runNoEllipsisTruncationRatchetTests } from "./no-ellipsis-truncation-ratchet.test.ts";
 import { runBadgeToneContrastTests } from "./badge-tone-contrast.test.ts";
@@ -2083,6 +2084,7 @@ await runTest("SoS seat attribution (today's wiring, departed reps keep their cr
 await runTest('Monthly closing lock (database triggers, not a disabled button)', runMonthlyClosingLockTests);
 await runTest('CLOSING GOLDEN RULE (a month is never published during that month, Cairo boundary)', runClosingPeriodGateTests);
 await runTest('design tokens contract (--phx- prefix, no globals.css collision, full dark coverage)', runDesignTokensContractTests);
+await runTest('admin shell palette scope (warm ramp stays inside .admin-shell, lightness pinned to Tailwind slate)', runAdminShellPaletteScopeTests);
 await runTest('no-ellipsis ratchet (UI truncation sites may fall, never rise)', runNoEllipsisTruncationRatchetTests);
 await runTest('Badge tone contrast (every tone meets WCAG AA for small text, both themes)', runBadgeToneContrastTests);
 await runTest('Navigation findability ratchet (a page with no link anywhere may fall, never rise)', runNavigationPageFindabilityRatchetTests);

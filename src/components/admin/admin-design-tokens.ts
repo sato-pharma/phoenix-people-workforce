@@ -12,8 +12,13 @@ export const adminInsetPanelClassName =
 // ── Unified dark hero ────────────────────────────────────────────────────────
 // Single source of truth for the black command-center hero used by every admin
 // page header (AdminPageHero), the route loading skeleton, and both command
-// centers. The admin shell zeroes border-radius (square corners) except
-// rounded-full, so the surface reads square and pills stay round.
+// centers. The admin shell zeroes border-radius on EVERY element — the LOCKED rule in
+// app/globals.css is `.admin-shell [class*="rounded"] { border-radius: 0 !important }`,
+// and `rounded-full` matches that selector like any other. Pills, chips, badges and
+// dots are square here too; this comment asserted the opposite until 2026-08-29.
+// So the `rounded-*` values on the tokens above are inert inside the admin shell, and
+// take effect only where the employee portal renders the same token — it reaches this
+// module through src/components/ui/loading-state.tsx.
 export const adminHeroSurfaceClassName =
   "relative overflow-hidden border border-[#1a1a1a] bg-[linear-gradient(135deg,#000000_0%,#070707_55%,#1C0E02_100%)] shadow-[0_28px_80px_rgba(0,0,0,0.45)]";
 
