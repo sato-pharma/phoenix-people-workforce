@@ -69,11 +69,17 @@ export const STEP_DEFINITIONS: Record<StepKey, StepDefinition> = {
     key: "p1_resignations",
     phase: "part1",
     title: "Resignations",
-    subtitle: "Leavers this month, with the recommended Base/ECoL/Fuel settlement (≤25th prorated, >25th full). CRM no-activity and Unpaid Vacation deductions moved to their own dedicated tabs (owner request 2026-07-25) — edit them there; they still net against this leaver's own Second Part first, then First Part if Second isn't enough. Edit or confirm.",
+    subtitle: "Leavers this month, with the recommended Base/ECoL/Fuel settlement. Last working day on or before the 25th: the whole NET salary is prorated to the days worked — base, cost of living and fuel all at the same day share (owner rule 2026-08-29). After the 25th: everything paid in full. CRM no-activity and Unpaid Vacation deductions moved to their own dedicated tabs (owner request 2026-07-25) — edit them there; they still net against this leaver's own Second Part first, then First Part if Second isn't enough. Edit or confirm.",
     contextColumns: [
       { key: "Hire Date", label: "Hire Date" },
       { key: "Last Working Date", label: "Last Working Date" },
-      { key: "Net Salary", label: "Net Salary" },
+      // Relabelled with the rule change, because the rule change is what made
+      // the old label ambiguous. While ECoL and Fuel showed 0, a bare "Net
+      // Salary" beside them was obviously the contractual monthly figure; now
+      // that all three fields carry PRORATED amounts it reads as this month's,
+      // which is exactly the confusion the owner raised on the New hires screen
+      // the same day. The key is unchanged, so nothing downstream moves.
+      { key: "Net Salary", label: "Full Month Net", money: true },
     ],
     fields: [
       // Days Worked is EDITABLE (owner 2026-07-25): the system can only count

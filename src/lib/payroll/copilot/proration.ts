@@ -5,20 +5,29 @@ import type { CopilotPeriod } from "./types.ts";
 /**
  * Pure proration/settlement math for joiners, leavers, and unpaid leave.
  *
- * TWO DAY-RATES, one per lifecycle branch. Both owner-confirmed, and they are
- * deliberately different — do not "unify" them.
+ * ONE DAY-RATE for both lifecycle branches, as of 2026-08-29:
+ * `Net Salary ÷ actual calendar days in the month`, Net being Base + ECOL +
+ * Fuel. A partial month pays exactly `Net × days ÷ calendar days`, whichever
+ * end of the month the partial-ness comes from.
  *
- *  - JOINER (owner instruction, 2026-08-29): the rate is
- *    `Net Salary ÷ actual calendar days in the month`, Net being
- *    Base + ECOL + Fuel. ECOL and Fuel are prorated alongside the base instead
- *    of being paid as whole-month extras. This REPLACED the previous joiner
- *    rule; computeJoinerPay records what changed and why.
+ *  - JOINER (owner instruction, 2026-08-29, morning): replaced a rule that
+ *    prorated the base and paid ECOL/Fuel as whole-month extras (halved after
+ *    the 15th). computeJoinerPay records what changed and why.
  *
- *  - LEAVER: unchanged — the rate stays `Base Salary ÷ calendar days`, with
- *    Resignation Rule 1 governing the allowances (≤25th: neither paid; >25th:
- *    both in full, base unprorated). The owner changed the JOINER rule only.
- *    Folding allowances into the leaver rate would silently rewrite a separate
- *    confirmed rule, so it is not done here.
+ *  - LEAVER (owner instruction, 2026-08-29, same day, later): *"in the
+ *    resignations, prorate the full net salary, not the base."* This replaced
+ *    Resignation Rule 1's ≤25th treatment, which prorated the base and paid
+ *    NEITHER allowance at all. computeResignationSettlement records the detail.
+ *
+ * These two were deliberately DIFFERENT for one day, and this comment said so
+ * — "folding allowances into the leaver rate would silently rewrite a separate
+ * confirmed rule". The owner has now made that rewrite explicitly. Do not
+ * restore the split on the strength of an older comment elsewhere in the repo.
+ *
+ * STILL BASE-ONLY, deliberately: unpaid leave, holiday bridging and vacation
+ * settlement. None of them is a partial month of employment — they price days
+ * NOT worked inside a month the employee is otherwise employed for in full, so
+ * the allowances are not in question. The owner named resignations only.
  *
  * Deterministic and I/O-free so it's trivially unit-testable, mirroring
  * statutory/calculator.ts.
@@ -75,12 +84,34 @@ export type ResignationSettlement = {
 
 /**
  * Resignation Rule 1 (owner-confirmed):
- *  - last working day ≤ 25th: Base-only day-rate proration for the days
- *    actually worked (minus any unpaid-leave days inside that span). No ECOL,
- *    no Fuel at all.
+ *  - last working day ≤ 25th: NET day-rate proration for the days actually
+ *    worked (minus any unpaid-leave days inside that span). Base, ECOL and Fuel
+ *    each prorate by the same day share.
  *  - last working day > 25th: Base paid in FULL (unprorated) + ECOL in full +
  *    Fuel in full. No proration in this branch.
  * Either way, other additions/deductions apply on top of the result.
+ *
+ * THE ≤25th BRANCH CHANGED 2026-08-29 on the owner's instruction: *"in the
+ * resignations, prorate the full net salary, not the base."* It previously
+ * prorated the base and paid NEITHER allowance — a resignation on the 9th of a
+ * 31-day month received 9/31 of base and nothing else. It now receives 9/31 of
+ * Base + ECOL + Fuel, so the rule matches the joiner rule set the same morning
+ * and a partial month means the same thing at both ends of the calendar.
+ *
+ * This RAISES what every affected leaver is paid — the allowances went from
+ * withheld to prorated, and nothing went down. That direction is the opposite
+ * of the joiner change and is intended: the two rules were never symmetrical
+ * before, which is what the owner was correcting.
+ *
+ * The >25th branch is untouched. It already pays every component in full, so
+ * "prorate the net" is a no-op there — a full month IS the full net.
+ *
+ * NOT extended to a NON-resignation leaver. A `terminated` or `inactive` leaver
+ * keeps neither allowance by the owner's separate ruling of 2026-08-14, and
+ * that gate lives in the Ready sheet's resolveReadyLifecycleSettlement — the
+ * automated engine never sees one, because its feeder keys leavers off the
+ * employee_resignations workflow. Prorating "net" for a dismissal would hand
+ * back allowances that ruling deliberately withholds.
  */
 export function computeResignationSettlement(
   input: ResignationSettlementInput,
@@ -92,15 +123,23 @@ export function computeResignationSettlement(
 
   if (day <= 25) {
     const daysWorked = Math.max(0, day - input.unpaidDaysInSpan);
-    const baseForMonth = roundCurrency(dailyRate(input.baseSalary, input.period) * daysWorked);
+    const totalDays = calendarDaysInMonth(input.period);
+    const workedShare = totalDays > 0 ? daysWorked / totalDays : 0;
+    // Each component is rounded separately, matching computeJoinerPay: a row's
+    // three parts must always add up to the row's own total, because every
+    // consumer displays the parts and sums them.
+    const baseForMonth = roundCurrency(input.baseSalary * workedShare);
+    const ecolPaid = roundCurrency(input.extraCostOfLiving * workedShare);
+    const fuelPaid = roundCurrency(input.fuelAllowance * workedShare);
+    const netForMonth = roundCurrency(baseForMonth + ecolPaid + fuelPaid);
     return {
       branch: "on_or_before_25",
       daysWorked,
       baseForMonth,
-      ecolPaid: 0,
-      fuelPaid: 0,
-      netForMonth: baseForMonth,
-      total: roundCurrency(baseForMonth + netAdjustment),
+      ecolPaid,
+      fuelPaid,
+      netForMonth,
+      total: roundCurrency(netForMonth + netAdjustment),
     };
   }
 

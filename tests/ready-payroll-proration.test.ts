@@ -9,15 +9,17 @@ import {
   readyLifecycleComment,
   resolveReadyLifecycleSettlement,
 } from "../src/lib/payroll/ready-proration.ts";
+import { roundCurrency } from "../src/lib/payroll/money.ts";
 
 /**
  * Behavioural cover for Ready-Payroll partial-month proration.
  *
- * TWO rules, one per lifecycle branch, both owner-confirmed:
- *   JOINER — daily rate is `Net Salary ÷ actual calendar days`, Net being
- *            Base + ECOL + Fuel (owner instruction 2026-08-29).
- *   LEAVER — daily rate stays `Base Salary ÷ actual calendar days`, with
- *            Resignation Rule 1 governing the allowances.
+ * ONE rate, both lifecycle branches, owner-confirmed on 2026-08-29 in two
+ * instructions the same day — joiners in the morning, resignations later:
+ *   `Net Salary ÷ actual calendar days`, Net being Base + ECOL + Fuel.
+ * Resignation Rule 1 still governs WHICH days a leaver is charged for (the
+ * >25th waiver), and a NON-resignation leaver is the one row still charged on
+ * base alone, because its allowances are withheld outright rather than prorated.
  * Either way, an employee present for the whole calendar month is deducted
  * nothing. The tests below assert the two rates stay DIFFERENT: collapsing them
  * into one would silently rewrite whichever rule lost.
@@ -163,7 +165,7 @@ export function runReadyPayrollProrationTests() {
   );
 
   // ── Resignation Rule 1: the >25th branch ───────────────────────────────────
-  // Owner rule: last working day ≤25th → base prorated, NO ECOL, NO Fuel.
+  // Owner rule: last working day ≤25th → NET prorated (base, ECOL and Fuel alike).
   //             last working day >25th → base IN FULL, ECOL and Fuel IN FULL.
   //
   // The Ready sheet had never implemented the second half. It zeroed both allowances for
@@ -215,11 +217,33 @@ export function runReadyPayrollProrationTests() {
   assert.equal(onBoundary.branch, "leaver_on_or_before_25", "the 25th falls in the prorated branch");
   assert.equal(
     onBoundary.prorationDeduction,
-    5_806.45,
-    "a leaver on the 25th of a 31-day month is charged the 6 unworked days at 30000/31",
+    6_483.87,
+    "a leaver on the 25th of a 31-day month is charged the 6 unworked days at NET/31 (33500/31), not at base/31 — " +
+      "the owner replaced the base-only rate on 2026-08-29",
   );
-  assert.equal(onBoundary.extraCostOfLiving, 0, "no ECOL on or before the 25th");
-  assert.equal(onBoundary.fuelAllowance, 0, "no fuel on or before the 25th");
+  // The allowance COLUMNS keep their contractual figures, exactly as a joiner's
+  // do. The deduction above already charges the unworked share of both; writing
+  // the prorated components here as well would charge that share twice.
+  assert.equal(onBoundary.extraCostOfLiving, ecol, "the ECOL column stays contractual — the shortfall is stated once, in the deduction");
+  assert.equal(onBoundary.fuelAllowance, fuel, "the Fuel column stays contractual — the shortfall is stated once, in the deduction");
+
+  // What the row actually PAYS is the point of all of the above: Net x worked
+  // days / calendar days, the same arithmetic a joiner gets at the other end of
+  // the month. 33,500 x 25/31 = 27,016.13.
+  assert.equal(
+    roundCurrency(base + onBoundary.extraCostOfLiving + onBoundary.fuelAllowance - onBoundary.prorationDeduction),
+    27_016.13,
+    "a leaver on the 25th must take home NET x 25/31 — if this figure moves, someone's final pay moved with it",
+  );
+
+  // And it must be MORE than the retired rule paid. The change was made to stop
+  // withholding allowances from a leaver, so a regression here underpays a real
+  // person: the old rule paid 30000 - 5806.45 = 24,193.55 and nothing else.
+  assert.ok(
+    roundCurrency(base + onBoundary.extraCostOfLiving + onBoundary.fuelAllowance - onBoundary.prorationDeduction) >
+      24_193.55,
+    "the net rule must pay a ≤25th leaver MORE than the retired base-only rule did, never less",
+  );
 
   const justAfter = settle("2026-07-26", null, 7, 2026);
   assert.equal(justAfter.branch, "leaver_after_25", "the 26th crosses into the full-pay branch");
@@ -241,12 +265,12 @@ export function runReadyPayrollProrationTests() {
 
   // ── The >25th waiver applies to the LEAVING end only ───────────────────────
   // Hired 10 July, left 28 July: "base in full" must not pay for the 9 days before the
-  // hire date. Charged 9 unworked days at 30000/31 = 8,709.68.
+  // hire date. Charged 9 unworked days at NET/31 (33500/31) = 9,725.81.
   const hiredAndLeft = settle("2026-07-28", "2026-07-10", 7, 2026);
   assert.equal(hiredAndLeft.branch, "leaver_after_25", "still the after-25 branch");
   assert.equal(
     hiredAndLeft.prorationDeduction,
-    8_709.68,
+    9_725.81,
     "someone HIRED this month and leaving after the 25th must still pay for the days before their hire date — " +
       "'base in full' waives the leaving end, it does not gift a month that was never worked",
   );
@@ -288,17 +312,36 @@ export function runReadyPayrollProrationTests() {
     "resignation vs dismissal on the SAME late date must produce different base pay — the whole point of the gate",
   );
 
-  // On or before the 25th, dismissal and resignation prorate base identically (both zero
-  // allowances), so the gate only changes the >25th tail and never underpays an early exit.
+  // On or before the 25th the two branches now DIVERGE, and the divergence is the
+  // point. Until 2026-08-29 both prorated base and withheld both allowances, so
+  // they produced an identical figure and this test asserted exactly that. The
+  // owner's resignation instruction that day raised the RESIGNATION side only.
+  // If a later change ever makes these two equal again, it has almost certainly
+  // handed a dismissed employee the allowances his 2026-08-14 ruling withholds.
   const dismissedEarly = settle("2026-07-20", null, 7, 2026, false);
+  const resignedEarly = settle("2026-07-20", null, 7, 2026, true);
   assert.equal(dismissedEarly.branch, "leaver_non_resignation", "still the non-resignation branch");
-  assert.equal(
-    dismissedEarly.prorationDeduction,
-    settle("2026-07-20", null, 7, 2026, true).prorationDeduction,
-    "on or before the 25th, dismissal and resignation prorate base identically — the gate only changes the >25th tail",
-  );
+  assert.equal(resignedEarly.branch, "leaver_on_or_before_25", "and the same date as a resignation is the prorated branch");
   assert.equal(dismissedEarly.extraCostOfLiving, 0, "no ECOL");
   assert.equal(dismissedEarly.fuelAllowance, 0, "no fuel");
+
+  // What each one is actually PAID. Comparing deductions alone cannot tell these
+  // apart safely — the two rows carry different allowance columns, so only the
+  // resulting month salary states what the employee receives.
+  const takeHome = (settlement: ReturnType<typeof settle>) =>
+    roundCurrency(base + settlement.extraCostOfLiving + settlement.fuelAllowance - settlement.prorationDeduction);
+
+  assert.equal(
+    takeHome(dismissedEarly),
+    19_354.84,
+    "a dismissal on the 20th takes home BASE x 20/31 and no allowances — unchanged by the resignation rule",
+  );
+  assert.equal(takeHome(resignedEarly), 21_612.9, "a resignation on the 20th takes home NET x 20/31");
+  assert.equal(
+    roundCurrency(takeHome(resignedEarly) - takeHome(dismissedEarly)),
+    2_258.06, // (3000 + 500) x 20/31 — exactly the allowances' worked share
+    "the gap between a resignation and a dismissal on the same day must be exactly the worked share of the allowances, nothing more",
+  );
   assert.match(
     String(readyLifecycleComment(dismissedLate)),
     /not a resignation/i,
@@ -390,10 +433,25 @@ export function runReadyPayrollProrationTests() {
     /paid in full/i,
     "a >25th row must not carry the old 'cost of living and fuel are zero' sentence — it shipped the wrong rule into the workbook as policy",
   );
+  // This sentence ships inside the workbook and is read as the statement of
+  // policy, so it has to move with the rule. It used to read "no cost of living
+  // and no fuel", which as of 2026-08-29 describes money the row now pays.
   assert.match(
     String(readyLifecycleComment(onBoundary)),
+    /net salary/i,
+    "a ≤25th resignation row must say NET is prorated — the workbook's own sentence is what HR reads as the rule",
+  );
+  assert.doesNotMatch(
+    String(readyLifecycleComment(onBoundary)),
+    /no cost of living|no fuel/i,
+    "…and must no longer say the allowances are withheld, which is exactly the rule the owner replaced",
+  );
+  // The dismissal comment keeps that sentence, because for a dismissal it is
+  // still true. The two must not be collapsed into one wording.
+  assert.match(
+    String(readyLifecycleComment(dismissedLate)),
     /no cost of living/i,
-    "a ≤25th row must say the allowances are withheld",
+    "a dismissal row must still say the allowances are withheld — that ruling stands",
   );
   assert.match(
     String(readyLifecycleComment(lateJoiner)),

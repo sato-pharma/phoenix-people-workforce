@@ -277,10 +277,16 @@ function otherDeductionsFormula(
   const hireDate = cellRef(rowNumber, 10);
   // Net = Base + Extra Cost of Living + Fuel, read from the row's own cells
   // (columns 11, 18, 19) rather than the Net Salary column, so the formula
-  // states the three components it actually prorates. The joiner branch below
-  // divides THIS, per the owner's 2026-08-29 rule; the leaver branch still
-  // divides Base alone. Mirrors calculateNetJoinerProrationDeduction and
-  // calculateBaseLifecycleProrationDeduction respectively.
+  // states the three components it actually prorates. BOTH branches divide this
+  // since 2026-08-29 — the owner gave the same instruction for joiners in the
+  // morning and for resignations later the same day.
+  //
+  // Reading the cells rather than hardcoding a divisor is also what keeps the
+  // NON-resignation leaver correct without a third branch: that row's ECOL and
+  // Fuel are withheld, so its cells are 0 and this expression collapses to the
+  // base — exactly calculateBaseLifecycleProrationDeduction. And because the
+  // cells are live, an HR edit to an allowance re-prorates coherently instead of
+  // leaving the deduction stating a shortfall on a figure no longer in the row.
   const netSalary = `(${baseSalary}+${cellRef(rowNumber, 18)}+${cellRef(rowNumber, 19)})`;
   // Must match payrollDaysInMonth exactly: the workbook recalculates these
   // formulas client-side, so a server-only fix would leave the downloaded sheet
@@ -288,13 +294,14 @@ function otherDeductionsFormula(
   const daysInMonth = payrollDaysInMonth(month, year);
 
   if (payrollMonthMatches(row.lastWorkingDate, month, year)) {
-    // Resignation Rule 1: a RESIGNATION after the 25th is paid base in full, so its end day
-    // is waived to month end; a termination/deactivation is charged to its actual last day.
+    // Resignation Rule 1: a RESIGNATION after the 25th is paid in full, so its end day is
+    // waived to month end; a termination/deactivation is charged to its actual last day.
     // row.effectiveEndDay is the number the stored proration already used (resolved with the
     // resignation flag) — the sheet recalculates client-side, so reusing that same number
-    // keeps the formula and the stored value from ever disagreeing.
+    // keeps the formula and the stored value from ever disagreeing. Mirrors the leaver
+    // branch of resolveReadyLifecycleSettlement, which divides the same net.
     const endDay = row.effectiveEndDay;
-    return `ROUND(MAX(0,${baseSalary}-((${baseSalary}/${daysInMonth})*MAX(0,${endDay}-IF(AND(ISNUMBER(${hireDate}),YEAR(${hireDate})=${year},MONTH(${hireDate})=${month}),DAY(${hireDate}),1)+1))),2)`;
+    return `ROUND(MAX(0,${netSalary}-((${netSalary}/${daysInMonth})*MAX(0,${endDay}-IF(AND(ISNUMBER(${hireDate}),YEAR(${hireDate})=${year},MONTH(${hireDate})=${month}),DAY(${hireDate}),1)+1))),2)`;
   }
 
   // Joiner branch — prorates NET, so the deducted shortfall covers the base and
@@ -564,8 +571,9 @@ async function buildUploadRows(month: number, year: number): Promise<PayrollTemp
       const grossSalary = money(fixedSalary.grossSalary);
       const governmentalDeductions = money(socialInsurance + employmentIncomeTax);
       // Resignation Rule 1 decides Base, ECOL and Fuel together — a RESIGNATION after the 25th
-      // keeps both allowances in full and is not prorated; on or before the 25th keeps neither;
-      // a termination/deactivation keeps neither and is prorated to its last working day.
+      // keeps both allowances in full and is not prorated; on or before the 25th prorates all
+      // three together on the net (owner, 2026-08-29); a termination/deactivation keeps neither
+      // allowance and has its base prorated to the last working day.
       // Zeroing on isTerminalPayroll alone contradicted the rule for every late-month leaver.
       const settlement = resolveReadyLifecycleSettlement({
         baseSalary,
@@ -580,9 +588,13 @@ async function buildUploadRows(month: number, year: number): Promise<PayrollTemp
       const extraCostOfLiving = settlement.extraCostOfLiving;
       const fuelAllowance = settlement.fuelAllowance;
       const otherDeductions = settlement.prorationDeduction;
-      // Net Salary = base + the SETTLEMENT allowances (0 for a leaver who keeps none), matching
-      // the col-13 formula base+ECOL+Fuel exactly. fixedSalary.netSalary carries the full
-      // standard allowances, which the row's own ECOL/Fuel=0 cells would then contradict.
+      // Net Salary = base + the row's OWN allowance cells, matching the col-13 formula
+      // base+ECOL+Fuel exactly. Those cells hold the contractual figures on every row except a
+      // non-resignation leaver, whose allowances are withheld outright and read 0 — so this
+      // states a full month's net wherever a full month's net is what the row means, and a
+      // prorated row shows its shortfall in Other Deductions rather than in this column.
+      // fixedSalary.netSalary is not used: it would carry the standard allowances onto that
+      // withheld row too, and the row's own ECOL/Fuel=0 cells would then contradict it.
       const netSalary = money(baseSalary + extraCostOfLiving + fuelAllowance);
       const parts = calculatePayrollParts({
         baseSalary,
