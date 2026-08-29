@@ -365,13 +365,25 @@ jobs:
         if: needs.changes.outputs.docs_only != 'true'
         run: pnpm install --frozen-lockfile
 
+      # STRATEGY MATTERS MORE THAN THE KEY HERE, and it is not obvious from the logs.
+      # eslint's --cache defaults to --cache-strategy metadata, which decides a file is unchanged
+      # by comparing size + MTIME. actions/checkout writes every file fresh on every run, so every
+      # mtime is the checkout time and eslint invalidates the whole restored cache — measured
+      # 2026-08-29: this step logged "Cache restored successfully" (139,373 bytes, primary-key hit)
+      # and the lint itself still took 112s, exactly as if no cache existed. package.json therefore
+      # passes --cache-strategy content, which hashes contents instead. Do not drop that flag; the
+      # cache is inert without it and nothing in CI reports the difference.
+      # The key carries the strategy name for the same reason: a metadata-format .eslintcache is
+      # unreadable to a content-strategy run, so without the discriminator the first runs after this
+      # change would download and extract a cache they must then throw away, and still log
+      # "Cache restored successfully". Renaming the key retires the old entries by letting them expire.
       - name: Restore ESLint cache
         if: needs.changes.outputs.docs_only != 'true'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .eslintcache
-          key: eslintcache-${{ hashFiles('app/**', 'src/**', 'tests/**', 'scripts/**', 'eslint.config.mjs', 'pnpm-lock.yaml') }}
-          restore-keys: eslintcache-
+          key: eslintcache-content-${{ hashFiles('app/**', 'src/**', 'tests/**', 'scripts/**', 'eslint.config.mjs', 'pnpm-lock.yaml') }}
+          restore-keys: eslintcache-content-
 
       - name: Lint
         if: needs.changes.outputs.docs_only != 'true'
