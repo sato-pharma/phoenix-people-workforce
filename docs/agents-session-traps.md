@@ -13,8 +13,13 @@ fixed context occupancy, re-sent on every request, which is context the conversa
 Compaction got more frequent in exact proportion. Splitting hook from detail is what `MEMORY.md`
 already does under its 22,000-byte budget; §2.1 had simply never had a budget of its own.
 
-**Nothing here was rewritten.** The body below is the verbatim §2.1 text as it stood at
-`fe750dbdf`, including every measurement, date, PR number and memory slug.
+**Nothing here was rewritten, with one correction.** The body below is the verbatim §2.1 text as it
+stood at `fe750dbdf`, including every measurement, date and PR number. The one exception, made
+2026-08-29 and flagged inline at both sites: #2617 attached the memory slug
+`a-mock-name-generator-reproduces-real-employee-names` to two traps that file does not describe —
+the multi-statement `execute_sql` trap and the `au.occupancy_history` hr_id trap. Both citations are
+removed, because a pointer that lands a session on the wrong record costs more than no pointer at
+all. **Read the verbatim claim as provenance, not as licence to restore them.**
 
 **Reading order.** Find the hook in `AGENTS.md` §2.1, then search this file for its wording. Groups
 below, in order: Shell and tooling · Git · CI and PRs · Migrations · Database, grants and RLS ·
@@ -70,7 +75,10 @@ file holding the full account, under
   statement one and prints a summary in statement two certifies whatever the summary happened to
   say, having never shown you the check. Put every question in ONE statement (CTEs or scalar
   subqueries, as the occupancy proof below did), or make a separate call per question.
-  `a-mock-name-generator-reproduces-real-employee-names`
+  **No memory file holds this trap, and this account is the record.** #2617 cited
+  `a-mock-name-generator-reproduces-real-employee-names` here, which is a record of the staging
+  anonymisation scrub this was noticed *during* — the name-collision method, not the MCP's
+  behaviour. Do not re-add that citation.
 - **A Windows USER env var SHADOWS every `.env.local` in every worktree, silently.** `node --env-file`
   / `--env-file-if-exists` only FILLS IN variables that are missing — it never overwrites one already
   in the process environment. So editing `.env.local` and re-running changes nothing, with no warning.
@@ -374,7 +382,10 @@ this file already gives them)
   loss at least looks odd; a total one does not look like a join failure at all, because an occupancy
   row that matches nobody reads as **a vacant seat** — a plausible org-structure fact that nobody
   re-checks, on the very model AGENTS §4 calls the source of truth for vacancy data. Lower BOTH sides
-  of any hr_id comparison. `a-mock-name-generator-reproduces-real-employee-names`
+  of any hr_id comparison. **The occupancy half has no memory file of its own** — the two slugs above
+  cover the mixed-case rule, and this account is the record for the total-loss case. #2617 also cited
+  `a-mock-name-generator-reproduces-real-employee-names` here, for the same wrong reason as the
+  `execute_sql` trap above; do not re-add it.
 - **The Sato logo's wordmark is WHITE, so "SATO" vanishes on white paper.** Reverse it onto a navy
   band, or recolour the near-white pixels, before any export or print.
   `sato-logo-wordmark-is-white-invisible-on-paper`
