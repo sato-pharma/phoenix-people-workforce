@@ -39,9 +39,12 @@
 // These hints follow the RECRUITMENT map, because that is the vocabulary the Region filter on the
 // CV database and the recruitment pool actually search on — it decides whether a candidate is ever
 // found. So Delta (1) no longer says Qalyubia, Delta (2) no longer says Sharqia, and Others no
-// longer says Ismailia or Suez, even though the area LISTS behind those rows still offer those
-// areas until the sales half of the split lands. That residue is a known gap, written up in
-// docs/recruitment-inbound-intake.md; it is not a bug in this file.
+// longer says Ismailia or Suez. The area LISTS behind those rows used to disagree — the sales map
+// still files those five areas under the old districts until the August closing publishes — but the
+// apply flow now overrides that grouping for recruitment (recruitmentAreaRegionOverrides in
+// candidate-region.ts), so an applicant who picks Delta (3) sees the five areas and Delta (1)/(2)/
+// Others no longer offer them. The two maps still differ in the DATABASE; the recruitment flow no
+// longer exposes the difference. See docs/recruitment-inbound-intake.md.
 //
 // ONE KNOWN DISAGREEMENT IS LEFT STANDING: Matrouh. The recruitment map files it under Others, but
 // its sales bricks (مرسى مطروح) sit inside AREA "Alex West", so Alex-BHR is the only row whose area
@@ -86,9 +89,10 @@ export const regionPlaceHints: Partial<Record<CandidateRegionCode, string>> = {
  * showing the wrong one, and the registered test fails on the mismatch so it is noticed. All 49
  * active areas are present as of 2026-08-28.
  *
- * Region groupings in the comments below are the SALES map, which is what drives the area list an
- * applicant is shown. Five of these areas — Qalubeya, Sharkia 1/2, Suez, Ismailia — are Delta (3)
- * in the recruitment map already; they are commented where the area menu still puts them.
+ * Region groupings in the comments below are the SALES map. It drives the area list an applicant is
+ * shown EXCEPT for five areas — Qalubeya, Sharkia 1/2, Suez, Ismailia — which the apply flow now
+ * files under Delta (3) (recruitmentAreaRegionOverrides in candidate-region.ts), matching the
+ * recruitment region map. The comments below still note their SALES district, marked "→ Delta (3)".
  */
 export const areaPlaceHints: Record<string, string> = {
   // ── AB · Alex-BHR ──────────────────────────────────────────────────────────────────────────
@@ -113,7 +117,7 @@ export const areaPlaceHints: Record<string, string> = {
   "Kafr El-Sheikh 2": "فوه · سيدى سالم · الحامول",
   "Menoufia 1": "شبين الكوم · قويسنا · بركة السبع",
   "Menoufia 2": "أشمون · منوف · باجور",
-  // Delta (3) in the recruitment map since #2509; still listed under Delta (1) in the area menu.
+  // Sales map: Delta (1). → Delta (3): the apply flow files it under Delta (3), matching the region map.
   Qalubeya: "بنها · شبين القناطر · قليوب",
 
   // ── D2 · Delta (2) ─────────────────────────────────────────────────────────────────────────
@@ -121,7 +125,7 @@ export const areaPlaceHints: Record<string, string> = {
   "Dakahlia 2": "ميت غمر · السنبلاوين · أجا",
   "Dakahlia 3": "دكرنس · المنزلة · منيا النصر",
   "Port said - Domiat": "دمياط · بور سعيد · كفر سعد",
-  // Delta (3) in the recruitment map since #2509; still listed under Delta (2) in the area menu.
+  // Sales map: Delta (2). → Delta (3): the apply flow files both under Delta (3), matching the region map.
   "Sharkia 1": "الزقازيق · أبو حماد · منيا القمح",
   "Sharkia 2": "فاقوس · الحسينيه · أبو كبير",
 
@@ -147,7 +151,7 @@ export const areaPlaceHints: Record<string, string> = {
   "North Sinai": "العريش",
   "Red Sea": "سفاجا · ش6 اكتوبر-البحرالاحمر · القصير",
   "South Sinai": "شرم الشيخ · طور سيناء",
-  // Delta (3) in the recruitment map since #2509; still listed under Others in the area menu.
+  // Sales map: Others. → Delta (3): the apply flow files both under Delta (3), matching the region map.
   Ismailia: "الاسماعيليه · القنطرةغرب",
   Suez: "السويس",
 

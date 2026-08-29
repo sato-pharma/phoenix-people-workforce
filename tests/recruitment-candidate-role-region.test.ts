@@ -4,6 +4,8 @@ import {
   candidateRegionForGovernorate,
   candidateRegionLabels,
   normalizeGovernorate,
+  recruitmentAreaRegionOverrides,
+  recruitmentRegionForArea,
 } from "../src/lib/recruitment/candidate-region.ts";
 import {
   candidateRoleFamily,
@@ -184,6 +186,42 @@ export function runCandidateRoleRegionTests() {
   assert.equal(candidateRegionForGovernorate("Damietta"), "D2", "Delta (2) keeps Damietta");
   assert.equal(candidateRegionForGovernorate("Hurghada"), "OT", "Others keeps Hurghada");
   assert.equal(candidateRegionForGovernorate("North Sinai"), "OT", "Others keeps North Sinai");
+
+  // --- Delta (3), the AREA side. The region map above moves the GOVERNORATES; this moves the five
+  // AREA rows the WhatsApp apply flow shows, which are read from the SALES geography and still sit
+  // under the old districts until the August closing publishes. Without this override, picking
+  // "Delta (3)" shows an EMPTY area list while Sharkia still appears under Delta (2) — the two
+  // questions in one conversation contradicting each other. Keyed by the EXACT au.canonical_areas
+  // name; a rename there silently drops the override, so the five names are pinned here.
+  assert.deepEqual(
+    Object.keys(recruitmentAreaRegionOverrides).sort(),
+    ["Ismailia", "Qalubeya", "Sharkia 1", "Sharkia 2", "Suez"],
+    "exactly the five Delta (3) areas are overridden — no more, no fewer",
+  );
+  for (const [areaName, region] of Object.entries(recruitmentAreaRegionOverrides)) {
+    assert.equal(region, "D3", `${areaName} is overridden to Delta (3), matching the region map`);
+  }
+  // The override wins over whatever district the sales map hands in for those five areas...
+  assert.equal(recruitmentRegionForArea("Qalubeya", "D1"), "D3", "Qalubeya moves off Delta (1)");
+  assert.equal(recruitmentRegionForArea("Sharkia 1", "D2"), "D3", "Sharkia 1 moves off Delta (2)");
+  assert.equal(recruitmentRegionForArea("Sharkia 2", "D2"), "D3", "Sharkia 2 moves off Delta (2)");
+  assert.equal(recruitmentRegionForArea("Suez", "OT"), "D3", "Suez moves off Others");
+  assert.equal(recruitmentRegionForArea("Ismailia", "OT"), "D3", "Ismailia moves off Others");
+  // ...and once the sales side finally repoints them to D3, the override is a harmless no-op.
+  assert.equal(recruitmentRegionForArea("Qalubeya", "D3"), "D3", "already-D3 sales grouping is unchanged");
+  // Every other area passes straight through — the override touches only the five.
+  assert.equal(recruitmentRegionForArea("Gharbia 1 (Tanta)", "D1"), "D1", "an untouched area keeps its sales region");
+  assert.equal(recruitmentRegionForArea("Dakahlia 1", "D2"), "D2", "an untouched area keeps its sales region");
+  assert.equal(recruitmentRegionForArea("Aswan", "OT"), "OT", "an untouched area keeps its sales region");
+  // The AREA override and the GOVERNORATE map must agree on Delta (3), or the apply flow's two
+  // questions would file the same person two ways.
+  for (const gov of ["Qalubeya", "Sharkia", "Suez", "Ismailia"]) {
+    assert.equal(
+      candidateRegionForGovernorate(gov),
+      "D3",
+      `the governorate map agrees the area override's ${gov} is Delta (3)`,
+    );
+  }
 
   // --- Both spellings in production must land on one region, or each hides the other's people.
   assert.equal(
