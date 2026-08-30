@@ -10,34 +10,64 @@
 // back in.
 //
 // So this is the same queue, on a route. The component below is deliberately thin: it owns the way
-// OUT of the queue and nothing else, because every behaviour worth having already lives in
-// CandidateScreeningSession and a second copy of it would be a second thing to keep true.
+// OUT of the queue and the narrowing bar above it, and nothing else, because every behaviour worth
+// having already lives in CandidateScreeningSession and a second copy of it would be a second thing
+// to keep true.
 
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useCallback } from "react";
 
 import { CandidateScreeningSession } from "@/components/recruitment/candidate-screening-session";
+import {
+  candidateRegionCodes,
+  candidateRegionLabels,
+  foreignRegionLabel,
+} from "@/lib/recruitment/candidate-region";
+import { candidateRoleFamilies, candidateRoleFamilyLabels } from "@/lib/recruitment/candidate-role-family";
 import { candidateStatuses, candidateStatusLabels, type CandidateStatus } from "@/lib/recruitment/candidate-status";
 import type { CandidateViewMap } from "@/lib/recruitment/candidate-views";
 // Type-only, and it has to stay that way: hiring-manager-notify reaches the service-role client, so
 // a value import would drag it into this "use client" bundle and fail the build outright.
 import type { HiringManagerOption } from "@/lib/recruitment/hiring-manager-notify";
-import { screeningHref } from "@/lib/recruitment/screening-link";
+import {
+  SCREENING_UNKNOWN,
+  screeningHref,
+  screeningShellPoolHref,
+  type ScreeningHrefOptions,
+  type ScreeningRegionFilter,
+  type ScreeningRoleFilter,
+  type ScreeningSeenFilter,
+} from "@/lib/recruitment/screening-link";
 import type { Candidate } from "@/lib/recruitment/types";
 // Type-only for the same reason: vacancy-options reads the service-role client.
 import type { VacancyOption } from "@/lib/recruitment/vacancy-options";
 
+/** The three-way, in the words a screener would use rather than the words the URL uses. */
+const seenFilterLabels: Record<ScreeningSeenFilter, string> = {
+  any: "Seen and unseen",
+  seen: "Only ones I have read",
+  unseen: "Only ones I have not read",
+};
+
 export function ScreeningPageClient({
+  area,
+  areaOptions,
   candidates,
   hiringManagers,
   initialViews,
   openVacancies,
   poolHref,
   positionSuggestions,
+  region,
+  role,
+  seen,
   status,
   totalCount,
-  unseenOnly,
 }: {
+  /** The area this link narrowed to, or `unknown` for applicants who never named one. */
+  area: string | null;
+  /** The areas applicants in this pool have actually named — the only ones worth offering. */
+  areaOptions: string[];
   candidates: Candidate[];
   /** The managers a CV can be pushed to without leaving the queue. Loaded server-side by the page. */
   hiringManagers: HiringManagerOption[];
@@ -53,14 +83,21 @@ export function ScreeningPageClient({
    * straight back out through the (admin) group's redirect.
    */
   poolHref: string;
+  /** The region this link narrowed to: a company region, `foreign`, or `unknown`. */
+  region: ScreeningRegionFilter | null;
+  /** The role family this link narrowed to, or `unknown` for candidates with no title on file. */
+  role: ScreeningRoleFilter | null;
+  /** Whether this link narrowed to what the viewer has, or has not, already opened. */
+  seen: ScreeningSeenFilter;
   /** The status this link narrowed to, e.g. `new` — null means every status. */
   status: CandidateStatus | null;
   /** The pool size before this link's narrowing, so "42 of 434" can be said instead of just "42". */
   totalCount: number;
-  /** Whether this link narrowed to CVs this viewer has never opened. */
-  unseenOnly: boolean;
 }) {
   const router = useRouter();
+  // WHICH SHELL AM I ACTUALLY IN? Not always the one that rendered me — see screeningShellPoolHref.
+  // Every push below goes through this, never through the server's own poolHref.
+  const shellPoolHref = screeningShellPoolHref(usePathname(), poolHref);
 
   const handleClose = useCallback(
     (decidedCount: number) => {
@@ -68,38 +105,45 @@ export function ScreeningPageClient({
       // after reading a few costs nothing, and a needless refresh of a 434-row pool is a visible
       // stall on the way out.
       if (decidedCount > 0) router.refresh();
-      router.push(poolHref);
+      router.push(shellPoolHref);
     },
-    [poolHref, router],
+    [router, shellPoolHref],
   );
 
   // Changing the narrowing is a NEW link, not a live filter — same address-bar mechanism as the
-  // "unseen=1" link the pool already offers, just reachable without leaving this page. Landing here
-  // directly (the HR job workbook sends people straight to /recruitment/screening, no filter) used
-  // to mean the only way to narrow the queue was going back to the pool, filtering there, and
-  // pressing "Screen" again.
+  // "unseen=1" link the pool already offers, just reachable without leaving this page. That is what
+  // makes "the New Medical Rep CVs in Tanta I have not read" a thing you can bookmark rather than a
+  // thing you rebuild every morning. Landing here directly (the HR job workbook sends people
+  // straight to /recruitment/screening, no filter) used to mean the only way to narrow the queue
+  // was going back to the pool, filtering there, and pressing "Screen" again.
   const goTo = useCallback(
-    (next: { status?: CandidateStatus | null; unseenOnly?: boolean }) => {
+    (next: ScreeningHrefOptions) => {
       router.push(
-        screeningHref(poolHref, {
+        screeningHref(shellPoolHref, {
+          area: next.area !== undefined ? next.area : area,
+          region: next.region !== undefined ? next.region : region,
+          role: next.role !== undefined ? next.role : role,
+          seen: next.seen !== undefined ? next.seen : seen,
           status: next.status !== undefined ? next.status : status,
-          unseenOnly: next.unseenOnly !== undefined ? next.unseenOnly : unseenOnly,
         }),
       );
     },
-    [poolHref, router, status, unseenOnly],
+    [area, region, role, router, seen, shellPoolHref, status],
   );
 
   return (
     <ScreeningPageFrame>
       <ScreeningFilterBar
-        onChangeStatus={(next) => goTo({ status: next })}
-        onClear={() => goTo({ status: null, unseenOnly: false })}
-        onToggleUnseen={() => goTo({ unseenOnly: !unseenOnly })}
+        area={area}
+        areaOptions={areaOptions}
+        onChange={goTo}
+        onClear={() => goTo({ area: null, region: null, role: null, seen: "any", status: null })}
         queueCount={candidates.length}
+        region={region}
+        role={role}
+        seen={seen}
         status={status}
         totalCount={totalCount}
-        unseenOnly={unseenOnly}
       />
       <CandidateScreeningSession
         candidates={candidates}
@@ -109,9 +153,10 @@ export function ScreeningPageClient({
         // mount from its props (see the comments in candidate-screening-session.tsx on why the queue
         // is "a snapshot, not a live view"); without a key tied to the narrowing, pushing a new
         // filter here would hand the same mounted session a shorter `candidates` array while its
-        // index and caches still pointed at the old one.
+        // index and caches still pointed at the old one. Every filter has to be in the key: one
+        // left out is one that silently reuses the previous queue's position.
         initialViews={initialViews}
-        key={`${status ?? "all"}:${unseenOnly ? "unseen" : "all-seen"}`}
+        key={`${status ?? "all"}:${seen}:${role ?? "all"}:${region ?? "all"}:${area ?? "all"}`}
         onClose={handleClose}
         openVacancies={openVacancies}
         positionSuggestions={positionSuggestions}
@@ -121,35 +166,49 @@ export function ScreeningPageClient({
   );
 }
 
+// Matches the candidate pool's own toolbar exactly — label above, small caps, the same select box.
+// The two are the same job on two screens, and the owner's standing rule is that a new surface in a
+// module looks like its siblings rather than inventing a look of its own.
+const filterLabelClass = "flex flex-col gap-1 text-phx-xs font-semibold uppercase tracking-wide text-slate-500";
+const filterSelectClass =
+  "border border-slate-200 px-2 py-1.5 text-sm text-slate-800 focus:border-orange-400 focus:outline-none";
+
 /**
- * "42 of 434 CVs — New only" and the switches to change it. Deliberately its own bar above the
- * session rather than a new item in CandidateScreeningSession's header: that header already carries
- * the position, the progress bar, the name, the band chip, three running totals and three buttons,
- * and its own comments warn that a seventh item is how it starts wrapping on a laptop screen. This
- * bar exists only for the `page` variant anyway — the overlay is always fed a queue the pool has
- * already filtered, so it has nothing to switch.
+ * "42 of 434 CVs" and the five switches that produced the 42.
+ *
+ * Deliberately its own bar above the session rather than more items in CandidateScreeningSession's
+ * header: that header already carries the position, the progress bar, the name, the band chip,
+ * three running totals and three buttons, and its own comments warn that a seventh item is how it
+ * starts wrapping on a laptop screen. This bar exists only for the `page` variant anyway — the
+ * overlay is always fed a queue the pool has already filtered, so it has nothing to switch.
  */
 function ScreeningFilterBar({
-  onChangeStatus,
+  area,
+  areaOptions,
+  onChange,
   onClear,
-  onToggleUnseen,
   queueCount,
+  region,
+  role,
+  seen,
   status,
   totalCount,
-  unseenOnly,
 }: {
-  onChangeStatus: (next: CandidateStatus | null) => void;
+  area: string | null;
+  areaOptions: string[];
+  onChange: (next: ScreeningHrefOptions) => void;
   onClear: () => void;
-  onToggleUnseen: () => void;
   queueCount: number;
+  region: ScreeningRegionFilter | null;
+  role: ScreeningRoleFilter | null;
+  seen: ScreeningSeenFilter;
   status: CandidateStatus | null;
   totalCount: number;
-  unseenOnly: boolean;
 }) {
-  const narrowed = status !== null || unseenOnly;
+  const narrowed = status !== null || seen !== "any" || role !== null || region !== null || area !== null;
   return (
-    <div className="flex flex-wrap items-center gap-3 rounded-t-lg border border-b-0 border-phx-line bg-white px-3 py-2 text-xs">
-      <span className="font-semibold text-slate-600">
+    <div className="flex flex-wrap items-end gap-3 rounded-t-lg border border-b-0 border-phx-line bg-white px-3 py-2">
+      <span className="pb-1.5 text-xs font-semibold whitespace-nowrap text-slate-600">
         {narrowed ? (
           <>
             {queueCount} of {totalCount} {totalCount === 1 ? "CV" : "CVs"}
@@ -160,11 +219,11 @@ function ScreeningFilterBar({
           </>
         )}
       </span>
-      <label className="flex items-center gap-1.5 font-semibold text-slate-600">
+      <label className={filterLabelClass}>
         Status
         <select
-          className="rounded-md border border-phx-line px-2 py-1 text-xs font-semibold text-slate-700"
-          onChange={(e) => onChangeStatus(e.target.value ? (e.target.value as CandidateStatus) : null)}
+          className={filterSelectClass}
+          onChange={(event) => onChange({ status: event.target.value ? (event.target.value as CandidateStatus) : null })}
           value={status ?? ""}
         >
           <option value="">Any status</option>
@@ -175,21 +234,72 @@ function ScreeningFilterBar({
           ))}
         </select>
       </label>
-      <button
-        aria-pressed={unseenOnly}
-        className={`inline-flex h-7 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md border px-2.5 text-xs font-semibold transition ${
-          unseenOnly
-            ? "border-phx-accent bg-orange-50 text-phx-accent-press"
-            : "border-phx-line bg-white text-slate-600 hover:border-phx-accent-line hover:text-phx-accent"
-        }`}
-        onClick={onToggleUnseen}
-        type="button"
-      >
-        Unseen only
-      </button>
+      <label className={filterLabelClass}>
+        Read
+        <select
+          className={filterSelectClass}
+          onChange={(event) => onChange({ seen: event.target.value as ScreeningSeenFilter })}
+          value={seen}
+        >
+          {(Object.keys(seenFilterLabels) as ScreeningSeenFilter[]).map((value) => (
+            <option key={value} value={value}>
+              {seenFilterLabels[value]}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className={filterLabelClass}>
+        Role
+        <select
+          className={filterSelectClass}
+          onChange={(event) => onChange({ role: (event.target.value || null) as ScreeningRoleFilter | null })}
+          value={role ?? ""}
+        >
+          <option value="">Any role</option>
+          {candidateRoleFamilies.map((family) => (
+            <option key={family} value={family}>
+              {candidateRoleFamilyLabels[family]}
+            </option>
+          ))}
+          <option value={SCREENING_UNKNOWN}>No job title on file</option>
+        </select>
+      </label>
+      <label className={filterLabelClass}>
+        Region
+        <select
+          className={filterSelectClass}
+          onChange={(event) => onChange({ region: (event.target.value || null) as ScreeningRegionFilter | null })}
+          value={region ?? ""}
+        >
+          <option value="">Any region</option>
+          {candidateRegionCodes.map((code) => (
+            <option key={code} value={code}>
+              {candidateRegionLabels[code]}
+            </option>
+          ))}
+          <option value="foreign">{foreignRegionLabel}</option>
+          <option value={SCREENING_UNKNOWN}>No governorate on file</option>
+        </select>
+      </label>
+      <label className={filterLabelClass}>
+        Area
+        <select
+          className={filterSelectClass}
+          onChange={(event) => onChange({ area: event.target.value || null })}
+          value={area ?? ""}
+        >
+          <option value="">Any area</option>
+          {areaOptions.map((value) => (
+            <option key={value} value={value}>
+              {value}
+            </option>
+          ))}
+          <option value={SCREENING_UNKNOWN}>No area on file</option>
+        </select>
+      </label>
       {narrowed ? (
         <button
-          className="text-xs font-semibold text-slate-500 underline-offset-2 hover:text-phx-accent hover:underline"
+          className="pb-1.5 text-xs font-semibold whitespace-nowrap text-slate-500 underline-offset-2 hover:text-phx-accent hover:underline"
           onClick={onClear}
           type="button"
         >
