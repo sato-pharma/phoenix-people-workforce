@@ -26,6 +26,8 @@ import type {
 import { downloadFromApiRoute } from "@/lib/navigation/browser-navigation";
 import { cn } from "@/lib/utils";
 
+import { CardSection, SectionHeading } from "./section-shell";
+
 type Props = {
   runId: string;
   stepKey: StepKey;
@@ -109,7 +111,7 @@ function SettlementSummaryBlock({ definition, row }: { definition: StepDefinitio
   const summary = computeSettlementSummary(row.settlement, definition, row.values);
   if (!summary) return null;
   return (
-    <div className="mt-1 flex flex-col gap-1 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+    <CardSection title="This month's settlement" tone="settlement">
       <SettlementLine label="Full Month Net" value={summary.monthNet} />
       <SettlementLine label="Working Days Net" value={summary.workedNet} />
       {/* Shown only when there IS one. Net Payable has to reconcile against the
@@ -120,7 +122,7 @@ function SettlementSummaryBlock({ definition, row }: { definition: StepDefinitio
       ) : null}
       <SettlementLine label="Total Deductions" value={summary.deductions} tone="negative" />
       <SettlementLine label="Net Payable" value={summary.payable} strong />
-    </div>
+    </CardSection>
   );
 }
 
@@ -872,31 +874,47 @@ export function RecommendationStep({
               const isExpanded = expanded.has(row.hrId);
               const lineCount = detailCount(row);
               return (
-                <div
+                <article
                   key={row.hrId}
                   className={cn(
-                    "border border-slate-200 bg-white p-3",
-                    tone === "hold" && "border-rose-200 bg-rose-50",
+                    // Shadow + hover lift: at three cards across, a flat hairline grid
+                    // gives the eye nothing to separate one person from the next.
+                    "border border-slate-200 bg-white shadow-sm transition hover:border-slate-300 hover:shadow-md",
+                    tone === "hold" && "border-rose-300 bg-rose-50",
                     tone === "conflict" && "border-l-4 border-l-orange-400 bg-orange-50",
                     tone === "notice" && "border-l-4 border-l-sky-400 bg-sky-50/70",
                     tone === "manual" && "border-l-4 border-l-amber-400 bg-amber-50/60",
                     tone === "leaver" && "bg-red-50",
                   )}
                 >
-                  <div className="mb-2 flex items-center justify-between gap-2 border-b border-slate-200 pb-2">
-                    <div className="min-w-0 overflow-hidden">
+                  {/* Identity banner — the person, not their figures. Dark so each card
+                      opens with a clear anchor and the blocks below it read as belonging
+                      to somebody, which a plain underlined name never achieved. */}
+                  <header
+                    className={cn(
+                      // Stacks below 640px so the name gets the card's full
+                      // width instead of sharing the row with the badges: at
+                      // 375px that is the difference between a legible name and
+                      // a clipped one on a screen whose entire job is telling
+                      // you WHO is being paid. Names are never wrapped or
+                      // ellipsised (owner rule) — they clip, so every pixel of
+                      // width recovered here is a character of a real person's
+                      // name that stays readable.
+                      "flex flex-col items-start gap-1.5 border-b border-slate-200 bg-slate-900 px-3 py-2 sm:flex-row sm:items-center sm:justify-between sm:gap-2",
+                      tone === "hold" && "bg-rose-900",
+                    )}
+                  >
+                    <div className="w-full min-w-0 overflow-hidden sm:w-auto">
                       <div
-                        className={cn(
-                          "overflow-hidden whitespace-nowrap text-sm",
-                          tone === "hold" ? "font-semibold text-rose-700" : "font-medium text-slate-800",
-                        )}
+                        title={row.fullName}
+                        className="overflow-hidden whitespace-nowrap text-[13px] font-black tracking-tight text-white sm:text-sm"
                       >
                         {row.fullName}
                       </div>
-                      <div className="flex flex-wrap items-center gap-x-1.5 font-mono text-xs text-slate-500">
+                      <div className="flex items-center gap-x-1.5 overflow-hidden whitespace-nowrap font-mono text-[11px] text-slate-400">
                         <span>{row.hrId}</span>
                         {hireDateColumn ? (
-                          <span className="font-sans text-slate-400">
+                          <span className="font-sans">
                             · Hired {String(row.context[hireDateColumn.key] ?? "—")}
                           </span>
                         ) : null}
@@ -912,116 +930,146 @@ export function RecommendationStep({
                           type="button"
                           onClick={() => removeManualRow(row)}
                           aria-label={`Remove ${row.fullName} from this step`}
-                          className="flex size-6 items-center justify-center text-slate-400 transition hover:text-rose-600"
+                          className="flex size-6 items-center justify-center text-slate-400 transition hover:text-rose-400"
                         >
                           <X className="size-4" />
                         </button>
                       ) : null}
                     </div>
-                  </div>
+                  </header>
 
-                  <div className="flex flex-col gap-2">
-                    {bodyContextColumns.map((column) => {
-                      const contextValue = row.context[column.key];
-                      return (
-                        <div key={column.key} className="flex items-center justify-between gap-3 text-sm">
-                          <span className="overflow-hidden whitespace-nowrap text-slate-500">{column.label}</span>
+                  <div className="flex flex-col gap-2 p-2.5">
+                    {bodyContextColumns.length > 0 ? (
+                      <CardSection title="Details">
+                        {bodyContextColumns.map((column) => {
+                          const contextValue = row.context[column.key];
+                          return (
+                            <div key={column.key} className="flex items-center justify-between gap-3 text-sm">
+                              <span className="overflow-hidden whitespace-nowrap text-slate-500">{column.label}</span>
+                              <span
+                                dir={column.money ? "ltr" : "auto"}
+                                className={cn(
+                                  "shrink-0 overflow-hidden whitespace-nowrap font-medium text-slate-700",
+                                  column.money && "tabular-nums",
+                                )}
+                              >
+                                {/* A money column can still carry a non-numeric marker — an em dash
+                                    when HR has entered no salary figure at all — and running that
+                                    through money() would print "NaN" on a payroll screen. Only real
+                                    numbers get formatted; anything else renders as written. */}
+                                {column.money && typeof contextValue === "number"
+                                  ? money(contextValue)
+                                  : String(contextValue ?? "")}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </CardSection>
+                    ) : null}
+
+                    {/* Everything HR actually changes on THIS screen, inside one border —
+                        kept apart from the read-only Details above it and the whole-month
+                        Settlement below it, so the three kinds of figure can no longer be
+                        mistaken for one another. */}
+                    <CardSection title="This step">
+                      {definition.isHoldStep ? (
+                        <div className="flex items-center justify-between gap-3 text-sm">
+                          <span className="text-slate-500">Hold</span>
+                          {locked ? (
+                            <span className={row.onHold ? "font-semibold text-rose-700" : "text-slate-400"}>
+                              {row.onHold ? "Held" : "—"}
+                            </span>
+                          ) : (
+                            <Switch checked={row.onHold} onChange={(value) => setHold(row.hrId, value)} />
+                          )}
+                        </div>
+                      ) : null}
+
+                      {definition.fields.map((field) => (
+                        <label key={field.key} className="flex flex-col gap-1 text-sm">
+                          {/* Micro-caps label, the module's premium field recipe. Literal
+                              text-[11px]: a named text-phx-* size is silently stripped by
+                              cn()/tailwind-merge and only a real browser can see it happen. */}
+                          <span className="overflow-hidden whitespace-nowrap text-[11px] font-black uppercase tracking-wide text-slate-500">
+                            {field.label}
+                          </span>
+                          {field.kind === "text" ? (
+                            <Input
+                              value={row.reasons?.[field.key] ?? ""}
+                              disabled={isRowLocked(row)}
+                              placeholder="Reason (optional)"
+                              onChange={(event) => setFieldReason(row.hrId, field.key, event.target.value)}
+                              className={fieldClassName}
+                            />
+                          ) : field.kind === "select" ? (
+                            <select
+                              value={row.selects?.[field.key] ?? field.options?.[0]?.value ?? ""}
+                              disabled={isRowLocked(row)}
+                              onChange={(event) => setSelectValue(row.hrId, field.key, event.target.value)}
+                              className={cn(fieldClassName, "cursor-pointer px-2")}
+                            >
+                              {field.options?.map((option) => (
+                                <option key={option.value} value={option.value}>
+                                  {option.label}
+                                </option>
+                              ))}
+                            </select>
+                          ) : (
+                            <Input
+                              type="number"
+                              value={String(row.values[field.key] ?? 0)}
+                              disabled={isRowLocked(row)}
+                              onChange={(event) => {
+                                const raw = Number(event.target.value) || 0;
+                                if (field.kind === "days" && field.complementFieldKey) {
+                                  setComplementaryDaysValue(row.hrId, field.key, field.complementFieldKey, field.complementTotalContextKey, raw);
+                                } else if (field.kind === "days") {
+                                  setDaysValue(row.hrId, field.key, raw);
+                                } else {
+                                  setValue(row.hrId, field.key, raw);
+                                }
+                                }}
+                              className={cn(fieldClassName, "text-right tabular-nums")}
+                            />
+                          )}
+                        </label>
+                      ))}
+
+                      {definition.hasReason ? (
+                        <label className="flex flex-col gap-1 text-sm">
+                          <span className="overflow-hidden whitespace-nowrap text-[11px] font-black uppercase tracking-wide text-slate-500">
+                            Reason
+                          </span>
+                          <Input
+                            value={row.reason ?? ""}
+                            disabled={isRowLocked(row)}
+                            placeholder="Reason"
+                            onChange={(event) => setReason(row.hrId, event.target.value)}
+                            className={fieldClassName}
+                          />
+                        </label>
+                      ) : null}
+
+                      {/* Live total of the editable money fields above it (owner request
+                          2026-08-29, New hires). Summed here from `row.values` rather than
+                          read from `row.context` on purpose: context is computed once on
+                          the server and never recomputed as HR types, so a context total
+                          would freeze at the loaded figure and disagree with the boxes the
+                          moment one is edited — exactly when the total is being read. */}
+                      {definition.fieldsTotal ? (
+                        <div className="mt-0.5 flex items-center justify-between gap-3 border-t border-slate-200 pt-2 text-sm">
+                          <span className="overflow-hidden whitespace-nowrap font-semibold text-slate-600">
+                            {definition.fieldsTotal.label}
+                          </span>
                           <span
-                            dir={column.money ? "ltr" : "auto"}
-                            className={cn(
-                              "shrink-0 overflow-hidden whitespace-nowrap font-medium text-slate-700",
-                              column.money && "tabular-nums",
-                            )}
+                            dir="ltr"
+                            className="shrink-0 overflow-hidden whitespace-nowrap font-black tabular-nums text-slate-900"
                           >
-                            {/* A money column can still carry a non-numeric marker — an em dash
-                                when HR has entered no salary figure at all — and running that
-                                through money() would print "NaN" on a payroll screen. Only real
-                                numbers get formatted; anything else renders as written. */}
-                            {column.money && typeof contextValue === "number"
-                              ? money(contextValue)
-                              : String(contextValue ?? "")}
+                            {money(stepFieldsTotal(definition, row.values))}
                           </span>
                         </div>
-                      );
-                    })}
-
-                    {definition.isHoldStep ? (
-                      <div className="flex items-center justify-between gap-3 text-sm">
-                        <span className="text-slate-500">Hold</span>
-                        {locked ? (
-                          <span className={row.onHold ? "font-semibold text-rose-700" : "text-slate-400"}>
-                            {row.onHold ? "Held" : "—"}
-                          </span>
-                        ) : (
-                          <Switch checked={row.onHold} onChange={(value) => setHold(row.hrId, value)} />
-                        )}
-                      </div>
-                    ) : null}
-
-                    {definition.fields.map((field) => (
-                      <label key={field.key} className="flex flex-col gap-1 text-sm">
-                        <span className="text-slate-500">{field.label}</span>
-                        {field.kind === "text" ? (
-                          <Input
-                            value={row.reasons?.[field.key] ?? ""}
-                            disabled={isRowLocked(row)}
-                            placeholder="Reason (optional)"
-                            onChange={(event) => setFieldReason(row.hrId, field.key, event.target.value)}
-                            className={fieldClassName}
-                          />
-                        ) : field.kind === "select" ? (
-                          <select
-                            value={row.selects?.[field.key] ?? field.options?.[0]?.value ?? ""}
-                            disabled={isRowLocked(row)}
-                            onChange={(event) => setSelectValue(row.hrId, field.key, event.target.value)}
-                            className={cn(fieldClassName, "px-2")}
-                          >
-                            {field.options?.map((option) => (
-                              <option key={option.value} value={option.value}>
-                                {option.label}
-                              </option>
-                            ))}
-                          </select>
-                        ) : (
-                          <Input
-                            type="number"
-                            value={String(row.values[field.key] ?? 0)}
-                            disabled={isRowLocked(row)}
-                            onChange={(event) => {
-                              const raw = Number(event.target.value) || 0;
-                              if (field.kind === "days" && field.complementFieldKey) {
-                                setComplementaryDaysValue(row.hrId, field.key, field.complementFieldKey, field.complementTotalContextKey, raw);
-                              } else if (field.kind === "days") {
-                                setDaysValue(row.hrId, field.key, raw);
-                              } else {
-                                setValue(row.hrId, field.key, raw);
-                              }
-                              }}
-                            className={fieldClassName}
-                          />
-                        )}
-                      </label>
-                    ))}
-
-                    {/* Live total of the editable money fields above it (owner request
-                        2026-08-29, New hires). Summed here from `row.values` rather than
-                        read from `row.context` on purpose: context is computed once on
-                        the server and never recomputed as HR types, so a context total
-                        would freeze at the loaded figure and disagree with the boxes the
-                        moment one is edited — exactly when the total is being read. */}
-                    {definition.fieldsTotal ? (
-                      <div className="mt-0.5 flex items-center justify-between gap-3 border-t border-slate-200 pt-2 text-sm">
-                        <span className="overflow-hidden whitespace-nowrap font-semibold text-slate-600">
-                          {definition.fieldsTotal.label}
-                        </span>
-                        <span
-                          dir="ltr"
-                          className="shrink-0 overflow-hidden whitespace-nowrap font-black tabular-nums text-slate-900"
-                        >
-                          {money(stepFieldsTotal(definition, row.values))}
-                        </span>
-                      </div>
-                    ) : null}
+                      ) : null}
+                    </CardSection>
 
                     {/* THE FOUR FIGURES (owner request 2026-08-30): the whole
                         month, on every screen. "I must see everything to make
@@ -1038,61 +1086,67 @@ export function RecommendationStep({
                         exactly when someone is revising them. */}
                     <SettlementSummaryBlock definition={definition} row={row} />
 
-                    {definition.hasReason ? (
-                      <label className="flex flex-col gap-1 text-sm">
-                        <span className="text-slate-500">Reason</span>
-                        <Input
-                          value={row.reason ?? ""}
-                          disabled={isRowLocked(row)}
-                          placeholder="Reason"
-                          onChange={(event) => setReason(row.hrId, event.target.value)}
-                          className={fieldClassName}
-                        />
-                      </label>
-                    ) : null}
-
+                    {/* The per-line breakdown is the card's fourth block, and it
+                        carries the same border as the other three whether it is
+                        open or shut. Collapsed, it is a bordered strip shaped
+                        exactly like a CardSection header, so the card keeps its
+                        rhythm instead of ending in a loose blue-ish link. */}
                     {hasDetail && lineCount > 0 ? (
-                      <>
+                      isExpanded ? (
+                        <CardSection
+                          title={detailLabel(row)}
+                          action={
+                            <button
+                              type="button"
+                              onClick={() => toggleExpanded(row.hrId)}
+                              aria-expanded
+                              className="flex items-center gap-0.5 whitespace-nowrap text-[11px] font-black uppercase tracking-wide text-orange-600 transition hover:text-orange-700"
+                            >
+                              Hide
+                              <ChevronDown className="size-3.5" />
+                            </button>
+                          }
+                        >
+                          {/* One mini-card per line, label/value stacked — nothing
+                              here is ever truncated or side-scrolled. */}
+                          {(row.details ?? []).map((line, lineIndex) => (
+                            <div
+                              key={lineIndex}
+                              className="flex flex-col gap-1 border border-slate-200 bg-slate-50 p-2 text-xs"
+                            >
+                              {(definition.detailColumns ?? []).map((column) => (
+                                <div key={column.key} className="flex items-start justify-between gap-3">
+                                  <span className="shrink-0 text-slate-500">{column.label}</span>
+                                  <span
+                                    dir={column.money ? "ltr" : "auto"}
+                                    className={cn(
+                                      "text-right font-medium text-slate-700",
+                                      column.money && "tabular-nums",
+                                    )}
+                                  >
+                                    {column.money
+                                      ? money(Number(line[column.key] ?? 0))
+                                      : String(line[column.key] ?? "—")}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          ))}
+                        </CardSection>
+                      ) : (
                         <button
                           type="button"
                           onClick={() => toggleExpanded(row.hrId)}
-                          aria-expanded={isExpanded}
-                          className="flex items-center gap-1 self-start pt-1 text-sm font-medium text-orange-600"
+                          aria-expanded={false}
+                          className="flex items-center justify-between gap-2 border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-left transition hover:border-slate-300 hover:bg-slate-100"
                         >
-                          {isExpanded ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
-                          {isExpanded ? `Hide ${detailLabel(row)}` : `Show ${detailLabel(row)}`}
+                          <SectionHeading title={detailLabel(row)} className="min-w-0" />
+                          <ChevronRight className="size-3.5 shrink-0 text-orange-600" />
                         </button>
-                        {/* One mini-card per line, label/value stacked — nothing here
-                            is ever truncated or side-scrolled. */}
-                        {isExpanded
-                          ? (row.details ?? []).map((line, lineIndex) => (
-                              <div
-                                key={lineIndex}
-                                className="flex flex-col gap-1 border border-slate-200 bg-slate-50 p-2 text-xs"
-                              >
-                                {(definition.detailColumns ?? []).map((column) => (
-                                  <div key={column.key} className="flex items-start justify-between gap-3">
-                                    <span className="shrink-0 text-slate-500">{column.label}</span>
-                                    <span
-                                      dir={column.money ? "ltr" : "auto"}
-                                      className={cn(
-                                        "text-right font-medium text-slate-700",
-                                        column.money && "tabular-nums",
-                                      )}
-                                    >
-                                      {column.money
-                                        ? money(Number(line[column.key] ?? 0))
-                                        : String(line[column.key] ?? "—")}
-                                    </span>
-                                  </div>
-                                ))}
-                              </div>
-                            ))
-                          : null}
-                      </>
+                      )
                     ) : null}
                   </div>
-                </div>
+                </article>
               );
             })}
           </div>

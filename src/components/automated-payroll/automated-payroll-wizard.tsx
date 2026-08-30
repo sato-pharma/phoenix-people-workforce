@@ -33,6 +33,7 @@ import { cn } from "@/lib/utils";
 
 import { NonEmployeesPanel } from "./non-employees-panel";
 import { RecommendationStep } from "./recommendation-step";
+import { SectionHeading } from "./section-shell";
 import { SelectField } from "./select-field";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -455,18 +456,26 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
               setNonEmployeesOpen(null);
             }}
             className={cn(
-              "flex items-center gap-1.5 border px-2.5 py-1.5 text-xs transition-colors",
+              // shadow-sm + a hover lift on the border is what separates these
+              // from flat swatches; the active pill additionally carries a solid
+              // left rule so the open step is findable in one glance across a
+              // strip of ten look-alikes.
+              "flex items-center gap-1.5 border px-2.5 py-1.5 text-xs shadow-sm transition",
               isActive
-                ? "border-orange-500 bg-orange-50 text-slate-900"
+                ? "border-orange-500 border-l-[3px] bg-orange-50 text-slate-900 shadow-[0_1px_6px_rgba(249,115,22,0.18)]"
                 : isConfirmed
-                  ? "border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100"
-                  : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50",
+                  ? "border-emerald-300 bg-emerald-50 text-emerald-800 hover:border-emerald-400 hover:bg-emerald-100"
+                  : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50",
             )}
           >
             <span
               className={cn(
-                "flex h-4 w-4 shrink-0 items-center justify-center text-phx-2xs font-bold",
-                isConfirmed ? "bg-emerald-600 text-white" : "border border-slate-300 text-slate-500",
+                "flex h-4 w-4 shrink-0 items-center justify-center text-[10px] font-bold",
+                isConfirmed
+                  ? "bg-emerald-600 text-white"
+                  : isActive
+                    ? "border border-orange-400 bg-white text-orange-700"
+                    : "border border-slate-300 text-slate-500",
               )}
             >
               {isConfirmed ? <Check className="size-2.5" /> : index + 1}
@@ -833,9 +842,7 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
               fighting a fixed 260px sidebar for space). */}
           <div className={cn(adminSoftPanelClassName, "flex flex-col gap-3 p-4")}>
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="text-phx-xs font-black uppercase tracking-wide text-slate-500">
-                Part 1 — First installment
-              </div>
+              <SectionHeading title="Part 1 — First installment" />
               <Button
                 size="sm"
                 className="border border-orange-600 bg-orange-600 text-white hover:bg-orange-700"
@@ -861,9 +868,7 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
               ) : (
                 <div className="flex flex-col gap-3">
                   <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div className="text-phx-xs font-black uppercase tracking-wide text-slate-500">
-                      Part 2 — Full sheet
-                    </div>
+                    <SectionHeading title="Part 2 — Full sheet" />
                     <div className="flex items-center gap-2">
                       {run.phase === "part2" ? (
                         <Button
@@ -903,7 +908,7 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
             </div>
 
             <div className="flex flex-wrap items-center gap-2 border-t border-slate-200 pt-3">
-              <span className="text-phx-xs font-black uppercase tracking-wide text-slate-500">Sheets</span>
+              <SectionHeading title="Sheets" />
               <Button
                 variant="outline"
                 size="sm"
@@ -953,9 +958,7 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
           {populationDiff && !populationDiff.noBaseline ? (
             <div className={cn(adminSoftPanelClassName, "flex flex-col gap-2 p-4")}>
               <div className="flex flex-wrap items-center gap-2">
-                <span className="text-phx-xs font-black uppercase tracking-wide text-slate-500">
-                  Roster vs last month
-                </span>
+                <SectionHeading title="Roster vs last month" />
                 <AdminInsightChip tone="neutral">
                   {populationDiff.currentHeadcount} now · {populationDiff.previousHeadcount} last month
                 </AdminInsightChip>
