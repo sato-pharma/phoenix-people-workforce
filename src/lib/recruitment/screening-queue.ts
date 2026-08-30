@@ -11,6 +11,7 @@
 // bundler should be trusted to keep tree-shaking away.
 
 import { listCandidates } from "@/lib/recruitment/candidates";
+import { isFiledCandidate } from "@/lib/recruitment/candidate-folder";
 import { listCandidateViews, type CandidateViewMap } from "@/lib/recruitment/candidate-views";
 import { normalizeCandidateStatus, type CandidateStatus } from "@/lib/recruitment/candidate-status";
 import { listHiringManagerOptions, type HiringManagerOption } from "@/lib/recruitment/hiring-manager-notify";
@@ -78,7 +79,16 @@ export async function loadScreeningQueue(
 
   const { status, unseenOnly } = parseScreeningFilters(filters);
 
-  let candidates = allCandidates;
+  // A shelved CV leaves the screening queue too, not only the pool. The whole purpose of the shelf
+  // is that a good-but-not-now CV stops being offered for review again — leaving it here would put
+  // it straight back in front of the one person the feature exists to stop re-reading it, which is
+  // the complaint that produced candidate-views.ts in the first place.
+  //
+  // It is taken off BEFORE `filteredOut` is counted, so "27 filtered out" means the filters, not the
+  // shelf. A number that quietly includes the archive is a number nobody can act on.
+  const poolCandidates = allCandidates.filter((candidate) => !isFiledCandidate(candidate));
+
+  let candidates = poolCandidates;
   if (status) {
     candidates = candidates.filter((candidate) => normalizeCandidateStatus(candidate.status) === status);
   }
@@ -88,7 +98,7 @@ export async function loadScreeningQueue(
 
   return {
     candidates,
-    filteredOut: allCandidates.length - candidates.length,
+    filteredOut: poolCandidates.length - candidates.length,
     hiringManagers,
     openVacancies,
     positionSuggestions,

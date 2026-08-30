@@ -14,6 +14,7 @@ import {
   Copy,
   Eye,
   FileSpreadsheet,
+  FolderPlus,
   Send,
   Sparkles,
   Trash2,
@@ -40,10 +41,22 @@ import {
 } from "@/components/employee-portal/portal-primitives";
 import { Input } from "@/components/ui/input";
 import { JobAdvertPanel } from "@/components/recruitment/job-advert-panel";
+import { CandidateFoldersTab } from "@/components/recruitment/candidate-folders-tab";
+import { deleteRequest, patchJson, postJson } from "@/components/recruitment/recruitment-fetch";
 import type { ApplicationWithContext } from "@/lib/recruitment/applications";
 import type { CandidateProfile } from "@/lib/recruitment/candidates";
 import { APPLIED_FOR_SOURCE_LABEL, APPLIED_FOR_SOURCE_SHORT, candidateRowAppliedFor } from "@/lib/recruitment/applied-for";
 import { candidateDisplayName, isShortenedCandidateName } from "@/lib/recruitment/candidate-display";
+import {
+  candidateFolderKeyLabels,
+  candidateFolderKindLabels,
+  candidateFolderKinds,
+  candidateFolderRefusal,
+  districtManagerFolderOptions,
+  partitionCandidatesByFolder,
+  type CandidateFolderKind,
+} from "@/lib/recruitment/candidate-folder";
+import type { CandidateFolderAreaOption } from "@/lib/recruitment/candidate-folder-options";
 import {
   groupCandidatesByNotifiedManager,
   managerPickerLabel as hiringManagerOptionLabel,
@@ -139,6 +152,8 @@ import { detectCvFileKind } from "@/lib/recruitment/cv-file-kind";
 type ManagerOption = { hrId: string; fullName: string };
 
 type Props = {
+  /** Every active area with the region it files under in RECRUITMENT — the folder picker's list. */
+  areaOptions: CandidateFolderAreaOption[];
   canApprove: boolean;
   canCreateRequisition: boolean;
   canDelete: boolean;
@@ -163,7 +178,13 @@ type Props = {
   positionCatalogue: PositionCatalogueOption[];
 };
 
-type TabKey = "pipeline" | "requisitions" | "candidates" | "advertise";
+type TabKey = "pipeline" | "requisitions" | "candidates" | "folders" | "advertise";
+
+/**
+ * Which inline picker a pool row has open. Lifted to the table so only ONE row expands at a time —
+ * 555 rows each carrying its own dropdowns is the thing this state exists to prevent.
+ */
+type PoolRowPanel = "send" | "start" | "folder";
 
 const fieldClass =
   "w-full border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-orange-400 focus:outline-none";
@@ -363,44 +384,6 @@ const rejectableStages = new Set([
   "manager_interview_completed",
   "backup_candidate",
 ]);
-
-async function postJson(url: string, body: unknown): Promise<Record<string, unknown>> {
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
-  if (!res.ok) throw new Error(typeof data.message === "string" ? data.message : "Request failed.");
-  return data;
-}
-
-/**
- * PATCH, which this file did not have — and its absence was a silent, total defect.
- *
- * The candidate status route exports PATCH and only PATCH, but the one control that wrote a status
- * called postJson against it. Next.js answers a POST to a PATCH-only route with 405, so every
- * "Update status" click in the history of this module failed, and the error surfaced as a generic
- * "Request failed." That is a large part of why 225 of the 226 candidates in production still carry
- * the database default: the button was never capable of changing it.
- */
-async function patchJson(url: string, body: unknown): Promise<Record<string, unknown>> {
-  const res = await fetch(url, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
-  if (!res.ok) throw new Error(typeof data.message === "string" ? data.message : "Request failed.");
-  return data;
-}
-
-async function deleteRequest(url: string): Promise<Record<string, unknown>> {
-  const res = await fetch(url, { method: "DELETE" });
-  const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
-  if (!res.ok) throw new Error(typeof data.message === "string" ? data.message : "Delete failed.");
-  return data;
-}
 
 
 /**
@@ -974,6 +957,7 @@ export function RecruitmentWorkspace(props: Props) {
   // The inbound-CV notification deep-links to ?candidate=<id> so a reviewer lands on the profile
   // holding the extracted fields, not on a module landing page they'd have to search from.
   const workspaceParams = useSearchParams();
+  const workspacePathname = usePathname();
   const linkedCandidateId = workspaceParams.get("candidate");
   const [pending, startTransition] = useTransition();
   // Candidates, not Pipeline. Production on 2026-08-15: the pipeline held 7 applications ever while
@@ -984,6 +968,25 @@ export function RecruitmentWorkspace(props: Props) {
   const [tab, setTab] = useState<TabKey>(() => (workspaceParams.get("application") ? "pipeline" : "candidates"));
   const [error, setError] = useState<string | null>(initialError);
   const [notice, setNotice] = useState<string | null>(null);
+
+  /**
+   * Open one CV from the folders screen.
+   *
+   * Deliberately routed through the ?candidate= deep link rather than by hoisting the profile panel
+   * out of the pool tab: that link is already the one path into a profile from OUTSIDE the pool (the
+   * inbound-CV notification uses it), so a filed CV opens through exactly the same code as every
+   * other CV — one profile panel, one CV viewer, one thing to keep working. `openProfile` fetches
+   * the candidate by id, so being off the pool does not stop it opening.
+   *
+   * The tab switch is what makes it visible: the panel renders inside the pool tab, so setting the
+   * link without switching would load a profile onto a screen that cannot show it.
+   */
+  const openCandidateFromFolder = (candidateId: string) => {
+    const next = new URLSearchParams(Array.from(workspaceParams.entries()));
+    next.set("candidate", candidateId);
+    setTab("candidates");
+    router.replace(`${workspacePathname}?${next.toString()}`, { scroll: false });
+  };
 
   const run = (work: () => Promise<string | void>) => {
     setError(null);
@@ -1053,9 +1056,11 @@ export function RecruitmentWorkspace(props: Props) {
       {/* Candidates first, because it is where the work is and where the module now opens. */}
       <div className="flex flex-wrap gap-2">
         {/* Advertise is management-only: it hands out apply links and retires channels. */}
+        {/* Folders sits directly after Candidates because it is the same pile, shelved — a CV is in
+            one or the other and never both, so the two tabs read as two halves of one list. */}
         {(props.canManage
-          ? (["candidates", "requisitions", "pipeline", "advertise"] as TabKey[])
-          : (["candidates", "requisitions", "pipeline"] as TabKey[])
+          ? (["candidates", "folders", "requisitions", "pipeline", "advertise"] as TabKey[])
+          : (["candidates", "folders", "requisitions", "pipeline"] as TabKey[])
         ).map((key) => (
           <Button key={key} variant={tab === key ? "default" : "ghost"} onClick={() => setTab(key)}>
             {humanizeRecruitmentTerm(key)}
@@ -1069,6 +1074,11 @@ export function RecruitmentWorkspace(props: Props) {
         </AdminCallout>
       ) : tab === "advertise" ? (
         <JobAdvertPanel />
+      ) : tab === "folders" ? (
+        // Handed the WHOLE candidate array, not the filed half. The shelf screen and the pool run
+        // the same partition over the same input, which is what makes "in exactly one of the two"
+        // true by construction rather than by two filters agreeing.
+        <CandidateFoldersTab candidates={props.candidates} onOpenCandidate={openCandidateFromFolder} />
       ) : tab === "pipeline" ? (
         <PipelineTab
           applications={applications}
@@ -1098,6 +1108,7 @@ export function RecruitmentWorkspace(props: Props) {
         />
       ) : (
         <CandidatesTab
+          areaOptions={props.areaOptions}
           asOf={candidateStats.asOf}
           canDelete={props.canDelete}
           canImport={props.canImport}
@@ -2344,10 +2355,133 @@ function DuplicateFlagControl({
  * candidate row, so "has anyone been told about this person?" is answered on screen rather than
  * guessed, and it survives a reload because it is stored, not component state.
  */
+/**
+ * "This CV is good, but not for now" — the picker that puts a candidate on the shelf.
+ *
+ * THREE SHELVES, THREE DIFFERENT SECOND QUESTIONS, which is why this is a component and not two
+ * dropdowns: a Medical Representative is filed by AREA, a District Manager by REGION, and anything
+ * else by JOB TITLE. Picking the shelf changes what the second control even is.
+ *
+ * The areas come from the server (au.canonical_areas, already re-tagged for the Delta (3)
+ * recruitment split — see candidate-folder-options.ts), the regions from the closed list in
+ * candidate-region.ts, and the job title is typed with the titles already in use offered beside it.
+ * That last one is the free-typed half the owner asked for on the position picker too, and it
+ * carries the same risk: two folders that read almost identically. `cleanFolderKey` collapsing
+ * whitespace and the case-folded group key are what keep "Medical  Rep" and "medical rep" together.
+ */
+function FileToFolderPicker({
+  areaOptions,
+  candidate,
+  onFiled,
+  pending,
+  run,
+  usedJobTitles,
+}: {
+  areaOptions: CandidateFolderAreaOption[];
+  candidate: Candidate;
+  onFiled: () => void;
+  pending: boolean;
+  run: (work: () => Promise<string | void>) => void;
+  /** Job titles already used as folders, so a second "Regulatory Affairs" is a pick, not a retype. */
+  usedJobTitles: string[];
+}) {
+  const [kind, setKind] = useState<CandidateFolderKind>("medical_rep");
+  const [key, setKey] = useState("");
+
+  const regionOptions = districtManagerFolderOptions();
+  // Areas are listed under their RECRUITMENT region, so a recruiter filing a Sharkia CV finds it
+  // under Delta (3) — where the district actually is — rather than under Delta (2), where the sales
+  // geography still deliberately files it.
+  const areasByRegion = new Map<string, string[]>();
+  for (const area of areaOptions) {
+    const list = areasByRegion.get(area.regionCode);
+    if (list) list.push(area.name);
+    else areasByRegion.set(area.regionCode, [area.name]);
+  }
+
+  const file = () =>
+    run(async () => {
+      await patchJson(`/api/recruitment/candidates/${candidate.id}/folder`, { key, kind });
+      onFiled();
+      setKey("");
+      return `${candidateDisplayName(candidate.fullName)} filed under ${candidateFolderKindLabels[kind]}.`;
+    });
+
+  return (
+    <div className="space-y-1.5 border border-sky-200 bg-sky-50/60 p-1.5">
+      <select
+        className="h-8 w-full min-w-0 border border-slate-300 bg-white px-2 text-xs text-slate-900"
+        onChange={(e) => {
+          setKind(e.target.value as CandidateFolderKind);
+          // The key means something different on every shelf, so carrying "Nasr City" across to the
+          // region shelf would file the CV under a region that does not exist.
+          setKey("");
+        }}
+        value={kind}
+      >
+        {candidateFolderKinds.map((option) => (
+          <option key={option} value={option}>
+            {candidateFolderKindLabels[option]}
+          </option>
+        ))}
+      </select>
+
+      {kind === "other" ? (
+        <>
+          <Input
+            list={`folder-titles-${candidate.id}`}
+            onChange={(e) => setKey(e.target.value)}
+            placeholder={candidateFolderKeyLabels.other}
+            value={key}
+          />
+          <datalist id={`folder-titles-${candidate.id}`}>
+            {usedJobTitles.map((title) => (
+              <option key={title} value={title} />
+            ))}
+          </datalist>
+        </>
+      ) : (
+        <select
+          className="h-8 w-full min-w-0 border border-slate-300 bg-white px-2 text-xs text-slate-900"
+          onChange={(e) => setKey(e.target.value)}
+          value={key}
+        >
+          <option value="">{`Choose a ${candidateFolderKeyLabels[kind].toLowerCase()}…`}</option>
+          {kind === "district_manager"
+            ? regionOptions.map((option) => (
+                <option key={option.key} value={option.key}>
+                  {option.label}
+                </option>
+              ))
+            : regionOptions.map((region) => {
+                const areas = areasByRegion.get(region.key) ?? [];
+                if (areas.length === 0) return null;
+                return (
+                  <optgroup key={region.key} label={region.label}>
+                    {areas.map((area) => (
+                      <option key={area} value={area}>
+                        {area}
+                      </option>
+                    ))}
+                  </optgroup>
+                );
+              })}
+        </select>
+      )}
+
+      <Button className="w-full" disabled={pending || key.trim().length === 0} onClick={file}>
+        File to folder
+      </Button>
+    </div>
+  );
+}
+
 function CandidateActionsControl({
+  areaOptions,
   candidate,
   canDelete,
   canManage,
+  folderJobTitles,
   hiringManagers,
   openPanel,
   openProfile,
@@ -2367,12 +2501,14 @@ function CandidateActionsControl({
   setStartReq,
   startReq,
 }: {
+  areaOptions: CandidateFolderAreaOption[];
   candidate: Candidate;
   canDelete: boolean;
   canManage: boolean;
+  folderJobTitles: string[];
   hiringManagers: HiringManagerOption[];
   /** Which picker, if any, this candidate has open — lifted so only one row expands at a time. */
-  openPanel: "send" | "start" | null;
+  openPanel: PoolRowPanel | null;
   openProfile: (id: string) => void;
   openRequisitions: Requisition[];
   openVacancies: VacancyReportRow[];
@@ -2382,7 +2518,7 @@ function CandidateActionsControl({
   sendFreeTitle: Record<string, string>;
   sendPosition: Record<string, string>;
   sendTo: Record<string, string>;
-  setOpenPanel: (panel: "send" | "start" | null) => void;
+  setOpenPanel: (panel: PoolRowPanel | null) => void;
   setSendFreeArea: Dispatch<SetStateAction<Record<string, string>>>;
   setSendFreeTitle: Dispatch<SetStateAction<Record<string, string>>>;
   setSendPosition: Dispatch<SetStateAction<Record<string, string>>>;
@@ -2393,6 +2529,7 @@ function CandidateActionsControl({
   const notified = candidate.managerNotified;
   const current = normalizeCandidateStatus(candidate.status);
   const positionChoice = sendPosition[candidate.id] ?? "";
+  const folderRefusal = candidateFolderRefusal(candidate);
 
   const sendToManager = () =>
     run(async () => {
@@ -2444,6 +2581,18 @@ function CandidateActionsControl({
             >
               <Briefcase className="h-3.5 w-3.5" />
             </PoolIconButton>
+            {/* Disabled rather than hidden when the CV cannot be filed. A control that vanishes
+                teaches nothing; one that is greyed out with the reason on it answers "why can I not
+                file this rejected CV?" without anybody having to ask. The sentence comes from
+                candidateFolderRefusal, the same one the route's 400 uses. */}
+            <PoolIconButton
+              active={openPanel === "folder"}
+              disabled={pending || folderRefusal !== null}
+              label={folderRefusal ?? "File to folder — keep this CV for later"}
+              onClick={() => setOpenPanel(openPanel === "folder" ? null : "folder")}
+            >
+              <FolderPlus className="h-3.5 w-3.5" />
+            </PoolIconButton>
             {canDelete ? (
               <PoolIconButton
                 disabled={pending}
@@ -2468,6 +2617,17 @@ function CandidateActionsControl({
           </>
         ) : null}
       </div>
+
+      {canManage && openPanel === "folder" ? (
+        <FileToFolderPicker
+          areaOptions={areaOptions}
+          candidate={candidate}
+          onFiled={() => setOpenPanel(null)}
+          pending={pending}
+          run={run}
+          usedJobTitles={folderJobTitles}
+        />
+      ) : null}
 
       {/* Only the row being acted on mounts a picker, so 555 rows do not carry 1,110 dropdowns. */}
       {canManage && openPanel === "send" ? (
@@ -2728,9 +2888,11 @@ function positionBody(
 }
 
 function CandidatePoolCard({
+  areaOptions,
   candidate,
   canDelete,
   canManage,
+  folderJobTitles,
   hiringManagers,
   isNew,
   openProfile,
@@ -2749,9 +2911,11 @@ function CandidatePoolCard({
   setStartReq,
   startReq,
 }: {
+  areaOptions: CandidateFolderAreaOption[];
   candidate: Candidate;
   canDelete: boolean;
   canManage: boolean;
+  folderJobTitles: string[];
   hiringManagers: HiringManagerOption[];
   isNew: boolean;
   openProfile: (id: string) => void;
@@ -2772,7 +2936,7 @@ function CandidatePoolCard({
 }) {
   // One card is one candidate, so the open picker is local here — unlike the table, where the state
   // is lifted so two rows cannot expand at once.
-  const [openPanel, setOpenPanel] = useState<"send" | "start" | null>(null);
+  const [openPanel, setOpenPanel] = useState<PoolRowPanel | null>(null);
 
   // The same facts the desktop row reads, resolved by the same module. A phone screener is doing
   // the identical job with less screen, so the card must not answer fewer questions than the table
@@ -2797,9 +2961,11 @@ function CandidatePoolCard({
       accent="slate"
       actions={
         <CandidateActionsControl
+          areaOptions={areaOptions}
           candidate={candidate}
           canDelete={canDelete}
           canManage={canManage}
+          folderJobTitles={folderJobTitles}
           hiringManagers={hiringManagers}
           openPanel={openPanel}
           openProfile={openProfile}
@@ -3012,6 +3178,7 @@ const poolFilterSelectClass =
   "border border-slate-200 px-2 py-1.5 text-sm text-slate-800 focus:border-orange-400 focus:outline-none";
 
 function CandidatesTab({
+  areaOptions,
   asOf,
   canDelete,
   canImport,
@@ -3026,6 +3193,9 @@ function CandidatesTab({
   setError,
   setNotice,
 }: {
+  /** Every active area, tagged with the region it files under in RECRUITMENT — the folder picker's
+      area list. Loaded on the server because it reads the org chart; see candidate-folder-options.ts. */
+  areaOptions: CandidateFolderAreaOption[];
   /** The instant the server counted the stat cards from — see CandidatePoolStats. */
   asOf: string;
   canDelete: boolean;
@@ -3110,7 +3280,7 @@ function CandidatesTab({
   const [bulkFreeTitle, setBulkFreeTitle] = useState("");
   // Which row, if any, has a picker open. One at a time: 555 rows must not each mount two
   // dropdowns, and two open pickers on screen is two places to click Send by mistake.
-  const [openRowPanel, setOpenRowPanel] = useState<{ id: string; panel: "send" | "start" } | null>(null);
+  const [openRowPanel, setOpenRowPanel] = useState<{ id: string; panel: PoolRowPanel } | null>(null);
   // Screening mode holds a SNAPSHOT of the queue taken when it opens, not a live view: re-sorting
   // the list under a reader who is halfway through it is how you lose your place, which is the
   // exact complaint this whole mode answers.
@@ -3134,6 +3304,7 @@ function CandidatesTab({
   // actually open. A hard-coded /recruitment/screening in the portal would bounce Talent
   // Acquisition straight back out through the (admin) group's redirect.
   const poolPathname = usePathname();
+  const poolParams = useSearchParams();
   const screeningBasePath = poolPathname?.startsWith("/employee-portals")
     ? "/employee-portals/recruitment"
     : "/recruitment";
@@ -3170,8 +3341,25 @@ function CandidatesTab({
     candidates.map((candidate) => [candidate.id, candidateDisplayName(candidate.fullName)] as const),
   );
 
+  // THE SHELF COMES OFF THE POOL FIRST, before search, before every filter and before the red/active
+  // split. The owner's requirement in his own words: *"the CV that I push to a folder ... it is not
+  // appearing now on the main page."* Taking it out here rather than inside the predicate below is
+  // what makes that true of the counts as well as the rows — a filed CV must not be sitting inside
+  // "Active 322" waiting for somebody to notice the arithmetic does not add up.
+  //
+  // `poolCandidates` and the folder screen come from ONE partition of ONE array, so a CV is in
+  // exactly one of them by construction. Two independent filters here is precisely how a candidate
+  // ends up in neither and is lost.
+  const { pool: poolCandidates, shelves: folderShelves } = partitionCandidatesByFolder(candidates);
+  // The job titles already in use as folders, offered beside the free-typed field. This is what
+  // keeps a second "Regulatory Affairs Specialist" from opening a folder that reads almost exactly
+  // like the first — the same risk the owner accepted on the position picker, answered the same way.
+  const folderJobTitles = (folderShelves.find((shelf) => shelf.kind === "other")?.folders ?? []).map(
+    (folder) => folder.storedKey,
+  );
+
   const q = query.trim().toLowerCase();
-  const filteredCandidates = candidates
+  const filteredCandidates = poolCandidates
     .filter((c) => {
       if (
         q &&
@@ -3409,6 +3597,16 @@ function CandidatesTab({
     setRetryError(null);
     setRetryPositionKey(defaultCvPositionKey);
     setStoredExtraction(null);
+    // Drop the ?candidate= link on the way out. Without this, a CV opened from a folder (or from the
+    // inbound-CV notification) could be opened exactly ONCE: the deep-link effect is guarded on the
+    // id, so closing and pressing the same CV again would set a value the guard had already seen and
+    // nothing would happen. Clearing the link is what makes the second press work.
+    if (linkedCandidateId) {
+      const next = new URLSearchParams(Array.from(poolParams.entries()));
+      next.delete("candidate");
+      const query = next.toString();
+      router.replace(query ? `${poolPathname}?${query}` : (poolPathname ?? ""), { scroll: false });
+    }
     if (returnTo === null || typeof window === "undefined") return;
     // After paint: the panel has to be gone before the page is short enough to scroll back into.
     // Instant, for the same measured reason as the scroll in — over these distances Chrome does not
@@ -3421,7 +3619,13 @@ function CandidatesTab({
   // than keyed on `profile` so closing the panel doesn't immediately reopen it.
   const autoOpenedRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!linkedCandidateId || autoOpenedRef.current === linkedCandidateId) return;
+    // Cleared link ⇒ forget what was opened, so pressing the SAME CV again reopens it. The guard
+    // exists to stop the panel reopening on every render, not to make a CV openable once per visit.
+    if (!linkedCandidateId) {
+      autoOpenedRef.current = null;
+      return;
+    }
+    if (autoOpenedRef.current === linkedCandidateId) return;
     autoOpenedRef.current = linkedCandidateId;
     void openProfile(linkedCandidateId);
     // openProfile is recreated every render; re-running on it would fight the ref guard.
@@ -3934,9 +4138,11 @@ function CandidatesTab({
                   </div>
                 ) : null}
                 <CandidatePoolCard
+                  areaOptions={areaOptions}
                   candidate={candidate}
                   canDelete={canDelete}
                   canManage={canManage}
+                  folderJobTitles={folderJobTitles}
                   hiringManagers={hiringManagers}
                   isNew={isNewArrival(candidate)}
                   openProfile={openProfile}
@@ -4375,9 +4581,11 @@ function CandidatesTab({
                       </td>
                       <td className="px-3 py-2.5">
                         <CandidateActionsControl
+                          areaOptions={areaOptions}
                           candidate={candidate}
                           canDelete={canDelete}
                           canManage={canManage}
+                          folderJobTitles={folderJobTitles}
                           hiringManagers={hiringManagers}
                           openPanel={openRowPanel?.id === candidate.id ? openRowPanel.panel : null}
                           openProfile={openProfile}

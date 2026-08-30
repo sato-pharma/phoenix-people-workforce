@@ -11,6 +11,10 @@ import { canAccess, isHrAuthorityRole, resolveNavigationMode, type AccessContext
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { listCandidates } from "@/lib/recruitment/candidates";
+import {
+  listCandidateFolderAreaOptions,
+  type CandidateFolderAreaOption,
+} from "@/lib/recruitment/candidate-folder-options";
 import { summarizeCandidatePool } from "@/lib/recruitment/candidate-stats";
 import { getRecruitmentDashboard, type RecruitmentDashboard } from "@/lib/recruitment/dashboard";
 import { isFileUploadEnabled } from "@/lib/recruitment/file-storage";
@@ -84,17 +88,23 @@ async function RecruitmentContent({ access }: { access: AccessContext }) {
   // ceremony that left 214 of 221 candidates sitting in the pool.
   let hiringManagers: HiringManagerOption[] = [];
   let candidates: Candidate[] = [];
+  // The folder picker's area list. Empty on a load failure rather than throwing: a recruiter
+  // who cannot file to an area must still get the pool, and the picker degrades to the two
+  // shelves that need no database (regions are a closed list, job titles are typed).
+  let areaOptions: CandidateFolderAreaOption[] = [];
   let initialError: string | null = null;
 
   try {
-    const [dashboardData, vacancies, catalogue, managerOptions, employeeRows] = await Promise.all([
+    const [dashboardData, vacancies, catalogue, managerOptions, employeeRows, areas] = await Promise.all([
       getRecruitmentDashboard(access),
       listOpenVacanciesForRequisition(),
       listPositionCatalogue(),
       listHiringManagerOptions(),
       getEmployeeDirectoryRows(),
+      listCandidateFolderAreaOptions(),
     ]);
     dashboard = dashboardData;
+    areaOptions = areas;
     openVacancies = vacancies;
     positionCatalogue = catalogue;
     hiringManagers = managerOptions;
@@ -110,6 +120,7 @@ async function RecruitmentContent({ access }: { access: AccessContext }) {
 
   return (
     <RecruitmentWorkspace
+      areaOptions={areaOptions}
       canApprove={canApprove}
       canCreateRequisition={canCreateRequisition}
       canDelete={canDelete}

@@ -7,6 +7,9 @@
 //   supabase/_migrations_archive/pre-baseline-2026-07-11/20260605014350_recruitment_workflow_registry_module.sql
 
 import type { CandidateAppliedFor } from "@/lib/recruitment/applied-for";
+// Type-only, so the cycle with candidate-folder.ts (which imports `Candidate` from here) is erased
+// at compile time and never reaches the bundle — same shape as the applied-for import above.
+import type { CandidateFolderKind } from "@/lib/recruitment/candidate-folder";
 import type { CandidateUnconfirmedCvFacts } from "@/lib/recruitment/candidate-screening-facts";
 
 export const RECRUITMENT_MODULE_KEY = "recruitment" as const;
@@ -303,6 +306,22 @@ export type Candidate = {
    * no position was recorded, and none is invented.
    */
   sentFor: SentForPosition | null;
+  /**
+   * The CV shelf — where a good-but-not-needed-now CV was filed, and by whom.
+   *
+   * Null for everyone in the live pool, which is nearly everybody. Non-null is the single authority
+   * for "hidden from the main page": the pool, the CV database and the screening queue all ask
+   * `isFiledCandidate` and none of them re-derives it. See candidate-folder.ts for the three shelves
+   * and why filing is deliberately NOT a status.
+   *
+   * `key` means whatever `kind` says it means — an area name, a region CODE, or a job title.
+   */
+  folder: {
+    kind: CandidateFolderKind;
+    key: string;
+    filedAt: string;
+    filedByHrId: string | null;
+  } | null;
   createdBy: string | null;
   createdAt: string;
   updatedAt: string;
