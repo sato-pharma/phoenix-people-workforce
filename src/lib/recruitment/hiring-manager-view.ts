@@ -32,6 +32,7 @@ import { canSeeAllRecruitment } from "@/lib/recruitment/access";
 import { recruitmentDb } from "@/lib/recruitment/db";
 import { isCandidateWithinViewerTeam } from "@/lib/recruitment/hiring-manager-team";
 import { getFileForDownload, listCandidateFiles, type FileDownload } from "@/lib/recruitment/files";
+import { isCandidateSentToManager } from "@/lib/recruitment/manager-sends";
 import { getRequisition } from "@/lib/recruitment/requisitions";
 import type { RecruitmentFile } from "@/lib/recruitment/types";
 
@@ -57,7 +58,17 @@ export async function isCandidateSentToCaller(access: AccessContext, candidateId
     .maybeSingle();
   if (error) throw error;
   const stamped = (data as { manager_notified_hr_id?: unknown } | null)?.manager_notified_hr_id;
-  return Boolean(stamped) && hrIdsMatch(String(stamped), access.hrId);
+  if (Boolean(stamped) && hrIdsMatch(String(stamped), access.hrId)) return true;
+
+  // TWO SOURCES, for the same reason the manager's LIST reads two. This column holds only the LAST
+  // manager a CV was sent to, so on its own it hands the file to the most recent recipient and
+  // refuses everyone before them — a manager would see the name on their own list and be told the
+  // candidate is outside their scope when they clicked it. Since 2026-08-30 a CV can be sent to
+  // several managers and each of them keeps it, so the send trail is what answers this.
+  //
+  // null means the table is not in this database yet; the column's answer above already stands, and
+  // a missing migration must never read as a denial.
+  return (await isCandidateSentToManager(candidateId, access.hrId)) === true;
 }
 
 async function assertCandidateInHiringManagerScope(access: AccessContext, candidateId: string): Promise<void> {

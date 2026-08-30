@@ -16,6 +16,7 @@ import {
 import { describeCandidateSource, type SourceContextRow } from "@/lib/recruitment/candidate-source-context";
 import type { CandidateUnconfirmedCvFacts } from "@/lib/recruitment/candidate-screening-facts";
 import { chunkIds } from "@/lib/recruitment/db-batch";
+import { listSendsForManager, managerSendStamp, type ManagerSend } from "@/lib/recruitment/manager-sends";
 import { hrIdLookupKeys, hrIdsMatch } from "@/lib/hr-id";
 import {
   listHiringManagerOptions,
@@ -496,20 +497,77 @@ export async function listCandidatesSentToManager(managerHrId: string | null | u
   const keys = hrIdLookupKeys(managerHrId);
   if (keys.length === 0) return [];
   const supabase = recruitmentDb();
-  const { data, error } = await supabase
+
+  // TWO SOURCES, UNIONED — and the union is the safety, not indecision.
+  //
+  //   • ats_candidate_manager_sends — one row per (candidate, manager). Since 2026-08-30 this is
+  //     the real record: a CV can be sent to several managers and every one of them keeps it.
+  //   • manager_notified_hr_id on the candidate — the old single-manager column, still written by
+  //     every send (last one wins) and still the only record for anything sent before the table
+  //     existed or during a window where the write to it was skipped.
+  //
+  // Reading only the new table would empty this page in the minutes between the code shipping and
+  // the migration being applied, and reading only the old column is the bug being fixed. Reading
+  // BOTH means a send shows up if EITHER recorded it, which is the only combination with no window
+  // where a manager is shown an empty page that means the opposite of what it says.
+  const sends = await listSendsForManager(managerHrId);
+
+  const legacy = await supabase
     .from("ats_candidates")
     .select("*")
     .in("manager_notified_hr_id", keys)
     .order("manager_notified_at", { ascending: false });
-  if (error) {
+  if (legacy.error) {
     // 42703 = the column does not exist, which is the pre-migration state and NOT a fault of this
     // caller: 20260815180000_candidate_manager_push adds it. Everything else is a real failure and
     // is thrown, because a manager silently shown an empty list is precisely the invisibility this
     // module has been fixing all day.
-    if ((error as { code?: string }).code === "42703") return [];
-    throw error;
+    if ((legacy.error as { code?: string }).code !== "42703") throw legacy.error;
   }
-  const candidates = ((data ?? []) as CandidateDbRow[]).map(mapCandidate);
+
+  const rowsById = new Map<string, CandidateDbRow>();
+  for (const row of (legacy.data ?? []) as CandidateDbRow[]) rowsById.set(String(row.id), row);
+
+  // Anything the fan-out knows about that the old column no longer points at — which is exactly the
+  // set that used to be lost: every CV since re-sent to somebody else.
+  const missingIds = (sends ?? []).map((send) => send.candidateId).filter((id) => !rowsById.has(id));
+  for (const batch of chunkIds(missingIds)) {
+    const extra = await supabase.from("ats_candidates").select("*").in("id", batch);
+    if (extra.error) throw extra.error;
+    for (const row of (extra.data ?? []) as CandidateDbRow[]) rowsById.set(String(row.id), row);
+  }
+
+  // Explicitly typed, and the entry is `as const`: without it the array literal widens to
+  // (string | ManagerSend)[] and the Map constructor no longer accepts it.
+  const sendsByCandidate = new Map<string, ManagerSend>(
+    (sends ?? []).map((send) => [send.candidateId, send] as const),
+  );
+  const candidates: Candidate[] = [];
+  for (const [id, row] of rowsById) {
+    const candidate = mapCandidate(row);
+    const send = sendsByCandidate.get(id);
+    // THIS MANAGER'S OWN SEND, overlaid on top of the candidate's shared columns.
+    //
+    // Those columns hold whoever was sent it LAST. Rendering them here would show manager A the
+    // date, the seat and — worse — the VACANCY that manager B was sent the CV for, filing it under
+    // a folder A never chose. The per-send row is the only thing that is true for this reader.
+    //
+    // Only when a send row exists. Without one the candidate reached this list through the old
+    // column, and that column IS this manager's send.
+    if (send) {
+      const stamp = managerSendStamp(send);
+      candidate.managerNotified = stamp.managerNotified;
+      candidate.sentFor = stamp.sentFor;
+    }
+    candidates.push(candidate);
+  }
+
+  // Newest send first — re-sorted here rather than trusted from either query, because the union can
+  // interleave rows the two sources ordered separately.
+  candidates.sort((left, right) =>
+    (right.managerNotified?.sentAt ?? "").localeCompare(left.managerNotified?.sentAt ?? ""),
+  );
+
   // The manager's own inbox needs the role more than any other screen — it is the whole question
   // they are answering. Without this the card read "No role stated on the application" for 540 of
   // the 555 rows, because `applied_for_job_title` is filled on 15 of them.

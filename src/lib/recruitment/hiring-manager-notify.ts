@@ -23,8 +23,10 @@ import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import { hrIdLookupKeys } from "@/lib/hr-id";
 import { createSystemNotification } from "@/lib/notifications/system";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { candidateAlertIdempotencyKey } from "@/lib/recruitment/candidate-alert-key";
 import { chunkIds } from "@/lib/recruitment/db-batch";
 import { writeApplicationEvent } from "@/lib/recruitment/db";
+import { recordManagerSends } from "@/lib/recruitment/manager-sends";
 import type { SentForPosition } from "@/lib/recruitment/types";
 
 /** The audit action written to ats_application_events when a manager is told about a candidate. */
@@ -244,6 +246,11 @@ export async function pushCandidatesToManager(input: {
   const managerName = manager.name;
   const names = input.candidates.map((candidate) => candidate.name);
   const many = input.candidates.length > 1;
+  // Taken BEFORE the notification rather than after it, because the alert's identity now depends on
+  // it. One instant is used for the alert key, the candidate stamp and the fan-out row, so all
+  // three agree — reading the clock twice would let a send straddle a minute boundary and key the
+  // alert to a minute the stamp does not claim.
+  const sentAt = new Date().toISOString();
 
   await createSystemNotification({
     // The manager's own screen, NOT the CV database. This link pointed at
@@ -265,13 +272,23 @@ export async function pushCandidatesToManager(input: {
     channels: ["in_app", "telegram", "push"],
     eventType: "candidate_assigned",
     message: `${joinNames(names)} ${many ? "have" : "has"} been sent to you to review.`,
+    // WITHOUT THIS, EVERY SEND TO THIS MANAGER IS THE SAME ALERT. The default key is derived from
+    // the title, the link, the module and the recipient — all constants here — so alert number two
+    // overwrote alert number one, keeping its original date and its already-read state. See
+    // candidateAlertIdempotencyKey for the measurements and the three consequences.
+    metadata: {
+      idempotencyKey: candidateAlertIdempotencyKey({
+        candidateIds: input.candidates.map((candidate) => candidate.id),
+        eventType: "candidate_assigned",
+        managerHrId: input.managerHrId,
+        sentAtIso: sentAt,
+      }),
+    },
     module: "recruitment",
     priority: "normal",
     recipientHrId: input.managerHrId,
     title: many ? `${input.candidates.length} new candidates to review` : "New candidate to review",
   });
-
-  const sentAt = new Date().toISOString();
 
   // One update per batch, all the stamp columns together — so a stamp is never half-written and
   // mapCandidate never has to render a send attributed to nobody. Batched through chunkIds because
@@ -350,6 +367,35 @@ export async function pushCandidatesToManager(input: {
     if (!written) throw lastError;
   }
 
+  // THE FAN-OUT ROW — and the reason a CV no longer falls out of the previous manager's list.
+  //
+  // The columns stamped above hold ONE manager. Sending the same CV to a second person overwrote
+  // the first, and what was overwritten was the record of the first send, so it vanished with
+  // nothing left behind to notice. Confirmed in production on 2026-08-30: Salim Salim Abdo Ibrahim
+  // Gomaa was sent Sara Osama AbdAlfattah at 01:44:22 Cairo and got the alert for her; the same CV
+  // went to Hany Saad Mohamed Omar at 01:44:53 and Salim's list dropped to zero while his alert
+  // still named her. Owner, asked directly: "yes a CV can go to two managers".
+  //
+  // Written AFTER the stamp, not instead of it. The old columns still drive the 6-hourly intake
+  // digest, the stale-send nudge and the recruiter's own "sent to" line, and keeping them current
+  // (last send wins) is also what makes this whole change revertible by dropping one table.
+  //
+  // Not wrapped in a catch: this is now the row the manager's list is read from, so a failure here
+  // is a send that will not be seen, which is precisely the silence this module exists to end. The
+  // one tolerated case is the table not existing yet — recordManagerSends returns false rather than
+  // throwing for that, because code ships minutes before its migration is applied.
+  await recordManagerSends({
+    actorHrId: input.actorHrId,
+    candidateIds: input.candidates.map((candidate) => candidate.id),
+    managerArea: manager.areaName,
+    managerHrId: input.managerHrId,
+    managerJobTitle: manager.jobTitle,
+    managerName,
+    managerRegion: manager.regionName,
+    position: input.position ?? null,
+    sentAt,
+  });
+
   return { count: input.candidates.length, managerHrId: input.managerHrId, managerName, sentAt };
 }
 
@@ -374,6 +420,7 @@ export async function notifyHiringManagerOfCandidate(input: {
   if (input.actorIsTheManager) return { sent: false, reason: "actor_is_the_manager" };
 
   const managerName = await hiringManagerName(input.hiringManagerHrId);
+  const sentAt = new Date().toISOString();
 
   await createSystemNotification({
     actionUrl: "/employee-portals/recruitment-candidates",
@@ -384,13 +431,24 @@ export async function notifyHiringManagerOfCandidate(input: {
     channels: ["in_app", "telegram", "push"],
     eventType: "candidate_assigned",
     message: `${input.candidateName} has been assigned to your ${input.jobTitle} position.`,
+    // The SAME collision as the push above, on the same event type, and it has to be fixed in both
+    // places or a manager's alerts collapse depending on which screen the recruiter started from —
+    // the exact inconsistency the two call sites are kept identical to avoid. The application is
+    // this alert's identity here, since a requisition assignment carries one candidate by
+    // construction and the application id is what the manager is being sent to act on.
+    metadata: {
+      idempotencyKey: candidateAlertIdempotencyKey({
+        candidateIds: [input.applicationId],
+        eventType: "candidate_assigned",
+        managerHrId: input.hiringManagerHrId,
+        sentAtIso: sentAt,
+      }),
+    },
     module: "recruitment",
     priority: "normal",
     recipientHrId: input.hiringManagerHrId,
     title: "New candidate assigned",
   });
-
-  const sentAt = new Date().toISOString();
 
   // Written only AFTER the send succeeds, so the history never claims a delivery that did not
   // happen — the exact failure mode this whole module exists to end. Best-effort on its own: a

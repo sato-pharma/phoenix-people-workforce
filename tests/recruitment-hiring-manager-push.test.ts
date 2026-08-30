@@ -61,7 +61,12 @@ export async function runRecruitmentHiringManagerPushTests() {
   assert.equal(MANAGER_NOTIFIED_ACTION, "manager_notified");
   assert.match(
     notify,
-    /await createSystemNotification\([\s\S]*?\n\s*const sentAt[\s\S]*?writeApplicationEvent\(/,
+    // Re-cut 2026-08-30. The `const sentAt` waypoint came out because that line moved ABOVE the
+    // delivery in both functions, so a single instant can drive the alert key, the stamp and the
+    // fan-out row. It was in any case only still matching here by accident: this regex runs against
+    // the WHOLE file, so it was pairing the push's delivery with the OTHER function's `const sentAt`.
+    // The property is what matters and is unchanged — the audit row follows the notification.
+    /await createSystemNotification\([\s\S]*?writeApplicationEvent\(/,
     "the audit row must be written AFTER the notification, or history can claim a delivery that never happened",
   );
   assert.match(
@@ -210,10 +215,25 @@ export async function runRecruitmentHiringManagerPushTests() {
   // database answers PGRST204. The PROPERTY being pinned is unchanged and is the only thing that
   // matters — the stamp is written AFTER the manager has actually been told — so the pin asserts
   // that ordering and stops dictating the spelling of the object literal in between.
+  //
+  // Re-cut AGAIN 2026-08-30, and that note holds for a third time. The waypoint dropped this round
+  // is `const sentAt`, which moved ABOVE the delivery. The pinned property is untouched — the stamp
+  // still follows the notification — and the pin still discriminates, because there is exactly one
+  // createSystemNotification in this body, so moving the stamp ahead of it leaves nothing to match.
   assert.match(
     pushBody,
-    /await createSystemNotification\([\s\S]*?const sentAt[\s\S]*?manager_notified_at/,
+    /await createSystemNotification\([\s\S]*?manager_notified_at/,
     "the stamp must be written AFTER the notification, or the row can claim a send that never happened",
+  );
+  // The move itself is worth pinning, because ONE instant now drives three things: the alert's
+  // idempotency key, the legacy stamp, and the row in ats_candidate_manager_sends. Read it after the
+  // delivery instead and the key is minted from a possibly different minute than the stamp, so a
+  // double-click could raise two alerts while recording one send — the mirror image of the collapse
+  // that hid six of Dina Fadel's seven CVs.
+  assert.match(
+    pushBody,
+    /const sentAt[\s\S]*?await createSystemNotification\(/,
+    "sentAt must be read BEFORE the delivery — the alert key, the stamp and the fan-out row all use it and have to agree",
   );
   // Re-cut 2026-08-28, and the note above about pinning a PROPERTY rather than a spelling applies
   // to this pair too — it just took a second change to prove it. These asserted the two literal
