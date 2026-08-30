@@ -207,7 +207,13 @@ const CONTRACTS: readonly WeeklyDistributorContract[] = [
       },
     ],
   },
-  // SF / Sofico — single sheet "Sheet1", header row 1 (parser.ts adaptSF ~:625-668)
+  // SF / Sofico — single sheet "Sheet1", header row 1 (parser.ts adaptSF).
+  // SOFICO IS THE ONE DISTRIBUTOR WHOSE COLUMNS ARE MATCHED BY HEADER NAME, NOT BY POSITION, because
+  // its export moves them between months (measured over 33 real files: SOLDQTY at column 34, 36 or
+  // 37). The positions below are the June 2026 layout and are recorded for the verification screen
+  // only — adaptSF does not read them, so moving one here changes nothing. Only headerRowNumber and
+  // the data start row still apply. To teach the import a header Sofico has renamed, add the new
+  // name to SF_HEADER_ALIASES in parser.ts.
   {
     code: "SF",
     name: "Sofico",
@@ -220,13 +226,13 @@ const CONTRACTS: readonly WeeklyDistributorContract[] = [
         headerRowNumber: 1,
         formField: "file",
         fields: [
-          { field: "itemCode", label: "Product code", columnIndex: 4, expectedHeaderHint: "ItemID (Sofico code)", role: "key" },
-          { field: "itemName", label: "Product name", columnIndex: 5, expectedHeaderHint: "ItemName", role: "context" },
-          { field: "branchCode", label: "Branch code", columnIndex: 12, expectedHeaderHint: "State (branch numeric id)", role: "key" },
-          { field: "branchName", label: "Branch name", columnIndex: 13, expectedHeaderHint: "statename (Arabic branch name)", role: "context" },
-          { field: "gross", label: "Gross sales", columnIndex: 20, expectedHeaderHint: "SalesQty", role: "value" },
-          { field: "return", label: "Return quantity", columnIndex: 22, expectedHeaderHint: "ReturnQty (positive). Bonus col 21 ignored", role: "value" },
-          { field: "net", label: "Net sales (priced)", columnIndex: 24, expectedHeaderHint: "NET SALES (authoritative net)", role: "value" },
+          { field: "itemCode", label: "Product code", columnIndex: 16, expectedHeaderHint: "ITEMIDE or ItemID (by name)", role: "key" },
+          { field: "itemName", label: "Product name", columnIndex: 5, expectedHeaderHint: "ITEMNAME or ItemName (by name)", role: "context" },
+          { field: "branchCode", label: "Branch code", columnIndex: 13, expectedHeaderHint: "SITE, InventSiteID or State (by name)", role: "key" },
+          { field: "branchName", label: "Branch name", columnIndex: 15, expectedHeaderHint: "SITENAME or statename (by name)", role: "context" },
+          { field: "gross", label: "Gross sales", columnIndex: 34, expectedHeaderHint: "SOLDQTY or SalesQty (by name)", role: "value" },
+          { field: "return", label: "Return quantity", columnIndex: 35, expectedHeaderHint: "RETURNQTY or ReturnQty, negative", role: "value" },
+          { field: "net", label: "Net sales (priced)", columnIndex: 2, expectedHeaderHint: "net qty or qty — net of record", role: "value" },
         ],
       },
     ],
