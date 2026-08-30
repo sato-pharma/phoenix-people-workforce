@@ -3,6 +3,8 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 
 import { canonicalViewerHrId, unseenCandidateIds } from "../src/lib/recruitment/candidate-views.ts";
+import { matchesScreeningNarrowing } from "../src/lib/recruitment/screening-filter.ts";
+import { parseScreeningFilters } from "../src/lib/recruitment/screening-link.ts";
 import type { CandidateViewMap } from "../src/lib/recruitment/candidate-views.ts";
 
 /**
@@ -160,11 +162,40 @@ export async function runRecruitmentCandidateSeenTests() {
   assert.match(sessionSource, /SEEN_DWELL_MS/, "seen must be recorded after a dwell, not on mount");
 
   // ── 6 · The link that opens on the unread pile ────────────────────────────
+  // Asserted as BEHAVIOUR, not as a source pattern. This was a regex pinning the loader's own
+  // `candidates.filter((candidate) => !views[candidate.id])` line, which went red the moment the
+  // narrowing moved into screening-filter.ts to make room for the area/role/region filters — a
+  // rename breaking a test that was never about the name. What matters is the answer, so ask for it.
+  const unseenNarrowing = parseScreeningFilters({ unseen: "1" });
+  const seenNarrowing = parseScreeningFilters({ seen: "1" });
+  const anyCandidate = { appliedForJobTitle: null, currentJobTitle: null, id: "cand-1", status: "new" };
+  assert.equal(
+    matchesScreeningNarrowing(anyCandidate, unseenNarrowing, { seenByViewer: false }),
+    true,
+    "?unseen=1 must keep a CV this viewer has never opened",
+  );
+  assert.equal(
+    matchesScreeningNarrowing(anyCandidate, unseenNarrowing, { seenByViewer: true }),
+    false,
+    "?unseen=1 must narrow to what this viewer has never opened",
+  );
+  // The other half of the same question, which the old one-way toggle could not ask at all.
+  assert.equal(
+    matchesScreeningNarrowing(anyCandidate, seenNarrowing, { seenByViewer: true }),
+    true,
+    "?seen=1 must keep a CV this viewer HAS opened",
+  );
+  assert.equal(
+    matchesScreeningNarrowing(anyCandidate, seenNarrowing, { seenByViewer: false }),
+    false,
+    "?seen=1 must drop a CV this viewer has never opened",
+  );
   const queueSource = read("src/lib/recruitment/screening-queue.ts");
+  // The seen-ness handed to that rule must still come from the map loaded for the CALLER.
   assert.match(
     queueSource,
-    /candidates\.filter\(\(candidate\) => !views\[candidate\.id\]\)/,
-    "?unseen=1 must narrow to what this viewer has never opened",
+    /seenByViewer: Boolean\(views\[candidate\.id\]\)/,
+    "the queue must judge seen-ness from the caller's own view map",
   );
   // The view map is loaded for the CALLER. A viewer id in a query string would let one person open
   // a link that reports somebody else's reading as their own.

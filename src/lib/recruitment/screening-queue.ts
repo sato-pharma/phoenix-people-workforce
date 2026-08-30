@@ -4,18 +4,26 @@
 // only ever existed inside one React component, so it could not be linked to. Moving screening onto
 // a route means the filter has to live somewhere addressable, and that somewhere is the URL.
 //
-// SERVER ONLY. This module reaches the database. The pure half — the link builder and the query
-// parser, which the client-side candidate pool also needs — lives in screening-link.ts and must
-// stay there: importing this file from a "use client" component drags listCandidates, the employee
-// directory and `node:crypto` into the browser bundle, which webpack refuses outright and which no
-// bundler should be trusted to keep tree-shaking away.
+// SERVER ONLY. This module reaches the database. The pure half is split across two files that must
+// stay pure: screening-link.ts (the link builder and query parser, which the client-side candidate
+// pool needs) and screening-filter.ts (the narrowing rule itself, so it can be tested against a
+// plain row instead of against 482 production candidates). Importing THIS file from a "use client"
+// component drags listCandidates, the employee directory and `node:crypto` into the browser bundle,
+// which webpack refuses outright and which no bundler should be trusted to keep tree-shaking away.
 
 import { listCandidates } from "@/lib/recruitment/candidates";
 import { isFiledCandidate } from "@/lib/recruitment/candidate-folder";
 import { listCandidateViews, type CandidateViewMap } from "@/lib/recruitment/candidate-views";
-import { normalizeCandidateStatus, type CandidateStatus } from "@/lib/recruitment/candidate-status";
+import { type CandidateStatus } from "@/lib/recruitment/candidate-status";
 import { listHiringManagerOptions, type HiringManagerOption } from "@/lib/recruitment/hiring-manager-notify";
-import { parseScreeningFilters, type ScreeningQueueFilters } from "@/lib/recruitment/screening-link";
+import { matchesScreeningNarrowing, screeningAreaOptions } from "@/lib/recruitment/screening-filter";
+import {
+  parseScreeningFilters,
+  type ScreeningQueueFilters,
+  type ScreeningRegionFilter,
+  type ScreeningRoleFilter,
+  type ScreeningSeenFilter,
+} from "@/lib/recruitment/screening-link";
 import {
   listOpenVacancyOptions,
   listUsedPositionText,
@@ -44,10 +52,15 @@ export type ScreeningQueue = {
    * from opening a folder that reads almost exactly like the first one.
    */
   positionSuggestions: { jobTitles: string[]; areas: string[] };
+  /** The areas the Area filter can offer — read off the pool itself. See `screeningAreaOptions`. */
+  areaOptions: string[];
   /** How many were dropped by the filters, so the page can say so instead of silently shrinking. */
   filteredOut: number;
-  unseenOnly: boolean;
+  seen: ScreeningSeenFilter;
   status: CandidateStatus | null;
+  area: string | null;
+  role: ScreeningRoleFilter | null;
+  region: ScreeningRegionFilter | null;
 };
 
 /**
@@ -77,7 +90,7 @@ export async function loadScreeningQueue(
       : Promise.resolve<{ jobTitles: string[]; areas: string[] }>({ areas: [], jobTitles: [] }),
   ]);
 
-  const { status, unseenOnly } = parseScreeningFilters(filters);
+  const narrowing = parseScreeningFilters(filters);
 
   // A shelved CV leaves the screening queue too, not only the pool. The whole purpose of the shelf
   // is that a good-but-not-now CV stops being offered for review again — leaving it here would put
@@ -88,22 +101,20 @@ export async function loadScreeningQueue(
   // shelf. A number that quietly includes the archive is a number nobody can act on.
   const poolCandidates = allCandidates.filter((candidate) => !isFiledCandidate(candidate));
 
-  let candidates = poolCandidates;
-  if (status) {
-    candidates = candidates.filter((candidate) => normalizeCandidateStatus(candidate.status) === status);
-  }
-  if (unseenOnly) {
-    candidates = candidates.filter((candidate) => !views[candidate.id]);
-  }
+  const candidates = poolCandidates.filter((candidate) =>
+    matchesScreeningNarrowing(candidate, narrowing, { seenByViewer: Boolean(views[candidate.id]) }),
+  );
 
   return {
+    ...narrowing,
+    // Built from the WHOLE pool, never from the narrowed list: a dropdown that loses its own options
+    // the moment you pick one is a dropdown you cannot change your mind in.
+    areaOptions: screeningAreaOptions(poolCandidates),
     candidates,
     filteredOut: poolCandidates.length - candidates.length,
     hiringManagers,
     openVacancies,
     positionSuggestions,
-    status,
-    unseenOnly,
     views,
   };
 }

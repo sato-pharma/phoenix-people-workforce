@@ -9,7 +9,7 @@ import { AppRouteLoadingState } from "@/components/ui/loading-state";
 import { ScreeningPageClient } from "@/components/recruitment/screening-page-client";
 import { canAccess, isHrAuthorityRole, resolveNavigationMode, type AccessContext } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
-import { type ScreeningQueueFilters } from "@/lib/recruitment/screening-link";
+import { parseScreeningFilters, screeningHref, type ScreeningQueueFilters } from "@/lib/recruitment/screening-link";
 import { loadScreeningQueue } from "@/lib/recruitment/screening-queue";
 
 export const dynamic = "force-dynamic";
@@ -29,8 +29,15 @@ export default async function EmployeePortalScreeningPage({
   searchParams: Promise<ScreeningQueueFilters>;
 }) {
   const access = await resolveAccessContextFromPage();
+  const filters = await searchParams;
   if (resolveNavigationMode(access) !== "employee-portal") {
-    redirect("/recruitment/screening");
+    // The narrowing travels WITH the redirect. A bare `redirect("/recruitment/screening")` threw
+    // the query string away, so an HR Advisory user following "the New Medical Rep CVs in Tanta I
+    // have not read" — or the plain `?unseen=1` link the pool builds — landed on the whole 481-row
+    // queue with every filter reset and nothing to say why. `screeningHref` is what rebuilds it,
+    // rather than forwarding the raw query string, so an edited address bar cannot be bounced
+    // through this redirect unvalidated.
+    redirect(screeningHref("/recruitment", parseScreeningFilters(filters)));
   }
   if (!isHrAuthorityRole(access.role) || !(await canAccess(access, "recruitment", "read"))) {
     return (
@@ -40,8 +47,6 @@ export default async function EmployeePortalScreeningPage({
       />
     );
   }
-
-  const filters = await searchParams;
 
   return (
     <EmployeePortalPageShell
@@ -87,15 +92,19 @@ async function ScreeningContent({
 
   return (
     <ScreeningPageClient
+      area={queue.area}
+      areaOptions={queue.areaOptions}
       candidates={queue.candidates}
       hiringManagers={queue.hiringManagers}
       initialViews={queue.views}
       openVacancies={queue.openVacancies}
       poolHref="/employee-portals/recruitment"
       positionSuggestions={queue.positionSuggestions}
+      region={queue.region}
+      role={queue.role}
+      seen={queue.seen}
       status={queue.status}
       totalCount={queue.candidates.length + queue.filteredOut}
-      unseenOnly={queue.unseenOnly}
     />
   );
 }
