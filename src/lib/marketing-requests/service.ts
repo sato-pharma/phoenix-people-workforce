@@ -3026,6 +3026,52 @@ async function notifyMarketingWorkflow(params: {
 }
 
 /**
+ * The epoch that lets a REOPENED rung tell its approver a second time — and nothing else do so.
+ *
+ * `notifyMarketingWorkflow` keys `request_assigned` on the step id, and
+ * `notification_deliveries.idempotency_key` is UNIQUE, so once a rung has told its approver it can
+ * physically never tell them again. That is exactly right for a rung that opened once. It is wrong
+ * for one that was returned and then reopened — `MKT-REQ-20260825-AADD59CE` was returned by the CEO
+ * at 10:25 Cairo on 2026-08-30 and put back on his own desk an hour later, and the notice he had
+ * already received at 10:19 was the only one the system would ever send him.
+ *
+ * The epoch is the rung's LATEST `step_opened` instant — written by the
+ * `marketing_request_steps_capture_event` trigger the moment a rung goes `current`, so it exists
+ * however the reopening was recorded, including straight in the database. Deliberately NOT `now()`:
+ * a stored instant means calling this twice for the same reopening still yields one notification.
+ *
+ * A rung opened only once returns `null` and keeps the existing step-id key untouched. That branch
+ * is the whole safety of this function — re-keying every rung would make all of them look
+ * un-notified and re-send the lot in one sweep.
+ */
+export function marketingReopenEpoch(openings: ReadonlyArray<string | null | undefined>): string | null {
+  const sorted = openings
+    .map((value) => cleanText(value))
+    .filter((value): value is string => Boolean(value) && Number.isFinite(Date.parse(value as string)))
+    .sort((left, right) => Date.parse(left) - Date.parse(right));
+  if (sorted.length < 2) return null;
+  return sorted[sorted.length - 1];
+}
+
+/** Every instant this rung became the live decision, in no particular order — `marketingReopenEpoch` sorts. */
+async function loadMarketingStepOpenings(
+  supabase: SupabaseClient,
+  requestId: string,
+  sequence: number,
+): Promise<string[]> {
+  const { data, error } = await supabase
+    .from("marketing_request_events")
+    .select("occurred_at")
+    .eq("request_id", requestId)
+    .eq("kind", "step_opened")
+    .eq("step_sequence", sequence);
+  if (error) throw error;
+  return ((data ?? []) as Array<{ occurred_at?: string | null }>)
+    .map((row) => cleanText(row.occurred_at))
+    .filter((value): value is string => Boolean(value));
+}
+
+/**
  * Send the `request_assigned` notice for whatever rung a request is CURRENTLY sitting on, addressed
  * by request id — the same notification `decideMarketingRequestWorkflow` fires when it advances a
  * step, and therefore the same full-detail email plus the link that opens the request itself.
@@ -3040,6 +3086,9 @@ async function notifyMarketingWorkflow(params: {
  * **Safe to call repeatedly.** `notifyMarketingWorkflow` keys the notification on the current step
  * id and `notification_deliveries.idempotency_key` is a UNIQUE index claimed conflict-tolerantly,
  * so a rung that has already told its approver cannot tell them twice.
+ *
+ * A REOPENED rung is the one case where that last sentence would be wrong, and
+ * `marketingReopenEpoch` is what keeps it right — see its own comment.
  */
 export async function dispatchMarketingAssignmentEmail(requestId: string): Promise<{
   dispatched: boolean;
@@ -3062,17 +3111,25 @@ export async function dispatchMarketingAssignmentEmail(requestId: string): Promi
     if (!currentStep?.assignedHrId) {
       return { dispatched: false, reason: "no_current_step", requestCode: request.requestCode };
     }
+    const reopenEpoch = marketingReopenEpoch(await loadMarketingStepOpenings(supabase, id, currentStep.sequence));
     /**
      * The unique idempotency key already makes a re-send physically impossible, so this check is
      * about REPORTING, not safety: without it every pending request would be counted as
      * "dispatched" and the backfill would claim it had emailed people it had not.
+     *
+     * It asks `notification_deliveries`, which is the table the UNIQUE key actually lives on, and
+     * for the exact key this call is about to claim. The previous check read
+     * `notification_events.metadata->>currentStepId` and answered "never notified" for rungs that
+     * demonstrably had been: on 2026-08-30 only 3 of the day's 91 marketing rows carried that key
+     * at all, and `MKT-REQ-20260825-AADD59CE`'s CEO rung had none while three delivery rows for it
+     * read `sent`. The mis-read was harmless to recipients — the unique index caught it downstream
+     * — but it made every run overstate what it had sent.
      */
+    const assignmentEventKey = `marketing-request:request_assigned:${request.id}:${reopenEpoch ?? currentStep.id}`;
     const { data: alreadySent } = await supabase
-      .from("notification_events")
+      .from("notification_deliveries")
       .select("id")
-      .eq("module", "marketing_requests")
-      .eq("event_type", "request_assigned")
-      .eq("metadata->>currentStepId", currentStep.id)
+      .like("idempotency_key", `${assignmentEventKey}:%`)
       .limit(1);
     if ((alreadySent ?? []).length > 0) {
       return { dispatched: false, reason: "already_notified", requestCode: request.requestCode, stepName: currentStep.stepName };
@@ -3092,6 +3149,9 @@ export async function dispatchMarketingAssignmentEmail(requestId: string): Promi
         assignedApproverHrId: currentStep.assignedHrId,
         currentStepId: currentStep.id,
         currentStepName: currentStep.stepName,
+        // Present only for a reopened rung, and `notifyMarketingWorkflow` reads it ahead of
+        // `currentStepId` — so an ordinary rung's key is byte-for-byte what it always was.
+        ...(reopenEpoch ? { idempotencyEpoch: reopenEpoch } : {}),
         workflowApproverHrId: currentStep.assignedHrId,
         ...marketingNotificationVariables({ currentStep, employeeRows, request, requestTypeName }),
       },
