@@ -16,6 +16,7 @@ import {
   Store,
   TrendingDown,
   TrendingUp,
+  Users,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
@@ -85,6 +86,7 @@ export function WeeklyDashboardView({ initial, initialError }: { initial: Weekly
   const [loading, setLoading] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [downloadingSummary, setDownloadingSummary] = useState(false);
+  const [downloadingNsmDsm, setDownloadingNsmDsm] = useState(false);
   const [filters, setFilters] = useState<WeeklyFilters>({
     distributorCodes: initial?.appliedFilters.distributorCodes ?? [],
     distributorMode: initial?.appliedFilters.distributorFilterMode ?? "include",
@@ -239,6 +241,20 @@ export function WeeklyDashboardView({ initial, initialError }: { initial: Weekly
     }
   }, [downloading, downloadWorkbook]);
 
+  // A third busy flag, for the same reason the second one exists: three exports sharing one flag
+  // would freeze all three on any click.
+  const handleNsmDsmExport = useCallback(async () => {
+    if (downloadingNsmDsm) return;
+    setDownloadingNsmDsm(true);
+    try {
+      await downloadWorkbook("/api/sales/weekly/nsm-dsm-export", "phoenix-weekly-nsm-dsm.xlsx");
+    } catch {
+      // silent — network errors show as nothing downloaded
+    } finally {
+      setDownloadingNsmDsm(false);
+    }
+  }, [downloadingNsmDsm, downloadWorkbook]);
+
   // Separate busy flag: the summarized report loads three dashboard scopes (period, month, year) and
   // takes longer than the BI workbook, so sharing one flag would freeze both buttons on either click.
   const handleSummaryExport = useCallback(async () => {
@@ -313,6 +329,23 @@ export function WeeklyDashboardView({ initial, initialError }: { initial: Weekly
                 <FileSpreadsheet className="h-4 w-4" />
               )}
               {downloadingSummary ? "Preparing…" : "Summarized Report"}
+            </button>
+            {/* Third export, outlined like the second so the BI workbook stays the primary action.
+                This one is the field manager's book: the same seven tabs the owner reviewed, in
+                units, week by week, scoped by whatever filters are on screen. */}
+            <button
+              type="button"
+              onClick={handleNsmDsmExport}
+              disabled={downloadingNsmDsm || loading}
+              className="flex items-center gap-1.5 rounded-[6px] border border-phx-accent bg-white px-3 py-2 text-sm font-black text-phx-accent-hover shadow-sm transition-colors hover:bg-phx-accent-soft disabled:opacity-60"
+              title="Download the field-manager workbook: sales by area, branch and distributor week by week in units, branches ranked, stock with no sales, and full details — with the current filters applied"
+            >
+              {downloadingNsmDsm ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Users className="h-4 w-4" />
+              )}
+              {downloadingNsmDsm ? "Preparing…" : "NSM/DSM Export"}
             </button>
           </div>
         </div>
