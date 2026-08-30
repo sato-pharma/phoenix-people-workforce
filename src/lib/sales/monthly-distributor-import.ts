@@ -3038,6 +3038,13 @@ export async function persistDistributorSalesUpload(
     // Sales-vs-target attribution rollup — after the channel rollup, same fallback site.
     const attributionRollupRefresh = await supabase.rpc("phx_refresh_monthly_attribution", { p_batch_id: batchId });
     if (attributionRollupRefresh.error) throw attributionRollupRefresh.error;
+    // Import summaries — the Source of Sales dashboard's own aggregate. This path just inserted
+    // them from the same parsed rows, so the refresh is a no-op here; it is called anyway to keep
+    // ONE rule with no exceptions — every site that refreshes the rollups also refreshes the
+    // summaries — which is what tests/sos-import-summaries-refresh.test.ts enforces. The exception
+    // list is the thing that let them drift apart in the first place.
+    const summaryRefresh = await supabase.rpc("phx_refresh_sos_import_summaries", { p_batch_id: batchId });
+    if (summaryRefresh.error) throw summaryRefresh.error;
     invalidateSalesDashboardCache("source of sales multi-period import (fallback refresh)");
   }
 

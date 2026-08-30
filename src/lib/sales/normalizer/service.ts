@@ -488,6 +488,11 @@ export async function persistNormalizedBatch(input: {
     // Sales-vs-target attribution rollup — after the channel rollup, same fallback site.
     const attributionRollupRefresh = await supabase.rpc("phx_refresh_monthly_attribution", { p_batch_id: batchId });
     if (attributionRollupRefresh.error) throw attributionRollupRefresh.error;
+    // Import summaries — the Source of Sales dashboard's own aggregate. A no-op on this path (the
+    // summaries were just built from the same rows), called anyway so the rule holds everywhere
+    // without exceptions. See tests/sos-import-summaries-refresh.test.ts.
+    const summaryRefresh = await supabase.rpc("phx_refresh_sos_import_summaries", { p_batch_id: batchId });
+    if (summaryRefresh.error) throw summaryRefresh.error;
     invalidateSalesDashboardCache("source of sales multi-period import (fallback refresh)");
   }
 
