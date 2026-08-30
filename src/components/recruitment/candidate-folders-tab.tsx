@@ -30,7 +30,10 @@ import {
   type CandidateFolder,
   type CandidateFolderKind,
 } from "@/lib/recruitment/candidate-folder";
-import { collectSuggestedFilings } from "@/lib/recruitment/candidate-folder-suggestion";
+import {
+  collectSuggestedFilings,
+  type SuggestedFiling,
+} from "@/lib/recruitment/candidate-folder-suggestion";
 import type { Candidate } from "@/lib/recruitment/types";
 import { cn } from "@/lib/utils";
 
@@ -236,12 +239,18 @@ function DeclaredFilingsPanel({ candidates }: { candidates: Candidate[] }) {
   }
   const groups = Array.from(byFolder.values()).sort((a, b) => b.names.length - a.names.length);
 
-  const fileAll = async () => {
+  // The owner's own split, made after reading the first fifteen: nine had arrived that morning and
+  // five were already shortlisted. Filing everything in one press takes live prospects off the
+  // screen recruiters work from, so the safer half gets its own button — and is the DEFAULT one.
+  const untouched = filings.filter((filing) => filing.untouched);
+  const inPlay = filings.filter((filing) => !filing.untouched);
+
+  const file = async (chosen: SuggestedFiling[]) => {
     setBusy(true);
     setError(null);
     try {
       await postJson("/api/recruitment/candidates/file-declared", {
-        candidateIds: filings.map((filing) => filing.candidateId),
+        candidateIds: chosen.map((filing) => filing.candidateId),
       });
       router.refresh();
     } catch (cause) {
@@ -259,12 +268,34 @@ function DeclaredFilingsPanel({ candidates }: { candidates: Candidate[] }) {
           Answered the WhatsApp questions themselves — nothing here was read off a CV.
         </span>
         {filings.length > 0 ? (
-          <Button className="ml-auto" disabled={busy} onClick={fileAll}>
-            <FolderInput aria-hidden className="mr-1.5 h-3.5 w-3.5" />
-            {busy ? "Filing…" : `File all ${filings.length}`}
-          </Button>
+          <span className="ml-auto flex flex-wrap items-center gap-2">
+            {/* Nobody-has-looked-at-them first, and as the primary button. When every suggestion is
+                untouched the two buttons would file the same people, so only one is offered. */}
+            {untouched.length > 0 ? (
+              <Button disabled={busy} onClick={() => file(untouched)}>
+                <FolderInput aria-hidden className="mr-1.5 h-3.5 w-3.5" />
+                {busy ? "Filing…" : `File the ${untouched.length} nobody has opened`}
+              </Button>
+            ) : null}
+            {inPlay.length > 0 ? (
+              <Button disabled={busy} onClick={() => file(filings)} variant="secondary">
+                {busy ? "Filing…" : `File all ${filings.length}`}
+              </Button>
+            ) : null}
+          </span>
         ) : null}
       </div>
+
+      {inPlay.length > 0 ? (
+        // Named, not counted. "5 are in play" is a number he has to go and check; the names are the
+        // thing that lets him decide without leaving this screen.
+        <p className="border-b border-phx-accent/40 px-3 py-1.5 text-phx-xs font-medium text-slate-600">
+          <span className="font-bold text-phx-ink">Filing the new ones leaves these {inPlay.length} in the pool: </span>
+          {inPlay
+            .map((filing) => `${candidateDisplayName(filing.fullName)} (${candidateStatusLabel(filing.status)})`)
+            .join(" · ")}
+        </p>
+      ) : null}
 
       {error ? (
         <p className="px-3 pt-2 text-xs font-semibold text-rose-700">{error}</p>

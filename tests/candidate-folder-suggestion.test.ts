@@ -179,6 +179,36 @@ export async function runCandidateFolderSuggestionTests() {
     "never-answered is NOT listed as skipped — that is most of the pool and would bury d and e",
   );
 
+  // ── 7a · The owner's split: file only the ones nobody has opened ──────────
+  // Made after he read the first fifteen — nine had arrived that morning and five were already
+  // shortlisted. A folder is for a CV that is good but not needed now, which is not what somebody
+  // shortlisted four hours ago is.
+  const mixed: Candidate[] = [
+    declared("fresh", { title: "Medical Representative", area: "Alex West", status: "new" }),
+    declared("short", { title: "Medical Representative", area: "Alex West", status: "shortlisted" }),
+    declared("sent", { title: "Medical Representative", area: "Alex West", status: "sent_to_manager" }),
+    declared("hired", { title: "Medical Representative", area: "Alex West", status: "hired" }),
+    declared("legacy", { title: "Medical Representative", area: "Alex West", status: "Interviewing 2nd round" }),
+  ];
+  const mixedFilings = collectSuggestedFilings(mixed).filings;
+
+  assert.equal(mixedFilings.length, 5, "all five are placeable — the split decides the BUTTON, not the folder");
+  assert.deepEqual(
+    mixedFilings.filter((filing) => filing.untouched).map((filing) => filing.candidateId),
+    ["fresh"],
+    "ONLY a candidate still at 'new' is untouched — shortlisted, sent-to-manager and hired are all somebody's decision",
+  );
+  assert.equal(
+    mixedFilings.find((filing) => filing.candidateId === "legacy")?.untouched,
+    false,
+    "a free-text status somebody typed is a review, not an absence of one — it must not be swept into the safe button",
+  );
+  assert.equal(
+    mixedFilings.find((filing) => filing.candidateId === "short")?.status,
+    "shortlisted",
+    "the status rides along, so the screen can NAME who it would leave behind rather than only counting them",
+  );
+
   // ── 8 · The round trip: a suggestion lands in the folder it named ─────────
   // The one property that spans both modules. A suggestion that reads well but files somewhere else
   // is worse than no suggestion, and nothing else in this suite would catch it.
