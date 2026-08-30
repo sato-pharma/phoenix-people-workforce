@@ -434,6 +434,42 @@ const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // because a table the app still cannot see would leave the nightly sweep silently inert.
   "20260828100000_crm_pre_hire_attribution_counter.sql",
   "20260828101000_crm_parity_windows.sql",
+  // ── Added 2026-08-30, after this check had been red on every scheduled run since 2026-08-24.
+  // Run 33312264542 flagged these two files, and ONLY these two, on BOTH projects. Each was
+  // judged by querying pg_catalog directly — pg_proc and the au/public tables themselves — never
+  // from schema_migrations, and each is applied on production AND staging.
+  //
+  // Both are mechanism 1 from the note above: applied via MCP apply_migration under a slug that
+  // is not the filename's slug, so version, name and version-as-substring all miss.
+  //
+  // Recorded on production as TWO rows, 20260826181406
+  // direct_orders_carry_area_and_brick_part1_direct_feed and 20260826181449
+  // ..._part2_channel_breakdown — the file was applied in its two halves, and neither recorded
+  // name equals the file's slug, which is why the exact-match on `name` does not save it.
+  //
+  // For a `create or replace` file EXISTENCE IS NOT ENOUGH, so the evidence is the shape and the
+  // body, on both projects: phx_monthly_closing_direct's return type reads
+  // TABLE(region_code text, area_code text, product_code text, sales_units numeric, sales_value
+  // numeric) — area_code is the column this migration adds, and it cannot appear without the
+  // drop-and-recreate this file performs, because CREATE OR REPLACE cannot alter a return type.
+  // phx_closing_channel_breakdown's prosrc carries the '2026-08' period floor, which is the
+  // load-bearing half: without it July's manually-placed areas would shrink the '__DIRECT__'
+  // bucket and break a published, LOCKED closing.
+  "20260826213000_direct_orders_carry_area_and_brick.sql",
+  // Applied to production 2026-08-28 outside the ledger — the file's own header says so and calls
+  // itself "the record of what was run", which is why every statement in it is idempotent. The
+  // nearest ledger row, 20260829084033 anti_infective_delta_3_from_september, is the SEPARATE
+  // later migration that dates the territory move; it is not this file under another name.
+  //
+  // Verified live on production AND staging by counting the objects this file creates, not by the
+  // ledger: au.regions has 1 row for 'D3', public.source_of_sales_regions 1, public.areas 1 for
+  // 'delta_3', and au.seats holds 5 anti_infective seats on region D3 — the DM chair plus its
+  // four rep chairs, exactly the vacant placeholder this file opens.
+  //
+  // DO NOT "fix" this by re-applying or re-dating anything. The Delta (3) move is live and dated
+  // 2026-09-01, the August closing must never contain Delta (3) whenever it is published, and
+  // that date is the mechanism rather than a problem to solve (AGENTS.md §4).
+  "20260828064500_anti_infective_delta_3_district.sql",
 ]);
 
 type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };
