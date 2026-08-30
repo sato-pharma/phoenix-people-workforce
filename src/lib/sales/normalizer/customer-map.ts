@@ -735,6 +735,20 @@ export async function applyHistoricalReconciliation(input: {
         500,
       );
     }
+    // The import summaries — what the Source of Sales DASHBOARD reads. Until 2026-08-30 no
+    // refresh for them existed: they were written once at insert and never again, so this loop
+    // rebuilt every number the Monthly Closing reads and none of the numbers the dashboard reads.
+    // Correcting a row here left the executive screen permanently stale with no marker anywhere
+    // (July 2026 was 653,299.13 EGP short). The comment above this function claimed "dashboards
+    // never go stale" while that was the one dashboard going stale.
+    const summaries = await supabase.rpc("phx_refresh_sos_import_summaries", { p_batch_id: batchId });
+    if (summaries.error) {
+      throw new SalesWorkflowError(
+        "reconcile_rollup_refresh_failed",
+        `${updatedRows} historical row(s) were corrected, but import summary refresh failed for batch ${batchId}: ${summaries.error.message}. Re-run the reconcile to retry the refresh.`,
+        500,
+      );
+    }
     refreshedBatches += 1;
   }
 
