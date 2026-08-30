@@ -155,14 +155,24 @@ export function foldAreaCodeForLine(
 }
 
 /**
- * Fold a line's area-option list for a picker/filter: drop the merged codes and rename the
- * surviving keep-code entry to its combined name. A line with no rule returns the list unchanged.
- * Mirrors the area handling in `applyClosingAreaMerges`, but for the surfaces that present a plain
- * list of areas (territory drilldown, CRM coverage, weekly planning) rather than a closing matrix.
+ * Fold a line's area-option list for a picker/filter into ONE entry per merged pair: the combined
+ * option survives under the keep-code (`GZ6`) with the combined name, and every other member of the
+ * pair (`UE9`) is folded into it. A line with no rule returns the list unchanged. Mirrors the area
+ * handling in `applyClosingAreaMerges`, but for the surfaces that present a plain list of areas
+ * (territory drilldown, CRM coverage, weekly planning) rather than a closing matrix.
+ *
+ * The merged option appears whenever EITHER code is in scope — including a list that holds only the
+ * folded-away `UE9` and not `GZ6` — and is always re-keyed to the survivor `GZ6`. Never dropping an
+ * in-scope area to nothing is the point: the old form filtered `UE9` out and only renamed `GZ6` if
+ * it happened to be present, so a viewer scoped to `UE9` alone (no live case today — both share one
+ * seat — but reachable by a future Pedia hire assigned Beni Suef alone) got an EMPTY area list and a
+ * blank drilldown / coverage picker instead of the combined option.
  *
  * Folding the OPTION list is only half the job — the caller must ALSO expand the picked code back
  * to its real codes with `expandAreaCodeForLine` wherever that selection scopes a query, or the
- * folded area shows one label with only half its data.
+ * folded area shows one label with only half its data. And any AREA-CHILD rows (blocks, bricks) must
+ * be scoped and re-keyed with `scopeAndFoldAreaChildren`, which filters on the viewer's REAL codes so
+ * the survivor's own children never leak to a viewer scoped only to the folded-away partner.
  */
 export function foldAreaOptionsForLine<T extends { areaCode: string; areaName?: string | null }>(
   lineCode: string | null | undefined,
@@ -171,16 +181,60 @@ export function foldAreaOptionsForLine<T extends { areaCode: string; areaName?: 
   const rules = CLOSING_AREA_MERGES[String(lineCode ?? "").trim().toLowerCase()] ?? [];
   if (rules.length === 0) return [...areas];
 
-  const mergeCodes = new Set(rules.map((rule) => up(rule.mergeAreaCode)));
-  const mergedNameByKeepCode = new Map(
-    rules.map((rule) => [up(rule.keepAreaCode), rule.mergedAreaName] as const),
-  );
+  // Both the survivor and each folded-away code map to the SAME surviving keep-code, so the merged
+  // option is emitted no matter which member(s) of the pair the list actually contains.
+  const keepCodeByCode = new Map<string, string>();
+  const mergedNameByKeepCode = new Map<string, string>();
+  for (const rule of rules) {
+    const keep = up(rule.keepAreaCode);
+    keepCodeByCode.set(keep, keep);
+    keepCodeByCode.set(up(rule.mergeAreaCode), keep);
+    mergedNameByKeepCode.set(keep, rule.mergedAreaName);
+  }
 
-  return areas
-    .filter((area) => !mergeCodes.has(up(area.areaCode)))
-    .map((area) => {
-      const mergedName = mergedNameByKeepCode.get(up(area.areaCode));
-      return mergedName ? { ...area, areaName: mergedName } : area;
+  const emittedKeepCodes = new Set<string>();
+  const result: T[] = [];
+  for (const area of areas) {
+    const keepCode = keepCodeByCode.get(up(area.areaCode));
+    if (!keepCode) {
+      result.push(area); // not part of any merge — passes through untouched
+      continue;
+    }
+    // Emit the combined option exactly once, keyed to the survivor and relabelled. Whichever member
+    // of the pair appears first carries it; later members are folded away (their data is recovered
+    // downstream via expandAreaCodeForLine / scopeAndFoldAreaChildren).
+    if (emittedKeepCodes.has(keepCode)) continue;
+    emittedKeepCodes.add(keepCode);
+    result.push({ ...area, areaCode: keepCode, areaName: mergedNameByKeepCode.get(keepCode) ?? area.areaName });
+  }
+  return result;
+}
+
+/**
+ * Scope a line's AREA-CHILD rows (blocks, bricks) to a viewer, then re-key each surviving row onto
+ * the code its area folds under for DISPLAY. Pass the viewer's REAL area codes — the ones they are
+ * actually scoped to, BEFORE `foldAreaOptionsForLine` collapses the pair — never the post-fold
+ * option codes.
+ *
+ * Filtering on the real code is the whole point. The folded-away partner (`UE9`) re-keys to the
+ * survivor (`GZ6`), and the survivor's OWN children are already `GZ6`, so filtering on the post-fold
+ * code `GZ6` would admit BOTH — leaking Fayoum's (GZ6) bricks to a viewer scoped only to Beni Suef
+ * (UE9). The territory skeleton has no keepExec check to catch that, so the guard lives here. A row
+ * whose real area is out of scope is dropped; a surviving row keeps its original casing unless it
+ * folds onto a different survivor. A line with no rule scopes the rows and passes them unchanged.
+ */
+export function scopeAndFoldAreaChildren<T extends { areaCode: string }>(
+  lineCode: string | null | undefined,
+  realAreaCodesInScope: Iterable<string>,
+  rows: readonly T[],
+): T[] {
+  const inScope = new Set([...realAreaCodesInScope].map(up));
+  return rows
+    .filter((row) => inScope.has(up(row.areaCode)))
+    .map((row) => {
+      const folded = foldAreaCodeForLine(lineCode, row.areaCode);
+      const areaCode = folded === up(row.areaCode) ? row.areaCode : folded;
+      return { ...row, areaCode };
     });
 }
 

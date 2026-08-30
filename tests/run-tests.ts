@@ -845,6 +845,7 @@ import { runAutomatedPayrollDataQualityTests } from "./automated-payroll-data-qu
 import { runTerritoryRootScopeTests } from "./territory-root-scope.test.ts";
 import { runTerritoryLineFilterTests } from "./territory-line-filter.test.ts";
 import { runTerritoryReconciliationTests } from "./territory-reconciliation.test.ts";
+import { runTerritoryAreaFoldHardeningTests } from "./territory-area-fold-hardening.test.ts";
 import { runAuSeatOccupantResolverTests } from "./au-seat-occupant-resolver.test.ts";
 import { runAuHireIntoSeatWiringTests } from "./au-hire-into-seat-wiring.test.ts";
 import { runSalesImsRatioTests } from "./sales-ims-ratio.test.ts";
@@ -2413,6 +2414,7 @@ await runTest("migrations secdef revoke guard (new public SECURITY DEFINER fns m
 await runTest("territory drilldown root-scope line resolution (fail-closed)", runTerritoryRootScopeTests);
 await runTest("territory drilldown pharmacy line filter (defense in depth)", runTerritoryLineFilterTests);
 await runTest("territory drilldown internal self-reconciliation", runTerritoryReconciliationTests);
+await runTest("territory / coverage area-fold hardening (Pedia's merged option appears for either GZ6 or UE9 alone; bricks scope by REAL code so a partner-only viewer never sees the survivor's own bricks)", runTerritoryAreaFoldHardeningTests);
 await runTest("au seat-occupant resolution (period-aware, no newest-row wins)", runAuSeatOccupantResolverTests);
 await runTest("au hire_into_seat wiring (replacement-hire vacancy fill trigger)", runAuHireIntoSeatWiringTests);
 await runTest("sales IMS ratio integrity (non-OT areas + OT region total exactly 1)", runSalesImsRatioTests);
