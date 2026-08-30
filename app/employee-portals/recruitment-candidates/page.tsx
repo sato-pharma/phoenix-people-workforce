@@ -10,6 +10,7 @@ import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { listApplications } from "@/lib/recruitment/applications";
 import { listCandidateFolderAreaOptions } from "@/lib/recruitment/candidate-folder-options";
 import { listCandidatesSentToManager } from "@/lib/recruitment/candidates";
+import { listCandidateCardFiles } from "@/lib/recruitment/files";
 import { listViewerTeamManagers } from "@/lib/recruitment/hiring-manager-team";
 import { listManagerFolderFilings } from "@/lib/recruitment/manager-folders";
 
@@ -62,6 +63,21 @@ export default async function EmployeePortalRecruitmentCandidatesPage() {
   ]);
   const myCandidates = applications.filter((application) => application.candidate && application.requisition);
 
+  // The CV files for every card on this page, in one query, before anything renders.
+  //
+  // "He must be able to screen and must have a button to download the CV or to view it. It is a
+  // must." — the owner, 2026-08-30. The button existed before this and still failed that test: each
+  // card asked for its own files after mounting, and eleven cards meant eleven requests, so the
+  // control appeared long after the card it belongs to. A control that arrives that late is missing.
+  //
+  // Nothing is widened by loading it here. Both lists are already scoped — `sentToMe` by this
+  // caller's own HR_ID, `myCandidates` by listApplications' own hiring-manager filter — so these are
+  // the files of CVs this caller was already entitled to open, fetched once instead of one by one.
+  const initialFiles = await listCandidateCardFiles([
+    ...sentToMe.map((candidate) => candidate.id),
+    ...myCandidates.map((application) => application.candidate?.id ?? ""),
+  ]);
+
   return (
     <EmployeePortalPageShell
       badge="Hiring"
@@ -72,6 +88,7 @@ export default async function EmployeePortalRecruitmentCandidatesPage() {
         areaOptions={areaOptions}
         initialApplications={myCandidates}
         initialFilings={filings}
+        initialFiles={initialFiles}
         initialSentToMe={sentToMe}
         initialTeam={team}
         viewerHrId={access.hrId}

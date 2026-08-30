@@ -27,7 +27,7 @@ import {
   type ManagerFolderFilings,
 } from "@/lib/recruitment/manager-folder-shelf";
 import { groupCandidatesByPosition, shouldShowGroupHeadings } from "@/lib/recruitment/position-folder";
-import type { Candidate, Interview } from "@/lib/recruitment/types";
+import type { Candidate, Interview, TeamCandidateFile } from "@/lib/recruitment/types";
 
 type Props = {
   /**
@@ -45,6 +45,17 @@ type Props = {
    * separate — the short version is that the recruiter's filing hides a CV from every recruiter.
    */
   initialFilings: ManagerFolderFilings;
+  /**
+   * Every card's CV file, keyed by candidate id, loaded on the server with the lists themselves.
+   *
+   * The owner's rule for this screen is that the CV must be openable — "he must be able to screen
+   * and must have a button to download the CV or to view it. It is a must." Letting each card ask
+   * for its own files met that on paper and failed it on screen: eleven cards meant eleven requests,
+   * and the View/Download control appeared long after the card it belongs to. A missing key means
+   * this candidate was never asked about, so the card falls back to asking; an EMPTY ARRAY is a real
+   * answer and means the candidate has no file.
+   */
+  initialFiles: Record<string, TeamCandidateFile[]>;
   /**
    * The CVs a recruiter pushed STRAIGHT to this manager — no requisition, no application, no seat on
    * the org chart. This is the flow the module is actually used for; the applications above are the
@@ -128,7 +139,16 @@ function Field({ label, value }: { label: string; value: string | null | undefin
   );
 }
 
-function CandidateCard({ application, onChanged }: { application: ApplicationWithContext; onChanged: () => void }) {
+function CandidateCard({
+  application,
+  files,
+  onChanged,
+}: {
+  application: ApplicationWithContext;
+  /** Loaded with the page, for the same reason as the sent-to-you cards. */
+  files: TeamCandidateFile[];
+  onChanged: () => void;
+}) {
   const candidate = application.candidate!;
   const requisition = application.requisition!;
   const [interviews, setInterviews] = useState<Interview[]>([]);
@@ -253,7 +273,7 @@ function CandidateCard({ application, onChanged }: { application: ApplicationWit
         {candidate.hasMedicalRepExperience ? <Field label="Medical Rep tenure" value={tenureLine} /> : null}
       </div>
 
-      <CandidateCvActions candidateId={candidate.id} />
+      <CandidateCvActions candidateId={candidate.id} initialFiles={files} />
 
       {error ? <p className="text-xs text-rose-600">{error}</p> : null}
 
@@ -344,6 +364,7 @@ function SentCandidateCard({
   areaOptions,
   candidate: initial,
   filing,
+  files,
   onFilingChanged,
   viewerHrId,
 }: {
@@ -351,6 +372,8 @@ function SentCandidateCard({
   candidate: Candidate;
   /** This manager's own filing of this CV, or null while it is still in his live list. */
   filing: ManagerFolderFiling | null;
+  /** This candidate's files, already loaded with the list — so View CV is there with the card. */
+  files: TeamCandidateFile[];
   onFilingChanged: (candidateId: string, filing: ManagerFolderFiling | null) => void;
   viewerHrId: string | null;
 }) {
@@ -427,7 +450,7 @@ function SentCandidateCard({
       </div>
 
       <div className="flex flex-wrap items-start gap-2">
-        <CandidateCvActions candidateId={candidate.id} />
+        <CandidateCvActions candidateId={candidate.id} initialFiles={files} />
         {/* The third answer, and the one the owner asked for on 2026-08-30: neither "Interview" nor
             "Not interested" is true of a good CV that simply is not needed this month. Filing writes
             to HIS shelf only - the recruitment team's pool does not move. */}
@@ -483,6 +506,7 @@ export function RecruitmentCandidatesPortal({
   areaOptions,
   initialApplications,
   initialFilings,
+  initialFiles: files,
   initialSentToMe: sentToMe,
   initialTeam,
   viewerHrId,
@@ -514,6 +538,7 @@ export function RecruitmentCandidatesPortal({
       areaOptions={areaOptions}
       candidate={candidate}
       filing={filings[candidate.id] ?? null}
+      files={files[candidate.id] ?? []}
       key={candidate.id}
       onFilingChanged={onFilingChanged}
       viewerHrId={viewerHrId}
@@ -633,7 +658,12 @@ export function RecruitmentCandidatesPortal({
             </div>
           ) : null}
           {applications.map((application) => (
-            <CandidateCard application={application} key={application.id} onChanged={reload} />
+            <CandidateCard
+              application={application}
+              files={files[application.candidate?.id ?? ""] ?? []}
+              key={application.id}
+              onChanged={reload}
+            />
           ))}
         </section>
       ) : null}

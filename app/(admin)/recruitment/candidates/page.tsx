@@ -11,6 +11,7 @@ import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { listApplications } from "@/lib/recruitment/applications";
 import { listCandidateFolderAreaOptions } from "@/lib/recruitment/candidate-folder-options";
 import { listCandidatesSentToManager } from "@/lib/recruitment/candidates";
+import { listCandidateCardFiles } from "@/lib/recruitment/files";
 import { listViewerTeamManagers } from "@/lib/recruitment/hiring-manager-team";
 import { listManagerFolderFilings } from "@/lib/recruitment/manager-folders";
 
@@ -68,6 +69,14 @@ async function AdminRecruitmentCandidatesContent() {
   ]);
   const myCandidates = applications.filter((application) => application.candidate && application.requisition);
 
+  // One query for every card's CV file, rather than one request per card after it mounts. Same
+  // reason as the portal page: the owner's rule for this screen is that the CV must be openable, and
+  // a View/Download control that turns up seconds after the card is one he reported as missing.
+  const initialFiles = await listCandidateCardFiles([
+    ...sentToMe.map((candidate) => candidate.id),
+    ...myCandidates.map((application) => application.candidate?.id ?? ""),
+  ]);
+
   return (
     <PageContainer>
       <div className="mx-auto max-w-5xl space-y-6">
@@ -81,6 +90,7 @@ async function AdminRecruitmentCandidatesContent() {
           areaOptions={areaOptions}
           initialApplications={myCandidates}
           initialFilings={filings}
+          initialFiles={initialFiles}
           initialSentToMe={sentToMe}
           initialTeam={team}
           viewerHrId={access.hrId}

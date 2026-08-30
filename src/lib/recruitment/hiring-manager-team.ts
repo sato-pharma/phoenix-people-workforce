@@ -22,7 +22,7 @@ import type { AccessContext } from "@/lib/auth/permissions";
 import { canonicalHrIdKey, hrIdLookupKeys } from "@/lib/hr-id";
 import { listCandidatesSentToManager } from "@/lib/recruitment/candidates";
 import { recruitmentDb } from "@/lib/recruitment/db";
-import { listCandidateFilesByCandidate } from "@/lib/recruitment/files";
+import { listCandidateCardFiles } from "@/lib/recruitment/files";
 import {
   canViewerSeeManagerCandidates,
   managersWithinViewerTeam,
@@ -173,16 +173,7 @@ export async function listTeamManagerCandidates(
   // Authorisation is NOT skipped by doing it here — it has already happened, once, for the whole
   // list: the caller was proven to be above this manager before any candidate row was read, and
   // every candidate in this list belongs to that manager by construction.
-  const byCandidate = await listCandidateFilesByCandidate(candidates.map((candidate) => candidate.id));
-  const files: Record<string, TeamCandidateFile[]> = {};
-  for (const candidate of candidates) {
-    files[candidate.id] = (byCandidate.get(candidate.id) ?? []).map((file) => ({
-      fileName: file.fileName,
-      id: file.id,
-      kind: file.kind ?? "",
-      mimeType: file.mimeType ?? null,
-    }));
-  }
+  const files = await listCandidateCardFiles(candidates.map((candidate) => candidate.id));
 
   return { candidates, files, manager };
 }

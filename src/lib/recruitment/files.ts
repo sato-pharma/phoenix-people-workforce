@@ -10,7 +10,7 @@ import {
   type RecruitmentFileDbRow,
 } from "@/lib/recruitment/db";
 import { getRecruitmentFileStorage } from "@/lib/recruitment/file-storage";
-import type { RecruitmentFile } from "@/lib/recruitment/types";
+import type { RecruitmentFile, TeamCandidateFile } from "@/lib/recruitment/types";
 
 export async function listCandidateFiles(candidateId: string): Promise<RecruitmentFile[]> {
   const supabase = recruitmentDb();
@@ -60,6 +60,35 @@ export async function listCandidateFilesByCandidate(
     }
   }
   return byCandidate;
+}
+
+/**
+ * The same thing, in the four fields a CARD may render — the shape that crosses to the browser.
+ *
+ * Every list screen that shows View CV / Download needs exactly this and nothing more, so it lives
+ * here once rather than being remapped at each caller. `RecruitmentFile` must NOT cross that line:
+ * it carries the storage path and the provider's own id, neither of which a card has any use for
+ * and both of which would then sit in the page's serialized props.
+ *
+ * Every requested candidate gets a key, empty array included. The absence of a key would mean
+ * "nobody asked", which the card would then treat as "go and ask yourself" — the exact per-card
+ * request this function exists to remove.
+ */
+export async function listCandidateCardFiles(
+  candidateIds: readonly string[],
+): Promise<Record<string, TeamCandidateFile[]>> {
+  const byCandidate = await listCandidateFilesByCandidate(candidateIds);
+  const files: Record<string, TeamCandidateFile[]> = {};
+  for (const candidateId of candidateIds) {
+    if (!candidateId) continue;
+    files[candidateId] = (byCandidate.get(candidateId) ?? []).map((file) => ({
+      fileName: file.fileName,
+      id: file.id,
+      kind: file.kind ?? "",
+      mimeType: file.mimeType ?? null,
+    }));
+  }
+  return files;
 }
 
 export type UploadCandidateFileInput = {

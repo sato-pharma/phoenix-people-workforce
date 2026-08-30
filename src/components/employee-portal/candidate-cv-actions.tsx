@@ -32,16 +32,18 @@ export function CandidateCvActions({
    */
   initialFiles?: CandidateFileSummary[] | null;
 }) {
-  const [files, setFiles] = useState<CandidateFileSummary[]>(initialFiles ?? []);
-  const [loaded, setLoaded] = useState(Boolean(initialFiles));
+  // Only the FETCHED case needs state. When the caller hands the files down there is nothing to
+  // load, nothing to store and nothing to wait for, so the props are read straight through during
+  // render — no effect runs, and no state is set synchronously inside one (which this repo lints as
+  // an error, correctly: it is a cascading re-render on every card).
+  const [fetched, setFetched] = useState<CandidateFileSummary[] | null>(null);
+  const [fetchSettled, setFetchSettled] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
 
   useEffect(() => {
-    if (initialFiles) {
-      setFiles(initialFiles);
-      setLoaded(true);
-      return;
-    }
+    // An empty ARRAY is still an answer — "the list already looked, this candidate has no files" —
+    // so it must not fall through to a fetch that would ask the same question again per card.
+    if (initialFiles) return;
     let active = true;
     void (async () => {
       try {
@@ -49,17 +51,20 @@ export function CandidateCvActions({
         const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
         if (!res.ok) throw new Error("files unavailable");
         if (!active) return;
-        setFiles(Array.isArray(data.files) ? (data.files as CandidateFileSummary[]) : []);
+        setFetched(Array.isArray(data.files) ? (data.files as CandidateFileSummary[]) : []);
       } catch {
         /* leave empty — the card still shows the candidate's own details */
       } finally {
-        if (active) setLoaded(true);
+        if (active) setFetchSettled(true);
       }
     })();
     return () => {
       active = false;
     };
   }, [candidateId, initialFiles]);
+
+  const files = initialFiles ?? fetched ?? [];
+  const loaded = Boolean(initialFiles) || fetchSettled;
 
   const cvFile = files.find((file) => file.kind === "cv");
   // "unsupported" means the preview modal cannot render this file type, so saving it is the only way
