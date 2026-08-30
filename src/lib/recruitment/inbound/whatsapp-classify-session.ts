@@ -1,9 +1,14 @@
-// Recruitment / ATS — the three-question WhatsApp self-classification conversation.
+// Recruitment / ATS — the WhatsApp self-classification conversation.
 //
-// A CV arrives -> ask what role -> ask which region -> ask which area inside it -> write the three
-// answers onto the candidate. Each answer comes back as its own webhook event minutes apart, with
-// nothing but the sender's number tying them together, so the conversation's position is held in
-// `ats_whatsapp_classification_sessions` (one open row per sender).
+// A CV arrives -> ask what role -> ask what they graduated in -> ask which region -> (Medical Rep
+// only) ask which area inside it -> write the answers onto the candidate. Each answer comes back as
+// its own webhook event minutes apart, with nothing but the sender's number tying them together, so
+// the conversation's position is held in `ats_whatsapp_classification_sessions` (one open row per
+// sender).
+//
+// The AREA question is the one that cascades: owner's rule 2026-08-30 (see askAreaForRole) asks it
+// only of a Medical Rep. Every other applicant — the sales managers, head-office roles, and anyone
+// who typed their own job — is asked region only, and the region answer is their last.
 //
 // EVERYTHING HERE IS BEST-EFFORT AND NEVER THROWS INTO THE WEBHOOK. The CV is already captured and
 // queued by the time any of this runs; a failed prompt must never turn a delivered CV into a lost
@@ -21,8 +26,15 @@ import {
   AREA_OTHER_MAX,
   areaMenu,
   areaOtherPromptText,
+  askAreaForRole,
+  BACKGROUND_OTHER_MAX,
+  backgroundMenu,
+  backgroundOtherPromptText,
+  backgroundOtherTooLongText,
+  candidateBackgroundLabels,
   classifyThankYouText,
   cleanTypedAnswer,
+  isOfferedBackground,
   isOfferedRegion,
   isOfferedRoleFamily,
   JOB_TITLE_OTHER_MAX,
@@ -35,6 +47,7 @@ import {
   regionMenu,
   regionOtherPromptText,
   typedAnswerTooLongText,
+  type CandidateBackgroundCode,
   type ClassifyMenu,
 } from "@/lib/recruitment/inbound/whatsapp-classify-menus";
 import {
@@ -59,6 +72,10 @@ type SessionRow = {
   job_title_family: string | null;
   /** What they typed after choosing "Other". Null for every other answer. */
   job_title_other_text: string | null;
+  /** Graduation background CODE (pharmacy/science/vet), or "other" when they typed their own. */
+  background: string | null;
+  /** What they typed after choosing "Other" on the background question. Null otherwise. */
+  background_other_text: string | null;
   region_code: string | null;
   /** What they typed after choosing "my region is not listed". Null otherwise. */
   region_other_text: string | null;
@@ -93,7 +110,7 @@ export function sessionAreaLabel(session: {
 }
 
 const SESSION_COLUMNS =
-  "id,wa_id,phone_number_id,step,job_title_family,job_title_other_text,region_code,region_other_text,area_name,area_other_text,last_prompt_wamid,applied_candidate_id";
+  "id,wa_id,phone_number_id,step,job_title_family,job_title_other_text,background,background_other_text,region_code,region_other_text,area_name,area_other_text,last_prompt_wamid,applied_candidate_id";
 
 /**
  * The role as it should be READ BACK — their typed words when they chose "Other", otherwise the
@@ -110,6 +127,26 @@ export function sessionRoleLabel(session: {
   return session.job_title_family
     ? candidateRoleFamilyLabels[session.job_title_family as CandidateRoleFamily]
     : null;
+}
+
+/**
+ * The graduation background as it should be READ BACK — their typed words when they chose "Other",
+ * otherwise the code's label. Same single-source rule as `sessionRoleLabel`: the thank-you message,
+ * the owner's Telegram mirror and the candidate column must never disagree.
+ *
+ * Unlike the role families, `candidateBackgroundLabels` has NO "other" key — the typed words are the
+ * only label an "Other" answer has — so the code path is guarded by `isOfferedBackground` and reads
+ * the map only for a key it actually holds, never producing a literal `undefined`.
+ */
+export function sessionBackgroundLabel(session: {
+  background: string | null;
+  background_other_text: string | null;
+}): string | null {
+  if (session.background === "other") return session.background_other_text;
+  if (session.background && isOfferedBackground(session.background)) {
+    return candidateBackgroundLabels[session.background];
+  }
+  return null;
 }
 
 // ── Areas, read live ─────────────────────────────────────────────────────────────────────────────
@@ -375,9 +412,35 @@ export async function handleClassifyReply(input: {
 
       await supabase
         .from(SESSIONS_TABLE)
-        .update({ job_title_family: parsed.value, step: "region", updated_at: nowIso })
+        .update({ job_title_family: parsed.value, step: "background", updated_at: nowIso })
         .eq("id", session.id);
-      const sent = await sendStep({ ...session, phone_number_id: session.phone_number_id ?? input.phoneNumberId }, regionMenu());
+      const sent = await sendStep({ ...session, phone_number_id: session.phone_number_id ?? input.phoneNumberId }, backgroundMenu());
+      return sent ? "advanced" : "advanced";
+    }
+
+    if (parsed.step === "background") {
+      // "Other" is the one answer a list cannot finish — same shape as the role question. Park on
+      // `background_other` and take the next plain text message as their degree.
+      if (parsed.value === OTHER_ROW_VALUE) {
+        await supabase
+          .from(SESSIONS_TABLE)
+          .update({ background: "other", step: "background_other", updated_at: nowIso })
+          .eq("id", session.id);
+        await sendPromptText(
+          { ...session, phone_number_id: session.phone_number_id ?? input.phoneNumberId },
+          backgroundOtherPromptText(),
+        );
+        return "asked_other";
+      }
+      if (!isOfferedBackground(parsed.value)) return "unknown_value";
+      await supabase
+        .from(SESSIONS_TABLE)
+        .update({ background: parsed.value, step: "region", updated_at: nowIso })
+        .eq("id", session.id);
+      const sent = await sendStep(
+        { ...session, phone_number_id: session.phone_number_id ?? input.phoneNumberId },
+        regionMenu(),
+      );
       return sent ? "advanced" : "advanced";
     }
 
@@ -396,6 +459,20 @@ export async function handleClassifyReply(input: {
         return "asked_other";
       }
       if (!isOfferedRegion(parsed.value)) return "unknown_value";
+
+      // The cascade. Only a Medical Rep is asked the area; for everyone else the region they just
+      // tapped is their last answer, so record it and finish here. Checked BEFORE loading areas —
+      // a manager never needs an area list built, and Delta (3)'s empty-area escape below is a
+      // medical-rep concern that must not fire for a role that was never going to be asked an area.
+      if (!askAreaForRole(session.job_title_family)) {
+        await supabase
+          .from(SESSIONS_TABLE)
+          .update({ region_code: parsed.value, updated_at: nowIso })
+          .eq("id", session.id);
+        await finishSession({ ...session, region_code: parsed.value }, input.phoneNumberId);
+        return "completed";
+      }
+
       const areas = await areaNamesForRegion(parsed.value);
       if (areas.length === 0) {
         // A real region with no areas yet — Delta (3) on 2026-08-28, live and carrying target the
@@ -492,7 +569,10 @@ export async function handleClassifyText(input: {
     if (!sessionRow) return "no_session";
     const session = sessionRow as SessionRow;
     const awaitingText =
-      session.step === "job_title_other" || session.step === "region_other" || session.step === "area_other";
+      session.step === "job_title_other" ||
+      session.step === "background_other" ||
+      session.step === "region_other" ||
+      session.step === "area_other";
     if (!awaitingText) return "not_awaiting_text";
 
     const withPhone = { ...session, phone_number_id: session.phone_number_id ?? input.phoneNumberId };
@@ -508,7 +588,21 @@ export async function handleClassifyText(input: {
       }
       await supabase
         .from(SESSIONS_TABLE)
-        .update({ job_title_other_text: typed, step: "region", updated_at: nowIso })
+        .update({ job_title_other_text: typed, step: "background", updated_at: nowIso })
+        .eq("id", session.id);
+      await sendStep(withPhone, backgroundMenu());
+      return "advanced";
+    }
+
+    if (session.step === "background_other") {
+      const typed = cleanTypedAnswer(input.text, BACKGROUND_OTHER_MAX);
+      if (!typed) {
+        await sendPromptText(withPhone, backgroundOtherTooLongText());
+        return "unusable_text";
+      }
+      await supabase
+        .from(SESSIONS_TABLE)
+        .update({ background_other_text: typed, step: "region", updated_at: nowIso })
         .eq("id", session.id);
       await sendStep(withPhone, regionMenu());
       return "advanced";
@@ -520,8 +614,18 @@ export async function handleClassifyText(input: {
         await sendPromptText(withPhone, typedAnswerTooLongText("region", REGION_OTHER_MAX));
         return "unusable_text";
       }
-      // A region we do not have has no areas to list, so question 3 is typed as well. Going back to
-      // a menu here would offer the areas of a DIFFERENT region, which is worse than asking.
+      // The cascade, in its typed form. A Medical Rep types the area next; for everyone else this
+      // typed region is their last answer, so finish here. A region we do not have has no areas to
+      // list, so the rep's area is typed too — going back to a menu would offer the areas of a
+      // DIFFERENT region, which is worse than asking.
+      if (!askAreaForRole(session.job_title_family)) {
+        await supabase
+          .from(SESSIONS_TABLE)
+          .update({ region_other_text: typed, updated_at: nowIso })
+          .eq("id", session.id);
+        await finishSession({ ...session, region_other_text: typed }, input.phoneNumberId);
+        return "advanced";
+      }
       await supabase
         .from(SESSIONS_TABLE)
         .update({ region_other_text: typed, step: "area_other", updated_at: nowIso })
@@ -556,16 +660,23 @@ export async function handleClassifyText(input: {
 
 async function finishSession(session: SessionRow, fallbackPhoneNumberId: string | null): Promise<void> {
   const roleLabel = sessionRoleLabel(session);
+  const backgroundLabel = sessionBackgroundLabel(session);
   const regionLabel = sessionRegionLabel(session);
   const areaLabel = sessionAreaLabel(session);
+  // Whether the area question was part of this applicant's flow at all — Medical Rep only. Drives
+  // whether the mirror reads a missing area as "not answered" or simply omits it.
+  const areaApplies = askAreaForRole(session.job_title_family);
 
   await applyClassificationToCandidate(session);
   await closeSession(session.id, "completed");
 
-  if (roleLabel && regionLabel && areaLabel) {
+  // Sent once role and region are in. Area is deliberately NOT required: it is Medical-Rep-only, so
+  // a manager legitimately completes without one, and gating the thank-you on it would leave every
+  // non-rep applicant with no confirmation at all.
+  if (roleLabel && regionLabel) {
     await sendWhatsAppText({
       phoneNumberId: session.phone_number_id ?? fallbackPhoneNumberId,
-      text: classifyThankYouText({ areaName: areaLabel, regionLabel, roleLabel }),
+      text: classifyThankYouText({ areaName: areaLabel, backgroundLabel, regionLabel, roleLabel }),
       toWaId: session.wa_id,
     });
   }
@@ -583,7 +694,10 @@ async function finishSession(session: SessionRow, fallbackPhoneNumberId: string 
   // answer is missing — a partly-filed applicant is still worth knowing about, and the message says
   // which part they did not reach.
   await mirrorWhatsAppEventToOwner({
-    areaName: session.area_name,
+    areaApplies,
+    // The read-back label, so a TYPED area reaches him too — not just a tapped one.
+    areaName: areaLabel,
+    backgroundLabel,
     candidateName: await candidateDisplayName(mirroredCandidateId),
     kind: "classified",
     regionLabel,
@@ -646,6 +760,12 @@ async function writeClassification(candidateId: string, session: SessionRow): Pr
   // and this column can never disagree about what the applicant said.
   const roleLabel = sessionRoleLabel(session);
   if (roleLabel) payload.applied_for_job_title = roleLabel;
+  // The graduation background, as a single read-back label (their typed words for "Other", the code's
+  // label otherwise). One column, the same shape as `applied_for_job_title`: a fixed vocabulary for a
+  // tapped answer, free text only when they said "Other". Nothing reads it back on screen yet — it is
+  // captured now and surfaced later, exactly as region/area were before the screening card read them.
+  const backgroundLabel = sessionBackgroundLabel(session);
+  if (backgroundLabel) payload.declared_background = backgroundLabel;
   // The code column takes ONLY a real code. A typed region is words, and words in a code column is
   // the shape that produced undefined label lookups and NaN sort keys in production on 2026-08-24 —
   // so it gets its own column instead. An area is a name either way, so both forms share one.

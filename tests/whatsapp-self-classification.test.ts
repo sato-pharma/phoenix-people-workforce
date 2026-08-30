@@ -6,10 +6,18 @@ import {
   AREA_OTHER_MAX,
   areaMenu,
   areaOtherPromptText,
+  askAreaForRole,
+  BACKGROUND_OTHER_MAX,
+  backgroundMenu,
+  backgroundOtherPromptText,
+  backgroundOtherTooLongText,
+  candidateBackgroundCodes,
+  candidateBackgroundLabels,
   classifyRowId,
   classifySessionSteps,
   cleanTypedAnswer,
   cleanTypedJobTitle,
+  isOfferedBackground,
   jobTitleMenu,
   jobTitleOtherPromptText,
   jobTitleOtherTooLongText,
@@ -77,6 +85,7 @@ export function runWhatsAppSelfClassificationTests() {
   // ── The menus must satisfy Meta's limits, or the message is a 400 and the flow dies silently ──
 
   assert.deepEqual(menuViolations(jobTitleMenu()), [], "the role menu must satisfy every Cloud API limit");
+  assert.deepEqual(menuViolations(backgroundMenu()), [], "the background menu must satisfy every Cloud API limit");
   assert.deepEqual(menuViolations(regionMenu()), [], "the region menu must satisfy every Cloud API limit");
 
   for (const [regionCode, areas] of Object.entries(PRODUCTION_AREAS)) {
@@ -355,6 +364,78 @@ export function runWhatsAppSelfClassificationTests() {
   assert.equal(roleTitleById.get(classifyRowId("job_title", "finance")), "Finance");
   assert.equal(roleTitleById.get(classifyRowId("job_title", "national_sales_manager")), "National Sales Manager");
 
+  // ── Question 2 — graduation background (owner's instruction 2026-08-30) ────────────────────────
+  // Asked to everyone, right after the role. Four rows: the three degrees a field applicant holds,
+  // then "Other" last, which opens a typed follow-up exactly like the role question's "Other".
+  const bgMenu = backgroundMenu();
+  assert.equal(bgMenu.step, "background", "the background menu must carry its own step");
+  assert.deepEqual(
+    bgMenu.rows.map((row) => row.id),
+    ["pharmacy", "science", "vet", OTHER_ROW_VALUE].map((value) => classifyRowId("background", value)),
+    "the background menu offers Pharmacy, Science, Veterinary, then Other last",
+  );
+  const bgTitleById = new Map(bgMenu.rows.map((row) => [row.id, row.title]));
+  assert.equal(bgTitleById.get(classifyRowId("background", "vet")), "Veterinary", "the applicant reads Veterinary, not the shorthand");
+  assert.equal(
+    bgMenu.rows[bgMenu.rows.length - 1].id,
+    classifyRowId("background", OTHER_ROW_VALUE),
+    '"Other" must be last on the background menu too — offering it early invites it',
+  );
+
+  // The guard rejects the "Other" escape (its branch is handled explicitly) and any stale value, and
+  // accepts exactly the three real codes.
+  assert.ok(!isOfferedBackground(OTHER_ROW_VALUE), "the background escape must never pass the vocabulary guard");
+  assert.ok(!isOfferedBackground("dentistry"), "a value we do not offer is rejected");
+  for (const code of candidateBackgroundCodes) {
+    assert.ok(isOfferedBackground(code), `${code} is an offered background`);
+  }
+
+  // The row ids round-trip through the parser, and the background step is a first-class tappable step.
+  assert.deepEqual(parseClassifyRowId(classifyRowId("background", "science")), { step: "background", value: "science" });
+
+  // The exhaustive-Record backstop, same reasoning as the region labels: a code added to the union
+  // without a label would compile and render as undefined. Walk the union, prove every key resolves.
+  for (const code of candidateBackgroundCodes) {
+    const label = candidateBackgroundLabels[code];
+    assert.equal(typeof label, "string", `background ${code} has no label`);
+    assert.ok(label.length > 0 && !label.includes("undefined"), `background ${code} label is not human-readable: ${label}`);
+  }
+  assert.equal(
+    Object.keys(candidateBackgroundLabels).length,
+    candidateBackgroundCodes.length,
+    "the background label Record must hold exactly the offered codes — no orphan, no missing one",
+  );
+
+  // The background "Other" prompts obey the owner's no-ellipsis rule and the too-long nudge names its
+  // limit, so an applicant who overshoots knows what to do.
+  for (const prompt of [backgroundOtherPromptText(), backgroundOtherTooLongText()]) {
+    assert.ok(prompt.trim().length > 0, "the prompt must say something");
+    assert.ok(!prompt.includes("…") && !prompt.includes("..."), "text is never cut with an ellipsis");
+  }
+  assert.ok(backgroundOtherTooLongText().includes(String(BACKGROUND_OTHER_MAX)), "the nudge names its limit");
+
+  // ── The area cascade — owner's rule 2026-08-30 ────────────────────────────────────────────────
+  // ONLY a Medical Rep is asked the area; every other role — the sales managers, the head-office
+  // roles, and a typed "Other" — is asked region only. This is the single seam the session state
+  // machine consults, so it is pinned here: a role added to the menu later has its area behaviour
+  // decided on purpose. The whole rule is `family === "medical_rep"`, and the test proves it both
+  // ways — that the rep gets the area, and that nobody else does.
+  assert.equal(askAreaForRole("medical_rep"), true, "a Medical Rep is asked the area");
+  for (const family of offeredRoleMenuFamilies) {
+    if (family === "medical_rep") continue;
+    assert.equal(askAreaForRole(family), false, `${family} is asked region only — the area question is Medical-Rep-only`);
+  }
+  // A typed "Other" job keeps family "other", and null is a session that never answered the role —
+  // neither is a medical rep, so neither is asked an area.
+  assert.equal(askAreaForRole("other"), false, "a typed Other job is not a Medical Rep — region only");
+  assert.equal(askAreaForRole(null), false, "an unanswered role is never asked an area");
+  // Every offered role except the rep is a region-only role, so at least the seven managers/HO roles
+  // skip the area — a sanity check that the menu did not quietly become all reps.
+  assert.ok(
+    offeredRoleMenuFamilies.filter((family) => !askAreaForRole(family)).length >= 6,
+    "the cascade must actually skip the non-rep roles, not wave everyone through to the area",
+  );
+
   // ── Row ids round-trip, and a foreign id is never mistaken for ours ───────────────────────────
 
   assert.deepEqual(parseClassifyRowId(classifyRowId("job_title", "medical_rep")), {
@@ -418,13 +499,28 @@ export function runWhatsAppSelfClassificationTests() {
 
   assert.deepEqual(
     [...classifySessionSteps],
-    ["job_title", "job_title_other", "region", "region_other", "area", "area_other", "done"],
-    "must match the CHECK constraint in 20260828075500_ats_whatsapp_classify_typed_region_and_area.sql",
+    [
+      "job_title",
+      "job_title_other",
+      "background",
+      "background_other",
+      "region",
+      "region_other",
+      "area",
+      "area_other",
+      "done",
+    ],
+    "must match the CHECK constraint in 20260830193000_ats_whatsapp_classify_background.sql",
   );
   assert.equal(
     parseClassifyRowId("phx:job_title_other:anything"),
     null,
     "job_title_other has no menu and no rows — an id claiming that step is not ours",
+  );
+  assert.equal(
+    parseClassifyRowId("phx:background_other:anything"),
+    null,
+    "background_other has no menu and no rows either — an id claiming that step is not ours",
   );
 
   // The prompt says what to do and never cuts text with an ellipsis (the owner's standing rule).

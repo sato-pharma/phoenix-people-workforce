@@ -79,7 +79,9 @@ export function runWhatsAppOwnerMirrorTests() {
   // ── The answers landing ───────────────────────────────────────────────────────────────────────
 
   const classified = buildWhatsAppMirrorMessage({
+    areaApplies: true,
     areaName: "Haram - Faisal",
+    backgroundLabel: "Pharmacy",
     candidateName: "Ahmed Mohamed Saleh",
     kind: "classified",
     regionLabel: "Giza",
@@ -87,20 +89,40 @@ export function runWhatsAppOwnerMirrorTests() {
     waId: "201001234567",
   });
   assert.equal(classified.title, "Applicant filed themselves");
-  for (const expected of ["Ahmed Mohamed Saleh", "Medical Representative", "Giza", "Haram - Faisal"]) {
+  for (const expected of ["Ahmed Mohamed Saleh", "Medical Representative", "Pharmacy", "Giza", "Haram - Faisal"]) {
     assert.ok(classified.message.includes(expected), `the mirror must carry ${expected}`);
   }
+  assert.ok(classified.message.includes("Background: Pharmacy"), "the graduation background reaches him");
 
-  // A partly-answered session still reaches him, and names the part they did not reach — two of
-  // three answers is far more than the free-text guess it replaces.
+  // A partly-answered MEDICAL REP still reaches him, and names the part they did not reach — the
+  // area line reads "not answered" because a rep really was asked it and stopped short.
   const partial = buildWhatsAppMirrorMessage({
+    areaApplies: true,
     areaName: null,
+    backgroundLabel: "Science",
     candidateName: "Mona Adel",
     kind: "classified",
     regionLabel: "Giza",
     roleLabel: "Medical Representative",
     waId: "201001234567",
   });
-  assert.ok(partial.message.includes("Area: not answered"), "an unanswered question is named, not omitted");
+  assert.ok(partial.message.includes("Area: not answered"), "a rep's unanswered area is named, not omitted");
   assert.ok(partial.message.includes("Giza"), "the answers they did give must survive");
+
+  // A MANAGER is never asked the area (owner's cascade, 2026-08-30). So a completed manager has no
+  // area, and the mirror must OMIT the line rather than claim they skipped a question they never
+  // saw — "Area: not answered" would be a false statement about a district manager.
+  const manager = buildWhatsAppMirrorMessage({
+    areaApplies: false,
+    areaName: null,
+    backgroundLabel: "Pharmacy",
+    candidateName: "Karim Fouad",
+    kind: "classified",
+    regionLabel: "Giza",
+    roleLabel: "District Manager",
+    waId: "201001234567",
+  });
+  assert.ok(manager.message.includes("District Manager"), "the manager's role must reach him");
+  assert.ok(manager.message.includes("Region: Giza"), "and their region");
+  assert.ok(!manager.message.includes("Area"), "a role never asked the area must show no area line at all");
 }

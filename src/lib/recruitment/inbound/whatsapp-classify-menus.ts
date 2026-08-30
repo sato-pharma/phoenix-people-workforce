@@ -1,4 +1,8 @@
-// Recruitment / ATS — the three menus a CV sender taps to say what they are applying for.
+// Recruitment / ATS — the menus a CV sender taps to say what they are applying for.
+//
+// Four questions: role -> graduation background -> region -> area. The area question is asked ONLY
+// to a Medical Rep (owner's cascade rule 2026-08-30, see askAreaForRole); every other applicant is
+// asked region only. The background question is asked to everyone.
 //
 // WHY THIS EXISTS. Measured against production 2026-08-28: 446 candidates, 227 of them (51%) from
 // WhatsApp, and `applied_for_job_title` filled on 60. Those 60 hold 41 DISTINCT spellings, because
@@ -36,17 +40,18 @@ export const WHATSAPP_SECTION_TITLE_MAX = 24;
 export const WHATSAPP_BODY_MAX = 1024;
 
 /** A step that is asked as a tappable list. Every menu below has one of these. */
-export type ClassifyStep = "job_title" | "region" | "area";
+export type ClassifyStep = "job_title" | "background" | "region" | "area";
 
 /**
- * Every value the session's `step` column may hold — the three tappable steps, plus the typed
- * follow-up after "Other", plus the terminal state. Kept separate from `ClassifyStep` on purpose:
+ * Every value the session's `step` column may hold — the tappable steps, plus the typed follow-up
+ * after "Other", plus the terminal state. Kept separate from `ClassifyStep` on purpose:
  * `job_title_other` has no menu and no row ids, so letting it into `ClassifyStep` would imply a
  * list that cannot exist. This union is the same vocabulary as the table's CHECK constraint.
  */
 export type ClassifySessionStep =
   | ClassifyStep
   | "job_title_other"
+  | "background_other"
   | "region_other"
   | "area_other"
   | "done";
@@ -54,6 +59,8 @@ export type ClassifySessionStep =
 export const classifySessionSteps: readonly ClassifySessionStep[] = [
   "job_title",
   "job_title_other",
+  "background",
+  "background_other",
   "region",
   "region_other",
   "area",
@@ -105,7 +112,7 @@ export function parseClassifyRowId(raw: string | null | undefined): ParsedClassi
   if (parts.length !== 3) return null;
   const [prefix, step, value] = parts;
   if (prefix !== ID_PREFIX) return null;
-  if (step !== "job_title" && step !== "region" && step !== "area") return null;
+  if (step !== "job_title" && step !== "background" && step !== "region" && step !== "area") return null;
   if (!value.trim()) return null;
   return { step, value };
 }
@@ -267,7 +274,66 @@ export function cleanTypedJobTitle(raw: string | null | undefined): string | nul
   return cleanTypedAnswer(raw, JOB_TITLE_OTHER_MAX);
 }
 
-// ── The typed escape on questions 2 and 3 ────────────────────────────────────────────────────────
+// ── Question 2 — graduation background ─────────────────────────────────────────────────────────────
+// Owner's instruction 2026-08-30: right after the role, ask what the applicant graduated in. In this
+// industry a field applicant is a Pharmacy, Science or Veterinary graduate far more often than not,
+// and which one a hiring manager wants to know before reading a word of the CV. Asked to EVERYONE —
+// a head-office applicant (HR, Finance) simply taps "Other" and types their degree, exactly as the
+// role question already works.
+//
+// This is a NEW vocabulary, not borrowed: nothing else in the app buckets candidates by degree yet,
+// so the codes are defined here and the answer is stored as its own declaration on the candidate.
+export const candidateBackgroundCodes = ["pharmacy", "science", "vet"] as const;
+export type CandidateBackgroundCode = (typeof candidateBackgroundCodes)[number];
+
+/** What the applicant reads. "Veterinary" rather than the owner's shorthand "vet" — it is clearer
+ *  on the phone and well inside the 24-character row ceiling. */
+export const candidateBackgroundLabels: Record<CandidateBackgroundCode, string> = {
+  pharmacy: "Pharmacy",
+  science: "Science",
+  vet: "Veterinary",
+};
+
+// Order is the owner's: the three degrees a field applicant actually holds, then "Other" last —
+// offering "Other" early invites it, the same reasoning as the role menu.
+const BACKGROUND_MENU_ORDER: readonly string[] = [...candidateBackgroundCodes, OTHER_ROW_VALUE];
+
+export function backgroundMenu(): ClassifyMenu {
+  return {
+    body: "What did you graduate in?",
+    buttonLabel: "Choose background",
+    rows: BACKGROUND_MENU_ORDER.map((value) =>
+      value === OTHER_ROW_VALUE
+        ? rowFor("background", OTHER_ROW_VALUE, "Other")
+        : rowFor("background", value, candidateBackgroundLabels[value as CandidateBackgroundCode]),
+    ),
+    sectionTitle: "Background",
+    step: "background",
+  };
+}
+
+/** True for a background we offer — guards a stale value arriving in a reply, and keeps rejecting
+ *  the "Other" escape so its branch has to be handled explicitly before validating. */
+export function isOfferedBackground(value: string): value is CandidateBackgroundCode {
+  return (candidateBackgroundCodes as readonly string[]).includes(value);
+}
+
+export const BACKGROUND_OTHER_MAX = 80;
+
+export function backgroundOtherPromptText(): string {
+  return [
+    "No problem — please type what you graduated in.",
+    "",
+    "Send it as a normal message, for example \"Dentistry\".",
+  ].join("\n");
+}
+
+/** Same shape as the other too-long nudges: names the limit, quotes nothing back. */
+export function backgroundOtherTooLongText(): string {
+  return typedAnswerTooLongText("background", BACKGROUND_OTHER_MAX);
+}
+
+// ── The typed escape on the region and area questions ────────────────────────────────────────────
 // Owner's instruction, 2026-08-28, after hitting this himself: he was opening a District Manager
 // seat in Delta (3) — a region that is live and carries target in `au.regions` but had ZERO areas —
 // and found the applicant could neither pick the region nor type it. A list is a closed vocabulary
@@ -306,7 +372,7 @@ export function typedAnswerTooLongText(what: string, max: number): string {
   ].join("\n");
 }
 
-// ── Question 2 — which region? ───────────────────────────────────────────────────────────────────
+// ── Question 3 — which region? ───────────────────────────────────────────────────────────────────
 // Still NOT read from au.regions live: that table also carries `UE-1` and `UE-2`, which are sales
 // subdivisions of Upper Egypt with ZERO active areas, and asking an applicant to choose between
 // them asks them to know an internal split. `candidateRegionCodes` stays the reviewed list.
@@ -344,7 +410,22 @@ export function isOfferedRoleFamily(value: string): value is CandidateRoleFamily
   return (candidateRoleFamilies as readonly string[]).includes(value);
 }
 
-// ── Question 3 — which area? ─────────────────────────────────────────────────────────────────────
+/**
+ * Whether this applicant is asked the AREA question. Owner's cascade rule, 2026-08-30: a Medical Rep
+ * is asked region THEN area; every other applicant — the sales managers, the head-office roles, and
+ * anyone who typed their own job under "Other" — is asked region only, no area.
+ *
+ * The whole rule is this one line, and it turns on the tapped role FAMILY, not the label. A typed
+ * "Other" job never counts (its family stays "other"), which is the safe default: we do not know
+ * what seat they are after, so we do not ask them to name an area inside one. This is the single
+ * seam the session state machine consults — pinned in a test so a role added to the menu later has
+ * its area behaviour decided on purpose rather than by omission.
+ */
+export function askAreaForRole(family: string | null | undefined): boolean {
+  return family === "medical_rep";
+}
+
+// ── Question 4 — which area? ─────────────────────────────────────────────────────────────────────
 // Areas are passed in because they are read live from au.canonical_areas. Largest region is Others
 // at 9 active areas, so every region fits the 10-row cap with a row to spare — but the cap is
 // enforced here anyway rather than assumed, because an org change could add a tenth and a silently
@@ -369,17 +450,25 @@ export function areaMenu(regionCode: CandidateRegionCode, areaNames: readonly st
   };
 }
 
-/** The closing message, sent once all three answers are in. Plain text, not a menu. */
-export function classifyThankYouText(input: { roleLabel: string; regionLabel: string; areaName: string }): string {
-  return [
-    "Thank you — your application is now recorded as:",
-    "",
-    `Role: ${input.roleLabel}`,
-    `Region: ${input.regionLabel}`,
-    `Area: ${input.areaName}`,
-    "",
-    "Our HR team will review your CV and contact you if there is a suitable opening.",
-  ].join("\n");
+/**
+ * The closing message, sent once the answers are in. Plain text, not a menu.
+ *
+ * Background is shown when given (everyone is asked, so it is normally present); the area line is
+ * shown only for a Medical Rep, who is the only role asked it — a manager's confirmation reading
+ * "Area: —" would look like they missed a question they were never shown.
+ */
+export function classifyThankYouText(input: {
+  roleLabel: string;
+  backgroundLabel: string | null;
+  regionLabel: string;
+  areaName: string | null;
+}): string {
+  const lines = ["Thank you — your application is now recorded as:", "", `Role: ${input.roleLabel}`];
+  if (input.backgroundLabel) lines.push(`Background: ${input.backgroundLabel}`);
+  lines.push(`Region: ${input.regionLabel}`);
+  if (input.areaName) lines.push(`Area: ${input.areaName}`);
+  lines.push("", "Our HR team will review your CV and contact you if there is a suitable opening.");
+  return lines.join("\n");
 }
 
 // ── Validation ───────────────────────────────────────────────────────────────────────────────────

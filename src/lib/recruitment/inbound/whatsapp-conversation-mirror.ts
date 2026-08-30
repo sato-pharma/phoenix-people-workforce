@@ -43,8 +43,13 @@ export type WhatsAppMirrorEvent =
       waId: string;
       candidateName: string | null;
       roleLabel: string | null;
+      backgroundLabel: string | null;
       regionLabel: string | null;
       areaName: string | null;
+      /** Whether the area question was part of this applicant's flow — Medical Rep only. When false
+       *  the area line is omitted entirely, rather than shown as "not answered": a manager was never
+       *  asked it, and "not answered" would read as a question they skipped. */
+      areaApplies: boolean;
     };
 
 /**
@@ -88,18 +93,20 @@ export function buildWhatsAppMirrorMessage(event: WhatsAppMirrorEvent): { title:
   const who = (event.candidateName ?? "").trim() || null;
 
   if (event.kind === "classified") {
-    return {
-      message: [
-        `${who ?? "Name not read from the CV yet"} · ${formatWaId(event.waId)}`,
-        "",
-        `Applying for: ${event.roleLabel ?? "not answered"}`,
-        `Region: ${event.regionLabel ?? "not answered"}`,
-        `Area: ${event.areaName ?? "not answered"}`,
-        "",
-        "They chose these themselves, in WhatsApp.",
-      ].join("\n"),
-      title: "Applicant filed themselves",
-    };
+    const lines = [
+      `${who ?? "Name not read from the CV yet"} · ${formatWaId(event.waId)}`,
+      "",
+      `Applying for: ${event.roleLabel ?? "not answered"}`,
+      `Background: ${event.backgroundLabel ?? "not answered"}`,
+      `Region: ${event.regionLabel ?? "not answered"}`,
+    ];
+    // The area line appears when it has a value, and — for a Medical Rep, the only role asked it —
+    // as "not answered" when they stopped short. For every other role it is omitted: they were
+    // never asked, and a line claiming they skipped it would be false.
+    if (event.areaName) lines.push(`Area: ${event.areaName}`);
+    else if (event.areaApplies) lines.push("Area: not answered");
+    lines.push("", "They chose these themselves, in WhatsApp.");
+    return { message: lines.join("\n"), title: "Applicant filed themselves" };
   }
 
   const profile = (event.contactName ?? "").trim() || null;
