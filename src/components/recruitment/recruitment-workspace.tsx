@@ -1108,6 +1108,7 @@ export function RecruitmentWorkspace(props: Props) {
           openRequisitions={requisitions.filter((requisition) =>
             ["req_open", "req_published"].includes(requisition.status),
           )}
+          openVacancies={props.openVacancies}
           pending={pending}
           run={run}
           setError={setError}
@@ -2351,10 +2352,17 @@ function CandidateActionsControl({
   openPanel,
   openProfile,
   openRequisitions,
+  openVacancies,
   pending,
   run,
+  sendFreeArea,
+  sendFreeTitle,
+  sendPosition,
   sendTo,
   setOpenPanel,
+  setSendFreeArea,
+  setSendFreeTitle,
+  setSendPosition,
   setSendTo,
   setStartReq,
   startReq,
@@ -2367,25 +2375,37 @@ function CandidateActionsControl({
   openPanel: "send" | "start" | null;
   openProfile: (id: string) => void;
   openRequisitions: Requisition[];
+  openVacancies: VacancyReportRow[];
   pending: boolean;
   run: (work: () => Promise<string | void>) => void;
+  sendFreeArea: Record<string, string>;
+  sendFreeTitle: Record<string, string>;
+  sendPosition: Record<string, string>;
   sendTo: Record<string, string>;
   setOpenPanel: (panel: "send" | "start" | null) => void;
+  setSendFreeArea: Dispatch<SetStateAction<Record<string, string>>>;
+  setSendFreeTitle: Dispatch<SetStateAction<Record<string, string>>>;
+  setSendPosition: Dispatch<SetStateAction<Record<string, string>>>;
   setSendTo: Dispatch<SetStateAction<Record<string, string>>>;
   setStartReq: Dispatch<SetStateAction<Record<string, string>>>;
   startReq: Record<string, string>;
 }) {
   const notified = candidate.managerNotified;
   const current = normalizeCandidateStatus(candidate.status);
+  const positionChoice = sendPosition[candidate.id] ?? "";
 
   const sendToManager = () =>
     run(async () => {
       const data = await postJson(`/api/recruitment/candidates/${candidate.id}/notify-manager`, {
         managerHrId: sendTo[candidate.id],
+        ...positionBody(positionChoice, sendFreeArea[candidate.id] ?? "", sendFreeTitle[candidate.id] ?? ""),
       });
       const result = (data.result ?? {}) as { managerName?: unknown };
       const name = typeof result.managerName === "string" ? result.managerName : "the manager";
       setOpenPanel(null);
+      setSendPosition((prev) => ({ ...prev, [candidate.id]: "" }));
+      setSendFreeArea((prev) => ({ ...prev, [candidate.id]: "" }));
+      setSendFreeTitle((prev) => ({ ...prev, [candidate.id]: "" }));
       return `${candidateDisplayName(candidate.fullName)} sent to ${name}.`;
     });
 
@@ -2451,22 +2471,33 @@ function CandidateActionsControl({
 
       {/* Only the row being acted on mounts a picker, so 555 rows do not carry 1,110 dropdowns. */}
       {canManage && openPanel === "send" ? (
-        <div className="flex items-center gap-1.5 border border-orange-200 bg-orange-50/60 p-1.5">
-          <SearchableSelect
-            className="h-8 w-full min-w-0 border border-slate-300 bg-white px-2 text-xs text-slate-900"
-            value={sendTo[candidate.id] ?? ""}
-            onChange={(e) => setSendTo((prev) => ({ ...prev, [candidate.id]: e.target.value }))}
-          >
-            <option value="">Send to manager…</option>
-            {hiringManagers.map((manager) => (
-              <option key={manager.hrId} value={manager.hrId}>
-                {hiringManagerOptionLabel(manager)}
-              </option>
-            ))}
-          </SearchableSelect>
-          <Button className="h-8 shrink-0" disabled={pending || !sendTo[candidate.id]} onClick={sendToManager}>
-            {notified ? "Send again" : "Send"}
-          </Button>
+        <div className="space-y-1.5 border border-orange-200 bg-orange-50/60 p-1.5">
+          <PositionPicker
+            freeArea={sendFreeArea[candidate.id] ?? ""}
+            freeTitle={sendFreeTitle[candidate.id] ?? ""}
+            onFreeAreaChange={(value) => setSendFreeArea((prev) => ({ ...prev, [candidate.id]: value }))}
+            onFreeTitleChange={(value) => setSendFreeTitle((prev) => ({ ...prev, [candidate.id]: value }))}
+            onVacancyChange={(value) => setSendPosition((prev) => ({ ...prev, [candidate.id]: value }))}
+            openVacancies={openVacancies}
+            vacancyChoice={positionChoice}
+          />
+          <div className="flex items-center gap-1.5">
+            <SearchableSelect
+              className="h-8 w-full min-w-0 border border-slate-300 bg-white px-2 text-xs text-slate-900"
+              value={sendTo[candidate.id] ?? ""}
+              onChange={(e) => setSendTo((prev) => ({ ...prev, [candidate.id]: e.target.value }))}
+            >
+              <option value="">Send to manager…</option>
+              {hiringManagers.map((manager) => (
+                <option key={manager.hrId} value={manager.hrId}>
+                  {hiringManagerOptionLabel(manager)}
+                </option>
+              ))}
+            </SearchableSelect>
+            <Button className="h-8 shrink-0" disabled={pending || !sendTo[candidate.id]} onClick={sendToManager}>
+              {notified ? "Send again" : "Send"}
+            </Button>
+          </div>
         </div>
       ) : null}
 
@@ -2594,6 +2625,108 @@ function scrollToManagerGroup(key: string): void {
  */
 const UNSENT_GROUP_KEY = "not-sent";
 
+/** Sentinel `<select>` value for "the seat isn't an open vacancy yet, let me type it". */
+const FREE_POSITION = "free:";
+
+/** "Nasr City · Medical Representative · Anti Infective" — an open vacancy, as a recruiter reads it. */
+function vacancyOptionLabel(vacancy: VacancyReportRow): string {
+  return [vacancy.areaName, vacancy.jobTitle, vacancy.lineName].filter(Boolean).join(" · ");
+}
+
+/**
+ * Which position a CV being sent to a manager is FOR.
+ *
+ * The owner, 2026-08-28, on the screening send flow this mirrors: "before sending the CV to the
+ * manager, I should be able to choose his area and his job title, so the same title, same area
+ * are consolidated." That request reaches every send-to-manager surface, not only screening's —
+ * this pool's per-row and bulk sends had no position picker at all until this one.
+ *
+ * Optional, deliberately: a send with no position is still a legitimate send, so nothing here
+ * blocks it. Backed by the same open vacancies the requisitions panel already reads — a genuinely
+ * new seat that never got a vacancy row is the one case this picker cannot offer, and free typing
+ * covers it.
+ */
+function PositionPicker({
+  freeArea,
+  freeTitle,
+  onFreeAreaChange,
+  onFreeTitleChange,
+  onVacancyChange,
+  openVacancies,
+  vacancyChoice,
+}: {
+  freeArea: string;
+  freeTitle: string;
+  onFreeAreaChange: (value: string) => void;
+  onFreeTitleChange: (value: string) => void;
+  onVacancyChange: (value: string) => void;
+  openVacancies: VacancyReportRow[];
+  vacancyChoice: string;
+}) {
+  const sorted = [...openVacancies].sort(
+    (left, right) =>
+      (left.areaName ?? "").localeCompare(right.areaName ?? "") ||
+      (left.lineName ?? "").localeCompare(right.lineName ?? "") ||
+      (left.jobTitle ?? "").localeCompare(right.jobTitle ?? ""),
+  );
+  return (
+    <div className="space-y-1.5">
+      <select
+        aria-label="Which position is this CV for"
+        className="h-8 w-full rounded-md border border-slate-300 bg-white px-2 text-xs text-slate-900 outline-none focus:border-orange-400"
+        onChange={(event) => onVacancyChange(event.target.value)}
+        title="The position this CV is for — the manager sees it filed under this"
+        value={vacancyChoice}
+      >
+        <option value="">For which position? (optional)</option>
+        {sorted.length > 0 ? (
+          <optgroup label="Open vacancies">
+            {sorted.map((vacancy) => (
+              <option key={vacancy.id} value={String(vacancy.id)}>
+                {vacancyOptionLabel(vacancy)}
+              </option>
+            ))}
+          </optgroup>
+        ) : null}
+        <option value={FREE_POSITION}>Another position — type it</option>
+      </select>
+      {vacancyChoice === FREE_POSITION ? (
+        <div className="grid grid-cols-2 gap-1.5">
+          <input
+            aria-label="Area"
+            className="h-8 min-w-0 rounded-md border border-slate-300 px-2 text-xs outline-none focus:border-orange-400"
+            onChange={(event) => onFreeAreaChange(event.target.value)}
+            placeholder="Area"
+            value={freeArea}
+          />
+          <input
+            aria-label="Job title"
+            className="h-8 min-w-0 rounded-md border border-slate-300 px-2 text-xs outline-none focus:border-orange-400"
+            onChange={(event) => onFreeTitleChange(event.target.value)}
+            placeholder="Job title"
+            value={freeTitle}
+          />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/** The position fields a send-to-manager POST body carries, from what {@link PositionPicker} holds. */
+function positionBody(
+  vacancyChoice: string,
+  freeArea: string,
+  freeTitle: string,
+): Record<string, unknown> {
+  if (vacancyChoice === FREE_POSITION) {
+    return { positionAreaName: freeArea, positionJobTitle: freeTitle };
+  }
+  if (vacancyChoice) {
+    return { vacancyId: Number(vacancyChoice) };
+  }
+  return {};
+}
+
 function CandidatePoolCard({
   candidate,
   canDelete,
@@ -2602,9 +2735,16 @@ function CandidatePoolCard({
   isNew,
   openProfile,
   openRequisitions,
+  openVacancies,
   pending,
   run,
+  sendFreeArea,
+  sendFreeTitle,
+  sendPosition,
   sendTo,
+  setSendFreeArea,
+  setSendFreeTitle,
+  setSendPosition,
   setSendTo,
   setStartReq,
   startReq,
@@ -2616,9 +2756,16 @@ function CandidatePoolCard({
   isNew: boolean;
   openProfile: (id: string) => void;
   openRequisitions: Requisition[];
+  openVacancies: VacancyReportRow[];
   pending: boolean;
   run: (work: () => Promise<string | void>) => void;
+  sendFreeArea: Record<string, string>;
+  sendFreeTitle: Record<string, string>;
+  sendPosition: Record<string, string>;
   sendTo: Record<string, string>;
+  setSendFreeArea: Dispatch<SetStateAction<Record<string, string>>>;
+  setSendFreeTitle: Dispatch<SetStateAction<Record<string, string>>>;
+  setSendPosition: Dispatch<SetStateAction<Record<string, string>>>;
   setSendTo: Dispatch<SetStateAction<Record<string, string>>>;
   setStartReq: Dispatch<SetStateAction<Record<string, string>>>;
   startReq: Record<string, string>;
@@ -2657,10 +2804,17 @@ function CandidatePoolCard({
           openPanel={openPanel}
           openProfile={openProfile}
           openRequisitions={openRequisitions}
+          openVacancies={openVacancies}
           pending={pending}
           run={run}
+          sendFreeArea={sendFreeArea}
+          sendFreeTitle={sendFreeTitle}
+          sendPosition={sendPosition}
           sendTo={sendTo}
           setOpenPanel={setOpenPanel}
+          setSendFreeArea={setSendFreeArea}
+          setSendFreeTitle={setSendFreeTitle}
+          setSendPosition={setSendPosition}
           setSendTo={setSendTo}
           setStartReq={setStartReq}
           startReq={startReq}
@@ -2866,6 +3020,7 @@ function CandidatesTab({
   hiringManagers,
   linkedCandidateId,
   openRequisitions,
+  openVacancies,
   pending,
   run,
   setError,
@@ -2880,6 +3035,7 @@ function CandidatesTab({
   hiringManagers: HiringManagerOption[];
   linkedCandidateId: string | null;
   openRequisitions: Requisition[];
+  openVacancies: VacancyReportRow[];
   pending: boolean;
   run: (work: () => Promise<string | void>) => void;
   setError: (value: string | null) => void;
@@ -2904,6 +3060,11 @@ function CandidatesTab({
   // Which manager is picked for each candidate, keyed by candidate id rather than held per row, so
   // a pick survives the re-render that router.refresh() triggers after some other row is sent.
   const [sendTo, setSendTo] = useState<Record<string, string>>({});
+  // Which position (an open vacancy id, or FREE_POSITION with the two fields below) rides along
+  // with that send — see PositionPicker. Keyed by candidate id for the same reason as sendTo.
+  const [sendPosition, setSendPosition] = useState<Record<string, string>>({});
+  const [sendFreeArea, setSendFreeArea] = useState<Record<string, string>>({});
+  const [sendFreeTitle, setSendFreeTitle] = useState<Record<string, string>>({});
   const [query, setQuery] = useState("");
   const [dateFilter, setDateFilter] = useState<PoolDateFilter>("all");
   const [statusFilter, setStatusFilter] = useState("");
@@ -2942,6 +3103,11 @@ function CandidatesTab({
   // so the choice survives the re-render router.refresh() triggers after some other row is acted on.
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [bulkManagerHrId, setBulkManagerHrId] = useState("");
+  // Same position choice as sendPosition/sendFreeArea/sendFreeTitle, held once rather than keyed
+  // per candidate — the whole point of a bulk send is one manager and one filing for everybody in it.
+  const [bulkPosition, setBulkPosition] = useState("");
+  const [bulkFreeArea, setBulkFreeArea] = useState("");
+  const [bulkFreeTitle, setBulkFreeTitle] = useState("");
   // Which row, if any, has a picker open. One at a time: 555 rows must not each mount two
   // dropdowns, and two open pickers on screen is two places to click Send by mistake.
   const [openRowPanel, setOpenRowPanel] = useState<{ id: string; panel: "send" | "start" } | null>(null);
@@ -3666,6 +3832,28 @@ function CandidatesTab({
             <span className="whitespace-nowrap text-xs font-semibold text-slate-700">
               {selectedVisibleIds.length} selected
             </span>
+            {/* The ticks were already there for bulk-send; this is the same selection, read into
+                screening mode instead. Sourced from visibleCandidates rather than the raw ids, so
+                the queue opens in the same newest-first order the table is already showing. */}
+            <Button
+              variant="secondary"
+              onClick={() =>
+                setScreeningQueue(visibleCandidates.filter((candidate) => selectedVisibleIds.includes(candidate.id)))
+              }
+            >
+              Screen selected
+            </Button>
+            <div className="w-56 sm:w-64">
+              <PositionPicker
+                freeArea={bulkFreeArea}
+                freeTitle={bulkFreeTitle}
+                onFreeAreaChange={setBulkFreeArea}
+                onFreeTitleChange={setBulkFreeTitle}
+                onVacancyChange={setBulkPosition}
+                openVacancies={openVacancies}
+                vacancyChoice={bulkPosition}
+              />
+            </div>
             <SearchableSelect
               className={`${fieldClass} sm:w-72`}
               value={bulkManagerHrId}
@@ -3685,12 +3873,16 @@ function CandidatesTab({
                   const data = await postJson("/api/recruitment/candidates/notify-manager", {
                     candidateIds: selectedVisibleIds,
                     managerHrId: bulkManagerHrId,
+                    ...positionBody(bulkPosition, bulkFreeArea, bulkFreeTitle),
                   });
                   const result = (data.result ?? {}) as { count?: unknown; managerName?: unknown };
                   const name = typeof result.managerName === "string" ? result.managerName : "the manager";
                   const count = typeof result.count === "number" ? result.count : selectedVisibleIds.length;
                   setSelectedIds([]);
                   setBulkManagerHrId("");
+                  setBulkPosition("");
+                  setBulkFreeArea("");
+                  setBulkFreeTitle("");
                   return `${count} ${count === 1 ? "candidate" : "candidates"} sent to ${name}.`;
                 })
               }
@@ -3760,9 +3952,16 @@ function CandidatesTab({
                   isNew={isNewArrival(candidate)}
                   openProfile={openProfile}
                   openRequisitions={openRequisitions}
+                  openVacancies={openVacancies}
                   pending={pending}
                   run={run}
+                  sendFreeArea={sendFreeArea}
+                  sendFreeTitle={sendFreeTitle}
+                  sendPosition={sendPosition}
                   sendTo={sendTo}
+                  setSendFreeArea={setSendFreeArea}
+                  setSendFreeTitle={setSendFreeTitle}
+                  setSendPosition={setSendPosition}
                   setSendTo={setSendTo}
                   setStartReq={setStartReq}
                   startReq={startReq}
@@ -4194,10 +4393,17 @@ function CandidatesTab({
                           openPanel={openRowPanel?.id === candidate.id ? openRowPanel.panel : null}
                           openProfile={openProfile}
                           openRequisitions={openRequisitions}
+                          openVacancies={openVacancies}
                           pending={pending}
                           run={run}
+                          sendFreeArea={sendFreeArea}
+                          sendFreeTitle={sendFreeTitle}
+                          sendPosition={sendPosition}
                           sendTo={sendTo}
                           setOpenPanel={(panel) => setOpenRowPanel(panel ? { id: candidate.id, panel } : null)}
+                          setSendFreeArea={setSendFreeArea}
+                          setSendFreeTitle={setSendFreeTitle}
+                          setSendPosition={setSendPosition}
                           setSendTo={setSendTo}
                           setStartReq={setStartReq}
                           startReq={startReq}
