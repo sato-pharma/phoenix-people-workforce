@@ -107,10 +107,27 @@ function Ensure-Agent {
   }
 
   Write-Log "Agent not listening on 127.0.0.1:8787; starting local agent."
+  # QUOTE THE SCRIPT PATH.
+  #
+  # This checkout lives under "F:\Phoenix Workforce\", and the ARRAY form of -ArgumentList joins its
+  # elements with a space WITHOUT quoting any of them. powershell.exe therefore received
+  # `-File F:\Phoenix Workforce\...\start-agent.ps1` as several arguments, took the first one, and
+  # exited immediately with "Processing -File 'F:\Phoenix' failed because the file does not have a
+  # '.ps1' extension". The agent never started, and this function then waited out its full 30
+  # seconds and reported "Agent did not start listening on 127.0.0.1:8787 within 30 seconds" — a
+  # message about the AGENT for a fault that was entirely in the LAUNCHER. That is the whole reason
+  # the recovery path was dead: whenever the agent was down, the one piece of code whose job is to
+  # bring it back could never run, so every sync failed until a human started it by hand.
+  #
+  # Measured both ways on 2026-08-30 against a probe script under a path containing a space: the
+  # array form failed with the message above; the quoted single string ran the script. The installed
+  # scheduled tasks and install-startup-shortcut.ps1 have always quoted this path, which is why the
+  # tasks themselves ran fine and only this in-script recovery was broken — do not "simplify" it
+  # back to the array form to match some other call site.
   Start-Process powershell.exe `
     -WindowStyle Hidden `
     -WorkingDirectory $AgentRoot `
-    -ArgumentList @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $StartScript, "-SkipPrereqInstall") | Out-Null
+    -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$StartScript`" -SkipPrereqInstall" | Out-Null
 
   $deadline = (Get-Date).AddSeconds(30)
   do {
