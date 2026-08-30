@@ -84,14 +84,24 @@ function organogramLinkIsOffered(role: PhoenixRole, mode: NavigationMode): boole
 export async function runOrganogramNavLinkExistsTests() {
   // ── 1. The headline: the two roles that were stranded ────────────────────────────────
   // Break the fix (drop either nav entry) and THESE are the asserts that fire.
-  // "Talent Acquisition" was one of the two stranded roles this test was written for. Its successor
-  // for the organogram is HR Advisory, NOT both HR seats: organogram:read comes from the
-  // workforce_insight function (org structure, vacancy and headcount insight), which only HR
-  // Advisory holds. A rename sweep put HR Operations here and it failed on the first run, which is
-  // the sweep working as intended — the successor of a retired role is a question about which
-  // FUNCTION carried the grant, not a find-and-replace. HR Operations is asserted below as a
-  // control, so the split stays pinned instead of merely dropped.
-  for (const role of ["HR Advisory", "Training Manager"] as const) {
+  // "Talent Acquisition" was one of the two stranded roles this test was written for. BOTH HR seats
+  // are its successor for the organogram, by the owner's instruction of 2026-08-30 ("the 2 new hrs
+  // should have the organogram full company appearing 2 them").
+  //
+  // HR Operations was pinned here as the opposite control until that ruling — the reasoning being
+  // that organogram:read comes from workforce_insight, an HR Advisory function, so a rename sweep
+  // moving her into this loop was a find-and-replace rather than an answer about which FUNCTION
+  // carried the grant. That reading of the split was right about the mechanism and wrong about the
+  // seat: she was named in canAccessCompanyOrganogram, canAccessHeadOffice AND
+  // canViewOrganogramSensitiveFields the whole time, so the page's second gate always let her in
+  // and only the matrix bounced her. The grant now comes from people_records — her own function,
+  // ops 5 and ops 6 — and NOT by handing her workforce_insight, which would have dragged
+  // weekly_plans along with it.
+  //
+  // The pairing this test exists to enforce is unchanged: grant and nav entry move together, and
+  // tests/hr-seats-see-the-company-organogram.test.ts is the other half, pinning company mode and
+  // Head Office for both seats.
+  for (const role of ["HR Advisory", "HR Operations", "Training Manager"] as const) {
     const access = createAccessContext({ hrId: "T-1", role });
     const mode = resolveNavigationMode(access);
     assert.equal(
@@ -138,24 +148,9 @@ export async function runOrganogramNavLinkExistsTests() {
   // ── 3. Controls: the roles that must NOT be offered it ───────────────────────────────
   // If the fix were implemented by widening the entry's role list carelessly, or by dropping
   // `roles` altogether, these are what fail.
-  // HR Operations is a deliberate control, not an omission: she runs personnel records, attendance
-  // and payroll inputs, and her job description asks for none of the org-structure work. If a
-  // future session gives her workforce_insight, BOTH of these fire and the nav entry has to be
-  // considered at the same time — which is the pairing this whole test exists to enforce.
-  {
-    const opsAccess = createAccessContext({ hrId: "T-1", role: "HR Operations" });
-    assert.equal(
-      await canAccess(opsAccess, "organogram", "read"),
-      false,
-      "HR Operations must NOT hold organogram:read — it belongs to workforce_insight, an HR Advisory function",
-    );
-    assert.equal(
-      organogramLinkIsOffered("HR Operations", resolveNavigationMode(opsAccess)),
-      false,
-      "HR Operations is offered an Organogram link the page will bounce her from",
-    );
-  }
-
+  // HR Operations was a control here until 2026-08-30 and is now asserted in block 1 with the
+  // other two — see the note there. The controls that remain are roles holding no organogram
+  // grant at all, which is what catches a fix implemented by dropping the entry's gate.
   for (const role of ["Medical Rep", "Employee"] as const) {
     assert.equal(
       organogramLinkIsOffered(role, resolveNavigationMode(createAccessContext({ hrId: "T-1", role }))),

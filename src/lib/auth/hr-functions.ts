@@ -199,6 +199,21 @@ export const HR_FUNCTIONS: readonly HrFunction[] = [
       employees: ["read", "create", "update", "export", "import"],
       employee_profile: ["read", "update"],
       employee_documents: MAINTAIN,
+      // READ only, and added 2026-08-30 (owner: both new HR seats must see the full company
+      // organogram). It lives HERE and not in workforce_insight — which is where the other seat's
+      // copy comes from — because workforce_insight also carries weekly_plans, and that grant is
+      // documented directly below as one that must NOT reach this seat. Moving the whole function
+      // across to get one resource would have dragged it along.
+      //
+      // ops 5 and ops 6 are the reason it belongs to this function at all: onboarding places
+      // somebody into a seat and offboarding empties one, and `vacancies: create` immediately
+      // below only exists because the resignation RPC opens the seat the departure just vacated.
+      // Reading the chart you are about to change is the same job.
+      //
+      // organogram:update stays denied to both seats through HR_ROLE_BOUNDARIES ("may not make
+      // organizational changes"), which is the owner's never-change-the-skeleton rule, so this
+      // grants sight of the structure and no power over it.
+      organogram: READ_ONLY,
       contracts: ["read", "create", "update", "export"],
       resignations: ["read", "create", "update", "export"],
       // `vacancies: create` and NOTHING else. POST /api/employees/[hrId]/resign asserts
