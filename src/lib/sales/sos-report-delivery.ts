@@ -228,11 +228,22 @@ export async function runSosMonthlyClosingReportCheck(): Promise<SosMonthlyRepor
 
   try {
     const [activeLines, publishedClosings] = await Promise.all([
-      // Head Office INCLUDED on purpose, unlike every closing surface: this asks "is every active
-      // line published for the period", not "which lines can be closed". Dropping it here would
-      // relax the gate and start firing an email on a condition it has never fired on — a
-      // behaviour change this module never asked for. See listMonthlyClosingLines' own note.
-      listMonthlyClosingLines({ includeHeadOffice: true }),
+      // Head Office is NOT counted here, and re-adding it would silence this report permanently.
+      //
+      // This gate asks "is every active line published for the period" and requires ALL of them,
+      // so it counts Head Office only if Head Office can be published. It cannot: the closing has
+      // excluded it since 2026-08-05, so no Head Office publication can ever exist — measured on
+      // production 2026-08-30, monthly_closing_publications held 1 row each for Anti Infective,
+      // CNS and Pedia and 0 for Head Office, while source_of_sales_products still carried 4 active
+      // Head Office products. Counting an unpublishable line made the condition unsatisfiable, and
+      // the report has consequently never fired once: notification_outbox held 0 `sos-bi-report:%`
+      // rows on that date, with 2026-07 fully published on all three real lines.
+      //
+      // The earlier note here defended the wider set as "a different question", which was true of
+      // the question and wrong about the answer — it was reasoning about a gate that had never
+      // opened. The owner then settled the rule outright, 2026-08-30: "The head office will not be
+      // used in the weekly sales or monthly sales."
+      listMonthlyClosingLines(),
       listAllPublishedClosings(),
     ]);
     const fullyPublishedPeriods = computeFullyPublishedPeriods(activeLines, publishedClosings);
