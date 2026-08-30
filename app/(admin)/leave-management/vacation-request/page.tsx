@@ -1,7 +1,5 @@
 import { VacationRequestForm } from "@/components/vacation/vacation-request-form";
-import { EmployeePortalPageShell } from "@/components/employee-portal/enterprise-shell";
 import { isForbiddenError, resolveAccessContextFromPage } from "@/lib/auth/server";
-import { resolveNavigationMode } from "@/lib/auth/permissions";
 import {
   getVacationRequestPageData,
   isVacationSchemaMissing,
@@ -31,21 +29,12 @@ export default async function VacationRequestPage() {
     initialError = vacationRequestPageError(error);
   }
 
-  if (resolveNavigationMode(access) === "admin") {
-    return <VacationRequestForm initialData={initialData} initialError={initialError ?? initialData?.balanceError ?? null} />;
-  }
-
-  return (
-    <EmployeePortalPageShell
-      badge="Leave Management"
-      description="Submit a leave request with the same employee portal workspace design and manager approval flow."
-      title="Vacation Request"
-    >
-      <VacationRequestForm
-        initialData={initialData}
-        initialError={initialError ?? initialData?.balanceError ?? null}
-        showHero={false}
-      />
-    </EmployeePortalPageShell>
-  );
+  // The (admin) group layout redirects every portal-mode viewer to /employee-portals before this
+  // page runs, so navigation mode is ALWAYS "admin" here. A second branch wrapping this in
+  // EmployeePortalPageShell lived below until 2026-08-30 and could not execute: it was written for
+  // a reader the layout had already sent away. Portal viewers have their own page at
+  // /employee-portals/vacation-request, which is what their sidebar links and what the twin of this file
+  // forwards an admin-mode viewer back from. The group layout's own comment used to name
+  // leave-management as living OUTSIDE the group; it does not, and that note is corrected there.
+  return <VacationRequestForm initialData={initialData} initialError={initialError ?? initialData?.balanceError ?? null} />;
 }

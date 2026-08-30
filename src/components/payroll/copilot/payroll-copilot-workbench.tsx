@@ -19,7 +19,13 @@ import { ExpensesTab } from "./tabs/expenses-tab";
 import { HolidayBridgingTab } from "./tabs/holiday-bridging-tab";
 import { UnpaidVacationTab } from "./tabs/unpaid-vacation-tab";
 
-/** Same accent recipe as admin-command-center.tsx's KPI cards — gradient bg, glow, icon badge, hover lift. */
+/**
+ * KPI-card accent recipe: gradient bg, glow, icon badge, hover lift.
+ *
+ * This named admin-command-center.tsx until that file was retired on 2026-08-30 with the generic
+ * /admin page, leaving the comment pointing at nothing. hr/hr-command-center.tsx is the live sibling
+ * carrying the same recipe — match it there, not here, if the look is ever changed.
+ */
 const ACCENT_STYLES = {
   blue: {
     bar: "from-sky-500 via-sky-400 to-sky-300",
@@ -783,7 +789,7 @@ function RunWorkspace(props: {
   );
 }
 
-/** Same KPI-card recipe as admin-command-center.tsx: gradient bg, top accent bar, glow, icon badge, hover lift. */
+/** KPI-card recipe: gradient bg, top accent bar, glow, icon badge, hover lift. Live sibling: hr/hr-command-center.tsx. */
 function Stat({
   accent,
   icon: Icon,
