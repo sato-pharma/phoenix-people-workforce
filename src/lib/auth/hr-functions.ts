@@ -101,7 +101,7 @@ export const HR_FUNCTIONS: readonly HrFunction[] = [
       // The portal-only activate/deactivate tool for a new joiner's login. Deliberately NOT
       // user_admin, which also covers role, scope and permission changes and stays Super Admin.
       account_activation: ["read", "update"],
-      // Contract & Form 1 and Hiring Documents are cards on the Recruitment & Hiring hub, and both
+      // HR Forms and Hiring Documents are cards on the Recruitment & Hiring hub, and both
       // pages gate on employee_documents. hr_governance grants only read+export, so recruiting must
       // carry the write half or the seat that runs the hire can open the contract and not fill it.
       employee_documents: MAINTAIN,

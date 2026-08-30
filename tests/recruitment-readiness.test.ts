@@ -85,7 +85,7 @@ export function runRecruitmentReadinessTests() {
   assert.ok(permissionMatrix["Super Admin"].candidates?.includes("import"));
   assert.ok(permissionMatrix["HR Advisory"].recruitment?.includes("create"));
   assert.ok(permissionMatrix["HR Advisory"].candidates?.includes("read"));
-  // Contract & Form 1 is hers, so she writes hiring documents.
+  // HR Forms is hers, so she writes hiring documents.
   assert.ok(permissionMatrix["HR Advisory"].employee_documents?.includes("update"));
   // But APPROVING leave is not hers — that moved to HR Operations with the time_attendance
   // function when the single Talent Acquisition seat was split on 2026-08-28. This pair is the

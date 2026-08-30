@@ -23,19 +23,19 @@
 // slashes between them. Writing either as one wide field would put ink on top of the form's own
 // separators.
 
+import type { Placement } from "@/lib/hiring-pack/render-placement";
+
 export const FORM1_PAGE_WIDTH_PT = 612.12;
 export const FORM1_PAGE_HEIGHT_PT = 1008.12;
 
 export const FORM1_PAGE_1_SVG = "/forms/social-insurance-form1-page1.svg";
 export const FORM1_PAGE_2_SVG = "/forms/social-insurance-form1-page2.svg";
 
-export type Form1Placement =
-  /** Free text written along a dotted rule. */
-  | { kind: "text"; key: string; x: number; y: number; w: number; h: number; align: "right" | "center" | "left"; size?: number }
-  /** One character per cell, across a printed box grid, left to right. */
-  | { kind: "digits"; key: string; x: number; y: number; pitch: number; cells: number; h: number; size?: number }
-  /** A checkmark inside a single box. */
-  | { kind: "tick"; key: string; x: number; y: number; w: number; h: number };
+/**
+ * Form 1's placements are ordinary placements — the shared kind every government form here uses.
+ * The alias is kept so this file and `render-form1.ts` read as they always have.
+ */
+export type Form1Placement = Placement;
 
 /**
  * The three wage grids, each a جنيه | قرش table with a header strip above a row of printed cells.

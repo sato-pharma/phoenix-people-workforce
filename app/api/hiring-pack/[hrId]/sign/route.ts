@@ -5,10 +5,12 @@ import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import {
   hiringPackErrorMessage,
+  isHiringPackConflict,
   isHiringPackEmployeeMissing,
   isHiringPackSchemaMissing,
   markHiringPackSigned,
 } from "@/lib/hiring-pack/service";
+import { SIGNABLE_DOCUMENTS } from "@/lib/hiring-pack/types";
 import type { HiringPackDocument } from "@/lib/hiring-pack/types";
 
 export const runtime = "nodejs";
@@ -21,7 +23,7 @@ export const dynamic = "force-dynamic";
 // in Phoenix. A server timestamp here would quietly manufacture a signature date, and this record
 // is what the hiring documents tracker then reports as done.
 
-const DOCUMENTS = new Set<HiringPackDocument>(["contract", "form1"]);
+const DOCUMENTS = new Set<HiringPackDocument>(SIGNABLE_DOCUMENTS);
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 function apiError(error: unknown) {
@@ -29,10 +31,14 @@ function apiError(error: unknown) {
   if (isHiringPackEmployeeMissing(error)) {
     return { message: hiringPackErrorMessage(error), status: 404 };
   }
+  // The one-signed-exit-form rule. Nothing is broken — the request contradicts it.
+  if (isHiringPackConflict(error)) {
+    return { message: hiringPackErrorMessage(error), status: 409 };
+  }
   if (isHiringPackSchemaMissing(error)) {
     return {
       message:
-        "Hiring pack schema is not ready. Run the Supabase migration for employee_hiring_profile.",
+        "HR forms schema is not ready. Run the Supabase migrations for employee_hiring_profile and employee_offboarding_profile.",
       status: 409,
     };
   }
@@ -56,7 +62,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ hrI
       return NextResponse.json(
         {
           error: "invalid_hiring_pack_document",
-          message: "Pass document as contract or form1.",
+          // Named against the SIGNABLE set, not every document this module prints. The custody
+          // receipts are absent on purpose — one person can hold three, signed on three days, so
+          // there is no single date to store against the person. See `SIGNABLE_DOCUMENTS`.
+          message: `Pass document as one of ${SIGNABLE_DOCUMENTS.join(", ")}.`,
         },
         { status: 400 },
       );

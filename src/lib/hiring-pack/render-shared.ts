@@ -22,6 +22,46 @@ export function escapeHtml(value: string | null | undefined): string {
     .replace(/'/g, "&#39;");
 }
 
+/**
+ * Hold a Latin or numeric value left-to-right inside Arabic prose.
+ *
+ * NOT DECORATION. A number written with separators — a tax card `477-108-318`, a date
+ * `24 / 08 / 2026` — is not one number to the bidirectional algorithm. Inside Arabic text every
+ * digit run resolves to an ARABIC number (rule W2: the nearest strong character before it is an
+ * Arabic letter), and the rule that would fuse the runs back together across the separator applies
+ * only to EUROPEAN numbers (W4). So three runs stay three, and a right-to-left paragraph lays them
+ * out right to left.
+ *
+ * Measured in a browser on 2026-08-30, on this company's own recital and on a formatted date:
+ *
+ *     477-108-318       painted as   318-108-477
+ *     24 / 08 / 2026    painted as   2026 / 08 / 24
+ *
+ * Nothing in this repository can see that. The HTML is correct, the string is correct, `escapeHtml`
+ * is correct, and every test comparing strings passes. Only a real layout engine reorders the runs,
+ * which is why the browser check on these documents is not a formality.
+ *
+ * CHANGING THE SEPARATOR DOES NOT FIX IT — also measured. `477-108-318` with a plain hyphen
+ * reverses exactly as `10530-06000-82894` with a non-breaking one does. The hyphen is a red
+ * herring; the direction of the paragraph is the cause.
+ *
+ * WHY ISOLATE CHARACTERS AND NOT AN ELEMENT. Most of these values are interpolated into a sentence
+ * that is escaped as one whole string — the contract's articles are plain text carrying `{{TOKEN}}`
+ * — so there is no element to hang `dir` on without restructuring the text. U+2066 LEFT-TO-RIGHT
+ * ISOLATE and U+2069 POP DIRECTIONAL ISOLATE travel inside the string, survive `escapeHtml`
+ * untouched, and are the same device the owner's own Word originals use for these values. They are
+ * invisible and paired, so pinning a value that already reads correctly changes nothing.
+ *
+ * Where a value has an element of its own — a field span, a table cell — `dir="ltr"` on that
+ * element is equivalent, and is what those renderers already do. Never `dir="auto"` on the
+ * surrounding line: it reads only the first strong character, so an Arabic label turns the whole
+ * line back to RTL and takes the number with it.
+ */
+export function pinLtr(value: string | null | undefined): string {
+  if (!value) return "";
+  return `\u2066${value}\u2069`;
+}
+
 const ARABIC_DAY_NAMES = [
   "الأحد",
   "الاثنين",
@@ -143,3 +183,48 @@ export const PRINT_BANNER_CSS = `
   .print-banner__list li { margin: 0 0 2px; }
   @media print { .no-print { display: none !important; } }
 `;
+
+/**
+ * A tax registration number laid out across a form's three printed segments.
+ *
+ * Egyptian tax numbers are written in three groups — 123/456/789 — and both social-insurance forms
+ * print the slashes themselves. Whatever separators HR types are discarded and the digits are
+ * regrouped, so "123-456-789", "123/456/789" and "123456789" all land the same way.
+ */
+export function splitTaxRegistration(raw: string): [string, string, string] {
+  const groups = raw.split(/[^0-9]+/u).filter(Boolean);
+  if (groups.length >= 3) return [groups[0], groups[1], groups.slice(2).join("")];
+  const digits = groups.join("");
+  return [digits.slice(0, 3), digits.slice(3, 6), digits.slice(6, 9)];
+}
+
+/**
+ * The permanent address as a document states it — prose, not codes.
+ *
+ * Form 1's قسم/مركز and محافظة fields are two-cell grids holding NUMERIC government codes, so
+ * reusing them here would print something like "شارع كذا، 03، 01" on an instrument somebody signs.
+ * The free-text residence address on the employee record is what prose wants; the structured parts
+ * are only a fallback for when it is empty.
+ *
+ * SHARED ON PURPOSE. The contract and the custody receipt both print this person's address, they
+ * are signed weeks apart, and a reader comparing the two reads a difference as one of them being
+ * wrong. Two local copies of this logic would drift the first time either was improved.
+ */
+export function resolvePermanentAddress(input: {
+  residenceAddress: string | null;
+  residenceCity: string | null;
+  addressStreet: string | null;
+  addressBuilding: string | null;
+}): string {
+  const direct = input.residenceAddress?.trim();
+  if (direct) return direct;
+
+  return [
+    input.addressStreet,
+    input.addressBuilding ? `رقم ${input.addressBuilding}` : null,
+    input.residenceCity,
+  ]
+    .map((part) => part?.trim())
+    .filter((part): part is string => Boolean(part))
+    .join("، ");
+}

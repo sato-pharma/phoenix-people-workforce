@@ -674,6 +674,10 @@ import { runHiringDocumentsAuditTests } from "./hiring-documents-audit.test.ts";
 import { runHiringDocumentsDeadlineTests } from "./hiring-documents-deadline.test.ts";
 import { runHiringDocumentsStatusNotesTests } from "./hiring-documents-status-notes.test.ts";
 import { runHiringPackTests } from "./hiring-pack.test.ts";
+import { runHrFormsClearanceTests } from "./hr-forms-clearance.test.ts";
+import { runHrFormsContractArchiveTests } from "./hr-forms-contract-archive.test.ts";
+import { runHrFormsCustodyTests } from "./hr-forms-custody.test.ts";
+import { runHrFormsExitDocumentTests } from "./hr-forms-exit-documents.test.ts";
 import { runOfferBuiltinTemplateTests } from "./offer-builtin-templates.test.ts";
 import { runOfferLetterPayAndRenderTests } from "./offer-letter-pay-and-render.test.ts";
 import { runOfferPdfRuntimeTests } from "./offer-pdf-runtime.test.ts";
@@ -2161,6 +2165,30 @@ await runTest("hiring document capture (polish keeps colour, pages become one A4
 await runTest("hiring document deadlines (a blur that changed nothing must not write, in both renders)", runHiringDocumentsDeadlineTests);
 await runTest("hiring document status notes (an omitted notes key must not blank the cell)", runHiringDocumentsStatusNotesTests);
 await runTest("hiring pack (Form 1 coordinate map, blank back page, تفقيط agreement)", runHiringPackTests);
+await runTest(
+  "HR Forms exit documents (Form 6 measured and double-sided x3, nothing typed on a signature line, one exit form never both, one last working day for both authorities, a long value compressed inside its own rule)",
+  runHrFormsExitDocumentTests,
+);
+await runTest(
+  "HR Forms contract archive (exactly one current version per document, nothing ever removed, both "
+    + "contract texts pinned by content hash, a signed contract reprints the version it was signed "
+    + "against, and each version keeps its own wording for the head office and the signatory)",
+  runHrFormsContractArchiveTests,
+);
+await runTest(
+  "HR Forms custody receipt (each form prints its own device and not the other's, a cross-form "
+    + "version id is refused, the person's half fills while the device half stays ruled, every "
+    + "Latin value is pinned dir=ltr, the contract and the receipt agree on one address, and no "
+    + "signature is recorded against a person who can hold three devices)",
+  runHrFormsCustodyTests,
+);
+await runTest(
+  "HR Forms clearance pair (إخلاء طرف — both signed and never alternatives, each paper prints its own "
+    + "body and names its own keeper, a cross-paper version id is refused, the settlement amount is "
+    + "never printed, no sign-off is pre-ticked, every exit paper agrees on one departure date, and "
+    + "a gap names only the paper that prints the value)",
+  runHrFormsClearanceTests,
+);
 
 await runTest(
   "offer letter (the pay formula against three signed offers plus a one-pound sweep, and both "

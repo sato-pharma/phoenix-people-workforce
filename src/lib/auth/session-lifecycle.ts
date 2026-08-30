@@ -29,6 +29,31 @@ export const ACTIVE_EMPLOYMENT_STATUSES_IN_LIST = `(${Array.from(ACTIVE_EMPLOYME
 // => "(active,on_leave)"
 
 /**
+ * Employee lifecycle statuses that mean SOMEBODY LEFT THIS COMPANY.
+ *
+ * NOT the complement of ACTIVE_EMPLOYMENT_STATUSES, and that is the whole point of writing it out.
+ * `isTerminalEmploymentStatus` answers "may this person hold a session", so it is true for
+ * `historical_payroll_record` and `system_placeholder` as well — 17 rows on production
+ * 2026-08-30 that are ledger artefacts and payroll placeholders, not people with a last working
+ * day. A screen that prints a departure document has to tell the two apart: a Form 6 filed for a
+ * placeholder is a form the insurance office rejects.
+ *
+ * Kept HERE rather than in the one module that needs it, because the last time a screen wrote its
+ * own employment-status list the two screens disagreed by 46 people (owner decision 2026-08-24, see
+ * tests/hiring-employee-scope.test.ts). One vocabulary, named once.
+ */
+export const DEPARTED_EMPLOYMENT_STATUSES = new Set(["resigned", "terminated", "not_renewed"]);
+
+/** PostgREST literal form of DEPARTED_EMPLOYMENT_STATUSES. Derived, so the two cannot drift. */
+export const DEPARTED_EMPLOYMENT_STATUSES_IN_LIST = `(${Array.from(DEPARTED_EMPLOYMENT_STATUSES).join(",")})`;
+// => "(resigned,terminated,not_renewed)"
+
+/** True when the employee record says this person has left. See the set above for why not `!active`. */
+export function hasDepartedEmployment(value: string | null | undefined): boolean {
+  return DEPARTED_EMPLOYMENT_STATUSES.has(String(value ?? "").trim().toLowerCase());
+}
+
+/**
  * True when a linked employee record carries a TERMINAL lifecycle status
  * (resigned / terminated / inactive / not_renewed / anything outside the active
  * set). An unset/empty status is treated as active (NOT terminal) so legacy rows

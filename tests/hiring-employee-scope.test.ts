@@ -4,6 +4,9 @@ import { readFileSync } from "node:fs";
 import {
   ACTIVE_EMPLOYMENT_STATUSES,
   ACTIVE_EMPLOYMENT_STATUSES_IN_LIST,
+  DEPARTED_EMPLOYMENT_STATUSES,
+  DEPARTED_EMPLOYMENT_STATUSES_IN_LIST,
+  hasDepartedEmployment,
   isTerminalEmploymentStatus,
 } from "../src/lib/auth/session-lifecycle.ts";
 
@@ -20,6 +23,17 @@ import {
  *     employment contract.
  *
  * Owner decision 2026-08-24: both mean current staff. Neither file may own a status list again.
+ *
+ * WIDENED 2026-08-30, for one screen only and without reopening that decision. The hiring pack
+ * became HR Forms and now prints the LEAVING documents too — social insurance Form 6 and the two
+ * Ministry of Labour exit templates — which are filed after somebody has gone and after
+ * `employment_status` has already flipped. Current staff only meant the one screen that prints a
+ * Form 6 could not find a single one of the 57 people it exists for (production, 2026-08-30: 55
+ * resigned, 2 terminated). So its roster is now current staff PLUS the departed set, and the 17
+ * rows that caused the original bug — 15 historical payroll records, 2 system placeholders — are
+ * still excluded, because they are ledger artefacts rather than people with a last working day.
+ *
+ * The hiring-documents checklist is UNCHANGED: it tracks documents a current employee owes.
  */
 
 /**
@@ -98,8 +112,50 @@ export function runHiringEmployeeScopeTests() {
     /employment_status\.is\.null,employment_status\.in\.\$\{ACTIVE_EMPLOYMENT_STATUSES_IN_LIST\}/.test(pack),
     "hiring-pack must scope its roster query with the shared literal — importing it is not using it",
   );
+  // The leaving half of the module, pinned the same way: by the CALL, not the import. Dropping this
+  // clause is silent — the screen keeps working for new hires and simply stops being able to print
+  // a Form 6 for anybody, which is the whole population that form is for.
+  assert.ok(
+    /employment_status\.in\.\$\{DEPARTED_EMPLOYMENT_STATUSES_IN_LIST\}/.test(pack),
+    "hiring-pack must also carry people who have left — Form 6 is filed after they go",
+  );
   assert.ok(
     !/\.neq\("employment_status"/.test(pack),
     'hiring-pack went back to excluding a single status with .neq("employment_status", ...)',
   );
+  assert.ok(
+    !/"historical_payroll_record"|"system_placeholder"/.test(pack),
+    "hiring-pack must not name an individual employment status — that is what the shared sets are for",
+  );
+
+  // ---------------------------------------------------------------------------
+  // "Has left" is not "may not hold a session", and conflating them is what would put a payroll
+  // placeholder in front of somebody printing a government form.
+  // ---------------------------------------------------------------------------
+  assert.deepEqual(
+    Array.from(DEPARTED_EMPLOYMENT_STATUSES).sort(),
+    ["not_renewed", "resigned", "terminated"],
+    "the departed set is the three ways employment actually ends",
+  );
+  assert.equal(
+    DEPARTED_EMPLOYMENT_STATUSES_IN_LIST,
+    "(resigned,terminated,not_renewed)",
+    "the PostgREST literal must stay derived from the same set",
+  );
+  for (const status of ["historical_payroll_record", "system_placeholder"]) {
+    assert.equal(
+      isTerminalEmploymentStatus(status),
+      true,
+      `${status} must still be terminal for session purposes`,
+    );
+    assert.equal(
+      hasDepartedEmployment(status),
+      false,
+      `${status} is a ledger row, not a person who left — it must never reach an exit form`,
+    );
+  }
+  for (const status of ["active", "on_leave", null, ""]) {
+    assert.equal(hasDepartedEmployment(status), false, `${String(status)} has not left`);
+  }
+  assert.equal(hasDepartedEmployment("  RESIGNED  "), true, "departed matching is trimmed and case-insensitive");
 }

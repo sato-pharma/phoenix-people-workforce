@@ -8,15 +8,20 @@ import {
   FORM1_PAGE_HEIGHT_PT,
   FORM1_PAGE_WIDTH_PT,
   FORM1_WAGE_GRIDS,
-  type Form1Placement,
   type Form1WageGrid,
 } from "@/lib/hiring-pack/form1-layout";
+import {
+  FIT_TO_BOX_SCRIPT,
+  placedFormCss,
+  renderSheet,
+} from "@/lib/hiring-pack/render-placement";
 import {
   ARABIC_FONT_STACK,
   escapeHtml,
   PRINT_BANNER_CSS,
   printBanner,
   splitIsoDate,
+  splitTaxRegistration,
   todayInCairo,
 } from "@/lib/hiring-pack/render-shared";
 import type { HiringPackData } from "@/lib/hiring-pack/types";
@@ -33,20 +38,6 @@ import type { HiringPackData } from "@/lib/hiring-pack/types";
 // WHY IT IS ONE PAGE OF ARTWORK PER SIDE. Page 1 says "أنظر خلفه" — see the back — and page 2
 // carries both the إرشادات and the إقرار the employee signs. They are two sides of one sheet, not
 // two documents, which is exactly why this must be printed duplex.
-
-/**
- * A tax registration number laid out across the form's three printed segments.
- *
- * Egyptian tax numbers are written in three groups — 123/456/789 — and this form prints the slashes
- * itself. Whatever separators HR types are discarded and the digits are regrouped, so "123-456-789",
- * "123/456/789" and "123456789" all land the same way.
- */
-function splitTaxRegistration(raw: string): [string, string, string] {
-  const groups = raw.split(/[^0-9]+/u).filter(Boolean);
-  if (groups.length >= 3) return [groups[0], groups[1], groups.slice(2).join("")];
-  const digits = groups.join("");
-  return [digits.slice(0, 3), digits.slice(3, 6), digits.slice(6, 9)];
-}
 
 /** The values every placement key resolves against. Missing keys simply print nothing. */
 function buildForm1Values(data: HiringPackData): Record<string, string> {
@@ -114,33 +105,6 @@ function buildForm1Values(data: HiringPackData): Record<string, string> {
   return values;
 }
 
-function renderPlacement(placement: Form1Placement, values: Record<string, string>): string {
-  const raw = values[placement.key] ?? "";
-  if (!raw) return "";
-
-  if (placement.kind === "tick") {
-    return `<span class="f tick" style="left:${placement.x}pt;top:${placement.y}pt;width:${placement.w}pt;height:${placement.h}pt;line-height:${placement.h}pt">${escapeHtml(raw)}</span>`;
-  }
-
-  if (placement.kind === "digits") {
-    // Digits are written left to right even inside an otherwise right-to-left form, and the grid is
-    // clipped to its own cell count so an over-long value can never spill past the printed boxes.
-    const characters = [...raw].slice(0, placement.cells);
-    const cells = characters
-      .map(
-        (character, index) =>
-          `<span class="cell" style="left:${(index * placement.pitch).toFixed(2)}pt;width:${placement.pitch.toFixed(2)}pt;line-height:${placement.h}pt">${escapeHtml(character)}</span>`,
-      )
-      .join("");
-    const width = placement.pitch * placement.cells;
-    const size = placement.size ?? 10;
-    return `<span class="f grid" style="left:${placement.x}pt;top:${placement.y}pt;width:${width.toFixed(2)}pt;height:${placement.h}pt;font-size:${size}pt">${cells}</span>`;
-  }
-
-  const size = placement.size ?? 9;
-  return `<span class="f txt" style="left:${placement.x}pt;top:${placement.y}pt;width:${placement.w}pt;height:${placement.h}pt;line-height:${placement.h}pt;text-align:${placement.align};font-size:${size}pt">${escapeHtml(raw)}</span>`;
-}
-
 /** One digit centred in one printed wage cell. */
 function wageCell(x: number, w: number, y: number, h: number, digit: string): string {
   return `<span class="f wage" style="left:${x.toFixed(2)}pt;top:${y}pt;width:${w.toFixed(2)}pt;height:${h}pt;line-height:${h}pt">${escapeHtml(digit)}</span>`;
@@ -178,20 +142,6 @@ function renderWageGrid(grid: Form1WageGrid, amount: number | null): string {
   return pounds + piastres;
 }
 
-function renderSheet(
-  svg: string,
-  placements: readonly Form1Placement[],
-  values: Record<string, string>,
-  extras: string,
-): string {
-  const fields = placements.map((placement) => renderPlacement(placement, values)).join("");
-  return `<section class="sheet">
-    <img class="artwork" src="${svg}" alt="" aria-hidden="true">
-    ${fields}
-    ${extras}
-  </section>`;
-}
-
 export function renderForm1Html(data: HiringPackData, copies: number): string {
   const values = buildForm1Values(data);
 
@@ -222,56 +172,8 @@ export function renderForm1Html(data: HiringPackData, copies: number): string {
    * 612.12 x 1008.12pt exactly. Printing it on A4 would shrink it by roughly 16% vertically or clip
    * the bottom, and neither is a form an insurance office accepts.
    */
-  @page { size: ${FORM1_PAGE_WIDTH_PT}pt ${FORM1_PAGE_HEIGHT_PT}pt; margin: 0; }
-  * { box-sizing: border-box; }
-  html, body { margin: 0; padding: 0; background: #e2e8f0; }
-  body { font-family: ${ARABIC_FONT_STACK}; }
+${placedFormCss(FORM1_PAGE_WIDTH_PT, FORM1_PAGE_HEIGHT_PT, ARABIC_FONT_STACK)}
   ${PRINT_BANNER_CSS}
-
-  .sheet {
-    position: relative;
-    width: ${FORM1_PAGE_WIDTH_PT}pt;
-    height: ${FORM1_PAGE_HEIGHT_PT}pt;
-    margin: 0 auto 18px;
-    background: #fff;
-    overflow: hidden;
-    page-break-after: always;
-    break-after: page;
-  }
-  .sheet:last-child { page-break-after: auto; break-after: auto; margin-bottom: 0; }
-
-  .artwork {
-    position: absolute; inset: 0;
-    width: ${FORM1_PAGE_WIDTH_PT}pt; height: ${FORM1_PAGE_HEIGHT_PT}pt;
-    /* The official artwork is a background, never a target: it must not intercept a click, and it
-       must not be dragged out of the page as an image. */
-    pointer-events: none; user-select: none;
-  }
-
-  /* Every filled value. Absolute, in the PDF's own points, so a coordinate measured off the source
-     lands unchanged on the paper. */
-  .f {
-    position: absolute;
-    display: block;
-    color: #000;
-    white-space: nowrap;     /* a wrapped value in a one-line slot is unreadable, never allowed */
-    overflow: visible;
-    font-family: ${ARABIC_FONT_STACK};
-  }
-  .txt { font-weight: 600; }
-  .tick { text-align: center; font-size: 13pt; font-weight: 700; }
-  /* One digit per printed cell, so no letter-spacing — it would push a centred digit off its box. */
-  .wage { direction: ltr; text-align: center; font-size: 10pt; font-weight: 700; }
-  .grid { direction: ltr; font-weight: 700; }
-  .grid .cell { position: absolute; top: 0; display: block; text-align: center; }
-
-  @media print {
-    html, body { background: #fff; }
-    .sheet { margin: 0; box-shadow: none; }
-    /* Without this the browser drops the form's own rules and boxes to save toner, and what comes
-       out is a page of floating values with no form around them. */
-    * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  }
 </style>
 </head>
 <body>
@@ -281,6 +183,7 @@ ${printBanner([
   "Scale must stay at 100% / “Actual size”. Fit-to-page shifts every value off its box.",
 ])}
 ${sheets.join("\n")}
+${FIT_TO_BOX_SCRIPT}
 </body>
 </html>`;
 }

@@ -374,10 +374,13 @@ export const accessRegistry = [
   // public URL; attaching and deleting are `update` and same-origin only.
   sessionApi({ methods: readOnly, pattern: "/api/hiring-documents/files/**", permission: { resource: "employee_documents", action: "read" } }),
   sessionApi({ methods: ["POST", "DELETE"], pattern: "/api/hiring-documents/files/**", permission: { resource: "employee_documents", action: "update" }, csrfRequired: true }),
-  // The hiring pack — the printable contract and Form 1 — is the same workflow as the tracker above
-  // seen from the other end, so it is gated on the same resource. Reading or printing needs `read`;
-  // saving the profile and recording a signature need `update`, which is why this is two entries
-  // and not one blanket: a blanket would say `read` and quietly understate what a PUT can do.
+  // The HR forms pack — the printable contract, Form 1, Form 6 and the two Ministry of Labour exit
+  // templates — is the same workflow as the tracker above seen from the other end, so it is gated
+  // on the same resource. Reading or printing needs `read`; saving either profile and recording a
+  // signature need `update`, which is why this is two entries and not one blanket: a blanket would
+  // say `read` and quietly understate what a PUT can do. The `**` covers the offboarding profile
+  // route deliberately — a separate resource for the exit half would let the two drift, so that
+  // somebody could print a Form 6 for an employee whose own checklist they cannot open.
   sessionApi({ methods: readOnly, pattern: "/api/hiring-pack/**", permission: { resource: "employee_documents", action: "read" } }),
   sessionApi({ methods: ["PUT", "POST"], pattern: "/api/hiring-pack/**", permission: { resource: "employee_documents", action: "update" }, csrfRequired: true }),
   // ── Job Offers ─────────────────────────────────────────────────────────────────────────────

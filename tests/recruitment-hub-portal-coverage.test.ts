@@ -153,7 +153,7 @@ export function runRecruitmentHubPortalCoverageTests() {
     cards.length,
     8,
     "the hub must carry exactly eight cards for the recruiting seat (Recruitment, CV Database, " +
-      "Hiring Documents, Contract & Form 1, Job Offers, Inbound Intake Health, Missing Contact " +
+      "Hiring Documents, HR Forms, Job Offers, Inbound Intake Health, Missing Contact " +
       "Details, WhatsApp Replies) — if that count moves, decide the reachability of the new one " +
       "in the same change. " +
       `Got: ${cards.map((c) => c.href).join(", ")}`,
@@ -171,7 +171,7 @@ export function runRecruitmentHubPortalCoverageTests() {
   // filters out for her. A roles-only sidebar entry would still show her the button, opening a hub
   // with nothing in it — the defect already recorded for SFE Manager and Finance Manager on People
   // Management, which is why the entry carries a permission clause as well as a role list.
-  // She clears the two cards gated on employee_documents — Hiring Documents and Contract & Form 1
+  // She clears the two cards gated on employee_documents — Hiring Documents and HR Forms
   // — because people_records grants her that resource: hiring paperwork is genuinely shared work,
   // not recruiting. She clears NONE of the five gated on recruitment / candidates / vacancies /
   // offers, which is the separation that matters. Named individually rather than counted, so a

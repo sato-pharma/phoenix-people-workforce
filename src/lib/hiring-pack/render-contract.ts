@@ -1,26 +1,22 @@
 import { systemLegalEntity } from "@/config/system-settings";
 import { spellEgyptianAmount } from "@/lib/hiring-pack/arabic-amount";
 import {
-  CONTRACT_ARTICLES_AR,
-  CONTRACT_FIRST_PARTY_AR,
-  CONTRACT_OPENING_AR,
-  CONTRACT_PREAMBLE_AR,
-  CONTRACT_PREAMBLE_HEADING_AR,
-  CONTRACT_SECOND_PARTY_AR,
-  CONTRACT_SIGNATURE_COLUMNS_AR,
-  CONTRACT_SUBTITLE_AR,
-  CONTRACT_TITLE_AR,
+  CONTRACT_BLANK_RULE,
   fillContractTokens,
+  type ContractTemplate,
   type ContractToken,
-} from "@/lib/hiring-pack/contract-text";
+} from "@/lib/hiring-pack/contract-template";
+import { resolveContractTemplate } from "@/lib/hiring-pack/contract-text";
 import {
   arabicDayName,
   ARABIC_FONT_STACK,
   describeDurationMonths,
   escapeHtml,
   formatDayMonthYear,
+  pinLtr,
   PRINT_BANNER_CSS,
   printBanner,
+  resolvePermanentAddress,
 } from "@/lib/hiring-pack/render-shared";
 import type { HiringPackData } from "@/lib/hiring-pack/types";
 
@@ -37,6 +33,19 @@ import type { HiringPackData } from "@/lib/hiring-pack/types";
 // identical originals, all of which get signed; none of them is marked as a copy, because writing
 // "copy 2 of 4" on a signed instrument would suggest three of them are duplicates when all four
 // carry an original signature.
+//
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// TWO LAYOUTS, ONE RENDERER. Since 2026-08-30 there is more than one version of the contract: the
+// current one (`banded` — a navy title panel, blue party bands, a zebra article grid) and the
+// archived one it replaced (`prose` — a run-in opening sentence and a continuous flow). Both are
+// rendered here, by the same code, on purpose. A renderer per version means the archived one is
+// never exercised until the day somebody reprints a contract signed against it, which is the worst
+// possible moment to discover it no longer works.
+//
+// The prose path below is the behaviour that shipped with version 1, deliberately left alone. An
+// archived contract has to reproduce as the document that was signed, so "improving" how it renders
+// is not an improvement — it is a change to the record.
+// ─────────────────────────────────────────────────────────────────────────────────────────────
 
 /**
  * A money figure in the form the contract prints it: digits only — مادة (2) supplies "جنيه".
@@ -55,42 +64,27 @@ function formatMoney(value: number | null): string {
 }
 
 /**
- * The permanent address as a contract states it — prose, not codes.
- *
- * Form 1's قسم/مركز and محافظة fields are two-cell grids holding NUMERIC government codes, so
- * reusing them here would print something like "شارع كذا، 03، 01" in a legal document. The
- * free-text residence address on the employee record is what a contract wants; the structured
- * parts are only a fallback for when it is empty.
- */
-function resolveContractAddress(data: HiringPackData): string {
-  const direct = data.employee.residenceAddress?.trim();
-  if (direct) return direct;
-
-  return [
-    data.profile.addressStreet,
-    data.profile.addressBuilding ? `رقم ${data.profile.addressBuilding}` : null,
-    data.employee.residenceCity,
-  ]
-    .map((part) => part?.trim())
-    .filter((part): part is string => Boolean(part))
-    .join("، ");
-}
-
-/**
- * Every blank in the contract, resolved once.
+ * Every blank in the contract, resolved once — for every version at the same time.
  *
  * WATCH THE UNITS. Three of these tokens sit inside a sentence that already prints the unit, so the
  * value must be bare: مادة (2) writes "({{SALARY_FIGURES}}) جنيه", and مادة (10) writes
- * "({{UNDERPERFORMANCE_PCT}}%)" and "({{UNDERPERFORMANCE_MONTHS}}) شهرًا متتالية". Passing
+ * "({{UNDERPERFORMANCE_PCT}} %)" and "({{UNDERPERFORMANCE_MONTHS}}) شهرًا متتالية". Passing
  * "3 أشهر" into the last of those would print "3 أشهر شهرًا متتالية". The two tokens that carry no
  * printed unit — مادة (4)'s DURATION and مادة (14)'s TRAINING_BOND — take the spelled-out phrase.
  *
  * PROBATION IS NOT A TOKEN. مادة (4) states "مدة الثلاثة أشهر الأولى تحت الاختبار" verbatim, so a
  * probation period other than three months cannot be expressed by filling a blank — it would need
  * the clause itself rewritten, which is a legal change and not a rendering one.
+ *
+ * THE FOUR PAIRED TOKENS ARE NOT DUPLICATES. `COMPANY_HEAD_OFFICE` / `COMPANY_HEAD_OFFICE_FULL` and
+ * `RESPONSIBLE_MANAGER*` / `CONTRACT_SIGNATORY*` hold the same two facts in the two forms the two
+ * contract versions state them in. Both are filled here whichever version is printing, because a
+ * version only ever reads its own — and collapsing them would let today's wording reach a contract
+ * somebody signed under the old one.
  */
 function buildContractValues(data: HiringPackData): Partial<Record<ContractToken, string>> {
   const { employee, profile, terms } = data;
+  const recital = systemLegalEntity.contractRecital;
 
   // The date the instrument bears. Deliberately NOT "today": a contract dated by whatever day the
   // print button happened to be pressed is a wrong date on a legal document, and a visible run of
@@ -99,7 +93,7 @@ function buildContractValues(data: HiringPackData): Partial<Record<ContractToken
 
   return {
     DAY_NAME: arabicDayName(contractDate),
-    CONTRACT_DATE: formatDayMonthYear(contractDate),
+    CONTRACT_DATE: pinLtr(formatDayMonthYear(contractDate)),
 
     COMPANY_NAME: systemLegalEntity.legalNameAr,
     COMPANY_HEAD_OFFICE: systemLegalEntity.headOfficeAr,
@@ -107,16 +101,31 @@ function buildContractValues(data: HiringPackData): Partial<Record<ContractToken
     RESPONSIBLE_MANAGER: systemLegalEntity.responsibleManagerAr,
     RESPONSIBLE_MANAGER_TITLE: systemLegalEntity.responsibleManagerTitleAr,
 
+    COMPANY_LEGAL_FORM: recital.legalFormAr,
+    COMPANY_HEAD_OFFICE_FULL: recital.headOfficeAr,
+    COMPANY_BRANCH_REGISTRY: recital.branchRegistryAr,
+    COMMERCIAL_REGISTER: pinLtr(recital.commercialRegisterNumber),
+    COMMERCIAL_REGISTER_OFFICE: recital.commercialRegisterOfficeAr,
+    UNIFIED_REGISTER: pinLtr(recital.unifiedRegisterNumber),
+    TAX_CARD: pinLtr(recital.taxCardNumber),
+    CONTRACT_SIGNATORY: recital.signatoryNameAr,
+    CONTRACT_SIGNATORY_TITLE: recital.signatoryTitleAr,
+
     // The Arabic name governs: مادة (18) makes the Arabic text controlling, so the party named in
     // it has to be the Arabic name wherever the record carries one.
     EMPLOYEE_NAME: employee.nameAr ?? employee.fullName,
     NATIONALITY: profile.nationality ?? "",
     QUALIFICATION: profile.qualification ?? "",
-    BIRTH_DATE: formatDayMonthYear(employee.birthDate),
+    BIRTH_DATE: pinLtr(formatDayMonthYear(employee.birthDate)),
     BIRTH_PLACE: profile.birthPlace ?? "",
     NATIONAL_ID: employee.nationalId ?? "",
     INSURANCE_NUMBER: employee.socialInsuranceNumber ?? "",
-    ADDRESS: resolveContractAddress(data),
+    ADDRESS: resolvePermanentAddress({
+      addressBuilding: data.profile.addressBuilding,
+      addressStreet: data.profile.addressStreet,
+      residenceAddress: data.employee.residenceAddress,
+      residenceCity: data.employee.residenceCity,
+    }),
     PHONE: employee.mobileNumber ?? "",
     EMAIL: employee.workEmail ?? "",
 
@@ -128,7 +137,7 @@ function buildContractValues(data: HiringPackData): Partial<Record<ContractToken
     INSURANCE_WAGE: formatMoney(employee.socialInsuranceWage),
 
     DURATION: describeDurationMonths(terms.durationMonths),
-    START_DATE: formatDayMonthYear(terms.contractStartDate ?? employee.hireDate),
+    START_DATE: pinLtr(formatDayMonthYear(terms.contractStartDate ?? employee.hireDate)),
 
     UNDERPERFORMANCE_PCT: String(terms.underperformanceThresholdPct),
     UNDERPERFORMANCE_MONTHS: String(terms.underperformanceMonths),
@@ -139,16 +148,16 @@ function buildContractValues(data: HiringPackData): Partial<Record<ContractToken
 /**
  * Escape a filled line, keeping the double spaces the source text uses to separate fields.
  *
- * The second party's three lines read "الاسم: (…)  الجنسية: (…)" — the gap is what tells the eye
- * where one field ends. HTML collapses runs of whitespace, so each pair becomes one hard space plus
- * one ordinary one: the gap survives, and the line can still wrap.
+ * The party lines read "الاسم: (…)  الجنسية: (…)" — the gap is what tells the eye where one field
+ * ends. HTML collapses runs of whitespace, so each pair becomes one hard space plus one ordinary
+ * one: the gap survives, and the line can still wrap.
  */
 function line(text: string): string {
   return escapeHtml(text).replace(/ {2}/g, "&nbsp; ");
 }
 
 /** "الرقم التأميني: (123456789)" — a label and the value in brackets that belongs to it. */
-const LABELLED_FIELD = /^(.*?:)[  ]*(\([^()]*\))/u;
+const LABELLED_FIELD = /^(.*?:)[  ]*(\([^()]*\))/u;
 
 /** Longest label+value pair kept unbreakable. Past this a hard line is worse than a wrap. */
 const MAX_UNBREAKABLE = 44;
@@ -174,37 +183,111 @@ function partyLine(text: string): string {
     .join("&nbsp; ");
 }
 
-function renderCopy(values: Partial<Record<ContractToken, string>>): string {
-  const secondParty = CONTRACT_SECOND_PARTY_AR.map(
-    (part) => `<p class="party">${partyLine(fillContractTokens(part, values))}</p>`,
-  ).join("");
+/**
+ * Fill a line and MARK what was filled, the way the source document marks it.
+ *
+ * The Word original prints every blank on a pale amber highlight. That is not decoration: it is how
+ * a reader tells, at a glance, which words are the standing legal text and which were written in
+ * for this person. Phoenix types those values instead of leaving them for a pen, so keeping the
+ * highlight is what preserves the distinction — and a value that is still missing keeps both the
+ * highlight and the dotted rule, which makes an incomplete contract obvious from across a desk
+ * rather than something found by reading all four pages.
+ *
+ * Used by the banded layout only. The prose layout keeps the plain substitution it shipped with,
+ * because an archived contract must reproduce as the document that was signed.
+ */
+function fillMarkedHtml(template: string, values: Partial<Record<ContractToken, string>>): string {
+  const pattern = /\{\{([A-Z_]+)\}\}/g;
+  let out = "";
+  let last = 0;
+  let match: RegExpExecArray | null = pattern.exec(template);
+  while (match !== null) {
+    out += line(template.slice(last, match.index));
+    const raw = values[match[1] as ContractToken];
+    const text = typeof raw === "string" ? raw.trim() : "";
+    out +=
+      text.length > 0
+        ? `<span class="fill">${escapeHtml(text)}</span>`
+        : `<span class="fill fill--blank">${CONTRACT_BLANK_RULE}</span>`;
+    last = match.index + match[0].length;
+    match = pattern.exec(template);
+  }
+  return out + line(template.slice(last));
+}
 
-  const articles = CONTRACT_ARTICLES_AR.map(
-    (article) =>
-      `<p class="article"><span class="article__number">${escapeHtml(article.number)}</span> ${line(
-        fillContractTokens(article.body, values),
-      )}</p>`,
-  ).join("");
+/**
+ * A party line for the banded layout: fill-marked, with each "label: ( value )" pair unbreakable.
+ *
+ * `partyLine` does the binding and `fillMarkedHtml` does the amber marking, and the party rows need
+ * both — so this is the one place they meet. It cannot simply call `partyLine`, because that escapes
+ * plain text and would print the marking spans as literal angle brackets.
+ *
+ * The pair is measured on the FILLED string, never on the template: `{{NATIONAL_ID}}` is 17
+ * characters and the number it stands for is 14, so measuring the template would judge the wrong
+ * line, and a missing value expands to the dotted rule, which is longer than either. A chunk is
+ * bound only when it is ENTIRELY one pair — a chunk that carries trailing prose is left wrappable,
+ * since binding it would push a whole sentence onto the next line to keep a label with its value.
+ */
+function markedPartyLine(
+  template: string,
+  values: Partial<Record<ContractToken, string>>,
+): string {
+  return template
+    .split(/ {2,}/u)
+    .map((chunk) => {
+      const html = fillMarkedHtml(chunk, values);
+      const filled = fillContractTokens(chunk, values).trim();
+      const match = LABELLED_FIELD.exec(filled);
+      if (!match || match[0].length !== filled.length || filled.length > MAX_UNBREAKABLE) {
+        return html;
+      }
+      return `<span class="field">${html}</span>`;
+    })
+    .join("&nbsp; ");
+}
 
-  const signatures = CONTRACT_SIGNATURE_COLUMNS_AR.map(
-    (column) =>
-      `<div class="sign__column">
-        <p class="sign__role">${escapeHtml(column)}</p>
+/** Version 1's layout: a run-in opening, numbered parties, articles in a continuous flow. */
+function renderProseCopy(
+  template: ContractTemplate,
+  values: Partial<Record<ContractToken, string>>,
+): string {
+  const parties = [...template.firstPartyLinesAr, ...template.secondPartyLinesAr]
+    .map((part) => `<p class="party">${partyLine(fillContractTokens(part, values))}</p>`)
+    .join("");
+
+  const articles = template.articles
+    .map(
+      (article) =>
+        `<p class="article"><span class="article__number">${escapeHtml(
+          article.number,
+        )}</span> ${line(fillContractTokens(article.body, values))}</p>`,
+    )
+    .join("");
+
+  const signatures = template.signatureColumns
+    .map(
+      (column) =>
+        `<div class="sign__column">
+        <p class="sign__role">${escapeHtml(column.headingAr)}</p>
         <p class="sign__rule"></p>
         <p class="sign__hint">الاسم والتوقيع</p>
       </div>`,
-  ).join("");
+    )
+    .join("");
 
-  return `<article class="copy">
-    <h1 class="title">${escapeHtml(CONTRACT_TITLE_AR)}</h1>
-    <p class="subtitle">${escapeHtml(CONTRACT_SUBTITLE_AR)}</p>
+  const opening = template.openingAr
+    ? `<p class="opening">${line(fillContractTokens(template.openingAr, values))}</p>`
+    : "";
 
-    <p class="opening">${line(fillContractTokens(CONTRACT_OPENING_AR, values))}</p>
-    <p class="party">${partyLine(fillContractTokens(CONTRACT_FIRST_PARTY_AR, values))}</p>
-    ${secondParty}
+  return `<article class="copy copy--prose">
+    <h1 class="title">${escapeHtml(template.titleAr)}</h1>
+    <p class="subtitle">${escapeHtml(template.subtitleAr)}</p>
 
-    <h2 class="heading">${escapeHtml(CONTRACT_PREAMBLE_HEADING_AR)}</h2>
-    <p class="preamble">${line(fillContractTokens(CONTRACT_PREAMBLE_AR, values))}</p>
+    ${opening}
+    ${parties}
+
+    <h2 class="heading">${escapeHtml(template.preambleHeadingAr)}</h2>
+    <p class="preamble">${line(fillContractTokens(template.preambleAr, values))}</p>
 
     ${articles}
 
@@ -212,19 +295,146 @@ function renderCopy(values: Partial<Record<ContractToken, string>>): string {
   </article>`;
 }
 
-export function renderContractHtml(data: HiringPackData, copies: number): string {
+/** One row of the article grid — the label column, then the clause. */
+function articleRow(number: string, titleAr: string | null, bodyHtml: string): string {
+  const title = titleAr ? `<span class="grid__title">${escapeHtml(titleAr)}</span>` : "";
+  return `<div class="grid__row">
+      <div class="grid__label"><span class="grid__number">${escapeHtml(number)}</span>${title}</div>
+      <div class="grid__body">${bodyHtml}</div>
+    </div>`;
+}
+
+/** Version 2's layout: a navy title panel, blue party bands, and the articles as a bordered grid. */
+function renderBandedCopy(
+  template: ContractTemplate,
+  values: Partial<Record<ContractToken, string>>,
+): string {
+  const partyBlock = (heading: string | null, lines: readonly string[]) =>
+    (heading ? `<p class="band">${escapeHtml(heading)}</p>` : "") +
+    lines
+      .map(
+        (text, index) =>
+          `<p class="row ${index % 2 === 0 ? "row--even" : "row--odd"}">${markedPartyLine(
+            text,
+            values,
+          )}</p>`,
+      )
+      .join("");
+
+  const rows = [
+    articleRow(template.preambleHeadingAr, null, fillMarkedHtml(template.preambleAr, values)),
+    ...template.articles.map((article) =>
+      articleRow(article.number, article.titleAr, fillMarkedHtml(article.body, values)),
+    ),
+  ].join("");
+
+  const closing = template.closingAr
+    ? `<p class="closing">${fillMarkedHtml(template.closingAr, values)}</p>`
+    : "";
+
+  const signatures = template.signatureColumns
+    .map(
+      (column) =>
+        `<div class="signcol">
+        <p class="signcol__head">${escapeHtml(column.headingAr)}</p>
+        <div class="signcol__body">${column.fieldsAr
+          .map((field) => `<p class="signcol__field">${fillMarkedHtml(field, values)}</p>`)
+          .join("")}</div>
+      </div>`,
+    )
+    .join("");
+
+  // The running footer rides in a <tfoot>. That is the ONE technique Chrome actually repeats on
+  // every printed page — `@page` margin boxes are unimplemented, and a `position: fixed` footer can
+  // overlap the text it is meant to sit below, which on a legal instrument is not a cosmetic bug.
+  const footer = template.footerAr
+    ? `<tfoot><tr><td class="sheet__foot">${line(
+        fillContractTokens(template.footerAr, values),
+      )}</td></tr></tfoot>`
+    : "";
+
+  return `<article class="copy copy--banded">
+    <table class="sheet">
+      <tbody><tr><td class="sheet__body">
+        <header class="masthead">
+          <div class="masthead__title">
+            <h1>${escapeHtml(template.titleAr)}</h1>
+            <p>${escapeHtml(template.subtitleAr)}</p>
+          </div>
+          <div class="masthead__mark">
+            <img src="/brand/sato-pharma-logo.png" alt="" width="401" height="158">
+          </div>
+        </header>
+        <div class="rule"></div>
+
+        <section class="parties">
+          ${partyBlock(template.firstPartyHeadingAr, template.firstPartyLinesAr)}
+          ${partyBlock(template.secondPartyHeadingAr, template.secondPartyLinesAr)}
+        </section>
+
+        <section class="grid">${rows}</section>
+
+        ${closing}
+
+        <section class="sign2">${signatures}</section>
+      </td></tr></tbody>
+      ${footer}
+    </table>
+  </article>`;
+}
+
+export function renderContractHtml(
+  data: HiringPackData,
+  copies: number,
+  requestedTemplateId?: string | null,
+): string {
+  // Which text this person's contract is. A signed contract reprints the version that was SIGNED;
+  // an explicit request (from the Archive screen) wins over both, because looking at an archived
+  // template is exactly the case where "helpfully" substituting the current one defeats the point.
+  const storedVersionId = data.profile.contractTemplateVersion;
+  const { template } = resolveContractTemplate(requestedTemplateId ?? storedVersionId);
+  const current = resolveContractTemplate(null).template;
+
+  // Whether this print is a FAITHFUL REPRODUCTION of a signed contract, which is a claim about the
+  // employee's file and not about how the version was chosen. Asking the resolver would conflate
+  // the two: it only sees an id, so a version picked off the Archive for somebody who has signed
+  // nothing would come back "reproduced from signature" and the banner would tell the reader this
+  // is the contract that person put their name to. It is answered here instead, from what the file
+  // actually stores — an explicit request for the version somebody DID sign still counts.
+  const reproducedFromSignature = storedVersionId !== null && template.id === storedVersionId;
+
   const values = buildContractValues(data);
   const total = Math.max(1, copies);
+  const renderCopy = template.layout === "banded" ? renderBandedCopy : renderProseCopy;
 
-  const body = Array.from({ length: total }, () => renderCopy(values)).join("\n");
+  const body = Array.from({ length: total }, () => renderCopy(template, values)).join("\n");
   const employeeName = data.employee.nameAr ?? data.employee.fullName;
 
   // Blocking gaps are named on screen and never on paper — the person pressing Print is the last
   // one who can still go and find the missing value.
-  const blocking = data.gaps.filter((gap) => gap.blocking && gap.document !== "form1");
+  const blocking = data.gaps.filter((gap) => gap.blocking && gap.documents.includes("contract"));
   const gapWarning =
     blocking.length > 0
       ? [`Still blank: ${blocking.map((gap) => gap.labelEn).join(", ")} — these print as dotted rules.`]
+      : [];
+
+  // An archived text is a legitimate thing to print and a dangerous thing to print by ACCIDENT, so
+  // it says so on the screen banner — which never reaches paper — rather than staying silent.
+  const archivedNotice =
+    template.id === current.id
+      ? []
+      : [
+          reproducedFromSignature
+            ? `ARCHIVED TEXT (${template.id}) — this reproduces the contract this employee actually signed, not the current one.`
+            : `ARCHIVED TEXT (${template.id}) — a superseded version was asked for. A new hire must sign the current contract.`,
+        ];
+
+  // Background graphics matter only where the design carries meaning. Version 1 is black on white.
+  const colourNotice =
+    template.layout === "banded"
+      ? [
+          "Turn ON “Background graphics” — the title panel, the party bands and the highlight on every filled value are part of the document.",
+        ]
       : [];
 
   return `<!doctype html>
@@ -234,8 +444,10 @@ export function renderContractHtml(data: HiringPackData, copies: number): string
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>عقد عمل — ${escapeHtml(employeeName)}</title>
 <style>
-  /* A4 with 18mm side margins — the source document's own page setup (11906 x 16838 twips). */
-  @page { size: A4; margin: 20mm 18mm; }
+  /* A4 with the current version's own page setup — 576 twips (10.2mm) at the sides, 604 (10.7mm)
+     top, 720 (12.7mm) bottom. Version 1 was drawn on 18mm side margins and keeps them in its own
+     padding, so the two versions print at the size each was designed for. */
+  @page { size: A4; margin: 10.7mm 10.2mm 12.7mm; }
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; background: #e2e8f0; }
   body {
@@ -250,35 +462,33 @@ export function renderContractHtml(data: HiringPackData, copies: number): string
     width: 210mm;
     min-height: 297mm;
     margin: 0 auto 18px;
-    padding: 20mm 18mm;
     background: #fff;
-    font-size: 10.5pt;
-    line-height: 1.75;
     break-after: page;
     page-break-after: always;
   }
   .copy:last-of-type { break-after: auto; page-break-after: auto; margin-bottom: 0; }
 
-  .title {
+  /* ── version 1, the archived prose layout ─────────────────────────────────────────────────── */
+  .copy--prose { padding: 20mm 18mm; font-size: 10.5pt; line-height: 1.75; }
+  .copy--prose .title {
     margin: 0 0 2mm;
     font-size: 16pt;
     font-weight: 700;
     text-align: center;
     text-decoration: underline;
   }
-  .subtitle {
+  .copy--prose .subtitle {
     margin: 0 0 7mm;
     font-size: 10pt;
     font-weight: 600;
     text-align: center;
   }
-  .heading {
+  .copy--prose .heading {
     margin: 6mm 0 2mm;
     font-size: 12pt;
     font-weight: 700;
     text-align: center;
   }
-
   .opening, .party, .preamble, .article {
     margin: 0 0 3mm;
     text-align: justify;
@@ -296,8 +506,8 @@ export function renderContractHtml(data: HiringPackData, copies: number): string
     display: flex;
     gap: 8mm;
     margin-top: 12mm;
-    /* The three signature columns must land together on one page: a party signing a sheet that
-       carries no clause above it is exactly the ambiguity a signature block exists to prevent. */
+    /* The signature columns must land together on one page: a party signing a sheet that carries no
+       clause above it is exactly the ambiguity a signature block exists to prevent. */
     break-inside: avoid;
     page-break-inside: avoid;
   }
@@ -306,9 +516,121 @@ export function renderContractHtml(data: HiringPackData, copies: number): string
   .sign__rule { margin: 0 0 1.5mm; border-bottom: 1px solid #000; }
   .sign__hint { margin: 0; font-size: 8.5pt; color: #333; }
 
+  /* ── version 2, the current banded layout ─────────────────────────────────────────────────── */
+  /* Palette read off the source document: a navy title panel and article numbers, a mid blue for
+     the rule and the band headings, a pale zebra on alternating rows, and the amber the original
+     uses to highlight everything that gets filled in. */
+  .copy--banded { padding: 10.7mm 10.2mm 12.7mm; color: #1a1a1a; font-size: 11.5pt; }
+  .sheet { width: 100%; border-collapse: collapse; }
+  .sheet__body { padding: 0; vertical-align: top; }
+  .sheet__foot {
+    padding: 2.5mm 0 0;
+    border-top: 0.5pt solid #c9d6e2;
+    color: #4a5b6b;
+    font-size: 8pt;
+    text-align: center;
+  }
+
+  .masthead { display: flex; align-items: stretch; background: #0b2a4a; }
+  .masthead__title { flex: 1 1 auto; padding: 4mm 5mm; text-align: center; }
+  .masthead__title h1 { margin: 0; color: #fff; font-size: 15pt; font-weight: 700; }
+  .masthead__title p { margin: 1.5mm 0 0; color: #a8c6e2; font-size: 8.5pt; font-weight: 600; }
+  .masthead__mark {
+    display: flex;
+    flex: 0 0 20.5%;
+    align-items: center;
+    justify-content: center;
+    padding: 3mm;
+  }
+  /* The white-wordmark logo, which is the on-dark variant — the same artwork the source document
+     places on this panel. The light-background variant would disappear here. */
+  .masthead__mark img { width: 100%; max-width: 32mm; height: auto; }
+  .rule { height: 1.6mm; background: #1b7fbf; }
+
+  .parties { margin: 0 0 4mm; border: 0.5pt solid #c9d6e2; border-top: 0; }
+  .band {
+    margin: 0;
+    padding: 1.6mm 3mm;
+    background: #1b7fbf;
+    color: #fff;
+    font-size: 9pt;
+    font-weight: 700;
+    text-align: center;
+  }
+  .row { margin: 0; padding: 1.8mm 3mm; font-size: 10pt; line-height: 1.45; }
+  .row--even { background: #f2f6fa; }
+  .row--odd { background: #fff; }
+
+  .grid { border: 0.5pt solid #c9d6e2; }
+  .grid__row {
+    display: flex;
+    align-items: stretch;
+    border-bottom: 0.5pt solid #c9d6e2;
+    background: #fff;
+    /* A clause may break across pages — they are long — but never on its first or last line. */
+    orphans: 3;
+    widows: 3;
+  }
+  /* Zebra by position, matching the source. Positional rather than a class so an article inserted
+     or removed can never leave two identical stripes touching. */
+  .grid__row:nth-child(even) { background: #f2f6fa; }
+  .grid__row:last-child { border-bottom: 0; }
+  .grid__label {
+    display: flex;
+    flex: 0 0 13.9%;
+    flex-direction: column;
+    gap: 1mm;
+    padding: 2.4mm 2mm;
+    border-inline-start: 0.5pt solid #c9d6e2;
+    text-align: center;
+  }
+  .grid__number { color: #0b2a4a; font-size: 11.5pt; font-weight: 700; }
+  .grid__title { color: #1b7fbf; font-size: 9.5pt; font-weight: 700; line-height: 1.25; }
+  .grid__body {
+    flex: 1 1 auto;
+    padding: 2.4mm 3mm;
+    font-size: 11.5pt;
+    line-height: 1.5;
+    text-align: justify;
+  }
+
+  .closing {
+    margin: 5mm 0 4mm;
+    color: #0b2a4a;
+    font-size: 10.5pt;
+    font-weight: 700;
+    text-align: right;
+  }
+
+  .sign2 {
+    display: flex;
+    border-top: 1pt solid #0b2a4a;
+    border-bottom: 0.5pt solid #c9d6e2;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  .signcol { flex: 1 1 50%; }
+  .signcol + .signcol { border-inline-end: 0.5pt solid #c9d6e2; }
+  .signcol__head {
+    margin: 0;
+    padding: 1.8mm 3mm;
+    background: #0b2a4a;
+    color: #fff;
+    font-size: 10pt;
+    font-weight: 700;
+    text-align: center;
+  }
+  .signcol__body { padding: 2mm 3mm 4mm; background: #f2f6fa; }
+  .signcol__field { margin: 2.4mm 0 0; font-size: 10pt; }
+
+  /* What Phoenix typed, on the amber the source document uses for its blanks. */
+  .fill { padding: 0 0.6mm; background: #ffedbe; color: #8a5a00; font-weight: 700; }
+  .fill--blank { letter-spacing: 0.4pt; }
+
   @media print {
     html, body { background: #fff; }
-    .copy { width: auto; min-height: 0; margin: 0; padding: 0; box-shadow: none; }
+    .copy { width: auto; min-height: 0; margin: 0; box-shadow: none; }
+    .copy--prose, .copy--banded { padding: 0; }
     * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   }
 </style>
@@ -317,7 +639,9 @@ export function renderContractHtml(data: HiringPackData, copies: number): string
 ${printBanner([
   "Print SINGLE-SIDED — turn OFF “Print on both sides”. Every page of the contract goes on its own sheet.",
   `Paper size: A4. ${total} copies are already laid out below — leave the dialog's copy count at 1.`,
-  "All four copies are signed originals. Scale must stay at 100% / “Actual size”.",
+  "Every copy is a signed original. Scale must stay at 100% / “Actual size”.",
+  ...colourNotice,
+  ...archivedNotice,
   ...gapWarning,
 ])}
 ${body}

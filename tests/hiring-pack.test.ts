@@ -9,17 +9,33 @@ import {
   FORM1_PAGE_WIDTH_PT,
   FORM1_WAGE_GRIDS,
 } from "../src/lib/hiring-pack/form1-layout.ts";
+import {
+  renderClearanceCompanyHtml,
+  renderClearanceEmployeeHtml,
+} from "../src/lib/hiring-pack/render-clearance.ts";
 import { renderContractHtml } from "../src/lib/hiring-pack/render-contract.ts";
+import {
+  renderCustodyLaptopHtml,
+  renderCustodyMobileHtml,
+} from "../src/lib/hiring-pack/render-custody.ts";
 import { renderForm1Html } from "../src/lib/hiring-pack/render-form1.ts";
+import { renderForm6Html } from "../src/lib/hiring-pack/render-form6.ts";
+import {
+  renderMutualTerminationHtml,
+  renderResignationHtml,
+} from "../src/lib/hiring-pack/render-labour-exit.ts";
 import {
   addMonthsToIsoDate,
   collectHiringPackGaps,
+  emptyOffboardingProfile,
   resolveContractTerms,
 } from "../src/lib/hiring-pack/service.ts";
 import type {
+  ExitFacts,
   HiringPackData,
   HiringPackEmployeeFacts,
   HiringPackProfile,
+  OffboardingProfile,
 } from "../src/lib/hiring-pack/types.ts";
 
 /**
@@ -68,6 +84,9 @@ function employeeFixture(overrides: Partial<HiringPackEmployeeFacts> = {}): Hiri
     mobileNumber: "01000000000",
     workEmail: "mona@example.com",
     employmentStatus: "active",
+    // Employed, so no departure date. The exit half of the module reads this to decide
+    // whether somebody is leaving at all — see tests/hr-forms-exit-documents.test.ts.
+    lastWorkingDate: null,
     ...overrides,
   };
 }
@@ -97,22 +116,41 @@ function profileFixture(overrides: Partial<HiringPackProfile> = {}): HiringPackP
     form1SignedDate: null,
     contractPrintedAt: null,
     form1PrintedAt: null,
+    // Nothing signed, so no version is stamped. Null is the ordinary state and means "print the
+    // current contract"; a value only appears once somebody signs one.
+    contractTemplateVersion: null,
     updatedAt: null,
     ...overrides,
   };
 }
 
+/**
+ * An exit nobody has started.
+ *
+ * Spread from the app's own `emptyOffboardingProfile` rather than written out here. Four test files
+ * used to hold their own copy of this literal, so adding a document to the module meant editing all
+ * four — and the only thing that caught a miss was the type checker failing four files at once.
+ */
+function offboardingFixture(overrides: Partial<OffboardingProfile> = {}): OffboardingProfile {
+  return { ...emptyOffboardingProfile("H-1001"), ...overrides };
+}
+
 function packFixture(
   employeeOverrides: Partial<HiringPackEmployeeFacts> = {},
   profileOverrides: Partial<HiringPackProfile> = {},
+  offboardingOverrides: Partial<OffboardingProfile> | null = null,
+  exit: ExitFacts | null = null,
 ): HiringPackData {
   const employee = employeeFixture(employeeOverrides);
   const profile = profileFixture(profileOverrides);
+  const offboarding = offboardingFixture(offboardingOverrides ?? {});
   return {
     employee,
     profile,
-    gaps: collectHiringPackGaps(employee, profile),
-    terms: resolveContractTerms(employee, profile),
+    offboarding,
+    exit,
+    gaps: collectHiringPackGaps(employee, profile, offboarding, exit),
+    terms: resolveContractTerms(employee, profile, offboarding, exit),
   };
 }
 
@@ -312,8 +350,12 @@ function testContractPrintsFourCopiesOnA4() {
   const data = packFixture();
   const html = renderContractHtml(data, systemContractDefaults.contractCopies);
 
+  // Match the class PREFIX, not the whole attribute: a copy carries a layout modifier beside
+  // `copy` (`copy--prose` for the archived text, `copy--banded` for the current one), so pinning
+  // the closing quote counts zero copies the moment a version renders in anything but the
+  // original layout — which reads as "the contract printed nothing", not as a stale selector.
   assert.equal(
-    html.split('<article class="copy">').length - 1,
+    html.split('<article class="copy').length - 1,
     4,
     'مادة (19) says "حُرر هذا العقد من أربع نسخ" — four copies',
   );
@@ -436,7 +478,10 @@ function testGapsSeparateBlockingFromChaseLater() {
   // Whatever is missing, both documents still print — the blanks stay blank rather than guessed.
   const sparse = packFixture({ nameAr: null, nationalId: null }, { nationality: null });
   assert.ok(renderForm1Html(sparse, 1).includes("<section class=\"sheet\">"));
-  assert.ok(renderContractHtml(sparse, 1).includes('<article class="copy">'));
+  assert.ok(
+    renderContractHtml(sparse, 1).includes('<article class="copy'),
+    "the contract must still print when fields are missing — the blanks stay blank",
+  );
 }
 
 /**
@@ -485,6 +530,95 @@ function testEveryCompanySettingsGapReachesThePage() {
   }
 }
 
+/**
+ * ── THE ONE DEFECT NOTHING IN THIS REPOSITORY CAN SEE ────────────────────────────────────────
+ *
+ * A number made of parts — `477-108-318`, `24 / 08 / 2026` — is not one number to the
+ * bidirectional algorithm. In Arabic prose every digit run resolves to an ARABIC number, the rule
+ * that would fuse the runs back together across the separator applies only to EUROPEAN ones, and a
+ * right-to-left paragraph then lays the parts out right to left. Measured in a browser on
+ * 2026-08-30, on this module's own output:
+ *
+ *     477-108-318      painted as   318-108-477      the company's tax card, on three papers
+ *     24 / 08 / 2026   painted as   2026 / 08 / 24   the last working day, on the resignation
+ *
+ * The second one is the Ministry of Labour form's most consequential value, printed backwards.
+ *
+ * The string is right, the HTML is right, `escapeHtml` is right, and every test that compares
+ * strings passes — including every test in this file. Only a real layout engine reorders the runs,
+ * which is why the browser check on these documents is not a formality.
+ *
+ * SO THIS TEST DOES NOT CHECK THE ORDER. It cannot see order. It checks the only thing a string
+ * can carry: that every such value is PINNED — either inside an element declaring `dir="ltr"`, or
+ * wrapped in the directional isolates `pinLtr` adds. A pinned value cannot reverse. An unpinned one
+ * is one layout engine away from printing backwards on a document somebody signs.
+ *
+ * WHY THE PATTERN IS NARROWER THAN "ANY NUMBER WITH A SEPARATOR". `14/2025` — Labour Law 14/2025,
+ * written into these templates as prose — is safe and must never be flagged: a single slash with no
+ * space beside it fuses its two numbers into one, and `24/08/2026` was measured rendering correctly
+ * for that exact reason. What is unsafe is a DASH of any kind, or a separator with whitespace next
+ * to it. Both were measured reversing; changing the dash character was measured NOT to help.
+ *
+ * A SPACED FULL STOP OR COMMA IS A SENTENCE BOUNDARY, NOT A SEPARATOR, so those are excluded as
+ * well — and the first run of this test proved why. It flagged "4. 1", out of the on-screen print
+ * banner: "Paper size: A4. 1 copies are already laid out below". Two unrelated numbers either side
+ * of a full stop are not one value, and the browser confirmed that pair paints as written.
+ */
+
+/** What a reader sees, with everything that pins its own direction removed. */
+function unpinnedText(html: string): string {
+  return html
+    .replace(/<style[\s\S]*?<\/style>/gu, " ")
+    .replace(/<script[\s\S]*?<\/script>/gu, " ")
+    .replace(/<(\w+)\b[^>]*\sdir="ltr"[^>]*>[\s\S]*?<\/\1>/gu, " ")
+    .replace(/\u2066[^\u2069]*\u2069/gu, " ")
+    .replace(/<[^>]*>/gu, " ");
+}
+
+/** Digit groups joined by a dash, or by a separator with a space beside it. Measured unsafe. */
+const REVERSIBLE_NUMBER =
+  /\d+(?:(?:\s*[-\u2010-\u2015\u2212]\s*|\s+[/:]\s*|\s*[/:]\s+)\d+)+/gu;
+
+function testNoNumberCanPrintBackwards() {
+  // A leaver, with every date the exit papers print actually filled in — an empty date prints a
+  // blank rule and would let this test pass by having nothing to reverse.
+  const pack = packFixture(
+    { employmentStatus: "resigned", lastWorkingDate: "2026-08-24" },
+    {},
+    {
+      exitRoute: "resignation",
+      lastWorkingDate: "2026-08-24",
+      agreementDate: "2026-08-20",
+      endReasonAr: "ظروف خاصة",
+      endReasonCode: "1",
+    },
+  );
+
+  const documents: ReadonlyArray<readonly [string, string]> = [
+    ["the employment contract", renderContractHtml(pack, 1)],
+    ["Form 1", renderForm1Html(pack, 1)],
+    ["Form 6", renderForm6Html(pack, 1)],
+    ["the resignation request", renderResignationHtml(pack, 1)],
+    ["the mutual termination agreement", renderMutualTerminationHtml(pack, 1)],
+    ["the laptop custody receipt", renderCustodyLaptopHtml(pack, 1)],
+    ["the phone custody receipt", renderCustodyMobileHtml(pack, 1)],
+    ["the employee clearance", renderClearanceEmployeeHtml(pack, 1)],
+    ["the company clearance", renderClearanceCompanyHtml(pack, 1)],
+  ];
+
+  for (const [name, html] of documents) {
+    const unpinned = unpinnedText(html).match(REVERSIBLE_NUMBER) ?? [];
+    assert.deepEqual(
+      unpinned,
+      [],
+      `${name} prints ${JSON.stringify(unpinned)} with nothing holding it left-to-right. ` +
+        "In Arabic prose the parts of such a number lay out right to left, so this prints " +
+        "backwards on paper while every string comparison in this repository still passes. " +
+        "Wrap the value in pinLtr(), or give it an element carrying dir=\"ltr\".",
+    );
+  }
+}
+
 export function runHiringPackTests() {
   testForm1LayoutIsTheMeasuredForm();
   testWagePoundsAreOnTheLeft();
@@ -497,4 +631,5 @@ export function runHiringPackTests() {
   testContractTermsFallBackToTheCompanyDefault();
   testGapsSeparateBlockingFromChaseLater();
   testEveryCompanySettingsGapReachesThePage();
+  testNoNumberCanPrintBackwards();
 }
