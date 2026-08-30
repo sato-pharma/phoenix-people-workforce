@@ -48,6 +48,7 @@
 // REARRANGED by `applyPersonalLayout`, which cannot introduce an href.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { Lock } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import {
@@ -58,6 +59,7 @@ import {
   type ReactNode,
 } from "react";
 
+import { isNavItemLockedFor, useLockedModuleKeys } from "@/components/layout/module-lock-context";
 import { ApprovalNavBadge } from "@/components/layout/nav-badge";
 import { NavRowAddButton } from "@/components/layout/nav-row-add-button";
 import {
@@ -259,6 +261,11 @@ function NavRowStrip({
   /** Rendered after the last tab. The "+" that adds a page to this row. */
   trailing?: ReactNode;
 }) {
+  // Read BEFORE the early return below — a hook after a conditional return is a rules-of-hooks
+  // violation. A pinned tab whose module is temporarily locked carries the same padlock the sidebar
+  // shows; a row pinned by the viewer is the one place they are most likely to look first.
+  const lockedModuleKeys = useLockedModuleKeys();
+
   // An empty row renders nothing — unless `keepWhenEmpty` says this viewer has a layout of their
   // own, in which case the lone "+" is their way back in. That keeps the promise made at the top of
   // this file: the bar stays invisible for every account that has never arranged anything, rather
@@ -324,10 +331,12 @@ function NavRowStrip({
         <div className="flex min-w-0 items-center gap-1 overflow-x-auto phoenix-navrow-scroll">
           {items.map((item) => {
             const active = item.href === activeHref;
-            const Icon = item.icon;
+            const locked = isNavItemLockedFor(item, lockedModuleKeys);
+            const Icon = locked ? Lock : item.icon;
             return (
               <Link
                 aria-current={active ? "page" : undefined}
+                title={locked ? `${item.label} — locked temporarily by the system administrator` : undefined}
                 className={cn(
                   "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-phx-sm font-semibold tracking-[-0.01em] transition-colors",
                   // EVERY visual change here sits in the `dark` branch, which is `usesAdminChrome`
@@ -348,6 +357,8 @@ function NavRowStrip({
                     : active
                       ? "bg-phx-accent-soft text-phx-accent"
                       : "text-phx-ink-soft hover:bg-phx-paper hover:text-phx-ink",
+                  // Last, so a locked tab never wears the live or active styling.
+                  locked && (dark ? "text-amber-300/80" : "text-amber-600"),
                 )}
                 data-navrow-tab=""
                 href={item.href}

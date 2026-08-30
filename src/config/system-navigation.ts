@@ -30,6 +30,7 @@ import {
   IdCard,
   Inbox,
   Landmark,
+  Lock,
   Package,
   LayoutDashboard,
   LayoutGrid,
@@ -2241,6 +2242,13 @@ export const accessCommunicationPageItems: readonly AdminToolsPageItem[] = [
     icon: ShieldAlert,
     label: "Scope & Visibility",
     description: "Review role-based data scope and visibility rules.",
+    roles: ["Super Admin"],
+  },
+  {
+    href: "/admin/module-locks",
+    icon: Lock,
+    label: "Temporary Module Locks",
+    description: "Temporarily close a module on one account, and release it again.",
     roles: ["Super Admin"],
   },
   {

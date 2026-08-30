@@ -326,6 +326,10 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "access-read", required: false }, methods: readOnly, pattern: "/api/admin/activity/live", permission: { resource: "user_activity", action: "read" } }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/activity/force-logout", permission: { resource: "user_activity", action: "export" }, csrfRequired: true }),
   tokenApi({ authMode: "machine-token", methods: ["POST"], pattern: "/api/admin/synthetic-journeys/ingest", reason: "Synthetic journey runner bearer-token ingestion route; protected by SYNTHETIC_INGEST_TOKEN." }),
+  // Temporary module locks. Its own entry rather than the /api/admin/** blanket below, which states
+  // `admin:read` — this route CLOSES a module on somebody's account, so it declares the update it
+  // actually performs and carries the CSRF requirement a mutation owes.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "POST", "DELETE"], pattern: "/api/admin/module-locks", permission: { resource: "admin", action: "update" }, csrfRequired: true }),
   sessionApi({ methods: allMethods, pattern: "/api/admin/**", permission: { resource: "admin", action: "read" } }),
 
   sessionApi({ methods: allMethods, pattern: "/api/attendance/agent/**", permission: { resource: "employees", action: "read" } }),

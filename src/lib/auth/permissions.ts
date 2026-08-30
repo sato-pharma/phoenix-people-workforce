@@ -5,6 +5,9 @@ import { isMissingRequiredManager } from "@/lib/employees/hierarchy-governance";
 import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { hrBundleGrants } from "@/lib/auth/hr-functions";
+// Temporary per-account module suspensions. Imported for its VALUE; module-locks.ts imports only
+// TYPES back from this file, so there is no runtime cycle between the two.
+import { isModuleLockedForAccess } from "@/lib/auth/module-locks";
 
 export const phoenixRoles = [
   "Employee",
@@ -1654,7 +1657,14 @@ export async function canAccess(
   if (context.scope === "system") return true;
   if (context.source === "guest" || context.scope === "none") return false;
   const matrix = await resolvePermissionMatrix();
-  return matrix[context.role][resource]?.includes(action) ?? false;
+  const granted = matrix[context.role][resource]?.includes(action) ?? false;
+  if (!granted) return false;
+
+  // A temporary per-account lock SUSPENDS a module the role still grants. Checked here, after the
+  // matrix, so it costs nothing on a resource the viewer never had — and so every `assertPermission`
+  // in the app enforces it without a single route handler being edited. See ./module-locks.ts; it
+  // fails OPEN, so a broken lock table can never take the application away from everyone.
+  return !(await isModuleLockedForAccess(context, resource));
 }
 
 export function getSalesScope(context: Pick<AccessContext, "role"> & { salesScopeOverride?: BusinessScope | null }): BusinessScope {
@@ -2002,9 +2012,17 @@ export async function assertPermission(
   resource: PermissionResource,
   action: PermissionAction = "read",
 ) {
-  if (!(await canAccess(context, resource, action))) {
-    throw new Error(`Forbidden: ${context.role} cannot ${action} ${resource}.`);
+  if (await canAccess(context, resource, action)) return;
+
+  // A locked module says so. The message still starts with "Forbidden:" because ~200 route handlers
+  // key their 403 on exactly that prefix (isForbiddenError in ./server.ts) — changing the shape of
+  // this error would turn every one of them into a 500. The page shells intercept before this and
+  // render the lock notice; this is what an API caller sees.
+  if (await isModuleLockedForAccess(context, resource)) {
+    throw new Error(`Forbidden: ${resource} is temporarily locked by the system administrator.`);
   }
+
+  throw new Error(`Forbidden: ${context.role} cannot ${action} ${resource}.`);
 }
 
 export async function canAccessAttendanceSetup(

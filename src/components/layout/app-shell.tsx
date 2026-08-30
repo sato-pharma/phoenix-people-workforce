@@ -16,6 +16,11 @@ import { resolveAccessContextFromPage, resolveViewerIdentityFromPage } from "@/l
 import { formatHrIdForDisplay } from "@/lib/hr-id";
 import { layoutOwnerKey } from "@/lib/navigation/personal-layout";
 import { loadEffectiveLayout } from "@/lib/navigation/personal-layout-store";
+import { resolveModuleLocksForAccess } from "@/lib/auth/module-locks";
+import { navigationHomePathByMode } from "@/config/system-navigation";
+import { resolveLockedModuleForPath } from "@/lib/navigation/module-catalog";
+import { ModuleLockProvider } from "@/components/layout/module-lock-context";
+import { ModuleLockedNotice } from "@/components/layout/module-locked-notice";
 import { CommandPalette } from "@/components/layout/command-palette";
 import { DocumentTitleSync } from "@/components/layout/document-title-sync";
 import { HorizontalNavProvider, LowerNavRow, UpperNavRow } from "@/components/layout/horizontal-nav-rows";
@@ -106,8 +111,30 @@ export async function AppShell({
 
   const isAdminMode = usesAdminChrome(resolvedNavigationMode);
 
+  // ── Temporary module locks ─────────────────────────────────────────────────────────────────
+  // The sidebar keeps showing a locked module — carrying a padlock — because hiding it would look
+  // like the module was taken away for good, which is a different and more alarming message than
+  // the one the administrator chose to send. Opening it lands here, on the lock notice, instead of
+  // on the page.
+  //
+  // This is CHROME, exactly like the shell selection above: the page behind it still refuses a
+  // locked module on its own (`canAccess` consults the same locks). Being wrong here shows a plain
+  // "Forbidden" rather than the friendly sentence — never access that should not exist.
+  const activeLocks = await resolveModuleLocksForAccess(access);
+  const lockedModuleKeys = Array.from(new Set(activeLocks.map((lock) => lock.moduleKey)));
+  // The address the BROWSER asked for. Absent only when the proxy did not run, in which case there
+  // is nothing to match and the page renders normally — and then refuses itself.
+  const requestedPath = requestHeaders.get(PATH_HEADER) ?? "";
+  const lockedModuleForPage = lockedModuleKeys.length
+    ? resolveLockedModuleForPath(requestedPath, lockedModuleKeys)
+    : null;
+  const pageLock = lockedModuleForPage
+    ? activeLocks.find((lock) => lock.moduleKey === lockedModuleForPage) ?? null
+    : null;
+
   return (
     <RouteTransitionProvider>
+      <ModuleLockProvider lockedModuleKeys={lockedModuleKeys}>
       <div className={`min-h-screen text-phx-ink ${isAdminMode ? `admin-shell ${adminShellBackgroundClassName}` : "bg-phx-paper"}`}>
         <SessionSecurityGuard />
         <OneSignalProvider />
@@ -166,7 +193,15 @@ export async function AppShell({
                         : "max-w-none"
                     }`}
                   >
-                    {children}
+                    {lockedModuleForPage ? (
+                      <ModuleLockedNotice
+                        homeHref={navigationHomePathByMode[resolvedNavigationMode]}
+                        lock={pageLock}
+                        moduleKey={lockedModuleForPage}
+                      />
+                    ) : (
+                      children
+                    )}
                   </div>
                 </main>
               </div>
@@ -174,6 +209,7 @@ export async function AppShell({
           </div>
         </div>
       </div>
+      </ModuleLockProvider>
     </RouteTransitionProvider>
   );
 }
