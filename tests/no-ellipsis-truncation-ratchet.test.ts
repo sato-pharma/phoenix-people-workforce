@@ -55,8 +55,15 @@ import path from "node:path";
  * 292 -> 285 on 2026-08-30: seven sites went with the unreachable components deleted
  * in the module audit's phase 1. Nothing changed on screen for these either — every
  * one of them sat in a file no route could reach.
+ *
+ * 285 -> 273 later the same day: twelve went with the generic Admin Command Center,
+ * retired in the audit's phase 5. Same story a third time — a role sweep found that
+ * no role landed on that page, so none of its twelve truncations was on anyone's
+ * screen to begin with. Deleting a dead file is the cheapest way this count falls,
+ * and it is the only way it has fallen so far; the ~273 that remain are on live
+ * screens and each needs its own fix.
  */
-const BASELINE = 285;
+const BASELINE = 273;
 
 const ROOTS = ["app", "src"];
 

@@ -235,7 +235,14 @@ const adminNavigationSectionSeeds = [
       // admin-wide dashboard instead of theirs. The CEO was already excluded for this reason;
       // the SFE Manager has had his own overview since /admin/sfe-command-center shipped and
       // needs the same exclusion. Keep this list in step with the dedicated entries above.
-      { href: "/admin", icon: LayoutDashboard, label: "Command Center", permissions: [{ resource: "admin" }, { resource: "overview" }], excludedRoles: ["CEO", "SFE Manager", "Finance Manager"] },
+      //
+      // HR Advisory and HR Operations joined on 2026-08-30 for exactly that reason: both seats land
+      // on /hr/admin/hr-command-center, so this row was a SECOND "Command Center" in their sidebar
+      // pointing at a worse page. Measured on production before removing it — the generic page
+      // answered EGP 0 payroll, EGP 0 sales and EGP 0 expenses for HR Advisory, and EGP 0 sales /
+      // EGP 0 expenses for HR Operations, because their scopes resolve to nothing on those
+      // aggregates while the tiles render regardless. /admin is now the Super Admin's alone.
+      { href: "/admin", icon: LayoutDashboard, label: "Command Center", permissions: [{ resource: "admin" }, { resource: "overview" }], excludedRoles: ["CEO", "SFE Manager", "Finance Manager", "HR Advisory", "HR Operations"] },
     ],
     // Heading restored on owner instruction (2026-08-08). It was blanked for the SFE Manager on
     // 2026-08-02, where this section resolves to a single button; Super Admin and CEO see several

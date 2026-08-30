@@ -82,6 +82,14 @@ const RETIRED_HR_ROLE_NAMES: readonly string[] = ["HR Specialist", "Talent Acqui
  * The rest are navigation, notification audiences, workflow definitions and UI copy.
  */
 const FILES_NAMING_AN_HR_SEAT: readonly string[] = [
+  // Names both seats in DEDICATED_COMMAND_CENTER_ROLES, added 2026-08-30 when the generic Admin
+  // Command Center was retired. Reviewed verdict: it REMOVES reach and can only ever remove it.
+  // The set is a redirect list — a role in it is sent to resolveLandingPathForRole(role), which for
+  // these two is their own /hr/admin/hr-command-center — so naming a seat here takes a page away
+  // and grants nothing. The page the redirect skips was measured against production first: it
+  // answered EGP 0 payroll / EGP 0 sales / EGP 0 expenses for HR Advisory and EGP 0 sales /
+  // EGP 0 expenses for HR Operations, so nothing they could act on was lost with it.
+  "app/(admin)/admin/page.tsx",
   "app/(admin)/admin/recruitment-hiring/page.tsx",
   "app/(admin)/attendance/page.tsx",
   "app/employee-portals/account-activation/page.tsx",
