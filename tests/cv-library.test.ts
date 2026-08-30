@@ -270,14 +270,24 @@ export function runCvLibraryTests() {
   const body = manager.slice(manager.indexOf("<tbody"), manager.indexOf("</tbody>"));
   const headings = (head.match(/<th[\s>]/g) ?? []).length;
   const cells = (body.match(/<td[\s>]/g) ?? []).length + (body.match(/<StackedCell[\s>]/g) ?? []).length;
-  assert.ok(headings >= 8, "the CV Database table lost columns");
+  // FIVE, exactly. This was ">= 8" while the table had eight columns, and eight columns is what
+  // made it 2460px wide inside a 1758px container — 702px of every row sat off-screen behind a
+  // horizontal scrollbar. Held as an equality, not a floor: a floor is what let it grow.
+  assert.equal(headings, 4, "the CV Database table is not four columns wide, so it will scroll again");
   assert.equal(
     cells,
     headings,
     "the CV Database table renders a different number of cells than it has column headings",
   );
-  for (const column of ["Wants to work", "Governorate"]) {
-    assert.ok(head.includes(`>${column}</th>`), `the CV Database table has no ${column} column`);
+
+  // The facts that lost their own COLUMN did not lose their place — they are lines inside a cell
+  // now, which is the whole trick that bought the width back. Dropping one is the failure this
+  // guards against; moving one is not.
+  for (const fact of ["row.governorate", "row.preferredArea", "row.totalExperience", "row.cvFileName"]) {
+    assert.ok(
+      body.includes(fact),
+      `the CV Database table stopped rendering ${fact} when its column was folded away`,
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -439,4 +449,64 @@ export function runCvLibraryTests() {
     "Sharqiya must be reachable through the Delta (3) option — this is the defect being fixed",
   );
   assert.equal(regionPool.filter((row) => matchesRegion(row, "")).length, regionPool.length);
+
+  // ---------------------------------------------------------------------------
+  // The table must FIT its container — no horizontal scroll.
+  // ---------------------------------------------------------------------------
+  // Measured on production 2026-08-30 at a 2400px window: the wrapper was 1758px and the table
+  // 2460px, so 702px of the row was permanently off-screen behind a horizontal scrollbar. Education
+  // alone was 733px and "Doing now" 580px — between them more than half the table.
+  //
+  // The rule here is that nothing truncates with an ellipsis and nothing wraps, so width cannot be
+  // bought by cutting text. It is bought by giving one column several LINES instead of giving
+  // several columns one line each — which is the idiom this table already used, applied further.
+  assert.equal(
+    (managerCode.match(/<th className=\{headCellClassName\}>/g) ?? []).length,
+    4,
+    "the desktop table grew back past four columns, which is what put it wider than its container",
+  );
+
+  // The export must not shrink with the screen. Stacking two facts into one cell is a layout
+  // decision; the spreadsheet still carries one column per fact, because a merged column is the one
+  // thing nobody can filter or pivot on afterwards.
+  for (const header of ["Total experience", "Governorate", "Region", "Area asked for", "CV file"]) {
+    assert.ok(
+      new RegExp(`"${header}"`).test(managerCode),
+      `the export lost its "${header}" column when the screen stopped giving it one`,
+    );
+  }
+
+  // Education is split at its own field boundary, not mid-string — these are separately-extracted
+  // fields on their own lines, which is why this is not text wrapping.
+  const split = cvLibraryRowFromCandidate(
+    candidate({ degree: "Bachelor", faculty: "Pharmacy", university: "Cairo University", graduationYear: 2019 }),
+  );
+  assert.equal(split.educationDegree, "Bachelor");
+  assert.equal(split.educationFaculty, "Pharmacy");
+  assert.equal(split.educationInstitution, "Cairo University (2019)");
+  assert.equal(
+    split.education,
+    "Bachelor \u00b7 Pharmacy \u00b7 Cairo University (2019)",
+    "the joined form must survive unchanged — it is what the export writes",
+  );
+
+  // The year rides with the institution. A bare year alone on the second line would read as a
+  // stray number, so with no university it becomes the institution line itself.
+  const noUniversity = cvLibraryRowFromCandidate(candidate({ degree: "Bachelor", graduationYear: 2019 }));
+  assert.equal(noUniversity.educationDegree, "Bachelor");
+  assert.equal(noUniversity.educationInstitution, "2019");
+
+  // Nothing known: both halves empty, and never the string "undefined".
+  const noEducation = cvLibraryRowFromCandidate(candidate({}));
+  assert.equal(noEducation.educationDegree, "");
+  assert.equal(noEducation.educationFaculty, "");
+  assert.equal(noEducation.educationInstitution, "");
+
+  // A custom font SIZE on these cells must stay in the literal bracket form. tailwind-merge
+  // silently drops custom NAMED sizes (text-phx-*), and nothing in this repo can see it happen —
+  // only getComputedStyle in a real browser can, so it ships looking fine and renders wrong.
+  assert.ok(
+    /const cellClassName = "[^"]*text-\[13px\]/.test(managerCode),
+    "the table cell font size was renamed to a named size, which tailwind-merge will silently drop",
+  );
 }

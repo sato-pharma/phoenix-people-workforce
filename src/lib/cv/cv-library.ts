@@ -29,6 +29,19 @@ export type CvLibraryRow = {
   medicalSalesDuration: string;
   medicalSalesEmployer: string;
   education: string;
+  /**
+   * The same education, split at its own field boundary so the widest column on the screen can be
+   * two short lines instead of one very long one.
+   *
+   * "Bachelor of Pharmacy · Cairo University (2019)" is one string a reader scans left to right, and
+   * it was single-handedly forcing the table 300px wider than its container. Splitting it is not
+   * wrapping — these are separately-extracted fields being shown on their own lines, the same idiom
+   * every other cell here already uses. `education` keeps the joined form, because the export
+   * carries one column per fact and must not change shape when the screen relayouts.
+   */
+  educationDegree: string;
+  educationFaculty: string;
+  educationInstitution: string;
   /** Where their CV says they LIVE. */
   governorate: string;
   /**
@@ -115,6 +128,26 @@ function medicalSalesStatus(candidate: Candidate): CvExperienceStatus {
   return "unknown";
 }
 
+/**
+ * Degree and faculty stay apart rather than joining into "Bachelor · Pharmacy".
+ *
+ * Joined, they were one line wide enough to keep the whole table scrolling sideways. Three short
+ * lines cost vertical space, which this page has, instead of horizontal space, which it does not.
+ */
+
+/**
+ * "Cairo University (2019)" — where they studied, and when.
+ *
+ * The year rides with the institution rather than the qualification because that is how a CV reads
+ * it, and because a bare year on its own line would look like a stray number.
+ */
+function educationInstitution(candidate: Candidate): string {
+  const university = text(candidate.university);
+  const year = candidate.graduationYear;
+  if (!university) return year ? String(year) : "";
+  return year ? `${university} (${year})` : university;
+}
+
 export function cvLibraryRowFromCandidate(candidate: Candidate): CvLibraryRow {
   const months = medicalSalesMonths(candidate);
   const years = candidate.yearsExperience;
@@ -125,6 +158,9 @@ export function cvLibraryRowFromCandidate(candidate: Candidate): CvLibraryRow {
     currentEmployer: text(candidate.currentEmployer),
     currentJobTitle: text(candidate.currentJobTitle),
     education: educationLine(candidate),
+    educationDegree: text(candidate.degree),
+    educationFaculty: text(candidate.faculty),
+    educationInstitution: educationInstitution(candidate),
     governorate: text(candidate.governorate),
     id: candidate.id,
     preferredArea: text(facts.area?.value),
