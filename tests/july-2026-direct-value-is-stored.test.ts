@@ -98,6 +98,8 @@ function detailRow(overrides: Partial<ClosingDetailRow> = {}): ClosingDetailRow 
     areaName: "",
     regionCode: "D1",
     regionName: "Delta (1)",
+    operationalRegionCode: "D1",
+    operationalRegionName: "Delta (1)",
     areaMismatch: false,
     brickUnmapped: false,
     clientCode: "",

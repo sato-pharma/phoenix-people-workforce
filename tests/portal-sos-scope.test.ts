@@ -83,9 +83,34 @@ export function runPortalSosScopeTests() {
     engine.includes("scopeProductCodes && !scopeProductCodes.has(row.productCode.toUpperCase())"),
     "engine keepExec must enforce product-code lockdown",
   );
+  // The region lockdown moved behind a named function when the board began GROUPING by the
+  // organogram region instead of the geographic one. The property being guarded did not move: the
+  // ACCESS test must stay on the geographic `regionCode`, because that is the dimension the RPC
+  // push-down filters on. Testing access against the organogram code would compare "UE-1" against a
+  // bound built from "UE" and reject every row the viewer owns — and that failure is not an error,
+  // it is an EMPTY BOARD, which a user reads as "I sold nothing".
+  //
+  // So it is pinned in both halves: that keepExec still runs it, and that the function itself reads
+  // the geographic column and never the operational one. The second half is the one that matters
+  // now — the two codes are both plain strings, so swapping them is a one-word edit that nothing
+  // else in this repository can see.
   assert.ok(
-    engine.includes("scopeRegionCodes && !scopeRegionCodes.has(row.regionCode.toUpperCase())"),
+    engine.includes("if (!rowIsInRegionScope(scopeRegionCodes, row)) return false;"),
     "engine keepExec must enforce region-code lockdown",
+  );
+  const regionBasis = readSource("../src/lib/sales/sos-region-basis.ts");
+  const scopeFnStart = regionBasis.indexOf("export function rowIsInRegionScope");
+  assert.ok(scopeFnStart >= 0, "rowIsInRegionScope must exist in sos-region-basis.ts");
+  // Bounded on the function's own closing brace, not a fixed byte window, so re-wording the doc
+  // comment that follows it cannot false-fail this.
+  const scopeFn = regionBasis.slice(scopeFnStart, regionBasis.indexOf("\n}", scopeFnStart));
+  assert.ok(
+    scopeFn.includes("scopeRegionCodes.has(row.regionCode.toUpperCase())"),
+    "the region access lockdown must test the GEOGRAPHIC region code",
+  );
+  assert.ok(
+    !scopeFn.includes("operationalRegionCode"),
+    "the region access lockdown must NEVER test the organogram region code — it would empty a scoped viewer's board",
   );
   assert.ok(
     engine.includes("canSeeCrossLineGeography") && engine.includes("emptyRpcRows"),

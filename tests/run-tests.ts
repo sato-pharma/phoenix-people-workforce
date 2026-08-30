@@ -694,6 +694,8 @@ import { runOfferTitleTemplateTests } from "./offer-title-template.test.ts";
 import { runSalesNullVsZeroTests } from "./sales-null-vs-zero.test.ts";
 import { runSosAnalyticsTests } from "./sos-analytics.test.ts";
 import { runSosBiWorkbookTests } from "./sos-bi-workbook.test.ts";
+import { runClosingDetailsRegionBasisTests } from "./closing-details-region-basis.test.ts";
+import { runSosRegionBasisTests } from "./sos-region-basis.test.ts";
 import { runMonthlyDashboardWorkbookTests } from "./monthly-dashboard-workbook.test.ts";
 import { runCustomerDirectoryRollupTests } from "./customer-directory-rollup.test.ts";
 import { runWeeklySalesPaginationTests } from "./weekly-sales-pagination.test.ts";
@@ -2274,6 +2276,14 @@ await runTest(
 await runTest("sales null-vs-zero dashboard", runSalesNullVsZeroTests);
 await runTest("sos analytics (MoM movers + pareto)", runSosAnalyticsTests);
 await runTest("sos BI workbook export", runSosBiWorkbookTests);
+await runTest(
+  "SoS dashboard and Monthly Closing split a month the SAME way — the organogram — while the access bound stays geographic, so a scoped manager's board is never emptied by the relabelling",
+  runSosRegionBasisTests,
+);
+await runTest(
+  "the Closing Details tab offers and filters the SAME regions the Closing Matrix beside it is grouped by, its area list cascades off that same basis, and its access gate stays geographic so a region-scoped viewer's tab is never emptied",
+  runClosingDetailsRegionBasisTests,
+);
 await runTest("monthly sales dashboard workbook export", runMonthlyDashboardWorkbookTests);
 await runTest("weekly-sales-pagination", runWeeklySalesPaginationTests);
 await runTest("nav-badge store", runNavBadgeStoreTests);

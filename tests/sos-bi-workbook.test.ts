@@ -170,9 +170,9 @@ function fixture(): SosDashboardData {
       { code: "ROY", label: nastyName, line: "Pedia", value: 3_000, units: 300, share: 0.3, cumulativeShare: 1, abcClass: "C" },
     ],
     detailRows: [
-      { period: "2026-06", distributorCode: "IS", distributorName: "Ibn Sina", officialLine: "Pedia", regionCode: "D1", regionName: "Delta 1", areaCode: "A1", areaName: "Area 1", productCode: "SAG", productName: "Saginkgo", channel: "Distributor", units: 700, value: 7_000 },
-      { period: "2026-06", distributorCode: "IS", distributorName: "Ibn Sina", officialLine: "Pedia", regionCode: "D2", regionName: "Delta 2", areaCode: "A2", areaName: "Area 2", productCode: "ROY", productName: nastyName, channel: "Distributor", units: 100, value: 1_000 },
-      { period: "2026-06", distributorCode: "DIRECT", distributorName: "Direct", officialLine: "Pedia", regionCode: "D1", regionName: "Delta 1", areaCode: "DIRECT", areaName: "Direct (National)", productCode: "SAG", productName: "Saginkgo", channel: "Direct", units: 200, value: 2_000 },
+      { period: "2026-06", distributorCode: "IS", distributorName: "Ibn Sina", officialLine: "Pedia", regionCode: "D1", regionName: "Delta 1", areaCode: "A1", areaName: "Area 1", productCode: "SAG", productName: "Saginkgo", channel: "Distributor", units: 700, value: 7_000, sourceRegionCode: "D1", sourceRegionName: "Delta 1" },
+      { period: "2026-06", distributorCode: "IS", distributorName: "Ibn Sina", officialLine: "Pedia", regionCode: "D2", regionName: "Delta 2", areaCode: "A2", areaName: "Area 2", productCode: "ROY", productName: nastyName, channel: "Distributor", units: 100, value: 1_000, sourceRegionCode: "D1", sourceRegionName: "Delta 1" },
+      { period: "2026-06", distributorCode: "DIRECT", distributorName: "Direct", officialLine: "Pedia", regionCode: "D1", regionName: "Delta 1", areaCode: "DIRECT", areaName: "Direct (National)", productCode: "SAG", productName: "Saginkgo", channel: "Direct", units: 200, value: 2_000, sourceRegionCode: "D1", sourceRegionName: "Delta 1" },
     ],
   };
 }

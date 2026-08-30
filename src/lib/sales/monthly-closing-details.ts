@@ -10,9 +10,11 @@ import {
 } from "@/lib/sales/access-scope";
 import { applyClosingAreaMergesToDetails } from "@/lib/sales/closing-area-merges";
 import { countsInClosingHeadline } from "@/lib/sales/closing-headline";
+import { loadOperationalRegionResolver } from "@/lib/sales/closing-organogram-regions";
 import { closingAreaOf, isRebookedRow } from "@/lib/sales/closing-row-area";
 import { loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
 import { resolveTargetLineCode } from "@/lib/sales/monthly-targets";
+import { rowIsInRegionScope, rowMatchesRegionFilter } from "@/lib/sales/sos-region-basis";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -81,8 +83,24 @@ export type ClosingDetailRow = {
   brickName: string;
   areaCode: string;
   areaName: string;
+  /**
+   * GEOGRAPHIC region — where the area sits on the map. This is the ACCESS dimension: the viewer's
+   * allowed regions are resolved from the same master, so `applyDetailScope` must keep testing this
+   * one. See `rowIsInRegionScope` in sos-region-basis.ts.
+   */
   regionCode: string;
   regionName: string;
+  /**
+   * ORGANOGRAM region — the DM territory that owns this row's CLOSING area, on this line, in this
+   * month. This is what the Closing Matrix beside this tab is grouped by, so it is what the region
+   * picker offers and what the region filter matches. On Anti Infective the two genuinely differ:
+   * the sheet says UE for all of Upper Egypt, the Matrix says UE-1 and UE-2.
+   *
+   * Equal to the geographic pair on every line and area the organogram does not re-own, which is
+   * most of them.
+   */
+  operationalRegionCode: string;
+  operationalRegionName: string;
   /** True when the sheet's area disagrees with the brick's Phoenix area. */
   areaMismatch: boolean;
   /** True when the brick id is absent from the Phoenix master (cannot roll up). */
@@ -428,7 +446,11 @@ export function applyDetailFilters(
   const search = text(filters.search).toLowerCase();
 
   return rows.filter((row) => {
-    if (regions && !regions.has(row.regionCode.toUpperCase())) return false;
+    // The ORGANOGRAM region — the one the Closing Matrix beside this tab groups by, and therefore
+    // the one the picker offers. Matching the geographic code here selected a different population
+    // than the Matrix cell the reader was looking at, and on Anti Infective it made this tab's own
+    // Export button post a region the Matrix has never heard of. See sos-region-basis.ts.
+    if (!rowMatchesRegionFilter(regions, row)) return false;
     // The CLOSING area — see closing-row-area.ts. Matching on the resolved `areaCode` made the
     // Details tab disagree with the Closing Matrix beside it for a hand-apportioned customer:
     // filtering to Dakahlia 2 hid rows the Matrix books there, and filtering to Dakahlia 1 showed
@@ -442,7 +464,11 @@ export function applyDetailFilters(
       const haystack = [
         // Both areas are searchable: a re-booked row is booked in one and physically sits in the
         // other, and a reader typing either code expects to find it.
-        row.brickId, row.brickName, row.areaCode, row.sheetAreaCode, row.areaName, row.sheetAreaName, row.regionName,
+        // Both regions are searchable for the same reason both areas are: the Matrix books the row
+        // under its organogram region while the sheet names the geographic one, and a reader typing
+        // either expects to find it.
+        row.brickId, row.brickName, row.areaCode, row.sheetAreaCode, row.areaName, row.sheetAreaName,
+        row.regionName, row.operationalRegionName,
         row.clientCode, row.clientName, row.clientAddress, row.productCode, row.productName,
         row.distributorCode,
       ]
@@ -533,9 +559,12 @@ export async function loadMonthlyClosingDetails(
     if (!allowed.has(normalizeLineKey(line))) return empty(true);
   }
 
-  const [batchIds, references] = await Promise.all([
+  const [batchIds, references, operationalRegions] = await Promise.all([
     validatedBatchIdsForPeriod(period),
     loadSalesReferenceData({ includeCustomerBricks: false }),
+    // The org chart, for the region relabel below. Fails soft to geography, so an unreadable chart
+    // costs this tab its region vocabulary and never its rows.
+    loadOperationalRegionResolver(),
   ]);
   if (batchIds.length === 0) return empty(false);
 
@@ -619,6 +648,11 @@ export async function loadMonthlyClosingDetails(
       areaName: text(brick?.areaName) || text(area?.areaName) || text(raw.area_name),
       regionCode,
       regionName: regionNameByCode.get(regionCode.toUpperCase()) ?? text(raw.region_name),
+      // Defaulted to geography and overwritten below, once the CLOSING area is known (a re-booked
+      // row is owned by the area the Matrix books it under, not by the one its brick sits in). A
+      // line the organogram does not re-own keeps these values unchanged.
+      operationalRegionCode: regionCode,
+      operationalRegionName: regionNameByCode.get(regionCode.toUpperCase()) ?? text(raw.region_name),
       areaMismatch:
         Boolean(brick) &&
         Boolean(sheetAreaCode) &&
@@ -660,11 +694,38 @@ export async function loadMonthlyClosingDetails(
     dropConfidential: !confidentialIncluded,
   });
 
+  // ── Organogram regions, applied AFTER the access scope, deliberately ────────────────────────
+  //
+  // This tab sits beside the Closing Matrix, which groups by the ORGANOGRAM region. Until this
+  // pass, the tab offered and filtered on the GEOGRAPHIC region instead, so the two disagreed on
+  // every area the organogram re-owns — 28 (line, area) pairs in production. On Anti Infective it
+  // was worse than a disagreement: the picker offered "UE", the Matrix holds only UE-1 and UE-2,
+  // and this tab's own Export button posts the picked region straight to the closing export, where
+  // an unmatched region narrows to `__NO_MATCHING_AREA__` and returns an EMPTY workbook.
+  //
+  // The pass runs after `applyDetailScope` because that is the ACCESS gate and it is expressed in
+  // geographic codes. Relabelling first would test a viewer's bound against a code it was never
+  // built from and drop every row he owns — an empty tab, which reads as "there were no sales"
+  // rather than as a bug. Same rule as the dashboard: access on geography, display on the
+  // organogram. See sos-region-basis.ts.
+  //
+  // Resolved at the CLOSING area (`closingAreaOf`) and at the period being read, never at today —
+  // a forward-dated territory move must not reach back into the month it was dated to spare.
+  const lineCode = resolveTargetLineCode(line);
+  const operationalMap = operationalRegions.forLinePeriod(lineCode, period);
+  const relabelled = operationalMap
+    ? scoped.map((row) => {
+        const owner = operationalMap.regionByArea.get(closingAreaOf(row));
+        if (!owner) return row;
+        return { ...row, operationalRegionCode: owner.regionCode, operationalRegionName: owner.regionName };
+      })
+    : scoped;
+
   // Options come from everything in scope (pre-filter) so choosing one area never removes the
   // other areas from the dropdown.
-  const options = buildFilterOptions(scoped);
+  const options = buildFilterOptions(relabelled);
 
-  const filtered = applyDetailFilters(scoped, input.filters);
+  const filtered = applyDetailFilters(relabelled, input.filters);
   const start = (page - 1) * pageSize;
 
   return {
@@ -750,7 +811,12 @@ export function buildFilterOptions(rows: ClosingDetailRow[]): ClosingDetailsResu
   const distributors = new Set<string>();
 
   for (const row of rows) {
-    if (row.regionCode) regions.set(row.regionCode, row.regionName || row.regionCode);
+    // Keyed on the ORGANOGRAM region, because that is what the region filter now matches and what
+    // the Closing Matrix shows — offering the geographic code instead listed a choice that selects
+    // a different population than the subtotal the reader clicked.
+    if (row.operationalRegionCode) {
+      regions.set(row.operationalRegionCode, row.operationalRegionName || row.operationalRegionCode);
+    }
     // Keyed on the CLOSING area, because that is what the area filter now matches — offering the
     // resolved area instead would list a choice that selects none of this row's own money.
     const areaCode = closingAreaOf(row);
@@ -758,7 +824,10 @@ export function buildFilterOptions(rows: ClosingDetailRow[]): ClosingDetailsResu
       // `areaName` describes the BRICK's area, so a re-booked row names its closing area from the
       // sheet instead; otherwise Port Said would be labelled "Dakahlia 1".
       const areaName = (isRebookedRow(row) ? text(row.sheetAreaName) : "") || row.areaName || areaCode;
-      areas.set(areaCode, { code: areaCode, name: areaName, regionCode: row.regionCode });
+      // The ORGANOGRAM region, because the panel cascades the area list off the selected region
+      // (closing-details-panel.tsx). Tagging areas with the geographic code while the picker offers
+      // organogram codes would leave the area list EMPTY the moment a reader picked UE-1.
+      areas.set(areaCode, { code: areaCode, name: areaName, regionCode: row.operationalRegionCode });
     }
     if (row.productCode) products.set(row.productCode, row.productName || row.productCode);
     if (row.distributorCode) distributors.add(row.distributorCode);
@@ -800,7 +869,11 @@ export function applyDetailScope(
   } else if (scope.allowedRegionCodes) {
     const allowed = scope.allowedRegionCodes;
     // Empty set = the viewer's region resolved to no code — fail closed.
-    out = out.filter((row) => allowed.has(row.regionCode.trim().toUpperCase()));
+    //
+    // GEOGRAPHIC, always: `allowedRegionCodes` is resolved from the same area master this row's
+    // `regionCode` came from. The organogram relabel deliberately runs AFTER this gate — testing a
+    // viewer's bound against a relabelled code would drop every row he owns and empty the tab.
+    out = out.filter((row) => rowIsInRegionScope(allowed, row));
   }
   out = applyProductCodeAllowlist(out, scope.allowedProductCodes);
   return out;
