@@ -41,7 +41,7 @@
 import { cache } from "react";
 
 import { currentCairoDateParts } from "@/lib/i18n/format";
-import { applyAchievementAreaMerges } from "@/lib/sales/closing-area-merges";
+import { applyAchievementAreaMerges, getMergedAreaName } from "@/lib/sales/closing-area-merges";
 import {
   lineName,
   loadAreaNameMap,
@@ -214,7 +214,10 @@ const loadAllCanonicalDashboardRecords = cache(async (): Promise<CanonicalDashbo
       employeeName: employeeName(aggregate.repHrId),
       managerHrId: aggregate.dmHrId,
       line: lineName(aggregate.lineCode),
-      territory: areaNames.get(aggregate.areaCode) ?? aggregate.areaCode,
+      territory:
+        getMergedAreaName(aggregate.lineCode, aggregate.areaCode) ??
+        areaNames.get(aggregate.areaCode) ??
+        aggregate.areaCode,
       salesType: CANONICAL_SALES_TYPE,
       family: productFamilies.get(aggregate.productCode) ?? "",
       product: productNames.get(aggregate.productCode) ?? aggregate.productCode,

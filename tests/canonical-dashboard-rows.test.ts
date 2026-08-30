@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import { aggregateCanonicalDashboardRows } from "../src/lib/sales/dashboard-canonical.ts";
+import { getMergedAreaName } from "../src/lib/sales/closing-area-merges.ts";
 import type { AchievementRow } from "../src/lib/sales/monthly-targets.ts";
 
 // Spread-merged, NOT `??`-defaulted: `repHrId: null` is the exact case this fixture exists to
@@ -130,5 +131,26 @@ export function runCanonicalDashboardRowsTests() {
     canonicalSource,
     /const CANONICAL_SALES_TYPE = ""/,
     "sales type stays blank, so the channel chart shows its empty state instead of inventing a split",
+  );
+
+  // ── The merged area keeps BOTH halves' name ─────────────────────────────────
+  // The sales fold correctly (asserted above), but the dashboard row's territory label must read
+  // "Fayoum - Beni Suef", not the bare GZ6 name "Fayoum". The label is built in
+  // loadAllCanonicalDashboardRecords, which needs the DB, so the guard is on the source: the
+  // territory must resolve through getMergedAreaName first.
+  assert.match(
+    canonicalSource,
+    /territory:\s*getMergedAreaName\(/,
+    "dashboard territory must label the merged Pedia/CNS row as 'Fayoum - Beni Suef' via getMergedAreaName",
+  );
+  assert.equal(
+    getMergedAreaName("pedia", "GZ6"),
+    "Fayoum - Beni Suef",
+    "Pedia's merged GZ6 row carries the combined Fayoum - Beni Suef name",
+  );
+  assert.equal(
+    getMergedAreaName("anti_infective", "GZ6"),
+    null,
+    "Anti Infective keeps Fayoum and Beni Suef separate — it has no merged name",
   );
 }

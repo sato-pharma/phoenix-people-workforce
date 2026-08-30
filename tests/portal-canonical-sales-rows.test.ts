@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import type { AchievementRow } from "../src/lib/sales/monthly-targets.ts";
+import { getMergedAreaName } from "../src/lib/sales/closing-area-merges.ts";
 import {
   aggregateCanonicalPortalRows,
   filterCanonicalPortalRows,
@@ -163,5 +165,27 @@ export function runPortalCanonicalSalesRowsTests() {
     [...new Set(rows.map((r) => r.salesType))],
     [""],
     "a fabricated sales-type token would put a filter on screen that silently discards data",
+  );
+
+  // ── The merged area keeps BOTH halves' name ─────────────────────────────────
+  // The sales fold correctly (asserted above), but the portal row's territory label must read
+  // "Fayoum - Beni Suef", not the bare GZ6 name "Fayoum". The label is built in
+  // loadAllCanonicalPortalSalesRows, which needs the DB, so the guard is on the source: the
+  // territory must resolve through getMergedAreaName. Without it a rep sees "Fayoum" with Beni
+  // Suef's sales silently folded in and no sign the two are one territory.
+  assert.match(
+    readFileSync("src/lib/employee-portal/portal-sales-canonical.ts", "utf8"),
+    /territory:\s*getMergedAreaName\(/,
+    "portal territory must label the merged Pedia/CNS row as 'Fayoum - Beni Suef' via getMergedAreaName",
+  );
+  assert.equal(
+    getMergedAreaName("cns", "GZ6"),
+    "Fayoum - Beni Suef",
+    "CNS's merged GZ6 row carries the combined Fayoum - Beni Suef name",
+  );
+  assert.equal(
+    getMergedAreaName("anti_infective", "GZ6"),
+    null,
+    "Anti Infective keeps Fayoum and Beni Suef separate — it has no merged name",
   );
 }

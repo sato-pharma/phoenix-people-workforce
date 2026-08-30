@@ -38,7 +38,7 @@
 import { cache } from "react";
 
 import { currentCairoDateParts } from "@/lib/i18n/format";
-import { applyAchievementAreaMerges } from "@/lib/sales/closing-area-merges";
+import { applyAchievementAreaMerges, getMergedAreaName } from "@/lib/sales/closing-area-merges";
 import { lineName, loadAreaNameMap, loadProductFamilyMap, loadProductNameMap } from "@/lib/sales/monthly-targets";
 import type { AchievementRow } from "@/lib/sales/monthly-targets";
 import {
@@ -236,7 +236,10 @@ const loadAllCanonicalPortalSalesRows = cache(async (): Promise<CanonicalPortalS
         salesUnits: aggregate.salesUnits,
         salesValue: aggregate.salesValue,
         targetValue: aggregate.targetValue,
-        territory: areaNames.get(aggregate.areaCode) ?? aggregate.areaCode,
+        territory:
+          getMergedAreaName(aggregate.lineCode, aggregate.areaCode) ??
+          areaNames.get(aggregate.areaCode) ??
+          aggregate.areaCode,
         year: Number(yearPart) || null,
       };
     })
