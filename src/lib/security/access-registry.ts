@@ -725,6 +725,14 @@ export const accessRegistry = [
   // somebody reporting to them.
   sessionApi({ methods: ["POST"], pattern: "/api/recruitment/hiring-manager/candidates/*/comments", permission: { resource: "hiring_interviews", action: "update" }, csrfRequired: true }),
   sessionApi({ methods: ["DELETE"], pattern: "/api/recruitment/hiring-manager/candidates/*/comments/*", permission: { resource: "hiring_interviews", action: "update" }, csrfRequired: true }),
+  // A manager filing a CV onto HIS OWN shelf. Same permission as the comment above, and the same
+  // reason it cannot be `candidates:update`. What makes this safe to hand a line manager is WHERE it
+  // writes: ats_candidate_manager_folders, one row per candidate per manager. The recruiter's
+  // identical-looking route at /api/recruitment/candidates/*/folder updates the candidate row and
+  // thereby removes the CV from the pool every recruiter works from — this one leaves Talent
+  // Acquisition's screen untouched, and the manager's HR_ID comes off the session so no shape of
+  // this call reaches another manager's shelf.
+  sessionApi({ methods: ["PATCH", "DELETE"], pattern: "/api/recruitment/hiring-manager/candidates/*/folder", permission: { resource: "hiring_interviews", action: "update" }, csrfRequired: true }),
   sessionApi({ audit: { classification: "export", required: true }, methods: readOnly, pattern: "/api/recruitment/hiring-manager/candidates/**", permission: { resource: "hiring_interviews", action: "read" } }),
   sessionApi({ methods: allMethods, pattern: "/api/recruitment/hiring-manager/applications/**", permission: { resource: "hiring_interviews", action: "read" }, csrfRequired: true }),
   sessionApi({ methods: allMethods, pattern: "/api/recruitment/hiring-manager/interviews/**", permission: { resource: "hiring_interviews", action: "update" }, csrfRequired: true }),

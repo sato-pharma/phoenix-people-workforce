@@ -22,12 +22,14 @@ import type { AccessContext } from "@/lib/auth/permissions";
 import { canonicalHrIdKey, hrIdLookupKeys } from "@/lib/hr-id";
 import { listCandidatesSentToManager } from "@/lib/recruitment/candidates";
 import { recruitmentDb } from "@/lib/recruitment/db";
+import { listCandidateFilesByCandidate } from "@/lib/recruitment/files";
 import {
   canViewerSeeManagerCandidates,
   managersWithinViewerTeam,
   type TeamManager,
   type TeamRosterEntry,
 } from "@/lib/recruitment/hiring-manager-team-scope";
+import type { TeamCandidateFile } from "@/lib/recruitment/types";
 import type { Candidate } from "@/lib/recruitment/types";
 
 /** A manager in the picker, with the one number that decides whether it is worth opening. */
@@ -149,7 +151,7 @@ export async function listViewerTeamManagers(access: AccessContext): Promise<Tea
 export async function listTeamManagerCandidates(
   access: AccessContext,
   managerHrId: string,
-): Promise<{ candidates: Candidate[]; manager: TeamManager | null }> {
+): Promise<{ candidates: Candidate[]; files: Record<string, TeamCandidateFile[]>; manager: TeamManager | null }> {
   if (!access.hrId) throw new Error("Forbidden: no HR_ID on this session.");
   const roster = await loadTeamRoster();
   if (!canViewerSeeManagerCandidates({ managerHrId, roster, viewerHrId: access.hrId })) {
@@ -159,7 +161,30 @@ export async function listTeamManagerCandidates(
     managersWithinViewerTeam({ roster, viewerHrId: access.hrId }).find(
       (entry) => canonicalHrIdKey(entry.hrId) === canonicalHrIdKey(managerHrId),
     ) ?? null;
-  return { candidates: await listCandidatesSentToManager(managerHrId), manager };
+
+  const candidates = await listCandidatesSentToManager(managerHrId);
+
+  // The CV files come back WITH the list, in one query, rather than each card asking for its own.
+  // The owner's rule for this screen is that the CV must be openable — "he must be able to screen
+  // and must have a button to download the CV or to view it. It is a must." Per-card fetching met
+  // that on paper and failed it in practice: seven cards meant seven requests, each re-walking the
+  // org chart to authorise, and the buttons took about fifteen seconds to appear.
+  //
+  // Authorisation is NOT skipped by doing it here — it has already happened, once, for the whole
+  // list: the caller was proven to be above this manager before any candidate row was read, and
+  // every candidate in this list belongs to that manager by construction.
+  const byCandidate = await listCandidateFilesByCandidate(candidates.map((candidate) => candidate.id));
+  const files: Record<string, TeamCandidateFile[]> = {};
+  for (const candidate of candidates) {
+    files[candidate.id] = (byCandidate.get(candidate.id) ?? []).map((file) => ({
+      fileName: file.fileName,
+      id: file.id,
+      kind: file.kind ?? "",
+      mimeType: file.mimeType ?? null,
+    }));
+  }
+
+  return { candidates, files, manager };
 }
 
 /**

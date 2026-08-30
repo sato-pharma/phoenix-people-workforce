@@ -9,8 +9,10 @@ import { RecruitmentCandidatesPortal } from "@/components/employee-portal/recrui
 import { canAccess, canOpenPersonalCandidateInbox } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { listApplications } from "@/lib/recruitment/applications";
+import { listCandidateFolderAreaOptions } from "@/lib/recruitment/candidate-folder-options";
 import { listCandidatesSentToManager } from "@/lib/recruitment/candidates";
 import { listViewerTeamManagers } from "@/lib/recruitment/hiring-manager-team";
+import { listManagerFolderFilings } from "@/lib/recruitment/manager-folders";
 
 export const dynamic = "force-dynamic";
 
@@ -53,10 +55,16 @@ async function AdminRecruitmentCandidatesContent() {
   // sits on the org chart rather than from their role, and the CEO sits directly above both people
   // holding an NSM seat. Restricting it to the portal twin would mean the one person above them
   // could not do what they can.
-  const [applications, sentToMe, team] = await Promise.all([
+  // The fourth and fifth are this caller's own CV shelf and the picker that fills it — the folders
+  // the owner asked for on 2026-08-30. Loaded here for the same reason the team picker is: this page
+  // is the same component, and a CEO who could file on the portal but not here would have two
+  // inboxes that disagree about which CVs are still waiting on him.
+  const [applications, sentToMe, team, filings, areaOptions] = await Promise.all([
     listApplications(access),
     listCandidatesSentToManager(access.hrId),
     listViewerTeamManagers(access),
+    listManagerFolderFilings(access.hrId),
+    listCandidateFolderAreaOptions(),
   ]);
   const myCandidates = applications.filter((application) => application.candidate && application.requisition);
 
@@ -70,7 +78,9 @@ async function AdminRecruitmentCandidatesContent() {
           title="My Candidates"
         />
         <RecruitmentCandidatesPortal
+          areaOptions={areaOptions}
           initialApplications={myCandidates}
+          initialFilings={filings}
           initialSentToMe={sentToMe}
           initialTeam={team}
           viewerHrId={access.hrId}

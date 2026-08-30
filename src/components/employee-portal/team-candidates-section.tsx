@@ -8,7 +8,7 @@ import { Card } from "@/components/ui/card";
 import { APPLIED_FOR_SOURCE_LABEL, candidateRowAppliedFor } from "@/lib/recruitment/applied-for";
 import { candidateStatusLabel } from "@/lib/recruitment/candidate-status";
 import { cairoDateTime } from "@/lib/format/cairo-datetime";
-import type { Candidate } from "@/lib/recruitment/types";
+import type { Candidate, TeamCandidateFile } from "@/lib/recruitment/types";
 
 /**
  * A manager reading the CVs that sit with the managers below him.
@@ -51,6 +51,7 @@ export function TeamCandidatesSection({
 }) {
   const [selected, setSelected] = useState<TeamManagerOption | null>(null);
   const [candidates, setCandidates] = useState<Candidate[] | null>(null);
+  const [files, setFiles] = useState<Record<string, TeamCandidateFile[]>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -62,10 +63,12 @@ export function TeamCandidatesSection({
     if (selected && selected.hrId === manager.hrId) {
       setSelected(null);
       setCandidates(null);
+      setFiles({});
       return;
     }
     setSelected(manager);
     setCandidates(null);
+    setFiles({});
     setError(null);
     setBusy(true);
     try {
@@ -77,6 +80,13 @@ export function TeamCandidatesSection({
         throw new Error(typeof data.message === "string" ? data.message : "Failed to load those candidates.");
       }
       setCandidates(Array.isArray(data.candidates) ? (data.candidates as Candidate[]) : []);
+      // The CV files arrive WITH the list. Every card can then offer View CV / Download the moment
+      // it renders, instead of each one asking separately and the control turning up much later.
+      setFiles(
+        data.files && typeof data.files === "object"
+          ? (data.files as Record<string, TeamCandidateFile[]>)
+          : {},
+      );
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Failed to load those candidates.");
     } finally {
@@ -148,7 +158,12 @@ export function TeamCandidatesSection({
             </Card>
           ) : (
             (candidates ?? []).map((candidate) => (
-              <TeamCandidateCard candidate={candidate} key={candidate.id} viewerHrId={viewerHrId} />
+              <TeamCandidateCard
+                candidate={candidate}
+                files={files[candidate.id] ?? []}
+                key={candidate.id}
+                viewerHrId={viewerHrId}
+              />
             ))
           )}
         </div>
@@ -175,7 +190,15 @@ function Field({ label, value }: { label: string; value: string | null }) {
  * purpose — the first thing a National Sales Manager needs to know about a CV in his district is
  * whether his district manager has dealt with it yet.
  */
-function TeamCandidateCard({ candidate, viewerHrId }: { candidate: Candidate; viewerHrId: string | null }) {
+function TeamCandidateCard({
+  candidate,
+  files,
+  viewerHrId,
+}: {
+  candidate: Candidate;
+  files: TeamCandidateFile[];
+  viewerHrId: string | null;
+}) {
   const appliedFor = candidateRowAppliedFor(candidate);
   return (
     <Card className="space-y-4 rounded-lg border border-gray-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.08)] sm:p-6">
@@ -218,7 +241,7 @@ function TeamCandidateCard({ candidate, viewerHrId }: { candidate: Candidate; vi
         />
       </div>
 
-      <CandidateCvActions candidateId={candidate.id} />
+      <CandidateCvActions candidateId={candidate.id} initialFiles={files} />
 
       <CandidateCommentThread candidateId={candidate.id} viewerHrId={viewerHrId} />
     </Card>

@@ -6,6 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { CandidateCommentThread } from "@/components/employee-portal/candidate-comment-thread";
 import { CandidateCvActions } from "@/components/employee-portal/candidate-cv-actions";
+import { CandidateFolderControl } from "@/components/employee-portal/candidate-folder-control";
+import { ManagerFoldersSection } from "@/components/employee-portal/manager-folders-section";
 import { TeamCandidatesSection, type TeamManagerOption } from "@/components/employee-portal/team-candidates-section";
 import { cairoDateTime } from "@/lib/format/cairo-datetime";
 import { APPLIED_FOR_SOURCE_LABEL, candidateRowAppliedFor } from "@/lib/recruitment/applied-for";
@@ -17,11 +19,32 @@ import {
   isUnreviewedCandidateStatus,
   type HiringManagerDecision,
 } from "@/lib/recruitment/candidate-status";
+import type { CandidateFolderAreaOption } from "@/lib/recruitment/candidate-folder-options";
+import {
+  partitionManagerCandidates,
+  withManagerFiling,
+  type ManagerFolderFiling,
+  type ManagerFolderFilings,
+} from "@/lib/recruitment/manager-folder-shelf";
 import { groupCandidatesByPosition, shouldShowGroupHeadings } from "@/lib/recruitment/position-folder";
 import type { Candidate, Interview } from "@/lib/recruitment/types";
 
 type Props = {
+  /**
+   * Every active area with its RECRUITMENT region, for the folder picker. Loaded on the server
+   * because it reads the org chart — see candidate-folder-options.ts, and note that a Sharkia area
+   * files under Delta (3) here while the sales geography deliberately still says Delta (2).
+   */
+  areaOptions: CandidateFolderAreaOption[];
   initialApplications: ApplicationWithContext[];
+  /**
+   * What this manager has filed onto HIS OWN shelf, keyed by candidate id.
+   *
+   * His own, not the recruitment team's: filing here writes ats_candidate_manager_folders and
+   * Talent Acquisition's pool does not move. See manager-folder-shelf.ts for why the two must stay
+   * separate — the short version is that the recruiter's filing hides a CV from every recruiter.
+   */
+  initialFilings: ManagerFolderFilings;
   /**
    * The CVs a recruiter pushed STRAIGHT to this manager — no requisition, no application, no seat on
    * the org chart. This is the flow the module is actually used for; the applications above are the
@@ -317,7 +340,20 @@ function CandidateCard({ application, onChanged }: { application: ApplicationWit
  * alternative is the state this replaced, where the alert arrived and pointed at a page the manager
  * was not allowed to open.
  */
-function SentCandidateCard({ candidate: initial, viewerHrId }: { candidate: Candidate; viewerHrId: string | null }) {
+function SentCandidateCard({
+  areaOptions,
+  candidate: initial,
+  filing,
+  onFilingChanged,
+  viewerHrId,
+}: {
+  areaOptions: CandidateFolderAreaOption[];
+  candidate: Candidate;
+  /** This manager's own filing of this CV, or null while it is still in his live list. */
+  filing: ManagerFolderFiling | null;
+  onFilingChanged: (candidateId: string, filing: ManagerFolderFiling | null) => void;
+  viewerHrId: string | null;
+}) {
   const [candidate, setCandidate] = useState(initial);
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
@@ -390,7 +426,18 @@ function SentCandidateCard({ candidate: initial, viewerHrId }: { candidate: Cand
         <Field label="Sent to you" value={notified ? cairoDateTime(notified.sentAt) : null} />
       </div>
 
-      <CandidateCvActions candidateId={candidate.id} />
+      <div className="flex flex-wrap items-start gap-2">
+        <CandidateCvActions candidateId={candidate.id} />
+        {/* The third answer, and the one the owner asked for on 2026-08-30: neither "Interview" nor
+            "Not interested" is true of a good CV that simply is not needed this month. Filing writes
+            to HIS shelf only - the recruitment team's pool does not move. */}
+        <CandidateFolderControl
+          areaOptions={areaOptions}
+          candidate={candidate}
+          filing={filing}
+          onChanged={(next) => onFilingChanged(candidate.id, next)}
+        />
+      </div>
 
       {error ? <p className="text-xs text-rose-600">{error}</p> : null}
 
@@ -433,18 +480,51 @@ function SentCandidateCard({ candidate: initial, viewerHrId }: { candidate: Cand
 }
 
 export function RecruitmentCandidatesPortal({
+  areaOptions,
   initialApplications,
+  initialFilings,
   initialSentToMe: sentToMe,
   initialTeam,
   viewerHrId,
 }: Props) {
   const [applications, setApplications] = useState(initialApplications);
+  const [filings, setFilings] = useState<ManagerFolderFilings>(initialFilings);
+
+  // The manager's own shelf, folded by the RECRUITER's own partition function so a folder means one
+  // thing on both screens. `live` is what still needs him; `shelves` is what he kept for later.
+  //
+  // Note the order: the shelf split happens BEFORE the position grouping below, so a CV he has filed
+  // leaves "Sent to you" entirely rather than sitting in a position folder AND in a shelf. A
+  // candidate in two lists is a candidate answered twice.
+  const {
+    live: liveSends,
+    shelves,
+    filedCount,
+  } = useMemo(() => partitionManagerCandidates(sentToMe, filings), [filings, sentToMe]);
+
+  const onFilingChanged = (candidateId: string, filing: ManagerFolderFiling | null) => {
+    setFilings((current) => withManagerFiling(current, candidateId, filing));
+  };
+
+  // ONE card renderer, used by the live list and by every folder. The two used to be one JSX literal
+  // repeated three times, and adding the folder control to it would have meant adding it three times
+  // — which is precisely how a card inside a folder ends up without the button that gets it out.
+  const renderSentCard = (candidate: Candidate) => (
+    <SentCandidateCard
+      areaOptions={areaOptions}
+      candidate={candidate}
+      filing={filings[candidate.id] ?? null}
+      key={candidate.id}
+      onFilingChanged={onFilingChanged}
+      viewerHrId={viewerHrId}
+    />
+  );
 
   // Folded on the SAME function the recruiter's screen and the tests use, so a folder cannot mean
   // one thing where it is created and another where it is read.
   const { folders: positionFolders, unfiled: unfiledSends } = useMemo(
-    () => groupCandidatesByPosition(sentToMe),
-    [sentToMe],
+    () => groupCandidatesByPosition(liveSends),
+    [liveSends],
   );
 
   // One answer drives BOTH headings — see shouldShowGroupHeadings. They disagreed precisely because
@@ -480,7 +560,7 @@ export function RecruitmentCandidatesPortal({
       {/* Sent-to-you first, deliberately: this is the list the notification links to, and it is the
           one that needs an answer. The requisition-based applications below are the longer route
           and are already sitting in a workflow. */}
-      {sentToMe.length > 0 ? (
+      {liveSends.length > 0 ? (
         <section className="space-y-4">
           <div>
             <h2 className="text-sm font-semibold text-slate-900">Sent to you</h2>
@@ -506,12 +586,12 @@ export function RecruitmentCandidatesPortal({
                     </span>
                   </div>
                   {folder.candidates.map((candidate) => (
-                    <SentCandidateCard candidate={candidate} key={candidate.id} viewerHrId={viewerHrId} />
+                    renderSentCard(candidate)
                   ))}
                 </div>
               ))
             : positionFolders.flatMap((folder) =>
-                folder.candidates.map((candidate) => <SentCandidateCard candidate={candidate} key={candidate.id} viewerHrId={viewerHrId} />),
+                folder.candidates.map((candidate) => renderSentCard(candidate)),
               )}
           {/* Sent before a position could be chosen, or sent without one. Never hidden — each is a
               real person somebody was asked to review — but kept apart from the folders rather than
@@ -527,12 +607,17 @@ export function RecruitmentCandidatesPortal({
                 </div>
               ) : null}
               {unfiledSends.map((candidate) => (
-                <SentCandidateCard candidate={candidate} key={candidate.id} viewerHrId={viewerHrId} />
+                renderSentCard(candidate)
               ))}
             </div>
           ) : null}
         </section>
       ) : null}
+
+      {/* His shelf, immediately under the list it was filled from — a CV he "kept for later" has to
+          be somewhere he can see he kept it, or the button reads as a delete. Renders nothing at all
+          until the first CV is filed. */}
+      <ManagerFoldersSection renderCandidate={renderSentCard} shelves={shelves} totalFiled={filedCount} />
 
       {/* After the caller's own CVs, deliberately. The ones sent to HIM are the ones he still owes an
           answer on; his team's are for oversight and carry no obligation, so they must not push his

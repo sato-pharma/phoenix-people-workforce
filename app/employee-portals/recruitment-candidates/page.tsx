@@ -8,8 +8,10 @@ import { RecruitmentCandidatesPortal } from "@/components/employee-portal/recrui
 import { canAccess, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { listApplications } from "@/lib/recruitment/applications";
+import { listCandidateFolderAreaOptions } from "@/lib/recruitment/candidate-folder-options";
 import { listCandidatesSentToManager } from "@/lib/recruitment/candidates";
 import { listViewerTeamManagers } from "@/lib/recruitment/hiring-manager-team";
+import { listManagerFolderFilings } from "@/lib/recruitment/manager-folders";
 
 export const dynamic = "force-dynamic";
 
@@ -43,21 +45,33 @@ export default async function EmployeePortalRecruitmentCandidatesPage() {
   //     2026-08-30 at the owner's request: "the National Sales Manager can choose any of these
   //     district managers and see all the CVs in his portal". Empty for anybody who manages nobody,
   //     which is most callers who reach this screen, and the component renders nothing at all then.
-  const [applications, sentToMe, team] = await Promise.all([
+  //   • filings — what THIS manager has kept for later, on his own shelf. The owner, 2026-08-30:
+  //     "and I want him to have a folders like like me". Read from ats_candidate_manager_folders,
+  //     never from the candidate row: the recruitment team's own filing hides a CV from every
+  //     recruiter, and a District Manager tidying his inbox must not do that. See
+  //     manager-folder-shelf.ts.
+  //   • areaOptions — the area list for the folder picker, tagged with each area's RECRUITMENT
+  //     region (which is not always its sales region — the Delta (3) split). Loaded here because it
+  //     reads the org chart and the portal component is "use client".
+  const [applications, sentToMe, team, filings, areaOptions] = await Promise.all([
     listApplications(access),
     listCandidatesSentToManager(access.hrId),
     listViewerTeamManagers(access),
+    listManagerFolderFilings(access.hrId),
+    listCandidateFolderAreaOptions(),
   ]);
   const myCandidates = applications.filter((application) => application.candidate && application.requisition);
 
   return (
     <EmployeePortalPageShell
       badge="Hiring"
-      description="CVs sent to you by the recruitment team, candidates assigned to your open positions, and the CVs sitting with the managers who report to you — read the CV, answer, and comment."
+      description="CVs sent to you by the recruitment team, candidates assigned to your open positions, and the CVs sitting with the managers who report to you — read the CV, answer, comment, and keep the good ones in your own folders."
       title="My Candidates"
     >
       <RecruitmentCandidatesPortal
+        areaOptions={areaOptions}
         initialApplications={myCandidates}
+        initialFilings={filings}
         initialSentToMe={sentToMe}
         initialTeam={team}
         viewerHrId={access.hrId}

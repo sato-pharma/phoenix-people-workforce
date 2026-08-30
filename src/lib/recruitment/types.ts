@@ -434,6 +434,19 @@ export type CandidateComment = {
   createdAt: string;
 };
 
+/**
+ * Just enough about a stored file for a card to offer View CV / Download.
+ *
+ * Deliberately NOT `RecruitmentFile`: that type belongs to the service layer, and this crosses into
+ * a client component. Four fields, all of them safe to render — no storage path, no provider id.
+ */
+export type TeamCandidateFile = {
+  id: string;
+  fileName: string;
+  kind: string;
+  mimeType: string | null;
+};
+
 export type Interview = {
   id: string;
   applicationId: string;

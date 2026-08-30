@@ -176,6 +176,7 @@ import { runRecruitmentScreeningPageTests } from "./recruitment-screening-page.t
 import { runCandidateFolderTests } from "./candidate-folders.test.ts";
 import { runCandidateFolderSuggestionTests } from "./candidate-folder-suggestion.test.ts";
 import { runHiringManagerTeamScopeTests } from "./hiring-manager-team-scope.test.ts";
+import { runManagerFolderShelfTests } from "./manager-folder-shelf.test.ts";
 import { runCandidatePositionFolderTests } from "./candidate-position-folders.test.ts";
 import { runArabicPlaceMatchTests } from "./arabic-place-match.test.ts";
 import { runCandidatePositionSuggestionTests } from "./candidate-position-suggestion.test.ts";
@@ -1422,6 +1423,10 @@ await runTest(
 await runTest(
   "hiring-manager team scope (one National Sales Manager can NEVER read the other's candidates, and the picker is exactly the gate)",
   runHiringManagerTeamScopeTests,
+);
+await runTest(
+  "manager CV folders (a manager's shelf never inherits the recruitment team's filing, and a CV is never in both lists)",
+  runManagerFolderShelfTests,
 );
 await runTest(
   "arabic place match (an English address naming an Arabic place: Box is not Bacos, George is not Girga)",

@@ -23,8 +23,10 @@ export async function GET(request: Request, { params }: { params: Promise<{ mana
   try {
     const access = await requireRecruitmentAccess(request, "hiring_interviews", "read");
     const { managerHrId } = await params;
-    const { candidates, manager } = await listTeamManagerCandidates(access, decodeURIComponent(managerHrId));
-    return NextResponse.json({ candidates, manager, success: true });
+    // `files` rides along with the list on purpose — the CV control has to be there when the card
+    // is, and asking per card put it fifteen seconds behind. See listTeamManagerCandidates.
+    const { candidates, files, manager } = await listTeamManagerCandidates(access, decodeURIComponent(managerHrId));
+    return NextResponse.json({ candidates, files, manager, success: true });
   } catch (error) {
     return recruitmentApiError(error, "Failed to load that manager's candidates.");
   }

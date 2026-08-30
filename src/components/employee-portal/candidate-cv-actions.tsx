@@ -17,12 +17,31 @@ type CandidateFileSummary = { id: string; fileName: string; kind: string; mimeTy
  * download manager will intercept it besides. The preview modal renders the real document, so it IS
  * the view action here; saving a copy sits beside it rather than being the only behaviour.
  */
-export function CandidateCvActions({ candidateId }: { candidateId: string }) {
-  const [files, setFiles] = useState<CandidateFileSummary[]>([]);
-  const [loaded, setLoaded] = useState(false);
+export function CandidateCvActions({
+  candidateId,
+  initialFiles,
+}: {
+  candidateId: string;
+  /**
+   * The candidate's files, when the caller already has them.
+   *
+   * A list screen must hand these down rather than let each card ask. The team view renders one card
+   * per CV, and per-card fetching meant one request each, every one of them re-authorising by
+   * walking the org chart — the buttons took about fifteen seconds to appear, which the owner
+   * correctly read as the CV control being missing. When this is given, no request is made at all.
+   */
+  initialFiles?: CandidateFileSummary[] | null;
+}) {
+  const [files, setFiles] = useState<CandidateFileSummary[]>(initialFiles ?? []);
+  const [loaded, setLoaded] = useState(Boolean(initialFiles));
   const [previewOpen, setPreviewOpen] = useState(false);
 
   useEffect(() => {
+    if (initialFiles) {
+      setFiles(initialFiles);
+      setLoaded(true);
+      return;
+    }
     let active = true;
     void (async () => {
       try {
@@ -40,7 +59,7 @@ export function CandidateCvActions({ candidateId }: { candidateId: string }) {
     return () => {
       active = false;
     };
-  }, [candidateId]);
+  }, [candidateId, initialFiles]);
 
   const cvFile = files.find((file) => file.kind === "cv");
   // "unsupported" means the preview modal cannot render this file type, so saving it is the only way

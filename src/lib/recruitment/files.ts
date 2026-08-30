@@ -23,6 +23,45 @@ export async function listCandidateFiles(candidateId: string): Promise<Recruitme
   return ((data ?? []) as RecruitmentFileDbRow[]).map(mapRecruitmentFile);
 }
 
+/**
+ * The files for many candidates at once, keyed by candidate.
+ *
+ * Exists because a LIST screen must not ask per card. The manager's team view renders one card per
+ * CV and each card's View/Download control needs to know whether there is a file: asking per card
+ * meant seven parallel requests, each of which re-authorised by walking the whole org chart, and the
+ * buttons took about fifteen seconds to appear on a cold server. A control that arrives that late is
+ * not a control — the owner reported it as missing, and he was right to.
+ *
+ * Chunked at 50: a PostgREST `.in()` carrying several hundred ids returns zero rows and no error,
+ * which here would render "No CV file on record." over a candidate whose CV is sitting right there.
+ */
+export async function listCandidateFilesByCandidate(
+  candidateIds: readonly string[],
+): Promise<Map<string, RecruitmentFile[]>> {
+  const byCandidate = new Map<string, RecruitmentFile[]>();
+  const ids = Array.from(new Set(candidateIds.filter((id) => id.length > 0)));
+  if (ids.length === 0) return byCandidate;
+
+  const supabase = recruitmentDb();
+  for (let index = 0; index < ids.length; index += 50) {
+    const { data, error } = await supabase
+      .from("ats_files")
+      .select("*")
+      .in("candidate_id", ids.slice(index, index + 50))
+      .order("created_at", { ascending: false });
+    if (error) throw error;
+    for (const row of (data ?? []) as RecruitmentFileDbRow[]) {
+      const file = mapRecruitmentFile(row);
+      const key = String(row.candidate_id ?? "");
+      if (!key) continue;
+      const existing = byCandidate.get(key);
+      if (existing) existing.push(file);
+      else byCandidate.set(key, [file]);
+    }
+  }
+  return byCandidate;
+}
+
 export type UploadCandidateFileInput = {
   candidateId: string;
   applicationId?: string | null;
