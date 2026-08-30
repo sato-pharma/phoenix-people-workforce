@@ -238,7 +238,7 @@ policy):
    | `phoenix-ireports360-live-poll` | **Simple**, period `5m` | 15m | the in-process poller, every tick |
    | `phoenix-ireports360-sync` | `0 6-21/3 * * *` | 2h | the in-process poller, when due |
    | `phoenix-reconcile-visits` | `0 4 * * 0` | 12h | the in-process poller, when due |
-   | `phoenix-job-heartbeat-sweep` | `*/15 * * * *` | 30m | cron-job.org — **not created yet, see below** |
+   | `phoenix-job-heartbeat-sweep` | `*/15 * * * *` | 30m | cron-job.org job `8351275` |
 
    **This table is machine-read.** `scripts/healthchecks-sync.mjs` parses these rows — slug in
    backticks, then either a backticked cron expression or a **Simple** cell naming its period, then

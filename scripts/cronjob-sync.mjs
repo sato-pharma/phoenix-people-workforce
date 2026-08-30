@@ -100,6 +100,21 @@ const JOBS = {
     // what the rest of the account sets; the platform still cuts at 30 regardless (see header).
     requestTimeout: 300,
   },
+  "job-heartbeat-sweep": {
+    title: "Phoenix — job heartbeat sweep",
+    path: "/api/cron/job-heartbeat-sweep",
+    // Every 15 minutes, around the clock. This is the sweep that reads public.job_heartbeats and
+    // pages when a scheduled job has stopped reporting, so it is the one job whose own silence is
+    // not covered by anything else in this account -- the Healthchecks free tier is full at 20 and
+    // there is no slot left for it. 15 minutes is the granularity the declared graces assume: the
+    // tightest is 30m, so a sweep interval above that could let a stranded job go a full cycle
+    // unnoticed.
+    schedule: { hours: [-1], minutes: [0, 15, 30, 45], mdays: [-1], months: [-1], wdays: [-1] },
+    // Reads 24 rows, judges each against its cron expression, and writes only when something is
+    // wrong. Nowhere near the 30s platform cut. 300 matches the rest of the account; the platform
+    // still cuts at 30 regardless (see header).
+    requestTimeout: 300,
+  },
   "reconciliation-check": {
     title: "Phoenix — nightly reconciliation harness",
     path: "/api/cron/reconciliation-check",
