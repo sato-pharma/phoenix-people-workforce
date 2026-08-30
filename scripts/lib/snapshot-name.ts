@@ -59,7 +59,7 @@ export const looksLikeSnapshot = (table: string): boolean =>
 /**
  * The same rule as a Postgres POSIX regex pair, for the RPC that applies it inside the
  * database (`public.phx_ci_snapshot_tables_in_public`, added by
- * 20260830150000_ci_snapshot_tables_in_public.sql).
+ * 20260830151500_ci_snapshot_tables_in_public.sql).
  *
  * Exported so a test can assert the SQL and the TypeScript still say the same thing. A
  * divergence here is invisible in every other way: each side would keep passing its own

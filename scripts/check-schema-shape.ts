@@ -131,7 +131,7 @@ export type SchemaShape = {
    * by nothing.
    *
    * Optional for the same reason as `stale_snapshot_schemas`: the RPC only exists once
-   * 20260830150000_ci_snapshot_tables_in_public.sql is applied, and this script runs against
+   * 20260830151500_ci_snapshot_tables_in_public.sql is applied, and this script runs against
    * production and staging independently. `undefined` means "target predates the check" and
    * must stay silent rather than invent a violation.
    */
@@ -456,7 +456,7 @@ async function loadShape(): Promise<SchemaShape> {
     shape.stale_snapshot_schemas = (stale.data ?? []) as StaleSnapshotSchema[];
   }
 
-  // Same pattern, same reason (20260830150000_ci_snapshot_tables_in_public.sql). Asks the
+  // Same pattern, same reason (20260830151500_ci_snapshot_tables_in_public.sql). Asks the
   // database directly which snapshot tables are in `public`, so a snapshot created by hand
   // through execute_sql — which is how every one of them has actually arrived — is named the
   // day it appears, instead of a week later as a side effect of having no primary key.

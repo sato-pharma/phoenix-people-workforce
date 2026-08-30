@@ -149,7 +149,7 @@ export function runSchemaShapeSnapshotInPublicTests() {
   // ...and the migration must actually contain those patterns, or the function in the database
   // is not the rule this file just verified.
   const migration = fs.readFileSync(
-    fileURLToPath(new URL("../supabase/migrations/20260830150000_ci_snapshot_tables_in_public.sql", import.meta.url)),
+    fileURLToPath(new URL("../supabase/migrations/20260830151500_ci_snapshot_tables_in_public.sql", import.meta.url)),
     "utf8",
   );
   for (const [tier, pattern] of Object.entries(SNAPSHOT_NAME_SQL)) {
