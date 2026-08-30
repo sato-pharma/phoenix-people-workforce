@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
+import { foldAreaOptionsForLine } from "../src/lib/sales/closing-area-merges.ts";
 import {
   APPROVED_PLANNING_REGIONS,
   approvedRegionsForSeats,
@@ -73,6 +74,15 @@ const CNS_SEATS = [
   { areaName: "Minia 2", regionCode: "UE", regionName: "Upper Egypt" },
   { areaName: "Assuit 1", regionCode: "UE", regionName: "Upper Egypt" },
   { areaName: "Qena 1", regionCode: "UE", regionName: "Upper Egypt" },
+];
+
+// The live Pedia Giza seats as au_v_line_area_map returns them (with area_code). Fayoum (GZ6) and
+// Beni Suef (UE9) both sit in region GZ and share one rep seat, which is why the owner folds them
+// into one plannable area on Pedia only. loadPlanningAreaSeats carries the code purely to fold.
+const PEDIA_GZ_SEATS_RAW = [
+  { areaCode: "GZ6", areaName: "Fayoum", regionCode: "GZ", regionName: "Giza" },
+  { areaCode: "UE9", areaName: "Beni Suef", regionCode: "GZ", regionName: "Giza" },
+  { areaCode: "GZ1", areaName: "Haram - Faisal", regionCode: "GZ", regionName: "Giza" },
 ];
 
 export function runWeeklyPlanRegionAreasTests() {
@@ -372,6 +382,58 @@ export function runWeeklyPlanRegionAreasTests() {
     "on 1 Sep the split is in force and Delta 3 becomes selectable",
   );
 
+  // ------------------------------------------- 4c. Pedia folds Fayoum + Beni Suef into one area
+  //
+  // Owner rule 2026-08-30: on Pedia ONLY, Fayoum (GZ6) and Beni Suef (UE9) are one territory, so
+  // the Area picker must offer them as a single "Fayoum - Beni Suef" option. loadPlanningAreaSeats
+  // applies foldAreaOptionsForLine to the seat list before returning it; this pins the exact call
+  // it makes (the picker keys on name, so folding the seat list folds both picker paths and the
+  // submit-time area check at once).
+  const foldedPedia = foldAreaOptionsForLine("pedia", PEDIA_GZ_SEATS_RAW);
+  assert.deepEqual(
+    foldedPedia.map((seat) => seat.areaName).sort(),
+    ["Fayoum - Beni Suef", "Haram - Faisal"],
+    "Pedia must fold Fayoum (GZ6) + Beni Suef (UE9) into one 'Fayoum - Beni Suef' area",
+  );
+  assert.ok(
+    !foldedPedia.some((seat) => seat.areaName === "Fayoum" || seat.areaName === "Beni Suef"),
+    "neither Fayoum nor Beni Suef may survive as a separate Pedia planning area",
+  );
+  // The merged seat keeps Giza (GZ6's region), so it surfaces under the Giza region, not a stray one.
+  assert.equal(
+    foldedPedia.find((seat) => seat.areaName === "Fayoum - Beni Suef")?.regionCode,
+    "GZ",
+    "the merged Pedia area stays in Giza",
+  );
+
+  // End to end through the actual picker: a Pedia planner in Giza is offered the one merged area
+  // and never the two halves separately.
+  const pediaGizaOptions = planningAreaOptions(foldedPedia, "Giza", { regionCode: "GZ" });
+  assert.ok(
+    pediaGizaOptions.includes("Fayoum - Beni Suef"),
+    "the Giza Area picker must offer the merged Pedia area",
+  );
+  assert.ok(
+    !pediaGizaOptions.includes("Fayoum") && !pediaGizaOptions.includes("Beni Suef"),
+    "the Giza Area picker must not still offer the two Pedia halves separately",
+  );
+
+  // Pedia ONLY. The same two codes on Anti Infective and CNS must stay two separate areas — those
+  // lines carry no merge rule (Beni Suef is a genuinely different UE-1 DM on Anti Infective, and the
+  // owner split CNS back into two on 2026-08-30), so the loader returns their seats unchanged.
+  for (const line of ["anti_infective", "cns"] as const) {
+    const foldedOtherLine = foldAreaOptionsForLine(line, PEDIA_GZ_SEATS_RAW);
+    assert.ok(
+      foldedOtherLine.some((seat) => seat.areaName === "Fayoum") &&
+        foldedOtherLine.some((seat) => seat.areaName === "Beni Suef"),
+      `${line} must keep Fayoum and Beni Suef as two separate planning areas`,
+    );
+    assert.ok(
+      !foldedOtherLine.some((seat) => seat.areaName === "Fayoum - Beni Suef"),
+      `${line} must not fold the two areas into one`,
+    );
+  }
+
   // ---------------------------------------------------------------- 5. wiring
 
   const serviceSrc = readFileSync("src/lib/weekly-planning/service.ts", "utf8");
@@ -400,6 +462,16 @@ export function runWeeklyPlanRegionAreasTests() {
   assert.match(loaderSrc, /from\("au_v_line_area_map"\)/, "the loader must read the AU seat map");
   assert.match(loaderSrc, /\.is\("effective_to", null\)/, "the loader must take only currently-effective seats");
   assert.match(loaderSrc, /\.eq\("line_code", lineCode\)/, "the loader must scope seats to the plan owner's line");
+
+  // The loader must fold the seat list so the Area picker inherits the Pedia area merge. The merge
+  // rule is defined by CODE, so the loader must select area_code even though the picker keys on name.
+  assert.match(
+    loaderSrc,
+    /from "@\/lib\/sales\/closing-area-merges"/,
+    "the loader must import the shared area-merge helper, not re-implement the Pedia merge",
+  );
+  assert.match(loaderSrc, /foldAreaOptionsForLine\(lineCode,/, "the loader must fold the seat list before returning it");
+  assert.match(loaderSrc, /\.select\("area_code,/, "the loader must select area_code so the merge rule can match");
 
   // The picker must prefer the seat model and keep the roster only as a fallback.
   assert.match(
