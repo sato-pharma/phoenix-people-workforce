@@ -10,7 +10,6 @@ import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
 import {
   bridgeEmployeeLineToOfficial,
   canonicalizeRegionName,
-  canViewHeadOfficeLine,
   isHeadOfficeLine,
   isRestrictedProductCode,
   normalizeLineKey,
@@ -79,13 +78,14 @@ export const PORTAL_CLOSING_ROLES: ReadonlySet<PhoenixRole> = new Set([
   // resolvePortalClosingScope below resolves her lines from resolveSalesAccessScope, which folds in
   // the fixed head-office oversight set (MARKETING_OVERSIGHT_LINE_ROLES → Anti Infective, Pedia,
   // CNS) instead of her own Head Office label, and then filters Head Office out by
-  // canViewHeadOfficeLine. loadPortalMonthlyClosing was already built for her — its published-lines
-  // read is commented "at most three (the Marketing oversight set)". Only this gate was missing, so
-  // she held the scope with no page to use it on.
+  // the unconditional Head Office filter below. loadPortalMonthlyClosing was already built for her
+  // — its published-lines read is commented "at most three (the Marketing oversight set)". Only
+  // this gate was missing, so she held the scope with no page to use it on.
   //
-  // Admitting her leaks nothing: Head Office is stripped from allowedLines for every non-CEO
-  // viewer, stripRestrictedColumns drops LA003/LA004/SS001, and the three lines she can now open
-  // are exactly the three she already oversees everywhere else in sales.
+  // Admitting her leaks nothing: Head Office is stripped from allowedLines for EVERY viewer (since
+  // 2026-08-30 — it used to be every viewer except CEO / Super Admin), stripRestrictedColumns drops
+  // LA003/LA004/SS001, and the three lines she can now open are exactly the three she already
+  // oversees everywhere else in sales.
   "Marketing Manager",
 ]);
 
@@ -227,9 +227,22 @@ export async function resolvePortalClosingScope(
   const allowedLines = (
     salesScope.allowedLineNames ? [...salesScope.allowedLineNames] : [...OFFICIAL_LINE_VALUES]
   )
-    // Head Office is a confidential LINE (CEO / Super Admin only), the same lock class the details
-    // loader applies. Nobody else may open it, whatever their scope says.
-    .filter((candidate) => !isHeadOfficeLine(candidate) || canViewHeadOfficeLine(access.role));
+    // Head Office is NEVER a monthly closing line — for anyone, CEO and Super Admin included.
+    // Owner, 2026-08-30: "The head office will not be used in the weekly sales or monthly sales",
+    // then "now do the same for the monthly closing line filter".
+    //
+    // Until that date this read `|| canViewHeadOfficeLine(access.role)`, so the confidential-line
+    // lock let those two roles through. That was the right rule while Head Office was merely
+    // CONFIDENTIAL; it is the wrong rule now that it is out of monthly reporting altogether.
+    //
+    // This removes a door, not a room. The ADMIN closing surface has never been able to produce a
+    // Head Office closing — listMonthlyClosingLines drops it in selectClosingLines, pinned by
+    // tests/closing-excludes-head-office.test.ts — so no Head Office period has ever been
+    // published: measured 0 rows in monthly_closing_publications on 2026-08-30, against 1 each for
+    // CNS, Pedia and Anti Infective. What was reachable is the REQUEST: pickPortalClosingLine
+    // accepts any line present in this list even with no published period, so `?line=Head Office`
+    // resolved instead of being refused for a CEO or Super Admin.
+    .filter((candidate) => !isHeadOfficeLine(candidate));
 
   // The viewer's own line stays the default when they hold it, so a single-line manager's every
   // existing read resolves to exactly the line it resolved to before.

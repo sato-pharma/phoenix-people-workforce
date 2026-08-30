@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import { isHeadOfficeLine } from "../src/lib/sales/access-scope.ts";
+import { pickPortalClosingLine } from "../src/lib/sales/monthly-closing-portal.ts";
 import { selectClosingLines } from "../src/lib/sales/monthly-distributor-import.ts";
 
 // Head Office must not be offerable as a Monthly Closing (owner decision, 2026-08-05).
@@ -110,4 +111,60 @@ export function runClosingExcludesHeadOfficeTests() {
       `${path} must never opt Head Office back into a closing surface`,
     );
   }
+
+  // ── THE PORTAL HALF — closed 2026-08-30 ─────────────────────────────────────────────────────
+  // Everything above is the ADMIN closing surface, which has excluded Head Office since 2026-08-05.
+  // The PORTAL took a different path: resolvePortalClosingScope built allowedLines and stripped
+  // Head Office with `|| canViewHeadOfficeLine(access.role)`, so a CEO or Super Admin kept it.
+  //
+  // The owner closed that: "The head office will not be used in the weekly sales or monthly sales",
+  // then "now do the same for the monthly closing line filter".
+  //
+  // Nothing was lost, because nothing was reachable — the admin side can produce no Head Office
+  // closing, and production carried 0 Head Office publications on 2026-08-30 against 1 each for
+  // CNS, Pedia and Anti Infective. What WAS reachable is the request: the picker accepts any line
+  // in the scope list even with no published period, so `?line=Head Office` resolved rather than
+  // being refused for those two roles.
+
+  // 1) With Head Office out of scope, asking for it by name is REFUSED — never quietly swapped for
+  //    another line. A silent substitution is the dangerous failure: it serves one line's matrix
+  //    under another line's name.
+  const askedHeadOffice = pickPortalClosingLine({
+    requestedLine: "Head Office",
+    allowedLines: ["Anti Infective", "CNS", "Pedia"],
+    publishedLines: ["Anti Infective", "CNS", "Pedia"],
+  });
+  assert.equal(askedHeadOffice.refused, true, "Head Office is out of scope, so asking for it is refused");
+  assert.equal(askedHeadOffice.line, null, "a refused line resolves to nothing, never to a substitute");
+  assert.ok(
+    !askedHeadOffice.availableLines.includes("Head Office"),
+    "the portal line picker must not offer Head Office",
+  );
+
+  // 2) The same call WOULD have resolved while Head Office sat in scope — so the assertion above is
+  //    measuring the scope filter, not merely the absence of a published period.
+  assert.equal(
+    pickPortalClosingLine({
+      requestedLine: "Head Office",
+      allowedLines: ["Anti Infective", "CNS", "Head Office", "Pedia"],
+      publishedLines: ["Anti Infective", "CNS", "Pedia"],
+    }).line,
+    "Head Office",
+    "with Head Office in scope the picker resolves it even unpublished — which is exactly why the scope filter has to drop it",
+  );
+
+  // 3) The scope filter itself carries no role exception any more. Comments are stripped first, so
+  //    the prose explaining the old rule can never satisfy the check.
+  const portal = code(read("src/lib/sales/monthly-closing-portal.ts"));
+  // An exact substring rather than a regex: a regex here would need four escaped brackets and an
+  // escaped dot, and a MIS-escaped one still matches something — which is precisely how a source pin
+  // becomes a test that only ever passes. This one was written wrong first time and caught itself.
+  assert.ok(
+    portal.includes(".filter((candidate) => !isHeadOfficeLine(candidate))"),
+    "resolvePortalClosingScope must drop Head Office unconditionally",
+  );
+  assert.ok(
+    !portal.includes("canViewHeadOfficeLine"),
+    "no role may re-open Head Office as a monthly closing line — not CEO, not Super Admin",
+  );
 }
