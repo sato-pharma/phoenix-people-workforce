@@ -13,11 +13,16 @@ import {
   backgroundOtherTooLongText,
   candidateBackgroundCodes,
   candidateBackgroundLabels,
+  candidateExperienceCodes,
+  candidateExperienceLabels,
   classifyRowId,
   classifySessionSteps,
   cleanTypedAnswer,
   cleanTypedJobTitle,
+  EXPECTED_SALARY_MAX,
+  experienceMenu,
   isOfferedBackground,
+  isOfferedExperience,
   jobTitleMenu,
   jobTitleOtherPromptText,
   jobTitleOtherTooLongText,
@@ -29,6 +34,8 @@ import {
   REGION_OTHER_MAX,
   regionMenu,
   regionOtherPromptText,
+  salaryPromptText,
+  salaryTooLongText,
   typedAnswerTooLongText,
   WHATSAPP_LIST_MAX_ROWS,
   WHATSAPP_ROW_TITLE_MAX,
@@ -87,6 +94,7 @@ export function runWhatsAppSelfClassificationTests() {
   assert.deepEqual(menuViolations(jobTitleMenu()), [], "the role menu must satisfy every Cloud API limit");
   assert.deepEqual(menuViolations(backgroundMenu()), [], "the background menu must satisfy every Cloud API limit");
   assert.deepEqual(menuViolations(regionMenu()), [], "the region menu must satisfy every Cloud API limit");
+  assert.deepEqual(menuViolations(experienceMenu()), [], "the experience menu must satisfy every Cloud API limit");
 
   for (const [regionCode, areas] of Object.entries(PRODUCTION_AREAS)) {
     const menu = areaMenu(regionCode as (typeof candidateRegionCodes)[number], areas);
@@ -414,6 +422,63 @@ export function runWhatsAppSelfClassificationTests() {
   }
   assert.ok(backgroundOtherTooLongText().includes(String(BACKGROUND_OTHER_MAX)), "the nudge names its limit");
 
+  // ── Question 5 — years of experience (owner's instruction 2026-08-30, bucket 1) ────────────────
+  // Asked to everyone, after geography. Five exhaustive bands and — deliberately — NO "Other" row:
+  // the ranges leave nothing uncovered, so a closed tappable band beats a free-typed "about 4 years".
+  const expMenu = experienceMenu();
+  assert.equal(expMenu.step, "experience", "the experience menu must carry its own step");
+  assert.deepEqual(
+    expMenu.rows.map((row) => row.id),
+    ["fresh", "lt_1", "1_3", "3_5", "gt_5"].map((code) => classifyRowId("experience", code)),
+    "the experience menu offers the five bands least-to-most, with no Other row",
+  );
+  assert.ok(
+    !expMenu.rows.some((row) => row.id === classifyRowId("experience", OTHER_ROW_VALUE)),
+    "experience has no Other escape — the bands are exhaustive",
+  );
+  const expTitleById = new Map(expMenu.rows.map((row) => [row.id, row.title]));
+  assert.equal(expTitleById.get(classifyRowId("experience", "fresh")), "Fresh graduate");
+  assert.equal(expTitleById.get(classifyRowId("experience", "gt_5")), "More than 5 years");
+
+  // The guard accepts exactly the five codes and rejects everything else, including the escape value
+  // (which experience never offers) — a stale value must never read as a real band.
+  for (const code of candidateExperienceCodes) {
+    assert.ok(isOfferedExperience(code), `${code} is an offered experience band`);
+  }
+  assert.ok(!isOfferedExperience(OTHER_ROW_VALUE), "the escape value is not an experience band");
+  assert.ok(!isOfferedExperience("10_years"), "a value we do not offer is rejected");
+
+  // The exhaustive-Record backstop, same reasoning as the region and background labels: a code added
+  // to the union without a label would compile under ignoreBuildErrors and render as undefined.
+  for (const code of candidateExperienceCodes) {
+    const label = candidateExperienceLabels[code];
+    assert.equal(typeof label, "string", `experience ${code} has no label`);
+    assert.ok(label.length > 0 && !label.includes("undefined"), `experience ${code} label is not human-readable: ${label}`);
+  }
+  assert.equal(
+    Object.keys(candidateExperienceLabels).length,
+    candidateExperienceCodes.length,
+    "the experience label Record must hold exactly the offered codes — no orphan, no missing one",
+  );
+
+  // ── Question 6 — expected salary (typed, stored verbatim) ──────────────────────────────────────
+  // The last question and the only free-typed one. The prompt obeys the no-ellipsis rule; the
+  // too-long nudge names its limit; and the shared cleaner keeps a real answer verbatim while
+  // refusing a pasted paragraph — including answers we must never coerce to a number.
+  for (const prompt of [salaryPromptText(), salaryTooLongText()]) {
+    assert.ok(prompt.trim().length > 0, "the prompt must say something");
+    assert.ok(!prompt.includes("…") && !prompt.includes("..."), "text is never cut with an ellipsis");
+  }
+  assert.ok(salaryTooLongText().includes(String(EXPECTED_SALARY_MAX)), "the salary nudge names its limit");
+  assert.equal(cleanTypedAnswer("  12000 - 15000  ", EXPECTED_SALARY_MAX), "12000 - 15000", "a salary range is kept, whitespace collapsed");
+  assert.equal(cleanTypedAnswer("negotiable", EXPECTED_SALARY_MAX), "negotiable", "a non-numeric salary answer is a truthful answer, kept verbatim");
+  assert.equal(cleanTypedAnswer("", EXPECTED_SALARY_MAX), null, "an empty salary is unusable");
+  assert.equal(
+    cleanTypedAnswer("x".repeat(EXPECTED_SALARY_MAX + 1), EXPECTED_SALARY_MAX),
+    null,
+    "a pasted sentence is refused rather than truncated",
+  );
+
   // ── The area cascade — owner's rule 2026-08-30 ────────────────────────────────────────────────
   // ONLY a Medical Rep is asked the area; every other role — the sales managers, the head-office
   // roles, and a typed "Other" — is asked region only. This is the single seam the session state
@@ -443,9 +508,14 @@ export function runWhatsAppSelfClassificationTests() {
     value: "medical_rep",
   });
   assert.deepEqual(parseClassifyRowId(classifyRowId("area", "Beni Suef")), { step: "area", value: "Beni Suef" });
+  // Experience is the fifth TAPPABLE step, so its row ids round-trip. The value "1_3" carries a
+  // colon-free code, so the three-part split is unambiguous.
+  assert.deepEqual(parseClassifyRowId(classifyRowId("experience", "1_3")), { step: "experience", value: "1_3" });
   assert.equal(parseClassifyRowId("someone_elses_button"), null, "an unnamespaced id is not ours");
   assert.equal(parseClassifyRowId("other:job_title:medical_rep"), null, "a foreign prefix is not ours");
-  assert.equal(parseClassifyRowId("phx:salary:1000"), null, "an unknown step is not ours");
+  // "salary" is a real session step but a TYPED one — no menu, no row ids — so an id claiming it is
+  // not ours, exactly like job_title_other. This is what keeps a typed step out of the tap handler.
+  assert.equal(parseClassifyRowId("phx:salary:1000"), null, "the typed salary step has no row ids");
   assert.equal(parseClassifyRowId(null), null, "a missing id is not ours");
 
   // ── The webhook parser reads a tapped answer ──────────────────────────────────────────────────
@@ -508,9 +578,11 @@ export function runWhatsAppSelfClassificationTests() {
       "region_other",
       "area",
       "area_other",
+      "experience",
+      "salary",
       "done",
     ],
-    "must match the CHECK constraint in 20260830193000_ats_whatsapp_classify_background.sql",
+    "must match the CHECK constraint in 20260831103000_ats_whatsapp_classify_screening.sql",
   );
   assert.equal(
     parseClassifyRowId("phx:job_title_other:anything"),
