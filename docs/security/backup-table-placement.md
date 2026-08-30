@@ -85,11 +85,39 @@ drop schema <domain>_backup_YYYYMMDD cascade;
 targeting `public` with a snapshot-shaped name. It uses two tiers, because one word list
 cannot separate a snapshot from a live table:
 
-- **Always flagged:** `backup`, `bak`, `undo`, `rollback`.
-- **Flagged only with a date:** `snapshot`, `old`, `copy`, `tmp`, `temp`, `orig`, `prev` —
-  because `public.sales_ops_dashboard_snapshot` is a real application table with a policy.
+- **Always flagged:** `backup`, `backups`, `bak`, `undo`, `rollback`.
+- **Flagged only with a date:** `snapshot`, `old`, `copy`, `tmp`, `temp`, `orig`, `prev`,
+  `pre` — because `public.sales_ops_dashboard_snapshot` is a real application table with a
+  policy, and `early_birds_period_snapshots`, `sos_import_coverage_snapshots` and
+  `field_workforce_compliance_live_snapshots` are live tables today whose content happens to
+  be snapshots. None carries a date, so none matches.
+
+`pre` joined the weak tier on 2026-08-30, and the reason is worth keeping: of the five
+snapshots found in production `public` that day, the two named `zz_backup_…` matched on the
+strong tier and the three named `…_20260829_pre` matched nothing at all. A rule that caught
+two fifths of the real cases had been reading as a rule that worked.
+
+The two tiers are defined once, in `scripts/lib/snapshot-name.ts`, and imported by both
+checks below. `tests/schema-shape-snapshot-in-public.test.ts` asserts the SQL and TypeScript
+forms still agree, because a divergence is invisible in every other way — each side would go
+on passing its own tests while enforcing a different definition of "snapshot".
 
 It does **not** see SQL run straight against a database through the Supabase MCP, `psql`, or
-the dashboard SQL editor. That path is exactly how all three exposures above were created,
-so the rule still has to be followed by hand there. The schema-shape monitor remains the
-backstop for it, and `supabase/_migrations_archive/` is skipped as immutable history.
+the dashboard SQL editor — and that path is how every exposure on this page was created.
+`supabase/_migrations_archive/` is skipped as immutable history.
+
+So since 2026-08-30 the database is asked directly as well. `phx_ci_snapshot_tables_in_public()`
+applies the same two tiers to `pg_class`, and `scripts/check-schema-shape.ts` reads it on every
+run of the daily Migration Drift Check, against staging and production independently. A snapshot
+in `public` is now named the day it appears, however it got there, and the finding says which
+browser-facing role can read it — the difference between "tidy this up" and "act now".
+
+That replaces a backstop that only worked by accident. `missing_primary_key` did surface these
+tables, but for a reason unrelated to being a snapshot: a `create table ... as select` happens
+to carry no primary key. It therefore arrived late, said the wrong thing — "this table has no
+primary key" invites adding one — and was silenceable by the wrong fix. Two migrations on
+2026-08-27 did exactly that, clearing the error while leaving every table in `public`, reported
+by nothing at all.
+
+A target that predates the migration returns an error the script reads as "gate not deployed
+yet" and stays quiet, so the two databases can be migrated independently.

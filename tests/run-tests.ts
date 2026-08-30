@@ -1032,6 +1032,7 @@ import { runCrmDepartedAgentScanTests } from "./crm-departed-agent-scan.test.ts"
 import { runApiErrorInfrastructureRedactionTests } from "./api-error-infrastructure-redaction.test.ts";
 import { runSchemaShapeDefaultAclTests } from "./schema-shape-default-acl.test.ts";
 import { runSchemaShapePrivateUsageTests } from "./schema-shape-private-usage.test.ts";
+import { runSchemaShapeSnapshotInPublicTests } from "./schema-shape-snapshot-in-public.test.ts";
 import { runTerritorySyncTests } from "./territory-sync.test.ts";
 import { runFinanceCommandCenterTests } from "./finance-command-center.test.ts";
 import { runMarketingManagerMonthlyClosingTests } from "./marketing-manager-monthly-closing.test.ts";
@@ -3028,6 +3029,10 @@ await runTest(
 await runTest(
   "schema-shape private USAGE (missing grant makes every dependent RLS policy untestable; no dependents means no demand)",
   runSchemaShapePrivateUsageTests,
+);
+await runTest(
+  "schema-shape snapshot in public (the five real pre-images are caught, live *_snapshots tables are not, and the SQL matches the TypeScript)",
+  runSchemaShapeSnapshotInPublicTests,
 );
 await runTest(
   "territory sync (rollup==source reconciles within epsilon; row-count off-by-one fails; period window clamps)",

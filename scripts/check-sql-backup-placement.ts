@@ -24,25 +24,16 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { glob } from "node:fs/promises";
 
+import { looksLikeSnapshot } from "./lib/snapshot-name.ts";
+
 const REPO_ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
 
-/**
- * Two tiers, because one word list cannot separate a snapshot from a live table.
- *
- * STRONG words never appear in a live table here — every `%backup%` table in production is
- * a point-in-time copy with RLS on and zero policies (verified 2026-08-01: three of them,
- * all snapshots). So the word alone is enough.
- *
- * WEAK words do appear in live tables — `public.sales_ops_dashboard_snapshot` is a real
- * application table with a policy — so those only count when the name also carries a date,
- * which is what makes a name a point-in-time copy rather than a description of content.
- */
-const STRONG_SNAPSHOT_NAME = /(^|_)(backup|backups|bak|undo|rollback)(_|$)/i;
-const WEAK_SNAPSHOT_NAME = /(^|_)(snapshot|old|copy|tmp|temp|orig|prev)(_|$)/i;
-const DATED = /(^|_)(19|20)\d{6}(_|$)/;
-
-const looksLikeSnapshot = (table: string) =>
-  STRONG_SNAPSHOT_NAME.test(table) || (WEAK_SNAPSHOT_NAME.test(table) && DATED.test(table));
+// The two-tier name rule used to live here. It moved to scripts/lib/snapshot-name.ts on
+// 2026-08-30 when check-schema-shape.ts began applying the SAME rule to the live database —
+// this check can only see snapshots that arrive as a `.sql` file, and every one found in
+// production `public` that day had been created by hand through MCP execute_sql instead.
+// Two checks with two private copies of "what a snapshot looks like" would drift, so there
+// is now exactly one definition and both import it.
 
 /**
  * Already-shipped history. These ran once against a database that no longer takes them, and
