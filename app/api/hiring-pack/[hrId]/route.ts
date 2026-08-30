@@ -30,7 +30,7 @@ function apiError(error: unknown) {
   if (isHiringPackSchemaMissing(error)) {
     return {
       message:
-        "Hiring pack schema is not ready. Run the Supabase migration for employee_hiring_profile.",
+        "HR forms schema is not ready. Run the Supabase migrations for employee_hiring_profile and employee_offboarding_profile.",
       status: 409,
     };
   }

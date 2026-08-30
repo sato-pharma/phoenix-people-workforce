@@ -133,6 +133,48 @@ export const systemLegalEntity = {
     /** The default NOSI branch office ("مكتب ..........") for new files. */
     defaultInsuranceOffice: "",
   },
+  /**
+   * The company as the EMPLOYMENT CONTRACT's recital states it.
+   *
+   * A separate block from the keys above, and deliberately not a tidier merge of them, because the
+   * two describe the same company to two different authorities and they do not agree by accident:
+   *
+   * - `responsibleManagerAr` / `responsibleManagerTitleAr` are what SOCIAL INSURANCE wants. "المدير
+   *   المسئول" is that Authority's own term, printed on Form 1 and Form 6, and the name is given as
+   *   those forms carry it.
+   * - The contract names the same person in full and by his COMPANY office — "المدير العام والممثل
+   *   القانوني للشركة" — because what a contract has to establish is that the signatory can bind the
+   *   company, which is a different assertion from naming the employer's responsible manager.
+   *
+   * Folding the two together would have been the obvious simplification and it is the wrong one: it
+   * would silently retitle the signatory on both social-insurance forms and on the job-offer letter,
+   * which read the keys above (`src/lib/offers/identity.ts`). Every value here is public registry
+   * data that is printed on every contract — none of it is a credential.
+   */
+  contractRecital: {
+    legalFormAr: "شركة ذات مسئولية محدودة",
+    /** السجل التجاري, and the office that holds it. */
+    commercialRegisterNumber: "82894",
+    commercialRegisterOfficeAr: "مكتب سجل تجاري استثمار القاهرة",
+    /**
+     * الرقم الموحد للسجل التجاري.
+     *
+     * The separators are U+2011 NON-BREAKING HYPHEN, written as escapes rather than pasted: the
+     * source document uses them so the number never breaks across a line, and a pasted one is
+     * indistinguishable from an ordinary hyphen in an editor while comparing unequal to it.
+     */
+    unifiedRegisterNumber: "10530\u201106000\u201182894",
+    /** البطاقة الضريبية. Distinct from `registration.taxRegistrationNumber`, which Form 1 prints. */
+    taxCardNumber: "477-108-318",
+    /** المركز العام, written out in full as the contract's own recital gives it. */
+    headOfficeAr:
+      "وحدة رقم 1، عمارة رقم 8، شارع محمد عبد المنعم (سعيد صابر)، منشية السد العالي، قسم أول السلام، القاهرة",
+    /** Where the company's registered branch sits, named in the same recital. */
+    branchRegistryAr: "مصر الجديدة",
+    /** Who signs as الطرف الأول on the contract, and in what company office. */
+    signatoryNameAr: "الدكتور/ أنور إبراهيم أحمد إبراهيم أحمد جاويش",
+    signatoryTitleAr: "المدير العام والممثل القانوني للشركة",
+  },
 } as const;
 
 /**
@@ -153,6 +195,39 @@ export const systemContractDefaults = {
   contractCopies: 4,
   /** Form 1 back-page instruction 1 — "من أصل وصورتين". An original and two copies. */
   form1Copies: 3,
+  /**
+   * Form 6 carries the identical instruction on its own back page — "من أصل وصورتين" — and the
+   * owner restated it when he sent the form: three copies, printed on both sides. The two numbers
+   * agree, which is exactly why this is written out rather than aliased to `form1Copies`: they
+   * happen to match today, and changing one form's requirement must not silently move the other's.
+   */
+  form6Copies: 3,
+  /**
+   * The two Ministry of Labour exit templates. The resignation is a letter the employee hands over
+   * — one for the labour office, one for his own file. The mutual-termination agreement's own
+   * البند السابع gives each party a copy, and the office keeps a third.
+   */
+  resignationCopies: 2,
+  mutualTerminationCopies: 3,
+  /**
+   * The custody receipt states its own count in its subtitle — "يُحرَّر من نسختين". One is handed
+   * to the employee, one is filed. Both forms carry the identical line, and both are written out
+   * here rather than shared for the same reason Form 6's count is: they agree today, and a change
+   * to one device's paperwork must not silently move the other's.
+   */
+  custodyLaptopCopies: 2,
+  custodyMobileCopies: 2,
+  /**
+   * The clearance pair. TWO EACH, and the reason is on the papers themselves: each says the other
+   * side keeps a copy of it. The employee's clearance is handed to him and the company keeps a
+   * duplicate for the personnel file; the company's clearance is filed and the employee is given a
+   * copy of what he signed — his own evidence of what he was told the settlement discharged.
+   *
+   * Written out separately for the same reason every other count here is: they agree today, and
+   * changing what one paper needs must not silently move the other's.
+   */
+  clearanceEmployeeCopies: 2,
+  clearanceCompanyCopies: 2,
 } as const;
 
 export const systemAuthEmailText = {

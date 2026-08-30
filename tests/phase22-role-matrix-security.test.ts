@@ -166,7 +166,7 @@ export async function runPhase22RoleMatrixSecurityTests() {
   assert.equal(await canAccess(hrOperations, "recruitment", "create"), false, "…and only hers");
   assert.equal(await canAccess(hrAdvisory, "candidates", "read"), true);
   assert.equal(await canAccess(hrOperations, "candidates", "read"), false, "HR Operations holds no candidate PII");
-  assert.equal(await canAccess(hrAdvisory, "employee_documents", "update"), true, "Contract & Form 1 is hers to fill");
+  assert.equal(await canAccess(hrAdvisory, "employee_documents", "update"), true, "HR Forms is hers to fill");
   assert.equal(await canAccess(hrOperations, "leave", "update"), true, "approving leave is HR Operations' function");
   assert.equal(await canAccess(hrAdvisory, "leave", "update"), false, "…and only hers");
   assert.equal(await canAccess(hrOperations, "contracts", "update"), true, "the records half");

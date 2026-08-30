@@ -22,7 +22,7 @@ export const dynamic = "force-dynamic";
 
 function hiringPackPageError(error: unknown) {
   if (isHiringPackSchemaMissing(error)) {
-    return "Hiring pack schema is not ready. Run the Supabase migration for employee_hiring_profile.";
+    return "HR forms schema is not ready. Run the Supabase migrations for employee_hiring_profile and employee_offboarding_profile.";
   }
   if (isHiringPackEmployeeMissing(error)) {
     return "That employee does not exist. Choose one from the list.";
@@ -57,7 +57,7 @@ export default async function EmployeePortalHiringPackPage({
     return (
       <EmployeePortalEmptyState
         message="The hiring pack is available to Talent Acquisition and Super Admin only."
-        title="Contract & Form 1 Unavailable"
+        title="HR Forms Unavailable"
       />
     );
   }
@@ -68,14 +68,14 @@ export default async function EmployeePortalHiringPackPage({
     <EmployeePortalPageShell
       badge="Talent Acquisition"
       description="Fill, print and record the employment contract and social insurance Form 1."
-      errorBoundaryTitle="Contract & Form 1 unavailable"
-      title="Contract & Form 1"
+      errorBoundaryTitle="HR Forms unavailable"
+      title="HR Forms"
     >
       <Suspense
         fallback={
           <AppRouteLoadingState
             description="Preparing the employment contract and social insurance Form 1."
-            title="Loading Contract & Form 1"
+            title="Loading HR Forms"
           />
         }
       >

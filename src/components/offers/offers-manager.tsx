@@ -12,7 +12,7 @@
 // as a candidate. An offer here can go to anybody — a referral, a direct approach, a rehire —
 // without first manufacturing a fake application to hang it on.
 //
-// The design identity is taken from Contract & Form 1 next door: the same rounded shell, the same
+// The design identity is taken from HR Forms next door: the same rounded shell, the same
 // hero, the same field labels and button sizes. The two produce the two documents a new hire
 // signs, in order.
 

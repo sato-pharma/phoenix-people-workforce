@@ -1,9 +1,22 @@
 import { systemContractDefaults, systemLegalEntity } from "@/config/system-settings";
 import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
-import { ACTIVE_EMPLOYMENT_STATUSES_IN_LIST } from "@/lib/auth/session-lifecycle";
+import {
+  ACTIVE_EMPLOYMENT_STATUSES_IN_LIST,
+  DEPARTED_EMPLOYMENT_STATUSES_IN_LIST,
+  hasDepartedEmployment,
+} from "@/lib/auth/session-lifecycle";
 import { canonicalHrIdForDisplay } from "@/lib/hr-id";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { currentTemplateVersion } from "@/lib/hiring-pack/template-registry";
+import {
+  ASSET_DOCUMENTS,
+  CLEARANCE_DOCUMENTS,
+  EXIT_DOCUMENTS,
+  HIRING_PACK_DOCUMENTS,
+} from "@/lib/hiring-pack/types";
 import type {
+  ExitFacts,
+  ExitRoute,
   HiringPackCandidate,
   HiringPackData,
   HiringPackDocument,
@@ -12,20 +25,99 @@ import type {
   HiringPackProfile,
   HiringPackProfileInput,
   MarkHiringPackSignedInput,
+  OffboardingProfile,
+  OffboardingProfileInput,
 } from "@/lib/hiring-pack/types";
 
-// The hiring pack — assembling everything the employment contract and Form 1 need to print, from
-// the two places it lives: what Phoenix already knows about the person (`employees`) and the
-// statutory extras HR supplies once (`employee_hiring_profile`).
+// The HR forms pack — assembling everything the five statutory documents need to print, from the
+// places it lives: what Phoenix already knows about the person (`employees`), the statutory extras
+// HR supplies at hiring (`employee_hiring_profile`), the extras it supplies at exit
+// (`employee_offboarding_profile`), and the departure itself (`employee_resignations`).
 //
-// The design rule this file exists to enforce: THE TEMPLATES NEVER TOUCH THE DATABASE. Both
-// documents are rendered from a single resolved `HiringPackData`, so there is exactly one place
-// where a value can be wrong, one place to test, and no way for the contract and Form 1 to disagree
-// about the same person's salary.
+// The design rule this file exists to enforce: THE TEMPLATES NEVER TOUCH THE DATABASE. Every
+// document is rendered from a single resolved `HiringPackData`, so there is exactly one place where
+// a value can be wrong, one place to test, and no way for the contract and Form 1 to disagree about
+// the same person's salary — or for Form 6 and the Ministry of Labour form to disagree about the
+// day he stopped working here.
 
-/** Names of the two checklist rows this feature completes when a document is signed. */
-const CONTRACT_DOCUMENT_NAME = "Signed employment contract";
-const FORM1_DOCUMENT_NAME = "Social insurance form";
+/**
+ * Where each document's state lives, and which checklist row it completes.
+ *
+ * A TABLE RATHER THAN A CONDITIONAL, DELIBERATELY. This used to be
+ * `document === "contract" ? "contract_signed_date" : "form1_signed_date"`, which was correct while
+ * there were exactly two documents and became silently wrong the moment there were five: every one
+ * of the three exit documents would have stamped Form 1's column and ticked Form 1's checklist row.
+ * Keying the union means adding a sixth document is a type error here rather than a wrong row in
+ * production.
+ */
+const DOCUMENT_BINDINGS: Record<
+  HiringPackDocument,
+  {
+    /**
+     * Where this document's state lives, or null when it has none.
+     *
+     * Null is the custody receipts, and it is a decision rather than a gap — see
+     * `SIGNABLE_DOCUMENTS` in `types.ts`. One person can hold three devices on three receipts
+     * signed on three different days, so a single column against the employee could record only
+     * one of them while appearing to cover all three.
+     */
+    table: "employee_hiring_profile" | "employee_offboarding_profile" | null;
+    signedColumn: string | null;
+    printedColumn: string | null;
+    /** The `hiring_document_definitions` row this signature completes. */
+    checklistName: string | null;
+  }
+> = {
+  contract: {
+    table: "employee_hiring_profile",
+    signedColumn: "contract_signed_date",
+    printedColumn: "contract_printed_at",
+    checklistName: "Signed employment contract",
+  },
+  form1: {
+    table: "employee_hiring_profile",
+    signedColumn: "form1_signed_date",
+    printedColumn: "form1_printed_at",
+    checklistName: "Social insurance form",
+  },
+  // The two custody receipts carry no stored state at all: they print, and the signed paper is
+  // filed. Written out one per form rather than shared, so that giving either one a real register
+  // later is an edit to that form's row and cannot silently move the other's.
+  custodyLaptop: { table: null, signedColumn: null, printedColumn: null, checklistName: null },
+  custodyMobile: { table: null, signedColumn: null, printedColumn: null, checklistName: null },
+  form6: {
+    table: "employee_offboarding_profile",
+    signedColumn: "form6_signed_date",
+    printedColumn: "form6_printed_at",
+    checklistName: "Signed social insurance Form 6",
+  },
+  resignation: {
+    table: "employee_offboarding_profile",
+    signedColumn: "resignation_signed_date",
+    printedColumn: "resignation_printed_at",
+    checklistName: "Signed resignation request",
+  },
+  mutualTermination: {
+    table: "employee_offboarding_profile",
+    signedColumn: "mutual_termination_signed_date",
+    printedColumn: "mutual_termination_printed_at",
+    checklistName: "Signed mutual termination agreement",
+  },
+  // The clearance pair. Two independent bindings, because unlike the two rows above these are
+  // complements rather than alternatives — both get signed, days apart. See `CLEARANCE_DOCUMENTS`.
+  clearanceEmployee: {
+    table: "employee_offboarding_profile",
+    signedColumn: "clearance_employee_signed_date",
+    printedColumn: "clearance_employee_printed_at",
+    checklistName: "Signed employee clearance",
+  },
+  clearanceCompany: {
+    table: "employee_offboarding_profile",
+    signedColumn: "clearance_company_signed_date",
+    printedColumn: "clearance_company_printed_at",
+    checklistName: "Signed company clearance",
+  },
+};
 
 type EmployeeDbRow = {
   birth_date: string | null;
@@ -35,6 +127,7 @@ type EmployeeDbRow = {
   hire_date: string | null;
   hr_id: string;
   job_title: string | null;
+  last_working_date: string | null;
   line_id: number | null;
   mobile_number: string | null;
   name_ar: string | null;
@@ -59,6 +152,7 @@ type ProfileDbRow = {
   contract_printed_at: string | null;
   contract_signed_date: string | null;
   contract_start_date: string | null;
+  contract_template_version: string | null;
   form1_printed_at: string | null;
   form1_signed_date: string | null;
   hr_id: string;
@@ -74,6 +168,39 @@ type ProfileDbRow = {
   updated_at: string | null;
 };
 
+type OffboardingDbRow = {
+  addressee_name_ar: string | null;
+  addressee_title_ar: string | null;
+  agreement_date: string | null;
+  clearance_company_printed_at: string | null;
+  clearance_company_signed_date: string | null;
+  clearance_employee_printed_at: string | null;
+  clearance_employee_signed_date: string | null;
+  employer_rep_name_ar: string | null;
+  employer_rep_title_ar: string | null;
+  end_reason_ar: string | null;
+  end_reason_code: string | null;
+  exit_route: string | null;
+  form6_printed_at: string | null;
+  form6_signed_date: string | null;
+  hr_id: string;
+  last_working_date: string | null;
+  mutual_termination_printed_at: string | null;
+  mutual_termination_signed_date: string | null;
+  notes: string | null;
+  resignation_printed_at: string | null;
+  resignation_signed_date: string | null;
+  updated_at: string | null;
+};
+
+type ResignationDbRow = {
+  effective_date: string | null;
+  exit_status: string | null;
+  job_title: string | null;
+  last_working_date: string | null;
+  resignation_date: string | null;
+};
+
 export class HiringPackEmployeeNotFoundError extends Error {
   constructor(hrId: string) {
     super(`No employee record for ${hrId}.`);
@@ -83,6 +210,24 @@ export class HiringPackEmployeeNotFoundError extends Error {
 
 export function isHiringPackEmployeeMissing(error: unknown) {
   return error instanceof HiringPackEmployeeNotFoundError;
+}
+
+/**
+ * A refusal the caller can fix, as opposed to a fault.
+ *
+ * Today it means one thing: an attempt to sign a second exit form when one is already signed. It is
+ * a 409 rather than a 500 because nothing is broken — the request contradicts a rule, and the
+ * message says which one and what is already on file.
+ */
+export class HiringPackConflictError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "HiringPackConflictError";
+  }
+}
+
+export function isHiringPackConflict(error: unknown) {
+  return error instanceof HiringPackConflictError;
 }
 
 export function isHiringPackSchemaMissing(error: unknown) {
@@ -165,6 +310,7 @@ function emptyProfile(hrId: string): HiringPackProfile {
     form1SignedDate: null,
     contractPrintedAt: null,
     form1PrintedAt: null,
+    contractTemplateVersion: null,
     updatedAt: null,
   };
 }
@@ -194,12 +340,118 @@ function mapProfile(row: ProfileDbRow): HiringPackProfile {
     form1SignedDate: row.form1_signed_date,
     contractPrintedAt: row.contract_printed_at,
     form1PrintedAt: row.form1_printed_at,
+    contractTemplateVersion: cleanText(row.contract_template_version),
     updatedAt: row.updated_at,
   };
 }
 
 /**
- * Everything the two documents ask for that is still unanswered.
+ * An exit nobody has started — every column null.
+ *
+ * EXPORTED FOR THE TESTS, deliberately. Four test files build an offboarding profile by hand, and
+ * before this they each held their own copy of the literal: adding a document meant editing five
+ * places, and the only thing that caught the miss was the type checker refusing four files at once.
+ * Sharing the app's own empty shape means a test fixture cannot drift from what the app builds,
+ * which is the whole reason a fixture exists.
+ */
+export function emptyOffboardingProfile(hrId: string): OffboardingProfile {
+  return {
+    hrId,
+    exitRoute: null,
+    lastWorkingDate: null,
+    endReasonAr: null,
+    endReasonCode: null,
+    addresseeNameAr: null,
+    addresseeTitleAr: null,
+    agreementDate: null,
+    employerRepNameAr: null,
+    employerRepTitleAr: null,
+    notes: null,
+    form6SignedDate: null,
+    resignationSignedDate: null,
+    mutualTerminationSignedDate: null,
+    clearanceEmployeeSignedDate: null,
+    clearanceCompanySignedDate: null,
+    form6PrintedAt: null,
+    resignationPrintedAt: null,
+    mutualTerminationPrintedAt: null,
+    clearanceEmployeePrintedAt: null,
+    clearanceCompanyPrintedAt: null,
+    updatedAt: null,
+  };
+}
+
+/** The two values `exit_route` may hold. Anything else is read as "nobody has decided yet". */
+function toExitRoute(value: string | null): ExitRoute | null {
+  return value === "resignation" || value === "mutualTermination" ? value : null;
+}
+
+function mapOffboardingProfile(row: OffboardingDbRow): OffboardingProfile {
+  return {
+    hrId: row.hr_id,
+    exitRoute: toExitRoute(cleanText(row.exit_route)),
+    lastWorkingDate: row.last_working_date,
+    endReasonAr: cleanText(row.end_reason_ar),
+    endReasonCode: cleanText(row.end_reason_code),
+    addresseeNameAr: cleanText(row.addressee_name_ar),
+    addresseeTitleAr: cleanText(row.addressee_title_ar),
+    agreementDate: row.agreement_date,
+    employerRepNameAr: cleanText(row.employer_rep_name_ar),
+    employerRepTitleAr: cleanText(row.employer_rep_title_ar),
+    notes: cleanText(row.notes),
+    form6SignedDate: row.form6_signed_date,
+    resignationSignedDate: row.resignation_signed_date,
+    mutualTerminationSignedDate: row.mutual_termination_signed_date,
+    clearanceEmployeeSignedDate: row.clearance_employee_signed_date,
+    clearanceCompanySignedDate: row.clearance_company_signed_date,
+    form6PrintedAt: row.form6_printed_at,
+    resignationPrintedAt: row.resignation_printed_at,
+    mutualTerminationPrintedAt: row.mutual_termination_printed_at,
+    clearanceEmployeePrintedAt: row.clearance_employee_printed_at,
+    clearanceCompanyPrintedAt: row.clearance_company_printed_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+/**
+ * Is anybody actually working on this person's exit?
+ *
+ * This gates the exit gaps below. Without it, every new hire's screen would list "last working day
+ * missing" as an outstanding item on the day he joined — which is not a gap, it is a career. A gap
+ * list that reports things nobody is waiting for is a gap list people stop reading, and this whole
+ * feature exists because forms were being filled in without anybody checking what was blank.
+ */
+function hasExitContext(
+  employee: HiringPackEmployeeFacts,
+  offboarding: OffboardingProfile,
+  exit: ExitFacts | null,
+) {
+  return Boolean(
+    exit ||
+      // The employee record is the widest of the three signals: 3 of the 57 people who have left
+      // carry no resignation row at all (production, 2026-08-30), and without this they would have
+      // read as still employed on the one screen that prints their Form 6.
+      hasDepartedEmployment(employee.employmentStatus) ||
+      employee.lastWorkingDate ||
+      offboarding.exitRoute ||
+      offboarding.lastWorkingDate ||
+      offboarding.endReasonAr ||
+      offboarding.agreementDate ||
+      offboarding.form6SignedDate ||
+      offboarding.resignationSignedDate ||
+      offboarding.mutualTerminationSignedDate ||
+      // A signed clearance is a departure whoever else has noticed. In practice the employee's
+      // clearance is the FIRST paper of an exit to be signed — it starts circulating the moment
+      // somebody hands in notice, well before a resignation row is created — so leaving it out
+      // would mean the one screen that prints the rest of the pack showed no exit context on
+      // exactly the people whose exit is furthest along.
+      offboarding.clearanceEmployeeSignedDate ||
+      offboarding.clearanceCompanySignedDate,
+  );
+}
+
+/**
+ * Everything the documents ask for that is still unanswered.
  *
  * `blocking` marks the values without which the document is not merely untidy but wrong to hand
  * over: an unnamed party, a contract with no salary, a Form 1 with no national ID. Everything else
@@ -209,52 +461,111 @@ function mapProfile(row: ProfileDbRow): HiringPackProfile {
 export function collectHiringPackGaps(
   employee: HiringPackEmployeeFacts,
   profile: HiringPackProfile,
+  offboarding: OffboardingProfile = emptyOffboardingProfile(employee.hrId),
+  exit: ExitFacts | null = null,
 ): HiringPackGap[] {
   const gaps: HiringPackGap[] = [];
   const add = (
     field: string,
     labelEn: string,
     labelAr: string,
-    document: HiringPackGap["document"],
+    documents: readonly HiringPackDocument[],
     blocking: boolean,
     source: HiringPackGap["source"],
-  ) => gaps.push({ field, labelEn, labelAr, document, blocking, source });
+  ) => gaps.push({ field, labelEn, labelAr, documents, blocking, source });
+
+  // The document sets a value can be missing from. Named rather than repeated, because the sets
+  // are the interesting part: an insurance number is a social-insurance concern and the Ministry of
+  // Labour never asks for one, while a national ID is asked for by all five.
+  const ALL = HIRING_PACK_DOCUMENTS;
+  const HIRING: readonly HiringPackDocument[] = ["contract", "form1"];
+  const LABOUR: readonly HiringPackDocument[] = ["resignation", "mutualTermination"];
+  const INSURANCE: readonly HiringPackDocument[] = ["form1", "form6"];
+  const CUSTODY: readonly HiringPackDocument[] = [...ASSET_DOCUMENTS];
+  const CLEARANCE: readonly HiringPackDocument[] = [...CLEARANCE_DOCUMENTS];
 
   // ── From the employee record ────────────────────────────────────────────────────────────────
-  if (!employee.nameAr) add("nameAr", "Arabic full name", "الاسم بالعربية", "both", true, "employee-record");
-  if (!employee.nationalId) add("nationalId", "National ID", "الرقم القومي", "both", true, "employee-record");
+  if (!employee.nameAr) add("nameAr", "Arabic full name", "الاسم بالعربية", ALL, true, "employee-record");
+  if (!employee.nationalId) add("nationalId", "National ID", "الرقم القومي", ALL, true, "employee-record");
   if (!employee.socialInsuranceNumber) {
-    add("socialInsuranceNumber", "Insurance number", "الرقم التأميني", "both", true, "employee-record");
+    add("socialInsuranceNumber", "Insurance number", "الرقم التأميني", ["contract", ...INSURANCE], true, "employee-record");
   }
-  if (!employee.birthDate) add("birthDate", "Date of birth", "تاريخ الميلاد", "contract", true, "employee-record");
+  if (!employee.birthDate) add("birthDate", "Date of birth", "تاريخ الميلاد", ["contract"], true, "employee-record");
   if (employee.grossSalary === null) {
-    add("grossSalary", "Gross monthly salary", "الأجر الشهري الإجمالي", "contract", true, "employee-record");
+    add("grossSalary", "Gross monthly salary", "الأجر الشهري الإجمالي", ["contract"], true, "employee-record");
   }
   if (employee.socialInsuranceWage === null) {
-    add("socialInsuranceWage", "Insurance wage", "الأجر التأميني", "both", true, "employee-record");
+    add("socialInsuranceWage", "Insurance wage", "الأجر التأميني", HIRING, true, "employee-record");
   }
-  if (!employee.hireDate) add("hireDate", "Hire date", "تاريخ الالتحاق", "both", true, "employee-record");
-  if (!employee.mobileNumber) add("mobileNumber", "Phone number", "رقم الهاتف", "both", false, "employee-record");
-  if (!employee.workEmail) add("workEmail", "Email", "البريد الإلكتروني", "both", false, "employee-record");
+  // The hire date reaches the mutual-termination agreement too: its تمهيد states when the contract
+  // being ended began, and that date falls back to the hire date exactly as the contract's does.
+  if (!employee.hireDate) {
+    add(
+      "hireDate",
+      "Hire date",
+      "تاريخ الالتحاق",
+      [...HIRING, "mutualTermination", "clearanceEmployee"],
+      true,
+      "employee-record",
+    );
+  }
+  // The employee's clearance names the department that has to sign the top row of its table, so a
+  // blank one leaves the paper asking a desk nobody identified. Non-blocking: the six rows below it
+  // are named by the form itself, and the office accepts it filled in by hand.
+  if (!employee.departmentAr) {
+    add(
+      "departmentAr",
+      "Department (Arabic)",
+      "الإدارة / القطاع",
+      ["clearanceEmployee"],
+      false,
+      "employee-record",
+    );
+  }
+  if (!employee.mobileNumber) add("mobileNumber", "Phone number", "رقم الهاتف", ALL, false, "employee-record");
+  if (!employee.workEmail) add("workEmail", "Email", "البريد الإلكتروني", [...HIRING, "form6"], false, "employee-record");
   if (!employee.residenceAddress) {
-    add("residenceAddress", "Permanent address", "العنوان الدائم", "contract", true, "employee-record");
+    add(
+      "residenceAddress",
+      "Permanent address",
+      "العنوان الدائم",
+      // The company's copy of the clearance prints محل الإقامة — it is the address a claim would be
+      // served to if the release it carries were ever disputed. The employee's copy does not.
+      ["contract", ...LABOUR, ...CUSTODY, "clearanceCompany"],
+      true,
+      "employee-record",
+    );
   }
 
   // ── From the hiring profile ─────────────────────────────────────────────────────────────────
-  if (!profile.nationality) add("nationality", "Nationality", "الجنسية", "both", true, "hiring-profile");
-  if (!profile.qualification) add("qualification", "Qualification", "المؤهل", "both", true, "hiring-profile");
-  if (!profile.birthPlace) add("birthPlace", "Place of birth", "محل الميلاد", "contract", true, "hiring-profile");
-  if (!profile.jobTitleAr) add("jobTitleAr", "Arabic job title", "المسمى الوظيفي بالعربية", "both", true, "hiring-profile");
-  if (!profile.occupationCode) add("occupationCode", "Occupation code", "كود المهنة", "form1", false, "hiring-profile");
+  if (!profile.nationality) add("nationality", "Nationality", "الجنسية", HIRING, true, "hiring-profile");
+  if (!profile.qualification) add("qualification", "Qualification", "المؤهل", HIRING, true, "hiring-profile");
+  if (!profile.birthPlace) add("birthPlace", "Place of birth", "محل الميلاد", ["contract"], true, "hiring-profile");
+  // The Arabic job title is what both labour templates print in "بوظيفة .........." — the English
+  // one in `employees.job_title` is a fallback so a form is not blank, never the right answer on an
+  // Arabic-language legal document.
+  if (!profile.jobTitleAr) {
+    add(
+      "jobTitleAr",
+      "Arabic job title",
+      "المسمى الوظيفي بالعربية",
+      [...HIRING, ...LABOUR, ...CUSTODY, ...CLEARANCE],
+      true,
+      "hiring-profile",
+    );
+  }
+  if (!profile.occupationCode) add("occupationCode", "Occupation code", "كود المهنة", ["form1"], false, "hiring-profile");
   // The form prints this employee's office, falling back to the company default — so it is only
   // missing when BOTH are empty. Reporting it while a default exists sends HR chasing a value the
   // printer is about to supply on its own.
   if (!profile.insuranceOffice && !systemLegalEntity.registration.defaultInsuranceOffice) {
-    add("insuranceOffice", "Insurance office", "مكتب التأمينات", "form1", false, "hiring-profile");
+    add("insuranceOffice", "Insurance office", "مكتب التأمينات", INSURANCE, false, "hiring-profile");
   }
-  if (!profile.addressBuilding) add("addressBuilding", "Building number", "عقار رقم", "form1", false, "hiring-profile");
-  if (!profile.addressStreet) add("addressStreet", "Street", "شارع / حارة", "form1", false, "hiring-profile");
-  if (!profile.addressGovernorate) add("addressGovernorate", "Governorate", "محافظة", "form1", false, "hiring-profile");
+  // The address block Form 1 captured at hiring is the one Form 6 reprints at exit — one address,
+  // asked for once.
+  if (!profile.addressBuilding) add("addressBuilding", "Building number", "عقار رقم", INSURANCE, false, "hiring-profile");
+  if (!profile.addressStreet) add("addressStreet", "Street", "شارع / حارة", INSURANCE, false, "hiring-profile");
+  if (!profile.addressGovernorate) add("addressGovernorate", "Governorate", "محافظة", INSURANCE, false, "hiring-profile");
 
   // ── From company settings ───────────────────────────────────────────────────────────────────
   // These are the company's own registration numbers. They are blank until the owner supplies them
@@ -268,13 +579,55 @@ export function collectHiringPackGaps(
   // shows. `testEveryCompanySettingsGapReachesThePage` now pins that both ways.
   const registration = systemLegalEntity.registration;
   if (!registration.insuranceEstablishmentNumber) {
-    add("insuranceEstablishmentNumber", "Establishment number", "رقم المنشأة", "form1", true, "company-settings");
+    add("insuranceEstablishmentNumber", "Establishment number", "رقم المنشأة", INSURANCE, true, "company-settings");
   }
+  // قطاع المنشأة is a Form 1 question only — Form 6 identifies the establishment by its number and
+  // tax registration and never asks which sector it trades in.
   if (!registration.insuranceSectorCode) {
-    add("insuranceSectorCode", "Sector code", "قطاع المنشأة", "form1", true, "company-settings");
+    add("insuranceSectorCode", "Sector code", "قطاع المنشأة", ["form1"], true, "company-settings");
   }
   if (!registration.taxRegistrationNumber) {
-    add("taxRegistrationNumber", "Tax registration number", "رقم التسجيل الضريبي", "form1", true, "company-settings");
+    add("taxRegistrationNumber", "Tax registration number", "رقم التسجيل الضريبي", INSURANCE, true, "company-settings");
+  }
+
+  // ── The exit documents ──────────────────────────────────────────────────────────────────────
+  // Reported only once somebody is actually working on this person's exit — see `hasExitContext`.
+  if (hasExitContext(employee, offboarding, exit)) {
+    // THE ONE VALUE THAT MUST NOT BE WRONG. تاريخ انتهاء الاشتراك is what the Authority calculates
+    // the final contribution from, and Form 6's own back page charges the employer 20% per month
+    // for filing it late — so a Form 6 that goes out with a blank or guessed date costs money.
+    if (!(offboarding.lastWorkingDate ?? exit?.lastWorkingDate ?? employee.lastWorkingDate)) {
+      add("lastWorkingDate", "Last working day", "تاريخ انتهاء الخدمة", EXIT_DOCUMENTS, true, "resignation-record");
+    }
+    // سبب انتهاء الاشتراك — Form 6 asks for it in words, and the resignation repeats it on its
+    // "ونظراً لـ" rule. Blocking on Form 6: an insurance office will not close a file without one.
+    if (!offboarding.endReasonAr) {
+      add(
+        "endReasonAr",
+        "Reason for leaving (Arabic)",
+        "سبب انتهاء الاشتراك",
+        ["form6", "resignation"],
+        true,
+        "offboarding-profile",
+      );
+    }
+    // The Authority's own numeric code. The office accepts the written reason on its own, so this
+    // is visible rather than blocking — the same treatment the occupation code gets on Form 1.
+    if (!offboarding.endReasonCode) {
+      add("endReasonCode", "Reason code", "كود سبب الانتهاء", ["form6"], false, "offboarding-profile");
+    }
+    // Which of the two Ministry of Labour templates applies. Blocking, because there is no safe
+    // default: printing the wrong one asserts a legal basis for the departure that did not happen.
+    // The two are alternatives — only one is ever signed — so this is a decision, not a preference.
+    if (!offboarding.exitRoute) {
+      add("exitRoute", "Exit route", "طريقة إنهاء العلاقة", LABOUR, true, "offboarding-profile");
+    }
+    // Dated the day it is signed, which is not the last working day. Left non-blocking because the
+    // renderer falls back to today in Cairo — a sensible default for a paper signed today, and the
+    // only value on either exit form that has one.
+    if (offboarding.exitRoute === "mutualTermination" && !offboarding.agreementDate) {
+      add("agreementDate", "Agreement date", "تاريخ الاتفاق", ["mutualTermination"], false, "offboarding-profile");
+    }
   }
 
   return gaps;
@@ -285,7 +638,7 @@ async function loadEmployeeFacts(hrId: string): Promise<HiringPackEmployeeFacts>
   const { data, error } = await supabase
     .from("employees")
     .select(
-      "hr_id, full_name, nickname, name_ar, national_id, social_insurance_number, social_insurance_wage, gross_salary, birth_date, hire_date, job_title, line_id, residence_address, residence_city, mobile_number, work_email, employment_status",
+      "hr_id, full_name, nickname, name_ar, national_id, social_insurance_number, social_insurance_wage, gross_salary, birth_date, hire_date, job_title, line_id, residence_address, residence_city, mobile_number, work_email, employment_status, last_working_date",
     )
     .eq("hr_id", hrId)
     .maybeSingle<EmployeeDbRow>();
@@ -323,42 +676,65 @@ async function loadEmployeeFacts(hrId: string): Promise<HiringPackEmployeeFacts>
     mobileNumber: cleanText(data.mobile_number),
     workEmail: cleanText(data.work_email),
     employmentStatus: cleanText(data.employment_status),
+    lastWorkingDate: data.last_working_date,
   };
 }
 
 /**
- * The roster the fill screen picks from — newest hires first.
+ * The roster the fill screen picks from — current staff, newest hires first, then the people who
+ * have left, most recent departure first.
  *
- * Ordered by hire date descending on purpose. This screen exists for the person who started this
- * week, so whoever needs a contract is at the top of the list rather than wherever an alphabetical
- * sort happens to put them.
+ * TWO POPULATIONS, BECAUSE THIS MODULE PRINTS AT BOTH ENDS OF A CAREER. The list was current staff
+ * only, which was right when the screen printed a contract and Form 1 and nothing else. It is wrong
+ * now: Form 6 is the notification that a subscription has ENDED, filed after the person has gone
+ * and after `employment_status` has already flipped to "resigned" — so the one screen that prints
+ * it could not find any of the 57 people it exists for (production, 2026-08-30). Form 6's own back
+ * page charges the employer 20% per month of delay, which makes "the employee is not in the list"
+ * an expensive way to fail.
  *
- * Scoped to current staff. It used to exclude only "resigned", which is not the same thing: that
- * left 2 terminated people, 15 historical payroll records and 2 system placeholders in a list whose
- * entire purpose is printing an employment contract — 131 rows where 112 people work here. Owner
- * decision 2026-08-24: this and the hiring-documents checklist both mean current staff.
+ * WHAT IS STILL EXCLUDED, and why this is not a return to the old bug. The owner's 2026-08-24
+ * decision was that neither hiring screen may invent its own status list, after two screens
+ * disagreed by 46 people: the roster then excluded only "resigned" and so carried 15 historical
+ * payroll records and 2 system placeholders — ledger rows, not people, in a list whose purpose is
+ * printing an employment contract. Those 17 are still excluded. What is added is the DEPARTED set,
+ * named once in `session-lifecycle.ts` beside the active one, because "has left" is not the same
+ * question as "may hold a session" and only the first has a last working day.
  *
- * Nulls are kept: a legacy row with no status is not evidence that someone left, and
- * ACTIVE_EMPLOYMENT_STATUSES_IN_LIST is the same set the shared predicate uses, so this query and
- * isTerminalEmploymentStatus can never drift apart.
+ * Nulls are kept: a legacy row with no status is not evidence that someone left.
  */
 export async function listHiringPackCandidates(): Promise<HiringPackCandidate[]> {
   const { data, error } = await getSupabaseAdmin()
     .from("employees")
-    .select("hr_id, full_name, nickname, name_ar, job_title, hire_date, employment_status")
-    .or(`employment_status.is.null,employment_status.in.${ACTIVE_EMPLOYMENT_STATUSES_IN_LIST}`)
+    .select(
+      "hr_id, full_name, nickname, name_ar, job_title, hire_date, employment_status, last_working_date",
+    )
+    .or(
+      `employment_status.is.null,employment_status.in.${ACTIVE_EMPLOYMENT_STATUSES_IN_LIST},employment_status.in.${DEPARTED_EMPLOYMENT_STATUSES_IN_LIST}`,
+    )
     .order("hire_date", { ascending: false, nullsFirst: false })
     .limit(2000);
 
   if (error) throw new Error(error.message);
 
-  return (data ?? []).map((row) => ({
+  const candidates = (data ?? []).map((row) => ({
     hrId: row.hr_id,
     fullName: resolveEmployeeDisplayName(row.full_name ?? "", row.nickname, row.hr_id),
     nameAr: cleanText(row.name_ar),
     jobTitle: cleanText(row.job_title),
     hireDate: row.hire_date,
+    departed: hasDepartedEmployment(row.employment_status),
+    lastWorkingDate: row.last_working_date,
   }));
+
+  // Current staff keep the hire-date order the query applied — this screen exists for the person
+  // who started this week. Leavers are re-sorted by DEPARTURE, because for them the relevant date
+  // is the one at the other end: somebody whose Form 6 is due left recently, whenever they joined.
+  const current = candidates.filter((candidate) => !candidate.departed);
+  const departed = candidates
+    .filter((candidate) => candidate.departed)
+    .sort((a, b) => (b.lastWorkingDate ?? "").localeCompare(a.lastWorkingDate ?? ""));
+
+  return [...current, ...departed];
 }
 
 async function loadProfile(hrId: string): Promise<HiringPackProfile> {
@@ -372,10 +748,67 @@ async function loadProfile(hrId: string): Promise<HiringPackProfile> {
   return data ? mapProfile(data) : emptyProfile(hrId);
 }
 
-/** Resolve the four policy terms: the per-hire override where one exists, the company default otherwise. */
+async function loadOffboardingProfile(hrId: string): Promise<OffboardingProfile> {
+  const { data, error } = await getSupabaseAdmin()
+    .from("employee_offboarding_profile")
+    .select("*")
+    .eq("hr_id", hrId)
+    .maybeSingle<OffboardingDbRow>();
+
+  if (error) throw new Error(error.message);
+  return data ? mapOffboardingProfile(data) : emptyOffboardingProfile(hrId);
+}
+
+/**
+ * The departure as the system already records it.
+ *
+ * `null` for anybody who has not resigned, which is almost everybody — and that is not an error
+ * state. The exit documents still print for somebody whose last day is Thursday and whose
+ * resignation row lands on Friday; what they must never do is invent a departure date.
+ *
+ * NEWEST ROW WINS. There is no uniqueness constraint on `employee_hr_id`, and a rehired employee
+ * who later leaves again has two. Ordering by the last working day descending means the exit forms
+ * describe this departure rather than one from three years ago.
+ *
+ * A plain `.eq` is correct here, unusually for an HR_ID column in this database. Measured on
+ * production 2026-08-30: all 54 `employee_resignations` rows hold an uppercase `employee_hr_id`,
+ * the exact join against `employees` returns all 54, and the case-insensitive join returns the same
+ * 54 — so lowering both sides would buy nothing. If that ever stops being true the symptom is a
+ * missing departure rather than a wrong one, which the gap list reports.
+ */
+async function loadExitFacts(hrId: string): Promise<ExitFacts | null> {
+  const { data, error } = await getSupabaseAdmin()
+    .from("employee_resignations")
+    .select("last_working_date, resignation_date, effective_date, exit_status, job_title")
+    .eq("employee_hr_id", hrId)
+    .order("last_working_date", { ascending: false, nullsFirst: false })
+    .limit(1);
+
+  if (error) throw new Error(error.message);
+  const row = (data ?? [])[0] as ResignationDbRow | undefined;
+  if (!row) return null;
+
+  return {
+    lastWorkingDate: row.last_working_date,
+    resignationDate: row.resignation_date,
+    effectiveDate: row.effective_date,
+    status: cleanText(row.exit_status),
+    jobTitle: cleanText(row.job_title),
+  };
+}
+
+/**
+ * Resolve every term the documents print: the per-person override where one exists, the company
+ * default or the system's own record otherwise.
+ *
+ * The offboarding arguments are optional so the contract half of this function can still be called
+ * — and tested — without inventing an exit for somebody who has not left.
+ */
 export function resolveContractTerms(
   employee: HiringPackEmployeeFacts,
   profile: HiringPackProfile,
+  offboarding: OffboardingProfile = emptyOffboardingProfile(employee.hrId),
+  exit: ExitFacts | null = null,
 ): HiringPackData["terms"] {
   const durationMonths = profile.contractDurationMonths ?? systemContractDefaults.durationMonths;
   // A contract that does not say when it starts is not a contract. Falling back to the hire date is
@@ -393,6 +826,24 @@ export function resolveContractTerms(
     // The end date is derived, not stored, unless somebody has deliberately overridden it — so a
     // corrected start date cannot leave a stale end date behind it.
     contractEndDate: profile.contractEndDate ?? addMonthsToIsoDate(contractStartDate, durationMonths),
+    /**
+     * THE DAY SERVICE ENDED, RESOLVED EXACTLY ONCE.
+     *
+     * Form 6 and whichever Ministry of Labour form applies both state this date, to two different
+     * authorities, and the two of them disagreeing is the kind of defect nobody notices until an
+     * inspector does. Resolving it here means there is one answer and both forms print it.
+     *
+     * The confirmed override outranks the resignation record, because that record is not the
+     * observation it looks like: the exit form that writes it copies a single date into
+     * `submitted_date`, `resignation_date`, `last_working_date` and `effective_date` in nearly every
+     * row, so all four agreeing is one value repeated four times, not four confirmations of it.
+     */
+    lastWorkingDate:
+      offboarding.lastWorkingDate ?? exit?.lastWorkingDate ?? employee.lastWorkingDate ?? null,
+    // Who signs for the company on the mutual-termination agreement. Defaults to the manager who
+    // signs the employment contract as الطرف الأول — the same authority, at the other end.
+    employerRepNameAr: offboarding.employerRepNameAr ?? systemLegalEntity.responsibleManagerAr,
+    employerRepTitleAr: offboarding.employerRepTitleAr ?? systemLegalEntity.responsibleManagerTitleAr,
   };
 }
 
@@ -411,13 +862,20 @@ function requireHrId(value: string | null | undefined): string {
 
 export async function getHiringPack(hrIdInput: string): Promise<HiringPackData> {
   const hrId = requireHrId(hrIdInput);
-  const [employee, profile] = await Promise.all([loadEmployeeFacts(hrId), loadProfile(hrId)]);
+  const [employee, profile, offboarding, exit] = await Promise.all([
+    loadEmployeeFacts(hrId),
+    loadProfile(hrId),
+    loadOffboardingProfile(hrId),
+    loadExitFacts(hrId),
+  ]);
 
   return {
     employee,
     profile,
-    gaps: collectHiringPackGaps(employee, profile),
-    terms: resolveContractTerms(employee, profile),
+    offboarding,
+    exit,
+    gaps: collectHiringPackGaps(employee, profile, offboarding, exit),
+    terms: resolveContractTerms(employee, profile, offboarding, exit),
   };
 }
 
@@ -466,14 +924,66 @@ export async function saveHiringPackProfile(
   return getHiringPack(hrId);
 }
 
+/**
+ * Save the exit-side fields.
+ *
+ * Separate from `saveHiringPackProfile` because they write different tables for different reasons —
+ * see the migration's own note. An exit form must never be able to rewrite a value the signed
+ * contract was printed from.
+ */
+export async function saveOffboardingProfile(
+  hrIdInput: string,
+  input: OffboardingProfileInput,
+  actorHrId?: string | null,
+): Promise<HiringPackData> {
+  const hrId = requireHrId(hrIdInput);
+  // Same reason as the hiring profile: the satellite table has no foreign key, so nothing at the
+  // database level would stop a typo creating an orphan row for an employee who does not exist.
+  await loadEmployeeFacts(hrId);
+
+  const exitRoute = toExitRoute(cleanText(input.exitRoute ?? null));
+
+  const { error } = await getSupabaseAdmin()
+    .from("employee_offboarding_profile")
+    .upsert(
+      {
+        hr_id: hrId,
+        exit_route: exitRoute,
+        last_working_date: cleanText(input.lastWorkingDate),
+        agreement_date: cleanText(input.agreementDate),
+        end_reason_ar: cleanText(input.endReasonAr),
+        // The form prints one box for the code, so anything that is not a digit cannot reach paper.
+        // Stripping here rather than at render time means what is stored is what will print.
+        end_reason_code: cleanText((input.endReasonCode ?? "").replace(/[^0-9]/gu, "")),
+        addressee_name_ar: cleanText(input.addresseeNameAr),
+        addressee_title_ar: cleanText(input.addresseeTitleAr),
+        employer_rep_name_ar: cleanText(input.employerRepNameAr),
+        employer_rep_title_ar: cleanText(input.employerRepTitleAr),
+        notes: cleanText(input.notes),
+        updated_by_hr_id: cleanText(actorHrId),
+      },
+      { onConflict: "hr_id" },
+    );
+
+  if (error) throw new Error(error.message);
+  return getHiringPack(hrId);
+}
+
 /** Stamp the print time so a reprint is visible rather than silent. Never blocks the print itself. */
 export async function recordHiringPackPrinted(hrIdInput: string, document: HiringPackDocument) {
   const hrId = requireHrId(hrIdInput);
-  const column = document === "contract" ? "contract_printed_at" : "form1_printed_at";
+  const binding = DOCUMENT_BINDINGS[document];
+
+  // A document with nowhere to record itself records nothing, and says so rather than reporting a
+  // write it never attempted. `recorded: false` here is not a failure — the caller ignores it, and
+  // treating it as one would put a spurious error in front of somebody printing a custody receipt.
+  if (!binding.table || !binding.printedColumn) {
+    return { recorded: false, message: null };
+  }
 
   const { error } = await getSupabaseAdmin()
-    .from("employee_hiring_profile")
-    .upsert({ hr_id: hrId, [column]: new Date().toISOString() }, { onConflict: "hr_id" });
+    .from(binding.table)
+    .upsert({ hr_id: hrId, [binding.printedColumn]: new Date().toISOString() }, { onConflict: "hr_id" });
 
   // A failure here must not stop the document reaching the printer: the audit value of knowing
   // when a contract was printed is real, but it is far below the cost of an HR user staring at an
@@ -498,22 +1008,67 @@ export async function markHiringPackSigned(input: MarkHiringPackSignedInput): Pr
 
   await loadEmployeeFacts(hrId);
   const supabase = getSupabaseAdmin();
-  const column = input.document === "contract" ? "contract_signed_date" : "form1_signed_date";
+  const binding = DOCUMENT_BINDINGS[input.document];
+
+  // Refused rather than silently dropped. A screen that accepts a signature date and stores it
+  // nowhere is worse than one that refuses: HR would believe the custody receipt was on file.
+  if (!binding.table || !binding.signedColumn) {
+    throw new Error(
+      `${input.document} does not record a signature against the employee. ` +
+        "A custody receipt is signed once per device, so one date on the person could not say which.",
+    );
+  }
+
+  // THE OWNER'S RULE, CHECKED BEFORE THE DATABASE CHECKS IT. One exit form is signed, never both.
+  // The table's own CHECK constraint refuses this too — that is the guarantee — but a constraint
+  // violation surfaces as a Postgres error string, and the person reading it needs to be told which
+  // form is already signed, not `violates check constraint`.
+  if (input.document === "resignation" || input.document === "mutualTermination") {
+    const existing = await loadOffboardingProfile(hrId);
+    const other =
+      input.document === "resignation"
+        ? { date: existing.mutualTerminationSignedDate, name: "mutual termination agreement" }
+        : { date: existing.resignationSignedDate, name: "resignation request" };
+    if (other.date) {
+      throw new HiringPackConflictError(
+        `A signed ${other.name} is already recorded for ${hrId} (${other.date}). ` +
+          "Only one exit form is ever signed — clear that date first if it was recorded in error.",
+      );
+    }
+  }
+
+  // WHICH TEXT WAS SIGNED, stamped once and never rewritten.
+  //
+  // Only on the first recording of a contract signature. A later correction to the DATE must not
+  // move the version: somebody fixing a typo in March would otherwise silently re-file a contract
+  // signed in August as though it were against whatever text is current in March, and a reprint
+  // would then produce a document that person never saw. Stamping it here rather than at print
+  // time is the same reasoning — printing is not signing, and a draft can be printed many times.
+  const versionStamp =
+    input.document === "contract" && !(await loadProfile(hrId)).contractTemplateVersion
+      ? { contract_template_version: currentTemplateVersion("contract").id }
+      : {};
 
   const { error } = await supabase
-    .from("employee_hiring_profile")
+    .from(binding.table)
     .upsert(
-      { hr_id: hrId, [column]: signedDate, updated_by_hr_id: cleanText(input.actorHrId) },
+      {
+        hr_id: hrId,
+        [binding.signedColumn]: signedDate,
+        updated_by_hr_id: cleanText(input.actorHrId),
+        ...versionStamp,
+      },
       { onConflict: "hr_id" },
     );
   if (error) throw new Error(error.message);
 
-  const documentName = input.document === "contract" ? CONTRACT_DOCUMENT_NAME : FORM1_DOCUMENT_NAME;
-  const { data: definition } = await supabase
-    .from("hiring_document_definitions")
-    .select("id, name")
-    .ilike("name", documentName)
-    .maybeSingle<{ id: string; name: string }>();
+  const { data: definition } = binding.checklistName
+    ? await supabase
+        .from("hiring_document_definitions")
+        .select("id, name")
+        .ilike("name", binding.checklistName)
+        .maybeSingle<{ id: string; name: string }>()
+    : { data: null };
 
   if (definition?.id) {
     await supabase.from("hiring_document_statuses").upsert(

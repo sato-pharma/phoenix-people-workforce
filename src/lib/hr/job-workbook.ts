@@ -147,7 +147,7 @@ const S = {
   employee360: { href: "/hr/employee-360", label: "Employee 360" },
   employees: { href: "/hr/employees", label: "Employee Directory" },
   hiringDocuments: { href: "/hr/hiring-documents", label: "Hiring Documents" },
-  hiringPack: { href: "/hr/hiring-pack", label: "Contract & Form 1" },
+  hiringPack: { href: "/hr/hiring-pack", label: "HR Forms" },
   intakeHealth: { href: "/hr/recruitment/intake-health", label: "Inbound Intake Health" },
   leave: { href: "/hr/leave-management", label: "Leave Management" },
   offers: { href: "/hr/offers", label: "Job Offers" },
@@ -776,7 +776,7 @@ const OPS_SECTIONS: readonly WorkbookSection[] = [
         screens: [S.contracts, S.hiringPack],
         steps: [
           "Open the renewal in Contract Renewal and prepare the contract from the person's approved terms.",
-          "Use Contract & Form 1 for the document itself, so it fills from the record instead of from an old copy.",
+          "Use HR Forms for the document itself, so it fills from the record instead of from an old copy.",
         ],
         evidence:
           "A renewal moves through HR review as a request with stages and dates. So 'it is with HR' is a place on a screen, not something somebody tells you.",

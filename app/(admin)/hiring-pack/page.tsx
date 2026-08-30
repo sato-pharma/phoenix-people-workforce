@@ -22,7 +22,7 @@ export const dynamic = "force-dynamic";
 
 function hiringPackPageError(error: unknown) {
   if (isHiringPackSchemaMissing(error)) {
-    return "Hiring pack schema is not ready. Run the Supabase migration for employee_hiring_profile.";
+    return "HR forms schema is not ready. Run the Supabase migrations for employee_hiring_profile and employee_offboarding_profile.";
   }
   if (isHiringPackEmployeeMissing(error)) {
     return "That employee does not exist. Choose one from the list.";
@@ -52,8 +52,8 @@ export default async function HiringPackPage({
     <Suspense
       fallback={
         <AppRouteLoadingState
-          description="Preparing the employment contract and social insurance Form 1."
-          title="Loading Contract & Form 1"
+          description="Preparing the contract, Form 1, Form 6 and the two exit forms."
+          title="Loading HR Forms"
         />
       }
     >

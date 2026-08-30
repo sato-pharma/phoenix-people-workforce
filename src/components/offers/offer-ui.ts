@@ -1,6 +1,6 @@
 // Shared field styling for the offers workspace.
 //
-// Lifted verbatim from the Contract & Form 1 screen so the two hiring-paperwork screens are
+// Lifted verbatim from the HR Forms screen so the two hiring-paperwork screens are
 // visibly one family. Kept in a module rather than copied per component so they cannot drift.
 
 /**
