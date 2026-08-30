@@ -156,6 +156,44 @@ const stickyTripHeaderClassName = `${adminTableHeaderClassName} sticky left-[260
 const stickyEmployeeCellClassName = "sticky left-0 z-20 w-[260px] min-w-[260px] px-4 py-3 shadow-[10px_0_18px_rgba(15,23,42,0.05)]";
 const stickyTripCellClassName = "sticky left-[260px] z-20 w-[220px] min-w-[220px] px-4 py-3 shadow-[10px_0_18px_rgba(15,23,42,0.04)]";
 
+/**
+ * Notes render per LINE, not as one block.
+ *
+ * Block-level `dir="auto"` is this repo's convention for single-language free text, and it is
+ * WRONG here for a structural reason rather than an incidental one: `appendCarEvidenceNote` and
+ * `appendAllowanceGuardNote` (`src/lib/outstation/service.ts`) both return
+ * `[notes, line].filter(Boolean).join("\n")`, so a stored note is the rep's OWN free text —
+ * Arabic on a real production row — followed by machine-written ENGLISH audit lines
+ * ("Arrival photo evidence: source=… gps=… request_id=…").
+ *
+ * `dir="auto"` reads only the FIRST strong character of the element, so one Arabic opening line
+ * would resolve the whole block RTL and render every English evidence line after it backwards.
+ * A line is the unit these notes are actually composed in, so it is the unit direction belongs to.
+ * Same fix and same reason as `MessageBody` in
+ * `src/components/recruitment/whatsapp-replies-view.tsx`.
+ */
+function NotesBody({ value }: { value: string | null | undefined }) {
+  if (!value) {
+    return <p className="mt-1 text-sm font-semibold text-phx-ink">No notes</p>;
+  }
+  return (
+    <div className="mt-1 text-sm font-semibold text-phx-ink">
+      {value.split("\n").map((line, index) => (
+        <span
+          className="block whitespace-pre-wrap break-words"
+          dir="auto"
+          // Position IS identity here: a stored note is never reordered, and two identical lines
+          // within one note are genuinely interchangeable.
+          key={index}
+        >
+          {/* An empty line still has to occupy one, or the gap the writer left disappears. */}
+          {line === "" ? " " : line}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 function OutstationAdminShell({ children }: { children: ReactNode }) {
   return (
     <div className="relative isolate min-h-[calc(100vh-8rem)] overflow-hidden rounded-lg border border-phx-line bg-[radial-gradient(circle_at_top_left,rgba(249,115,22,0.16),transparent_32%),linear-gradient(135deg,#FFF9F3_0%,#FFFFFF_44%,#F7FAFC_100%)] p-4 shadow-[0_24px_70px_rgba(15,23,42,0.1)] sm:p-6">
@@ -585,7 +623,7 @@ function RequestDetailsModal({
                 <MapPinned className="mt-1 h-5 w-5 text-phx-accent-hover" />
                 <div>
                   <p className="text-xs font-black uppercase tracking-[0.16em] text-phx-ink-soft">Notes</p>
-                  <p className="mt-1 whitespace-pre-wrap text-sm font-semibold text-phx-ink">{request.notes ?? "No notes"}</p>
+                  <NotesBody value={request.notes} />
                 </div>
               </div>
             </div>

@@ -1380,7 +1380,7 @@ export function MobileOutstationWizard({
                 title={residenceSummary}
               >
                 <span className="h-1.5 w-1.5 shrink-0 rounded-sm bg-orange-400" />
-                <span className="truncate">{fromShortLabel}</span>
+                <span className="truncate" dir="auto">{fromShortLabel}</span>
               </div>
             </PremiumTooltip>
           </Field>
@@ -1404,7 +1404,7 @@ export function MobileOutstationWizard({
                 title={destinationLocation.fullAddress}
                 type="button"
               >
-                <span className="truncate">
+                <span className="truncate" dir="auto">
                   {isCapturing ? "Capturing destination..." : destinationLocation.shortLabel}
                 </span>
                 {isCapturing ? (
@@ -2008,7 +2008,7 @@ function LocationTooltipContent({
       <p className="text-phx-2xs font-bold uppercase tracking-[0.14em] text-slate-500">
         {label}
       </p>
-      <p className="break-words text-sm font-semibold leading-5 text-slate-900">
+      <p className="break-words text-sm font-semibold leading-5 text-slate-900" dir="auto">
         {value}
       </p>
     </div>
@@ -2021,7 +2021,7 @@ function LocationReadout({ value }: { value: string }) {
       className="flex min-h-11 items-center rounded-md border border-slate-200 bg-slate-50 px-3 text-sm font-semibold text-slate-800"
       title={value}
     >
-      <span className="truncate">{value}</span>
+      <span className="truncate" dir="auto">{value}</span>
     </div>
   );
 }
