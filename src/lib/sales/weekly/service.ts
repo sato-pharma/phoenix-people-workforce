@@ -21,7 +21,11 @@ import { decumulateRows, suppressGapSpannedValue, weekHasDecumulationGap } from 
 import { resolveWeeklyContractWithSource } from "@/lib/sales/weekly/weekly-column-profile-store";
 import { loadProductAliasIndex } from "@/lib/sales/weekly/product-aliases";
 import { weeklyTemplateDistributorFallbackName } from "@/lib/sales/weekly/templates";
-import { applyWeeklyTrackedLineScope, WEEKLY_TRACKED_SCOPE_NOTE } from "@/lib/sales/weekly/tracked-lines";
+import {
+  applyWeeklyTrackedLineScope,
+  weeklyTrackedLineOptions,
+  WEEKLY_TRACKED_SCOPE_NOTE,
+} from "@/lib/sales/weekly/tracked-lines";
 import type {
   WeeklyBatch,
   WeeklyBranchComparisonRow,
@@ -1124,10 +1128,12 @@ export async function loadWeeklyDashboard(filters?: {
   // excludes unmapped products — the exported workbook must never contain them.
   const dropUnmapped = filters?.excludeUnmapped === true && mappedCodes.size > 0;
   // GOLDEN RULE — see tracked-lines.ts. Weekly Sales is CNS / Anti Infective / Pedia; Head Office is
-  // not tracked weekly and is 78% of the table, so it is out of the default scope. The escape hatch
-  // is naming a line in the Line filter, which makes this a DEFAULT rather than a deletion — and
-  // note availableLines below is deliberately built from visibleRows, NOT from here, so Head Office
-  // stays selectable. Scoping the dropdown too would make the escape hatch unreachable.
+  // used in neither weekly nor monthly sales, so it is out of scope here AND out of the Line filter
+  // (2026-08-30, the owner: "remove head office from the line filter"). availableLines below is
+  // therefore run through weeklyTrackedLineOptions. An explicit ?line= on the API still reaches
+  // untracked rows via includeUntracked, so the import and admin checks keep a way in; what changed
+  // is that no screen can select it, which is the whole point — before this, one click on a dropdown
+  // entry turned a 4M report into a 41M one with nothing on the page saying which had happened.
   const trackedRows = applyWeeklyTrackedLineScope(visibleRows, { includeUntracked: lineNamedExplicitly });
   const scopedRows = trackedRows.filter((row) => {
     if (dropUnmapped && !mappedCodes.has(normalizeCode(row.productCode))) return false;
@@ -1163,8 +1169,10 @@ export async function loadWeeklyDashboard(filters?: {
   };
   const availableRegions = dedupeOptions(optionRows, (row) => row.regionCode, (row) => row.regionName);
   const availableProducts = dedupeOptions(optionRows, (row) => row.productCode, (row) => row.productName);
-  const availableLines = [...new Set(optionRows.map((row) => row.officialLine).map(normalizeText).filter(Boolean))].sort(
-    (left, right) => left.localeCompare(right),
+  const availableLines = weeklyTrackedLineOptions(
+    [...new Set(optionRows.map((row) => row.officialLine).map(normalizeText).filter(Boolean))].sort((left, right) =>
+      left.localeCompare(right),
+    ),
   );
   // Month + week-of-month option universes — independent of the date-week selection (computed from all
   // visible rows for the chosen distributor) so these dropdowns never collapse on selection.
