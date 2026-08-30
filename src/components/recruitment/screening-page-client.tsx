@@ -32,8 +32,12 @@ import type { HiringManagerOption } from "@/lib/recruitment/hiring-manager-notif
 import {
   SCREENING_UNKNOWN,
   screeningHref,
+  screeningReceivedFilterLabels,
+  screeningReceivedFilters,
   screeningShellPoolHref,
   type ScreeningHrefOptions,
+  type ScreeningNotifiedFilter,
+  type ScreeningReceivedFilter,
   type ScreeningRegionFilter,
   type ScreeningRoleFilter,
   type ScreeningSeenFilter,
@@ -49,18 +53,29 @@ const seenFilterLabels: Record<ScreeningSeenFilter, string> = {
   unseen: "Only ones I have not read",
 };
 
+/** The other three-way, in the words a screener would use. */
+const notifiedFilterLabels: Record<ScreeningNotifiedFilter, string> = {
+  any: "Sent and not sent",
+  sent: "Already sent to a manager",
+  unsent: "Not sent to a manager yet",
+};
+
 export function ScreeningPageClient({
   area,
   areaOptions,
   candidates,
   hiringManagers,
   initialViews,
+  notified,
   openVacancies,
   poolHref,
   positionSuggestions,
+  received,
   region,
   role,
   seen,
+  source,
+  sourceOptions,
   status,
   totalCount,
 }: {
@@ -72,6 +87,8 @@ export function ScreeningPageClient({
   /** The managers a CV can be pushed to without leaving the queue. Loaded server-side by the page. */
   hiringManagers: HiringManagerOption[];
   initialViews: CandidateViewMap;
+  /** Whether this link narrowed to CVs already pushed to a manager, or never pushed to one. */
+  notified: ScreeningNotifiedFilter;
   /** The open seats a CV can be sent FOR. Same server load, same gate as the managers. */
   openVacancies: VacancyOption[];
   /** Titles and areas already used on a send, offered beside the free-typed fields. */
@@ -83,12 +100,18 @@ export function ScreeningPageClient({
    * straight back out through the (admin) group's redirect.
    */
   poolHref: string;
+  /** How long ago this link narrowed the CV to have arrived — null means any time. */
+  received: ScreeningReceivedFilter | null;
   /** The region this link narrowed to: a company region, `foreign`, or `unknown`. */
   region: ScreeningRegionFilter | null;
   /** The role family this link narrowed to, or `unknown` for candidates with no title on file. */
   role: ScreeningRoleFilter | null;
   /** Whether this link narrowed to what the viewer has, or has not, already opened. */
   seen: ScreeningSeenFilter;
+  /** The source channel this link narrowed to, verbatim — e.g. `WhatsApp`. */
+  source: string | null;
+  /** The source labels this pool actually has — the only ones worth offering. */
+  sourceOptions: string[];
   /** The status this link narrowed to, e.g. `new` — null means every status. */
   status: CandidateStatus | null;
   /** The pool size before this link's narrowing, so "42 of 434" can be said instead of just "42". */
@@ -121,14 +144,17 @@ export function ScreeningPageClient({
       router.push(
         screeningHref(shellPoolHref, {
           area: next.area !== undefined ? next.area : area,
+          notified: next.notified !== undefined ? next.notified : notified,
+          received: next.received !== undefined ? next.received : received,
           region: next.region !== undefined ? next.region : region,
           role: next.role !== undefined ? next.role : role,
           seen: next.seen !== undefined ? next.seen : seen,
+          source: next.source !== undefined ? next.source : source,
           status: next.status !== undefined ? next.status : status,
         }),
       );
     },
-    [area, region, role, router, seen, shellPoolHref, status],
+    [area, notified, received, region, role, router, seen, shellPoolHref, source, status],
   );
 
   return (
@@ -136,12 +162,27 @@ export function ScreeningPageClient({
       <ScreeningFilterBar
         area={area}
         areaOptions={areaOptions}
+        notified={notified}
         onChange={goTo}
-        onClear={() => goTo({ area: null, region: null, role: null, seen: "any", status: null })}
+        onClear={() =>
+          goTo({
+            area: null,
+            notified: "any",
+            received: null,
+            region: null,
+            role: null,
+            seen: "any",
+            source: null,
+            status: null,
+          })
+        }
         queueCount={candidates.length}
+        received={received}
         region={region}
         role={role}
         seen={seen}
+        source={source}
+        sourceOptions={sourceOptions}
         status={status}
         totalCount={totalCount}
       />
@@ -156,7 +197,7 @@ export function ScreeningPageClient({
         // index and caches still pointed at the old one. Every filter has to be in the key: one
         // left out is one that silently reuses the previous queue's position.
         initialViews={initialViews}
-        key={`${status ?? "all"}:${seen}:${role ?? "all"}:${region ?? "all"}:${area ?? "all"}`}
+        key={`${status ?? "all"}:${seen}:${notified}:${role ?? "all"}:${region ?? "all"}:${area ?? "all"}:${received ?? "all"}:${source ?? "all"}`}
         onClose={handleClose}
         openVacancies={openVacancies}
         positionSuggestions={positionSuggestions}
@@ -174,7 +215,7 @@ const filterSelectClass =
   "border border-slate-200 px-2 py-1.5 text-sm text-slate-800 focus:border-orange-400 focus:outline-none";
 
 /**
- * "42 of 434 CVs" and the five switches that produced the 42.
+ * "42 of 434 CVs" and the switches that produced the 42.
  *
  * Deliberately its own bar above the session rather than more items in CandidateScreeningSession's
  * header: that header already carries the position, the progress bar, the name, the band chip,
@@ -185,27 +226,43 @@ const filterSelectClass =
 function ScreeningFilterBar({
   area,
   areaOptions,
+  notified,
   onChange,
   onClear,
   queueCount,
+  received,
   region,
   role,
   seen,
+  source,
+  sourceOptions,
   status,
   totalCount,
 }: {
   area: string | null;
   areaOptions: string[];
+  notified: ScreeningNotifiedFilter;
   onChange: (next: ScreeningHrefOptions) => void;
   onClear: () => void;
   queueCount: number;
+  received: ScreeningReceivedFilter | null;
   region: ScreeningRegionFilter | null;
   role: ScreeningRoleFilter | null;
   seen: ScreeningSeenFilter;
+  source: string | null;
+  sourceOptions: string[];
   status: CandidateStatus | null;
   totalCount: number;
 }) {
-  const narrowed = status !== null || seen !== "any" || role !== null || region !== null || area !== null;
+  const narrowed =
+    status !== null ||
+    seen !== "any" ||
+    notified !== "any" ||
+    received !== null ||
+    role !== null ||
+    region !== null ||
+    area !== null ||
+    source !== null;
   return (
     <div className="flex flex-wrap items-end gap-3 rounded-t-lg border border-b-0 border-phx-line bg-white px-3 py-2">
       <span className="pb-1.5 text-xs font-semibold whitespace-nowrap text-slate-600">
@@ -244,6 +301,37 @@ function ScreeningFilterBar({
           {(Object.keys(seenFilterLabels) as ScreeningSeenFilter[]).map((value) => (
             <option key={value} value={value}>
               {seenFilterLabels[value]}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className={filterLabelClass}>
+        Sent to manager
+        <select
+          className={filterSelectClass}
+          onChange={(event) => onChange({ notified: event.target.value as ScreeningNotifiedFilter })}
+          value={notified}
+        >
+          {(Object.keys(notifiedFilterLabels) as ScreeningNotifiedFilter[]).map((value) => (
+            <option key={value} value={value}>
+              {notifiedFilterLabels[value]}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className={filterLabelClass}>
+        Received
+        <select
+          className={filterSelectClass}
+          onChange={(event) =>
+            onChange({ received: (event.target.value || null) as ScreeningReceivedFilter | null })
+          }
+          value={received ?? ""}
+        >
+          <option value="">Any time</option>
+          {screeningReceivedFilters.map((value) => (
+            <option key={value} value={value}>
+              {screeningReceivedFilterLabels[value]}
             </option>
           ))}
         </select>
@@ -297,6 +385,23 @@ function ScreeningFilterBar({
           <option value={SCREENING_UNKNOWN}>No area on file</option>
         </select>
       </label>
+      {sourceOptions.length > 1 ? (
+        <label className={filterLabelClass}>
+          Source
+          <select
+            className={filterSelectClass}
+            onChange={(event) => onChange({ source: event.target.value || null })}
+            value={source ?? ""}
+          >
+            <option value="">Any source</option>
+            {sourceOptions.map((value) => (
+              <option key={value} value={value}>
+                {value}
+              </option>
+            ))}
+          </select>
+        </label>
+      ) : null}
       {narrowed ? (
         <button
           className="pb-1.5 text-xs font-semibold whitespace-nowrap text-slate-500 underline-offset-2 hover:text-phx-accent hover:underline"

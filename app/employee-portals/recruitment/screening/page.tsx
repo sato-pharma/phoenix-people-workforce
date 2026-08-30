@@ -97,12 +97,16 @@ async function ScreeningContent({
       candidates={queue.candidates}
       hiringManagers={queue.hiringManagers}
       initialViews={queue.views}
+      notified={queue.notified}
       openVacancies={queue.openVacancies}
       poolHref="/employee-portals/recruitment"
       positionSuggestions={queue.positionSuggestions}
+      received={queue.received}
       region={queue.region}
       role={queue.role}
       seen={queue.seen}
+      source={queue.source}
+      sourceOptions={queue.sourceOptions}
       status={queue.status}
       totalCount={queue.candidates.length + queue.filteredOut}
     />
