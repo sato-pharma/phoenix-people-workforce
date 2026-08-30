@@ -117,7 +117,11 @@ export function CeoHeroIdentity({
         className={cn(
           "flex flex-col gap-6 sm:flex-row sm:items-start",
           showPhoto && "sm:pr-[34%] lg:pr-[30%]",
-          showInitials && "sm:pr-36 lg:pr-40",
+          // Reserved runway for the medallion, which is absolutely positioned and so cannot push
+          // this text aside itself. Kept in step with the badge BY HAND: at lg the badge is 160px
+          // wide and sits 56px off the right edge, so anything under 216px here lets a long name
+          // run under it. Grow both together or neither.
+          showInitials && "sm:pr-48 lg:pr-60",
         )}
       >
         {/* ── Identity + greeting ───────────────────────────────────────────── */}
@@ -208,10 +212,18 @@ export function CeoHeroIdentity({
         >
           <span
             aria-hidden="true"
-            className="absolute inset-0 -m-4 rounded-full bg-[radial-gradient(circle_at_center,rgba(249,115,22,0.22)_0%,rgba(249,115,22,0.06)_55%,transparent_75%)] blur-xl"
+            className="absolute inset-0 -m-4 bg-[radial-gradient(circle_at_center,rgba(249,115,22,0.22)_0%,rgba(249,115,22,0.06)_55%,transparent_75%)] blur-xl"
           />
-          <div className="relative flex h-24 w-24 items-center justify-center rounded-full border border-orange-400/40 bg-gradient-to-br from-orange-500/30 via-orange-400/10 to-white/5 shadow-[0_16px_40px_rgba(249,115,22,0.28)] sm:h-28 sm:w-28 lg:h-32 lg:w-32">
-            <span className="text-3xl font-black tracking-tight text-orange-50 sm:text-4xl lg:text-[2.75rem]">
+          {/* SQUARE, deliberately — and do not "fix" it to a circle.
+              `app/globals.css` RULE 1 zeroes border-radius for every element inside `.admin-shell`
+              ("NOTHING is rounded or semi-rounded"), with `!important`, so `rounded-full` here was
+              inert: it rendered as a square while the code claimed a circle, which is the kind of
+              lie that sends the next session hunting a CSS bug that does not exist. Measured
+              `border-radius: 0px` on the live page. The class is gone rather than overridden,
+              because every card, chip and tile in this shell is sharp and a single round badge
+              would be exactly the one-off look the owner's rule forbids. */}
+          <div className="relative flex h-28 w-28 items-center justify-center border border-orange-400/40 bg-gradient-to-br from-orange-500/30 via-orange-400/10 to-white/5 shadow-[0_16px_40px_rgba(249,115,22,0.28)] sm:h-32 sm:w-32 lg:h-40 lg:w-40">
+            <span className="text-[2.25rem] font-black tracking-tight text-orange-50 sm:text-[2.75rem] lg:text-[3.25rem]">
               {initials}
             </span>
           </div>

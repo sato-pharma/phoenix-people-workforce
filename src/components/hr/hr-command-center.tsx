@@ -67,7 +67,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { AdminHeroFrame, AdminInsightChip } from "@/components/admin/admin-design-system";
 import { CeoHeroIdentity } from "@/components/admin/ceo-hero-identity";
-import type { HrFunctionKey } from "@/lib/auth/hr-functions";
+import { HR_SEAT_JOB_TITLES, type HrFunctionKey } from "@/lib/auth/hr-functions";
 import type { HrCommandCenterData, HrCommandGroup, HrCommandTile } from "@/lib/hr/command-center";
 
 const GROUP_ICONS: Record<HrFunctionKey, LucideIcon> = {
@@ -151,6 +151,180 @@ function MetricTile({ tile }: { tile: HrCommandTile }) {
         {tile.sub}
       </p>
     </Link>
+  );
+}
+
+/**
+ * ── The workload ring ────────────────────────────────────────────────────────
+ *
+ * The one genuine PICTURE on this page, and it is drawn from data that already exists: how much of
+ * the seat's board is clear against how much is waiting. Nothing here is a new figure — `attention`
+ * is the same amber/rose count the strip and the group badges use, so the ring can never disagree
+ * with the numbers beside it.
+ *
+ * WHY A RING AND NOT A TREND LINE. The obvious "dashboard" move is `AreaSparkline`, and it would be
+ * a lie here: this payload has no history in it at all. A sparkline drawn from a single day's
+ * numbers invents a shape, and an invented shape on an HR board is the false promise the owner's
+ * rule for this page type forbids. A proportion is the honest picture of a snapshot.
+ *
+ * Hand-drawn SVG for the same reason `AreaSparkline` and `TwoSeriesBars` are: this codebase pulls
+ * in no charting library, and one ring does not justify becoming the first.
+ */
+function WorkloadRing({ attention, total }: { attention: number; total: number }) {
+  const radius = 46;
+  const circumference = 2 * Math.PI * radius;
+  const share = total > 0 ? Math.min(1, attention / total) : 0;
+  const allClear = attention === 0;
+
+  return (
+    <div className="relative h-[132px] w-[132px] shrink-0">
+      {/* A soft bloom behind the ring so it reads as lit rather than printed - the same warm
+          ember the hero and the finance banner use, at a strength that survives on white. */}
+      <span
+        aria-hidden="true"
+        className={`pointer-events-none absolute inset-2 rounded-full blur-2xl ${
+          allClear ? "bg-emerald-400/20" : "bg-orange-400/25"
+        }`}
+      />
+      <svg
+        aria-hidden="true"
+        className="relative h-full w-full -rotate-90"
+        viewBox="0 0 120 120"
+      >
+        <defs>
+          <linearGradient id="hr-ring-attention" x1="0" x2="1" y1="0" y2="1">
+            <stop offset="0%" stopColor="#FB923C" />
+            <stop offset="55%" stopColor="#F97316" />
+            <stop offset="100%" stopColor="#EA580C" />
+          </linearGradient>
+          <linearGradient id="hr-ring-clear" x1="0" x2="1" y1="0" y2="1">
+            <stop offset="0%" stopColor="#34D399" />
+            <stop offset="100%" stopColor="#059669" />
+          </linearGradient>
+        </defs>
+        {/* The track is the whole board; the arc is the part of it that is waiting. */}
+        <circle
+          cx="60"
+          cy="60"
+          fill="none"
+          r={radius}
+          stroke="#E2E8F0"
+          strokeWidth="11"
+        />
+        <circle
+          cx="60"
+          cy="60"
+          fill="none"
+          r={radius}
+          stroke={allClear ? "url(#hr-ring-clear)" : "url(#hr-ring-attention)"}
+          strokeDasharray={`${(allClear ? 1 : share) * circumference} ${circumference}`}
+          strokeLinecap="round"
+          strokeWidth="11"
+          style={{ transition: "stroke-dasharray 600ms ease-out" }}
+        />
+      </svg>
+      {/* Centre label. The ring shows the proportion; this says what the proportion IS, because a
+          ring alone cannot be read as a number and the owner reads numbers. */}
+      <div className="absolute inset-0 flex flex-col items-center justify-center">
+        <span
+          className={`text-[30px] font-black leading-none tabular-nums ${
+            allClear ? "text-emerald-600" : "text-orange-600"
+          }`}
+        >
+          {attention}
+        </span>
+        <span className="mt-1 whitespace-nowrap text-[9px] font-black uppercase tracking-[0.12em] text-slate-400">
+          of {total} waiting
+        </span>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Where the waiting work actually sits, one bar per function. Bars are scaled against the BUSIEST
+ * group rather than against the page total, because the question this answers is "which of these
+ * do I open first" — and a total-scaled bar renders every group as a sliver the moment the board
+ * has more than a handful of items.
+ *
+ * Groups with nothing waiting still render, greyed, rather than dropping out: the owner's rule for
+ * this page type is that an empty stage stays visible ("relevant even if empty"), and a chart that
+ * silently omits the quiet functions teaches the reader they do not exist.
+ */
+function AttentionByGroup({
+  groups,
+  onJump,
+}: {
+  groups: HrCommandGroup[];
+  onJump: (functionKey: string) => void;
+}) {
+  const rows = groups.map((group) => ({
+    count: group.tiles.filter(needsAttention).length,
+    functionKey: group.functionKey,
+    label: group.label,
+  }));
+  const busiest = Math.max(...rows.map((row) => row.count), 1);
+
+  return (
+    <div className="min-w-0 flex-1 space-y-2.5">
+      {rows.map((row) => {
+        const Icon = GROUP_ICONS[row.functionKey];
+        const quiet = row.count === 0;
+        return (
+          <button
+            className="group/bar block w-full px-1 py-1 text-left transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500"
+            key={row.functionKey}
+            onClick={() => onJump(row.functionKey)}
+            type="button"
+          >
+            {/* Label ABOVE its bar, never beside it. A label in a fixed side column has to be
+                given a width, and any width is a guess: measured at 1440px, a 132px column was
+                overrun by 39px by "People Records & Lifecycle" and 35px by "Performance &
+                Probation", so both ran under their own bar. Stacking removes the guess — the
+                label takes the width it needs, at any length and in any locale, and the owner's
+                standing rule (never truncate, never wrap) holds by construction rather than by a
+                number somebody has to keep correct. The hairline leader carries the eye across to
+                the count, so the gap reads as deliberate rather than as a hole. */}
+            <span className="flex items-center gap-2">
+              <Icon
+                aria-hidden="true"
+                className={`h-3.5 w-3.5 shrink-0 ${quiet ? "text-slate-300" : "text-orange-500"}`}
+              />
+              <span
+                className={`shrink-0 whitespace-nowrap text-[10px] font-black uppercase tracking-[0.1em] ${
+                  quiet ? "text-slate-400" : "text-slate-700"
+                }`}
+              >
+                {row.label}
+              </span>
+              <span aria-hidden="true" className="h-px min-w-4 flex-1 bg-slate-200/80" />
+              <span
+                className={`shrink-0 text-[13px] font-black leading-none tabular-nums ${
+                  quiet ? "text-slate-300" : "text-orange-700"
+                }`}
+              >
+                {row.count}
+              </span>
+            </span>
+            <span className="relative mt-1.5 block h-2 w-full overflow-hidden bg-slate-100">
+              <span
+                className={`absolute inset-y-0 left-0 ${
+                  quiet
+                    ? "bg-slate-200"
+                    : "bg-gradient-to-r from-orange-400 via-orange-500 to-orange-600 shadow-[0_0_10px_rgba(249,115,22,0.35)]"
+                }`}
+                style={{
+                  transition: "width 600ms ease-out",
+                  // A quiet group keeps a visible 3% stub so the row still reads as a bar with
+                  // nothing in it, rather than as a missing bar.
+                  width: quiet ? "3%" : `${Math.max(8, (row.count / busiest) * 100)}%`,
+                }}
+              />
+            </span>
+          </button>
+        );
+      })}
+    </div>
   );
 }
 
@@ -254,6 +428,12 @@ export function HrCommandCenter({
     [data.groups],
   );
 
+  /** Every figure the seat can see. The ring's denominator, and the filter summary's. */
+  const totalTileCount = useMemo(
+    () => data.groups.reduce((total, group) => total + group.tiles.length, 0),
+    [data.groups],
+  );
+
   const trimmedQuery = query.trim().toLowerCase();
   const isFiltering = trimmedQuery.length > 0 || attentionOnly;
 
@@ -289,7 +469,18 @@ export function HrCommandCenter({
   return (
     <div className="min-w-0 max-w-full overflow-x-hidden">
       <AdminHeroFrame className="z-10 overflow-visible">
-        <div className="p-5 sm:p-6 lg:p-8">
+        {/* `relative` and width-capped ON PURPOSE, and the two go together.
+            CeoHeroIdentity's medallion is absolutely positioned, so it anchors to the nearest
+            POSITIONED ancestor — with none here it anchored to the hero frame itself and flew to
+            the far edge of a ~1200px band, leaving a wide dead strip between the greeting and the
+            badge that read as a stretched banner rather than a designed one. Making this box
+            positioned and capping it re-anchors the badge to the end of the TEXT's measure, so the
+            identity reads as one tight cluster.
+            The cap is on the CONTENT, not on the frame: the dark surface still spans the full page
+            width, so the band's height and full-bleed look are untouched — only the spread of what
+            sits inside it changes. Scoped to this page; the CEO, Finance and SFE heroes are not
+            touched. */}
+        <div className="relative w-full max-w-4xl p-5 sm:p-6 lg:p-8">
           <div className="mb-5 inline-flex items-center gap-2 border border-orange-400/40 bg-orange-500/15 px-3 py-1.5 text-phx-3xs font-black uppercase tracking-[0.22em] text-orange-100">
             <UsersRound aria-hidden="true" className="h-3.5 w-3.5" />
             HR Command Center
@@ -299,37 +490,55 @@ export function HrCommandCenter({
             fullName={viewerName}
             imageUrl={viewerImageUrl}
             initials={viewerInitials}
-            roleLabel={data.seat}
+            // Her TITLE, not the seat key. `data.seat` is the permission bundle name, which is
+            // deliberately not a job title and must never be shown to the person holding it.
+            // The seat name is not written out in quotes anywhere in this file on purpose:
+            // tests/hr-function-governance.test.ts flags every file containing a quoted seat name,
+            // so that a seat used as a real grant or gate cannot hide. This file gates nothing by
+            // seat, and adding it to that allowlist would exempt it from the check permanently.
+            roleLabel={HR_SEAT_JOB_TITLES[data.seat]}
             subGreeting="Your day, by the part of the job it belongs to."
           />
         </div>
       </AdminHeroFrame>
 
-      {/* At-a-glance status strip - light surface, sits below the dark hero rather than inside it
-          so it can never disturb CeoHeroIdentity's vertically-centred initials medallion. Reuses
-          AdminInsightChip exactly as built (no new colour tokens): "orange" is this app's existing
-          pay-attention accent, "emerald" its existing all-clear one. */}
-      <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 bg-slate-50/60 px-5 py-3">
-        {attentionCount > 0 ? (
-          <AdminInsightChip tone="orange">
-            <span className="whitespace-nowrap">
-              {attentionCount} {attentionCount === 1 ? "item needs" : "items need"} your attention
-              today
-            </span>
-          </AdminInsightChip>
-        ) : (
-          <AdminInsightChip tone="emerald">
-            <span className="whitespace-nowrap">All caught up - nothing waiting on you</span>
-          </AdminInsightChip>
-        )}
-      </div>
+      {/* ── Today at a glance. The page's one picture, and its answer to "where does my day go".
+          A light surface below the dark hero rather than inside it, so it can never disturb
+          CeoHeroIdentity's vertically-centred initials medallion. ── */}
+      <section className="border-b border-slate-200/70 bg-gradient-to-b from-white via-white to-slate-50/70 px-5 py-5">
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          <span className="h-2 w-2 rounded-full bg-gradient-to-r from-orange-500 to-amber-400 shadow-[0_0_8px_rgba(249,115,22,0.5)]" />
+          <h2 className="whitespace-nowrap text-[11px] font-black uppercase tracking-[0.16em] text-slate-950">
+            Today at a glance
+          </h2>
+          {attentionCount > 0 ? (
+            <AdminInsightChip tone="orange">
+              <span className="whitespace-nowrap">
+                {attentionCount} {attentionCount === 1 ? "item needs" : "items need"} your attention
+                today
+              </span>
+            </AdminInsightChip>
+          ) : (
+            <AdminInsightChip tone="emerald">
+              <span className="whitespace-nowrap">All caught up - nothing waiting on you</span>
+            </AdminInsightChip>
+          )}
+        </div>
+        <div className="flex flex-col items-center gap-6 sm:flex-row sm:items-center sm:gap-8">
+          <WorkloadRing attention={attentionCount} total={totalTileCount} />
+          <AttentionByGroup groups={data.groups} onJump={jumpToGroup} />
+        </div>
+      </section>
 
       {/* ── Toolbar. Filter, attention-only, and a jump chip per group. Not sticky on purpose:
           AppShell already freezes the page chrome, and a second sticky at the same offset is the
           trap documented in admin-design-system.tsx. ── */}
       <div className="border-b border-slate-200/70 bg-white px-5 py-3">
         <div className="flex flex-wrap items-center gap-2">
-          <div className="relative min-w-0 flex-1 sm:max-w-xs">
+          {/* Full width on a phone, sharing the row from `sm` up. Measured at 375px: sharing the
+              row there leaves the field 127px, which clips its own placeholder — and the owner's
+              standing rule is that text is never truncated. */}
+          <div className="relative w-full min-w-0 sm:w-auto sm:max-w-xs sm:flex-1">
             <Search
               aria-hidden="true"
               className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400"
@@ -403,8 +612,7 @@ export function HrCommandCenter({
         {/* A filtered page must say what it is showing, or a short page reads as an empty one. */}
         {isFiltering ? (
           <p className="mt-2 text-[11px] font-semibold text-slate-500">
-            Showing {visibleTileCount} of {data.groups.flatMap((group) => group.tiles).length}{" "}
-            figures
+            Showing {visibleTileCount} of {totalTileCount} figures
             {attentionOnly ? " that need attention" : ""}
             {trimmedQuery ? ` matching "${query.trim()}"` : ""}.
           </p>

@@ -2,7 +2,12 @@ import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 
 import { hrNavigationSections } from "../src/config/system-navigation.ts";
-import { HR_ROLE_BUNDLES, type HrBundleName } from "../src/lib/auth/hr-functions.ts";
+import {
+  displayTitleForRole,
+  HR_ROLE_BUNDLES,
+  HR_SEAT_JOB_TITLES,
+  type HrBundleName,
+} from "../src/lib/auth/hr-functions.ts";
 import {
   permissionActions,
   permissionMatrix,
@@ -313,4 +318,38 @@ export function runHrJobWorkbookTests() {
   assert.equal(workbookForSeat("Super Admin"), null, "only the two seats hold a workbook of their own");
   assert.equal(workbookForSeat(null), null);
   assert.equal(workbookForSeat(undefined), null);
+
+  // 8 ── THE DISPLAYED TITLE. `HR_SEAT_JOB_TITLES` is what every screen in an HR seat's account
+  // actually shows — the topbar chip, its dropdown, the profile page and the command-centre hero
+  // all resolve through it. It lives in hr-functions.ts rather than here because it is read on
+  // every authenticated page render and this module is ~1,300 lines of workbook prose, so the two
+  // are separate copies of one fact and CAN drift. This is what stops them.
+  for (const seat of Object.keys(HR_ROLE_BUNDLES) as HrBundleName[]) {
+    assert.equal(
+      HR_SEAT_JOB_TITLES[seat],
+      workbookForSeat(seat)?.jobTitle,
+      `${seat}: the title shown in the account must equal the seat workbook's jobTitle`,
+    );
+    assert.equal(
+      HR_SEAT_JOB_TITLES[seat],
+      COMPANY_ROLE_WORKBOOKS.find((entry) => entry.role === seat)?.jobTitle,
+      `${seat}: the title shown in the account must equal the company catalogue's jobTitle`,
+    );
+    // The seat key itself must never leak to a person. This is the regression the owner reported
+    // on 2026-08-30: her account said "HR Advisory" everywhere instead of "HR Business Partner".
+    assert.notEqual(
+      HR_SEAT_JOB_TITLES[seat],
+      seat,
+      `${seat}: the displayed title must not be the permission key`,
+    );
+  }
+
+  // And the helper the callers actually use, including the pass-through every other role relies
+  // on — this must not become a company-wide relabelling.
+  assert.equal(displayTitleForRole("HR Advisory"), "HR Business Partner");
+  assert.equal(displayTitleForRole("HR Operations"), "HR Operations Coordinator");
+  assert.equal(displayTitleForRole("Finance Manager"), "Finance Manager", "a non-HR role is unchanged");
+  assert.equal(displayTitleForRole("Super Admin"), "Super Admin", "a non-HR role is unchanged");
+  assert.equal(displayTitleForRole(null), "", "a null role must not render the word 'null'");
+  assert.equal(displayTitleForRole(undefined), "");
 }

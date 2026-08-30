@@ -1,4 +1,4 @@
-import type { PermissionAction, PermissionResource } from "@/lib/auth/permissions";
+import type { PermissionAction, PermissionResource, PhoenixCompanyJobTitle } from "@/lib/auth/permissions";
 
 /**
  * HR FUNCTIONS — the unit an HR seat is built from.
@@ -322,6 +322,42 @@ export const HR_ROLE_BUNDLES = {
 } as const satisfies Record<string, readonly HrFunctionKey[]>;
 
 export type HrBundleName = keyof typeof HR_ROLE_BUNDLES;
+
+/**
+ * THE JOB TITLE EACH SEAT IS SHOWN AS — display only, never a key.
+ *
+ * The bundle names above are deliberately NOT job titles: that is the whole point of this file,
+ * and `tests/hr-function-governance.test.ts` fails the build if a bundle name ever collides with
+ * an entry in `phoenixCompanyJobTitles`. But a person does not think of herself as "HR Advisory".
+ * The owner's instruction (2026-08-30) is that Aya's title is **HR Business Partner** and that it
+ * is the title shown everywhere in her account.
+ *
+ * So the two live side by side, and the split is the resolution of the tension rather than a
+ * compromise with it: `"HR Advisory"` stays the permission key that nothing reads for intent and
+ * that can never strand when the seat changes hands, while this map is the only thing a human ever
+ * sees. Renaming the key to the title is precisely the mistake that cost two codebase-wide renames
+ * and an eleven-table migration — do not do it, and do not "simplify" this map away.
+ *
+ * `COMPANY_ROLE_WORKBOOKS` in `src/lib/hr/job-workbook.ts` holds the same pairing for the whole
+ * company. It is not imported here on purpose — that module is ~1,300 lines of workbook prose and
+ * this map is read on every authenticated page render. `tests/hr-job-workbook.test.ts` asserts the
+ * two agree, so they cannot drift apart.
+ */
+export const HR_SEAT_JOB_TITLES = {
+  "HR Advisory": "HR Business Partner",
+  "HR Operations": "HR Operations Coordinator",
+} as const satisfies Record<HrBundleName, PhoenixCompanyJobTitle>;
+
+/**
+ * The label to SHOW for a role. Returns the seat's job title for the two HR bundles and the role
+ * itself for everything else — every other role key in this system already reads as a title
+ * ("Finance Manager", "SFE Manager"), so this is not a company-wide relabelling and must not grow
+ * into one. Takes a plain string because the callers hold `app_auth_users.role`, which is text.
+ */
+export function displayTitleForRole(role: string | null | undefined): string {
+  const seat = String(role ?? "");
+  return (HR_SEAT_JOB_TITLES as Record<string, string>)[seat] ?? seat;
+}
 
 /**
  * ROLE BOUNDARIES — the "may not approve" lists from both job descriptions, made mechanical.
