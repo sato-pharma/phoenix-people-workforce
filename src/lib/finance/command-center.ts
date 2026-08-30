@@ -15,9 +15,13 @@ import { logError } from "@/lib/observability/log";
  * Phase A composes domain services that fan out, transitively, into the low hundreds of round
  * trips. Every service that could have supplied a tile here carries the same problem —
  * getDirectOrderReport reads the whole table across ~5 sequential waves,
- * getMarketingRequestDraftWorkspace is an 11-query Promise.all, getVacationWorkspaceData fetches
- * the company leave report twice per call. So the aggregation lives in Postgres and comes back
- * assembled.
+ * getMarketingRequestDraftWorkspace is an 11-query Promise.all. So the aggregation lives in
+ * Postgres and comes back assembled.
+ *
+ * (getVacationWorkspaceData's several calls into getVacationReportData({status:"all"}) with the
+ * same access reference DO collapse to one DB round trip — verified live 2026-08-31 via a
+ * request-count probe on the Approvals Hub page. React's cache() in vacation/service.ts already
+ * handles this; it was never the reason this module avoids that service.)
  *
  * The deduction figures in this payload come from COMMITTED payroll — salary_records for closed
  * batches, automated_payroll_draft_rows for the in-flight run — and never from

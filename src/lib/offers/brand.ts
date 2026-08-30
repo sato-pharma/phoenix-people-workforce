@@ -45,21 +45,31 @@ const LOGO_PUBLIC_PATH = "/brand/sato-pharma-logo-on-light.png";
  * somebody signs by hand. Both are plainer than intended but neither is WRONG, and an offer that
  * failed to render at all would be worse than either.
  */
-function pngDataUri(...segments: string[]): string | null {
-  try {
-    const bytes = readFileSync(join(process.cwd(), ...segments));
-    return `data:image/png;base64,${bytes.toString("base64")}`;
-  } catch {
-    return null;
-  }
+function pngDataUri(bytes: Buffer): string {
+  return `data:image/png;base64,${bytes.toString("base64")}`;
 }
 
 let logoCache: string | null | undefined;
 let signatureCache: string | null | undefined;
 
-/** The Sato mark as a `data:` URI, for the PDF. Null when it cannot be read. */
+/**
+ * The Sato mark as a `data:` URI, for the PDF. Null when it cannot be read.
+ *
+ * `readFileSync(join(process.cwd(), 'literal', 'literal', 'literal'))` must stay written out
+ * exactly like this, inline, with every segment a string literal — not passed in through a
+ * variable or a rest parameter. Turbopack's build tracer only resolves a `join(process.cwd(), …)`
+ * call it can statically read at the call site; the previous variadic-helper version defeated
+ * that and made this ONE route trace the entire project (measured: 6,034 files / 441 KB, vs. 233
+ * for a comparable route — Turbopack's own build warning named it "over bundling").
+ */
 export function satoLogoDataUri(): string | null {
-  if (logoCache === undefined) logoCache = pngDataUri("public", "brand", "sato-pharma-logo-on-light.png");
+  if (logoCache === undefined) {
+    try {
+      logoCache = pngDataUri(readFileSync(join(process.cwd(), "public", "brand", "sato-pharma-logo-on-light.png")));
+    } catch {
+      logoCache = null;
+    }
+  }
   return logoCache;
 }
 
@@ -77,7 +87,11 @@ export function satoLogoUrl(baseUrl: string): string {
  */
 export function satoSignatureDataUri(): string | null {
   if (signatureCache === undefined) {
-    signatureCache = pngDataUri("assets", "brand", "signature-omar-anwar-gawish.png");
+    try {
+      signatureCache = pngDataUri(readFileSync(join(process.cwd(), "assets", "brand", "signature-omar-anwar-gawish.png")));
+    } catch {
+      signatureCache = null;
+    }
   }
   return signatureCache;
 }

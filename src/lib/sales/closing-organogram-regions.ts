@@ -467,7 +467,11 @@ export async function loadDirectSubmitters(
       .select("region_code,product_code,value,raw_row")
       .in("batch_id", batchIds)
       .eq("is_direct", true)
-      .eq("official_line", line);
+      .eq("official_line", line)
+      // Explicit ceiling, well above any real batch (largest observed ~87 rows), so a future
+      // spike fails loudly against this number instead of silently hitting PostgREST's
+      // unmarked default cap of 1000.
+      .limit(5000);
     if (rows.error || !rows.data) return [];
 
     return (rows.data as Array<Record<string, unknown>>)

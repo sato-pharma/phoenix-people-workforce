@@ -43,9 +43,14 @@ Phoenix Workforce/
 
 # Data files (store in cloud, not git)
 *.xlsx
+*.xlsm
 *.csv
+*.bas
 !Source of sales area database.xlsx
 !.env.*.example
+
+# Root-level scratch scripts from local automation sessions (e.g. Excel COM builds)
+_tmp-*
 
 # Generated output
 output/

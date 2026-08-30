@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 
+import { unstable_cache } from "next/cache.js";
 
 import {
   canSeeHrScopedRecord,
@@ -6987,26 +6988,70 @@ export async function getMarketingAllRequestsWorkspace(
   };
 }
 
+const MARKETING_DRAFT_REFERENCE_REVALIDATE_SECONDS = 60;
+
+/**
+ * The 7 reference/lookup tables getMarketingRequestDraftWorkspace needs — all filtered to active
+ * rows, all "small reference sets," none of them request-specific or per-viewer. Cached company-
+ * wide for a minute at a time instead of re-fetched fresh on every requester's page load (60s
+ * mirrors the revalidate window already used for vacation-report rows, src/lib/vacation/service.ts).
+ */
+const loadMarketingDraftReferenceDataCached = unstable_cache(
+  async () => {
+    const supabase = getSupabaseAdmin();
+    const [typesResult, productsResult, distributorsResult, customersResult, validatedLinksResult, pharmaciesResult, distributorCodesResult] = await Promise.all([
+      supabase.from("marketing_request_types").select("*").or("active.is.null,active.eq.true").order("sort_order"),
+      supabase.from("marketing_products").select("*").or("active.is.null,active.eq.true").order("product_name"),
+      supabase.from("marketing_distributors").select("*").or("active.is.null,active.eq.true").order("display_name"),
+      supabase.from("marketing_customers").select("*").or("active.is.null,active.eq.true").order("display_name"),
+      // Also carries the pharmacy detail now, not just customer_id: the request form has to let the
+      // requester CHOOSE which pharmacies a campaign targets. A customer has at most 8 linked
+      // pharmacies in production (median 1-3), so this is a handful of extra rows, not a second set.
+      supabase
+        .from("marketing_customer_pharmacies")
+        .select("customer_id, distributor_code_id, pharmacy_id")
+        .or("active.is.null,active.eq.true")
+        .in("validation_status", ["system_validated", "sfe_validated"]),
+      // Display data for the target-pharmacy picker. Both tables are small reference sets.
+      supabase.from("marketing_pharmacies").select("id, display_name, pharmacy_code, venue_type"),
+      supabase
+        .from("marketing_pharmacy_distributor_codes")
+        .select("id, pharmacy_id, distributor_id, distributor_pharmacy_code, reference_status")
+        .or("active.is.null,active.eq.true"),
+    ]);
+    if (typesResult.error) throw typesResult.error;
+    if (productsResult.error) throw productsResult.error;
+    if (distributorsResult.error) throw distributorsResult.error;
+    if (customersResult.error) throw customersResult.error;
+    if (validatedLinksResult.error) throw validatedLinksResult.error;
+    if (pharmaciesResult.error) throw pharmaciesResult.error;
+    if (distributorCodesResult.error) throw distributorCodesResult.error;
+    return {
+      types: typesResult.data ?? [],
+      products: productsResult.data ?? [],
+      distributors: distributorsResult.data ?? [],
+      customers: customersResult.data ?? [],
+      validatedLinks: validatedLinksResult.data ?? [],
+      pharmacies: pharmaciesResult.data ?? [],
+      distributorCodes: distributorCodesResult.data ?? [],
+    };
+  },
+  ["marketing-draft-reference-data"],
+  { revalidate: MARKETING_DRAFT_REFERENCE_REVALIDATE_SECONDS },
+);
+
 export async function getMarketingRequestDraftWorkspace(access: AccessContext): Promise<MarketingRequestDraftWorkspace> {
   assertMarketingWorkspaceAccess(access);
 
   const supabase = getSupabaseAdmin();
-  const [typesResult, productsResult, distributorsResult, customersResult, validatedLinksResult, draftsResult, approvedRequestsResult, pharmaciesResult, distributorCodesResult, returnedResult, inApprovalResult, rejectedResult] = await Promise.all([
-    supabase.from("marketing_request_types").select("*").or("active.is.null,active.eq.true").order("sort_order"),
-    supabase.from("marketing_products").select("*").or("active.is.null,active.eq.true").order("product_name"),
-    supabase.from("marketing_distributors").select("*").or("active.is.null,active.eq.true").order("display_name"),
-    supabase.from("marketing_customers").select("*").or("active.is.null,active.eq.true").order("display_name"),
-    // Also carries the pharmacy detail now, not just customer_id: the request form has to let the
-    // requester CHOOSE which pharmacies a campaign targets. Until it could, every Phoenix request
-    // was saved with no targets at all — and a request with no target pharmacies can never
-    // attribute a single sale, so its ROI would read zero forever no matter how well it performed.
-    // A customer has at most 8 linked pharmacies in production (median 1-3), so this is a handful
-    // of extra rows, not a second data set.
-    supabase
-      .from("marketing_customer_pharmacies")
-      .select("customer_id, distributor_code_id, pharmacy_id")
-      .or("active.is.null,active.eq.true")
-      .in("validation_status", ["system_validated", "sfe_validated"]),
+  // The first 7 queries below are reference/lookup tables (types, products, distributors,
+  // customers, validated customer-pharmacy links, pharmacies, distributor codes) that change
+  // rarely — every requester opening this workspace was re-fetching all of them fresh, alongside
+  // the 5 genuinely live per-request queries. Reference data goes through the shared 60s cache
+  // instead (matches the revalidate window already used for vacation-report rows); the 5 live
+  // queries stay direct.
+  const [referenceData, draftsResult, approvedRequestsResult, returnedResult, inApprovalResult, rejectedResult] = await Promise.all([
+    loadMarketingDraftReferenceDataCached(),
     supabase.from("marketing_requests").select("*").eq("status", "draft").order("created_at", { ascending: false }).limit(MARKETING_WORKSPACE_SAFETY_LIMIT),
     supabase
       .from("marketing_requests")
@@ -7014,12 +7059,6 @@ export async function getMarketingRequestDraftWorkspace(access: AccessContext): 
       .in("status", approvedMarketingRequestStatuses)
       .order("pay_date", { ascending: false, nullsFirst: false })
       .limit(MARKETING_WORKSPACE_SAFETY_LIMIT),
-    // Display data for the target-pharmacy picker. Both tables are small reference sets.
-    supabase.from("marketing_pharmacies").select("id, display_name, pharmacy_code, venue_type"),
-    supabase
-      .from("marketing_pharmacy_distributor_codes")
-      .select("id, pharmacy_id, distributor_id, distributor_pharmacy_code, reference_status")
-      .or("active.is.null,active.eq.true"),
     supabase.from("marketing_requests").select("*").eq("status", "returned").order("updated_at", { ascending: false }).limit(MARKETING_WORKSPACE_SAFETY_LIMIT),
     supabase.from("marketing_requests").select("*").eq("status", "pending_approval").order("submitted_at", { ascending: false, nullsFirst: false }).limit(MARKETING_WORKSPACE_SAFETY_LIMIT),
     // Rejected. Every other status a requester can reach was already queried above; this one was
@@ -7028,12 +7067,14 @@ export async function getMarketingRequestDraftWorkspace(access: AccessContext): 
     // the only place the "why" is written down at all), and it was unreachable from any screen.
     supabase.from("marketing_requests").select("*").eq("status", "rejected").order("rejected_at", { ascending: false, nullsFirst: false }).limit(MARKETING_WORKSPACE_SAFETY_LIMIT),
   ]);
+  const typesResult = { data: referenceData.types, error: null as null };
+  const productsResult = { data: referenceData.products, error: null as null };
+  const distributorsResult = { data: referenceData.distributors, error: null as null };
+  const customersResult = { data: referenceData.customers, error: null as null };
+  const validatedLinksResult = { data: referenceData.validatedLinks, error: null as null };
+  const pharmaciesResult = { data: referenceData.pharmacies, error: null as null };
+  const distributorCodesResult = { data: referenceData.distributorCodes, error: null as null };
 
-  if (typesResult.error) throw typesResult.error;
-  if (productsResult.error) throw productsResult.error;
-  if (distributorsResult.error) throw distributorsResult.error;
-  if (customersResult.error) throw customersResult.error;
-  if (validatedLinksResult.error) throw validatedLinksResult.error;
   if (draftsResult.error) throw draftsResult.error;
   if (approvedRequestsResult.error) throw approvedRequestsResult.error;
   if (returnedResult.error) throw returnedResult.error;
