@@ -445,7 +445,7 @@ export function MailboxMonitorDashboard({
                   {monitors.map((monitor) => (
                     <tr key={monitor.id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50/70">
                       <td className="px-6 py-3">
-                        <div className="whitespace-nowrap font-semibold text-slate-900">{monitorTitle(monitor)}</div>
+                        <div className="whitespace-nowrap font-semibold text-slate-900" dir="auto">{monitorTitle(monitor)}</div>
                         <div className="whitespace-nowrap text-xs text-slate-500">{monitor.emailAddress}</div>
                         {monitor.status === "failing" || monitor.status === "revoked" ? (
                           <div className="whitespace-nowrap text-xs text-rose-600">{monitor.lastError || "Last connection failed."}</div>
@@ -480,7 +480,7 @@ export function MailboxMonitorDashboard({
                 <div key={monitor.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <div className="truncate font-semibold text-slate-900">{monitorTitle(monitor)}</div>
+                      <div className="truncate font-semibold text-slate-900" dir="auto">{monitorTitle(monitor)}</div>
                       <div className="truncate text-xs text-slate-500">{monitor.emailAddress}</div>
                     </div>
                     <StatusPill status={monitor.status} />
@@ -535,7 +535,7 @@ export function MailboxMonitorDashboard({
                         onClick={() => loadMessages(reader.monitor, reader.folders, folder.path)}
                       >
                         <Inbox className="h-3.5 w-3.5 shrink-0" />
-                        <span className="truncate">{folder.name}</span>
+                        <span className="truncate" dir="auto">{folder.name}</span>
                       </button>
                     </li>
                   ))}
@@ -563,14 +563,14 @@ export function MailboxMonitorDashboard({
                         onClick={() => handleOpenMessage(summary)}
                       >
                         <div className="flex items-center justify-between gap-2">
-                          <span className={cn("truncate text-sm", summary.seen ? "text-slate-600" : "font-semibold text-slate-900")}>
+                          <span className={cn("truncate text-sm", summary.seen ? "text-slate-600" : "font-semibold text-slate-900")} dir="auto">
                             {summary.fromName || summary.fromAddress || "Unknown sender"}
                           </span>
                           <span className="shrink-0 text-phx-xs text-slate-400">{formatCairo(summary.date)}</span>
                         </div>
                         <div className="flex items-center gap-1.5">
                           {summary.hasAttachments ? <Paperclip className="h-3 w-3 shrink-0 text-slate-400" /> : null}
-                          <span className="truncate text-sm text-slate-500">{summary.subject || "(no subject)"}</span>
+                          <span className="truncate text-sm text-slate-500" dir="auto">{summary.subject || "(no subject)"}</span>
                         </div>
                       </button>
                     </li>
@@ -589,9 +589,12 @@ export function MailboxMonitorDashboard({
               ) : (
                 <div className="space-y-3 px-4 py-3">
                   <div>
-                    <div className="text-base font-bold text-slate-900">{reader.message.subject || "(no subject)"}</div>
+                    <div className="text-base font-bold text-slate-900" dir="auto">{reader.message.subject || "(no subject)"}</div>
                     <div className="mt-1 text-xs text-slate-500">
-                      From {reader.message.fromName || reader.message.fromAddress || "Unknown"} · {formatCairo(reader.message.date)}
+                      {/* Only the NAME takes dir="auto", never the whole line: the line is an English
+                          sentence carrying a date, and an Arabic sender would otherwise drag both
+                          the separator and the timestamp to the wrong end. */}
+                      From <span dir="auto">{reader.message.fromName || reader.message.fromAddress || "Unknown"}</span> · {formatCairo(reader.message.date)}
                     </div>
                     <div className="text-xs text-slate-500">To {reader.message.toAddresses.join(", ") || "—"}</div>
                   </div>
@@ -624,7 +627,16 @@ export function MailboxMonitorDashboard({
                           Show original HTML (may load remote images)
                         </Button>
                       ) : null}
-                      <pre className="max-h-[50vh] overflow-auto whitespace-pre-wrap break-words rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-800">
+                      {/* A mail body is routinely Arabic AND English in one message — an Arabic
+                          opening over an English signature or quoted reply. Block-level dir="auto"
+                          is still the right fix HERE, and measured so: dir="auto" maps to
+                          unicode-bidi:plaintext, and because whitespace-pre-wrap makes every
+                          newline a forced break, each line resolves its own direction. Measured at
+                          375px, this is byte-identical to splitting the body into per-line spans —
+                          so do not "upgrade" it to that. It is NOT interchangeable in general: on a
+                          non-preformatted block the same attribute right-aligns the English half
+                          (see NotesBody in outstation-requests-admin.tsx, which needs per line). */}
+                      <pre className="max-h-[50vh] overflow-auto whitespace-pre-wrap break-words rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-800" dir="auto">
                         {reader.message.text || "(no plain-text body)"}
                       </pre>
                     </div>
