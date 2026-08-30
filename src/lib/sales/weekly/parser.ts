@@ -72,6 +72,11 @@ function cellNumber(cell: ExcelJS.Cell | undefined): number {
   return isParenNegative ? -Math.abs(num) : num;
 }
 
+/** Thousands-separated, at most 2 decimals — for numbers that appear in operator-facing messages. */
+function readableNumber(value: number): string {
+  return value.toLocaleString("en-US", { maximumFractionDigits: 2 });
+}
+
 const EXCEL_EPOCH_UTC = Date.UTC(1899, 11, 30); // 1899-12-30, the ExcelJS/Lotus serial epoch
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -709,11 +714,37 @@ function adaptPS(ctx: AdapterContext, salesWb?: ExcelJS.Workbook, stockWb?: Exce
   return { observations, sheetDates, sheetName: names.join(" + ") || "Overseas", blockingReasons };
 }
 
+/**
+ * Sum of the POS sheet's own "Total Units" summary row across the channel block, or null when that
+ * row is absent. POS closes the product block with a "Total Units" row and a "Total Values" row; only
+ * the first is a unit total, and it agrees with the product qty rows exactly — measured on the
+ * 2026-08 file at 1,048 against 1,048, and on the value side 92,213.02 against 92,213.02. That makes
+ * it a free, file-supplied check on whether the adapter classified the rows the way the file meant.
+ */
+function posDeclaredTotalUnits(
+  sheet: ExcelJS.Worksheet,
+  itemNameCol: number,
+  channelFirst: number,
+  lastChannelCol: number,
+  firstDataRow: number,
+): number | null {
+  for (let r = firstDataRow; r <= sheet.rowCount; r += 1) {
+    const row = sheet.getRow(r);
+    if (!/^total\s*units?$/i.test(cellText(at(row, itemNameCol)).trim())) continue;
+    let sum = 0;
+    for (let col = channelFirst; col <= lastChannelCol; col += 1) sum += cellNumber(at(row, col));
+    return sum;
+  }
+  return null;
+}
+
 // POS (POS Purchasing Sales) — single matrix sheet "Purchasing Sales Data".
 // Unique interleaved layout: every product occupies two consecutive rows.
 //   Qty row  : col1=company (first product only, ignored) | col2=product name (Arabic) |
 //              col3=product code | col4..N=qty per channel | colN+1=Total | colN+2=Total Bonus
-//   Value row: col2 empty, col3 empty, col4..N=EGP values (ignored — factory_price used instead)
+//   Value row: col4..N=EGP values (ignored — factory_price is used instead). Older files left its
+//              name and code cells BLANK; from the 2026-08 file POS repeats both. See the
+//              classification note in the row loop — that change is what cost EGP 16.4M.
 // Returns are negative quantities in the qty row; the adapter splits them into separate observations.
 // No date column → periodDate is always required on upload.
 function adaptPOS(ctx: AdapterContext): AdapterResult {
@@ -759,16 +790,42 @@ function adaptPOS(ctx: AdapterContext): AdapterResult {
   const itemCodeCol = colOf(combinedC, "itemCode", 3);
   const bonusCol   = colOf(combinedC, "bonusQty", 109);
 
-  // Iterate data rows. Qty rows have a non-empty product name in itemNameCol; value rows do not.
-  // We also stop on the "Total Units" / "Total Values" summary rows at the bottom.
+  // Row-kind classification. POS ships every product as a PAIR of consecutive rows: the first holds
+  // units per channel, the second the matching EGP values. Older POS files left the value row's name
+  // and code cells BLANK, so "no product name" identified one. That test is not safe, and stopped
+  // being true: from the 2026-08 file onward POS repeats the product name AND code on the value row,
+  // so a name-only test reads every value row as a quantity row. Rows aggregate by (product, branch),
+  // so the pair then MERGES into one cell holding units + EGP. That is how the 2026-08 W3 batch came
+  // to hold 172,046 "units" and EGP 16.4M against a true 1,048 units — and to pass validation, since
+  // nothing compared the result to anything.
+  //
+  // Classify by the file's own pairing instead: a row repeating the product key of the row directly
+  // above it IS that row's value row. A standalone product row — the one-row-per-product layout still
+  // seen in the 2026-07 file, whose products sat on consecutive rows 2,3,4,6,7 — keeps reading as
+  // units, so both shapes parse correctly and a file may switch between them. The parsed unit total is
+  // then reconciled against the sheet's own "Total Units" row below, which is what turns the next
+  // layout change into a blocked upload instead of another silent inflation.
+  let previousPairKey: string | null = null;
+  let parsedUnitsNet = 0;
+
   for (let r = dataStartRow(combinedC, 2); r <= sheet.rowCount; r += 1) {
     const row = sheet.getRow(r);
     const productName = cellText(at(row, itemNameCol));
     const productCode = cellText(at(row, itemCodeCol));
 
-    // Value row (empty name) or sentinel summary row → skip.
-    if (!productName) continue;
-    if (/^total/i.test(productName.trim())) continue;
+    // Blank row, legacy blank-name value row, or a "Total Units" / "Total Values" sentinel.
+    if (!productName || /^total/i.test(productName.trim())) {
+      previousPairKey = null;
+      continue;
+    }
+
+    // Value row: repeats the product key of the qty row directly above → never a quantity.
+    const pairKey = productCode || productName;
+    if (pairKey && pairKey === previousPairKey) {
+      previousPairKey = null; // pair closed; the next row starts a new product
+      continue;
+    }
+    previousPairKey = pairKey || null;
 
     // Qty row: iterate every channel column and emit an observation for each non-zero cell.
     for (let col = channelFirst; col <= lastChannelCol; col += 1) {
@@ -776,6 +833,7 @@ function adaptPOS(ctx: AdapterContext): AdapterResult {
       if (!channelName) continue;
       const qty = cellNumber(at(row, col));
       if (qty === 0) continue;
+      parsedUnitsNet += qty;
 
       if (qty > 0) {
         observations.push({
@@ -821,6 +879,29 @@ function adaptPOS(ctx: AdapterContext): AdapterResult {
         unallocated: true,
       });
     }
+  }
+
+  // Reconcile the units we read against the units the sheet says it contains. POS states its own unit
+  // total per channel on the "Total Units" row and it agrees with the qty rows to the unit, so any
+  // disagreement means the adapter classified rows differently from the file (a new layout, a shifted
+  // column, a value row counted as units) and the numbers must not reach the database. This is the
+  // self-check PS has always had through its "Total Qty" column and POS never had; on the 2026-08 W3
+  // file it fires at 93,261 read against 1,048 declared, and blocks the import.
+  const declaredUnits = posDeclaredTotalUnits(
+    sheet,
+    itemNameCol,
+    channelFirst,
+    lastChannelCol,
+    dataStartRow(combinedC, 2),
+  );
+  if (declaredUnits !== null && Math.abs(declaredUnits - parsedUnitsNet) > 0.01) {
+    blockingReasons.push(
+      `POS Purchasing Sales: the sheet's own "Total Units" row declares ${readableNumber(declaredUnits)} units, but the ` +
+        `adapter read ${readableNumber(parsedUnitsNet)}. The file's layout is not the one the adapter expects, so nothing ` +
+        `was imported rather than storing quantities that are known to be wrong. A gap this size normally means ` +
+        `each product's EGP value row is being counted as units — check whether the value rows now repeat the ` +
+        `product name and code.`,
+    );
   }
 
   return { observations, sheetDates, sheetName: sheet.name, blockingReasons };

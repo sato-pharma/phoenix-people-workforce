@@ -332,6 +332,7 @@ import { runCustomerPropagationTests } from "./customer-propagation.test.ts";
 import { runSosAutoApplyTests } from "./sos-auto-apply.test.ts";
 import { runCustomerClustersTests } from "./customer-clusters.test.ts";
 import { runWeeklySalesImportTests } from "./weekly-sales-import.test.ts";
+import { runWeeklyPosValueRowTests } from "./weekly-pos-value-row-is-not-units.test.ts";
 import { runWeeklySalesAccessTests } from "./weekly-sales-access.test.ts";
 import { runMonthlyClosingRegionScopeTests } from "./monthly-closing-region-scope.test.ts";
 import { runMonthlyClosingDetailsTests } from "./monthly-closing-details.test.ts";
@@ -1690,6 +1691,7 @@ await runTest("customer cross-distributor propagation", runCustomerPropagationTe
 await runTest("sos auto-apply gate", runSosAutoApplyTests);
 await runTest("customer location clusters", runCustomerClustersTests);
 await runTest("weekly sales import", runWeeklySalesImportTests);
+await runTest("weekly POS value row is not units", runWeeklyPosValueRowTests);
 await runTest("weekly sales access", runWeeklySalesAccessTests);
 await runTest("monthly closing region scope", runMonthlyClosingRegionScopeTests);
 await runTest("monthly closing details", runMonthlyClosingDetailsTests);
