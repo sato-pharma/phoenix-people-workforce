@@ -10,7 +10,7 @@ import {
   type RecruitmentFileDbRow,
 } from "@/lib/recruitment/db";
 import { getRecruitmentFileStorage } from "@/lib/recruitment/file-storage";
-import type { RecruitmentFile } from "@/lib/recruitment/types";
+import type { RecruitmentFile, TeamCandidateFile } from "@/lib/recruitment/types";
 
 export async function listCandidateFiles(candidateId: string): Promise<RecruitmentFile[]> {
   const supabase = recruitmentDb();
@@ -21,6 +21,74 @@ export async function listCandidateFiles(candidateId: string): Promise<Recruitme
     .order("created_at", { ascending: false });
   if (error) throw error;
   return ((data ?? []) as RecruitmentFileDbRow[]).map(mapRecruitmentFile);
+}
+
+/**
+ * The files for many candidates at once, keyed by candidate.
+ *
+ * Exists because a LIST screen must not ask per card. The manager's team view renders one card per
+ * CV and each card's View/Download control needs to know whether there is a file: asking per card
+ * meant seven parallel requests, each of which re-authorised by walking the whole org chart, and the
+ * buttons took about fifteen seconds to appear on a cold server. A control that arrives that late is
+ * not a control — the owner reported it as missing, and he was right to.
+ *
+ * Chunked at 50: a PostgREST `.in()` carrying several hundred ids returns zero rows and no error,
+ * which here would render "No CV file on record." over a candidate whose CV is sitting right there.
+ */
+export async function listCandidateFilesByCandidate(
+  candidateIds: readonly string[],
+): Promise<Map<string, RecruitmentFile[]>> {
+  const byCandidate = new Map<string, RecruitmentFile[]>();
+  const ids = Array.from(new Set(candidateIds.filter((id) => id.length > 0)));
+  if (ids.length === 0) return byCandidate;
+
+  const supabase = recruitmentDb();
+  for (let index = 0; index < ids.length; index += 50) {
+    const { data, error } = await supabase
+      .from("ats_files")
+      .select("*")
+      .in("candidate_id", ids.slice(index, index + 50))
+      .order("created_at", { ascending: false });
+    if (error) throw error;
+    for (const row of (data ?? []) as RecruitmentFileDbRow[]) {
+      const file = mapRecruitmentFile(row);
+      const key = String(row.candidate_id ?? "");
+      if (!key) continue;
+      const existing = byCandidate.get(key);
+      if (existing) existing.push(file);
+      else byCandidate.set(key, [file]);
+    }
+  }
+  return byCandidate;
+}
+
+/**
+ * The same thing, in the four fields a CARD may render — the shape that crosses to the browser.
+ *
+ * Every list screen that shows View CV / Download needs exactly this and nothing more, so it lives
+ * here once rather than being remapped at each caller. `RecruitmentFile` must NOT cross that line:
+ * it carries the storage path and the provider's own id, neither of which a card has any use for
+ * and both of which would then sit in the page's serialized props.
+ *
+ * Every requested candidate gets a key, empty array included. The absence of a key would mean
+ * "nobody asked", which the card would then treat as "go and ask yourself" — the exact per-card
+ * request this function exists to remove.
+ */
+export async function listCandidateCardFiles(
+  candidateIds: readonly string[],
+): Promise<Record<string, TeamCandidateFile[]>> {
+  const byCandidate = await listCandidateFilesByCandidate(candidateIds);
+  const files: Record<string, TeamCandidateFile[]> = {};
+  for (const candidateId of candidateIds) {
+    if (!candidateId) continue;
+    files[candidateId] = (byCandidate.get(candidateId) ?? []).map((file) => ({
+      fileName: file.fileName,
+      id: file.id,
+      kind: file.kind ?? "",
+      mimeType: file.mimeType ?? null,
+    }));
+  }
+  return files;
 }
 
 export type UploadCandidateFileInput = {

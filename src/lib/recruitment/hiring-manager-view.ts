@@ -21,11 +21,16 @@
 // Since 2026-08-15 there are TWO ways into that scope, not one: the requisition walk below, and a
 // candidate a recruiter pushed straight to this caller with no requisition in between. The second
 // is the one the module is actually used for — see isCandidateSentToCaller.
+//
+// Since 2026-08-30 there is a THIRD: a candidate pushed to somebody who reports to this caller, so a
+// National Sales Manager can open the CVs sitting with his district managers. That one is an org
+// walk and lives in hiring-manager-team.ts, which owns the rule about who may look at whom.
 
 import type { AccessContext } from "@/lib/auth/permissions";
 import { hrIdsMatch } from "@/lib/hr-id";
 import { canSeeAllRecruitment } from "@/lib/recruitment/access";
 import { recruitmentDb } from "@/lib/recruitment/db";
+import { isCandidateWithinViewerTeam } from "@/lib/recruitment/hiring-manager-team";
 import { getFileForDownload, listCandidateFiles, type FileDownload } from "@/lib/recruitment/files";
 import { getRequisition } from "@/lib/recruitment/requisitions";
 import type { RecruitmentFile } from "@/lib/recruitment/types";
@@ -58,6 +63,12 @@ export async function isCandidateSentToCaller(access: AccessContext, candidateId
 async function assertCandidateInHiringManagerScope(access: AccessContext, candidateId: string): Promise<void> {
   if (canSeeAllRecruitment(access)) return;
   if (await isCandidateSentToCaller(access, candidateId)) return;
+  // THE THIRD ROUTE INTO SCOPE, added 2026-08-30: a CV pushed to somebody who reports to this
+  // caller. The owner asked for a National Sales Manager to be able to read the CVs sitting with his
+  // district managers, and "read the CV" means opening the actual document — without this the team
+  // view would render a card whose View CV button answers 403, which is a worse screen than not
+  // showing the card at all. The org walk itself lives in hiring-manager-team.ts.
+  if (await isCandidateWithinViewerTeam(access, candidateId)) return;
 
   const supabase = recruitmentDb();
   const { data, error } = await supabase

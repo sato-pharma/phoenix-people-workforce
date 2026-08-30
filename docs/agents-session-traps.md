@@ -339,6 +339,35 @@ file holding the full account, under
   one this depends on: every DB round trip from here crosses the Atlantic.
   `supabase-client-15s-timeout-commits-anyway-half-applies`
 
+- **A missing TABLE answers `PGRST205`, NOT `42P01`.** `42P01` is Postgres's own `undefined_table`,
+  it is what a direct `psql` connection returns, and it is therefore what the guard gets written as
+  and what looks right in review. PostgREST never sends it: a read against a table it cannot find is
+  answered **out of its schema cache**, as `PGRST205 "Could not find the table 'public.<name>' in the
+  schema cache"`, with no Postgres error code on the object at all. So `code === "42P01"` fires
+  never, and the code reads as though it survives a window it does not survive.
+
+  Measured 2026-08-30 while adding `ats_candidate_manager_folders` (PR #2762) against a database that
+  did not yet have the table: the optional read threw, and a manager's **entire My Candidates page**
+  rendered the portal error boundary. That page is not a folders page — one new table that had not
+  landed yet took the whole screen down.
+
+  The window is the normal case here, not an edge: **a Railway deploy applies no migrations**, so a
+  merge to `main` serves the new code within minutes while the migration is still waiting to be run
+  by hand. Every page reading a new table runs against a database without it for that whole gap.
+
+  Treat "that table is not there" as a **set** rather than a code —
+  `const MISSING_TABLE_CODES = new Set(["42P01", "PGRST205"])` behind one `isMissingTable(error)`
+  helper, so a read path and a delete path cannot drift apart on it — and degrade to the empty answer
+  rather than throwing: an empty shelf is survivable, a dead screen is not. Pin it in a registered
+  test. Reaching the real failure needs a database that is missing a table, which no unit test can
+  arrange, so source-pin the constant **and** assert that no bare `code === "42P01"` comparison has
+  come back; `tests/manager-folder-shelf.test.ts` is the worked example.
+
+  The sibling trap is sharper because it fails *silently* rather than 500ing: a missing **function**
+  is `PGRST202`, and a detector matching on the words *schema cache* cannot tell it from a missing
+  table — see `pgrst202-missing-function-reads-as-missing-schema`.
+  `a-missing-table-answers-pgrst205-not-42p01`
+
 **Database, grants and RLS** (relocated from `MEMORY.md`, 2026-08-28 — these are platform
 mechanics, not Phoenix business rules, so under §2.2's cap they were spending index bytes for reach
 this file already gives them)

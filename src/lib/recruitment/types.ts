@@ -410,6 +410,43 @@ export type CandidateStatusEvent = {
   createdAt: string;
 };
 
+/**
+ * Ceiling on a manager's comment, matching the CHECK constraint in
+ * 20260830223000_candidate_manager_comments.sql.
+ *
+ * It lives in this module, not beside the service, because the textarea that enforces it is a client
+ * component — and candidate-comments.ts reaches for the service-role database client, which must
+ * never be pulled into a browser bundle by an innocent-looking import of a number.
+ */
+export const CANDIDATE_COMMENT_MAX_LENGTH = 2000;
+
+// What a manager said about a CV pushed to somebody in their team. Not a decision and not a status
+// change — see the note on ats_candidate_comments for why it does not live in the status history.
+// The author's name and title are as at the moment of writing, because HR_IDs are reused when a
+// seat is refilled and resolving them later would attribute one manager's words to their successor.
+export type CandidateComment = {
+  id: string;
+  candidateId: string;
+  authorHrId: string | null;
+  authorName: string | null;
+  authorJobTitle: string | null;
+  body: string;
+  createdAt: string;
+};
+
+/**
+ * Just enough about a stored file for a card to offer View CV / Download.
+ *
+ * Deliberately NOT `RecruitmentFile`: that type belongs to the service layer, and this crosses into
+ * a client component. Four fields, all of them safe to render — no storage path, no provider id.
+ */
+export type TeamCandidateFile = {
+  id: string;
+  fileName: string;
+  kind: string;
+  mimeType: string | null;
+};
+
 export type Interview = {
   id: string;
   applicationId: string;

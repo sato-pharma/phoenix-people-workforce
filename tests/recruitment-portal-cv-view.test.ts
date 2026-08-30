@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
+import { join, sep } from "node:path";
+import { fileURLToPath } from "node:url";
 
 /**
  * "View CV" must VIEW the CV, and a failed preview must never be a dead end.
@@ -25,49 +27,78 @@ import { readFileSync } from "node:fs";
  * download from an inline URL too, with no error anywhere. Only the modal is immune.
  */
 export async function runRecruitmentPortalCvViewTests(): Promise<void> {
-  const portalSource = readFileSync(
-    new URL("../src/components/employee-portal/recruitment-candidates-portal.tsx", import.meta.url),
-    "utf8",
-  );
-
   // ── "View CV" must be a Button that opens the preview, not an anchor ────────────────────────
+  //
+  // The control is found by SEARCHING for it rather than by naming the file it used to sit in.
+  // It has already moved once: on 2026-08-30 it was lifted out of recruitment-candidates-portal
+  // into its own component so a second screen (a manager reading the CVs held by the managers
+  // below him) could reuse it instead of growing a copy. A test pinned to the old path fails on
+  // that move while the behaviour is perfectly intact, which teaches a session to relax the
+  // assertion — and the assertion is the whole point.
+  //
+  // Searching is also STRICTER than the original: every component rendering a "View CV" control
+  // must satisfy the rule, so a future second copy is held to it too rather than slipping past a
+  // check that only ever read one file.
+  const componentsRoot = fileURLToPath(new URL("../src/components/", import.meta.url));
+  const componentFiles = readdirSync(componentsRoot, { encoding: "utf8", recursive: true })
+    .filter((name) => name.endsWith(".tsx"))
+    .map((name) => name.split(sep).join("/"))
+    .sort();
+
   // Comments are stripped first: the code around this control is deliberately commented, and
   // those comments name "View CV" and "<a>" while explaining the bug. Matching raw source would
   // find the explanation instead of the element and report on prose rather than on behaviour.
-  const code = portalSource
-    .replace(/\{\s*\/\*[\s\S]*?\*\/\s*\}/g, "")
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .replace(/^[ \t]*\/\/.*$/gm, "");
+  const stripComments = (source: string): string =>
+    source
+      .replace(/\{\s*\/\*[\s\S]*?\*\/\s*\}/g, "")
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/^[ \t]*\/\/.*$/gm, "");
 
-  const viewCvAt = code.indexOf("View CV");
-  assert.ok(viewCvAt > 0, "the portal must still offer a control labelled \"View CV\"");
+  const renderers = componentFiles
+    .map((name) => {
+      const source = readFileSync(join(componentsRoot, name), "utf8");
+      return { code: stripComments(source), name, source };
+    })
+    .filter((file) => file.code.includes("View CV"));
 
-  // Walk back to the element that owns this label. Whichever opening tag is nearest before the
-  // label is the element rendering it.
-  const beforeLabel = code.slice(0, viewCvAt);
-  const anchorAt = beforeLabel.lastIndexOf("<a");
-  const buttonAt = beforeLabel.lastIndexOf("<Button");
   assert.ok(
-    buttonAt > anchorAt,
-    "\"View CV\" must be rendered by <Button> (opening CvPreviewModal), not by an <a> at the file " +
-      "route — an anchor there serves Content-Disposition: attachment and downloads the CV instead " +
-      "of showing it",
+    renderers.length > 0,
+    "no component under src/components renders a control labelled \"View CV\" any more — the " +
+      "hiring-manager portal must still offer one, and this test cannot check a control that " +
+      "does not exist",
   );
 
-  // ...and that Button must actually open the preview modal.
-  const buttonOpening = code.slice(buttonAt, viewCvAt);
-  assert.match(
-    buttonOpening,
-    /setPreviewOpen\(true\)/,
-    "the \"View CV\" button must open the in-page CV preview (setPreviewOpen(true))",
-  );
+  for (const renderer of renderers) {
+    const viewCvAt = renderer.code.indexOf("View CV");
 
-  // The modal must be wired to the same file, or the button opens an empty viewer.
-  assert.match(
-    portalSource,
-    /<CvPreviewModal/,
-    "the portal must render CvPreviewModal — it is what actually displays the CV",
-  );
+    // Walk back to the element that owns this label. Whichever opening tag is nearest before the
+    // label is the element rendering it.
+    const beforeLabel = renderer.code.slice(0, viewCvAt);
+    const anchorAt = beforeLabel.lastIndexOf("<a");
+    const buttonAt = beforeLabel.lastIndexOf("<Button");
+    assert.ok(
+      buttonAt > anchorAt,
+      `${renderer.name}: "View CV" must be rendered by <Button> (opening CvPreviewModal), not by ` +
+        "an <a> at the file route — an anchor there serves Content-Disposition: attachment and " +
+        "downloads the CV instead of showing it",
+    );
+
+    // ...and that Button must actually open the preview modal.
+    const buttonOpening = renderer.code.slice(buttonAt, viewCvAt);
+    assert.match(
+      buttonOpening,
+      /setPreviewOpen\(true\)/,
+      `${renderer.name}: the "View CV" button must open the in-page CV preview (setPreviewOpen(true))`,
+    );
+
+    // The modal must be wired to the same file, or the button opens an empty viewer.
+    assert.match(
+      renderer.source,
+      /<CvPreviewModal/,
+      `${renderer.name}: a component offering "View CV" must render CvPreviewModal — it is what ` +
+        "actually displays the CV",
+    );
+  }
 
   // ── A failed render must still offer a way to read the CV ───────────────────────────────────
   const modalSource = readFileSync(

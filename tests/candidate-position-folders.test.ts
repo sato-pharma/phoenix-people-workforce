@@ -278,8 +278,17 @@ export async function runCandidatePositionFolderTests() {
   const portal = read("src/components/employee-portal/recruitment-candidates-portal.tsx");
   assert.match(
     portal,
-    /groupCandidatesByPosition\(sentToMe\)/,
+    /groupCandidatesByPosition\(liveSends\)/,
     "the manager's inbox folds on the SAME function the recruiter's screen and this test use",
+  );
+  // The argument was `sentToMe` until 2026-08-30, when the manager got his own CV shelf. It must now
+  // be the SHELF-FILTERED list, and the order is the whole point: a CV he has kept for later has to
+  // leave "Sent to you" entirely. Folding the unfiltered list would put it in a position folder AND
+  // in a folder on his shelf — a candidate in two lists is a candidate answered twice.
+  assert.match(
+    portal,
+    /partitionManagerCandidates\(sentToMe, filings\)/,
+    "the shelf split runs BEFORE the position grouping, so a filed CV is in exactly one list",
   );
   assert.match(
     portal,
