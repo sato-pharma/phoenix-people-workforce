@@ -28,6 +28,7 @@ import type {
   CeoAttentionTone,
   CeoCommandCenterData,
 } from "@/lib/ceo/command-center";
+import { sosPeriodDisplayLabel } from "@/lib/ceo/command-center";
 import { cn } from "@/lib/utils";
 
 export type CeoWelcomeProfile = {
@@ -323,7 +324,12 @@ function PerfCard({
 }) {
   return (
     <div className={cn("flex flex-col border border-slate-200 bg-white", className)}>
-      <div className="flex items-center justify-between gap-2 border-b border-slate-100 bg-slate-900 px-4 py-3">
+      {/* `flex-wrap` so a long badge drops to its own line instead of overflowing the card.
+          It pairs with `whitespace-nowrap` on the badge itself: together they mean no PHRASE ever
+          breaks mid-sentence (the owner's rule) while the header still cannot overflow at a narrow
+          width — this row is one column on anything below `lg`. It is inert whenever both items
+          fit, which is every desktop width, so the other cards in this row are unaffected. */}
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 bg-slate-900 px-4 py-3">
         <div className="flex items-center gap-2 text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-300">
           <span className="text-orange-400">{icon}</span>
           {title}
@@ -401,6 +407,16 @@ export function CeoCommandCenter({
   variant?: "admin" | "ceo" | "sfe";
 }) {
   const { attention, approvals, dataUnavailable, headcount, health, payroll, sos } = data;
+  // Name the month AND say what it is, everywhere the month appears. This card shows the last
+  // published closing rather than the newest upload (see getCeoCommandCenterData), so a bare
+  // "2026-07" read in August would look like a stale page; the word "closing" is what turns it
+  // into a deliberate figure.
+  const sosPeriodLabel = sosPeriodDisplayLabel(sos);
+  // "August is loading" — the one thing a reader of a deliberately-last-month figure still needs.
+  const sosNewerLabel =
+    sos && sos.newerPeriods.length > 0 && sos.periodBasis === "published-closing"
+      ? `${sos.newerPeriods[0]} is still loading`
+      : null;
   const isSfe = variant === "sfe";
   const surfaceLabel =
     variant === "sfe"
@@ -490,7 +506,7 @@ export function CeoCommandCenter({
               icon={<Wallet className="h-3.5 w-3.5" />}
               label="Monthly sales"
               value={sos ? egp(sos.totalValue) : "—"}
-              sub={sos?.period ? `Source of Sales · ${sos.period}` : "No monthly sales loaded"}
+              sub={sosPeriodLabel ? `Source of Sales · ${sosPeriodLabel}` : "No monthly sales loaded"}
               tone={sos && sos.totalValue > 0 ? "emerald" : "amber"}
             />
           )}
@@ -533,7 +549,7 @@ export function CeoCommandCenter({
             icon={<BarChart3 className="h-3.5 w-3.5" />}
             label="Lines selling"
             value={n(sos?.lineCount ?? 0)}
-            sub={sos ? `In ${sos.period ?? "the latest period"}` : "No monthly sales loaded"}
+            sub={sos ? `In ${sosPeriodLabel ?? "the latest period"}` : "No monthly sales loaded"}
             tone={sos && sos.lineCount > 0 ? "slate" : "amber"}
           /> : <MetricTile
             icon={<BarChart3 className="h-3.5 w-3.5" />}
@@ -548,7 +564,7 @@ export function CeoCommandCenter({
             icon={<MapPinned className="h-3.5 w-3.5" />}
             label="Products selling"
             value={n(sos?.byProduct.length ?? 0)}
-            sub={sos ? `Across ${n(sos.lineCount)} lines · ${sos.period ?? "latest period"}` : "No monthly sales loaded"}
+            sub={sos ? `Across ${n(sos.lineCount)} lines · ${sosPeriodLabel ?? "latest period"}` : "No monthly sales loaded"}
             tone={sos && sos.byProduct.length > 0 ? "slate" : "amber"}
           /> : <MetricTile
             icon={<MapPinned className="h-3.5 w-3.5" />}
@@ -704,14 +720,22 @@ export function CeoCommandCenter({
             number of cards that actually render for THAT variant. A card removed by a ruling and a
             column count left behind is exactly how these gaps appear. */}
         <div className={cn("grid divide-x divide-slate-200", isSfe ? "lg:grid-cols-1" : "lg:grid-cols-3")}>
-          {/* SoS — immediate */}
+          {/* SoS — immediate. The month in progress rides on this card's own header line, next to
+              the units: the one place a reader looking at a deliberately-last-month figure is
+              already looking. `whitespace-nowrap` on that badge because an owner rule forbids this
+              text wrapping, and it uses a plain className rather than cn(), which silently drops
+              text-phx-* named sizes. */}
           <PerfCard
             className={cn(!isSfe && "lg:col-span-2")}
             title="Source of Sales"
             icon={<BarChart3 className="h-3.5 w-3.5" />}
             headline={sos ? egp(sos.totalValue) : "—"}
-            headlineSub={sos?.period ? `Monthly · ${sos.period}` : "Monthly"}
-            badge={sos ? <span className="text-phx-2xs text-slate-400">{n(sos.totalQty)} units</span> : null}
+            headlineSub={sosPeriodLabel ? `Monthly · ${sosPeriodLabel}` : "Monthly"}
+            badge={sos ? (
+              <span className="whitespace-nowrap text-phx-2xs text-slate-400">
+                {n(sos.totalQty)} units{sosNewerLabel ? ` · ${sosNewerLabel}` : ""}
+              </span>
+            ) : null}
           >
             {/* Full-width on the SFE page, so the two tables sit side by side instead of one
                 stacked under the other across the whole screen. */}

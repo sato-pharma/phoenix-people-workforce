@@ -16,6 +16,7 @@ import { getOutstationExpenseCommandData } from "@/lib/outstation/expense-comman
 import { getPlatformMetrics, type PlatformMetrics } from "@/lib/platform/metrics";
 import { getProbationRows, isProbationDecisionOutstanding } from "@/lib/probation/service";
 import { getResignationsDashboardData } from "@/lib/resignations/service";
+import { latestPublishedClosingPeriod } from "@/lib/sales/monthly-closing-publication";
 import { loadSourceOfSalesDashboard } from "@/lib/sales/monthly-distributor-import";
 import {
   getSfeImsContribution,
@@ -85,6 +86,23 @@ export type CeoCommandCenterData = {
   approvals: { leavePending: number | null; plansPending: number | null };
   sos: {
     period: string | null;
+    /**
+     * Why `period` is the month it is — so the card can SAY which month it is showing instead of
+     * quietly swapping one for another.
+     *
+     * `published-closing` — the last month with a published closing, the normal case.
+     * `latest-upload`     — nothing has ever been published (or the lookup failed), so this is the
+     *                       newest month holding data, exactly as before this field existed.
+     */
+    periodBasis: "published-closing" | "latest-upload";
+    /**
+     * Months NEWER than the one shown that already hold data but are not closed yet, newest first.
+     *
+     * Without this the card would be silent about a month in progress, and "August is loading" is
+     * not a detail — it is the difference between a number that is deliberately last month's and a
+     * system that looks stuck. Empty whenever the newest month is the one on display.
+     */
+    newerPeriods: string[];
     totalValue: number;
     totalQty: number;
     /**
@@ -116,6 +134,23 @@ export type CeoCommandCenterData = {
   adminSignals: CeoAdminSignals | null;
 };
 
+/**
+ * How the SoS month is named wherever it appears — hero tiles, card header, table titles, export
+ * titles. One helper because those live in three components: two of them would otherwise each grow
+ * their own copy of this string and drift, and the owner's rule is that an export must match the
+ * screen it came from.
+ *
+ * Pure and null-safe by design, so a client component can be handed the finished string.
+ */
+export function sosPeriodDisplayLabel(sos: CeoCommandCenterData["sos"]): string | null {
+  if (!sos?.period) return null;
+  // Never call an unclosed month a closing. When nothing has been published the card is simply
+  // showing the newest data loaded, and saying so is the difference between a figure the reader
+  // can bank and one they should not.
+  return sos.periodBasis === "published-closing"
+    ? `${sos.period} closing`
+    : `${sos.period} · not closed yet`;
+}
 
 /**
  * Product lines the SFE partitions (targets, IMS contribution) are computed over.
@@ -268,9 +303,32 @@ export async function getCeoCommandCenterData(access: AccessContext): Promise<Ce
   // of executive-signal fetching that could run concurrently.
   const adminSignalsPromise = getCeoAdminSignals(access, platformPromise);
 
+  // Which month this card shows: the last PUBLISHED closing, not the newest upload.
+  //
+  // `loadSourceOfSalesDashboard(null)` picks the newest period holding a validated import batch,
+  // which is right for the Source of Sales upload console — the person loading a month must see
+  // the month they are loading. It is wrong for a landing page. A month's distributors arrive over
+  // weeks: measured on production 2026-08-30, August held ONE validated batch worth EGP 290,387
+  // while July held seventeen worth EGP 61,547,414. So from the first upload of a new month this
+  // hero read 0.5% of a real month and the tables under it were nearly empty — which reads as
+  // "the company sold nothing", not as "the month has barely started loading".
+  //
+  // The published closing is the right anchor because it is the only month the business treats as
+  // true (a closing may not even be published during the month it covers — see
+  // closing-period-gate.ts), and it is a fact this app already records rather than a freshness
+  // heuristic that would need a threshold and would rot.
+  //
+  // Fired before the await below so it overlaps the platform and admin-signal fetches already in
+  // flight; it is one indexed row, so it costs the page nothing. Null (nothing ever published, or
+  // the lookup errored) falls through to today's exact behaviour, so this can only ever widen what
+  // the card shows. `loadSourceOfSalesDashboard` itself ignores a period with no validated batch,
+  // so a published month whose imports were since removed also degrades to newest-loaded.
+  const closingPeriodPromise = latestPublishedClosingPeriod();
+  const closingPeriod = await closingPeriodPromise;
+
   const [sosR, platformR, adminSignalsR, pendingPlansR] =
     await Promise.allSettled([
-      loadSourceOfSalesDashboard(null, { role: access.role }),
+      loadSourceOfSalesDashboard(closingPeriod, { role: access.role }),
       platformPromise,
       adminSignalsPromise,
       getCeoPendingPlansCount(),
@@ -296,9 +354,24 @@ export async function getCeoCommandCenterData(access: AccessContext): Promise<Ce
   // renders "unavailable" instead of a false all-clear.
   const leavePending = adminSignals ? adminSignals.leavePendingTotal : null;
 
+  // The period actually rendered is whatever loadSourceOfSalesDashboard settled on, which is the
+  // requested closing month only when that month really holds validated data — so read the basis
+  // off the RESULT, never off what we asked for. Anything newer than the shown month and already
+  // carrying data is a month in progress.
+  const shownPeriod = sos?.period ?? null;
+  const sosPeriodBasis: "published-closing" | "latest-upload" =
+    closingPeriod !== null && shownPeriod === closingPeriod ? "published-closing" : "latest-upload";
+  const sosNewerPeriods = shownPeriod
+    ? [...(sos?.availablePeriods ?? [])]
+        .filter((candidate) => candidate > shownPeriod)
+        .sort((left, right) => right.localeCompare(left))
+    : [];
+
   const sosOut = sos
     ? {
         period: sos.period,
+        periodBasis: sosPeriodBasis,
+        newerPeriods: sosNewerPeriods,
         totalValue: sos.totals.totalValue,
         totalQty: sos.totals.totalQty,
         lineCount: (sos.byLine ?? []).length,
