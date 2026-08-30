@@ -22,6 +22,7 @@ import {
   resolveSalesGeographyBound,
 } from "@/lib/sales/access-scope";
 import { listMonthlyClosingPeriods, loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
+import { loadOperationalRegionResolver } from "@/lib/sales/closing-organogram-regions";
 import {
   expandAreaCodesForLine,
   foldAreaCodeForLine,
@@ -29,6 +30,14 @@ import {
   getMergedAreaName,
   hasClosingAreaMerges,
 } from "@/lib/sales/closing-area-merges";
+import {
+  areaMatchesRegionFilter,
+  buildRegionOptions,
+  operationalRegionFor,
+  rowIsInRegionScope,
+  rowMatchesRegionFilter,
+  widenRegionsToGeography,
+} from "@/lib/sales/sos-region-basis";
 import { shiftPeriod } from "@/lib/sales/periods";
 import {
   buildSosCoverageReport,
@@ -203,6 +212,7 @@ export type SosDetailLeafRow = {
   distributorCode: string;
   distributorName: string;
   officialLine: string;
+  /** ORGANOGRAM region — the DM territory that owned this area, on this line, in this month. */
   regionCode: string;
   regionName: string;
   areaCode: string;
@@ -212,19 +222,44 @@ export type SosDetailLeafRow = {
   channel: "Direct" | "Distributor";
   units: number;
   value: number;
+  /**
+   * GEOGRAPHIC region — where the area sits on the map, the code the fact row itself carries.
+   * Carried alongside so the export states which basis produced its subtotals, instead of leaving
+   * a reader to discover that two screens split the same month differently. Equal to `regionCode`
+   * for every row the organogram does not move. Same vocabulary as `applyOperationalRegions`.
+   */
+  sourceRegionCode: string;
+  sourceRegionName: string;
 };
 
 type ExecRow = {
   distributorCode: string;
   officialLine: string;
+  /**
+   * GEOGRAPHIC region — the code the fact row itself carries, i.e. where the area sits on the map.
+   * This is the ACCESS dimension: `scopeRegionCodes` is resolved against it, because that is what
+   * the RPC push-down filters on. Never group or display on it for an organogram line.
+   */
   regionCode: string;
+  /**
+   * ORGANOGRAM region — which DM territory owned this area, on this line, in this month. Falls back
+   * to `regionCode` for a line outside the organogram set (Head Office), for an area the org chart
+   * does not cover, and whenever the org chart could not be read at all.
+   *
+   * This is the DISPLAY and USER-FILTER dimension, and the split is the whole point: the two
+   * disagree on 23 (line, area) pairs as of 2026-07-31, moving 807k EGP between regions in July
+   * alone — CNS Others +335k, CNS Delta (1) −214k — while the grand total stays identical, so
+   * nothing about the disagreement looks wrong on either screen.
+   */
+  operationalRegionCode: string;
   areaCode: string;
   productCode: string;
   productName: string;
   units: number;
   value: number;
   /** The month this leaf row belongs to — tagged at fetch time so the trend can reconcile each
-   *  selected month's point to its own detail total. Empty for the prior-period MoM fetch. */
+   *  selected month's point to its own detail total, and so `operationalRegionCode` is dated at the
+   *  row's OWN month. Tagged on every detail fetch including the MoM and YoY comparison months. */
   period: string;
 };
 type BrickRow = { distributorCode: string; regionCode: string; areaCode: string; brickId: string; units: number; value: number };
@@ -396,12 +431,19 @@ const fetchSosDashboardRpcRowsUncached = async (inputs: SosRpcInputs): Promise<S
       ).then((arrays) => arrays.flat());
     const detailRowsPromise = trendForcedEmpty ? emptyRpcRows : fetchDetail(selectedPeriods);
 
+    // Both comparison fetches tag `__period` for the same reason the selected months do. It used to
+    // be left off because the trend only ever reconciles SELECTED months — but the row's month is
+    // now what dates its organogram lookup, and an untagged row would resolve the prior or year-ago
+    // month against TODAY's structure, silently crediting a territory move to a month it predates.
     const priorDetailRowsPromise =
       !priorPeriod || trendForcedEmpty
         ? emptyRpcRows
         : safeRpcAll(
             "phx_exec_distributor_product (prior period)",
-            () => rpcAll(supabase, "phx_exec_distributor_product", detailArgsFor(priorPeriod), DETAIL_ORDER_BY),
+            () =>
+              rpcAll(supabase, "phx_exec_distributor_product", detailArgsFor(priorPeriod), DETAIL_ORDER_BY).then(
+                (rows) => rows.map((row) => ({ ...row, __period: priorPeriod })),
+              ),
             failedRpcs,
           );
 
@@ -410,7 +452,10 @@ const fetchSosDashboardRpcRowsUncached = async (inputs: SosRpcInputs): Promise<S
         ? emptyRpcRows
         : safeRpcAll(
             "phx_exec_distributor_product (YoY period)",
-            () => rpcAll(supabase, "phx_exec_distributor_product", detailArgsFor(yoyPeriod), DETAIL_ORDER_BY),
+            () =>
+              rpcAll(supabase, "phx_exec_distributor_product", detailArgsFor(yoyPeriod), DETAIL_ORDER_BY).then(
+                (rows) => rows.map((row) => ({ ...row, __period: yoyPeriod })),
+              ),
             failedRpcs,
           );
 
@@ -548,7 +593,7 @@ export async function getSosDashboard(
   // from rows, filter options and the trend for every other role (incl. company-scope SFE).
   const canSeeHeadOffice = canViewHeadOfficeLine(accessContext.role);
 
-  const [availablePeriods, references, salesScope, coverage] = await Promise.all([
+  const [availablePeriods, references, salesScope, coverage, operationalRegions] = await Promise.all([
     listMonthlyClosingPeriods(),
     loadSalesReferenceData({ includeCustomerBricks: false }),
     resolveSalesAccessScope(accessContext),
@@ -556,6 +601,10 @@ export async function getSosDashboard(
     // 2026-05 was never uploaded, and every trend line drew straight through the gap. A failure to
     // read coverage must not take the dashboard down — it degrades to "no gaps reported".
     loadSosCoverageReport().catch(() => null),
+    // The organogram's area -> DM-territory map, for every line and every month this page can show.
+    // Fails soft to an unavailable resolver: the dashboard then groups geographically exactly as it
+    // did before, which is wrong-but-unchanged rather than blank. See loadOperationalRegionResolver.
+    loadOperationalRegionResolver(),
   ]);
 
   // Per-viewer LINE/REGION lockdown. The SoS RPCs return the WHOLE company; without this any
@@ -643,6 +692,18 @@ export async function getSosDashboard(
       if (merged) areaLabel.set(a.areaCode, merged);
     }
   }
+  // UE-1 and UE-2 exist ONLY in the organogram — `source_of_sales_areas` has no such region codes,
+  // so `regionLabel` alone would render them as bare codes on the very screen that introduces them.
+  const regionDisplayLabel = (code: string): string =>
+    regionLabel.get(code) ?? operationalRegions.regionName(code) ?? code;
+  /** Every official line label present in the product master — the set `forLinePeriod` is asked about. */
+  const officialLines = [...new Set(references.products.map((p) => norm(p.line)).filter(Boolean))];
+  /** Upper-cased area -> geographic region. The organogram's own keys are upper-cased; these are not. */
+  const geographicRegionByArea = new Map<string, string>();
+  (references.areas ?? []).forEach((a) => {
+    if (a.areaCode) geographicRegionByArea.set(a.areaCode.toUpperCase(), (a.regionCode ?? "").toUpperCase());
+  });
+
   const distributorLabel = new Map<string, string>();
   references.distributors.forEach((d) => distributorLabel.set(d.code, d.name || d.code));
   const brickLabel = new Map<string, string>();
@@ -706,7 +767,12 @@ export async function getSosDashboard(
       .filter((line) => canSeeHeadOffice || !isHeadOfficeLine(line))
       .sort(),
     distributors: references.distributors.map((d) => ({ code: d.code, label: d.name || d.code })),
-    regions: references.regions.map((r) => ({ code: r.regionCode, label: r.regionName || r.regionCode })),
+    // Regions the viewer can PICK are the ones the board can SHOW, so this list is the organogram's
+    // as well as geography's. Without the union, Anti Infective's UE-1 / UE-2 subtotals would be
+    // rendered on the board with no way to filter to either of them, and picking "Upper Egypt"
+    // would select a region that line no longer has. Resolved at the selected month, never today —
+    // a forward-dated territory move must not add its region to a month it was dated to spare.
+    regions: buildRegionOptions(references.regions, operationalRegions, officialLines, selectedPeriod),
     areas: (foldLineCode ? foldAreaOptionsForLine(foldLineCode, references.areas ?? []) : references.areas ?? [])
       .map((a) => ({ code: a.areaCode, label: a.areaName || a.areaCode, region: a.regionCode })),
     products: references.products
@@ -751,7 +817,21 @@ export async function getSosDashboard(
   const scopeAreaArr = scopeAreaCodes ? [...scopeAreaCodes] : null;
 
   const trendLineNames = intersect(userLineNames, scopeLineNamesArr);
-  const trendRegionCodes = intersect(userRegionCodes, scopeRegionArr);
+  // Every month whose rows this request can fetch — the trend window, plus the year-ago anchor,
+  // plus the live structure. The widening below is a FETCH widener, so being generous here can only
+  // over-fetch (keepExec re-applies the exact per-row, per-month operational test); being stingy
+  // would silently drop rows, which is the failure that reads as "you sold nothing".
+  const widenPeriods: Array<string | null> = [
+    ...windowPeriods,
+    selectedPeriod ? shiftPeriod(selectedPeriod, 12) : null,
+    null,
+  ];
+  const trendRegionCodes = intersect(
+    userRegionCodes
+      ? widenRegionsToGeography(userRegionCodes, operationalRegions, officialLines, widenPeriods, geographicRegionByArea)
+      : null,
+    scopeRegionArr,
+  );
   const trendProductCodes = intersect(userProductCodes, scopeProductArr);
   // The AREA push-down carries the seat bound into SQL. This matters beyond latency: the 6-month
   // trend RPC has no area dimension of its own, so without it a seat-scoped viewer whose region set
@@ -841,7 +921,7 @@ export async function getSosDashboard(
     // Access-scope lockdown (line/region/product) — applied before user-supplied filters so a
     // scoped caller can never widen past their own line/region/products via query params.
     if (scopeLineKeys && !scopeLineKeys.has(normalizeLineKey(row.officialLine))) return false;
-    if (scopeRegionCodes && !scopeRegionCodes.has(row.regionCode.toUpperCase())) return false;
+    if (!rowIsInRegionScope(scopeRegionCodes, row)) return false;
     // Area lockdown — the tight half of a seat-derived geography bound. Rows with no area (the
     // "DIRECT" national placeholder) are left to the region check above, exactly as before.
     if (scopeAreaCodes && row.areaCode && !scopeAreaCodes.has(row.areaCode.toUpperCase())) return false;
@@ -850,23 +930,36 @@ export async function getSosDashboard(
       if (!lineFilterSet.has(row.officialLine.toLowerCase())) return false;
     } else if (lineFilter && row.officialLine.toLowerCase() !== lineFilter) return false;
     if (distSet && !distSet.has(row.distributorCode.toUpperCase())) return false;
-    if (regionSet && !regionSet.has(row.regionCode.toUpperCase())) return false;
+    // The USER's region filter matches what the board SHOWS — the organogram region. The access
+    // check above deliberately stays on the geographic code: that is the dimension the RPC
+    // push-down filters on, and swapping it would empty a scoped manager's board rather than
+    // scope it. Two different questions, two different columns; see ExecRow.
+    if (!rowMatchesRegionFilter(regionSet, row)) return false;
     if (areaSet && !areaSet.has(row.areaCode.toUpperCase())) return false;
     if (productSet && !productSet.has(row.productCode.toUpperCase())) return false;
     return true;
   };
 
-  const mapExecRow = (row: Record<string, unknown>): ExecRow => ({
-    distributorCode: norm(row.distributor_code as string),
-    officialLine: norm(row.official_line as string),
-    regionCode: norm(row.region_code as string),
-    areaCode: norm(row.area_code as string),
-    productCode: norm(row.product_code as string),
-    productName: norm(row.product_name as string),
-    units: Number(row.units ?? 0),
-    value: Number(row.value ?? 0),
-    period: norm(row.__period as string),
-  });
+  const mapExecRow = (row: Record<string, unknown>): ExecRow => {
+    const officialLine = norm(row.official_line as string);
+    const regionCode = norm(row.region_code as string);
+    const areaCode = norm(row.area_code as string);
+    const period = norm(row.__period as string);
+    return {
+      distributorCode: norm(row.distributor_code as string),
+      officialLine,
+      regionCode,
+      // Resolved at the row's OWN month. The prior-period and year-ago fetches carry different
+      // months, and a territory move between them is exactly the case that must not be flattened.
+      operationalRegionCode: operationalRegionFor(operationalRegions, officialLine, areaCode, period, regionCode),
+      areaCode,
+      productCode: norm(row.product_code as string),
+      productName: norm(row.product_name as string),
+      units: Number(row.units ?? 0),
+      value: Number(row.value ?? 0),
+      period,
+    };
+  };
 
   // Re-key a merged area onto its surviving code (UE9 → GZ6 on Pedia), or return it unchanged for a
   // non-merge code and every non-fold view. Byte-for-byte identity for anything without a rule.
@@ -878,6 +971,14 @@ export async function getSosDashboard(
   // Apply that AFTER keepExec, so authorization always runs on the real geography (UE9 stays UE9
   // through the scope/area checks) while every downstream breakdown groups the folded area as one
   // row. Only Pedia has a rule, and only on a single-Pedia view.
+  //
+  // The fold re-keys the AREA and deliberately leaves `operationalRegionCode` alone, which is only
+  // coherent because the two merged areas share an organogram region on the line that merges them:
+  // on pedia both GZ6 and UE9 resolve to GZ (measured on production 2026-08-31). They do NOT agree
+  // on anti_infective — GZ6 is GZ while UE9 is UE-1 — but that line has no merge rule, so the fold
+  // never runs there. If a merge rule is ever added for a line whose merged areas sit in different
+  // organogram regions, one displayed area would split across two regions on the board, and the
+  // fold would have to re-resolve the region for the surviving code as well.
   const foldExecRowArea = (row: ExecRow): ExecRow => {
     const folded = foldAreaForDisplay(row.areaCode);
     return folded === row.areaCode ? row : { ...row, areaCode: folded };
@@ -940,8 +1041,12 @@ export async function getSosDashboard(
       .sort((a, b) => b.value - a.value);
   };
 
+  // Regional subtotals follow the ORGANOGRAM, the same rule the Monthly Closing publishes and the
+  // same rule the owner ruled on for CNS and Pedia on 2026-08-07. Until this changed, these two
+  // executive surfaces split the same line and month differently and neither said which rule it
+  // used — the grand totals matched, so the disagreement was invisible.
   const groupByRegion = (rows: ExecRow[], total: number) =>
-    group(rows, (row) => row.regionCode, (code) => regionLabel.get(code) ?? code, () => null, total);
+    group(rows, (row) => row.operationalRegionCode, (code) => regionDisplayLabel(code), () => null, total);
   const groupByArea = (rows: ExecRow[], total: number) =>
     group(
       rows,
@@ -978,7 +1083,9 @@ export async function getSosDashboard(
     const current = distAccum.get(code) ?? { value: 0, units: 0, regions: new Set(), areas: new Set(), products: new Set() };
     current.value += row.value;
     current.units += row.units;
-    if (row.regionCode) current.regions.add(row.regionCode);
+    // Counted on the same basis the board's regional split uses, so "covers 5 regions" and the
+    // five rows above it are the same five.
+    if (row.operationalRegionCode) current.regions.add(row.operationalRegionCode);
     if (row.areaCode && row.areaCode !== "DIRECT") current.areas.add(row.areaCode);
     if (row.productCode) current.products.add(row.productCode);
     distAccum.set(code, current);
@@ -1009,7 +1116,8 @@ export async function getSosDashboard(
     }))
     .filter((row) => {
       if (distSet && !distSet.has(row.distributorCode.toUpperCase())) return false;
-      if (regionSet && !regionSet.has(row.regionCode.toUpperCase())) return false;
+      if (!areaMatchesRegionFilter(regionSet, operationalRegions, officialLines, selectedPeriod, row.regionCode, row.areaCode))
+        return false;
       if (areaSet && !areaSet.has(row.areaCode.toUpperCase())) return false;
       return true;
     });
@@ -1040,7 +1148,8 @@ export async function getSosDashboard(
     }))
     .filter((row) => {
       if (distSet && !distSet.has(row.distributorCode.toUpperCase())) return false;
-      if (regionSet && !regionSet.has(row.regionCode.toUpperCase())) return false;
+      if (!areaMatchesRegionFilter(regionSet, operationalRegions, officialLines, selectedPeriod, row.regionCode, row.areaCode))
+        return false;
       if (areaSet && !areaSet.has(row.areaCode.toUpperCase())) return false;
       return true;
     });
@@ -1236,8 +1345,13 @@ export async function getSosDashboard(
         distributorCode: row.distributorCode,
         distributorName: distributorLabel.get(row.distributorCode) ?? row.distributorCode,
         officialLine: row.officialLine,
-        regionCode: row.regionCode,
-        regionName: regionLabel.get(row.regionCode) ?? row.regionCode,
+        // The BI workbook's region tree is built off these two, so they carry the SAME organogram
+        // rule the board and the Monthly Closing use. Publishing used to mail the CEO a geographic
+        // split of a month he was reading the organogram split of, with matching grand totals.
+        regionCode: row.operationalRegionCode,
+        regionName: regionDisplayLabel(row.operationalRegionCode),
+        sourceRegionCode: row.regionCode,
+        sourceRegionName: regionDisplayLabel(row.regionCode),
         areaCode: row.areaCode,
         areaName: row.areaCode === "DIRECT" ? "Direct (National)" : areaLabel.get(row.areaCode) ?? row.areaCode,
         productCode: row.productCode,

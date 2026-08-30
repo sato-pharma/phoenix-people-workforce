@@ -91,6 +91,8 @@ function detailRow(overrides: Partial<ClosingDetailRow> = {}): ClosingDetailRow 
     areaName: "Giza One",
     regionCode: "GZ",
     regionName: "Giza",
+    operationalRegionCode: "GZ",
+    operationalRegionName: "Giza",
     areaMismatch: false,
     brickUnmapped: false,
     clientCode: "",

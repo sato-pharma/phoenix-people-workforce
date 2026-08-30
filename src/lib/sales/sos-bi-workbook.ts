@@ -60,13 +60,23 @@ const F_PCT = "0.0%";
 const F_Z = "0.00";
 
 // ── hidden Data sheet column map (1-based index; MUST track DATA_HEADERS order) ──
+// `Region Code` / `Region` are the ORGANOGRAM region — the DM territory that owned the area on that
+// line in that month, the same basis the Monthly Closing publishes. The geographic region the fact
+// row itself carries is kept beside it so the sheet states its own basis, rather than leaving a
+// reader to find out the hard way that two screens split one month differently.
+//
+// The two geographic columns are APPENDED, never inserted: every formula addresses this sheet
+// through `L()` / `DATA`, so an existing index must not move, and the chart helper columns below
+// are derived from DATA_NCOLS and shift on their own.
 const DATA = {
   Period: 1, DistCode: 2, Distributor: 3, Line: 4, RegionCode: 5, Region: 6,
   AreaCode: 7, Area: 8, ProductCode: 9, Product: 10, Channel: 11, Units: 12, Value: 13,
+  GeoRegionCode: 14, GeoRegion: 15,
 } as const;
 const DATA_HEADERS = [
   "Period", "Distributor Code", "Distributor", "Line", "Region Code", "Region",
   "Area Code", "Area", "Product Code", "Product", "Channel", "Units", "Value",
+  "Geographic Region Code", "Geographic Region",
 ];
 const DATA_NCOLS = DATA_HEADERS.length;
 // Chart helper series live BEYOND the table columns, on the HIDDEN Data sheet — never on the
@@ -267,6 +277,7 @@ function buildDataSheet(wb: Workbook, rows: SosDetailLeafRow[], trend: SosDashbo
     cleanText(r.officialLine), cleanText(r.regionCode), cleanText(r.regionName || r.regionCode),
     cleanText(r.areaCode), cleanText(r.areaName || r.areaCode), cleanText(r.productCode),
     cleanText(r.productName || r.productCode), r.channel, r.units, r.value,
+    cleanText(r.sourceRegionCode || r.regionCode), cleanText(r.sourceRegionName || r.sourceRegionCode || r.regionName),
   ]);
   if (matrix.length) sheet.writeArray(2, 1, matrix);
   const lastRow = Math.max(2, 1 + matrix.length);

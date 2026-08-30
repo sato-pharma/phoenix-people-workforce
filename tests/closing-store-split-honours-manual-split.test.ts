@@ -129,6 +129,8 @@ function detailRow(spec: RowSpec): ClosingDetailRow {
     qty: spec.qty,
     regionCode: "D2",
     regionName: "Delta 2",
+    operationalRegionCode: "D2",
+    operationalRegionName: "Delta 2",
     rowNumber: spec.id,
     salesValue: spec.salesValue,
     sheetAreaCode: spec.factArea,

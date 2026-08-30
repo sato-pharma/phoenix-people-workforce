@@ -1,5 +1,6 @@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
+import { resolveTargetLineCode } from "@/lib/sales/monthly-targets";
 import type {
   MonthlyClosingAggregateCell,
   MonthlyClosingDirectCell,
@@ -436,6 +437,100 @@ export async function loadLineOperationalRegions(
     );
   } catch {
     return null; // see "Fails SOFT" above
+  }
+}
+
+/**
+ * Answers "which DM territory owned this area, on this line, in this month" for MANY lines and
+ * MANY months from a single pair of reads.
+ *
+ * `loadLineOperationalRegions` above is per line and per month, which is exactly right for a
+ * closing — it shows one line, for one month. The executive dashboard shows every line the viewer
+ * is entitled to, across a selected month set plus its prior and year-ago anchors, so the per-line
+ * loader would be one round trip per (line, month) pair on the hot path of the page.
+ *
+ * The dating is NOT hoisted out of the loop. `buildOperationalRegionMap` is re-run per (line,
+ * month) against the same unordered rows, because that is the function that applies the
+ * `effective_from <= asOf < effective_to` window — resolving once at "now" and reusing it for
+ * every month is precisely the bug `closingRegionsAsOfDate` exists to prevent (AGENTS.md §4, the
+ * August / Delta (3) golden rule). Two months therefore legitimately get two different maps.
+ *
+ * Fails SOFT exactly like the per-line loader: on any read failure every lookup returns null and
+ * the caller keeps the geographic grouping it has always used. A dashboard must never fail to
+ * render because the org chart is unavailable.
+ *
+ * The unfiltered select is safe at this size and only at this size: the whole history view is 155
+ * rows (147 open) against `au_v_regions`' 10, measured on production 2026-08-31. An unbounded
+ * PostgREST select stops at 1000 rows with no marker of any kind, so if the org chart ever grows
+ * toward that, this needs paging — a silently truncated map does not fail, it just stops moving
+ * some areas.
+ */
+export type OperationalRegionResolver = {
+  /** null ⇒ this line does not use organogram regions, or the org chart could not be read. */
+  forLinePeriod: (officialLine: string | null | undefined, period: string | null | undefined) => LineOperationalRegionMap | null;
+  /** Display name for a region code, covering codes that exist ONLY operationally (UE-1, UE-2). */
+  regionName: (regionCode: string) => string | undefined;
+  /** False when the org chart could not be read at all — the caller then knows it is on geography. */
+  available: boolean;
+};
+
+const EMPTY_RESOLVER: OperationalRegionResolver = {
+  forLinePeriod: () => null,
+  regionName: () => undefined,
+  available: false,
+};
+
+export async function loadOperationalRegionResolver(): Promise<OperationalRegionResolver> {
+  try {
+    const supabase = getSupabaseAdmin();
+    const [historyResult, regionResult] = await Promise.all([
+      supabase.from("au_v_line_area_map_all").select(`line_code,${LINE_AREA_MAP_COLUMNS}`),
+      supabase.from("au_v_regions").select("region_code,region_name"),
+    ]);
+    // Same rule as the per-line loader: only the history view's ABSENCE earns a second round trip.
+    // A fallback that also masked a real outage would hand the caller a half-built map, which is
+    // worse than no map at all — it would silently move some areas and not others.
+    const mapResult = historyResult.error
+      ? await supabase.from("au_v_line_area_map").select(`line_code,${LINE_AREA_MAP_COLUMNS}`)
+      : historyResult;
+    if (mapResult.error || !mapResult.data) return EMPTY_RESOLVER;
+
+    const regionNames = new Map<string, string>();
+    (regionResult.error ? [] : regionResult.data ?? []).forEach((row) => {
+      const typed = row as { region_code?: string | null; region_name?: string | null };
+      const code = up(typed.region_code);
+      if (code) regionNames.set(code, String(typed.region_name ?? "").trim() || code);
+    });
+
+    const rowsByLine = new Map<string, Array<Record<string, unknown>>>();
+    (mapResult.data as Array<Record<string, unknown>>).forEach((row) => {
+      const lineCode = String(row.line_code ?? "").trim().toLowerCase();
+      if (!lineCode) return;
+      const bucket = rowsByLine.get(lineCode);
+      if (bucket) bucket.push(row);
+      else rowsByLine.set(lineCode, [row]);
+    });
+
+    const cache = new Map<string, LineOperationalRegionMap | null>();
+    return {
+      available: true,
+      regionName: (regionCode) => regionNames.get(up(regionCode)),
+      forLinePeriod: (officialLine, period) => {
+        const lineCode = resolveTargetLineCode(officialLine);
+        // Head Office resolves to null here and must: it is a confidential line with no field
+        // structure, and it is not on the organogram list either way.
+        if (!lineCode || !usesOrganogramRegions(lineCode)) return null;
+        const asOf = closingRegionsAsOfDate(period);
+        const key = `${lineCode} ${asOf}`;
+        const hit = cache.get(key);
+        if (hit !== undefined) return hit;
+        const built = buildOperationalRegionMap(rowsByLine.get(lineCode) ?? [], asOf, regionNames);
+        cache.set(key, built);
+        return built;
+      },
+    };
+  } catch {
+    return EMPTY_RESOLVER; // see "Fails SOFT" above
   }
 }
 

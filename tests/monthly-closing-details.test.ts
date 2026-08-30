@@ -55,6 +55,8 @@ function row(overrides: Partial<ClosingDetailRow> = {}): ClosingDetailRow {
     areaName: "Qena",
     regionCode: "UE",
     regionName: "Upper Egypt",
+    operationalRegionCode: "UE",
+    operationalRegionName: "Upper Egypt",
     areaMismatch: false,
     brickUnmapped: false,
     clientCode: "C1",

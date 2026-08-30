@@ -90,6 +90,8 @@ function detailRow(id: number, areaCode: string, clientName: string, qty: number
     qty,
     regionCode: "AB",
     regionName: "Alex-BHR",
+    operationalRegionCode: "AB",
+    operationalRegionName: "Alex-BHR",
     rowNumber: id,
     salesValue,
     sheetAreaCode: areaCode,
