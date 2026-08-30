@@ -19,10 +19,10 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { FolderOpen, Undo2 } from "lucide-react";
+import { FolderInput, FolderOpen, Undo2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { deleteRequest } from "@/components/recruitment/recruitment-fetch";
+import { deleteRequest, postJson } from "@/components/recruitment/recruitment-fetch";
 import { candidateDisplayName } from "@/lib/recruitment/candidate-display";
 import { candidateStatusLabel } from "@/lib/recruitment/candidate-status";
 import {
@@ -30,6 +30,7 @@ import {
   type CandidateFolder,
   type CandidateFolderKind,
 } from "@/lib/recruitment/candidate-folder";
+import { collectSuggestedFilings } from "@/lib/recruitment/candidate-folder-suggestion";
 import type { Candidate } from "@/lib/recruitment/types";
 import { cn } from "@/lib/utils";
 
@@ -105,6 +106,8 @@ export function CandidateFoldersTab({
           {error}
         </p>
       ) : null}
+
+      <DeclaredFilingsPanel candidates={candidates} />
 
       {shelves.map((shelf) => (
         <section className="rounded-lg border border-phx-line bg-white" key={shelf.kind}>
@@ -198,6 +201,110 @@ export function CandidateFoldersTab({
 /** "kind/key" — unique across shelves, because two shelves can legitimately hold the same key. */
 function folderId(kind: CandidateFolderKind, key: string): string {
   return `${kind}/${key}`;
+}
+
+/**
+ * "These people told us where they belong" — the one-press filing of everyone whose own WhatsApp
+ * answers name their folder.
+ *
+ * PROPOSE, NEVER AUTO-FILE. The owner's own standing rule for the comparable case is that the system
+ * flags an expense and never rejects one; filing is the same shape of decision, and a CV filed
+ * before any human saw it is a CV that arrived and was hidden in the same instant. So this panel
+ * shows exactly who would move and where, and waits to be pressed.
+ *
+ * The skipped half is shown for the same reason the shelves render when empty: a screen that lists
+ * only the confident cases reads as "everyone was handled", and the people who answered but could
+ * not be placed are precisely the ones who would otherwise be forgotten.
+ */
+function DeclaredFilingsPanel({ candidates }: { candidates: Candidate[] }) {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const { filings, skipped } = collectSuggestedFilings(candidates);
+
+  if (filings.length === 0 && skipped.length === 0) return null;
+
+  // Grouped by destination, because "8 CVs into Gharbia 1 (Tanta)" is a sentence the owner can check
+  // at a glance, while eight separate rows naming the same folder is one he has to add up himself.
+  const byFolder = new Map<string, { label: string; names: string[] }>();
+  for (const filing of filings) {
+    const id = folderId(filing.suggestion.kind, filing.suggestion.key.toLowerCase());
+    const existing = byFolder.get(id);
+    const name = candidateDisplayName(filing.fullName);
+    if (existing) existing.names.push(name);
+    else byFolder.set(id, { label: filing.suggestion.label, names: [name] });
+  }
+  const groups = Array.from(byFolder.values()).sort((a, b) => b.names.length - a.names.length);
+
+  const fileAll = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await postJson("/api/recruitment/candidates/file-declared", {
+        candidateIds: filings.map((filing) => filing.candidateId),
+      });
+      router.refresh();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Failed to file these CVs.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className="rounded-lg border border-phx-accent bg-orange-50/60">
+      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-phx-accent/40 px-3 py-2">
+        <span className="whitespace-nowrap text-sm font-black text-phx-ink">They told us where they belong</span>
+        <span className="whitespace-nowrap text-xs font-medium text-slate-500">
+          Answered the WhatsApp questions themselves — nothing here was read off a CV.
+        </span>
+        {filings.length > 0 ? (
+          <Button className="ml-auto" disabled={busy} onClick={fileAll}>
+            <FolderInput aria-hidden className="mr-1.5 h-3.5 w-3.5" />
+            {busy ? "Filing…" : `File all ${filings.length}`}
+          </Button>
+        ) : null}
+      </div>
+
+      {error ? (
+        <p className="px-3 pt-2 text-xs font-semibold text-rose-700">{error}</p>
+      ) : null}
+
+      {groups.length > 0 ? (
+        <ul className="divide-y divide-phx-accent/20">
+          {groups.map((group) => (
+            <li className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2" key={group.label}>
+              <span className="whitespace-nowrap text-sm font-bold text-phx-ink">{group.label}</span>
+              <span className="whitespace-nowrap text-xs font-bold tabular-nums text-phx-accent-press">
+                {group.names.length} {group.names.length === 1 ? "CV" : "CVs"}
+              </span>
+              <span className="whitespace-nowrap text-xs font-medium text-slate-500">
+                {group.names.join(" · ")}
+              </span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+
+      {skipped.length > 0 ? (
+        <div className="border-t border-phx-accent/40 px-3 py-2">
+          <p className="whitespace-nowrap text-xs font-bold text-slate-600">
+            {skipped.length} answered but cannot be placed
+          </p>
+          <ul className="mt-1 space-y-0.5">
+            {skipped.map((row) => (
+              <li className="flex flex-wrap items-baseline gap-x-2 text-phx-xs" key={row.candidateId}>
+                <span className="whitespace-nowrap font-semibold text-phx-ink">
+                  {candidateDisplayName(row.fullName)}
+                </span>
+                <span className="font-medium text-slate-500">{row.reason}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+    </section>
+  );
 }
 
 function FolderChip({

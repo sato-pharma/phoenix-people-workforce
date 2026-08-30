@@ -174,6 +174,7 @@ import { runRecruitmentManagerGroupingTests } from "./recruitment-manager-groupi
 import { runRecruitmentCandidateSeenTests } from "./recruitment-candidate-seen.test.ts";
 import { runRecruitmentScreeningPageTests } from "./recruitment-screening-page.test.ts";
 import { runCandidateFolderTests } from "./candidate-folders.test.ts";
+import { runCandidateFolderSuggestionTests } from "./candidate-folder-suggestion.test.ts";
 import { runCandidatePositionFolderTests } from "./candidate-position-folders.test.ts";
 import { runArabicPlaceMatchTests } from "./arabic-place-match.test.ts";
 import { runCandidatePositionSuggestionTests } from "./candidate-position-suggestion.test.ts";
@@ -1413,6 +1414,10 @@ await runTest(
 await runTest(
   "recruitment CV folders (a filed CV leaves the pool, the region shelf is EIGHT, and a rejection cannot be shelved)",
   runCandidateFolderTests,
+);
+await runTest(
+  "recruitment declared filing (only a TAPPED answer files a CV — 64 of production's 82 job titles are extractor output)",
+  runCandidateFolderSuggestionTests,
 );
 await runTest(
   "arabic place match (an English address naming an Arabic place: Box is not Bacos, George is not Girga)",
