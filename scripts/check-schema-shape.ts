@@ -115,6 +115,27 @@ export type SchemaShape = {
    * check" and must stay silent rather than invent a violation.
    */
   stale_snapshot_schemas?: StaleSnapshotSchema[];
+  /**
+   * Point-in-time snapshot tables sitting in `public`, named by the shared rule in
+   * scripts/lib/snapshot-name.ts.
+   *
+   * `check:sql-backups` applies that same rule to `.sql` FILES, so it catches a snapshot that
+   * arrives as a migration. It cannot see the case that actually keeps happening: all five
+   * pre-images relocated on 2026-08-30 were created by hand through MCP `execute_sql` during
+   * live fixes, so no file existed and that check stayed green for days.
+   *
+   * `missing_primary_key` did eventually catch them, but late and for the wrong reason — a
+   * `create table ... as select` happens to have no primary key. That makes it silenceable by
+   * the wrong fix: two migrations on 2026-08-27 added primary keys to the snapshots of the day,
+   * clearing the error while leaving every table in the one schema PostgREST serves, reported
+   * by nothing.
+   *
+   * Optional for the same reason as `stale_snapshot_schemas`: the RPC only exists once
+   * 20260830151500_ci_snapshot_tables_in_public.sql is applied, and this script runs against
+   * production and staging independently. `undefined` means "target predates the check" and
+   * must stay silent rather than invent a violation.
+   */
+  snapshot_tables_in_public?: SnapshotTableInPublic[];
 };
 
 /** Whether each browser-facing/server role holds USAGE on a given schema. */
@@ -127,6 +148,14 @@ export type StaleSnapshotSchema = {
   age_days: number;
   tables_count: number;
   size_bytes: number;
+};
+
+/** A snapshot table found in `public`, with whether a browser-facing role can reach it. */
+export type SnapshotTableInPublic = {
+  table_name: string;
+  anon_select: boolean;
+  authenticated_select: boolean;
+  rls_enabled: boolean;
 };
 
 /** One (granting role, object type, grantee) triple from pg_default_acl in schema public. */
@@ -358,6 +387,46 @@ export function evaluateSchemaShape(shape: SchemaShape): Violation[] {
     });
   }
 
+  // A point-in-time snapshot in `public`, named the day it appears rather than a week later
+  // as a side effect of having no primary key.
+  //
+  // ERROR, not warning, and that is a measured decision rather than a preference. The same
+  // rule already FAILS review in check:sql-backups, so grading it lower here would mean the
+  // repository refusing a snapshot in a file while tolerating the identical table in the
+  // database. Before shipping it was run against both live databases: zero of the 319
+  // production and 318 staging tables in `public` on 2026-08-30 match, so this can only go red when someone
+  // actually puts a snapshot there — which is the whole intent, and why it needs no allowlist.
+  //
+  // The reachability split is what makes the message actionable. A snapshot nothing can read
+  // is untidy; one `anon` or `authenticated` can read is the 2026-08-01 incident happening
+  // again, and the two must not print the same way at 4am.
+  if (shape.snapshot_tables_in_public && shape.snapshot_tables_in_public.length > 0) {
+    const snaps = shape.snapshot_tables_in_public;
+    const reachable = snaps.filter((s) => s.anon_select || s.authenticated_select);
+    const describe = (s: SnapshotTableInPublic) =>
+      s.anon_select || s.authenticated_select
+        ? `${s.table_name} (READABLE by ${[s.anon_select ? "anon" : null, s.authenticated_select ? "authenticated" : null]
+            .filter(Boolean)
+            .join(" and ")})`
+        : s.table_name;
+    v.push({
+      severity: "error",
+      code: "snapshot_table_in_public",
+      message:
+        `${snaps.length} point-in-time snapshot table(s) are in \`public\`, the only schema PostgREST ` +
+        `serves: ${snaps.slice(0, 10).map(describe).join(", ")}${snaps.length > 10 ? ", …" : ""}. ` +
+        (reachable.length > 0
+          ? `${reachable.length} of them can be read by a browser-facing role RIGHT NOW — that is the ` +
+            "2026-08-01 exposure shape, not untidiness. "
+          : "None is reachable today, so this is placement rather than exposure — but that protection " +
+            "rests on grants staying exactly as they are. ") +
+        "Move it, do not give it a primary key: `create schema if not exists <domain>_backup_YYYYMMDD; " +
+        "revoke all on schema <domain>_backup_YYYYMMDD from anon, authenticated; " +
+        "alter table public.<name> set schema <domain>_backup_YYYYMMDD;` — see " +
+        "docs/security/backup-table-placement.md.",
+    });
+  }
+
   return v;
 }
 
@@ -385,6 +454,19 @@ async function loadShape(): Promise<SchemaShape> {
     );
   } else {
     shape.stale_snapshot_schemas = (stale.data ?? []) as StaleSnapshotSchema[];
+  }
+
+  // Same pattern, same reason (20260830151500_ci_snapshot_tables_in_public.sql). Asks the
+  // database directly which snapshot tables are in `public`, so a snapshot created by hand
+  // through execute_sql — which is how every one of them has actually arrived — is named the
+  // day it appears, instead of a week later as a side effect of having no primary key.
+  const snapshots = await supabase.rpc("phx_ci_snapshot_tables_in_public");
+  if (snapshots.error) {
+    console.log(
+      `[schema-shape] snapshot-in-public gate not available on this target (${snapshots.error.message}) — skipping.`,
+    );
+  } else {
+    shape.snapshot_tables_in_public = (snapshots.data ?? []) as SnapshotTableInPublic[];
   }
 
   return shape;

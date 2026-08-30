@@ -83,6 +83,23 @@ export function runSqlBackupPlacementTests() {
     "a weak word plus a date is a snapshot and must be flagged",
   );
 
+  // `pre` joined the weak tier on 2026-08-30. It is the house convention for a rollback
+  // pre-image and the rule was blind to it: of the five snapshots found in production `public`
+  // that day, the two named `zz_backup_…` matched on the strong tier and the three named
+  // `…_20260829_pre` matched nothing at all. The rule now lives in scripts/lib/snapshot-name.ts
+  // and is shared with the live-database check in check-schema-shape.ts.
+  assert.deepEqual(
+    tables("create table public.probation_reanchor_20260829_pre as select * from public.probation_cases;"),
+    ["public.probation_reanchor_20260829_pre"],
+    "a dated `_pre` pre-image must be flagged — three real ones sat in production public unnamed by this rule",
+  );
+
+  assert.deepEqual(
+    tables("create table public.employees_pre (id uuid primary key);"),
+    [],
+    "an undated `_pre` is dated-gated like every other weak word and must not be flagged",
+  );
+
   // --- comments must never trip it ----------------------------------------------------------
   assert.deepEqual(
     tables("-- create table public.foo_backup_20260801 as select 1;\nselect 1;"),
