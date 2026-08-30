@@ -10,6 +10,7 @@ import { canAccess, canOpenPersonalCandidateInbox } from "@/lib/auth/permissions
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { listApplications } from "@/lib/recruitment/applications";
 import { listCandidatesSentToManager } from "@/lib/recruitment/candidates";
+import { listViewerTeamManagers } from "@/lib/recruitment/hiring-manager-team";
 
 export const dynamic = "force-dynamic";
 
@@ -47,9 +48,15 @@ async function AdminRecruitmentCandidatesContent() {
   // The second list is the direct push, scoped by the caller's own HR_ID. It is loaded here as well
   // as on the portal twin because the CEO's job title matches the manager list a recruiter picks
   // from, so a CV can be sent straight to them — and this admin page is where the CEO would look.
-  const [applications, sentToMe] = await Promise.all([
+  // The third list is the team picker the owner asked for on 2026-08-30 for the National Sales
+  // Manager. It is loaded here too, and that is not scope creep: it is derived from where the caller
+  // sits on the org chart rather than from their role, and the CEO sits directly above both people
+  // holding an NSM seat. Restricting it to the portal twin would mean the one person above them
+  // could not do what they can.
+  const [applications, sentToMe, team] = await Promise.all([
     listApplications(access),
     listCandidatesSentToManager(access.hrId),
+    listViewerTeamManagers(access),
   ]);
   const myCandidates = applications.filter((application) => application.candidate && application.requisition);
 
@@ -62,7 +69,12 @@ async function AdminRecruitmentCandidatesContent() {
           icon={<Users className="h-5 w-5" />}
           title="My Candidates"
         />
-        <RecruitmentCandidatesPortal initialApplications={myCandidates} initialSentToMe={sentToMe} />
+        <RecruitmentCandidatesPortal
+          initialApplications={myCandidates}
+          initialSentToMe={sentToMe}
+          initialTeam={team}
+          viewerHrId={access.hrId}
+        />
       </div>
     </PageContainer>
   );

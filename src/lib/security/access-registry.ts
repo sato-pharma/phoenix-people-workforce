@@ -715,9 +715,30 @@ export const accessRegistry = [
   // `update` on the same narrow resource, and per-record scoping still applies — the route refuses
   // with 403 unless this candidate was deliberately sent to this caller.
   sessionApi({ methods: ["PATCH"], pattern: "/api/recruitment/hiring-manager/candidates/*/decision", permission: { resource: "hiring_interviews", action: "update" }, csrfRequired: true }),
+  // A manager's COMMENT on a CV — the second write on this surface, and listed ahead of the
+  // read-only pattern below for the same reason the decision is: everything else a manager can
+  // reach here stays read-only. `hiring_interviews:update`, never `candidates:update`, which is
+  // hard-boundary-locked to Super Admin and Talent Acquisition and so could never be granted to a
+  // National Sales Manager even by an override. Writing a comment does NOT change the candidate's
+  // status: the manager the CV was pushed to still owns that answer, and per-record scoping still
+  // applies — the route refuses with 403 unless this candidate sits with the caller or with
+  // somebody reporting to them.
+  sessionApi({ methods: ["POST"], pattern: "/api/recruitment/hiring-manager/candidates/*/comments", permission: { resource: "hiring_interviews", action: "update" }, csrfRequired: true }),
+  sessionApi({ methods: ["DELETE"], pattern: "/api/recruitment/hiring-manager/candidates/*/comments/*", permission: { resource: "hiring_interviews", action: "update" }, csrfRequired: true }),
   sessionApi({ audit: { classification: "export", required: true }, methods: readOnly, pattern: "/api/recruitment/hiring-manager/candidates/**", permission: { resource: "hiring_interviews", action: "read" } }),
   sessionApi({ methods: allMethods, pattern: "/api/recruitment/hiring-manager/applications/**", permission: { resource: "hiring_interviews", action: "read" }, csrfRequired: true }),
   sessionApi({ methods: allMethods, pattern: "/api/recruitment/hiring-manager/interviews/**", permission: { resource: "hiring_interviews", action: "update" }, csrfRequired: true }),
+  // Reading DOWN the org chart: the managers reporting to the caller, and the CVs sitting with one
+  // of them. Read-only on purpose — a manager above can look and comment, and the answer stays with
+  // the manager the CV was actually sent to.
+  //
+  // The scoping is NOT in these entries and cannot be. `hiring_interviews:read` is the same
+  // permission every district manager already holds, so the permission alone would let any of them
+  // ask about any other; what separates them is the org walk inside listTeamManagerCandidates,
+  // which proves the requested HR_ID is beneath the caller before a candidate row is read and
+  // answers 403 — never an empty list — when it is not.
+  sessionApi({ methods: readOnly, pattern: "/api/recruitment/hiring-manager/team", permission: { resource: "hiring_interviews", action: "read" } }),
+  sessionApi({ audit: { classification: "export", required: true }, methods: readOnly, pattern: "/api/recruitment/hiring-manager/team/*/candidates", permission: { resource: "hiring_interviews", action: "read" } }),
   sessionApi({ methods: readOnly, pattern: "/api/reports/vacancies", permission: { resource: "vacancies", action: "read" } }),
   // Listed AHEAD of the blanket /api/reports/** below, which would otherwise swallow it. The
   // permission is identical — this entry exists to DECLARE the audit. It is the one organogram

@@ -9,6 +9,7 @@ import { canAccess, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { listApplications } from "@/lib/recruitment/applications";
 import { listCandidatesSentToManager } from "@/lib/recruitment/candidates";
+import { listViewerTeamManagers } from "@/lib/recruitment/hiring-manager-team";
 
 export const dynamic = "force-dynamic";
 
@@ -38,19 +39,29 @@ export default async function EmployeePortalRecruitmentCandidatesPage() {
   //     flow the owner actually asked for, and until now the notification for it deep-linked to the
   //     CV database, which answers a District Manager with "available to Talent Acquisition and
   //     Super Admin only".
-  const [applications, sentToMe] = await Promise.all([
+  //   • team — the managers who report to this caller, and how many CVs sit with each. Added
+  //     2026-08-30 at the owner's request: "the National Sales Manager can choose any of these
+  //     district managers and see all the CVs in his portal". Empty for anybody who manages nobody,
+  //     which is most callers who reach this screen, and the component renders nothing at all then.
+  const [applications, sentToMe, team] = await Promise.all([
     listApplications(access),
     listCandidatesSentToManager(access.hrId),
+    listViewerTeamManagers(access),
   ]);
   const myCandidates = applications.filter((application) => application.candidate && application.requisition);
 
   return (
     <EmployeePortalPageShell
       badge="Hiring"
-      description="CVs sent to you by the recruitment team, and candidates assigned to your open positions — read the CV, answer, and record your interview outcome."
+      description="CVs sent to you by the recruitment team, candidates assigned to your open positions, and the CVs sitting with the managers who report to you — read the CV, answer, and comment."
       title="My Candidates"
     >
-      <RecruitmentCandidatesPortal initialApplications={myCandidates} initialSentToMe={sentToMe} />
+      <RecruitmentCandidatesPortal
+        initialApplications={myCandidates}
+        initialSentToMe={sentToMe}
+        initialTeam={team}
+        viewerHrId={access.hrId}
+      />
     </EmployeePortalPageShell>
   );
 }

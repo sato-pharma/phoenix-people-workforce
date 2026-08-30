@@ -1,0 +1,31 @@
+import { NextResponse } from "next/server";
+
+import { listTeamManagerCandidates } from "@/lib/recruitment/hiring-manager-team";
+import { recruitmentApiError, requireRecruitmentAccess } from "@/app/api/recruitment/_lib/http";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+/**
+ * The CVs pushed to one manager beneath the caller.
+ *
+ * THIS IS THE FIRST ROUTE IN THIS FOLDER THAT TAKES AN HR_ID FROM THE CALLER. Every sibling reads
+ * the caller's own id off the session and says so in its header — *"there is no id to guess and no
+ * way to ask for somebody else's pushes."* That property is what the owner's request necessarily
+ * gives up, so the id is proven against the org chart inside listTeamManagerCandidates before a
+ * single candidate row is read.
+ *
+ * An id outside the caller's team is a 403, never an empty list. Answering "no candidates" would let
+ * anyone holding this permission map the whole company by asking about HR_IDs one at a time and
+ * watching which ones answer differently.
+ */
+export async function GET(request: Request, { params }: { params: Promise<{ managerHrId: string }> }) {
+  try {
+    const access = await requireRecruitmentAccess(request, "hiring_interviews", "read");
+    const { managerHrId } = await params;
+    const { candidates, manager } = await listTeamManagerCandidates(access, decodeURIComponent(managerHrId));
+    return NextResponse.json({ candidates, manager, success: true });
+  } catch (error) {
+    return recruitmentApiError(error, "Failed to load that manager's candidates.");
+  }
+}
