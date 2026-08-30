@@ -76,10 +76,34 @@ export function runRecruitmentCandidateMatchingTests() {
     { id: "mail", reason: "email" },
   );
 
-  // Phone match when no national id / email.
-  assert.deepEqual(
+  // PHONE NEVER MATCHES — owner's instruction, 2026-08-30, and the point of this whole change.
+  // A WhatsApp message from anyone not on the import allowlist is stamped with the SENDER's number,
+  // so a manager forwarding CVs from her own handset gave three different applicants one shared
+  // phone; each new forward then matched the previous record and was filed inside it. This is the
+  // headline assertion: an exact phoneNorm hit, with nothing else to go on, must still be null.
+  assert.equal(
     findMatchingCandidate(pool, { nationalIdNorm: null, emailNorm: null, phoneNorm: "333" }),
-    { id: "tel", reason: "phone" },
+    null,
+    "phone is not an identity key — an exact phone hit must NOT merge two candidates",
+  );
+
+  // ...and it must not merge even when it is the only thing the two rows share, which is exactly
+  // the forwarder's shape: same number, different person, no email and no national ID on either.
+  assert.equal(
+    findMatchingCandidate(
+      [{ id: "forwarder", nationalIdNorm: null, emailNorm: null, phoneNorm: "201001407066" }],
+      { nationalIdNorm: null, emailNorm: null, phoneNorm: "201001407066" },
+    ),
+    null,
+    "two CVs forwarded from one handset stay two candidates",
+  );
+
+  // Email still matches — only phone was withdrawn. Guards against the over-correction of removing
+  // the whole matcher: email did the real work (71 matches in production against phone's 8).
+  assert.deepEqual(
+    findMatchingCandidate(pool, { nationalIdNorm: null, emailNorm: "match@x.com", phoneNorm: "333" }),
+    { id: "mail", reason: "email" },
+    "email still matches even when a different record shares the phone",
   );
 
   // No match.
