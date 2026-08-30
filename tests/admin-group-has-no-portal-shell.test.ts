@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 
+import { PORTAL_HOME } from "../src/lib/navigation/portal-twins.ts";
+
 // ─────────────────────────────────────────────────────────────────────────────
 // A page inside app/(admin)/ can never render the employee-portal shell.
 //
@@ -103,15 +105,41 @@ export async function runAdminGroupHasNoPortalShellTests(): Promise<void> {
   );
 
   // ── The premise: the group layout still redirects portal-mode viewers away ──
+  // This pinned the literal `redirect("/employee-portals")` until 2026-08-30, when that
+  // destination became a resolved one — the layout now forwards to the portal TWIN of the
+  // address the viewer asked for, falling back to the portal home. The premise this test
+  // rests on is unchanged, because it was never about WHERE the viewer is sent: it is that
+  // a portal-mode viewer is sent away before any page in the group renders. What follows
+  // asserts that, in a form that does not re-break the moment the destination is computed
+  // rather than spelled out.
   const layout = stripComments(readFileSync(GROUP_LAYOUT, "utf8"));
+  const portalBranch = /resolveNavigationMode\(access\)\s*===\s*"employee-portal"\s*\)\s*\{([\s\S]*?)\n\s*\}/.exec(layout);
   assert.ok(
-    /resolveNavigationMode\(access\)\s*===\s*"employee-portal"/.test(layout) &&
-      /redirect\("\/employee-portals"\)/.test(layout),
-    `${GROUP_LAYOUT} no longer redirects portal-mode viewers to /employee-portals.\n` +
+    portalBranch,
+    `${GROUP_LAYOUT} no longer branches on resolveNavigationMode(access) === "employee-portal".\n` +
       `This test asserts that no page in the (admin) group renders the employee-portal shell, and the ` +
-      `ONLY reason that is true is the redirect in that layout. If the redirect was removed on purpose, ` +
-      `dual-mode pages in this group are legitimate again and this test should be retired — do not ` +
-      `re-add the redirect just to make it pass.`,
+      `ONLY reason that is true is that this layout sends those viewers away first. If the branch was ` +
+      `removed on purpose, dual-mode pages in this group are legitimate again and this test should be ` +
+      `retired — do not re-add it just to make this pass.`,
+  );
+  assert.match(
+    portalBranch[1],
+    /redirect\(/,
+    `${GROUP_LAYOUT} branches on portal mode but no longer redirects inside that branch — a portal-mode ` +
+      `viewer would fall through into the admin shell, which is the exact outcome this test exists to prevent.`,
+  );
+  // Where they land is pinned by tests/portal-twin-forwarding.test.ts, which proves every
+  // possible destination is inside /employee-portals. Here it is enough that the fallback
+  // still is, so a viewer whose address maps to nothing is still sent out of the group.
+  assert.equal(
+    PORTAL_HOME,
+    "/employee-portals",
+    "the layout's fallback destination must remain the portal home, outside this route group",
+  );
+  assert.match(
+    portalBranch[1],
+    /\?\?\s*PORTAL_HOME/,
+    `${GROUP_LAYOUT} must fall back to PORTAL_HOME for an address that maps to no twin`,
   );
 
   // ── Exactly one nested layout under the group, and it does not override ─────
