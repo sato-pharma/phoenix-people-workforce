@@ -75,6 +75,7 @@ export async function runAutomatedPayrollNonEmployeesTests() {
     totalSalary,
     bankName: null,
     bankAccount: null,
+    recurringId: null,
     createdBy: null,
     createdAt: "",
     updatedAt: "",
