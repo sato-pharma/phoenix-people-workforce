@@ -198,6 +198,7 @@ import { runWhatsAppOwnerMirrorTests } from "./whatsapp-owner-mirror.test.ts";
 import { runWhatsAppCoexistenceHistoryTests } from "./recruitment-whatsapp-coexistence-history.test.ts";
 import { runWhatsAppReplyAnswersTheQuestionTests } from "./whatsapp-reply-answers-the-question.test.ts";
 import { runWhatsAppOutboundLogTests } from "./whatsapp-outbound-log.test.ts";
+import { runWhatsAppRepliesPanelTests } from "./whatsapp-replies-panel.test.ts";
 import { runWhatsAppTextOnlyApplicantTests } from "./whatsapp-text-only-applicant.test.ts";
 import { runWhatsAppUnreadableCvTests } from "./whatsapp-unreadable-cv.test.ts";
 import {
@@ -1462,6 +1463,7 @@ await runTest("whatsapp self-classification menus and replies", runWhatsAppSelfC
 await runTest("whatsapp text-only applicant recovery", runWhatsAppTextOnlyApplicantTests);
 await runTest("whatsapp reply answers what they asked", runWhatsAppReplyAnswersTheQuestionTests);
 await runTest("whatsapp outbound message log", runWhatsAppOutboundLogTests);
+await runTest("whatsapp replies panel", runWhatsAppRepliesPanelTests);
 await runTest("whatsapp unreadable CV recovery", runWhatsAppUnreadableCvTests);
   await runTest("whatsapp owner conversation mirror", runWhatsAppOwnerMirrorTests);
 await runTest(

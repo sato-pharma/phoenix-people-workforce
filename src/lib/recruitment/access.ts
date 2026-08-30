@@ -56,6 +56,19 @@ export function canViewInboundIntakeHealth(access: Pick<AccessContext, "role" | 
   return access.scope === "system" || recruitmentManageRoles.includes(access.role);
 }
 
+// WhatsApp outbound replies — the record of what the automated channel actually SAID to a member
+// of the public, and to which number.
+//
+// Deliberately its own helper rather than a second caller of canViewInboundIntakeHealth, which it
+// resolves identically to today. The two answer different questions: that one guards counts about
+// the plumbing, this one guards message bodies alongside the applicants' phone numbers. Sharing a
+// helper would mean a later widening of the diagnostics gate silently widened access to the
+// content of conversations with the public — the same reasoning canReviewCandidateContacts is
+// separated on, one clause down.
+export function canViewWhatsAppOutboundLog(access: Pick<AccessContext, "role" | "scope">): boolean {
+  return access.scope === "system" || recruitmentManageRoles.includes(access.role);
+}
+
 // Contact-details review — accepting an email or phone the AI read off a CV onto the candidate.
 //
 // Same authority as the rest of the pipeline, and deliberately NOT canViewInboundIntakeHealth even

@@ -151,10 +151,11 @@ export function runRecruitmentHubPortalCoverageTests() {
   const cards = hubCardsFor(RECRUITING_SEAT);
   assert.equal(
     cards.length,
-    7,
-    "the hub must carry exactly seven cards for the recruiting seat (Recruitment, CV Database, " +
+    8,
+    "the hub must carry exactly eight cards for the recruiting seat (Recruitment, CV Database, " +
       "Hiring Documents, Contract & Form 1, Job Offers, Inbound Intake Health, Missing Contact " +
-      "Details) — if that count moves, decide the reachability of the new one in the same change. " +
+      "Details, WhatsApp Replies) — if that count moves, decide the reachability of the new one " +
+      "in the same change. " +
       `Got: ${cards.map((c) => c.href).join(", ")}`,
   );
   for (const card of cards) {

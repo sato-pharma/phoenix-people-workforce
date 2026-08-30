@@ -1514,6 +1514,7 @@ const hrNavigationSectionSeeds = [
       { href: "/hr/hiring-pack", icon: FileSignature, label: "Contract & Form 1", permissions: [{ resource: "employee_documents" }] },
       { href: "/hr/recruitment/contact-review", icon: IdCard, label: "Missing Contact Details", permissions: [{ resource: "recruitment" }] },
       { href: "/hr/recruitment/intake-health", icon: HeartPulse, label: "Inbound Intake Health", permissions: [{ resource: "recruitment" }] },
+      { href: "/hr/recruitment/whatsapp-replies", icon: MessageSquareText, label: "WhatsApp Replies", permissions: [{ resource: "recruitment" }] },
     ],
     label: "Recruitment",
   },
@@ -2723,6 +2724,18 @@ export const recruitmentHiringPageItems: readonly AdminToolsPageItem[] = [
     icon: IdCard,
     label: "Missing Contact Details",
     description: "Candidates nobody can reach, and the email or phone their own CV already gave us.",
+    permissions: [{ resource: "recruitment" }],
+    roles: hrAuthorityNavigationRoles,
+  },
+  // The record of what the automated recruitment line SAID to each applicant. Added 2026-08-30,
+  // when "show me the reply that went out" turned out to be answerable only by reading the source
+  // commit that was live at the time. Read-only: it carries no action, because an audit trail with
+  // an edit button is a weaker one.
+  {
+    href: "/recruitment/whatsapp-replies",
+    icon: MessageSquareText,
+    label: "WhatsApp Replies",
+    description: "The exact words the recruitment line sent each applicant, and whether they reached WhatsApp.",
     permissions: [{ resource: "recruitment" }],
     roles: hrAuthorityNavigationRoles,
   },
