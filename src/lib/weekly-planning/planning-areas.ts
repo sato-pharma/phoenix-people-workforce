@@ -1,5 +1,6 @@
 import { normalizeHrIdForAccess } from "@/lib/hr-id";
 import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
+import { foldAreaOptionsForLine } from "@/lib/sales/closing-area-merges";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { isSeatEffectiveOn, normalizeRegionCode, type PlanningAreaSeat } from "@/lib/weekly-planning/regions";
 
@@ -51,7 +52,7 @@ export async function loadPlanningAreaSeats(
   const [areaResult, regionResult] = await Promise.all([
     supabase
       .from("au_v_line_area_map")
-      .select("area_name,operational_region_code,effective_from,effective_to")
+      .select("area_code,area_name,operational_region_code,effective_from,effective_to")
       .eq("line_code", lineCode)
       .is("effective_to", null),
     supabase.from("au_v_regions").select("region_code,region_name"),
@@ -66,15 +67,32 @@ export async function loadPlanningAreaSeats(
     if (code && name) regionNameByCode.set(code, name);
   }
 
-  const seats: PlanningAreaSeat[] = [];
+  // Carry area_code only long enough to fold: the picker below keys on area NAME, but the merge
+  // rule is defined by CODE (Pedia folds GZ6 + UE9), so foldAreaOptionsForLine needs the code.
+  const seats: (PlanningAreaSeat & { areaCode: string })[] = [];
   for (const row of areaResult.data ?? []) {
     const areaName = row.area_name?.trim();
+    const areaCode = String(row.area_code ?? "").trim();
     const regionCode = normalizeRegionCode(row.operational_region_code);
     if (!areaName || !regionCode) continue;
     if (!isSeatEffectiveOn(row.effective_from, asOfDate)) continue;
-    seats.push({ areaName, regionCode, regionName: regionNameByCode.get(regionCode) ?? null });
+    seats.push({ areaCode, areaName, regionCode, regionName: regionNameByCode.get(regionCode) ?? null });
   }
-  return seats;
+
+  // Fold this line's merged areas into ONE seat: Pedia shows Fayoum (GZ6) + Beni Suef (UE9) as a
+  // single "Fayoum - Beni Suef" area (owner rule 2026-08-30), so the Area picker offers it once and
+  // a submitted plan stores the merged name. Folding the seat list here covers BOTH picker paths
+  // (planningAreaOptions is seat-based and primary) and the submit-time area check
+  // (planningAreaBelongsToRegion, service.ts) at once. No expand step is needed — a plan stores the
+  // chosen area NAME as free text and never filters sales by the code, so Beni Suef's numbers can't
+  // be dropped the way a code-filtered query would. Anti Infective and CNS have no rule, so
+  // foldAreaOptionsForLine returns the list unchanged. area_code is dropped on the way out to keep
+  // the public PlanningAreaSeat shape unchanged.
+  return foldAreaOptionsForLine(lineCode, seats).map((seat) => ({
+    areaName: seat.areaName,
+    regionCode: seat.regionCode,
+    regionName: seat.regionName,
+  }));
 }
 
 /**
