@@ -35,6 +35,7 @@ import {
   type CandidateFolderKind,
 } from "@/lib/recruitment/candidate-folder";
 import { candidateRegionCodes, type CandidateRegionCode } from "@/lib/recruitment/candidate-region";
+import { isUnreviewedCandidateStatus } from "@/lib/recruitment/candidate-status";
 import {
   candidateRoleFamily,
   candidateRoleFamilyLabels,
@@ -175,6 +176,19 @@ export type SuggestedFiling = {
   candidateId: string;
   fullName: string | null;
   suggestion: CandidateFolderSuggestion;
+  /**
+   * Nobody has acted on this person yet — `isUnreviewedCandidateStatus`, the SAME question the
+   * recruitment landing screen counts, deliberately not a second copy of it.
+   *
+   * It carries the owner's split, made on 2026-08-30 after reading the first fifteen: nine had
+   * arrived that morning and five were already shortlisted. His own words for what a folder is —
+   * *"if this CV is good, but I'm not needing it now"* — do not describe somebody a recruiter
+   * shortlisted four hours ago, so a single button filing the whole set would take live prospects
+   * off the screen the recruiters work from.
+   */
+  untouched: boolean;
+  /** As stored, so a screen naming who it would leave behind can say WHY without a second lookup. */
+  status: string | null;
 };
 
 /** One candidate who answered, but whose answers do not reach a folder. */
@@ -209,7 +223,9 @@ export function collectSuggestedFilings(candidates: readonly Candidate[]): {
       filings.push({
         candidateId: candidate.id,
         fullName: candidate.fullName,
+        status: candidate.status ?? null,
         suggestion: result.suggestion,
+        untouched: isUnreviewedCandidateStatus(candidate.status),
       });
     } else {
       skipped.push({ candidateId: candidate.id, fullName: candidate.fullName, reason: result.refusal });
