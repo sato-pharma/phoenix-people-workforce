@@ -121,8 +121,10 @@ export function runRecruitmentCvAutoApplyTests() {
   );
 
   // The created-only gate is the whole safety story: on a match, the record's identity was resolved
-  // by a DIFFERENT CV, so writing this CV's phone could repoint someone else's row (and its
-  // phone_norm, which carries a partial UNIQUE index).
+  // by a DIFFERENT CV, so writing this CV's phone would repoint someone else's row. That was also a
+  // 23505 risk until 2026-08-30, when phone_norm's partial UNIQUE index was dropped along with phone
+  // as an identity key — the database no longer objects, which makes this gate the ONLY thing left
+  // standing between an extracted phone and the wrong person's record. Do not relax it.
   assert.deepEqual(
     selectAutoApplyFields({
       candidate: freshCandidate({ phone: null }),

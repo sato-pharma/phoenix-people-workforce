@@ -1,9 +1,27 @@
 // Recruitment / ATS — candidate identity + hybrid dedup (pure, unit-tested).
 //
-// Identity rule (LOCKED): match on National ID when present, else on normalized
-// phone OR email. These helpers compute the normalized keys and resolve a match
-// against existing candidates; the DB partial-unique indexes are the race-safety
-// net behind them.
+// Identity rule: match on National ID when present, else on normalized email.
+// These helpers compute the normalized keys and resolve a match against existing
+// candidates; the DB partial-unique indexes are the race-safety net behind them.
+//
+// PHONE IS NOT AN IDENTITY KEY — owner's instruction, 2026-08-30. It was, and it merged three
+// different applicants into one record. A WhatsApp message from anyone NOT on the import allowlist
+// is treated as a direct application, so the candidate is stamped with the SENDER's number
+// (buildWhatsAppIntakeInput, identitySource "sender"). A hiring manager forwarding CVs from her own
+// handset therefore produced one record carrying HER number, and every later forward matched it on
+// phone: three forwards on 30 Aug became a single candidate, named after the first CV, holding all
+// three. Measured before removal: phone had matched 8 times ever, 6 of them these wrong merges.
+// Email matched 71 times and is untouched.
+//
+// The phone is still normalized, still stored, and still drives the ADVISORY duplicate flag below —
+// what it no longer does is silently merge two records. That direction is deliberate and matches
+// normalizePhone's own reasoning: a duplicate a human can merge is far cheaper than a false merge,
+// which buries one applicant's CV inside another's file where nobody thinks to look.
+//
+// The unique index recruitment_candidates_phone_norm_uidx is dropped in the same change and must
+// NOT be restored: with phone no longer matched, a second candidate on one number would hit 23505
+// and the rematch below would find nothing to fall back to, so the import would fail outright
+// instead of merging. Removing one without the other breaks CV intake.
 
 export function normalizeNationalId(value: string | null | undefined): string | null {
   const digits = String(value ?? "").replace(/\D/g, "");
@@ -57,6 +75,10 @@ export function candidateMatchKeys(input: {
   };
 }
 
+// "phone" stays in the union even though findMatchingCandidate can no longer return it: 8 historical
+// ats_cv_intake_events rows carry match_reason = 'phone', and cv-intake-service's asMatchReason
+// narrows that free-text column back through this type. Dropping it would turn those rows into
+// nulls on read, erasing the evidence of the very merges this change exists to stop.
 export type CandidateMatchReason = "national_id" | "email" | "phone";
 
 export type MatchableCandidate = CandidateMatchKeys & { id: string };
@@ -67,7 +89,11 @@ export type CandidateMatch = {
 };
 
 // Returns the first existing candidate that matches the incoming keys, in
-// priority order: National ID > email > phone. Null when no match.
+// priority order: National ID > email. Null when no match.
+//
+// phoneNorm is deliberately NOT consulted — see the header. Keep it on CandidateMatchKeys: it is
+// still computed, still written to the row, and still feeds the advisory duplicate flag; only the
+// automatic merge is gone.
 export function findMatchingCandidate(
   existing: readonly MatchableCandidate[],
   keys: CandidateMatchKeys,
@@ -79,10 +105,6 @@ export function findMatchingCandidate(
   if (keys.emailNorm) {
     const hit = existing.find((row) => row.emailNorm && row.emailNorm === keys.emailNorm);
     if (hit) return { id: hit.id, reason: "email" };
-  }
-  if (keys.phoneNorm) {
-    const hit = existing.find((row) => row.phoneNorm && row.phoneNorm === keys.phoneNorm);
-    if (hit) return { id: hit.id, reason: "phone" };
   }
   return null;
 }

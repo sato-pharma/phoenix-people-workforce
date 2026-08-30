@@ -185,7 +185,7 @@ export function runRecruitmentCandidateMergeTests() {
   );
   assert.ok(
     service.indexOf(".delete().eq(\"id\", duplicateId)") < service.indexOf("borrowedPayload(borrowed)"),
-    "the duplicate must be deleted BEFORE its email/phone/national ID are written onto the survivor — all three carry a partial UNIQUE index, so borrowing one while the duplicate still holds it is a 23505 every time",
+    "the duplicate must be deleted BEFORE its email/national ID are written onto the survivor — both carry a partial UNIQUE index, so borrowing one while the duplicate still holds it is a 23505 every time. (phone_norm's unique index was dropped 2026-08-30 when phone stopped being an identity key, so phone alone would no longer conflict — the ordering is still required for the other two.)",
   );
   for (const norm of ["email_norm", "phone_norm", "national_id_norm"]) {
     assert.ok(
