@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 
 import { resolveLandingPathForRole } from "../src/lib/auth/landing.ts";
-import { buildPermissionLookup, permissionMatrix } from "../src/lib/auth/permissions.ts";
+import { buildPermissionLookup, permissionMatrix, phoenixRoles } from "../src/lib/auth/permissions.ts";
 import { sosPeriodDisplayLabel, type CeoCommandCenterData } from "../src/lib/ceo/command-center.ts";
 import { getNavigationSections } from "../src/config/system-navigation.ts";
 import { getSections } from "../src/lib/navigation/active-path.ts";
@@ -144,6 +144,61 @@ export function runCeoCommandCenterTests() {
     adminPageSource,
     /redirect\(resolveLandingPathForRole\(access\.role\)\)/,
     "/admin's redirect target must come from resolveLandingPathForRole so it cannot drift from the sidebar",
+  );
+
+  // ── The generic Admin Command Center is RETIRED (2026-08-30) ────────────────────────────────
+  // A role sweep that day asked who actually LANDED on the generic /admin dashboard and found
+  // nobody: every admin-shell role resolves to a landing page of its own. The only way in was a
+  // "Command Center" sidebar row, and the two seats that could follow it — HR Advisory and HR
+  // Operations — got a page of mostly EGP 0, because its payroll/sales/expense tiles render
+  // unconditionally while those seats' scopes resolve to nothing behind them.
+  //
+  // Both halves are asserted because they fail in opposite directions: without the redirect a
+  // typed URL still reaches the dead page, and without the nav exclusion the sidebar still offers
+  // a row that now bounces.
+  for (const role of ["HR Advisory", "HR Operations"]) {
+    assert.ok(
+      adminRedirectRoles.includes(`"${role}"`),
+      `/admin must redirect ${role} to /hr/admin/hr-command-center — the generic dashboard it used to `
+        + `render is retired, and it could only ever answer EGP 0 for this seat anyway`,
+    );
+    assert.ok(
+      genericCommandCenter.includes(`"${role}"`),
+      `${role} has a landing page of their own, so must be excluded from the generic /admin nav row`,
+    );
+  }
+  assert.doesNotMatch(
+    adminPageSource,
+    /admin-command-center/,
+    "/admin must not render the retired Admin Command Center — the component is deleted, so an "
+      + "import of it does not compile, but a stale lazy/dynamic reference would only fail at runtime",
+  );
+  assert.equal(
+    existsSync("src/components/admin/admin-command-center.tsx"),
+    false,
+    "the retired Admin Command Center component must stay deleted — reinstating the file is how a "
+      + "page nobody lands on comes back",
+  );
+
+  // The loop guard in /admin's fall-through. resolveLandingPathForRole ENDS in `: "/admin"`, so it
+  // answers this very address for any role it does not enumerate — and that unenumerated role is
+  // precisely the one that reaches the fall-through. Redirecting it unconditionally would be an
+  // infinite redirect. Asserted as a property of every role rather than of the one line, because
+  // the danger arrives when somebody ADDS a role, not when somebody edits this page.
+  for (const role of phoenixRoles) {
+    if (resolveLandingPathForRole(role) !== "/admin") continue;
+    assert.equal(
+      role,
+      "Super Admin",
+      `${role} resolves to /admin as its own landing page, so /admin's fall-through would redirect it `
+        + `to itself forever. Give the role a landing path in resolveLandingPathForRole, or keep the `
+        + `\`landing !== "/admin"\` guard that renders the access card instead`,
+    );
+  }
+  assert.match(
+    adminPageSource,
+    /landing !== "\/admin"/,
+    "/admin's fall-through must keep the loop guard — resolveLandingPathForRole defaults to /admin",
   );
 
   const accessPageSource = readFileSync("app/(admin)/admin/access/page.tsx", "utf8");

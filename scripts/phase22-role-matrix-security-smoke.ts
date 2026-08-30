@@ -317,7 +317,12 @@ function verifyStaticEntryPoints() {
   const adminDataHealthPage = readFileSync("app/(admin)/admin/data-health/page.tsx", "utf8");
   const adminMonitoringPage = readFileSync("app/(admin)/admin/monitoring/page.tsx", "utf8");
   const adminLogsPage = readFileSync("app/(admin)/admin/logs/page.tsx", "utf8");
-  const adminCommandCenter = readFileSync("src/components/admin/admin-command-center.tsx", "utf8");
+  // src/components/admin/admin-command-center.tsx was RETIRED on 2026-08-30 along with the generic
+  // /admin dashboard it rendered, so the two checks that read it are gone rather than relaxed. What
+  // they asserted — that the page hid financial, admin and sales modules behind access flags — is
+  // now enforced by the page not existing for those roles at all: /admin redirects every role bar
+  // the Super Admin to its own landing page. The service check below survives because the module
+  // does, as the payroll reconciliation check's comparison source.
   const adminCommandCenterService = readFileSync("src/lib/admin/command-center.ts", "utf8");
 
   addCheck("Admin payroll page redirects non-company payroll scopes to payslips", /getPayrollScope\(access\)[\s\S]*redirect\("\/payslips"\)/.test(payrollPage));
@@ -325,8 +330,8 @@ function verifyStaticEntryPoints() {
   addCheck("Admin data health remains full-admin gated", !/canAccess\(access, "overview", "read"\)/.test(adminDataHealthPage));
   addCheck("Admin monitoring remains full-admin gated", !/canAccess\(access, "overview", "read"\)/.test(adminMonitoringPage));
   addCheck("Admin audit logs remain full-admin gated", !/canAccess\(access, "overview", "read"\)/.test(adminLogsPage));
-  addCheck("HR command center hides financial and admin modules behind access flags", /showFinancialModules[\s\S]*Payroll Operations/.test(adminCommandCenter) && /showAdminModules[\s\S]*Access Control/.test(adminCommandCenter));
-  addCheck("HR command center hides sales modules and renders concise HR modules", /showSalesModules[\s\S]*Sales Performance/.test(adminCommandCenter) && /People Management/.test(adminCommandCenter) && /Hiring Pipeline/.test(adminCommandCenter) && /HR Communication/.test(adminCommandCenter));
+  addCheck("Generic /admin dashboard stays retired for the HR seats", /DEDICATED_COMMAND_CENTER_ROLES[\s\S]*"HR Advisory"[\s\S]*"HR Operations"/.test(adminCommandCenterPage));
+  addCheck("Retired admin command center is not rendered by /admin", !/admin-command-center/.test(adminCommandCenterPage));
   addCheck("HR command center skips sales data fetches", /showSalesModules \? fetchSalesSummary/.test(adminCommandCenterService) && /showSalesModules \? fetchSalesHealthCounts/.test(adminCommandCenterService));
   addCheck("Attendance setup pages use dedicated non-HR gate", /canAccessAttendanceSetup\(access, "read"\)/.test(attendancePoliciesPage) && /canAccessAttendanceSetup\(access, "read"\)/.test(attendanceDeviceMappingPage));
   addCheck("Attendance setup APIs use dedicated non-HR gate", /assertAttendanceSetupPermission\(access, "read"\)/.test(attendancePoliciesRoute) && /assertAttendanceSetupPermission\(access, "update"\)/.test(attendancePoliciesRoute) && /assertAttendanceSetupPermission\(access, "read"\)/.test(attendanceDeviceMappingRoute) && /assertAttendanceSetupPermission\(access, "update"\)/.test(attendanceDeviceMappingRoute));

@@ -293,10 +293,26 @@ function testLandingAndNavAgree() {
     /href: "\/admin\/finance-command-center"/.test(nav),
     "the sidebar must carry a route to the page — an unreachable page is the same as no page",
   );
-  assert.ok(
-    /excludedRoles: \["CEO", "SFE Manager", "Finance Manager"\]/.test(nav),
-    "the generic Command Center row must exclude every role that has its own",
-  );
+  // Asserted role by role rather than as one exact array literal, changed 2026-08-30.
+  //
+  // The literal form pinned `["CEO", "SFE Manager", "Finance Manager"]` character for character,
+  // so it failed the moment HR Advisory and HR Operations were EXCLUDED TOO — that is, it went red
+  // for a change that strengthened the very property it exists to protect, and the only way to get
+  // it green was to edit the assertion. A pin that has to be rewritten every time the rule it
+  // guards is applied more widely trains the next session to rewrite it without reading it.
+  //
+  // The intent is unchanged and the guard is not weakened: every role with a landing page of its
+  // own must still be absent from the generic row. Adding a role to that set now extends this list
+  // instead of re-pinning it.
+  const genericCommandCenterRow = /^.*href: "\/admin", icon: LayoutDashboard, label: "Command Center".*$/m
+    .exec(nav)?.[0] ?? "";
+  assert.ok(genericCommandCenterRow.length > 0, "the generic /admin Command Center nav row must still be findable");
+  for (const role of ["CEO", "SFE Manager", "Finance Manager", "HR Advisory", "HR Operations"]) {
+    assert.ok(
+      genericCommandCenterRow.includes(`"${role}"`),
+      `the generic Command Center row must exclude every role that has its own — ${role} is missing`,
+    );
+  }
   // /workspace/marketing-requests is the ONE page that shows the Finance Manager an approved
   // request and its Invoice due column, so it now has BOTH routes — a sidebar row (owner,
   // 2026-08-30: "open the sidebar route") and the dashboard link below.

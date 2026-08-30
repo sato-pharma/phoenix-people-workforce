@@ -2,14 +2,12 @@ import { AlertCircle } from "lucide-react";
 import { redirect } from "next/navigation";
 import { Suspense } from "react";
 
-import { AdminCommandCenter } from "@/components/admin/admin-command-center";
 import { CeoPhaseBSkeleton, CeoPhaseBWidgets } from "@/components/admin/ceo-phase-b";
 import { SystemAdminOverview } from "@/components/admin/system-admin-overview";
 import { Card } from "@/components/ui/card";
 import { AppRouteLoadingState } from "@/components/ui/loading-state";
 import { resolveLandingPathForRole } from "@/lib/auth/landing";
 import { canAccess, resolveNavigationMode, type AccessContext, type PhoenixRole } from "@/lib/auth/permissions";
-import { getAdminCommandCenterData, loadDirectManagerName } from "@/lib/admin/command-center";
 import { getSystemAdminOverviewData } from "@/lib/admin/system-overview";
 import { resolveAccessContextFromPage, resolveViewerIdentityFromPage } from "@/lib/auth/server";
 import { uploadedEmployeePhotoUrl } from "@/lib/employees/employee-photo";
@@ -17,8 +15,25 @@ import { formatHrIdForDisplay } from "@/lib/hr-id";
 
 export const dynamic = "force-dynamic";
 
-/** Keep in step with the dedicated command-center entries in system-navigation.ts. */
-const DEDICATED_COMMAND_CENTER_ROLES = new Set<PhoenixRole>(["CEO", "SFE Manager", "Finance Manager"]);
+/**
+ * Every role that has a landing page of its own. Keep in step with the dedicated command-center
+ * entries in system-navigation.ts.
+ *
+ * The two HR seats joined on 2026-08-30. They always had their own page — /hr/admin/hr-command-center
+ * is what resolveLandingPathForRole returns for both — but they were never redirected off /admin,
+ * so the generic dashboard stayed reachable through a "Command Center" row in their sidebar. A role
+ * sweep that day measured what they actually got there, against production: HR Advisory saw EGP 0
+ * payroll, EGP 0 sales and EGP 0 expenses, and HR Operations EGP 0 sales and EGP 0 expenses. Those
+ * are not outages — the tiles render unconditionally while the scopes behind them resolve to
+ * nothing, so the page could only ever answer zero for these seats.
+ */
+const DEDICATED_COMMAND_CENTER_ROLES = new Set<PhoenixRole>([
+  "CEO",
+  "SFE Manager",
+  "Finance Manager",
+  "HR Advisory",
+  "HR Operations",
+]);
 
 export default async function AdminCommandPage() {
   const access = await resolveAccessContextFromPage();
@@ -47,27 +62,24 @@ export default async function AdminCommandPage() {
       redirect("/employee-portals");
     }
 
-    return (
-      <div className="px-4 py-10 text-slate-900">
-        <Card className="mx-auto max-w-xl rounded-none border-amber-200 bg-white p-6 shadow-[0_2px_8px_rgba(15,23,42,0.06)]">
-          <div className="mb-4 flex items-center gap-3 text-amber-600">
-            <AlertCircle aria-hidden="true" className="h-6 w-6" />
-            <h1 className="text-lg font-bold">Access unavailable</h1>
-          </div>
-          <p className="text-sm leading-6 text-slate-600">
-            Your account is signed in, but it is not authorized for the admin workspace or employee portal yet. Ask your Phoenix admin to review your role and HR ID setup.
-          </p>
-        </Card>
-      </div>
-    );
+    return <AccessUnavailableCard />;
   }
 
-  // The Super Admin's landing page is the System Administrator Overview: the CEO's own command
-  // centre, plus Finance's money bands, plus the system tools only this seat owns. The generic
-  // AdminCommandCenter below still serves the remaining admin-shell roles that reach /admin
-  // (HR Advisory, HR Operations, Financial Advisor) until the owner rules on retiring it for them
-  // too — swapping their page over is a separate decision with its own role sweep, and shipping it
-  // silently inside this change is exactly how a role loses a tool nobody noticed it used.
+  // /admin is the System Administrator Overview and nothing else: the CEO's own command centre,
+  // plus Finance's money bands, plus the system tools only this seat owns.
+  //
+  // The generic Admin Command Center that used to render below is RETIRED (2026-08-30). The role
+  // sweep that authorised it asked the question the other way round — not "may these roles see the
+  // overview" but "who actually lands on the generic page" — and the answer was nobody. Every
+  // admin-shell role resolves to a landing page of its own, so the only way to reach the generic
+  // dashboard was the sidebar row that pointed at it, and what it rendered for the two seats that
+  // could follow that row was mostly EGP 0. Retiring it removed a page, a component and a sidebar
+  // row without taking a single working tool off anyone.
+  //
+  // Not swapped over to this overview, deliberately: it reads company sales that neither HR seat
+  // holds `sales:read` for, and its System Tools band links to three hubs that redirect them
+  // straight back out. A role losing a tool nobody noticed it used is one failure; a role gaining
+  // a figure nobody meant it to see is the worse one.
   if (access.role === "Super Admin") {
     return (
       <Suspense
@@ -83,17 +95,44 @@ export default async function AdminCommandPage() {
     );
   }
 
+  // Unreachable today: every role except Super Admin either runs on the employee portal, holds a
+  // dedicated landing page, or fails the grant check above. It is handled rather than asserted
+  // because the thing that would make it reachable — a new role granted `overview:read` — is a
+  // routine matrix edit, and the right answer for such a role is its own landing page, not a crash
+  // and not a page written for somebody else.
+  //
+  // The `!== "/admin"` guard is load-bearing, not defensive noise. resolveLandingPathForRole ENDS
+  // in `: "/admin"`, so it answers this very address for any role it does not enumerate — which is
+  // exactly the unenumerated role that reaches this line. Redirecting unconditionally would turn a
+  // harmless fall-through into an infinite redirect, and it would appear for the first time on
+  // whoever added the new role, not on whoever wrote this.
+  const landing = resolveLandingPathForRole(access.role);
+  if (landing !== "/admin") {
+    redirect(landing);
+  }
+
+  return <AccessUnavailableCard />;
+}
+
+/**
+ * Shown to a signed-in account that /admin has nothing to render for. Two callers: the grant check
+ * above, and the fall-through for a role whose own landing path is /admin but which is not the
+ * Super Admin. One component because the second caller exists only to avoid a redirect loop, and a
+ * blank screen there would read as a broken page rather than a missing permission.
+ */
+function AccessUnavailableCard() {
   return (
-    <Suspense
-      fallback={
-        <AppRouteLoadingState
-          title="Loading Admin Command Center"
-          description="Preparing operational KPIs and executive attention queues."
-        />
-      }
-    >
-      <AdminCommandContent access={access} />
-    </Suspense>
+    <div className="px-4 py-10 text-slate-900">
+      <Card className="mx-auto max-w-xl rounded-none border-amber-200 bg-white p-6 shadow-[0_2px_8px_rgba(15,23,42,0.06)]">
+        <div className="mb-4 flex items-center gap-3 text-amber-600">
+          <AlertCircle aria-hidden="true" className="h-6 w-6" />
+          <h1 className="text-lg font-bold">Access unavailable</h1>
+        </div>
+        <p className="text-sm leading-6 text-slate-600">
+          Your account is signed in, but it is not authorized for the admin workspace or employee portal yet. Ask your Phoenix admin to review your role and HR ID setup.
+        </p>
+      </Card>
+    </div>
   );
 }
 
@@ -149,58 +188,5 @@ async function SystemAdminOverviewContent({ access }: { access: AccessContext })
         />
       </Suspense>
     </div>
-  );
-}
-
-async function AdminCommandContent({ access }: { access: AccessContext }) {
-  const [viewer, dataResult] = await Promise.all([
-    resolveViewerIdentityFromPage(access),
-    getAdminCommandCenterData(access)
-      .then((value) => ({ data: value, error: null as string | null }))
-      .catch((error) => {
-        console.error("Failed to load Admin Command Center:", error);
-        return {
-          data: null,
-          error: error instanceof Error ? error.message : "Unknown error occurred",
-        };
-      }),
-  ]);
-  const data = dataResult.data;
-  const loadError = dataResult.error;
-
-  const viewerHrId = formatHrIdForDisplay(access.hrId);
-  const [managerName, profilePhotoUrl] = await Promise.all([
-    loadDirectManagerName(viewerHrId ?? access.hrId),
-    uploadedEmployeePhotoUrl(viewerHrId ?? access.hrId),
-  ]);
-  const welcomeProfile = {
-    fullName: viewer.displayName,
-    hrId: viewerHrId,
-    managerName,
-    systemRoleLabel: viewer.roleLabel,
-    titleLabel: viewer.roleLabel,
-  };
-
-  return (
-    data ? (
-      <AdminCommandCenter data={data} profilePhotoUrl={profilePhotoUrl} welcomeProfile={welcomeProfile} />
-    ) : (
-      <div className="p-8">
-        <Card className="mx-auto max-w-2xl rounded-none border-rose-100 bg-rose-50 p-6 shadow-[0_2px_8px_rgba(15,23,42,0.06)]">
-          <div className="mb-4 flex items-center gap-3 text-rose-600">
-            <AlertCircle aria-hidden="true" className="h-6 w-6" />
-            <h2 className="text-lg font-bold">Command Center Error</h2>
-          </div>
-          <p className="mb-4 text-sm text-rose-700">
-            There was a problem loading operational data from Supabase. Please ensure your database views and tables are correctly configured.
-          </p>
-          <div className="border border-rose-200 bg-white/50 p-3">
-            <p className="break-all font-mono text-xs text-rose-800">
-              {loadError ?? "Unknown error occurred"}
-            </p>
-          </div>
-        </Card>
-      </div>
-    )
   );
 }

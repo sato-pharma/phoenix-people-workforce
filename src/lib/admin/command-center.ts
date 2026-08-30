@@ -19,31 +19,14 @@ import { getSalesPlatformMetrics } from "@/lib/sales/service";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { calculateWorkforceStructureSummary } from "@/lib/workforce/seat-lifecycle";
 
-/**
- * Resolves an employee's direct manager display name live from the employees
- * table by HR_ID (their own manager_hr_id -> the manager's full_name). Used for
- * the admin command-center welcome hero so every signed-in user sees their
- * direct manager (only someone with no manager — the CEO — resolves to null).
- */
-export async function loadDirectManagerName(employeeHrId: string | null | undefined): Promise<string | null> {
-  const target = String(employeeHrId ?? "").trim();
-  if (!target) return null;
-  const supabase = getSupabaseAdmin();
-  const { data: self } = await supabase
-    .from("employees")
-    .select("manager_hr_id")
-    .eq("hr_id", target)
-    .maybeSingle();
-  const managerHrId = String((self as { manager_hr_id?: string | null } | null)?.manager_hr_id ?? "").trim();
-  if (!managerHrId) return null;
-  const { data: manager } = await supabase
-    .from("employees")
-    .select("full_name")
-    .eq("hr_id", managerHrId)
-    .maybeSingle();
-  const fullName = (manager as { full_name?: string | null } | null)?.full_name;
-  return fullName ? String(fullName) : null;
-}
+// `loadDirectManagerName` lived here until 2026-08-30. Its only caller was the Admin Command
+// Center's welcome hero, retired with that page; git has it if a future hero wants the same
+// lookup. The REST of this module stays and is not dead: `getAdminCommandCenterData` is what the
+// payroll reconciliation check compares its own figures against
+// (src/lib/reconciliation/checks/payroll.ts) and what four phase-smoke scripts call. It is now a
+// pure aggregate with no page behind it, which is why its `showFinancialModules` / `showAdminModules`
+// flags are hardcoded `true` — they were the RETIRED page's display gates, and every remaining
+// caller passes a system-scope context that would set them true anyway.
 
 // ---------------------------------------------------------------------------
 // Types
@@ -66,7 +49,14 @@ export type DataHealthMetrics = {
   salesLinkageBatch: string | null;
 };
 
-/** Flat snapshot that AdminCommandCenter renders — avoids OverviewDashboardData entirely. */
+/**
+ * Flat company snapshot — avoids OverviewDashboardData entirely.
+ *
+ * No page renders this any more: the Admin Command Center that did was retired on 2026-08-30.
+ * It survives as a DATA shape, read by the payroll reconciliation check and the phase-smoke
+ * scripts. The `access` flags below are therefore vestigial display gates — see the note at the
+ * top of this file before wiring them to anything.
+ */
 export type AdminCommandCenterData = {
   access: {
     showAdminModules: boolean;
