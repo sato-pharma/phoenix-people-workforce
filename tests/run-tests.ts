@@ -1103,6 +1103,13 @@ import { runCompanyActivityReportPostExitDaysTests } from "./company-activity-re
 import { runMarketingApprovedCustomerNameTests } from "./marketing-approved-customer-name.test.ts";
 import { runOutstationArabicTextDirectionTests } from "./outstation-arabic-text-direction.test.ts";
 import { runMailboxMonitorTextDirectionTests } from "./mailbox-monitor-text-direction.test.ts";
+import {
+  runModuleLockAddressMapTests,
+  runModuleLockCatalogTests,
+  runModuleLockGuardSourceTests,
+  runModuleLockNavRowTests,
+  runModuleLockRefusalTests,
+} from "./module-locks.test.ts";
 
 /**
  * MARK THE SUITE AS A TEST RUN — this is a data-safety gate, not a formality.
@@ -3409,6 +3416,26 @@ await runTest(
 await runTest(
   "mailbox monitor Arabic direction (body dir=auto needs whitespace-pre-wrap; From line isolates the name)",
   runMailboxMonitorTextDirectionTests,
+);
+await runTest(
+  "module lock catalogue (every permission resource has a human name, and none of them is a raw key)",
+  runModuleLockCatalogTests,
+);
+await runTest(
+  "module lock address map (a page inherits its module, the portal is covered, an OR page stays open)",
+  runModuleLockAddressMapTests,
+);
+await runTest(
+  "module lock padlock rule (a row with two grants is padlocked only when both are locked)",
+  runModuleLockNavRowTests,
+);
+await runTest(
+  "module lock refusals (never your own account, never administration on a Super Admin, never employee_profile)",
+  runModuleLockRefusalTests,
+);
+await runTest(
+  "module lock guard reads the target's role from the database, never from the request body",
+  runModuleLockGuardSourceTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);

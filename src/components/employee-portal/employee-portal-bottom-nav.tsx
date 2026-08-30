@@ -2,7 +2,9 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { Lock } from "lucide-react";
 
+import { isNavItemLockedFor, useLockedModuleKeys } from "@/components/layout/module-lock-context";
 import type { EmployeePortalNavVisibility } from "@/lib/employee-portal/navigation";
 import {
   DEFAULT_BOTTOM_NAV_HREFS,
@@ -36,6 +38,10 @@ export function EmployeePortalBottomNav({
   const currentPathname = usePathname();
   const pathname = activePathOverride ?? currentPathname;
   const [selected] = useBottomNavPreference();
+  // A tab a system administrator has temporarily locked keeps its place here too. On a phone this
+  // bar IS the navigation — a rep who never opens the drawer would otherwise meet the lock only
+  // after tapping, with no warning on the tab itself.
+  const lockedModuleKeys = useLockedModuleKeys();
 
   const visibleHrefs = new Set(visiblePortalNavEntries(visibility).map((entry) => entry.href));
 
@@ -60,14 +66,20 @@ export function EmployeePortalBottomNav({
     >
       <ul className="mx-auto flex max-w-[640px] items-stretch justify-around px-1">
         {items.map((item) => {
-          const Icon = item.icon;
           const active = isActiveHref(pathname, item.href);
+          const locked = isNavItemLockedFor({ href: item.href }, lockedModuleKeys);
+          const Icon = locked ? Lock : item.icon;
           return (
             <li className="flex-1" key={`${item.label}-${item.href}`}>
               <Link
                 aria-current={active ? "page" : undefined}
+                aria-label={locked ? `${item.label} — locked` : undefined}
                 className={`mx-0.5 flex h-[60px] min-w-0 flex-col items-center justify-center gap-0.5 rounded text-phx-2xs font-black transition-colors ${
-                  active ? "bg-orange-50 text-orange-700 ring-1 ring-orange-100" : "text-slate-500 active:text-slate-700"
+                  active
+                    ? "bg-orange-50 text-orange-700 ring-1 ring-orange-100"
+                    : locked
+                      ? "text-amber-600 active:text-amber-700"
+                      : "text-slate-500 active:text-slate-700"
                 }`}
                 href={item.href}
               >

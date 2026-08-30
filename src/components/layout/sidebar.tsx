@@ -39,6 +39,7 @@ import {
   ArrowUpRight,
   ChevronRight,
   GripVertical,
+  Lock,
   PanelLeftClose,
   PanelLeftOpen,
   RotateCcw,
@@ -53,6 +54,7 @@ import { usePathname, useSearchParams } from "next/navigation";
 import { type CSSProperties, Fragment, useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
 import { ApprovalNavBadge } from "@/components/layout/nav-badge";
+import { useIsNavItemLocked } from "@/components/layout/module-lock-context";
 import {
   getNavigationSections,
   navigationHomePathByMode,
@@ -377,6 +379,13 @@ function NavRow({
   // The one tab that outranks the rest. Keyed on href rather than a nav-config flag so the
   // styling cannot be handed to a second "master" tab by editing a list.
   const premium = item.href === PREMIUM_NAV_HREF;
+  // A module this account has temporarily lost. The row STAYS — and stays clickable — because
+  // hiding it would read as "removed", and because pressing it is how the person learns why: the
+  // shell answers the address with the lock notice rather than the page. The padlock replaces the
+  // row's own icon, so no label width is spent on it (sidebar label budgets are pinned by
+  // tests/sidebar-label-width.test.ts and this row must not start ellipsising).
+  const locked = useIsNavItemLocked(item);
+  const LeadingIcon = locked ? Lock : Icon;
 
   return (
     <div
@@ -386,7 +395,8 @@ function NavRow({
     >
       <Link
         aria-current={active ? "page" : undefined}
-        aria-label={rail ? item.label : undefined}
+        aria-label={rail ? (locked ? `${item.label} — locked` : item.label) : undefined}
+        title={locked ? `${item.label} — locked temporarily by the system administrator` : undefined}
         className={cn(
           "relative flex w-full items-center text-phx-md font-semibold transition-colors duration-150",
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-phx-accent/60 focus-visible:ring-offset-2",
@@ -429,9 +439,14 @@ function NavRow({
                   : standalone
                     ? "bg-orange-50 text-phx-accent ring-1 ring-orange-200 group-hover:ring-orange-300"
                     : "bg-white text-phx-ink-soft ring-1 ring-[#EBE4DA] group-hover:text-phx-accent group-hover:ring-phx-accent-line",
+            // Last, so it wins over every state above — including `premium` and `active`. A locked
+            // row must never look like a live one, whichever tab it is.
+            locked && (dark
+              ? "bg-amber-500/10 text-amber-300/90 shadow-none ring-1 ring-amber-400/30"
+              : "bg-amber-50 text-amber-600 shadow-none ring-1 ring-amber-200"),
           )}
         >
-          <Icon className="h-4 w-4" />
+          <LeadingIcon className="h-4 w-4" />
           {rail && <ApprovalNavBadge compact navBadge={item.navBadge} />}
         </span>
         {!rail && (
@@ -440,6 +455,9 @@ function NavRow({
               className={cn(
                 "min-w-0 flex-1 truncate tracking-[-0.01em]",
                 premium && "font-black tracking-[0.005em]",
+                // Muted, never struck through or greyed to unreadable: the person still has to be
+                // able to read which module it is in order to ask for it back.
+                locked && "opacity-70",
               )}
             >
               {item.label}

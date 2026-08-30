@@ -36,6 +36,7 @@ import {
   IdCard,
   CalendarDays,
   Headphones,
+  Lock,
   ChevronsLeft,
   ChevronsRight,
   ChevronDown,
@@ -55,6 +56,11 @@ import { OneSignalProvider } from "@/components/notifications/onesignal-provider
 import { logoutOneSignal } from "@/lib/notifications/onesignal-client";
 import { InAppNotificationsBell } from "@/components/layout/in-app-notifications-bell";
 import { InternalMessagesMenu } from "@/components/layout/internal-messages-menu";
+import {
+  ModuleLockProvider,
+  isNavItemLockedFor,
+  useLockedModuleKeys,
+} from "@/components/layout/module-lock-context";
 import { RouteTransitionProvider } from "@/components/layout/route-transition-provider";
 import { PageTransition } from "@/components/ui/page-transition";
 import type { EmployeePortalShellData } from "@/lib/employee-portal/service";
@@ -503,6 +509,11 @@ function EmployeePortalMenu({
   const [pendingHref, setPendingHref] = useState<string | null>(null);
   // Resolved once for the whole menu, not per row: only the deepest matching href is active.
   const activeHref = resolveActivePortalHref(pathname, sections);
+  // Which of this viewer's modules a system administrator has temporarily locked. Portal rows carry
+  // no permission metadata of their own — they are built from visibility flags — so the module
+  // behind a row is resolved from its ADDRESS, through the very same map the page-level check uses.
+  // One map, one answer: a padlocked row and the page it opens can never disagree.
+  const lockedModuleKeys = useLockedModuleKeys();
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => setPendingHref(null), 0);
@@ -559,10 +570,18 @@ function EmployeePortalMenu({
             {section.items.map((item) => {
               const active = item.href.split("#")[0] === activeHref;
               const pending = isPending && pendingHref === item.href;
+              const locked = isNavItemLockedFor({ href: item.href }, lockedModuleKeys);
+              // The padlock REPLACES the row's icon rather than joining it. The label keeps its
+              // full width that way, which matters here: the portal's label span has no `truncate`,
+              // so anything added beside a long label wraps to a second line — and wrapping is
+              // exactly what the owner's standing rule forbids.
+              const RowIcon = locked ? Lock : item.icon;
               return (
                 <Link
                   aria-busy={pending || undefined}
                   aria-current={active ? "page" : undefined}
+                  aria-label={locked ? `${item.label} — locked` : undefined}
+                  title={locked ? `${item.label} — temporarily locked by the system administrator` : undefined}
                   key={item.label}
                   className={`group flex items-center gap-3 rounded px-4 py-2.5 ${
                     isMobile ? "text-phx-md font-semibold duration-200" : "text-phx-sm font-bold duration-150"
@@ -571,12 +590,18 @@ function EmployeePortalMenu({
                   onClick={(event) => handleNavigate(event, item.href)}
                   prefetch
                 >
-                  <item.icon
+                  <RowIcon
                     className={`${
                       isMobile ? "h-4 w-4" : "h-[15px] w-[15px] stroke-[2.1]"
-                    } shrink-0 transition ${pending ? "text-phx-accent-hover" : navIconClass(active)}`}
+                    } shrink-0 transition ${
+                      pending
+                        ? "text-phx-accent-hover"
+                        : locked
+                          ? "text-amber-600"
+                          : navIconClass(active)
+                    }`}
                   />
-                  <span>{item.label}</span>
+                  <span className={locked ? "opacity-70" : undefined}>{item.label}</span>
                   {item.navBadge === "approvals-hub-pending" ? <NavBadge src="/api/approvals-hub/pending-count" /> : null}
                   {item.navBadge === "vacation-approvals-pending" ? <NavBadge src="/api/approvals/vacation/pending-count" /> : null}
                   {item.navBadge === "excuse-approvals-pending" ? <NavBadge src="/api/approvals/excuse/pending-count" /> : null}
@@ -1066,6 +1091,7 @@ export function EmployeePortalChrome({
   children,
   data,
   disableSessionGuard = false,
+  lockedModuleKeys,
   personalLayout = null,
   visibility,
 }: {
@@ -1073,6 +1099,14 @@ export function EmployeePortalChrome({
   children: ReactNode;
   data: EmployeePortalShellData;
   disableSessionGuard?: boolean;
+  /**
+   * Modules a system administrator has temporarily locked for THIS viewer, resolved server-side by
+   * EmployeePortalServerShell. Shared through context rather than threaded as a prop because four
+   * navigation surfaces need it — the sidebar, the mobile drawer, the two horizontal rows and the
+   * bottom nav — and none of them share a parent below this one. A surface that missed the prop
+   * would not look broken; it would look UNLOCKED, which is the one thing this must never show.
+   */
+  lockedModuleKeys?: readonly string[];
   /**
    * The viewer's own saved arrangement, or the company default when they have saved nothing —
    * resolved server-side by EmployeePortalServerShell. Null means "nothing arranged", which renders
@@ -1083,6 +1117,7 @@ export function EmployeePortalChrome({
 }) {
   return (
     <RouteTransitionProvider>
+      <ModuleLockProvider lockedModuleKeys={lockedModuleKeys}>
       <div className="employee-portal-shell relative min-h-screen overflow-x-hidden bg-[linear-gradient(160deg,#f4f8fc_0%,#f8fafc_28%,#fdf8f5_58%,#f6faf8_82%,#f8fafc_100%)] pt-[56px] lg:pt-[64px]">
         <EmployeePortalRouteProgress />
         <div className="pointer-events-none absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r from-sky-500 via-orange-500 to-emerald-500" />
@@ -1129,6 +1164,7 @@ export function EmployeePortalChrome({
         </div>
         <EmployeePortalBottomNav activePathOverride={activePathOverride} visibility={visibility} />
       </div>
+      </ModuleLockProvider>
     </RouteTransitionProvider>
   );
 }
