@@ -31,10 +31,14 @@ export function demoSosByPeriod(): SosKpiRow[] {
 }
 
 export function demoSosByArea(): SosByAreaRow[] {
+  // `operationalRegion*` is the district the ORGANOGRAM gives the area; `region*` is where it sits
+  // geographically. Gamma deliberately differs between the two, because that is the real shape this
+  // page exists to show — on production 15 of 48 areas are owned by a district other than their
+  // geographic region on at least one line. A demo where the two always agree would hide it.
   const areas = [
-    { regionCode: "DEMO-R1", regionName: "Demo Region North", areaCode: "DEMO-A1", areaName: "Demo Area Alpha" },
-    { regionCode: "DEMO-R1", regionName: "Demo Region North", areaCode: "DEMO-A2", areaName: "Demo Area Beta" },
-    { regionCode: "DEMO-R2", regionName: "Demo Region South", areaCode: "DEMO-A3", areaName: "Demo Area Gamma" },
+    { regionCode: "DEMO-R1", regionName: "Demo Region North", operationalRegionCode: "DEMO-R1", operationalRegionName: "Demo Region North", areaCode: "DEMO-A1", areaName: "Demo Area Alpha" },
+    { regionCode: "DEMO-R1", regionName: "Demo Region North", operationalRegionCode: "DEMO-R1", operationalRegionName: "Demo Region North", areaCode: "DEMO-A2", areaName: "Demo Area Beta" },
+    { regionCode: "DEMO-R2", regionName: "Demo Region South", operationalRegionCode: "DEMO-R2-1", operationalRegionName: "Demo Region South 1", areaCode: "DEMO-A3", areaName: "Demo Area Gamma" },
   ];
   return DEMO_PERIODS.flatMap((period, i) =>
     areas.map((area, j) => ({

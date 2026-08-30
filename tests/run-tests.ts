@@ -695,6 +695,7 @@ import { runSalesNullVsZeroTests } from "./sales-null-vs-zero.test.ts";
 import { runSosAnalyticsTests } from "./sos-analytics.test.ts";
 import { runSosBiWorkbookTests } from "./sos-bi-workbook.test.ts";
 import { runClosingDetailsRegionBasisTests } from "./closing-details-region-basis.test.ts";
+import { runAnalyticsOrganogramRegionsTests } from "./analytics-organogram-regions.test.ts";
 import { runSosRegionBasisTests } from "./sos-region-basis.test.ts";
 import { runMonthlyDashboardWorkbookTests } from "./monthly-dashboard-workbook.test.ts";
 import { runCustomerDirectoryRollupTests } from "./customer-directory-rollup.test.ts";
@@ -2284,6 +2285,10 @@ await runTest(
 await runTest(
   "the Closing Details tab offers and filters the SAME regions the Closing Matrix beside it is grouped by, its area list cascades off that same basis, and its access gate stays geographic so a region-scoped viewer's tab is never emptied",
   runClosingDetailsRegionBasisTests,
+);
+await runTest(
+  "the analytics region breakdowns file every area under the district the ORGANOGRAM gives it for that line and month, collapsing the line back out losslessly, while the geographic code stays on the row as the dimension access was applied in",
+  runAnalyticsOrganogramRegionsTests,
 );
 await runTest("monthly sales dashboard workbook export", runMonthlyDashboardWorkbookTests);
 await runTest("weekly-sales-pagination", runWeeklySalesPaginationTests);

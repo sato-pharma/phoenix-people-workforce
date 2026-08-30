@@ -108,11 +108,14 @@ async function ExecComparisonContent({
     .slice(0, 30)
     .map((p) => ({ ...p, sharePct: safeDividePct(p.value, grandTotal) }));
 
-  // Aggregate region totals
+  // Aggregate region totals on the ORGANOGRAM region — the district that owns the area on that
+  // line in that month, which is what the Monthly Closing publishes. Grouping on the geographic
+  // code understated OT by EGP 266,063 in July and reported UE-1 and UE-2 as nothing at all,
+  // because no row in the geographic master carries those codes.
   const regionMap = new Map<string, { regionName: string; value: number; units: number }>();
   for (const r of byArea) {
-    const cur = regionMap.get(r.regionCode) ?? { regionName: r.regionName, value: 0, units: 0 };
-    regionMap.set(r.regionCode, { ...cur, value: cur.value + r.value, units: cur.units + r.units });
+    const cur = regionMap.get(r.operationalRegionCode) ?? { regionName: r.operationalRegionName, value: 0, units: 0 };
+    regionMap.set(r.operationalRegionCode, { ...cur, value: cur.value + r.value, units: cur.units + r.units });
   }
   const regionRanked = [...regionMap.values()]
     .sort((a, b) => b.value - a.value)

@@ -6,6 +6,8 @@ import { unstable_cache } from "next/cache.js";
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { canViewHeadOfficeLine, canViewRestrictedProducts, isHeadOfficeLine, stripHeadOfficeRows } from "@/lib/sales/access-scope";
+import { loadOperationalRegionResolver, type OperationalRegionResolver } from "@/lib/sales/closing-organogram-regions";
+import { operationalRegionFor } from "@/lib/sales/sos-region-basis";
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
 import { shiftPeriod } from "@/lib/analytics/compare";
 import type { PhoenixRole } from "@/lib/auth/permissions";
@@ -48,10 +50,31 @@ export type SosKpiRow = {
   value: number;
 };
 
+/**
+ * One row of `analytics_sos_by_area_line` — the by-area breakdown BEFORE the line is collapsed out.
+ * Internal to this module's region re-filing; no dashboard consumes it directly.
+ */
+export type SosByAreaLineRow = Omit<SosByAreaRow, "operationalRegionCode" | "operationalRegionName"> & {
+  line: string;
+};
+
 export type SosByAreaRow = {
   period: string;
+  /**
+   * GEOGRAPHIC region — where the area sits on the map. This stays the ACCESS dimension: the
+   * viewer's bound in `SosFilters.regions` is a geographic set produced by `scopeAnalyticsFilters`,
+   * and it is pushed into the RPC, so this is the code that bound was applied against.
+   */
   regionCode: string;
   regionName: string;
+  /**
+   * ORGANOGRAM region — the DM territory that owns this area, on this line, in this month. This is
+   * what the Monthly Closing publishes and what every region breakdown here is grouped by. The two
+   * genuinely differ: measured on production for 2026-07, EGP 705,076 of 10,370,361 sat under a
+   * region the organogram does not agree with.
+   */
+  operationalRegionCode: string;
+  operationalRegionName: string;
   areaCode: string;
   areaName: string;
   channel: string;
@@ -307,7 +330,7 @@ async function loadSosByPeriodUncached(filters: SosFilters): Promise<SosKpiRow[]
 
 async function loadSosByAreaUncached(filters: SosFilters): Promise<SosByAreaRow[]> {
   const db = getSupabaseAdmin();
-  const { data, error } = await db.rpc("analytics_sos_by_area" as never, {
+  const { data, error } = await db.rpc("analytics_sos_by_area_line" as never, {
     p_periods:     filters.period?.length      ? filters.period      : null,
     p_period_from: filters.periodFrom  ?? null,
     p_period_to:   filters.periodTo    ?? null,
@@ -325,7 +348,71 @@ async function loadSosByAreaUncached(filters: SosFilters): Promise<SosByAreaRow[
     ...confidentialRevealArg(filters),
   } as never);
   if (error) throw new Error(`SoS by area: ${error.message}`);
-  return ((data ?? []) as Record<string, unknown>[]).map(mapSosAreaRow);
+  return regroupAreaRowsByOperationalRegion(
+    ((data ?? []) as Record<string, unknown>[]).map(mapSosAreaLineRow),
+    await loadOperationalRegionResolver(),
+  );
+}
+
+/**
+ * Re-file each (line, area, month) row under the region the ORGANOGRAM gives it, then collapse the
+ * line back out so the row grain every caller already consumes is unchanged.
+ *
+ * Why the line has to be fetched at all: the organogram region is a function of (line, area,
+ * month) — the same area belongs to different DM territories on different lines — so it cannot be
+ * recovered from rows that have already been summed across lines, which is exactly what the older
+ * `analytics_sos_by_area` returns. `analytics_sos_by_area_line` is that function with `line` added
+ * and nothing else changed; rolling its rows back up across the line reproduces the old function
+ * group-for-group (verified on staging: 434 groups both ways, 0 mismatched).
+ *
+ * The GEOGRAPHIC code is deliberately preserved on every row rather than overwritten. It is the
+ * dimension the viewer's access bound was applied in — `SosFilters.regions` is a geographic set,
+ * intersected with the viewer's allowed regions by `scopeAnalyticsFilters` and pushed into the RPC
+ * — so losing it would leave nothing to audit that decision against.
+ *
+ * One area CAN legitimately appear under two organogram regions once the line is collapsed, when
+ * two lines assign it to different districts. That is the same shape the Monthly Closing publishes,
+ * not a duplicate row.
+ */
+export function regroupAreaRowsByOperationalRegion(
+  rows: SosByAreaLineRow[],
+  resolver: OperationalRegionResolver,
+): SosByAreaRow[] {
+  const buckets = new Map<string, SosByAreaRow>();
+  for (const row of rows) {
+    const operationalRegionCode = operationalRegionFor(
+      resolver,
+      row.line,
+      row.areaCode,
+      row.period,
+      row.regionCode,
+    );
+    // UE-1 / UE-2 exist only in the organogram, so the geographic master has no name for them.
+    const operationalRegionName =
+      operationalRegionCode === row.regionCode
+        ? row.regionName
+        : resolver.regionName(operationalRegionCode) ?? operationalRegionCode;
+    const key = `${row.period}\u0000${operationalRegionCode}\u0000${row.areaCode}\u0000${row.channel}`;
+    const bucket = buckets.get(key);
+    if (bucket) {
+      bucket.units += row.units;
+      bucket.value += row.value;
+      continue;
+    }
+    buckets.set(key, {
+      period: row.period,
+      regionCode: row.regionCode,
+      regionName: row.regionName,
+      operationalRegionCode,
+      operationalRegionName,
+      areaCode: row.areaCode,
+      areaName: row.areaName,
+      channel: row.channel,
+      units: row.units,
+      value: row.value,
+    });
+  }
+  return [...buckets.values()];
 }
 
 async function loadSosByProductUncached(filters: SosFilters): Promise<SosByProductRow[]> {
@@ -845,9 +932,10 @@ function mapSosKpiRow(r: Record<string, unknown>): SosKpiRow {
   };
 }
 
-function mapSosAreaRow(r: Record<string, unknown>): SosByAreaRow {
+function mapSosAreaLineRow(r: Record<string, unknown>): SosByAreaLineRow {
   return {
     period:     s(r.period),
+    line:       s(r.line),
     regionCode: s(r.region_code),
     regionName: s(r.region_name),
     areaCode:   s(r.area_code),
