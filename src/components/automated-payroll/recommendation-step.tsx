@@ -11,6 +11,7 @@ import {
   enteredOnThisStepAmount,
   hasDoubleDeductionConflict,
 } from "@/lib/automated-payroll/conflicts";
+import { computeSettlementSummary } from "@/lib/automated-payroll/settlement-summary";
 import { stepDefinition, stepFieldsTotal, stepWindowLabel } from "@/lib/automated-payroll/step-definitions";
 import type {
   ManualRowCandidate,
@@ -39,6 +40,88 @@ type Props = {
 
 function money(value: number): string {
   return value.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+}
+
+/** One line of the four-figure settlement block. */
+function SettlementLine({
+  label,
+  value,
+  tone,
+  strong,
+}: {
+  label: string;
+  value: number;
+  tone?: "positive" | "negative";
+  strong?: boolean;
+}) {
+  return (
+    <div
+      className={cn(
+        "flex items-center justify-between gap-3",
+        strong && "mt-0.5 border-t border-slate-300 pt-1.5",
+      )}
+    >
+      {/* No truncate and no wrap anywhere in this block (owner's standing UI
+          rule): a payroll figure whose label has been cut short, or whose
+          amount has folded onto a second line, is a figure that gets misread. */}
+      <span
+        className={cn(
+          "overflow-hidden whitespace-nowrap",
+          strong ? "font-semibold text-slate-700" : "text-slate-500",
+        )}
+      >
+        {label}
+      </span>
+      <span
+        dir="ltr"
+        className={cn(
+          "shrink-0 overflow-hidden whitespace-nowrap tabular-nums",
+          strong ? "text-base font-black text-slate-900" : "font-semibold",
+          !strong && tone === "negative" && "text-rose-600",
+          !strong && tone === "positive" && "text-emerald-700",
+          !strong && !tone && "text-slate-700",
+        )}
+      >
+        {/* A deduction reads as what it does to the pay. Without the sign,
+            "Working Days Net 17,500 / Total Deductions 2,540 / Net Payable
+            14,959" is three numbers the reader still has to work out the
+            relationship between. */}
+        {tone === "negative" && value !== 0 ? `− ${money(value)}` : money(value)}
+      </span>
+    </div>
+  );
+}
+
+/**
+ * THE FOUR FIGURES the owner asked to see on every screen of the sheet
+ * (2026-08-30): what the month is worth, what the days actually worked are
+ * worth, what is being taken off across all sixteen steps, and what the
+ * employee ends up with — recomputed on every keystroke.
+ *
+ * Its own component purely so the summary is computed ONCE per row instead of
+ * once per line rendered.
+ *
+ * Renders NOTHING when the row carries no settlement basis — a holds step, or a
+ * manually-added employee with no draft row yet. On a payroll screen a missing
+ * figure is safer than a confident zero: zero is a number HR can act on.
+ */
+function SettlementSummaryBlock({ definition, row }: { definition: StepDefinition; row: StepRow }) {
+  const summary = computeSettlementSummary(row.settlement, definition, row.values);
+  if (!summary) return null;
+  return (
+    <div className="mt-1 flex flex-col gap-1 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+      <SettlementLine label="Full Month Net" value={summary.monthNet} />
+      <SettlementLine label="Working Days Net" value={summary.workedNet} />
+      {/* Shown only when there IS one. Net Payable has to reconcile against the
+          lines above it or the block reads as broken — but an "Additions 0.00"
+          row on the thirteen screens that never carry one is just noise. */}
+      {summary.additions !== 0 ? (
+        <SettlementLine label="Additions" value={summary.additions} tone="positive" />
+      ) : null}
+      <SettlementLine label="Total Deductions" value={summary.deductions} tone="negative" />
+      <SettlementLine label="Net Payable" value={summary.payable} strong />
+    </div>
+  );
 }
 
 /** Shared premium field recipe (see [[premium-design-language]]) — orange focus ring, dense height. */
@@ -939,6 +1022,21 @@ export function RecommendationStep({
                         </span>
                       </div>
                     ) : null}
+
+                    {/* THE FOUR FIGURES (owner request 2026-08-30): the whole
+                        month, on every screen. "I must see everything to make
+                        the things clear for me" — before this, each screen
+                        showed its own slice and nothing showed what the
+                        employee actually ends the month with, so checking a
+                        figure meant adding up sixteen screens by hand on a
+                        calculator.
+
+                        Computed live from row.values overlaid on the server's
+                        components, for the same reason the total above is:
+                        anything read straight from row.context freezes at the
+                        figure it loaded with and stops agreeing with the boxes
+                        exactly when someone is revising them. */}
+                    <SettlementSummaryBlock definition={definition} row={row} />
 
                     {definition.hasReason ? (
                       <label className="flex flex-col gap-1 text-sm">
