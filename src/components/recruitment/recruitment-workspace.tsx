@@ -3832,17 +3832,6 @@ function CandidatesTab({
             <span className="whitespace-nowrap text-xs font-semibold text-slate-700">
               {selectedVisibleIds.length} selected
             </span>
-            {/* The ticks were already there for bulk-send; this is the same selection, read into
-                screening mode instead. Sourced from visibleCandidates rather than the raw ids, so
-                the queue opens in the same newest-first order the table is already showing. */}
-            <Button
-              variant="secondary"
-              onClick={() =>
-                setScreeningQueue(visibleCandidates.filter((candidate) => selectedVisibleIds.includes(candidate.id)))
-              }
-            >
-              Screen selected
-            </Button>
             <div className="w-56 sm:w-64">
               <PositionPicker
                 freeArea={bulkFreeArea}
