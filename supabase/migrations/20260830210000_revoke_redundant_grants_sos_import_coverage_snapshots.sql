@@ -1,0 +1,33 @@
+-- Harden public.sos_import_coverage_snapshots — revoke the redundant anon/authenticated grants.
+--
+-- Background (verified against production 2026-08-30)
+--   The table holds SoS import coverage snapshots, including sensitive columns
+--   (importable_value, new_customer_codes, new_customer_details, unmapped_products).
+--   RLS is ENABLED with a single deliberate deny-all policy
+--   `sos_coverage_no_direct_access` = FOR ALL TO public USING (false) WITH CHECK (false),
+--   so anon and authenticated already see 0 rows and cannot write (proven by
+--   running count(*) as the anon role: 0). The application reads/writes it only via
+--   the service_role client in src/lib/sales/import-coverage.ts, which bypasses RLS
+--   AND grants.
+--
+--   Yet both anon and authenticated still hold the full table grant
+--   (DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE). Those grants are
+--   100% redundant today — the deny-all policy neutralises them — but they mean the
+--   table's protection rests entirely on that one RLS policy staying in place: a single
+--   accidental `DROP POLICY` or `DISABLE ROW LEVEL SECURITY` would immediately expose
+--   129 rows of sales values + customer details to anon. Revoking the grants removes
+--   that latent single-point dependency and matches the house norm (RLS-on + no grant).
+--
+-- What this does
+--   REVOKE ALL from anon + authenticated. Functionally a no-op (RLS already denied
+--   them and the app uses service_role). RLS and the deny-all policy are left in place
+--   as defense-in-depth. No data touched. Fully reversible (rollback below).
+
+revoke all privileges on table public.sos_import_coverage_snapshots from anon, authenticated;
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- ROLLBACK (run by hand if ever needed — restores the exact prior grant set):
+--
+--   grant delete, insert, references, select, trigger, truncate, update
+--     on table public.sos_import_coverage_snapshots to anon, authenticated;
+-- ─────────────────────────────────────────────────────────────────────────────
