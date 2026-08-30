@@ -8,7 +8,6 @@ import { runBirthdayNotifications } from "@/app/api/notifications/birthdays/rout
 import { runContractRenewalNotifications } from "@/app/api/notifications/contract-renewals/route";
 import { runHolidayConfirmationReminder } from "@/app/api/notifications/holiday-confirmation/route";
 import { runVacationSlaDaily } from "@/lib/vacation/service";
-import { runFieldWorkforceComplianceDeductionsAutoSync } from "@/lib/deductions-governance/connectors/field-workforce-compliance";
 import { backfillMissingMarketingAssignmentEmails, runMarketingSlaDaily } from "@/lib/marketing-requests/service";
 import { runRecruitmentDailyNotifications } from "@/lib/recruitment/notifications";
 import { expireStaleHeldNotifications } from "@/lib/notifications/confidence-gate";
@@ -90,7 +89,6 @@ async function runDailyNotifications(request: Request) {
     // .catch() and runs regardless of destructuring position — only this diagnostic JSON
     // response was mislabeled.
     outstationGeocodeWarmup,
-    fieldWorkforceComplianceDeductionsAutoSync,
     excuseSla,
     outstationSla,
     outstationDeparturePhotoReminders,
@@ -142,14 +140,13 @@ async function runDailyNotifications(request: Request) {
       onJobFailure("weekly-system-health-digest", (message) => ({ delivered: 0, skipped: true, error: message, sourceWarnings: [] })),
     ),
     // Retired 2026-08-02: the probation weekly digest and the Field Workforce Compliance digest
-    // were removed at the owner's request. The FWC DEDUCTIONS auto-sync immediately below is a
-    // different job with a near-identical name and is deliberately KEPT — it writes deduction
-    // candidates, so retiring it would stop money records being created, not just emails.
+    // were removed at the owner's request. The FWC DEDUCTIONS auto-sync that used to run here was
+    // retired in the C6 deductions cutover (2026-08-30): it wrote into the legacy governance
+    // `deduction_candidates` table (frozen since 2026-08-02, read by nothing outside the retired
+    // module). The unified Deductions module's CRM collector (crm_visits_mirror ->
+    // deductions_candidates) is the live no-activity path now — do NOT re-add this as a money job.
     runOutstationGeocodeWarmup().catch(
       onJobFailure("daily-outstation-geocode-warmup", (message) => ({ success: false, error: message })),
-    ),
-    runFieldWorkforceComplianceDeductionsAutoSync().catch(
-      onJobFailure("daily-fwc-deductions-sync", (message) => ({ ok: false as const, months: [] as const, error: message })),
     ),
     runExcuseSlaDaily().catch(onJobFailure("daily-excuse-sla", (message) => ({ processed: 0, errors: 1, detail: message }))),
     // Restored 2026-07-23 behind a real admin toggle (see "outstation_sla_reminder" in
@@ -234,8 +231,8 @@ async function runDailyNotifications(request: Request) {
   // the dead-man's-switch ping (which only proves the route executed) — is the signal to alert on:
   // `event="cron_run_summary" job="notifications/daily" failedCount>0`.
   // Hand-maintained: bump this whenever a sub-job is added above, or the run summary silently
-  // under-reports (24 since the marketing field-capture nudge moved to its own cron on 2026-08-29).
-  const totalJobs = 24;
+  // under-reports (23 since the FWC deductions auto-sync was retired in the C6 cutover on 2026-08-30).
+  const totalJobs = 23;
   if (failures.length > 0) {
     logError(
       `Daily notification run completed with ${failures.length} of ${totalJobs} sub-job(s) FAILED: ${failures.map((f) => f.job).join(", ")}`,
@@ -274,7 +271,6 @@ async function runDailyNotifications(request: Request) {
     excuseSla,
     failedCount: failures.length,
     failedJobs: failures,
-    fieldWorkforceComplianceDeductionsAutoSync,
     heldNotificationReminder,
     holidayConfirmation,
     marketingAssignmentBackfill,

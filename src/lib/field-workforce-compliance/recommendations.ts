@@ -538,7 +538,7 @@ function generatedRecommendations(
 
       // SFE Manager appears in the compliance report above (leaveRecommendations) but must
       // never generate a payroll-deduction recommendation — see the ELIGIBLE_TITLES comment
-      // in eligibility.ts. This is the "enforced separately in the deductions-governance
+      // in eligibility.ts. This is the "enforced separately in the deductions module's CRM
       // connector" half of that promise; it was previously undocumented-but-missing.
       //
       // isFieldWorkforceComplianceEligibleTitle is required here too: employees now also enter

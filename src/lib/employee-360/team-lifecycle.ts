@@ -13,7 +13,7 @@
 // meaningful signal, so that is what this reports. Probation is computed purely
 // from hire_date + 90 (the canonical rule) — no extra query.
 
-import { compactDeductionHrId } from "@/lib/deductions-governance/service";
+import { compactDeductionsHrId } from "@/lib/deductions/candidate-key";
 import { resolveEmployee360RoleCategory } from "@/lib/employee-360/roles";
 import type { EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { canonicalHrIdKey } from "@/lib/hr-id";
@@ -93,7 +93,7 @@ export async function getEmployee360TeamLifecycle(input: {
   const compactToKey = new Map<string, string>();
   for (const e of teamReps) {
     const key = canonicalHrIdKey(e.hrId);
-    const compact = compactDeductionHrId(e.hrId);
+    const compact = compactDeductionsHrId(e.hrId);
     if (key && compact) compactToKey.set(compact, key);
   }
   const months = monthKeysIn(input.window.from, input.window.to);

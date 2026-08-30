@@ -10,7 +10,7 @@ import {
   resolveNavigationMode,
 } from "@/lib/auth/permissions";
 import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
-import { compactDeductionHrId } from "@/lib/deductions-governance/service";
+import { compactDeductionsHrId } from "@/lib/deductions/candidate-key";
 import { getPortalDeductions } from "@/lib/deductions/portal.ts";
 
 export const dynamic = "force-dynamic";
@@ -22,7 +22,7 @@ type DeductionsPortalPageProps = {
 export default async function DeductionsPortalPage(props: DeductionsPortalPageProps) {
   const access = await resolveAuthenticatedPageAccess();
   if (resolveNavigationMode(access) !== "employee-portal") {
-    redirect("/admin/deductions-governance");
+    redirect("/admin/deductions");
   }
 
   await assertPermission(access, "employee_profile", "read");
@@ -59,7 +59,7 @@ export default async function DeductionsPortalPage(props: DeductionsPortalPagePr
       <DeductionsPortalWorkspace
         comments={data.comments}
         lines={data.lines}
-        ownCompactHrId={compactDeductionHrId(access.hrId ?? access.loginId)}
+        ownCompactHrId={compactDeductionsHrId(access.hrId ?? access.loginId)}
       />
     </EmployeePortalPageShell>
   );

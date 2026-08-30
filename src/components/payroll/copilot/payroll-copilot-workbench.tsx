@@ -15,7 +15,6 @@ import { PremiumHero } from "@/components/ui/premium-hero";
 
 type IconType = typeof Users;
 
-import { DeductionReviewTable } from "./tabs/deduction-review-table";
 import { ExpensesTab } from "./tabs/expenses-tab";
 import { HolidayBridgingTab } from "./tabs/holiday-bridging-tab";
 import { UnpaidVacationTab } from "./tabs/unpaid-vacation-tab";
@@ -526,7 +525,7 @@ function RunWorkspace(props: {
 }) {
   const { view, draft, busy, chat, proposals, answer, materialized } = props;
   const [activeTab, setActiveTab] = useState<
-    "sheet" | "fingerprint" | "crm" | "vacation" | "expenses" | "holiday-bridging"
+    "sheet" | "vacation" | "expenses" | "holiday-bridging"
   >("sheet");
   if (!draft) return null;
 
@@ -560,16 +559,6 @@ function RunWorkspace(props: {
           [
             { key: "sheet", label: "Payroll Sheet", count: draft.flaggedOpenCount },
             {
-              key: "fingerprint",
-              label: "Fingerprint Deductions",
-              count: draft.otherTabsBlocking.find((tab) => tab.label === "Fingerprint Deductions")?.count ?? 0,
-            },
-            {
-              key: "crm",
-              label: "CRM Deductions",
-              count: draft.otherTabsBlocking.find((tab) => tab.label === "CRM Deductions")?.count ?? 0,
-            },
-            {
               key: "vacation",
               label: "Unpaid Vacation",
               count: draft.otherTabsBlocking.find((tab) => tab.label === "Unpaid Vacation")?.count ?? 0,
@@ -602,21 +591,7 @@ function RunWorkspace(props: {
         ))}
       </div>
 
-      {activeTab === "fingerprint" ? (
-        <DeductionReviewTable
-          runId={view.run.id}
-          endpoint="fingerprint"
-          title="Fingerprint / Attendance Deductions"
-          valueLabel="Days/Hours"
-        />
-      ) : activeTab === "crm" ? (
-        <DeductionReviewTable
-          runId={view.run.id}
-          endpoint="crm"
-          title="CRM No-Activity Deductions"
-          valueLabel="No-Activity Days"
-        />
-      ) : activeTab === "vacation" ? (
+      {activeTab === "vacation" ? (
         <UnpaidVacationTab runId={view.run.id} />
       ) : activeTab === "expenses" ? (
         <ExpensesTab runId={view.run.id} />

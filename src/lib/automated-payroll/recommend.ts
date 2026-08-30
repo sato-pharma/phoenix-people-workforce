@@ -16,7 +16,6 @@ import { buildFeederStates, compactHrKey } from "@/lib/payroll/copilot/feeders.t
 // of each computing its own.
 import { computeJoinerPay, isInPeriod } from "@/lib/payroll/copilot/proration.ts";
 import { listUnpaidVacationCandidates } from "@/lib/payroll/copilot/vacation-settlement.ts";
-import type { DeductionInboxRow } from "@/lib/deductions-governance/service";
 import { deductionsCategoryLabel } from "@/lib/deductions/calculations";
 import {
   linesFor,
@@ -25,6 +24,7 @@ import {
   type DeductionLine,
   type EmployeeDeductions,
 } from "./deductions-source.ts";
+import { calculateFlat30DeductionAmount } from "./flat-deduction-rate.ts";
 // The ONE leaver rule — days worked and the day rate — shared by the
 // Resignations and Resignations CRM steps so they can never disagree again
 // (owner, 2026-08-30: "the rule must be synced everywhere in the module").
@@ -33,10 +33,6 @@ import {
   prorateLeaverNet,
   resolveLeaverBasis,
 } from "./leaver-basis.ts";
-import {
-  calculateDeductionAmountFromBaseSalary,
-  resolveDayBasedDeductionAmount,
-} from "@/lib/deductions-governance/calculations";
 import { expenseApprovalState } from "@/lib/outstation/approval-state";
 import { payableExpenseAmount } from "@/lib/outstation/payable";
 import { isPayrollIneligibleEmployee } from "@/lib/payroll/eligibility.ts";
@@ -837,35 +833,6 @@ function monthNameOf(dateText: string): string {
   return monthNameAndYear(month, year);
 }
 
-/** Aggregate day-based deduction candidates per employee → { days, value }. Exported for tests. */
-export function aggregateDeductionRows(
-  candidates: DeductionInboxRow[],
-  sources: Map<string, PayrollSalarySource>,
-): Map<string, { days: number; value: number }> {
-  const totals = new Map<string, { days: number; value: number }>();
-  for (const candidate of candidates) {
-    // A rejected candidate must not fall back to the original system-flagged value —
-    // resolveDayBasedDeductionAmount only looks at appliedAmount/appliedDeductionValue
-    // (both null on rejection) and would otherwise re-apply the un-rejected estimate.
-    // Mirrors the same guard Payroll Copilot's CRM aggregation already uses.
-    if (candidate.decision?.decisionStatus === "Do Not Take Action") continue;
-    const compact = compactHrKey(candidate.employeeHrIdCompact || candidate.employeeCode);
-    if (!compact) continue;
-    const source = lookupSource(sources, candidate.employeeCode);
-    const value =
-      resolveDayBasedDeductionAmount({
-        decision: candidate.decision,
-        deductionValue: candidate.deductionValue,
-        baseSalary: source?.baseSalary ?? undefined,
-      }) ?? candidate.estimatedAmount ?? 0;
-    const existing = totals.get(compact) ?? { days: 0, value: 0 };
-    existing.days += Number(candidate.deductionValue ?? 0);
-    existing.value += value;
-    totals.set(compact, existing);
-  }
-  return totals;
-}
-
 /**
  * Fingerprint deductions, sourced from the Deductions module HR actually
  * confirms in (owner-reported 2026-08-03 — see deductions-source.ts for the
@@ -1237,7 +1204,7 @@ export async function computeVacationDeductionTotals(
     const base = roundCurrency(lookupSource(sources, member.employee.hrId)?.baseSalary ?? 0);
     const amount =
       unpaidDays > 0
-        ? calculateDeductionAmountFromBaseSalary({ baseSalary: base, deductionDays: unpaidDays }) ?? 0
+        ? calculateFlat30DeductionAmount({ baseSalary: base, deductionDays: unpaidDays }) ?? 0
         : 0;
     const entry = ensure(compact);
     entry.crmDays += crmOnly.length;

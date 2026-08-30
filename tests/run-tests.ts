@@ -223,11 +223,6 @@ import { runAttendanceEmployeeDayReportTests } from "./attendance-employee-day-r
 import { runAttendanceDeviceOutageFailsafeTests } from "./attendance-device-outage-failsafe.test.ts";
 import { runAttendanceSkippedPunchClassificationTests } from "./attendance-skipped-punch-classification.test.ts";
 import { runAttendanceHolidayOverridesTests } from "./attendance-holiday-overrides.test.ts";
-import { runDeductionsGovernanceFoundationTests } from "./deductions-governance-foundation.test.ts";
-import { runDeductionsGovernanceServiceTests } from "./deductions-governance-service.test.ts";
-import { runDeductionsGovernanceFwcConnectorTests } from "./deductions-governance-fwc-connector.test.ts";
-import { runDeductionsGovernancePayrollImportDisabledTests } from "./deductions-governance-payroll-import-disabled.test.ts";
-import { runDeductionsGovernanceCompletionTests } from "./deductions-governance-completion.test.ts";
 import { runDeductionsModuleFoundationTests } from "./deductions-module-foundation.test.ts";
 import { runDeductionsModulePublishTests } from "./deductions-module-publish.test.ts";
 import { runDeductionsModuleCrmGuardsTests } from "./deductions-module-crm-guards.test.ts";
@@ -745,7 +740,6 @@ import { runPayrollCopilotTests } from "./payroll-copilot.test.ts";
 import { runPayrollStatutoryTests } from "./payroll-statutory.test.ts";
 import { runEmployeeSalaryAutofillTests } from "./employee-salary-autofill.test.ts";
 import { runPayrollCopilotProrationTests } from "./payroll-copilot-proration.test.ts";
-import { runPayrollCopilotDeductionsReviewTests } from "./payroll-copilot-deductions-review.test.ts";
 import { runPayrollCopilotUnifiedDeductionsGuardTests } from "./payroll-copilot-refuses-unified-deductions.test.ts";
 import { runPayrollInsuranceWageImportTests } from "./payroll-insurance-wage-import.test.ts";
 import { runPayrollExportsTests } from "./payroll-exports.test.ts";
@@ -812,7 +806,6 @@ import { runAnalyticsConfidentialProductCodeNormalizeTests } from "./analytics-c
 import { runAnalyticsDimProductsHeadOfficeExclusionTests } from "./analytics-dim-products-head-office-exclusion.test.ts";
 import { runMigrationsSecdefRevokeGuardTests } from "./migrations-secdef-revoke-guard.test.ts";
 import { runAutomatedPayrollSplitTests } from "./automated-payroll-split.test.ts";
-import { runAutomatedPayrollFingerprintAggregationTests } from "./automated-payroll-fingerprint-aggregation.test.ts";
 import { runAutomatedPayrollExportOrderTests } from "./automated-payroll-export-order.test.ts";
 import { runAutomatedPayrollPart1ScopeTests } from "./automated-payroll-part1-scope.test.ts";
 import { runAutomatedPayrollNonEmployeesTests } from "./automated-payroll-non-employees.test.ts";
@@ -1217,7 +1210,6 @@ await runTest("money path silent failures (a confident zero is worse than an err
 await runTest("payroll sheet mapping", runPayrollSheetMappingTests);
 await runTest("payroll workflow", runPayrollWorkflowTests);
 await runTest("automated payroll split (Part 1/2 freeze + FP-in-Part-1 + reconcile)", runAutomatedPayrollSplitTests);
-await runTest("automated payroll fingerprint aggregation (rejected candidates excluded)", runAutomatedPayrollFingerprintAggregationTests);
 await runTest("automated payroll export order (fixed HR-ID sequence)", runAutomatedPayrollExportOrderTests);
 await runTest("automated payroll Part 1/2 scope (no CRM/vacation double-deduction)", runAutomatedPayrollPart1ScopeTests);
 await runTest("automated payroll Non-Employees Payroll (inline rows + accurate Executive Summary)", runAutomatedPayrollNonEmployeesTests);
@@ -1484,18 +1476,10 @@ await runTest("sfe manager vacation source report (read-only + Phoenix vs CRM)",
 await runTest("company activity report (reconciliation, summary, filters, range, role gate)", runCompanyActivityReportTests);
 await runTest("nsm team calendar (manager grouping)", runNsmTeamCalendarTests);
 await runTest("company holidays", runCompanyHolidaysTests);
-await runTest("deductions governance foundation", runDeductionsGovernanceFoundationTests);
-await runTest("deductions governance service", runDeductionsGovernanceServiceTests);
-await runTest("deductions governance fwc connector", runDeductionsGovernanceFwcConnectorTests);
-await runTest(
-  "deductions governance payroll import stays disabled (no second writer to salary_records)",
-  runDeductionsGovernancePayrollImportDisabledTests,
-);
-await runTest("deductions governance completion", runDeductionsGovernanceCompletionTests);
 await runTest("deductions module foundation (unified module — candidate key, calculations, conflicts, validation)", runDeductionsModuleFoundationTests);
 await runTest("deductions module publish eligibility (mandatory-vs-approval-gated selection rule)", runDeductionsModulePublishTests);
 await runTest("deductions module CRM guards (suspect-date sync-gap detection + exclusion)", runDeductionsModuleCrmGuardsTests);
-await runTest("deductions module portal read path (dual-read-by-month merge + legacy shape mapping)", runDeductionsModulePortalTests);
+await runTest("deductions module portal read path (single-source publications: line mapping + sort order)", runDeductionsModulePortalTests);
 await runTest("deductions module safety guards (the 9 PR-1 defects — including that each guard is WIRED IN)", runDeductionsModuleSafetyTests);
 await runTest("deductions read gate (company-wide reads are admin-only; portal deductions are self-only for every role)", runDeductionsReadGateTests);
 await runTest("deductions supersede carries the decision (identity survives a changed day set; a grown day set resets to Pending)", runDeductionsSupersedeCarriesDecisionTests);
@@ -2231,7 +2215,6 @@ await runTest(
   runEmployeeSalaryAutofillTests,
 );
 await runTest("payroll copilot proration (resignation/joiner/unpaid-leave day-rate rules)", runPayrollCopilotProrationTests);
-await runTest("payroll copilot deductions review (cycle window + month-key resolution)", runPayrollCopilotDeductionsReviewTests);
 await runTest("payroll copilot refuses a sheet while the unified Deductions module owns the month (and Automated Payroll stays ungated)", runPayrollCopilotUnifiedDeductionsGuardTests);
 await runTest("payroll insurance-wage import (parser)", runPayrollInsuranceWageImportTests);
 await runTest("payroll exports (bank file + statutory summary)", runPayrollExportsTests);

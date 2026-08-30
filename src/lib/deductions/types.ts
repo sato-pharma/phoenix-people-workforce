@@ -216,6 +216,35 @@ export type DeductionsPublicationLine = {
   createdAt: string;
 };
 
+// The employee-portal display line (src/lib/deductions/portal.ts). One row per
+// published deduction the viewer is allowed to see. Named for the portal, not a
+// "monthly summary": this module's publish snapshot *is* the record, so there is
+// no separate summary object the way the retired governance module had. The
+// shape mirrors what DeductionsPortalWorkspace renders and nothing more —
+// `sourceModule` is always "DEDUCTIONS_MODULE" now that the legacy dual-read is
+// gone, kept only because the component still prints it beside the category.
+export type DeductionsPortalLine = {
+  id: string;
+  summaryId: string;
+  candidateId: string;
+  decisionId: string;
+  employeeCode: string;
+  employeeHrIdCompact: string;
+  employeeName: string | null;
+  monthKey: string;
+  sourceModule: "DEDUCTIONS_MODULE";
+  deductionType: DeductionsCategory;
+  payrollColumn: DeductionsSalaryRecordsColumn;
+  deductionUnit: DeductionsUnit;
+  originalDeductionValue: number;
+  appliedDeductionValue: number;
+  appliedAmount: number;
+  dates: string[];
+  reason: string | null;
+  hrNote: string | null;
+  createdAt: string;
+};
+
 // Employee/HR comment thread on a published candidate (Phase 4). Mirrors
 // legacy deductions-governance's DeductionComment shape 1:1 — see
 // src/lib/deductions/comments.ts.

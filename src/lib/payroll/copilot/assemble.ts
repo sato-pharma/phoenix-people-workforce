@@ -103,7 +103,12 @@ type BuildRowInput = {
   statutory?: { config: StatutoryConfig; insuranceWage: number | null };
   /** Set when this employee's last working date falls within `period` — routes through resignation Rule 1/2 instead of the normal parts split. */
   resignation?: { lastWorkingDate: string; unpaidDaysInSpan: number } | null;
-  /** Already-"Approved for Payroll" fingerprint/CRM decisions for this employee this period (see deductions-review.ts). */
+  /**
+   * Retired in the C6 deductions cutover: the Copilot's own Fingerprint/CRM review path
+   * (formerly deductions-review.ts, now deleted) is gone, and the unified /admin/deductions
+   * module owns those deductions and publishes them to salary_records directly. No caller
+   * sets this any more, so it defaults to 0; kept as an optional input only for pre-cutover use.
+   */
   approvedDeductions?: { crm: number; fingerPrint: number };
   /** Already-decided "deduct from salary" unpaid-vacation settlement amount for this employee this period (see vacation-settlement.ts). */
   settledUnpaidVacationSalaryDeduction?: number;
@@ -167,8 +172,9 @@ export function buildRowForEmployee(input: BuildRowInput): SalaryValidationRow |
   const incentive = 0;
   // Sum of already-"include" decisions from the Expenses tab (see expense-review.ts).
   const expenses = roundCurrency(input.approvedExpenses ?? 0);
-  // Sum of already-"Approved for Payroll" decisions from the Deductions
-  // Governance tables (see the Fingerprint/CRM review tabs + deductions-review.ts).
+  // Retired in the C6 cutover: these were sourced from the Copilot's Fingerprint/CRM review
+  // tabs (deductions-review.ts, now deleted). The unified /admin/deductions module owns them
+  // now and publishes to salary_records directly, so approvedDeductions is unset and both default to 0.
   const crm = roundCurrency(input.approvedDeductions?.crm ?? 0);
   const fingerPrint = roundCurrency(input.approvedDeductions?.fingerPrint ?? 0);
   const medicalInsurance = roundCurrency(employee.medicalInsurance ?? 0);

@@ -1,16 +1,15 @@
 import ExcelJS from "exceljs";
 
-import { calculateDeductionAmountFromBaseSalary } from "@/lib/deductions-governance/calculations";
 import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 import { compactHrKey } from "./feeders.ts";
 
 /**
- * Downloadable xlsx reports for the Payroll Copilot's deduction/expense tabs —
- * the backup sheets behind the monthly payroll sheet (CRM no-activity,
- * fingerprint, unpaid-vacation, expenses). Each report is built from the SAME
- * live data the tab shows, so "download" and "on screen" always agree.
+ * Downloadable xlsx reports for the Payroll Copilot's unpaid-vacation and
+ * expense tabs — the backup sheets behind the monthly payroll sheet. Each
+ * report is built from the SAME live data the tab shows, so "download" and
+ * "on screen" always agree.
  *
  * Styling mirrors the existing payroll exports (statutory-summary route): a navy
  * title band, an orange header row, frozen header, an optional totals row.
@@ -144,9 +143,8 @@ export async function getHireDateMap(): Promise<Map<string, string>> {
 }
 
 /**
- * Base-salary map, shared with the payroll-sheet assembler's mandatory
- * no-activity totals (deductions-review.ts) so the sheet and this export
- * always agree on the same estimate.
+ * Base-salary map, shared with the payroll-sheet assembler so the sheet and
+ * the vacation/expense exports always agree on the same estimate.
  */
 export { getBaseSalaryMap } from "./feeders.ts";
 
@@ -181,85 +179,6 @@ export function formatPeriodLabel(period: { month: number; year: number }): stri
 export function periodFileSlug(period: { month: number; year: number }): string {
   const name = MONTH_NAMES[period.month - 1] ?? `M${period.month}`;
   return `${name}_${period.year}`;
-}
-
-/** A CRM/Fingerprint deduction candidate row (subset of DeductionInboxRow) needed for the sheet. */
-export type DeductionExportRow = {
-  employeeCode: string;
-  employeeHrIdCompact: string;
-  employeeName: string | null;
-  deductionValue: number;
-  deductionUnit: string;
-  estimatedAmount: number | null;
-  /** the specific flagged days (ISO dates) behind the count */
-  dates: string[];
-  decision: { decisionStatus?: string; appliedDeductionValue?: number | null; appliedAmount?: number | null } | null;
-};
-
-/** CRM no-activity / Fingerprint deductions report (Name, Hire Date, Qty, Value). */
-export async function buildDeductionReportWorkbook(input: {
-  title: string;
-  subtitle: string;
-  qtyHeader: string;
-  rows: DeductionExportRow[];
-  hireDates: Map<string, string>;
-  /** base salaries (compact HR key -> salary) used to estimate value where no amount is computed yet */
-  baseSalaries?: Map<string, number>;
-}): Promise<ArrayBuffer> {
-  const columns: ReportColumn[] = [
-    { header: "HR ID", width: 10 },
-    { header: "Name", width: 40 },
-    { header: "Hire Date", width: 13 },
-    { header: input.qtyHeader, width: 18 },
-    { header: "Dates (problem days)", width: 42 },
-    { header: "Value (EGP)", width: 15, money: true },
-    { header: "Value Basis", width: 14 },
-    { header: "Status", width: 24 },
-  ];
-  let totalQty = 0;
-  let totalValue = 0;
-  const rows: ReportCell[][] = input.rows.map((r) => {
-    const qty = r.decision?.appliedDeductionValue ?? r.deductionValue;
-    // Prefer the decided/persisted amount; else the stored estimate; else, for
-    // day-based deductions, estimate from base salary (base / 30 x days) — the
-    // same formula approval uses — so pending rows aren't misleading zeros.
-    const decided = r.decision?.appliedAmount ?? r.estimatedAmount;
-    let value = decided ?? 0;
-    let basis = decided != null ? (r.decision?.appliedAmount != null ? "Approved" : "Estimate") : "";
-    if (decided == null && r.deductionUnit === "days") {
-      const estimate = calculateDeductionAmountFromBaseSalary({
-        baseSalary: input.baseSalaries?.get(r.employeeHrIdCompact),
-        deductionDays: qty,
-      });
-      if (estimate != null) {
-        value = estimate;
-        basis = "Estimate";
-      } else {
-        basis = "No base salary";
-      }
-    }
-    value = round2(value);
-    totalQty += qty;
-    totalValue += value;
-    return [
-      r.employeeCode,
-      r.employeeName ?? r.employeeCode,
-      input.hireDates.get(r.employeeHrIdCompact) ?? "",
-      qty,
-      (r.dates ?? []).join(", "),
-      value,
-      basis,
-      r.decision?.decisionStatus ?? "Pending",
-    ];
-  });
-  return buildReportWorkbook({
-    sheetName: "Deductions",
-    title: input.title,
-    subtitle: input.subtitle,
-    columns,
-    rows,
-    totals: ["TOTAL", "", "", round2(totalQty), "", round2(totalValue), "", ""],
-  });
 }
 
 export type VacationExportRow = {

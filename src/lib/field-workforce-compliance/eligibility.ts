@@ -21,8 +21,9 @@ import type { PhoenixRole } from "@/lib/auth/permissions";
  *
  * NOTE: the SFE Manager APPEARS in the Workforce Compliance report (listed below), but
  * must NOT be subject to deductions. That deduction-side exclusion is enforced separately
- * in the deductions-governance connector — this helper only controls who shows up in the
- * compliance report.
+ * in the deductions module's CRM connector (src/lib/deductions/connectors/crm.ts, which
+ * re-applies isFieldWorkforceComplianceEligibleTitle) — this helper only controls who shows
+ * up in the compliance report.
  */
 
 const ELIGIBLE_TITLES = new Set<string>([

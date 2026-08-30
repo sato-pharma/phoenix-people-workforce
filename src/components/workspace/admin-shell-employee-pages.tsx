@@ -52,7 +52,7 @@ import {
   getPayslipPortalData,
   getDsmTeamPerformance,
 } from "@/lib/employee-portal/service";
-import { compactDeductionHrId } from "@/lib/deductions-governance/service";
+import { compactDeductionsHrId } from "@/lib/deductions/candidate-key";
 import { getPortalDeductions } from "@/lib/deductions/portal.ts";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import { currentCairoDateOnlyIso, currentCairoDateParts } from "@/lib/i18n/format";
@@ -353,7 +353,7 @@ export async function WorkspaceDeductionsPage({ searchParams }: { searchParams: 
       <DeductionsPortalWorkspace
         comments={data.comments}
         lines={data.lines}
-        ownCompactHrId={compactDeductionHrId(access.hrId ?? access.loginId)}
+        ownCompactHrId={compactDeductionsHrId(access.hrId ?? access.loginId)}
       />
     </WorkspaceFrame>
   );

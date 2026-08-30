@@ -21,8 +21,6 @@ import {
 } from "@/lib/payroll/service";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
-import { systemAccessContext } from "@/lib/auth/permissions";
-
 import {
   buildRowForEmployee,
   groupAdjustmentsByEmployee,
@@ -31,10 +29,6 @@ import {
   isOnHold,
   lookupSource,
 } from "./assemble.ts";
-import {
-  buildApprovedDeductionTotals,
-  listFingerprintDeductionCandidates,
-} from "./deductions-review.ts";
 import { buildIncludedExpenseTotals, listExpenseCandidates } from "./expense-review.ts";
 import { buildFeederStates, compactHrKey } from "./feeders.ts";
 import { evaluateEmployeeFlags } from "./flags.ts";
@@ -174,7 +168,6 @@ export async function assembleDraft(
     priorRecords,
     statutoryConfig,
     insuranceWages,
-    approvedDeductions,
     settledVacationSalaryDeductions,
     includedExpenseTotals,
     holidayBridgingSalaryDeductions,
@@ -186,7 +179,6 @@ export async function assembleDraft(
       getLatestSalaryRecordsBefore(period.month, period.year),
       getStatutoryConfigForPeriod(period),
       loadInsuranceWages(),
-      buildApprovedDeductionTotals(period),
       buildSettledSalaryDeductionTotals(period),
       buildIncludedExpenseTotals(period),
       buildHolidayBridgingSalaryTotals(period),
@@ -240,7 +232,6 @@ export async function assembleDraft(
             unpaidDaysInSpan: feeder.unpaidDaysBeforeLastWorkingDate,
           }
         : null,
-      approvedDeductions: approvedDeductions.get(compact),
       settledUnpaidVacationSalaryDeduction: settledVacationSalaryDeductions.get(compact),
       holidayBridgingSalaryDeduction: holidayBridgingSalaryDeductions.get(compact),
       approvedExpenses: includedExpenseTotals.get(compact),
@@ -440,32 +431,21 @@ export type CopilotRunView = {
 };
 
 /**
- * Pending-item counts for the Fingerprint/CRM/Unpaid Vacation/Expenses tabs —
- * folded into `canMaterialize` so "Generate payroll sheet" can no longer be
- * clicked while those tabs still have real, undecided items sitting
- * untouched. Before this, `canMaterialize` only looked at the Negotiation
- * tab's blocking flags; a CEO could generate the sheet having never opened
- * the other tabs. Defensive: never throws — a governance-data outage must
- * not permanently block payroll assembly, it just means this run's gate
- * can't see that tab (same failure posture as `buildApprovedDeductionTotals`).
+ * Pending-item counts for the Unpaid Vacation/Expenses tabs — folded into
+ * `canMaterialize` so "Generate payroll sheet" can no longer be clicked while
+ * those tabs still have real, undecided items sitting untouched. Before this,
+ * `canMaterialize` only looked at the Negotiation tab's blocking flags; a CEO
+ * could generate the sheet having never opened the other tabs. Defensive:
+ * never throws — a data outage must not permanently block payroll assembly, it
+ * just means this run's gate can't see that tab.
  */
 async function countOtherTabsPending(period: CopilotPeriod): Promise<OtherTabBlocking[]> {
   const blocking: OtherTabBlocking[] = [];
   try {
-    // CRM no-activity is intentionally excluded from this gate: it is a MANDATORY
-    // deduction (autoAppliesUnlessRejected). Every pending row already counts toward
-    // the payroll sheet using the base-salary estimate — the CEO only needs to act
-    // on a row to EXCLUDE it, not to include it. Requiring explicit approval on all
-    // CRM rows would permanently block the button for normal months.
-    const [fingerprint, vacation, expenses] = await Promise.all([
-      listFingerprintDeductionCandidates(systemAccessContext, period),
+    const [vacation, expenses] = await Promise.all([
       listUnpaidVacationCandidates(period),
       listExpenseCandidates(period),
     ]);
-    const fingerprintPending = fingerprint.rows.filter(
-      (row) => (row.decision?.decisionStatus ?? "Pending") === "Pending",
-    ).length;
-    if (fingerprintPending > 0) blocking.push({ label: "Fingerprint Deductions", count: fingerprintPending });
 
     const vacationPending = vacation.filter((candidate) => candidate.existingSettlement === null).length;
     if (vacationPending > 0) blocking.push({ label: "Unpaid Vacation", count: vacationPending });
@@ -603,7 +583,7 @@ async function requireRun(runId: string): Promise<CopilotRun> {
   return run;
 }
 
-/** The run's payroll period — used by the fingerprint/CRM deduction review routes. */
+/** The run's payroll period — used by the vacation-settlement and expense-review routes. */
 export async function getRunPeriod(runId: string): Promise<CopilotPeriod> {
   const run = await requireRun(runId);
   return { month: run.month, year: run.year };

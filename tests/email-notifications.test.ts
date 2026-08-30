@@ -128,11 +128,13 @@ export function runEmailNotificationTests() {
   assert.match(dailyCronRoute, /runRecruitmentDailyNotifications\(\)\.catch\(/, "daily recruitment run must have catch boundary");
   assert.match(dailyCronRoute, /runTelegramDailyHrDigest\(\)\.catch\(/, "daily telegram digest run must have catch boundary");
   assert.match(dailyCronRoute, /runOutstationGeocodeWarmup\(\)\.catch\(/, "daily outstation geocode warmup must have catch boundary");
-  // The FWC *digest* was retired 2026-08-02. The deductions auto-sync below has a near-identical
-  // name and is deliberately kept — it writes deduction candidates, so this assertion is the guard
-  // against the two being confused and the wrong one being removed.
+  // Both FWC cron jobs are now retired. The *digest* went 2026-08-02. The deductions auto-sync went
+  // in the C6 deductions cutover (2026-08-30): it wrote into the legacy governance
+  // `deduction_candidates` table (frozen, read by nothing outside the now-removed governance module),
+  // and the unified Deductions module's CRM collector is the live no-activity path now. Neither must
+  // be re-wired into the daily cron.
   assert.doesNotMatch(dailyCronRoute, /runFieldWorkforceComplianceDigest\(/, "the FWC digest was retired — it must not be re-wired into the daily cron");
-  assert.match(dailyCronRoute, /runFieldWorkforceComplianceDeductionsAutoSync\(\)\.catch\(/, "daily deductions auto sync must have catch boundary");
+  assert.doesNotMatch(dailyCronRoute, /runFieldWorkforceComplianceDeductionsAutoSync\(/, "the FWC deductions auto-sync was retired in the C6 cutover — it must not be re-wired into the daily cron");
   assert.match(dailyCronRoute, /runExcuseSlaDaily\(\)\.catch\(/, "daily excuse SLA must have catch boundary");
   assert.match(dailyCronRoute, /runOutstationSlaDaily\(\)\.catch\(/, "outstation SLA reminder is restored behind a real admin toggle (see outstation_sla_reminder in role-recipients.ts)");
   assert.match(dailyCronRoute, /runResignationSlaDaily\(\)\.catch\(/, "daily resignation SLA must have catch boundary");

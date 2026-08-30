@@ -341,12 +341,17 @@ const TILES_BY_FUNCTION: Record<
     if (!summary) return null;
     // READ-ONLY for this seat, deliberately: `payroll_inputs` grants deductions:read and nothing
     // more, because approving a disciplinary penalty is a JD boundary (HR_ROLE_BOUNDARIES). These
-    // tiles report the month; the decisions behind them are not hers to take.
+    // tiles report the month; the decisions behind them are not hers to take. The two deduction tiles
+    // drill down to Payroll Management (a page this seat can open), NOT to a deductions-review page:
+    // the retired Deductions Governance page was her only such screen, and its unified replacement
+    // (/admin/deductions) is gated to Super Admin / CEO. So as of the C6 cutover (2026-08-30, owner
+    // decision) the count stays visible here and Payroll Management is where she reconciles it. The
+    // counts themselves come from the unified module (getCompanyMonthSummaryByCategory) and are unchanged.
     const pendingCandidates = Object.values(summary.pending).reduce((total, bucket) => total + bucket.candidateCount, 0);
     const willPublishCandidates = Object.values(summary.willPublish).reduce((total, bucket) => total + bucket.candidateCount, 0);
     return [
-      tile("deductions-pending", "Awaiting Decision", pendingCandidates, "this month", "/hr/admin/deductions-governance", pendingCandidates > 0 ? "amber" : "emerald"),
-      tile("deductions-ready", "Ready To Publish", willPublishCandidates, "this month", "/hr/admin/deductions-governance"),
+      tile("deductions-pending", "Awaiting Decision", pendingCandidates, "this month", "/hr/admin/payroll-management", pendingCandidates > 0 ? "amber" : "emerald"),
+      tile("deductions-ready", "Ready To Publish", willPublishCandidates, "this month", "/hr/admin/payroll-management"),
       tile("payroll-month", "Payroll Month", Number(currentCairoMonthKey().slice(5)), "running period", "/hr/admin/payroll-management"),
     ];
   },

@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { permissionMatrix } from "../src/lib/auth/permissions.ts";
 import type { AccessContext } from "../src/lib/auth/permissions.ts";
 import { isDeductionsReadActor } from "../src/lib/deductions/permissions.ts";
-import { collectPortalDeductionScope } from "../src/lib/deductions-governance/service.ts";
+import { collectPortalDeductionScope } from "../src/lib/deductions/portal.ts";
 
 /**
  * Guards the deductions READ boundary (owner instruction, 2026-08-06:
@@ -102,11 +102,8 @@ export function runDeductionsReadGateTests() {
   // 5. Portal scope is SELF-only for every non-system role — no subtree, no line widening.
   //    Previously a Regional/National/District manager read their whole reporting line's
   //    deduction amounts, which are derived from base salary and therefore disclose pay.
-  const employees = [
-    { hr_id: "B-10", full_name: "Root Manager", manager_hr_id: null, line_id: 1, line_name: "Pedia" },
-    { hr_id: "B-20", full_name: "Direct Report", manager_hr_id: "B-10", line_id: 1, line_name: "Pedia" },
-    { hr_id: "B-30", full_name: "Skip Level", manager_hr_id: "B-20", line_id: 1, line_name: "Pedia" },
-  ];
+  //    As of the C6 cutover the resolver takes only the access context: any non-system scope
+  //    collapses to the caller's OWN compact hr-id, so a management scope cannot widen at all.
   for (const [role, scope] of [
     ["Regional Manager", "hierarchy"],
     ["National Sales Manager", "line"],
@@ -115,7 +112,6 @@ export function runDeductionsReadGateTests() {
   ] as const) {
     const result = collectPortalDeductionScope({
       access: { hrId: "B-10", loginId: "B-10", role, scope, source: "session" } as AccessContext,
-      employees,
     });
     assert.equal(result.all, false, `${role} must not get unrestricted portal deductions`);
     assert.deepEqual(
@@ -129,7 +125,6 @@ export function runDeductionsReadGateTests() {
   {
     const result = collectPortalDeductionScope({
       access: { hrId: "PHX-1", loginId: "PHX-1", role: "Super Admin", scope: "system", source: "session" } as AccessContext,
-      employees,
     });
     assert.equal(result.all, true, "system scope must retain full visibility");
   }

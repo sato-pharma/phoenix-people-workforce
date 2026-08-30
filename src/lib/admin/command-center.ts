@@ -4,7 +4,6 @@ import { getAttendanceIngestionHealth } from "@/lib/attendance/ingestion-health"
 import { buildCoachingReportAnalytics } from "@/lib/coaching/analytics";
 import { getCoachingReports } from "@/lib/coaching/service";
 import { getContractRenewalDashboardData } from "@/lib/contracts/service";
-import { getDeductionInboxKpis } from "@/lib/deductions-governance/service";
 import { getResignationsDashboardData } from "@/lib/resignations/service";
 import { getVacationReportData } from "@/lib/vacation/service";
 import { getEmployeeDirectory, type EmployeeDirectoryData } from "@/lib/employees/employee-directory";
@@ -148,14 +147,6 @@ export type AdminCommandCenterData = {
       coachingRedZone: number;
       /** Vacation requests that have breached the manager/HR approval SLA. */
       overdueLeaveSla: number;
-    };
-    // Deductions governance summary (P2).
-    deductions: {
-      pending: number;
-      disputed: number;
-      needsFollowUp: number;
-      employeesAffected: number;
-      estimatedAmount: number;
     };
   };
   health: DataHealthMetrics;
@@ -511,13 +502,6 @@ async function fetchExecutiveSignals(
   coachingScore: number;
   coachingRedZone: number;
   overdueLeaveSla: number;
-  deductions: {
-    pending: number;
-    disputed: number;
-    needsFollowUp: number;
-    employeesAffected: number;
-    estimatedAmount: number;
-  };
   errors: string[];
 }> {
   const errors: string[] = [];
@@ -537,7 +521,6 @@ async function fetchExecutiveSignals(
     salaryFlagsResult,
     coachingResult,
     leaveResult,
-    deductionsResult,
   ] = await Promise.allSettled([
     getResignationsDashboardData(accessContext),
     getProbationRows(accessContext),
@@ -545,7 +528,6 @@ async function fetchExecutiveSignals(
     options.showFinancial ? getSalaryFlags() : Promise.resolve(null),
     getCoachingReports({}, accessContext),
     getVacationReportData(accessContext, {}),
-    getDeductionInboxKpis({ access: accessContext }),
   ]);
 
   let pendingResignations = 0;
@@ -616,21 +598,6 @@ async function fetchExecutiveSignals(
     errors.push("Leave SLA data unavailable.");
   }
 
-  // Deductions governance summary.
-  let deductions = { pending: 0, disputed: 0, needsFollowUp: 0, employeesAffected: 0, estimatedAmount: 0 };
-  if (deductionsResult.status === "fulfilled") {
-    const kpis = deductionsResult.value;
-    deductions = {
-      pending: kpis.pending,
-      disputed: kpis.disputed,
-      needsFollowUp: kpis.needsFollowUp,
-      employeesAffected: kpis.employeesAffected,
-      estimatedAmount: options.showFinancial ? kpis.estimatedAmountSubtotal : 0,
-    };
-  } else {
-    errors.push("Deductions data unavailable.");
-  }
-
   return {
     pendingResignations,
     totalResignations,
@@ -641,7 +608,6 @@ async function fetchExecutiveSignals(
     coachingScore,
     coachingRedZone,
     overdueLeaveSla,
-    deductions,
     errors,
   };
 }
@@ -675,7 +641,6 @@ export async function getAdminCommandCenterData(accessContext: AccessContext): P
       coachingScore: 0,
       coachingRedZone: 0,
       overdueLeaveSla: 0,
-      deductions: { pending: 0, disputed: 0, needsFollowUp: 0, employeesAffected: 0, estimatedAmount: 0 },
       errors: ["Executive signals unavailable."],
     }));
   let executiveSignals: ExecutiveSignals | null = null;
@@ -781,7 +746,6 @@ export async function getAdminCommandCenterData(accessContext: AccessContext): P
         coachingRedZone: executiveSignals.coachingRedZone,
         overdueLeaveSla: executiveSignals.overdueLeaveSla,
       },
-      deductions: executiveSignals.deductions,
     };
 
     return {
@@ -998,7 +962,6 @@ export async function getAdminCommandCenterData(accessContext: AccessContext): P
         coachingRedZone: executiveSignals.coachingRedZone,
         overdueLeaveSla: executiveSignals.overdueLeaveSla,
       },
-      deductions: executiveSignals.deductions,
     },
     payrollEligibleCount,
     unresolvedSalaryFlags: showFinancialModules ? executiveSignals.unresolvedSalaryFlags : 0,

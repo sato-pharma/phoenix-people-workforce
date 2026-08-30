@@ -1,7 +1,6 @@
 
 import { runAttendanceIngestionAlert } from "@/lib/attendance/ingestion-health";
 import { getInactiveUsers } from "@/lib/activity/service";
-import { supersedeExitedEmployeeDeductionCandidates } from "@/lib/deductions-governance/service";
 import {
   processNotificationOutbox,
   reapStaleProcessingOutboxRows,
@@ -65,14 +64,13 @@ export async function runScheduledNotificationProcessing(limit = 10) {
       { fallback: { attempted: 0, failed: 0, processedIds: [] as string[], sent: 0, error: "step timed out" } },
     );
     // Retired 2026-08-02 at the owner's request: the DV feedback SLA reminders and the day
-    // 30/60/75 probation milestone emails. The two steps below are NOT notifications and are
-    // deliberately kept — the attendance alert is the only automated signal that punch data has
-    // stopped flowing into payroll, and the exited-employee sweep is what withdraws pending
-    // deduction candidates for people who have already left.
+    // 30/60/75 probation milestone emails. The attendance alert below is NOT a notification and is
+    // deliberately kept — it is the only automated signal that punch data has stopped flowing into
+    // payroll. (The exited-employee deduction sweep that used to run here was retired in the C6
+    // deductions cutover on 2026-08-30; it superseded rows in the legacy governance
+    // `deduction_candidates` table, which nothing reads any more — do not re-add it.)
     // Never throws; per-day idempotency key prevents duplicate alerts across runs.
     const attendanceAgent = await runStep("attendance-agent", () => runAttendanceIngestionAlert(), budget);
-    // Never throws; idempotent cleanup of pending deduction warnings for exited employees.
-    const exitedDeductions = await runStep("exited-deductions", () => supersedeExitedEmployeeDeductionCandidates(), budget);
     // Never throws; clears Source of Sales batches that died mid-pipeline before reaching 'validated'.
     const staleSosBatches = await runStep("stale-sos-batches", () => cleanupStalePendingSosBatches(), budget);
     const outbox = await runStep(
@@ -170,7 +168,6 @@ export async function runScheduledNotificationProcessing(limit = 10) {
       attendanceAgent,
       deferred,
       drainHealth,
-      exitedDeductions,
       inactiveUsers: inactiveUsers?.length ?? 0,
       outbox,
       probationReminders,

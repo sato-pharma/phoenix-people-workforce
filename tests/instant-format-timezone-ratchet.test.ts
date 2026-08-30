@@ -53,7 +53,10 @@ import path from "node:path";
  *
  * Lower this when sites are genuinely retired; never raise it to make a red run green.
  */
-const CLIENT_BASELINE = 17;
+// Lowered 17 -> 16 in the C6 deductions cutover (2026-08-30): removing the legacy governance
+// client components (the governance workspace and the Payroll Copilot deduction-review table)
+// deleted one unzoned client-side instant format, and the ratchet locks that ground in.
+const CLIENT_BASELINE = 16;
 
 /**
  * Not a baseline — a rule. A server-rendered instant with no zone is wrong in

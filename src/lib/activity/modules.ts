@@ -35,7 +35,6 @@ const MODULE_RULES: ModuleRule[] = [
   // ── Admin: people / HR ────────────────────────────────────────────────────
   { prefix: "/admin/weekly-plans", key: "weekly_plans", label: "Weekly / Monthly Plans" },
   { prefix: "/admin/field-workforce-compliance", key: "workforce_compliance", label: "Workforce Compliance" },
-  { prefix: "/admin/deductions-governance", key: "deductions_governance", label: "Deductions Governance" },
   { prefix: "/admin/support-requests", key: "hr_support_requests", label: "HR Support Requests" },
   { prefix: "/admin/payslips-center", key: "payslips_center", label: "Payslips Center" },
   // ── Admin: sales / marketing / pharmacovigilance ──────────────────────────

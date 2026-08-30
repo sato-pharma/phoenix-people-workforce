@@ -62,8 +62,14 @@ import path from "node:path";
  *
  * Lower this when a copy is genuinely folded onto canon; never raise it to turn a
  * red run green — a rise means a new hand-rolled HR_ID normaliser was added.
+ *
+ * Lowered 21 -> 20 in the C6 deductions cutover (2026-08-30): retiring the legacy
+ * governance module deleted its hand-rolled `normalizedHrId` in
+ * src/lib/deductions-governance/payroll-handoff.ts. A deleted copy is ground won
+ * exactly like a folded one, and 20 is the documented floor (19 foldable + the one
+ * deliberately-unfoldable normalizeHrId in employee-normalizers.ts).
  */
-const BASELINE = 21;
+const BASELINE = 20;
 
 const ROOTS = ["app", "src"];
 
