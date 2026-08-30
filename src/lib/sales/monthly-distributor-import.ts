@@ -4162,35 +4162,33 @@ function isNonSalesLine(line: string): boolean {
 /**
  * Which of these raw `source_of_sales_products.line` values can be closed — the whole rule, with
  * no database in it, so it can be exercised directly rather than described.
+ *
+ * There is NO opt-in to Head Office and there must not be one again. It carried an
+ * `includeHeadOffice` flag until 2026-08-30 for a single caller, the published-everything gate in
+ * runSosMonthlyClosingReportCheck, which asks "is every active line published yet" rather than
+ * "which lines can be closed" — a genuinely different question, and at the time a fair reason to
+ * keep the wider set.
+ *
+ * The owner then settled the underlying question: "The head office will not be used in the weekly
+ * sales or monthly sales." Once Head Office is out of monthly reporting entirely, "is every active
+ * line published" cannot mean "including the one line nobody may publish" — see that gate for what
+ * the flag actually cost. The flag is gone rather than merely unused, because a dead option
+ * encoding a retired rule is exactly what a future caller copies.
  */
-export function selectClosingLines(
-  rawLines: readonly unknown[],
-  options?: { includeHeadOffice?: boolean },
-): string[] {
+export function selectClosingLines(rawLines: readonly unknown[]): string[] {
   const lines = new Set<string>();
   rawLines.forEach((raw) => {
     const line = normalizeDisplay(raw);
     if (!line) return;
-    // A sentinel is never a closing, for any caller — including the published-everything gate,
-    // which would otherwise wait forever for "IGNORE" to be published.
+    // A sentinel is never a closing, for any caller — it would otherwise be waited on forever.
     if (isNonSalesLine(line)) return;
-    if (!options?.includeHeadOffice && isHeadOfficeLine(line)) return;
+    if (isHeadOfficeLine(line)) return;
     lines.add(line);
   });
   return [...lines].sort((left, right) => left.localeCompare(right));
 }
 
-export async function listMonthlyClosingLines(
-  options?: {
-    /**
-     * Include Head Office anyway. For callers asking a DIFFERENT question than "which lines can be
-     * closed" — `runSosMonthlyClosingReportCheck` asks "is every active line published yet", and
-     * quietly shrinking its line set would make a scheduled email start firing on a condition it
-     * has never fired on. Only that caller passes this.
-     */
-    includeHeadOffice?: boolean;
-  },
-): Promise<string[]> {
+export async function listMonthlyClosingLines(): Promise<string[]> {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("source_of_sales_products")
@@ -4199,7 +4197,7 @@ export async function listMonthlyClosingLines(
 
   if (error) throw toQueryError(error);
 
-  return selectClosingLines((data ?? []).map((row) => (row as Record<string, unknown>).line), options);
+  return selectClosingLines((data ?? []).map((row) => (row as Record<string, unknown>).line));
 }
 
 export async function listMonthlyClosingPeriods(): Promise<string[]> {

@@ -17,9 +17,10 @@ import { selectClosingLines } from "../src/lib/sales/monthly-distributor-import.
 // and loadMonthlyClosing only accepts a line that appears in it. That is what makes Head Office
 // unreachable rather than merely hidden.
 //
-// The one caller that must NOT lose it is the scheduled report check, which asks a different
-// question — "is every active line published for this period" — and would start firing an email on
-// a relaxed condition if its line set quietly shrank.
+// There is no opt-out and no caller-specific exception. One existed until 2026-08-30 — an
+// `includeHeadOffice` flag for the scheduled report check, which asks "is every active line
+// published for this period" — and this file used to pin that flag, so the pin protected the
+// defect. See "THE REPORT GATE" below for what it cost.
 
 function read(path: string): string {
   return readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
@@ -42,12 +43,7 @@ export function runClosingExcludesHeadOfficeTests() {
     "the closing offers the three real sales lines and nothing else — no Head Office, no sentinel, no blanks",
   );
   assert.deepEqual(
-    selectClosingLines(raw, { includeHeadOffice: true }),
-    ["Anti Infective", "CNS", "Head Office", "Pedia"],
-    "the published-everything gate opts Head Office back in — but never the sentinel, which was never a line",
-  );
-  assert.deepEqual(
-    selectClosingLines(["head office", "ignore", "  IGNORE  "], { includeHeadOffice: false }),
+    selectClosingLines(["head office", "ignore", "  IGNORE  "]),
     [],
     "both rules are case- and whitespace-insensitive, because the source data is neither",
   );
@@ -76,26 +72,31 @@ export function runClosingExcludesHeadOfficeTests() {
     "listMonthlyClosingLines must route through selectClosingLines, so what is tested is what runs",
   );
 
-  // And the default really is exclusion: the opt-in must be a positive flag, never the fallback.
+  // ── THE REPORT GATE — closed 2026-08-30 ─────────────────────────────────────────────────────
+  // There is no opt-in left to take. The `includeHeadOffice` option is gone from the module, not
+  // merely unused: while it existed, a caller could ask for a line set the product does not have.
+  //
+  // What it cost. runSosMonthlyClosingReportCheck passed it, because it asks "is every active line
+  // published" rather than "which lines can be closed" — a fair distinction, and the wrong answer.
+  // The closing has been unable to produce a Head Office publication since 2026-08-05, so requiring
+  // one made the gate unsatisfiable and the CEO's Source-of-Sales BI report never fired at all:
+  // measured on production 2026-08-30, notification_outbox held 0 `sos-bi-report:%` rows while
+  // 2026-07 was fully published on Anti Infective, CNS and Pedia. This file pinned that call, so
+  // the pin was protecting the defect — which is why the flag is deleted rather than defaulted.
   assert.ok(
-    !/includeHeadOffice\s*[=?]{1,2}\s*true/.test(importer),
-    "includeHeadOffice must default to false/undefined, so a caller that says nothing gets the safe answer",
+    !importer.includes("includeHeadOffice"),
+    "no caller may opt Head Office back in — the option must not exist, or a future caller will copy it",
   );
 
-  // A sentinel is not a line for ANY caller — including the published-everything gate, which would
-  // otherwise wait forever for "IGNORE" to be published. This is the deliberate asymmetry with
-  // Head Office: Head Office IS a real line and stays in that gate; "IGNORE" never was one.
-  assert.ok(
-    !/includeHeadOffice[^\n]*isNonSalesLine|isNonSalesLine[^\n]*includeHeadOffice/.test(importer),
-    "the sentinel filter must not be conditional on the Head Office opt-in — they are separate rules",
-  );
-
-  // The scheduled report keeps the whole line set, on purpose.
   const delivery = code(read("src/lib/sales/sos-report-delivery.ts"));
   assert.match(
     delivery,
-    /listMonthlyClosingLines\(\{ includeHeadOffice: true \}\)/,
-    "the published-everything gate must still count Head Office, or removing it from the closing would relax when a scheduled email fires",
+    /listMonthlyClosingLines\(\)/,
+    "the published-everything gate must take the same line set as every closing surface",
+  );
+  assert.ok(
+    !delivery.includes("includeHeadOffice"),
+    "the report gate must not count a line that can never be published, or it can never fire",
   );
 
   // Every closing surface takes the default. Naming them keeps a future surface from quietly
