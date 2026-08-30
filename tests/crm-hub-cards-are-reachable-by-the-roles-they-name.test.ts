@@ -24,22 +24,27 @@ import {
  * offers neither. Both pages rendered perfectly on a typed URL and were reachable in the product
  * only through Cmd+K.
  *
- * ## How it was finally closed (2026-08-29)
+ * ## How it was closed (2026-08-29), and then closed the other way (2026-08-30)
  *
- * By hand, one page at a time, until the owner was actually asked. Reps Plans got its own row;
- * Doctor List and Plan Verification got theirs; four more cards were recorded as a known blind spot
- * because "more sidebar rows" was not obviously the right answer and nobody had the standing to
- * choose. Asked directly, the owner chose to FINISH THE EXPANSION — the four missing rows — and to
- * keep the hub exclusion.
+ * First by hand, one page at a time, until the owner was actually asked. Reps Plans got its own
+ * row; Doctor List and Plan Verification got theirs; four more cards were recorded as a known blind
+ * spot because "more sidebar rows" was not obviously the right answer and nobody had the standing
+ * to choose. Asked directly on 2026-08-29, the owner chose to FINISH THE EXPANSION — the four
+ * missing rows — and to keep the hub exclusion.
  *
- * That is the right answer for a reason worth writing down, because the cheaper-looking one was
- * offered first and was wrong: the exclusion is not a quirk, it is the 2026-08-08 rule that the SFE
- * Manager keeps hub BUTTONS while everyone else gets those hubs EXPANDED into rows. Handing Super
- * Admin the hub button would have put a button on his sidebar whose nine cards include FIVE pages
- * he already has rows for — restoring exactly the duplication the 2026-08-08 restoration removed.
+ * Asked again on 2026-08-30, in the context of his own navigation ruling that Layer 1 should hold
+ * one row per module, he REVERSED it: collapse CRM to the hub button. So Super Admin now sees
+ * /admin/crm-tools like everyone else, and the nine rows are gone.
  *
- * So the rule below is stated positively — every card needs a row — rather than as an allowlist of
- * the ones that do not have one. An allowlist records a gap; this fails on the day one is created.
+ * Both answers were his and neither was a mistake — they answer different questions. On 08-29 the
+ * question was "these four pages are stranded, rows or hub?" with the rest of the sidebar held
+ * constant. On 08-30 it was "your whole rail is 60 rows, which rule wins?" The lesson this file
+ * keeps is not which way the answer went; it is that the question was ASKED both times, because
+ * the cost of guessing is a page nobody can find.
+ *
+ * The rule below is therefore stated as REACHABILITY, not as "every card needs a row". A row and a
+ * visible hub button are both routes, and pinning the row specifically is what made this test have
+ * to be rewritten when the owner changed his mind about the shape rather than about the rule.
  *
  * ## Why no existing test caught it
  *
@@ -87,23 +92,53 @@ function adminHrefsFor(role: PhoenixRole): Set<string> {
 }
 
 export function runCrmHubCardReachabilityTests() {
-  // ── 1. The headline: the two cards that were stranded ────────────────────────────────────────
+  // ── 1. The headline: Reps Plans is reachable, and the route is now the hub ───────────────────
   const superAdminHrefs = adminHrefsFor("Super Admin");
 
   assert.ok(
-    superAdminHrefs.has("/admin/reps-plans"),
-    "Super Admin is the ONLY role Reps Plans admits, and he cannot see the hub that lists it — he must have his own sidebar row",
+    superAdminHrefs.has(CRM_HUB_HREF) || superAdminHrefs.has("/admin/reps-plans"),
+    "Super Admin is the ONLY role Reps Plans admits, so he needs a route to it — the CRM hub button, or a row of its own. With neither, the page is reachable by nobody except a typed URL",
   );
 
-  // The exclusion STAYS. It is the 2026-08-08 rule — the SFE Manager keeps hub BUTTONS, and every
-  // other role gets those hubs EXPANDED into their own rows — not a quirk to be undone. Asked
-  // directly on 2026-08-29 whether to hand Super Admin the hub instead, the owner chose to finish
-  // the expansion: the hub's nine cards include five pages he already has rows for, so the button
-  // would restore exactly the duplication the 2026-08-08 restoration removed.
-  assert.ok(
-    !superAdminHrefs.has(CRM_HUB_HREF),
-    "Super Admin must not see the CRM hub button — he gets the expanded rows instead (owner, 2026-08-08), and a button beside them duplicates five of those rows",
+  // The 2026-08-30 collapse (owner, asked directly). Super Admin previously had NINE CRM rows and
+  // was excluded from the hub by name, so that he never saw a hub button beside the rows
+  // duplicating it. He chose the hub, so the exclusion went and the rows went with it.
+  //
+  // This is asserted as "not both", not as "the hub". The owner has moved this boundary twice and
+  // may move it again; what must never come back is the state either arrangement exists to
+  // prevent — a hub button sitting beside the rows it duplicates.
+  //
+  // The list is the eight hrefs that WERE his rows, spelled out rather than derived from
+  // crmPageItems, because one card is not a CRM-module page at all: Workforce Compliance
+  // (/admin/field-workforce-compliance) is a People Management row that appears here as a card
+  // because it is judged on CRM visit activity, and the SFE Manager — excluded from that row by
+  // name — reaches it only through this hub. One page filed under two modules is the arrangement,
+  // not the duplication this guards against, and a derived list would flag it on every run.
+  const CRM_ROWS_COLLAPSED_2026_08_30 = [
+    "/admin/crm",
+    "/admin/reps-plans",
+    "/admin/doctor-list",
+    "/admin/plan-verification",
+    "/admin/crm-integrity",
+    "/admin/brick-coverage",
+    "/admin/double-visit-analytics",
+    "/admin/double-visit-data-integrity",
+  ] as const;
+  const duplicatedByTheHub = superAdminHrefs.has(CRM_HUB_HREF)
+    ? CRM_ROWS_COLLAPSED_2026_08_30.filter((href) => superAdminHrefs.has(href))
+    : [];
+  assert.deepEqual(
+    duplicatedByTheHub,
+    [],
+    "Super Admin must not see the CRM hub button AND rows for the cards it already lists — that duplication is what both the 2026-08-08 expansion and the 2026-08-30 collapse exist to avoid",
   );
+  // Every one of those eight is still a card here, so the collapse removed a row and not a route.
+  for (const href of CRM_ROWS_COLLAPSED_2026_08_30) {
+    assert.ok(
+      crmPageItems.some((card) => card.href === href),
+      `${href} lost its Super Admin row in the 2026-08-30 collapse, so it MUST still be a card in crmPageItems`,
+    );
+  }
 
   // ── 2. THE EXPANSION MUST BE COMPLETE ───────────────────────────────────────────────────────
   // This is the assertion that ends the recurrence, and it replaces an allowlist.
@@ -122,26 +157,24 @@ export function runCrmHubCardReachabilityTests() {
     `expected the real CRM card list, got ${crmPageItems.length} cards — an emptied or renamed list must fail here rather than pass by having nothing to check`,
   );
 
-  // Note there is no `|| superAdminHrefs.has(CRM_HUB_HREF)` escape here, unlike the general rule in
-  // 2b below. He cannot see that hub by design, so for him the row is the only route there is.
+  // Super Admin is no longer a special case: since 2026-08-30 he sees the hub like everyone else,
+  // so the same reachability rule covers him. It is kept as its own assertion because he is the
+  // role every one of these cards names, and a failure here should say so by name.
   const superAdminCannotReach = crmPageItems
-    .filter((card) => !superAdminHrefs.has(card.href))
+    .filter((card) => !superAdminHrefs.has(card.href) && !superAdminHrefs.has(CRM_HUB_HREF))
     .map((card) => card.href)
     .sort();
 
   assert.deepEqual(
     superAdminCannotReach,
     [],
-    "every CRM hub card needs its own Super-Admin sidebar row: he cannot see the hub that renders these cards, so a card without a row is reachable by nobody except a typed URL. Add the row in system-navigation.ts beside the other CRM rows",
+    "every CRM hub card must be reachable by Super Admin — via the hub row, or a row of its own. With neither, the page is reachable by nobody except a typed URL",
   );
 
-  // ── 2b. The general rule for every OTHER role ──────────────────────────────────────
-  // Everyone else must be able to reach every card that names them. Only Super Admin has the
-  // exclusion, so only Super Admin gets an allowance.
+  // ── 2b. The same rule, every role a card names ─────────────────────────────────────
   const unreachable: string[] = [];
   for (const card of crmPageItems) {
     for (const role of card.roles ?? []) {
-      if (role === "Super Admin") continue;
       const hrefs = adminHrefsFor(role);
       if (!hrefs.has(card.href) && !hrefs.has(CRM_HUB_HREF)) {
         unreachable.push(`${role} -> ${card.label} (${card.href})`);
@@ -155,8 +188,9 @@ export function runCrmHubCardReachabilityTests() {
   );
 
   // ── 3. Nobody else's route changed ───────────────────────────────────────────────────────────
-  // The Reps Plans row is Super-Admin-only, so every other role must still reach its page the way
-  // it always did: as a card on the hub, with no direct row of its own. /admin/rep-doctor-lists is
+  // Every other role reaches these pages the way it always did: as cards on the hub, with no direct
+  // row. That was true before the 2026-08-30 collapse and is still true after it — the collapse
+  // moved Super Admin ONTO their arrangement, it did not move them. /admin/rep-doctor-lists is
   // absent for a second reason since 2026-08-28 — the owner retired it, so there is no row for any
   // role and no card either.
   for (const role of ["SFE Manager", "CEO", "National Sales Manager"] as const) {

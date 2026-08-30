@@ -1,6 +1,10 @@
 # Navigation restructure — the owner's eleven rulings
 
-**Status: model only. Zero lines of `src/config/system-navigation.ts` have changed.**
+**Status: built.** The rulings are implemented in `src/config/system-navigation.ts` — see "What
+was built" at the foot of this file. The one conflict between a ruling and a later owner decision
+was **put to the owner on 2026-08-30 and answered**; it was not resolved by guessing, and his
+answer reversed two of his own earlier decisions. The Super Admin's rail went from **59 visual
+rows to 47**.
 
 This file exists because the last model didn't. An earlier session modelled this restructure in
 full — "21 modules over 234 pages" — and never wrote it down, so it died with that session's
@@ -161,3 +165,180 @@ route → rail (a page with no link), which is why 56 pages could drift out of r
 restructure of this size should add both that check and a test pinning the eleven rulings — no
 module label matching `/analytic/`, Payroll and Expenses as separate sections, Monthly Closing and
 Targets each alone — so the structure cannot drift back without a red PR.
+
+## What was built (2026-08-30)
+
+### Built
+
+| Ruling | Change |
+|---|---|
+| 10 | **Organogram is its own top-level section.** It had two rail entries — one in Command Center gated `roles: ["CEO"]`, one in People Management gated `excludedRoles: ["Marketing Manager", "CEO"]`. The gates were mutually exclusive, so no ordinary role saw both; for the Super Admin, whose sidebar bypasses `roles`, `dedupeSectionsByHref` was the only thing hiding the second copy. The merged gate is the exact union of the two. |
+| 10 | The section formerly labelled "Approvals Hub" is now **"Approvals"**, the owner's own word. Its four rows deliberately do *not* collapse — see below. |
+| 6 | **Early Birds reaches the admin rail**, beside Field Coaching. It had never rendered for anybody: see the finding below. |
+| 1 | **Monthly Closing stands alone for the Super Admin**, at `/sales/monthly-closing`. It was one of Sales' five blocks folded inside another of the five (a card in the Source of Sales hub) for every role except the Finance Manager. |
+| — | **The two "Company Calendar" sections are one.** Both pointed at `/admin/weekly-plans/calendar` under the same label, kept apart only by role. The seer set is unchanged. |
+| — | **PM Product Master left the Employee 360 block** for a section of its own. It is a product-master page that was reading as a per-employee-profile tool because it shared that heading; its row and gate are untouched, only the heading it sits under changed. |
+| 10 | **CRM, Probation and Marketing collapsed onto their hub rows** — 9 rows to 1, 5 to 1, and 5 to 3. This reverses the owner’s 2026-08-08 and 2026-08-29 decisions, and was done only because he was asked and chose it. See “Answered” below for the question, his answer, and why Marketing did not reach 1. |
+
+### What it actually cost, measured
+
+Resolved through `getSections` for **every role that reaches the admin shell**, at three points: the
+commit before this branch, after the structural work, and after the collapse. Read each cell as
+sections / items / **visual rows** — a single-item section renders *headerless*, so it is one row,
+not a heading plus a row. The visual row count is the honest one.
+
+| Role | before | after the structural work | after the collapse |
+|---|---|---|---|
+| Super Admin | 26 / 51 / **59** | 30 / 53 / **60** | 30 / 41 / **47** |
+| CEO | 21 / 30 / **34** | 24 / 31 / **34** | 24 / 30 / **33** |
+| SFE Manager | 17 / 23 / **27** | 19 / 24 / **27** | 19 / 23 / **26** |
+| Financial Advisor | 10 / 15 / **18** | 10 / 15 / **18** | 10 / 14 / **17** |
+| HR Operations | 11 / 14 / **16** | 11 / 14 / **16** | 11 / 14 / **16** |
+| HR Advisory | 10 / 13 / **15** | 11 / 13 / **15** | 11 / 13 / **15** |
+| Finance Manager | 13 / 14 / **15** | 13 / 14 / **15** | 13 / 14 / **15** |
+
+**Two corrections to the first version of this table, both mine.** It listed six roles with larger
+numbers, and it was wrong twice over:
+
+- It was measured with a permission lookup that set only the *granted* pairs, leaving the rest
+  `undefined`. `undefined` is not `false` to a gate that tests for a missing key, so rows appeared that no
+  real session shows. Every figure above is built with the lookup the registered navigation tests
+  use — **every** `resource:action` pair set explicitly to true or false.
+- It listed **HR Specialist**, **National Sales Manager** and **Marketing Manager**. The first is
+  not a role at all any more (HR seats are composed from function bundles; retired seats alias to
+  `Employee`), and the other two are **portal** roles — `resolveNavigationMode` sends them to the
+  employee portal, so they never see this rail. Measuring them against `adminNavigationSections`
+  measured a shell they never open. Seven roles reach the admin shell; those seven are the table.
+
+**The structural work did not shrink the rail — the collapse did.** Nobody lost a route in either
+half. Across the whole branch, per role:
+
+| Role | gained | lost |
+|---|---|---|
+| Super Admin | CRM hub, Probation hub, Early Birds, Monthly Closing | the 12 rows those two hubs carry, plus All Marketing Requests and ROI Tracker — every one a card on a hub he can open |
+| CEO | Early Birds | ROI Tracker (a card on the ROI hub he can open) |
+| SFE Manager | Early Birds | All Marketing Requests (a card on the ROI hub he can open) |
+| Financial Advisor | — | ROI Tracker (a card on the ROI hub he can open) |
+| HR Operations, HR Advisory | the Probation hub | `/probation`, which is a card on it |
+| Finance Manager | — | — |
+
+The duplicates that went were in the **config**, not on anyone's screen: two duplicated hrefs
+(`/organogram`, `/admin/weekly-plans/calendar`) and two duplicated section labels, now zero and one
+(Leave Management, two different pages for two disjoint audiences, correct as it stands).
+`dedupeSectionsByHref` had been suppressing both at render time, which is why nothing looked wrong
+— the duplication was load-bearing rather than visible, and that is the worse of the two states to
+leave a config in.
+
+### The finding: Early Birds had no door
+
+`/admin/early-birds` shipped on 2026-08-09 (#1918). Its rail section names Super Admin, CEO and
+SFE Manager — three admin-shell roles — and was appended to `employeePortalNavigationSectionSeeds`
+instead of `adminNavigationSectionSeeds`. It is the **only** `/admin/*` href in that portal array,
+which is the signature of a slip rather than a decision, and `resolveNavigationMode` pins all three
+of those roles to `"admin"`, so the entry has never rendered in either shell.
+
+No guard fired, and correctly so: the page *is* reachable, from a card in
+`src/components/admin/ceo-phase-b.tsx:862` — a component rendered by **both** `/admin/ceo-command-center`
+and `/admin/sfe-command-center`, so each of the three roles could get to it. The findability backlog
+was right to record it as `linked-from-a-component` rather than as stranded.
+
+What makes that a thin door rather than a real one is the **condition** on it. The card renders
+inside `{earlyBirdStars.length > 0 ? … : null}`, so **a fortnight with no stars to show removes the
+module's only route, for everybody**, with nothing anywhere saying so. A rail row does not blink
+out when the data behind it is empty.
+
+The stray portal-array copy is left in place: the owner's standing instruction for this audit is not
+to touch the employee portal, and the dead entry costs nothing (`dedupeSectionsByHref` runs per
+mode, so the two copies never meet). It is worth removing in a change that is allowed to.
+
+It is not the only one. Sweeping the portal rail the same way finds **five rows that render for no
+role in that shell**. They are reported here and deliberately left alone:
+
+| Row | Why it renders for nobody |
+|---|---|
+| `/admin/early-birds` | an admin href in the portal array — the slip above |
+| `/employee-portals/marketing-requests/control` | names only Super Admin and SFE Manager, both admin-shell roles |
+| `/employee-portals/marketing-requests/customer-database` | same |
+| `/employee-portals/sales-analytics` | same shape |
+| `/leave-management/vacation-control` | same shape |
+
+The middle two deserve a look by someone allowed to touch that file: they are real pages, gated to
+two roles, filed on a rail neither of those roles ever sees.
+
+### Answered: ruling 10 versus the 2026-08-08 decision sheet (2026-08-30)
+
+Ruling 10 — "Layer 1 = Approvals + Organogram only" — reads naturally as *one row per module*.
+Implementing it that way means collapsing the expanded module rows back into their hubs, **which is
+precisely what the owner reverted on 2026-08-08 and reaffirmed on 2026-08-29.** That is a conflict
+between two of his own instructions, so it was put to him rather than decided here:
+
+> The rulings ask for one row per module. Your 2026-08-08 and 2026-08-29 decisions ask for the
+> Super Admin's modules to be expanded into rows instead. Which wins?
+
+He was shown that collapsing reverses both of those decisions, and chose to **collapse**. So:
+
+| Module | before | after | where the pages went |
+|---|---|---|---|
+| CRM | 9 Super Admin rows, and he was excluded from the hub by name | 1 row — the hub | all 8 collapsed hrefs are cards in `crmPageItems` |
+| Probation | 4 expanded rows plus the SFE Manager's hub | 1 row — the same hub, widened | all 4 are cards in `probationPageItems` |
+| Marketing | 5 rows | 3 | 2 became cards in `marketingRoiPageItems` |
+
+**Nothing was stranded, and that was checked rather than assumed.** Every href that lost a row is a
+card on a hub whose page guard admits the roles that lost it, and every one of those roles has that
+hub's row on their rail. The two pinning tests were re-pinned to the new arrangement and then
+**broken deliberately to confirm they fire**: re-adding one collapsed CRM row, and restoring the
+Super Admin exclusion on the probation hub, each produced the expected named failure.
+
+#### Why Marketing came out at 3 rows and not 1
+
+The other two collapse cleanly. Marketing does not, for three separate reasons, each of which is
+consistent with the ruling rather than a defiance of it:
+
+- **`/admin/marketing-requests/inbox` stays.** It carries a live pending badge
+  (`navBadge: "marketing-approvals-pending"`), and a hub card cannot carry one — folding it in
+  hides the count that is the entire point of an inbox. Ruling 10 also keeps approvals on layer 1.
+- **`/workspace/marketing-requests` stays.** The owner instructed it be re-opened on the rail on
+  the morning of 2026-08-30, hours before this collapse.
+- **`/admin/marketing-roi` is the hub itself.**
+
+#### The row that turned out to serve nobody
+
+The first attempt at this collapse kept the ROI Tracker row alive "for the three roles that cannot
+open the ROI hub" — Marketing Manager, Product Manager, Group Product Manager. That reasoning was
+wrong, and measuring rather than reading the config is what caught it: **all three are portal
+roles.** `resolveNavigationMode` sends them to the employee portal, so `adminNavigationSections` is
+not their rail and naming them in it never did anything, before or after. The row rendered for
+**nobody**. Their real route is the portal's own `/employee-portals/roi` and
+`/employee-portals/roi-tracker`, deliberately separate URLs rather than a shared page with the
+admin one (owner rule, 2026-07-28).
+
+The row is deleted. Generalised, this is the part worth keeping: **a `roles` list in these arrays is
+not a statement about what a person can see.** It is filtered by shell first, so a portal role
+written into an admin section is dead weight that reads exactly like a working grant.
+
+A sweep for the same defect elsewhere now reports **0 of 51 admin rail rows rendering for no role**.
+The portal rail has **5 of 56**, listed under the previous heading; they are not touched here.
+
+### Also deliberately not done
+
+- **The four Approvals rows do not collapse into `/admin/approvals-hub`.** That page is the
+  "Other Approvals" inbox and it actively bounces `?module=leave|excuse|weekly_plan` deep links
+  back out to the three dedicated pages (`MIGRATED_DEEPLINK_BASES`). One row there would point at a
+  page that refuses three quarters of the work it claimed to hold.
+- **Ruling 5 needs nothing.** "Weekly/Monthly Plans not under Attendance & Leave" — it is a card on
+  the People Management hub, which is neither.
+- **Ruling 7 needs nothing.** Workforce Compliance and Double Visit Analytics are both gated by
+  permission with no `roles` list on their hub cards, so neither is training-manager-only.
+- **Ruling 9 is another session's work** (`hrNavigationSectionSeeds`, PR #2554), still inert
+  because `resolveNavigationMode` never returns `"hr"`.
+- **The "My Requests" rows** (Request Vacation, Submit Excuse) are personal self-service, not a
+  module. They belong in the account menu, which is the next phase's subject.
+
+### On the ruling-1 test
+
+`tests/navigation-ruling-11-analytics.test.ts` asserted that Monthly Closing's section held exactly
+one item in the raw seed array. Ruling 1's "alone" is a property of what a *person* sees, so that
+assertion now resolves the section through `getSections` for every role and requires one row each.
+It is strictly stronger where it matters — it would catch a role genuinely shown two Monthly Closing
+rows even if the entries lived in two different sections, which the old form could not — and it was
+verified by breaking the config and confirming the new message fires naming the role and both hrefs.

@@ -76,7 +76,7 @@ type ControlCenterPatchBody = {
 };
 
 // Every write here dispatches into the exact same update function the item's own existing
-// admin surface (cron-control's role-recipients section / email-notifications / email-templates)
+// admin surface (notification-recipients / email-notifications / email-templates)
 // already calls — this route adds no new gating logic of its own, only a shared entry point.
 export async function PATCH(request: NextRequest, context: { params: Promise<{ system: string; key: string }> }) {
   try {

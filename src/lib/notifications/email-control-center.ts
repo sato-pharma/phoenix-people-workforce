@@ -55,7 +55,6 @@ export type EmailControlCenterSnapshot = {
 
 const SYSTEM_HEALTH_MODULE = "System Health & Digests";
 
-// Same 2 hybrid-recipient captions shown on /admin/cron-control's own section — repeated here
 // (rather than imported from that client component) since this is a server-side read model.
 const ROLE_RECIPIENTS_HYBRID_NOTICE: Partial<Record<NotificationRoleKey, string>> = {
   vacation_sla_hr_escalation: "The manager-stage recipient is always the specific request's manager-of-manager and isn't affected by this list.",
@@ -119,7 +118,7 @@ function roleRecipientsItem(policy: NotificationRolePolicy): EmailControlCenterI
     recipientSummary,
     hybridNotice: ROLE_RECIPIENTS_HYBRID_NOTICE[policy.key] ?? null,
     roleGatingCaveat: notConfigurable ?? null,
-    deepLinkHref: "/admin/cron-control",
+    deepLinkHref: "/admin/notification-recipients",
   };
 }
 

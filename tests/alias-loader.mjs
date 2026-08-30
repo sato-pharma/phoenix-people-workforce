@@ -7,7 +7,6 @@ const aliasRoots = ["", "src"];
 const extensions = [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".json"];
 const emailStubs = new Map([
   ["@/emails/general-notification", "tests/stubs/general-notification.ts"],
-  ["@/emails/offer-letter", "tests/stubs/offer-letter.ts"],
   ["@/emails/phoenix-email-layout", "tests/stubs/phoenix-email-layout.ts"],
   // `next/cache` has no runtime equivalent under plain-Node type-stripping. Stub it
   // (both specifier forms) so any domain module importing it loads under test.

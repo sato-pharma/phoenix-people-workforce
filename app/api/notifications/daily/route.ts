@@ -253,9 +253,10 @@ async function runDailyNotifications(request: Request) {
     });
   }
 
-  // Slug matches the live Cloud Scheduler job name (phoenix-notify-daily), not this route's own
-  // path — deliberately, so it lines up
-  // with what the owner sees in /admin/cron-control and `gcloud scheduler jobs list`. Called
+  // Slug matches the historical Cloud Scheduler job name (phoenix-notify-daily), not this
+  // route's own path. GCP is dead (billing closed 2026-08-01) and cron-job.org runs production
+  // now, but the slug is the dead man's switch's IDENTITY at Healthchecks — renaming it would
+  // orphan the check and its history, so it stays as-is. Called
   // directly (not via the generic withDeadMansSwitch wrapper) so a PARTIAL sub-job failure — which
   // never throws, by design — still pings /fail instead of reporting a false "success" externally.
   await pingDeadMansSwitch(

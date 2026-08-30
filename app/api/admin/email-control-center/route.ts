@@ -8,7 +8,7 @@ import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// Read = CEO + Super Admin (mirrors /admin/cron-control); mutations on the sibling
+// Read = CEO + Super Admin; mutations on the sibling
 // [system]/[key] route are Super Admin only — see the comment in access-registry.ts.
 export async function GET(request: NextRequest) {
   try {

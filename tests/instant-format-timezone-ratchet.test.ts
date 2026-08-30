@@ -56,7 +56,7 @@ import path from "node:path";
 // Lowered 17 -> 16 in the C6 deductions cutover (2026-08-30): removing the legacy governance
 // client components (the governance workspace and the Payroll Copilot deduction-review table)
 // deleted one unzoned client-side instant format, and the ratchet locks that ground in.
-const CLIENT_BASELINE = 16;
+const CLIENT_BASELINE = 15;
 
 /**
  * Not a baseline — a rule. A server-rendered instant with no zone is wrong in
