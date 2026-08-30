@@ -84,15 +84,19 @@ async function ScreeningContent({
 
   return (
     <ScreeningPageClient
+      area={queue.area}
+      areaOptions={queue.areaOptions}
       candidates={queue.candidates}
       hiringManagers={queue.hiringManagers}
       initialViews={queue.views}
       openVacancies={queue.openVacancies}
       poolHref="/recruitment"
       positionSuggestions={queue.positionSuggestions}
+      region={queue.region}
+      role={queue.role}
+      seen={queue.seen}
       status={queue.status}
       totalCount={queue.candidates.length + queue.filteredOut}
-      unseenOnly={queue.unseenOnly}
     />
   );
 }

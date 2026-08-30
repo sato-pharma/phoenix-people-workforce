@@ -3960,7 +3960,7 @@ function CandidatesTab({
                 opens on the unread pile because that is the reason to come back a second time. */}
             <Link
               className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50"
-              href={screeningHref(screeningBasePath, { unseenOnly: true })}
+              href={screeningHref(screeningBasePath, { seen: "unseen" })}
               title="Open the screening queue on its own page, starting with the CVs you have never read"
             >
               <Sparkles className="h-3.5 w-3.5" />
