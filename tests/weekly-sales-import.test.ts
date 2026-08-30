@@ -349,46 +349,80 @@ async function psStockWorkbook(opts?: { driftHeader?: boolean }): Promise<ExcelJ
 }
 
 // ── SF (Sofico) synthetic workbook ──────────────────────────────────────────────────────────────
-// col4=ItemID (Sofico code), col5=ItemName, col12=State (branch numeric ID), col13=statename
-// (Arabic branch name), col20=SalesQty, col21=BonusQty, col22=ReturnQty, col24=NET SALES.
+// Sofico's columns are located BY HEADER NAME, because the real export moves them between months.
+// The two generations below therefore put the SAME fields at DIFFERENT positions on purpose, and
+// must parse to identical fact rows — that is the property under test, not any one layout.
+// Both mirror real files: the return quantity is stored NEGATIVE, and the net of record is the
+// `qty` / `net qty` column, which is column 2 in every real Sofico export.
+// There is deliberately no "NET SALES" column: no Sofico file has ever carried one.
 // No date column — always requires periodDate.
-async function sfWorkbook(opts?: { hasReturn?: boolean }): Promise<ExcelJS.Buffer> {
+type SfGeneration = "2026" | "2025";
+const SF_LAYOUTS: Record<SfGeneration, { width: number; at: Record<string, number>; header: Record<number, string> }> = {
+  // Jan 2026 → Jun 2026 exports: ITEMIDE / ITEMNAME / SITE / SITENAME / SOLDQTY / RETURNQTY.
+  "2026": {
+    width: 40,
+    at: { branchCode: 13, branchName: 15, itemCode: 16, itemName: 5, net: 2, ret: 35, sold: 34 },
+    header: { 2: "qty", 5: "ITEMNAME", 10: "TOTALVALUE", 13: "SITE", 15: "SITENAME", 16: "ITEMIDE", 20: "CUSTOMERCODE", 24: "ORDERCUSTOMERGROUP", 34: "SOLDQTY", 35: "RETURNQTY" },
+  },
+  // 2025 exports: ItemID / ItemName / InventSiteID / statename / SalesQty / ReturnQty.
+  "2025": {
+    width: 28,
+    at: { branchCode: 12, branchName: 18, itemCode: 13, itemName: 5, net: 2, ret: 25, sold: 24 },
+    header: { 2: "net qty", 5: "ItemName", 12: "InventSiteID", 13: "ItemID", 17: "State", 18: "statename", 23: "LINEAMOUNT", 24: "SalesQty", 25: "ReturnQty" },
+  },
+};
+async function sfWorkbook(opts?: {
+  hasReturn?: boolean;
+  generation?: SfGeneration;
+  renameNetColumn?: string;
+  bothGenerations?: boolean;
+  corruptSplit?: boolean;
+}): Promise<ExcelJS.Buffer> {
+  const layout = SF_LAYOUTS[opts?.generation ?? "2026"];
   return bufferOf((wb) => {
     const sheet = wb.addWorksheet("Sheet1");
-    const header = new Array(24).fill("");
-    header[0] = "VENDOR";       // col1
-    header[1] = "VendorName";   // col2
-    header[2] = "InventSiteID"; // col3 (not used by adapter)
-    header[3] = "ItemID";       // col4 — Sofico product code (alias key)
-    header[4] = "ItemName";     // col5
-    header[11] = "State";       // col12 — branch numeric ID
-    header[12] = "statename";   // col13 — Arabic branch name
-    header[19] = "SalesQty";    // col20 — gross
-    header[20] = "BonusQty";    // col21 — read, not priced
-    header[21] = "ReturnQty";   // col22
-    header[23] = "NET SALES";   // col24 — authoritative net
+    const header = new Array(layout.width).fill("");
+    for (const [col, text] of Object.entries(layout.header)) header[Number(col) - 1] = text;
+    // Lets a test prove the import blocks rather than guesses when Sofico renames a column.
+    if (opts?.renameNetColumn) header[layout.at.net - 1] = opts.renameNetColumn;
+    // Two of the 33 real files carry BOTH generations' quantity headers, the older pair left blank.
+    // Put that pair EARLIER than the populated one, which is what makes first-match-wins pick wrong.
+    if (opts?.bothGenerations) {
+      header[21] = "SalesQty";
+      header[22] = "ReturnQty";
+    }
     sheet.addRow(header);
-    const mkRow = (branchId: string, branchName: string, itemCode: string, gross: number, ret: number, net: number, bonus = 0) => {
-      const r = new Array(24).fill("");
-      r[0] = "SOFICO";
-      r[3] = itemCode;    // col4 ItemID
-      r[4] = "SAGINKGO";  // col5 ItemName
-      r[11] = branchId;   // col12 State (branch numeric ID)
-      r[12] = branchName; // col13 statename
-      r[19] = gross;
-      r[20] = bonus;
-      r[21] = ret;
-      r[23] = net;
+    const mkRow = (branchId: string, branchName: string, itemCode: string, sold: number, returned: number) => {
+      const r = new Array(layout.width).fill("");
+      r[layout.at.itemCode - 1] = itemCode;
+      r[layout.at.itemName - 1] = "SAGINKGO";
+      r[layout.at.branchCode - 1] = branchId;
+      r[layout.at.branchName - 1] = branchName;
+      r[layout.at.sold - 1] = sold;
+      r[layout.at.ret - 1] = -returned; // stored NEGATIVE, exactly as the real files do
+      r[layout.at.net - 1] = sold - returned;
+      // Money and codes sit among the quantities in the real export — a position-matched import
+      // reads these as units, so they carry values that would be unmistakable if it ever did.
+      if (layout.header[10] === "TOTALVALUE") r[9] = 78.947;
+      if (layout.header[20] === "CUSTOMERCODE") r[19] = "1500039701";
+      if (layout.header[24] === "ORDERCUSTOMERGROUP") r[23] = "01";
+      if (layout.header[23] === "LINEAMOUNT") r[22] = 315.8;
+      // What a header row shifted against its data actually looks like in one real March copy: a
+      // date sitting under SOLDQTY and a street address under the return column.
+      if (opts?.corruptSplit) {
+        r[layout.at.sold - 1] = "31.03.2026";
+        r[layout.at.ret - 1] = "القومية ش. عبد العظيم فراج";
+      }
       return r;
     };
     // Two rows for branch "2" (Giza) — must aggregate to one fact row (net 3 + 5 = 8).
-    sheet.addRow(mkRow("2", "Giza", "SF-SAG", 3, 0, 3));
-    sheet.addRow(mkRow("2", "Giza", "SF-SAG", 5, 0, 5));
+    sheet.addRow(mkRow("2", "Giza", "SF-SAG", 3, 0));
+    sheet.addRow(mkRow("2", "Giza", "SF-SAG", 5, 0));
     if (opts?.hasReturn) {
-      // Branch "11" (Alexandria) with a return: gross 10, ret 2, NET SALES 8 (authoritative).
-      sheet.addRow(mkRow("11", "Alexandria", "SF-SAG", 10, 2, 8, 1));
+      // Branch "11" (Alexandria) with a return: sold 10, returned 2, so the stated net is 8.
+      sheet.addRow(mkRow("11", "Alexandria", "SF-SAG", 10, 2));
     } else {
-      sheet.addRow(mkRow("11", "Alexandria", "SF-SAG", 6, 0, 6));
+      sheet.addRow(mkRow("11", "Alexandria", "SF-SAG", 6, 0));
     }
   });
 }
@@ -1026,7 +1060,7 @@ export async function runWeeklySalesImportTests() {
 
   // ════════════ SF (Sofico) — per-customer invoice detail, twice-monthly ════════════
   {
-    // Branch codes are the numeric State IDs from col12: "2" = Giza, "11" = Alexandria.
+    // Branch codes are the numeric site IDs Sofico ships: "2" = Giza, "11" = Alexandria.
     const branch = branchIndex({
       branches: [
         { key: "2", fileType: "sales", region: "GZ" },
@@ -1035,31 +1069,47 @@ export async function runWeeklySalesImportTests() {
     });
     const aliases = aliasIndex("SF", { "SF-SAG": "SA001" });
 
+    const parseSf = async (opts?: Parameters<typeof sfWorkbook>[0], periodDate?: string) =>
+      parseWeeklyWorkbookBuffer({
+        buffer: await sfWorkbook(opts),
+        distributorCode: "SF",
+        distributorName: "Sofico",
+        fileName: "SF.xlsx",
+        references: references(),
+        aliasIndex: aliases,
+        branchMapIndex: branch,
+        ...(periodDate ? { periodDate } : {}),
+      });
+    const shapeOf = (parsed: Awaited<ReturnType<typeof parseSf>>) =>
+      parsed.ok
+        ? parsed.rows
+            .map((row) =>
+              [row.branchCode, row.productCode, row.netQty, row.salesQty, row.returnQty, row.salesValue, row.regionCode].join(" | "),
+            )
+            .sort()
+        : ["did not parse"];
+
     // No periodDate → blocked (file has no date column).
-    const noDate = await parseWeeklyWorkbookBuffer({
-      buffer: await sfWorkbook(),
-      distributorCode: "SF",
-      distributorName: "Sofico",
-      fileName: "SF.xlsx",
-      references: references(),
-      aliasIndex: aliases,
-      branchMapIndex: branch,
-    });
+    const noDate = await parseSf();
     assert.equal(noDate.ok, true, "SF parses");
     if (noDate.ok) assert.equal(noDate.result.status, "blocked", "SF blocks without periodDate (no date column)");
 
-    // With periodDate → validates; multiple rows for same (product, branch) aggregate.
-    const sf = await parseWeeklyWorkbookBuffer({
-      buffer: await sfWorkbook(),
-      distributorCode: "SF",
-      distributorName: "Sofico",
-      fileName: "SF.xlsx",
-      references: references(),
-      aliasIndex: aliases,
-      branchMapIndex: branch,
-      periodDate: "2025-05-31",
-    });
+    // Sofico moves its columns between months, so the import matches them BY HEADER NAME. These two
+    // generations state the same figures at deliberately different positions and must produce
+    // identical fact rows — this is the assertion that fails the moment anyone pins Sofico back to
+    // fixed column indices, whichever generation they pin it to.
+    const sf = await parseSf({ generation: "2026" }, "2025-05-31");
+    const older = await parseSf({ generation: "2025" }, "2025-05-31");
     assert.equal(sf.ok, true);
+    assert.equal(older.ok, true);
+    assert.deepEqual(
+      shapeOf(older),
+      shapeOf(sf),
+      "SF: the 2025 and 2026 exports state the same figures in different columns and must parse identically",
+    );
+    // Guards the line above against passing on two empty results.
+    if (older.ok) assert.equal(older.rows.length, 2, "SF 2025 layout yields both branches");
+
     if (sf.ok) {
       assert.equal(sf.result.status, "validated", "SF validates with periodDate");
       assert.equal(sf.result.weekStart, "2025-05-31", "SF uses supplied periodDate");
@@ -1067,7 +1117,7 @@ export async function runWeeklySalesImportTests() {
       // Two rows for branch "2" (Giza) aggregate into one fact row (net 3 + 5 = 8).
       const giza = sf.rows.find((row) => row.branchCode === "2");
       assert.ok(giza, "SF Giza (branch 2) fact row present — aggregated from 2 invoice lines");
-      assert.equal(giza?.netQty, 8, "SF Giza authoritative net = 3 + 5");
+      assert.equal(giza?.netQty, 8, "SF Giza stated net = 3 + 5");
       assert.equal(giza?.salesQty, 8, "SF Giza gross = 3 + 5");
       assert.equal(giza?.returnQty, 0, "SF Giza return = 0");
       assert.equal(giza?.salesValue, round2(8 * PRICES.SA001), "SF value = net * factory_price");
@@ -1078,26 +1128,68 @@ export async function runWeeklySalesImportTests() {
       assert.equal(alex?.netQty, 6, "SF Alexandria net = 6");
     }
 
-    // Return rows: NET SALES is authoritative, return reconciled to gross − net.
-    const withReturn = await parseWeeklyWorkbookBuffer({
-      buffer: await sfWorkbook({ hasReturn: true }),
-      distributorCode: "SF",
-      distributorName: "Sofico",
-      fileName: "SF.xlsx",
-      references: references(),
-      aliasIndex: aliases,
-      branchMapIndex: branch,
-      periodDate: "2025-05-31",
-    });
-    assert.equal(withReturn.ok, true);
-    if (withReturn.ok) {
-      assert.equal(withReturn.result.status, "validated", "SF with return validates");
-      const alexRet = withReturn.rows.find((row) => row.branchCode === "11");
-      assert.ok(alexRet, "SF Alexandria return fact row present");
-      assert.equal(alexRet?.netQty, 8, "SF Alexandria net = NET SALES column (8)");
-      assert.equal(alexRet?.salesQty, 10, "SF Alexandria gross stays as SalesQty (10)");
-      assert.equal(alexRet?.returnQty, 2, "SF Alexandria return reconciled to gross − net = 10 − 8 = 2");
-      assert.equal(alexRet?.salesValue, round2(8 * PRICES.SA001), "SF value = authoritative net * factory_price");
+    // Return rows: the stated net quantity is authoritative, and the return cell is NEGATIVE in
+    // every real Sofico export — so the import must read its magnitude, never its sign.
+    for (const generation of ["2026", "2025"] as const) {
+      const withReturn = await parseSf({ hasReturn: true, generation }, "2025-05-31");
+      assert.equal(withReturn.ok, true);
+      if (withReturn.ok) {
+        assert.equal(withReturn.result.status, "validated", `SF ${generation} with return validates`);
+        const alexRet = withReturn.rows.find((row) => row.branchCode === "11");
+        assert.ok(alexRet, `SF ${generation} Alexandria return fact row present`);
+        assert.equal(alexRet?.netQty, 8, `SF ${generation} net = the quantity Sofico states (10 − 2)`);
+        assert.equal(alexRet?.salesQty, 10, `SF ${generation} gross stays as the sold quantity (10)`);
+        assert.equal(alexRet?.returnQty, 2, `SF ${generation} return = gross − net, read positive from a negative cell`);
+        assert.equal(alexRet?.salesValue, round2(8 * PRICES.SA001), `SF ${generation} value = stated net * factory_price`);
+      }
+    }
+
+    // A file carrying BOTH generations' quantity headers, the older pair blank and sitting FIRST.
+    // Names alone cannot separate them — `RETURNQTY` and `ReturnQty` are the same name — so the pair
+    // is chosen by which one reconciles with the net, and the result must match the single-generation
+    // file exactly. Without that, the blank pair wins on column order and the return silently reads 0.
+    const twoHeaderSets = await parseSf({ hasReturn: true, bothGenerations: true }, "2025-05-31");
+    const oneHeaderSet = await parseSf({ hasReturn: true }, "2025-05-31");
+    assert.deepEqual(
+      shapeOf(twoHeaderSets),
+      shapeOf(oneHeaderSet),
+      "SF: a file carrying both generations' quantity headers picks the populated pair, not the first one",
+    );
+    if (twoHeaderSets.ok) {
+      const alexBoth = twoHeaderSets.rows.find((row) => row.branchCode === "11");
+      assert.equal(alexBoth?.returnQty, 2, "SF two-header-set file still reads the real return, not the blank column");
+    }
+
+    // A row whose sales and return columns contradict the net beside it must never book an
+    // impossible split — a gross below the net shows on screen as a NEGATIVE return quantity.
+    const corrupt = await parseSf({ hasReturn: true, corruptSplit: true }, "2025-05-31");
+    assert.equal(corrupt.ok, true);
+    if (corrupt.ok) {
+      assert.equal(corrupt.result.status, "validated", "SF still imports: the net is read from the column Sofico states it in");
+      for (const row of corrupt.rows) {
+        assert.ok(row.returnQty >= 0, `SF return quantity is never negative (branch ${row.branchCode} read ${row.returnQty})`);
+        assert.ok(row.salesQty >= row.netQty, `SF gross is never below the net (branch ${row.branchCode})`);
+      }
+      const gizaCorrupt = corrupt.rows.find((row) => row.branchCode === "2");
+      assert.equal(gizaCorrupt?.netQty, 8, "SF corrupt-split file still imports the net Sofico states");
+      assert.equal(gizaCorrupt?.salesQty, 8, "SF falls back to the net for the gross when the split contradicts it");
+      // `advisories` is optional on the result, so an absent list must fail this the same way an
+      // empty one does — never pass silently because the field was not written at all.
+      assert.ok(
+        (corrupt.result.advisories ?? []).some((advisory) => advisory.includes("Sofico")),
+        "SF reports the disagreement to the operator instead of hiding the repair",
+      );
+    }
+
+    // Sofico renaming a column the import needs must STOP it, never fall back to a position.
+    const renamed = await parseSf({ renameNetColumn: "QUANTITE" }, "2025-05-31");
+    assert.equal(renamed.ok, true, "SF still reads the file when a header is renamed");
+    if (renamed.ok) {
+      assert.equal(renamed.result.status, "blocked", "SF blocks when the net quantity header is absent");
+      assert.ok(
+        renamed.result.blockingReasons.some((reason) => reason.includes("net quantity") && reason.includes("QUANTITE")),
+        "SF names the field it could not find and lists the headers it did find, so the fix is obvious",
+      );
     }
   }
 

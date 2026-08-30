@@ -321,10 +321,9 @@ const FILE_DECLARES_NO_TOTAL: Record<string, string> = {
     "The Ibn Sina Sato sheet is one row per product and branch and closes with a blank row rather than " +
     "a totals row, so the file states no figure the import can be checked against.",
   SF:
-    "Sofico states a net per row (NET SALES) which is authoritative and is allowed to carry adjustments " +
-    "not visible in SalesQty and ReturnQty — the same rule as RAMCO's صافى كمية. A row where the three " +
-    "disagree is therefore legitimate, so there is no identity here that can be checked without raising " +
-    "an alarm on correct files.",
+    "This Sofico sheet states a net quantity per row but carries no SOLDQTY and RETURNQTY pair beside " +
+    "it, so it states no second figure the import can be checked against. A Sofico export that carries " +
+    "all three is cross-checked instead.",
   Direct:
     "The Direct sheet is filled in by hand, one row per order, with no totals row. Its Value column is " +
     "the real per-deal price and is stored as-is rather than derived, so it cannot cross-check the " +
@@ -1136,30 +1135,166 @@ function adaptPOS(ctx: AdapterContext): AdapterResult {
 }
 
 // SF (Sofico) — single "Sheet1" workbook. Per-customer invoice detail rows (one invoice line per
-// row). Header row 1, data row 2+. col4=ItemID (Sofico product code, not the master — alias key),
-// col5=ItemName (product display name), col12=State (branch numeric ID, e.g. "2" / "11"),
-// col13=statename (Arabic branch name), col20=SalesQty (gross), col21=BonusQty (ignored),
-// col22=ReturnQty (positive), col24=NET SALES (authoritative net — same semantics as
-// RM col15). No period-date column; periodDate is always required on upload.
+// row). Header row 1, data row 2+. No period-date column; periodDate is always required on upload.
+//
+// COLUMNS ARE RESOLVED BY HEADER NAME, NEVER BY POSITION — the one distributor here that has to be.
+// Sofico's export moves its own columns between months. Measured across 33 real files (Jan 2025 to
+// Jun 2026): SOLDQTY sits at column 34, 36 or 37; `State` at 17, 18 or 21; `statename` at 18, 19 or
+// 22. A pinned index therefore reads a DIFFERENT FIELD depending on which month was exported, and it
+// lands on a customer code or an invoice id without failing — every row still parses, so the batch
+// validates and the numbers are simply wrong. Simulating the previous pinned map against three real
+// files imported 315, 280 and 0 units where the files themselves state 1,428, 4,837 and 710, and
+// summed 428 BILLION units of "gross" out of the ten-digit CUSTOMERCODE column.
+//
+// There is no "NET SALES" column and there never was: of the 68 distinct headers those 33 files
+// carry between them, the only one containing "net" is `net qty`, and not one of the 68 is a bonus
+// or free-goods column either — so the "BonusQty" the previous map documented as ignored does not
+// exist in any Sofico file. That map's field NAMES came from the 2025 generation (ItemID / ItemName
+// / State / statename / SalesQty / ReturnQty) but its positions matched no file of either generation.
+//
+// Both generations resolve here. 2026 files name the product ITEMIDE / ITEMNAME, the branch
+// SITE / SITENAME, the quantities `qty` + SOLDQTY + RETURNQTY. 2025 files name them ItemID /
+// ItemName, InventSiteID / statename, `net qty` + SalesQty + ReturnQty. RETURNQTY is stored
+// NEGATIVE (−302 against 1,730 sold), so the file's own identity is SOLDQTY + RETURNQTY = net qty.
+// Measured over all 33 with the pair-picking and the per-row guard below: 33 of 33 import the net
+// the file itself states, and 32 of 33 satisfy that identity outright. The one exception is a March
+// copy whose header row is shifted against its data — its net is still right and agrees with its
+// three sibling copies of the same month, so the self-check below REPORTS and does not block:
+// refusing a file whose net is demonstrably correct would cost more than the advisory does.
+const SF_HEADER_ALIASES: Record<string, string[]> = {
+  branchCode: ["SITE", "InventSiteID", "State"],
+  branchName: ["SITENAME", "statename"],
+  itemCode: ["ITEMIDE", "ItemID"],
+  itemName: ["ITEMNAME", "ItemName"],
+  net: ["net qty", "qty"],
+  return: ["RETURNQTY", "RETURNQTY4", "ReturnQty"],
+  sold: ["SOLDQTY", "SalesQty"],
+};
+/** Without these the sheet cannot be read at all, so a miss blocks rather than guesses a position. */
+const SF_REQUIRED_FIELDS = ["itemCode", "branchCode", "net"] as const;
+const SF_FIELD_WANTED: Record<string, string> = {
+  branchCode: "a branch code (SITE, InventSiteID or State)",
+  itemCode: "a product code (ITEMIDE or ItemID)",
+  net: "a net quantity (net qty or qty)",
+};
+
 function adaptSF(ctx: AdapterContext): AdapterResult {
   const workbook = ctx.workbooks[0];
   const combinedC = contractSheet(ctx.contract, "combined");
   const sheet = findSheet(workbook, { name: "Sheet1", includes: "Sheet" }) ?? workbook.worksheets[0];
   const observations: WeeklyObservation[] = [];
+  const blockingReasons: string[] = [];
+  const fileTotalChecks: WeeklyFileTotalCheck[] = [];
   const sheetDates = new Set<string>(); // no date column → always require periodDate
-  if (!sheet) return { observations, sheetDates, sheetName: "Sofico", blockingReasons: [] };
+  if (!sheet) return { observations, sheetDates, sheetName: "Sofico", blockingReasons };
 
-  for (let r = dataStartRow(combinedC, 2); r <= sheet.rowCount; r += 1) {
+  // Scan well past the widest real file (44 populated columns) — ExcelJS `columnCount` under-reports
+  // on sparse sheets, and a header missed here would be indistinguishable from one Sofico renamed.
+  const headerRowNumber = headerRowOf(combinedC, 1);
+  const headerRow = sheet.getRow(headerRowNumber);
+  const lastColumn = Math.max(sheet.columnCount, 80);
+  const cols = findHeaderColumns(headerRow, lastColumn, SF_HEADER_ALIASES);
+
+  const missing = SF_REQUIRED_FIELDS.filter((field) => !cols.has(field));
+  if (missing.length > 0) {
+    const present: string[] = [];
+    for (let c = 1; c <= lastColumn; c += 1) {
+      const text = cellText(at(headerRow, c)).trim();
+      if (text) present.push(text);
+    }
+    blockingReasons.push(
+      `Sofico: this file states no ${missing.map((field) => SF_FIELD_WANTED[field]).join(", and no ")}. ` +
+        "Sofico moves its columns between months, so the import matches them by header name instead of by " +
+        "position, and it will not guess at one it cannot find — reading the wrong column here imports a " +
+        "customer code as a quantity without anything looking wrong. " +
+        `The headers on sheet "${sheet.name}" row ${headerRowNumber} read: ${present.join(" · ")}. ` +
+        "Send that list on and the new name will be added to the ones the import recognizes.",
+    );
+    return { observations, sheetDates, sheetName: sheet.name, blockingReasons };
+  }
+
+  const colItemCode = cols.get("itemCode") as number;
+  const colBranchCode = cols.get("branchCode") as number;
+  const colNet = cols.get("net") as number;
+  const colItemName = cols.get("itemName") ?? null;
+  const colBranchName = cols.get("branchName") ?? null;
+
+  const firstDataRow = dataStartRow(combinedC, 2);
+  const isDataRow = (row: ExcelJS.Row) => Boolean(cellText(at(row, colItemCode)) || cellText(at(row, colBranchCode)));
+
+  // Two of the 33 real files carry BOTH generations' quantity headers at once — SalesQty/ReturnQty
+  // AND SOLDQTY/RETURNQTY — with one pair populated and the other blank. Header matching is
+  // case-insensitive, so `RETURNQTY` and `ReturnQty` are the same name and the lower column index
+  // wins on nothing but position; measured, that handed the file the BLANK pair. So when a file
+  // offers more than one candidate, the pair is chosen by the file's own arithmetic instead: the one
+  // whose sold − |return| lands on the net the file states beside it. Ties keep the first candidate,
+  // and a file where no pair reconciles keeps it too — the check at the end then reports the gap.
+  const soldCandidates = headerColumnsMatching(headerRow, lastColumn, SF_HEADER_ALIASES.sold);
+  const returnCandidates = headerColumnsMatching(headerRow, lastColumn, SF_HEADER_ALIASES.return);
+  let colSold: number | null = soldCandidates[0] ?? null;
+  let colReturn: number | null = returnCandidates[0] ?? null;
+  if (soldCandidates.length > 1 || returnCandidates.length > 1) {
+    const candidateSums = new Map<number, number>();
+    let netTotal = 0;
+    for (let r = firstDataRow; r <= sheet.rowCount; r += 1) {
+      const row = sheet.getRow(r);
+      if (!isDataRow(row)) continue;
+      netTotal += cellNumber(at(row, colNet));
+      for (const c of new Set([...soldCandidates, ...returnCandidates])) {
+        candidateSums.set(c, (candidateSums.get(c) ?? 0) + cellNumber(at(row, c)));
+      }
+    }
+    let smallestGap = Number.POSITIVE_INFINITY;
+    for (const sold of soldCandidates.length > 0 ? soldCandidates : [null]) {
+      for (const ret of returnCandidates.length > 0 ? returnCandidates : [null]) {
+        const soldTotal = sold === null ? 0 : candidateSums.get(sold) ?? 0;
+        const returnTotal = ret === null ? 0 : Math.abs(candidateSums.get(ret) ?? 0);
+        const gap = Math.abs(soldTotal - returnTotal - netTotal);
+        if (gap < smallestGap - 0.001) {
+          smallestGap = gap;
+          colSold = sold;
+          colReturn = ret;
+        }
+      }
+    }
+  }
+
+  let netSum = 0;
+  let soldSum = 0;
+  let returnSignedSum = 0;
+
+  for (let r = firstDataRow; r <= sheet.rowCount; r += 1) {
     const row = sheet.getRow(r);
-    const itemCode = cellText(at(row, colOf(combinedC, "itemCode", 4)));    // ItemID — Sofico's own product code (alias key)
-    const itemName = cellText(at(row, colOf(combinedC, "itemName", 5)));    // ItemName
-    const branchCode = cellText(at(row, colOf(combinedC, "branchCode", 12))); // State — branch numeric ID (e.g. "2", "11")
-    const branchName = cellText(at(row, colOf(combinedC, "branchName", 13))); // statename — Arabic branch display name
+    const itemCode = cellText(at(row, colItemCode));
+    const itemName = colItemName ? cellText(at(row, colItemName)) : "";
+    const branchCode = cellText(at(row, colBranchCode));
+    const branchName = colBranchName ? cellText(at(row, colBranchName)) : "";
     if (!itemCode && !branchCode) continue;
-    const gross = cellNumber(at(row, colOf(combinedC, "gross", 20)));    // SalesQty
-    const ret = cellNumber(at(row, colOf(combinedC, "return", 22)));      // ReturnQty (positive in the file)
-    const net = cellNumber(at(row, colOf(combinedC, "net", 24)));      // NET SALES — authoritative net of record
-    // col21 (BonusQty) is ignored — free units are never counted as sales.
+
+    // Sofico's stated net is the net of record, exactly as RAMCO's صافى كمية is. SOLDQTY and
+    // RETURNQTY only supply the gross/return split for display and the cross-check below.
+    const net = cellNumber(at(row, colNet));
+    const returnSigned = colReturn ? cellNumber(at(row, colReturn)) : 0;
+    let returned = Math.abs(returnSigned); // stored negative in every real file; take either sign
+    let gross = colSold ? cellNumber(at(row, colSold)) : Math.max(net, 0) + returned;
+
+    // Take the split only when the row's own arithmetic agrees with the net beside it. Measured
+    // across the 33 files, sold − |return| = net holds on EVERY row of 29 of them; it fails only on
+    // hand-edited March copies, one of which has its header row shifted against its data so that
+    // SOLDQTY sits over a date and ReturnQty over a street address — which reads as a gross of zero
+    // against a net of 4,837, i.e. a return of MINUS 4,837 units on the screen. Rather than book an
+    // impossible split, fall back to the net itself: a positive net is all sales, a negative net is
+    // all return. The net — the only figure that reaches the closing — is untouched either way.
+    if (Math.abs(gross - returned - net) > 0.001) {
+      gross = Math.max(net, 0);
+      returned = Math.max(-net, 0);
+    }
+
+    // The sums below are the file's RAW columns, never the corrected split, so the check at the end
+    // still reports a disagreement the correction has just hidden from the screen.
+    netSum += net;
+    soldSum += colSold ? cellNumber(at(row, colSold)) : gross;
+    returnSignedSum += colReturn ? returnSigned : 0;
 
     observations.push({
       side: "sales",
@@ -1172,7 +1307,7 @@ function adaptSF(ctx: AdapterContext): AdapterResult {
       qty: gross,
       authoritativeNet: net,
     });
-    if (ret > 0) {
+    if (returned > 0) {
       observations.push({
         side: "return",
         sourceRowNumber: r,
@@ -1181,11 +1316,35 @@ function adaptSF(ctx: AdapterContext): AdapterResult {
         rawBranchCode: branchCode,
         rawBranchName: branchName || branchCode,
         branchFileType: "sales",
-        qty: ret,
+        qty: returned,
       });
     }
   }
-  return { observations, sheetDates, sheetName: sheet.name, blockingReasons: [] };
+
+  // The file's own identity, read from columns the import does NOT take its net from — so a header
+  // that resolved to the wrong field shows up as a number, not as a silently plausible import.
+  if (colSold !== null && colReturn !== null) {
+    const soldHeader = cellText(at(headerRow, colSold)).trim();
+    const returnHeader = cellText(at(headerRow, colReturn)).trim();
+    const netHeader = cellText(at(headerRow, colNet)).trim();
+    fileTotalChecks.push(
+      fileTotalCheck({
+        label: `${soldHeader} + ${returnHeader} against its own ${netHeader}`,
+        where: `${sheet.name}, columns ${colSold} and ${colReturn} against column ${colNet}`,
+        declared: Number((soldSum + returnSignedSum).toFixed(6)),
+        parsed: Number(netSum.toFixed(6)),
+        severity: "report",
+        hint:
+          "Sofico states the same quantity twice, and the import takes its net from the second. When " +
+          "the two disagree, either one of the three columns was matched to the wrong field or the " +
+          "sheet was edited by hand after Sofico produced it. The net is not at risk either way — it " +
+          "is read from the column Sofico states it in, and on any row where the sales and return " +
+          "columns contradict that net, the split falls back to the net rather than to them.",
+      }),
+    );
+  }
+
+  return { observations, sheetDates, sheetName: sheet.name, blockingReasons, fileTotalChecks };
 }
 
 // Direct (company) channel — a hand-coded sheet, not a distributor's raw export, so headers are
@@ -1209,21 +1368,46 @@ const DIRECT_HEADER_ALIASES: Record<string, string[]> = {
 };
 const DIRECT_REQUIRED_FIELDS = ["distributorCode", "invoiceDate", "productCode", "qty", "regionCode", "value"];
 
-function findHeaderColumns(headerRow: ExcelJS.Row, lastColumn: number): Map<string, number> {
+/**
+ * Resolve field → column by matching the header row against a per-field alias list, first alias
+ * that matches wins. Used by every adapter that cannot pin a position: Direct because the sheet is
+ * hand-made, SF because Sofico's own export moves its columns between months.
+ */
+function findHeaderColumns(
+  headerRow: ExcelJS.Row,
+  lastColumn: number,
+  aliases: Record<string, string[]>,
+): Map<string, number> {
   const byText = new Map<string, number>();
   for (let c = 1; c <= lastColumn; c += 1) {
     const text = cellText(at(headerRow, c)).trim().toLowerCase();
     if (text && !byText.has(text)) byText.set(text, c);
   }
   const found = new Map<string, number>();
-  for (const [field, aliases] of Object.entries(DIRECT_HEADER_ALIASES)) {
-    for (const alias of aliases) {
+  for (const [field, fieldAliases] of Object.entries(aliases)) {
+    for (const alias of fieldAliases) {
       const col = byText.get(alias.trim().toLowerCase());
       if (col != null) {
         found.set(field, col);
         break;
       }
     }
+  }
+  return found;
+}
+
+/**
+ * EVERY column matching one of `aliases`, in sheet order — where `findHeaderColumns` returns the one
+ * winner, this returns the whole field of candidates. Sofico needs it: a file that carries two
+ * generations of headers at once offers two columns for the same field, and which one holds the
+ * numbers cannot be decided from the names alone.
+ */
+function headerColumnsMatching(headerRow: ExcelJS.Row, lastColumn: number, aliases: string[]): number[] {
+  const wanted = new Set(aliases.map((alias) => alias.trim().toLowerCase()));
+  const found: number[] = [];
+  for (let c = 1; c <= lastColumn; c += 1) {
+    const text = cellText(at(headerRow, c)).trim().toLowerCase();
+    if (text && wanted.has(text)) found.push(c);
   }
   return found;
 }
@@ -1237,7 +1421,7 @@ function adaptDirect(ctx: AdapterContext): AdapterResult {
 
   const headerRow = sheet.getRow(1);
   const lastColumn = Math.max(sheet.columnCount, 16);
-  const cols = findHeaderColumns(headerRow, lastColumn);
+  const cols = findHeaderColumns(headerRow, lastColumn, DIRECT_HEADER_ALIASES);
 
   const missing = DIRECT_REQUIRED_FIELDS.filter((field) => !cols.has(field));
   if (missing.length > 0) {
