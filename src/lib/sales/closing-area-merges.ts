@@ -7,20 +7,26 @@ import type {
 
 // WHY THIS EXISTS: Fayoum (GZ6) and Beni Suef (UE9, split out of GZ6 on 2026-08-03) are staffed
 // differently per line — see the memory note fayoum-beni-suef-golden-rule-per-line for the full
-// ruling (owner, 2026-08-07):
+// ruling (owner, 2026-08-07, refined 2026-08-30):
 //
 //   Anti Infective  kept SEPARATE — Beni Suef sits in UE-1 with Minia 1/2, Fayoum stays in GZ.
-//   Pedia / CNS     ONE area — one rep/territory covers both, so the closing must show ONE row.
+//   Pedia           ONE area — one rep/territory covers both, so every surface shows ONE row.
+//   CNS             kept SEPARATE — owner split the CNS "Others" bucket back into two on 2026-08-30
+//                   (it carried ~174K of real July value across the two codes; he chose to see them
+//                   as Fayoum and Beni Suef separately, same as Anti Infective).
 //
-// `au.line_area_map` already reflects this (both area_code rows share one seat on Pedia/CNS), but
-// the Closing Matrix groups by `source_of_sales_areas`, a geography table with no concept of "one
+// `au.line_area_map` reflects the staffing (on Pedia both area_code rows share one seat), but the
+// Closing Matrix groups by `source_of_sales_areas`, a geography table with no concept of "one
 // line's organogram merges these" — GZ6 and UE9 are, and must stay, two genuinely separate SALES
-// areas (different bricks, different invoice lines) on every line, including Anti Infective. This
-// module is the ONLY place that folds them into one row, and only for the two lines the owner named.
+// areas (different bricks, different invoice lines) on EVERY line. This module is the ONLY place
+// that folds them into one row, and only for the one line the owner named (Pedia).
 //
-// Following the owner's "Golden Rule" (2026-08-07), this merge is applied EVERYWHERE for those lines
-// — on the Closing Matrix, the export's Data sheet, and the UI's Closing Details panel — so the
-// viewer never sees them as separate areas.
+// Following the owner's rule, the Pedia merge is applied EVERYWHERE the areas surface — the Closing
+// Matrix, the export's Data sheet, the Closing Details panel, the canonical dashboards, the
+// organogram, and the territory / coverage / planning pickers — so the viewer never sees the two
+// Pedia halves as separate areas. Beni Suef (UE9) carries its OWN sales, so any surface that
+// FILTERS by the merged area must expand the selection back to {GZ6, UE9} via expandAreaCodeForLine
+// — filtering on GZ6 alone silently drops Beni Suef's numbers.
 
 const up = (value: string | null | undefined) => String(value ?? "").trim().toUpperCase();
 
@@ -34,12 +40,12 @@ export type ClosingAreaMergeRule = {
 };
 
 /**
- * The ONLY lines whose Closing Matrix merges Fayoum and Beni Suef into one row.
- * ADDING A LINE HERE MERGES THAT LINE'S AREA ROWS — ask the owner first, every time.
+ * The ONLY lines whose area rows are folded into one. Pedia folds Fayoum (GZ6) + Beni Suef (UE9).
+ * ADDING A LINE HERE MERGES THAT LINE'S AREA ROWS — ask the owner first, every time. CNS was
+ * removed on 2026-08-30 at the owner's instruction (it now shows the two areas separately).
  */
 const CLOSING_AREA_MERGES: Record<string, ClosingAreaMergeRule[]> = {
   pedia: [{ keepAreaCode: "GZ6", mergeAreaCode: "UE9", mergedAreaName: "Fayoum - Beni Suef" }],
-  cns: [{ keepAreaCode: "GZ6", mergeAreaCode: "UE9", mergedAreaName: "Fayoum - Beni Suef" }],
 };
 
 /** Does this line's closing merge any areas? Line code as `resolveTargetLineCode` returns. */
@@ -97,6 +103,85 @@ export function getMergedAreaName(lineCode: string | null | undefined, areaCode:
   const rules = CLOSING_AREA_MERGES[lineCode.trim().toLowerCase()] ?? [];
   const match = rules.find((r) => up(r.keepAreaCode) === up(areaCode));
   return match ? match.mergedAreaName : null;
+}
+
+/**
+ * Expand a (possibly merged) area code to every real area code it stands for, so a query that
+ * filters on the surviving keep-code still pulls the folded areas' rows. For Pedia, `GZ6` expands
+ * to `["GZ6", "UE9"]`; every other code — and every other line — returns just `[code]`.
+ *
+ * This is the anti-data-loss primitive every PICKER-FOLD surface MUST call before it filters or
+ * queries: Beni Suef (UE9) carries its own sales, so a query scoped to `GZ6` alone silently drops
+ * it. Returns UPPER-cased codes, matching how the area tables store them.
+ */
+export function expandAreaCodeForLine(
+  lineCode: string | null | undefined,
+  areaCode: string,
+): string[] {
+  const rules = CLOSING_AREA_MERGES[String(lineCode ?? "").trim().toLowerCase()] ?? [];
+  const code = up(areaCode);
+  const extras = rules
+    .filter((rule) => up(rule.keepAreaCode) === code)
+    .map((rule) => up(rule.mergeAreaCode));
+  return extras.length > 0 ? [code, ...extras] : [code];
+}
+
+/** `expandAreaCodeForLine` mapped over a set of codes, de-duplicated and UPPER-cased. */
+export function expandAreaCodesForLine(
+  lineCode: string | null | undefined,
+  areaCodes: Iterable<string>,
+): string[] {
+  const out = new Set<string>();
+  for (const code of areaCodes) {
+    for (const expanded of expandAreaCodeForLine(lineCode, code)) out.add(expanded);
+  }
+  return [...out];
+}
+
+/**
+ * Map a real area code to the code its row is folded UNDER for this line — `UE9` → `GZ6` on Pedia —
+ * or to itself when nothing folds it. The counterpart of `expandAreaCodeForLine`: use it to
+ * re-key a folded area's child rows (blocks, bricks) so they nest under the surviving area instead
+ * of vanishing when the merged code is dropped from the option list. Returns an UPPER-cased code.
+ */
+export function foldAreaCodeForLine(
+  lineCode: string | null | undefined,
+  areaCode: string,
+): string {
+  const rules = CLOSING_AREA_MERGES[String(lineCode ?? "").trim().toLowerCase()] ?? [];
+  const code = up(areaCode);
+  const rule = rules.find((r) => up(r.mergeAreaCode) === code);
+  return rule ? up(rule.keepAreaCode) : code;
+}
+
+/**
+ * Fold a line's area-option list for a picker/filter: drop the merged codes and rename the
+ * surviving keep-code entry to its combined name. A line with no rule returns the list unchanged.
+ * Mirrors the area handling in `applyClosingAreaMerges`, but for the surfaces that present a plain
+ * list of areas (territory drilldown, CRM coverage, weekly planning) rather than a closing matrix.
+ *
+ * Folding the OPTION list is only half the job — the caller must ALSO expand the picked code back
+ * to its real codes with `expandAreaCodeForLine` wherever that selection scopes a query, or the
+ * folded area shows one label with only half its data.
+ */
+export function foldAreaOptionsForLine<T extends { areaCode: string; areaName?: string | null }>(
+  lineCode: string | null | undefined,
+  areas: readonly T[],
+): T[] {
+  const rules = CLOSING_AREA_MERGES[String(lineCode ?? "").trim().toLowerCase()] ?? [];
+  if (rules.length === 0) return [...areas];
+
+  const mergeCodes = new Set(rules.map((rule) => up(rule.mergeAreaCode)));
+  const mergedNameByKeepCode = new Map(
+    rules.map((rule) => [up(rule.keepAreaCode), rule.mergedAreaName] as const),
+  );
+
+  return areas
+    .filter((area) => !mergeCodes.has(up(area.areaCode)))
+    .map((area) => {
+      const mergedName = mergedNameByKeepCode.get(up(area.areaCode));
+      return mergedName ? { ...area, areaName: mergedName } : area;
+    });
 }
 
 /**

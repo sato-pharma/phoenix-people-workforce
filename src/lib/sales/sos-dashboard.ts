@@ -22,6 +22,13 @@ import {
   resolveSalesGeographyBound,
 } from "@/lib/sales/access-scope";
 import { listMonthlyClosingPeriods, loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
+import {
+  expandAreaCodesForLine,
+  foldAreaCodeForLine,
+  foldAreaOptionsForLine,
+  getMergedAreaName,
+  hasClosingAreaMerges,
+} from "@/lib/sales/closing-area-merges";
 import { shiftPeriod } from "@/lib/sales/periods";
 import {
   buildSosCoverageReport,
@@ -594,6 +601,31 @@ export async function getSosDashboard(
       ? null
       : new Set([...options.allowedProductCodes].map((code) => code.trim().toUpperCase()));
 
+  // Area-merge fold decision. An area merge (Pedia's Fayoum GZ6 + Beni Suef UE9 → one row) is only
+  // coherent when the ENTIRE view resolves to that one line: byArea and coverage aggregate ACROSS
+  // lines, so folding one line's areas inside a mixed-line view would misgroup the others. Resolve
+  // the sole line in force = the user's line filter intersected with the viewer's scope (null on a
+  // side means "all" from that side, mirroring `intersect` used for the trend below). Both Pedia
+  // halves share one DM seat and one operational region (verified in au_v_line_area_map), so this
+  // fold is display-only — every viewer who can see GZ6 already sees UE9; it never changes scope.
+  const foldSoleLine = ((): string | null => {
+    const user = filters.lines?.length ? filters.lines : filters.line ? [filters.line] : null;
+    const scope = scopeLineKeys ? [...(salesScope.allowedLineNames ?? [])] : null;
+    let effective: string[];
+    if (user && scope) {
+      const scopeKeys = new Set(scope.map(normalizeLineKey));
+      effective = user.filter((name) => scopeKeys.has(normalizeLineKey(name)));
+    } else if (user) {
+      effective = user;
+    } else if (scope) {
+      effective = scope;
+    } else {
+      return null;
+    }
+    return effective.length === 1 ? effective[0] : null;
+  })();
+  const foldLineCode = foldSoleLine && hasClosingAreaMerges(foldSoleLine) ? foldSoleLine : null;
+
   // Label + master maps.
   const regionLabel = new Map<string, string>();
   references.regions.forEach((r) => regionLabel.set(r.regionCode, r.regionName || r.regionCode));
@@ -603,6 +635,14 @@ export async function getSosDashboard(
     areaLabel.set(a.areaCode, a.areaName || a.areaCode);
     areaRegion.set(a.areaCode, a.regionCode);
   });
+  // On a folded single-Pedia view, the surviving area (GZ6) shows its combined name; UE9's detail
+  // rows re-key onto GZ6 after keepExec, so they read this same label. Only Pedia has a rule.
+  if (foldLineCode) {
+    for (const a of references.areas ?? []) {
+      const merged = getMergedAreaName(foldLineCode, a.areaCode);
+      if (merged) areaLabel.set(a.areaCode, merged);
+    }
+  }
   const distributorLabel = new Map<string, string>();
   references.distributors.forEach((d) => distributorLabel.set(d.code, d.name || d.code));
   const brickLabel = new Map<string, string>();
@@ -616,7 +656,7 @@ export async function getSosDashboard(
   // Coverage denominator is scoped to the viewer: a region-locked caller (DSM / RM) measures
   // coverage against THEIR regions' areas, not the whole company — otherwise "3 / 120 areas"
   // reads as poor coverage when they only own a handful. Company / line-only callers keep all areas.
-  const masterAreas = (references.areas ?? [])
+  const masterAreasScoped = (references.areas ?? [])
     .filter((a) => a.areaCode)
     // A seat-scoped viewer measures coverage against exactly THEIR areas; otherwise fall back to
     // every area in their regions. Using the region set alone for a seat-scoped viewer would inflate
@@ -626,6 +666,10 @@ export async function getSosDashboard(
         ? scopeAreaCodes.has(a.areaCode.toUpperCase())
         : !scopeRegionCodes || scopeRegionCodes.has((a.regionCode ?? "").toUpperCase()),
     );
+  // Fold the coverage denominator too, or "areas reached / total areas" would divide a folded
+  // numerator (one GZ6) by an unfolded denominator (GZ6 + UE9) and UE9 would show as permanent
+  // white space. foldAreaOptionsForLine drops UE9 and renames GZ6; a no-rule line is unchanged.
+  const masterAreas = foldLineCode ? foldAreaOptionsForLine(foldLineCode, masterAreasScoped) : masterAreasScoped;
   const totalAreas = masterAreas.length;
   // Brick coverage needs a MASTER denominator, scoped exactly like masterAreas above. It used to be
   // `new Set(brickRows.map(r => r.brickId)).size` — the very same expression as the numerator — so
@@ -663,7 +707,8 @@ export async function getSosDashboard(
       .sort(),
     distributors: references.distributors.map((d) => ({ code: d.code, label: d.name || d.code })),
     regions: references.regions.map((r) => ({ code: r.regionCode, label: r.regionName || r.regionCode })),
-    areas: (references.areas ?? []).map((a) => ({ code: a.areaCode, label: a.areaName || a.areaCode, region: a.regionCode })),
+    areas: (foldLineCode ? foldAreaOptionsForLine(foldLineCode, references.areas ?? []) : references.areas ?? [])
+      .map((a) => ({ code: a.areaCode, label: a.areaName || a.areaCode, region: a.regionCode })),
     products: references.products
       .filter((p) => p.productCode.toUpperCase() !== "IGNORE")
       .filter((p) => canSeeRestricted || !RESTRICTED_SET.has(p.productCode.toUpperCase()))
@@ -761,7 +806,11 @@ export async function getSosDashboard(
       trendRegionCodes: sortedOrNull(trendRegionCodes),
       trendProductCodes: sortedOrNull(trendProductCodes),
       // scope ∩ user selection (null ⇒ no restriction ⇒ [] = "all" to the RPCs).
-      filterAreas: [...(trendAreaCodes ?? [])].sort(),
+      // Expand a folded pick (GZ6) back to its real codes ({GZ6, UE9}) so the RPC pulls Beni Suef's
+      // rows too — they are re-keyed onto GZ6 for display after keepExec. Both are already in scope.
+      filterAreas: [
+        ...(foldLineCode && trendAreaCodes ? expandAreaCodesForLine(foldLineCode, trendAreaCodes) : trendAreaCodes ?? []),
+      ].sort(),
       filterDistributors: [...(filters.distributors ?? [])].sort(),
       excludeCodes: [...excludeCodes].sort(),
       trendExcludeCodes: [...trendExcludeCodes].sort(),
@@ -772,7 +821,12 @@ export async function getSosDashboard(
   // Shared leaf-row filter (line / distributor / region / area / product + restricted stripping).
   const distSet = toFilterSet(filters.distributors);
   const regionSet = toFilterSet(filters.regions);
-  const areaSet = toFilterSet(filters.areas);
+  // On a folded single-Pedia view the picker emits only GZ6; expand it back to {GZ6, UE9} so a
+  // filter on the merged area keeps Beni Suef's rows through keepExec (they authorize on the real
+  // area code, then re-key onto GZ6 for display below).
+  const areaSet = toFilterSet(
+    foldLineCode && filters.areas?.length ? expandAreaCodesForLine(foldLineCode, filters.areas) : filters.areas,
+  );
   const productSet = toFilterSet(filters.products);
   const lineFilter = filters.line ? norm(filters.line).toLowerCase() : null;
   const lineFilterSet =
@@ -814,12 +868,27 @@ export async function getSosDashboard(
     period: norm(row.__period as string),
   });
 
+  // Re-key a merged area onto its surviving code (UE9 → GZ6 on Pedia), or return it unchanged for a
+  // non-merge code and every non-fold view. Byte-for-byte identity for anything without a rule.
+  const foldAreaForDisplay = (code: string): string => {
+    if (!foldLineCode) return code;
+    const folded = foldAreaCodeForLine(foldLineCode, code);
+    return folded === code.toUpperCase() ? code : folded;
+  };
+  // Apply that AFTER keepExec, so authorization always runs on the real geography (UE9 stays UE9
+  // through the scope/area checks) while every downstream breakdown groups the folded area as one
+  // row. Only Pedia has a rule, and only on a single-Pedia view.
+  const foldExecRowArea = (row: ExecRow): ExecRow => {
+    const folded = foldAreaForDisplay(row.areaCode);
+    return folded === row.areaCode ? row : { ...row, areaCode: folded };
+  };
+
   // Detail = the union of leaf rows across every selected month (each already tagged with its period).
-  const detail = (detailRows as Array<Record<string, unknown>>).map(mapExecRow).filter(keepExec);
+  const detail = (detailRows as Array<Record<string, unknown>>).map(mapExecRow).filter(keepExec).map(foldExecRowArea);
   // Prior-period leaf rows for the MoM layer — same mapping, same keepExec (period-agnostic).
-  const priorDetail = (priorDetailRaw as Array<Record<string, unknown>>).map(mapExecRow).filter(keepExec);
+  const priorDetail = (priorDetailRaw as Array<Record<string, unknown>>).map(mapExecRow).filter(keepExec).map(foldExecRowArea);
   // Same-month-last-year leaf rows for the YoY layer — same mapping, same keepExec.
-  const yoyDetail = (yoyDetailRaw as Array<Record<string, unknown>>).map(mapExecRow).filter(keepExec);
+  const yoyDetail = (yoyDetailRaw as Array<Record<string, unknown>>).map(mapExecRow).filter(keepExec).map(foldExecRowArea);
 
   const totalValue = detail.reduce((sum, row) => sum + row.value, 0);
   const totalUnits = detail.reduce((sum, row) => sum + row.units, 0);
@@ -983,7 +1052,7 @@ export async function getSosDashboard(
     name: row.clientName || row.clientCode,
     distributor: distributorLabel.get(row.distributorCode) ?? row.distributorCode,
     region: regionLabel.get(row.regionCode) ?? row.regionCode,
-    area: row.areaCode === "DIRECT" ? "Direct" : areaLabel.get(row.areaCode) ?? row.areaCode,
+    area: row.areaCode === "DIRECT" ? "Direct" : areaLabel.get(foldAreaForDisplay(row.areaCode)) ?? row.areaCode,
     value: row.value,
     units: row.units,
     share: share(row.value, customerTotalValue),

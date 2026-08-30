@@ -176,12 +176,17 @@ export function runPortalCanonicalSalesRowsTests() {
   assert.match(
     readFileSync("src/lib/employee-portal/portal-sales-canonical.ts", "utf8"),
     /territory:\s*getMergedAreaName\(/,
-    "portal territory must label the merged Pedia/CNS row as 'Fayoum - Beni Suef' via getMergedAreaName",
+    "portal territory must label the merged Pedia row as 'Fayoum - Beni Suef' via getMergedAreaName",
+  );
+  assert.equal(
+    getMergedAreaName("pedia", "GZ6"),
+    "Fayoum - Beni Suef",
+    "Pedia's merged GZ6 row carries the combined Fayoum - Beni Suef name",
   );
   assert.equal(
     getMergedAreaName("cns", "GZ6"),
-    "Fayoum - Beni Suef",
-    "CNS's merged GZ6 row carries the combined Fayoum - Beni Suef name",
+    null,
+    "CNS no longer merges — owner split Fayoum and Beni Suef back into two areas on 2026-08-30",
   );
   assert.equal(
     getMergedAreaName("anti_infective", "GZ6"),

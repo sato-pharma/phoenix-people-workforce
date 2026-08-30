@@ -1,5 +1,6 @@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import type { PhoenixRole } from "@/lib/auth/permissions";
+import { foldAreaCodeForLine, foldAreaOptionsForLine } from "@/lib/sales/closing-area-merges";
 import { loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
 
 import type { TerritoryDiagnostic, TerritoryRootScope, TerritorySkeleton } from "./types";
@@ -160,7 +161,7 @@ export async function buildTerritorySkeleton(
   // rootScope.level === "nationwide": stays null → loadLineAreas above ran with no region
   // restriction, so allAreas already covers every region the viewer's line has any presence in.
 
-  const areas = allAreas
+  const scopedAreas = allAreas
     .filter((area) =>
       areaCodesInScope
         ? areaCodesInScope.has(area.areaCode.toUpperCase())
@@ -169,7 +170,21 @@ export async function buildTerritorySkeleton(
         : !regionCodesInScope || regionCodesInScope.has(area.regionCode.toUpperCase()),
     )
     .map((area) => ({ areaCode: area.areaCode, areaName: area.areaName, regionCode: area.regionCode }));
+  // Fold this line's merged areas into ONE option: Pedia shows Fayoum (GZ6) + Beni Suef (UE9) as a
+  // single "Fayoum - Beni Suef" area (owner rule 2026-08-30). The dropped code's blocks/bricks are
+  // re-keyed onto the survivor below (foldAreaCodeForLine), and the per-area pharmacy fetch expands
+  // it back to both real codes (see pharmacies.ts), so nothing Beni Suef sold is lost. Anti
+  // Infective and CNS have no rule, so foldAreaOptionsForLine returns their areas unchanged.
+  const areas = foldAreaOptionsForLine(auLineCode, scopedAreas);
   const finalAreaCodesInScope = new Set(areas.map((area) => area.areaCode.toUpperCase()));
+
+  // Re-key a merged-away area's blocks/bricks onto the surviving code so they still nest under it;
+  // preserve the original casing for every non-merged code (foldAreaCodeForLine upper-cases, and the
+  // prior behaviour emitted these codes verbatim).
+  const remapAreaCode = (code: string): string => {
+    const folded = foldAreaCodeForLine(auLineCode, code);
+    return folded === code.toUpperCase() ? code : folded;
+  };
 
   // Regions shown = exactly the regions actually represented in `areas` above, named via the
   // organogram (au_v_regions) rather than source_of_sales_regions — never an empty region card
@@ -185,10 +200,12 @@ export async function buildTerritorySkeleton(
     .sort((a, b) => a.regionName.localeCompare(b.regionName));
 
   const blocks = allBlocks
+    .map((block) => ({ ...block, areaCode: remapAreaCode(block.areaCode) }))
     .filter((block) => finalAreaCodesInScope.has(block.areaCode.toUpperCase()))
     .map((block) => ({ blockCode: block.blockCode, blockName: block.blockName, areaCode: block.areaCode }));
 
   const bricks = allBricks
+    .map((brick) => ({ ...brick, areaCode: remapAreaCode(brick.areaCode) }))
     .filter((brick) => finalAreaCodesInScope.has(brick.areaCode.toUpperCase()))
     .map((brick) => ({
       brickId: brick.brickId,
