@@ -47,10 +47,28 @@ import { cn } from "@/lib/utils";
  * already reads. Nothing was dropped: every fact that was on screen is still on screen, and the
  * export still carries each one in a column of its own.
  *
- * NOTHING TRUNCATES AND NOTHING WRAPS. Both lines of every cell are whitespace-nowrap; the table is
+ * THEN EIGHT TO FOUR, on 2026-08-30, because eight still scrolled sideways. Measured in Chrome on
+ * the owner's own viewport: the eight-column table was 2,460px inside a 1,758px container — 702px
+ * of horizontal scroll. Ten nowrap fields laid side by side is simply more than a screen has, so
+ * four of the eight columns were folded into their neighbours as extra STACKED LINES rather than
+ * removed: "Doing now" and "Experience" became one Work column, and Governorate and "Wants to
+ * work" joined Region under one Where column. A column costs its widest value plus padding on
+ * every row; a line costs nothing horizontally beyond its own text. Same facts, same order of
+ * reading, 1,555px instead of 2,460px — it now fits the owner's screen with 203px to spare.
+ *
+ * NOTHING TRUNCATES AND NOTHING WRAPS. Every line of every cell is whitespace-nowrap; the table is
  * allowed to be as wide as its widest real value and PortalDesktopTable scrolls it. truncate and
  * line-clamp are deliberately absent — an ellipsis is exactly what the owner's rule forbids, and a
- * second line here is a separate element, never a wrapped one.
+ * further line here is a separate element, never a wrapped one. That is also the honest limit of
+ * this fix: a handful of CVs carry 90-100 character free-text job titles and institute names, and
+ * a string that wide cannot be made narrower without breaking one of those two rules. They set the
+ * 1,555px floor, so a container below that scrolls again — there is no layout that avoids it while
+ * the text may neither wrap nor truncate.
+ *
+ * THE MOBILE CARDS AND THE EXPORT ARE UNCHANGED. Folding a column is a layout decision about one
+ * screen: the export still declares all thirteen columns and the phone card still lists every
+ * field with its own label, because "an export must match the screen" means the same facts, not
+ * the same shape.
  */
 
 type ExperienceFilter = "all" | CvExperienceStatus;
@@ -88,13 +106,23 @@ const DECLARED_REGION_TITLE = "The applicant chose this themselves when they app
  * "Outside Egypt" on its own reads like a shrug, and the reader would have no way to tell it from
  * a gap in our data without looking at the Governorate column and knowing world geography.
  */
+/**
+ * Degree, faculty, institution — in that order, with the blanks removed rather than left as gaps.
+ *
+ * Compacting matters: a missing degree would otherwise push the faculty onto the second line and
+ * leave the first one empty, which reads as a rendering fault rather than as a fact nobody has.
+ */
+function educationLines(row: CvLibraryRow): string[] {
+  return [row.educationDegree, row.educationFaculty, row.educationInstitution].filter(Boolean);
+}
+
 function regionTitle(row: CvLibraryRow): string | undefined {
   if (row.regionForeignCountry) return `This CV gives an address in ${row.regionForeignCountry}.`;
   return row.regionDeclared ? DECLARED_REGION_TITLE : undefined;
 }
 
-const headCellClassName = "whitespace-nowrap px-4 py-3";
-const cellClassName = "whitespace-nowrap px-4 py-4 align-top text-phx-ink-soft";
+const headCellClassName = "whitespace-nowrap px-3 py-3";
+const cellClassName = "whitespace-nowrap px-3 py-4 align-top text-[13px] text-phx-ink-soft";
 
 /**
  * One table cell, two facts.
@@ -107,10 +135,12 @@ const cellClassName = "whitespace-nowrap px-4 py-4 align-top text-phx-ink-soft";
 function StackedCell({
   primary,
   secondary,
+  tertiary,
   title,
 }: {
   primary: React.ReactNode;
   secondary?: string;
+  tertiary?: string;
   title?: string;
 }) {
   return (
@@ -121,6 +151,11 @@ function StackedCell({
       {secondary ? (
         <div className="mt-0.5 whitespace-nowrap text-phx-xs text-slate-500" title={title}>
           {secondary}
+        </div>
+      ) : null}
+      {tertiary ? (
+        <div className="mt-0.5 whitespace-nowrap text-phx-xs text-slate-500" title={title}>
+          {tertiary}
         </div>
       ) : null}
     </td>
@@ -496,17 +531,20 @@ export function CvDatabaseManager({ rows }: { rows: CvLibraryRow[] }) {
               <thead className="bg-phx-paper text-phx-2xs font-black uppercase tracking-[0.16em] text-phx-ink-soft">
                 <tr>
                   <th className={headCellClassName}>Candidate</th>
-                  <th className={headCellClassName}>Doing now</th>
-                  <th className={headCellClassName}>Medical sales</th>
-                  <th className={headCellClassName}>Total experience</th>
-                  {/* Where they will WORK. The Region filter above has always keyed on this while
-                      showing no column for it, so a screener narrowing to Alex-BHR had to take the
-                      filter's word for it. The area beneath is the applicant's own wording. */}
-                  <th className={headCellClassName}>Wants to work</th>
-                  {/* And where they LIVE, which is a different fact and keeps its own column. */}
-                  <th className={headCellClassName}>Governorate</th>
+                  {/* Everything about their working life, in one column. Measured 2026-08-30: as
+                      two columns ("Doing now" and "Experience") these cost 1110px side by side and
+                      were what kept the table wider than its container even after everything else
+                      had been folded. Stacked, the column costs only as much as its widest single
+                      line. Vertical space is cheap here and horizontal space is not — that is the
+                      whole trade, and it is the only one available when nothing may wrap or
+                      truncate. */}
+                  <th className={headCellClassName}>Work</th>
+                  {/* Where they will WORK, which the Region filter keys on, with the area in the
+                      applicant's own wording beneath it and where they LIVE below that. Three
+                      different facts kept apart by line rather than by column — each one is labelled
+                      in place, so nothing is lost by not giving each its own header. */}
+                  <th className={headCellClassName}>Where</th>
                   <th className={headCellClassName}>Education</th>
-                  <th className={headCellClassName}>CV file</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-phx-line">
@@ -522,10 +560,22 @@ export function CvDatabaseManager({ rows }: { rows: CvLibraryRow[] }) {
                       <div className="mt-0.5 whitespace-nowrap text-phx-xs text-slate-500">
                         {`CV received ${emptyText(row.receivedOn)}`}
                       </div>
+                      {row.cvFileName ? (
+                        <div className="mt-0.5 whitespace-nowrap text-phx-xs text-slate-500">
+                          {row.cvFileName}
+                        </div>
+                      ) : null}
                     </td>
-                    <StackedCell primary={emptyText(row.currentJobTitle)} secondary={row.currentEmployer} />
                     <td className={cellClassName}>
-                      <span className="inline-flex items-center gap-2 whitespace-nowrap">
+                      <div className="whitespace-nowrap font-semibold text-phx-ink">
+                        {emptyText(row.currentJobTitle)}
+                      </div>
+                      {row.currentEmployer ? (
+                        <div className="mt-0.5 whitespace-nowrap text-phx-xs text-slate-500">
+                          {row.currentEmployer}
+                        </div>
+                      ) : null}
+                      <span className="mt-1.5 inline-flex items-center gap-2 whitespace-nowrap">
                         <Badge variant={experienceBadgeVariant(row.medicalSales)}>
                           {experienceLabel(row.medicalSales)}
                         </Badge>
@@ -536,16 +586,26 @@ export function CvDatabaseManager({ rows }: { rows: CvLibraryRow[] }) {
                           {row.medicalSalesEmployer}
                         </div>
                       ) : null}
+                      {row.totalExperience ? (
+                        <div className="mt-0.5 whitespace-nowrap text-phx-xs text-slate-500">
+                          {`${row.totalExperience} in total`}
+                        </div>
+                      ) : null}
                     </td>
-                    <StackedCell primary={emptyText(row.totalExperience)} />
                     <StackedCell
                       primary={emptyText(row.regionLabel)}
                       secondary={row.preferredArea}
+                      tertiary={row.governorate ? `Lives in ${row.governorate}` : ""}
                       title={regionTitle(row)}
                     />
-                    <StackedCell primary={emptyText(row.governorate)} />
-                    <StackedCell primary={emptyText(row.education)} />
-                    <StackedCell primary={emptyText(row.cvFileName)} />
+                    {/* Three lines, each a separately-extracted field. Whichever facts exist float
+                        up, so a row that knows only where somebody studied still reads on the first
+                        line rather than leaving a gap above it. */}
+                    <StackedCell
+                      primary={emptyText(educationLines(row)[0] ?? "")}
+                      secondary={educationLines(row)[1] ?? ""}
+                      tertiary={educationLines(row)[2] ?? ""}
+                    />
                   </tr>
                 ))}
               </tbody>
