@@ -71,6 +71,27 @@ export function CeoTopMoversTable({
     share: grandTotal > 0 ? `${((r.value / grandTotal) * 100).toFixed(1)}%` : "—",
   }));
 
+  // Nothing to show at all. Say so once, in one line.
+  //
+  // Until 2026-08-30 an empty table still rendered its whole apparatus: a filter box with nothing
+  // to filter, an Export button that would have written an empty sheet, a header row, the table's
+  // own "no rows" line, AND the `empty` message underneath it -- the same fact stated twice, under
+  // two dead controls. Two of these sit in the Source of Sales card, which made that card 568px of
+  // almost entirely blank white and the single largest empty area on the CEO, SFE and System
+  // Administrator overviews. It is one component, so this closes it on all three at once.
+  //
+  // This is the movers.length === 0 case only, so it cannot hide anything: a filter that matches
+  // nothing is a different state and still renders the toolbar below, because there the controls
+  // are live and clearing the filter is the way out. Nothing is dropped from an export either --
+  // there is no row to export.
+  if (movers.length === 0) {
+    return (
+      <div className="border border-slate-200 bg-slate-50/70 px-3 py-4 text-center text-phx-xs text-slate-400">
+        {empty}
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-2">
       {/* Toolbar: search + export */}
@@ -167,10 +188,6 @@ export function CeoTopMoversTable({
           </tbody>
         </table>
       </div>
-
-      {movers.length === 0 && !table.isFiltered ? (
-        <p className="py-2 text-center text-phx-xs text-slate-400">{empty}</p>
-      ) : null}
     </div>
   );
 }

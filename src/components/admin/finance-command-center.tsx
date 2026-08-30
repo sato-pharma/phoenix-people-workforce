@@ -20,6 +20,7 @@ import { AreaSparkline, SectionShell } from "@/components/admin/ceo-command-cent
 import { CeoHeroIdentity } from "@/components/admin/ceo-hero-identity";
 import { APPROVALS_SLA_THRESHOLDS, slaTone } from "@/components/approvals-hub/sla-thresholds";
 import type {
+  FinanceCommandCenterData,
   FinanceCommandCenterView,
   FinanceCommittedMonth,
   FinancePayrollRun,
@@ -581,6 +582,165 @@ function PayrollCycle({ view }: { view: FinanceCommandCenterView }) {
 
 // ── Page ─────────────────────────────────────────────────────────────────────
 
+/**
+ * Everything sitting in the Finance Manager's own queues. Extracted so the System Administrator
+ * Overview counts the identical set - two surfaces quoting a different "waiting" number for the
+ * same backlog is how a queue gets argued about instead of worked.
+ */
+function financeActionTotal(data: FinanceCommandCenterData) {
+  return (
+    data.directOrders.awaitingCount +
+    data.marketing.awaitingMyStep +
+    data.marketing.dueUnexecutedCount +
+    data.marketing.invoiceOverdueCount +
+    data.marketing.missingPaymentProof +
+    data.leave.awaitingMyDecision
+  );
+}
+
+/**
+ * Band 1's tiles, shared with the admin overview.
+ *
+ * `audience` only changes who the queue tile says the work belongs to. On the Finance Manager's
+ * own page it is "Awaiting you"; on the Super Admin's it is the Finance Manager's backlog, which
+ * he is reading rather than owning - labelling it "Awaiting you" there would put four queues on
+ * his desk that are not his.
+ */
+function MoneyInMotionTiles({
+  audience,
+  data,
+}: {
+  audience: "admin" | "finance";
+  data: FinanceCommandCenterData;
+}) {
+  const latest = data.payroll.committed[data.payroll.committed.length - 1] ?? null;
+  const actionTotal = financeActionTotal(data);
+  return (
+    <div className="grid gap-2 p-5 sm:grid-cols-2 lg:grid-cols-4">
+      <MetricTile
+        icon={<Wallet aria-hidden="true" className="h-3.5 w-3.5" />}
+        label="Net payroll"
+        sub={`${n(data.headcount.payrollEligible)} payroll-eligible`}
+        value={egp(latest?.net ?? data.headcount.standingNet)}
+      />
+      <MetricTile
+        icon={<ScrollText aria-hidden="true" className="h-3.5 w-3.5" />}
+        label={audience === "admin" ? "In the finance queue" : "Awaiting you"}
+        sub={
+          actionTotal === 0
+            ? "Nothing queued"
+            : audience === "admin"
+              ? "Waiting on the Finance Manager"
+              : "Across every module"
+        }
+        tone={actionTotal > 0 ? "amber" : "emerald"}
+        value={n(actionTotal)}
+      />
+      <MetricTile
+        icon={<ReceiptText aria-hidden="true" className="h-3.5 w-3.5" />}
+        label="Direct orders unbooked"
+        sub={ageLabel(data.directOrders.awaitingOldest, "All booked")}
+        tone={unbookedTone(data.directOrders.awaitingCount, data.directOrders.awaitingOldest)}
+        value={egp(data.directOrders.awaitingValue)}
+      />
+      <MetricTile
+        icon={<Megaphone aria-hidden="true" className="h-3.5 w-3.5" />}
+        label="Marketing spend to pay"
+        sub={
+          data.marketing.dueUnexecutedCount > 0
+            ? `${n(data.marketing.dueUnexecutedCount)} approved, not executed`
+            : "Nothing due"
+        }
+        tone={data.marketing.dueUnexecutedCount > 0 ? "amber" : "emerald"}
+        value={egp(data.marketing.dueUnexecutedValue)}
+      />
+    </div>
+  );
+}
+
+/** The Workforce band's stats, shared with the admin overview. Cairo month boundaries, never UTC. */
+function WorkforceTiles({ data }: { data: FinanceCommandCenterData }) {
+  return (
+    <div className="grid gap-2 p-5 sm:grid-cols-2 lg:grid-cols-4">
+      <PipelineStat
+        label="Payroll-eligible"
+        sub={`${n(data.headcount.activeEmployees)} active on the roster`}
+        value={n(data.headcount.payrollEligible)}
+      />
+      <PipelineStat label="Cost to company" sub="gross, this month" value={egp(data.headcount.standingGross)} />
+      <PipelineStat
+        label="Resigned this month"
+        muted={data.headcount.resignedThisMonth === 0}
+        sub="settlements to prepare"
+        tone={data.headcount.resignedThisMonth > 0 ? "amber" : "slate"}
+        value={n(data.headcount.resignedThisMonth)}
+      />
+      <PipelineStat
+        label="Last working day this month"
+        muted={data.headcount.leavingThisMonth === 0}
+        sub="final pay lands in this run"
+        tone={data.headcount.leavingThisMonth > 0 ? "amber" : "slate"}
+        value={n(data.headcount.leavingThisMonth)}
+      />
+    </div>
+  );
+}
+
+/**
+ * The three Finance bands the System Administrator Overview borrows.
+ *
+ * Money, the payroll cycle, and the workforce behind both - the part of the Finance Manager's page
+ * that answers "is the company's money moving", which is a system-administration question as much
+ * as a finance one. His four PERSONAL queues (direct orders, marketing, invoices, leave) stay on
+ * his page: they are assigned to him by name, and duplicating them here would make it ambiguous
+ * who is expected to clear them.
+ *
+ * Rendered through the SAME components his page uses, so the two can never drift into quoting
+ * different figures for the same month.
+ */
+export function FinanceAdminBands({ view }: { view: FinanceCommandCenterView }) {
+  const { data } = view;
+  return (
+    <>
+      <SectionShell
+        action={
+          <Link
+            className="inline-flex items-center gap-1.5 border border-white/20 bg-white/10 px-3 py-1.5 text-phx-2xs font-bold text-white hover:bg-white/20"
+            href="/admin/finance-command-center"
+          >
+            <Landmark aria-hidden="true" className="h-3.5 w-3.5" />
+            Finance
+          </Link>
+        }
+        description="The Finance Manager's headline figures, read-only from here."
+        title="Money in motion"
+      >
+        <MoneyInMotionTiles audience="admin" data={data} />
+      </SectionShell>
+
+      <SectionShell
+        action={
+          <Link
+            className="inline-flex items-center gap-1.5 border border-white/20 bg-white/10 px-3 py-1.5 text-phx-2xs font-bold text-white hover:bg-white/20"
+            href="/admin/automated-payroll/finance"
+          >
+            <FileSpreadsheet aria-hidden="true" className="h-3.5 w-3.5" />
+            Payroll
+          </Link>
+        }
+        description="Run status, the sheets that can be pulled, and who is still held out of the payout."
+        title="Payroll cycle"
+      >
+        <PayrollCycle view={view} />
+      </SectionShell>
+
+      <SectionShell description="Who payroll pays this month, and who is leaving it." title="Workforce">
+        <WorkforceTiles data={data} />
+      </SectionShell>
+    </>
+  );
+}
+
 export function FinanceCommandCenter({
   view,
   welcome,
@@ -589,15 +749,8 @@ export function FinanceCommandCenter({
   welcome: FinanceWelcomeProfile;
 }) {
   const { data } = view;
-  const latest = data.payroll.committed[data.payroll.committed.length - 1] ?? null;
 
-  const actionTotal =
-    data.directOrders.awaitingCount +
-    data.marketing.awaitingMyStep +
-    data.marketing.dueUnexecutedCount +
-    data.marketing.invoiceOverdueCount +
-    data.marketing.missingPaymentProof +
-    data.leave.awaitingMyDecision;
+  const actionTotal = financeActionTotal(data);
 
   return (
     <div className="space-y-0 divide-y divide-slate-200">
@@ -628,39 +781,7 @@ export function FinanceCommandCenter({
         header={<FinanceOwnerBanner />}
         title="Money in motion"
       >
-        <div className="grid gap-2 p-5 sm:grid-cols-2 lg:grid-cols-4">
-          <MetricTile
-            icon={<Wallet aria-hidden="true" className="h-3.5 w-3.5" />}
-            label="Net payroll"
-            sub={`${n(data.headcount.payrollEligible)} payroll-eligible`}
-            value={egp(latest?.net ?? data.headcount.standingNet)}
-          />
-          <MetricTile
-            icon={<ScrollText aria-hidden="true" className="h-3.5 w-3.5" />}
-            label="Awaiting you"
-            sub={actionTotal === 0 ? "Nothing queued" : "Across every module"}
-            tone={actionTotal > 0 ? "amber" : "emerald"}
-            value={n(actionTotal)}
-          />
-          <MetricTile
-            icon={<ReceiptText aria-hidden="true" className="h-3.5 w-3.5" />}
-            label="Direct orders unbooked"
-            sub={ageLabel(data.directOrders.awaitingOldest, "All booked")}
-            tone={unbookedTone(data.directOrders.awaitingCount, data.directOrders.awaitingOldest)}
-            value={egp(data.directOrders.awaitingValue)}
-          />
-          <MetricTile
-            icon={<Megaphone aria-hidden="true" className="h-3.5 w-3.5" />}
-            label="Marketing spend to pay"
-            sub={
-              data.marketing.dueUnexecutedCount > 0
-                ? `${n(data.marketing.dueUnexecutedCount)} approved, not executed`
-                : "Nothing due"
-            }
-            tone={data.marketing.dueUnexecutedCount > 0 ? "amber" : "emerald"}
-            value={egp(data.marketing.dueUnexecutedValue)}
-          />
-        </div>
+        <MoneyInMotionTiles audience="finance" data={data} />
       </SectionShell>
 
       {/* ── Band 2: the payroll cycle ── */}
@@ -826,32 +947,7 @@ export function FinanceCommandCenter({
         description="Who payroll pays this month, and who is leaving it."
         title="Workforce"
       >
-        <div className="grid gap-2 p-5 sm:grid-cols-2 lg:grid-cols-4">
-          <PipelineStat
-            label="Payroll-eligible"
-            sub={`${n(data.headcount.activeEmployees)} active on the roster`}
-            value={n(data.headcount.payrollEligible)}
-          />
-          <PipelineStat
-            label="Cost to company"
-            sub="gross, this month"
-            value={egp(data.headcount.standingGross)}
-          />
-          <PipelineStat
-            label="Resigned this month"
-            muted={data.headcount.resignedThisMonth === 0}
-            sub="settlements to prepare"
-            tone={data.headcount.resignedThisMonth > 0 ? "amber" : "slate"}
-            value={n(data.headcount.resignedThisMonth)}
-          />
-          <PipelineStat
-            label="Last working day this month"
-            muted={data.headcount.leavingThisMonth === 0}
-            sub="final pay lands in this run"
-            tone={data.headcount.leavingThisMonth > 0 ? "amber" : "slate"}
-            value={n(data.headcount.leavingThisMonth)}
-          />
-        </div>
+        <WorkforceTiles data={data} />
       </SectionShell>
 
       {/* ── Band 4: direct orders, end to end ──

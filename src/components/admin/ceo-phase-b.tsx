@@ -306,7 +306,8 @@ function ExpenseSnippet({
   const approvedPctDisplay = `${Math.round(data.approvedPct * 100)}%`;
   return (
     <div className="p-5 space-y-4">
-      <div className="grid grid-cols-3 gap-2">
+      {/* Two tiles, two columns. It was three, leaving the last cell empty. */}
+      <div className="grid grid-cols-2 gap-2">
         <div className="border border-slate-200 px-3 py-2.5">
           <p className="text-phx-3xs font-black uppercase tracking-[0.14em] text-slate-400">Total spend</p>
           <p className="mt-0.5 text-lg font-black text-slate-900">{egp(data.totalAmount)}</p>
@@ -762,15 +763,16 @@ const SFE_NAV_ITEMS = [
   { href: "/business-review",                     icon: LayoutDashboard, label: "Business Review", sub: "Live business review, any period" },
 ];
 
-function SmartNavGrid({ access, variant }: { access: AccessContext; variant: "ceo" | "sfe" }) {
+function SmartNavGrid({ access, variant }: { access: AccessContext; variant: "admin" | "ceo" | "sfe" }) {
   const items = variant === "sfe"
     ? SFE_NAV_ITEMS
     : access.role === "CEO"
     ? NAV_ITEMS.filter((item) => item.href !== "/employees" && item.href !== "/admin/data-health")
     : NAV_ITEMS;
 
+  // Five across, so ten links are two full rows. Four left two blank cells at the end.
   return (
-    <div className="grid grid-cols-2 gap-2 p-5 sm:grid-cols-3 lg:grid-cols-4">
+    <div className="grid grid-cols-2 gap-2 p-5 sm:grid-cols-3 lg:grid-cols-5">
       {items.map(({ href, icon: Icon, label, sub }) => (
         <Link
           key={href}
@@ -795,12 +797,18 @@ function SmartNavGrid({ access, variant }: { access: AccessContext; variant: "ce
 
 // Titles must track the sections actually rendered below, per variant — a skeleton row for a
 // partition that never arrives reads as a stuck load.
+const CEO_PHASE_B_SKELETON_TITLES = ["Risk signals & payroll", "Company health", "Trends", "Double-Visit Intelligence", "Monthly Sales Intelligence", "Expense Snapshot", "ROI Signal", "Attendance & Leave"] as const;
+
 const PHASE_B_SKELETON_TITLES = {
-  ceo: ["Risk signals & payroll", "Company health", "Trends", "Double-Visit Intelligence", "Monthly Sales Intelligence", "Expense Snapshot", "ROI Signal", "Attendance & Leave"],
+  // The admin variant renders the CEO sections, so it must show the CEO skeleton. Spelled out
+  // rather than defaulted: a variant missing from this Record throws `undefined.map` at request
+  // time, and an exhaustive Record is not something this build checks.
+  admin: CEO_PHASE_B_SKELETON_TITLES,
+  ceo: CEO_PHASE_B_SKELETON_TITLES,
   sfe: ["Company health", "Targets", "IMS contribution", "Weekly sales trend", "Trends", "Double-Visit Intelligence", "Monthly Sales Intelligence", "ROI Signal", "CRM field activity"],
 } as const;
 
-export function CeoPhaseBSkeleton({ variant = "ceo" }: { variant?: "ceo" | "sfe" }) {
+export function CeoPhaseBSkeleton({ variant = "ceo" }: { variant?: "admin" | "ceo" | "sfe" }) {
   return (
     <div className="divide-y divide-slate-200 border-t border-slate-200">
       {PHASE_B_SKELETON_TITLES[variant].map((title) => (
@@ -830,8 +838,9 @@ export async function CeoPhaseBWidgets({
   access: AccessContext;
   sosPrefetched: CeoCommandCenterData["sos"];
   adminSignalsPrefetched: CeoCommandCenterData["adminSignals"];
-  variant?: "ceo" | "sfe";
+  variant?: "admin" | "ceo" | "sfe";
 }) {
+  // `admin` is deliberately not `isSfe` — it renders every CEO section. See CeoCommandCenter.
   const isSfe = variant === "sfe";
   // The outstation expense fetch is skipped outright for the SFE variant — his overview does not
   // render the Expense Snapshot (canUseAdminOutstationWorkspace names Super Admin / Finance

@@ -35,10 +35,12 @@ import {
   permissionActions,
   permissionMatrix,
   permissionResources,
+  scopeForRole,
   usesHrNamespace,
   type NavigationMode,
   type PhoenixRole,
 } from "../src/lib/auth/permissions.ts";
+import { resolvePersonalWorkspaceTabs } from "../src/lib/workspace/personal-workspace-nav.ts";
 
 /**
  * The `/hr` URL namespace (owner instruction, 2026-08-28).
@@ -78,9 +80,21 @@ function sidebarHrefs(sections: readonly { items: readonly { href: string }[] }[
 }
 
 /**
- * What the OLD, derived approach would have shown this role: the admin sidebar plus every hub card
- * behind it that the role's grants admit. This is the set the authored namespace must be a subset
- * of — that subset relation is what "can only narrow, never widen" means concretely.
+ * What the OLD, derived approach would have shown this role: the admin sidebar, every hub card
+ * behind it that the role's grants admit, and the personal-workspace tabs the role resolves. This
+ * is the set the authored namespace must be a subset of — that subset relation is what "can only
+ * narrow, never widen" means concretely.
+ *
+ * The workspace tabs are the third source because on 2026-08-30 the doors to the personal pages
+ * MOVED. `/workspace/leave-management/vacation-request` and `/workspace/excuses` were the only two
+ * of those fifteen pages with a sidebar row; the tab strip replaced both rows and gave the other
+ * thirteen a door for the first time. Reading only the sidebar after that, this closure lost two
+ * pages the matrix still admits, and the /hr rows pointing at them read as WIDENINGS — the exact
+ * inversion of what this test is for, since the change opened pages rather than smuggling any in.
+ *
+ * `resolvePersonalWorkspaceTabs` is the right source and not a loophole: it filters against the
+ * same `lookup` built from `permissionMatrix` that everything else here uses, so a tab can only
+ * enter this closure when the matrix already admits it for that seat.
  */
 function derivedAdminClosure(role: PhoenixRole): Set<string> {
   const lookup = lookupFor(role);
@@ -95,6 +109,9 @@ function derivedAdminClosure(role: PhoenixRole): Set<string> {
         closure.add(item.href);
       }
     }
+  }
+  for (const tab of resolvePersonalWorkspaceTabs({ role, scope: scopeForRole(role) }, lookup)) {
+    closure.add(tab.href);
   }
   return closure;
 }

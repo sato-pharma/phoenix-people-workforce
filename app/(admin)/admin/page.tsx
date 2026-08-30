@@ -3,11 +3,14 @@ import { redirect } from "next/navigation";
 import { Suspense } from "react";
 
 import { AdminCommandCenter } from "@/components/admin/admin-command-center";
+import { CeoPhaseBSkeleton, CeoPhaseBWidgets } from "@/components/admin/ceo-phase-b";
+import { SystemAdminOverview } from "@/components/admin/system-admin-overview";
 import { Card } from "@/components/ui/card";
 import { AppRouteLoadingState } from "@/components/ui/loading-state";
 import { resolveLandingPathForRole } from "@/lib/auth/landing";
 import { canAccess, resolveNavigationMode, type AccessContext, type PhoenixRole } from "@/lib/auth/permissions";
 import { getAdminCommandCenterData, loadDirectManagerName } from "@/lib/admin/command-center";
+import { getSystemAdminOverviewData } from "@/lib/admin/system-overview";
 import { resolveAccessContextFromPage, resolveViewerIdentityFromPage } from "@/lib/auth/server";
 import { uploadedEmployeePhotoUrl } from "@/lib/employees/employee-photo";
 import { formatHrIdForDisplay } from "@/lib/hr-id";
@@ -59,6 +62,27 @@ export default async function AdminCommandPage() {
     );
   }
 
+  // The Super Admin's landing page is the System Administrator Overview: the CEO's own command
+  // centre, plus Finance's money bands, plus the system tools only this seat owns. The generic
+  // AdminCommandCenter below still serves the remaining admin-shell roles that reach /admin
+  // (HR Advisory, HR Operations, Financial Advisor) until the owner rules on retiring it for them
+  // too — swapping their page over is a separate decision with its own role sweep, and shipping it
+  // silently inside this change is exactly how a role loses a tool nobody noticed it used.
+  if (access.role === "Super Admin") {
+    return (
+      <Suspense
+        fallback={
+          <AppRouteLoadingState
+            title="Loading System Administrator Overview"
+            description="Preparing executive, financial, and system signals."
+          />
+        }
+      >
+        <SystemAdminOverviewContent access={access} />
+      </Suspense>
+    );
+  }
+
   return (
     <Suspense
       fallback={
@@ -70,6 +94,61 @@ export default async function AdminCommandPage() {
     >
       <AdminCommandContent access={access} />
     </Suspense>
+  );
+}
+
+async function SystemAdminOverviewContent({ access }: { access: AccessContext }) {
+  const [viewer, result] = await Promise.all([
+    resolveViewerIdentityFromPage(access),
+    getSystemAdminOverviewData(access)
+      .then((data) => ({ data, error: null as string | null }))
+      .catch((error) => {
+        console.error("Failed to load System Administrator Overview:", error);
+        return { data: null, error: error instanceof Error ? error.message : "Unknown error occurred" };
+      }),
+  ]);
+
+  if (!result.data) {
+    return (
+      <div className="p-8">
+        <Card className="mx-auto max-w-2xl rounded-none border-rose-100 bg-rose-50 p-6">
+          <div className="flex items-center gap-3 text-rose-600">
+            <AlertCircle aria-hidden="true" className="h-6 w-6" />
+            <h2 className="text-lg font-bold">System Administrator Overview Error</h2>
+          </div>
+          <p className="mt-4 text-sm text-rose-700">
+            The overview could not load its executive and workforce data.
+          </p>
+          <p className="mt-3 break-all border border-rose-200 bg-white/50 p-3 font-mono text-xs text-rose-800">
+            {result.error ?? "Unknown error occurred"}
+          </p>
+        </Card>
+      </div>
+    );
+  }
+
+  // The hero falls back to the initials medallion when no portrait resolves (CeoHeroIdentity's
+  // onError), so this renders correctly whether or not a photo has been uploaded for the seat.
+  const welcome = {
+    fullName: viewer.displayName,
+    hrId: access.hrId,
+    imageUrl: await uploadedEmployeePhotoUrl(formatHrIdForDisplay(access.hrId) ?? access.hrId),
+    initials: viewer.initials,
+    roleLabel: viewer.roleLabel,
+  };
+
+  return (
+    <div className="min-w-0 max-w-full overflow-x-hidden">
+      <SystemAdminOverview access={access} data={result.data} welcome={welcome} />
+      <Suspense fallback={<CeoPhaseBSkeleton variant="admin" />}>
+        <CeoPhaseBWidgets
+          access={access}
+          adminSignalsPrefetched={result.data.ceo.adminSignals}
+          sosPrefetched={result.data.ceo.sos}
+          variant="admin"
+        />
+      </Suspense>
+    </div>
   );
 }
 

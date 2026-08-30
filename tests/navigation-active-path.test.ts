@@ -23,8 +23,10 @@ import {
   permissionActions,
   permissionMatrix,
   permissionResources,
+  scopeForRole,
   type PhoenixRole,
 } from "../src/lib/auth/permissions.ts";
+import { resolvePersonalWorkspaceTabs } from "../src/lib/workspace/personal-workspace-nav.ts";
 
 // Minimal typed fixture builders — the matcher functions only read href/exact/
 // activeTab/permissions/roles/excludedRoles, so we synthesise items without real
@@ -492,31 +494,39 @@ export function runNavigationActivePathTests() {
     "every consolidated Leave Management action must survive as a hub card",
   );
 
-  // ── A visible sidebar row must never bounce the person who presses it ────────────────────────
-  // "Request Vacation" under My Requests is shown to every adminShellEmployeeRole, but its page
-  // guard (requireAdminShellEmployeeWorkspaceAccess with action "create") is a PERMISSION check.
+  // ── A visible entry must never bounce the person who presses it ──────────────────────────────
+  // "Request Vacation" is offered to every adminShellEmployeeRole, but its page guard
+  // (requireAdminShellEmployeeWorkspaceAccess with action "create") is a PERMISSION check.
   // On 2026-08-10 the Finance Manager was the one role in that list without leave:create, so the
-  // row rendered for him and then redirected him to his landing page with no message — and an
+  // entry rendered for him and then redirected him to his landing page with no message — and an
   // admin-shell role has no employee portal, so he could not file leave anywhere on the system.
   //
-  // Fixed on both sides: he was granted leave:create, and the row now carries the same permission
+  // Fixed on both sides: he was granted leave:create, and the entry now carries the same permission
   // its guard checks. This asserts the two gates agree for EVERY role in the list, so adding a
   // fifth admin-shell role without leave:create fails here instead of shipping a button that
   // throws the user out.
+  //
+  // 2026-08-30 (phase 4): the SURFACE making that promise moved. The sidebar's "My Requests"
+  // section is gone and this page is now a tab in the personal workspace strip, so the assertion
+  // reads resolvePersonalWorkspaceTabs instead of adminHrefsFor. The promise itself is unchanged —
+  // and it now covers the Finance Manager too, the very role the 2026-08-10 incident was about. He
+  // was exempt from the old loop because his rail row had been folded into his consolidated Leave
+  // Management page (financeLeaveManagementVacationItems, still asserted by hubCardHrefsFor above);
+  // the tab strip is offered to every adminShellEmployeeRole alike, so the exemption is gone and
+  // this loop is strictly stronger than the one it replaces.
   const VACATION_REQUEST_HREF = "/workspace/leave-management/vacation-request";
   for (const shellRole of adminShellEmployeeRoles) {
-    // Finance Manager is intentionally exempt from this loop: his row moved into the consolidated
-    // Leave Management page on 2026-08-10 (financeLeaveManagementVacationItems), so the row is
-    // absent even though he still holds leave:create — a deliberate navigation decision, not a
-    // guard/gate mismatch. hubCardHrefsFor above already asserts the card survives there instead.
-    if (shellRole === "Finance Manager") continue;
-    const rowIsShown = adminHrefsFor(shellRole).includes(VACATION_REQUEST_HREF);
-    const guardWouldAdmit = lookupForRole(shellRole)["leave:create"] === true;
+    const lookup = lookupForRole(shellRole);
+    const entryIsShown = resolvePersonalWorkspaceTabs({ role: shellRole, scope: scopeForRole(shellRole) }, lookup).some(
+      (tab) => tab.href === VACATION_REQUEST_HREF,
+    );
+    const guardWouldAdmit = lookup["leave:create"] === true;
     assert.equal(
-      rowIsShown,
+      entryIsShown,
       guardWouldAdmit,
-      `${shellRole}: the Request Vacation row and its leave:create page guard must agree — ` +
-        `row shown=${rowIsShown}, guard admits=${guardWouldAdmit}. A row shown without the grant is a button that redirects.`,
+      `${shellRole}: the Request Vacation tab and its leave:create page guard must agree — ` +
+        `tab shown=${entryIsShown}, guard admits=${guardWouldAdmit}. Shown without the grant is a button that ` +
+        `redirects; hidden with the grant is a role that can file leave nowhere on the system.`,
     );
   }
   // And the specific account this started from must actually be able to file leave.
