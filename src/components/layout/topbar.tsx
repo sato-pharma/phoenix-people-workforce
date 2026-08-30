@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronDown, LogOut, Menu, Search, UserCog } from "lucide-react";
+import { Briefcase, ChevronDown, LogOut, Menu, Search, UserCog } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRef, useState } from "react";
@@ -13,12 +13,13 @@ import { MobileSidebar } from "@/components/layout/sidebar";
 import type { PersonalNavigationLayout } from "@/lib/navigation/personal-layout";
 import { systemAssets, systemUiText } from "@/config/system-settings";
 import { logoutOneSignal } from "@/lib/notifications/onesignal-client";
-import { type AccessContext, type NavigationMode, type PhoenixRole } from "@/lib/auth/permissions";
+import { scopeForRole, type AccessContext, type NavigationMode, type PhoenixRole } from "@/lib/auth/permissions";
 import type { PermissionLookup } from "@/components/layout/sidebar";
 import type { ViewerIdentity } from "@/lib/auth/server";
 import { usesAdminChrome } from "@/lib/navigation/active-path";
 import { hardNavigate } from "@/lib/navigation/browser-navigation";
 import { useDismissOnOutsideInteraction } from "@/hooks/use-dismiss-on-outside-interaction";
+import { personalWorkspaceEntryHref } from "@/lib/workspace/personal-workspace-nav";
 
 export function Topbar({
   navigationMode = "admin",
@@ -26,6 +27,7 @@ export function Topbar({
   viewer,
   currentRole,
   personalLayout = null,
+  scope,
 }: {
   currentRole?: PhoenixRole;
   navigationMode?: NavigationMode;
@@ -43,6 +45,28 @@ export function Topbar({
   useDismissOnOutsideInteraction(userMenuRef, userMenuOpen, setUserMenuOpen);
   const isAdminMode = usesAdminChrome(navigationMode);
   const profileHref = isAdminMode ? "/admin/profile" : "/employee-portals/profile";
+  // The door to this person's own workspace — payslip, incentive, deductions, vacation balance,
+  // expenses, calendar. Fifteen working pages that until 2026-08-30 had almost no way in: two had
+  // a sidebar row and the other thirteen were reachable only by typing the URL.
+  //
+  // ADMIN CHROME ONLY. Portal roles have the employee portal itself for all of this, and its own
+  // navigation already covers it; `/workspace/*` exists precisely because admin-shell roles do not
+  // get that portal. Nothing on the portal side of this component changes.
+  //
+  // Null means "do not offer it", which is the honest answer for the CEO: he is not in
+  // `adminShellEmployeeRoles`, so every one of those pages would redirect him straight back out.
+  //
+  // `scope` is declared optional on this component while AccessContext's is not, so it is defaulted
+  // through the same function the auth layer itself uses (`scopeForRole`, which resolveAccessContext
+  // calls) rather than to a guessed literal. AppShell does pass it; this is the type being honest
+  // about a prop that could be omitted, not a second source of truth.
+  const workspaceHref =
+    isAdminMode && currentRole
+      ? personalWorkspaceEntryHref(
+          { role: currentRole, scope: scope ?? scopeForRole(currentRole) },
+          permissionLookup,
+        )
+      : null;
   const handleLogout = async () => {
     // Unbind this browser from the signed-out user's OneSignal identity first — best
     // effort, never blocks sign-out — so a shared device doesn't keep receiving their
@@ -154,6 +178,19 @@ export function Topbar({
               <div className={`absolute right-0 top-full z-30 mt-1.5 w-56 overflow-hidden rounded border shadow-lg ${
                 isAdminMode ? "border-[#333333] bg-[#050505]" : "border-phx-line bg-white"
               }`} role="menu">
+                {workspaceHref ? (
+                  <Link
+                    className={`flex w-full items-center gap-2 px-4 py-2 text-sm ${
+                      isAdminMode ? "text-[#D4DDE8] hover:bg-[#1a1a1a] hover:text-[#F8B56B]" : "text-phx-ink hover:bg-phx-paper"
+                    }`}
+                    href={workspaceHref}
+                    onClick={() => setUserMenuOpen(false)}
+                    role="menuitem"
+                  >
+                    <Briefcase className="h-4 w-4" />
+                    My Workspace
+                  </Link>
+                ) : null}
                 <Link
                   className={`flex w-full items-center gap-2 px-4 py-2 text-sm ${
                     isAdminMode ? "text-[#D4DDE8] hover:bg-[#1a1a1a] hover:text-[#F8B56B]" : "text-phx-ink hover:bg-phx-paper"
@@ -165,7 +202,13 @@ export function Topbar({
                   <UserCog className="h-4 w-4" />
                   My Profile
                 </Link>
-                <div className={`px-4 py-2 text-xs ${isAdminMode ? "text-phx-ink-faint" : "text-phx-ink-soft"}`}>
+                {/* Identity, for the screens that need it. The BUTTON above already prints both
+                    lines, but only from `sm:` up — below that it shows the avatar alone, so on a
+                    phone this block is the only place the signed-in name appears. Hiding it on
+                    desktop removes the repetition without costing anything on mobile.
+
+                    Admin chrome only: the portal shell keeps exactly what it has today. */}
+                <div className={`px-4 py-2 text-xs ${isAdminMode ? "text-phx-ink-faint sm:hidden" : "text-phx-ink-soft"}`}>
                   <p className="font-semibold">{viewer.roleLabel}</p>
                   <p className="mt-0.5 whitespace-nowrap">{viewer.displayName}</p>
                 </div>

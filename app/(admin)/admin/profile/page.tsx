@@ -1,4 +1,5 @@
 import { AlertCircle } from "lucide-react";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { AdminProfileForm } from "@/components/admin/admin-profile-form";
@@ -15,7 +16,68 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
-export default async function AdminProfilePage() {
+/**
+ * The four things this page does. They were four cards stacked down one long scroll, which meant
+ * changing a password or turning off a notification began with hunting past everything else. Tabs
+ * are the owner's own suggested shape for exactly this ("they can be in the same page different
+ * tabs, why not?", 2026-08-30).
+ *
+ * `?tab=` rather than client state, so the strip is plain `<Link>`s in a server component: Back
+ * works, a tab is shareable, and no JavaScript is involved in choosing one. Profile is the default
+ * and carries NO query string, so the page's existing URL keeps working and stays canonical.
+ */
+const PROFILE_TABS = [
+  { key: "profile", label: "Profile" },
+  { key: "password", label: "Password" },
+  { key: "devices", label: "Devices" },
+  { key: "notifications", label: "Notifications" },
+] as const;
+
+type ProfileTabKey = (typeof PROFILE_TABS)[number]["key"];
+
+function resolveProfileTab(value: string | string[] | undefined): ProfileTabKey {
+  const raw = Array.isArray(value) ? value[0] : value;
+  // Anything unrecognised falls back to Profile rather than rendering an empty page — a stale or
+  // hand-edited `?tab=` must not be able to produce a blank screen.
+  return PROFILE_TABS.some((tab) => tab.key === raw) ? (raw as ProfileTabKey) : "profile";
+}
+
+/**
+ * Same strip as the personal workspace and Direct Orders — same border, same square control, same
+ * uppercase weight. Three tab strips that look like three different products is how a system starts
+ * to feel like several systems.
+ */
+function ProfileTabStrip({ active }: { active: ProfileTabKey }) {
+  return (
+    <div className="-mx-1 overflow-x-auto px-1">
+      <div className="inline-flex min-w-max border border-slate-300 bg-white p-1" role="tablist">
+        {PROFILE_TABS.map((tab) => {
+          const isActive = tab.key === active;
+          return (
+            <Link
+              aria-selected={isActive}
+              className={`min-h-[40px] whitespace-nowrap px-3 py-1.5 text-phx-sm font-black uppercase tracking-wide transition-colors ${
+                isActive ? "bg-slate-900 text-white" : "text-slate-500 hover:bg-slate-100"
+              }`}
+              href={tab.key === "profile" ? "/admin/profile" : `/admin/profile?tab=${tab.key}`}
+              key={tab.key}
+              role="tab"
+            >
+              {tab.label}
+            </Link>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+export default async function AdminProfilePage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const activeTab = resolveProfileTab((await searchParams).tab);
   const access = await resolveAccessContextFromPage();
 
   if (!access.loginId) {
@@ -65,27 +127,40 @@ export default async function AdminProfilePage() {
 
   return (
     profile ? (
-      <div className="space-y-6">
-        {profile.hrId && (
+      <div className="space-y-6 pb-8">
+        <div className="px-4 pt-4 sm:px-6 lg:px-8">
+          <ProfileTabStrip active={activeTab} />
+        </div>
+        {activeTab === "profile" && (
+          <>
+            {profile.hrId && (
+              <div className="px-4 sm:px-6 lg:px-8">
+                <EmployeePhotoEditor
+                  currentPhotoUrl={currentPhotoUrl}
+                  fullName={profile.name ?? profile.loginId}
+                  hasUploadedPhoto={Boolean(uploadedPhoto)}
+                  initials={photoInitials}
+                />
+              </div>
+            )}
+            <AdminProfileForm profile={profile} />
+          </>
+        )}
+        {activeTab === "password" && (
           <div className="px-4 sm:px-6 lg:px-8">
-            <EmployeePhotoEditor
-              currentPhotoUrl={currentPhotoUrl}
-              fullName={profile.name ?? profile.loginId}
-              hasUploadedPhoto={Boolean(uploadedPhoto)}
-              initials={photoInitials}
-            />
+            <ChangePasswordForm />
           </div>
         )}
-        <AdminProfileForm profile={profile} />
-        <div className="px-4 sm:px-6 lg:px-8">
-          <ChangePasswordForm />
-        </div>
-        <div className="px-4 sm:px-6 lg:px-8">
-          <BiometricDevicesCard />
-        </div>
-        <div className="px-4 pb-8 sm:px-6 lg:px-8">
-          <NotificationSettingsPanel />
-        </div>
+        {activeTab === "devices" && (
+          <div className="px-4 sm:px-6 lg:px-8">
+            <BiometricDevicesCard />
+          </div>
+        )}
+        {activeTab === "notifications" && (
+          <div className="px-4 sm:px-6 lg:px-8">
+            <NotificationSettingsPanel />
+          </div>
+        )}
       </div>
     ) : (
       <div className="p-8">

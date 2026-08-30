@@ -342,3 +342,143 @@ assertion now resolves the section through `getSections` for every role and requ
 It is strictly stronger where it matters — it would catch a role genuinely shown two Monthly Closing
 rows even if the entries lived in two different sections, which the old form could not — and it was
 verified by breaking the config and confirming the new message fires naming the role and both hrefs.
+
+## Phase 4 — "tidy my account" (2026-08-30)
+
+### The finding: an admin-shell user had fifteen personal pages and two doors
+
+`/workspace/*` is where an admin-shell role does their *own* employee business — payslips, leave,
+excuses, fingerprint, probation, expenses. It exists because these roles have **no employee
+portal**: for them this is the only self-service there is.
+
+Resolved through each page's real guard, an admin-shell user has **15** working personal pages.
+Before this phase, **2** of them were reachable from anywhere in the UI — the two "My Requests"
+rail rows. The other thirteen were reachable only by typing the URL. `WorkspaceFrame`, which every
+one of them renders, carried a title and a description and **no navigation at all**, so even a user
+who reached one page by link found no way to the other fourteen. Each page was an island.
+
+Two of the thirteen — Payslips and Deductions — were already recorded in
+`tests/navigation-reachability-backlog.ts` on 2026-08-28, excused as "reached via the workspace
+shell's `basePath` prop". That excuse was too generous: the prop sets a base path, it does not draw
+a link. There was no door. Both entries are now cleared, because both hrefs are literals in
+`personal-workspace-nav.ts` and the ratchet test finds them.
+
+### What was built
+
+- **`src/lib/workspace/personal-workspace-nav.ts`** — one array, fifteen entries, each carrying the
+  resource/action/roles its page's own guard checks, plus three resolvers
+  (`resolvePersonalWorkspaceTabs`, `personalWorkspaceEntryHref`, `activePersonalWorkspaceTab`).
+  There is no icon in this module on purpose: it stays cheap to import and nothing in it crosses the
+  server/client boundary.
+- **A tab strip on every personal page** (`personal-workspace-tabs.tsx`), rendered by
+  `WorkspaceFrame` when it is given the caller's `access`. Same border, same square control, same
+  uppercase weight as the Direct Orders strip — three tab strips that look like three different
+  products is how a system starts to feel like several systems. Groups (me / pay / time / work /
+  expenses / help) are separated by a hairline rather than by headers, so the strip stays one row.
+- **"My Workspace" in the account menu**, pointing at the first tab the viewer can actually open.
+  A role with no personal pages is offered no entry — see the CEO below.
+- **`/admin/profile` is four tabs, not five stacked cards** — Profile, Password, Devices,
+  Notifications. `?tab=` on server-rendered `<Link>`s, so Back works, a tab is shareable, and no
+  JavaScript chooses one. Profile carries no query string, so the page's existing URL stays
+  canonical.
+
+### The rail, and the tabs, measured
+
+Rail figures are visual rows resolved through `getSections`, continuing the phase-3 table. Tabs are
+resolved through `resolvePersonalWorkspaceTabs` against the same strict lookup.
+
+| Role | rail after phase 3 | rail after phase 4 | personal tabs |
+|---|---|---|---|
+| Super Admin | 47 | **44** | 15 |
+| CEO | 33 | **33** | **0** |
+| SFE Manager | 26 | **23** | 15 |
+| Finance Manager | 15 | **15** | 12 |
+| HR Advisory | 15 | **12** | 13 |
+| HR Operations | 16 | **13** | 11 |
+| Financial Advisor | 17 | **14** | 10 |
+
+Three rows leave the rail for the five roles that had them: the two "My Requests" rows and the
+section heading above them. The Finance Manager is unchanged because he never had those rows — his
+two pages were folded into his own Leave Management button on 2026-08-10, which still stands. The
+CEO is unchanged because he has no personal workspace at all.
+
+**Nobody lost a route.** Every role that saw the two rows resolves both hrefs as tabs.
+
+### The CEO resolves zero tabs, and that is correct
+
+He is not in `adminShellEmployeeRoles` and never has been, so
+`requireAdminShellEmployeeWorkspaceAccess` redirects him from all fifteen pages. He therefore gets
+**no** "My Workspace" entry rather than one that throws him out. That refusal is by `redirect()`
+with no message, which is why offering an entry to someone the page bounces reads to a user as the
+app ejecting them for no reason — the exact defect that shipped on 2026-08-10 with the Finance
+Manager's Request Vacation row.
+
+### One row I removed and put back
+
+The first pass also deleted the Finance Manager's `finance-fingerprint-report` rail row, on the
+reasoning that personal pages belong in the workspace. That was wrong, and a registered test said
+so by name: `tests/navigation-active-path.test.ts` pins it under *"the sidebar trim must not remove
+a duty the Finance Manager actually holds"*, and its comment records it as one of the six modules
+the owner asked for by name on 2026-08-10. It is restored, with a comment recording the mistake.
+
+A second door to a page is not a defect. Removing a row the owner asked for, because a general rule
+said it belonged elsewhere, is.
+
+### Two test pins moved with the change
+
+- `tests/navigation-active-path.test.ts` — the Request Vacation gate/guard assertion now reads
+  `resolvePersonalWorkspaceTabs` instead of the rail. The 2026-08-10 incident comment is intact; the
+  surface making the promise moved, the promise did not. It also **covers the Finance Manager now**,
+  the very role that incident was about — he was exempt from the rail version because his row had
+  been folded into Leave Management, and the tab strip is offered to every admin-shell role alike.
+  Verified by breaking the tab three ways in fresh processes (narrowed to one role, href typo,
+  deleted) and confirming the assertion's own message fires each time.
+- `tests/sidebar-role-scoped-headings.test.ts` — `["my-requests", "My Requests"]` left the pinned
+  list, because that section no longer exists. That list catches a heading being **re-blanked**;
+  keeping the entry would have asserted a heading on nothing.
+
+### The new test, and what it holds
+
+`tests/personal-workspace-nav.test.ts` (registered in `tests/run-tests.ts`) parses
+`admin-shell-employee-pages.tsx` and the `app/(admin)/workspace` route files rather than trusting a
+second hand-written list. Nine groups: every tab is a real route; **the set of pages that render the
+strip is exactly the set of pages that are tabs**; every tab's resource/action/roles matches its
+page's guard verbatim; no tab renders for nobody; the CEO resolves zero and is offered no entry; a
+signed-in Super Admin reaches all fifteen through the matrix, and the `scope === "system"` bypass
+beside it still mirrors `canAccess` (probed with an *empty* lookup, the only thing that can see it);
+every other admin-shell role gets a door that opens; the active-tab matcher (root exact, longest
+wins); labels short enough not to wrap; groups contiguous.
+
+### A scope assumption that was wrong, caught before it shipped
+
+The first version of that test — and the resolver's own comment — said the Super Admin is
+system-scoped, and that the `scope === "system"` line in `resolvePersonalWorkspaceTabs` is what lets
+him see every tab. **Neither is true.** `scopeForRole` returns `"system"` for nobody; a signed-in
+Super Admin is `"company"`-scoped, exactly like the CEO, the Finance Manager and HR Operations.
+`"system"` belongs to `systemAccessContext` — the identity crons and imports run as, which never
+renders a tab strip.
+
+So the bypass is invisible to every screen, and the thing that actually gets a Super Admin his
+fifteen tabs is his permission matrix. The line stays, because a resolver that mirrors `canAccess`
+must mirror all of it or the same context gets two answers from two functions describing one gate —
+but it is now documented as parity, not as anyone's fast path, and the assertion that protects the
+product asserts the *matrix* path.
+
+Two smaller type defects surfaced in the same pass, both invisible to the test runner because
+`--experimental-strip-types` strips types without checking them: the tests passed `scope: "role"`,
+which is not one of the seven `AccessScope` values, and built an `AccessContext` without its `hrId`.
+Both are gone — every scope in the tests and in the topbar now comes from `scopeForRole`, the same
+function `resolveAccessContext` calls, so none of them is a literal anyone can get wrong again. **A
+green test run carries no type signal here; only the PR's `typecheck` job does.**
+
+Broken ten ways in fresh node processes — all ten fire with their own named message. The first
+harness reported three false "not caught" results: a `?v=` cache-buster busted only the test module,
+not the dependency under test, which stayed cached in-process. **The harness was wrong, not the
+test.** One process per break is the only honest way to run this.
+
+### Deliberately not tabs
+
+- **`/workspace/marketing-requests`, its inbox and its decision page** — company approval work with
+  a live sidebar badge, not personal self-service.
+- **`/workspace/vacancies`** — a company report that happens to live under `/workspace`.
+- **`/workspace/organogram`** — already retired to a redirect earlier the same day.

@@ -147,8 +147,16 @@ export const NAVIGATION_REACHABILITY_BACKLOG: readonly ReachabilityGap[] = [
   { route: "/sales/weekly/missing", roles: "all", kind: "invisible-to-literal-scan", reason: "A weekly-planning sub-route reached via a runtime-assembled href from the weekly workspace; no full-route literal.", recorded: "2026-08-28" },
   { route: "/sales/weekly/missing-products", roles: "all", kind: "invisible-to-literal-scan", reason: "A weekly-planning sub-route reached via a runtime-assembled href from the weekly workspace; no full-route literal.", recorded: "2026-08-28" },
   { route: "/whatsapp-connect", roles: "all", kind: "invisible-to-literal-scan", reason: "Public WhatsApp-coexistence onboarding page reached from the external Meta signup flow, not from in-app navigation — correctly carries no sidebar link.", recorded: "2026-08-28" },
-  { route: "/workspace/deductions", roles: "all", kind: "invisible-to-literal-scan", reason: "The admin-shell mirror of an employee page, reached via the workspace shell's basePath prop (admin-shell-employee-pages.tsx), never as a full-route literal.", recorded: "2026-08-28" },
-  { route: "/workspace/payslips", roles: "all", kind: "invisible-to-literal-scan", reason: "The admin-shell mirror of an employee page, reached via the workspace shell's basePath prop (admin-shell-employee-pages.tsx), never as a full-route literal.", recorded: "2026-08-28" },
+  // ── CLEARED 2026-08-30 ────────────────────────────────────────────────────────────────────────
+  // /workspace/deductions and /workspace/payslips sat here from 2026-08-28, both recorded as
+  // "reached via the workspace shell's basePath prop, never as a full-route literal". That reading
+  // was too generous: the literal scan could not see a link because there was no link. Both pages
+  // were reachable only by typing the URL, and they were two of THIRTEEN personal /workspace pages
+  // in that state.
+  //
+  // They are now real literals in src/lib/workspace/personal-workspace-nav.ts, which the tab strip
+  // and the account menu both render, so the scan finds them the ordinary way. Removed rather than
+  // re-worded, per this ratchet's own rule: ground that was won cannot be given back.
 ];
 
 export const NAVIGATION_REACHABILITY_BACKLOG_SIZE = NAVIGATION_REACHABILITY_BACKLOG.length;

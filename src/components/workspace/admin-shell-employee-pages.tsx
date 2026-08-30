@@ -32,7 +32,6 @@ import { EmployeeProbationDashboard } from "@/components/employee-portal/employe
 import {
   ContactHRSupportPage,
   EmployeePortalIncentivePage,
-  MedicalRepOverviewPage,
   MedicalRepPayrollPage,
 } from "@/components/employee-portal/employee-portal-dashboard-dynamic";
 import { EmployeePortalEmptyState } from "@/components/employee-portal/enterprise-shell";
@@ -42,9 +41,14 @@ import { VacanciesReport } from "@/components/reports/vacancies-report";
 import { VacationReport } from "@/components/vacation/vacation-report";
 import { VacationRequestForm } from "@/components/vacation/vacation-request-form";
 import { PageTransition } from "@/components/ui/page-transition";
+import { PersonalWorkspaceTabs } from "@/components/workspace/personal-workspace-tabs";
 import { getEmployeeAttendanceData } from "@/lib/attendance/employee-attendance";
 import { writeAuditLog } from "@/lib/admin/audit";
-import type { AccessContext } from "@/lib/auth/permissions";
+import {
+  buildPermissionLookup,
+  permissionMatrix,
+  type AccessContext,
+} from "@/lib/auth/permissions";
 import {
   getEmployeePortalIncentiveData,
   getEmployeePortalShellData,
@@ -99,6 +103,13 @@ import {
   workspaceExpenseDashboardRoles,
   workspaceMarketingRoles,
 } from "@/lib/workspace/admin-shell-employee";
+import {
+  PersonalWorkspaceHero,
+  PersonalWorkspaceOverview,
+  type PersonalWorkspaceOverviewData,
+} from "@/components/workspace/personal-workspace-overview";
+import { resolveViewerIdentityFromPage } from "@/lib/auth/server";
+import { resolvePersonalWorkspaceTabs } from "@/lib/workspace/personal-workspace-nav";
 
 type SearchParams = Record<string, string | string[] | undefined>;
 
@@ -111,33 +122,62 @@ function dateKey(date: Date) {
 }
 
 function WorkspaceFrame({
+  access,
   badges,
   children,
   description,
   eyebrow = "Employee Workspace",
+  hero,
   icon,
   title,
 }: {
+  /**
+   * Pass this on a PERSONAL page and the tab strip appears; omit it and the frame renders bare.
+   *
+   * That is the whole switch, and it is a prop rather than something the frame works out for
+   * itself because five pages using this frame are not personal at all — the marketing request,
+   * inbox, decision, vacancies and organogram pages are module work that happens to render here.
+   * Showing them a strip of somebody's payslips and excuses would be wrong, and having the frame
+   * guess which is which by pathname would put that decision somewhere nobody would look for it.
+   *
+   * The tabs are resolved here rather than in the client component so nothing about the permission
+   * matrix ships to the browser: the strip receives a plain list of hrefs it may show.
+   */
+  access?: AccessContext;
   badges?: ReactNode;
   children: ReactNode;
   description: string;
   eyebrow?: string;
+  /**
+   * Replaces the default AdminPageHero entirely. The overview uses it to draw the personal identity
+   * banner the CEO, SFE Manager and Finance Manager pages draw — same component, same person's name
+   * and photo. It is a REPLACEMENT rather than an addition on purpose: two stacked heroes is a real
+   * defect this repo has shipped three times, and tests/workspace-single-hero.test.ts exists because
+   * of it.
+   */
+  hero?: ReactNode;
   icon: ReactNode;
   title: string;
 }) {
+  const tabs = access
+    ? resolvePersonalWorkspaceTabs(access, buildPermissionLookup(permissionMatrix, access.role))
+    : [];
   return (
     <div className="space-y-6">
-      <AdminPageHero
-        badges={
-          badges ?? (
-            <AdminInsightChip tone="orange">Admin shell</AdminInsightChip>
-          )
-        }
-        description={description}
-        eyebrow={eyebrow}
-        icon={icon}
-        title={title}
-      />
+      {hero ?? (
+        <AdminPageHero
+          badges={
+            badges ?? (
+              <AdminInsightChip tone="orange">Admin shell</AdminInsightChip>
+            )
+          }
+          description={description}
+          eyebrow={eyebrow}
+          icon={icon}
+          title={title}
+        />
+      )}
+      {tabs.length ? <PersonalWorkspaceTabs tabs={tabs} /> : null}
       <PageTransition>{children}</PageTransition>
     </div>
   );
@@ -216,22 +256,85 @@ function buildResidenceShortSummary(residence: {
   return parts.length ? parts.join(", ") : buildResidenceSummary(residence);
 }
 
+/**
+ * The personal workspace overview.
+ *
+ * REPLACED 2026-08-30 (owner). This page used to render `MedicalRepOverviewPage` — the medical
+ * rep's PORTAL dashboard — to whoever opened it, so a Super Admin, an HR seat or the Finance
+ * Manager landed on a sales rep's home: company sales totals, achievement rate, gap to target, a
+ * team-rank panel that read "not available for this period", and territory insight copy about a
+ * territory they do not hold. It was the seat's own landing page and showed the seat nothing.
+ *
+ * It is now built from the viewer's own record, in the command-centre language the owner named —
+ * the same identity banner, section shells and metric tiles the CEO, SFE Manager and Finance
+ * Manager pages use, imported rather than copied.
+ *
+ * Each of the three sources is loaded independently and may fail alone: the tile then reads "—"
+ * and says which source did not answer. A zero would read as "no leave left" or "never at work
+ * this month", which is the misleading-zero this repo's rules forbid.
+ */
 export async function WorkspaceDashboardPage() {
   const access = await requireAdminShellEmployeeWorkspaceAccess({ resource: "employee_profile" });
-  let data = null;
-  try {
-    data = await getMedicalRepPortalData(access);
-  } catch (error) {
-    logPortalFailure({ route: "/workspace", module: "workspace-dashboard", role: access.role, hrId: access.hrId }, error);
-  }
-  if (!data) return employeeDataUnavailable("Dashboard Unavailable");
+  const { year, month } = currentCairoDateParts();
+  const monthStart = `${year}-${String(month).padStart(2, "0")}-01`;
+  const today = currentCairoDateOnlyIso();
+  const monthLabel = new Intl.DateTimeFormat("en-GB", { month: "long", year: "numeric", timeZone: "UTC" }).format(
+    new Date(`${monthStart}T00:00:00Z`),
+  );
+
+  const [viewer, excuses, leave, attendance] = await Promise.all([
+    resolveViewerIdentityFromPage(access),
+    getExcuseWorkspace(access).catch((error) => {
+      logPortalFailure({ route: "/workspace", module: "workspace-overview-excuses", role: access.role, hrId: access.hrId }, error);
+      return null;
+    }),
+    // Asserts leave:create, which every adminShellEmployeeRole holds — but a role added to that
+    // list without it must degrade to a dash here, not throw the whole page away.
+    getVacationRequestPageData(access)
+      .then((data) => data.balance)
+      .catch((error) => {
+        logPortalFailure({ route: "/workspace", module: "workspace-overview-leave", role: access.role, hrId: access.hrId }, error);
+        return null;
+      }),
+    access.hrId
+      ? getEmployeeAttendanceData(access.hrId, monthStart, today).catch((error) => {
+          logPortalFailure({ route: "/workspace", module: "workspace-overview-attendance", role: access.role, hrId: access.hrId }, error);
+          return null;
+        })
+      : Promise.resolve(null),
+  ]);
+
+  const data: PersonalWorkspaceOverviewData = {
+    attendance: attendance
+      ? {
+          exceptions: attendance.rows.filter((row) => row.hasException).length,
+          monthLabel,
+          recordedDays: attendance.rows.length,
+        }
+      : null,
+    excuses,
+    leave,
+  };
+
   return (
     <WorkspaceFrame
-      description="Your employee dashboard in the admin shell, with the same employee-scope data and no additional authority."
+      access={access}
+      description="Your own record in the admin shell — leave, excuses, attendance and everything this seat can open."
+      hero={
+        <PersonalWorkspaceHero
+          fullName={excuses?.employee.fullName ?? viewer.displayName}
+          imageUrl={viewer.imageUrl}
+          initials={viewer.initials}
+          roleLabel={excuses?.employee.roleLabel ?? viewer.roleLabel}
+        />
+      }
       icon={<LayoutDashboard className="h-3.5 w-3.5" />}
-      title="My Dashboard"
+      title="My Workspace"
     >
-      <MedicalRepOverviewPage data={data} surface="workspace" />
+      <PersonalWorkspaceOverview
+        data={data}
+        tabs={resolvePersonalWorkspaceTabs(access, buildPermissionLookup(permissionMatrix, access.role))}
+      />
     </WorkspaceFrame>
   );
 }
@@ -245,6 +348,7 @@ export async function WorkspaceIncentivePage() {
   if (!data) return employeeDataUnavailable("Incentive Unavailable");
   return (
     <WorkspaceFrame
+      access={access}
       description="Review incentive progress using the same employee-scope calculations in the admin shell."
       icon={<Sparkles className="h-3.5 w-3.5" />}
       title="Incentive"
@@ -260,6 +364,7 @@ export async function WorkspacePlansPage({ searchParams }: { searchParams: Searc
   const workspace = await getEmployeePlansWorkspace(access);
   return (
     <WorkspaceFrame
+      access={access}
       description="Submit, review, and follow up on weekly and monthly plans from the admin shell."
       icon={<CalendarDays className="h-3.5 w-3.5" />}
       title="Weekly / Monthly Plan"
@@ -281,6 +386,7 @@ export async function WorkspacePlanningCalendarPage() {
   const canExport = canExportPlanningCalendar(access.role);
   return (
     <WorkspaceFrame
+      access={access}
       description="View submitted planning activity, vacations, and conflicts from your existing employee scope."
       icon={<CalendarRange className="h-3.5 w-3.5" />}
       title="Planning Calendar"
@@ -304,6 +410,7 @@ export async function WorkspacePrivateCalendarPage() {
   });
   return (
     <WorkspaceFrame
+      access={access}
       description="Attendance, vacations, excuses, plans, and national vacations for your employee scope."
       icon={<CalendarCheck className="h-3.5 w-3.5" />}
       title="Private Calendar"
@@ -323,6 +430,7 @@ export async function WorkspacePayslipsPage() {
   }
   return (
     <WorkspaceFrame
+      access={access}
       description="Review your own published payslips inside the admin shell."
       icon={<ScrollText className="h-3.5 w-3.5" />}
       title="Payslips"
@@ -346,6 +454,7 @@ export async function WorkspaceDeductionsPage({ searchParams }: { searchParams: 
   }
   return (
     <WorkspaceFrame
+      access={access}
       description="Approved and finalized salary deductions visible to your existing employee scope."
       icon={<ReceiptText className="h-3.5 w-3.5" />}
       title="Deductions"
@@ -369,6 +478,7 @@ export async function WorkspaceFingerprintReportPage() {
   const initialData = await getEmployeeAttendanceData(access.hrId, dateFrom, dateTo).catch(() => null);
   return (
     <WorkspaceFrame
+      access={access}
       description="Your punch history and attendance status, scoped to your employee identity."
       icon={<Fingerprint className="h-3.5 w-3.5" />}
       title="Fingerprint Report"
@@ -514,6 +624,7 @@ export async function WorkspaceVacationRequestPage() {
   }
   return (
     <WorkspaceFrame
+      access={access}
       description="Submit leave requests with the same manager approval flow in the admin shell."
       icon={<CalendarDays className="h-3.5 w-3.5" />}
       title="Vacation Request"
@@ -543,6 +654,7 @@ export async function WorkspaceVacationReportPage({ searchParams }: { searchPara
   }
   return (
     <WorkspaceFrame
+      access={access}
       description="Review leave requests and entitlements within your existing employee scope."
       icon={<CalendarCheck className="h-3.5 w-3.5" />}
       title="Vacation Report"
@@ -586,6 +698,7 @@ export async function WorkspaceProbationPage() {
   if (initialError) return <WorkspaceUnavailable message={initialError} title="Probation Tracker Unavailable" />;
   return (
     <WorkspaceFrame
+      access={access}
       description="Track probation records visible to your employee scope."
       icon={<CalendarCheck className="h-3.5 w-3.5" />}
       title="Probation Tracker"
@@ -648,6 +761,7 @@ export async function WorkspaceExpenseDashboardPage() {
   }
   return (
     <WorkspaceFrame
+      access={access}
       description="Review workload, trip volume, and outstation expense movement for you and your visible expense scope."
       icon={<ReceiptText className="h-3.5 w-3.5" />}
       title="Expense Dashboard"
@@ -688,6 +802,7 @@ export async function WorkspaceSubmitExpensePage() {
     })) ?? [];
   return (
     <WorkspaceFrame
+      access={access}
       description="Start the guided outstation submission using your existing employee permissions."
       icon={<PlusCircle className="h-3.5 w-3.5" />}
       title="Submit Expense"
@@ -715,6 +830,7 @@ export async function WorkspaceContactSupportPage() {
   if (!data) return employeeDataUnavailable("Support Unavailable");
   return (
     <WorkspaceFrame
+      access={access}
       description="Open support tickets and reach HR with your latest employee profile context."
       icon={<LifeBuoy className="h-3.5 w-3.5" />}
       title="Request Support"
@@ -745,6 +861,7 @@ export async function WorkspaceExcusesPage() {
   }
   return (
     <WorkspaceFrame
+      access={access}
       description="Submit a morning or afternoon 2-hour excuse, send it to your direct manager, and track monthly usage."
       icon={<CalendarClock className="h-3.5 w-3.5" />}
       title="Excuses"

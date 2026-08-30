@@ -391,10 +391,19 @@ export function runCeoCommandCenterTests() {
       `SFE attention rows must exclude "${denied}" — that page redirects the SFE Manager to /employee-portals`,
     );
   }
+  // `getCeoGreeting()` returns "Good morning, Dr. Anwar" and pairs with CeoHiddenNote — a greeting
+  // and a note written for one named person. It belongs to the CEO variant and to no other.
+  //
+  // This pinned `personal={!isSfe}` until 2026-08-30, which said the same thing while there were
+  // exactly two variants and became WRONG the moment a third arrived: the System Administrator
+  // Overview is not the SFE page, so `!isSfe` handed the Super Admin the Chief Executive's own
+  // greeting on his first render. Pin the rule, not the arithmetic that happened to express it —
+  // an allow-list of the one variant cannot silently admit the next one.
   assert.match(
     ceoComponentSource,
-    /personal=\{!isSfe\}/,
-    "the SFE Manager must be greeted by his own name, not 'Dr. Anwar'",
+    /personal=\{variant === "ceo"\}/,
+    "the CEO's personal greeting must be gated on the CEO variant by name — every other variant, "
+      + "including any added later, must be greeted by its own viewer's name and never as 'Dr. Anwar'",
   );
   assert.match(
     ceoComponentSource,

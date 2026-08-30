@@ -55,7 +55,11 @@ function pct(value: number) {
   return `${Math.round(Math.max(0, Math.min(1, Number.isFinite(value) ? value : 0)) * 100)}%`;
 }
 
-function MetricTile({
+// Exported so the personal workspace overview draws the SAME tile rather than a copy of its
+// markup — the owner asked for that page to match the command centres, and four pages only stay
+// matching if a restyle here reaches all of them. `SectionShell` is already shared this way with
+// the Finance command centre.
+export function MetricTile({
   icon,
   label,
   value,
@@ -306,6 +310,7 @@ function PerfCard({
   headlineSub,
   badge,
   children,
+  className,
 }: {
   title: string;
   icon: ReactNode;
@@ -313,9 +318,11 @@ function PerfCard({
   headlineSub: string;
   badge?: ReactNode;
   children: ReactNode;
+  /** Grid placement from the caller - this card is wide, so it usually spans more than one column. */
+  className?: string;
 }) {
   return (
-    <div className="flex flex-col border border-slate-200 bg-white">
+    <div className={cn("flex flex-col border border-slate-200 bg-white", className)}>
       <div className="flex items-center justify-between gap-2 border-b border-slate-100 bg-slate-900 px-4 py-3">
         <div className="flex items-center gap-2 text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-300">
           <span className="text-orange-400">{icon}</span>
@@ -334,7 +341,8 @@ function PerfCard({
 
 // ── Quick-link card (instant — no data fetch) ─────────────────────────────────
 
-function QuickLinkCard({
+/** Exported so the System Administrator Overview's own hub band uses the identical card. */
+export function QuickLinkCard({
   title,
   icon,
   headline,
@@ -368,19 +376,38 @@ function QuickLinkCard({
 
 // ── Main component ────────────────────────────────────────────────────────────
 
+/**
+ * The one surface three roles land on.
+ *
+ * `variant` selects the wording and the partitions, never a different page. The SFE variant is a
+ * SUBSET — every partition is filtered down to what an SFE Manager can act on. The `admin` variant
+ * is the opposite: it is the CEO layout verbatim, because the Super Admin can action strictly more
+ * than the CEO can, so filtering anything out of his copy would hide work only he can do. That is
+ * why every branch below asks `isSfe` and not `!isCeo` — `admin` deliberately falls through to the
+ * full layout, and a future band that must NOT reach the Super Admin has to say so explicitly.
+ */
 export function CeoCommandCenter({
   data,
+  extraBands,
   welcome: _welcome,
   access: _access,
   variant = "ceo",
 }: {
   data: CeoCommandCenterData;
+  /** Rendered as the last band before the footer. The admin overview passes its Finance bands here. */
+  extraBands?: ReactNode;
   welcome: CeoWelcomeProfile;
   access: AccessContext;
-  variant?: "ceo" | "sfe";
+  variant?: "admin" | "ceo" | "sfe";
 }) {
   const { attention, approvals, dataUnavailable, headcount, health, payroll, sos } = data;
   const isSfe = variant === "sfe";
+  const surfaceLabel =
+    variant === "sfe"
+      ? "SFE Manager Overview"
+      : variant === "admin"
+        ? "System Administrator Overview"
+        : "CEO Command Center";
   const visibleAttention = isSfe
     ? attention.filter((item) => SFE_ATTENTION_KEYS.has(item.key))
     : attention;
@@ -410,19 +437,33 @@ export function CeoCommandCenter({
         <div className="p-5 sm:p-6 lg:p-8">
           <div className="mb-5 inline-flex items-center gap-2 border border-orange-400/40 bg-orange-500/15 px-3 py-1.5 text-phx-3xs font-black uppercase tracking-[0.22em] text-orange-100">
             <HeartPulse aria-hidden="true" className="h-3.5 w-3.5" />
-            {isSfe ? "SFE Manager Overview" : "CEO Command Center"}
+            {surfaceLabel}
           </div>
           <CeoHeroIdentity
             fullName={_welcome.fullName}
             roleLabel={_welcome.roleLabel}
             imageUrl={_welcome.imageUrl}
             initials={_welcome.initials}
-            personal={!isSfe}
+            // The CEO's OWN greeting -- "Good morning, Dr. Anwar" and the note written for the
+            // Chief Executive -- belongs to exactly one person. `!isSfe` handed both to the Super
+            // Admin the moment the admin variant existed, which is why this asks for the CEO by
+            // name rather than for "not the SFE".
+            personal={variant === "ceo"}
+            // The shared fallback sub-line is "Here is where sales and the field stand today."
+            // True for a sales seat, wrong for the one that also owns access, data and payroll.
+            subGreeting={
+              variant === "admin"
+                ? "Everything the company is doing, and everything only you can fix."
+                : undefined
+            }
           />
         </div>
       </AdminHeroFrame>
 
-      <DataUnavailableNotice owner={isSfe ? "SFE" : "CEO"} sources={visibleDataUnavailable} />
+      <DataUnavailableNotice
+        owner={variant === "sfe" ? "SFE" : variant === "admin" ? "system" : "CEO"}
+        sources={visibleDataUnavailable}
+      />
 
       <SectionShell
         title={isSfe ? "SFE Department" : "Sato Pharma"}
@@ -653,12 +694,19 @@ export function CeoCommandCenter({
             : "Source of Sales (monthly, live) — plus one-click access to Weekly Sales and Marketing ROI dashboards."
         }
       >
-        {/* Three columns only when there is something to put in them. The SFE variant drops the
-            Weekly Sales shortcut (it gets the real trend further down), which left the SoS card
-            alone in a third of the row and two thirds of blank white beside it. */}
+        {/* Three columns, but only ever TWO cards in them - so the Source of Sales card spans two
+            and the row closes. Before 2026-08-30 it did not: the third column was empty for the CEO
+            and the Super Admin, 583px tall, the single largest blank area on the page. The SFE
+            variant drops the Weekly Sales shortcut entirely (it gets the real trend further down),
+            so its row is one full-width card and the span is irrelevant there.
+
+            Read this as the rule for every grid on this page: the column count must match the
+            number of cards that actually render for THAT variant. A card removed by a ruling and a
+            column count left behind is exactly how these gaps appear. */}
         <div className={cn("grid divide-x divide-slate-200", isSfe ? "lg:grid-cols-1" : "lg:grid-cols-3")}>
           {/* SoS — immediate */}
           <PerfCard
+            className={cn(!isSfe && "lg:col-span-2")}
             title="Source of Sales"
             icon={<BarChart3 className="h-3.5 w-3.5" />}
             headline={sos ? egp(sos.totalValue) : "—"}
@@ -707,14 +755,11 @@ export function CeoCommandCenter({
         </div>
 
         {/* ── Company field-sales command — NSM-parity dashboards at company scope ── */}
-        {/* Six cards. Four columns leaves a ragged half-empty second row; three gives two full
-            rows. Scoped to the SFE variant to keep this change to the page under review. */}
-        <div
-          className={cn(
-            "grid divide-x divide-slate-200 border-t border-slate-200 sm:grid-cols-2",
-            isSfe ? "lg:grid-cols-3" : "lg:grid-cols-4",
-          )}
-        >
+        {/* FIVE cards, so five columns - one full row, no blank cells. It said "six cards" and
+            split 3/4 until 2026-08-30, which was true until ruling 11 removed the Sales Analytics
+            card and left the column counts behind: the CEO saw 4 + 1 with three empty cells
+            (413px), the SFE Manager 3 + 2 with one. Count the cards below before changing this. */}
+        <div className="grid divide-x divide-slate-200 border-t border-slate-200 sm:grid-cols-2 lg:grid-cols-5">
           <QuickLinkCard
             title="Weekly Sales · Company"
             icon={<Activity className="h-3.5 w-3.5" />}
@@ -799,11 +844,15 @@ export function CeoCommandCenter({
         </div>
       </SectionShell>
 
+      {/* Bands the variant adds on top of the shared layout. Last before the footer so the
+          "Data as of" line stays the final thing on the page whatever was inserted. */}
+      {extraBands}
+
       {/* ── Footer ────────────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between bg-slate-900 px-5 py-3 text-phx-2xs text-slate-400">
         <span className="flex items-center gap-2">
           <Users aria-hidden="true" className="h-3 w-3" />
-          Phoenix Workforce · {isSfe ? "SFE Manager Overview" : "CEO Command Center"}
+          Phoenix Workforce · {surfaceLabel}
         </span>
         <span className="flex items-center gap-2">
           <Wallet aria-hidden="true" className="h-3 w-3" />
