@@ -2,7 +2,12 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import { aggregateCanonicalDashboardRows } from "../src/lib/sales/dashboard-canonical.ts";
-import { getMergedAreaName } from "../src/lib/sales/closing-area-merges.ts";
+import {
+  expandAreaCodeForLine,
+  expandAreaCodesForLine,
+  foldAreaOptionsForLine,
+  getMergedAreaName,
+} from "../src/lib/sales/closing-area-merges.ts";
 import type { AchievementRow } from "../src/lib/sales/monthly-targets.ts";
 
 // Spread-merged, NOT `??`-defaulted: `repHrId: null` is the exact case this fixture exists to
@@ -141,7 +146,7 @@ export function runCanonicalDashboardRowsTests() {
   assert.match(
     canonicalSource,
     /territory:\s*getMergedAreaName\(/,
-    "dashboard territory must label the merged Pedia/CNS row as 'Fayoum - Beni Suef' via getMergedAreaName",
+    "dashboard territory must label the merged Pedia row as 'Fayoum - Beni Suef' via getMergedAreaName",
   );
   assert.equal(
     getMergedAreaName("pedia", "GZ6"),
@@ -152,5 +157,70 @@ export function runCanonicalDashboardRowsTests() {
     getMergedAreaName("anti_infective", "GZ6"),
     null,
     "Anti Infective keeps Fayoum and Beni Suef separate — it has no merged name",
+  );
+
+  // ── expandAreaCodeForLine: the anti-data-loss primitive ─────────────────────
+  // Beni Suef (UE9) carries its own real Pedia sales, so any picker that folds it into the "Fayoum
+  // - Beni Suef" (GZ6) option MUST expand a GZ6 selection back to both codes before it queries, or
+  // Beni Suef's numbers silently vanish. Every non-merged code, and every other line, is untouched.
+  assert.deepEqual(
+    expandAreaCodeForLine("pedia", "GZ6").sort(),
+    ["GZ6", "UE9"],
+    "Pedia's merged GZ6 expands to both real codes so a filter on it never drops Beni Suef",
+  );
+  assert.deepEqual(
+    expandAreaCodeForLine("pedia", "UE9"),
+    ["UE9"],
+    "the folded-away code is not itself a keep-code — it expands to just itself",
+  );
+  assert.deepEqual(
+    expandAreaCodeForLine("pedia", "gz6"),
+    ["GZ6", "UE9"],
+    "input casing does not matter — codes come back upper-cased",
+  );
+  assert.deepEqual(
+    expandAreaCodeForLine("cns", "GZ6"),
+    ["GZ6"],
+    "CNS no longer merges, so GZ6 stands only for itself there",
+  );
+  assert.deepEqual(
+    expandAreaCodeForLine("anti_infective", "GZ6"),
+    ["GZ6"],
+    "Anti Infective never merges Fayoum and Beni Suef",
+  );
+  assert.deepEqual(
+    expandAreaCodeForLine("pedia", "CA3"),
+    ["CA3"],
+    "an unrelated area is returned unchanged",
+  );
+  assert.deepEqual(
+    expandAreaCodesForLine("pedia", ["GZ6", "CA3", "GZ6"]).sort(),
+    ["CA3", "GZ6", "UE9"],
+    "the plural form expands each code and de-duplicates",
+  );
+
+  // ── foldAreaOptionsForLine: drop the merged code, rename the survivor ────────
+  const pediaOptions = foldAreaOptionsForLine("pedia", [
+    { areaCode: "GZ6", areaName: "Fayoum" },
+    { areaCode: "UE9", areaName: "Beni Suef" },
+    { areaCode: "CA3", areaName: "Cairo Centers" },
+  ]);
+  assert.deepEqual(
+    pediaOptions.map((a) => a.areaCode),
+    ["GZ6", "CA3"],
+    "the merged code (UE9) is dropped from the option list; the survivor and unrelated areas stay",
+  );
+  assert.equal(
+    pediaOptions.find((a) => a.areaCode === "GZ6")?.areaName,
+    "Fayoum - Beni Suef",
+    "the surviving option is relabelled with the combined name",
+  );
+  assert.deepEqual(
+    foldAreaOptionsForLine("anti_infective", [
+      { areaCode: "GZ6", areaName: "Fayoum" },
+      { areaCode: "UE9", areaName: "Beni Suef" },
+    ]).map((a) => a.areaName),
+    ["Fayoum", "Beni Suef"],
+    "Anti Infective's option list keeps both areas with their own names",
   );
 }

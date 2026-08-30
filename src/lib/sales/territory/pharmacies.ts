@@ -1,7 +1,9 @@
 import { normalizeLineKey } from "@/lib/sales/access-scope";
+import { expandAreaCodeForLine } from "@/lib/sales/closing-area-merges";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 import { isReconciled } from "./reconciliation";
+import { resolveAuLineCode } from "./skeleton";
 import type { TerritoryAreaPayload, TerritoryPharmacy } from "./types";
 
 type RawPharmacyRow = {
@@ -54,8 +56,13 @@ export async function fetchTerritoryAreaPharmacies(
   }
 
   const supabase = getSupabaseAdmin();
+  // On Pedia the folded "Fayoum - Beni Suef" area is shown under GZ6, but Beni Suef (UE9) carries
+  // its own sales — so expand the selected code back to every real code it stands for before the
+  // RPC, or the folded area would render with only half its pharmacies. Every other area, and every
+  // other line, expands to just itself. The RPC's scope_total is a single window-sum across all
+  // requested codes, so reconciliation still holds. The payload keeps the caller's `areaCode` (GZ6).
   const { data, error } = await supabase.rpc("phx_territory_area_pharmacies", {
-    p_area_codes: [areaCode],
+    p_area_codes: expandAreaCodeForLine(resolveAuLineCode(officialLine), areaCode),
     p_periods: periods,
     p_lines: [officialLine],
   });

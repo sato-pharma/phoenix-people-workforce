@@ -9,7 +9,7 @@ import { buildMonthlyClosingMatrix } from "../src/lib/sales/monthly-distributor-
 import type { MonthlyClosingMatrix, SalesAreaReference } from "../src/lib/sales/monthly-distributor-import.ts";
 
 // closing-area-merges.ts folds Fayoum (GZ6) and Beni Suef (UE9) into one "Fayoum - Beni Suef" row
-// on Pedia and CNS. A CI review bot (P1) caught the failure mode: the Closing Matrix sheet wrote
+// on Pedia (CNS was un-merged 2026-08-30). A CI review bot (P1) caught the failure mode: the Closing Matrix sheet wrote
 // every area's Units/Value as a live SUMIFS keyed to ITS OWN area code over the hidden Calc sheet —
 // which still holds GZ6's and UE9's raw invoice rows SEPARATELY, under their own codes. The merged
 // row's SUMIFS(area="GZ6") therefore recalculated straight back down to Fayoum's half alone,
@@ -26,8 +26,8 @@ import type { MonthlyClosingMatrix, SalesAreaReference } from "../src/lib/sales/
 //
 // What this file pins now, from the area merge's own angle:
 //
-//   1. `applyClosingAreaMerges` folds GZ6 + UE9 into one row on Pedia and CNS, and leaves Anti
-//      Infective (which has no merge rule) completely untouched.
+//   1. `applyClosingAreaMerges` folds GZ6 + UE9 into one row on Pedia, and leaves Anti Infective
+//      AND CNS (which have no merge rule) completely untouched.
 //   2. `markMergedAreaRowsStatic` still stamps the merged row — the flag no longer drives
 //      rendering, but it remains the module's contract and other callers read it.
 //   3. The merged row exports the CORRECT combined total (24,000), with its combined display name,
@@ -153,7 +153,7 @@ function findAreaRowInMatrix(matrix: MonthlyClosingMatrix, areaCode: string) {
   return undefined;
 }
 
-function buildMergedMatrix(lineCode: "pedia" | "cns", protect: boolean): MonthlyClosingMatrix {
+function buildMergedMatrix(lineCode: "pedia", protect: boolean): MonthlyClosingMatrix {
   const merged = applyClosingAreaMerges(lineCode, AREAS, CELLS, []);
   const matrix = buildMonthlyClosingMatrix({
     areas: merged.areas,
@@ -230,10 +230,17 @@ export async function runMonthlyClosingExportAreaMergeStaticTests() {
     "region subtotal = GZ6 15,000 + UE9 9,000 + GZ1 6,000 = 30,000",
   );
 
-  // ── CNS uses the same merge rule -- confirm the fix is not Pedia-specific ────────────────────
-  const cnsProtected = buildMergedMatrix("cns", true);
-  assert.equal(findAreaRowInMatrix(cnsProtected, "GZ6")?.storeSplitAdjusted, true, "the same protection applies for cns");
-  const cnsFixed = await auditWorkbook(cnsProtected);
-  assert.deepEqual(cnsFixed.calcBacked, [], NO_CALC);
-  assert.equal(findRow(cnsFixed.sheet, 1, "GZ6").getCell(VALUE_COL).value, 24_000, "cns: the merged row carries the combined total too");
+  // ── CNS no longer merges — owner split it back into two areas (2026-08-30) ───────────────────
+  // Same fixture, line = cns: applyClosingAreaMerges must now leave GZ6 and UE9 as two separate
+  // rows, exactly like Anti Infective. Only Pedia folds.
+  const cnsUnmerged = applyClosingAreaMerges("cns", AREAS, CELLS, []);
+  assert.equal(cnsUnmerged.areas.length, 4, "cns no longer merges -- all 4 areas stay separate");
+  assert.ok(
+    cnsUnmerged.areas.some((a) => a.areaCode === "UE9" && a.areaName === "Beni Suef"),
+    "cns: Beni Suef keeps its own name and its own row",
+  );
+  assert.ok(
+    cnsUnmerged.areas.some((a) => a.areaCode === "GZ6" && a.areaName === "Fayoum"),
+    "cns: Fayoum keeps its own name — not the combined label",
+  );
 }

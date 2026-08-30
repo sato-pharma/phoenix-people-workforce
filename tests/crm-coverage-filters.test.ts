@@ -340,6 +340,78 @@ function testSelectionResolutionTreatsBlanksAsAbsent() {
   );
 }
 
+/**
+ * The Pedia one-area fold (owner rule 2026-08-30): Fayoum (GZ6) and Beni Suef (UE9) are ONE area
+ * "Fayoum - Beni Suef" on Pedia, and stay two separate areas on every other line. The picker must
+ * offer one Pedia option, the label must read the combined name, and — the anti-data-loss half —
+ * selecting the folded option must still resolve to BOTH real areas' reps, or Beni Suef silently
+ * drops out of a board filtered to that combined area.
+ */
+function testPediaFoldsFayoumAndBeniSuefIntoOneArea() {
+  const foldLineNames = new Map([
+    ["anti_infective", "Anti Infective"],
+    ["pedia", "Pedia"],
+  ]);
+  const foldRegionNames = new Map([
+    ["gz", "Giza"],
+    ["ue-1", "Upper Egypt 1"],
+  ]);
+  // Real codes. On Pedia both areas sit in region GZ; deliberately given DIFFERENT filled seats so
+  // the test proves the fold recovers Beni Suef's rep even when the two are not one seat (today the
+  // seat model happens to share one, but the expansion must not depend on that).
+  const rows: CoverageFilterMapRow[] = [
+    cell("gz", "pedia", "GZ6", "Fayoum", "SEAT-PED-GZ6"),
+    cell("gz", "pedia", "UE9", "Beni Suef", "SEAT-PED-UE9"),
+    cell("gz", "anti_infective", "GZ6", "Fayoum", "SEAT-AIF-GZ6"),
+    cell("ue-1", "anti_infective", "UE9", "Beni Suef", "SEAT-AIF-UE9"),
+  ];
+  const seats: CoverageFilterSeatRow[] = [
+    { fullName: "Pedia Fayoum Rep", hrId: "PED-1", seatId: "SEAT-PED-GZ6", seatTier: "REP" },
+    { fullName: "Pedia Beni Rep", hrId: "PED-2", seatId: "SEAT-PED-UE9", seatTier: "REP" },
+    { fullName: "AI Fayoum Rep", hrId: "AIF-1", seatId: "SEAT-AIF-GZ6", seatTier: "REP" },
+    { fullName: "AI Beni Rep", hrId: "AIF-2", seatId: "SEAT-AIF-UE9", seatTier: "REP" },
+  ];
+  const t = buildCoverageFilterTree({ lineNames: foldLineNames, mapRows: rows, regionNames: foldRegionNames, seats });
+
+  // Pedia: one combined option, carrying the surviving GZ6 code and the merged name.
+  const pediaAreas = narrowCoverageOptions(t, { line: "pedia" }).areas;
+  assert.deepEqual(
+    pediaAreas.map((a) => a.code),
+    ["GZ6"],
+    "Pedia folds Fayoum + Beni Suef into one area option under the surviving GZ6 code",
+  );
+  assert.equal(pediaAreas[0]?.name, "Fayoum - Beni Suef", "and it is labelled with the combined name");
+
+  // Anti Infective: the two areas stay separate — the fold is Pedia-only.
+  assert.deepEqual(
+    narrowCoverageOptions(t, { line: "anti_infective" }).areas.map((a) => a.name).sort(),
+    ["Beni Suef", "Fayoum"],
+    "Anti Infective keeps Fayoum and Beni Suef as two areas",
+  );
+
+  // Anti-data-loss: selecting the folded Pedia option resolves to BOTH areas' reps. Without the
+  // expansion in cellMatches this returns only the GZ6 rep, dropping Beni Suef entirely.
+  assert.deepEqual(
+    repsMatching(t, { line: "pedia", area: "GZ6" }).map((r) => r.hrId).sort(),
+    ["PED-1", "PED-2"],
+    "the folded GZ6 selection expands back to {GZ6, UE9}, so Beni Suef's rep is never dropped",
+  );
+
+  // Anti Infective's GZ6 does not expand — its Beni Suef is a different, separate area.
+  assert.deepEqual(
+    repsMatching(t, { line: "anti_infective", area: "GZ6" }).map((r) => r.hrId),
+    ["AIF-1"],
+    "Anti Infective's GZ6 stands only for itself — no accidental cross-line expansion",
+  );
+
+  // The on-screen scope line reads the combined name, not the bare Fayoum.
+  assert.equal(
+    describeCoverageSelection(t, { line: "pedia", area: "GZ6", region: "gz" }),
+    "Giza · Pedia · Fayoum - Beni Suef",
+    "the scope line names the merged Pedia area",
+  );
+}
+
 export function runCrmCoverageFilterTests() {
   testBuildsFromRealCombinations();
   testDroppedRowsAreCountedNotGuessed();
@@ -355,4 +427,5 @@ export function runCrmCoverageFilterTests() {
   testPruningRepairsAStaleUrl();
   testRestrictionNarrowsThePickerToTheViewersOwnReps();
   testSelectionResolutionTreatsBlanksAsAbsent();
+  testPediaFoldsFayoumAndBeniSuefIntoOneArea();
 }

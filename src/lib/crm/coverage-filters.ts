@@ -55,7 +55,14 @@
  * server-only — the loader lives in `coverage-filters-data.ts` for exactly that reason. Adding an
  * import of `next/cache`, the Supabase client, or anything reaching for `process.env` here drags
  * the server bundle into the client and breaks the build. Put it in the data module instead.
+ * (`closing-area-merges` is pure — only an `import type` — so it is safe to import here.)
  */
+
+import {
+  expandAreaCodeForLine,
+  foldAreaOptionsForLine,
+  getMergedAreaName,
+} from "@/lib/sales/closing-area-merges";
 
 /**
  * The agent-key convention every CRM board already uses — `hr:<lowercased hr id>` when the agent is
@@ -290,11 +297,19 @@ export function restrictCoverageFilterTree(
   };
 }
 
-/** Does this cell satisfy every geography level that is selected? */
+/**
+ * Does this cell satisfy every geography level that is selected?
+ *
+ * The area test expands the picked code to every real code it stands for: on Pedia the folded
+ * "Fayoum - Beni Suef" option carries the surviving code `GZ6`, so a selection on it must match
+ * BOTH the `GZ6` and `UE9` cells — otherwise Beni Suef's seat (and its rep) would drop out of a
+ * board filtered to that one combined area. Every other area, and every other line, expands to
+ * just itself, so this is a no-op there.
+ */
 const cellMatches = (cell: CoverageFilterCell, selection: CoverageFilterSelection): boolean =>
   (!selection.region || cell.regionCode === selection.region) &&
   (!selection.line || cell.lineCode === selection.line) &&
-  (!selection.area || cell.areaCode === selection.area);
+  (!selection.area || expandAreaCodeForLine(selection.line, selection.area).includes(cell.areaCode.toUpperCase()));
 
 /**
  * The reps a selection resolves to. Empty selection → every rep in the tree.
@@ -376,7 +391,19 @@ export function narrowCoverageOptions(
   };
 
   const lines = optionsFrom(tree.lines, { region: selection.region }, (c) => c.lineCode);
-  const areas = optionsFrom(tree.areas, { line: selection.line, region: selection.region }, (c) => c.areaCode);
+  // On Pedia, fold Fayoum (GZ6) + Beni Suef (UE9) into ONE "Fayoum - Beni Suef" option (owner rule
+  // 2026-08-30): drop the merged code and rename the survivor. Gated by the picked line — a line
+  // with no merge rule (Anti Infective, CNS, or no line picked yet) is returned unchanged, so the
+  // two areas stay separate everywhere else. `cellMatches` above expands the picked code back to
+  // both real codes, so the folded option loses no data.
+  const areasRaw = optionsFrom(tree.areas, { line: selection.line, region: selection.region }, (c) => c.areaCode);
+  const areas = foldAreaOptionsForLine(
+    selection.line,
+    areasRaw.map((option) => ({ areaCode: option.code, areaName: option.name })),
+  )
+    .map((option) => ({ code: option.areaCode, name: option.areaName ?? option.areaCode }))
+    // Re-sort: the fold renames the survivor ("Fayoum" → "Fayoum - Beni Suef"), which can move it.
+    .sort((a, b) => a.name.localeCompare(b.name));
 
   const repSeatIds = new Set(
     tree.cells
@@ -404,7 +431,11 @@ export function describeCoverageSelection(
   const parts = [
     name(tree.regions, selection.region),
     name(tree.lines, selection.line),
-    name(tree.areas, selection.area),
+    // Prefer the combined name on a merged area (Pedia's "Fayoum - Beni Suef"); every other area
+    // has no merged name, so it falls back to the plain area name.
+    selection.area
+      ? (getMergedAreaName(selection.line, selection.area) ?? name(tree.areas, selection.area))
+      : null,
     selection.rep ? (tree.reps.find((r) => r.repKey === selection.rep)?.repName ?? selection.rep) : null,
   ].filter((part): part is string => Boolean(part));
 

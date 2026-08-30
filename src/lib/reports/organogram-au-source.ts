@@ -5,6 +5,7 @@ import {
   HEAD_OFFICE_LINE_ID,
 } from "@/lib/reports/organogram-head-office";
 import { hasWhatsAppNumber } from "@/lib/reports/organogram-whatsapp";
+import { getMergedAreaName } from "@/lib/sales/closing-area-merges";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import type {
   OrganogramReportRow,
@@ -249,7 +250,10 @@ export async function buildOrganogramSeatReport(): Promise<VacancyReportData> {
     rows.push({
       ...workFieldsFor(s.occupant_hr_id),
       areaId: null,
-      areaName: s.area_name,
+      // Pedia folds Fayoum (GZ6) + Beni Suef (UE9) into ONE area "Fayoum - Beni Suef" (owner rule
+      // 2026-08-30). Pedia has a single GZ6 seat and no UE9 seat, so this only renames that node.
+      // Anti Infective and CNS keep both areas separate — getMergedAreaName returns null for them.
+      areaName: getMergedAreaName(s.line_code, s.area_code ?? "") ?? s.area_name,
       departmentId: null,
       // Stays null, as it always has. The employee master's department reaches the
       // export through `employeeDepartmentName` instead — see OrganogramWorkFields.
