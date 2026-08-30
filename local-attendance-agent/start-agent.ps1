@@ -12,6 +12,47 @@ $DotnetHome = Join-Path $AgentRoot ".dotnet-home"
 $NuGetRoot = Join-Path $AgentRoot ".nuget"
 $AppDataRoot = Join-Path $AgentRoot ".appdata"
 
+# ONE AGENT AT A TIME - EXIT QUIETLY IF SOMETHING ALREADY HOLDS THE PORT.
+#
+# Two things start this script at logon: the "Phoenix Attendance Agent - Run At Logon" scheduled
+# task and the startup shortcut. Both fired, both reached Start-Process, the first won the
+# 127.0.0.1:8787 bind and the second died on it - an unhandled managed exception, LastTaskResult
+# 3762504530 (0xE0434352), logged as an Application Error against the exe with no explanation.
+# Measured on the 2026-08-26 15:14 reboot: task at 15:15:07, winning agent at 15:15:16 (which then
+# served every sync all day), crash at 15:15:21. The crash was always the LOSER of a race, never a
+# sick agent - which is why "attendance is broken" was the wrong reading of it every time.
+#
+# This is checked before the prereq install and before the log rotation below, deliberately, because
+# a redundant launch does real damage on its way to failing: install-prereqs.ps1 copies
+# ATTENDANCE_AGENT_TOKEN out of the repo .env.local over this agent's .env (that overwrote a working
+# production token on 2026-08-30), and the rotation moves agent.log aside and truncates it while the
+# WINNING instance is still writing to it - destroying the one record that explains a death.
+#
+# A raw TCP connect is the right probe, not GET /health. A healthy-but-degraded agent answers 503
+# when the fingerprint device is off the network, which is most of the night, so anything that reads
+# a non-2xx as "not running" would launch the duplicate this guard exists to prevent. Port-bound is
+# the exact question being asked. If something OTHER than the agent holds 8787 then the agent could
+# not bind either, so declining to start is the correct outcome - and it now says so and exits 0
+# instead of crashing.
+#
+# Residual, accepted: two launches less than the probe apart can still both see a free port. That is
+# a sub-second window against the ~9 seconds actually observed, and the failure mode is unchanged
+# from today. It is not closed with a mutex on purpose - a mutex that misfires would stop the agent
+# starting at all, which is far worse than the duplicate it would prevent.
+$AgentPortInUse = $false
+try {
+  $probe = New-Object System.Net.Sockets.TcpClient
+  $AgentPortInUse = $probe.ConnectAsync("127.0.0.1", 8787).Wait(2000) -and $probe.Connected
+} catch {
+  $AgentPortInUse = $false
+} finally {
+  if ($probe) { $probe.Dispose() }
+}
+if ($AgentPortInUse) {
+  Write-Host "[attendance-agent] Something is already listening on 127.0.0.1:8787 - leaving it alone and exiting."
+  exit 0
+}
+
 Set-Location $AgentRoot
 New-Item -ItemType Directory -Path $DotnetHome -Force | Out-Null
 New-Item -ItemType Directory -Path $NuGetRoot -Force | Out-Null
