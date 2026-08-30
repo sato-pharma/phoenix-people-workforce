@@ -9,6 +9,7 @@ import type {
   WeeklyDistributorOption,
   WeeklyExcludedBranch,
   WeeklyExcludedItem,
+  WeeklyFileTotalsReport,
   WeeklySalesValidationResult,
   WeeklyVerifyColumnStatus,
   WeeklyVerifyResult,
@@ -1215,6 +1216,79 @@ function ExcludedBranchesPanel({ branches }: { branches: WeeklyExcludedBranch[] 
   );
 }
 
+/**
+ * What the file said its own totals were, against what the import read.
+ *
+ * Shown on every upload, including when everything agrees and including when the format states no
+ * total at all. That last case is the point: the 2026-08 POS batch stored 172,046 units against a true
+ * 1,048 and validated cleanly, because nothing compared the result to anything and nothing on this
+ * screen said so. A silent absence is indistinguishable from a passed check, so it is spelled out.
+ */
+function FileSelfCheckPanel({ fileTotals }: { fileTotals: WeeklyFileTotalsReport }) {
+  const mismatches = fileTotals.checks.filter((check) => check.status === "mismatch").length;
+  const headline =
+    fileTotals.absence !== null
+      ? "File self-check — this file states no total of its own"
+      : mismatches > 0
+        ? `File self-check — ${num(mismatches)} of ${num(fileTotals.checks.length)} disagree with the file`
+        : `File self-check — all ${num(fileTotals.checks.length)} agree with the file`;
+
+  return (
+    <div className="border-b border-phx-line bg-phx-paper px-4 py-3">
+      <h3 className="text-xs font-black uppercase tracking-wide text-phx-ink-2">{headline}</h3>
+
+      {fileTotals.absence !== null ? (
+        <p className="mt-2 text-sm font-medium text-phx-ink-2">{fileTotals.absence.reason}</p>
+      ) : (
+        <div className="mt-2 overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="text-left text-phx-xs font-bold uppercase text-phx-ink-faint">
+              <tr>
+                <th className="py-1 pr-4 whitespace-nowrap">What the file states</th>
+                <th className="py-1 pr-4 whitespace-nowrap">Where</th>
+                <th className="py-1 pr-4 text-right whitespace-nowrap">File says</th>
+                <th className="py-1 pr-4 text-right whitespace-nowrap">Import read</th>
+                <th className="py-1 whitespace-nowrap">Verdict</th>
+              </tr>
+            </thead>
+            <tbody>
+              {fileTotals.checks.map((check) => (
+                <tr className="border-t border-phx-line" key={`${check.label}|${check.where}`}>
+                  <td className="py-1 pr-4 font-semibold text-phx-ink whitespace-nowrap">{check.label}</td>
+                  <td className="py-1 pr-4 text-phx-ink-2 whitespace-nowrap">{check.where}</td>
+                  <td className="py-1 pr-4 text-right tabular-nums text-phx-ink-2">{num(check.declared)}</td>
+                  <td className="py-1 pr-4 text-right tabular-nums text-phx-ink-2">{num(check.parsed)}</td>
+                  <td
+                    className={`py-1 font-bold whitespace-nowrap ${
+                      check.status === "ok"
+                        ? "text-emerald-700"
+                        : check.severity === "block"
+                          ? "text-red-700"
+                          : "text-amber-700"
+                    }`}
+                  >
+                    {check.status === "ok"
+                      ? "Agrees"
+                      : check.severity === "block"
+                        ? "Disagrees — import stopped"
+                        : "Disagrees — please check"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {fileTotals.absence === null && mismatches === 0 && (
+        <p className="mt-2 text-xs font-medium text-phx-ink-faint">
+          The numbers below were read the way the file itself says they should add up.
+        </p>
+      )}
+    </div>
+  );
+}
+
 function ValidationResultPanel({
   result,
   selectedWeek,
@@ -1302,6 +1376,18 @@ function ValidationResultPanel({
           {result.blockingReasons.map((r) => <li key={r}>{r}</li>)}
         </ul>
       )}
+
+      {/* Heads-up notes that do NOT stop the import — currently the file-total checks whose invariant
+          has not yet been proven against a real file of that format. */}
+      {result.advisories && result.advisories.length > 0 && (
+        <ul className="list-disc space-y-1 border-b border-phx-line bg-amber-50/60 px-8 py-3 text-sm font-semibold text-amber-900">
+          {result.advisories.map((advisory) => <li key={advisory}>{advisory}</li>)}
+        </ul>
+      )}
+
+      {/* What the file said about itself, against what we read — shown on every upload, including
+          when it agrees and when the format states nothing to check. */}
+      {result.fileTotals && <FileSelfCheckPanel fileTotals={result.fileTotals} />}
 
       {/* Unresolved items — one row per unique unmapped product/region/price/line problem, each with
           a direct link to the screen that actually fixes it (Weekly Mapping for aliases/branches,

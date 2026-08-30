@@ -15,6 +15,8 @@ import type { WeeklyProductAliasIndex } from "@/lib/sales/weekly/product-aliases
 import type {
   WeeklyExcludedBranch,
   WeeklyExcludedItem,
+  WeeklyFileTotalCheck,
+  WeeklyFileTotalsReport,
   WeeklyParsedRow,
   WeeklySalesValidationResult,
   WeeklyTotals,
@@ -244,6 +246,89 @@ type AdapterResult = {
   sheetName: string;
   /** hard structural failures the adapter detected (e.g. PS missing a file, header drift) */
   blockingReasons: string[];
+  /** what the FILE says its own totals are, against what this adapter read — see the section below */
+  fileTotalChecks?: WeeklyFileTotalCheck[];
+};
+
+// ── file-declared totals: check what we read against what the file says it contains ──────────────
+//
+// The 2026-08 POS batch stored 172,046 units against a true 1,048, priced them at EGP 16.4M, and
+// passed validation cleanly, because nothing anywhere compared the parsed result to anything. Several
+// of these exports state their own totals; where one does, it is an independent check on whether the
+// adapter read the file the way the file meant, and it costs nothing to run.
+//
+// TWO RULES make this safe to switch on across every distributor at once:
+//
+//   1. A check must be INDEPENDENT of the range the adapter scanned. A declared total summed across
+//      the same columns the adapter read cannot see a wrong column range — both sides shrink together
+//      and the check passes while the import is short. So a grand-total CELL is preferred over a
+//      summed row wherever the file provides one, and the column holding it is located by its own
+//      header, never from where the data scan happened to stop.
+//   2. A check only BLOCKS where the invariant is proven against real files. Everything else reports.
+//      These are live weekly uploads; blocking a legitimate one on a format nobody has a sample of
+//      would cost more than it saves, and a loud advisory catches the fault this class produces (the
+//      POS gap was 172,046 against 1,048 — not a rounding question) without that risk.
+
+/** Absolute tolerance, in units. The files state whole packs; anything above this is real. */
+const FILE_TOTAL_TOLERANCE = 0.01;
+
+function fileTotalCheck(input: {
+  label: string;
+  where: string;
+  declared: number;
+  parsed: number;
+  severity: "block" | "report";
+  hint?: string;
+}): WeeklyFileTotalCheck {
+  return {
+    label: input.label,
+    where: input.where,
+    declared: input.declared,
+    parsed: input.parsed,
+    severity: input.severity,
+    status: Math.abs(input.declared - input.parsed) > FILE_TOTAL_TOLERANCE ? "mismatch" : "ok",
+    ...(input.hint ? { hint: input.hint } : {}),
+  };
+}
+
+/** Operator-facing sentence for one failed check — the same shape whether it blocks or advises. */
+function fileTotalMessage(distributorName: string, check: WeeklyFileTotalCheck): string {
+  const head =
+    `${distributorName}: the file's own ${check.label} says ${readableNumber(check.declared)}, but the import read ` +
+    `${readableNumber(check.parsed)} (${check.where}).`;
+  const tail =
+    check.severity === "block"
+      ? " Nothing was imported, rather than storing quantities that are known to disagree with the file."
+      : " The import was not stopped, but these two should agree — check the figures before you press Import.";
+  return check.hint ? `${head}${tail} ${check.hint}` : `${head}${tail}`;
+}
+
+/**
+ * Why a distributor's export offers nothing to check an import against. Written out per distributor
+ * so that "no self-check" is a stated fact on the screen, not an empty list that could equally mean
+ * the adapter forgot to run one. Each was read off the adapter's own column map and the golden
+ * fixtures in tests/weekly-sales-import.test.ts, which mirror the real exports.
+ */
+const FILE_DECLARES_NO_TOTAL: Record<string, string> = {
+  EG:
+    "EGD's three sheets (Branches Sales, Branch Sales Return, Current Stock Branches) are plain " +
+    "row-per-record exports with no totals row and no value column, so the file states no figure the " +
+    "import can be checked against.",
+  IS:
+    "The Ibn Sina sheet is one row per product and branch with no totals row and no value column, so " +
+    "the file states no figure the import can be checked against.",
+  "IS-S":
+    "The Ibn Sina Sato sheet is one row per product and branch and closes with a blank row rather than " +
+    "a totals row, so the file states no figure the import can be checked against.",
+  SF:
+    "Sofico states a net per row (NET SALES) which is authoritative and is allowed to carry adjustments " +
+    "not visible in SalesQty and ReturnQty — the same rule as RAMCO's صافى كمية. A row where the three " +
+    "disagree is therefore legitimate, so there is no identity here that can be checked without raising " +
+    "an alarm on correct files.",
+  Direct:
+    "The Direct sheet is filled in by hand, one row per order, with no totals row. Its Value column is " +
+    "the real per-deal price and is stored as-is rather than derived, so it cannot cross-check the " +
+    "quantity either.",
 };
 
 // ── adapters: each reads a verified real layout and emits neutral observations ───────────────────
@@ -263,6 +348,21 @@ function findSheet(
 }
 
 const at = (row: ExcelJS.Row, col: number): ExcelJS.Cell => row.getCell(col);
+
+/**
+ * First column in `headerRow` whose header matches `pattern`, searched across the WHOLE row rather
+ * than stopping where a data scan stopped. That independence is the point: a grand-total column found
+ * by walking until the data ran out can only ever agree with the data that was read, so it would pass
+ * on exactly the wrong-column-range fault it is meant to catch. `limit` is a loop bound, not a
+ * meaningful edge — ExcelJS `columnCount` is unreliable on sparse sheets.
+ */
+function findHeaderColumn(headerRow: ExcelJS.Row, pattern: RegExp, from: number, limit = 300): number | null {
+  for (let col = from; col <= limit; col += 1) {
+    const header = cellText(at(headerRow, col)).trim();
+    if (header && pattern.test(header)) return col;
+  }
+  return null;
+}
 
 // EG (EGD) — combined workbook. Sales = "Branches Sales", Returns = "Branch Sales Return",
 // Stock = "Current Stock Branches" only.
@@ -381,6 +481,7 @@ function adaptRM(ctx: AdapterContext): AdapterResult {
   // The STOCK sheet headers use Arabic branch names; this map lets us emit stock with
   // the same numeric key already registered in the branch-mapping template.
   const branchNameToCode = new Map<string, string>();
+  const fileTotalChecks: WeeklyFileTotalCheck[] = [];
 
   const salesC = contractSheet(ctx.contract, "sales");
   const stockC = contractSheet(ctx.contract, "stock");
@@ -472,14 +573,37 @@ function adaptRM(ctx: AdapterContext): AdapterResult {
       branchCols.set(c, { code: mapped ?? name, name });
     }
 
+    // الإجمالى — the sheet's own grand total per product, until now used only as a marker telling the
+    // branch scan where to stop, its value never read. Located here across the WHOLE header row rather
+    // than from where that scan stopped: the scan also breaks at the first blank header, so a branch
+    // column added mid-row ends the scan early and every column past it is silently dropped. The grand
+    // total is the only figure in the sheet that can see that happen.
+    const grandTotalCol = findHeaderColumn(
+      headerRow,
+      /^\s*(?:الإجمالى|الاجمالى|الإجمالي|الاجمالي)\s*$/u,
+      matrixFirst,
+      Math.max(stock.columnCount, 200),
+    );
+    let declaredStock = 0;
+    let parsedStock = 0;
+    let sawDeclaredStock = false;
+
     for (let r = dataStartRow(stockC, 3); r <= stock.rowCount; r += 1) {
       const row = stock.getRow(r);
       const itemCode = cellText(at(row, colOf(stockC, "itemCode", 4)));
       const itemName = cellText(at(row, colOf(stockC, "itemName", 5)));
       if (!itemCode && !itemName) continue;
 
+      // Only a row that actually STATES a grand total joins the comparison, and when it does, both
+      // sides take that row — a blank cell means the file totalled nothing there, not zero.
+      const statesTotal = grandTotalCol !== null && cellText(row.getCell(grandTotalCol)).trim() !== "";
+      if (statesTotal) {
+        declaredStock += cellNumber(row.getCell(grandTotalCol as number));
+        sawDeclaredStock = true;
+      }
       for (const [col, branch] of branchCols) {
         const qty = cellNumber(row.getCell(col));
+        if (statesTotal) parsedStock += qty;
         if (qty === 0) continue; // skip zero-stock branch entries to keep row count lean
         observations.push({
           side: "stock",
@@ -493,9 +617,27 @@ function adaptRM(ctx: AdapterContext): AdapterResult {
         });
       }
     }
+
+    if (sawDeclaredStock) {
+      fileTotalChecks.push(
+        fileTotalCheck({
+          label: 'stock sheet grand-total column (الإجمالى), summed over every product',
+          where: `${stock.name}, column ${grandTotalCol} against branch columns ${[...branchCols.keys()].join(", ") || "none"}`,
+          declared: declaredStock,
+          parsed: parsedStock,
+          // Reports rather than blocks: no real RAMCO stock file has been measured against this column,
+          // and the columns between the branches and the grand total are unverified, so a blocking
+          // check here could stop a legitimate upload on a shape nobody has seen.
+          severity: "report",
+          hint:
+            "A gap here usually means branch columns were missed — the branch scan stops at the first " +
+            "blank header, so a column added or renamed part-way along the row ends it early.",
+        }),
+      );
+    }
   }
 
-  return { observations, sheetDates, sheetName: names.join(" + ") || "RAMCO", blockingReasons: [] };
+  return { observations, sheetDates, sheetName: names.join(" + ") || "RAMCO", blockingReasons: [], fileTotalChecks };
 }
 
 // IS-S (Ibn Sina Sato) — single sheet "SalesAndStockReport2_DataHub", title row 1, header row 2,
@@ -600,6 +742,7 @@ function adaptPS(ctx: AdapterContext, salesWb?: ExcelJS.Workbook, stockWb?: Exce
   const sheetDates = new Set<string>(); // PS matrices carry no row dates → require periodDate
   const blockingReasons: string[] = [];
   const names: string[] = [];
+  const fileTotalChecks: WeeklyFileTotalCheck[] = [];
 
   if (!salesWb || !stockWb) {
     blockingReasons.push(
@@ -682,6 +825,15 @@ function adaptPS(ctx: AdapterContext, salesWb?: ExcelJS.Workbook, stockWb?: Exce
       if (!cellText(at(header, col))) break;
       lastLocationCol = col;
     }
+    // The stock matrix states its own "Total Qty." per product, in a column BEFORE the locations —
+    // never read until now. It is the one figure in this file that is independent of the location
+    // range, which is detected per file and shifts whenever the distributor renames or adds a depot,
+    // so it is exactly the check the location scan cannot perform on itself.
+    const stockTotalQtyCol = findHeaderColumn(header, /total\s*qty/i, 1, Math.max(lastLocationCol, 200));
+    let declaredStockQty = 0;
+    let parsedStockQty = 0;
+    let sawDeclaredStockQty = false;
+
     // PS stock location headers change every month by design (distributors rename branches).
     // The mapping is keyed by column index, not by name, so header drift never breaks resolution.
     // No blocking check here — resolveRegion already falls back to name if the index is missing.
@@ -690,10 +842,22 @@ function adaptPS(ctx: AdapterContext, salesWb?: ExcelJS.Workbook, stockWb?: Exce
       const itemCode = cellText(at(row, colOf(stockC, "itemCode", 3)));
       const itemName = cellText(at(row, colOf(stockC, "itemName", 4)));
       if (!itemCode && !itemName) continue;
+      // Only a row that actually STATES a total joins the comparison, and when it does, both sides
+      // take that row — otherwise a blank total cell would read as a declared zero and manufacture a
+      // gap out of a row the file simply did not total.
+      const statesTotal =
+        stockTotalQtyCol !== null &&
+        stockTotalQtyCol < locationFirst &&
+        cellText(at(row, stockTotalQtyCol)).trim() !== "";
+      if (statesTotal) {
+        declaredStockQty += cellNumber(at(row, stockTotalQtyCol as number));
+        sawDeclaredStockQty = true;
+      }
       for (let col = locationFirst; col <= lastLocationCol; col += 1) {
         const locHeader = cellText(at(header, col));
         if (!locHeader) continue;
         const qty = cellNumber(at(row, col));
+        if (statesTotal) parsedStockQty += qty;
         if (qty === 0) continue;
         observations.push({
           side: "stock",
@@ -709,31 +873,66 @@ function adaptPS(ctx: AdapterContext, salesWb?: ExcelJS.Workbook, stockWb?: Exce
         });
       }
     }
+
+    if (sawDeclaredStockQty) {
+      fileTotalChecks.push(
+        fileTotalCheck({
+          label: 'stock matrix "Total Qty." column, summed over every product',
+          where: `${stockSheet.name}, column ${stockTotalQtyCol} against locations ${locationFirst}–${lastLocationCol}`,
+          declared: declaredStockQty,
+          parsed: parsedStockQty,
+          // Reports rather than blocks: no real Overseas stock file has been measured against this
+          // column, and stopping a legitimate weekly upload would cost more than the check saves.
+          severity: "report",
+          hint:
+            "A gap here usually means the location columns end somewhere other than where the import " +
+            "stopped reading them — a renamed or newly added depot leaves a blank header, and the scan " +
+            "stops at the first one.",
+        }),
+      );
+    }
   }
 
-  return { observations, sheetDates, sheetName: names.join(" + ") || "Overseas", blockingReasons };
+  return { observations, sheetDates, sheetName: names.join(" + ") || "Overseas", blockingReasons, fileTotalChecks };
 }
 
 /**
- * Sum of the POS sheet's own "Total Units" summary row across the channel block, or null when that
- * row is absent. POS closes the product block with a "Total Units" row and a "Total Values" row; only
- * the first is a unit total, and it agrees with the product qty rows exactly — measured on the
- * 2026-08 file at 1,048 against 1,048, and on the value side 92,213.02 against 92,213.02. That makes
- * it a free, file-supplied check on whether the adapter classified the rows the way the file meant.
+ * The POS sheet's own "Total Units" summary row, read TWO independent ways.
+ *
+ * POS closes the product block with a "Total Units" row and a "Total Values" row; only the first is a
+ * unit total, and it agrees with the product qty rows exactly — measured across all seven files held
+ * for 2026-07 and 2026-08, where the row's channel sum, the row's own "Total" cell and the parser's
+ * net were the same number every time.
+ *
+ * `acrossChannels` sums the row over the same columns the adapter read, so it catches a row the
+ * adapter CLASSIFIED wrongly (the EGP value row counted as units). It cannot catch a wrong channel
+ * RANGE, because a short range shortens both sides equally and the check still passes.
+ *
+ * `grandTotalCell` is the row's own "Total" cell, located from the header row independently of where
+ * the channel scan stopped. That one does catch a short range — POS adds branches over time (83 → 94 →
+ * 99 → 103 channels across the files held), so the range is detected per file and is exactly the kind
+ * of thing that can silently drift.
  */
-function posDeclaredTotalUnits(
+function posDeclaredTotals(
   sheet: ExcelJS.Worksheet,
   itemNameCol: number,
   channelFirst: number,
   lastChannelCol: number,
+  totalCol: number | null,
   firstDataRow: number,
-): number | null {
+): { acrossChannels: number; grandTotalCell: number | null } | null {
   for (let r = firstDataRow; r <= sheet.rowCount; r += 1) {
     const row = sheet.getRow(r);
     if (!/^total\s*units?$/i.test(cellText(at(row, itemNameCol)).trim())) continue;
     let sum = 0;
     for (let col = channelFirst; col <= lastChannelCol; col += 1) sum += cellNumber(at(row, col));
-    return sum;
+    // A BLANK total cell means the file declares nothing there — not that it declares zero. Reading it
+    // as zero would turn every file that leaves it empty into a blocked import.
+    const totalCellIsStated = totalCol !== null && cellText(at(row, totalCol)).trim() !== "";
+    return {
+      acrossChannels: sum,
+      grandTotalCell: totalCellIsStated ? cellNumber(at(row, totalCol as number)) : null,
+    };
   }
   return null;
 }
@@ -778,6 +977,11 @@ function adaptPOS(ctx: AdapterContext): AdapterResult {
     if (totalStop.test(hdr)) break;
     lastChannelCol = col;
   }
+
+  // The "Total" column, located from the header row itself rather than from wherever the scan above
+  // stopped — the scan also breaks on an empty header, and a total column found by following the data
+  // could only ever confirm the data that was read. See findHeaderColumn and posDeclaredTotals.
+  const totalCol = findHeaderColumn(headerRow, totalStop, channelFirst);
 
   if (lastChannelCol < channelFirst) {
     blockingReasons.push(
@@ -881,30 +1085,54 @@ function adaptPOS(ctx: AdapterContext): AdapterResult {
     }
   }
 
-  // Reconcile the units we read against the units the sheet says it contains. POS states its own unit
-  // total per channel on the "Total Units" row and it agrees with the qty rows to the unit, so any
-  // disagreement means the adapter classified rows differently from the file (a new layout, a shifted
-  // column, a value row counted as units) and the numbers must not reach the database. This is the
-  // self-check PS has always had through its "Total Qty" column and POS never had; on the 2026-08 W3
-  // file it fires at 93,261 read against 1,048 declared, and blocks the import.
-  const declaredUnits = posDeclaredTotalUnits(
+  // Reconcile the units we read against the units the sheet says it contains, TWICE — once across the
+  // channel columns (catches a misclassified row: a new layout, a shifted column, a value row counted
+  // as units) and once against the row's own "Total" cell (catches a channel range that stopped short,
+  // which the first check cannot see, because a short range shortens both of its sides together).
+  // Either disagreement means the adapter read the file differently from how the file meant it, and the
+  // numbers must not reach the database. On the 2026-08 W3 file the first fires at 93,261 read against
+  // 1,048 declared and blocks the import.
+  const declared = posDeclaredTotals(
     sheet,
     itemNameCol,
     channelFirst,
     lastChannelCol,
+    totalCol,
     dataStartRow(combinedC, 2),
   );
-  if (declaredUnits !== null && Math.abs(declaredUnits - parsedUnitsNet) > 0.01) {
-    blockingReasons.push(
-      `POS Purchasing Sales: the sheet's own "Total Units" row declares ${readableNumber(declaredUnits)} units, but the ` +
-        `adapter read ${readableNumber(parsedUnitsNet)}. The file's layout is not the one the adapter expects, so nothing ` +
-        `was imported rather than storing quantities that are known to be wrong. A gap this size normally means ` +
-        `each product's EGP value row is being counted as units — check whether the value rows now repeat the ` +
-        `product name and code.`,
+  const fileTotalChecks: WeeklyFileTotalCheck[] = [];
+  if (declared) {
+    fileTotalChecks.push(
+      fileTotalCheck({
+        label: '"Total Units" row, summed across the channel columns',
+        where: `${sheet.name}, columns ${channelFirst}–${lastChannelCol}`,
+        declared: declared.acrossChannels,
+        parsed: parsedUnitsNet,
+        severity: "block",
+        hint:
+          "A gap this size normally means each product's EGP value row is being counted as units — check " +
+          "whether the value rows now repeat the product name and code.",
+      }),
     );
+    // The grand-total cell sees a channel range that stopped short, which the summed row cannot.
+    if (declared.grandTotalCell !== null && totalCol !== null) {
+      fileTotalChecks.push(
+        fileTotalCheck({
+          label: '"Total Units" row, its own "Total" cell',
+          where: `${sheet.name}, column ${totalCol}`,
+          declared: declared.grandTotalCell,
+          parsed: parsedUnitsNet,
+          severity: "block",
+          hint:
+            "This total is the file's own, independent of the channel columns the import scanned, so a gap " +
+            "here alongside a matching channel sum means whole channel columns were missed — POS adds " +
+            "branches over time and the range is detected per file.",
+        }),
+      );
+    }
   }
 
-  return { observations, sheetDates, sheetName: sheet.name, blockingReasons };
+  return { observations, sheetDates, sheetName: sheet.name, blockingReasons, fileTotalChecks };
 }
 
 // SF (Sofico) — single "Sheet1" workbook. Per-customer invoice detail rows (one invoice line per
@@ -1494,6 +1722,29 @@ export async function parseWeeklyWorkbookBuffer(input: {
 
   const blockingReasons = [...adapted.blockingReasons];
 
+  // ── what the file said about itself, against what we read ───────────────────────────────────
+  // A `block` mismatch joins the blocking reasons and nothing persists; a `report` mismatch becomes an
+  // advisory the operator sees before pressing Import. A format that states no total of its own is
+  // recorded as such, so "nothing checked this" is visible instead of looking like a check that passed.
+  const fileTotalChecks = adapted.fileTotalChecks ?? [];
+  const fileTotals: WeeklyFileTotalsReport = {
+    checks: fileTotalChecks,
+    absence:
+      fileTotalChecks.length > 0
+        ? null
+        : {
+            reason:
+              FILE_DECLARES_NO_TOTAL[canonicalCode] ??
+              `${distributorName} states no total of its own in this export, so there is no figure the import can be checked against.`,
+          },
+  };
+  const fileTotalAdvisories: string[] = [];
+  for (const check of fileTotalChecks) {
+    if (check.status !== "mismatch") continue;
+    if (check.severity === "block") blockingReasons.push(fileTotalMessage(distributorName, check));
+    else fileTotalAdvisories.push(fileTotalMessage(distributorName, check));
+  }
+
   // ── date rule: exactly one distinct sheet date auto-uses it; else require periodDate ─────────
   const distinctDates = [...adapted.sheetDates].sort();
   const explicitPeriod = (input.periodDate ?? "").trim() || null;
@@ -1745,6 +1996,8 @@ export async function parseWeeklyWorkbookBuffer(input: {
     sheetName: adapted.sheetName,
     weekStart,
     blockingReasons,
+    fileTotals,
+    advisories: fileTotalAdvisories,
     excludedItems: [...excluded.values()]
       .map((entry) => ({
         itemCode: entry.itemCode,
@@ -1798,6 +2051,10 @@ export function summarizeWeekly(input: {
   sheetName: string;
   weekStart: string | null;
   blockingReasons: string[];
+  /** what the file declared about its own totals, and whether we read it that way */
+  fileTotals?: WeeklyFileTotalsReport;
+  /** non-blocking notes shown before Import — currently the `report`-severity file-total mismatches */
+  advisories?: string[];
   excludedItems?: WeeklyExcludedItem[];
   excludedBranches?: WeeklyExcludedBranch[];
 }): WeeklySalesValidationResult {
@@ -1854,6 +2111,8 @@ export function summarizeWeekly(input: {
 
   return {
     distributor: { code: input.distributor.code, name: input.distributor.name },
+    ...(input.advisories && input.advisories.length > 0 ? { advisories: input.advisories } : {}),
+    ...(input.fileTotals ? { fileTotals: input.fileTotals } : {}),
     fileName: input.fileName,
     sheetName: input.sheetName,
     templateKey: input.distributor.code,

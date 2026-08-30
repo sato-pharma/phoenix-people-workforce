@@ -139,8 +139,49 @@ export type WeeklyExcludedBranch = {
   stockQty: number;
 };
 
+/**
+ * One comparison of what the adapter READ against a total the FILE ITSELF states.
+ *
+ * This exists because the 2026-08 POS batch stored 172,046 units against a true 1,048 and passed
+ * validation cleanly — nothing anywhere compared the parsed result to anything. A distributor export
+ * that states its own total hands us a free, independent check on whether we read it the way it was
+ * meant, and every format that states one now gets checked.
+ *
+ * `severity` is deliberately per-check, not global. `block` is used only where the invariant has been
+ * proven against real files; `report` where the check is expected to hold but no real file has
+ * confirmed it yet — so a first mismatch surfaces loudly instead of stopping a legitimate weekly
+ * upload on a format nobody has seen. A `report` earns promotion to `block` once real files back it.
+ */
+export type WeeklyFileTotalCheck = {
+  /** what the file calls the figure, verbatim where the file names it (e.g. `"Total Units" row`) */
+  label: string;
+  /** where in the file the declared figure lives — for the operator-facing message */
+  where: string;
+  /** the number the file states */
+  declared: number;
+  /** the number the adapter read for the same scope */
+  parsed: number;
+  severity: "block" | "report";
+  status: "ok" | "mismatch";
+  /** what a mismatch of this shape usually means, when there is a known diagnosis */
+  hint?: string;
+};
+
+/**
+ * What the file said about itself, and whether we read it that way. `absence` is set — and `checks`
+ * left empty — for a format that states NO total of its own, recorded explicitly so "there is nothing
+ * to check this against" is visible on the screen instead of being indistinguishable from a check
+ * that quietly passed.
+ */
+export type WeeklyFileTotalsReport = {
+  checks: WeeklyFileTotalCheck[];
+  absence: { reason: string } | null;
+};
+
 export type WeeklySalesValidationResult = {
   advisories?: string[];
+  /** what the file said about itself, and whether we read it that way — see WeeklyFileTotalCheck */
+  fileTotals?: WeeklyFileTotalsReport;
   batchId?: string;
   createdAt?: string;
   distributor: WeeklyDistributorOption;
