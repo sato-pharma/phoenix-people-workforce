@@ -2399,7 +2399,7 @@ export function EmployeeManagement({
                     {group.rows.map(([label, value]) => (
                       <div className="grid grid-cols-[140px_1fr] gap-3 border-b border-phx-paper py-2 last:border-0" key={String(label)}>
                         <dt className="text-xs font-medium text-phx-ink-faint">{label}</dt>
-                        <dd className="text-sm font-medium text-phx-ink">{masterText(value)}</dd>
+                        <dd className="text-sm font-medium text-phx-ink" dir="auto">{masterText(value)}</dd>
                       </div>
                     ))}
                   </dl>

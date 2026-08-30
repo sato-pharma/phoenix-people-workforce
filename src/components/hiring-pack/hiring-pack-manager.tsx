@@ -618,6 +618,7 @@ export function HiringPackManager({ canManage, candidates, initialError, initial
                         "mt-1 text-sm font-bold",
                         fact.value === "Missing" ? "text-rose-600" : "text-phx-ink",
                       )}
+                      dir="auto"
                     >
                       {fact.value}
                     </p>

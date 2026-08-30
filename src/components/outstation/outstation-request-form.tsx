@@ -390,7 +390,7 @@ function InfoCard({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="rounded-md border border-slate-200 bg-slate-50 p-4">
       <p className="text-phx-xs font-black uppercase tracking-[0.16em] text-slate-500">{label}</p>
-      <div className="mt-2 text-sm font-semibold text-slate-900">{value}</div>
+      <div className="mt-2 text-sm font-semibold text-slate-900" dir="auto">{value}</div>
     </div>
   );
 }

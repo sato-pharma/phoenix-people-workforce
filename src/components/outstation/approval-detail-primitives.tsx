@@ -31,7 +31,7 @@ export function Fact({ label, value }: { label: string; value: string }) {
   return (
     <div>
       <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">{label}</p>
-      <p className="mt-0.5 whitespace-nowrap text-sm font-semibold text-slate-900">{value || "—"}</p>
+      <p className="mt-0.5 whitespace-nowrap text-sm font-semibold text-slate-900" dir="auto">{value || "—"}</p>
     </div>
   );
 }
@@ -47,11 +47,11 @@ export function RouteFact({ from, to }: { from: string; to: string }) {
       <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">Route</p>
       <div className="mt-0.5 -mx-1 overflow-x-auto px-1">
         <p className="flex w-max items-center gap-1.5 text-sm font-semibold text-slate-900">
-          <span className="whitespace-nowrap">{from || "—"}</span>
+          <span className="whitespace-nowrap" dir="auto">{from || "—"}</span>
           <span aria-hidden className="shrink-0 text-slate-400">
             →
           </span>
-          <span className="whitespace-nowrap">{to || "—"}</span>
+          <span className="whitespace-nowrap" dir="auto">{to || "—"}</span>
         </p>
       </div>
     </div>

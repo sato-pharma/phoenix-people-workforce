@@ -177,7 +177,7 @@ function DetailRow({ label, value }: { label: string; value: string | null | und
   return (
     <div className="flex flex-col gap-0.5">
       <dt className="text-phx-xs font-bold uppercase tracking-wide text-slate-500">{label}</dt>
-      <dd className="text-sm text-slate-800">{value}</dd>
+      <dd className="text-sm text-slate-800" dir="auto">{value}</dd>
     </div>
   );
 }

@@ -108,7 +108,7 @@ function ReadOnlyField({
   return (
     <div className="flex min-h-12 min-w-0 items-center gap-2 rounded-none border border-slate-200 bg-slate-50 px-4 text-sm font-semibold text-slate-800">
       <Icon className="h-4 w-4 shrink-0 text-orange-500" />
-      <span className="min-w-0 whitespace-nowrap">{value}</span>
+      <span className="min-w-0 whitespace-nowrap" dir="auto">{value}</span>
     </div>
   );
 }
@@ -653,10 +653,10 @@ export function MedicalRepExpensesWorkspace({
                     <td className="px-4 py-3 font-semibold text-slate-800">
                       {formatDate(request.tripStartDate)}
                     </td>
-                    <td className="max-w-[220px] whitespace-nowrap px-4 py-3 font-medium text-slate-700">
+                    <td className="max-w-[220px] whitespace-nowrap px-4 py-3 font-medium text-slate-700" dir="auto">
                       {requestFromLabel(request)}
                     </td>
-                    <td className="max-w-[260px] whitespace-nowrap px-4 py-3 font-semibold text-slate-900">
+                    <td className="max-w-[260px] whitespace-nowrap px-4 py-3 font-semibold text-slate-900" dir="auto">
                       {request.toLabel || "N/A"}
                     </td>
                     <td className="px-4 py-3 text-right font-semibold text-slate-800">
@@ -696,7 +696,7 @@ export function MedicalRepExpensesWorkspace({
                     <p className="mt-1 font-black text-slate-950">
                       {request.employeeName || employeeName}
                     </p>
-                    <p className="mt-1 text-sm font-semibold text-slate-700">
+                    <p className="mt-1 text-sm font-semibold text-slate-700" dir="auto">
                       {request.toLabel || "N/A"}
                     </p>
                   </div>
