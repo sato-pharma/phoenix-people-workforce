@@ -235,6 +235,8 @@ function customerMapGuardKey(distributorCode: unknown, customerCode: unknown): s
 // in the crosswalk", and "learn" would then write every row — reinstating the exact overwrite this
 // guard exists to prevent. A save that fails loudly is recoverable; one that silently reverts the
 // owner's rulings is not.
+type GuardRow = { active?: unknown; confidence?: unknown; customer_code?: unknown; distributor_code?: unknown };
+
 async function loadCustomerMapGuardKeys(
   supabase: ReturnType<typeof getSupabaseAdmin>,
   rows: Record<string, unknown>[],
@@ -251,14 +253,23 @@ async function loadCustomerMapGuardKeys(
     const table = () => supabase.from("source_of_sales_customer_map");
     // No .eq("active", true): the upsert conflicts on (distributor_code, customer_code) whatever the
     // row's active flag, so an inactive row is still a row that would be overwritten.
-    let { data, error } = await table().select("active,confidence,customer_code,distributor_code").in("customer_code", slice);
-    if (error && /confidence/i.test(error.message ?? "")) {
+    //
+    // The two selects are kept in SEPARATE bindings rather than reassigning one. The client infers a
+    // row type from the select string, so the narrower fallback shape is not assignable to the wider
+    // one — reusing a single `data` is a TS2322, not a style preference.
+    const withConfidence = await table().select("active,confidence,customer_code,distributor_code").in("customer_code", slice);
+    let rows: GuardRow[] = (withConfidence.data ?? []) as unknown as GuardRow[];
+    if (withConfidence.error) {
+      if (!/confidence/i.test(withConfidence.error.message ?? "")) {
+        throw new Error(`customer map guard: ${withConfidence.error.message ?? "lookup failed"}`);
+      }
       // Pre-migration deployment with no `confidence` column: the existing-row half still answers
       // correctly, and only the owner-ruling half degrades — matching what the upsert already does.
-      ({ data, error } = await table().select("active,customer_code,distributor_code").in("customer_code", slice));
+      const withoutConfidence = await table().select("active,customer_code,distributor_code").in("customer_code", slice);
+      if (withoutConfidence.error) throw new Error(`customer map guard: ${withoutConfidence.error.message ?? "lookup failed"}`);
+      rows = (withoutConfidence.data ?? []) as unknown as GuardRow[];
     }
-    if (error) throw new Error(`customer map guard: ${error.message ?? "lookup failed"}`);
-    for (const row of (data ?? []) as { active?: unknown; confidence?: unknown; customer_code?: unknown; distributor_code?: unknown }[]) {
+    for (const row of rows) {
       const key = customerMapGuardKey(row.distributor_code, row.customer_code);
       existing.add(key);
       if (Number(row.confidence) === 100 && row.active !== false) ownerVerified.add(key);
