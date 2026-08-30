@@ -191,6 +191,10 @@ export async function backfillCustomerRows(
       await supabase.rpc("phx_refresh_sos_distributor_product_rollup", { p_batch_id: batchId });
       // Sales-vs-target attribution rollup — same site, after the fact rollup it reads.
       await supabase.rpc("phx_refresh_monthly_attribution", { p_batch_id: batchId });
+      // Import summaries — what the Source of Sales dashboard reads. Frozen at insert until
+      // 2026-08-30, so a mapping backfill refreshed every rollup EXCEPT the one the executive
+      // screen actually renders from.
+      await supabase.rpc("phx_refresh_sos_import_summaries", { p_batch_id: batchId });
     } catch {
       // Intentionally swallowed — see above.
     }
