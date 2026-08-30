@@ -52,6 +52,12 @@ const HEAD_SOFT = "FFFAF8F5";
 const TOTAL_BG = "FFEBE8E3";
 const ZEBRA = "FFF4F1EC";
 const ACCENT = "FFF97316";
+// The only colours in this book that carry MEANING rather than structure, so they are the only ones
+// allowed to be seen from across a desk. Everything else is ink, rule and paper.
+const UP = "FF1E7A3C";
+const DOWN = "FFB3261E";
+const HEAT_TOP = "FFF6DCC4";
+const HEAT_MID = "FFFBEFE2";
 
 const F_UNITS = "#,##0";
 const F_VALUE = "#,##0";
@@ -180,6 +186,11 @@ type Group = {
   /** the same keys, rounded for print */
   print: Map<string, number>;
   value: number;
+  /**
+   * product code -> EGP this group sold of it. It PARTITIONS `value` exactly, which is what lets
+   * the Ranked tab print family totals beside the row total and have the two agree.
+   */
+  valueByProduct: Map<string, number>;
   stockValue: number;
 };
 
@@ -306,6 +317,7 @@ function buildGroups(
         exact: new Map(),
         print: new Map(),
         value: 0,
+        valueByProduct: new Map(),
         stockValue: 0,
       };
       byKey.set(key, group);
@@ -315,6 +327,10 @@ function buildGroups(
       group.exact.set(cell, (group.exact.get(cell) ?? 0) + measure.units);
     }
     group.value += num(row.salesValue);
+    group.valueByProduct.set(
+      row.productCode,
+      (group.valueByProduct.get(row.productCode) ?? 0) + num(row.salesValue),
+    );
   }
 
   let groups = [...byKey.values()];
@@ -393,6 +409,167 @@ export function orderedProducts(rows: Split[], axis?: string[]): { code: string;
 }
 
 // ── the masthead ────────────────────────────────────────────────────────────────
+
+/**
+ * The product columns grouped into FAMILIES, in the axis order (rule 3 again).
+ *
+ * A family is the owner's unit of thought - "how did Conviban do here" - but its four
+ * concentrations cannot be added in units, so a family line is always MONEY. Grouping is on the
+ * family NAME: family_code is not unique in this master ("DO" is both Dopaminict and Dolabactin),
+ * and Lacto Advanced and Lacto Basic share BOTH name and code, separated only by the line.
+ * A product the master gave no family stands as its own one-product family rather than being
+ * collected into an "Other" bin, which would put unrelated products under a single money total.
+ */
+export function familyBlocks(
+  products: { code: string; name: string }[],
+  familyOf: Map<string, string>,
+): { name: string; products: { code: string; name: string }[] }[] {
+  const order: string[] = [];
+  const bins = new Map<string, { code: string; name: string }[]>();
+  for (const product of products) {
+    const family = (familyOf.get(product.code) ?? "").trim() || product.name;
+    const bin = bins.get(family);
+    if (bin) bin.push(product);
+    else {
+      bins.set(family, [product]);
+      order.push(family);
+    }
+  }
+  return order.map((name) => ({ name, products: bins.get(name) ?? [] }));
+}
+
+/**
+ * The two weeks a trend arrow compares - NOT simply the last two.
+ *
+ * A week a distributor never sent reads 0 here and its sales sit in the next week that did arrive;
+ * the masthead says exactly that, in plain English. Comparing against that 0 would paint a green
+ * arrow on every row of the recovery week and a red one on every row of the gap. So the pair is
+ * drawn only from weeks carrying money ACROSS THE WHOLE SHEET - the set that note is about.
+ */
+export function trendPair(valueByWeek: Map<number, number>): { last: number; prev: number } | null {
+  const live = [...valueByWeek.entries()]
+    .filter(([, value]) => value > 0)
+    .map(([week]) => week)
+    .sort((left, right) => left - right);
+  if (live.length < 2) return null;
+  return { last: live[live.length - 1], prev: live[live.length - 2] };
+}
+
+/** Up, down, or nothing. A row that sold in NEITHER week gets no arrow, never a flat one. */
+export function trendMark(last: number, prev: number): { glyph: string; colour: string } | null {
+  if (last <= 0 && prev <= 0) return null;
+  if (last > prev) return { glyph: "▲", colour: UP };
+  if (last < prev) return { glyph: "▼", colour: DOWN };
+  return null;
+}
+
+/**
+ * The distributors whose two weeks can honestly be compared: the ones that sent a sheet in BOTH.
+ *
+ * Skipping weeks that are empty sheet-wide is not enough on real data. In August, Ibn Sina - 30% of
+ * the line - sent nothing in W3, so W3 was low but not zero, and every row on the sheet then read as
+ * a rise: 47 up against 1 down on the area tab. That is not a trend, it is a filing gap wearing a
+ * green arrow, and it is worse than no arrow at all because it looks like information.
+ */
+export function comparableDistributors(
+  rows: { distributorCode: string; weekNumber: number | null; salesValue: number }[],
+  last: number,
+  prev: number,
+): Set<string> {
+  const inLast = new Set<string>();
+  const inPrev = new Set<string>();
+  for (const row of rows) {
+    if (num(row.salesValue) <= 0) continue;
+    if (row.weekNumber === last) inLast.add(row.distributorCode);
+    if (row.weekNumber === prev) inPrev.add(row.distributorCode);
+  }
+  const both = new Set<string>();
+  for (const code of inLast) if (inPrev.has(code)) both.add(code);
+  return both;
+}
+
+/**
+ * Each group's money in the two compared weeks, counting only the comparable distributors.
+ *
+ * Keyed exactly as `buildGroups` keys its groups, so a row looks its own pair up by its own id.
+ */
+function trendByGroup(
+  input: NsmDsmWorkbookInput,
+  rows: Split[],
+  tab: TabKey,
+  trend: { last: number; prev: number },
+  comparable: Set<string>,
+): Map<string, { last: number; prev: number }> {
+  const out = new Map<string, { last: number; prev: number }>();
+  for (const row of rows) {
+    if (row.weekNumber !== trend.last && row.weekNumber !== trend.prev) continue;
+    if (!comparable.has(row.distributorCode)) continue;
+    const id = idOf(input, row, tab);
+    const key = ID_COLUMNS[tab].map((column) => id[column]).join("||");
+    let pair = out.get(key);
+    if (!pair) {
+      pair = { last: 0, prev: 0 };
+      out.set(key, pair);
+    }
+    if (row.weekNumber === trend.last) pair.last += num(row.salesValue);
+    else pair.prev += num(row.salesValue);
+  }
+  return out;
+}
+
+/**
+ * Whether a row gained or lost GROUND between the two weeks - not whether its money went up.
+ *
+ * Measured on live August CNS: the W4 sheet carried 1,374,341 EGP against W3's 342,712, a factor of
+ * four. That gap is when the distributors' sheets arrived, not how anyone sold, and against it a
+ * plain money comparison marked 44 areas up and 1 down - a column of green that a manager cannot
+ * act on, because it says the same thing about every row. Dividing by the line removes the part
+ * that is common to everybody and leaves the part that is about this row: whose slice grew.
+ *
+ * Both weeks are counted over the SAME distributors (see `comparableDistributors`), so the divisor
+ * is not itself distorted by a house that skipped a week.
+ */
+export function shareTrend(
+  pair: { last: number; prev: number },
+  lineLast: number,
+  linePrev: number,
+): { glyph: string; colour: string } | null {
+  if (lineLast <= 0 || linePrev <= 0) return null;
+  return trendMark(pair.last / lineLast, pair.prev / linePrev);
+}
+
+/** The key `buildGroups` filed a group under, rebuilt from the group's own printed ids. */
+const groupKey = (group: Group, tab: TabKey) => ID_COLUMNS[tab].map((column) => group.id[column]).join("||");
+
+/**
+ * Round a list of money figures to whole EGP so they still add to `target` exactly.
+ *
+ * Deliberately NOT `conserveRound`: that one distributes whole UNITS and never takes a cell below
+ * zero, which is right for units and wrong here - a family carrying returns is legitimately
+ * negative. The residue is at most half an EGP per family, and it lands on the largest family,
+ * where it cannot be seen.
+ */
+export function shareOut(values: number[], target: number): number[] {
+  const out = values.map((value) => Math.round(value));
+  const drift = target - out.reduce((sum, value) => sum + value, 0);
+  if (drift !== 0 && out.length > 0) {
+    let pick = 0;
+    for (let index = 1; index < values.length; index += 1) {
+      if (Math.abs(values[index]) > Math.abs(values[pick])) pick = index;
+    }
+    out[pick] += drift;
+  }
+  return out;
+}
+
+/** One line saying what the arrows mean, because a mark nobody can read is worse than no mark. */
+const arrowNote = (trend: { last: number; prev: number }) =>
+  `green up / red down is this row's SHARE of the line, W${trend.prev} to W${trend.last} - two weekly sheets are rarely the same size, so plain money would mostly measure which sheets arrived`;
+
+/** Add ONE vertical rule to a cell without discarding the borders it already carries. */
+function addSide(cell: ExcelJS.Cell, side: "left" | "right"): void {
+  cell.border = { ...(cell.border ?? {}), [side]: { style: "thin", color: { argb: RULE_STRONG } } };
+}
 
 const DAY_MONTH = (iso: string) => {
   const [, month, day] = iso.split("-");
@@ -628,6 +805,12 @@ type SheetContext = {
   scopeLine: string;
   unitPrice: Map<string, number>;
   targets: Map<string, number>;
+  /** product code -> family NAME from the master. Empty when the master has none for it. */
+  familyOf: Map<string, string>;
+  /** The two weeks the arrow column compares, or null when fewer than two weeks carry money. */
+  trend: { last: number; prev: number } | null;
+  /** Distributors that sent a sheet in BOTH of those weeks - the only ones an arrow may count. */
+  trendDistributors: Set<string>;
   /** Set when the product-by-week grid would be too wide to read; the weeks are then dropped. */
   weeksDropped: boolean;
 };
@@ -688,7 +871,21 @@ function drawFlatSheet(workbook: ExcelJS.Workbook, tab: TabKey, context: SheetCo
   else groups.sort((left, right) => right.value - left.value);
 
   const valueLabel = tab === "stock" ? "Stock value (EGP)" : "Sales Value (EGP)";
-  const columns = idColumns.length + products.length * measures.length + 1;
+  const totalColumn = idColumns.length + products.length * measures.length + 1;
+  // The arrow column, only where a direction can honestly be drawn. The Stock tab is branches that
+  // sold NOTHING, so an arrow there would be a claim about nothing.
+  const trend = tab === "stock" ? null : context.trend;
+  const trendColumn = trend ? totalColumn + 1 : 0;
+  const columns = trend ? trendColumn : totalColumn;
+  const trendPairs = trend
+    ? trendByGroup(input, context.rows, tab, trend, context.trendDistributors)
+    : new Map<string, { last: number; prev: number }>();
+  let trendLineLast = 0;
+  let trendLinePrev = 0;
+  for (const pair of trendPairs.values()) {
+    trendLineLast += pair.last;
+    trendLinePrev += pair.prev;
+  }
 
   // Row 5: the product band, merged over that product's own columns.
   const spans: { name: string; from: number; to: number }[] = [];
@@ -708,8 +905,13 @@ function drawFlatSheet(workbook: ExcelJS.Workbook, tab: TabKey, context: SheetCo
     }
     cursor = to + 1;
   }
-  sheet.getCell(GROUP_ROW, columns).value = valueLabel;
-  styleHeader(sheet.getCell(GROUP_ROW, columns), true, true);
+  sheet.getCell(GROUP_ROW, totalColumn).value = valueLabel;
+  styleHeader(sheet.getCell(GROUP_ROW, totalColumn), true, true);
+  if (trend) {
+    const band = sheet.getCell(GROUP_ROW, trendColumn);
+    band.value = "Trend";
+    styleHeader(band, true, true);
+  }
 
   // Row 6: the header.
   idColumns.forEach((label, index) => {
@@ -726,11 +928,18 @@ function drawFlatSheet(workbook: ExcelJS.Workbook, tab: TabKey, context: SheetCo
       cursor += 1;
     }
   }
-  const totalHeader = sheet.getCell(HEADER_ROW, columns);
+  const totalHeader = sheet.getCell(HEADER_ROW, totalColumn);
   totalHeader.value = "Total";
   styleHeader(totalHeader, true);
+  if (trend) {
+    const head = sheet.getCell(HEADER_ROW, trendColumn);
+    // The header names the two weeks, so the arrow needs no legend and nobody has to be told.
+    head.value = `Share W${trend.last} vs W${trend.prev}`;
+    styleHeader(head, true);
+  }
 
   // Data.
+  const heat: { row: number; value: number }[] = [];
   let row = FIRST_DATA_ROW;
   groups.forEach((group, index) => {
     const zebra = index % 2 === 1;
@@ -751,17 +960,30 @@ function drawFlatSheet(workbook: ExcelJS.Workbook, tab: TabKey, context: SheetCo
           name: "Calibri",
           size: 10,
           bold: measure.key === "M" && measures.length > 1,
-          color: { argb: value === 0 ? FAINT : INK },
+          // A return reads as a negative unit count. It is the one figure on the grid that says
+          // something went the wrong way, so it is the one figure that is not black.
+          color: { argb: value === 0 ? FAINT : value < 0 ? DOWN : INK },
         };
         cell.alignment = { vertical: "middle", horizontal: "right", indent: 1 };
         column += 1;
       }
     }
-    const totalCell = sheet.getCell(row, columns);
-    totalCell.value = Math.round(tab === "stock" ? group.stockValue : group.value);
+    const totalCell = sheet.getCell(row, totalColumn);
+    const totalValue = Math.round(tab === "stock" ? group.stockValue : group.value);
+    totalCell.value = totalValue;
     totalCell.numFmt = F_VALUE;
     totalCell.font = { name: "Calibri", size: 10, bold: true, color: { argb: INK } };
     totalCell.alignment = { vertical: "middle", horizontal: "right", indent: 1 };
+    heat.push({ row, value: totalValue });
+
+    if (trend) {
+      const pair = trendPairs.get(groupKey(group, tab));
+      const mark = pair ? shareTrend(pair, trendLineLast, trendLinePrev) : null;
+      const arrow = sheet.getCell(row, trendColumn);
+      arrow.value = mark ? mark.glyph : "";
+      arrow.font = { name: "Calibri", size: 8, bold: true, color: { argb: mark ? mark.colour : FAINT } };
+      arrow.alignment = { vertical: "middle", horizontal: "center" };
+    }
 
     if (zebra) {
       for (let column2 = 1; column2 <= columns; column2 += 1) {
@@ -771,6 +993,22 @@ function drawFlatSheet(workbook: ExcelJS.Workbook, tab: TabKey, context: SheetCo
     row += 1;
   });
 
+  // WHERE TO LOOK. One column carries a tint, and only by size: the rows holding the top tenth of
+  // the money, then the next fifth a shade fainter. Applied after the zebra so it sits over it, and
+  // deliberately nowhere else - a sheet where several things are coloured is a sheet where the eye
+  // has to choose, which is the opposite of the point.
+  const byMoney = heat.filter((entry) => entry.value > 0).sort((left, right) => right.value - left.value);
+  const topEnd = Math.max(1, Math.round(byMoney.length * 0.1));
+  const softEnd = Math.max(topEnd, Math.round(byMoney.length * 0.3));
+  const strongRows = new Set(byMoney.slice(0, topEnd).map((entry) => entry.row));
+  const softRows = new Set(byMoney.slice(topEnd, softEnd).map((entry) => entry.row));
+  for (const entry of heat) {
+    const shade = strongRows.has(entry.row) ? HEAT_TOP : softRows.has(entry.row) ? HEAT_MID : null;
+    if (shade) {
+      sheet.getCell(entry.row, totalColumn).fill = { type: "pattern", pattern: "solid", fgColor: { argb: shade } };
+    }
+  }
+
   // A SUBTOTAL total row, so filtering the sheet recomputes it over what is visible.
   const lastData = row - 1;
   if (lastData >= FIRST_DATA_ROW) {
@@ -778,11 +1016,11 @@ function drawFlatSheet(workbook: ExcelJS.Workbook, tab: TabKey, context: SheetCo
     totalRow.value = "Total (rows shown)";
     totalRow.font = { name: "Calibri", size: 10, bold: true, color: { argb: INK } };
     totalRow.alignment = { vertical: "middle", horizontal: "left", indent: 1 };
-    for (let column = idColumns.length + 1; column <= columns; column += 1) {
+    for (let column = idColumns.length + 1; column <= totalColumn; column += 1) {
       const letter = sheet.getColumn(column).letter;
       const cell = sheet.getCell(row, column);
       cell.value = { formula: `SUBTOTAL(109,${letter}${FIRST_DATA_ROW}:${letter}${lastData})` };
-      cell.numFmt = column === columns ? F_VALUE : F_UNITS;
+      cell.numFmt = column === totalColumn ? F_VALUE : F_UNITS;
       cell.font = { name: "Calibri", size: 10, bold: true, color: { argb: INK } };
       cell.alignment = { vertical: "middle", horizontal: "right", indent: 1 };
     }
@@ -818,11 +1056,240 @@ function drawFlatSheet(workbook: ExcelJS.Workbook, tab: TabKey, context: SheetCo
       ? `stock shows only for distributors that send one - ${reporting.join(", ")} do`
       : "no distributor in this scope reports stock on hand";
   }
+  if (trend && !extraNote) extraNote = arrowNote(trend);
   if (context.weeksDropped && (tab === "area" || tab === "branch" || tab === "dist")) {
     extraNote = `${context.products.length} products x ${context.weekNumbers.length} weeks is too wide to read, so the week columns are not shown here - filter to one line for the weekly grid`;
   }
+  // A rule down each side of every product's block. At 20 products x 5 columns the eye loses which
+  // concentration a number belongs to; the owner asked for this by name. Merged onto whatever
+  // border the cell already carries, never written over it.
+  for (const span of spans) {
+    for (let line = GROUP_ROW; line <= row; line += 1) {
+      addSide(sheet.getCell(line, span.from), "left");
+      addSide(sheet.getCell(line, span.to), "right");
+    }
+  }
+
   paintMasthead(sheet, columns, TAB_TITLE[tab], context.scopeLine, context.headline, extraNote);
 
+  sheet.views = [
+    { state: "frozen", xSplit: idColumns.length, ySplit: HEADER_ROW, showGridLines: false },
+  ];
+  applyPrint(sheet, columns, row);
+}
+
+/**
+ * "Branches ranked" - every concentration in UNITS, each family closed by its own figure in MONEY.
+ *
+ * The owner's design, and the reason it has to be shaped this way: he thinks in families ("how did
+ * Conviban do at this branch"), but Conviban is four concentrations and adding their units means
+ * nothing - 100 mg and 25 mg are not the same object. So each family shows its concentrations in
+ * units and then closes with the one figure that CAN be summed across them: money. The family
+ * figures add to the row Total exactly, because both are cut from the same per-product value.
+ */
+function drawRankedSheet(workbook: ExcelJS.Workbook, context: SheetContext, sheetPrefix: string): void {
+  const { input, products } = context;
+  const tab: TabKey = "ranked";
+  const sheet = workbook.addWorksheet(sanitizeSheetName(`${sheetPrefix}${TAB_SHEET[tab]}`).slice(0, 31));
+  sheet.views = [{ showGridLines: false }];
+
+  const idColumns = ID_COLUMNS[tab];
+  const families = familyBlocks(products, context.familyOf);
+  const groups = buildGroups(input, context.rows, tab, context.weekNumbers, context.unitPrice);
+  for (const group of groups) {
+    for (const product of products) {
+      const key = cellKey(product.code, "M");
+      if (!group.print.has(key)) group.print.set(key, Math.round(group.exact.get(key) ?? 0));
+    }
+  }
+  groups.sort((left, right) => right.value - left.value);
+
+  // The column plan: ids, then per family its concentrations followed by that family's money, then
+  // the row total and the arrow.
+  const plan: {
+    name: string;
+    from: number;
+    money: number;
+    products: { code: string; name: string }[];
+  }[] = [];
+  let cursor = idColumns.length + 1;
+  for (const family of families) {
+    const from = cursor;
+    const money = from + family.products.length;
+    plan.push({ name: family.name, from, money, products: family.products });
+    cursor = money + 1;
+  }
+  const totalColumn = cursor;
+  const trend = context.trend;
+  const trendColumn = trend ? totalColumn + 1 : 0;
+  const columns = trend ? trendColumn : totalColumn;
+  const trendPairs = trend
+    ? trendByGroup(input, context.rows, tab, trend, context.trendDistributors)
+    : new Map<string, { last: number; prev: number }>();
+  let trendLineLast = 0;
+  let trendLinePrev = 0;
+  for (const pair of trendPairs.values()) {
+    trendLineLast += pair.last;
+    trendLinePrev += pair.prev;
+  }
+
+  // Row 5: the family band, merged across its concentrations AND its money column - that figure
+  // belongs to the family, not to the concentration it happens to sit beside.
+  for (const block of plan) {
+    if (block.money > block.from) sheet.mergeCells(GROUP_ROW, block.from, GROUP_ROW, block.money);
+    const cell = sheet.getCell(GROUP_ROW, block.from);
+    cell.value = block.name;
+    cell.font = { name: "Calibri", size: 10, bold: true, color: { argb: INK } };
+    cell.alignment = { vertical: "middle", horizontal: "center" };
+    cell.border = { bottom: { style: "thin", color: { argb: RULE_STRONG } } };
+    for (let column = block.from; column <= block.money; column += 1) {
+      sheet.getCell(GROUP_ROW, column).fill = { type: "pattern", pattern: "solid", fgColor: { argb: HEAD_SOFT } };
+    }
+  }
+  sheet.getCell(GROUP_ROW, totalColumn).value = "Sales Value (EGP)";
+  styleHeader(sheet.getCell(GROUP_ROW, totalColumn), true, true);
+  if (trend) {
+    const band = sheet.getCell(GROUP_ROW, trendColumn);
+    band.value = "Trend";
+    styleHeader(band, true, true);
+  }
+
+  // Row 6: the concentrations themselves, then the family's money column.
+  idColumns.forEach((label, index) => styleHeaderWith(sheet, HEADER_ROW, index + 1, label, false));
+  for (const block of plan) {
+    block.products.forEach((product, index) =>
+      styleHeaderWith(sheet, HEADER_ROW, block.from + index, product.name, true),
+    );
+    styleHeaderWith(sheet, HEADER_ROW, block.money, "Family (EGP)", true);
+  }
+  styleHeaderWith(sheet, HEADER_ROW, totalColumn, "Total", true);
+  if (trend) {
+    styleHeaderWith(sheet, HEADER_ROW, trendColumn, `Share W${trend.last} vs W${trend.prev}`, true);
+  }
+
+  const heat: { row: number; value: number }[] = [];
+  let row = FIRST_DATA_ROW;
+  groups.forEach((group, index) => {
+    idColumns.forEach((label, position) => {
+      const cell = sheet.getCell(row, position + 1);
+      cell.value = group.id[label] ?? "";
+      cell.font = { name: "Calibri", size: 10, bold: position === 0, color: { argb: position === 0 ? INK : SUB } };
+      cell.alignment = { vertical: "middle", horizontal: "left", indent: 1 };
+    });
+
+    const totalValue = Math.round(group.value);
+    const exactFamily = plan.map((block) =>
+      block.products.reduce((sum, product) => sum + (group.valueByProduct.get(product.code) ?? 0), 0),
+    );
+    const printedFamily = shareOut(exactFamily, totalValue);
+
+    plan.forEach((block, blockIndex) => {
+      block.products.forEach((product, position) => {
+        const cell = sheet.getCell(row, block.from + position);
+        const units = group.print.get(cellKey(product.code, "M")) ?? 0;
+        cell.value = units;
+        cell.numFmt = F_UNITS;
+        cell.font = {
+          name: "Calibri",
+          size: 10,
+          color: { argb: units === 0 ? FAINT : units < 0 ? DOWN : INK },
+        };
+        cell.alignment = { vertical: "middle", horizontal: "right", indent: 1 };
+      });
+      const money = printedFamily[blockIndex] ?? 0;
+      const cell = sheet.getCell(row, block.money);
+      cell.value = money;
+      cell.numFmt = F_VALUE;
+      cell.font = {
+        name: "Calibri",
+        size: 10,
+        bold: true,
+        color: { argb: money === 0 ? FAINT : money < 0 ? DOWN : INK },
+      };
+      cell.alignment = { vertical: "middle", horizontal: "right", indent: 1 };
+    });
+
+    const totalCell = sheet.getCell(row, totalColumn);
+    totalCell.value = totalValue;
+    totalCell.numFmt = F_VALUE;
+    totalCell.font = { name: "Calibri", size: 10, bold: true, color: { argb: INK } };
+    totalCell.alignment = { vertical: "middle", horizontal: "right", indent: 1 };
+    heat.push({ row, value: totalValue });
+
+    if (trend) {
+      const pair = trendPairs.get(groupKey(group, tab));
+      const mark = pair ? shareTrend(pair, trendLineLast, trendLinePrev) : null;
+      const arrow = sheet.getCell(row, trendColumn);
+      arrow.value = mark ? mark.glyph : "";
+      arrow.font = { name: "Calibri", size: 8, bold: true, color: { argb: mark ? mark.colour : FAINT } };
+      arrow.alignment = { vertical: "middle", horizontal: "center" };
+    }
+
+    if (index % 2 === 1) {
+      for (let column = 1; column <= columns; column += 1) {
+        sheet.getCell(row, column).fill = { type: "pattern", pattern: "solid", fgColor: { argb: ZEBRA } };
+      }
+    }
+    row += 1;
+  });
+
+  const byMoney = heat.filter((entry) => entry.value > 0).sort((left, right) => right.value - left.value);
+  const topEnd = Math.max(1, Math.round(byMoney.length * 0.1));
+  const softEnd = Math.max(topEnd, Math.round(byMoney.length * 0.3));
+  const strongRows = new Set(byMoney.slice(0, topEnd).map((entry) => entry.row));
+  const softRows = new Set(byMoney.slice(topEnd, softEnd).map((entry) => entry.row));
+  for (const entry of heat) {
+    const shade = strongRows.has(entry.row) ? HEAT_TOP : softRows.has(entry.row) ? HEAT_MID : null;
+    if (shade) {
+      sheet.getCell(entry.row, totalColumn).fill = { type: "pattern", pattern: "solid", fgColor: { argb: shade } };
+    }
+  }
+
+  const lastData = row - 1;
+  if (lastData >= FIRST_DATA_ROW) {
+    const label = sheet.getCell(row, 1);
+    label.value = "Total (rows shown)";
+    label.font = { name: "Calibri", size: 10, bold: true, color: { argb: INK } };
+    label.alignment = { vertical: "middle", horizontal: "left", indent: 1 };
+    for (let column = idColumns.length + 1; column <= totalColumn; column += 1) {
+      const letter = sheet.getColumn(column).letter;
+      const cell = sheet.getCell(row, column);
+      cell.value = { formula: `SUBTOTAL(109,${letter}${FIRST_DATA_ROW}:${letter}${lastData})` };
+      cell.numFmt = plan.some((block) => block.money === column) || column === totalColumn ? F_VALUE : F_UNITS;
+      cell.font = { name: "Calibri", size: 10, bold: true, color: { argb: INK } };
+      cell.alignment = { vertical: "middle", horizontal: "right", indent: 1 };
+    }
+    for (let column = 1; column <= columns; column += 1) {
+      const cell = sheet.getCell(row, column);
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: TOTAL_BG } };
+      cell.border = { top: { style: "thin", color: { argb: RULE_STRONG } } };
+    }
+    sheet.autoFilter = { from: { row: HEADER_ROW, column: 1 }, to: { row: lastData, column: columns } };
+  }
+
+  autofit(sheet, columns, HEADER_ROW, row, new Map());
+  for (const block of plan) {
+    let have = 0;
+    for (let column = block.from; column <= block.money; column += 1) have += sheet.getColumn(column).width ?? 0;
+    const need = widthOf(block.name, 10) * 1.06;
+    if (have < need) {
+      const last = sheet.getColumn(block.money);
+      last.width = Math.round(((last.width ?? 0) + (need - have)) * 10) / 10;
+    }
+    for (let line = GROUP_ROW; line <= row; line += 1) {
+      addSide(sheet.getCell(line, block.from), "left");
+      addSide(sheet.getCell(line, block.money), "right");
+    }
+  }
+
+  paintMasthead(
+    sheet,
+    columns,
+    TAB_TITLE[tab],
+    context.scopeLine,
+    context.headline,
+    trend ? arrowNote(trend) : null,
+  );
   sheet.views = [
     { state: "frozen", xSplit: idColumns.length, ySplit: HEADER_ROW, showGridLines: false },
   ];
@@ -983,9 +1450,12 @@ function drawSummarySheet(workbook: ExcelJS.Workbook, context: SheetContext, she
   const wide = Math.max(columns, products.length + 2);
   autofit(sheet, wide, headerRow, row, new Map());
   paintMasthead(sheet, wide, "Summary", context.scopeLine, context.headline, null);
-  // No frozen pane: this sheet stacks several tables, so a pane frozen at the first table's header
-  // is meaningless everywhere below it.
-  sheet.views = [{ showGridLines: false }];
+  // Frozen at B7, the owner's own instruction - and this was the ONE tab that lacked it, the other
+  // six having frozen at that exact line since the first build. The COLUMN is what he needs: the
+  // name stays put while the weeks scroll sideways. The row half is the compromise, because this
+  // sheet stacks several tables and the pinned header belongs to the first of them - worth it,
+  // because a number whose row you cannot name is worth nothing at all.
+  sheet.views = [{ state: "frozen", xSplit: 1, ySplit: HEADER_ROW, showGridLines: false }];
   applyPrint(sheet, wide, row);
 }
 
@@ -1107,6 +1577,22 @@ function buildTabSet(
   // than the products, and SAY SO on the sheet — a silent cut reads as "this is everything".
   const weeksDropped = products.length * (weekNumbers.length + 1) > 120;
 
+  const familyOf = new Map<string, string>();
+  for (const row of rows) {
+    if (!familyOf.has(row.productCode)) familyOf.set(row.productCode, (row.family ?? "").trim());
+  }
+
+  // Money per week for the WHOLE scope, which is what decides the two weeks the arrows compare.
+  // `salesValue` is already the split figure - splitWeeklyRowsByBranch divides it before this file
+  // ever sees it - so it is summed as it stands, never re-weighted.
+  const valueByWeek = new Map<number, number>();
+  for (const row of rows) {
+    const week = row.weekNumber;
+    if (week === null || !weekNumbers.includes(week)) continue;
+    valueByWeek.set(week, (valueByWeek.get(week) ?? 0) + num(row.salesValue));
+  }
+  const trendPeriod = trendPair(valueByWeek);
+
   const context: SheetContext = {
     input,
     rows,
@@ -1117,11 +1603,16 @@ function buildTabSet(
     scopeLine,
     unitPrice: unitPrices(rows),
     targets: lineTargetsFor(rows, weekNumbers, input),
+    familyOf,
+    trend: trendPeriod,
+    trendDistributors: trendPeriod
+      ? comparableDistributors(rows, trendPeriod.last, trendPeriod.prev)
+      : new Set<string>(),
     weeksDropped,
   };
 
   drawSummarySheet(workbook, context, sheetPrefix);
-  for (const tab of ["area", "branch", "dist", "ranked", "stock", "details"] as TabKey[]) {
-    drawFlatSheet(workbook, tab, context, sheetPrefix);
-  }
+  for (const tab of ["area", "branch", "dist"] as TabKey[]) drawFlatSheet(workbook, tab, context, sheetPrefix);
+  drawRankedSheet(workbook, context, sheetPrefix);
+  for (const tab of ["stock", "details"] as TabKey[]) drawFlatSheet(workbook, tab, context, sheetPrefix);
 }
