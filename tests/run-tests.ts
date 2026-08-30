@@ -1089,6 +1089,7 @@ import { runLeaverRosterExclusionTests } from "./leaver-roster-exclusion.test.ts
 import { runCompanyActivityReportPostExitDaysTests } from "./company-activity-report-post-exit-days.test.ts";
 import { runMarketingApprovedCustomerNameTests } from "./marketing-approved-customer-name.test.ts";
 import { runOutstationArabicTextDirectionTests } from "./outstation-arabic-text-direction.test.ts";
+import { runMailboxMonitorTextDirectionTests } from "./mailbox-monitor-text-direction.test.ts";
 
 /**
  * MARK THE SUITE AS A TEST RUN — this is a data-safety gate, not a formality.
@@ -3333,6 +3334,10 @@ await runTest("marketing finance table never labels a request with a raw custome
 await runTest(
   "outstation Arabic direction (residence/route take block dir=auto; notes take it per line)",
   runOutstationArabicTextDirectionTests,
+);
+await runTest(
+  "mailbox monitor Arabic direction (body dir=auto needs whitespace-pre-wrap; From line isolates the name)",
+  runMailboxMonitorTextDirectionTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
