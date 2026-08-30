@@ -976,6 +976,7 @@ import { runDeductionsCrmSingleMonthScanTests } from "./deductions-crm-single-mo
 import { runCrmDayMapPushdownTests } from "./crm-day-map-pushdown.test.ts";
 import { runSfeManagerNavDeadLinksTests } from "./sfe-manager-nav-dead-links.test.ts";
 import { runOrganogramNavLinkExistsTests } from "./organogram-nav-link-exists-for-every-role-that-can-open-it.test.ts";
+import { runHrSeatsCompanyOrganogramTests } from "./hr-seats-see-the-company-organogram.test.ts";
 import { runEveryOfferedLinkOpensTests } from "./every-offered-link-opens.test.ts";
 import { runCrmHubCardReachabilityTests } from "./crm-hub-cards-are-reachable-by-the-roles-they-name.test.ts";
 import { runCrmDepartedExclusionHandoverTests } from "./crm-departed-exclusion-handover.test.ts";
@@ -2756,6 +2757,14 @@ await runTest(
   + "the whole chart on request — but neither was listed on any sidebar entry, so there was no way to reach "
   + "it; the owner hit this on 2026-08-25 after the Head Office branch shipped)",
   runOrganogramNavLinkExistsTests,
+);
+
+await runTest(
+  "both new HR seats see the FULL COMPANY organogram, Head Office included (HR Operations was named in "
+  + "canAccessCompanyOrganogram, canAccessHeadOffice and canViewOrganogramSensitiveFields and held no "
+  + "organogram grant at all, because the only HR function granting one belongs to the other seat's bundle "
+  + "— gate two open, gate one shut, so /organogram redirected her out; owner reported it 2026-08-30)",
+  runHrSeatsCompanyOrganogramTests,
 );
 
 await runTest(

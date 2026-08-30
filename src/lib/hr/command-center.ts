@@ -286,9 +286,13 @@ const TILES_BY_FUNCTION: Record<
     const tiles = [
       tile("headcount", "Active Headcount", directory.summary.activeEmployees, "on the payroll", "/hr/employee-360", "emerald"),
       tile("incomplete-records", "Incomplete Records", incomplete, "missing required data", "/hr/employee-360", incomplete > 0 ? "amber" : "emerald"),
-      // /hr/employee-360, NOT /hr/organogram — this figure is about employee RECORDS, and no
-      // function in the HR Operations bundle grants `organogram` at all. The organogram spelling
-      // was written here first and would have rendered a tile she cannot open.
+      // /hr/employee-360, NOT /hr/organogram — this figure is about employee RECORDS. A missing
+      // manager here is a field to fill in on a personnel file, not a seat to move on the chart,
+      // and the fix is made on the 360 screen. The second half of this note used to be that no
+      // function in her bundle granted `organogram` at all; that stopped being true on 2026-08-30,
+      // when people_records gained organogram:read on the owner's instruction. The destination is
+      // unchanged and the reason is now the only reason: she can open the chart, and it is still
+      // not where this number gets fixed.
       tile("no-manager", "No Manager Set", directory.summary.employeesWithoutManagers, "records to complete", "/hr/employee-360", directory.summary.employeesWithoutManagers > 0 ? "amber" : "emerald"),
     ];
     if (loaded.resignations) {
