@@ -50,6 +50,10 @@ export type WhatsAppMirrorEvent =
        *  the area line is omitted entirely, rather than shown as "not answered": a manager was never
        *  asked it, and "not answered" would read as a question they skipped. */
       areaApplies: boolean;
+      /** Years-of-experience label, asked to everyone. "not answered" when they stopped short. */
+      experienceLabel: string | null;
+      /** Expected salary, verbatim as typed. "not answered" when they stopped short. */
+      expectedSalary: string | null;
     };
 
 /**
@@ -105,6 +109,10 @@ export function buildWhatsAppMirrorMessage(event: WhatsAppMirrorEvent): { title:
     // never asked, and a line claiming they skipped it would be false.
     if (event.areaName) lines.push(`Area: ${event.areaName}`);
     else if (event.areaApplies) lines.push("Area: not answered");
+    // Experience and salary are asked of everyone, so a missing one reads as "not answered" — the
+    // same treatment as background and region, and unlike area, which is role-scoped.
+    lines.push(`Experience: ${event.experienceLabel ?? "not answered"}`);
+    lines.push(`Expected salary: ${event.expectedSalary ?? "not answered"}`);
     lines.push("", "They chose these themselves, in WhatsApp.");
     return { message: lines.join("\n"), title: "Applicant filed themselves" };
   }

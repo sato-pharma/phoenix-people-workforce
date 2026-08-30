@@ -121,11 +121,11 @@ export async function POST(request: Request) {
       // job title onto the next document they send.
       //
       // Narrow on purpose, and the narrowing lives in `handleClassifyText`, not here: it acts only
-      // when this sender has an open conversation parked on `job_title_other`, `region_other` or
-      // `area_other`, and returns `not_awaiting_text` for everything else, which falls through to
-      // the buffer exactly as before. Keeping the step list in one place is why adding two typed
-      // questions needed no change on this side. A message carrying a document is excluded outright
-      // — that is a CV with a caption, never an answer.
+      // when this sender has an open conversation parked on one of the typed-answer steps (an "Other"
+      // follow-up, or the expected-salary question), and returns `not_awaiting_text` for everything
+      // else, which falls through to the buffer exactly as before. Keeping the step list in one place
+      // is why adding the screening questions needed no change on this side. A message carrying a
+      // document is excluded outright — that is a CV with a caption, never an answer.
       if (message.text && !message.document && !message.historical) {
         const textOutcome = await handleClassifyText({
           phoneNumberId: message.deliveredToPhoneNumberId,

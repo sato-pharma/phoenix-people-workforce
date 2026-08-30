@@ -1,8 +1,10 @@
 // Recruitment / ATS — the menus a CV sender taps to say what they are applying for.
 //
-// Four questions: role -> graduation background -> region -> area. The area question is asked ONLY
-// to a Medical Rep (owner's cascade rule 2026-08-30, see askAreaForRole); every other applicant is
-// asked region only. The background question is asked to everyone.
+// Six questions: role -> graduation background -> region -> area -> years of experience -> expected
+// salary. The area question is asked ONLY to a Medical Rep (owner's cascade rule 2026-08-30, see
+// askAreaForRole); every other applicant skips it and goes straight to experience. Background,
+// experience and expected salary are asked to everyone. Expected salary is the one free-typed
+// question — every other question is a tappable list.
 //
 // WHY THIS EXISTS. Measured against production 2026-08-28: 446 candidates, 227 of them (51%) from
 // WhatsApp, and `applied_for_job_title` filled on 60. Those 60 hold 41 DISTINCT spellings, because
@@ -40,13 +42,15 @@ export const WHATSAPP_SECTION_TITLE_MAX = 24;
 export const WHATSAPP_BODY_MAX = 1024;
 
 /** A step that is asked as a tappable list. Every menu below has one of these. */
-export type ClassifyStep = "job_title" | "background" | "region" | "area";
+export type ClassifyStep = "job_title" | "background" | "region" | "area" | "experience";
 
 /**
  * Every value the session's `step` column may hold — the tappable steps, plus the typed follow-up
  * after "Other", plus the terminal state. Kept separate from `ClassifyStep` on purpose:
  * `job_title_other` has no menu and no row ids, so letting it into `ClassifyStep` would imply a
- * list that cannot exist. This union is the same vocabulary as the table's CHECK constraint.
+ * list that cannot exist. `salary` is the same case — the last question is typed, not tapped — so it
+ * lives here and not in `ClassifyStep`. This union is the same vocabulary as the table's CHECK
+ * constraint.
  */
 export type ClassifySessionStep =
   | ClassifyStep
@@ -54,6 +58,7 @@ export type ClassifySessionStep =
   | "background_other"
   | "region_other"
   | "area_other"
+  | "salary"
   | "done";
 
 export const classifySessionSteps: readonly ClassifySessionStep[] = [
@@ -65,6 +70,8 @@ export const classifySessionSteps: readonly ClassifySessionStep[] = [
   "region_other",
   "area",
   "area_other",
+  "experience",
+  "salary",
   "done",
 ];
 
@@ -112,7 +119,15 @@ export function parseClassifyRowId(raw: string | null | undefined): ParsedClassi
   if (parts.length !== 3) return null;
   const [prefix, step, value] = parts;
   if (prefix !== ID_PREFIX) return null;
-  if (step !== "job_title" && step !== "background" && step !== "region" && step !== "area") return null;
+  if (
+    step !== "job_title" &&
+    step !== "background" &&
+    step !== "region" &&
+    step !== "area" &&
+    step !== "experience"
+  ) {
+    return null;
+  }
   if (!value.trim()) return null;
   return { step, value };
 }
@@ -450,23 +465,100 @@ export function areaMenu(regionCode: CandidateRegionCode, areaNames: readonly st
   };
 }
 
+// ── Question 5 — years of experience ─────────────────────────────────────────────────────────────
+// Owner's instruction 2026-08-30 (bucket 1 screening): after geography, ask how much experience the
+// applicant has. Asked to EVERYONE and placed second-to-last, so it never gets between a CV and the
+// role/region answers that route it — a manager still files themselves quickly, and this sits after.
+//
+// The ranges are exhaustive — fresh graduate through more than five years covers every applicant —
+// so there is deliberately NO "Other" row. A closed, tappable band is worth more than a free-typed
+// "about 4-ish years": it sorts, it filters, and it cannot arrive as junk in the column a manager
+// reads. This is a NEW vocabulary, stored as its own declaration on the candidate.
+export const candidateExperienceCodes = ["fresh", "lt_1", "1_3", "3_5", "gt_5"] as const;
+export type CandidateExperienceCode = (typeof candidateExperienceCodes)[number];
+
+/** What the applicant reads. Every label is well inside the 24-character row ceiling. The keys are
+ *  quoted because `1_3` unquoted is a numeric-separator literal (the number 13), not a string key. */
+export const candidateExperienceLabels: Record<CandidateExperienceCode, string> = {
+  fresh: "Fresh graduate",
+  lt_1: "Less than 1 year",
+  "1_3": "1 - 3 years",
+  "3_5": "3 - 5 years",
+  gt_5: "More than 5 years",
+};
+
+// Order is least-to-most experience — a natural ladder, and there is no "Other" to keep last because
+// the bands leave nothing uncovered.
+const EXPERIENCE_MENU_ORDER: readonly CandidateExperienceCode[] = candidateExperienceCodes;
+
+export function experienceMenu(): ClassifyMenu {
+  return {
+    body: "How many years of experience do you have?",
+    buttonLabel: "Choose experience",
+    rows: EXPERIENCE_MENU_ORDER.map((code) => rowFor("experience", code, candidateExperienceLabels[code])),
+    sectionTitle: "Experience",
+    step: "experience",
+  };
+}
+
+/** True for an experience band we offer — guards a stale value arriving in a reply. There is no
+ *  "Other" escape here, so unlike the region/background guards this rejects everything else outright. */
+export function isOfferedExperience(value: string): value is CandidateExperienceCode {
+  return (candidateExperienceCodes as readonly string[]).includes(value);
+}
+
+// ── Question 6 — expected salary ─────────────────────────────────────────────────────────────────
+// Owner's instruction 2026-08-30: the last question. Free text, not a band, and on purpose — an
+// expected salary is a figure the applicant names, and offering ranges would both anchor them and
+// force a real answer into a bucket. So it is typed, stored VERBATIM, and never coerced to a number:
+// applicants write "negotiable", a range, or Arabic numerals, and every one of those is a truthful
+// answer a recruiter can read. Placed dead last because it is the highest-friction question — an
+// applicant who drops here has already answered everything else.
+//
+// Plain text, like the "Other" follow-ups: there is nothing to tap, so the reply arrives as an
+// ordinary inbound message the webhook routes into the session before buffering it as CV context.
+export const EXPECTED_SALARY_MAX = 60;
+
+export function salaryPromptText(): string {
+  return [
+    "Last question — what monthly net salary are you looking for?",
+    "",
+    'Send it as a normal message, in EGP. You can write a number, a range, or "negotiable".',
+  ].join("\n");
+}
+
+/** Sent when the typed salary is longer than a figure should be — someone pasted a sentence. Names
+ *  the limit, quotes nothing back, and reads naturally (the shared nudge would say "a expected
+ *  salary"). */
+export function salaryTooLongText(): string {
+  return [
+    "That looks a little long for a salary.",
+    "",
+    `Please send just the amount — up to ${EXPECTED_SALARY_MAX} characters, for example "12000" or "negotiable".`,
+  ].join("\n");
+}
+
 /**
  * The closing message, sent once the answers are in. Plain text, not a menu.
  *
- * Background is shown when given (everyone is asked, so it is normally present); the area line is
- * shown only for a Medical Rep, who is the only role asked it — a manager's confirmation reading
- * "Area: —" would look like they missed a question they were never shown.
+ * Background, experience and expected salary are shown when given (everyone is asked, so they are
+ * normally present); the area line is shown only for a Medical Rep, who is the only role asked it —
+ * a manager's confirmation reading "Area: —" would look like they missed a question never shown.
  */
 export function classifyThankYouText(input: {
   roleLabel: string;
   backgroundLabel: string | null;
   regionLabel: string;
   areaName: string | null;
+  experienceLabel: string | null;
+  expectedSalary: string | null;
 }): string {
   const lines = ["Thank you — your application is now recorded as:", "", `Role: ${input.roleLabel}`];
   if (input.backgroundLabel) lines.push(`Background: ${input.backgroundLabel}`);
   lines.push(`Region: ${input.regionLabel}`);
   if (input.areaName) lines.push(`Area: ${input.areaName}`);
+  if (input.experienceLabel) lines.push(`Experience: ${input.experienceLabel}`);
+  if (input.expectedSalary) lines.push(`Expected salary: ${input.expectedSalary}`);
   lines.push("", "Our HR team will review your CV and contact you if there is a suitable opening.");
   return lines.join("\n");
 }
