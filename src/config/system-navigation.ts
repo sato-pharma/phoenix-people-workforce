@@ -936,9 +936,13 @@ const adminNavigationSectionSeeds = [
   // Placed here rather than anywhere else because the ruling says so: Early Birds is field-force
   // recognition and Field Coaching is the row it belongs beside.
   //
-  // The stray portal-array copy is deliberately LEFT IN PLACE. The owner's standing instruction
-  // for this audit is not to touch the employee portal, and the dead entry costs nothing:
-  // dedupeSectionsByHref runs per mode, so the two copies never meet.
+  // The stray portal-array copy was DELETED on 2026-08-30, with the owner asked for that specific
+  // permission first — it sat in employeePortalNavigationSectionSeeds, and his standing instruction
+  // for this audit is not to touch the employee portal. Nothing observable changed: every role on
+  // that row (Super Admin, SFE Manager, and CEO via its explicit early return) resolves to the
+  // ADMIN shell in resolveNavigationMode, and the portal array only renders in portal mode, so the
+  // row was offered to three roles who were never in the shell that could draw it. This row, in
+  // this array, is now the only one.
   {
     id: "early-birds",
     items: [
@@ -1499,18 +1503,6 @@ const employeePortalNavigationSectionSeeds = [
       { href: "/employee-portals/report-it", icon: ShieldAlert, label: "Report It", excludedRoles: ["Manager"] },
     ],
     label: "Pharmacovigilance",
-  },
-  // A NEW section rather than an item inside an existing one: navigation-active-path.test.ts pins
-  // the exact ordered href list of several sections, so inserting into one breaks it. A section
-  // resolving to a single visible item renders headerless, which is exactly the "tab" this is meant
-  // to be. Ship the real label — getSections blanks it for the flat-sidebar roles at render time,
-  // and the role-scoped heading test requires a non-empty label for Super Admin and CEO.
-  {
-    id: "early-birds",
-    items: [
-      { href: "/admin/early-birds", icon: Sunrise, label: "Early Birds", permissions: [{ resource: "early_birds", action: "read" }], roles: ["Super Admin", "CEO", "SFE Manager"] },
-    ],
-    label: "Early Birds",
   },
 ] as const satisfies readonly NavigationSectionSeed[];
 
