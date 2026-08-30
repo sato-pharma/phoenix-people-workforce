@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { downloadFromApiRoute } from "@/lib/navigation/browser-navigation";
 
+import { SectionHeading } from "./section-shell";
 import { SelectField } from "./select-field";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -132,10 +133,10 @@ export function FinanceDownloadPanel({ initialMonth, initialYear }: { initialMon
             description="The HR-confirmed sheet, protected — only the Finance Edit and Finance Edit Reason columns accept input."
           >
             <div className="flex flex-col gap-3 p-5">
-              <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-slate-400">
-                <ShieldCheck className="h-4 w-4 text-orange-500" />
-                Locked workbook
-              </div>
+              <SectionHeading
+                title="Locked workbook"
+                icon={<ShieldCheck className="size-3.5 text-orange-500" />}
+              />
               <Button
                 disabled={!availability.part1}
                 onClick={() => download("part1")}
@@ -158,11 +159,11 @@ export function FinanceDownloadPanel({ initialMonth, initialYear }: { initialMon
             description="FAB's own bulk-transfer format, matched cell-for-cell to the company's real submitted file — no branding, no extra columns."
           >
             <div className="flex flex-col gap-3 p-5">
-              <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-slate-400">
-                <Building2 className="h-4 w-4 text-blue-600" />
-                Bank submission file
-              </div>
-              <label className="flex flex-col gap-1 text-phx-xs font-black uppercase tracking-wide text-slate-500">
+              <SectionHeading
+                title="Bank submission file"
+                icon={<Building2 className="size-3.5 text-blue-600" />}
+              />
+              <label className="flex flex-col gap-1 text-[11px] font-black uppercase tracking-wide text-slate-500">
                 Value Date
                 <input
                   type="date"
@@ -198,10 +199,10 @@ export function FinanceDownloadPanel({ initialMonth, initialYear }: { initialMon
             description="CIB's own bulk-credit format, matched cell-for-cell — same fixed-width fields, same header colors, same account-number highlight."
           >
             <div className="flex flex-col gap-3 p-5">
-              <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-slate-400">
-                <Banknote className="h-4 w-4 text-indigo-600" />
-                Bank submission file
-              </div>
+              <SectionHeading
+                title="Bank submission file"
+                icon={<Banknote className="size-3.5 text-indigo-600" />}
+              />
               <Button
                 disabled={!availability.part1}
                 onClick={() => downloadCib("part1")}

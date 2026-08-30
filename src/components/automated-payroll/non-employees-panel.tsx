@@ -343,24 +343,32 @@ export function NonEmployeesPanel({ runId, part, locked, onChange }: Props) {
         {rows.map((row, index) => {
           const draft = edits[row.id] ?? emptyDraft;
           return (
-            <div key={row.id} className="border border-slate-200 bg-white p-3">
-              <div className="mb-2 flex items-center justify-between gap-2 border-b border-slate-200 pb-2">
-                <span className="text-xs font-semibold text-slate-500">Entry {index + 1}</span>
+            <div
+              key={row.id}
+              className="border border-slate-200 bg-white shadow-sm transition hover:border-slate-300 hover:shadow-md"
+            >
+              {/* Same dark identity header the per-employee recommendation cards
+                  carry, so a non-employee entry reads as the same kind of object
+                  rather than a different-looking stray. */}
+              <div className="flex items-center justify-between gap-2 border-b border-slate-200 bg-slate-900 px-3 py-2">
+                <span className="overflow-hidden whitespace-nowrap text-sm font-black tracking-tight text-white">
+                  Entry {index + 1}
+                </span>
                 {!locked ? (
                   <Button
                     size="sm"
                     variant="ghost"
                     disabled={busyId === row.id}
                     onClick={() => void deleteExisting(row.id)}
-                    className="text-rose-600 hover:bg-rose-50 hover:text-rose-700"
+                    className="shrink-0 text-slate-400 hover:bg-white/10 hover:text-rose-400"
                   >
                     <Trash2 className="size-4" />
                   </Button>
                 ) : null}
               </div>
-              <div className="flex flex-col gap-2">
+              <div className="flex flex-col gap-2 p-3">
                 <label className="flex flex-col gap-1 text-sm">
-                  <span className="text-slate-500">Full Name (EN)</span>
+                  <span className="overflow-hidden whitespace-nowrap text-[11px] font-black uppercase tracking-wide text-slate-500">Full Name (EN)</span>
                   <Input
                     value={draft.fullNameEn}
                     disabled={locked}
@@ -369,7 +377,7 @@ export function NonEmployeesPanel({ runId, part, locked, onChange }: Props) {
                   />
                 </label>
                 <label className="flex flex-col gap-1 text-sm">
-                  <span className="text-slate-500">Full Name (AR)</span>
+                  <span className="overflow-hidden whitespace-nowrap text-[11px] font-black uppercase tracking-wide text-slate-500">Full Name (AR)</span>
                   <Input
                     value={draft.fullNameAr}
                     disabled={locked}
@@ -379,7 +387,7 @@ export function NonEmployeesPanel({ runId, part, locked, onChange }: Props) {
                   />
                 </label>
                 <label className="flex flex-col gap-1 text-sm">
-                  <span className="text-slate-500">Bank Name</span>
+                  <span className="overflow-hidden whitespace-nowrap text-[11px] font-black uppercase tracking-wide text-slate-500">Bank Name</span>
                   <Input
                     value={draft.bankName ?? ""}
                     disabled={locked}
@@ -388,7 +396,7 @@ export function NonEmployeesPanel({ runId, part, locked, onChange }: Props) {
                   />
                 </label>
                 <label className="flex flex-col gap-1 text-sm">
-                  <span className="text-slate-500">Bank Account</span>
+                  <span className="overflow-hidden whitespace-nowrap text-[11px] font-black uppercase tracking-wide text-slate-500">Bank Account</span>
                   <Input
                     value={draft.bankAccount ?? ""}
                     disabled={locked}
@@ -397,7 +405,7 @@ export function NonEmployeesPanel({ runId, part, locked, onChange }: Props) {
                   />
                 </label>
                 <label className="flex flex-col gap-1 text-sm">
-                  <span className="text-slate-500">Total Salary</span>
+                  <span className="overflow-hidden whitespace-nowrap text-[11px] font-black uppercase tracking-wide text-slate-500">Total Salary</span>
                   <Input
                     type="number"
                     value={String(draft.totalSalary)}
@@ -422,16 +430,25 @@ export function NonEmployeesPanel({ runId, part, locked, onChange }: Props) {
         })}
 
         {newRows.map((row) => (
-          <div key={row.tempId} className="border border-orange-300 bg-orange-50/40 p-3">
-            <div className="mb-2 flex items-center justify-between gap-2 border-b border-orange-200 pb-2">
-              <span className="text-xs font-semibold text-orange-700">New entry</span>
-              <Button size="sm" variant="ghost" onClick={() => discardNewRow(row.tempId)}>
+          <div key={row.tempId} className="border border-orange-300 bg-orange-50/40 shadow-sm">
+            {/* An unsaved entry keeps the orange draft tone rather than the dark
+                header — it is deliberately not yet one of the saved objects. */}
+            <div className="flex items-center justify-between gap-2 border-b border-orange-200 bg-orange-100/70 px-3 py-2">
+              <span className="overflow-hidden whitespace-nowrap text-sm font-black tracking-tight text-orange-800">
+                New entry
+              </span>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => discardNewRow(row.tempId)}
+                className="shrink-0 text-orange-700 hover:bg-orange-200/60 hover:text-rose-700"
+              >
                 <Trash2 className="size-4" />
               </Button>
             </div>
-            <div className="flex flex-col gap-2">
+            <div className="flex flex-col gap-2 p-3">
               <label className="flex flex-col gap-1 text-sm">
-                <span className="text-slate-500">Full Name (EN)</span>
+                <span className="overflow-hidden whitespace-nowrap text-[11px] font-black uppercase tracking-wide text-slate-500">Full Name (EN)</span>
                 <Input
                   value={row.fullNameEn}
                   placeholder="Full name (English)"
@@ -440,7 +457,7 @@ export function NonEmployeesPanel({ runId, part, locked, onChange }: Props) {
                 />
               </label>
               <label className="flex flex-col gap-1 text-sm">
-                <span className="text-slate-500">Full Name (AR)</span>
+                <span className="overflow-hidden whitespace-nowrap text-[11px] font-black uppercase tracking-wide text-slate-500">Full Name (AR)</span>
                 <Input
                   value={row.fullNameAr}
                   placeholder="الاسم بالعربية"
@@ -450,7 +467,7 @@ export function NonEmployeesPanel({ runId, part, locked, onChange }: Props) {
                 />
               </label>
               <label className="flex flex-col gap-1 text-sm">
-                <span className="text-slate-500">Bank Name</span>
+                <span className="overflow-hidden whitespace-nowrap text-[11px] font-black uppercase tracking-wide text-slate-500">Bank Name</span>
                 <Input
                   value={row.bankName ?? ""}
                   placeholder="Bank Name"
@@ -459,7 +476,7 @@ export function NonEmployeesPanel({ runId, part, locked, onChange }: Props) {
                 />
               </label>
               <label className="flex flex-col gap-1 text-sm">
-                <span className="text-slate-500">Bank Account</span>
+                <span className="overflow-hidden whitespace-nowrap text-[11px] font-black uppercase tracking-wide text-slate-500">Bank Account</span>
                 <Input
                   value={row.bankAccount ?? ""}
                   placeholder="Bank Account"
@@ -468,7 +485,7 @@ export function NonEmployeesPanel({ runId, part, locked, onChange }: Props) {
                 />
               </label>
               <label className="flex flex-col gap-1 text-sm">
-                <span className="text-slate-500">Total Salary</span>
+                <span className="overflow-hidden whitespace-nowrap text-[11px] font-black uppercase tracking-wide text-slate-500">Total Salary</span>
                 <Input
                   type="number"
                   value={String(row.totalSalary)}
