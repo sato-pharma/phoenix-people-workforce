@@ -73,26 +73,39 @@ async function ByAreaContent({
     ]);
   }
 
-  // Area is the grain this tab is named for — key by areaCode (not name, which can collide
-  // across regions) and carry regionName along for context. Leads the page so "By Area" actually
-  // shows areas first; the region rollup below stays as a secondary, coarser view of the same data.
+  // Every "Region" on this page is the ORGANOGRAM region — the DM district that owns the area on
+  // that line in that month, which is what the Monthly Closing publishes. It is NOT the geographic
+  // region the area sits in; those disagree for 23 (line, area) pairs on production, worth EGP
+  // 705,076 of July's 10,370,361. The geographic code is still on every row as `regionCode`, and it
+  // stays the dimension the viewer's access bound was applied in — see SosByAreaRow.
+  //
+  // Area is the grain this tab is named for, but 15 of 48 areas are owned by TWO districts —
+  // different lines, different DMs — so keying on areaCode alone would silently show one district's
+  // label over both districts' money. Key on (area, owning district) instead: such an area appears
+  // once per district, each row carrying its own value, exactly as the closing reports it. Areas
+  // with a single owner are unaffected and still produce exactly one row.
   const areaMap = new Map<string, { areaName: string; regionName: string; units: number; value: number }>();
   for (const r of byArea) {
-    const cur = areaMap.get(r.areaCode) ?? { areaName: r.areaName, regionName: r.regionName, units: 0, value: 0 };
-    areaMap.set(r.areaCode, { ...cur, units: cur.units + r.units, value: cur.value + r.value });
+    const key = `${r.areaCode}\u0000${r.operationalRegionCode}`;
+    const cur = areaMap.get(key) ?? { areaName: r.areaName, regionName: r.operationalRegionName, units: 0, value: 0 };
+    areaMap.set(key, { ...cur, units: cur.units + r.units, value: cur.value + r.value });
   }
   const areaTotals = [...areaMap.entries()]
-    .map(([areaCode, t]) => ({ areaCode, ...t }))
+    .map(([key, t]) => ({ areaCode: key.split("\u0000")[0]!, ...t }))
     .sort((a, b) => b.value - a.value);
 
   const regionMap = new Map<string, { units: number; value: number }>();
   for (const r of byArea) {
-    const cur = regionMap.get(r.regionName) ?? { units: 0, value: 0 };
-    regionMap.set(r.regionName, { units: cur.units + r.units, value: cur.value + r.value });
+    const cur = regionMap.get(r.operationalRegionName) ?? { units: 0, value: 0 };
+    regionMap.set(r.operationalRegionName, { units: cur.units + r.units, value: cur.value + r.value });
   }
   const regionTotals = [...regionMap.entries()]
     .map(([regionName, t]) => ({ regionName, ...t }))
     .sort((a, b) => b.value - a.value);
+
+  // The detail table renders `regionName`; show the owning district there too, so all three tables
+  // on this page agree with each other and with the closing.
+  const byAreaDetail = byArea.map((r) => ({ ...r, regionName: r.operationalRegionName }));
 
   return (
     <div className="space-y-5">
@@ -160,7 +173,7 @@ async function ByAreaContent({
               { key: "units",      label: "Units",   align: "right", sortable: true, formatKind: "number" },
               { key: "value",      label: "Value",   align: "right", sortable: true, formatKind: "number" },
             ]}
-            rows={byArea}
+            rows={byAreaDetail}
             exportTitle="SoS By Region-Area Detail"
             exportSubtitle="Period-level SoS by region and area"
           />
