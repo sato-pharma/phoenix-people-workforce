@@ -112,6 +112,10 @@ export type AuditEntityType =
   | "source_of_sales_region"
   | "territory_preview_link"
   | "territory_sync"
+  // A scheduled job that stopped reporting, or reported failure, as found by the job
+  // heartbeat sweep. Written only when something is wrong: a row every 15 minutes saying
+  // "all fine" would bury the log in 96 entries a day and hide the real ones.
+  | "scheduled_job_health"
   | "system_cleanup"
   | "user"
   | "user_activity_access"

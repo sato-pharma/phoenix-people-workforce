@@ -238,6 +238,7 @@ policy):
    | `phoenix-ireports360-live-poll` | **Simple**, period `5m` | 15m | the in-process poller, every tick |
    | `phoenix-ireports360-sync` | `0 6-21/3 * * *` | 2h | the in-process poller, when due |
    | `phoenix-reconcile-visits` | `0 4 * * 0` | 12h | the in-process poller, when due |
+   | `phoenix-job-heartbeat-sweep` | `*/15 * * * *` | 30m | cron-job.org — **not created yet, see below** |
 
    **This table is machine-read.** `scripts/healthchecks-sync.mjs` parses these rows — slug in
    backticks, then either a backticked cron expression or a **Simple** cell naming its period, then
@@ -247,23 +248,64 @@ policy):
    Reformat the table freely, but re-run `pnpm run test` — a parser that silently matches nothing
    turns the sync into a no-op that reports success.
 
-   🔴 **THE ACCOUNT IS FULL AT 20 CHECKS, AND THE LAST THREE ROWS ARE DECLARED BUT NOT CREATED.**
-   Measured 2026-08-30: `GET /api/v3/checks/` returns exactly **20**, every one of them declared
-   here and legitimate, and `POST /checks/` for a 21st returns **HTTP 403 with an empty body** —
-   the free tier's ceiling. So `phoenix-crm-contact-lists`, `phoenix-expense-claims-refresh` and
-   `phoenix-recruitment-cv-digest` are wired in their routes and declared above, and the sync
-   reports them `FAILED: HTTP 403` on every run until capacity exists. **That is the honest state,
-   not a bug to re-diagnose** — do not spend time on the 403, and do not delete a row to make the
-   sync go green, which would only hide three unwatched jobs again. It resolves one of two ways,
-   both of them the owner's call: raise the plan, or retire an existing check to free a slot. The
-   moment either happens, a plain `node scripts/healthchecks-sync.mjs --apply` creates all three
-   with no further edit — the declaration above is already correct.
+   🔴 **THE HEALTHCHECKS ACCOUNT IS FULL AT 20 CHECKS — WHICH IS WHY THERE IS NOW A SECOND,
+   IN-HOUSE BACKEND.** Measured 2026-08-30: `GET /api/v3/checks/` returns exactly **20**, every one
+   of them declared here and legitimate, and `POST /checks/` for a 21st returns **HTTP 403 with an
+   empty body** — the free tier's ceiling. So `phoenix-crm-contact-lists`,
+   `phoenix-expense-claims-refresh`, `phoenix-recruitment-cv-digest` and
+   `phoenix-job-heartbeat-sweep` are declared above but have no external check, and the sync reports
+   them `FAILED: HTTP 403` on every run. **That is the honest state, not a bug to re-diagnose** — do
+   not spend time on the 403, and do not delete a row to make the sync go green, which would only
+   hide unwatched jobs again. The owner declined a paid plan on 2026-08-30 (`$20/month` for 100
+   checks) and asked for a free path; the register below is that path.
 
    ⚠️ **A ping to an uncreated slug is best-effort and silent, which is the trap here.**
    `pingDeadMansSwitch` never throws and swallows its own failure into a `logWarning`, so these
-   three routes will ping into nothing and carry on working normally. Nothing breaks; nothing is
+   routes will ping into nothing and carry on working normally. Nothing breaks; nothing is
    watched either. **Absence of a red check is not evidence of a healthy job when the check was
-   never created** — that is precisely how these three came to be unwatched in the first place.
+   never created** — that is precisely how these came to be unwatched in the first place.
+
+### The in-house register — `public.job_heartbeats`
+
+`pingDeadMansSwitch` now writes to **two** backends on every call, and neither can block the other
+(`Promise.allSettled`; both halves already swallow their own errors). No route changed to gain
+this — the function is the single seam every one of the 24 declared jobs already went through.
+
+| | Healthchecks.io | `public.job_heartbeats` |
+|---|---|---|
+| Where it lives | outside Phoenix | inside Phoenix |
+| Capacity | **20, full** | unlimited |
+| Survives Phoenix being down | **yes — this is its whole value** | no |
+| Detects "ran and reported FAILURE" | on a dashboard only | **yes, and it alerts** |
+| Alerts via | whatever the project has configured | in-app + Telegram, never email |
+
+The sweeper is [`/api/cron/job-heartbeat-sweep`](../app/api/cron/job-heartbeat-sweep/route.ts),
+every 15 minutes. It bootstraps a row for every declared slug, judges each against its schedule,
+and on any problem writes an ERROR log, an audit row, and a notification to the
+`weekly_system_health_digest` audience. **Deliberately no email, and do not "fix" that back** —
+this alert can fire *because* the notification pipeline is what stopped, so an emailed alert would
+depend on the channel it is reporting broken.
+
+Three design points worth not re-deriving:
+
+- **The previous scheduled fire is computed with `cron-parser`, never from an average interval.**
+  Several schedules here are windowed — `*/5 5 * * *` fires twelve times inside one hour and is then
+  silent for 23 hours *by design*, and `0 6-21/3 * * *` has a nine-hour overnight gap. Any
+  interval-based staleness rule calls both of those stranded every single day, and a monitor that
+  cries wolf daily is one nobody reads.
+- **A job that has never reported is not stranded until a fire has passed since `first_seen_at`.**
+  Otherwise declaring a new job pages someone the moment it deploys.
+- **The sweep pings its own switch `success` even when it finds problems.** That check answers one
+  question — "is the sweeper running?" — and turning it red for another job's fault is how a
+  watchdog stops being trusted.
+
+🔴 **THE ONE HOLE, STATED RATHER THAN HIDDEN: the sweeper is not externally watched.** A sweeper
+that stops entirely cannot report its own silence, and `phoenix-job-heartbeat-sweep` has no
+Healthchecks slot because the account is full. **Every other job is now covered internally, which
+is exactly what makes retiring an external check safe for the first time** — freeing one slot for
+this slug is the single action that closes the loop, and it costs nothing that is not already
+covered twice. Until then: a monitoring layer that overstates its own coverage is worse than one
+that admits a gap, so this paragraph exists instead of a green dashboard.
 
    🔴 **A check created through the management API is stored with an EMPTY slug unless one is sent
    explicitly** — and the app pings by slug (`hc-ping.com/<ping-key>/<slug>?create=1`), never by name.
