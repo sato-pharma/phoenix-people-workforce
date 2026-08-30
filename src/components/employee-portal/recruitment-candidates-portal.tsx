@@ -4,7 +4,12 @@ import { useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { CvPreviewModal } from "@/components/recruitment/cv-preview-modal";
+import { CandidateCommentThread } from "@/components/employee-portal/candidate-comment-thread";
+import { CandidateCvActions } from "@/components/employee-portal/candidate-cv-actions";
+import { CandidateFolderControl } from "@/components/employee-portal/candidate-folder-control";
+import { ManagerFoldersSection } from "@/components/employee-portal/manager-folders-section";
+import { TeamCandidatesSection, type TeamManagerOption } from "@/components/employee-portal/team-candidates-section";
+import { cairoDateTime } from "@/lib/format/cairo-datetime";
 import { APPLIED_FOR_SOURCE_LABEL, candidateRowAppliedFor } from "@/lib/recruitment/applied-for";
 import type { ApplicationWithContext } from "@/lib/recruitment/applications";
 import {
@@ -14,21 +19,57 @@ import {
   isUnreviewedCandidateStatus,
   type HiringManagerDecision,
 } from "@/lib/recruitment/candidate-status";
-import { detectCvFileKind } from "@/lib/recruitment/cv-file-kind";
+import type { CandidateFolderAreaOption } from "@/lib/recruitment/candidate-folder-options";
+import {
+  partitionManagerCandidates,
+  withManagerFiling,
+  type ManagerFolderFiling,
+  type ManagerFolderFilings,
+} from "@/lib/recruitment/manager-folder-shelf";
 import { groupCandidatesByPosition, shouldShowGroupHeadings } from "@/lib/recruitment/position-folder";
-import type { Candidate, Interview } from "@/lib/recruitment/types";
+import type { Candidate, Interview, TeamCandidateFile } from "@/lib/recruitment/types";
 
 type Props = {
+  /**
+   * Every active area with its RECRUITMENT region, for the folder picker. Loaded on the server
+   * because it reads the org chart — see candidate-folder-options.ts, and note that a Sharkia area
+   * files under Delta (3) here while the sales geography deliberately still says Delta (2).
+   */
+  areaOptions: CandidateFolderAreaOption[];
   initialApplications: ApplicationWithContext[];
+  /**
+   * What this manager has filed onto HIS OWN shelf, keyed by candidate id.
+   *
+   * His own, not the recruitment team's: filing here writes ats_candidate_manager_folders and
+   * Talent Acquisition's pool does not move. See manager-folder-shelf.ts for why the two must stay
+   * separate — the short version is that the recruiter's filing hides a CV from every recruiter.
+   */
+  initialFilings: ManagerFolderFilings;
+  /**
+   * Every card's CV file, keyed by candidate id, loaded on the server with the lists themselves.
+   *
+   * The owner's rule for this screen is that the CV must be openable — "he must be able to screen
+   * and must have a button to download the CV or to view it. It is a must." Letting each card ask
+   * for its own files met that on paper and failed it on screen: eleven cards meant eleven requests,
+   * and the View/Download control appeared long after the card it belongs to. A missing key means
+   * this candidate was never asked about, so the card falls back to asking; an EMPTY ARRAY is a real
+   * answer and means the candidate has no file.
+   */
+  initialFiles: Record<string, TeamCandidateFile[]>;
   /**
    * The CVs a recruiter pushed STRAIGHT to this manager — no requisition, no application, no seat on
    * the org chart. This is the flow the module is actually used for; the applications above are the
    * long way round, taken 7 times in the module's history against 226 candidates.
    */
   initialSentToMe: Candidate[];
+  /**
+   * The managers reporting to this caller, for the picker the owner asked for on 2026-08-30. Empty
+   * for anybody who manages nobody, which is most people who reach this screen.
+   */
+  initialTeam: TeamManagerOption[];
+  /** Only used to decide which comments offer a Delete — every delete is re-checked server-side. */
+  viewerHrId: string | null;
 };
-
-type CandidateFileSummary = { id: string; fileName: string; kind: string; mimeType: string | null };
 
 async function getJson(url: string): Promise<Record<string, unknown>> {
   const res = await fetch(url);
@@ -81,90 +122,6 @@ function formatDate(value: string | null | undefined) {
 // than imported, matching the copies in recruitment-workspace.tsx and intake-health-view.tsx — the
 // three differ in separator and empty-value, and this one matches the workspace, which is the screen
 // a recruiter is looking at when they talk to the manager about the same candidate.
-function cairoDateTime(iso: string | null | undefined): string {
-  if (!iso) return "—";
-  const value = new Date(iso);
-  if (Number.isNaN(value.getTime())) return "—";
-  const date = value.toLocaleDateString("en-GB", {
-    day: "2-digit",
-    month: "short",
-    timeZone: "Africa/Cairo",
-    year: "numeric",
-  });
-  const time = value.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: "Africa/Cairo" });
-  return `${date} · ${time}`;
-}
-
-/**
- * View CV / Download, for any candidate the caller is allowed to see.
- *
- * Shared by both cards below because the rule it encodes is not obvious and must not be re-derived:
- * "View CV" has to actually VIEW the CV. The bare file route serves Content-Disposition: attachment
- * unless asked for "inline", so a plain link saves the file and shows the manager nothing — and a
- * download manager will intercept it besides. The preview modal renders the real document, so it IS
- * the view action here; saving a copy sits beside it rather than being the only behaviour.
- */
-function CandidateCvActions({ candidateId }: { candidateId: string }) {
-  const [files, setFiles] = useState<CandidateFileSummary[]>([]);
-  const [loaded, setLoaded] = useState(false);
-  const [previewOpen, setPreviewOpen] = useState(false);
-
-  useEffect(() => {
-    let active = true;
-    void (async () => {
-      try {
-        const data = await getJson(`/api/recruitment/hiring-manager/candidates/${candidateId}/files`);
-        if (!active) return;
-        setFiles(Array.isArray(data.files) ? (data.files as CandidateFileSummary[]) : []);
-      } catch {
-        /* leave empty — the card still shows the candidate's own details */
-      } finally {
-        if (active) setLoaded(true);
-      }
-    })();
-    return () => {
-      active = false;
-    };
-  }, [candidateId]);
-
-  const cvFile = files.find((file) => file.kind === "cv");
-  // "unsupported" means the preview modal cannot render this file type, so saving it is the only way
-  // to read it — that is the one case where the CV button may still be a download.
-  const cvKind = cvFile ? detectCvFileKind(cvFile.mimeType ?? "", cvFile.fileName) : "unsupported";
-  const href = cvFile ? `/api/recruitment/hiring-manager/candidates/${candidateId}/files/${cvFile.id}` : "";
-
-  if (!loaded) return null;
-  if (!cvFile) return <p className="text-xs text-slate-400">No CV file on record.</p>;
-
-  return (
-    <>
-      <div className="flex flex-wrap items-center gap-2">
-        {cvKind !== "unsupported" ? (
-          <Button variant="secondary" onClick={() => setPreviewOpen(true)}>
-            View CV — {cvFile.fileName}
-          </Button>
-        ) : null}
-        <a
-          className="inline-flex w-fit items-center rounded-md border border-gray-200 px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 hover:text-slate-900"
-          href={href}
-          rel="noreferrer"
-          target="_blank"
-        >
-          {cvKind === "unsupported" ? `Download — ${cvFile.fileName}` : "Download"}
-        </a>
-      </div>
-      {previewOpen ? (
-        <CvPreviewModal
-          downloadUrl={href}
-          fileName={cvFile.fileName}
-          mimeType={cvFile.mimeType}
-          onClose={() => setPreviewOpen(false)}
-        />
-      ) : null}
-    </>
-  );
-}
-
 const hiringManagerCriteria = [
   { key: "territory_knowledge", label: "Territory knowledge" },
   { key: "sales_skills", label: "Sales skills" },
@@ -182,7 +139,16 @@ function Field({ label, value }: { label: string; value: string | null | undefin
   );
 }
 
-function CandidateCard({ application, onChanged }: { application: ApplicationWithContext; onChanged: () => void }) {
+function CandidateCard({
+  application,
+  files,
+  onChanged,
+}: {
+  application: ApplicationWithContext;
+  /** Loaded with the page, for the same reason as the sent-to-you cards. */
+  files: TeamCandidateFile[];
+  onChanged: () => void;
+}) {
   const candidate = application.candidate!;
   const requisition = application.requisition!;
   const [interviews, setInterviews] = useState<Interview[]>([]);
@@ -307,7 +273,7 @@ function CandidateCard({ application, onChanged }: { application: ApplicationWit
         {candidate.hasMedicalRepExperience ? <Field label="Medical Rep tenure" value={tenureLine} /> : null}
       </div>
 
-      <CandidateCvActions candidateId={candidate.id} />
+      <CandidateCvActions candidateId={candidate.id} initialFiles={files} />
 
       {error ? <p className="text-xs text-rose-600">{error}</p> : null}
 
@@ -394,7 +360,23 @@ function CandidateCard({ application, onChanged }: { application: ApplicationWit
  * alternative is the state this replaced, where the alert arrived and pointed at a page the manager
  * was not allowed to open.
  */
-function SentCandidateCard({ candidate: initial }: { candidate: Candidate }) {
+function SentCandidateCard({
+  areaOptions,
+  candidate: initial,
+  filing,
+  files,
+  onFilingChanged,
+  viewerHrId,
+}: {
+  areaOptions: CandidateFolderAreaOption[];
+  candidate: Candidate;
+  /** This manager's own filing of this CV, or null while it is still in his live list. */
+  filing: ManagerFolderFiling | null;
+  /** This candidate's files, already loaded with the list — so View CV is there with the card. */
+  files: TeamCandidateFile[];
+  onFilingChanged: (candidateId: string, filing: ManagerFolderFiling | null) => void;
+  viewerHrId: string | null;
+}) {
   const [candidate, setCandidate] = useState(initial);
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
@@ -467,7 +449,18 @@ function SentCandidateCard({ candidate: initial }: { candidate: Candidate }) {
         <Field label="Sent to you" value={notified ? cairoDateTime(notified.sentAt) : null} />
       </div>
 
-      <CandidateCvActions candidateId={candidate.id} />
+      <div className="flex flex-wrap items-start gap-2">
+        <CandidateCvActions candidateId={candidate.id} initialFiles={files} />
+        {/* The third answer, and the one the owner asked for on 2026-08-30: neither "Interview" nor
+            "Not interested" is true of a good CV that simply is not needed this month. Filing writes
+            to HIS shelf only - the recruitment team's pool does not move. */}
+        <CandidateFolderControl
+          areaOptions={areaOptions}
+          candidate={candidate}
+          filing={filing}
+          onChanged={(next) => onFilingChanged(candidate.id, next)}
+        />
+      </div>
 
       {error ? <p className="text-xs text-rose-600">{error}</p> : null}
 
@@ -499,18 +492,64 @@ function SentCandidateCard({ candidate: initial }: { candidate: Candidate }) {
           </p>
         </div>
       )}
+
+      {/* The same thread the managers above this one write into. It is HERE, on the card the manager
+          holding the CV actually opens, because that is the only place a comment from above can do
+          its job — a National Sales Manager's opinion filed somewhere only he can see is an opinion
+          he may as well not have written. */}
+      <CandidateCommentThread candidateId={candidate.id} viewerHrId={viewerHrId} />
     </Card>
   );
 }
 
-export function RecruitmentCandidatesPortal({ initialApplications, initialSentToMe: sentToMe }: Props) {
+export function RecruitmentCandidatesPortal({
+  areaOptions,
+  initialApplications,
+  initialFilings,
+  initialFiles: files,
+  initialSentToMe: sentToMe,
+  initialTeam,
+  viewerHrId,
+}: Props) {
   const [applications, setApplications] = useState(initialApplications);
+  const [filings, setFilings] = useState<ManagerFolderFilings>(initialFilings);
+
+  // The manager's own shelf, folded by the RECRUITER's own partition function so a folder means one
+  // thing on both screens. `live` is what still needs him; `shelves` is what he kept for later.
+  //
+  // Note the order: the shelf split happens BEFORE the position grouping below, so a CV he has filed
+  // leaves "Sent to you" entirely rather than sitting in a position folder AND in a shelf. A
+  // candidate in two lists is a candidate answered twice.
+  const {
+    live: liveSends,
+    shelves,
+    filedCount,
+  } = useMemo(() => partitionManagerCandidates(sentToMe, filings), [filings, sentToMe]);
+
+  const onFilingChanged = (candidateId: string, filing: ManagerFolderFiling | null) => {
+    setFilings((current) => withManagerFiling(current, candidateId, filing));
+  };
+
+  // ONE card renderer, used by the live list and by every folder. The two used to be one JSX literal
+  // repeated three times, and adding the folder control to it would have meant adding it three times
+  // — which is precisely how a card inside a folder ends up without the button that gets it out.
+  const renderSentCard = (candidate: Candidate) => (
+    <SentCandidateCard
+      areaOptions={areaOptions}
+      candidate={candidate}
+      filing={filings[candidate.id] ?? null}
+      files={files[candidate.id] ?? []}
+      key={candidate.id}
+      onFilingChanged={onFilingChanged}
+      viewerHrId={viewerHrId}
+    />
+  );
 
   // Folded on the SAME function the recruiter's screen and the tests use, so a folder cannot mean
   // one thing where it is created and another where it is read.
   const { folders: positionFolders, unfiled: unfiledSends } = useMemo(
-    () => groupCandidatesByPosition(sentToMe),
-    [sentToMe],
+    () => groupCandidatesByPosition(liveSends),
+    [liveSends],
   );
 
   // One answer drives BOTH headings — see shouldShowGroupHeadings. They disagreed precisely because
@@ -527,7 +566,10 @@ export function RecruitmentCandidatesPortal({ initialApplications, initialSentTo
     }
   };
 
-  if (applications.length === 0 && sentToMe.length === 0) {
+  // The team check belongs in this condition, not only in the render below it. A National Sales
+  // Manager with nothing sent to him personally still has districts to look through, and without
+  // this he would be shown "No candidates yet" over a team holding ten CVs.
+  if (applications.length === 0 && sentToMe.length === 0 && initialTeam.length === 0) {
     return (
       <Card className="rounded-lg border border-gray-200 bg-white p-10 text-center shadow-[0_1px_3px_rgba(15,23,42,0.08)]">
         <p className="text-base font-semibold text-slate-700">No candidates yet</p>
@@ -543,7 +585,7 @@ export function RecruitmentCandidatesPortal({ initialApplications, initialSentTo
       {/* Sent-to-you first, deliberately: this is the list the notification links to, and it is the
           one that needs an answer. The requisition-based applications below are the longer route
           and are already sitting in a workflow. */}
-      {sentToMe.length > 0 ? (
+      {liveSends.length > 0 ? (
         <section className="space-y-4">
           <div>
             <h2 className="text-sm font-semibold text-slate-900">Sent to you</h2>
@@ -569,12 +611,12 @@ export function RecruitmentCandidatesPortal({ initialApplications, initialSentTo
                     </span>
                   </div>
                   {folder.candidates.map((candidate) => (
-                    <SentCandidateCard candidate={candidate} key={candidate.id} />
+                    renderSentCard(candidate)
                   ))}
                 </div>
               ))
             : positionFolders.flatMap((folder) =>
-                folder.candidates.map((candidate) => <SentCandidateCard candidate={candidate} key={candidate.id} />),
+                folder.candidates.map((candidate) => renderSentCard(candidate)),
               )}
           {/* Sent before a position could be chosen, or sent without one. Never hidden — each is a
               real person somebody was asked to review — but kept apart from the folders rather than
@@ -590,12 +632,22 @@ export function RecruitmentCandidatesPortal({ initialApplications, initialSentTo
                 </div>
               ) : null}
               {unfiledSends.map((candidate) => (
-                <SentCandidateCard candidate={candidate} key={candidate.id} />
+                renderSentCard(candidate)
               ))}
             </div>
           ) : null}
         </section>
       ) : null}
+
+      {/* His shelf, immediately under the list it was filled from — a CV he "kept for later" has to
+          be somewhere he can see he kept it, or the button reads as a delete. Renders nothing at all
+          until the first CV is filed. */}
+      <ManagerFoldersSection renderCandidate={renderSentCard} shelves={shelves} totalFiled={filedCount} />
+
+      {/* After the caller's own CVs, deliberately. The ones sent to HIM are the ones he still owes an
+          answer on; his team's are for oversight and carry no obligation, so they must not push his
+          own queue below the fold. */}
+      <TeamCandidatesSection managers={initialTeam} viewerHrId={viewerHrId} />
 
       {applications.length > 0 ? (
         <section className="space-y-4">
@@ -606,7 +658,12 @@ export function RecruitmentCandidatesPortal({ initialApplications, initialSentTo
             </div>
           ) : null}
           {applications.map((application) => (
-            <CandidateCard application={application} key={application.id} onChanged={reload} />
+            <CandidateCard
+              application={application}
+              files={files[application.candidate?.id ?? ""] ?? []}
+              key={application.id}
+              onChanged={reload}
+            />
           ))}
         </section>
       ) : null}

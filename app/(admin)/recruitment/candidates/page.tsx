@@ -9,7 +9,11 @@ import { RecruitmentCandidatesPortal } from "@/components/employee-portal/recrui
 import { canAccess, canOpenPersonalCandidateInbox } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { listApplications } from "@/lib/recruitment/applications";
+import { listCandidateFolderAreaOptions } from "@/lib/recruitment/candidate-folder-options";
 import { listCandidatesSentToManager } from "@/lib/recruitment/candidates";
+import { listCandidateCardFiles } from "@/lib/recruitment/files";
+import { listViewerTeamManagers } from "@/lib/recruitment/hiring-manager-team";
+import { listManagerFolderFilings } from "@/lib/recruitment/manager-folders";
 
 export const dynamic = "force-dynamic";
 
@@ -47,11 +51,31 @@ async function AdminRecruitmentCandidatesContent() {
   // The second list is the direct push, scoped by the caller's own HR_ID. It is loaded here as well
   // as on the portal twin because the CEO's job title matches the manager list a recruiter picks
   // from, so a CV can be sent straight to them — and this admin page is where the CEO would look.
-  const [applications, sentToMe] = await Promise.all([
+  // The third list is the team picker the owner asked for on 2026-08-30 for the National Sales
+  // Manager. It is loaded here too, and that is not scope creep: it is derived from where the caller
+  // sits on the org chart rather than from their role, and the CEO sits directly above both people
+  // holding an NSM seat. Restricting it to the portal twin would mean the one person above them
+  // could not do what they can.
+  // The fourth and fifth are this caller's own CV shelf and the picker that fills it — the folders
+  // the owner asked for on 2026-08-30. Loaded here for the same reason the team picker is: this page
+  // is the same component, and a CEO who could file on the portal but not here would have two
+  // inboxes that disagree about which CVs are still waiting on him.
+  const [applications, sentToMe, team, filings, areaOptions] = await Promise.all([
     listApplications(access),
     listCandidatesSentToManager(access.hrId),
+    listViewerTeamManagers(access),
+    listManagerFolderFilings(access.hrId),
+    listCandidateFolderAreaOptions(),
   ]);
   const myCandidates = applications.filter((application) => application.candidate && application.requisition);
+
+  // One query for every card's CV file, rather than one request per card after it mounts. Same
+  // reason as the portal page: the owner's rule for this screen is that the CV must be openable, and
+  // a View/Download control that turns up seconds after the card is one he reported as missing.
+  const initialFiles = await listCandidateCardFiles([
+    ...sentToMe.map((candidate) => candidate.id),
+    ...myCandidates.map((application) => application.candidate?.id ?? ""),
+  ]);
 
   return (
     <PageContainer>
@@ -62,7 +86,15 @@ async function AdminRecruitmentCandidatesContent() {
           icon={<Users className="h-5 w-5" />}
           title="My Candidates"
         />
-        <RecruitmentCandidatesPortal initialApplications={myCandidates} initialSentToMe={sentToMe} />
+        <RecruitmentCandidatesPortal
+          areaOptions={areaOptions}
+          initialApplications={myCandidates}
+          initialFilings={filings}
+          initialFiles={initialFiles}
+          initialSentToMe={sentToMe}
+          initialTeam={team}
+          viewerHrId={access.hrId}
+        />
       </div>
     </PageContainer>
   );
