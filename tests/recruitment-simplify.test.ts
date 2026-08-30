@@ -138,7 +138,29 @@ export async function runRecruitmentSimplifyTests() {
   // "Update status" click in the history of this module failed, with the error surfacing as a
   // generic "Request failed." That is a large part of why 225 of 226 rows never moved.
   assert.doesNotMatch(statusRoute, /export async function POST/, "the status route has no POST — it never had one");
-  assert.match(workspace, /async function patchJson\(/, "the workspace needs a PATCH helper, which it did not have");
+
+  // The PATCH helper moved out of the workspace into recruitment-fetch.ts on 2026-08-30, so the
+  // candidate-folders screen could reuse it instead of keeping a second copy. This pin follows it
+  // rather than being relaxed: what matters was never WHERE the helper lives, it is that a PATCH
+  // helper exists, that it really sends PATCH, and that the status control is the thing calling it.
+  // Checking all three is strictly stronger than the old "the file contains this function" grep —
+  // that one would have passed a helper whose method had been edited to POST.
+  const recruitmentFetch = read("src/components/recruitment/recruitment-fetch.ts");
+  assert.match(
+    recruitmentFetch,
+    /export async function patchJson\([\s\S]{0,200}method: "PATCH"/,
+    "the shared PATCH helper must exist and must actually send PATCH",
+  );
+  assert.match(
+    workspace,
+    /import \{[^}]*\bpatchJson\b[^}]*\} from "@\/components\/recruitment\/recruitment-fetch"/,
+    "the workspace must use the ONE shared PATCH helper, not a second local copy",
+  );
+  assert.match(
+    workspace,
+    /patchJson\(`\/api\/recruitment\/candidates\/\$\{[^}]+\}\/status`/,
+    "the status write must go through PATCH — a POST here is the 405 that silently broke 225 of 226 rows",
+  );
   assert.doesNotMatch(
     workspace,
     /postJson\(`\/api\/recruitment\/candidates\/\$\{[^}]+\}\/status`/,

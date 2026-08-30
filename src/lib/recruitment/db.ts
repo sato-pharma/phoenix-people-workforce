@@ -2,6 +2,7 @@
 // the workflow-registry transition guard, and append-only event logging.
 
 import type { PhoenixRole } from "@/lib/auth/permissions";
+import { isCandidateFolderKind } from "@/lib/recruitment/candidate-folder";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { assertWorkflowRegistryTransition } from "@/lib/workflow-registry/service";
 import {
@@ -212,6 +213,25 @@ export function mapCandidate(row: CandidateDbRow): Candidate {
             // finiteness check would turn an absent id into vacancy 0 — a real-looking foreign key
             // pointing at nothing.
             vacancyId: numberOrNull(row.sent_for_vacancy_id),
+          }
+        : null,
+    // The CV shelf. Gated on folder_filed_at rather than on the kind, because that timestamp is what
+    // every "is this hidden?" check reads and the two must agree exactly — a row with a kind but no
+    // stamp would otherwise disappear from the pool while counting as unfiled everywhere else. The
+    // database constraint makes that shape unreachable through the app; this reads the same way a
+    // hand-written SQL fix would be read, so the screen degrades to "still in the pool" rather than
+    // to a CV nobody can find.
+    //
+    // isCandidateFolderKind is asked HERE rather than cast, so an unrecognised kind (a shelf retired
+    // in a later release, a value typed straight into the table) leaves the candidate in the pool
+    // instead of forging a folder the vocabulary has no name for.
+    folder:
+      textOrNull(row.folder_filed_at) && isCandidateFolderKind(row.folder_kind) && textOrNull(row.folder_key)
+        ? {
+            filedAt: String(row.folder_filed_at),
+            filedByHrId: textOrNull(row.folder_filed_by_hr_id),
+            key: String(row.folder_key),
+            kind: row.folder_kind,
           }
         : null,
     createdBy: textOrNull(row.created_by),

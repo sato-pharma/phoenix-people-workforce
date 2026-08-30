@@ -32,6 +32,9 @@ function candidate(overrides: Partial<Candidate> = {}): Candidate {
     email: null,
     expectedSalary: null,
     faculty: null,
+    // Not on the CV shelf — this fixture is about extraction, and a filed candidate is simply a
+    // candidate with somewhere to wait. See candidate-folder.ts.
+    folder: null,
     fullName: "Mazen Hassan",
     gender: null,
     governorate: null,

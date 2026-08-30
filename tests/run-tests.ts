@@ -173,6 +173,7 @@ import { runRecruitmentAppliedForTests } from "./recruitment-applied-for.test.ts
 import { runRecruitmentManagerGroupingTests } from "./recruitment-manager-grouping.test.ts";
 import { runRecruitmentCandidateSeenTests } from "./recruitment-candidate-seen.test.ts";
 import { runRecruitmentScreeningPageTests } from "./recruitment-screening-page.test.ts";
+import { runCandidateFolderTests } from "./candidate-folders.test.ts";
 import { runCandidatePositionFolderTests } from "./candidate-position-folders.test.ts";
 import { runArabicPlaceMatchTests } from "./arabic-place-match.test.ts";
 import { runCandidatePositionSuggestionTests } from "./candidate-position-suggestion.test.ts";
@@ -1408,6 +1409,10 @@ await runTest(
 await runTest(
   "recruitment position folders (a CV is sent FOR a vacancy, and a manager's inbox folds into one page per position)",
   runCandidatePositionFolderTests,
+);
+await runTest(
+  "recruitment CV folders (a filed CV leaves the pool, the region shelf is EIGHT, and a rejection cannot be shelved)",
+  runCandidateFolderTests,
 );
 await runTest(
   "arabic place match (an English address naming an Arabic place: Box is not Bacos, George is not Girga)",

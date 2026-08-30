@@ -8,6 +8,11 @@ import {
 } from "@/lib/uploads/exceljs-rows";
 import { assertCanDeleteRecruitment } from "@/lib/recruitment/access";
 import { candidateAppliedFor, freeAppliedForEvidence } from "@/lib/recruitment/applied-for";
+import {
+  candidateFolderRefusal,
+  cleanFolderKey,
+  isCandidateFolderKind,
+} from "@/lib/recruitment/candidate-folder";
 import { describeCandidateSource, type SourceContextRow } from "@/lib/recruitment/candidate-source-context";
 import type { CandidateUnconfirmedCvFacts } from "@/lib/recruitment/candidate-screening-facts";
 import { chunkIds } from "@/lib/recruitment/db-batch";
@@ -603,6 +608,88 @@ export async function updateCandidateStatus(
     toStatus: next,
   });
 
+  return mapCandidate(data as CandidateDbRow);
+}
+
+/**
+ * Put a CV on the shelf — "good, but not needed now".
+ *
+ * THE STATUS IS DELIBERATELY NOT TOUCHED. Filing answers a question about the queue, not about the
+ * person, so a shortlisted candidate parked until a seat opens comes back out still shortlisted.
+ * The whole design rests on that; see candidate-folder.ts.
+ *
+ * The refusal is asked through `candidateFolderRefusal` rather than restated here, so the button's
+ * tooltip, this service and the route's 400 all say the same sentence instead of three wordings that
+ * drift apart the first time the rule changes.
+ */
+export async function fileCandidateToFolder(
+  access: AccessContext,
+  id: string,
+  kind: string,
+  key: string,
+): Promise<Candidate> {
+  if (!isCandidateFolderKind(kind)) {
+    throw new Error(`"${String(kind ?? "").trim()}" is not a folder kind.`);
+  }
+  const cleanKey = cleanFolderKey(key);
+  if (!cleanKey) throw new Error("A folder needs a name.");
+
+  const existing = await getCandidate(id);
+  if (!existing) throw new Error("Candidate not found.");
+  const refusal = candidateFolderRefusal(existing);
+  if (refusal) throw new Error(refusal);
+
+  const filedAt = new Date().toISOString();
+  const supabase = recruitmentDb();
+  const { data, error } = await supabase
+    .from("ats_candidates")
+    .update({
+      folder_filed_at: filedAt,
+      folder_filed_by_hr_id: access.hrId ?? null,
+      // `kind` is already narrowed to CandidateFolderKind by the guard above — no cast needed.
+      folder_kind: kind,
+      folder_key: cleanKey,
+      updated_at: filedAt,
+    })
+    .eq("id", id)
+    .select("*")
+    .single();
+  if (error) throw error;
+  return mapCandidate(data as CandidateDbRow);
+}
+
+/**
+ * Take a CV back off the shelf and return it to the live pool.
+ *
+ * All four columns are cleared TOGETHER — the table's `ats_candidates_folder_complete` constraint
+ * refuses any half-cleared shape, which is the point: a row left carrying a kind with no timestamp
+ * would read as unfiled to `mapCandidate` and as filed to a hand-written query, and a CV that two
+ * screens disagree about is exactly how one gets lost.
+ *
+ * Returning an already-unfiled candidate is a no-op that succeeds rather than an error. The button
+ * is one click on a screen two people can have open, and the honest answer to "put it back" when it
+ * is already back is yes, not a failure the second person has to interpret.
+ */
+export async function returnCandidateToPool(id: string): Promise<Candidate> {
+  const existing = await getCandidate(id);
+  if (!existing) throw new Error("Candidate not found.");
+  if (!existing.folder) return existing;
+
+  const clearedAt = new Date().toISOString();
+  const supabase = recruitmentDb();
+  const { data, error } = await supabase
+    .from("ats_candidates")
+    .update({
+      folder_filed_at: null,
+      folder_filed_by_hr_id: null,
+      folder_kind: null,
+      folder_key: null,
+      updated_at: clearedAt,
+    })
+    .eq("id", id)
+    .select("*")
+    .single();
+  if (error) throw error;
   return mapCandidate(data as CandidateDbRow);
 }
 
