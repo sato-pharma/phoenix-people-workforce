@@ -1022,10 +1022,37 @@ export async function runMarketingRequestServiceTests() {
     /export async function dispatchMarketingAssignmentEmail\(requestId: string\)/,
     "the service must expose a by-request-id assignment dispatcher, like direct orders' dispatchDirectOrderApprovedEmail",
   );
+  /**
+   * Sliced to the function BODY rather than matched inside a fixed byte window. The window form
+   * (`[\s\S]{0,2600}?`) false-failed the moment this function gained a comment — measured at 2,939
+   * characters on 2026-08-30 — which says nothing at all about whether the notice is still sent.
+   * See AGENTS.md §2.1, "source-pinning tests slice a fixed BYTE window and false-FAIL".
+   */
+  const dispatcherStart = serviceSource.indexOf("export async function dispatchMarketingAssignmentEmail(");
+  const dispatcherEnd = serviceSource.indexOf("export async function backfillMissingMarketingAssignmentEmails(");
+  assert.ok(dispatcherStart > -1, "dispatchMarketingAssignmentEmail must be declared in the service");
+  assert.ok(dispatcherEnd > dispatcherStart, "backfillMissingMarketingAssignmentEmails must follow the dispatcher");
+  const dispatcherBody = serviceSource.slice(dispatcherStart, dispatcherEnd);
   assert.match(
-    serviceSource,
-    /dispatchMarketingAssignmentEmail[\s\S]{0,2600}?eventType: "request_assigned"/,
+    dispatcherBody,
+    /eventType: "request_assigned"/,
     "the dispatcher must send the same request_assigned notice the decision path sends",
+  );
+  /**
+   * A rung that was RETURNED and then reopened has already claimed its step-id key, so without an
+   * epoch the UNIQUE index silently swallows the notice and the approver is never told the request
+   * came back. `marketingReopenEpoch` is unit-tested on its own; this pins that the dispatcher
+   * actually WIRES it, which passing unit tests cannot show.
+   */
+  assert.match(
+    dispatcherBody,
+    /marketingReopenEpoch\(await loadMarketingStepOpenings\(/,
+    "the dispatcher must resolve the reopen epoch from the rung's recorded openings",
+  );
+  assert.match(
+    dispatcherBody,
+    /idempotencyEpoch: reopenEpoch/,
+    "the dispatcher must pass the reopen epoch through, or a reopened rung re-uses its spent key",
   );
   // It must refuse to invent a recipient when nobody is holding the request.
   for (const guard of ["request_not_pending", "no_current_step", "already_notified"]) {
