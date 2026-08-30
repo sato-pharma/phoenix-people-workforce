@@ -227,26 +227,15 @@ export const accessRegistry = [
   // AI triage — POSTs that call OpenAI (cost); CEO + Super Admin only, rate-limited in-route.
   sessionApi({ audit: { classification: "access-read", required: true }, methods: ["POST"], pattern: "/api/admin/system-issues/explain", permission: null, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "access-read", required: true }, methods: ["POST"], pattern: "/api/admin/system-issues/summary", permission: null, guard: "domain-helper", csrfRequired: true }),
-  // Cron Control dashboard: view = CEO + Super Admin (inline role check in-route, like
-  // system-issues above); all 4 mutations = Super Admin only — pausing or rescheduling a cron
-  // that drives payroll/notification SLAs is at least as consequential as an IP block.
-  sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/admin/cron-control", permission: null, guard: "domain-helper" }),
-  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/cron-control/*/pause", permission: null, guard: "domain-helper", csrfRequired: true }),
-  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/cron-control/*/resume", permission: null, guard: "domain-helper", csrfRequired: true }),
-  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/cron-control/*/run", permission: null, guard: "domain-helper", csrfRequired: true }),
-  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/cron-control/*/schedule", permission: null, guard: "domain-helper", csrfRequired: true }),
-  // Pure local computation (no GCP call, no state mutation) but still POST, so proxy.ts's
-  // blanket same-origin check for DELETE/PATCH/POST/PUT applies regardless — csrfRequired here
-  // just makes the registry's own description match that real, unconditional enforcement.
-  sessionApi({ audit: { classification: "access-read", required: true }, methods: ["POST"], pattern: "/api/admin/cron-control/preview-schedule", permission: null, guard: "domain-helper", csrfRequired: true }),
   // Notification Recipients editor (which roles get told about a cron-triggered system
-  // notification): Super Admin only end-to-end, both view and edit — unlike cron-control's
-  // CEO+SA view, there's no equivalent "CEO needs to see this" oversight story for internal
-  // notification-routing plumbing.
+  // notification): Super Admin only end-to-end, both view and edit — there's no "CEO needs to
+  // see this" oversight story for internal notification-routing plumbing. Its page is
+  // /admin/notification-recipients, which is also where AGENTS.md 2.3 sends an operator to
+  // silence or retarget the stranded-drain alert.
   sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/admin/notification-recipients", permission: null, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/notification-recipients/*", permission: null, guard: "domain-helper", csrfRequired: true }),
   // Email Control Center: a read-only rollup over the 3 systems above plus email-templates —
-  // view = CEO + Super Admin (matches cron-control), edit = Super Admin only (matches
+  // view = CEO + Super Admin, edit = Super Admin only (matches
   // notification-recipients), since every write here dispatches straight into those systems'
   // own existing update functions rather than a new mechanism of its own.
   sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/admin/email-control-center", permission: null, guard: "domain-helper" }),

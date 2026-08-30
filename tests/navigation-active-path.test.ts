@@ -227,8 +227,19 @@ export function runNavigationActivePathTests() {
   const ceoExecutiveNav = getSections(adminNavigationSections, "admin", { "probation:read": true, "organogram:read": true }, "CEO");
   assert.equal(
     ceoExecutiveNav.find((section) => section.id === "command-center")?.items.map((item) => item.href).join(","),
-    "/admin/ceo-command-center,/business-review,/organogram",
-    "CEO command center section must include Business Review and Organogram as separate executive tabs",
+    "/admin/ceo-command-center,/business-review",
+    "CEO command center section must include Business Review as a separate executive tab",
+  );
+  // Organogram left this section on 2026-08-30 for a top-level slot of its own — ruling 10, "Layer 1
+  // = Approvals + Organogram only". It is still on the CEO's rail, one row higher up, and the
+  // assertion below is what proves that rather than assuming it. Merging the two copies (the other
+  // lived in People Management under a mutually-exclusive gate) is what implementing the ruling
+  // looked like; tests/organogram-nav-link-exists-for-every-role-that-can-open-it.test.ts covers
+  // every OTHER role's link.
+  assert.equal(
+    ceoExecutiveNav.some((section) => section.id === "organogram" && section.items.some((item) => item.href === "/organogram")),
+    true,
+    "CEO must still reach the Organogram — as its own top-level section since ruling 10",
   );
   assert.equal(
     ceoExecutiveNav.some((section) => section.items.some((item) => item.href === "/admin/ceo-probation")),

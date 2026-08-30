@@ -9,8 +9,8 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 // Super Admin only, both view and edit — see the comment in access-registry.ts. Which roles
-// get pinged about a resignation-SLA breach is internal plumbing, unlike cron-control's
-// CEO-relevant "when did this job last run."
+// get pinged about a resignation-SLA breach is internal plumbing, with no CEO oversight story.
+// Its page is /admin/notification-recipients.
 export async function GET(request: NextRequest) {
   try {
     const access = await resolveAccessContext(request);

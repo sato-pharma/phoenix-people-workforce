@@ -1,8 +1,17 @@
-// Static metadata for the 7 GCP Cloud Scheduler jobs that drive this system's automation.
-// This is the single place job descriptions live — the dashboard never shows a raw GCP job
-// name without a human label, and `tests/cron-control-registry.test.ts` cross-checks every
-// `route` here against `src/lib/security/access-registry.ts` so this can't silently drift
-// from the real cron-secret-gated routes.
+// The manifest of this system's cron-triggered routes.
+//
+// It was written as metadata for the GCP Cloud Scheduler dashboard at /admin/cron-control. That
+// dashboard was retired on 2026-08-30 (GCP billing closed 2026-08-01; cron-job.org runs
+// production), and this file DELIBERATELY OUTLIVED IT — do not delete it as GCP residue.
+//
+// What it does now is guard cron auth. `tests/cron-control-registry.test.ts` cross-checks every
+// `route` here against `src/lib/security/access-registry.ts` and fails the PR unless each one is
+// registered authMode:"cron-secret", so a cron route cannot silently lose its gate. That invariant
+// is about this app's own auth and has nothing to do with which scheduler calls the routes.
+// `tests/cv-intake-digest-6h.test.ts` also reads this file as a source fixture.
+//
+// The gcpJobName fields are historical identities, kept because the dead man's switch slugs at
+// Healthchecks are named after them — renaming one orphans its check and its history.
 
 export type CronJobKey =
   | "phoenix-background-jobs"

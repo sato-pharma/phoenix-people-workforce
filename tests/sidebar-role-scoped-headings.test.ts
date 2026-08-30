@@ -5,7 +5,7 @@ import {
   usesFlatSidebar,
   type PermissionLookup,
 } from "../src/lib/navigation/active-path.ts";
-import { adminNavigationSections } from "../src/config/system-navigation.ts";
+import { adminNavigationSections, hubPageItemGroups } from "../src/config/system-navigation.ts";
 import {
   permissionActions,
   permissionMatrix,
@@ -20,8 +20,23 @@ import {
 // modules folded away into hub pages. Owner instruction 2026-08-08: leave the SFE Manager's
 // sidebar exactly as it is and restore everyone else's.
 //
-// This suite pins BOTH halves of that: the restoration for Super Admin / CEO, and the fact that
-// the SFE Manager's own sidebar did not move.
+// ── 2026-08-30: the owner reversed the ROW half of that, and only the row half ────────────────
+//
+// Asked directly, in the context of his own navigation ruling that Layer 1 should carry one row per
+// module, he chose to collapse CRM (9 rows), Probation (5) and Marketing back into their hub
+// buttons. Measured through getSections, that took his rail from 60 visual rows to 47.
+//
+// So this suite no longer pins the restored ROWS. It still pins everything else the 2026-08-08
+// instruction covered, and those parts were never in question:
+//   • the HEADINGS are back for Super Admin and CEO — that is what made the sections collapsible
+//     again, and it is independent of how many rows sit under each one;
+//   • the SFE Manager's sidebar did not move, on 08-08 or on 08-30;
+//   • no role sees the same href twice.
+//
+// And it now pins the collapse itself, so the rows cannot drift back in one at a time — which is
+// exactly how they arrived the first time. Read the two lists below as "what the owner last said",
+// not as "what is correct": both have been reversed once, and the next reversal should edit these
+// lists rather than argue with them.
 
 function lookupForRole(role: PhoenixRole): PermissionLookup {
   const rolePermissions = permissionMatrix[role];
@@ -58,18 +73,40 @@ function assertExcludesAll(hrefs: readonly string[], forbidden: readonly string[
   }
 }
 
-// The five modules PR #1625 folded into hub pages, restored as their own rows on 2026-08-08.
-const RESTORED_ROWS = [
-  "/probation",
-  "/admin/field-workforce-compliance",
-  "/admin/pm-products",
-  "/admin/marketing-roi-tracker",
-  "/admin/crm",
-] as const;
+// What is LEFT of the 2026-08-08 restoration after the 2026-08-30 collapse. Both of these are
+// still rows on Super Admin's sidebar, and both are still cards on a hub the SFE Manager uses —
+// which is the arrangement, not a duplication, because he is excluded from each row by name:
+//   /admin/field-workforce-compliance   a People Management row; a card on the CRM hub, where the
+//                                       SFE Manager reaches it (it is judged on CRM visit activity)
+//   /admin/pm-products                  its own section since 2026-08-30; a card on the Marketing
+//                                       & ROI hub, where the SFE Manager reaches it
+const RESTORED_ROWS = ["/admin/field-workforce-compliance", "/admin/pm-products"] as const;
 
-// The hub buttons that replaced them. The SFE Manager keeps these; Super Admin must not see a hub
-// AND its expanded rows at the same time.
+// The hub buttons. The SFE Manager always had these; since 2026-08-30 Super Admin has them too,
+// INSTEAD of the rows they list — never beside them.
 const SFE_HUBS = ["/admin/probation-tools", "/admin/crm-tools"] as const;
+
+// The rows the 2026-08-30 collapse removed. Nobody may have one of these AND the hub that lists it;
+// Super Admin, who had every one, must now have none of them.
+const COLLAPSED_INTO_HUBS = [
+  // → /admin/probation-tools
+  "/probation",
+  "/probation/dashboard",
+  "/probation/analytics",
+  "/admin/probation-settings",
+  // → /admin/crm-tools
+  "/admin/crm",
+  "/admin/reps-plans",
+  "/admin/doctor-list",
+  "/admin/plan-verification",
+  "/admin/crm-integrity",
+  "/admin/brick-coverage",
+  "/admin/double-visit-analytics",
+  "/admin/double-visit-data-integrity",
+  // → /admin/marketing-roi
+  "/admin/marketing-requests/all",
+  "/admin/marketing-roi-tracker",
+] as const;
 
 export function runSidebarRoleScopedHeadingsTests() {
   // ── The flat-sidebar rule itself ───────────────────────────────────────────
@@ -130,22 +167,36 @@ export function runSidebarRoleScopedHeadingsTests() {
     "SFE Manager must not pick up the rows restored for the other roles",
   );
 
-  // ── Super Admin gets the folded-away modules back, without duplicates ──────
+  // ── Super Admin: the two surviving restored rows, the hubs, and none of the collapsed rows ──
   const superAdminHrefs = hrefsFor("Super Admin");
-  assertIncludesAll(superAdminHrefs, RESTORED_ROWS, "Super Admin gets his module rows back");
-  assertExcludesAll(
-    superAdminHrefs,
-    SFE_HUBS,
-    "Super Admin must not see a hub button beside the expanded rows it duplicates",
-  );
-
-  // The four probation rows travel together — collapsing them to one button is what row 5 of the
-  // owner's decision sheet reverted.
   assertIncludesAll(
     superAdminHrefs,
-    ["/probation", "/probation/dashboard", "/probation/analytics", "/admin/probation-settings"],
-    "Super Admin sees all four probation rows",
+    RESTORED_ROWS,
+    "Super Admin keeps the rows the 2026-08-30 collapse did NOT touch",
   );
+  assertIncludesAll(
+    superAdminHrefs,
+    SFE_HUBS,
+    "Super Admin sees the hub buttons since 2026-08-30 — they are his route to every page the collapsed rows used to open",
+  );
+  assertExcludesAll(
+    superAdminHrefs,
+    COLLAPSED_INTO_HUBS,
+    "Super Admin must not see a row the 2026-08-30 collapse folded into a hub — a hub button beside the rows it lists is the duplication both arrangements exist to avoid",
+  );
+
+  // Every collapsed page still has a route: it is a card on the hub that replaced its row. This is
+  // the assertion that makes the collapse safe rather than merely tidy, and it is why the list
+  // above is spelled out per href instead of counted.
+  const superAdminCards = new Set(
+    hubPageItemGroups.flatMap((group) => group.items.map((item) => item.href)),
+  );
+  for (const href of COLLAPSED_INTO_HUBS) {
+    assert.ok(
+      superAdminCards.has(href),
+      `${href} lost its sidebar row in the 2026-08-30 collapse, so it MUST be a card on the hub that replaced it — otherwise the page is reachable by nobody except a typed URL`,
+    );
+  }
 
   // No href may appear twice on one sidebar — two rows pointing at the same page is the exact
   // failure mode `excludedRoles` on the hub copies exists to prevent.

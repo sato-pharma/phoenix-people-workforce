@@ -51,8 +51,12 @@ import path from "node:path";
  * Was 298 when first counted on 80ba78f2 (Phase 5). That figure counted six prose
  * mentions as violations, so it never described the UI. Nothing changed on screen
  * when it moved to 292 — only the measurement stopped being wrong.
+ *
+ * 292 -> 285 on 2026-08-30: seven sites went with the unreachable components deleted
+ * in the module audit's phase 1. Nothing changed on screen for these either — every
+ * one of them sat in a file no route could reach.
  */
-const BASELINE = 292;
+const BASELINE = 285;
 
 const ROOTS = ["app", "src"];
 

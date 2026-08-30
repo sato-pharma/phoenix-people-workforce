@@ -141,18 +141,37 @@ export function runNavigationRuling11AnalyticsTests() {
   // "Sales = 5 blocks; Monthly Closing alone, Targets alone." `alone` means the
   // section holds exactly one item, so neither can quietly acquire a sibling
   // and become a group again.
+  // "alone" is a property of what a PERSON sees, so it is asserted after getSections has gated the
+  // section for each role — not on the raw seed array. The two are not the same check, and the
+  // difference is load-bearing here: on 2026-08-30 Monthly Closing gained a second entry so that the
+  // Super Admin gets the block ruling 1 promises him (/sales/monthly-closing) beside the Finance
+  // Manager's export-only surface (/admin/analytics/monthly-closing/details), which admits nobody
+  // else. The gates are mutually exclusive, so no role has ever seen both — but a raw
+  // `items.length === 1` reads that as a group and fails, while a role that really was shown two
+  // Monthly Closing rows would slip past it if the entries lived in two sections. Resolving per role
+  // catches the case that matters and permits the one that does not.
+  //
+  // The section was renamed finance-monthly-closing -> monthly-closing in the same change, because
+  // it is no longer one role's.
   for (const [id, label] of [
-    ["finance-monthly-closing", "Monthly Closing"],
+    ["monthly-closing", "Monthly Closing"],
     ["sales-targets-module", "Targets"],
   ] as const) {
     const found = adminNavigationSections.find((navSection) => navSection.id === id);
     assert.ok(found, `The "${label}" section (${id}) is missing — ruling 1 requires it as its own block.`);
-    assert.equal(
-      found.items.length,
-      1,
-      `Ruling 1 says ${label} stands ALONE, but its section now holds ${found.items.length} items. ` +
-        `A second item turns the standalone button back into a collapsible group.`,
-    );
+    for (const role of phoenixRoles) {
+      const resolved = getSections(adminNavigationSections, "admin", lookupForRole(role), role).find(
+        (navSection) => navSection.id === id,
+      );
+      if (!resolved) continue;
+      assert.equal(
+        resolved.items.length,
+        1,
+        `Ruling 1 says ${label} stands ALONE, but ${role} is shown ${resolved.items.length} rows in it ` +
+          `(${resolved.items.map((item) => item.href).join(", ")}). A second visible item turns the ` +
+          `standalone button back into a collapsible group.`,
+      );
+    }
   }
 
   // ── 6. Territory Management folded into Source of Sales ────────────────────

@@ -231,7 +231,6 @@ const adminNavigationSectionSeeds = [
       // rail is width-constrained. Budgets are pinned by tests/sidebar-label-width.test.ts.
       { href: "/admin/finance-command-center", icon: Landmark, label: "Finance Overview", roles: ["Finance Manager"], excludedRoles: ["Super Admin", "CEO"] },
       { href: "/business-review", icon: LayoutDashboard, label: "Business Review", permissions: [{ resource: "admin" }, { resource: "overview" }], roles: ["CEO", "SFE Manager", "Super Admin"] },
-      { href: "/organogram", icon: Network, label: "Organogram", permissions: [{ resource: "organogram" }], roles: ["CEO"] },
       // Excluded for every role that has its OWN command center directly above — otherwise the
       // section shows them two "Command Center" entries and the generic one lands on the
       // admin-wide dashboard instead of theirs. The CEO was already excluded for this reason;
@@ -245,6 +244,28 @@ const adminNavigationSectionSeeds = [
     // heading — see flatSidebarRoles.
     label: "Command Center",
   },
+  // ── Ruling 10 (owner, 2026-08-28): "Layer 1 = Approvals + Organogram only" ──────────────────
+  // Organogram had TWO rail entries: one inside Command Center gated roles: ["CEO"], one inside
+  // People Management gated excludedRoles: ["Marketing Manager", "CEO"]. The two gates were
+  // mutually exclusive, so no ordinary role ever saw both — and for the Super Admin, whose sidebar
+  // bypasses `roles` entirely, dedupeSectionsByHref was the only thing keeping the second copy off
+  // his rail. Nothing was visibly broken; the duplication was load-bearing, which is worse.
+  //
+  // The ruling settles it by giving the org chart a slot of its own, and collapsing the two copies
+  // into one is what implementing the ruling looks like. The gate below is the exact UNION of the
+  // two it replaces: everyone holding organogram:read except the Marketing Manager, who the People
+  // Management copy excluded by name. The CEO exclusion is gone because it existed only to keep the
+  // two copies apart — there is one copy now.
+  //
+  // tests/organogram-nav-link-exists-for-every-role-that-can-open-it.test.ts is the proof that no
+  // role lost its link in the merge; it fails if any role that can open the page has no link to it.
+  {
+    id: "organogram",
+    items: [
+      { href: "/organogram", icon: Network, label: "Organogram", permissions: [{ resource: "organogram" }], excludedRoles: ["Marketing Manager"] },
+    ],
+    label: "Organogram",
+  },
   {
     id: "ceo-probation",
     items: [
@@ -255,7 +276,27 @@ const adminNavigationSectionSeeds = [
   {
     id: "ceo-company-calendar",
     items: [
-      { href: "/admin/weekly-plans/calendar", icon: CalendarRange, label: "Company Calendar", permissions: [{ resource: "weekly_plans", action: "read" }], roles: ["CEO", "SFE Manager"] },
+      // Finance Manager merged in from the former `finance-events-calendar` section (module audit,
+      // 2026-08-30). That section held this same href under this same label, gated roles:
+      // ["Finance Manager"] excludedRoles: ["Super Admin", "CEO"] — so the rail carried two
+      // sections named "Company Calendar" pointing at one page, kept apart only by role. The seer
+      // set is unchanged by the merge: CEO, SFE Manager and Finance Manager by name, Super Admin
+      // through the role bypass, exactly as before.
+      //
+      // Why the Finance Manager reads the PLANNING calendar and not /admin/company-calendar, kept
+      // verbatim from the section this absorbed (owner, 2026-08-11): the authoring page would only
+      // ever have reached head-office staff — canPublishCompanyWide is false for him — so it
+      // promised a company-wide reach he does not have, while the planning calendar is the one he
+      // actually needs to read. Both of his gates were verified before that row was pointed here:
+      //   gate 1, the page — /admin/weekly-plans/calendar redirects unless canAccess(weekly_plans,
+      //           read); he holds weekly_plans: ["read","export"], so he is admitted.
+      //   gate 2, the data — isPlanItemVisibleToViewer narrows only the roles it NAMES (CEO,
+      //           Training Manager, the line-scoped sales roles, District/Regional Manager) and
+      //           ends in `return true`. Finance Manager is not named, so he keeps the documented
+      //           unrestricted default and sees every calendar-eligible plan, company-wide.
+      // If anyone ever adds a "finance manager" branch to that function, this row starts showing
+      // him a narrowed calendar without the nav changing at all.
+      { href: "/admin/weekly-plans/calendar", icon: CalendarRange, label: "Company Calendar", permissions: [{ resource: "weekly_plans", action: "read" }], roles: ["CEO", "SFE Manager", "Finance Manager"] },
     ],
     label: "Company Calendar",
   },
@@ -286,10 +327,24 @@ const adminNavigationSectionSeeds = [
         excludedRoles: ["Finance Manager"],
         permissions: [{ resource: "employee_profile", action: "read" }],
       },
-      // Restored to its own row on 2026-08-08. It was folded into the Marketing & ROI hub on
-      // 2026-08-02 during the SFE rebuild; the SFE Manager still reaches it there (he is excluded
-      // here), but Super Admin and CEO get the direct row back. It remains a card in
-      // marketingRoiPageItems, so no role loses a route either way.
+    ],
+    label: "Employee 360",
+  },
+  // ── PM Product Master, lifted out of the Employee 360 block (module audit, 2026-08-30) ───────
+  // Restored to its own row on 2026-08-08 after being folded into the Marketing & ROI hub on
+  // 2026-08-02; it remains a card in marketingRoiPageItems, which is how the SFE Manager (excluded
+  // here) still reaches it. tests/sidebar-role-scoped-headings.test.ts lists /admin/pm-products in
+  // RESTORED_ROWS, so the ROW itself is pinned and must not be removed.
+  //
+  // What moved is only which heading it sits under. It was the second item in the "Employee 360"
+  // section, so Super Admin and CEO read a product-master link under a per-employee-profile
+  // heading — two unrelated modules sharing one title. Its permission gate is employee_profile:read
+  // purely because it inherited the section's, and that is the tell. The gate is carried over
+  // UNCHANGED rather than "corrected": every role that could see this row still sees it, and
+  // narrowing a live grant is not what a navigation tidy-up gets to do on its own.
+  {
+    id: "pm-product-master",
+    items: [
       {
         href: "/admin/pm-products",
         icon: Package,
@@ -299,7 +354,7 @@ const adminNavigationSectionSeeds = [
         roles: ["Super Admin", "CEO"],
       },
     ],
-    label: "Employee 360",
+    label: "PM Product Master",
   },
 
   // ── Approvals Hub: consolidated per-module approval surfaces (near the top —
@@ -339,6 +394,12 @@ const adminNavigationSectionSeeds = [
     label: "My Requests",
   },
   {
+    // Named "Approvals Hub" until 2026-08-30; ruling 10 calls this "Approvals" and the shorter
+    // label is the owner's own word for it. The four rows below deliberately do NOT collapse into
+    // /admin/approvals-hub: that page is the "Other Approvals" inbox and it actively BOUNCES
+    // ?module=leave|excuse|weekly_plan deep links back out to the three dedicated pages (see
+    // MIGRATED_DEEPLINK_BASES in app/(admin)/admin/approvals-hub/page.tsx). Collapsing them would
+    // point one row at a page that refuses three quarters of the work it claimed to hold.
     id: "approvals-hub",
     items: [
       // Finance Manager excluded 2026-08-10 (owner) from both rows below, same reason as the two
@@ -361,7 +422,7 @@ const adminNavigationSectionSeeds = [
       // A-1 / A-4 and decides their vacations and excuses — so the row can only go by name.
       { href: "/admin/approvals-hub", icon: Inbox, label: "Other Approvals", permissions: [{ resource: "leave", action: "read" }], excludedRoles: ["SFE Manager", "Finance Manager"], navBadge: "approvals-hub-pending" },
     ],
-    label: "Approvals Hub",
+    label: "Approvals",
   },
 
   // Finance-Manager-only consolidated Vacation + Excuse workspace (owner instruction, 2026-08-10).
@@ -404,31 +465,6 @@ const adminNavigationSectionSeeds = [
       { href: "/resignations", icon: FileSpreadsheet, label: "Resignations", permissions: [{ resource: "resignations", action: "read" }], roles: ["Finance Manager"], excludedRoles: ["Super Admin", "CEO"] },
     ],
     label: "Resignations",
-  },
-  {
-    id: "finance-events-calendar",
-    items: [
-      // Owner, 2026-08-11: swapped from /admin/company-calendar (event AUTHORING) to the planning
-      // calendar (company READING). His events would only ever have reached head-office staff —
-      // canPublishCompanyWide is false for him — so the authoring page promised a company-wide
-      // reach he does not have, while the planning calendar is the one he actually needs to read.
-      //
-      // Both gates verified before this row was pointed here, because a row whose destination
-      // bounces the viewer is the dead link this account has been audited for twice:
-      //   gate 1, the page — /admin/weekly-plans/calendar redirects unless canAccess(weekly_plans,
-      //           read); he holds weekly_plans: ["read","export"], so he is admitted.
-      //   gate 2, the data — isPlanItemVisibleToViewer narrows only the roles it NAMES (CEO,
-      //           Training Manager, the line-scoped sales roles, District/Regional Manager) and
-      //           ends in `return true`. Finance Manager is not named, so he keeps the documented
-      //           unrestricted default and sees every calendar-eligible plan, company-wide.
-      // If anyone ever adds a "finance manager" branch to that function, this row starts showing
-      // him a narrowed calendar without the nav changing at all.
-      //
-      // The authoring page keeps its own role guard — this is a navigation decision, not a
-      // revocation, so /admin/company-calendar stays reachable by URL exactly as ROI Tracker was.
-      { href: "/admin/weekly-plans/calendar", icon: CalendarRange, label: "Company Calendar", permissions: [{ resource: "weekly_plans", action: "read" }], roles: ["Finance Manager"], excludedRoles: ["Super Admin", "CEO"] },
-    ],
-    label: "Company Calendar",
   },
   {
     id: "finance-payslips-center",
@@ -560,16 +596,12 @@ const adminNavigationSectionSeeds = [
         label: "Marketing Requests",
         roles: ["Super Admin", "CEO", "SFE Manager", "Finance Manager", "Financial Advisor"],
       },
-      // Company-wide register (owner instruction, 2026-08-03) — every request on the system and
-      // where each one is stopped. Deliberately separate from the inbox above, which only carries
-      // what is waiting on YOUR decision: an oversight role needs the ones waiting on everyone
-      // else too. Marketing Manager is portal-only and reaches the same page via the portal.
-      {
-        href: "/admin/marketing-requests/all",
-        icon: ClipboardList,
-        label: "All Marketing Requests",
-        roles: ["Super Admin", "SFE Manager"],
-      },
+      // COLLAPSED TO THE HUB, 2026-08-30 (owner, asked directly). The company-wide register
+      // (owner instruction, 2026-08-03 — every request on the system and where each one is
+      // stopped, as distinct from the inbox above which carries only what waits on YOUR decision)
+      // is now a card in marketingRoiPageItems under the same two roles. Both of them can open
+      // /admin/marketing-roi, so neither loses the route; Marketing Manager was never on this row
+      // and still reaches the same page through the portal.
       // Restored on 2026-08-08. It was pulled out of the hub onto the sidebar deliberately (it is
       // the ROI source of truth, and burying it one click inside a hub of four competing ROI cards
       // was the discoverability problem the module set out to fix), then folded back in on
@@ -582,20 +614,23 @@ const adminNavigationSectionSeeds = [
       // marketingRoiPageItems for him too — that hub card is what the Cmd+K palette folds back in,
       // so leaving it would have moved "ROI Tracker" from his sidebar into his command palette
       // rather than removing it.
-      {
-        href: "/admin/marketing-roi-tracker",
-        icon: Target,
-        label: "ROI Tracker",
-        excludedRoles: ["SFE Manager"],
-        roles: [
-          "Super Admin",
-          "CEO",
-          "Marketing Manager",
-          "Product Manager",
-          "Group Product Manager",
-          "Financial Advisor",
-        ],
-      },
+      // ── REMOVED 2026-08-30 (owner's collapse) ────────────────────────────────────────────
+      // The ROI Tracker row stood here with roles Super Admin, CEO, Marketing Manager, Product
+      // Manager, Group Product Manager and Financial Advisor, minus the SFE Manager. It is gone,
+      // and the three admin-shell roles on that list — Super Admin, CEO, Financial Advisor — now
+      // reach the page as a card on /admin/marketing-roi, which all three can open.
+      //
+      // The other three were never served by this row at all, and the first attempt at this
+      // collapse kept it FOR them on exactly that mistaken reasoning. Marketing Manager, Product
+      // Manager and Group Product Manager are portal roles: resolveNavigationMode sends them to
+      // the employee portal, so adminNavigationSections is not their rail and naming them in it
+      // did nothing in either direction. Their route is the portal's own /employee-portals/roi
+      // and /employee-portals/roi-tracker, which are deliberately separate URLs rather than a
+      // shared page with this one (owner rule, 2026-07-28 — see the comment on that entry).
+      //
+      // Read that as the general warning it is: a `roles` list in this array is NOT a statement
+      // about what a person can see. It is filtered by shell first, so a portal role written into
+      // an admin section is dead weight that reads exactly like a working grant.
     ],
     // Heading restored on owner instruction (2026-08-08). It repeated the single button beneath
     // it in the SFE Manager's sidebar, but this section carries three rows for Super Admin, so
@@ -641,20 +676,30 @@ const adminNavigationSectionSeeds = [
           { resource: "support_requests" },
         ],
       },
-      { href: "/organogram", icon: Network, label: "Organogram", permissions: [{ resource: "organogram" }], excludedRoles: ["Marketing Manager", "CEO"] },
-      // Probation was collapsed to ONE hub button on 2026-08-02 during the SFE rebuild. The four
-      // rows below were restored on 2026-08-08 for every role except the SFE Manager, who keeps
-      // the hub (the entry directly after these). They stay cards in probationPageItems too, so
-      // the hub still works for him and no page became unreachable in either direction.
-      { href: "/probation", icon: Hourglass, label: "Probation", permissions: [{ resource: "probation" }], excludedRoles: ["Marketing Manager", "CEO", "SFE Manager"] },
-      { href: "/probation/dashboard", icon: LayoutDashboard, label: "Probation Dashboard", permissions: [{ resource: "probation", action: "read" }], roles: ["Super Admin", "Training Manager", "Marketing Manager"] },
-      { href: "/probation/analytics", icon: Activity, label: "Probation Analytics", permissions: [{ resource: "probation", action: "read" }], roles: ["Super Admin", "Training Manager", "Marketing Manager"] },
-      { href: "/admin/probation-settings", icon: Settings2, label: "Probation Settings", permissions: [{ resource: "probation", action: "update" }], roles: ["Super Admin"] },
-      // The SFE Manager's copy. `roles` alone would not keep it off Super Admin's sidebar — the
-      // system-administrator workspace bypasses role gating but still honours excludedRoles (see
-      // getSections) — so Super Admin is named explicitly or he would see the hub AND the four
-      // rows above.
-      { href: "/admin/probation-tools", icon: Hourglass, label: "Probation", permissions: [{ resource: "probation" }], roles: ["SFE Manager"], excludedRoles: ["Super Admin"] },
+      // ── COLLAPSED TO THE HUB, 2026-08-30 (owner, asked directly) ──────────────────────────
+      // Probation held FIVE rows here — /probation, /probation/dashboard, /probation/analytics,
+      // /admin/probation-settings and the SFE Manager's own /admin/probation-tools hub. The four
+      // expanded ones were the 2026-08-02 hub reverted by row 5 of the owner's 2026-08-08 decision
+      // sheet; he was shown that history and chose the hub anyway. Do not restore them without a
+      // fresh instruction.
+      //
+      // The single row below is the same hub the SFE Manager already had, widened to everyone who
+      // held any of the four. Its gate is deliberately `probation` with no action, matching what
+      // /probation itself used, rather than `probation:read`: the settings row was probation:update
+      // and narrowing here could silently drop an update-only holder. The page's own guard is
+      // probation:read, so an update-only role would be redirected — but that is the pre-existing
+      // shape of the SFE row, not something introduced here.
+      //
+      // CEO is excluded because he never held any of the four (/probation excluded him by name and
+      // he is on none of the other role lists) and he has his own /admin/ceo-probation section.
+      // Without the exclusion the collapse would GRANT him a row, which is not what was asked for.
+      //
+      // Nothing is stranded, and this was checked rather than assumed: all four hrefs are cards in
+      // probationPageItems; /admin/probation-tools admits anyone with probation:read; and each
+      // card's own gate covers its old audience — Marketing Manager and Training Manager keep the
+      // dashboard and analytics cards, Super Admin keeps all four, and the Marketing Manager stays
+      // excluded from the Probation Cases card exactly as his old row excluded him.
+      { href: "/admin/probation-tools", icon: Hourglass, label: "Probation", permissions: [{ resource: "probation" }], excludedRoles: ["CEO"] },
       // Restored on 2026-08-08. Moved into the CRM hub on 2026-08-02 because it is judged on CRM
       // visit activity; it stays a card there for the SFE Manager, who is excluded here.
       { href: "/admin/field-workforce-compliance", icon: ClipboardCheck, label: "Workforce Compliance", permissions: [{ resource: "hr_calendar" }], excludedRoles: ["SFE Manager"] },
@@ -867,70 +912,92 @@ const adminNavigationSectionSeeds = [
     ],
     label: "Field Coaching",
   },
-  // Single Super-Admin-only sidebar button opening the CRM hub
-  // (app/(admin)/admin/crm/page.tsx, cards in crmPageItems below). The hub is the one
-  // home for all CRM (iReports360) data — sync health, manual pull, the raw master table,
-  // unmapped-identity resolution, and recovered-chains review all live on the page itself
-  // (via its own tab bar), plus CRM Integrity / Double Visit Data Integrity as linked-out cards.
+  // ── Ruling 6 (owner, 2026-08-28): "Early Birds with Field Force" ─────────────────────────────
+  // This section was authored on 2026-08-09 (#1918) naming Super Admin, CEO and SFE Manager —
+  // three admin-shell roles — and appended to employeePortalNavigationSectionSeeds instead of to
+  // this array. It is the ONLY /admin/* href in that portal list, which is the signature of the
+  // slip rather than a decision. resolveNavigationMode pins all three of those roles to "admin",
+  // so the entry has never rendered for anybody in either shell: this rail never held it, and no
+  // portal viewer is on its role list.
+  //
+  // The module was not unreachable, which is why no guard fired: /admin/early-birds is linked from
+  // a card in src/components/admin/ceo-phase-b.tsx:862, and that component is rendered by BOTH
+  // /admin/ceo-command-center and /admin/sfe-command-center — so each of the three roles above
+  // could reach the page, and tests/navigation-reachability-backlog.ts was right to record it as
+  // "linked-from-a-component" rather than as stranded.
+  //
+  // What makes that a thin door rather than a real one is the CONDITION on it. The card renders
+  // inside `{earlyBirdStars.length > 0 ? … : null}`, so a fortnight with no stars to show removes
+  // the module's only route, for everybody, with nothing anywhere saying so. A rail row does not
+  // blink out when the data behind it is empty; that is most of what a rail row is for.
+  //
+  // Placed here rather than anywhere else because the ruling says so: Early Birds is field-force
+  // recognition and Field Coaching is the row it belongs beside.
+  //
+  // The stray portal-array copy is deliberately LEFT IN PLACE. The owner's standing instruction
+  // for this audit is not to touch the employee portal, and the dead entry costs nothing:
+  // dedupeSectionsByHref runs per mode, so the two copies never meet.
+  {
+    id: "early-birds",
+    items: [
+      { href: "/admin/early-birds", icon: Sunrise, label: "Early Birds", permissions: [{ resource: "early_birds", action: "read" }], roles: ["Super Admin", "CEO", "SFE Manager"] },
+    ],
+    label: "Early Birds",
+  },
+  // ── COLLAPSED TO THE HUB, 2026-08-30 (owner, asked directly) ────────────────────────────────
+  // This section held NINE rows for the Super Admin: /admin/crm plus seven Super-Admin-only tools,
+  // beside the /admin/crm-tools hub button that every other role gets. He was shown the trade —
+  // 9 rows against 1, with every page still one click inside the hub — and chose the hub. That
+  // REVERSES the 2026-08-08 restoration and the 2026-08-29 completion of it, both of which are
+  // recorded below; do not restore the rows without a fresh instruction.
+  //
+  // The mechanism is one line: /admin/crm-tools used to name Super Admin in excludedRoles, because
+  // the 2026-08-08 rule was that he must never see a hub button beside the rows duplicating it.
+  // With the rows gone, that exclusion is what would leave him with no CRM row at all, so it goes
+  // and the seven rows go with it. Finance Manager stays excluded — that is a separate owner
+  // decision from 2026-08-10, and unrelated.
+  //
+  // Nothing is stranded, and this was checked rather than assumed: all nine hrefs that used to be
+  // rows are cards in crmPageItems, /admin/crm-tools' own page guard admits anyone holding
+  // crm_visits, double_visit_analytics or hr_calendar (so it admits him), and every one of those
+  // cards names Super Admin or is gated on permission alone.
+  //
+  // What the removed rows were, kept so the history is not lost with them:
+  //   /admin/crm                          the CRM workspace itself — sync health, manual pull, the
+  //                                       raw master table, unmapped-identity resolution and
+  //                                       recovered-chains review, all on that page's own tab bar.
+  //                                       Super Admin's direct link to it was the whole of this
+  //                                       section before the 2026-08-02 SFE rebuild.
+  //   /admin/reps-plans                   Reps Plans
+  //   /admin/doctor-list                  Doctor List           } the District Manager page's two
+  //   /admin/plan-verification            Plan Verification     } tabs, two routes, two rows
+  //   /admin/crm-integrity                CRM Integrity
+  //   /admin/brick-coverage               Brick Coverage
+  //   /admin/double-visit-analytics       Double Visit Analytics
+  //   /admin/double-visit-data-integrity  Double Visit Integrity — the label was shortened from
+  //                                       "Double Visit Data Integrity" because that string
+  //                                       measured 160px against this shell's 157px budget. It
+  //                                       keeps the full name as a hub card, where the budget is
+  //                                       different. Never model these widths: the app resolves to
+  //                                       Aptos and a per-character estimate was once off by 9px
+  //                                       against ~5px of slack. scripts/measure-sidebar-labels.ts
+  //                                       regenerates tests/fixtures/sidebar-label-widths.json.
   {
     id: "crm",
-    // Owner decision 2026-08-02: the SFE Manager owns sales and CRM, so he gets the workspace.
-    // Server side is enforced by canUseAdminCrmWorkspace (src/lib/crm/admin-access.ts) — this
-    // list only controls the sidebar.
-    // Now a HUB button (2026-08-02): the workspace, the two integrity checks, Double-Visit
-    // Analytics and Field Workforce Compliance are cards on /admin/crm-tools. Its role list is
-    // wider than the workspace's own because the hub also carries WFC (hr_calendar) and
-    // double-visit analytics — gating the button on the workspace grant alone would hide the hub
-    // from roles that hold one of the other two. Each card still carries its own gate.
-    // Super Admin's direct link to the workspace, restored 2026-08-08 — before the 2026-08-02 SFE
-    // rebuild this section was exactly this one row, Super-Admin-only, opening the workspace with
-    // no hub in between. The hub below keeps every other role (including the SFE Manager, who owns
-    // CRM) on the 2026-08-02 behaviour, so nobody's route is withdrawn.
-    //
-    // Super Admin is excluded from the hub BY NAME, and that is the 2026-08-08 rule rather than a
-    // quirk: the SFE Manager keeps the flat sidebar WITH hub buttons, and every other role gets
-    // those hubs EXPANDED into their own rows instead. Pinned in exactly those words by
-    // tests/sidebar-role-scoped-headings.test.ts — "Super Admin must not see a hub button beside
-    // the expanded rows it duplicates".
-    //
-    // So the Super-Admin-only rows below are not workarounds for the exclusion. They ARE the
-    // pattern, the same way the four probation rows are, and the list must stay COMPLETE: every
-    // card in crmPageItems needs one, or that page is reachable by the owner only through Cmd+K.
-    // It was incomplete for a long time and four cards were stranded — see the note on the last
-    // four rows. tests/crm-hub-cards-are-reachable-by-the-roles-they-name.test.ts now fails if a
-    // new card is added without its row, which is what stops that recurring.
     items: [
-      { href: "/admin/crm", icon: Database, label: "CRM", roles: ["Super Admin"] },
+      // Owner decision 2026-08-02: the SFE Manager owns sales and CRM, so he gets the workspace.
+      // Server side is enforced by canUseAdminCrmWorkspace (src/lib/crm/admin-access.ts) — this
+      // list only controls the sidebar.
+      //
+      // The role list is wider than the workspace's own grant because the hub also carries
+      // Workforce Compliance (hr_calendar) and Double Visit Analytics: gating the button on the
+      // workspace grant alone would hide the hub from roles holding one of the other two. Each
+      // card still carries its own gate.
+      //
       // Finance Manager excluded 2026-08-10 (owner). crm_visits:read is what admitted him, and
       // that grant has to stay — canViewEmployeeActivity and the attendance manager view both
-      // read it — so the row is removed by name. /admin/crm above is Super-Admin-only, so the
-      // whole "CRM" section leaves his sidebar.
-      { href: "/admin/crm-tools", icon: Database, label: "CRM", permissions: [{ resource: "crm_visits" }, { resource: "double_visit_analytics" }, { resource: "hr_calendar" }], excludedRoles: ["Super Admin", "Finance Manager"] },
-      // RETIRED 2026-08-28 (owner): the "Rep Doctor Lists" row sat here too. See the retirement
-      // note on crmPageItems below — do not re-add it.
-      { href: "/admin/reps-plans", icon: Gauge, label: "Reps Plans", roles: ["Super Admin"] },
-      // Doctor List and Plan Verification are the District Manager page's two tabs, listed as two
-      // rows rather than one because they are two routes — each re-runs its own gate on entry.
-      { href: "/admin/doctor-list", icon: BookUser, label: "Doctor List", roles: ["Super Admin"] },
-      { href: "/admin/plan-verification", icon: ClipboardCheck, label: "Plan Verification", roles: ["Super Admin"] },
-      // ── The four that completed the expansion, 2026-08-29 (owner, asked directly) ──────────
-      // Each of these is a crmPageItems card naming Super Admin, rendered ONLY by /admin/crm-tools,
-      // which excludes him — so for months the one role permitted to open them reached them by
-      // nothing but a typed URL. They had been recorded as a known blind spot rather than fixed,
-      // because "give him the hub instead" looked like the cheaper answer; it is not, because the
-      // hub's nine cards include five pages he already has rows for, which is the duplication the
-      // 2026-08-08 restoration removed.
-      //
-      // Labels are the card labels verbatim, except Double Visit Data Integrity. Measured in the
-      // real headless Chromium on 2026-08-29, that string renders at 160px against this shell's
-      // 157px plain-row budget — 3px over, so it would have been the first label in the admin rail
-      // to clip. "Double Visit Integrity" measures 129px. Never model these widths: the app
-      // resolves to Aptos and a per-character estimate was once off by 9px against ~5px of slack.
-      // scripts/measure-sidebar-labels.ts regenerates tests/fixtures/sidebar-label-widths.json.
-      { href: "/admin/crm-integrity", icon: MapPinned, label: "CRM Integrity", roles: ["Super Admin"] },
-      { href: "/admin/brick-coverage", icon: MapPinned, label: "Brick Coverage", roles: ["Super Admin"] },
-      { href: "/admin/double-visit-analytics", icon: UsersRound, label: "Double Visit Analytics", roles: ["Super Admin"] },
-      { href: "/admin/double-visit-data-integrity", icon: TriangleAlert, label: "Double Visit Integrity", roles: ["Super Admin"] },
+      // read it — so the row is removed by name.
+      { href: "/admin/crm-tools", icon: Database, label: "CRM", permissions: [{ resource: "crm_visits" }, { resource: "double_visit_analytics" }, { resource: "hr_calendar" }], excludedRoles: ["Finance Manager"] },
     ],
     label: "CRM",
   },
@@ -1018,16 +1085,36 @@ const adminNavigationSectionSeeds = [
     ],
     label: "Targets",
   },
-  // Ruling 1 (owner): Sales is five blocks, with Monthly Closing alone and Targets alone. This row
-  // is the "Monthly Closing alone" block. It was `finance-monthly-closing`, filed under the finance
-  // tier; the id is unchanged so nothing keyed on it breaks, and so are its roles — it is still the
-  // Finance Manager's row and still hidden from Super Admin and CEO, who reach the closing through
-  // the Source of Sales hub. Only its position in the rail moved. The long note on WHY it points at
-  // the analytics detail route rather than /sales/monthly-closing is preserved below; that reasoning
-  // is load-bearing and cost a real incident to work out.
+  // Ruling 1 (owner): Sales is five blocks, with Monthly Closing alone and Targets alone. This is
+  // the "Monthly Closing alone" block. It was `finance-monthly-closing`, filed under the finance
+  // tier and holding the Finance Manager's export row only; moving it up here was the first half of
+  // the ruling, and giving the Super Admin a row of his own (2026-08-30) is the second. The two
+  // rows point at DIFFERENT pages under mutually exclusive gates — the note on each says why. The
+  // long account of WHY the Finance Manager gets the analytics detail route rather than
+  // /sales/monthly-closing is preserved below; that reasoning is load-bearing and cost a real
+  // incident to work out.
   {
-    id: "finance-monthly-closing",
+    id: "monthly-closing",
     items: [
+      // Ruling 1 (owner, 2026-08-28): Sales is five blocks, and Monthly Closing is one of them,
+      // standing alone. Targets — the other block the ruling names outright — already had its own
+      // rail row. Monthly Closing had one only for the Finance Manager, on the export-only page
+      // below; for everyone else it was a card inside the Source of Sales hub, i.e. one of the five
+      // blocks folded into another of the five.
+      //
+      // Super Admin ONLY, and that is a gate rather than a preference. /sales/monthly-closing
+      // admits Super Admin, system scope and the SFE Manager and redirects everyone else, so a CEO
+      // row here would bounce on entry — which is the same reason the Finance Manager's row below
+      // deliberately points at a different page. The SFE Manager is left out for the opposite
+      // reason: he keeps the flat sidebar WITH hub buttons and reaches this page as a Source of
+      // Sales card, which is the 2026-08-08 rule pinned by
+      // tests/sidebar-role-scoped-headings.test.ts.
+      //
+      // The section id changed from "finance-monthly-closing" with this row, because the section is
+      // no longer one role's. Section ids are the localStorage key for the per-user collapsed set,
+      // so the only effect is that this section starts expanded once for anyone who had collapsed
+      // it; no saved sidebar ARRANGEMENT is affected, that layout is stored by href.
+      { href: "/sales/monthly-closing", icon: ChartColumnBig, label: "Monthly Closing", permissions: [{ resource: "sales", action: "read" }], roles: ["Super Admin"] },
       // Owner, 2026-08-11: a Monthly Closing tab of his own, able to export the full workbook for
       // CNS, Pedia or Anti Infective.
       //
@@ -2030,12 +2117,16 @@ export const adminToolsPageItems: readonly AdminToolsPageItem[] = [
     description: "Supabase + GCP Cloud Logging errors, and per-employee error/failed-login attempt counts.",
     roles: ["Super Admin", "CEO"],
   },
+  // "Cron Control" (/admin/cron-control) stood here until 2026-08-30. It drove the GCP Cloud
+  // Scheduler, which died with GCP billing on 2026-08-01, so the card opened a permanent error
+  // box and could not see cron-job.org — the scheduler that actually runs production. The card
+  // now names the live editor that shared that page and outlived it.
   {
-    href: "/admin/cron-control",
-    icon: CalendarClock,
-    label: "Cron Control",
-    description: "View, pause/resume, run now, and reschedule the GCP Cloud Scheduler jobs behind this system's automation.",
-    roles: ["Super Admin", "CEO"],
+    href: "/admin/notification-recipients",
+    icon: BellRing,
+    label: "Notification Recipients",
+    description: "Choose which roles are told about each system notification, and silence or retarget an alert.",
+    roles: ["Super Admin"],
   },
   {
     href: "/admin/email-control-center",
@@ -2634,8 +2725,24 @@ export const marketingRoiPageItems: readonly AdminToolsPageItem[] = [
     // admits the SFE Manager to the workflow pages, this card did not.
     roles: ["District Manager", "Super Admin", "SFE Manager"],
   },
-  // Approval Inbox moved to its own sidebar tab (2026-08-02) — see the Marketing & ROI section
-  // above. Keeping a card here too would put one module in two places.
+  // Approval Inbox is NOT a card here, and that is deliberate twice over. It moved to its own
+  // sidebar tab on 2026-08-02 because an inbox has to be visible at a glance with its pending
+  // badge rather than one click inside a hub of reports, and a hub card cannot carry that badge.
+  // The 2026-08-30 collapse left it on the rail for the same reason, and because the owner's own
+  // ruling 10 keeps approvals on layer 1. Same for /workspace/marketing-requests, which he
+  // instructed be re-opened on the rail that very morning.
+  {
+    // Moved here from its own sidebar row by the 2026-08-30 collapse. The two roles are the row's
+    // verbatim, and both can open this hub, so neither lost the route. The page itself admits the
+    // wider marketingAdminWorkflowRoles set (Marketing Manager, Product Manager and Group Product
+    // Manager too) — they are left off this card because they cannot open the hub at all and reach
+    // the same register through the portal, exactly as the row's own note said.
+    href: "/admin/marketing-requests/all",
+    icon: ClipboardList,
+    label: "All Marketing Requests",
+    description: "Every marketing request on the system, and where each one is stopped.",
+    roles: ["Super Admin", "SFE Manager"],
+  },
   {
     href: "/admin/marketing-requests/bulk-upload",
     icon: FileUp,
