@@ -1,8 +1,11 @@
 import { strict as assert } from "node:assert";
 
-import { mapPublicationLine, mergePortalLines } from "../src/lib/deductions/portal.ts";
-import type { DeductionMonthlySummaryLine } from "../src/lib/deductions-governance/types.ts";
-import { deductionsCategories, type DeductionsCategory } from "../src/lib/deductions/types.ts";
+import { mapPublicationLine, sortPortalLines } from "../src/lib/deductions/portal.ts";
+import {
+  deductionsCategories,
+  type DeductionsCategory,
+  type DeductionsPortalLine,
+} from "../src/lib/deductions/types.ts";
 
 function publicationLineRow(overrides: Partial<Parameters<typeof mapPublicationLine>[0]> = {}) {
   return {
@@ -27,18 +30,18 @@ function publicationLineRow(overrides: Partial<Parameters<typeof mapPublicationL
   };
 }
 
-function legacyLine(overrides: Partial<DeductionMonthlySummaryLine> = {}): DeductionMonthlySummaryLine {
+function portalLine(overrides: Partial<DeductionsPortalLine> = {}): DeductionsPortalLine {
   return {
-    id: "legacy-line-1",
-    summaryId: "summary-1",
-    candidateId: "legacy-cand-1",
-    decisionId: "legacy-dec-1",
+    id: "line-1",
+    summaryId: "pub-1",
+    candidateId: "cand-1",
+    decisionId: "dec-1",
     employeeCode: "B-1",
     employeeHrIdCompact: "b1",
-    employeeName: "Legacy Employee",
+    employeeName: "Test Employee",
     monthKey: "2026-05",
-    sourceModule: "FIELD_WORKFORCE",
-    deductionType: "no_activity",
+    sourceModule: "DEDUCTIONS_MODULE",
+    deductionType: "crm",
     payrollColumn: "crm",
     deductionUnit: "days",
     originalDeductionValue: 1,
@@ -54,8 +57,8 @@ function legacyLine(overrides: Partial<DeductionMonthlySummaryLine> = {}): Deduc
 
 export async function runDeductionsModulePortalTests(): Promise<void> {
   // 1. mapPublicationLine — every one of the 7 categories maps to a distinct,
-  // valid payrollColumn (widened DeductionPayrollColumn), never falls through
-  // to the "else -> Unpaid Vacations" trap the legacy 3-value enum would hit.
+  // valid payrollColumn (widened DeductionsSalaryRecordsColumn), never falls
+  // through to the "else -> Unpaid Vacations" trap the legacy 3-value enum would hit.
   {
     const expectedColumns: Record<DeductionsCategory, string> = {
       fingerprint: "finger_print",
@@ -74,7 +77,7 @@ export async function runDeductionsModulePortalTests(): Promise<void> {
     }
   }
 
-  // 2. mapPublicationLine — decisionId null-coalesces to "" (legacy shape is
+  // 2. mapPublicationLine — decisionId null-coalesces to "" (portal shape is
   // non-nullable), never throws or produces "null" as a string.
   {
     const mapped = mapPublicationLine(publicationLineRow({ decision_id: null }));
@@ -82,7 +85,7 @@ export async function runDeductionsModulePortalTests(): Promise<void> {
   }
 
   // 3. mapPublicationLine — unit "amount" maps through; anything else
-  // defaults to "days" (the only two units the new module's schema allows).
+  // defaults to "days" (the only two units the module's schema allows).
   {
     assert.equal(mapPublicationLine(publicationLineRow({ unit: "amount" })).deductionUnit, "amount");
     assert.equal(mapPublicationLine(publicationLineRow({ unit: "days" })).deductionUnit, "days");
@@ -95,38 +98,28 @@ export async function runDeductionsModulePortalTests(): Promise<void> {
     assert.deepEqual(mapped.dates, []);
   }
 
-  // 5. mergePortalLines — a month the new module has published excludes that
-  // month's legacy rows entirely (cutover replaces, never supplements).
+  // 5. sortPortalLines — as of the C6 cutover the portal reads a single source
+  // (this module's publications), so sorting is a pure ordering of that one list:
+  // month_key descending, then employee_name ascending within a month.
   {
-    const newLine = mapPublicationLine(publicationLineRow({ month_key: "2026-06" }));
-    const staleLegacyLine = legacyLine({ monthKey: "2026-06", employeeName: "Should Be Excluded" });
-    const olderLegacyLine = legacyLine({ monthKey: "2026-05", employeeName: "Should Survive" });
-    const merged = mergePortalLines([newLine], [staleLegacyLine, olderLegacyLine], new Set(["2026-06"]));
-    assert.equal(merged.length, 2);
-    assert.ok(merged.some((l) => l.candidateId === newLine.candidateId), "new-module line survives");
-    assert.ok(merged.some((l) => l.employeeName === "Should Survive"), "uncovered older month's legacy line survives");
-    assert.ok(!merged.some((l) => l.employeeName === "Should Be Excluded"), "covered month's legacy line is excluded");
-  }
-
-  // 6. mergePortalLines — no new-module publications at all (coveredMonthKeys
-  // empty) is a no-op passthrough of every legacy line, pre-cutover behavior
-  // preserved exactly.
-  {
-    const legacyOnly = [legacyLine({ monthKey: "2026-04" }), legacyLine({ monthKey: "2026-03", employeeName: "A" })];
-    const merged = mergePortalLines([], legacyOnly, new Set());
-    assert.equal(merged.length, 2);
-  }
-
-  // 7. mergePortalLines — sort order matches the legacy query: month_key
-  // descending, then employee_name ascending within a month.
-  {
-    const a = legacyLine({ monthKey: "2026-06", employeeName: "Zara" });
-    const b = legacyLine({ monthKey: "2026-06", employeeName: "Amir" });
-    const c = legacyLine({ monthKey: "2026-05", employeeName: "Omar" });
-    const merged = mergePortalLines([], [a, b, c], new Set());
+    const a = portalLine({ id: "a", monthKey: "2026-06", employeeName: "Zara" });
+    const b = portalLine({ id: "b", monthKey: "2026-06", employeeName: "Amir" });
+    const c = portalLine({ id: "c", monthKey: "2026-05", employeeName: "Omar" });
+    const sorted = sortPortalLines([a, b, c]);
     assert.deepEqual(
-      merged.map((l) => l.employeeName),
+      sorted.map((l) => l.employeeName),
       ["Amir", "Zara", "Omar"],
     );
+  }
+
+  // 6. sortPortalLines — a pure function: it never mutates its input and an empty
+  // list is a no-op passthrough.
+  {
+    const input = [portalLine({ id: "x", monthKey: "2026-04" }), portalLine({ id: "y", monthKey: "2026-06" })];
+    const originalOrder = input.map((l) => l.id);
+    const sorted = sortPortalLines(input);
+    assert.deepEqual(sorted.map((l) => l.id), ["y", "x"], "newest month first");
+    assert.deepEqual(input.map((l) => l.id), originalOrder, "input array is not mutated");
+    assert.deepEqual(sortPortalLines([]), [], "empty list stays empty");
   }
 }

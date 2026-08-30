@@ -8,17 +8,17 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { PaginationControls } from "@/components/ui/pagination-controls";
 import type {
-  DeductionComment,
-  DeductionMonthlySummaryLine,
-  DeductionPayrollColumn,
-} from "@/lib/deductions-governance/types";
+  DeductionsComment,
+  DeductionsPortalLine,
+  DeductionsSalaryRecordsColumn,
+} from "@/lib/deductions/types";
 import { cn } from "@/lib/utils";
 
 const DEDUCTION_LINES_PAGE_SIZE = 25;
 
 type DeductionsPortalWorkspaceProps = {
-  comments: DeductionComment[];
-  lines: DeductionMonthlySummaryLine[];
+  comments: DeductionsComment[];
+  lines: DeductionsPortalLine[];
   ownCompactHrId: string | null;
 };
 
@@ -45,7 +45,7 @@ function formatDate(value: string): string {
   }
 }
 
-function payrollColumnLabel(column: DeductionPayrollColumn) {
+function payrollColumnLabel(column: DeductionsSalaryRecordsColumn) {
   if (column === "crm") return "CRM";
   if (column === "finger_print") return "Finger Print";
   if (column === "loans") return "Loan";
@@ -53,8 +53,8 @@ function payrollColumnLabel(column: DeductionPayrollColumn) {
   return "Unpaid Vacations";
 }
 
-function groupComments(comments: DeductionComment[]) {
-  const grouped = new Map<string, DeductionComment[]>();
+function groupComments(comments: DeductionsComment[]) {
+  const grouped = new Map<string, DeductionsComment[]>();
   for (const comment of comments) {
     const list = grouped.get(comment.candidateId) ?? [];
     list.push(comment);
@@ -71,7 +71,7 @@ export function DeductionsPortalWorkspace({
   const [commentDrafts, setCommentDrafts] = useState<Record<string, string>>({});
   const [savingCandidateId, setSavingCandidateId] = useState<string | null>(null);
   const [messageByCandidate, setMessageByCandidate] = useState<Record<string, string>>({});
-  const [localComments, setLocalComments] = useState<DeductionComment[]>(comments);
+  const [localComments, setLocalComments] = useState<DeductionsComment[]>(comments);
   const commentsByCandidate = useMemo(() => groupComments(localComments), [localComments]);
 
   const [page, setPage] = useState(0);
@@ -111,7 +111,7 @@ export function DeductionsPortalWorkspace({
         body: JSON.stringify({ body, candidateId }),
       });
       const payload = (await response.json()) as {
-        comment?: DeductionComment;
+        comment?: DeductionsComment;
         message?: string;
         success?: boolean;
       };
@@ -122,7 +122,7 @@ export function DeductionsPortalWorkspace({
         }));
         return;
       }
-      setLocalComments((current) => [payload.comment as DeductionComment, ...current]);
+      setLocalComments((current) => [payload.comment as DeductionsComment, ...current]);
       setCommentDrafts((current) => ({ ...current, [candidateId]: "" }));
       setMessageByCandidate((current) => ({ ...current, [candidateId]: "Comment saved." }));
     } catch (error) {

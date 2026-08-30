@@ -218,10 +218,10 @@ export function runNavigationActivePathTests() {
   );
   assert.deepEqual(
     ceoPayrollTools.filter(
-      (item) => item.href.includes("payroll-copilot") || item.href === "/admin/deductions-governance",
+      (item) => item.href.includes("payroll-copilot"),
     ).map((item) => item.href),
     [],
-    "CEO payroll navigation must hide Copilot, Insurance Wages, and Deductions Governance",
+    "CEO payroll navigation must hide Copilot and Insurance Wages",
   );
 
   const ceoExecutiveNav = getSections(adminNavigationSections, "admin", { "probation:read": true, "organogram:read": true }, "CEO");
@@ -437,7 +437,6 @@ export function runNavigationActivePathTests() {
     financeHubCards,
     [
       "/payroll",
-      "/admin/deductions-governance",
       "/admin/outstation/policy",
       "/admin/deductions",
       // The whole Outstation Expenses hub, added when the owner said "exclude him 100% from

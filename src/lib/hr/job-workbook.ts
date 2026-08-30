@@ -144,7 +144,6 @@ const S = {
   contactReview: { href: "/hr/recruitment/contact-review", label: "Missing Contact Details" },
   contracts: { href: "/hr/contracts", label: "Contract Renewal" },
   cvDatabase: { href: "/hr/cv-database", label: "CV Database" },
-  deductionsGovernance: { href: "/hr/admin/deductions-governance", label: "Deductions Governance" },
   employee360: { href: "/hr/employee-360", label: "Employee 360" },
   employees: { href: "/hr/employees", label: "Employee Directory" },
   hiringDocuments: { href: "/hr/hiring-documents", label: "Hiring Documents" },
@@ -730,7 +729,7 @@ const OPS_SECTIONS: readonly WorkbookSection[] = [
       {
         id: "ops-3-2",
         responsibility: "Reconcile payroll inputs against approved HR documents before submission.",
-        screens: [S.payroll, S.deductionsGovernance, S.hiringDocuments],
+        screens: [S.payroll, S.hiringDocuments],
         steps: [
           "Read the payroll run against the documents behind it.",
           "Where they disagree, fix the record the figure came from. That is the only place a fix sticks.",
@@ -743,7 +742,7 @@ const OPS_SECTIONS: readonly WorkbookSection[] = [
         id: "ops-3-3",
         responsibility:
           "Ensure no deduction, addition or employee status change is processed without clear supporting evidence and approval.",
-        screens: [S.deductionsGovernance, S.attendanceDayReport],
+        screens: [S.attendanceDayReport],
         steps: [
           "Every possible deduction shows the day it came from and the decision made on that day.",
           "If there is no decision behind it, it does not go through. You stop it simply by not supporting it.",

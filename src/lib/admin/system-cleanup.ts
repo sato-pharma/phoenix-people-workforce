@@ -122,7 +122,11 @@ const moduleLabels: Record<SystemCleanupModuleKey, string> = {
 };
 
 const DEFAULT_CLEANUP_NOTE = "No cleanup note provided.";
-type WeeklyPlanSourceTable = "employee_plan_headers" | "weekly_plans";
+// The legacy `weekly_plans` table (and its `weekly_plan_days` / `weekly_plan_approval_tokens`
+// children) is empty in production and is being retired (mossy-ocean C7). The System Cleanup Center
+// therefore sources weekly/monthly plans only from the live `employee_plan_headers` table, and a
+// bare/unprefixed recordId routes to it — never to the retiring legacy table.
+type WeeklyPlanSourceTable = "employee_plan_headers";
 
 function text(value: unknown) {
   return String(value ?? "").replace(/\s+/g, " ").trim();
@@ -216,15 +220,10 @@ function parseWeeklyPlanRecordId(recordId: string): { rawRecordId: string; sourc
       sourceTable: "employee_plan_headers",
     };
   }
-  if (recordId.startsWith("weekly_plans:")) {
-    return {
-      rawRecordId: recordId.slice("weekly_plans:".length),
-      sourceTable: "weekly_plans",
-    };
-  }
+  // A bare id (or any other prefix) resolves against the live table, not the retired legacy one.
   return {
     rawRecordId: recordId,
-    sourceTable: "weekly_plans",
+    sourceTable: "employee_plan_headers",
   };
 }
 
@@ -519,33 +518,6 @@ async function loadOutstationCleanupRecord(recordId: string): Promise<LoadedClea
   };
 }
 
-function weeklyPlanRecord(row: JsonRecord): SystemCleanupRecord {
-  const weekStart = dateOnly(row.week_start_date);
-  const weekEnd = dateOnly(row.week_end_date);
-  const monthKey = text(row.month_key);
-  const rawRecordId = text(row.id);
-
-  return {
-    blockReason: null,
-    canDelete: true,
-    createdAt: isoOrNull(row.submitted_at ?? row.created_at),
-    dateLabel: weekStart && weekEnd ? `${weekStart} to ${weekEnd}` : monthKey || "No plan date",
-    employeeHrId: nullableText(row.employee_hr_id),
-    employeeName: nullableText(row.employee_name),
-    impact: [
-      "Delete legacy weekly plan header",
-      "Delete child day rows and approval tokens through existing cascade",
-      "Preserve the full plan snapshot in cleanup history",
-    ],
-    moduleKey: "weekly_plans",
-    moduleLabel: moduleLabels.weekly_plans,
-    recordId: weeklyPlanRecordId("weekly_plans", rawRecordId),
-    safetyState: "safe",
-    status: normalizeStatus(row.status),
-    title: `Legacy weekly plan ${text(row.week_key) || rawRecordId}${monthKey ? ` - ${monthKey}` : ""}`,
-  };
-}
-
 function employeePlanRecord(row: JsonRecord): SystemCleanupRecord {
   const periodStart = dateOnly(row.period_start_date);
   const periodEnd = dateOnly(row.period_end_date);
@@ -580,65 +552,13 @@ function statusLabel(value: string) {
 }
 
 async function listWeeklyPlanCleanupRecords() {
-  const [employeePlans, legacyPlans] = await Promise.all([
-    selectRows("employee_plan_headers"),
-    selectRows("weekly_plans"),
-  ]);
-
-  return sortCleanupRecordsNewestFirst([
-    ...employeePlans.map(employeePlanRecord),
-    ...legacyPlans.map(weeklyPlanRecord),
-  ]);
+  const employeePlans = await selectRows("employee_plan_headers");
+  return sortCleanupRecordsNewestFirst(employeePlans.map(employeePlanRecord));
 }
 
 async function loadWeeklyPlanCleanupRecord(recordId: string): Promise<LoadedCleanupRecord> {
   const parsed = parseWeeklyPlanRecordId(recordId);
-  if (parsed.sourceTable === "employee_plan_headers") {
-    return loadEmployeePlanCleanupRecord(parsed.rawRecordId);
-  }
-  return loadLegacyWeeklyPlanCleanupRecord(parsed.rawRecordId);
-}
-
-async function loadLegacyWeeklyPlanCleanupRecord(rawRecordId: string): Promise<LoadedCleanupRecord> {
-  const header = await selectMaybeSingle("weekly_plans", rawRecordId);
-  if (!header) {
-    return missingRecord("weekly_plans", weeklyPlanRecordId("weekly_plans", rawRecordId));
-  }
-
-  const [days, approvalTokens] = await Promise.all([
-    selectChildren("weekly_plan_days", "plan_id", rawRecordId),
-    selectChildren("weekly_plan_approval_tokens", "plan_id", rawRecordId),
-  ]);
-  const record = weeklyPlanRecord(header);
-  const decisions = {
-    ceoDecision: header.ceo_decision ?? null,
-    ceoDecisionAt: header.ceo_decision_at ?? null,
-    ceoDecisionByHrId: header.ceo_decision_by_hr_id ?? null,
-    ceoDecisionComment: header.ceo_decision_comment ?? null,
-    managerDecision: header.manager_decision ?? null,
-    managerDecisionAt: header.manager_decision_at ?? null,
-    managerDecisionByHrId: header.manager_decision_by_hr_id ?? null,
-    managerDecisionComment: header.manager_decision_comment ?? null,
-  };
-  const snapshot = {
-    acknowledgements: [],
-    approvalTokens,
-    decisions,
-    header,
-    items: days,
-    returnNotes: [],
-  };
-  const impactSummary = {
-    approvalTokens: approvalTokens.length,
-    days: days.length,
-    planTable: "weekly_plans",
-  };
-
-  return {
-    ...record,
-    impactSummary,
-    snapshot,
-  };
+  return loadEmployeePlanCleanupRecord(parsed.rawRecordId);
 }
 
 async function loadEmployeePlanCleanupRecord(rawRecordId: string): Promise<LoadedCleanupRecord> {

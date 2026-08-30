@@ -1,35 +1,28 @@
-// Unified Deductions module: employee-portal read path (Phase 4).
+// Unified Deductions module: employee-portal read path.
 //
-// Dual-read-by-month: a given month_key is served by AT MOST ONE system —
-// the new module if it has an active (status='published') publication for
-// that month, otherwise the legacy deductions-governance snapshot. This is
-// lower-risk than a one-time backfill (per the approved plan) and requires no
-// new migration on the legacy side. The two portal call sites
+// Single source of truth as of the C6 cutover (2026-08-30): every published
+// deduction the portal shows comes from THIS module's own publication tables
+// (deductions_publications / deductions_publication_lines / deductions_comments).
+// The legacy deductions-governance snapshot it used to dual-read from was
+// retired in C6 — its portal table (deduction_monthly_summary_lines) had been
+// dead-on-arrival (0 rows) since the module went live, so removing that arm
+// changes nothing a viewer sees. The two portal call sites
 // (app/employee-portals/deductions/page.tsx and admin-shell-employee-pages.tsx's
-// WorkspaceDeductionsPage) both call this instead of
-// deductions-governance/service.ts's listPublishedDeductionsForPortal
-// directly, so both surfaces stay consistent.
+// WorkspaceDeductionsPage) both call getPortalDeductions, so both surfaces stay
+// consistent.
 //
-// The output shape is the legacy DeductionMonthlySummaryLine/DeductionComment
-// pair verbatim — DeductionsPortalWorkspace (the live component both pages
-// render) is intentionally left unchanged, per the plan's "keep its current
-// shape, don't redesign it" instruction.
+// DeductionsPortalWorkspace (the live component both pages render) is
+// intentionally left unchanged — its DeductionsPortalLine/DeductionsComment
+// props are this module's own types now, but the shape is identical to the
+// legacy pair it replaced.
 
 import type { AccessContext } from "@/lib/auth/permissions";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { fetchAllRows } from "@/lib/supabase/paginated";
-import {
-  collectPortalDeductionScope,
-  listDeductionComments,
-  mapSummaryLineRow,
-  type EmployeeScopeRow,
-  type SummaryLineRow,
-} from "@/lib/deductions-governance/service";
-import type { DeductionComment, DeductionMonthlySummaryLine } from "@/lib/deductions-governance/types";
 import { salaryRecordsColumnForCategory } from "./calculations.ts";
 import { listDeductionsComments } from "./comments.ts";
-import { normalizeMonthKey } from "./candidate-key.ts";
-import type { DeductionsCategory } from "./types.ts";
+import { compactDeductionsHrId, normalizeMonthKey } from "./candidate-key.ts";
+import type { DeductionsCategory, DeductionsComment, DeductionsPortalLine } from "./types.ts";
 
 function safeNormalizeMonthKey(input: string | undefined): string | undefined {
   if (typeof input !== "string" || !input.trim()) return undefined;
@@ -60,7 +53,7 @@ type PublicationLineRow = {
   created_at: string;
 };
 
-export function mapPublicationLine(row: PublicationLineRow): DeductionMonthlySummaryLine {
+export function mapPublicationLine(row: PublicationLineRow): DeductionsPortalLine {
   const deductionUnit = row.unit === "amount" ? "amount" : "days";
   return {
     id: row.id,
@@ -86,7 +79,7 @@ export function mapPublicationLine(row: PublicationLineRow): DeductionMonthlySum
 }
 
 async function loadNewModuleLines(monthKey: string | undefined): Promise<{
-  lines: DeductionMonthlySummaryLine[];
+  lines: DeductionsPortalLine[];
   coveredMonthKeys: Set<string>;
 }> {
   const supabase = getSupabaseAdmin();
@@ -116,40 +109,35 @@ async function loadNewModuleLines(monthKey: string | undefined): Promise<{
   return { lines: rows.map(mapPublicationLine), coveredMonthKeys };
 }
 
-async function loadLegacyLines(monthKey: string | undefined): Promise<DeductionMonthlySummaryLine[]> {
-  // Mirrors deductions-governance/service.ts's listPublishedDeductionsForPortal
-  // query verbatim (same table, same columns, same ordering) — that function
-  // isn't reused directly here because its own scope-filter/comment-fetch
-  // steps need to run once, after this module's lines are merged in, not twice.
-  const supabase = getSupabaseAdmin();
-  // Paginated for the same reason as the new-module loader above. The "id"
-  // tiebreak (stable + unique) is what .range() paging needs for a total order —
-  // fetchAllRows applies it itself. Display order is applied in mergePortalLines.
-  const rows = await fetchAllRows<SummaryLineRow>(() => {
-    let query = supabase
-      .from("deduction_monthly_summary_lines")
-      .select(
-        "id, summary_id, candidate_id, decision_id, employee_code, employee_hr_id_compact, employee_name, month_key, source_module, deduction_type, payroll_column, deduction_unit, original_deduction_value, applied_deduction_value, applied_amount, dates, reason, hr_note, created_at",
-      );
-    if (monthKey) query = query.eq("month_key", monthKey);
-    return query;
-  }, "id");
-
-  return rows.map(mapSummaryLineRow);
+// PORTAL DEDUCTIONS ARE SELF-ONLY FOR EVERY ROLE (owner instruction, 2026-08-06:
+// "everyone can only see his deductions only"). Relocated verbatim from the
+// retired deductions-governance service in the C6 cutover; `compactDeductionsHrId`
+// is byte-identical to the governance `compactHrId` it replaced (same
+// canonicalHrIdKey source, same regex — see candidate-key.ts).
+//
+// This once widened by management subtree and by line, so a Regional Manager, a
+// National Sales Manager, a District Manager or any "team"/"hierarchy"/"line"-scoped
+// viewer read the deduction amounts of everyone beneath them. A deduction is
+// financial AND disciplinary PII — the amount is derived directly from the person's
+// base salary, so seeing the row tells you roughly what a colleague earns.
+//
+// Company-wide review does NOT live here and is unaffected: it is the admin
+// Deductions module, gated on its own read actor (Super Admin / CEO / Finance
+// Manager). `scope === "system"` below keeps that audience whole. A manager who
+// needs a subordinate's figure asks HR.
+export function collectPortalDeductionScope(input: {
+  access: AccessContext;
+}): { all: boolean; compactHrIds: Set<string> } {
+  if (input.access.scope === "system") return { all: true, compactHrIds: new Set<string>() };
+  const root = compactDeductionsHrId(input.access.hrId ?? input.access.loginId);
+  return { all: false, compactHrIds: new Set<string>(root ? [root] : []) };
 }
 
-// The dual-read-by-month rule, isolated as a pure function: a month is owned
-// by AT MOST ONE system. If the new module has an active publication for a
-// month, that month's legacy rows are stale by definition and must not
-// appear alongside the new ones — the whole point of cutover is that the new
-// snapshot replaces the old one, not supplements it.
-export function mergePortalLines(
-  newLines: DeductionMonthlySummaryLine[],
-  legacyLines: DeductionMonthlySummaryLine[],
-  coveredMonthKeys: Set<string>,
-): DeductionMonthlySummaryLine[] {
-  const survivingLegacyLines = legacyLines.filter((line) => !coveredMonthKeys.has(line.monthKey));
-  return [...newLines, ...survivingLegacyLines].sort((a, b) => {
+// Display order for the portal: month_key descending, then employee name.
+// Kept as a pure exported function (was mergePortalLines, back when a legacy
+// arm still fed in) so the ordering stays unit-testable independent of the DB.
+export function sortPortalLines(lines: DeductionsPortalLine[]): DeductionsPortalLine[] {
+  return [...lines].sort((a, b) => {
     const monthCompare = b.monthKey.localeCompare(a.monthKey);
     if (monthCompare !== 0) return monthCompare;
     return String(a.employeeName ?? "").localeCompare(String(b.employeeName ?? ""));
@@ -160,39 +148,19 @@ export async function getPortalDeductions(input: {
   access: AccessContext;
   monthKey?: string;
 }): Promise<{
-  comments: DeductionComment[];
-  lines: DeductionMonthlySummaryLine[];
+  comments: DeductionsComment[];
+  lines: DeductionsPortalLine[];
 }> {
   const monthKey = safeNormalizeMonthKey(input.monthKey);
-  const supabase = getSupabaseAdmin();
 
-  const [{ data: employees, error: employeesError }, { lines: newLines, coveredMonthKeys }, legacyLinesRaw] =
-    await Promise.all([
-      supabase.from("employees").select("hr_id,full_name,manager_hr_id,line_id,line_name"),
-      loadNewModuleLines(monthKey),
-      loadLegacyLines(monthKey),
-    ]);
-  if (employeesError) throw employeesError;
+  const { lines: publishedLines } = await loadNewModuleLines(monthKey);
+  const sortedLines = sortPortalLines(publishedLines);
 
-  const allLines = mergePortalLines(newLines, legacyLinesRaw, coveredMonthKeys);
+  const scope = collectPortalDeductionScope({ access: input.access });
+  const lines = scope.all
+    ? sortedLines
+    : sortedLines.filter((line) => scope.compactHrIds.has(line.employeeHrIdCompact));
 
-  const scope = collectPortalDeductionScope({
-    access: input.access,
-    employees: (employees ?? []) as EmployeeScopeRow[],
-  });
-  const lines = scope.all ? allLines : allLines.filter((line) => scope.compactHrIds.has(line.employeeHrIdCompact));
-
-  const newLineIds = new Set(newLines.map((line) => line.candidateId));
-  const newCandidateIds = lines.filter((l) => newLineIds.has(l.candidateId)).map((l) => l.candidateId);
-  const legacyCandidateIds = lines.filter((l) => !newLineIds.has(l.candidateId)).map((l) => l.candidateId);
-
-  const [newComments, legacyComments] = await Promise.all([
-    listDeductionsComments({ candidateIds: newCandidateIds }),
-    listDeductionComments({ access: input.access, candidateIds: legacyCandidateIds }),
-  ]);
-  const comments = [...newComments, ...legacyComments].sort((a, b) =>
-    String(b.createdAt ?? "").localeCompare(String(a.createdAt ?? "")),
-  );
-
+  const comments = await listDeductionsComments({ candidateIds: lines.map((line) => line.candidateId) });
   return { comments, lines };
 }

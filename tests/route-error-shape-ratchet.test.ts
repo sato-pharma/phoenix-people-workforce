@@ -42,7 +42,10 @@ import path from "node:path";
  * error shape is added; lower it when a route is migrated to a shared helper, and
  * never raise it to make a red run go green.
  */
-const BASELINE = 30;
+// Lowered 30 -> 22 in the C6 deductions cutover (2026-08-30): removing the 8 legacy governance
+// and Payroll-Copilot deduction API routes deleted their inline jsonError bodies. Retiring a route
+// counts as ground won, same as migrating one to a shared helper.
+const BASELINE = 22;
 
 const APP_ROOT = "app";
 

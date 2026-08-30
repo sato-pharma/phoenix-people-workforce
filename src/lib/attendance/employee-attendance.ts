@@ -1,7 +1,7 @@
 import { getFingerprintAttendanceReport, type FingerprintPolicyDetailRow } from "@/lib/attendance/fingerprint-report";
 import { getAttendanceExceptions } from "@/lib/attendance/exceptions";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-import { compactDeductionHrId } from "@/lib/deductions-governance/service";
+import { compactDeductionsHrId } from "@/lib/deductions/candidate-key";
 import { isAttendanceTracked } from "@/lib/attendance/eligibility";
 import { loadActiveDeviceMappedHrIds } from "@/lib/attendance/device-user-mapping";
 import { normalizeAttendanceHrId } from "@/lib/attendance/metrics";
@@ -79,7 +79,7 @@ export type EmployeeAttendanceData = {
 };
 
 async function getHrConfirmedDeductionDates(hrId: string): Promise<Set<string>> {
-  const compactHrId = compactDeductionHrId(hrId);
+  const compactHrId = compactDeductionsHrId(hrId);
   if (!compactHrId) return new Set();
 
   // Unified Deductions module (src/lib/deductions/). The attendance-device deductions

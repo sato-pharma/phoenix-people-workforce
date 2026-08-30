@@ -62,15 +62,22 @@ export function runSystemCleanupCenterTests() {
   assert.match(service, /imported_payroll_batch_id != null \|\| row\.imported_to_payroll_at != null/, "payroll-linked outstation rows must be blocked");
 
   assert.match(service, /selectRows\("employee_plan_headers"\)/, "weekly cleanup must list modern weekly/monthly plan headers");
-  assert.match(service, /selectRows\("weekly_plans"\)/, "weekly cleanup must still list legacy weekly plan headers");
   assert.match(service, /selectMaybeSingle\("employee_plan_headers"/, "weekly cleanup must snapshot modern plan headers");
   assert.match(service, /selectChildren\("employee_plan_items"/, "weekly cleanup must snapshot modern plan items");
   assert.match(service, /selectChildren\("employee_plan_decisions"/, "weekly cleanup must snapshot modern plan decisions");
   assert.match(service, /selectChildren\("employee_plan_hr_acknowledgements"/, "weekly cleanup must snapshot modern HR acknowledgements");
   assert.match(service, /selectChildren\("employee_plan_item_return_notes"/, "weekly cleanup must snapshot modern return notes");
-  assert.match(service, /selectMaybeSingle\("weekly_plans"/, "weekly cleanup must snapshot legacy plan headers");
-  assert.match(service, /selectChildren\("weekly_plan_days"/, "weekly cleanup must snapshot legacy child day rows");
-  assert.match(service, /selectChildren\("weekly_plan_approval_tokens"/, "weekly cleanup must snapshot legacy approval tokens");
+  // C6/mossy-ocean: the legacy weekly_plans table (with its weekly_plan_days / weekly_plan_approval_tokens
+  // children) is empty in production and is being retired in C7 — the cleanup center must no longer read
+  // or delete it, sourcing weekly/monthly plans only from employee_plan_headers. "weekly_plans" survives
+  // ONLY as the cleanup module key, never as a table read.
+  assert.doesNotMatch(service, /selectRows\("weekly_plans"\)/, "weekly cleanup must not list the retired legacy weekly_plans table");
+  assert.doesNotMatch(service, /selectMaybeSingle\("weekly_plans"/, "weekly cleanup must not snapshot the retired legacy weekly_plans table");
+  // Precise on purpose: a real DB access always double-quotes the table name (selectChildren("…"),
+  // .from("…")), while the retirement comment above names the tables in backticks. A bare
+  // /weekly_plan_days/ would match that prose and false-fail on correct code.
+  assert.doesNotMatch(service, /"weekly_plan_days"/, "weekly cleanup must not read retired legacy weekly_plan_days");
+  assert.doesNotMatch(service, /"weekly_plan_approval_tokens"/, "weekly cleanup must not read retired legacy weekly_plan_approval_tokens");
   assert.match(service, /\.from\(parsed\.sourceTable\)[\s\S]*?\.delete\(\)[\s\S]*?\.eq\("id", parsed\.rawRecordId\)/, "weekly cleanup must delete only the selected source-table plan header");
 
   assert.match(service, /\.from\("admin_cleanup_events"\)[\s\S]*?\.insert\(/, "cleanup must write a cleanup history event before execution");

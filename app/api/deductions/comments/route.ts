@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
-import { addDeductionComment } from "@/lib/deductions-governance/service";
 import { addDeductionsComment, findDeductionsCandidateOwner } from "@/lib/deductions/comments.ts";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
@@ -36,14 +35,15 @@ export async function POST(request: Request) {
     if (!candidateId) {
       return NextResponse.json({ success: false, message: "candidateId is required." }, { status: 400 });
     }
-    // candidateId may belong to either the unified Deductions module or the
-    // legacy governance ledger, depending on which system published the month
-    // this line came from (dual-read-by-month, see src/lib/deductions/portal.ts).
-    // The two tables' UUIDs can never collide, so a lookup-then-dispatch is safe.
+    // Every candidateId now belongs to the unified Deductions module — the legacy
+    // governance ledger was retired in the C6 cutover (2026-08-30). addDeductionsComment
+    // re-validates ownership and the "only after publication" gate itself; the pre-check
+    // here just yields a clean 404 for an id that is not a unified candidate at all.
     const ownsCandidate = await findDeductionsCandidateOwner(candidateId);
-    const comment = ownsCandidate
-      ? await addDeductionsComment({ access, body: String(body.body ?? ""), candidateId })
-      : await addDeductionComment({ access, body: String(body.body ?? ""), candidateId });
+    if (!ownsCandidate) {
+      return NextResponse.json({ success: false, message: "Deduction not found." }, { status: 404 });
+    }
+    const comment = await addDeductionsComment({ access, body: String(body.body ?? ""), candidateId });
     return NextResponse.json({ success: true, comment });
   } catch (error) {
     return jsonError(error, "Failed to save deduction comment.");
