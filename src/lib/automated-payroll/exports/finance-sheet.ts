@@ -52,7 +52,13 @@ export async function buildFinanceSheetWorkbook(input: {
     rows: input.rows,
     headers: input.scope === "part1" ? PART1_HEADERS : [...payrollSheetHeaders],
     extraColumns: [
-      ...(input.scope === "part1" ? bankExtraColumns() : []),
+      // BOTH scopes carry bank details (owner request 2026-08-30: "make sure the
+      // downloaded xlsx payroll is downloaded with bank names and bank accounts").
+      // The full scope used to omit them, and it was the odd one out — the Part 1
+      // sheet, the Part 1 finance sheet and the internal full sheet all had them
+      // already, so the one download finance executes a whole month from was the
+      // only one with no account numbers on it.
+      ...bankExtraColumns(),
       { label: "Finance Edit", kind: "money" },
       { label: "Finance Edit Reason", kind: "text" },
     ],

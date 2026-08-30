@@ -43,6 +43,10 @@ function mapRow(row: Row): NonEmployeePayrollRow {
     totalSalary: Number(row.total_salary ?? 0),
     bankName: (row.bank_name as string | null) ?? null,
     bankAccount: (row.bank_account as string | null) ?? null,
+    // Null on an environment where the provenance column hasn't landed, which
+    // reads identically to "HR typed this one in by hand" — the safe default,
+    // since it only ever drives a UI badge and never an amount.
+    recurringId: (row.recurring_id as string | null) ?? null,
     createdBy: (row.created_by as string | null) ?? null,
     createdAt: String(row.created_at ?? ""),
     updatedAt: String(row.updated_at ?? ""),

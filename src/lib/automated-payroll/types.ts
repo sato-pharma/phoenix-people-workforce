@@ -604,6 +604,8 @@ export type NonEmployeePayrollRow = {
   totalSalary: number;
   bankName: string | null;
   bankAccount: string | null;
+  /** The standing-roster entry this row was copied from, or null when HR typed it in for this month only. */
+  recurringId: string | null;
   createdBy: string | null;
   createdAt: string;
   updatedAt: string;
@@ -617,6 +619,52 @@ export type NonEmployeePayrollInput = {
   bankAccount?: string | null;
   /** Defaults to "first" — the behaviour every entry had before this field existed. */
   part?: NonEmployeePart;
+};
+
+/**
+ * One person on the STANDING Non-Employees Payroll roster (owner request
+ * 2026-08-30: "add them to be fixed every month without me adding them manual").
+ *
+ * This is the register, not the payment. Every new run copies the `active`
+ * entries into its own NonEmployeePayrollRow list, and from that moment the
+ * run's COPY is what every sheet, total and bank file reads — so editing an
+ * amount here never reaches back into a month already built. Someone paid with
+ * both installments is two entries, one per `part`, because they are two
+ * different payments on two different dates.
+ */
+export type RecurringNonEmployeeRow = {
+  id: string;
+  part: NonEmployeePart;
+  fullNameAr: string;
+  fullNameEn: string;
+  totalSalary: number;
+  bankName: string | null;
+  bankAccount: string | null;
+  /** Inactive entries stay for history but are not copied into new runs. */
+  active: boolean;
+  note: string | null;
+  createdBy: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type RecurringNonEmployeeInput = {
+  fullNameAr: string;
+  fullNameEn: string;
+  totalSalary: number;
+  bankName?: string | null;
+  bankAccount?: string | null;
+  part?: NonEmployeePart;
+  active?: boolean;
+  note?: string | null;
+};
+
+/** What one seed/sync of the standing roster into a run actually did. */
+export type RecurringSeedResult = {
+  /** Entries copied in by this call. */
+  inserted: number;
+  /** Active entries already present on the run (matched by recurring_id), left untouched. */
+  skipped: number;
 };
 
 /**

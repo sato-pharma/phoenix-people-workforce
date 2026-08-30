@@ -1,4 +1,5 @@
 import type { AccessContext } from "@/lib/auth/permissions";
+import { logError } from "@/lib/observability/log";
 import { roundCurrency } from "@/lib/payroll/money";
 import {
   createSalaryBatch,
@@ -21,6 +22,7 @@ import {
   releaseCarryForwardForCancelledRun,
 } from "./carry-forward.ts";
 import { getNonEmployeePayrollRows } from "./non-employees.ts";
+import { seedRunFromRecurring } from "./non-employee-recurring.ts";
 import {
   auditPayrollDataQuality,
   describePayrollDataQuality,
@@ -261,6 +263,24 @@ export async function startOrResumeRun(
 
   const run = await createRun({ month: period.month, year: period.year, createdBy: actorId(access) });
   await writeAutomatedPayrollAudit({ runId: run.id, actorHrId: actorId(access), action: "run_started" });
+
+  // Copy the standing Non-Employees Payroll roster in (owner request 2026-08-30:
+  // "add them to be fixed every month without me adding them manual"). These land
+  // as ordinary per-run entries — from here they are edited, locked, sheeted and
+  // paid by exactly the rules a hand-typed entry follows.
+  //
+  // Best-effort on purpose: a roster that cannot be read must never stop a
+  // payroll month from opening. Seeding is idempotent per (run, roster entry) and
+  // HR can re-run it from the panel, so a failure here costs a button press
+  // rather than a missed payment.
+  try {
+    await seedRunFromRecurring({ runId: run.id, actorHrId: actorId(access) });
+  } catch (error) {
+    logError("Automated payroll: seeding the recurring non-employee roster failed", {
+      labels: { event: "automated_payroll_recurring_seed_failed", runId: run.id },
+      error,
+    });
+  }
   return run;
 }
 
