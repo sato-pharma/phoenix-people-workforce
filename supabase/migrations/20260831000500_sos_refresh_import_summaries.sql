@@ -214,8 +214,10 @@ begin
 end;
 $function$;
 
-revoke all on function public.phx_refresh_sos_import_summaries(uuid) from public;
-revoke all on function public.phx_refresh_sos_import_summaries(uuid) from anon, authenticated;
+-- anon and authenticated inherit EXECUTE through PUBLIC membership, so revoking only those two is
+-- a no-op -- PUBLIC has to be named. Revoking PUBLIC on a default ACL also strips service_role,
+-- hence the explicit re-grant after it.
+revoke execute on function public.phx_refresh_sos_import_summaries(uuid) from public, anon, authenticated;
 grant execute on function public.phx_refresh_sos_import_summaries(uuid) to service_role;
 
 comment on function public.phx_refresh_sos_import_summaries(uuid) is
@@ -303,3 +305,9 @@ begin
   return jsonb_build_object('supersededBatches', v_superseded, 'rowCount', v_raw_count);
 end;
 $function$;
+
+-- CREATE OR REPLACE preserves the existing ACL, so this is a no-op today (postgres + service_role
+-- only). Re-declared anyway, the same way phx_closing_customers does it: if this function is ever
+-- dropped and recreated rather than replaced, it would otherwise come back with PUBLIC EXECUTE.
+revoke execute on function public.phx_finalize_sos_batch(uuid, text, text) from public, anon, authenticated;
+grant execute on function public.phx_finalize_sos_batch(uuid, text, text) to service_role;
