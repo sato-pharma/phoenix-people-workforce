@@ -24,6 +24,11 @@ export async function POST(request: Request) {
     const result = await saveMappings(mappings, {
       backfill: body.backfill === true,
       mappedBy: access.loginId ?? undefined,
+      // The one caller allowed to overwrite an owner ruling. This route is Super-Admin-only and the
+      // mapping it carries was typed by a person on the mapping screen, so it IS the owner changing
+      // his mind — the single case the guard must not stand in the way of. Every automated path
+      // (history mining, cleaned-file mining, auto-map) keeps the protective default.
+      onExistingCustomer: "force",
     });
     return NextResponse.json({ success: true, data: result });
   } catch (error) {

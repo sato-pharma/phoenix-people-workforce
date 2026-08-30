@@ -1009,6 +1009,7 @@ import { runDirectOrdersBasketLabelTests } from "./direct-orders-basket-label.te
 import { runDirectOrdersSheetEditableColumnsTests } from "./direct-orders-sheet-editable-columns.test.ts";
 
 import { runSosSelfHealOwnerVerifiedGuardTests } from "./sos-self-heal-owner-verified-guard.test.ts";
+import { runSosMiningOwnerRulingGuardTests } from "./sos-mining-owner-ruling-guard.test.ts";
 import { runOutstationManualExpenseTicketPlusAllowanceTests } from "./outstation-manual-expense-ticket-plus-allowance.test.ts";
 import { runClosingDirectAreaIdentityTests } from "./closing-direct-area-identity.test.ts";
 import { runMonthlyClosingExportAreaMergeStaticTests } from "./monthly-closing-export-area-merge-static.test.ts";
@@ -2935,6 +2936,10 @@ await runTest(
 await runTest(
   "SoS self-heal never overwrites an owner-verified (confidence=100) customer mapping, and the guard is keyed on (distributor, customer) exactly as the upsert is",
   runSosSelfHealOwnerVerifiedGuardTests,
+);
+await runTest(
+  "SoS history mining only ever TEACHES: it never rewrites a customer the crosswalk already holds, and an owner ruling survives every mode except an explicit human re-map",
+  runSosMiningOwnerRulingGuardTests,
 );
 await runTest(
   "manual admin outstation expense adds the ticket price to the allowance instead of replacing it (travelCostAmount reaches the create route)",

@@ -94,7 +94,10 @@ export async function learnFromCleanedFile(distributorCode: string, file: File):
       }
     }
   }
-  const result = await saveMappings(mappings);
+  // "learn": this is a teaching upload, and its own contract above says insert-if-absent. A sheet
+  // cleaned weeks ago must not silently overrule a mapping corrected since — correcting one is what
+  // the mapping screen is for.
+  const result = await saveMappings(mappings, { onExistingCustomer: "learn" });
   return { ...result, scannedRows };
 }
 
@@ -120,10 +123,18 @@ async function selectAllImportRows(columns: string, distributorCode: string | un
 }
 
 // Mine every import_rows record for product_name→product_code and client_code→brick_id pairs and
-// upsert them as aliases. Runs per-distributor or across all distributors. Idempotent (ON CONFLICT
-// DO UPDATE). Use this to bulk-bootstrap the alias dictionary from all historical upload data.
-// Fully paginated (reads all rows, not just the first 1000) and the upserts are chunked so a large
-// distributor never sends one oversized request.
+// write them as aliases. Runs per-distributor or across all distributors. Fully paginated (reads all
+// rows, not just the first 1000) and the upserts are chunked so a large distributor never sends one
+// oversized request.
+//
+// TEACHES, NEVER RE-TEACHES. This fires unattended after every validated import, so it must only
+// ever fill gaps: customer mappings go in with onExistingCustomer "learn", which leaves every row
+// already in the crosswalk exactly as it is. Until 2026-08-30 it upserted ON CONFLICT DO UPDATE
+// instead, and since a customer's FIRST historical row won the scan, each import quietly rewound
+// hand-made owner rulings to whatever the oldest sheet had said — 417 of 418 owner-verified
+// mappings, 4 of them onto a different brick. Bringing history INTO line with a corrected mapping is
+// a separate, explicit, preview-then-apply action (applyHistoricalReconciliation), never a
+// side effect of an upload.
 export async function learnFromImportHistory(distributorCode?: string): Promise<{ saved: number; skipped: number; invalid: number; scannedRows: number }> {
   const [productRows, customerRows] = await Promise.all([
     selectAllImportRows("distributor_code,product_name,product_code", distributorCode, ["product_name", "product_code"]),
@@ -131,7 +142,7 @@ export async function learnFromImportHistory(distributorCode?: string): Promise<
   ]);
 
   const seenProd = new Set<string>();
-  const seenCust = new Set<string>();
+  const custByKey = new Map<string, MappingInput>();
   const mappings: MappingInput[] = [];
   let scannedRows = 0;
 
@@ -150,16 +161,21 @@ export async function learnFromImportHistory(distributorCode?: string): Promise<
     const brick = String(row.brick_id ?? "").trim();
     const dist = String(row.distributor_code ?? "").trim();
     if (!clientCode || !brick || !dist) continue;
-    const key = `${dist}\x00${clientCode}`;
-    if (!seenCust.has(key)) { seenCust.add(key); mappings.push({ type: "customer", raw: clientCode, code: brick, distributorCode: dist }); }
+    // LAST row wins, not first. selectAllImportRows pages in ascending `id` order and `id` is a
+    // bigint identity, so the last row a customer appears in is genuinely the most recent sheet that
+    // named them — the one that reflects where they sit now. Only ever reached for a customer with
+    // no crosswalk row at all, so this decides how an UNKNOWN customer is first learned, never how a
+    // known one is revised.
+    custByKey.set(`${dist}\x00${clientCode}`, { type: "customer", raw: clientCode, code: brick, distributorCode: dist });
   }
+  mappings.push(...custByKey.values());
 
   if (mappings.length === 0) return { saved: 0, skipped: 0, invalid: 0, scannedRows };
   // Chunk the upserts so one big distributor never sends a single oversized request.
   const CHUNK = 1000;
   let saved = 0, skipped = 0, invalid = 0;
   for (let i = 0; i < mappings.length; i += CHUNK) {
-    const r = await saveMappings(mappings.slice(i, i + CHUNK));
+    const r = await saveMappings(mappings.slice(i, i + CHUNK), { onExistingCustomer: "learn" });
     saved += r.saved; skipped += r.skipped; invalid += r.invalid;
   }
   return { saved, skipped, invalid, scannedRows };

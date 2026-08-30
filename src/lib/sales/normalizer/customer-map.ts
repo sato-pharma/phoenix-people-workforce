@@ -162,7 +162,8 @@ export async function deleteCustomerMapRow(input: {
 // Mirrors the master-data import (app/api/sales/database-mapping/[master]/import) but for the
 // customer→brick crosswalk: accepts the SAME sheet the export produces, validates every brick
 // against the master (deriving area/region from it), and UPSERTS WITH UPDATE (so a corrected
-// Brick ID overwrites the existing row — unlike saveMappings(), which only inserts new unknowns).
+// Brick ID overwrites the existing row — unlike saveMappings() called by a MINING path, which is
+// passed onExistingCustomer:"learn" and only inserts customers the crosswalk has never seen).
 
 const KEY_SEP = "␟"; // unit-separator: cannot occur in a code, so a safe composite-key joiner
 const IMPORT_CHUNK = 500;
