@@ -69,20 +69,45 @@ export async function runRecruitmentManagerInboxTests() {
     /export async function listCandidatesSentToManager/,
     "a manager needs a query that returns the people pushed straight to them",
   );
-  assert.match(
-    candidates,
-    /const keys = hrIdLookupKeys\(managerHrId\);[\s\S]{0,400}?\.in\("manager_notified_hr_id", keys\)/,
-    "the HR_ID must go through hrIdLookupKeys and .in() — a bare .eq() is case-sensitive and silently returns nothing",
+  // Re-cut 2026-08-30. This pin and the 42703 one below both measured a fixed DISTANCE through the
+  // whole file, and both false-failed the moment listCandidatesSentToManager grew the comment
+  // explaining why it now reads TWO sources. Distance was never the property. They now slice the
+  // function body and assert the property itself, which is also strictly stronger: the old regex
+  // would have been satisfied by an .eq() sitting anywhere else inside its 400-character window.
+  const inboxStart = candidates.indexOf("export async function listCandidatesSentToManager");
+  const inboxEnd = candidates.indexOf("\nexport ", inboxStart + 1);
+  const inboxBody = candidates.slice(inboxStart, inboxEnd === -1 ? undefined : inboxEnd);
+  assert.ok(
+    inboxBody.includes("const keys = hrIdLookupKeys(managerHrId);"),
+    "the HR_ID must go through hrIdLookupKeys — the ids in this database are mixed case",
+  );
+  assert.ok(
+    inboxBody.includes('.in("manager_notified_hr_id", keys)'),
+    "the HR_ID must be matched with .in() across every spelling, never as a single value",
+  );
+  assert.doesNotMatch(
+    inboxBody,
+    /\.eq\("manager_notified_hr_id"/,
+    "a bare .eq() is case-sensitive and silently returns nothing — which reads to a manager as 'nobody sent you anything'",
   );
   assert.match(
     candidates,
     /\.order\("manager_notified_at", \{ ascending: false \}\)/,
     "newest send first, so the person named in the alert is at the top of the screen it links to",
   );
+  // The pre-migration answer used to be `return []`. It cannot be any more: the function now reads a
+  // second source, so a missing legacy column has to fall THROUGH to that source rather than abandon
+  // the page — an empty list is the wrong answer when the send table has rows. What is pinned is the
+  // half that still matters, that a missing column is tolerated and everything else is thrown.
   assert.match(
-    candidates,
-    /listCandidatesSentToManager[\s\S]{0,2200}?code === "42703"\) return \[\];/,
-    "the column arrives in a separate announced migration, so the pre-migration state is an empty list, not a 500",
+    inboxBody,
+    /code\s*!==\s*"42703"\)\s*throw/,
+    "the legacy column arrives in its own migration, so its absence must degrade, not 500 the page",
+  );
+  assert.doesNotMatch(
+    inboxBody,
+    /catch\s*(\([^)]*\))?\s*\{\s*\}/,
+    "nothing here may swallow an error — a manager silently shown an empty list is the exact invisibility this module exists to end",
   );
 
   // Reading the list is not enough: opening the CV goes through a different route with its own
@@ -97,6 +122,17 @@ export async function runRecruitmentManagerInboxTests() {
     managerView,
     /assertCandidateInHiringManagerScope[\s\S]{0,300}?if \(await isCandidateSentToCaller\(access, candidateId\)\) return;/,
     "a candidate pushed to this caller is in scope for their own CV",
+  );
+  // Added 2026-08-30, and it closes a hole opened by the fan-out itself. Seeing a name in the list
+  // and being allowed to open the CV are two different routes with two different checks, and this
+  // one read ONLY manager_notified_hr_id — the column that holds the LAST manager. So the moment a
+  // CV went to a second person, the first was refused the file while still seeing the name. Salim
+  // Salim Abdo Ibrahim Gomaa is the live case: his send exists only in the send table, because the
+  // column moved to Hany Saad Mohamed Omar 31 seconds after he got it.
+  assert.match(
+    managerView,
+    /isCandidateSentToManager\(candidateId, access\.hrId\)/,
+    "opening the CV must consult the send trail too — the candidate row names only the manager it went to LAST",
   );
 
   // ── 2 · The manager can ANSWER ──────────────────────────────────────────────
