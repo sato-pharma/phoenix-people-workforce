@@ -821,6 +821,7 @@ import { runAutomatedPayrollThursdayHalfDayChargeTests } from "./automated-payro
 import { runAutomatedPayrollCibSheetTests } from "./automated-payroll-cib-sheet.test.ts";
 import { runAutomatedPayrollExecutiveSummaryTests } from "./automated-payroll-executive-summary.test.ts";
 import { runAutomatedPayrollAssembleTests } from "./automated-payroll-assemble.test.ts";
+import { runAutomatedPayrollSettlementSummaryTests } from "./automated-payroll-settlement-summary.test.ts";
 import { runAutomatedPayrollPopulationDiffTests } from "./automated-payroll-population-diff.test.ts";
 import { runAutomatedPayrollDataQualityTests } from "./automated-payroll-data-quality.test.ts";
 import { runTerritoryRootScopeTests } from "./territory-root-scope.test.ts";
@@ -1259,6 +1260,7 @@ await runTest("automated payroll Thursday half-day reaches the CHARGE (owner rul
 await runTest("automated payroll CIB bank-transfer sheet (schema + filtering + styling)", runAutomatedPayrollCibSheetTests);
 await runTest("automated payroll Executive Summary Dashboard (headcount + value vs last month)", runAutomatedPayrollExecutiveSummaryTests);
 await runTest("automated payroll assembleRows + reconcile (each deduction counted exactly once)", runAutomatedPayrollAssembleTests);
+await runTest("automated payroll settlement summary (the four figures reconcile with what is actually paid, and follow the edit)", runAutomatedPayrollSettlementSummaryTests);
 await runTest("automated payroll population diff (silent-disappearance guard)", runAutomatedPayrollPopulationDiffTests);
 await runTest("automated payroll data quality (a missing field must never become a default that pays money)", runAutomatedPayrollDataQualityTests);
 await runTest("content security policy headers (wasm + maps + onesignal)", runCspHeaderTests);

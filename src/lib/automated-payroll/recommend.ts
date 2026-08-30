@@ -17,6 +17,11 @@ import { buildFeederStates, compactHrKey } from "@/lib/payroll/copilot/feeders.t
 import { computeJoinerPay, isInPeriod } from "@/lib/payroll/copilot/proration.ts";
 import { listUnpaidVacationCandidates } from "@/lib/payroll/copilot/vacation-settlement.ts";
 import { deductionsCategoryLabel } from "@/lib/deductions/calculations";
+// The whole-month settlement basis behind every step's four-figure summary.
+// Value import into a module assemble.ts imports FROM — safe, and deliberately
+// so: assemble.ts takes only `import type { PopulationMember }` back, which is
+// erased at compile time, so there is no runtime cycle.
+import { settlementBasisFor } from "./assemble.ts";
 import {
   linesFor,
   loadConfirmedDeductions,
@@ -1959,6 +1964,42 @@ function recommendHolds(members: PopulationMember[], drafts: Map<string, DraftRo
 }
 
 /** Build one step's recommendation rows (system recommendation overlaid with saved edits). */
+/**
+ * Attach each row's whole-month settlement basis — the four figures the owner
+ * asked to see on every screen (2026-08-30). See settlement-summary.ts.
+ *
+ * Done HERE, once, after the switch, rather than inside each of the sixteen
+ * recommend* functions: the summary is the same quantity on every screen by
+ * definition (it is the employee's month, not this step's slice), so building
+ * it per step would be fifteen chances for one screen to disagree with the
+ * others about what someone is paid. A step whose row has no matching member —
+ * a manually-added employee — simply gets no basis, and the card renders no
+ * summary rather than a confident row of zeros.
+ */
+function attachSettlementBasis(
+  rows: StepRow[],
+  members: PopulationMember[],
+  sources: Map<string, PayrollSalarySource>,
+  drafts: Map<string, DraftRow>,
+  period: PayrollPeriod,
+  carryForward: Map<string, number> | undefined,
+): StepRow[] {
+  const byCompact = new Map(members.map((member) => [member.compact, member]));
+  for (const row of rows) {
+    const compact = compactHrKey(row.hrId);
+    const member = byCompact.get(compact);
+    if (!member) continue;
+    row.settlement = settlementBasisFor({
+      member,
+      source: lookupSource(sources, member.employee.hrId),
+      draft: drafts.get(compact),
+      period,
+      carriedForward: carryForward?.get(compact) ?? 0,
+    });
+  }
+  return rows;
+}
+
 export async function recommendStep(input: {
   access: AccessContext;
   period: PayrollPeriod;
@@ -1966,8 +2007,38 @@ export async function recommendStep(input: {
   members: PopulationMember[];
   sources: Map<string, PayrollSalarySource>;
   draftRows: DraftRow[];
+  /**
+   * This run's recovery of previous runs' overpayments, keyed by compact HR id
+   * (carry-forward.ts). Optional: the confirm path only persists what is
+   * already on the row and never reads the settlement basis, so it does not pay
+   * for the extra query. Omitting it leaves `carriedForwardApplied` at 0.
+   */
+  carryForwardByCompact?: Map<string, number>;
 }): Promise<StepRow[]> {
   const drafts = draftMap(input.draftRows);
+  const withBasis = async (rows: StepRow[] | Promise<StepRow[]>): Promise<StepRow[]> =>
+    attachSettlementBasis(
+      await rows,
+      input.members,
+      input.sources,
+      drafts,
+      input.period,
+      input.carryForwardByCompact,
+    );
+  return withBasis(recommendStepRows(input, drafts));
+}
+
+async function recommendStepRows(
+  input: {
+    access: AccessContext;
+    period: PayrollPeriod;
+    stepKey: StepKey;
+    members: PopulationMember[];
+    sources: Map<string, PayrollSalarySource>;
+    draftRows: DraftRow[];
+  },
+  drafts: Map<string, DraftRow>,
+): Promise<StepRow[]> {
   switch (input.stepKey) {
     case "p1_new_hires":
       return recommendNewHires(input.members, input.sources, input.period, drafts);

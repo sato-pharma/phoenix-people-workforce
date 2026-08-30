@@ -289,6 +289,42 @@ export type StepRow = {
    * second, competing source of truth for the money.
    */
   details?: StepRowDetail[];
+  /**
+   * This employee's WHOLE-MONTH money, in components, so every screen can show
+   * the four figures the owner asked for on 2026-08-30 — full month net,
+   * working-days net, total deducted, and what is actually payable.
+   *
+   * Deliberately the components rather than the four totals. The totals have to
+   * move as HR types, and a total computed on the server would freeze at the
+   * figure it was loaded with — the same trap that retired the "This Month Net"
+   * context column on the New hires step (see StepFieldsTotal). Shipping the
+   * components instead lets the client overlay just the boxes on screen and add
+   * up, with the other fifteen steps' saved figures read as-is.
+   *
+   * Absent for holds steps and for a manually-added row that has never been
+   * saved: no basis means the summary is not rendered, rather than rendered as
+   * a confident row of zeros.
+   */
+  settlement?: RowSettlementBasis;
+};
+
+/**
+ * One employee's month, broken into the components that make up their pay —
+ * built in assemble.ts beside the arithmetic it mirrors, consumed by
+ * settlement-summary.ts on the client.
+ *
+ * `components` is keyed by the DraftRow column name, which is also the step
+ * field key that edits it (`crm`, `baseForMonth`, `p1odLoanValue`, …). That
+ * shared naming is the whole mechanism: it is what lets a live edit overlay
+ * exactly one component with no mapping table to fall out of date. Keys with no
+ * editable field anywhere (`medicalInsurance`, `carriedForwardApplied`) ride
+ * along so the payable figure is the real one.
+ */
+export type RowSettlementBasis = {
+  /** The contractual month net (Base + ECoL + Fuel), never prorated. */
+  monthNet: number;
+  /** Every money component of the month, keyed by its DraftRow column name. */
+  components: Record<string, number>;
 };
 
 /** One line of a row's read-only breakdown, keyed by the step's `detailColumns`. */

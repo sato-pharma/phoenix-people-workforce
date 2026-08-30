@@ -11,7 +11,7 @@ import {
   freezeFirstPart,
   type EffectiveSalary,
 } from "./split.ts";
-import type { DraftRow, PayrollPeriod, RowLifecycle } from "./types.ts";
+import type { DraftRow, PayrollPeriod, RowLifecycle, RowSettlementBasis } from "./types.ts";
 
 /**
  * Assembles the canonical monthly rows (the exact SalaryValidationRow shape the
@@ -136,6 +136,68 @@ export function computeFrozenFirstParts(input: {
     frozen.set(member.compact, value);
   }
   return frozen;
+}
+
+/**
+ * One employee's month broken into components, for the four-figure summary the
+ * owner asked to see on every step screen (2026-08-30). See
+ * settlement-summary.ts for what is done with it and why the client is the one
+ * that adds it up.
+ *
+ * IT LIVES HERE, NOT IN recommend.ts, ON PURPOSE. Every value below is lifted
+ * from assembleRows a few lines down — the same `buildEffective`, the same
+ * `num`, the same helpers — so the two read as one function and a change to the
+ * money has both in front of it. Additive: assembleRows is untouched, so
+ * nothing that pays anybody moves.
+ *
+ * The component list must stay the exact flattening of assembleParts'
+ * sumAdditions/sumDeductions. It is pinned that way by
+ * tests/automated-payroll-settlement-summary.test.ts, which runs this and
+ * assembleRows over the same inputs and asserts the three derived figures
+ * match — so a new deduction added to the payroll but not to this list turns
+ * the PR red instead of quietly overstating someone's take-home.
+ */
+export function settlementBasisFor(input: {
+  member: PopulationMember;
+  source: PayrollSalarySource | undefined;
+  draft: DraftRow | undefined;
+  period: PayrollPeriod;
+  /** This run's recovery of a PREVIOUS run's overpayment (carry-forward.ts). */
+  carriedForward?: number;
+}): RowSettlementBasis {
+  const draft = input.draft;
+  const effective = buildEffective(input.member, input.source, draft, input.period);
+  return {
+    monthNet: roundCurrency(num(input.source?.netSalary)),
+    components: {
+      // Earned — already carrying any joiner/leaver proration AND any HR
+      // settlement override, exactly as the paid row will.
+      baseForMonth: effective.base,
+      ecolPaid: effective.ecol,
+      fuelPaid: effective.fuel,
+      // Added on top.
+      expenses: num(draft?.expenses),
+      incentive: num(draft?.incentive),
+      bonus: num(draft?.bonus),
+      overtime: num(draft?.overtime),
+      specialAdditionValue: specialAdditionAmount(draft),
+      // Taken off.
+      fingerprintValue: num(draft?.fingerprintValue),
+      crm: num(draft?.crm),
+      unpaidVacations: num(draft?.unpaidVacations),
+      medicalInsurance: roundCurrency(num(input.member.employee.medicalInsurance)),
+      p1odCrmValue: num(draft?.p1odCrmValue),
+      p1odVacationValue: num(draft?.p1odVacationValue),
+      p1odNoRecordValue: num(draft?.p1odNoRecordValue),
+      p1odLoanValue: num(draft?.p1odLoanValue),
+      p1odOtherValue: num(draft?.p1odOtherValue),
+      manualOtherDeductions: num(draft?.manualOtherDeductions),
+      specialDeductionValue: specialDeductionAmount(draft),
+      // Clamped the same way assembleRows clamps it, so a bad ledger value can
+      // never read as an addition.
+      carriedForwardApplied: Math.max(0, roundCurrency(input.carriedForward ?? 0)),
+    },
+  };
 }
 
 /** Leaver's own CRM+vacation deduction, confirmed on the Resignation step (owner rule 2026-07-20). Non-leavers: 0. */

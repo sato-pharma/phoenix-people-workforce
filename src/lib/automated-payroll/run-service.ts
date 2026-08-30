@@ -366,7 +366,20 @@ export async function getStepRecommendation(
   const run = await requireRun(runId);
   const period: PayrollPeriod = { month: run.month, year: run.year };
   const { members, sources, draftRows } = await loadRunContext(period, runId);
-  const rows = await recommendStep({ access, period, stepKey, members, sources, draftRows });
+  // Needed only by the four-figure summary each card shows (owner 2026-08-30):
+  // a previous run's overpayment being recovered is a real deduction, so
+  // leaving it out would overstate take-home for exactly the people whose pay
+  // has already gone wrong once. One indexed lookup, on the read path only.
+  const carryForwardByCompact = await outstandingCarryForwardFor(runId);
+  const rows = await recommendStep({
+    access,
+    period,
+    stepKey,
+    members,
+    sources,
+    draftRows,
+    carryForwardByCompact,
+  });
   const states = await listStepStates(runId);
   return {
     run,
