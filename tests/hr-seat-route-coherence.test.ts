@@ -172,6 +172,10 @@ const GATE_SHAPE_NOT_MACHINE_READABLE: Record<string, string> = {
   "/hr/probation": "canReadAllProbation(access) — true for both seats",
   "/hr/recruitment/contact-review": "canReviewCandidateContacts(access) — true for Advisory, the only seat offered it",
   "/hr/recruitment/intake-health": "canViewInboundIntakeHealth(access) — true for Advisory, the only seat offered it",
+  "/hr/recruitment/whatsapp-replies":
+    "canViewWhatsAppOutboundLog(access) — true for Advisory, the only seat offered it. Verified by " +
+    "CALLING the predicate for each seat, not by reading it: recruitmentManageRoles is [Super Admin, " +
+    "HR Advisory], and Operations holds no recruitment grant so the row is never offered to her",
   "/hr/attendance/device-user-mapping": 'canAccessAttendanceSetup(access, "read") — true for Operations, the only seat offered it',
   "/hr/attendance/policies": 'canAccessAttendanceSetup(access, "read") — true for Operations, the only seat offered it',
   "/hr/admin/support-requests": "hoisted const canRead = await canAccess(access, support_requests, read) — true for both",
