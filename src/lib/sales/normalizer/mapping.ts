@@ -127,6 +127,20 @@ export type SaveMappingsOptions = {
   // sos_backfill_import_rows_from_customer_map RPC. Best-effort: a missing RPC (pre-migration)
   // or per-row failure never fails the save.
   backfill?: boolean;
+  // What an incoming CUSTOMER mapping does to a crosswalk row that already exists. The upsert below
+  // is ON CONFLICT DO UPDATE, so without this every caller silently overwrites — which is how an
+  // automated mine came to revert hand-made owner rulings to whatever the OLDEST historical sheet
+  // happened to say. The default is the safe one on purpose: this was a FORGOTTEN option, not a
+  // wrong one, so a caller must opt IN to destruction rather than opt out of it.
+  //
+  //   "correct" (default) — overwrite the existing row, EXCEPT an active owner ruling
+  //                         (confidence=100), which is left alone and counted in skippedOwnerVerified.
+  //   "force"             — overwrite everything, owner rulings included. For an explicit human
+  //                         re-map only (the Super-Admin mapping screen), never for automation.
+  //   "learn"             — insert only; every existing row is left exactly as it is, whatever its
+  //                         provenance. This is what "bulk-bootstrap the dictionary" already claimed
+  //                         to do in three separate comments across this module.
+  onExistingCustomer?: "correct" | "force" | "learn";
 };
 
 // Hard cap: a bulk save larger than this skips backfill (run it separately) so one giant import
@@ -203,7 +217,82 @@ export async function backfillCustomerRows(
   return backfilled;
 }
 
-export async function saveMappings(mappings: MappingInput[], options?: SaveMappingsOptions): Promise<{ saved: number; skipped: number; invalid: number; invalidEntries: InvalidEntry[]; backfilled: number }> {
+// Identity of a crosswalk row, keyed exactly the way the upsert keys it. The distributor is
+// normalized (saveMappings only ever WRITES it normalized) while the customer code is taken
+// literally, because `onConflict: "distributor_code,customer_code"` compares the stored strings —
+// so a literal match is precisely the row that would be overwritten. Same convention as
+// loadOwnerVerifiedMapKeys in customer-map.ts; that one cannot be shared here, because
+// customer-map.ts already imports THIS module and the reverse import would be a cycle.
+function customerMapGuardKey(distributorCode: unknown, customerCode: unknown): string {
+  return `${normalizeCodeKey(String(distributorCode ?? ""))} ${String(customerCode ?? "").trim()}`;
+}
+
+// Which crosswalk rows these customer mappings would collide with, and which of those are owner
+// rulings. One query answers both: "learn" needs the existing set, "correct" needs the owner set.
+//
+// This THROWS rather than degrading to empty sets, unlike its counterpart in customer-map.ts. There
+// an empty set only means "guard nothing extra"; here an empty `existing` set would mean "nothing is
+// in the crosswalk", and "learn" would then write every row — reinstating the exact overwrite this
+// guard exists to prevent. A save that fails loudly is recoverable; one that silently reverts the
+// owner's rulings is not.
+async function loadCustomerMapGuardKeys(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  rows: Record<string, unknown>[],
+): Promise<{ existing: Set<string>; ownerVerified: Set<string> }> {
+  const existing = new Set<string>();
+  const ownerVerified = new Set<string>();
+  const customerCodes = [...new Set(rows.map((r) => String(r.customer_code ?? "").trim()).filter(Boolean))];
+  if (customerCodes.length === 0) return { existing, ownerVerified };
+
+  // Chunked: PostgREST puts the `in` list in the URL and a history mine carries thousands of codes.
+  const CHUNK = 200;
+  for (let i = 0; i < customerCodes.length; i += CHUNK) {
+    const slice = customerCodes.slice(i, i + CHUNK);
+    const table = () => supabase.from("source_of_sales_customer_map");
+    // No .eq("active", true): the upsert conflicts on (distributor_code, customer_code) whatever the
+    // row's active flag, so an inactive row is still a row that would be overwritten.
+    let { data, error } = await table().select("active,confidence,customer_code,distributor_code").in("customer_code", slice);
+    if (error && /confidence/i.test(error.message ?? "")) {
+      // Pre-migration deployment with no `confidence` column: the existing-row half still answers
+      // correctly, and only the owner-ruling half degrades — matching what the upsert already does.
+      ({ data, error } = await table().select("active,customer_code,distributor_code").in("customer_code", slice));
+    }
+    if (error) throw new Error(`customer map guard: ${error.message ?? "lookup failed"}`);
+    for (const row of (data ?? []) as { active?: unknown; confidence?: unknown; customer_code?: unknown; distributor_code?: unknown }[]) {
+      const key = customerMapGuardKey(row.distributor_code, row.customer_code);
+      existing.add(key);
+      if (Number(row.confidence) === 100 && row.active !== false) ownerVerified.add(key);
+    }
+  }
+  return { existing, ownerVerified };
+}
+
+export type CustomerWriteMode = NonNullable<SaveMappingsOptions["onExistingCustomer"]>;
+
+// Which of these customer rows may actually be written, given what the crosswalk already holds.
+// Pure and exported so the rule can be tested without a database — the same reason
+// selectCorrectionRows is pure over in customer-map.ts. Both sets are keyed by customerMapGuardKey.
+export function selectCustomerRowsToWrite<T extends Record<string, unknown>>(
+  rows: T[],
+  existing: Set<string>,
+  ownerVerified: Set<string>,
+  mode: CustomerWriteMode,
+): { rows: T[]; skippedOwnerVerified: number; skippedExisting: number } {
+  if (mode === "force") return { rows, skippedExisting: 0, skippedOwnerVerified: 0 };
+  let skippedOwnerVerified = 0;
+  let skippedExisting = 0;
+  const kept = rows.filter((row) => {
+    const key = customerMapGuardKey(row.distributor_code, row.customer_code);
+    // An owner ruling outranks the mode: it is the one mapping a person decided by hand, and it is
+    // checked first so it is reported as a RULING skip rather than as an ordinary existing row.
+    if (ownerVerified.has(key)) { skippedOwnerVerified += 1; return false; }
+    if (mode === "learn" && existing.has(key)) { skippedExisting += 1; return false; }
+    return true;
+  });
+  return { rows: kept, skippedExisting, skippedOwnerVerified };
+}
+
+export async function saveMappings(mappings: MappingInput[], options?: SaveMappingsOptions): Promise<{ saved: number; skipped: number; invalid: number; invalidEntries: InvalidEntry[]; backfilled: number; skippedOwnerVerified: number }> {
   // Only the product + brick masters are needed to validate the mapping targets — NOT the (12k+ row)
   // customer→brick crosswalk, which loadSalesReferenceData() pages 1000-at-a-time by default. Skipping
   // it keeps a save fast + cold-start-safe (~2s → ~0.2s) instead of scaling with the customer map.
@@ -214,8 +303,9 @@ export async function saveMappings(mappings: MappingInput[], options?: SaveMappi
   const supabase = getSupabaseAdmin();
 
   // Intra-batch dedup only — these sets prevent sending duplicate keys in a single upsert batch.
-  // We do NOT pre-load existing DB rows: the upsert ON CONFLICT DO UPDATE path below overwrites
-  // existing rows, so corrections and re-mappings always take effect (not silently skipped).
+  // Product and territory aliases pre-load nothing: their upsert is ON CONFLICT DO UPDATE, so a
+  // correction always takes effect rather than being silently skipped. CUSTOMER rows are the
+  // exception — they carry the owner-ruling sentinel, so they get the guarded lookup below.
   const haveProd = new Set<string>();
   const haveTerr = new Set<string>();
   const haveCust = new Set<string>();
@@ -278,6 +368,20 @@ export async function saveMappings(mappings: MappingInput[], options?: SaveMappi
       territoryRows.push({ alias: raw, normalized_alias: key, target_type: "brick", target_code: code, active: true, source_file: "normalizer", notes: fromDistributor });
     }
   }
+  // Guard the crosswalk BEFORE the upsert, because ON CONFLICT DO UPDATE cannot be told to spare a
+  // row once it runs. "force" skips the lookup entirely — a human re-map is allowed to land on
+  // anything, and that path should not pay for a round trip it never uses.
+  const onExistingCustomer = options?.onExistingCustomer ?? "correct";
+  let skippedOwnerVerified = 0;
+  let customerWriteRows = customerRows;
+  if (customerRows.length > 0 && onExistingCustomer !== "force") {
+    const { existing, ownerVerified } = await loadCustomerMapGuardKeys(supabase, customerRows);
+    const guarded = selectCustomerRowsToWrite(customerRows, existing, ownerVerified, onExistingCustomer);
+    customerWriteRows = guarded.rows;
+    skippedOwnerVerified = guarded.skippedOwnerVerified;
+    skipped += guarded.skippedOwnerVerified + guarded.skippedExisting;
+  }
+
   // Upsert: ON CONFLICT DO UPDATE so corrections and re-mappings always overwrite the existing row.
   // .select("id") returns all affected rows (inserts + updates), giving an accurate saved count.
   const failed = (label: string, error: { message?: string; details?: string; hint?: string }) =>
@@ -312,11 +416,11 @@ export async function saveMappings(mappings: MappingInput[], options?: SaveMappi
     saved += data?.length ?? 0;
   }
   let customerSaved = 0;
-  if (customerRows.length) {
-    let { data, error } = await supabase.from("source_of_sales_customer_map").upsert(customerRows, { onConflict: "distributor_code,customer_code" }).select("id");
+  if (customerWriteRows.length) {
+    let { data, error } = await supabase.from("source_of_sales_customer_map").upsert(customerWriteRows, { onConflict: "distributor_code,customer_code" }).select("id");
     if (error && /confidence|mapped_by/i.test(error.message ?? "")) {
       // Pre-migration deployment: retry without the provenance columns rather than failing the save.
-      const stripped = customerRows.map(({ confidence: _c, mapped_by: _m, ...rest }) => rest);
+      const stripped = customerWriteRows.map(({ confidence: _c, mapped_by: _m, ...rest }) => rest);
       ({ data, error } = await supabase.from("source_of_sales_customer_map").upsert(stripped, { onConflict: "distributor_code,customer_code" }).select("id"));
     }
     if (error) throw failed("customer map", error);
@@ -324,16 +428,20 @@ export async function saveMappings(mappings: MappingInput[], options?: SaveMappi
     saved += customerSaved;
   }
   // Safety net: if any submitted row was not reflected in the select result, count it as skipped.
-  skipped += productRows.length + territoryRows.length + customerRows.length - saved;
+  // Counts the rows actually SENT — guard-skipped rows are already in `skipped` above, and counting
+  // them twice would report more skips than there were mappings.
+  skipped += productRows.length + territoryRows.length + customerWriteRows.length - saved;
 
   let backfilled = 0;
-  if (options?.backfill && customerSaved > 0 && customerRows.length <= BACKFILL_MAX_MAPPINGS) {
+  // Backfill only what was actually written: healing import rows for a mapping this save deliberately
+  // did NOT touch would re-point history at a brick the owner had already overruled.
+  if (options?.backfill && customerSaved > 0 && customerWriteRows.length <= BACKFILL_MAX_MAPPINGS) {
     backfilled = await backfillCustomerRows(
       supabase,
-      customerRows.map((r) => ({ customer_code: r.customer_code, distributor_code: r.distributor_code })),
+      customerWriteRows.map((r) => ({ customer_code: r.customer_code, distributor_code: r.distributor_code })),
     );
   }
-  return { saved, skipped, invalid, invalidEntries, backfilled };
+  return { saved, skipped, invalid, invalidEntries, backfilled, skippedOwnerVerified };
 }
 
 // ── Single-row mapping CRUD (Mapping Database page) ──
