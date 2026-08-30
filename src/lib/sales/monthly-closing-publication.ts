@@ -104,6 +104,38 @@ export async function listAllPublishedClosings(): Promise<PublishedClosing[]> {
   }
 }
 
+/**
+ * The newest period (`YYYY-MM`) with a published closing on ANY line — the newest month the
+ * business considers finished — or null when nothing has ever been published.
+ *
+ * "Any line" and not "all three" deliberately. A closing publishes per (line, period), and the
+ * three lines are published one at a time over minutes or hours; requiring all three would make
+ * this answer flip back to the previous month mid-publish, which is the one moment a reader is
+ * most likely to be looking. A month that is half published is still a month with real, closed
+ * numbers in it, which is the question this function is asked.
+ *
+ * Callers use this to pick WHICH month to show on a landing page, never to decide whether a
+ * viewer may see a closing — that gate is `isClosingPublished(line, period)` and stays per line.
+ *
+ * Returns null rather than throwing: every caller has a working fallback (usually "newest data
+ * loaded"), and a landing page must not fail to render because a period lookup errored.
+ */
+export async function latestPublishedClosingPeriod(): Promise<string | null> {
+  try {
+    const supabase = getSupabaseAdmin();
+    const { data, error } = await supabase
+      .from("monthly_closing_publications")
+      .select("period")
+      .order("period", { ascending: false })
+      .limit(1);
+    if (error) return null;
+    const period = String((data ?? [])[0]?.period ?? "").trim();
+    return period || null;
+  } catch {
+    return null;
+  }
+}
+
 /** Publish a (line, period). Idempotent — re-publishing is a no-op. */
 export async function publishClosing(input: {
   line: string;

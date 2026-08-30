@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 
 import { resolveLandingPathForRole } from "../src/lib/auth/landing.ts";
 import { buildPermissionLookup, permissionMatrix } from "../src/lib/auth/permissions.ts";
+import { sosPeriodDisplayLabel, type CeoCommandCenterData } from "../src/lib/ceo/command-center.ts";
 import { getNavigationSections } from "../src/config/system-navigation.ts";
 import { getSections } from "../src/lib/navigation/active-path.ts";
 import {
@@ -552,4 +553,76 @@ export function runCeoCommandCenterTests() {
     workforce.activeEmployees > 0,
     "CEO Command Center must show non-zero workforce metrics when employees exist",
   );
+
+  // ── The Source of Sales card shows the last PUBLISHED closing, not the newest upload ────────
+  //
+  // Measured on production 2026-08-30: August held ONE validated import batch worth EGP 290,387
+  // while July held seventeen worth EGP 61,547,414. Passing `null` picks the newest period with
+  // any data at all, so from the first upload of a new month this card rendered 0.5% of a real
+  // month and the tables under it were nearly empty — which reads as "the company sold nothing",
+  // not as "the month has barely started loading". That is the whole defect.
+  //
+  // Pinned as a source assertion because the alternative is a live database round-trip; the
+  // behaviour it guards is one argument, and the pure label function below is tested for real.
+  assert.match(
+    ceoCommandCenterSource,
+    /loadSourceOfSalesDashboard\(closingPeriod, \{ role: access\.role \}\)/,
+    "the CEO/SFE/admin landing card must load the LAST PUBLISHED CLOSING, never loadSourceOfSalesDashboard(null) "
+      + "— null picks the newest month holding any data, which during an in-progress upload is a near-empty "
+      + "month rendered as though it were the company's real sales",
+  );
+  assert.match(
+    ceoCommandCenterSource,
+    /const closingPeriod = await closingPeriodPromise/,
+    "the closing period must come from latestPublishedClosingPeriod() and be awaited before the SoS load",
+  );
+
+  // The upload console must keep seeing the NEWEST month — the person loading August has to watch
+  // August arrive. If this ever changes, the fix above has been over-applied.
+  const salesImportPageSource = readFileSync("app/(admin)/sales/import/page.tsx", "utf8");
+  assert.match(
+    salesImportPageSource,
+    /loadSourceOfSalesDashboard\(undefined, \{ role: accessContext\.role \}\)/,
+    "the Source of Sales IMPORT page must still show the newest uploaded month, not the last published closing "
+      + "— it is the console someone uses to watch the month they are currently loading",
+  );
+
+  // Never call an unclosed month a closing. When nothing has been published the card falls back to
+  // the newest data loaded and the label has to say so — a figure labelled "closing" is one the
+  // owner will quote, and quoting a half-loaded month is the failure this change exists to prevent.
+  // This is the real behaviour test: the label function is pure.
+  const sosPayload = (
+    period: string | null,
+    periodBasis: "published-closing" | "latest-upload",
+  ): CeoCommandCenterData["sos"] => ({
+    period,
+    periodBasis,
+    newerPeriods: [],
+    totalValue: 0,
+    totalQty: 0,
+    lineCount: 0,
+    regionCount: 0,
+    topLines: [],
+    topRegions: [],
+    byLine: [],
+    byRegion: [],
+    byProduct: [],
+  });
+  assert.equal(
+    sosPeriodDisplayLabel(sosPayload("2026-07", "published-closing")),
+    "2026-07 closing",
+    "a published month must be labelled as a closing",
+  );
+  assert.equal(
+    sosPeriodDisplayLabel(sosPayload("2026-08", "latest-upload")),
+    "2026-08 · not closed yet",
+    "an UNPUBLISHED month must never be labelled a closing — it is data still arriving, and the label is the "
+      + "only thing telling the reader not to quote it",
+  );
+  assert.equal(
+    sosPeriodDisplayLabel(sosPayload(null, "latest-upload")),
+    null,
+    "no period means no label, so the card falls back to its own 'no monthly sales loaded' copy",
+  );
+  assert.equal(sosPeriodDisplayLabel(null), null, "a missing SoS payload must not throw");
 }

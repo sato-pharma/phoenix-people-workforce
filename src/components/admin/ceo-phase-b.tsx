@@ -29,7 +29,7 @@ import { CeoExpenseTables } from "@/components/admin/ceo-expense-tables";
 import { CeoSosTables } from "@/components/admin/ceo-sos-tables";
 import type { AccessContext } from "@/lib/auth/permissions";
 import type { CeoCommandCenterData, CeoAttentionTone, CeoWeeklyTrendPoint } from "@/lib/ceo/command-center";
-import { getCeoLandingDeferred } from "@/lib/ceo/command-center";
+import { getCeoLandingDeferred, sosPeriodDisplayLabel } from "@/lib/ceo/command-center";
 import { formatStartMinutes, type SfeCrmFieldAnalytics } from "@/lib/crm/sfe-field-analytics";
 import type { SfeImsContribution, SfeImsRow, SfeTargetPerformance } from "@/lib/sales/sfe-performance";
 
@@ -1030,7 +1030,9 @@ export async function CeoPhaseBWidgets({
           <CeoSosTables
             byRegion={sosPrefetched.byRegion}
             byProduct={sosPrefetched.byProduct}
-            period={sosPrefetched.period}
+            /* The qualified label, not the bare period, so these tables and their exports name
+               the same month the same way the hero above them does. Both read the one helper. */
+            period={sosPeriodDisplayLabel(sosPrefetched)}
           />
         ) : (
           <UnavailableChip label="Monthly SoS" />
