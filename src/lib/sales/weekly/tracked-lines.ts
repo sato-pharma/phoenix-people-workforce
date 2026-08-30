@@ -40,15 +40,39 @@ export const WEEKLY_TRACKED_LINES_LABEL = "CNS, Anti Infective and Pedia";
 
 export const WEEKLY_TRACKED_SCOPE_NOTE =
   `Weekly Sales covers the lines tracked weekly — ${WEEKLY_TRACKED_LINES_LABEL}. ` +
-  "Head Office is not tracked weekly and is excluded; select it in the Line filter to see it.";
+  "Head Office is not used in weekly or monthly sales and is excluded.";
+
+/**
+ * The Line filter's option list: tracked lines only.
+ *
+ * Until 2026-08-30 Head Office stayed selectable on purpose, so that the rule was a default scope
+ * rather than a deletion. The owner closed that: *"remove head office from the line filter"*, on the
+ * back of *"The head office will not be used in the weekly sales or monthly sales."* An option
+ * nobody may act on is worse than no option — it invites the one selection the rule forbids, and the
+ * book that comes back is indistinguishable from a real one.
+ *
+ * Head Office was measured at **90.2% of weekly VALUE** on 2026-08-30 (EGP 37,568,199 against the
+ * three tracked lines' 4,089,756 combined), so a stray selection does not merely skew a total — it
+ * becomes the total.
+ *
+ * This trims the OPTIONS only. `applyWeeklyTrackedLineScope`'s `includeUntracked` hatch still
+ * answers an explicit `?line=Head Office`, so nothing became unreachable to a caller that names it;
+ * the UI simply no longer offers it, and no screen can reach it by clicking.
+ */
+export function weeklyTrackedLineOptions(lines: string[]): string[] {
+  return lines.filter((line) => isWeeklyTrackedLine(line));
+}
 
 /**
  * Drop the rows of lines that are not tracked weekly.
  *
- * `includeUntracked` is the deliberate escape hatch: when the viewer names a line in the Line
- * filter, that request wins — the rule is a DEFAULT SCOPE, not a deletion, and no data becomes
- * unreachable. The owner's standing rule is that an export must match the screen, so both sides
- * call this and both carry WEEKLY_TRACKED_SCOPE_NOTE.
+ * `includeUntracked` is the escape hatch: when the CALLER names a line, that request wins, so no
+ * data becomes unreachable to something that asks for it by name. Since 2026-08-30 the UI can no
+ * longer be that caller for Head Office — `weeklyTrackedLineOptions` keeps it out of the dropdown —
+ * so in practice this now fires only for an explicit `?line=` on the API. Kept deliberately: the
+ * weekly import and any admin check of a Head Office upload still need a way to see those rows, and
+ * a rule about REPORTING should not make data unreadable. The owner's standing rule is that an
+ * export must match the screen, so both sides call this and both carry WEEKLY_TRACKED_SCOPE_NOTE.
  */
 export function applyWeeklyTrackedLineScope<T extends { officialLine: string | null }>(
   rows: T[],

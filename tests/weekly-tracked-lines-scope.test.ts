@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   applyWeeklyTrackedLineScope,
   isWeeklyTrackedLine,
+  weeklyTrackedLineOptions,
   WEEKLY_TRACKED_SCOPE_NOTE,
 } from "../src/lib/sales/weekly/tracked-lines.ts";
 
@@ -76,6 +77,45 @@ export async function runWeeklyTrackedLinesScopeTests() {
   {
     for (const needle of ["CNS", "Anti Infective", "Pedia", "Head Office"]) {
       assert.ok(WEEKLY_TRACKED_SCOPE_NOTE.includes(needle), `the scope note must name ${needle}`);
+    }
+    // The note must not promise a door that no longer exists. Until 2026-08-30 it ended "select it in
+    // the Line filter to see it", which was true then and is a lie now that the option is gone.
+    assert.ok(
+      !/select it in the line filter/i.test(WEEKLY_TRACKED_SCOPE_NOTE),
+      "the scope note must not tell the reader to pick Head Office in a filter that no longer offers it",
+    );
+  }
+
+  // 7) THE LINE FILTER OFFERS TRACKED LINES ONLY — owner, 2026-08-30: "remove head office from the
+  //    line filter", on the back of "The head office will not be used in the weekly sales or monthly
+  //    sales." Before this, Head Office sat in the dropdown deliberately, as the escape hatch that
+  //    made the rule a default rather than a deletion. It is now a deletion, at the UI, by decision.
+  //
+  //    Why this earns its own pin: measured 2026-08-30 across four books off one August sheet, Head
+  //    Office is EGP 37,568,199 against CNS 2,648,156 + Pedia 831,362 + Anti Infective 610,238 —
+  //    90.2% of the total. One click on a dropdown entry turned a 4M report into a 41M one, and
+  //    nothing on the page distinguished the two. The option IS the defect.
+  {
+    const offered = weeklyTrackedLineOptions(["Anti Infective", "CNS", "Head Office", "Pedia"]);
+    assert.deepEqual(offered, ["Anti Infective", "CNS", "Pedia"], "the Line filter offers the three tracked lines");
+    assert.ok(!offered.includes("Head Office"), "Head Office must never be offered in the Line filter");
+
+    // Order is the caller's, not re-sorted here — the service sorts before calling, and a second
+    // sort inside a filter is where a dropdown quietly stops matching the list beside it.
+    assert.deepEqual(weeklyTrackedLineOptions(["Pedia", "CNS"]), ["Pedia", "CNS"], "input order is preserved");
+
+    // A line nobody can name is not tracked, so it cannot be offered either — same safe direction as
+    // isWeeklyTrackedLine. A blank entry reaching a dropdown renders as an empty, selectable row.
+    assert.deepEqual(weeklyTrackedLineOptions(["", "Head Office", "Something New"]), []);
+    assert.deepEqual(weeklyTrackedLineOptions([]), []);
+
+    // The two halves must agree: whatever the filter offers, the default scope must also keep.
+    for (const line of weeklyTrackedLineOptions(["Anti Infective", "CNS", "Head Office", "Pedia"])) {
+      assert.equal(
+        applyWeeklyTrackedLineScope([row(line)]).length,
+        1,
+        `${line} is offered in the filter, so the default scope must keep it`,
+      );
     }
   }
 }
