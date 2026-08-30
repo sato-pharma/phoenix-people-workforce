@@ -11,6 +11,7 @@ import {
   type AccessContext,
   type NavigationMode,
 } from "@/lib/auth/permissions";
+import { displayTitleForRole } from "@/lib/auth/hr-functions";
 import { resolveAccessContextFromPage, resolveViewerIdentityFromPage } from "@/lib/auth/server";
 import { formatHrIdForDisplay } from "@/lib/hr-id";
 import { layoutOwnerKey } from "@/lib/navigation/personal-layout";
@@ -90,7 +91,7 @@ export async function AppShell({
     : {
         displayName: access.loginId || formatHrIdForDisplay(access.hrId) || "User",
         initials: "US",
-        roleLabel: access.role,
+        roleLabel: displayTitleForRole(access.role),
       };
   // The `/hr` namespace decides the shell, and it decides it HERE rather than in the route-group
   // layout so that EVERY AppShell render honours it — including the handful of dual-mode pages

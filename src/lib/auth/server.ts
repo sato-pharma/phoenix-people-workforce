@@ -23,6 +23,7 @@ import {
   verifySessionToken,
 } from "@/lib/auth/session";
 import { writeAuthAudit } from "@/lib/auth/audit";
+import { displayTitleForRole } from "@/lib/auth/hr-functions";
 import {
   evaluateEmployeeLifecycleGate,
   type SessionLifecycleGate,
@@ -543,7 +544,7 @@ export const resolveViewerIdentityFromPage = cache(async (accessContext?: Access
     return {
       displayName: fallbackName,
       initials: buildInitials(fallbackName),
-      roleLabel: fallbackRole,
+      roleLabel: displayTitleForRole(fallbackRole),
       imageUrl: await resolveViewerPhotoUrl(access.hrId),
     };
   }
@@ -570,7 +571,14 @@ export const resolveViewerIdentityFromPage = cache(async (accessContext?: Access
   }
 
   const displayName = row?.name?.trim() || fallbackName;
-  const roleLabel = row?.role?.trim() || fallbackRole;
+  // `app_auth_users.role` holds the PERMISSION key, not a job title, so it reads HR Advisory for
+  // a person whose title is HR Business Partner. (Deliberately unquoted — see the note in
+  // hr-command-center.tsx: a quoted seat name here would put this file on the
+  // hr-function-governance allowlist and exempt it from that check for good.)
+  // This is the one place the topbar chip and its
+  // dropdown get their label from, so mapping it here is what puts the real title on every page of
+  // an HR seat's account rather than on the pages someone remembered to fix.
+  const roleLabel = displayTitleForRole(row?.role?.trim() || fallbackRole);
 
   return {
     displayName,
