@@ -37,6 +37,18 @@ export function onesignalEnvironmentStatus(): OneSignalEnvironmentStatus {
   };
 }
 
+// OneSignal's `url` field needs a fully-qualified URL — every caller here passes an
+// app-relative path (same as email/Telegram do), so this makes it absolute the same way
+// dashboardUrl() does in src/lib/notifications/email.ts. Without this, OneSignal falls back
+// to its own dashboard-configured "Default URL", which drifted to a dead Cloud Run bind
+// address (0.0.0.0:8080) and broke every desktop push notification's click target.
+function resolvePushActionUrl(path: string) {
+  const base = (process.env.NOTIFICATION_DASHBOARD_URL || process.env.NEXT_PUBLIC_APP_URL || "").replace(/\/+$/, "");
+  if (!base) return path;
+  if (/^https?:\/\//.test(path)) return path;
+  return `${base}${path.startsWith("/") ? path : `/${path}`}`;
+}
+
 function cleanPushText(value: string) {
   return value.replace(/\s+/g, " ").trim().slice(0, 900);
 }
@@ -113,7 +125,7 @@ export async function sendPushNotification(input: PushSendInput): Promise<PushSe
         contents: { en: message || title },
         headings: { en: title || "Phoenix Workforce" },
         include_external_user_ids: [input.externalId.trim()],
-        ...(input.actionUrl ? { url: input.actionUrl } : {}),
+        ...(input.actionUrl ? { url: resolvePushActionUrl(input.actionUrl) } : {}),
       }),
       headers: {
         "Authorization": `Key ${apiKey}`,

@@ -1117,6 +1117,7 @@ import {
   runModuleLockNavRowTests,
   runModuleLockRefusalTests,
 } from "./module-locks.test.ts";
+import { runPushActionUrlResolutionTests } from "./push-action-url-resolution.test.ts";
 
 /**
  * MARK THE SUITE AS A TEST RUN — this is a data-safety gate, not a formality.
@@ -3456,6 +3457,10 @@ await runTest(
 await runTest(
   "module lock guard reads the target's role from the database, never from the request body",
   runModuleLockGuardSourceTests,
+);
+await runTest(
+  "push notification actionUrl resolves to an absolute URL before reaching OneSignal",
+  runPushActionUrlResolutionTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
