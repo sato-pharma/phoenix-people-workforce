@@ -6197,19 +6197,24 @@ export async function getDirectOrderReport(
       : [];
   }
 
-  const stepsByReq = await loadStepsForRequests(requests.map((request) => request.id));
-  const pharmacies = await loadPharmaciesByIds(requests.map((request) => request.pharmacyId));
-  const nameOf = await nameLookup();
-  const decidedByReq = await loadDecidingActors(requests.map((request) => request.id));
-  // Every product on every request. One paged read alongside the four this already does — the
-  // report's product and unit columns would otherwise show the FIRST line against a sales value
-  // that is the whole basket, which on the sheet Finance books from is the report understating
-  // what was ordered.
-  const itemsByRequest = await loadDirectOrderItemsForRequests(requests.map((request) => request.id));
-
-  // Resolve brick/area/region CODES → NAMES for display (owner wants both). Shared with the
-  // approval detail and the approvals lists — see @/lib/direct-orders/geo-names.
-  const { brickNameById, areaNameByCode, regionNameByCode } = await loadDirectOrderGeoNames();
+  // Six independent lookups, none depending on another's result — parallelized rather than
+  // stacked as sequential round trips (was ~6 serial awaits; measured as a real latency cost on
+  // every report load regardless of table size, see src/lib/finance/command-center.ts:17).
+  const requestIds = requests.map((request) => request.id);
+  const [stepsByReq, pharmacies, nameOf, decidedByReq, itemsByRequest, geoNames] = await Promise.all([
+    loadStepsForRequests(requestIds),
+    loadPharmaciesByIds(requests.map((request) => request.pharmacyId)),
+    nameLookup(),
+    loadDecidingActors(requestIds),
+    // Every product on every request. One paged read alongside the others — the report's product
+    // and unit columns would otherwise show the FIRST line against a sales value that is the whole
+    // basket, which on the sheet Finance books from is the report understating what was ordered.
+    loadDirectOrderItemsForRequests(requestIds),
+    // Resolve brick/area/region CODES → NAMES for display (owner wants both). Shared with the
+    // approval detail and the approvals lists — see @/lib/direct-orders/geo-names.
+    loadDirectOrderGeoNames(),
+  ]);
+  const { brickNameById, areaNameByCode, regionNameByCode } = geoNames;
 
   return requests.map((request) => {
     const active = resolveActiveStep(stepsByReq.get(request.id) ?? []);

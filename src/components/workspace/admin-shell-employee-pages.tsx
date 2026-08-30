@@ -23,7 +23,7 @@ import { FingerprintAnalytics } from "@/components/employee-portal/fingerprint-a
 import { MarketingRequestDecisionConfirmation } from "@/components/employee-portal/marketing-request-decision-confirmation";
 import { MarketingRequestDraftWorkspace } from "@/components/employee-portal/marketing-request-drafts";
 import { MarketingRequestInbox } from "@/components/employee-portal/marketing-request-inbox";
-import { PersonalExpenseWorkloadDashboard } from "@/components/employee-portal/personal-expense-workload-dashboard";
+import { PersonalExpenseWorkloadDashboard } from "@/components/employee-portal/personal-expense-workload-dashboard-dynamic";
 import { PlanningCalendar } from "@/components/employee-portal/planning-calendar";
 import { PlansWorkspace } from "@/components/employee-portal/plans-workspace";
 import { PrivateCalendar } from "@/components/employee-portal/private-calendar";
