@@ -5,6 +5,7 @@ import path from "node:path";
 import {
   matchesScreeningNarrowing,
   screeningAreaOptions,
+  screeningSourceOptions,
   type ScreeningFilterCandidateRow,
 } from "../src/lib/recruitment/screening-filter.ts";
 import {
@@ -69,6 +70,40 @@ export async function runRecruitmentScreeningPageTests() {
     screeningHref("/recruitment", { seen: "any" }),
     "/recruitment/screening",
     "explicitly asking for everything is the plain link",
+  );
+
+  // Sent-to-a-manager is the same kind of three-way as seen/unseen, added 2026-08-31 for "sent a
+  // week ago... sent to manager or not" — the owner's request, verbatim.
+  assert.equal(
+    screeningHref("/recruitment", { notified: "sent" }),
+    "/recruitment/screening?sent=1",
+    "already sent to a manager is its own bookmarkable link",
+  );
+  assert.equal(
+    screeningHref("/recruitment", { notified: "unsent" }),
+    "/recruitment/screening?unsent=1",
+    "and so is never sent",
+  );
+  assert.equal(
+    screeningHref("/recruitment", { notified: "any" }),
+    "/recruitment/screening",
+    "sent and not sent together is the plain link",
+  );
+  // How long ago the CV arrived — the other half of the same request.
+  assert.equal(
+    screeningHref("/recruitment", { received: "hour" }),
+    "/recruitment/screening?received=hour",
+    "how recently the CV arrived is linkable too",
+  );
+  assert.equal(
+    screeningHref("/recruitment", { received: "week" }),
+    "/recruitment/screening?received=week",
+    "every window in the scale is its own link",
+  );
+  assert.equal(
+    screeningHref("/recruitment", { source: "WhatsApp" }),
+    "/recruitment/screening?source=WhatsApp",
+    "and so is the channel the CV arrived on",
   );
 
   // Every filter on the bar is a LINK, and the whole point is that they compose: "the New Medical
@@ -141,16 +176,33 @@ export async function runRecruitmentScreeningPageTests() {
   );
 
   // ── 2 · Reading the narrowing out of a link ───────────────────────────────
-  const nothing = { area: null, region: null, role: null, seen: "any", status: null };
+  const nothing = {
+    area: null,
+    notified: "any",
+    received: null,
+    region: null,
+    role: null,
+    seen: "any",
+    source: null,
+    status: null,
+  };
   assert.deepEqual(parseScreeningFilters({}), nothing, "a bare link narrows nothing");
   assert.deepEqual(parseScreeningFilters(), nothing, "no params at all narrows nothing");
   for (const truthy of ["1", "true", "TRUE", "yes"]) {
     assert.equal(parseScreeningFilters({ unseen: truthy }).seen, "unseen", `${truthy} means unseen only`);
     assert.equal(parseScreeningFilters({ seen: truthy }).seen, "seen", `${truthy} on the other half means seen only`);
+    assert.equal(parseScreeningFilters({ sent: truthy }).notified, "sent", `${truthy} means sent to a manager only`);
+    assert.equal(
+      parseScreeningFilters({ unsent: truthy }).notified,
+      "unsent",
+      `${truthy} on the other half means never sent to a manager`,
+    );
   }
   for (const falsy of ["0", "false", "no", "", "  "]) {
     assert.equal(parseScreeningFilters({ unseen: falsy }).seen, "any", `${falsy} does not mean unseen only`);
     assert.equal(parseScreeningFilters({ seen: falsy }).seen, "any", `${falsy} does not mean seen only`);
+    assert.equal(parseScreeningFilters({ sent: falsy }).notified, "any", `${falsy} does not mean sent only`);
+    assert.equal(parseScreeningFilters({ unsent: falsy }).notified, "any", `${falsy} does not mean unsent only`);
   }
   // Somebody editing an address bar, not an attack. Unseen wins because it is the link that already
   // exists in bookmarks and in the pool's own button.
@@ -158,6 +210,12 @@ export async function runRecruitmentScreeningPageTests() {
     parseScreeningFilters({ seen: "1", unseen: "1" }).seen,
     "unseen",
     "asking for both halves at once resolves to the one that already had a link",
+  );
+  // Same rule, same reason, for the other three-way added 2026-08-31.
+  assert.equal(
+    parseScreeningFilters({ sent: "1", unsent: "1" }).notified,
+    "sent",
+    "asking for both halves of sent/unsent at once resolves to the narrower half",
   );
   // Next.js hands a repeated query param through as an array. Take the first and ignore the rest
   // rather than throwing — `?unseen=1&unseen=0` is a person editing an address bar, not an attack.
@@ -167,6 +225,24 @@ export async function runRecruitmentScreeningPageTests() {
     "a repeated param takes the first value",
   );
   assert.equal(parseScreeningFilters({ unseen: [] }).seen, "any", "an empty array narrows nothing");
+
+  // How long ago the CV arrived, and its source channel — the owner's request of 2026-08-31,
+  // verbatim: "sent a week ago, a months ago, one day ago, one hour ago... sent to manager or not
+  // ... filter in this page on everything." Same rule as role/region/status: unrecognised is
+  // IGNORED, never guessed at.
+  assert.equal(parseScreeningFilters({ received: "hour" }).received, "hour", "the narrowest window narrows");
+  assert.equal(parseScreeningFilters({ received: "day" }).received, "day", "a day narrows");
+  assert.equal(parseScreeningFilters({ received: "week" }).received, "week", "a week narrows");
+  assert.equal(parseScreeningFilters({ received: "month" }).received, "month", "a month narrows");
+  assert.equal(parseScreeningFilters({ received: "HOUR" }).received, "hour", "received matching is case-blind");
+  assert.equal(parseScreeningFilters({ received: "banana" }).received, null, "an unknown window narrows nothing");
+  assert.equal(parseScreeningFilters({ received: "" }).received, null, "an empty received narrows nothing");
+
+  // Source is free text resolved off a fixed set of channel badges, so — like area — it cannot be
+  // validated here and passes through verbatim, trimmed but not cased.
+  assert.equal(parseScreeningFilters({ source: "WhatsApp" }).source, "WhatsApp", "a source survives verbatim");
+  assert.equal(parseScreeningFilters({ source: "  Email  " }).source, "Email", "a source is trimmed, not mangled");
+  assert.equal(parseScreeningFilters({ source: "" }).source, null, "an empty source narrows nothing");
 
   // Role, region and area — the three the owner asked for beside seen/unseen. Same rule as the
   // status below them: an unrecognised value is IGNORED rather than guessed at or thrown on.
@@ -221,31 +297,45 @@ export async function runRecruitmentScreeningPageTests() {
   // "District Sales Manager" was invisible to the District Manager filter. Every fixture below has
   // its fact somewhere OTHER than the obvious column, so a regression to reading the raw column
   // fails here rather than in front of a recruiter.
+  // Fixed instant every "how recently" assertion below is measured against — the same role the
+  // server's own `Date.now()` stamp plays in loadScreeningQueue, just pinned so the test never flakes.
+  const asOf = Date.parse("2026-08-30T12:00:00.000Z");
   const rep: ScreeningFilterCandidateRow = {
     // Title only in the CV reader's hedged answer, never in the column. Reading `currentJobTitle`
     // alone classifies this person as nothing at all.
+    createdAt: "2026-08-30T11:30:00.000Z", // 30 minutes before asOf
     cvUnconfirmed: { currentJobTitle: "Medical Representative", governorate: "Tanta" },
     fullName: "Fixture Rep",
     id: "rep",
     preferredAreaName: "Gharbia 1 (Tanta)",
+    source: "whatsapp",
     status: "new",
   };
   const managerAbroad: ScreeningFilterCandidateRow = {
+    createdAt: "2026-08-30T07:00:00.000Z", // 5 hours before asOf
     currentJobTitle: "District Sales Manager",
     fullName: "Fixture Manager",
     governorate: "Dubai",
     id: "manager",
+    managerNotified: { sentAt: "2026-08-29T09:00:00.000Z" },
     status: "shortlisted",
   };
   // Nothing on file at all: no title, no governorate, no declared area. All three unknown buckets.
-  const blank: ScreeningFilterCandidateRow = { fullName: "Fixture Blank", id: "blank", status: "new" };
+  const blank: ScreeningFilterCandidateRow = {
+    createdAt: "2026-08-27T12:00:00.000Z", // 3 days before asOf
+    fullName: "Fixture Blank",
+    id: "blank",
+    status: "new",
+  };
   // The role comes only off what they ASKED for — the last rung of the ladder the row displays.
   const applicant: ScreeningFilterCandidateRow = {
     appliedForJobTitle: "Medical Rep",
+    createdAt: "2026-08-10T12:00:00.000Z", // 20 days before asOf
     fullName: "Fixture Applicant",
     governorate: "Gharbia",
     id: "applicant",
     preferredAreaName: "gharbia 1 (tanta)",
+    sourceContext: { channel: "email", detailLines: [], shortLabel: "Subject: CV" },
     status: "new",
   };
   const everyone = [rep, managerAbroad, blank, applicant];
@@ -254,6 +344,7 @@ export async function runRecruitmentScreeningPageTests() {
     everyone
       .filter((candidate) =>
         matchesScreeningNarrowing(candidate, parseScreeningFilters(query), {
+          asOf,
           seenByViewer: seenIds.includes(candidate.id),
         }),
       )
@@ -291,6 +382,52 @@ export async function runRecruitmentScreeningPageTests() {
     "five filters at once narrow to the one person who satisfies all five",
   );
 
+  // Sent to a manager — a plain presence check on `managerNotified`, added 2026-08-31.
+  assert.deepEqual(keeps({ sent: "1" }), ["manager"], "sent keeps only the one CV actually pushed to a manager");
+  assert.deepEqual(
+    keeps({ unsent: "1" }),
+    ["rep", "blank", "applicant"],
+    "unsent keeps everyone never pushed to a manager",
+  );
+  assert.deepEqual(keeps({}), ["rep", "manager", "blank", "applicant"], "neither half of sent/unsent excludes anyone");
+
+  // Received — a rolling window off `createdAt`, measured against the fixed `asOf` above. Each
+  // fixture sits in exactly one more window than the last, so widening the window picks up exactly
+  // one more person at a time.
+  assert.deepEqual(keeps({ received: "hour" }), ["rep"], "only the CV from 30 minutes ago is within the last hour");
+  assert.deepEqual(keeps({ received: "day" }), ["rep", "manager"], "5 hours ago is within the last day too");
+  assert.deepEqual(keeps({ received: "week" }), ["rep", "manager", "blank"], "3 days ago is within the last week");
+  assert.deepEqual(
+    keeps({ received: "month" }),
+    ["rep", "manager", "blank", "applicant"],
+    "20 days ago is within the last month, and nothing here is older than that",
+  );
+  assert.deepEqual(
+    keeps({ received: "banana" }),
+    ["rep", "manager", "blank", "applicant"],
+    "an unrecognised window is ignored, same as an unrecognised role or region",
+  );
+
+  // Source — resolved through the SAME channel badge the pool's own Source column reads, never the
+  // raw column alone, for the reason this file's header already gives for role/region/area: a NULL
+  // `source` column still resolves to "Manual".
+  assert.deepEqual(keeps({ source: "WhatsApp" }), ["rep"], "the WhatsApp arrival is found by its resolved badge");
+  assert.deepEqual(keeps({ source: "whatsapp" }), ["rep"], "source matching is case-blind, like area");
+  assert.deepEqual(
+    keeps({ source: "Manual" }),
+    ["manager", "blank"],
+    "a NULL source column resolves to Manual, not to nothing",
+  );
+  assert.deepEqual(keeps({ source: "Email" }), ["applicant"], "sourceContext alone is enough when the column is NULL");
+  assert.deepEqual(keeps({ source: "Referral" }), [], "a source nobody arrived through is empty, not everybody");
+
+  // And the new filters compose with the old ones, same as every filter on this bar.
+  assert.deepEqual(
+    keeps({ received: "day", source: "WhatsApp", unseen: "1" }),
+    ["rep"],
+    "received, source and unseen all narrow together",
+  );
+
   // The Area dropdown offers what applicants have NAMED, de-duplicated case-insensitively, first
   // spelling winning — never every area the company has, which would be ~50 options that can only
   // return an empty queue.
@@ -304,6 +441,19 @@ export async function runRecruitmentScreeningPageTests() {
     screeningAreaOptions([{ ...blank, preferredAreaName: "Zagazig" }, { ...blank, preferredAreaName: "Alex West" }]),
     ["Alex West", "Zagazig"],
     "the list is sorted the way a reader scans it",
+  );
+
+  // The Source dropdown offers the resolved badges this pool actually has, sorted the way a reader
+  // scans them — never a raw column value, for the same reason the area list reads the resolved fact.
+  assert.deepEqual(
+    screeningSourceOptions(everyone),
+    ["Email", "Manual", "WhatsApp"],
+    "every channel actually present, alphabetised",
+  );
+  assert.deepEqual(
+    screeningSourceOptions([blank]),
+    ["Manual"],
+    "a candidate with no source column and no source context still offers Manual",
   );
 
   // ── 3 · Both shells exist, and each points at its own ─────────────────────
@@ -370,7 +520,18 @@ export async function runRecruitmentScreeningPageTests() {
     // HAND — so a filter added to one and forgotten on the other is the exact failure this pair of
     // files keeps producing. Every narrowing the loader resolved has to be handed over on both, or
     // the control renders blank on the shell nobody was looking at.
-    for (const prop of ["area", "areaOptions", "region", "role", "seen", "status"]) {
+    for (const prop of [
+      "area",
+      "areaOptions",
+      "notified",
+      "received",
+      "region",
+      "role",
+      "seen",
+      "source",
+      "sourceOptions",
+      "status",
+    ]) {
       assert.match(
         source,
         new RegExp(`${prop}=\\{queue\\.${prop}\\}`),

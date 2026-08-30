@@ -16,10 +16,12 @@ import { isFiledCandidate } from "@/lib/recruitment/candidate-folder";
 import { listCandidateViews, type CandidateViewMap } from "@/lib/recruitment/candidate-views";
 import { type CandidateStatus } from "@/lib/recruitment/candidate-status";
 import { listHiringManagerOptions, type HiringManagerOption } from "@/lib/recruitment/hiring-manager-notify";
-import { matchesScreeningNarrowing, screeningAreaOptions } from "@/lib/recruitment/screening-filter";
+import { matchesScreeningNarrowing, screeningAreaOptions, screeningSourceOptions } from "@/lib/recruitment/screening-filter";
 import {
   parseScreeningFilters,
+  type ScreeningNotifiedFilter,
   type ScreeningQueueFilters,
+  type ScreeningReceivedFilter,
   type ScreeningRegionFilter,
   type ScreeningRoleFilter,
   type ScreeningSeenFilter,
@@ -54,13 +56,18 @@ export type ScreeningQueue = {
   positionSuggestions: { jobTitles: string[]; areas: string[] };
   /** The areas the Area filter can offer — read off the pool itself. See `screeningAreaOptions`. */
   areaOptions: string[];
+  /** The source labels the Source filter can offer. See `screeningSourceOptions`. */
+  sourceOptions: string[];
   /** How many were dropped by the filters, so the page can say so instead of silently shrinking. */
   filteredOut: number;
   seen: ScreeningSeenFilter;
+  notified: ScreeningNotifiedFilter;
   status: CandidateStatus | null;
   area: string | null;
   role: ScreeningRoleFilter | null;
   region: ScreeningRegionFilter | null;
+  received: ScreeningReceivedFilter | null;
+  source: string | null;
 };
 
 /**
@@ -101,8 +108,13 @@ export async function loadScreeningQueue(
   // shelf. A number that quietly includes the archive is a number nobody can act on.
   const poolCandidates = allCandidates.filter((candidate) => !isFiledCandidate(candidate));
 
+  // Stamped once, not read again per candidate: this is a server function run fresh on every
+  // request (the page is `force-dynamic`), so one `Date.now()` here is the same instant the
+  // "how recently" filter measures every row against.
+  const asOf = Date.now();
+
   const candidates = poolCandidates.filter((candidate) =>
-    matchesScreeningNarrowing(candidate, narrowing, { seenByViewer: Boolean(views[candidate.id]) }),
+    matchesScreeningNarrowing(candidate, narrowing, { asOf, seenByViewer: Boolean(views[candidate.id]) }),
   );
 
   return {
@@ -115,6 +127,7 @@ export async function loadScreeningQueue(
     hiringManagers,
     openVacancies,
     positionSuggestions,
+    sourceOptions: screeningSourceOptions(poolCandidates),
     views,
   };
 }

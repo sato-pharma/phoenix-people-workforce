@@ -169,24 +169,27 @@ export async function runRecruitmentCandidateSeenTests() {
   const unseenNarrowing = parseScreeningFilters({ unseen: "1" });
   const seenNarrowing = parseScreeningFilters({ seen: "1" });
   const anyCandidate = { appliedForJobTitle: null, currentJobTitle: null, id: "cand-1", status: "new" };
+  // `asOf` only matters to the `received` filter, which neither narrowing here sets — any instant
+  // does for this section.
+  const asOf = Date.now();
   assert.equal(
-    matchesScreeningNarrowing(anyCandidate, unseenNarrowing, { seenByViewer: false }),
+    matchesScreeningNarrowing(anyCandidate, unseenNarrowing, { asOf, seenByViewer: false }),
     true,
     "?unseen=1 must keep a CV this viewer has never opened",
   );
   assert.equal(
-    matchesScreeningNarrowing(anyCandidate, unseenNarrowing, { seenByViewer: true }),
+    matchesScreeningNarrowing(anyCandidate, unseenNarrowing, { asOf, seenByViewer: true }),
     false,
     "?unseen=1 must narrow to what this viewer has never opened",
   );
   // The other half of the same question, which the old one-way toggle could not ask at all.
   assert.equal(
-    matchesScreeningNarrowing(anyCandidate, seenNarrowing, { seenByViewer: true }),
+    matchesScreeningNarrowing(anyCandidate, seenNarrowing, { asOf, seenByViewer: true }),
     true,
     "?seen=1 must keep a CV this viewer HAS opened",
   );
   assert.equal(
-    matchesScreeningNarrowing(anyCandidate, seenNarrowing, { seenByViewer: false }),
+    matchesScreeningNarrowing(anyCandidate, seenNarrowing, { asOf, seenByViewer: false }),
     false,
     "?seen=1 must drop a CV this viewer has never opened",
   );

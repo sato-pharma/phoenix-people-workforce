@@ -25,6 +25,10 @@ export type ScreeningQueueFilters = {
   unseen?: string | string[] | undefined;
   /** `1`/`true` — the other half of the same three-way: only CVs this viewer HAS already opened. */
   seen?: string | string[] | undefined;
+  /** `1`/`true` — only CVs already pushed straight to a manager. */
+  sent?: string | string[] | undefined;
+  /** `1`/`true` — the other half of the same three-way: only CVs never pushed to a manager. */
+  unsent?: string | string[] | undefined;
   /** A single candidate status, e.g. `new`. Anything unrecognised is ignored, never guessed at. */
   status?: string | string[] | undefined;
   /** The area the applicant asked to work in, verbatim, or `unknown` for those who never said. */
@@ -33,6 +37,10 @@ export type ScreeningQueueFilters = {
   role?: string | string[] | undefined;
   /** A `candidateRegionCodes` value, `foreign`, or `unknown`. */
   region?: string | string[] | undefined;
+  /** A `screeningReceivedFilters` value — how long ago the CV arrived. */
+  received?: string | string[] | undefined;
+  /** A source channel label, verbatim — see `candidateSourceChannel`, e.g. `WhatsApp`, `Email`. */
+  source?: string | string[] | undefined;
 };
 
 /**
@@ -44,6 +52,29 @@ export type ScreeningQueueFilters = {
  * pool instead.
  */
 export type ScreeningSeenFilter = "any" | "seen" | "unseen";
+
+/**
+ * Sent-to-a-manager, as the same kind of three-way as seen/unseen above — and for the same reason:
+ * "never sent" is a real question a screener asks ("what's still sitting with nobody looking at
+ * it?"), not just the absence of the "already sent" checkbox.
+ */
+export type ScreeningNotifiedFilter = "any" | "sent" | "unsent";
+
+/**
+ * How long ago the CV arrived, as a rolling window ending now — "the last hour", not "today" — so
+ * hour/day/week/month compose into one scale rather than mixing a clock window with a calendar one.
+ */
+export type ScreeningReceivedFilter = "hour" | "day" | "week" | "month";
+
+/** Narrowest window first, matching how a person scans the dropdown. */
+export const screeningReceivedFilters: readonly ScreeningReceivedFilter[] = ["hour", "day", "week", "month"];
+
+export const screeningReceivedFilterLabels: Record<ScreeningReceivedFilter, string> = {
+  day: "Last 24 hours",
+  hour: "Last hour",
+  month: "Last 30 days",
+  week: "Last 7 days",
+};
 
 /** A role family, or `unknown` — meaning nobody ever told us what this person does. */
 export type ScreeningRoleFilter = CandidateRoleFamily | "unknown";
@@ -70,11 +101,15 @@ export const SCREENING_UNKNOWN = "unknown";
 /** What a screening link actually asks for, once the query string has been read. */
 export type ScreeningQueueNarrowing = {
   seen: ScreeningSeenFilter;
+  notified: ScreeningNotifiedFilter;
   status: CandidateStatus | null;
   /** An area name spelled as the applicant's answer spells it, or `SCREENING_UNKNOWN`. */
   area: string | null;
   role: ScreeningRoleFilter | null;
   region: ScreeningRegionFilter | null;
+  received: ScreeningReceivedFilter | null;
+  /** A source channel label, verbatim — see `candidateSourceChannel`. */
+  source: string | null;
 };
 
 /** Next.js hands a repeated query param through as an array; take the first and ignore the rest. */
@@ -96,6 +131,14 @@ function parseRole(value: string | null): ScreeningRoleFilter | null {
   if (normalized === SCREENING_UNKNOWN) return SCREENING_UNKNOWN;
   return (candidateRoleFamilies as readonly string[]).includes(normalized)
     ? (normalized as CandidateRoleFamily)
+    : null;
+}
+
+function parseReceived(value: string | null): ScreeningReceivedFilter | null {
+  if (!value) return null;
+  const normalized = value.toLowerCase();
+  return (screeningReceivedFilters as readonly string[]).includes(normalized)
+    ? (normalized as ScreeningReceivedFilter)
     : null;
 }
 
@@ -123,14 +166,21 @@ function parseRegion(value: string | null): ScreeningRegionFilter | null {
 export function parseScreeningFilters(filters: ScreeningQueueFilters = {}): ScreeningQueueNarrowing {
   const unseen = isTruthyFlag(firstParam(filters.unseen));
   const seen = isTruthyFlag(firstParam(filters.seen));
+  const sent = isTruthyFlag(firstParam(filters.sent));
+  const unsent = isTruthyFlag(firstParam(filters.unsent));
   const area = firstParam(filters.area);
   return {
     area: area && area.toLowerCase() === SCREENING_UNKNOWN ? SCREENING_UNKNOWN : area,
+    // `?sent=1&unsent=1` is somebody editing an address bar, not an attack. Sent wins for the same
+    // reason unseen wins over seen below: it is the narrower, more specific half of the pair.
+    notified: sent ? "sent" : unsent ? "unsent" : "any",
+    received: parseReceived(firstParam(filters.received)),
     region: parseRegion(firstParam(filters.region)),
     role: parseRole(firstParam(filters.role)),
     // `?unseen=1&seen=1` is somebody editing an address bar, not an attack. Unseen wins because it
     // is the link that already exists in bookmarks and in the pool's own button.
     seen: unseen ? "unseen" : seen ? "seen" : "any",
+    source: firstParam(filters.source),
     status: normalizeCandidateStatus(firstParam(filters.status)),
   };
 }
@@ -138,10 +188,13 @@ export function parseScreeningFilters(filters: ScreeningQueueFilters = {}): Scre
 /** Everything a screening link can narrow to. Absent keys narrow nothing, exactly as before. */
 export type ScreeningHrefOptions = {
   seen?: ScreeningSeenFilter;
+  notified?: ScreeningNotifiedFilter;
   status?: CandidateStatus | null;
   area?: string | null;
   role?: ScreeningRoleFilter | null;
   region?: ScreeningRegionFilter | null;
+  received?: ScreeningReceivedFilter | null;
+  source?: string | null;
 };
 
 /**
@@ -163,10 +216,14 @@ export function screeningHref(basePath: string, options: ScreeningHrefOptions = 
   const params = new URLSearchParams();
   if (options.seen === "unseen") params.set("unseen", "1");
   if (options.seen === "seen") params.set("seen", "1");
+  if (options.notified === "sent") params.set("sent", "1");
+  if (options.notified === "unsent") params.set("unsent", "1");
   if (options.status) params.set("status", options.status);
   if (options.role) params.set("role", options.role);
   if (options.region) params.set("region", options.region);
   if (options.area) params.set("area", options.area);
+  if (options.received) params.set("received", options.received);
+  if (options.source) params.set("source", options.source);
   const query = params.toString();
   return query ? `${base}?${query}` : base;
 }
