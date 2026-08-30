@@ -1,4 +1,5 @@
 import { isProductionRuntime } from "@/config/system-settings";
+import { recordJobHeartbeat } from "@/lib/observability/job-heartbeat";
 import { logWarning } from "@/lib/observability/log";
 
 // An INDEPENDENT, EXTERNAL liveness monitor (Healthchecks.io) for the 8 Cloud Scheduler jobs —
@@ -37,15 +38,8 @@ function pingKey(): string | null {
 
 export type DeadMansSwitchOutcome = "success" | "fail";
 
-/**
- * Pings the external monitor for one cron job. Best-effort by design and contract: NEVER throws,
- * never delays or masks the actual cron job's own result — a Healthchecks outage must not itself
- * become a second incident. No-ops (no network attempt at all) outside production, or whenever
- * HEALTHCHECKS_PING_KEY is unset, so this stays completely inert in dev/staging/CI and never
- * flaps a shared production dashboard with test traffic.
- */
-export async function pingDeadMansSwitch(jobSlug: string, outcome: DeadMansSwitchOutcome, detail?: string): Promise<void> {
-  if (!isProductionRuntime()) return;
+/** The external half: Healthchecks.io. Inert when HEALTHCHECKS_PING_KEY is unset. */
+async function pingHealthchecks(jobSlug: string, outcome: DeadMansSwitchOutcome, detail?: string): Promise<void> {
   const key = pingKey();
   if (!key) return;
 
@@ -67,6 +61,34 @@ export async function pingDeadMansSwitch(jobSlug: string, outcome: DeadMansSwitc
       labels: { event: "deadmans_switch_ping_failed", job: jobSlug, outcome },
     });
   }
+}
+
+/**
+ * Reports one cron job's outcome to BOTH monitors. Best-effort by design and contract: NEVER
+ * throws, never delays or masks the actual cron job's own result — a monitoring outage must not
+ * itself become a second incident. No-ops entirely outside production, so this stays inert in
+ * dev/staging/CI and never flaps a shared production dashboard with test traffic.
+ *
+ * TWO BACKENDS, ON PURPOSE, AND NEITHER CAN BLOCK THE OTHER.
+ *
+ *  - Healthchecks.io, external. Its value is being OUTSIDE this system: it still alerts when
+ *    Phoenix itself is the thing that is down. Its free tier holds exactly 20 checks and on
+ *    2026-08-30 it was full — `POST /checks/` answered HTTP 403 for the 21st — so a job with no
+ *    slot got no coverage at all. Unset key or missing slot, this half simply does nothing.
+ *  - `public.job_heartbeats`, in-house. No cap, so every declared job is covered, and it records
+ *    the one thing the external switch only ever showed on a dashboard: that a run happened and
+ *    REPORTED FAILURE. Swept by /api/cron/job-heartbeat-sweep, which alerts in-app + Telegram.
+ *
+ * `allSettled`, not `all`: whichever backend is unavailable, the other must still record the run.
+ * Both halves already swallow their own errors; this is the belt to that pair of braces.
+ */
+export async function pingDeadMansSwitch(jobSlug: string, outcome: DeadMansSwitchOutcome, detail?: string): Promise<void> {
+  if (!isProductionRuntime()) return;
+
+  await Promise.allSettled([
+    recordJobHeartbeat(jobSlug, outcome, detail),
+    pingHealthchecks(jobSlug, outcome, detail),
+  ]);
 }
 
 /**

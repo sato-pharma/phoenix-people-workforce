@@ -71,6 +71,7 @@ import { runOutstationFuelPolicyTests } from "./outstation-fuel-policy.test.ts";
 import { runDeadMansSwitchTests } from "./dead-mans-switch.test.ts";
 import { runDirectOrdersSweepLivenessTests } from "./direct-orders-sweep-liveness.test.ts";
 import { runHealthchecksScheduleSyncTests } from "./healthchecks-schedule-sync.test.ts";
+import { runJobHeartbeatRegisterTests } from "./job-heartbeat-register.test.ts";
 import { runDirectOrdersHrIdCaseTests } from "./direct-orders-hr-id-case.test.ts";
 import { runDbHealthSnapshotLivenessTests } from "./db-health-snapshot-liveness.test.ts";
 import { runSheetTokenRotationLivenessTests } from "./sheet-token-rotation-liveness.test.ts";
@@ -1086,6 +1087,36 @@ import { runLeaverRosterExclusionTests } from "./leaver-roster-exclusion.test.ts
 import { runCompanyActivityReportPostExitDaysTests } from "./company-activity-report-post-exit-days.test.ts";
 import { runMarketingApprovedCustomerNameTests } from "./marketing-approved-customer-name.test.ts";
 
+/**
+ * MARK THE SUITE AS A TEST RUN — this is a data-safety gate, not a formality.
+ *
+ * `pnpm run test` runs with `--env-file-if-exists=.env.local`, and that file points at the
+ * PRODUCTION Supabase project (AGENTS.md §3). Several tests also set `APP_ENV=production` on
+ * purpose, to exercise production-only code paths — so `isProductionRuntime()` is TRUE for part of
+ * this run while live production credentials are loaded. Any module that writes on that signal
+ * would write to production from the test suite. `src/lib/observability/job-heartbeat.ts` is the
+ * first that would have: it would have stamped fabricated successes for real job slugs into the
+ * monitoring register, making stopped jobs look alive — the precise failure that register exists
+ * to catch.
+ *
+ * TWO flags, deliberately. `PHOENIX_TEST_SUITE` is the load-bearing one: it is read by nothing
+ * else in the repository, so no other test's save/restore can leave it wrong. `NODE_ENV` is set
+ * too because it is the conventional signal — but `config-drift.test.ts` and
+ * `cron-auth-policy.test.ts` both reassign it mid-suite (the former to "production", alongside
+ * `APP_ENV=production`) and restore it in a `finally`, so on its own it would make this gate
+ * depend on their discipline holding through every future refactor.
+ *
+ * Set here rather than as an inline `NODE_ENV=test` prefix in the npm script, because that syntax
+ * does not work on Windows, which is where this repository is developed. Read lazily by the gates
+ * that depend on it, so module import order does not matter.
+ */
+process.env.PHOENIX_TEST_SUITE = "1";
+// Next augments NodeJS.ProcessEnv with a READ-ONLY NODE_ENV, so this needs a mutable view --
+// the same pattern config-drift.test.ts and cron-auth-policy.test.ts already use. A plain
+// assignment compiles under the test runner, which strips types, and fails only in the PR
+// typecheck job -- which is exactly how this one was caught.
+(process.env as Record<string, string | undefined>).NODE_ENV = "test";
+
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -1192,6 +1223,10 @@ await runTest("direct orders sweeps stay watched (dead-man's-switch wiring)", ru
 await runTest(
   "healthchecks schedule sync (docs/observability.md is the source of truth for every check)",
   runHealthchecksScheduleSyncTests,
+);
+await runTest(
+  "job heartbeat register (a windowed schedule's silent hours are not a stranded job)",
+  runJobHeartbeatRegisterTests,
 );
 await runTest("direct orders hr-id filters are case-insensitive", runDirectOrdersHrIdCaseTests);
 await runTest(
