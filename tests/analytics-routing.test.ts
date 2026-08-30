@@ -65,10 +65,15 @@ export function runAnalyticsRoutingTests() {
   }
 
   // (4) The (admin) group layout must still bounce portal-mode users — it now also guards /admin/analytics.
+  // This matched the literal `redirect("/employee-portals")` until 2026-08-30, when the destination
+  // became a resolved one: the layout forwards to the portal TWIN of the requested address, falling
+  // back to PORTAL_HOME. What this test needs is unchanged — that portal-mode users are sent away —
+  // so it asserts the branch and the redirect, not the spelling of the destination. Where they land
+  // is pinned by tests/portal-twin-forwarding.test.ts, which proves every destination is a portal one.
   const adminLayout = readFileSync("app/(admin)/layout.tsx", "utf8");
+  const portalBranch = /resolveNavigationMode\(access\)\s*===\s*"employee-portal"\s*\)\s*\{([\s\S]*?)\n\s*\}/.exec(adminLayout);
   assert.ok(
-    adminLayout.includes('resolveNavigationMode(access) === "employee-portal"') &&
-      adminLayout.includes('redirect("/employee-portals")'),
+    portalBranch && /redirect\(/.test(portalBranch[1]),
     "(admin) group layout must still redirect portal-mode users away from the admin shell",
   );
 
