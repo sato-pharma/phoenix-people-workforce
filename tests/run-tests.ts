@@ -726,6 +726,9 @@ import { runSosBackfillEmptyBrickSentinelTests } from "./sos-backfill-empty-bric
 import { runSosSeatAttributionPeriodTests } from "./sos-seat-attribution-period.test.ts";
 import { runMonthlyClosingLockTests } from "./monthly-closing-lock.test.ts";
 import { runClosingPeriodGateTests } from "./closing-period-gate.test.ts";
+import { runOfficialNumbersExcludeWeeklyTests } from "./official-numbers-exclude-weekly.test.ts";
+import { runLactoLineFamilyGroupingTests } from "./lacto-line-family-grouping.test.ts";
+import { runIdentityCardSignatureLockTests } from "./identity-card-signature-lock.test.ts";
 import { runAdminShellPaletteScopeTests } from "./admin-shell-palette-scope.test.ts";
 import { runDesignTokensContractTests } from "./design-tokens-contract.test.ts";
 import { runNoEllipsisTruncationRatchetTests } from "./no-ellipsis-truncation-ratchet.test.ts";
@@ -2334,6 +2337,9 @@ await runTest("SoS backfill matches the empty-string brick sentinel, not just NU
 await runTest("SoS seat attribution (today's wiring, departed reps keep their credit)", runSosSeatAttributionPeriodTests);
 await runTest('Monthly closing lock (database triggers, not a disabled button)', runMonthlyClosingLockTests);
 await runTest('CLOSING GOLDEN RULE (a month is never published during that month, Cairo boundary)', runClosingPeriodGateTests);
+await runTest('RULE #1 Monthly Closing is the only truth (the official-number engine never imports the weekly pipeline)', runOfficialNumbersExcludeWeeklyTests);
+await runTest('Lacto (line, family) key (family_code LA is shared across Pedia + Head Office; never group on it alone)', runLactoLineFamilyGroupingTests);
+await runTest('identity-card DESIGN LOCK (the portal identity banner always renders PhoenixSignatureCard)', runIdentityCardSignatureLockTests);
 await runTest('design tokens contract (--phx- prefix, no globals.css collision, full dark coverage)', runDesignTokensContractTests);
 await runTest('admin shell palette scope (warm ramp stays inside .admin-shell, lightness pinned to Tailwind slate)', runAdminShellPaletteScopeTests);
 await runTest('no-ellipsis ratchet (UI truncation sites may fall, never rise)', runNoEllipsisTruncationRatchetTests);

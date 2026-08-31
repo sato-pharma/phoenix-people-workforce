@@ -8,9 +8,11 @@
 // ANY value or formula in this file without the owner first
 // approving that specific change in the conversation.
 //
-// Enforcement is a permission gate, not a password:
-// .claude/settings.json lists this path under permissions.ask,
-// so every edit raises an approval prompt the owner must accept.
+// Enforcement is behavioral, not a prompt or a password:
+// .claude/settings.json's permissions.ask list was emptied
+// 2026-08-14, so NO dialog fires on edits here. The lock holds
+// only because sessions honor this notice and ask the owner in
+// the conversation first.
 // Do NOT add a passphrase here — one used to live in this
 // comment and was removed 2026-07-31, because anyone who could
 // read the file could read the phrase and "unlock" it.
