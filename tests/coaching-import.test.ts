@@ -68,15 +68,19 @@ export async function runCoachingImportTests() {
   assert.equal(parseCoachingDate("16/02/2026").date, "2026-02-16");
   assert.equal(parseCoachingDate("2026-03-09").date, "2026-03-09");
   assert.equal(parseCoachingDate("not a date").date, null);
+  // Every swap case below pins an explicit "today" rather than reading the clock: the swap is
+  // now refused when it would land in the future (see coaching-future-date-guard.test.ts), so a
+  // clock-relative expectation here would silently flip depending on the day the suite runs.
+  const AFTER = "2026-12-31";
   // Excel Date with day > 12 is unambiguous — kept as-is, not swapped.
-  assert.equal(parseCoachingDate(new Date(Date.UTC(2026, 0, 14))).date, "2026-01-14");
-  assert.equal(parseCoachingDate(new Date(Date.UTC(2026, 0, 14))).corrected, false);
+  assert.equal(parseCoachingDate(new Date(Date.UTC(2026, 0, 14)), AFTER).date, "2026-01-14");
+  assert.equal(parseCoachingDate(new Date(Date.UTC(2026, 0, 14)), AFTER).corrected, false);
   // Excel Date with both fields <= 12 = US-locale day/month swap; recover day-first.
   // Stored 2026-09-02 (Excel read "09/02" as Sep 2) -> coach meant 9 Feb -> 2026-02-09.
-  assert.equal(parseCoachingDate(new Date(Date.UTC(2026, 8, 2))).date, "2026-02-09");
-  assert.equal(parseCoachingDate(new Date(Date.UTC(2026, 8, 2))).corrected, true);
+  assert.equal(parseCoachingDate(new Date(Date.UTC(2026, 8, 2)), AFTER).date, "2026-02-09");
+  assert.equal(parseCoachingDate(new Date(Date.UTC(2026, 8, 2)), AFTER).corrected, true);
   // Stored 2026-04-05 (Excel read "04/05" as Apr 5) -> coach meant 4 May -> 2026-05-04.
-  assert.equal(parseCoachingDate(new Date(Date.UTC(2026, 3, 5))).date, "2026-05-04");
+  assert.equal(parseCoachingDate(new Date(Date.UTC(2026, 3, 5)), AFTER).date, "2026-05-04");
 
   const workbook = buildWorkbook();
   const { rows, sheetName } = parseCoachingWorkbookRows(workbook);
@@ -113,7 +117,7 @@ export async function runCoachingImportTests() {
   assert.equal(tester.scores.medical_patient_knowledge, undefined);
 
   // Classification against an active-employee directory.
-  const classified = classifyCoachingImportRows(rows, buildDirectory());
+  const classified = classifyCoachingImportRows(rows, buildDirectory(), AFTER);
 
   const emanClass = classified[0];
   assert.equal(emanClass.classification, "matched");

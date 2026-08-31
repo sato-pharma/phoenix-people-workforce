@@ -1,6 +1,7 @@
 import type ExcelJS from "exceljs";
 
 import { type AccessContext, normalizeHrId, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
+import { cairoTodayIso } from "@/lib/crm/dates";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import {
   type EmployeeDirectoryRow,
@@ -184,7 +185,10 @@ function parseRepName(source: string) {
   return { repCode: null, repName: source.trim() || null, territory: null };
 }
 
-export function parseCoachingDate(value: ExcelJS.CellValue): { corrected: boolean; date: string | null; display: string } {
+export function parseCoachingDate(
+  value: ExcelJS.CellValue,
+  today: string = cairoTodayIso(),
+): { corrected: boolean; date: string | null; display: string } {
   const readable = readableExcelCellValue(value);
   if (readable instanceof Date) {
     const iso = readable.toISOString().slice(0, 10);
@@ -197,7 +201,17 @@ export function parseCoachingDate(value: ExcelJS.CellValue): { corrected: boolea
     // is flagged and shown in the import preview for verification.
     if (month >= 1 && month <= 12 && day >= 1 && day <= 12 && month !== day) {
       const swapped = `${year}-${String(day).padStart(2, "0")}-${String(month).padStart(2, "0")}`;
-      return { corrected: true, date: swapped, display: iso };
+      // A coaching session cannot have happened after the day it is imported, so a swap
+      // that lands in the future is proof the cell was ALREADY day-first and needed no
+      // correction — the assumption above simply did not hold for this row. Applying it
+      // anyway is what filed two 11 May 2026 reports under 5 November 2026 (CR-2026-000196
+      // and -000197) in the 19 Jun 2026 historical import: the swap invented a date four
+      // months ahead and nothing downstream questioned it. Keep the stored date instead,
+      // and leave it unflagged — no correction was made.
+      if (swapped <= today) {
+        return { corrected: true, date: swapped, display: iso };
+      }
+      return { corrected: false, date: iso, display: iso };
     }
     return { corrected: false, date: iso, display: iso };
   }
@@ -325,6 +339,7 @@ function buildDirectoryIndex(rows: EmployeeDirectoryRow[]) {
 export function classifyCoachingImportRows(
   rows: CoachingImportRawRow[],
   directoryIndex: Map<string, EmployeeDirectoryRow>,
+  today: string = cairoTodayIso(),
 ): CoachingImportClassifiedRow[] {
   return rows.map((row) => {
     const normalized = normalizeHrId(row.claimedHrId);
@@ -334,6 +349,12 @@ export function classifyCoachingImportRows(
     const issues = [...row.scoreIssues];
     if (!row.coachingDate) {
       issues.push(`Coaching date missing or unparseable${row.coachingDateRaw ? ` ("${row.coachingDateRaw}")` : ""}`);
+    } else if (row.coachingDate > today) {
+      // Second line of defence, covering every parse path rather than just the day/month
+      // swap: a coaching session dated after the import cannot have happened. Raising it
+      // as an issue means the row is classified "skipped" instead of "matched", so the
+      // preview shows it and the commit leaves it out.
+      issues.push(`Coaching date ${row.coachingDate} is in the future — a coaching session cannot be dated after today (${today}).`);
     }
 
     let classification: CoachingImportClassification;

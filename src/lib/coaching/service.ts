@@ -6,6 +6,7 @@ import {
   normalizeHrId,
   resolveEmployeeIdentityId,
 } from "@/lib/auth/permissions";
+import { cairoTodayIso } from "@/lib/crm/dates";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import {
   isWithinManagerHierarchy,
@@ -136,6 +137,25 @@ function normalizeDate(value: string | null | undefined) {
   const date = new Date(`${raw.slice(0, 10)}T00:00:00Z`);
   if (Number.isNaN(date.getTime())) return null;
   return date.toISOString().slice(0, 10);
+}
+
+/**
+ * A coaching report records a visit that already happened, so it can never be dated ahead of
+ * today. Nothing enforced this before: the form's date input had no `max`, {@link normalizeDate}
+ * only checked the string parsed, and there is no CHECK constraint — so any future date saved
+ * silently, and `coaching_month`/`coaching_quarter`/`coaching_year` (GENERATED from
+ * `coaching_date`) filed the report in a quarter that has not happened yet, polluting every
+ * period-scoped analytic. Two rows reached production this way.
+ *
+ * Compared in Africa/Cairo, not UTC: between 22:00 and 23:59 UTC it is already tomorrow in Cairo,
+ * and a coach entering today's date would otherwise be rejected for a date "in the future".
+ */
+export function assertCoachingDateNotFuture(date: string, today: string = cairoTodayIso()) {
+  if (date > today) {
+    throw new Error(
+      `Coaching date ${date} is in the future. A coaching report can only be dated today (${today}) or earlier.`,
+    );
+  }
 }
 
 function toNumber(value: number | string | null | undefined) {
@@ -437,6 +457,7 @@ export async function createDraftCoachingReport(input: CoachingReportCreateInput
 
   const coachingDate = normalizeDate(input.coachingDate);
   if (!coachingDate) throw new Error("A valid coaching date is required.");
+  assertCoachingDateNotFuture(coachingDate);
 
   const scoreResult = input.scores ? calculateCoachingScore(input.scores) : null;
   const now = new Date().toISOString();
@@ -511,6 +532,7 @@ export async function updateDraftCoachingReport(
   if (input.coachingDate !== undefined) {
     const date = normalizeDate(input.coachingDate);
     if (!date) throw new Error("A valid coaching date is required.");
+    assertCoachingDateNotFuture(date);
     updates.coaching_date = date;
   }
   if (input.areaOfDevelopment !== undefined) updates.area_of_development = cleanText(input.areaOfDevelopment);

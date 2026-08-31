@@ -113,8 +113,11 @@ const zoneClassNames: Record<CoachingPerformanceZone, string> = {
   yellow_zone: "border-orange-200 bg-orange-50 text-orange-700",
 };
 
+/** Today in Africa/Cairo — both the default coaching date and the picker's `max`. UTC would run a
+ * day behind between 22:00 and 23:59 UTC (already tomorrow in Cairo) and block a coach entering
+ * today's date. Mirrors the same rule the server enforces in coaching/service.ts. */
 function todayIsoDate() {
-  return new Date().toISOString().slice(0, 10);
+  return new Date().toLocaleDateString("en-CA", { timeZone: "Africa/Cairo" });
 }
 
 function groupScoreItems() {
@@ -419,6 +422,7 @@ export function CoachingReportForm({ coach, employees, initialDraft }: CoachingR
                 <CalendarDays className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-phx-ink-faint" />
                 <input
                   className="h-12 w-full rounded-md border border-phx-line bg-white pl-10 pr-3 text-sm font-bold text-phx-ink outline-none transition focus:border-phx-accent-line focus:ring-4 focus:ring-phx-accent/10"
+                  max={todayIsoDate()}
                   onChange={(event) => setCoachingDate(event.target.value)}
                   type="date"
                   value={coachingDate}
