@@ -8,8 +8,8 @@ import { ExportXlsxButton } from "@/components/ui/export-xlsx-button";
 import { SortableTh, TableSearchInput } from "@/components/ui/sortable-table";
 import { useSortableTable, visibleMax } from "@/components/ui/use-sortable-table";
 
-type RegionRow  = { label: string; totalValue: number; totalQty: number };
-type ProductRow = { label: string; totalValue: number; totalQty: number; line: string | null };
+type RegionRow  = { key: string; label: string; totalValue: number; totalQty: number };
+type ProductRow = { key: string; label: string; totalValue: number; totalQty: number; line: string | null };
 
 function egp(v: number) {
   if (!Number.isFinite(v)) return "—";
@@ -70,7 +70,7 @@ function RegionTable({ rows, period }: { rows: RegionRow[]; period: string | nul
           {table.rows.length === 0 ? (
             <tr><td colSpan={4} className="px-3 py-4 text-center text-slate-400">No data.</td></tr>
           ) : table.rows.map((row) => (
-            <tr key={row.label} className="bg-white hover:bg-slate-50">
+            <tr key={row.key} className="bg-white hover:bg-slate-50">
               <td className="px-3 py-2">
                 <div className="flex items-center gap-2">
                   <div className="h-1.5 w-20 shrink-0 bg-slate-100">
@@ -148,7 +148,7 @@ function ProductTable({ rows, period }: { rows: ProductRow[]; period: string | n
           {table.rows.length === 0 ? (
             <tr><td colSpan={5} className="px-3 py-4 text-center text-slate-400">No data.</td></tr>
           ) : table.rows.map((row) => (
-            <tr key={row.label} className="bg-white hover:bg-slate-50">
+            <tr key={row.key} className="bg-white hover:bg-slate-50">
               <td className="px-3 py-2">
                 <div className="flex items-center gap-2">
                   <div className="h-1.5 w-16 shrink-0 bg-slate-100">

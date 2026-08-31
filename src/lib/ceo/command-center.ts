@@ -119,8 +119,16 @@ export type CeoCommandCenterData = {
     topRegions: CeoTopMover[];
     /** Every line with sales this period (not just the top movers) — the basis for line scoping. */
     byLine: Array<{ label: string; totalValue: number; totalQty: number }>;
-    byRegion: Array<{ label: string; totalValue: number; totalQty: number }>;
-    byProduct: Array<{ label: string; totalValue: number; totalQty: number; line: string | null }>;
+    /**
+     * `key` is `SourceOfSalesDashboardGroup.key` (the raw distributor sheet's group_key, e.g.
+     * `"D1|Delta (1)"`) — the field the dashboard's own grouping Map is keyed on, so it is
+     * guaranteed unique. `code`/`label` are NOT: `buildSourceOfSalesDashboard` self-heals a
+     * group's `label` to its master-table name, so two rows with different raw codes (or a null
+     * code) can legitimately end up sharing one display label. The UI must key rows on `key`,
+     * never on `label` or `code`, or React collapses distinct rows into one.
+     */
+    byRegion: Array<{ key: string; label: string; totalValue: number; totalQty: number }>;
+    byProduct: Array<{ key: string; label: string; totalValue: number; totalQty: number; line: string | null }>;
   } | null;
   trends: {
     sales: Array<{ label: string; sales: number; target: number }>;
@@ -382,10 +390,10 @@ export async function getCeoCommandCenterData(access: AccessContext): Promise<Ce
         topLines: topMoversFromSos(sos.byLine),
         topRegions: topMoversFromSos(sos.byRegion),
         byRegion: [...sos.byRegion].sort((a, b) => b.totalValue - a.totalValue).map((r) => ({
-          label: r.label, totalValue: r.totalValue, totalQty: r.totalQty,
+          key: r.key, label: r.label, totalValue: r.totalValue, totalQty: r.totalQty,
         })),
         byProduct: [...(sos.byProduct ?? [])].sort((a, b) => b.totalValue - a.totalValue).map((p) => ({
-          label: p.label, totalValue: p.totalValue, totalQty: p.totalQty, line: (p as { line?: string | null }).line ?? null,
+          key: p.key, label: p.label, totalValue: p.totalValue, totalQty: p.totalQty, line: (p as { line?: string | null }).line ?? null,
         })),
       }
     : null;
