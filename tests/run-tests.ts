@@ -164,6 +164,7 @@ import { runRecruitmentCandidateMergeTests } from "./recruitment-candidate-merge
 import { runWhatsAppScreeningQuestionsMenuTests } from "./whatsapp-screening-questions-menu.test.ts";
 import { runWhatsAppScreeningQuestionsSessionTests } from "./whatsapp-screening-questions-session.test.ts";
 import { runWhatsAppScreeningQuestionsAdminTests } from "./whatsapp-screening-questions-admin.test.ts";
+import { runWhatsAppQuestionPromptsTests } from "./whatsapp-question-prompts.test.ts";
 import { runRecruitmentPipelineMetricsTests } from "./recruitment-pipeline-metrics.test.ts";
 import { runRecruitmentHiringManagerPushTests } from "./recruitment-hiring-manager-push.test.ts";
 import { runRecruitmentSimplifyTests } from "./recruitment-simplify.test.ts";
@@ -1415,6 +1416,10 @@ await runTest(
 await runTest(
   "WhatsApp screening questions - admin (slugifyQuestionKey/disambiguateQuestionKey; admin:update is a hard boundary open only to Super Admin; save validates before writing and never deletes a row)",
   runWhatsAppScreeningQuestionsAdminTests,
+);
+await runTest(
+  "WhatsApp built-in question wording (defaults are read from the menu builders so they cannot drift; rewording never touches the answer options; a reworded menu still passes the send-time check; the built-in wording is never written into the extra-question table, which would ask all six a second time)",
+  runWhatsAppQuestionPromptsTests,
 );
 await runTest("recruitment pipeline metrics (time to hire, stalled applications, offers out vs accepted — a finished application is never counted as stalled)", runRecruitmentPipelineMetricsTests);
 await runTest(

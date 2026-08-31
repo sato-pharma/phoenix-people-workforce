@@ -24,6 +24,13 @@ import { candidateRegionLabels, recruitmentRegionForArea, type CandidateRegionCo
 import { candidateRoleFamilyLabels, type CandidateRoleFamily } from "@/lib/recruitment/candidate-role-family";
 import { recruitmentDb, textOrNull } from "@/lib/recruitment/db";
 import { SESSION_COLUMNS, type SessionRow } from "@/lib/recruitment/inbound/whatsapp-classify-session-row";
+// The owner's own wording for these six questions, when he has saved any. Pure helper + a cached,
+// never-throwing read: with nothing saved (or on a read failure) every prompt keeps its code default.
+import {
+  applyPromptOverride,
+  resolvePromptBody,
+} from "@/lib/recruitment/inbound/whatsapp-question-prompts";
+import { loadQuestionPromptOverrides } from "@/lib/recruitment/inbound/whatsapp-question-prompts-store";
 import {
   AREA_OTHER_MAX,
   areaMenu,
@@ -209,9 +216,15 @@ export async function areaNamesForRegion(regionCode: string): Promise<string[]> 
 async function sendStep(
   session: Pick<SessionRow, "id" | "wa_id" | "phone_number_id">,
   menu: ClassifyMenu,
+  regionLabel?: string | null,
 ): Promise<boolean> {
+  // The one seam where the owner's wording is applied. Every tappable question in this file goes
+  // through here, so an override cannot reach one prompt and miss another. A step with nothing saved
+  // gets the identical object back, so the untouched path is exactly the pre-feature code path.
+  // The read never throws: a failure returns an empty map and every question keeps its default.
+  const worded = applyPromptOverride(menu, await loadQuestionPromptOverrides(), regionLabel);
   const result = await sendClassifyMenu({
-    menu,
+    menu: worded,
     phoneNumberId: session.phone_number_id,
     toWaId: session.wa_id,
   });
@@ -231,6 +244,18 @@ async function sendStep(
     .update({ last_prompt_wamid: result.wamid, step: menu.step, updated_at: new Date().toISOString() })
     .eq("id", session.id);
   return true;
+}
+
+/**
+ * The salary question's wording. It is the one built-in question sent as plain text rather than a
+ * menu, so it cannot ride through `sendStep`'s override seam and resolves its own here instead.
+ */
+async function salaryPromptWithOverride(): Promise<string> {
+  return resolvePromptBody({
+    defaultBody: salaryPromptText(),
+    key: "salary",
+    overrides: await loadQuestionPromptOverrides(),
+  });
 }
 
 /**
@@ -509,6 +534,9 @@ export async function handleClassifyReply(input: {
       const sent = await sendStep(
         { ...session, phone_number_id: session.phone_number_id ?? input.phoneNumberId },
         areaMenu(parsed.value as CandidateRegionCode, areas),
+        // The only prompt carrying a token: an owner-written "Which area inside {region}?" needs the
+        // region they just chose. Passed here rather than derived in sendStep, which cannot know it.
+        candidateRegionLabels[parsed.value as CandidateRegionCode],
       );
       return sent ? "advanced" : "advanced";
     }
@@ -554,7 +582,7 @@ export async function handleClassifyReply(input: {
       .eq("id", session.id);
     await sendPromptText(
       { ...session, phone_number_id: session.phone_number_id ?? input.phoneNumberId },
-      salaryPromptText(),
+      await salaryPromptWithOverride(),
     );
     return "advanced";
   } catch (error) {
