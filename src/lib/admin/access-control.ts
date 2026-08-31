@@ -511,13 +511,26 @@ export async function upsertAccessUser(input: AccessUserMutation, actor?: Access
 
 /**
  * Narrow entry point for provisioning a NEW hire's portal login from the employee-add flow
- * (Talent Acquisition only — Super Admin keeps using upsertAccessUser above).
+ * (HR Operations only — Super Admin keeps using upsertAccessUser above).
  *
  * Before this existed, adding an employee always tried to create their login via
  * upsertAccessUser, whose Super-Admin-only gate threw for every other role. The failure was
  * caught and shown as one line of text the actor had no permission to act on, so every
- * employee Talent Acquisition added silently ended up with no way to sign in (CN-0006 and
+ * employee the recruiting seat added silently ended up with no way to sign in (CN-0006 and
  * PD-0007, 2026-08-04).
+ *
+ * THE SEAT HERE IS HR OPERATIONS, AND IT IS THE ONE THING IN THIS FUNCTION THAT MUST NOT BE
+ * "TIDIED" TO MATCH ITS NAME. The name says "ForRecruiting" and the sibling tool below
+ * (updateAccountActiveForRecruiting) really is HR Advisory's — she holds account_activation.
+ * This one is not hers: creating the employee is `employees:create`, which lives in the
+ * people_records function and reaches HR Operations alone. HR Advisory holds employees at
+ * read+export, so she can never reach this path at all.
+ *
+ * That distinction was lost once already. When "Talent Acquisition" was retired this guard was
+ * renamed to "HR Advisory" alongside its sibling, while the sole caller
+ * (src/lib/employees/access-provisioning.ts) correctly routes HR Operations into it — so the
+ * guard rejected the only role that can reach it and regenerated the CN-0006 incident above
+ * verbatim: employee created, login not. Pinned by tests/hr-provisioning-guard.test.ts.
  *
  * Deliberately bypasses assertSuperAdminUserAdminActor for the same reason
  * updateAccountActiveForRecruiting does — that shared gate also covers role/scope/permission
@@ -528,16 +541,16 @@ export async function upsertAccessUser(input: AccessUserMutation, actor?: Access
  *  - no scope grants: a sales scope override is rejected outright.
  *  - rank-bounded: assertActorMayManageUser (called unchanged inside the core) hard-blocks
  *    Super Admin targets for any non-Super-Admin actor and rejects peer-or-higher roles.
- *    Talent Acquisition's rank is 150 (getRolePrivilegeRank), so CEO (300), Finance Manager
- *    (200) and another Talent Acquisition (150) are all refused; only default-rank (100)
- *    employee accounts are reachable — the same boundary the activation tool already uses.
+ *    HR Operations' rank is 150 (getRolePrivilegeRank), so CEO (300), Finance Manager (200)
+ *    and the peer HR seats (150) are all refused; only default-rank (100) employee accounts
+ *    are reachable — the same boundary the activation tool already uses.
  */
 export async function provisionEmployeeAccountForRecruiting(
   input: AccessUserMutation,
   actor: AccessActor,
 ) {
-  if (actor.role !== "HR Advisory") {
-    throw new Error("Forbidden: only HR Advisory can use this tool.");
+  if (actor.role !== "HR Operations") {
+    throw new Error("Forbidden: only HR Operations can use this tool.");
   }
   if (input.salesScopeOverride) {
     throw new Error("Forbidden: this tool cannot grant a sales scope override.");
