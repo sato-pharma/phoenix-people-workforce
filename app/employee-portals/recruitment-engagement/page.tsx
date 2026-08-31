@@ -42,7 +42,7 @@ export default async function EmployeePortalManagerEngagementPage() {
   return (
     <EmployeePortalPageShell
       badge="Hiring"
-      description="For every manager on your line: how many CVs the recruitment team sent them, how many they opened, how many are still unopened, and how many they answered."
+      description="For every manager on your line: how many CVs are in their My Candidates folder, how many they opened, how many are still unopened, and how many they answered."
       errorBoundaryTitle="Manager engagement unavailable"
       title="Manager CV Engagement"
     >
