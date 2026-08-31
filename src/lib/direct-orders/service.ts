@@ -2475,16 +2475,19 @@ export async function listHeldDirectOrders(access: AccessContext): Promise<HeldD
   const requests = ((data ?? []) as Array<Record<string, unknown>>).map(mapRequestRow);
   if (requests.length === 0) return [];
 
-  const pharmacies = await loadPharmaciesByIds(requests.map((request) => request.pharmacyId));
-  const resolveName = await nameLookup();
-
-  // Latest notice per request, so the admin can see "already told, twice" vs "never told".
-  const { data: noticeRows } = await supabase
-    .from("direct_order_events")
-    .select("request_id, created_at")
-    .eq("event_type", "held_notice_sent")
-    .in("request_id", requests.map((request) => request.id))
-    .order("created_at", { ascending: false });
+  // Three independent reads — none needs another's result — run together instead of in sequence.
+  const [pharmacies, resolveName, noticeResult] = await Promise.all([
+    loadPharmaciesByIds(requests.map((request) => request.pharmacyId)),
+    nameLookup(),
+    // Latest notice per request, so the admin can see "already told, twice" vs "never told".
+    supabase
+      .from("direct_order_events")
+      .select("request_id, created_at")
+      .eq("event_type", "held_notice_sent")
+      .in("request_id", requests.map((request) => request.id))
+      .order("created_at", { ascending: false }),
+  ]);
+  const noticeRows = noticeResult.data;
   const lastNoticeByRequest = new Map<string, string>();
   for (const row of (noticeRows ?? []) as Array<{ request_id: string; created_at: string }>) {
     if (!lastNoticeByRequest.has(row.request_id)) lastNoticeByRequest.set(row.request_id, row.created_at);
@@ -2587,11 +2590,15 @@ export async function sendHeldDirectOrderNotices(
     return [request.id, request] as const;
   }));
 
-  const directory = await getEmployeeDirectory();
+  // Four independent reads — none needs another's result (getEmployeeDirectory is TTL-cached and
+  // in-flight-deduped, so calling it here and again inside nameLookup() shares one fetch, not two).
+  const [directory, resolveName, sfeHolders, ceoHolders] = await Promise.all([
+    getEmployeeDirectory(),
+    nameLookup(),
+    hrIdsForRole(SFE_VALIDATION_ROLE),
+    ceoHrIds(),
+  ]);
   const lookup = directoryLookup(directory);
-  const resolveName = await nameLookup();
-  const sfeHolders = await hrIdsForRole(SFE_VALIDATION_ROLE);
-  const ceoHolders = await ceoHrIds();
 
   let sent = 0;
   const skipped: Array<{ requestId: string; reason: string }> = [];
@@ -4826,14 +4833,19 @@ export async function getDirectOrderWorkspaceData(access: AccessContext): Promis
   }
 
   const allRequests = [...pending, ...historyRequests, ...heldRequests];
-  const stepsByReq = await loadStepsForRequests(allRequests.map((r) => r.id));
-  const pharmacies = await loadPharmaciesByIds(allRequests.map((r) => r.pharmacyId));
-  const nameOf = await nameLookup();
-  const caps = await loadDirectOrderCaps();
+  // Five independent reads — none consumes another's result — batched together instead of run
+  // one after another. `decorations` is the one genuine dependency (needs `pharmacies` + `nameOf`),
+  // so it waits for those alone rather than for all five.
+  const [stepsByReq, pharmacies, nameOf, caps, itemsByRequest] = await Promise.all([
+    loadStepsForRequests(allRequests.map((r) => r.id)),
+    loadPharmaciesByIds(allRequests.map((r) => r.pharmacyId)),
+    nameLookup(),
+    loadDirectOrderCaps(),
+    // One batched read for all three lists, alongside the four others. Without it every basket on
+    // this screen names line 1 only against the whole basket's value.
+    loadDirectOrderItemsForRequests(allRequests.map((r) => r.id)),
+  ]);
   const decorations = await loadListDecorations(allRequests, pharmacies, nameOf);
-  // One batched read for all three lists, alongside the four this already does. Without it every
-  // basket on this screen names line 1 only against the whole basket's value.
-  const itemsByRequest = await loadDirectOrderItemsForRequests(allRequests.map((r) => r.id));
 
   const awaiting: DirectOrderApprovalListItem[] = [];
   for (const request of pending) {
@@ -4962,12 +4974,16 @@ export async function listMyDirectOrders(access: AccessContext): Promise<DirectO
     .order("created_at", { ascending: false });
   if (error) throw error;
   const requests = ((data ?? []) as Array<Record<string, unknown>>).map(mapRequestRow);
-  const stepsByReq = await loadStepsForRequests(requests.map((r) => r.id));
-  const pharmacies = await loadPharmaciesByIds(requests.map((r) => r.pharmacyId));
-  const nameOf = await nameLookup();
-  const caps = await loadDirectOrderCaps();
+  // Five independent reads, batched — see the identical pattern (and its rationale) in
+  // getDirectOrderWorkspaceData above.
+  const [stepsByReq, pharmacies, nameOf, caps, itemsByRequest] = await Promise.all([
+    loadStepsForRequests(requests.map((r) => r.id)),
+    loadPharmaciesByIds(requests.map((r) => r.pharmacyId)),
+    nameLookup(),
+    loadDirectOrderCaps(),
+    loadDirectOrderItemsForRequests(requests.map((r) => r.id)),
+  ]);
   const decorations = await loadListDecorations(requests, pharmacies, nameOf);
-  const itemsByRequest = await loadDirectOrderItemsForRequests(requests.map((r) => r.id));
   return requests.map((request) =>
     toApprovalListItem(
       request,
@@ -7620,13 +7636,12 @@ export async function listDirectOrderApprovalExceptions(
   );
   if (requests.size === 0) return [];
 
-  const pharmacies = await loadPharmaciesByIds(
-    Array.from(requests.values()).map((request) => request.pharmacyId),
-  );
-  const resolveName = await nameLookup();
-  const itemsByRequest = await loadDirectOrderItemsForRequests(
-    Array.from(requests.values()).map((request) => request.id),
-  );
+  // Three independent reads — none needs another's result — batched together.
+  const [pharmacies, resolveName, itemsByRequest] = await Promise.all([
+    loadPharmaciesByIds(Array.from(requests.values()).map((request) => request.pharmacyId)),
+    nameLookup(),
+    loadDirectOrderItemsForRequests(Array.from(requests.values()).map((request) => request.id)),
+  ]);
   const now = Date.now();
 
   const rows: DirectOrderApprovalExceptionRow[] = [];

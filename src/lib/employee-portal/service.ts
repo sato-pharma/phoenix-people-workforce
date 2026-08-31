@@ -3633,40 +3633,52 @@ export async function getMedicalRepPortalData(
         ? null // line-managers mode uses lineId, not managerHrId
         : (salesScope === "SELF" ? employee.managerHrId : employee.hrId);
 
-      const allPeriodsResult = await resolveSalesRankInTeam({
-        managerHrId: teamAnchorHrId,
-        currentHrId,
-        directory: directory,
-        comparisonMode,
-        comparisonRole,
-        comparisonLineId,
-      });
+      const selectedPeriod = normalizeTeamComparisonPeriod(options.teamComparisonPeriod);
+
+      // These three lookups only ever read the directory and the scope variables resolved
+      // above — none depends on another's result — so they run concurrently instead of
+      // paying for three sequential round trips on every portal load.
+      const [allPeriodsResult, leadingMedicalRepLookup, selectedPeriodResult] = await Promise.all([
+        resolveSalesRankInTeam({
+          managerHrId: teamAnchorHrId,
+          currentHrId,
+          directory: directory,
+          comparisonMode,
+          comparisonRole,
+          comparisonLineId,
+        }),
+        isNationalSalesManager
+          ? resolveSalesRankInTeam({
+              managerHrId: null,
+              currentHrId,
+              directory: directory,
+              comparisonMode: "line-members",
+              comparisonRole: "Medical Rep",
+              comparisonLineId,
+            })
+          : Promise.resolve(null),
+        selectedPeriod
+          ? resolveSalesRankInTeam({
+              managerHrId: teamAnchorHrId,
+              currentHrId,
+              comparisonMode,
+              comparisonRole,
+              comparisonLineId,
+              comparisonPeriod: selectedPeriod,
+              directory: directory,
+            })
+          : Promise.resolve(null),
+      ]);
+
       if (allPeriodsResult) {
         teamRankAllPeriodsResult = allPeriodsResult;
       }
 
       if (isNationalSalesManager) {
-        leadingMedicalRepResult = await resolveSalesRankInTeam({
-          managerHrId: null,
-          currentHrId,
-          directory: directory,
-          comparisonMode: "line-members",
-          comparisonRole: "Medical Rep",
-          comparisonLineId,
-        });
+        leadingMedicalRepResult = leadingMedicalRepLookup;
       }
 
-      const selectedPeriod = normalizeTeamComparisonPeriod(options.teamComparisonPeriod);
       if (selectedPeriod) {
-        const selectedPeriodResult = await resolveSalesRankInTeam({
-          managerHrId: teamAnchorHrId,
-          currentHrId,
-          comparisonMode,
-          comparisonRole,
-          comparisonLineId,
-          comparisonPeriod: selectedPeriod,
-          directory: directory,
-        });
         if (selectedPeriodResult) {
           teamRankResult = selectedPeriodResult;
         }

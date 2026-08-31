@@ -8,7 +8,7 @@ import {
   hasOpenAiApiKey,
   OPENAI_ROUTE_BUDGET_MS,
 } from "@/lib/ai/openai-client";
-import { parseAiJson } from "@/lib/recruitment/cv-extraction";
+import { parseAiJson } from "@/lib/ai/parse-ai-json";
 import { searchDirectOrderPharmacyDirectory } from "@/lib/direct-orders/service";
 import { listSourceOfSalesProducts } from "@/lib/sales/monthly-distributor-import";
 

@@ -219,9 +219,22 @@ export function expandRegionCodesForOperationalMatch(
  * Super Admin see everything. A role this cannot place at all (e.g. Medical Rep, who has no area-
  * management use for this module) fails closed to "nothing" rather than defaulting open.
  */
-export async function resolveTerritoryScope(access: AccessContext): Promise<TerritoryScope> {
+type TerritoryReferenceData = Awaited<ReturnType<typeof loadSalesReferenceData>>;
+
+/**
+ * Same resolution as {@link resolveTerritoryScope}, plus the reference-data load it makes along
+ * the way (or null on the branches that never need one). Callers that go on to build a
+ * region-name map from the same reference data — loadTerritoryFilters, loadTerritoryMap — reuse
+ * this instead of re-fetching, which used to double `loadSalesReferenceData`'s 6-query fan-out on
+ * every call (and up to 6x it on loadTerritoryScopeOverview, which resolves scope per line).
+ */
+async function resolveTerritoryScopeWithReferences(
+  access: AccessContext,
+): Promise<{ references: TerritoryReferenceData | null; scope: TerritoryScope }> {
   const salesScope = await resolveSalesAccessScope(access);
-  if (salesScope.canViewAllSales) return { lineCodes: null, regionCodes: null, areaCodes: null };
+  if (salesScope.canViewAllSales) {
+    return { references: null, scope: { lineCodes: null, regionCodes: null, areaCodes: null } };
+  }
 
   const lineCodes = salesScope.allowedLineNames
     ? new Set(
@@ -242,12 +255,12 @@ export async function resolveTerritoryScope(access: AccessContext): Promise<Terr
     [...(salesScope.allowedAreaCodes ?? [])].map((code) => code.trim().toUpperCase()).filter(Boolean),
   );
   if (seatAreaCodes.size > 0) {
-    return { lineCodes, regionCodes: null, areaCodes: seatAreaCodes };
+    return { references: null, scope: { lineCodes, regionCodes: null, areaCodes: seatAreaCodes } };
   }
 
   // National Sales Manager: LINE scope, allowedRegionNames is null — every region within the line.
   if (access.role !== "Regional Manager" && !salesScope.allowedRegionNames) {
-    return { lineCodes, regionCodes: null, areaCodes: null };
+    return { references: null, scope: { lineCodes, regionCodes: null, areaCodes: null } };
   }
 
   const references = await loadSalesReferenceData({ includeCustomerBricks: false });
@@ -259,9 +272,12 @@ export async function resolveTerritoryScope(access: AccessContext): Promise<Terr
   if (access.role === "Regional Manager") {
     const regionCodes = await resolveRegionalManagerRegionCodes(access, salesScope, references);
     return {
-      lineCodes,
-      regionCodes: expandRegionCodesForOperationalMatch(regionCodes, knownRegionCodes),
-      areaCodes: null,
+      references,
+      scope: {
+        lineCodes,
+        regionCodes: expandRegionCodesForOperationalMatch(regionCodes, knownRegionCodes),
+        areaCodes: null,
+      },
     };
   }
 
@@ -274,16 +290,23 @@ export async function resolveTerritoryScope(access: AccessContext): Promise<Terr
       .filter((code): code is string => Boolean(code)),
   );
   return {
-    lineCodes,
-    regionCodes: expandRegionCodesForOperationalMatch(regionCodes, knownRegionCodes),
-    areaCodes: null,
+    references,
+    scope: {
+      lineCodes,
+      regionCodes: expandRegionCodesForOperationalMatch(regionCodes, knownRegionCodes),
+      areaCodes: null,
+    },
   };
 }
 
+export async function resolveTerritoryScope(access: AccessContext): Promise<TerritoryScope> {
+  return (await resolveTerritoryScopeWithReferences(access)).scope;
+}
+
 export async function loadTerritoryFilters(lineCode: string | null, access?: AccessContext): Promise<TerritoryFilters> {
-  const scope = access
-    ? await resolveTerritoryScope(access)
-    : { lineCodes: null, regionCodes: null, areaCodes: null };
+  const { scope, references } = access
+    ? await resolveTerritoryScopeWithReferences(access)
+    : { references: null, scope: { lineCodes: null, regionCodes: null, areaCodes: null } };
 
   const lines = Object.entries(LINE_LABELS)
     .filter(([code]) => !scope.lineCodes || scope.lineCodes.has(code))
@@ -294,8 +317,14 @@ export async function loadTerritoryFilters(lineCode: string | null, access?: Acc
   // dropdown never offers it, but a hand-crafted request must not be able to read it either.
   if (scope.lineCodes && !scope.lineCodes.has(lineCode)) return { areas: [], lines, regions: [] };
 
+  // Reuse the reference data resolveTerritoryScopeWithReferences already loaded when it has some
+  // (Regional/District Manager and named-region roles); only the roles whose scope never needed
+  // it (CEO/SFE/Super Admin, National Sales Manager, seat-bound roles) fetch here.
   const regionNameByCode = new Map(
-    (await loadSalesReferenceData({ includeCustomerBricks: false })).regions.map((r) => [r.regionCode.toUpperCase(), r.regionName]),
+    (references ?? (await loadSalesReferenceData({ includeCustomerBricks: false }))).regions.map((r) => [
+      r.regionCode.toUpperCase(),
+      r.regionName,
+    ]),
   );
 
   const rows = await loadLineAreaRows(lineCode);
@@ -631,9 +660,9 @@ export async function loadTerritoryMap(params: {
   };
   if (!LINE_LABELS[lineCode] || areaCodes.length === 0) return empty;
 
-  const scope = access
-    ? await resolveTerritoryScope(access)
-    : { lineCodes: null, regionCodes: null, areaCodes: null };
+  const { scope, references } = access
+    ? await resolveTerritoryScopeWithReferences(access)
+    : { references: null, scope: { lineCodes: null, regionCodes: null, areaCodes: null } };
   if (scope.lineCodes && !scope.lineCodes.has(lineCode)) return empty;
 
   // Only areas this line actually carries — an area code from the client is never trusted. A
@@ -652,7 +681,10 @@ export async function loadTerritoryMap(params: {
   if (requested.length === 0) return empty;
 
   const regionNameByCode = new Map(
-    (await loadSalesReferenceData({ includeCustomerBricks: false })).regions.map((r) => [r.regionCode.toUpperCase(), r.regionName]),
+    (references ?? (await loadSalesReferenceData({ includeCustomerBricks: false }))).regions.map((r) => [
+      r.regionCode.toUpperCase(),
+      r.regionName,
+    ]),
   );
 
   const brickRows = await pageAll<Row>(async (from, to) => {

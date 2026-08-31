@@ -5,6 +5,7 @@ import {
   OPENAI_ROUTE_BUDGET_MS,
   PhoenixOpenAiError,
 } from "@/lib/ai/openai-client";
+import { tryParseAiJson } from "@/lib/ai/parse-ai-json";
 import { sanitizeEmailTemplateHtml } from "@/lib/email/email-safety";
 
 export type AiDraftMode = "composer" | "email_template";
@@ -232,20 +233,8 @@ function buildPromptInput(input: AiDraftRequest, instruction: string) {
 }
 
 function parseAiJson(text: string): Record<string, unknown> {
-  const cleaned = text.replace(/```(?:json)?/gi, "").trim();
-  try {
-    return JSON.parse(cleaned) as Record<string, unknown>;
-  } catch {
-    const start = cleaned.indexOf("{");
-    const end = cleaned.lastIndexOf("}");
-    if (start >= 0 && end > start) {
-      try {
-        return JSON.parse(cleaned.slice(start, end + 1)) as Record<string, unknown>;
-      } catch {
-        /* fall through to the error below */
-      }
-    }
-  }
+  const parsed = tryParseAiJson(text);
+  if (parsed) return parsed;
   throw new AiAssistError("ai_failed", "The AI reply was not in the expected format. Try again.");
 }
 

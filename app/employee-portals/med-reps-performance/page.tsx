@@ -18,7 +18,7 @@ import {
   TeamLeaderboardTable,
   TeamMembersBreakdown,
   TeamSalesVsTargetChart,
-} from "../team-performance/team-members-breakdown.client";
+} from "../team-performance/team-members-breakdown-dynamic";
 
 export const dynamic = "force-dynamic";
 

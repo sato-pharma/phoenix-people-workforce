@@ -629,11 +629,9 @@ async function readSalesData(options?: { batchId?: string; approvedOnly?: boolea
   const includeRecords = options?.includeRecords ?? true;
 
   let batchesQuery = supabase.from("sales_import_batches").select("*").order("created_at", { ascending: false });
-  let recordsQuery = supabase.from("sales_records").select("*");
 
   if (options?.batchId) {
     batchesQuery = batchesQuery.eq("id", options.batchId);
-    recordsQuery = recordsQuery.eq("batch_id", options.batchId);
   }
 
   if (options?.approvedOnly) {
@@ -648,16 +646,21 @@ async function readSalesData(options?: { batchId?: string; approvedOnly?: boolea
     ? rawBatchRows
     : rawBatchRows.filter((row) => !isDisposableSalesBatchRow(row));
   const batchIds = batchRows.map((row) => String(row.id)).filter(Boolean);
+  // Both branches page past PostgREST's 1000-row cap via readAllSupabaseRows — a single batch
+  // (e.g. a monthly closing sheet across every product/customer/rep) can easily exceed it, and the
+  // single-batch path used to skip the ceiling with a raw, unpaged `.select("*")`.
   const recordResult = includeRecords
     ? options?.batchId
-      ? await recordsQuery
+      ? await readAllSupabaseRows(supabase, "sales_records", {
+          inFilters: [{ column: "batch_id", values: [options.batchId] }],
+        })
       : batchIds.length > 0
         ? await readAllSupabaseRows(supabase, "sales_records", {
             inFilters: [{ column: "batch_id", values: batchIds }],
           })
         : []
-    : { data: [] as DbRow[] };
-  const rawRecordRows = (Array.isArray(recordResult) ? recordResult : toSafeArray(recordResult.data)) as DbRow[];
+    : ([] as DbRow[]);
+  const rawRecordRows = recordResult as DbRow[];
   const recordRows = options?.batchId
     ? rawRecordRows
     : rawRecordRows.filter((row) => !isDisposableSalesRecordRow(row));

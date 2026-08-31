@@ -34,6 +34,7 @@ import {
   PhoenixOpenAiError,
   type PhoenixOpenAiErrorCode,
 } from "@/lib/ai/openai-client";
+import { tryParseAiJson } from "@/lib/ai/parse-ai-json";
 import { logError } from "@/lib/observability/log";
 import { getCandidate, updateCandidate } from "@/lib/recruitment/candidates";
 import { selectAutoApplyFields } from "@/lib/recruitment/cv-auto-apply";
@@ -463,20 +464,8 @@ export function buildPdfFileInput(bytes: Buffer, fileName: string, coverMessage?
 // ---------------------------------------------------------------------------
 
 export function parseAiJson(text: string): Record<string, unknown> {
-  const cleaned = text.replace(/```(?:json)?/gi, "").trim();
-  try {
-    return JSON.parse(cleaned) as Record<string, unknown>;
-  } catch {
-    const start = cleaned.indexOf("{");
-    const end = cleaned.lastIndexOf("}");
-    if (start >= 0 && end > start) {
-      try {
-        return JSON.parse(cleaned.slice(start, end + 1)) as Record<string, unknown>;
-      } catch {
-        /* fall through to the error below */
-      }
-    }
-  }
+  const parsed = tryParseAiJson(text);
+  if (parsed) return parsed;
   throw new CvExtractionError("ai_failed", "The reply was not in the expected format. Try again.");
 }
 

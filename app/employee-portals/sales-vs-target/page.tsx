@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 
 import { EmployeePortalPageShell } from "@/components/employee-portal/enterprise-shell";
-import { VsTargetDashboard } from "@/components/sales/vs-target/vs-target-dashboard";
+import { VsTargetDashboard } from "@/components/sales/vs-target/vs-target-dashboard-dynamic";
 import { assertPermission } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { buildVsTargetDashboard } from "@/lib/sales/vs-target-page";

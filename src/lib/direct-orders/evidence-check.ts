@@ -3,7 +3,7 @@ import {
   hasOpenAiApiKey,
   OPENAI_ROUTE_BUDGET_MS,
 } from "@/lib/ai/openai-client";
-import { parseAiJson } from "@/lib/recruitment/cv-extraction";
+import { parseAiJson } from "@/lib/ai/parse-ai-json";
 import {
   diceCoefficient,
   jaccardSimilarity,
