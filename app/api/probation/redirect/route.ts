@@ -22,24 +22,21 @@ export async function GET(request: Request) {
 
   const { searchParams } = new URL(request.url);
   const employeeHrId = searchParams.get("employeeHrId");
-  const action = searchParams.get("action"); // "feedback" = open feedback panel
-  const cycle = searchParams.get("cycle");
+
+  // `action=feedback` and `cycle` were read here until 2026-09-01. They deep-linked into the legacy
+  // per-cycle feedback panel, which was retired because employee_probation — the table behind it —
+  // has held zero rows since the Case model took over provisioning, so the panel could only ever
+  // answer "not eligible". Older notification rows may still carry both params; they are ignored
+  // rather than rejected, so an existing link still lands the recipient on their probation view.
+  // That view is the correct destination now: it lists their open DV feedback tasks.
 
   if (resolveNavigationMode(access) === "employee-portal") {
     const dest = new URL("/employee-portals/probation", request.url);
     if (employeeHrId) dest.searchParams.set("employeeHrId", employeeHrId);
-    if (action === "feedback" && employeeHrId) {
-      dest.searchParams.set("feedbackEmployeeHrId", employeeHrId);
-    }
-    if (cycle) dest.searchParams.set("cycle", cycle);
     return NextResponse.redirect(dest);
   }
 
   const dest = new URL("/probation", request.url);
   if (employeeHrId) dest.searchParams.set("employeeHrId", employeeHrId);
-  if (action === "feedback" && employeeHrId) {
-    dest.searchParams.set("feedbackEmployeeHrId", employeeHrId);
-  }
-  if (cycle) dest.searchParams.set("cycle", cycle);
   return NextResponse.redirect(dest);
 }

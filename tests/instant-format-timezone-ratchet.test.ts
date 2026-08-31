@@ -56,7 +56,10 @@ import path from "node:path";
 // Lowered 17 -> 16 in the C6 deductions cutover (2026-08-30): removing the legacy governance
 // client components (the governance workspace and the Payroll Copilot deduction-review table)
 // deleted one unzoned client-side instant format, and the ratchet locks that ground in.
-const CLIENT_BASELINE = 15;
+// Lowered 15 -> 13 retiring the legacy probation feedback path (2026-09-01): both sites were in
+// feedback-form-panel.tsx — the submission stamp and the comment stamp, each an unzoned
+// Intl.DateTimeFormat over a stored instant. That file is deleted, so they cannot come back.
+const CLIENT_BASELINE = 13;
 
 /**
  * Not a baseline — a rule. A server-rendered instant with no zone is wrong in

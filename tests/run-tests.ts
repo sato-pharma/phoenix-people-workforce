@@ -557,7 +557,7 @@ import { runResignationsDashboardScopeTests } from "./resignations-dashboard-sco
 import { runResignationsCairoTodayTests } from "./resignations-cairo-today.test.ts";
 import { runResignationSubmittedByFkTests } from "./resignation-submitted-by-fk.test.ts";
 import { runResignationCrmIdentityReleaseTests } from "./resignation-crm-identity-release.test.ts";
-import { runProbationFeedbackRevivalTests } from "./probation-feedback-revival.test.ts";
+import { runProbationLegacyFeedbackRetiredTests } from "./probation-legacy-feedback-retired.test.ts";
 import { runAccessProfileHrIdCasingTests } from "./access-profile-hrid-casing.test.ts";
 import { runEmployeePortalNavigationTests } from "./employee-portal-navigation.test.ts";
 import { runPortalNavActingDmUsesAppRoleTests } from "./portal-nav-acting-dm-uses-app-role.test.ts";
@@ -591,7 +591,6 @@ import { runVacancyReportSourceTests } from "./vacancy-report-source.test.ts";
 import { runOrganogramNodeDetailPrivacyTests } from "./organogram-node-detail-privacy.test.ts";
 import { runOrganogramAudienceTests } from "./organogram-audience.test.ts";
 import { runProbationStabilizationTests } from "./probation-stabilization.test.ts";
-import { runProbationFeedbackSecurityTests } from "./probation-feedback-security.test.ts";
 import { runGoogleRoutesShortestTests } from "./google-routes-shortest.test.ts";
 import { runAccessGovernanceHardeningTests } from "./access-governance-hardening.test.ts";
 import { runRlsAuthenticatedReadRevokeTests } from "./rls-authenticated-read-revoke.test.ts";
@@ -2108,7 +2107,6 @@ await runTest(
   runOrganogramAudienceTests,
 );
 await runTest("probation stabilization", runProbationStabilizationTests);
-await runTest("probation feedback security", runProbationFeedbackSecurityTests);
   await runTest("google routes fastest", runGoogleRoutesShortestTests);
 await runTest("auth session", runAuthSessionTests);
 await runTest("auth page access guard (guest-fallback predicate)", runAuthPageAccessTests);
@@ -2127,7 +2125,7 @@ await runTest("resignations dashboard scope (unscoped-read fix)", runResignation
 await runTest("resignations Cairo-today (exit-date defaults resolve via Africa/Cairo)", runResignationsCairoTodayTests);
 await runTest("resignation submitted_by_hr_id FK (actor casing must not violate the employees FK; constraint errors are not 'schema missing')", runResignationSubmittedByFkTests);
 await runTest("resignation CRM identity release (a leaver releases crm_id for their successor but KEEPS crm_username so their own trailing visits stay attributable)", runResignationCrmIdentityReleaseTests);
-await runTest("probation feedback revival (coarse gate is probation:read, FK columns take the stored hr_id, both HR bundles resolve and are visible)", runProbationFeedbackRevivalTests);
+await runTest("legacy probation feedback stays retired (its files, its identifiers, the dead cron tick — and the live per-DV-Day path that replaced it is still wired)", runProbationLegacyFeedbackRetiredTests);
 await runTest("access profile hr_id casing (admin-typed hr_id is normalised before it reaches the employees FK)", runAccessProfileHrIdCasingTests);
 await runTest("access governance hardening", runAccessGovernanceHardeningTests);
 await runTest("RLS authenticated-read revoke (M3)", runRlsAuthenticatedReadRevokeTests);
