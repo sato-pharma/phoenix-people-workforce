@@ -299,6 +299,7 @@ import { runCrmAmpmNormalizationTests } from "./crm-ampm-normalization.test.ts";
 import { runCrmVisitTypeLabelTests } from "./crm-visit-type-labels.test.ts";
 import { runCrmRepDoctorListsTests } from "./crm-rep-doctor-lists.test.ts";
 import { runCrmContactListsTests } from "./crm-contact-lists.test.ts";
+import { runRepsListTests } from "./reps-list.test.ts";
 import { runCrmPlanVerificationTests } from "./crm-plan-verification.test.ts";
 import { runCrmRepDoctorTrendTests } from "./crm-rep-doctor-trend.test.ts";
 import { runLocationIqGeocodeConfidenceTests } from "./locationiq-geocode-confidence.test.ts";
@@ -2904,6 +2905,19 @@ await runTest(
   + "parses to []; and an empty fetch against a non-empty mirror is REFUSED rather than applied, so "
   + "an expired session degrades to yesterday's list instead of \"this rep has no doctors\")",
   runCrmContactListsTests,
+);
+
+await runTest(
+  "reps list (the board that replaced Doctor List — a rep's whole CRM contact list grouped by the "
+  + "brick each contact sits in. Every failure mode here is SILENT: only 5,608 of 9,518 contact "
+  + "links resolve to a brick, so dropping the rest would shorten a rep's list by ~40% with nothing "
+  + "saying why, and pooling them would discard the region name that is the only thing an admin "
+  + "needs to fix the mapping — so an unmapped contact groups under its own CRM region, flagged; a "
+  + "contact's OWN brick beats the one its region supplies, or a resolvable contact is quietly "
+  + "coarsened; a brick id with no name row falls back to the region rather than printing a raw "
+  + "code; and the portal sidebar's hand-copied role list is asserted against the enforcing gate, "
+  + "because a row a role cannot open is invisible until someone in that role clicks it)",
+  runRepsListTests,
 );
 
 await runTest(

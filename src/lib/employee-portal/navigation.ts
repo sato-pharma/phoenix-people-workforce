@@ -22,6 +22,7 @@ export type EmployeePortalNavVisibility = {
   showMyPerformanceTab?: boolean;
   showTeamPerformanceTab?: boolean;
   showMedRepsPerformanceTab?: boolean;
+  showRepsListTab?: boolean;
   showMedicalRepExpensesTab?: boolean;
   showDsmsPerformanceTab?: boolean;
   // Team Calendar — NSM-only live field-visit month grid for their whole line, scoped
@@ -328,6 +329,21 @@ export function resolveEmployeePortalNavVisibility(
   const hideMyPerformanceTab = hideMyPerformanceTabRoles.has(resolvedRole);
   const showTeamPerformanceTab = isDistrictManager;
   const showMedRepsPerformanceTab = isNationalSalesManager;
+  // Reps List — the portal twin of /admin/reps-list, scoped to the manager's own reps. The owner
+  // asked for it on 2026-08-31: "every manager in the employee portal has a scoped reps list."
+  //
+  // Mirrors the three portal-side roles in DOCTOR_LIST_ACCESS_ROLES
+  // (src/lib/crm/doctor-list-access.ts), which with crm_visits:read is the enforcing gate. Spelled
+  // out rather than imported for the same reason as isExcuseExcludedPortalRole above: that module
+  // reaches the Supabase server client through manager-scope.ts, and nothing here may.
+  //
+  // Deliberately NOT isDistrictManager — that predicate also admits the bare "Manager" title, which
+  // the access module does not. Reusing it would show a Manager a row the page then refuses, which
+  // is the "visible row he cannot open" bug the sidebar tests exist to catch.
+  const showRepsListTab =
+    resolvedRole === "District Manager" ||
+    resolvedRole === "Regional Manager" ||
+    resolvedRole === "National Sales Manager";
   // Talent Acquisition is HR staff processing outstation expenses, not a field claimant —
   // she has no outstation expenses of her own, so both expense tabs stay hidden for her.
   const showExpenseActionTab = !isMedicalRep && !isPortalHrOfficeStaff;
@@ -407,6 +423,7 @@ export function resolveEmployeePortalNavVisibility(
     showMarketingRoiTrackingTab,
     showMarketingCoverageReportTab,
     showMedRepsPerformanceTab,
+    showRepsListTab,
     showMedicalRepExpensesTab: isMedicalRep,
     showMyPerformanceTab: isA3Account ? false : baseShowMyPerformanceTab,
     showMyCoachingTab: isMedicalRep,

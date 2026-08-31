@@ -1000,6 +1000,9 @@ const adminNavigationSectionSeeds = [
   //   /admin/reps-plans                   Reps Plans
   //   /admin/doctor-list                  Doctor List           } the District Manager page's two
   //   /admin/plan-verification            Plan Verification     } tabs, two routes, two rows
+  //                                       — Doctor List and that tab strip were retired 2026-08-31;
+  //                                       /admin/reps-list replaced the first and Plan Verification
+  //                                       now stands on its own.
   //   /admin/crm-integrity                CRM Integrity
   //   /admin/brick-coverage               Brick Coverage
   //   /admin/double-visit-analytics       Double Visit Analytics
@@ -1369,6 +1372,16 @@ const employeePortalNavigationSectionSeeds = [
       // link lives in the Fieldforce section of employee-portal-layout.tsx. Mirrors PORTAL_CRM_ROLES
       // in src/lib/crm/portal-crm-scope.ts (adds Medical Rep to the DSM/RM/NSM set above).
       { href: "/employee-portals/crm", icon: Database, label: "CRM", permissions: [{ resource: "crm_visits", action: "read" }], roles: ["Medical Rep", "District Manager", "Regional Manager", "National Sales Manager"] },
+      // Reps List — the portal twin of /admin/reps-list, added 2026-08-31 with it ("every manager in
+      // the employee portal has a scoped reps list"). Catalog entry so the command palette can find
+      // it and the browser tab gets its label; the rendered sidebar link sits under CRM in the Field
+      // Activity section of employee-portal-layout.tsx.
+      //
+      // NO Medical Rep, unlike the CRM row above. This board is about the reps who report to you, so
+      // a rep would reach it and see nobody — and the enforcing gate (canAccessDoctorList, in
+      // src/lib/crm/doctor-list-access.ts) does not admit the role at all. These three roles must
+      // stay in step with the portal-side half of DOCTOR_LIST_ACCESS_ROLES.
+      { href: "/employee-portals/reps-list", icon: BookUser, label: "Reps List", permissions: [{ resource: "crm_visits", action: "read" }], roles: ["District Manager", "Regional Manager", "National Sales Manager"] },
     ],
     label: "Sales Operations",
   },
@@ -3243,10 +3256,16 @@ export const crmPageItems: readonly AdminToolsPageItem[] = [
     roles: ["Super Admin", "SFE Manager", "CEO"],
   },
   {
-    // TAB ONE of the District Manager page. WIDENED 2026-08-28 from Super Admin alone, once the
-    // reps-per-manager scope landed: a district manager now sees his own reps and nobody else's,
-    // and the SAME scope filters the rep picker, which is the half that was missing when the owner
-    // caught the fault on Doctor Coverage that same day. The enforcing gate is canAccessDoctorList
+    // REPLACED "Doctor List" (/admin/doctor-list) on 2026-08-31, by the owner, in the conversation:
+    // "if you have another one named rep list, then retire it — retire it and build instead of it
+    // this one." Same source, same access module, same scope; what is new is the Line -> Region ->
+    // Area -> Rep cascade and the grouping by brick. The old route is a redirect stub and its
+    // District Manager tab went with it, so this is the single door onto that data.
+    //
+    // WIDENED 2026-08-28 from Super Admin alone, once the reps-per-manager scope landed: a district
+    // manager sees his own reps and nobody else's, and the SAME scope restricts the cascade tree
+    // BEFORE it derives a dropdown option — which is the half that was missing when the owner caught
+    // the fault on Doctor Coverage that same day. The enforcing gate is canAccessDoctorList
     // (src/lib/crm/doctor-list-access.ts) plus crm_visits:read, both asked by the page; this list
     // is UX only and must be kept in step with that file.
     //
@@ -3255,10 +3274,11 @@ export const crmPageItems: readonly AdminToolsPageItem[] = [
     // somebody had already planned. This one mirrors the CRM's own contact list, which is the only
     // place a doctor assigned to a rep and never touched appears at all — 448 of them on the first
     // sweep. That is the assignment itself, and it survives the retirement for that reason.
-    href: "/admin/doctor-list",
+    href: "/admin/reps-list",
     icon: BookUser,
-    label: "Doctor List",
-    description: "Every doctor on a rep's CRM list, with specialty, grade and address — the assignment itself, not the activity against it.",
+    label: "Reps List",
+    description:
+      "Filter to a line, region and area, then open a rep to see his whole CRM contact list grouped by the brick each contact sits in — the assignment itself, not the activity against it.",
     roles: ["Super Admin", "CEO", "National Sales Manager", "SFE Manager", "Regional Manager", "District Manager"],
   },
   {
