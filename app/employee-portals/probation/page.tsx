@@ -73,11 +73,7 @@ function probationPageError(error: unknown) {
 
 /* ---------- page ---------- */
 
-export default async function EmployeePortalProbationPage({
-  searchParams,
-}: {
-  searchParams: Promise<Record<string, string | string[] | undefined>>;
-}) {
+export default async function EmployeePortalProbationPage() {
   const access = await resolveAuthenticatedPageAccess();
 
   if (resolveNavigationMode(access) !== "employee-portal") {
@@ -86,10 +82,10 @@ export default async function EmployeePortalProbationPage({
 
   await assertPermission(access, "probation", "read");
 
-  const params = await searchParams;
-  const feedbackEmployeeHrId = typeof params.feedbackEmployeeHrId === "string" ? params.feedbackEmployeeHrId : null;
-  const feedbackCycle = typeof params.cycle === "string" ? parseInt(params.cycle, 10) : null;
-
+  // `?feedbackEmployeeHrId=` and `?cycle=` were read here until 2026-09-01, to auto-open the legacy
+  // per-cycle feedback panel. Both went with it — the panel's table, employee_probation, has held
+  // zero rows since the Case model took over provisioning, so it could only ever refuse. Live
+  // feedback is the ProbationFeedbackTasksPanel below, which is submitted per DV-Day.
   const canSubmitManagerFeedback =
     access.role === "District Manager" ||
     access.role === "Regional Manager" ||
@@ -103,8 +99,6 @@ export default async function EmployeePortalProbationPage({
     // they are ADMIN-shell roles and reach app/(admin)/probation, so they do not belong in this
     // portal-side list. Case decisions (pass/terminate) stay isProbationAdministrator-only either way.
     false;
-
-  const canManageDvCheckboxes = access.role === "Super Admin";
 
   let initialData: ProbationRow[] | null = null;
   let initialError: string | null = null;
@@ -226,10 +220,7 @@ export default async function EmployeePortalProbationPage({
       {hasTracker ? (
         <EmployeeProbationDashboard
           canExport={canExportProbation(access)}
-          canManageDvCheckboxes={canManageDvCheckboxes}
           canSubmitManagerFeedback={canSubmitManagerFeedback}
-          feedbackCycle={feedbackCycle}
-          feedbackEmployeeHrId={feedbackEmployeeHrId}
           initialData={initialData!}
         />
       ) : (

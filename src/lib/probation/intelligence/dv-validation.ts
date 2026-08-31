@@ -80,9 +80,12 @@ export function resolveEvaluatorRole(
 
 /**
  * Inclusive [start, end] probation-window test; a missing bound is open on that side.
- * Exported so the legacy `employee_probation` DV-checkbox auto-tick (feedback-service.ts)
- * gates on the EXACT same window semantics as this authoritative DV-Day validation —
- * otherwise the checkbox and probation_dv_days can disagree for an out-of-window DV.
+ *
+ * It was exported so the legacy `employee_probation` DV-checkbox auto-tick shared these exact
+ * window semantics. That auto-tick was retired 2026-09-01 with the rest of the legacy feedback
+ * path, so validateDvDay below is now the only caller. The export stays because these are the
+ * authoritative window semantics any future DV reader must gate on — not because something
+ * outside this file needs it today.
  */
 export function withinWindow(dvDate: string, start: string | null, end: string | null): boolean {
   if (start && dvDate < start) return false;

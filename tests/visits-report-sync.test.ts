@@ -292,73 +292,38 @@ export function runVisitsReportSyncTests() {
     "the reaper must be wired into the every-30-min notification-process cron, the only one frequent enough to catch a stuck row promptly",
   );
 
-  // Deeper audit finding D: the probation DV auto-tick failure was fully swallowed with no
-  // logging (even though the route already has an outer console.error, it never got
-  // a chance to fire since the inner catch always absorbed the error first).
+  // Both crons must feed probation_dv_days, each isolated so a probation failure can never fail an
+  // otherwise-successful visits sync.
+  //
+  // The daily sync and the wide reconcile also ran tickDvCheckboxesFromSync until 2026-09-01, and
+  // three assertions here pinned it (not-swallowed, logged-to-Sentry, present in the reconcile).
+  // They went with it: the tick wrote DV booleans on employee_probation, which has held ZERO rows
+  // since the Case model took over provisioning, so it had been a no-op on every run.
   const syncRouteSource = readFileSync("app/api/cron/ireports360-visits-sync/route.ts", "utf8");
-  assert.doesNotMatch(
-    syncRouteSource,
-    /tickDvCheckboxesFromSync\(dateFrom, dateTo\)\.catch\(\(\) => undefined\);/,
-    "the DV-tick failure must not be swallowed without logging",
-  );
   assert.match(
     syncRouteSource,
-    /tickDvCheckboxesFromSync\(dateFrom, dateTo\)\.catch\(\(error: unknown\) => \{\s*console\.error\(error, \{ tags: \{ cron: "ireports360-visits-sync-dv-tick" \} \}\);\s*\}\);/,
-    "a failed DV-tick must still be reported to Sentry, isolated from the otherwise-successful visits sync",
+    /syncProbationDvDays\(getSupabaseAdmin\(\), \{ dateFrom, dateTo \}\)\.catch\(/,
+    "the daily sync must feed probation_dv_days over its window (isolated with .catch)",
   );
 
   // Fix #10: the WIDE reconcile must ALSO feed probation — a DV landed >10 days old (past the daily
-  // sync's window) reaches probation only here; otherwise it shows in DV Analytics but never on a
-  // probation checkbox. Both steps run over the reconcile's own slice window, each isolated so a
-  // probation failure can't fail the reconcile.
+  // sync's window) reaches probation only here; otherwise it shows in DV Analytics but never
+  // reaches probation_dv_days at all.
   const reconcileRouteSource = readFileSync("app/api/cron/ireports360-visits-reconcile/route.ts", "utf8");
-  assert.match(
-    reconcileRouteSource,
-    /tickDvCheckboxesFromSync\(dateFrom, dateTo\)\.catch\(/,
-    "the wide reconcile must run the DV-checkbox tick over its slice window (isolated with .catch)",
-  );
   assert.match(
     reconcileRouteSource,
     /syncProbationDvDays\(getSupabaseAdmin\(\), \{ dateFrom, dateTo \}\)\.catch\(/,
     "the wide reconcile must run the probation DV-day sync over its slice window (isolated with .catch)",
   );
 
-  // Fix #8: tickDvCheckboxesFromSync builds hr-id lists via normalizeHrId (lowercase) but
-  // app_auth_users / employees store hr_id UPPERCASE and PostgREST .in is case-sensitive — it must
-  // expand every casing variant (hrIdLookupKeys), or every role/DM lookup returns [] and NO checkbox
-  // ever ticks (a silent no-op).
-  const feedbackServiceSource = readFileSync("src/lib/probation/feedback-service.ts", "utf8");
-  assert.match(
-    feedbackServiceSource,
-    /\.in\("hr_id", Array\.from\(new Set\(visitorHrIds\.flatMap\(hrIdLookupKeys\)\)\)\)/,
-    "the app_auth_users role lookup must expand hr-id casing variants so the case-sensitive .in matches",
-  );
-  assert.match(
-    feedbackServiceSource,
-    /\.in\("hr_id", Array\.from\(new Set\(probationVisited\.flatMap\(hrIdLookupKeys\)\)\)\)/,
-    "the employees DM lookup must expand hr-id casing variants so the case-sensitive .in matches",
-  );
-
-  // Fix B (2026-07-18 data-fidelity audit): the legacy checkbox auto-tick must apply the SAME
-  // probation-window gate as the authoritative probation_dv_days path — a DV outside the
-  // employee's window [hire_date, probation_end_date] must NOT tick a checkbox that DV-Day
-  // validation would reject as outside_probation_window (they diverged silently before).
-  assert.match(
-    feedbackServiceSource,
-    /import \{ withinWindow \} from "\.\/intelligence\/dv-validation";/,
-    "the checkbox tick must reuse the DV-Day validation window predicate (one source of window semantics)",
-  );
-  assert.match(
-    feedbackServiceSource,
-    /withinWindow\(dvRow\.visit_date, empByHrId\.get\(visitedHrId\)\?\.hire_date \?\? null, probRecord\.probation_end_date\)/,
-    "each DV must be window-gated against the employee's probation window before ticking a checkbox",
-  );
-  // Fix B (deeper, 2026-07-18): PM/GPM checkbox tick must skip the CNS line the SAME way
-  // probation_dv_days does (dv-validation keys on line_name === 'cns'), not only via the legacy
-  // NULL-column sentinel — so the two can't disagree on whether a PM/GPM DV counts.
-  assert.match(
-    feedbackServiceSource,
-    /const isCns = String\(visitedEmp\?\.line_name \?\? ""\)\.trim\(\)\.toLowerCase\(\) === "cns";/,
-    "PM/GPM checkbox tick must determine CNS via line_name, matching probation_dv_days",
-  );
+  // RETIRED 2026-09-01. Four assertions stood here pinning tickDvCheckboxesFromSync in
+  // feedback-service.ts: hr-id casing expansion on two lookups, the shared withinWindow gate, and
+  // the CNS skip for the PM/GPM checkbox. All four described a function that ticked DV booleans on
+  // employee_probation — a table that has held ZERO rows since the Case model took over
+  // provisioning, so the tick had been a no-op on every run regardless of whether those fixes were
+  // correct. The function and its two cron call sites went with the legacy feedback path.
+  //
+  // The window and CNS semantics they protected are NOT lost: they live in
+  // intelligence/dv-validation.ts, which is what feeds probation_dv_days, and the assertions above
+  // still pin syncProbationDvDays into both crons.
 }

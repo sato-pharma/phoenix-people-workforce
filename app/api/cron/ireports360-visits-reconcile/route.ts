@@ -6,7 +6,6 @@ import { withDeadMansSwitch } from "@/lib/observability/dead-mans-switch";
 import { resolveWideReconciliationSlice, runWideIReports360Reconciliation } from "@/lib/crm/sync";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { syncProbationDvDays } from "@/lib/probation/intelligence/dv-sync";
-import { tickDvCheckboxesFromSync } from "@/lib/probation/feedback-service";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 import { assertCronAuthorized } from "@/lib/security/cron-auth";
 
@@ -44,13 +43,14 @@ async function runReconcile() {
   }
 
   // The wide reconcile can newly land a double visit whose visit_date is OLDER than the daily
-  // sync's 10-day window, so the daily cron's probation steps never see it (DV shows in Double
-  // Visit Analytics but never reaches probation checkboxes / probation_dv_days). Run them here too,
-  // over this slice's window, so probation stays complete. Both are idempotent + cohort-scoped, and
-  // each is isolated (a probation failure must never fail the reconcile).
-  await tickDvCheckboxesFromSync(dateFrom, dateTo).catch((error: unknown) => {
-    logError("iReports360 reconcile DV-checkbox tick failed", { error, labels: { job: JOB_NAME } });
-  });
+  // sync's 10-day window, so the daily cron's probation step never sees it (DV shows in Double
+  // Visit Analytics but never reaches probation_dv_days). Run it here too, over this slice's
+  // window, so probation stays complete. It is idempotent + cohort-scoped, and isolated (a
+  // probation failure must never fail the reconcile).
+  //
+  // A tickDvCheckboxesFromSync() call ran alongside it until 2026-09-01, ticking the DV booleans
+  // on employee_probation — a table nothing has filled since the Case model landed, so it updated
+  // ZERO rows every run. It went with the rest of the legacy feedback path.
   await syncProbationDvDays(getSupabaseAdmin(), { dateFrom, dateTo }).catch((error: unknown) => {
     logError("iReports360 reconcile probation DV-day sync failed", { error, labels: { job: JOB_NAME } });
   });

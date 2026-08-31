@@ -6,8 +6,6 @@ import { Card } from "@/components/ui/card";
 import { PortalDesktopTable } from "@/components/employee-portal/portal-primitives";
 import { PaginationControls } from "@/components/ui/pagination-controls";
 import { WorkspaceErrorBoundary } from "@/components/ui/workspace-error-boundary";
-import { DvCheckboxPanel } from "@/components/probation/dv-checkbox-panel";
-import { FeedbackFormPanel } from "@/components/probation/feedback-form-panel";
 import { formatDateOnly, parseDateOnly } from "@/lib/date-only";
 import {
   calculateProbationProgress,
@@ -15,7 +13,6 @@ import {
   summarizeProbationRiskRows,
 } from "@/lib/lifecycle-risk/metrics";
 import type {
-  ProbationDvState,
   ProbationRow,
   ProbationWorkflowAction,
   TrafficStatus,
@@ -28,15 +25,16 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 /* ------------------------------------------------------------------ */
 
 type EmployeeProbationDashboardProps = {
-  canManageDvCheckboxes?: boolean;
   // Resolved server-side by canExportProbation (src/lib/probation/service.ts) — the SAME predicate
   // /api/exports enforces, so the button never appears for someone the endpoint would 403. The file
   // contains only the rows getProbationRows returns for this viewer (their own subtree), not the
   // company-wide list the admin tracker exports.
   canExport?: boolean;
+  /**
+   * Gates the `manager_feedback` WORKFLOW action only. It no longer gates a feedback form: the
+   * legacy per-cycle feedback panel was retired 2026-09-01 (see the note further down).
+   */
   canSubmitManagerFeedback: boolean;
-  feedbackCycle?: number | null;
-  feedbackEmployeeHrId?: string | null;
   initialData: ProbationRow[];
 };
 
@@ -133,11 +131,8 @@ function workflowBadgeColors(status: string | null | undefined) {
 /* ------------------------------------------------------------------ */
 
 export function EmployeeProbationDashboard({
-  canManageDvCheckboxes = false,
   canExport = false,
   canSubmitManagerFeedback,
-  feedbackCycle: _feedbackCycle,
-  feedbackEmployeeHrId: initialFeedbackHrId,
   initialData,
 }: EmployeeProbationDashboardProps) {
   /* State */
@@ -152,8 +147,6 @@ export function EmployeeProbationDashboard({
   const [actionForm, setActionForm] = useState<ActionFormState>(() => emptyActionForm());
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [message, setMessage] = useState<{ tone: "danger" | "success"; text: string } | null>(null);
-  const [feedbackEmployeeHrId, setFeedbackEmployeeHrId] = useState<string | null>(initialFeedbackHrId ?? null);
-  const [dvStateMap, setDvStateMap] = useState<Record<string, ProbationDvState>>({});
 
   /* Filter options */
   const filterOptions = useMemo(
@@ -214,23 +207,6 @@ export function EmployeeProbationDashboard({
       ),
     [filteredRows],
   );
-
-  /* DV state update callback */
-  function handleDvChanged(hrId: string, probationId: number) {
-    // Reload DV state for this employee row from fresh data
-    fetch(`/api/probation/feedback/employee/${encodeURIComponent(hrId)}`)
-      .then(r => r.json())
-      .then(data => {
-        if (data.eligibility?.probationId) {
-          // Re-fetch the full probation rows to pick up updated DV columns
-          void probationId; // probationId used for future per-row endpoint
-        }
-      })
-      .catch(() => {});
-    // Optimistically keep rows fresh — they'll reload on next navigate
-    void dvStateMap;
-    setDvStateMap(prev => ({ ...prev }));
-  }
 
   /* Active filter tracking */
   const hasActiveFilters =
@@ -649,29 +625,6 @@ export function EmployeeProbationDashboard({
                       <td className="border-r border-slate-100 px-3 py-3 sm:px-4">
                         <p className="font-semibold text-slate-800">{row.full_name}</p>
                         <p className="mt-0.5 text-phx-xs text-slate-400">{row.hr_id}</p>
-                        {row.dv_state && (
-                          <div className="mt-1.5">
-                            <DvCheckboxPanel
-                              canManualOverride={canManageDvCheckboxes}
-                              dvState={{
-                                dmDvDone: row.dv_state.dm_dv_done,
-                                dmDvDoneAt: row.dv_state.dm_dv_done_at,
-                                dmDvDoneManually: row.dv_state.dm_dv_done_manually,
-                                nsmDvDone: row.dv_state.nsm_dv_done,
-                                nsmDvDoneAt: row.dv_state.nsm_dv_done_at,
-                                nsmDvDoneManually: row.dv_state.nsm_dv_done_manually,
-                                pmGpmDvDone: row.dv_state.pm_gpm_dv_done,
-                                pmGpmDvDoneAt: row.dv_state.pm_gpm_dv_done_at,
-                                pmGpmDvDoneManually: row.dv_state.pm_gpm_dv_done_manually,
-                                tmDvDone: row.dv_state.tm_dv_done,
-                                tmDvDoneAt: row.dv_state.tm_dv_done_at,
-                                tmDvDoneManually: row.dv_state.tm_dv_done_manually,
-                              }}
-                              onChanged={() => handleDvChanged(row.hr_id, Number(row.probation_id ?? 0))}
-                              probationId={Number(row.probation_id ?? 0)}
-                            />
-                          </div>
-                        )}
                       </td>
 
                       {/* Job Title */}
@@ -760,15 +713,6 @@ export function EmployeeProbationDashboard({
                               {actionLabel(action)}
                             </button>
                           ))}
-                          {canSubmitManagerFeedback && row.probation_id && (
-                            <button
-                              className="rounded border border-orange-200 bg-orange-50 px-2.5 py-1.5 text-phx-xs font-semibold text-orange-700 hover:bg-orange-100 transition"
-                              onClick={() => setFeedbackEmployeeHrId(feedbackEmployeeHrId === row.hr_id ? null : row.hr_id)}
-                              type="button"
-                            >
-                              {feedbackEmployeeHrId === row.hr_id ? "Close" : "Feedback"}
-                            </button>
-                          )}
                           {!row.workflow && !canSubmitManagerFeedback && (
                             <span className="text-phx-xs text-slate-400">No review</span>
                           )}
@@ -895,19 +839,16 @@ export function EmployeeProbationDashboard({
         total={filteredRows.length}
       />
 
-      {/* ---- Feedback Panel ---- */}
-      {feedbackEmployeeHrId && (() => {
-        const feedbackRow = rows.find(r => r.hr_id === feedbackEmployeeHrId);
-        return feedbackRow ? (
-          <Card className={`rounded border border-orange-100 p-0 ${cardShadow}`}>
-            <FeedbackFormPanel
-              employeeHrId={feedbackRow.hr_id}
-              employeeName={feedbackRow.full_name}
-              onClose={() => setFeedbackEmployeeHrId(null)}
-            />
-          </Card>
-        ) : null;
-      })()}
+      {/*
+        RETIRED 2026-09-01 — the per-cycle feedback panel and the DV checkbox strip stood here.
+        Both read employee_probation, which has held ZERO rows since the Case model took over
+        provisioning, so the panel always answered "not eligible" and the DV strip never rendered
+        (its `row.dv_state` is built from that same empty table, so it was always null).
+
+        Feedback lives in the Case model now: submit against a real double-visit at
+        /employee-portals/probation/feedback/<dvDayId>, listed on this portal's own feedback-tasks
+        view. Do not re-add a second feedback surface here.
+      */}
 
       {/* ---- Workflow Action Form ---- */}
       {selectedAction && (

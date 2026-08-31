@@ -3,7 +3,6 @@ import { NextResponse } from "next/server";
 import { notifyIReports360SyncResult } from "@/lib/notifications/ireports360-sync-digest";
 import { logError } from "@/lib/observability/log";
 import { withDeadMansSwitch } from "@/lib/observability/dead-mans-switch";
-import { tickDvCheckboxesFromSync } from "@/lib/probation/feedback-service";
 import { syncProbationDvDays } from "@/lib/probation/intelligence/dv-sync";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { runScheduledIReports360Sync } from "@/lib/crm/sync";
@@ -53,12 +52,11 @@ async function runSync() {
     throw error;
   }
 
-  // Auto-tick probation DV checkboxes for double visits in the just-refreshed window. Only
-  // reached if the mirror sync above succeeded (it throws on failure, which short-circuits this
-  // call). Never let a probation-tick failure mask an otherwise-successful visits sync.
-  await tickDvCheckboxesFromSync(dateFrom, dateTo).catch((error: unknown) => {
-    console.error(error, { tags: { cron: "ireports360-visits-sync-dv-tick" } });
-  });
+  // A tickDvCheckboxesFromSync() call stood here until 2026-09-01. It ticked the
+  // dm/nsm/pm_gpm/tm_dv_done booleans on employee_probation — a table the hire trigger stopped
+  // filling when the Case model landed — so it had been updating ZERO rows on every run. It went
+  // with the rest of the legacy feedback path. syncProbationDvDays below is the live DV pipeline
+  // and is deliberately untouched: it feeds probation_dv_days, which is what the Case model reads.
 
   // Capture validated probation DV-Days from the just-refreshed window into the new probation
   // domain (idempotent; scoped to probation employees). Non-blocking — a failure here must never

@@ -870,7 +870,11 @@ async function ensureProbationReminderEvents(employee: EmployeeScopeRow, directo
       employee_hr_id: employee.hrId,
       event_key: `${employee.hrId}:probation:${reminder.reminderType}:${reminder.scheduledFor}`,
       metadata: {
-        href: `/api/probation/redirect?action=feedback&employeeHrId=${employee.hrId}&cycle=${cycleNumber}`,
+        // `&action=feedback&cycle=N` was dropped 2026-09-01 with the legacy feedback panel: the
+        // params opened a per-cycle form backed by employee_probation, a table that has held zero
+        // rows since the Case model took over provisioning. The redirect now lands the recipient on
+        // their probation view, where their open DV feedback tasks are listed and submittable.
+        href: `/api/probation/redirect?employeeHrId=${employee.hrId}`,
         message: `${employee.displayName} has ${reminder.daysRemaining} days remaining in the 90-day probation period. Submit manager probation feedback.`,
         title: `${employee.displayName}'s probation feedback is due`,
         days_after_hire: reminder.daysAfterHire,

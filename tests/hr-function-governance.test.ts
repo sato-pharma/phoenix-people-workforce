@@ -118,7 +118,9 @@ const FILES_NAMING_AN_HR_SEAT: readonly string[] = [
   // workbook can only ever describe access the matrix has already decided.
   "src/lib/hr/job-workbook.ts",
   "src/lib/notifications/role-recipients.ts",
-  "src/lib/probation/feedback-service.ts",
+  // src/lib/probation/feedback-service.ts sat here until 2026-09-01. It named both seats in
+  // resolveSubmitterRole, mapping them to the "ta" submitter role. The file was deleted with the
+  // rest of the legacy probation feedback path — see tests/probation-legacy-feedback-retired.test.ts.
   "src/lib/probation/service.ts",
   "src/lib/recruitment/access.ts",
   "src/lib/recruitment/account-activation.ts",
