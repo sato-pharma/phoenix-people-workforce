@@ -3,6 +3,7 @@
 import { useState } from "react";
 
 import { CandidateReadCard } from "@/components/employee-portal/candidate-read-card";
+import { CandidateReturnControl } from "@/components/employee-portal/candidate-return-control";
 import { Card } from "@/components/ui/card";
 import type { DistrictManagerBoard } from "@/lib/recruitment/district-manager-folders";
 import type { Candidate, TeamCandidateFile } from "@/lib/recruitment/types";
@@ -37,14 +38,28 @@ export function DistrictFoldersSection({
   heading = "Your areas",
   subheading = "Every area you hold in the organogram, and the CVs of applicants who asked to work in it. Open a folder to read them.",
   viewerHrId,
+  ownFolders = false,
 }: {
   boards: DistrictManagerBoard<Candidate>[];
   files: Record<string, TeamCandidateFile[]>;
   heading?: string;
   subheading?: string;
   viewerHrId: string | null;
+  /**
+   * TRUE only when the viewer is looking at HIS OWN folders — the self-view on the recruitment
+   * portal. It turns on the two things a manager may do to his own folder and nobody else's: the
+   * screening banner that explains why these CVs are here, and the per-CV "Return to administrator"
+   * control. A National Sales Manager reading a district manager's folders leaves it false, so he
+   * reads the same CVs with neither the banner addressed to someone else nor a return button that
+   * would be his to press. The API enforces the same boundary; this only keeps the screen honest.
+   */
+  ownFolders?: boolean;
 }) {
   const [open, setOpen] = useState<{ areaName: string; seatId: string } | null>(null);
+  // Which CVs the viewer has returned in THIS session, so the card can collapse in place the moment
+  // he presses Return — the folders are derived server-side and only refresh on reload, so without
+  // this the returned CV would sit there looking un-returned until the next navigation.
+  const [returnedIds, setReturnedIds] = useState<Set<string>>(() => new Set());
 
   // Renders NOTHING for anybody who holds no district seat, which is most people who reach this
   // page. An empty heading over an empty list would read as a fault in the screen.
@@ -56,12 +71,24 @@ export function DistrictFoldersSection({
     );
   };
 
+  const handleReturned = (candidateId: string) => {
+    setReturnedIds((current) => {
+      const next = new Set(current);
+      next.add(candidateId);
+      return next;
+    });
+  };
+
   return (
     <section className="space-y-4">
-      <div>
-        <h2 className="text-sm font-semibold text-slate-900">{heading}</h2>
-        <p className="text-xs text-slate-500">{subheading}</p>
-      </div>
+      {ownFolders ? (
+        <RescreenBanner />
+      ) : (
+        <div>
+          <h2 className="text-sm font-semibold text-slate-900">{heading}</h2>
+          <p className="text-xs text-slate-500">{subheading}</p>
+        </div>
+      )}
 
       {boards.map((board) => {
         const openFolder =
@@ -153,14 +180,33 @@ export function DistrictFoldersSection({
                     </p>
                   </Card>
                 ) : (
-                  openFolder.candidates.map((candidate) => (
-                    <CandidateReadCard
-                      candidate={candidate}
-                      files={files[candidate.id] ?? []}
-                      key={candidate.id}
-                      viewerHrId={viewerHrId}
-                    />
-                  ))
+                  openFolder.candidates.map((candidate) =>
+                    returnedIds.has(candidate.id) ? (
+                      <ReturnedStrip key={candidate.id} name={candidate.fullName} />
+                    ) : (
+                      <CandidateReadCard
+                        candidate={candidate}
+                        files={files[candidate.id] ?? []}
+                        footer={
+                          ownFolders ? (
+                            <CandidateReturnControl
+                              candidateId={candidate.id}
+                              context={{
+                                areaName: openFolder.areaName,
+                                lineName: board.lineName,
+                                regionName: board.regionName,
+                                seatId: board.seatId,
+                                seatLabel: board.seatLabel,
+                              }}
+                              onReturned={handleReturned}
+                            />
+                          ) : undefined
+                        }
+                        key={candidate.id}
+                        viewerHrId={viewerHrId}
+                      />
+                    ),
+                  )
                 )}
               </div>
             ) : null}
@@ -168,5 +214,62 @@ export function DistrictFoldersSection({
         );
       })}
     </section>
+  );
+}
+
+/**
+ * The screening banner over a district manager's OWN folders. The owner, 2026-09-01, asked for this
+ * in a premium, polished voice: tell each manager these CVs are here because candidates named his
+ * area (or were routed to his region from an older CV), that nobody hand-picked them for him, and
+ * that he should re-screen and filter — and can hand back the ones that do not belong.
+ *
+ * It is built from the portal's own section-header identity — the orange accent bar, the orange
+ * kicker, and the title on the white-to-slate gradient card used across the dashboard — so it reads
+ * as part of the screen rather than a notice bolted onto it. See sales-performance-section.tsx for
+ * the same header shape.
+ */
+function RescreenBanner() {
+  return (
+    <Card className="rounded border border-slate-200/90 bg-gradient-to-br from-white to-slate-50/50 p-5 shadow-[0_12px_34px_rgba(15,23,42,0.05)] sm:p-6">
+      <div className="flex items-start gap-3">
+        <div className="mt-0.5 h-8 w-[3px] shrink-0 rounded-full bg-gradient-to-b from-orange-400 to-orange-600" />
+        <div className="space-y-2">
+          <div>
+            <p className="text-phx-2xs font-bold uppercase tracking-[0.18em] text-orange-500">
+              Your candidate folders
+            </p>
+            <h2 className="mt-0.5 text-[22px] font-semibold leading-tight tracking-tight text-slate-900">
+              These CVs came to you to screen — not already chosen for you
+            </h2>
+          </div>
+          <p className="max-w-3xl text-sm leading-relaxed text-slate-600">
+            Every applicant below asked to work in one of your areas, or was matched to your region from the
+            governorate written on an older CV. No recruiter picked them for you — so please read each one, keep
+            the candidates who fit your team, and screen out the rest.
+          </p>
+          <p className="max-w-3xl text-sm leading-relaxed text-slate-600">
+            If a CV is not for one of your areas, open the card and use{" "}
+            <span className="font-semibold text-amber-700">Return to administrator</span> with a reason. It goes
+            straight back to the recruitment team and leaves your folder.
+          </p>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+/**
+ * What a card becomes the instant its CV is returned — a slim, unmistakable confirmation in the
+ * card's own place. It replaces the full card rather than removing the row outright: a CV that
+ * simply vanished would read as a delete, when what happened is it went back to the administrator.
+ */
+function ReturnedStrip({ name }: { name: string | null }) {
+  return (
+    <Card className="flex flex-wrap items-baseline gap-x-2 gap-y-1 rounded-lg border border-emerald-200 bg-emerald-50/70 px-4 py-3 shadow-[0_1px_3px_rgba(15,23,42,0.06)]">
+      <span className="text-sm font-semibold text-emerald-900" dir="auto">
+        {name?.trim() ? name : "This CV"}
+      </span>
+      <span className="text-phx-xs font-medium text-emerald-700">returned to the administrator.</span>
+    </Card>
   );
 }

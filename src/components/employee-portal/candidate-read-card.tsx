@@ -1,5 +1,7 @@
 "use client";
 
+import type { ReactNode } from "react";
+
 import { CandidateCommentThread } from "@/components/employee-portal/candidate-comment-thread";
 import { CandidateCvActions } from "@/components/employee-portal/candidate-cv-actions";
 import { Card } from "@/components/ui/card";
@@ -34,10 +36,17 @@ export function CandidateReadCard({
   candidate,
   files,
   viewerHrId,
+  footer,
 }: {
   candidate: Candidate;
   files: TeamCandidateFile[];
   viewerHrId: string | null;
+  /**
+   * An optional action strip below the comment thread. Passed ONLY from the district folders, where
+   * a manager may hand a CV back to the administrator; the team screen leaves it empty, because
+   * returning is not the reader's to do there. See CandidateReturnControl.
+   */
+  footer?: ReactNode;
 }) {
   const appliedFor = candidateRowAppliedFor(candidate);
   return (
@@ -88,6 +97,8 @@ export function CandidateReadCard({
       <CandidateCvActions candidateId={candidate.id} initialFiles={files} />
 
       <CandidateCommentThread candidateId={candidate.id} viewerHrId={viewerHrId} />
+
+      {footer ? <div className="border-t border-slate-100 pt-3">{footer}</div> : null}
     </Card>
   );
 }

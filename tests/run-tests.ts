@@ -187,6 +187,7 @@ import { runHiringManagerTeamScopeTests } from "./hiring-manager-team-scope.test
 import { runManagerFolderShelfTests } from "./manager-folder-shelf.test.ts";
 import { runBackgroundReviewQueueTests } from "./background-review-queue.test.ts";
 import { runDistrictManagerFolderTests } from "./district-manager-folders.test.ts";
+import { runRecruitmentDistrictReturnsTests } from "./recruitment-district-returns.test.ts";
 import { runCandidatePositionFolderTests } from "./candidate-position-folders.test.ts";
 import { runArabicPlaceMatchTests } from "./arabic-place-match.test.ts";
 import { runCandidatePositionSuggestionTests } from "./candidate-position-suggestion.test.ts";
@@ -1506,6 +1507,10 @@ await runTest(
 await runTest(
   "district CV folders (an area belongs to up to THREE district managers, and an area nobody holds is reported rather than guessed)",
   runDistrictManagerFolderTests,
+);
+await runTest(
+  "district CV returns (a district manager hands a CV back and it leaves HIS folder only — the other two lines that share the area keep it — and the recruiting admin, never the DM, clears the queue)",
+  runRecruitmentDistrictReturnsTests,
 );
 await runTest(
   "background review queue (an admin's answer outranks the parser in BOTH directions, and actually changes who sees the CV)",
