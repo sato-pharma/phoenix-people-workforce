@@ -1,5 +1,10 @@
 # Repository Hygiene Audit
 
+> **⚠️ ARCHIVED — historical record.** This is a point-in-time catalog from 2026-05-30. Nearly
+> everything it flagged was executed via [repository-cleanup-plan.md](repository-cleanup-plan.md)
+> (Phases 1-3) or superseded by later cleanup passes. Counts, sizes, and file lists reflect the repo
+> state at that time and are not current. Retained for reference only.
+
 **Date:** 2026-05-30
 **Status:** Documented -- pending owner approval for cleanup actions
 

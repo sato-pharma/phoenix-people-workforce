@@ -1,5 +1,12 @@
 # Phoenix Workforce: Team Performance Enhancements
 
+> **⚠️ ARCHIVED — historical record.** This tracked the original Team Performance build-out and was
+> last touched with only item 1 of 8 checked off. The feature it describes has since shipped in
+> full — nav reorder, service data, the team-performance page, the trend/achievement/sales-vs-target
+> charts, the leaderboard, and the rep-comparison views all exist in `app/employee-portals/`,
+> `app/(admin)/admin/field-sales/`, and `src/lib/employee-portal/service.ts` today. Retained for
+> reference only; it is not a current task list.
+
 Branch context: do this work on the working branch, not `main`. Validate with the branch preview before production.
 
 ## Status: [IN PROGRESS] 0/8
