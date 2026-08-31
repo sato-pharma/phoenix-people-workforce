@@ -556,7 +556,18 @@ export function filterHiringDocumentsForAccess(
   // (isCompanyResignationReader, isCompanyContractReader, canSeeAllRecruitment) — without
   // it here she'd fall through to canSeeHrScopedRecord's self-only default and see only
   // her own employee row instead of the company-wide new-hire document checklist.
-  if (access.scope === "system" || access.role === "Super Admin" || access.role === "HR Advisory") {
+  //
+  // HR Operations gets the same bypass — owner instruction 2026-08-31: every employee must
+  // appear to her on this screen, with full read/write. She was falling through to the same
+  // self-only default and seeing only her own row (HR-009), which silently contradicted the
+  // company scope she already holds for attendance, leave and payroll (see
+  // hr-operations-company-scope.test.ts).
+  if (
+    access.scope === "system" ||
+    access.role === "Super Admin" ||
+    access.role === "HR Advisory" ||
+    access.role === "HR Operations"
+  ) {
     return dashboard;
   }
 
@@ -606,7 +617,12 @@ const HIRING_DOCUMENT_FILE_COLUMNS =
  * entry points here.
  */
 async function assertCanReachEmployeeDocuments(access: AccessContext, employeeHrId: string) {
-  if (access.scope === "system" || access.role === "Super Admin" || access.role === "HR Advisory") {
+  if (
+    access.scope === "system" ||
+    access.role === "Super Admin" ||
+    access.role === "HR Advisory" ||
+    access.role === "HR Operations"
+  ) {
     return;
   }
 

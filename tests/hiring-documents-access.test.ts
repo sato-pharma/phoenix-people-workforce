@@ -10,6 +10,10 @@ import type { AccessContext } from "../src/lib/auth/permissions.ts";
 // (isCompanyResignationReader, isCompanyContractReader, canSeeAllRecruitment) — without
 // it here, filterHiringDocumentsForAccess fell through to canSeeHrScopedRecord's
 // self-only default and would have shown her only her own employee row.
+//
+// HR Operations regression guard (owner instruction, 2026-08-31): Yasmine (HR-009) was
+// falling through to that same self-only default and seeing only her own row. Every
+// employee must appear to her here, with full read/write.
 function makeEmployee(hrId: string, managerHrId: string | null) {
   return {
     hrId,
@@ -44,6 +48,11 @@ export function runHiringDocumentsAccessTests() {
   const taFiltered = filterHiringDocumentsForAccess(dashboard, taContext);
   assert.equal(taFiltered.employees.length, 2, "HR Advisory sees every employee, not just her own scoped subset");
   assert.deepEqual(taFiltered, dashboard, "HR Advisory gets the dashboard back unchanged (company-wide bypass)");
+
+  const hrOpsContext: AccessContext = { hrId: "HR-009", loginId: "HR-009", role: "HR Operations", scope: "company", source: "session" };
+  const hrOpsFiltered = filterHiringDocumentsForAccess(dashboard, hrOpsContext);
+  assert.equal(hrOpsFiltered.employees.length, 2, "HR Operations sees every employee, not just her own scoped subset");
+  assert.deepEqual(hrOpsFiltered, dashboard, "HR Operations gets the dashboard back unchanged (company-wide bypass)");
 
   // Regression guard: an ordinary role without HR authority is still scoped to self-only.
   const repContext: AccessContext = { hrId: "MR-1", loginId: "MR-1", role: "Medical Rep", scope: "self", source: "session" };
