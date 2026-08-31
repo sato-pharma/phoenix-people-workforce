@@ -768,6 +768,46 @@ async function loadOffboardingProfile(hrId: string): Promise<OffboardingProfile>
 }
 
 /**
+ * The Arabic job title someone else already typed for the same English job title.
+ *
+ * There is no title translation table — this reads the one that already exists, spread across
+ * everybody's own hiring profile, and offers the most recently saved match as a one-click fill.
+ * It is a suggestion only: nothing here writes anything, and a miss (no match, or a Supabase
+ * hiccup) must never block the rest of the pack from loading, so every failure resolves to `null`
+ * rather than throwing.
+ */
+async function loadSuggestedJobTitleAr(jobTitle: string | null): Promise<string | null> {
+  const trimmed = jobTitle?.trim();
+  if (!trimmed) return null;
+
+  try {
+    const admin = getSupabaseAdmin();
+    const { data: peers, error: peersError } = await admin
+      .from("employees")
+      .select("hr_id")
+      .ilike("job_title", trimmed)
+      .limit(200);
+    if (peersError || !peers?.length) return null;
+
+    const hrIds = peers.map((row) => row.hr_id).filter((id): id is string => Boolean(id));
+    if (!hrIds.length) return null;
+
+    const { data: rows, error: rowsError } = await admin
+      .from("employee_hiring_profile")
+      .select("job_title_ar, updated_at")
+      .in("hr_id", hrIds)
+      .not("job_title_ar", "is", null)
+      .order("updated_at", { ascending: false, nullsFirst: false })
+      .limit(1);
+    if (rowsError || !rows?.length) return null;
+
+    return cleanText(rows[0].job_title_ar as string | null);
+  } catch {
+    return null;
+  }
+}
+
+/**
  * The departure as the system already records it.
  *
  * `null` for anybody who has not resigned, which is almost everybody — and that is not an error
@@ -876,12 +916,14 @@ export async function getHiringPack(hrIdInput: string): Promise<HiringPackData> 
     loadOffboardingProfile(hrId),
     loadExitFacts(hrId),
   ]);
+  const suggestedJobTitleAr = await loadSuggestedJobTitleAr(employee.jobTitle);
 
   return {
     employee,
     profile,
     offboarding,
     exit,
+    suggestedJobTitleAr,
     gaps: collectHiringPackGaps(employee, profile, offboarding, exit),
     terms: resolveContractTerms(employee, profile, offboarding, exit),
   };

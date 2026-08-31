@@ -373,6 +373,11 @@ export type HiringPackData = {
   offboarding: OffboardingProfile;
   /** The departure as the system records it, or null when nobody has recorded one. */
   exit: ExitFacts | null;
+  /**
+   * The Arabic job title someone else already typed for the same English job title, most recently
+   * saved first. A suggestion only — never persisted here, never overwrites `profile.jobTitleAr`.
+   */
+  suggestedJobTitleAr: string | null;
   gaps: HiringPackGap[];
   /** Resolved terms — the profile override where present, the company default otherwise. */
   terms: {

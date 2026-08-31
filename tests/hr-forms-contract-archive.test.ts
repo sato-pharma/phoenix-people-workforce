@@ -138,6 +138,7 @@ function packFixture(profileOverrides: Partial<HiringPackProfile> = {}): HiringP
     profile,
     offboarding,
     exit: null,
+    suggestedJobTitleAr: null,
     gaps: collectHiringPackGaps(employee, profile, offboarding, null),
     terms: resolveContractTerms(employee, profile, offboarding, null),
   };
