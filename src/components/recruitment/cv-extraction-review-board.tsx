@@ -45,6 +45,7 @@ import { Button } from "@/components/ui/button";
 import type { ExtractedCvValue, ExtractedField, ExtractedFieldConfidence } from "@/lib/recruitment/cv-extraction";
 import {
   CV_FIELD_SECTIONS,
+  fieldIsIrrelevant,
   type CvFieldDefinition,
   type CvPositionSchema,
   type CvSubFieldDefinition,
@@ -269,9 +270,23 @@ export function CvExtractionReviewBoard({
     return booleanValues[field.showWhen.field] === (field.showWhen.equals ? "true" : "false");
   };
 
+  // The live (draft) text of a chip field — whatever chip currently sits in its slot. Used so
+  // `irrelevantWhen` reacts to the gender the reviewer is looking at right now, not the original.
+  const fieldTextValue = (fieldKey: string): string | null => {
+    const assigned = slotAssignment[fieldKey];
+    const text = assigned ? (chipValues[assigned] ?? "") : "";
+    return text.trim() ? text : null;
+  };
+  const fieldIrrelevant = (field: CvFieldDefinition): boolean => fieldIsIrrelevant(field, fieldTextValue);
+
   const poolChipKeys = chipFields
     .map((field) => field.key)
-    .filter((key) => !Object.values(slotAssignment).includes(key));
+    .filter((key) => !Object.values(slotAssignment).includes(key))
+    // Don't leave a military-status chip floating in the pool for a female candidate.
+    .filter((key) => {
+      const field = chipFields.find((entry) => entry.key === key);
+      return !(field && fieldIrrelevant(field));
+    });
 
   const handleDragStart = (event: DragStartEvent) => setActiveChip(String(event.active.id));
 
@@ -320,6 +335,11 @@ export function CvExtractionReviewBoard({
         // Always an array, never null — "the CV listed none" and "nobody looked" must stay
         // distinguishable, and the PATCH route merges rather than replaces.
         values[field.key] = blockValues[field.key] ?? [];
+        continue;
+      }
+      if (fieldIrrelevant(field)) {
+        // Irrelevant for this candidate (e.g. military status for a female) — never persist a value.
+        values[field.key] = null;
         continue;
       }
       if (!isFieldVisible(field)) {
@@ -400,6 +420,16 @@ export function CvExtractionReviewBoard({
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {section.chipsInSection.map((field) => {
                 const assignedChipKey = slotAssignment[field.key];
+                if (fieldIrrelevant(field)) {
+                  return (
+                    <div key={field.key}>
+                      <p className="mb-1 text-phx-xs font-semibold uppercase tracking-wider text-slate-400">{field.label}</p>
+                      <div className="flex min-h-[42px] items-center rounded-md border border-dashed border-gray-200 bg-slate-50 px-2 text-xs italic text-slate-400">
+                        Irrelevant
+                      </div>
+                    </div>
+                  );
+                }
                 return (
                   <div key={field.key}>
                     <p className="mb-1 text-phx-xs font-semibold uppercase tracking-wider text-slate-400">{field.label}</p>
