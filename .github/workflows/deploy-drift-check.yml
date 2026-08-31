@@ -44,6 +44,7 @@ on:
 
 permissions:
   contents: read
+  actions: read # read this workflow own past runs, to count the failure streak
 
 # A new run's answer always supersedes an older one still mid-grace-period-sleep.
 concurrency:
@@ -105,15 +106,60 @@ jobs:
           TELEGRAM_ALERT_CHAT_ID: ${{ secrets.TELEGRAM_ALERT_CHAT_ID }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           IS_TEST: ${{ inputs.test_alert }}
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+          EVENT: ${{ github.event_name }}
+          WF_FILE: deploy-drift-check.yml
         run: |
           if [ -z "$TELEGRAM_BOT_TOKEN" ] || [ -z "$TELEGRAM_ALERT_CHAT_ID" ]; then
             echo "::warning::Telegram alert not sent — TELEGRAM_BOT_TOKEN or TELEGRAM_ALERT_CHAT_ID is unset. Production deploy drift went UNDETECTED-BY-A-HUMAN, which is the condition this step exists to prevent."
             exit 0
           fi
+          # ── How old is this failure? ──────────────────────────────────────────────────────
+          # An alert that has fired identically for three weeks looks exactly like one firing for
+          # the first time. Not hypothetical: this check was red on 21 CONSECUTIVE nightly runs
+          # (2026-08-11 to 2026-08-31) and every one of them delivered, because delivery was never
+          # the problem — visibility of AGE was. The same shape cost 3 days on six anon-readable
+          # tables, 13 days on the outbox drain and 9 nights on the direct-order sweeps. Adding
+          # more channels does not fix that; saying how long it has been does.
+          #
+          # Scoped to runs of the SAME event: a manual dispatch fired to inspect something must
+          # not reset a nightly streak. Counting every event hid this one at "6" instead of 21.
+          #
+          # Best-effort by construction — it needs only `actions: read`, and any failure leaves the
+          # line out rather than breaking the alert. An alarm must never fail because the thing
+          # describing it failed. jq joins on a SPACE deliberately: a tab delimiter needs IFS=$'\t',
+          # and that sequence is a special replacement pattern in several editors and scripts.
+          STREAK_LINE=""
+          RUNS=$(gh api "repos/${REPO}/actions/workflows/${WF_FILE}/runs?per_page=50&status=completed&event=${EVENT}" --jq '.workflow_runs[] | [(.id|tostring), .conclusion, .created_at] | join(" ")' 2>/dev/null || true)
+          if [ -n "$RUNS" ]; then
+            STREAK=1
+            FIRST_SEEN=""
+            while read -r rid rconc rdate; do
+              [ -z "$rid" ] && continue
+              [ "$rid" = "$RUN_ID" ] && continue
+              if [ "$rconc" = "failure" ]; then
+                STREAK=$((STREAK + 1))
+                FIRST_SEEN="$rdate"
+              else
+                break
+              fi
+            done <<< "$RUNS"
+            if [ "$STREAK" -gt 1 ]; then
+              STREAK_LINE=$(printf 'Consecutive failure #%s' "$STREAK")
+              if [ -n "$FIRST_SEEN" ]; then
+                STREAK_LINE=$(printf '%s, first seen %s' "$STREAK_LINE" "${FIRST_SEEN%%T*}")
+              fi
+              STREAK_LINE=$(printf '%s. A climbing number means nobody is acting on this.' "$STREAK_LINE")
+            fi
+          fi
           if [ "$IS_TEST" = "true" ]; then
             TEXT=$(printf 'ALERT SELF-TEST (not an incident)\n\nSomeone ran the deploy drift check with the test flag to confirm this channel still works.\n\nIf you are reading this, a real production deploy-drift failure would also reach you.\n\n%s' "$RUN_URL")
           else
-            TEXT=$(printf 'PRODUCTION DEPLOY DRIFT DETECTED\n\nProduction is not serving main HEAD, 3 minutes after first noticing. This is the failure mode fixed 2026-08-13 (Railway production tracking the wrong source branch) — check railway status for the production service source branch.\n\n%s' "$RUN_URL")
+            HEADER='PRODUCTION DEPLOY DRIFT DETECTED'
+            [ -n "$STREAK_LINE" ] && HEADER=$(printf '%s\n%s' "$HEADER" "$STREAK_LINE")
+            TEXT=$(printf '%s\n\nProduction is not serving main HEAD, 3 minutes after first noticing. This is the failure mode fixed 2026-08-13 (Railway production tracking the wrong source branch) — check railway status for the production service source branch.\n\n%s' "$HEADER" "$RUN_URL")
           fi
           HTTP=$(curl -sS --max-time 20 -X POST \
             "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
