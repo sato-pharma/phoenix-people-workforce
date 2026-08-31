@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 
 import {
   PortalRecordCard,
@@ -19,6 +19,7 @@ import {
   type ConfidenceBand,
   type LocationConfidence,
 } from "@/lib/crm/location-confidence";
+import type { PhoenixInsight } from "@/lib/crm/phoenix-insights";
 import type { ContactSeenAt, RepsListContact, RepsListGroup } from "@/lib/crm/reps-list";
 
 // Client half of Reps List — the rep's contacts, one block per brick.
@@ -306,6 +307,19 @@ const LINK_CLASS =
  *
  * Amber already means "not mapped yet" on this board and orange already means "a link". Neither was
  * reused for a new meaning — a page where one colour means two things is worse than a plain one.
+ *
+ * ## The fourth signal has no colour at all, and that is the point
+ *
+ * Phoenix insights arrived later the same day, and by then the page had run out of hues: violet is
+ * the shared customer, sky/rose/teal/lime/indigo are the five neighbourhoods, emerald and amber are
+ * the confidence bands, amber is also "no brick yet", orange is a link, and rose and amber are also
+ * the A and B grades. A tenth colour would not have been a new meaning — it would have been a
+ * SECOND meaning for a colour that already had one, which is the exact thing the paragraph above
+ * forbids.
+ *
+ * So the insight chip spends the one axis still free: SHAPE. It is the only filled dark pill on the
+ * board, in the same slate-900 the table headers and the popup headers already use, so it reads as
+ * Phoenix speaking rather than as data. Unmistakable at a glance, and it costs the palette nothing.
  */
 const BAND_BAR: Record<ConfidenceBand, string> = {
   high: "bg-emerald-500",
@@ -363,15 +377,26 @@ function ConfidenceChip({ onOpen, row }: { onOpen: () => void; row: RepsListCont
 }
 
 /**
- * The popup that explains a score — the owner asked for it by name: "if anyone clicks on it, a pop
- * up, not a new page, appears showing from where did you get the score."
+ * The popup shell both dialogs share — backdrop, Escape, close button, and the phone/desktop shape.
  *
- * It states the arithmetic in words rather than showing a formula, because the reader is a manager
- * deciding whether to trust a pin, not an engineer auditing a weighting. Every line names what was
- * checked and what it was worth, and the lines add up to the number on the chip.
+ * EXTRACTED RATHER THAN COPIED when the second popup arrived (Phoenix insights, 2026-09-01). Two
+ * dialogs that close differently is the kind of divergence nobody notices until one of them traps a
+ * reader on a phone with no way out — and there are three ways out of this one on purpose: the
+ * backdrop, the ×, and Escape.
  */
-function ConfidenceDialog({ onClose, row }: { onClose: () => void; row: RepsListContact }) {
-  const confidence = row.confidence;
+function DialogShell({
+  children,
+  eyebrow,
+  onClose,
+  subject,
+}: {
+  children: ReactNode;
+  /** The small uppercase line above the name, saying which popup this is. */
+  eyebrow: string;
+  onClose: () => void;
+  /** The contact the popup is about. */
+  subject: string;
+}) {
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") onClose();
@@ -380,7 +405,6 @@ function ConfidenceDialog({ onClose, row }: { onClose: () => void; row: RepsList
     return () => document.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  if (!confidence) return null;
   return (
     <div
       aria-modal
@@ -397,9 +421,9 @@ function ConfidenceDialog({ onClose, row }: { onClose: () => void; row: RepsList
       >
         <div className="flex items-start justify-between gap-3 border-b border-slate-200 bg-slate-900 px-4 py-3">
           <div className="min-w-0">
-            <p className="text-phx-3xs font-black uppercase tracking-[0.16em] text-slate-400">Location confidence</p>
+            <p className="text-phx-3xs font-black uppercase tracking-[0.16em] text-slate-400">{eyebrow}</p>
             <p className="break-words text-sm font-bold text-white" dir="auto">
-              {row.name}
+              {subject}
             </p>
           </div>
           <button
@@ -411,41 +435,113 @@ function ConfidenceDialog({ onClose, row }: { onClose: () => void; row: RepsList
             ×
           </button>
         </div>
-
-        <div className="flex items-baseline gap-2 border-b border-slate-100 px-4 py-3">
-          <span className={`text-3xl font-black ${BAND_TEXT[confidence.band]}`}>{confidence.score}%</span>
-          <span className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">
-            {BAND_WORD[confidence.band]}
-          </span>
-        </div>
-
-        <p className="px-4 pt-3 text-xs text-slate-500">
-          {/* "customer", not "contact". Once a shared customer's rows are scored together the visits
-              come from more than one contact record, and saying "this contact" would describe the
-              wrong thing to the one reader most likely to notice — the manager looking at a row that
-              names a second rep. */}
-          {`Worked out from the ${confidence.total} check-in${confidence.total === 1 ? "" : "s"} `}
-          {`${confidence.observers > 1 ? `${confidence.observers} reps have` : "a rep has"} made on this customer, `}
-          {"each one compared against the pin shown in the Address column."}
-        </p>
-
-        <ul className="space-y-2 p-4">
-          {confidence.reasons.map((reason) => (
-            <li className="border border-slate-100 bg-slate-50/60 px-3 py-2" key={reason.label}>
-              <div className="flex items-baseline justify-between gap-3">
-                <span className="text-phx-2xs font-black uppercase tracking-[0.1em] text-slate-500">{reason.label}</span>
-                {reason.points == null ? null : (
-                  <span className="shrink-0 text-phx-2xs font-black text-slate-700">
-                    {reason.points > 0 ? `+${reason.points}` : reason.points} pts
-                  </span>
-                )}
-              </div>
-              <p className="mt-1 break-words text-xs text-slate-600">{reason.detail}</p>
-            </li>
-          ))}
-        </ul>
+        {children}
       </div>
     </div>
+  );
+}
+
+/**
+ * The popup that explains a score — the owner asked for it by name: "if anyone clicks on it, a pop
+ * up, not a new page, appears showing from where did you get the score."
+ *
+ * It states the arithmetic in words rather than showing a formula, because the reader is a manager
+ * deciding whether to trust a pin, not an engineer auditing a weighting. Every line names what was
+ * checked and what it was worth, and the lines add up to the number on the chip.
+ */
+function ConfidenceDialog({ onClose, row }: { onClose: () => void; row: RepsListContact }) {
+  const confidence = row.confidence;
+  if (!confidence) return null;
+  return (
+    <DialogShell eyebrow="Location confidence" onClose={onClose} subject={row.name}>
+      <div className="flex items-baseline gap-2 border-b border-slate-100 px-4 py-3">
+        <span className={`text-3xl font-black ${BAND_TEXT[confidence.band]}`}>{confidence.score}%</span>
+        <span className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">
+          {BAND_WORD[confidence.band]}
+        </span>
+      </div>
+
+      <p className="px-4 pt-3 text-xs text-slate-500">
+        {/* "customer", not "contact". Once a shared customer's rows are scored together the visits
+            come from more than one contact record, and saying "this contact" would describe the
+            wrong thing to the one reader most likely to notice — the manager looking at a row that
+            names a second rep. */}
+        {`Worked out from the ${confidence.total} check-in${confidence.total === 1 ? "" : "s"} `}
+        {`${confidence.observers > 1 ? `${confidence.observers} reps have` : "a rep has"} made on this customer, `}
+        {"each one compared against the pin shown in the Address column."}
+      </p>
+
+      <ul className="space-y-2 p-4">
+        {confidence.reasons.map((reason) => (
+          <li className="border border-slate-100 bg-slate-50/60 px-3 py-2" key={reason.label}>
+            <div className="flex items-baseline justify-between gap-3">
+              <span className="text-phx-2xs font-black uppercase tracking-[0.1em] text-slate-500">{reason.label}</span>
+              {reason.points == null ? null : (
+                <span className="shrink-0 text-phx-2xs font-black text-slate-700">
+                  {reason.points > 0 ? `+${reason.points}` : reason.points} pts
+                </span>
+              )}
+            </div>
+            <p className="mt-1 break-words text-xs text-slate-600">{reason.detail}</p>
+          </li>
+        ))}
+      </ul>
+    </DialogShell>
+  );
+}
+
+/**
+ * "Phoenix insights" — the label, and nothing else, on the rows that have something odd about them.
+ *
+ * The owner's words, 2026-09-01: "you can put beside each contact name Phoenix insights. Show only
+ * Phoenix insights. And when anyone presses on it, you show the insights."  So the chip carries the
+ * name of the thing and no preview of it: the row stays as quiet as it was, and the finding is one
+ * press away. A row with nothing odd renders NOTHING here, which is most rows.
+ */
+function InsightsChip({ onOpen, row }: { onOpen: () => void; row: RepsListContact }) {
+  const insights = row.insights ?? null;
+  if (!insights || insights.length === 0) return null;
+  return (
+    <button
+      className="mt-1 inline-block bg-slate-900 px-1.5 py-0.5 text-phx-3xs font-black uppercase tracking-[0.08em] text-white hover:bg-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400"
+      onClick={onOpen}
+      title="Something about this record looks wrong"
+      type="button"
+    >
+      Phoenix insights
+    </button>
+  );
+}
+
+/**
+ * What Phoenix noticed about one record, one short sentence each.
+ *
+ * "Be simple. Use clear English, be to the point, and don't prolong." — the owner, specifying this
+ * popup. So there is no score, no arithmetic and no advice column: a heading of three words and one
+ * sentence saying what is odd. Each sentence begins in English even when it names an Arabic rep,
+ * which is why no `dir` is set here — an English sentence with a name inside it is single-language
+ * text that the browser already lays out correctly, and a `dir="auto"` block would flip the whole
+ * line right-to-left the moment a name came first (AGENTS.md 2.1).
+ */
+function InsightsDialog({ onClose, row }: { onClose: () => void; row: RepsListContact }) {
+  const insights = row.insights ?? [];
+  if (insights.length === 0) return null;
+  return (
+    <DialogShell eyebrow="Phoenix insights" onClose={onClose} subject={row.name}>
+      <p className="px-4 pt-3 text-xs text-slate-500">
+        {insights.length === 1
+          ? "One thing about this record looks wrong."
+          : `${insights.length} things about this record look wrong.`}
+      </p>
+      <ul className="space-y-2 p-4">
+        {insights.map((insight: PhoenixInsight) => (
+          <li className="border border-slate-200 bg-slate-50/60 px-3 py-2" key={insight.kind}>
+            <span className="text-phx-2xs font-black uppercase tracking-[0.1em] text-slate-500">{insight.title}</span>
+            <p className="mt-1 break-words text-xs text-slate-600">{insight.detail}</p>
+          </li>
+        ))}
+      </ul>
+    </DialogShell>
   );
 }
 
@@ -596,13 +692,19 @@ function NearbyLine({ row }: { row: RepsListContact }) {
 }
 
 /** Name, then grade and phone beneath it — one cell, so neither needs a column of its own. */
-function ContactCell({ row }: { row: RepsListContact }) {
+function ContactCell({ onOpenInsights, row }: { onOpenInsights: () => void; row: RepsListContact }) {
   const phone = phoneOf(row);
   return (
     <div className="break-words">
       <span className="block font-semibold text-slate-900" dir="auto">
         {row.name}
       </span>
+      {/* Directly UNDER the name rather than inline beside it. The Contact column is 21% of the
+          table and an Arabic name fills most of that, so an inline pill would wrap to this exact
+          position on nearly every flagged row anyway — and an LTR pill inside a `dir="auto"` span
+          is a bidi hazard bought for nothing. It sits ABOVE the grade and phone because it is the
+          only line on the row that says something may be wrong. */}
+      <InsightsChip onOpen={onOpenInsights} row={row} />
       <span className="mt-0.5 block text-phx-2xs font-semibold">
         <span className={gradeClass(row.grade)}>{row.grade ?? "No grade"}</span>
         <span className="text-slate-400">{phone ? ` · ${phone}` : " · no phone"}</span>
@@ -615,11 +717,13 @@ function ContactCell({ row }: { row: RepsListContact }) {
 function GroupTable({
   group,
   onOpenConfidence,
+  onOpenInsights,
   rows,
   showList,
 }: {
   group: RepsListGroup;
   onOpenConfidence: (row: RepsListContact) => void;
+  onOpenInsights: (row: RepsListContact) => void;
   rows: RepsListContact[];
   /** False on the Pharmacies tab, where every row's list is "Pharmacist" and the column says nothing. */
   showList: boolean;
@@ -657,8 +761,10 @@ function GroupTable({
           }
           title={row.name}
         >
-          {/* The shared line rides directly under the title on a card too, because on a phone the
-              violet edge is the only other signal and a colour with no words is a riddle. */}
+          {/* The insight pill and the shared line ride directly under the title on a card too,
+              because on a phone the violet edge is the only other signal and a colour with no
+              words is a riddle. */}
+          <InsightsChip onOpen={() => onOpenInsights(row)} row={row} />
           <SharedLine row={row} />
           <PortalRecordFields
             fields={[
@@ -725,7 +831,7 @@ function GroupTable({
                     key={`${row.agentCrmId}:${row.contactCrmId}:${row.listType}`}
                   >
                     <td className="px-3 py-2">
-                      <ContactCell row={row} />
+                      <ContactCell onOpenInsights={() => onOpenInsights(row)} row={row} />
                     </td>
                     <td className="break-words px-3 py-2 text-slate-600">{row.speciality ?? "Unspecified"}</td>
                     {showList ? (
@@ -788,6 +894,9 @@ export function RepsListContacts({
   const [confidenceFor, setConfidenceFor] = useState<RepsListContact | null>(null);
   const openConfidence = useCallback((row: RepsListContact) => setConfidenceFor(row), []);
   const closeConfidence = useCallback(() => setConfidenceFor(null), []);
+  const [insightsFor, setInsightsFor] = useState<RepsListContact | null>(null);
+  const openInsights = useCallback((row: RepsListContact) => setInsightsFor(row), []);
+  const closeInsights = useCallback(() => setInsightsFor(null), []);
 
   const [tab, setTab] = useState<TabKey>("contacts");
   // Switching tab clears the List choice, because "PM list only" cannot survive a move to the
@@ -1052,6 +1161,7 @@ export function RepsListContacts({
               <GroupTable
                 group={entry.group}
                 onOpenConfidence={openConfidence}
+                onOpenInsights={openInsights}
                 rows={entry.rows}
                 showList={tab === "contacts"}
               />
@@ -1061,6 +1171,7 @@ export function RepsListContacts({
       )}
 
       {confidenceFor ? <ConfidenceDialog onClose={closeConfidence} row={confidenceFor} /> : null}
+      {insightsFor ? <InsightsDialog onClose={closeInsights} row={insightsFor} /> : null}
     </div>
   );
 }

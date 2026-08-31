@@ -125,6 +125,11 @@ export function metresBetween(aLat: number, aLon: number, bLat: number, bLon: nu
   return Math.sqrt(latMetres * latMetres + lonMetres * lonMetres);
 }
 
+/** Metres in the unit a reader thinks in. Shared, so every screen states a distance the same way. */
+export function formatDistance(metres: number): string {
+  return metres >= 1000 ? `${(metres / 1000).toFixed(1)} km` : `${Math.round(metres)} m`;
+}
+
 function daysSince(iso: string | null, now: number): number | null {
   if (!iso) return null;
   const then = Date.parse(iso);
@@ -300,9 +305,7 @@ export function scoreLocationConfidence(
     const where =
       nearest == null
         ? "has no confirmed location of their own"
-        : nearest >= 1000
-          ? `stands about ${(nearest / 1000).toFixed(1)} km away`
-          : `stands about ${nearest} m away`;
+        : `stands about ${formatDistance(nearest)} away`;
     reasons.push({
       detail:
         `${who} shares this customer, but their record ${where}, so their visits are not evidence about ` +
@@ -432,6 +435,25 @@ export type RosterEntry = {
   name: string;
   nameKey: string;
   phoneKey: string | null;
+  /**
+   * The CRM's own locality label, lowercased. NOT the brick.
+   *
+   * The board groups by brick, but a brick is only resolved for the rep being viewed — the
+   * customer-level mapping is fetched in chunks of fifty for that rep's contacts alone. Reading it
+   * company-wide to answer one question about one row would be roughly 190 more requests. This is
+   * the same locality claim from the CRM, it rides on a row already being read, and it costs
+   * nothing. Two records placed in one locality yet pinned kilometres apart contradict each other
+   * whichever of the two names the place.
+   */
+  regionKey: string | null;
+  /**
+   * The CRM speciality, verbatim.
+   *
+   * A controlled vocabulary, not free text: thirty distinct values across 9,518 contacts, blank on
+   * twenty-two of them. That is what makes a DISAGREEMENT meaningful — "Pediatrics" against
+   * "Urology" for one name is two doctors, not one typo.
+   */
+  speciality: string | null;
 };
 
 /**

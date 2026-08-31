@@ -51,6 +51,7 @@ import {
   type RosterEntry,
   type SharedWith,
 } from "@/lib/crm/location-confidence";
+import { buildPhoenixInsights, type PhoenixInsight } from "@/lib/crm/phoenix-insights";
 import { isCrmSchemaMissingError } from "@/lib/crm/schema";
 import {
   CRM_CHECKINS_TABLE,
@@ -131,6 +132,8 @@ export type RepsListContact = DoctorListRow & {
   cluster?: number | null;
   /** How well every check-in on this contact agrees with the pin being shown. Null when none exist. */
   confidence?: LocationConfidence | null;
+  /** Anything odd about this record, one sentence each. Null or empty when there is nothing to say. */
+  insights?: PhoenixInsight[] | null;
   /** Other contacts in the SAME group standing at effectively the same address. */
   nearby?: NearbyContact[] | null;
   seenAt?: ContactSeenAt | null;
@@ -441,7 +444,7 @@ async function loadCheckins(contactIds: readonly number[]): Promise<Map<number, 
 }
 
 /**
- * Every contact in the company, reduced to the four fields identity matching needs.
+ * Every contact in the company, reduced to the six fields identity matching needs.
  *
  * A COMPANY-WIDE READ IS THE POINT, and it is safe here because nothing from it reaches the screen
  * except a rep's NAME on a row the viewer can already see. Sharing cannot be detected from one rep's
@@ -468,7 +471,7 @@ async function loadContactRoster(): Promise<RosterEntry[]> {
     Array.from({ length: pages }, (_unused, page) =>
       supabase
         .from(CRM_CONTACTS_TABLE)
-        .select("contact_crm_id, agent_crm_id, contact_name, phone")
+        .select("contact_crm_id, agent_crm_id, contact_name, phone, speciality, crm_region_name")
         .order("contact_crm_id", { ascending: true })
         .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1),
     ),
@@ -484,7 +487,9 @@ async function loadContactRoster(): Promise<RosterEntry[]> {
       agent_crm_id: number;
       contact_crm_id: number;
       contact_name: string | null;
+      crm_region_name: string | null;
       phone: string | null;
+      speciality: string | null;
     }>) {
       roster.push({
         agentCrmId: row.agent_crm_id,
@@ -492,6 +497,8 @@ async function loadContactRoster(): Promise<RosterEntry[]> {
         name: row.contact_name?.trim() || "",
         nameKey: nameKey(row.contact_name),
         phoneKey: phoneKey(row.phone),
+        regionKey: row.crm_region_name?.trim().toLowerCase() || null,
+        speciality: row.speciality?.trim() || null,
       });
     }
   }
@@ -624,6 +631,23 @@ export async function getRepsListForAgent(
   }
   const partnerCheckins = partnerIds.size > 0 ? await loadCheckins([...partnerIds]) : new Map<number, ContactCheckins>();
 
+  // WHAT LOOKS WRONG ABOUT EACH ROW. Computed from the roster, the pins and the check-ins that are
+  // already loaded above, so it costs no extra round trip. Deliberately built AFTER the sharing
+  // pass and never inside it: the two answer opposite questions about the same pair of records —
+  // sharing asks who else has this customer, insights ask why two records that look like the same
+  // customer are 40 km apart — and folding them together would make the highlight fire on rows the
+  // owner does not want highlighted.
+  const insightsByContact = buildPhoenixInsights(
+    rows.map((row) => ({
+      agentCrmId: row.agentCrmId,
+      contactCrmId: row.contactCrmId,
+      points: checkins.get(row.contactCrmId)?.points ?? [],
+    })),
+    roster,
+    pins,
+    repNames,
+  );
+
   // Every annotation rides ON the row rather than in a lookup beside it: this object crosses the
   // server-to-client boundary, where a Map would arrive as `{}` — the same serialization trap that
   // has bitten `unstable_cache` here before.
@@ -663,6 +687,7 @@ export async function getRepsListForAgent(
           ? { count: sharedPoints.length, distant, repNames: sharedRepNames }
           : undefined,
       ),
+      insights: insightsByContact.get(row.contactCrmId) ?? null,
       nearby: null,
       seenAt: found?.seenAt ?? null,
       sharedWith,

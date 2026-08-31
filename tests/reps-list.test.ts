@@ -19,6 +19,7 @@ import {
   scoreLocationConfidence,
   type RosterEntry,
 } from "../src/lib/crm/location-confidence.ts";
+import { buildPhoenixInsights } from "../src/lib/crm/phoenix-insights.ts";
 import { pruneLineFirst, regionsForLine } from "../src/lib/crm/reps-list-board.ts";
 import { groupContactsByBrick, type BrickIndex } from "../src/lib/crm/reps-list.ts";
 
@@ -784,6 +785,8 @@ export function runRepsListTests() {
       name,
       nameKey: nameKey(name),
       phoneKey: phoneKey(phone),
+      regionKey: null,
+      speciality: null,
     });
     const mine = [{ agentCrmId: 10, contactCrmId: 101 }];
     const roster = [
@@ -1016,4 +1019,412 @@ export function runRepsListTests() {
       "the FILL has to carry the hue by itself. app/globals.css gives every .admin-shell cell a 1px orange hairline with !important — an owner-level rule drawing the house grid — so a border utility on a cell cannot show and must not be made to. At the -50 step the hues are indistinguishable, which is what sent the first attempt to the border in the first place",
     );
   }
+
+  // ---------------------------------------------------------------------------------------------
+  // PHOENIX INSIGHTS — the odd things about one record, one sentence each.
+  //
+  // The owner asked for this on 2026-09-01 and gave his own example: "any weird thing, like same
+  // full match about forty kilometre away — highlight it... but be simple, use clear English, be to
+  // the point, and don't prolong."
+  //
+  // What has to be pinned is the RESTRAINT, not the detection. Every one of these rules is trivial
+  // to make fire, and each one measured on production would mark between 664 and 1,596 of 9,518
+  // contacts if the gates came off — a chip on one row in six, which is wallpaper rather than a
+  // signal, and the exact outcome his standing "don't make the page noisy" rule exists to prevent.
+  // So the negative cases below matter more than the positive ones.
+  {
+    const at = (lat: number) => ({ lat, lon: 31 });
+    // 111_320 m per degree of latitude, the constant the scorer uses — so these are exact.
+    const northOf = (km: number) => at(30 + (km * 1000) / 111_320);
+    const entry = (
+      contactCrmId: number,
+      agentCrmId: number,
+      name: string,
+      phone: string | null,
+      speciality: string | null = null,
+      region: string | null = null,
+    ): RosterEntry => ({
+      agentCrmId,
+      contactCrmId,
+      name,
+      nameKey: nameKey(name),
+      phoneKey: phoneKey(phone),
+      regionKey: region,
+      speciality,
+    });
+    const reps = new Map([
+      [10, "Mina Adel"],
+      [20, "Sara Ali"],
+      [30, "Karim Fouad"],
+    ]);
+
+    // THE OWNER'S OWN EXAMPLE: one distinctive name, two reps, forty kilometres apart.
+    {
+      const roster = [
+        entry(1, 10, "Ahmed Fathy Nour", null, "Internal Medicine"),
+        entry(2, 20, "Ahmed Fathy Nour", null, "Internal Medicine"),
+      ];
+      const pins = new Map([
+        [1, at(30)],
+        [2, northOf(40)],
+      ]);
+      const found = buildPhoenixInsights([{ agentCrmId: 10, contactCrmId: 1, points: [] }], roster, pins, reps);
+      const insights = found.get(1) ?? [];
+      assert.equal(insights.length, 1, "a distinctive name forty kilometres away under another rep is the owner's own example of a weird thing and must be reported");
+      assert.equal(insights[0].kind, "distant twin");
+      assert.ok(
+        insights[0].detail.includes("the same speciality"),
+        `the owner asked the insight to say WHICH other field agrees, so he can tell a fraud from a coincidence: ${insights[0].detail}`,
+      );
+      assert.ok(
+        insights[0].detail.includes("Sara Ali"),
+        "the insight has to name the rep whose list the twin is on — a finding a reader cannot act on is not a finding",
+      );
+      assert.ok(
+        insights[0].detail.includes("40.0 km"),
+        `the distance is the whole point of this insight and must be stated: ${insights[0].detail}`,
+      );
+      // The sentence must not open with the rep's name. Rep names here can be Arabic, and a block
+      // that starts with a strong RTL character flips an English sentence wholly right-to-left —
+      // the bilingual trap in AGENTS.md 2.1, which has shipped through green checks twice.
+      assert.ok(
+        !insights[0].detail.startsWith("Sara Ali") && /^[A-Za-z]/.test(insights[0].detail),
+        `every insight must open in English so an Arabic rep name cannot flip the line: ${insights[0].detail}`,
+      );
+    }
+
+    // NOTHING ELSE AGREES, SO NOTHING IS SAID. The owner's second instruction on 2026-09-01 was to
+    // check the speciality, the area and the phone as well as the name, "so I have many ways to
+    // tell that this is a fraud or this is normal". This is the normal one: one rare name, two
+    // cities, and every other field disagreeing — a paediatrician in Cairo and a urologist in
+    // Tanta who happen to be namesakes. 266 of the 585 flagged contacts are this shape.
+    {
+      const roster = [
+        entry(1, 10, "Ahmed Fathy Nour", "01001234567", "Pediatrics", "cairo"),
+        entry(2, 20, "Ahmed Fathy Nour", "01009998888", "Urology", "tanta"),
+      ];
+      const pins = new Map([
+        [1, at(30)],
+        [2, northOf(40)],
+      ]);
+      const found = buildPhoenixInsights([{ agentCrmId: 10, contactCrmId: 1, points: [] }], roster, pins, reps);
+      assert.equal(
+        found.has(1),
+        false,
+        "a shared rare name where the speciality, area and phone all disagree is two different doctors, and calling it weird is a coin toss printed as a finding",
+      );
+    }
+
+    // THE PHONE SETTLES IT. Two records reachable on one number are one doctor, so the question is
+    // no longer who these people are but which pin is wrong — and the sentence has to say so.
+    {
+      const roster = [
+        entry(1, 10, "Ahmed Fathy Nour", "01001234567", "Pediatrics", "cairo"),
+        entry(2, 20, "Ahmed Fathy Nour", "01001234567", "Urology", "tanta"),
+      ];
+      const pins = new Map([
+        [1, at(30)],
+        [2, northOf(40)],
+      ]);
+      const found = buildPhoenixInsights([{ agentCrmId: 10, contactCrmId: 1, points: [] }], roster, pins, reps);
+      const insights = found.get(1) ?? [];
+      assert.equal(insights.length, 1, "one phone number on two records forty kilometres apart is the strongest evidence this board has that a pin is wrong");
+      assert.ok(
+        insights[0].detail.includes("the same phone number"),
+        `the agreeing field must be named: ${insights[0].detail}`,
+      );
+      assert.ok(
+        insights[0].detail.includes("one doctor on two lists"),
+        `a phone match turns the finding from a question into a verdict, and the sentence must carry the verdict: ${insights[0].detail}`,
+      );
+    }
+
+    // THE AREA AGREEING IS A CONTRADICTION ON ITS FACE — one locality cannot be forty kilometres
+    // wide — and it must count even when the speciality disagrees.
+    {
+      const roster = [
+        entry(1, 10, "Ahmed Fathy Nour", null, "Pediatrics", "mahalla"),
+        entry(2, 20, "Ahmed Fathy Nour", null, "Urology", "mahalla"),
+      ];
+      const pins = new Map([
+        [1, at(30)],
+        [2, northOf(40)],
+      ]);
+      const found = buildPhoenixInsights([{ agentCrmId: 10, contactCrmId: 1, points: [] }], roster, pins, reps);
+      const insights = found.get(1) ?? [];
+      assert.equal(insights.length, 1, "two records filed in one locality but pinned forty kilometres apart contradict each other whichever of them names the place");
+      assert.ok(
+        insights[0].detail.includes("the same area") && !insights[0].detail.includes("speciality"),
+        `only the fields that actually agree may be listed — naming one that disagrees would be a false statement on screen: ${insights[0].detail}`,
+      );
+    }
+
+    // ALL THREE AGREEING READS AS ONE ENGLISH LIST, not three clauses.
+    {
+      const roster = [
+        entry(1, 10, "Ahmed Fathy Nour", "01001234567", "Pediatrics", "mahalla"),
+        entry(2, 20, "Ahmed Fathy Nour", "01001234567", "Pediatrics", "mahalla"),
+      ];
+      const pins = new Map([
+        [1, at(30)],
+        [2, northOf(40)],
+      ]);
+      const found = buildPhoenixInsights([{ agentCrmId: 10, contactCrmId: 1, points: [] }], roster, pins, reps);
+      const insights = found.get(1) ?? [];
+      assert.ok(
+        (insights[0]?.detail ?? "").includes("the same phone number, area and speciality"),
+        `three agreements are one list with one "the same", not three repetitions of it: ${insights[0]?.detail}`,
+      );
+    }
+
+    // A COMMON NAME IS NOT EVIDENCE. Same distance, same two reps — but the name is carried by five
+    // contacts company-wide, which in Egypt means five different doctors. 785 rows would carry a
+    // chip without this gate; 390 do with it.
+    {
+      // Every one of them agrees on speciality, so ONLY the rare-name gate can be what silences
+      // this — a fixture that would also be caught by the corroboration gate proves nothing.
+      const roster = [
+        entry(1, 10, "Mohamed Ahmed", null, "Internal Medicine"),
+        entry(2, 20, "Mohamed Ahmed", null, "Internal Medicine"),
+        entry(3, 30, "Mohamed Ahmed", null, "Internal Medicine"),
+        entry(4, 30, "Mohamed Ahmed", null, "Internal Medicine"),
+        entry(5, 20, "Mohamed Ahmed", null, "Internal Medicine"),
+      ];
+      const pins = new Map([
+        [1, at(30)],
+        [2, northOf(40)],
+        [3, northOf(50)],
+        [4, northOf(60)],
+        [5, northOf(70)],
+      ]);
+      const found = buildPhoenixInsights([{ agentCrmId: 10, contactCrmId: 1, points: [] }], roster, pins, reps);
+      assert.equal(
+        found.has(1),
+        false,
+        "a name five contacts share is not an identity, and flagging it would put a chip on a thousand rows",
+      );
+    }
+
+    // A NEAR MATCH IS THE SHARED-CUSTOMER HIGHLIGHT'S JOB, NOT THIS ONE. The two rules meet at the
+    // 200 m identity threshold and must never both fire on one pair: a row cannot be both "the same
+    // customer as Sara's" and "suspiciously far from Sara's".
+    {
+      // Corroborated, so only the DISTANCE can be what silences it.
+      const roster = [
+        entry(1, 10, "Ahmed Fathy Nour", null, "Internal Medicine"),
+        entry(2, 20, "Ahmed Fathy Nour", null, "Internal Medicine"),
+      ];
+      const pins = new Map([
+        [1, at(30)],
+        [2, northOf(0.8)],
+      ]);
+      const found = buildPhoenixInsights([{ agentCrmId: 10, contactCrmId: 1, points: [] }], roster, pins, reps);
+      assert.equal(found.has(1), false, "a same-name pair 800 m apart is a rep who pinned the next street, and is already handled by the shared-customer highlight");
+    }
+
+    // AN UNNAMEABLE REP IS SILENCE, NOT AN ID. The standing rule is that no screen prints a raw id
+    // at a reader, so a twin under a rep nobody can name is dropped rather than described.
+    {
+      // Corroborated and far enough, so only the UNREADABLE REP NAME can be what silences it.
+      const roster = [
+        entry(1, 10, "Ahmed Fathy Nour", null, "Internal Medicine"),
+        entry(2, 99, "Ahmed Fathy Nour", null, "Internal Medicine"),
+      ];
+      const pins = new Map([
+        [1, at(30)],
+        [2, northOf(40)],
+      ]);
+      const found = buildPhoenixInsights([{ agentCrmId: 10, contactCrmId: 1, points: [] }], roster, pins, reps);
+      assert.equal(found.has(1), false, "with no readable rep name the only sentence available names a raw agent id, which the owner's naming rule forbids");
+    }
+
+    // THE SAME NAME TWICE ON ONE REP'S OWN LIST. findSharedCustomers skips this by design — it is a
+    // duplicate, not sharing — so nothing else on the board can see it.
+    {
+      const roster = [entry(1, 10, "Ahmed Fathy Nour", null), entry(2, 10, "Ahmed Fathy Nour", null)];
+      const pins = new Map([
+        [1, at(30)],
+        [2, northOf(12)],
+      ]);
+      const found = buildPhoenixInsights([{ agentCrmId: 10, contactCrmId: 1, points: [] }], roster, pins, reps);
+      const insights = found.get(1) ?? [];
+      assert.equal(insights.length, 1, "one rep carrying the same name on two rows is a duplicate and must be reported");
+      assert.equal(insights[0].kind, "duplicate row");
+      assert.ok(
+        insights[0].detail.includes("twice") && insights[0].detail.includes("12.0 km apart"),
+        `the duplicate line must say how many rows and how far apart: ${insights[0].detail}`,
+      );
+      assert.ok(
+        !insights.some((insight) => insight.kind === "distant twin"),
+        "a rep's own duplicate is never also a distant twin — the twin rule is about ANOTHER rep's list, and reporting both would say the same thing twice",
+      );
+    }
+
+    // A SWITCHBOARD PHONE. Same threshold the identity matcher refuses a phone at, so the two can
+    // never disagree about what a switchboard is.
+    {
+      const roster = [
+        entry(1, 10, "Nadia Samir", "01001234567"),
+        entry(2, 20, "Hala Mostafa", "01001234567"),
+        entry(3, 20, "Omar Zaki", "01001234567"),
+        entry(4, 30, "Yara Adel", "01001234567"),
+        entry(5, 30, "Tarek Nabil", "01001234567"),
+      ];
+      const found = buildPhoenixInsights(
+        [{ agentCrmId: 10, contactCrmId: 1, points: [] }],
+        roster,
+        new Map([[1, at(30)]]),
+        reps,
+      );
+      const insights = found.get(1) ?? [];
+      assert.equal(insights.length, 1);
+      assert.equal(insights[0].kind, "shared phone line");
+      assert.ok(
+        insights[0].detail.includes("5 different contacts"),
+        `the count is what makes this readable as a switchboard rather than an accusation: ${insights[0].detail}`,
+      );
+    }
+
+    // A PHONE ON TWO CONTACTS IS A DOCTOR REACHABLE ON ONE LINE. Thirty of the thirty-four shared
+    // numbers in production are this shape, and flagging them would bury the one that matters.
+    {
+      const roster = [entry(1, 10, "Nadia Samir", "01001234567"), entry(2, 20, "Hala Mostafa", "01001234567")];
+      const found = buildPhoenixInsights(
+        [{ agentCrmId: 10, contactCrmId: 1, points: [] }],
+        roster,
+        new Map([[1, at(30)]]),
+        reps,
+      );
+      assert.equal(found.has(1), false, "two contacts on one number is normal and must stay quiet");
+    }
+
+    // A NUMBER ON DOZENS OF CONTACTS IS A BUILDING, AND SAYING SO ON EVERY ROW IS WALLPAPER. One
+    // real rep's list came back 102 of 110 flagged off a single number carried by 101 contacts,
+    // which buried that same list's six distant twins and one scattered contact. Above the cap the
+    // finding is about the LIST, not the doctor, and a per-row chip is the wrong shape for it.
+    {
+      const roster = Array.from({ length: 40 }, (_unused, index) =>
+        entry(index + 1, index === 0 ? 10 : 20, `Doctor ${index + 1} Distinctive`, "01001234567"),
+      );
+      const found = buildPhoenixInsights(
+        [{ agentCrmId: 10, contactCrmId: 1, points: [] }],
+        roster,
+        new Map([[1, at(30)]]),
+        reps,
+      );
+      assert.equal(
+        found.has(1),
+        false,
+        "a number on forty contacts is a hospital switchboard, and repeating that on all forty rows teaches the reader to ignore the chip",
+      );
+    }
+
+    // CHECK-INS TOO FAR APART TO BE ONE PLACE.
+    {
+      const roster = [entry(1, 10, "Nadia Samir", null)];
+      const rows = [{ agentCrmId: 10, contactCrmId: 1, points: [at(30), northOf(60)] }];
+      const found = buildPhoenixInsights(rows, roster, new Map([[1, at(30)]]), reps);
+      const insights = found.get(1) ?? [];
+      assert.equal(insights.length, 1);
+      assert.equal(insights[0].kind, "scattered visits");
+      assert.ok(insights[0].detail.includes("60.0 km"), `the spread must be stated: ${insights[0].detail}`);
+    }
+
+    // A THREE-KILOMETRE SPREAD IS ALREADY EXPLAINED NEXT DOOR, by the confidence popup's "what is
+    // pulling the score down" line. 1,596 contacts are in that state and repeating it here would
+    // mark a sixth of the board with something a reader can already see.
+    {
+      const roster = [entry(1, 10, "Nadia Samir", null)];
+      const rows = [{ agentCrmId: 10, contactCrmId: 1, points: [at(30), northOf(3)] }];
+      assert.equal(
+        buildPhoenixInsights(rows, roster, new Map([[1, at(30)]]), reps).has(1),
+        false,
+        "a 3 km spread is a doctor with two clinics and is already explained by the confidence popup",
+      );
+    }
+
+    // A QUIET ROW IS ABSENT FROM THE MAP, not present with an empty list — the page reads presence,
+    // so an empty array would render a chip promising a popup with nothing in it.
+    {
+      const roster = [entry(1, 10, "Nadia Samir", "01001234567"), entry(2, 20, "Hala Mostafa", null)];
+      const found = buildPhoenixInsights(
+        [{ agentCrmId: 10, contactCrmId: 1, points: [at(30)] }],
+        roster,
+        new Map([[1, at(30)]]),
+        reps,
+      );
+      assert.equal(found.size, 0, "a contact with nothing odd about it must carry no entry at all");
+    }
+  }
+
+  // ---------------------------------------------------------------------------------------------
+  // The insights have to REACH the page. Every rule above is pure and provable, and all of it is
+  // worth nothing if the loader never calls it or the board never renders the chip — the shape that
+  // has already shipped once here, where a feature was green, deployed, and reachable by nobody.
+  {
+    const loader = readFileSync("src/lib/crm/reps-list.ts", "utf8");
+    assert.ok(
+      /buildPhoenixInsights\(/.test(loader),
+      "the loader must actually build the insights: the pure rules above are unreachable otherwise",
+    );
+    assert.ok(
+      /insights: insightsByContact\.get\(row\.contactCrmId\)/.test(loader),
+      "the insights must be attached to the row — they cross the server-to-client boundary on the row itself, because a Map arrives as {} there",
+    );
+    assert.ok(
+      /points: checkins\.get\(row\.contactCrmId\)\?\.points \?\? \[\]/.test(loader),
+      "the scattered-visits rule needs this contact's own check-ins; passing an empty list would silently disable it with no error anywhere",
+    );
+    // THE ONE FAILURE NOTHING ELSE IN THIS FILE CAN SEE. Every twin now needs a second field to
+    // agree before it is reported, and those two fields arrive from one SELECT in the roster
+    // loader. Drop either of them and `agreementsBetween` returns an empty list for every pair on
+    // the board, so the whole distant-twin rule goes quiet — with no error, no failing unit test,
+    // and a page that looks exactly like a clean month. Pinned on the source because the loader is
+    // IO and the rules above are pure, so nothing else here ever reads it.
+    assert.ok(
+      /\.select\("contact_crm_id, agent_crm_id, contact_name, phone, speciality, crm_region_name"\)/.test(loader),
+      "the roster must SELECT speciality and the CRM region: without them nothing corroborates a name match and every distant twin falls silent",
+    );
+    assert.ok(
+      /regionKey: row\.crm_region_name/.test(loader) && /speciality: row\.speciality/.test(loader),
+      "the roster must MAP speciality and the CRM region onto the entry — selecting a column and dropping it fails exactly as silently",
+    );
+
+    const board = readFileSync("src/components/crm/reps-list-tables.tsx", "utf8");
+    const chip = board.match(/function InsightsChip\(\{[\s\S]*?\n\}/);
+    assert.ok(chip, "the chip must exist — it is the only way into the popup");
+    assert.ok(
+      chip[0].includes(">\n      Phoenix insights\n"),
+      "the label is the owner's own words and is exactly 'Phoenix insights' — he asked for that name and for nothing else to be shown until it is pressed",
+    );
+    assert.ok(
+      /if \(!insights \|\| insights\.length === 0\) return null;/.test(chip[0]),
+      "a row with nothing odd must render no chip at all: a chip on every row is the noise the owner's standing rule forbids",
+    );
+    assert.ok(
+      chip[0].includes("bg-slate-900"),
+      "the chip carries its meaning by SHAPE, in the slate the headers already use",
+    );
+    assert.ok(
+      !/violet|emerald|rose|sky-|teal|lime|indigo/.test(chip[0]),
+      "every one of those hues already means something else on this board — a tenth colour would be a SECOND meaning for a colour that already had one",
+    );
+    assert.ok(
+      board.includes("<InsightsChip onOpen={onOpenInsights} row={row} />") &&
+        board.includes("<InsightsChip onOpen={() => onOpenInsights(row)} row={row} />"),
+      "the chip must render on BOTH halves — the desktop cell and the mobile card. The owner's golden rule is that this board works on a phone, and a finding only a laptop can see is half shipped",
+    );
+    assert.ok(
+      board.includes("<InsightsDialog onClose={closeInsights} row={insightsFor} />"),
+      "pressing the chip must open the popup: the owner asked for a pop up, not a page and not a column",
+    );
+    // ONE shell for both popups. Two hand-written dialogs drift, and the way they drift is that one
+    // of them loses a way to close — on a phone, where the backdrop is the only obvious one.
+    assert.equal(
+      (board.match(/role="dialog"/g) ?? []).length,
+      1,
+      "both popups must go through the one DialogShell, so neither can lose its backdrop, its Escape key or its close button",
+    );
+  }
+
 }
