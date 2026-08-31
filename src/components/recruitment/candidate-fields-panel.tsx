@@ -10,6 +10,7 @@
 import type { Candidate } from "@/lib/recruitment/types";
 import {
   CV_FIELD_SECTIONS,
+  fieldIsIrrelevant,
   type CvFieldDefinition,
   type CvPositionSchema,
   type CvSubFieldDefinition,
@@ -93,10 +94,20 @@ function BlockEntries({ entries, itemFields }: { entries: Array<Record<string, u
 }
 
 export function CandidateFieldsPanel({ candidate, schema }: { candidate: Candidate; schema: CvPositionSchema }) {
+  // Reads another field's saved string value, so `irrelevantWhen` can test it (e.g. gender).
+  const valueOf = (fieldKey: string): string | null => {
+    const gate = schema.fields.find((entry) => entry.key === fieldKey);
+    if (!gate) return null;
+    const raw = readFieldValue(candidate, gate);
+    return typeof raw === "string" ? raw : null;
+  };
   const populated = schema.fields
     .filter((field) => isFieldVisible(candidate, field, schema))
-    .map((field) => ({ field, value: readFieldValue(candidate, field) }))
-    .filter(({ value }) => hasValue(value));
+    .map((field) => ({ field, irrelevant: fieldIsIrrelevant(field, valueOf), value: readFieldValue(candidate, field) }))
+    // An irrelevant field is shown as "Irrelevant" even when empty — otherwise every female
+    // candidate would simply be missing the Military status row, which is what the owner asked to
+    // make explicit. Relevant fields keep hiding when blank.
+    .filter(({ irrelevant, value }) => irrelevant || hasValue(value));
 
   return (
     <div className="space-y-4">
@@ -113,10 +124,12 @@ export function CandidateFieldsPanel({ candidate, schema }: { candidate: Candida
               <p className="border-b border-slate-200 pb-1 text-phx-xs font-semibold uppercase tracking-wider text-slate-500">
                 {section.label}
               </p>
-              {rows.map(({ field, value }) => (
+              {rows.map(({ field, irrelevant, value }) => (
                 <div key={field.key}>
                   <p className="text-phx-xs font-semibold uppercase tracking-wider text-slate-400">{field.label}</p>
-                  {field.type === "array" && Array.isArray(value) ? (
+                  {irrelevant ? (
+                    <p className="text-sm italic text-slate-400">Irrelevant</p>
+                  ) : field.type === "array" && Array.isArray(value) ? (
                     <BlockEntries entries={value} itemFields={field.itemFields ?? []} />
                   ) : (
                     <p className="text-sm text-slate-700">{formatValue(field, value)}</p>

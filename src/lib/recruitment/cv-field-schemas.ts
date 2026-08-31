@@ -58,6 +58,11 @@ export type CvFieldDefinition = {
   // Only rendered/required in the review UI when the named boolean field has this value —
   // e.g. medicalRepEmployer only makes sense once hasMedicalRepExperience is true.
   showWhen?: { field: string; equals: boolean };
+  // Unlike showWhen (which HIDES a field), an "irrelevant" field stays on screen but is shown as
+  // "Irrelevant" — not editable, and saved as null — when another (string) field's value matches
+  // one of `equalsAny`. Military service in Egyptian hiring applies to men only, so military status
+  // is irrelevant for a female candidate rather than merely blank.
+  irrelevantWhen?: { field: string; equalsAny: readonly string[] };
   // Required for type: "array" — the shape of one entry in the block.
   itemFields?: CvSubFieldDefinition[];
 };
@@ -174,6 +179,9 @@ const personalFields: CvFieldDefinition[] = [
   {
     aiDescription:
       'Military service status as stated, e.g. "Exempted", "Completed", "Postponed", "Not applicable". Common on Egyptian male CVs.',
+    // Egyptian military service is for men only, so this field is shown as "Irrelevant" (and never
+    // edited or saved) once gender reads female.
+    irrelevantWhen: { equalsAny: ["female", "أنثى", "انثى"], field: "gender" },
     key: "militaryStatus",
     label: "Military status",
     section: "personal",
@@ -551,4 +559,22 @@ export function listCvFieldKeys(): string[] {
 
 export function getCvFieldDefinition(key: string): CvFieldDefinition | null {
   return universalCvFields.find((field) => field.key === key) ?? null;
+}
+
+// Whether a field is "irrelevant" for the record being shown — see `irrelevantWhen`. `valueOf`
+// returns the current (draft or saved) string value of the gate field by key. Matching is
+// case-insensitive and also matches when the value simply starts with a listed token, so "Female"
+// and a stray "Females" both count. A blank/unknown gate value is NOT a match — an unstated gender
+// leaves military status relevant (the common Egyptian-CV default) rather than hiding it.
+export function fieldIsIrrelevant(
+  field: CvFieldDefinition,
+  valueOf: (fieldKey: string) => string | null | undefined,
+): boolean {
+  if (!field.irrelevantWhen) return false;
+  const norm = (valueOf(field.irrelevantWhen.field) ?? "").trim().toLowerCase();
+  if (!norm) return false;
+  return field.irrelevantWhen.equalsAny.some((token) => {
+    const candidate = token.trim().toLowerCase();
+    return candidate.length > 0 && (norm === candidate || norm.startsWith(candidate));
+  });
 }

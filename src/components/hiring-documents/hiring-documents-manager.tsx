@@ -660,21 +660,45 @@ export function HiringDocumentsManager({ canManage, initialData, initialError }:
                                   {documentStatusBadge(status)}
                                   <div className="flex items-center gap-2">
                                     <Button
-                                      aria-label={`Mark ${document.name} submitted for ${employee.fullName}`}
+                                      aria-label={
+                                        status === "submitted"
+                                          ? `Clear submitted tick for ${document.name} for ${employee.fullName}`
+                                          : `Mark ${document.name} submitted for ${employee.fullName}`
+                                      }
                                       className="h-8 w-8 rounded-lg p-0"
                                       disabled={!canManage || busy}
-                                      onClick={() => void updateDocumentStatus(employee, document, "submitted")}
-                                      title="Mark submitted"
+                                      // Toggle: a second click clears the tick back to pending, so a
+                                      // mistaken tick can be undone and re-applied freely.
+                                      onClick={() =>
+                                        void updateDocumentStatus(
+                                          employee,
+                                          document,
+                                          status === "submitted" ? "pending" : "submitted",
+                                        )
+                                      }
+                                      title={status === "submitted" ? "Clear tick" : "Mark submitted"}
                                       variant={status === "submitted" ? "default" : "secondary"}
                                     >
                                       <Check className="h-4 w-4" />
                                     </Button>
                                     <Button
-                                      aria-label={`Mark ${document.name} missing for ${employee.fullName}`}
+                                      aria-label={
+                                        status === "missing"
+                                          ? `Clear missing mark for ${document.name} for ${employee.fullName}`
+                                          : `Mark ${document.name} missing for ${employee.fullName}`
+                                      }
                                       className="h-8 w-8 rounded-lg p-0"
                                       disabled={!canManage || busy}
-                                      onClick={() => void updateDocumentStatus(employee, document, "missing", dueDate || null)}
-                                      title="Mark missing"
+                                      // Toggle: a second click clears the missing mark back to pending.
+                                      onClick={() =>
+                                        void updateDocumentStatus(
+                                          employee,
+                                          document,
+                                          status === "missing" ? "pending" : "missing",
+                                          dueDate || null,
+                                        )
+                                      }
+                                      title={status === "missing" ? "Clear mark" : "Mark missing"}
                                       variant={status === "missing" ? "destructive" : "secondary"}
                                     >
                                       <X className="h-4 w-4" />
@@ -842,21 +866,45 @@ export function HiringDocumentsManager({ canManage, initialData, initialError }:
                                   </div>
                                   <div className="mt-2 flex items-center gap-2">
                                     <Button
-                                      aria-label={`Mark ${document.name} submitted for ${employee.fullName}`}
+                                      aria-label={
+                                        status === "submitted"
+                                          ? `Clear submitted tick for ${document.name} for ${employee.fullName}`
+                                          : `Mark ${document.name} submitted for ${employee.fullName}`
+                                      }
                                       className="h-8 w-8 rounded-lg p-0"
                                       disabled={!canManage || busy}
-                                      onClick={() => void updateDocumentStatus(employee, document, "submitted")}
-                                      title="Mark submitted"
+                                      // Toggle: a second click clears the tick back to pending, so a
+                                      // mistaken tick can be undone and re-applied freely.
+                                      onClick={() =>
+                                        void updateDocumentStatus(
+                                          employee,
+                                          document,
+                                          status === "submitted" ? "pending" : "submitted",
+                                        )
+                                      }
+                                      title={status === "submitted" ? "Clear tick" : "Mark submitted"}
                                       variant={status === "submitted" ? "default" : "secondary"}
                                     >
                                       <Check className="h-4 w-4" />
                                     </Button>
                                     <Button
-                                      aria-label={`Mark ${document.name} missing for ${employee.fullName}`}
+                                      aria-label={
+                                        status === "missing"
+                                          ? `Clear missing mark for ${document.name} for ${employee.fullName}`
+                                          : `Mark ${document.name} missing for ${employee.fullName}`
+                                      }
                                       className="h-8 w-8 rounded-lg p-0"
                                       disabled={!canManage || busy}
-                                      onClick={() => void updateDocumentStatus(employee, document, "missing", dueDate || null)}
-                                      title="Mark missing"
+                                      // Toggle: a second click clears the missing mark back to pending.
+                                      onClick={() =>
+                                        void updateDocumentStatus(
+                                          employee,
+                                          document,
+                                          status === "missing" ? "pending" : "missing",
+                                          dueDate || null,
+                                        )
+                                      }
+                                      title={status === "missing" ? "Clear mark" : "Mark missing"}
                                       variant={status === "missing" ? "destructive" : "secondary"}
                                     >
                                       <X className="h-4 w-4" />
