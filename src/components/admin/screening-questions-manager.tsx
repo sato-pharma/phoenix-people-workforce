@@ -20,6 +20,9 @@ import type { ScreeningQuestionAdminRow } from "@/lib/recruitment/inbound/whatsa
 type Props = {
   initialError: string | null;
   initialQuestions: ScreeningQuestionAdminRow[];
+  /** True when rendered beneath the built-in-question editor on the shared screen, which already
+   *  supplies the page padding. Standalone, this component keeps owning its own. */
+  embedded?: boolean;
 };
 
 type EditableOption = { title: string; description: string };
@@ -92,7 +95,7 @@ function counterClass(length: number, max: number): string {
   return "text-slate-400";
 }
 
-export function ScreeningQuestionsManager({ initialError, initialQuestions }: Props) {
+export function ScreeningQuestionsManager({ embedded, initialError, initialQuestions }: Props) {
   const [rows, setRows] = React.useState<EditableQuestion[]>(() => initialQuestions.map(fromServerRow));
   const [error, setError] = React.useState<string | null>(initialError);
   const [notice, setNotice] = React.useState<string | null>(null);
@@ -232,15 +235,15 @@ export function ScreeningQuestionsManager({ initialError, initialQuestions }: Pr
   }
 
   return (
-    <div className="space-y-6 p-6">
+    <div className={embedded ? "space-y-6" : "space-y-6 p-6"}>
       <AdminSectionHeader
         action={
           <Button aria-label="Refresh" disabled={loading} onClick={refresh} size="sm" variant="outline">
             <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
           </Button>
         }
-        description="Whatever you add here, the WhatsApp bot asks after its own six questions (role, background, region, area, experience, salary) — those never change. Add a tappable list or a free-text question, put them in the order you want, and save. No code change, no deploy — it takes effect on the very next reply."
-        title="WhatsApp Screening Questions"
+        description="Brand-new questions of your own, asked AFTER the six above. Add a tappable list or a free-text question, put them in the order you want, and save. No code change, no deploy — it takes effect on the very next reply."
+        title="Extra questions you add"
       />
 
       {error ? (

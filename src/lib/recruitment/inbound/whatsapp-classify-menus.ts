@@ -241,6 +241,29 @@ export function jobTitleMenu(): ClassifyMenu {
 /** The families this menu offers. Exported so a test can pin the owner's list, not re-derive it. */
 export const offeredRoleMenuFamilies: readonly CandidateRoleFamily[] = ROLE_MENU_ORDER;
 
+/**
+ * EVERY role family as a menu row — the owner's eight in his order, then the two he left off.
+ *
+ * This is NOT what the bot sends; `jobTitleMenu()` is, and it is unchanged. This exists so the admin
+ * screen can offer `sales` and `pharmacist` as answers to switch ON, built by the same `rowFor` the
+ * real menu uses. That reuse is the point: a hand-built row would miss `MENU_ROLE_TITLES`, and
+ * "Sales & Business Development" is 28 characters against Meta's 24-character ceiling — a row that
+ * would 400 the whole message rather than merely look untidy. The short title for it has sat in that
+ * table since the menu was written, against exactly this day.
+ *
+ * Switching one on is safe because `isOfferedRoleFamily` already accepts both: the reply handler has
+ * always understood the value, the menu simply never offered it.
+ */
+export function jobTitleMenuAllFamilies(): ClassifyMenu {
+  const unoffered = candidateRoleFamilies.filter((family) => !ROLE_MENU_ORDER.includes(family));
+  return {
+    ...jobTitleMenu(),
+    rows: [...ROLE_MENU_ORDER, ...unoffered].map((family) =>
+      rowFor("job_title", family, candidateRoleFamilyLabels[family], MENU_ROLE_TITLES[family]),
+    ),
+  };
+}
+
 // ── Question 1b — "Other", in their own words ────────────────────────────────────────────────────
 // Owner's instruction, 2026-08-28: "if he choose other, he free text what he want." So "Other" is
 // not a dead end that files someone under a label meaning nothing — it opens the one question this
