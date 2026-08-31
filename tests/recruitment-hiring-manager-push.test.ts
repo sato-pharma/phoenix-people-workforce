@@ -294,10 +294,20 @@ export async function runRecruitmentHiringManagerPushTests() {
     /const notified = candidate\.managerNotified;/,
     "the candidate row must read its own recorded send, not just offer the button",
   );
+  // The flat `<select>` this replaced was pinned by its placeholder text. It is now the screening
+  // queue's grouped picker, shared verbatim, so the pin is on the thing that actually matters: a
+  // picker mounted PER ROW and addressed to that row's candidate. The panel id carries the
+  // candidate id because the pool can have a row's panel and the bulk bar's panel open at once, and
+  // two portals sharing one id is two panels claiming one listbox.
   assert.match(
     workspace,
-    /<option value="">Send to manager…<\/option>/,
+    /<ManagerPicker/,
     "the manager picker must be on the candidate row itself, where the CV lands",
+  );
+  assert.match(
+    workspace,
+    /panelId=\{`pool-manager-\$\{candidate\.id\}`\}/,
+    "each row's picker must be its own panel, not one shared across the pool",
   );
   assert.match(
     workspace,

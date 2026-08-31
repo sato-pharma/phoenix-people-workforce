@@ -49,7 +49,10 @@ export function CandidateFactsSummary({
   const cells: Cell[] = [];
   if (facts.roleTitle) {
     cells.push({
-      hint: facts.employer ? facts.employer.value : undefined,
+      // No employer hint here. It was `facts.employer.value`, and the Employer cell below is pushed
+      // on exactly the same condition — so the hint was never anything but the next cell's value,
+      // repeated one line above it in grey. It also rendered a HEDGED employer as though it were
+      // confirmed, because a hint carries none of the unconfirmed styling.
       label: "Current role",
       unconfirmed: !facts.roleTitle.confirmed,
       value: facts.roleTitle.value,
@@ -67,7 +70,9 @@ export function CandidateFactsSummary({
   }
   if (facts.pharmaRep) {
     cells.push({
-      hint: repSpan ?? undefined,
+      // No span hint either: the value already ends in `repSpan` whenever there is one, so the cell
+      // read "Glenmark multinational · 2023 → now" with "2023 → now" repeated underneath it. On a
+      // "No" the hint was worse than redundant — it dated a tenure the cell had just denied.
       label: "Medical rep before",
       unconfirmed: !facts.pharmaRep.confirmed,
       value: facts.pharmaRep.value
@@ -77,10 +82,15 @@ export function CandidateFactsSummary({
   }
   if (facts.governorate) {
     cells.push({
+      // The governorate is the answer; the region is the qualifier, and it belongs in the hint on
+      // its own. Carrying it in BOTH printed "Qena · Upper Egypt" with "Upper Egypt region" beneath.
+      // The hint keeps the word "region" because that is the load-bearing part: these are the
+      // COMPANY's regions, not geography — Beni Suef is filed under Giza, Aswan under Others — so
+      // "Upper Egypt" alone invites a reader to check it against a map and call it wrong.
       hint: facts.region ? `${facts.region.value.label} region` : undefined,
       label: "Lives in",
       unconfirmed: !facts.governorate.confirmed,
-      value: facts.region ? `${facts.governorate.value} · ${facts.region.value.label}` : facts.governorate.value,
+      value: facts.governorate.value,
     });
   }
   if (education) cells.push({ hint: graduated ?? undefined, label: "Studied", value: education });

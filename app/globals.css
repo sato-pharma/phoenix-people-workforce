@@ -1223,8 +1223,24 @@ html:has(.admin-shell):not(:has(.employee-portal-shell)) {
 
 /* Flex and grid children default to `min-width: auto`, which refuses to shrink
    below their content — the single commonest way a long cell drags a whole page
-   sideways. `:where()` keeps specificity at zero so any component can override. */
-.admin-shell :where(.flex, .grid) > * {
+   sideways.
+
+   The `:not()` is what makes the override promised here actually possible. This
+   rule is UNLAYERED, and unlayered CSS beats everything in `@layer utilities`
+   whatever the specificity — so `:where()` alone did not hand control back to
+   the component, it only looked as though it did. The effect was that no
+   `min-w-*` utility could take hold on a direct flex or grid child anywhere in
+   the admin shell: the class sat in the DOM, the rule sat in the stylesheet, and
+   the computed value was 0. Nothing in this repo can see that — no test, no
+   typecheck, no build — only `getComputedStyle` in a real browser, which is how
+   it was finally found on 2026-08-31, after the screened candidate's own name
+   rendered as one letter and an ellipsis at 17 CSS pixels.
+
+   So: an element that says nothing about its minimum width still gets the
+   shrink-safe 0, which is the whole point of the rule and stays true for the 624
+   `min-w-0` sites that rely on it. An element that explicitly asks for a minimum
+   is given it. */
+.admin-shell :where(.flex, .grid) > *:not([class*="min-w-"]) {
   min-width: 0;
 }
 

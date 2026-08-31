@@ -296,14 +296,31 @@ export async function runCandidatePositionSuggestionTests(): Promise<void> {
     // silently, and looking exactly like the old behaviour.
     assert.match(screen, /vacancyId: Number\(effectivePosition\)/,
       "the send posts the position that is actually showing, not the untouched picker state");
-    assert.match(screen, /managerHrId: effectiveManagerHrId/,
-      "and the manager the suggestion filled in, or the send goes nowhere");
-    assert.match(screen, /disabled=\{busy \|\| !effectiveManagerHrId\}/,
+    // The manager picker went MULTI-select on 2026-08-31, so the send loops the effective LIST. The
+    // `effective` prefix is the part that matters and is what these two pin: a loop over the raw
+    // `sendManagerHrIds` would post nothing on a suggested send, silently, looking exactly like the
+    // old behaviour — which is the bug the single-value version of this assertion was written for.
+    assert.match(screen, /for \(const managerHrId of effectiveManagerHrIds\)/,
+      "the send goes to every manager the suggestion or the recruiter put in the picker");
+    assert.match(screen, /disabled=\{busy \|\| effectiveManagerHrIds\.length === 0\}/,
       "and the button unlocks on the suggested manager too, or a suggestion cannot be acted on");
 
     // A recruiter must be able to say no. With "" meaning both "untouched" and "none", choosing the
     // blank option handed the suggestion straight back and there was no way to refuse it.
-    assert.match(screen, /value=\{NO_POSITION\}>No position/,
+    //
+    // The row itself moved into `vacancy-picker.tsx` when the flat `<select>` became a grouped,
+    // searchable picker, so this is now pinned in two halves: the screen must still ASK for the
+    // option, and the picker must still OFFER it. Pinning only one half would let the option quietly
+    // stop rendering while the assertion stayed green.
+    assert.match(screen, /offerNoPosition=\{Boolean\(suggestion\.confident\)\}/,
+      "the screen offers the refusal exactly when there is a suggestion to refuse");
+    const vacancyPicker = readFileSync(
+      path.join(process.cwd(), "src/components/recruitment/vacancy-picker.tsx"),
+      "utf8",
+    );
+    assert.match(vacancyPicker, /id: NO_POSITION/,
+      "and the picker carries a row for it");
+    assert.match(vacancyPicker, /name: "No position"/,
       "there is an explicit way to send with no position at all");
 
     // STANDING OWNER RULE: assistive inference is invisible to users. No screen may name it.

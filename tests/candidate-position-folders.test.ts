@@ -335,8 +335,15 @@ export async function runCandidatePositionFolderTests() {
 
   // ── 10 · The picker exists on the screening screen, both ways ──────────────
   const session = read("src/components/recruitment/candidate-screening-session.tsx");
-  assert.match(session, /For which position\? \(optional\)/, "the position is chosen BEFORE the send");
-  assert.match(session, /Another position — type it/, "and a position that is not an open seat yet can still be named");
+  // The two prompts moved into `vacancy-picker.tsx` on 2026-08-31, when the flat `<select>` became a
+  // grouped, searchable picker — 35 open seats across 34 areas, with Nasr City's two differing only
+  // by a line the label did not carry. The words a recruiter reads are pinned where they now live,
+  // and the screen is pinned to still MOUNT the thing that says them: either half alone would go
+  // green while the picker had quietly stopped being rendered.
+  assert.match(session, /<VacancyPicker/, "the position picker is on the screening screen");
+  const picker = read("src/components/recruitment/vacancy-picker.tsx");
+  assert.match(picker, /For which position\? \(optional\)/, "the position is chosen BEFORE the send");
+  assert.match(picker, /name: "Another position"/, "and a position that is not an open seat yet can still be named");
   assert.match(
     session,
     /const vacancy = openVacancies\.find\(\(option\) => String\(option\.id\) === value\);/,

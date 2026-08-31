@@ -16,6 +16,7 @@
 
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback } from "react";
+import { X } from "lucide-react";
 
 import { CandidateScreeningSession } from "@/components/recruitment/candidate-screening-session";
 import {
@@ -43,6 +44,7 @@ import {
   type ScreeningSeenFilter,
 } from "@/lib/recruitment/screening-link";
 import type { Candidate } from "@/lib/recruitment/types";
+import { cn } from "@/lib/utils";
 // Type-only for the same reason: vacancy-options reads the service-role client.
 import type { VacancyOption } from "@/lib/recruitment/vacancy-options";
 
@@ -207,12 +209,40 @@ export function ScreeningPageClient({
   );
 }
 
-// Matches the candidate pool's own toolbar exactly — label above, small caps, the same select box.
-// The two are the same job on two screens, and the owner's standing rule is that a new surface in a
-// module looks like its siblings rather than inventing a look of its own.
-const filterLabelClass = "flex flex-col gap-1 text-phx-xs font-semibold uppercase tracking-wide text-slate-500";
-const filterSelectClass =
-  "border border-slate-200 px-2 py-1.5 text-sm text-slate-800 focus:border-orange-400 focus:outline-none";
+// Matches the candidate pool's own toolbar — label above, small caps, the same select box. The two
+// are the same job on two screens, and the owner's standing rule is that a new surface in a module
+// looks like its siblings rather than inventing a look of its own.
+//
+// The corners are the one thing that was NOT matched. This class carried no radius at all, so eight
+// hard-cornered boxes sat in a product where every other control is `rounded-md` — visible at a
+// glance against the picker directly below them and against the pool's own toolbar. Squaring off
+// was never a decision; it was an omission, and it is the sort that survives because nobody can
+// name what looks wrong. The focus ring is the second half: `focus:border-orange-400` alone moves
+// one pixel of colour, which on a 1px slate border is very nearly invisible.
+//
+// ── AND WHICH OF THE EIGHT IS DOING IT ──────────────────────────────────────────────────────────
+// The bar reports that 42 of 434 CVs survived, and until now it did not say WHICH switch took the
+// other 392. Eight dropdowns rendered identically, one of them holding "Pedia" and the other seven
+// holding "Any" — and the one that matters looks exactly like the seven that do not. That is the
+// question a screener actually asks when the queue is unexpectedly short ("why am I only seeing
+// four?"), and answering it meant reading all eight boxes one at a time.
+//
+// So a filter that is HOLDING something wears it: orange label, orange border, orange text, a tinted
+// field. Not decoration — it is the difference between spotting a stale Region filter in a glance
+// and hunting for it. The `narrowed` flag that already drives the count pill and the Clear button is
+// the same idea; this just moves it from the summary onto the control responsible.
+const filterLabelClass = (active: boolean) =>
+  cn(
+    "flex min-w-0 flex-col gap-1 text-phx-xs font-semibold uppercase tracking-wide transition-colors",
+    active ? "text-orange-600" : "text-slate-500",
+  );
+const filterSelectClass = (active: boolean) =>
+  cn(
+    "h-8 rounded-md border px-2 text-sm transition focus:outline-none focus:ring-2 focus:ring-orange-100",
+    active
+      ? "border-orange-300 bg-orange-50/70 font-semibold text-orange-900 hover:border-orange-400 focus:border-orange-400"
+      : "border-slate-200 bg-white text-slate-800 hover:border-slate-300 focus:border-orange-400",
+  );
 
 /**
  * "42 of 434 CVs" and the switches that produced the 42.
@@ -264,22 +294,30 @@ function ScreeningFilterBar({
     area !== null ||
     source !== null;
   return (
-    <div className="flex flex-wrap items-end gap-3 rounded-t-lg border border-b-0 border-phx-line bg-white px-3 py-2">
-      <span className="pb-1.5 text-xs font-semibold whitespace-nowrap text-slate-600">
+    <div className="flex flex-wrap items-end gap-x-3 gap-y-2 rounded-t-lg border border-b-0 border-phx-line bg-gradient-to-b from-white to-slate-50/70 px-3 py-2.5">
+      {/* The size of the pile, as the headline of the bar rather than another grey word in it.
+          "42 of 434" is the single fact this row exists to report — how much the switches beside it
+          just took off — and as plain 12px text it read as a caption on the Status filter. The
+          tabular figures stop the number jittering as it changes with each new link. */}
+      <span
+        className={`inline-flex items-center gap-1 whitespace-nowrap rounded-md px-2 py-1 text-xs font-bold tabular-nums ${
+          narrowed ? "bg-orange-50 text-orange-700 ring-1 ring-orange-200/70" : "bg-slate-100 text-slate-700"
+        }`}
+      >
         {narrowed ? (
           <>
-            {queueCount} of {totalCount} {totalCount === 1 ? "CV" : "CVs"}
+            {queueCount}
+            <span className="font-semibold text-orange-500/80">of {totalCount}</span>
           </>
         ) : (
-          <>
-            {totalCount} {totalCount === 1 ? "CV" : "CVs"}
-          </>
+          <>{totalCount}</>
         )}
+        <span className="font-semibold opacity-70">{totalCount === 1 ? "CV" : "CVs"}</span>
       </span>
-      <label className={filterLabelClass}>
+      <label className={filterLabelClass(status !== null)}>
         Status
         <select
-          className={filterSelectClass}
+          className={filterSelectClass(status !== null)}
           onChange={(event) => onChange({ status: event.target.value ? (event.target.value as CandidateStatus) : null })}
           value={status ?? ""}
         >
@@ -291,10 +329,10 @@ function ScreeningFilterBar({
           ))}
         </select>
       </label>
-      <label className={filterLabelClass}>
+      <label className={filterLabelClass(seen !== "any")}>
         Read
         <select
-          className={filterSelectClass}
+          className={filterSelectClass(seen !== "any")}
           onChange={(event) => onChange({ seen: event.target.value as ScreeningSeenFilter })}
           value={seen}
         >
@@ -305,10 +343,10 @@ function ScreeningFilterBar({
           ))}
         </select>
       </label>
-      <label className={filterLabelClass}>
+      <label className={filterLabelClass(notified !== "any")}>
         Sent to manager
         <select
-          className={filterSelectClass}
+          className={filterSelectClass(notified !== "any")}
           onChange={(event) => onChange({ notified: event.target.value as ScreeningNotifiedFilter })}
           value={notified}
         >
@@ -319,10 +357,10 @@ function ScreeningFilterBar({
           ))}
         </select>
       </label>
-      <label className={filterLabelClass}>
+      <label className={filterLabelClass(received !== null)}>
         Received
         <select
-          className={filterSelectClass}
+          className={filterSelectClass(received !== null)}
           onChange={(event) =>
             onChange({ received: (event.target.value || null) as ScreeningReceivedFilter | null })
           }
@@ -336,10 +374,10 @@ function ScreeningFilterBar({
           ))}
         </select>
       </label>
-      <label className={filterLabelClass}>
+      <label className={filterLabelClass(role !== null)}>
         Role
         <select
-          className={filterSelectClass}
+          className={filterSelectClass(role !== null)}
           onChange={(event) => onChange({ role: (event.target.value || null) as ScreeningRoleFilter | null })}
           value={role ?? ""}
         >
@@ -352,10 +390,10 @@ function ScreeningFilterBar({
           <option value={SCREENING_UNKNOWN}>No job title on file</option>
         </select>
       </label>
-      <label className={filterLabelClass}>
+      <label className={filterLabelClass(region !== null)}>
         Region
         <select
-          className={filterSelectClass}
+          className={filterSelectClass(region !== null)}
           onChange={(event) => onChange({ region: (event.target.value || null) as ScreeningRegionFilter | null })}
           value={region ?? ""}
         >
@@ -369,10 +407,10 @@ function ScreeningFilterBar({
           <option value={SCREENING_UNKNOWN}>No governorate on file</option>
         </select>
       </label>
-      <label className={filterLabelClass}>
+      <label className={filterLabelClass(area !== null)}>
         Area
         <select
-          className={filterSelectClass}
+          className={filterSelectClass(area !== null)}
           onChange={(event) => onChange({ area: event.target.value || null })}
           value={area ?? ""}
         >
@@ -386,10 +424,10 @@ function ScreeningFilterBar({
         </select>
       </label>
       {sourceOptions.length > 1 ? (
-        <label className={filterLabelClass}>
+        <label className={filterLabelClass(source !== null)}>
           Source
           <select
-            className={filterSelectClass}
+            className={filterSelectClass(source !== null)}
             onChange={(event) => onChange({ source: event.target.value || null })}
             value={source ?? ""}
           >
@@ -402,12 +440,18 @@ function ScreeningFilterBar({
           </select>
         </label>
       ) : null}
+      {/* Only ever shown when there is something to clear, so it doubles as the answer to "is this
+          list narrowed?" — the question a screener asks when the queue is unexpectedly short. Now a
+          real target rather than a 12px underline: this is the undo for a filter that hid the CVs
+          somebody is looking for, and it was the smallest hit area on the bar. */}
       {narrowed ? (
         <button
-          className="pb-1.5 text-xs font-semibold whitespace-nowrap text-slate-500 underline-offset-2 hover:text-phx-accent hover:underline"
+          className="inline-flex h-8 shrink-0 items-center gap-1 whitespace-nowrap rounded-md border border-slate-200 bg-white px-2.5 text-xs font-semibold text-slate-600 transition hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700"
           onClick={onClear}
+          title="Drop every filter and show the whole pool"
           type="button"
         >
+          <X className="h-3 w-3" />
           Clear
         </button>
       ) : null}

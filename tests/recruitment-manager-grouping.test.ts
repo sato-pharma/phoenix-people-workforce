@@ -236,9 +236,18 @@ export async function runRecruitmentManagerGroupingTests() {
     /groupCandidatesByNotifiedManager\(visibleCandidates\)/,
     "the pool must group what is on screen, so a filter narrows the piles too",
   );
+  // The seat is no longer written by the workspace itself: the pool now mounts the screening
+  // queue's `ManagerPicker`, which is where the seat wording lives for both screens. So the check
+  // follows it — the workspace must use that picker, and that picker must name the seat.
   assert.match(
     workspaceSource,
-    /hiringManagerOptionLabel/,
+    /<ManagerPicker/,
+    "the pool must send through the shared manager picker, not a flat dropdown of its own",
+  );
+  const managerPickerSource = read("src/components/recruitment/manager-picker.tsx");
+  assert.match(
+    managerPickerSource,
+    /managerSeatLabel\(/,
     "the send dropdown must name the seat, not just the person",
   );
 }

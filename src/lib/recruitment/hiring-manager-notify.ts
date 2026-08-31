@@ -21,6 +21,11 @@
 import { ACTIVE_EMPLOYMENT_STATUSES_IN_LIST } from "@/lib/auth/session-lifecycle";
 import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import { hrIdLookupKeys } from "@/lib/hr-id";
+// The shared org casing rule — `Ceo` -> `CEO`, `Sfe Manager` -> `SFE Manager`, `R And D Manager` ->
+// `R&D Manager`. All three of those are still the literal contents of `employees.job_title` in
+// production; this renders them the way the company writes them without touching the column, and
+// deliberately leaves every other word alone (see the note on `orgAcronymCase`).
+import { orgAcronymCase } from "@/lib/recruitment/manager-grouping";
 import { createSystemNotification } from "@/lib/notifications/system";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { candidateAlertIdempotencyKey } from "@/lib/recruitment/candidate-alert-key";
@@ -57,7 +62,154 @@ export type HiringManagerOption = {
    */
   areaName: string | null;
   regionName: string | null;
+  /**
+   * The LINE this seat carries on the organogram — CNS, Anti Infective or Pedia.
+   *
+   * ADDED 2026-08-31, and it is the field that makes this picker usable at all. Measured live in
+   * production that day, the rendered dropdown held 30 people and **16 of them were not
+   * identifiable from their seat text**: three "District Sales Manager · Giza", three "District
+   * Sales Manager · Delta (1)", two each on Cairo, Alex-BHR, Delta (2) and Upper Egypt, and two
+   * "National Sales Manager · Egypt". The company runs one District Manager PER LINE PER REGION, so
+   * the line is the ONLY thing that tells those pairs apart — and it was the one thing the label
+   * did not carry. A recruiter had to know by heart that Giza's Anti-Infective DM is Mahmoud
+   * Eldaly, its CNS DM is Sameh, and its Pedia DM is Taha.
+   *
+   * Null for the head-office seats, and that is correct rather than missing: `au_v_org_tree` is the
+   * SALES seat model, so Finance, HR, Marketing, R&D, SFE, Training and the Product Managers hold
+   * no seat on it at all (8 of the 31 on the day this was written). They are named by their HR job
+   * title instead — never as "not in the organogram".
+   */
+  lineName: string | null;
+  /**
+   * The organogram tier — `CEO`, `NSM`, `RSM`, `DM` — or null for a head-office seat off the sales
+   * tree. Drives the ordering and the grouping in the picker, so the list reads down the org chart
+   * instead of alphabetically by job title.
+   */
+  seatTier: string | null;
 };
+
+/**
+ * Where a seat sits in the org chart, for ordering.
+ *
+ * Head office sorts LAST rather than first. Measured in production 2026-08-15 and again on
+ * 2026-08-31, the District Sales Managers receive nearly every push; making a recruiter scroll past
+ * Finance, R&D and Training to reach them is the ordering the old alphabetical-by-job-title sort
+ * produced, and it is exactly backwards.
+ */
+const SEAT_TIER_RANK: Readonly<Record<string, number>> = { CEO: 0, NSM: 1, RSM: 2, DM: 3, ACTING_DM: 4 };
+const HEAD_OFFICE_TIER_RANK = 5;
+
+/**
+ * The seat tiers that make somebody a manager a CV can be sent to.
+ *
+ * **`REP` is the one that matters, and leaving it out of this set is the whole reason the set
+ * exists.** `au_v_org_tree` is the sales seat model, so it holds every FIELD seat too: measured in
+ * production 2026-08-31 it carries 109 REP seats with 67 people in them, against 22 DM, 3 NSM, 1
+ * RSM, 1 CEO and 1 ACTING_DM. The first cut of the seat-holder union below asked the organogram for
+ * "anyone holding a seat" without qualifying which, and the picker went from 30 people to 98 — 68 of
+ * them medical representatives, who are the people CVs are sent ABOUT, never the people they are
+ * sent TO. The owner caught it on sight: "Don't show medical reps."
+ *
+ * `ACTING_DM` IS included, and that is a judgement rather than an oversight. One person holds such a
+ * seat — Nosiba Moussa, Upper Egypt 1 / Anti Infective — and her `employees.job_title` is literally
+ * `Medical Representative`, because the owner's standing rule is that an acting district manager
+ * keeps her real title and it is the REPS that move, not her title. Dropping her would leave that
+ * district with no manager to send a CV to at all, so she is offered under the seat she actually
+ * holds. See the title override at the mapping step: she is rendered as an acting DM, which is the
+ * truthful answer to "who runs Upper Egypt 1 Anti Infective" and is not the same claim as changing
+ * what she is employed as.
+ */
+const MANAGER_SEAT_TIERS: ReadonlySet<string> = new Set(["CEO", "NSM", "RSM", "DM", "ACTING_DM"]);
+
+/**
+ * What an acting seat is CALLED, when the holder's own job title does not say it.
+ *
+ * Rendering, not rewriting — the same rule `orgAcronymCase` runs under. `employees.job_title` keeps
+ * saying `Medical Representative` because that is what she is employed as; the picker says what she
+ * is doing, because a list of managers that reads "Medical Representative" is the exact thing the
+ * owner asked not to see.
+ */
+const ACTING_SEAT_TITLES: Readonly<Record<string, string>> = {
+  ACTING_DM: "Acting District Sales Manager",
+};
+
+/** One organogram seat, reduced to what a picker needs. */
+type OrgSeat = {
+  /**
+   * The occupant's HR_ID **exactly as the organogram spells it**, kept beside the lower-cased map
+   * key rather than derived from it.
+   *
+   * This field is the fix for a bug that shipped in the first cut of this change and cost the whole
+   * point of it. The union filter below was built from `orgSeats.keys()` — which are lower-cased,
+   * because that is what makes the lookup case-safe — and `employees.hr_id` stores `AA`, `B-156`,
+   * `AI-0001` in upper case. PostgREST `in` is case-SENSITIVE, so the filter matched nothing at all
+   * and the CEO, the one person this union exists to add, was still absent from the rendered picker.
+   * Thirty options, no CEO, and no error anywhere to say why.
+   *
+   * Lower-case to COMPARE, original case to QUERY. That is the whole rule, and it is the same trap
+   * this repo has been bitten by repeatedly — a mixed-case HR_ID match that under-returns silently
+   * and reads as "there is nobody there".
+   */
+  hrId: string;
+  seatTier: string | null;
+  lineName: string | null;
+  regionName: string | null;
+  areaName: string | null;
+};
+
+/**
+ * Every occupied seat on the organogram, indexed by lower-cased HR_ID.
+ *
+ * Read from `au_v_org_tree` — the same view the organogram chart, the CRM boards and the business
+ * review all read, which is the entire point: "who are the managers, and which seat does each
+ * hold" must have ONE answer in this codebase, not a directory-shaped answer here and an
+ * organogram-shaped answer everywhere else.
+ *
+ * Lower-cased on BOTH sides. `occupant_hr_id` and `employees.hr_id` happen to agree on casing today
+ * (both upper-case, verified 2026-08-31), but the standing trap in this repo is that HR ids are
+ * mixed case across tables and a bare match silently under-returns — on `au.occupancy_history` the
+ * loss was total, 0 of 120. A seat that matches nobody reads as a vacant seat, not as a bug.
+ *
+ * Never throws. The organogram is an ENRICHMENT here: if this read fails, every manager still
+ * appears, just without their line and tier — which is precisely what the picker looked like
+ * yesterday. A recruiter losing the ability to send a CV because a view was slow is a regression;
+ * losing a line badge is not.
+ */
+async function loadOrgSeatsByHrId(): Promise<Map<string, OrgSeat>> {
+  const seats = new Map<string, OrgSeat>();
+  try {
+    const { data, error } = await getSupabaseAdmin()
+      .from("au_v_org_tree")
+      .select("occupant_hr_id,seat_tier,line_name,region_name,area_name");
+    if (error) throw error;
+
+    for (const row of (data ?? []) as Array<Record<string, unknown>>) {
+      const occupantRaw = String(row.occupant_hr_id ?? "").trim();
+      const occupant = occupantRaw.toLowerCase();
+      if (!occupant) continue;
+      const seat: OrgSeat = {
+        areaName: String(row.area_name ?? "").trim() || null,
+        hrId: occupantRaw,
+        lineName: String(row.line_name ?? "").trim() || null,
+        regionName: String(row.region_name ?? "").trim() || null,
+        seatTier: String(row.seat_tier ?? "").trim() || null,
+      };
+      // One person can hold more than one seat. Keep the HIGHEST — a manager covering a district
+      // while holding the national seat is a National Sales Manager, and filing him under the
+      // district would bury him below seventeen DMs in the picker.
+      const existing = seats.get(occupant);
+      if (existing && seatTierRank(existing.seatTier) <= seatTierRank(seat.seatTier)) continue;
+      seats.set(occupant, seat);
+    }
+  } catch {
+    /* enrichment only — see above */
+  }
+  return seats;
+}
+
+function seatTierRank(seatTier: string | null): number {
+  return seatTier ? (SEAT_TIER_RANK[seatTier] ?? HEAD_OFFICE_TIER_RANK) : HEAD_OFFICE_TIER_RANK;
+}
 
 /** The manager's seat as it was AT THE MOMENT OF A SEND, frozen onto the candidate row. */
 export type NotifiedManagerContext = {
@@ -86,11 +238,51 @@ export type NotifiedManagerContext = {
  * who owns that seat when they return, and their CVs should not silently route to nobody.
  */
 export async function listHiringManagerOptions(): Promise<HiringManagerOption[]> {
+  // The organogram is read FIRST, because it decides who is on the list as well as how they read.
+  const orgSeats = await loadOrgSeatsByHrId();
+
+  // ── WHO IS OFFERED ────────────────────────────────────────────────────────────────────────────
+  // Two sources unioned, and the union is the fix rather than a belt-and-braces.
+  //
+  //   1. The job title, as before — it is what catches the eight head-office managers who hold no
+  //      seat on the sales tree at all (Finance, HR, Marketing, R&D, SFE, Training, 2 Product
+  //      Managers). For them the directory IS the right source, and always was.
+  //   2. Anyone holding a MANAGING seat on the organogram, whatever their title says — CEO, NSM,
+  //      RSM, DM, ACTING_DM, and pointedly NOT the 67 occupied REP seats. See MANAGER_SEAT_TIERS
+  //      for what that unqualified "anyone holding a seat" cost when it shipped without the filter.
+  //
+  // Measured in production 2026-08-31, source 2 adds exactly ONE person to source 1 — and it is the
+  // CEO, which is the whole reason this changed. His `job_title` is stored as the three letters
+  // `Ceo`, and the patterns below match `manager`/`director`/`head`/`chief`. Whoever wrote `chief`
+  // plainly expected "Chief Executive Officer"; production never held that string, so the intended
+  // catch has never once fired and the owner could not send a CV to himself.
+  //
+  // `*ceo*` is NOT simply added to the pattern list, and that is deliberate. A substring that short
+  // is a liability — it matches any title that happens to contain those three letters — and, more
+  // to the point, patching the pattern would fix today's one name while leaving the next oddly
+  // titled seat-holder invisible in exactly the same silent way. Asking the organogram who holds a
+  // seat is the answer that keeps being right.
+  const seatHolderIds = [...orgSeats.values()]
+    // Managing seats only. Without this the union drags in every medical representative on the
+    // sales tree — 68 of them, measured live — and buries the seventeen District Managers under a
+    // list of the people whose CVs get sent in the first place.
+    .filter((seat) => MANAGER_SEAT_TIERS.has((seat.seatTier ?? "").toUpperCase()))
+    // The ORIGINAL casing, never the lower-cased map key — see the note on `OrgSeat.hrId`. Querying
+    // with the key matched zero rows and silently dropped the CEO.
+    .map((seat) => seat.hrId)
+    // Anything that could close the filter's own parenthesis or quote is dropped rather than
+    // escaped: an HR_ID has never contained one, and a filter string that a value can break out of
+    // is not a thing to be clever about.
+    .filter((hrId) => hrId.length > 0 && !/[",()]/.test(hrId));
+  const seatHolderClause = seatHolderIds.length > 0 ? `,hr_id.in.(${seatHolderIds.map((hrId) => `"${hrId}"`).join(",")})` : "";
+
   const { data, error } = await getSupabaseAdmin()
     .from("employees")
     .select("hr_id,full_name,nickname,job_title,area_name,region_name")
     .filter("employment_status", "in", ACTIVE_EMPLOYMENT_STATUSES_IN_LIST)
-    .or("job_title.ilike.*manager*,job_title.ilike.*director*,job_title.ilike.*head*,job_title.ilike.*chief*");
+    .or(
+      `job_title.ilike.*manager*,job_title.ilike.*director*,job_title.ilike.*head*,job_title.ilike.*chief*${seatHolderClause}`,
+    );
   if (error) throw error;
 
   const rows = (data ?? []) as Array<{
@@ -104,19 +296,66 @@ export async function listHiringManagerOptions(): Promise<HiringManagerOption[]>
 
   return rows
     .filter((row) => Boolean(row.hr_id) && Boolean(row.full_name))
-    .map((row) => ({
-      areaName: String(row.area_name ?? "").trim() || null,
-      hrId: String(row.hr_id),
-      jobTitle: String(row.job_title ?? "").trim() || "Manager",
-      name: resolveEmployeeDisplayName(String(row.full_name), row.nickname ?? null),
-      regionName: String(row.region_name ?? "").trim() || null,
-    }))
+    .map((row) => {
+      const hrId = String(row.hr_id);
+      const held = orgSeats.get(hrId.trim().toLowerCase()) ?? null;
+      // A REP seat never colours a manager's label. The map keeps the highest tier a person holds,
+      // so this only bites where somebody is offered by TITLE while also occupying a field seat —
+      // but "District Sales Manager · Minia 1 · Anti Infective" built out of a rep seat would be a
+      // wrong seat rendered with total confidence, which is worse than no seat at all.
+      const seat = held && MANAGER_SEAT_TIERS.has((held.seatTier ?? "").toUpperCase()) ? held : null;
+      const actingTitle = seat ? ACTING_SEAT_TITLES[(seat.seatTier ?? "").toUpperCase()] : undefined;
+      /**
+       * Whether the organogram has anything to say about WHERE this seat is.
+       *
+       * The fallback below is all-or-nothing on purpose, and this flag is the whole reason. Falling
+       * back field by field mixes two different seats' geography into one label: Nosiba Moussa acts
+       * as District Manager for **Upper Egypt 1** (the organogram's region, with no area — DM seats
+       * are region-scoped) while her directory row still says **Minia 1**, the area she covers as a
+       * medical representative. Per-field, the null seat area handed the label her rep's area and
+       * the picker read "Nosiba Moussa · Minia 1" under the Acting District Sales Manager heading —
+       * a real place, confidently wrong, and the one thing a recruiter would use to tell her seat
+       * apart from somebody else's. Measured live 2026-08-31.
+       *
+       * The directory is still the answer where the organogram genuinely has nothing: the CEO and
+       * the Regional Sales Manager both hold seats carrying neither region nor area, and their
+       * "Head office" and "Alex East" come from `employees` as they always did.
+       */
+      const seatKnowsWhere = Boolean(seat && (seat.areaName || seat.regionName));
+      return {
+        // The organogram wins on the seat's geography, the directory fills in behind it. On every
+        // District Manager the two agree; where they differ it is because the directory's
+        // `area_name` is a copy of its `region_name` (verified on all 17 DMs, 2026-08-31) while the
+        // organogram knows the DM seat is scoped by REGION and carries no area at all.
+        areaName: seatKnowsWhere ? seat?.areaName ?? null : String(row.area_name ?? "").trim() || null,
+        hrId,
+        // Cased through the shared org helper, at DISPLAY time only. Production still stores the
+        // raw importer output in `employees.job_title` — `Ceo`, `Sfe Manager`, `R And D Manager`
+        // were all live on 2026-08-31 — and the standing rule is that no mangled label reaches a
+        // person. Rendering it correctly is not the same as rewriting the column, and rewriting it
+        // is not this feature's business.
+        // The acting seat's own name wins over the employment title — see ACTING_SEAT_TITLES.
+        jobTitle: actingTitle ?? (orgAcronymCase(String(row.job_title ?? "").trim()) || "Manager"),
+        lineName: seat?.lineName ?? null,
+        name: resolveEmployeeDisplayName(String(row.full_name), row.nickname ?? null),
+        regionName: seatKnowsWhere ? seat?.regionName ?? null : String(row.region_name ?? "").trim() || null,
+        seatTier: seat?.seatTier ?? null,
+      };
+    })
     .sort(
       (left, right) =>
+        // DOWN THE ORG CHART, not down the alphabet. The old sort led on the job title string, which
+        // put "District Sales Manager" above "National Sales Manager" for no reason anyone could
+        // read and buried the CEO under Finance and R&D. Tier first answers "how senior", and the
+        // seventeen District Managers — who take nearly every push — now sit in one block.
+        seatTierRank(left.seatTier) - seatTierRank(right.seatTier) ||
         left.jobTitle.localeCompare(right.jobTitle) ||
-        // Area before name, so the seventeen District Sales Managers arrive grouped by territory
-        // rather than alphabetically scattered across the country.
+        // Territory before line, matching the vacancy picker in the same panel, which reads
+        // "Area · Job title · Line". A recruiter holding a Giza CV wants Giza's managers together;
+        // the line is what then tells those three apart.
+        (left.regionName ?? "").localeCompare(right.regionName ?? "") ||
         (left.areaName ?? "").localeCompare(right.areaName ?? "") ||
+        (left.lineName ?? "").localeCompare(right.lineName ?? "") ||
         left.name.localeCompare(right.name),
     );
 }
@@ -152,7 +391,10 @@ export async function notifiedManagerContext(hrId: string): Promise<NotifiedMana
     if (!row?.full_name) return { areaName: null, jobTitle: null, name: hrId, regionName: null };
     return {
       areaName: String(row.area_name ?? "").trim() || null,
-      jobTitle: String(row.job_title ?? "").trim() || null,
+      // Cased on the way IN as well as on the way out. `managerSeatLabel` cases at render, which is
+      // what rescues the stamps already written; casing here means the ones written from now on are
+      // right in the column itself, for any reader that is not a label — an export, a digest email.
+      jobTitle: orgAcronymCase(String(row.job_title ?? "").trim()) || null,
       name: resolveEmployeeDisplayName(row.full_name, row.nickname),
       regionName: String(row.region_name ?? "").trim() || null,
     };
