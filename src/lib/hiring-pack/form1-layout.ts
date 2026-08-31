@@ -55,7 +55,14 @@ export type Form1Placement = Placement;
  * gets written in. All of them were read out of the PDF's own hairline rectangles.
  */
 export type Form1WageGrid = {
-  key: string;
+  /**
+   * Which of the three wage columns this is. A literal union rather than `string` on purpose: the
+   * renderer feeds each column a DIFFERENT figure, so a typo or a newly added grid must fail the
+   * typecheck rather than silently fall through to a default and print the wrong wage on a
+   * government form. `tests/hiring-pack.test.ts` asserts at runtime that every key is handled too,
+   * because an exhaustive mapping alone does not gate the build in this repo.
+   */
+  key: "basicWage" | "subscriptionWage" | "comprehensiveWage";
   /** جنيه — five evenly pitched cells, filled right-aligned so the units digit lands in the last. */
   pounds: { x: number; pitch: number; cells: number };
   /** قرش — two cells, printed at different widths, so each is given explicitly. */

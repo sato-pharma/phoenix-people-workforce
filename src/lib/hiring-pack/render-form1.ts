@@ -24,7 +24,7 @@ import {
   splitTaxRegistration,
   todayInCairo,
 } from "@/lib/hiring-pack/render-shared";
-import { insuranceWageFromBase } from "@/lib/hiring-pack/insurance-wage";
+import { STATUTORY_BASIC_WAGE, insuranceWageFromBase } from "@/lib/hiring-pack/insurance-wage";
 import type { HiringPackData } from "@/lib/hiring-pack/types";
 
 // Rendering government Form 1: the official artwork as a vector background, the values placed over
@@ -146,18 +146,37 @@ function renderWageGrid(grid: Form1WageGrid, amount: number | null): string {
 export function renderForm1Html(data: HiringPackData, copies: number): string {
   const values = buildForm1Values(data);
 
-  // All three wage grids are filled from the SAME insurance wage. That is deliberate: the basic and
-  // comprehensive figures on this form are both derived from the subscription wage, and putting the
-  // gross salary in one of them — which is what happens when a person fills it in by hand in a
-  // hurry — overstates the contribution base.
+  // THE THREE COLUMNS CARRY THREE DIFFERENT FIGURES — owner, 2026-08-31, naming each one:
+  //   الأجر الشامل   (comprehensiveWage) — the base salary itself
+  //   أجر الاشتراك    (subscriptionWage)  — base ÷ 1.3 capped, what contributions are computed on
+  //   الأجر الأساسي  (basicWage)         — the flat statutory 2,450, identical for every employee
   //
-  // It is also the same figure the contract prints, and for the same reason one step out: Form 1 is
-  // the declaration this employee is subscribed on, and the contract is what he signed. If those
-  // two named different insurance wages the discrepancy would be sitting in his own file. So both
-  // run the owner's rule off the base salary rather than reading `social_insurance_wage`, which
-  // holds a different number today (see `insurance-wage.ts`).
-  const wage = insuranceWageFromBase(data.employee.baseSalary);
-  const wageGrids = FORM1_WAGE_GRIDS.map((grid) => renderWageGrid(grid, wage)).join("");
+  // Until this was corrected all three were filled from the subscription wage, on the reasoning that
+  // the other two were derived from it. They are not. That printed ONE number three times on a
+  // government form whose three columns exist precisely BECAUSE they differ, and it understated
+  // الأجر الشامل — the comprehensive wage — by the whole ÷1.3 on every form issued.
+  //
+  // Form 1 and the contract still agree on أجر الاشتراك, which is why that one runs the owner's rule
+  // off the base salary rather than reading the stored `social_insurance_wage`: the declaration a
+  // person is subscribed on and the contract he signed must never name two different figures.
+  const base = data.employee.baseSalary;
+  const wageForGrid = (key: Form1WageGrid["key"]): number | null => {
+    // Every column stays blank when there is no base salary, the flat one included. A form with a
+    // single column filled reads as a filling mistake; all three blank reads as unfinished, which is
+    // what it is — and the fill screen already warns that the base salary is missing.
+    if (base === null) return null;
+    switch (key) {
+      case "comprehensiveWage":
+        return base;
+      case "subscriptionWage":
+        return insuranceWageFromBase(base);
+      case "basicWage":
+        return STATUTORY_BASIC_WAGE;
+    }
+  };
+  const wageGrids = FORM1_WAGE_GRIDS.map((grid) =>
+    renderWageGrid(grid, wageForGrid(grid.key)),
+  ).join("");
 
   const sheets: string[] = [];
   for (let copy = 0; copy < Math.max(1, copies); copy += 1) {

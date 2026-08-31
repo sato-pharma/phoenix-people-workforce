@@ -33,6 +33,19 @@ export const INSURANCE_WAGE_DIVISOR = 1.3;
 export const INSURANCE_WAGE_CEILING = 16_700;
 
 /**
+ * «الأجر الأساسي» as Form 1 asks for it, in EGP per month — the SAME figure for every employee.
+ *
+ * OWNER, 2026-08-31, giving the three Form 1 columns and what each one carries: «الاجر الشامل ---
+ * base salary / اجر الاشتراك 1.3 base capped 16700 / الاجر الاساسي 2450». So this column is not
+ * derived from anybody's salary at all — it is the flat statutory basic wage, and it is 2,450.
+ *
+ * MUST BE UPDATED WHEN THE LAW CHANGES, like the ceiling above. It is deliberately a constant here
+ * rather than a per-employee column: there is nothing on the employee record it could be read from,
+ * and inventing a derivation for it is how the three columns collapsed into one figure before.
+ */
+export const STATUTORY_BASIC_WAGE = 2_450;
+
+/**
  * The insurance wage to print for someone on this base salary.
  *
  * Returns null for a missing or unusable base, so the contract prints its dotted rule and the fill
