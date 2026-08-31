@@ -1,4 +1,5 @@
 import { invalidateClosingStoreSplitCache } from "@/lib/dashboard/invalidation";
+import { isHeadOfficeLine } from "@/lib/sales/access-scope";
 import { assertClosingPeriodComplete } from "@/lib/sales/closing-period-gate";
 import { notifyClosingPublished } from "@/lib/sales/closing-publish-notification";
 import { logError } from "@/lib/observability/log";
@@ -21,6 +22,45 @@ export function normalizeClosingLine(line: string | null | undefined): string {
     .trim()
     .toLowerCase()
     .replace(/\s+/g, " ");
+}
+
+/**
+ * THE HEAD OFFICE RULE — Head Office is never a monthly closing.
+ *
+ * Owner, 2026-08-31: "exclude head office from monthly closing this is never happening." He had
+ * said it twice already — "The head office will not be used in the weekly sales or monthly sales"
+ * (2026-08-30) — and the line has been unofferable on the admin closing surface since 2026-08-05.
+ *
+ * WHY A GATE ON TOP OF THE LINE LIST. Every closing surface takes its lines from
+ * listMonthlyClosingLines, which drops Head Office for every viewer, the CEO included; and
+ * loadMonthlyClosingParts only accepts a line that appears in that list, which is what makes Head
+ * Office unreachable rather than merely hidden. publishClosing never consulted it. It normalized
+ * whatever line string it was handed and upserted it, so a POST to
+ * /api/sales/monthly-closing/publish naming "Head Office" created a publication row for a line no
+ * screen can render.
+ *
+ * That is the worst available shape, because publishing is not a private act: it releases the
+ * (line, period) to every sales and product manager's portal, fires notifyClosingPublished to that
+ * audience, and counts toward the gate that arms the CEO's Source-of-Sales BI report. Readers
+ * would be told a Head Office closing exists and find nothing behind it — on a line measured at
+ * 90.2% of weekly VALUE, where a stray inclusion does not skew a total, it becomes the total.
+ *
+ * This mirrors assertClosingPeriodComplete deliberately: the UI already prevents it, and the
+ * domain service refuses it anyway, because a rule enforced only by a dropdown is enforced only
+ * until someone calls the API.
+ *
+ * UNPUBLISHING IS NOT GATED, for the same reason the date rule does not gate it — it is the
+ * recovery path, and a row that should never have existed must always be removable.
+ *
+ * Pinned by tests/closing-excludes-head-office.test.ts, in the required CI validate check.
+ */
+export function assertNotHeadOfficeClosing(line: string | null | undefined): void {
+  if (isHeadOfficeLine(line)) {
+    throw new Error(
+      "Head Office is never published as a monthly closing. "
+        + "The monthly closing covers CNS, Anti Infective and Pedia.",
+    );
+  }
 }
 
 export type PublishedClosing = {
@@ -148,6 +188,9 @@ export async function publishClosing(input: {
   if (!normalizedLine || !period) {
     throw new Error("A line and a period are required to publish a closing.");
   }
+
+  // THE HEAD OFFICE RULE — Head Office is never a closing, on any month. See the gate above.
+  assertNotHeadOfficeClosing(line);
 
   // THE CLOSING GOLDEN RULE — a month's closing is never released during that month.
   // Publishing notifies every sales/product manager and arms the CEO's SoS report, and a sent

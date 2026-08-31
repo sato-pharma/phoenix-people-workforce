@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 
 import { isHeadOfficeLine } from "../src/lib/sales/access-scope.ts";
 import { pickPortalClosingLine } from "../src/lib/sales/monthly-closing-portal.ts";
+import { assertNotHeadOfficeClosing } from "../src/lib/sales/monthly-closing-publication.ts";
 import { selectClosingLines } from "../src/lib/sales/monthly-distributor-import.ts";
 
 // Head Office must not be offerable as a Monthly Closing (owner decision, 2026-08-05).
@@ -167,5 +168,64 @@ export function runClosingExcludesHeadOfficeTests() {
   assert.ok(
     !portal.includes("canViewHeadOfficeLine"),
     "no role may re-open Head Office as a monthly closing line — not CEO, not Super Admin",
+  );
+
+  // ── THE PUBLISH HALF — closed 2026-08-31 ────────────────────────────────────────────────────
+  // Everything above stops Head Office being OFFERED or LOADED. None of it stopped it being
+  // PUBLISHED. publishClosing took the line straight from the request body, normalized it and
+  // upserted it — it never consulted listMonthlyClosingLines. So a POST to
+  // /api/sales/monthly-closing/publish naming "Head Office" wrote a publication row for a line no
+  // screen can render, released that (line, period) to every sales and product manager's portal,
+  // fired notifyClosingPublished to that audience, and counted toward the gate that arms the CEO's
+  // Source-of-Sales BI report. The admin UI never offered the button; the API never needed it.
+  //
+  // Owner, 2026-08-31: "exclude head office from monthly closing this is never happening."
+
+  // 1) The rule, EXECUTED — every spelling isHeadOfficeLine recognises, since the source data is
+  //    not consistent about any of them.
+  for (const spelling of ["Head Office", "head office", "  HEAD OFFICE  ", "HeadOffice", "hq"]) {
+    assert.throws(
+      () => assertNotHeadOfficeClosing(spelling),
+      /never published as a monthly closing/,
+      `publishing "${spelling}" must be refused by the domain service, not merely hidden by the UI`,
+    );
+  }
+
+  // 2) It DISCRIMINATES. Without this the gate could refuse everything and still look green,
+  //    which would close the product rather than close the hole.
+  for (const line of ["CNS", "Anti Infective", "Pedia", "  Pedia  "]) {
+    assert.doesNotThrow(
+      () => assertNotHeadOfficeClosing(line),
+      `${line} is a real closing line and must still publish`,
+    );
+  }
+  assert.doesNotThrow(
+    () => assertNotHeadOfficeClosing(null),
+    "a blank line is refused by publishClosing's own required-fields check, not by this gate",
+  );
+
+  // 3) publishClosing actually CALLS it. A gate nothing invokes is a comment — and comments are
+  //    stripped here, so this pin cannot be satisfied by the prose that explains the rule.
+  const publication = code(read("src/lib/sales/monthly-closing-publication.ts"));
+  // An exact substring, not a regex — the same reason the portal pin above uses one: a regex
+  // here needs escaped brackets, and a MIS-escaped one still matches something, which is how a
+  // source pin quietly becomes a test that only ever passes. This one was written as a regex
+  // first and failed on exactly that.
+  assert.ok(
+    publication.includes("assertNotHeadOfficeClosing(line);"),
+    "publishClosing must call the gate — the UI line list does not reach an API caller",
+  );
+
+  // 4) ...and unpublishClosing must NOT be gated, for the same reason the date rule leaves it
+  //    open: it is the recovery path. A Head Office row that should never have existed has to
+  //    stay removable, or the gate turns a bad row into a permanent one.
+  const unpublish = publication.slice(publication.indexOf("export async function unpublishClosing"));
+  assert.ok(
+    unpublish.length > 0,
+    "unpublishClosing must still exist — the recovery path is part of the rule",
+  );
+  assert.ok(
+    !unpublish.includes("assertNotHeadOfficeClosing"),
+    "unpublishClosing must stay ungated — it is how a wrongly published Head Office row is removed",
   );
 }
