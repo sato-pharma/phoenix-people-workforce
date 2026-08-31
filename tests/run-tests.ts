@@ -153,6 +153,7 @@ import { runRecruitmentVacancyCloseInvariantTests } from "./recruitment-vacancy-
 import { runRecruitmentHireOfferGuardTests } from "./recruitment-hire-offer-guard.test.ts";
 import { runRecruitmentInterviewNotificationsTests } from "./recruitment-interview-notifications.test.ts";
 import { runRecruitmentNsmRmCeoScopingTests } from "./recruitment-nsm-rm-ceo-scoping.test.ts";
+import { runRecruitmentManagerCvEngagementTests } from "./recruitment-manager-cv-engagement.test.ts";
 import { runRecruitmentCvExtractionFieldsTests } from "./recruitment-cv-extraction-fields.test.ts";
 import { runRecruitmentCvExtractionQualityTests } from "./recruitment-cv-extraction-quality.test.ts";
 import { runRecruitmentRuleExtractionTests } from "./recruitment-rule-extraction.test.ts";
@@ -1394,6 +1395,7 @@ await runTest("recruitment vacancy close invariant", runRecruitmentVacancyCloseI
 await runTest("recruitment hire offer guard", runRecruitmentHireOfferGuardTests);
 await runTest("recruitment interview notifications", runRecruitmentInterviewNotificationsTests);
 await runTest("recruitment NSM/RM/CEO scoping (interview type by role, hierarchy/line scope wiring)", runRecruitmentNsmRmCeoScopingTests);
+await runTest("recruitment manager CV engagement (silent open/answer report — the five-role gate excludes SFE, dedup + cross-viewer open isolation + null-status-not-answered, NSM line-scope wiring)", runRecruitmentManagerCvEngagementTests);
 await runTest("recruitment cv extraction fields", runRecruitmentCvExtractionFieldsTests);
 await runTest(
   "recruitment cv extraction quality (thin-read scoring, best-of merge, hyperlink capture, high effort, escalation ladder, recorded intake failure)",
