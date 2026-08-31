@@ -128,18 +128,17 @@ export function runSidebarRoleScopedHeadingsTests() {
     }
   }
 
-  // The sections PR #1625 blanked, named explicitly so a future edit that re-blanks one is
+  // The four sections PR #1625 blanked, named explicitly so a future edit that re-blanks one is
   // caught by name rather than by a generic "some section lost its label".
   //
-  // There were four. "my-requests" ("My Requests") left the list on 2026-08-30 because the section
-  // itself no longer exists: phase 4 moved its two rows — Request Vacation and Submit Excuse — into
-  // the personal workspace tab strip, so a person's own leave form is no longer a heading on the
-  // company navigation rail. That is a section REMOVED, not a section re-blanked, which is the
-  // failure this list exists to catch; keeping it here would assert a heading on nothing. The other
-  // three are untouched and still pinned by name.
+  // "my-requests" ("My Requests") was RESTORED to the rail on 2026-08-31 (owner instruction),
+  // reversing the 2026-08-30 phase-4 removal: the owner asked for the sidebar rows back for every
+  // admin-shell role that lost them, while the personal-workspace tabs stay too (additive). So the
+  // section exists again and its heading is pinned here once more.
   const superAdminSections = new Map(sectionsFor("Super Admin").map((s) => [s.id, s.label]));
   for (const [sectionId, expectedLabel] of [
     ["command-center", "Command Center"],
+    ["my-requests", "My Requests"],
     ["workspace-marketing-requests", "Marketing & ROI"],
     ["people-management", "People Management"],
   ] as const) {
