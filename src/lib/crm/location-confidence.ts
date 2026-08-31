@@ -170,7 +170,12 @@ export function scoreLocationConfidence(
   pin: { lat: number; lon: number } | null,
   checkins: readonly CheckinPoint[],
   now: number = Date.now(),
-  shared?: { count: number; repNames: readonly string[] },
+  shared?: {
+    count: number;
+    repNames: readonly string[];
+    /** Reps who share this customer but whose record stands somewhere else — see the reason line. */
+    distant?: readonly { metres: number | null; repName: string }[];
+  },
 ): LocationConfidence | null {
   // No pin means nobody has ever checked in, so there is nothing to be confident ABOUT. The board
   // shows the CRM's own address for these and no score at all — a 0% would read as "this location is
@@ -278,6 +283,35 @@ export function scoreLocationConfidence(
     });
   }
 
+  // A SHARED ROW WHOSE PARTNER WAS NOT COUNTED MUST SAY WHY, or the popup reproduces the exact
+  // contradiction this whole change exists to remove: a violet line naming a second rep sitting
+  // above the sentence "only one rep has ever checked in here". That sentence is now literally
+  // TRUE for these rows — nobody else has checked in at THIS pin — but a reader cannot see the
+  // difference between "the other rep works somewhere else" and "the screen is lying to me", and
+  // there are 41 such rows in production. So the gap gets named instead of left to be inferred.
+  const distant = shared?.distant ?? [];
+  if (distant.length > 0) {
+    const names = distant.map((entry) => entry.repName);
+    const who = names.length === 1 ? names[0] : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+    const nearest = distant.reduce<number | null>(
+      (best, entry) => (entry.metres != null && (best == null || entry.metres < best) ? entry.metres : best),
+      null,
+    );
+    const where =
+      nearest == null
+        ? "has no confirmed location of their own"
+        : nearest >= 1000
+          ? `stands about ${(nearest / 1000).toFixed(1)} km away`
+          : `stands about ${nearest} m away`;
+    reasons.push({
+      detail:
+        `${who} shares this customer, but their record ${where}, so their visits are not evidence about ` +
+        "this pin and are left out of the score. A shared phone can be a clinic switchboard, or one doctor working in two places.",
+      label: "Shared, but not the same place",
+      points: null,
+    });
+  }
+
   if (far > 0) {
     reasons.push({
       detail:
@@ -296,9 +330,13 @@ function recencyLine(days: number | null, points: number): ConfidenceReason {
     detail:
       days == null
         ? "No date on the last check-in."
-        : days <= 90
-          ? `Last confirmed ${days} days ago.`
-          : `Last confirmed ${days} days ago, so it may have moved since.`,
+        : days === 0
+          ? "Last confirmed today."
+          : days === 1
+            ? "Last confirmed yesterday."
+            : days <= 90
+              ? `Last confirmed ${days} days ago.`
+              : `Last confirmed ${days} days ago, so it may have moved since.`,
     label: "How recently it was confirmed",
     points,
   };
@@ -315,7 +353,7 @@ export type SharedWith = {
   /** Why the two rows were judged the same customer — stated on screen, never left implicit. */
   basis: "name and location" | "shared phone";
   /**
-   * The other rep's OWN contact rows for this customer.
+   * The other rep's contact rows that are CONFIRMED TO STAND IN THE SAME PLACE as ours.
    *
    * Carried, never printed — the standing rule is that no raw id reaches a reader. It is here
    * because the other rep's VISITS are filed against these ids, not against ours: the CRM splits one
@@ -323,6 +361,10 @@ export type SharedWith = {
    * Measured 2026-09-01, that is not a rare shape — 374 contacts the board marks as shared have a
    * partner row carrying its own check-ins, and every one of them used to be told, in the popup,
    * that only one rep had ever been there while the row beside it named the second rep.
+   *
+   * DELIBERATELY NARROWER THAN THE MATCH ITSELF, and it can be empty on a row that is genuinely
+   * shared. A row earns its highlight on a looser test than its score earns another rep's visits —
+   * see the note in `consider`, and the 26 phone-sharing pairs measured over 5 km apart.
    */
   contactCrmIds: number[];
   /** Metres between the two pins, when both are located. */
@@ -449,12 +491,27 @@ export function findSharedCustomers(
       // No name means no readable way to say who it is shared with, and the owner's standing rule is
       // that a screen never prints a raw id at the reader. Silence beats "shared with agent 4412".
       if (!repName) return;
+      // EVIDENCE NEEDS A TIGHTER TEST THAN A LABEL DOES, and this is where the two part company.
+      //
+      // Saying "also on Sara's list" is an observation about two records. COUNTING her visits into
+      // this pin's score asserts something much stronger — that her record and ours are the same
+      // physical place. The name path has always required that (a name alone is not an identity),
+      // but the phone path never did, and measured 2026-09-01 it badly needs it: of 72 cross-rep
+      // pairs sharing a phone, 42 are over 200 m apart and 26 are over 5 KM apart — a clinic
+      // switchboard, a secretary's mobile, or a doctor working in two cities. Folding those visits
+      // in would not merely be untidy: they land far from the pin, so they count as disagreement
+      // and DRAG THE SCORE DOWN, then explain themselves with a "practises in two places" line
+      // about a customer who does not exist. So the label keeps the looser rule and the score gets
+      // the strict one.
+      const samePlace = metres != null && metres <= SAME_CUSTOMER_M;
       const existing = hits.get(other.agentCrmId);
       if (existing) {
         // One rep can hold the same customer on more than one row of their own, and both rows are a
         // record of the same doctor — so every matched id is kept as evidence even though only one
         // of them decides the wording.
-        if (!existing.contactCrmIds.includes(other.contactCrmId)) existing.contactCrmIds.push(other.contactCrmId);
+        if (samePlace && !existing.contactCrmIds.includes(other.contactCrmId)) {
+          existing.contactCrmIds.push(other.contactCrmId);
+        }
         // Phone is the stronger signal, so it wins the label when both fire on the same rep.
         if (!(basis === "shared phone" && existing.basis === "name and location")) return;
         hits.set(other.agentCrmId, { ...existing, basis, metres });
@@ -463,7 +520,7 @@ export function findSharedCustomers(
       hits.set(other.agentCrmId, {
         agentCrmId: other.agentCrmId,
         basis,
-        contactCrmIds: [other.contactCrmId],
+        contactCrmIds: samePlace ? [other.contactCrmId] : [],
         metres,
         repName,
       });

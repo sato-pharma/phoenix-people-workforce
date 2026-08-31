@@ -636,7 +636,15 @@ export async function getRepsListForAgent(
     // them as evidence would overstate what was actually counted.
     const sharedPoints: CheckinPoint[] = [];
     const sharedRepNames: string[] = [];
+    const distant: { metres: number | null; repName: string }[] = [];
     for (const entry of sharedWith ?? []) {
+      // An empty id list is the proximity gate having refused this partner — the two records match
+      // on a phone but stand somewhere else. That is worth SAYING rather than leaving the reader to
+      // wonder why a row naming two reps scores as though it had one.
+      if (entry.contactCrmIds.length === 0) {
+        distant.push({ metres: entry.metres, repName: entry.repName });
+        continue;
+      }
       const before = sharedPoints.length;
       for (const id of entry.contactCrmIds) {
         const partner = partnerCheckins.get(id);
@@ -651,7 +659,9 @@ export async function getRepsListForAgent(
         found ? { lat: found.seenAt.lat, lon: found.seenAt.lon } : null,
         found ? [...found.points, ...sharedPoints] : [],
         Date.now(),
-        sharedPoints.length > 0 ? { count: sharedPoints.length, repNames: sharedRepNames } : undefined,
+        sharedPoints.length > 0 || distant.length > 0
+          ? { count: sharedPoints.length, distant, repNames: sharedRepNames }
+          : undefined,
       ),
       nearby: null,
       seenAt: found?.seenAt ?? null,

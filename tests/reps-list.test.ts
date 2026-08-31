@@ -630,6 +630,40 @@ export function runRepsListTests() {
       "the sentence the owner caught must be gone once a second rep's visits are counted",
     );
 
+    // A SHARED ROW WHOSE PARTNER WAS NOT COUNTED MUST EXPLAIN ITSELF. The proximity gate keeps a
+    // distant phone match out of the score, which is right — but it leaves the row highlighted as
+    // shared above a popup reading "only one rep has ever checked in here", which is word for word
+    // the contradiction the owner reported. It is TRUE for these rows and still unreadable, so the
+    // reason has to be stated. 41 rows in production are in this shape.
+    const distantOnly = scoreLocationConfidence(
+      pin,
+      [
+        { agentCrmId: 1, at: daysAgo(5), lat: 30, lon: 31 },
+        { agentCrmId: 1, at: daysAgo(6), lat: 30, lon: 31 },
+      ],
+      now,
+      { count: 0, distant: [{ metres: 11_000, repName: "Mariem Hany" }], repNames: [] },
+    );
+    assert.ok(distantOnly, "a row whose partner was refused still scores on its own visits");
+    const gapLine = distantOnly.reasons.find((reason) => reason.label === "Shared, but not the same place");
+    assert.ok(
+      gapLine,
+      "a highlighted row that counted NOTHING from its partner must say why, or the popup reproduces the exact contradiction this work exists to remove",
+    );
+    assert.ok(
+      gapLine.detail.includes("Mariem Hany") && gapLine.detail.includes("11.0 km"),
+      "the line names the rep and how far away their record stands — distance is the whole reason those visits were left out, so stating it is what turns a contradiction into an explanation",
+    );
+    assert.equal(
+      distantOnly.observers,
+      1,
+      "a refused partner must NOT be counted as an observer — the explanation is a sentence, never a nudge to the number",
+    );
+    assert.ok(
+      distantOnly.reasons.every((reason) => reason.label !== "Counted from a shared customer"),
+      "nothing was counted, so nothing may claim to have been counted",
+    );
+
     // Plural agreement, on a line a non-engineer reads every day. "1 visits back this pin up" was on
     // screen in production.
     const single = scoreLocationConfidence(
@@ -820,6 +854,55 @@ export function runRepsListTests() {
       findSharedCustomers(mine, pair, new Map(), repNames).get(101)?.[0]?.basis,
       "shared phone",
       "a phone shared by two contacts is the strongest signal there is, and needs no pin to be trusted",
+    );
+
+    // ── A LABEL AND A VOTE ON THE SCORE ARE NOT THE SAME CLAIM ────────────────────────────────
+    // Saying "also on Sara's list" describes two records. Counting her VISITS into this pin says
+    // they are the same physical place, which is a far stronger claim and needs the proximity test
+    // the name path has always had. Measured 2026-09-01: 42 of 72 cross-rep phone pairs are over
+    // 200 m apart and 26 are over 5 km — clinic switchboards and doctors working in two cities.
+    // Those visits land far from the pin, so folding them in would count as DISAGREEMENT and push
+    // the score DOWN, then explain it with a "practises in two places" line about a customer who
+    // does not exist. So `contactCrmIds` may legitimately be empty on a genuinely shared row.
+    assert.deepEqual(
+      findSharedCustomers(mine, pair, new Map(), repNames).get(101)?.[0]?.contactCrmIds,
+      [],
+      "a phone match with no pins keeps its highlight but contributes NO visits — proximity was never established, so there is nothing to justify moving the score",
+    );
+
+    const farPhone = findSharedCustomers(
+      mine,
+      pair,
+      new Map([
+        [101, { lat: 30, lon: 31 }],
+        [201, { lat: 30.1, lon: 31 }],
+      ]),
+      repNames,
+    );
+    assert.equal(
+      farPhone.get(101)?.[0]?.basis,
+      "shared phone",
+      "eleven kilometres apart on a shared phone is still worth SAYING — it is how a manager spots a clinic switchboard or a doctor working two cities",
+    );
+    assert.deepEqual(
+      farPhone.get(101)?.[0]?.contactCrmIds,
+      [],
+      "but a record eleven kilometres away must contribute NO visits to this pin's score: its check-ins would read as disagreement and drag down a percentage that was never about it",
+    );
+
+    const nearPhone = findSharedCustomers(
+      mine,
+      pair,
+      new Map([
+        [101, { lat: 30, lon: 31 }],
+        [201, { lat: 30.0005, lon: 31 }],
+      ]),
+      repNames,
+    );
+    assert.deepEqual(
+      nearPhone.get(101)?.[0]?.contactCrmIds,
+      [201],
+      "a shared phone AT THE SAME PLACE is the case the whole feature exists for — that partner's visits must be counted, or the popup goes back to claiming one rep on a row that names two",
     );
 
     assert.equal(
