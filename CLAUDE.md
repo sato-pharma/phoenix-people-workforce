@@ -95,8 +95,9 @@ this repo file denies that one connector, while user-level `~/.claude/settings.j
 the same one and, since 2026-08-23, the owner's own `mcp__45bb6356-…`. Both counts read live
 2026-08-29; check the file you actually mean), so the three
 file paths above no longer have an entry there and **no dialog will fire on any of them.** (`office-allocation.ts` was never in that
-list — it has the CI lock instead, which is untouched and still turns a PR red.) `permissions.defaultMode` is **`auto`** in user-level settings,
-read live 2026-08-14, and auto mode auto-approves a great deal on its own. So nothing except the
+list — it has the CI lock instead, which is untouched and still turns a PR red.) `permissions.defaultMode` is **`default`** in user-level settings,
+changed from `auto` on 2026-08-31 at the owner's instruction so that a would-be block becomes a
+prompt instead; several hundred allow rules still wave routine calls through. So nothing except the
 agent's own compliance now stands between a request and an edit to a protected file. **Never read
 the absence of a prompt as approval** — that was already the rule while the entries existed, and it
 is the entire story now that they are gone. Ask the owner in plain words and wait for a plain answer.

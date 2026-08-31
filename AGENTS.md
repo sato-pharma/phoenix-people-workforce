@@ -43,17 +43,23 @@ These exist because 1.4 fixes per feature is what happens without them.
 4. **After compaction or a long session, distrust yourself.** Sessions here routinely run for days,
    so a replayed summary of earlier work can read like a live instruction. Before acting on
    "previous" state, re-run the check. Prefer one fresh session per task over one endless session.
-5. **The absence of a permission prompt is not approval.** `permissions.defaultMode` is **`auto`**
-   in user-level `~/.claude/settings.json` — read live 2026-08-12. It was `bypassPermissions` from
+5. **The absence of a permission prompt is not approval.** `permissions.defaultMode` is
+   **`default`** in user-level `~/.claude/settings.json` — **changed from `auto` on 2026-08-31 at
+   the owner's instruction** ("instead of blocked prompt me"), because auto mode's classifier was
+   *hard-denying* commands outright with no dialog. Under `default`, anything not matched by an
+   allow rule raises a prompt he can approve; nothing is silently killed by a classifier. It was
+   `bypassPermissions` from
    2026-08-01 (set after the risk was disclosed twice), which gated nothing at all; the owner
    reverted it, confirmed 2026-08-09. That once meant the repo's `permissions.ask`/`deny` lists were
    no longer outranked — but on **2026-08-14 the owner had the `ask` list emptied**, so there are now
    no `ask` rules left in `.claude/settings.json` and **no dialog fires from a prompt rule at all.**
    (The `deny` list was emptied that day too, then the single block on the untrusted
    `mcp__b345e47e-…` Supabase connector was restored per §8 — a `deny` is a silent hard block, not a
-   prompt, so it changes nothing about dialogs.) What auto mode still does **not** do is gate the work
-   that matters: its classifier silently
-   auto-approves a large share of routine calls, and no mode has ever prompted on a judgement call.
+   prompt, so it changes nothing about dialogs — and the two `deny` entries are now the ONLY silent
+   blocks left anywhere.) What `default` mode still does **not** do is gate the work
+   that matters: several hundred allow rules across the three settings files (469 on the day of the
+   change — **count them live, never quote this**) wave routine calls straight
+   through, and no mode has ever prompted on a judgement call.
    **Every approval rule in section 6 is therefore behavioral: ask in plain words and wait for a
    plain answer** — that is now the only gate there is. Never offer a prompt that did not appear as
    evidence you were allowed, and read the settings file before asserting what is enforced — this
