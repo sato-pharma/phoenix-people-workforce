@@ -106,7 +106,16 @@ const DISCIPLINE_PATTERNS: ReadonlyArray<{ code: CandidateBackgroundCode; patter
   { code: "dentistry", pattern: /\b(dentist\w*|dental|dentistry)\b|أسنان/iu },
   { code: "pharmacy", pattern: /\b(pharmac\w*)\b|صيدل/iu },
   { code: "medicine", pattern: /\b(medicine|mbbch|m\.?b\.?b\.?ch)\b|طب بشر/iu },
-  { code: "science", pattern: /\b(science|sciences|biotechnolog\w*|biochemist\w*|microbiolog\w*)\b|علوم/iu },
+  // "Chemistry" is a Faculty of Science degree that names its DEPARTMENT, not its faculty, so the CV
+  // rarely says "science" at all — which is why five real chemistry graduates were reading as
+  // unparseable and dropping toward the review queue. `chemist\w*` catches "Chemistry"/"chemist" (not
+  // "chemical", which is engineering and stays in KNOWN_OTHER), plus the Arabic كيمياء. Owner
+  // 2026-08-31: *"add chemistry to be approved with pharma vet science."* Folded INTO `science` rather
+  // than made a sixth code: it is a science degree, not its own discipline, and is deliberately NOT a
+  // row in the applicant's question. Geology — the other science department in those same missed CVs —
+  // was left out on purpose; the owner named chemistry only, so geology stays paramedical until he
+  // says otherwise.
+  { code: "science", pattern: /\b(science|sciences|biotechnolog\w*|biochemist\w*|microbiolog\w*|chemist\w*)\b|علوم|كيمياء/iu },
 ];
 
 /**
