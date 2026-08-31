@@ -32,7 +32,20 @@ Phoenix button:
 2. Open `http://localhost:3000/attendance/device-user-mapping`.
 3. Click `Sync Now`.
 
-Phoenix calls its server-side `/api/attendance/sync-now` route. If the local agent is offline, Phoenix first tries to start `start-agent.ps1`, then calls this local agent at `http://127.0.0.1:8787/sync-now` using `ATTENDANCE_AGENT_TOKEN`. The token is not exposed to the browser.
+The browser calls this agent directly at `http://127.0.0.1:8787/sync-now`, because the Next.js server
+cannot reach `127.0.0.1` on your machine once Phoenix is running on Railway. It authenticates with
+`ATTENDANCE_AGENT_BROWSER_TOKEN`, which Phoenix passes to the page for users who hold the attendance
+update permission — so `Sync Now` only appears when you are viewing the page **on the machine running
+the agent**, and only for those users.
+
+`ATTENDANCE_AGENT_TOKEN` is deliberately **not** the token used here, and must never be handed to a
+browser: it is also the only credential on `POST /api/attendance/raw-punches`, so anyone holding it
+can write arbitrary attendance into Phoenix, and attendance feeds payroll. The two must differ — the
+agent refuses to start if they are equal. A leaked browser token buys nothing but a device read the
+scheduler would have done within two hours anyway.
+
+In local dev the server and the agent are the same machine, so the `Run Local Agent` button can also
+spawn `start-agent.ps1` server-side; that path is dev-only.
 
 Manual agent button:
 

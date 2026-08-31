@@ -20,7 +20,12 @@ The local attendance agent is a separate .NET application that integrates with Z
 
 1. Navigate to `local-attendance-agent/`
 2. Copy `.env.example` to `.env` and configure:
-   - `ATTENDANCE_AGENT_TOKEN` -- shared secret with the Phoenix app
+   - `ATTENDANCE_AGENT_TOKEN` -- shared secret with the Phoenix app. This is also the only thing
+     authenticating step 3 above, so treat it as a payroll-write credential: **never** put it
+     anywhere a browser can read it
+   - `ATTENDANCE_AGENT_BROWSER_TOKEN` -- optional, and a *different* value. Phoenix hands this to the
+     admin page so `Sync Now` can call the agent directly from the browser; it unlocks `/sync-now`
+     alone. The agent refuses to start if it equals `ATTENDANCE_AGENT_TOKEN`
    - `SYNC_START_DATE` -- date to start syncing from
    - `AUTO_SYNC_ENABLED` -- enable automatic sync (default: true)
    - `AUTO_SYNC_INTERVAL_MINUTES` -- sync interval (default: 120)

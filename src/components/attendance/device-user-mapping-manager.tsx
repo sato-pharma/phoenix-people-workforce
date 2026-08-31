@@ -27,11 +27,18 @@ import type {
 import { SearchableSelect } from "@/components/ui/searchable-select";
 
 
+// Called directly from the BROWSER, not proxied through the Next.js server - the server only
+// reaches this when it happens to run on the same machine (local dev). Calling it straight from
+// the browser is what lets "Sync Now" work from the real production page too, as long as the
+// browser viewing it is on the machine the agent runs on. See Program.cs's CORS policy.
+const LOCAL_AGENT_BASE_URL = "http://127.0.0.1:8787";
+
 type Props = {
-  agentIsRemotelyReachable: boolean;
+  canRunLocalAgentSpawn: boolean;
   canUpdate: boolean;
   initialData: AttendanceDeviceUserMappingDashboard | null;
   initialError: string | null;
+  localAgentDirectToken: string | null;
 };
 
 type UploadResult = {
@@ -72,9 +79,13 @@ type AgentHealth = {
 
 async function fetchAgentHealth(): Promise<AgentHealth> {
   try {
-    const response = await fetch("/api/attendance/agent/health", { cache: "no-store" });
-    return await response.json();
+    const response = await fetch(`${LOCAL_AGENT_BASE_URL}/health`, { cache: "no-store" });
+    const payload = await response.json().catch(() => undefined);
+    return { ok: response.ok, reachable: true, payload };
   } catch {
+    // No response at all: either nothing is listening on this browser's machine, or the agent's
+    // CORS policy rejected the origin - both read the same to a caller, and both correctly mean
+    // "Sync Now" is unavailable from here.
     return { ok: false, reachable: false };
   }
 }
@@ -240,7 +251,13 @@ function MappingRow({
   );
 }
 
-export function DeviceUserMappingManager({ agentIsRemotelyReachable, canUpdate, initialData, initialError }: Props) {
+export function DeviceUserMappingManager({
+  canRunLocalAgentSpawn,
+  canUpdate,
+  initialData,
+  initialError,
+  localAgentDirectToken,
+}: Props) {
   const [data, setData] = useState(initialData);
   const [error, setError] = useState(initialError);
   const [notice, setNotice] = useState<string | null>(null);
@@ -316,26 +333,45 @@ export function DeviceUserMappingManager({ agentIsRemotelyReachable, canUpdate, 
     setSyncResult(null);
 
     try {
-      const response = await fetch("/api/attendance/sync-now", {
-        body: "{}",
-        headers: { "Content-Type": "application/json" },
-        method: "POST",
-      });
-      const payload = await response.json();
-      if (!response.ok) {
-        throw new Error(payload.message ?? "Attendance sync failed.");
+      if (!localAgentDirectToken) {
+        throw new Error("Sync Now is not available for your role.");
       }
 
-      setSyncResult(payload);
-      if (payload.syncInProgress) {
+      const response = await fetch(`${LOCAL_AGENT_BASE_URL}/sync-now`, {
+        body: "{}",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${localAgentDirectToken}`,
+        },
+        method: "POST",
+        signal: AbortSignal.timeout(600_000),
+      });
+      const payload = await response.json().catch(() => ({}));
+
+      if (response.status === 409) {
+        // The agent itself reports "a sync is already running" as 409 - not a failure.
+        setSyncResult({ ...payload, failed: 0, syncInProgress: true });
         setNotice(payload.message ?? "Attendance sync is already running.");
+      } else if (!response.ok) {
+        const detail = Array.isArray(payload.errors) ? payload.errors.join("; ") : undefined;
+        throw new Error(payload.message ?? detail ?? "Attendance sync failed.");
       } else {
+        setSyncResult(payload);
         setNotice(`Sync complete: ${payload.inserted ?? 0} inserted, ${payload.duplicate ?? 0} duplicates, ${payload.skipped ?? 0} skipped.`);
       }
       await load();
       await loadAgentHealth();
     } catch (syncError) {
-      setError(syncError instanceof Error ? syncError.message : "Attendance sync failed.");
+      if (syncError instanceof DOMException && syncError.name === "TimeoutError") {
+        setError("Attendance agent sync timed out while reading the fingerprint device.");
+      } else if (syncError instanceof TypeError) {
+        setError(
+          `Local attendance agent is not reachable at ${LOCAL_AGENT_BASE_URL} from this browser. ` +
+            "Make sure you're viewing this page on the machine running the agent.",
+        );
+      } else {
+        setError(syncError instanceof Error ? syncError.message : "Attendance sync failed.");
+      }
     } finally {
       setSyncing(false);
     }
@@ -418,17 +454,17 @@ export function DeviceUserMappingManager({ agentIsRemotelyReachable, canUpdate, 
         title="Device User Mapping"
         actions={(
           <>
-            {agentIsRemotelyReachable ? (
-              <>
-                <Button disabled={!canUpdate || startingAgent} variant="secondary" type="button" onClick={() => void startAgent()}>
-                  <RefreshCw className={`h-4 w-4 ${startingAgent ? "animate-spin" : ""}`} />
-                  {startingAgent ? "Starting Agent" : "Run Local Agent"}
-                </Button>
-                <Button disabled={!canUpdate || syncing} type="button" onClick={() => void syncNow()}>
-                  <RefreshCw className={`h-4 w-4 ${syncing ? "animate-spin" : ""}`} />
-                  {syncing ? "Syncing" : "Sync Now"}
-                </Button>
-              </>
+            {canRunLocalAgentSpawn ? (
+              <Button disabled={!canUpdate || startingAgent} variant="secondary" type="button" onClick={() => void startAgent()}>
+                <RefreshCw className={`h-4 w-4 ${startingAgent ? "animate-spin" : ""}`} />
+                {startingAgent ? "Starting Agent" : "Run Local Agent"}
+              </Button>
+            ) : null}
+            {agentHealth?.reachable ? (
+              <Button disabled={!canUpdate || syncing || !localAgentDirectToken} type="button" onClick={() => void syncNow()}>
+                <RefreshCw className={`h-4 w-4 ${syncing ? "animate-spin" : ""}`} />
+                {syncing ? "Syncing" : "Sync Now"}
+              </Button>
             ) : (
               <span className="inline-flex items-center gap-1.5 rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-xs font-medium text-slate-200">
                 Auto-sync: every 2 h + 5 PM daily
@@ -463,48 +499,32 @@ export function DeviceUserMappingManager({ agentIsRemotelyReachable, canUpdate, 
 
       {error ? <AdminCallout tone="danger">{error}</AdminCallout> : null}
       {notice ? <AdminCallout tone="success">{notice}</AdminCallout> : null}
-      {agentIsRemotelyReachable && agentHealth ? (
-        <AdminCallout tone={agentHealth.reachable ? "success" : "warning"}>
+      {agentHealth ? (
+        <AdminCallout tone={agentHealth.reachable ? "success" : "neutral"}>
           {agentHealth.reachable ? (
             <>
-              Local agent: <strong>running</strong>. Device:{" "}
+              Local agent: <strong>reachable from your browser</strong>. Device:{" "}
               {agentHealth.payload?.checks?.deviceTcpReachable ? "reachable" : "not checked / unreachable"}.
             </>
           ) : (
             <div className="space-y-1">
               <p>
-                <strong>Local agent not running.</strong> The attendance agent is a Windows program that runs on the
-                machine connected to your ZKTeco fingerprint device. It cannot be started from the cloud.
+                <strong>Local agent not reachable from this browser.</strong> Sync still runs automatically —
+                every 2 hours and daily at 5 PM — as long as the agent is running on the Windows machine
+                connected to your ZKTeco fingerprint device. &quot;Sync Now&quot; only works when you view this
+                page from that same machine.
               </p>
               <p className="text-xs">
                 To start it: open a PowerShell window in{" "}
-                <code className="rounded bg-amber-100 px-1 font-mono text-amber-800">local-attendance-agent\</code>
+                <code className="rounded bg-slate-100 px-1 font-mono text-slate-700">local-attendance-agent\</code>
                 {" "}and run{" "}
-                <code className="rounded bg-amber-100 px-1 font-mono text-amber-800">.\start-agent.ps1</code>.
+                <code className="rounded bg-slate-100 px-1 font-mono text-slate-700">.\start-agent.ps1</code>.
                 For automatic startup, run{" "}
-                <code className="rounded bg-amber-100 px-1 font-mono text-amber-800">.\install-scheduled-tasks.ps1</code>.
+                <code className="rounded bg-slate-100 px-1 font-mono text-slate-700">.\install-scheduled-tasks.ps1</code>{" "}
+                (requires Administrator).
               </p>
             </div>
           )}
-        </AdminCallout>
-      ) : null}
-      {!agentIsRemotelyReachable ? (
-        <AdminCallout tone="neutral">
-          <div className="space-y-1">
-            <p>
-              <strong>Sync runs automatically</strong> — every 2 hours and daily at 5 PM — once the local attendance
-              agent is running on your Windows machine.
-            </p>
-            <p className="text-xs">
-              To start the agent: open PowerShell in{" "}
-              <code className="rounded bg-slate-100 px-1 font-mono text-slate-700">local-attendance-agent\</code>
-              {" "}and run{" "}
-              <code className="rounded bg-slate-100 px-1 font-mono text-slate-700">.\start-agent.ps1</code>.
-              For auto-startup on login run{" "}
-              <code className="rounded bg-slate-100 px-1 font-mono text-slate-700">.\install-scheduled-tasks.ps1</code>{" "}
-              (requires Administrator).
-            </p>
-          </div>
         </AdminCallout>
       ) : null}
       {!canUpdate ? <AdminCallout tone="warning">You can review mappings, but this account cannot update employee mappings.</AdminCallout> : null}

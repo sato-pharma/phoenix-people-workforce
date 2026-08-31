@@ -61,7 +61,8 @@ All environment variables are listed in `.env.example` at the repository root. C
 | Variable | Description | Default |
 |---|---|---|
 | ATTENDANCE_AGENT_LOCAL_URL | Local agent endpoint | http://127.0.0.1:8787 |
-| ATTENDANCE_AGENT_TOKEN | Shared auth token between app and agent | |
+| ATTENDANCE_AGENT_TOKEN | Shared auth token between app and agent. Also the ONLY credential on `POST /api/attendance/raw-punches` — never expose it to a browser | |
+| ATTENDANCE_AGENT_BROWSER_TOKEN | Weaker token handed to the admin page so "Sync Now" can call the agent directly. Unlocks `/sync-now` only. Optional; must differ from `ATTENDANCE_AGENT_TOKEN` | |
 | ATTENDANCE_AGENT_START_SCRIPT | Path to agent start script | |
 | ATTENDANCE_AGENT_WORKING_DIRECTORY | Agent working directory | |
 | ATTENDANCE_DEFAULT_DEVICE_ID | Default ZKTeco device ID | 1 |
