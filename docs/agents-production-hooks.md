@@ -155,6 +155,52 @@ production-ops guidance. They stay in the index.
   the restore unit is the whole database** — say that plainly before any bulk or destructive
   production change, and **never restore a daily backup in place**, which rolls back everything
   since roughly 07:30 Cairo that day. `production-supabase-has-no-pitr-only-daily-backups`
+- **Payroll never reads `social_insurance_status` — the WAGE column alone decides the statutory
+  filing, and neither statutory figure reduces take-home pay** (recorded 2026-08-31, after a night
+  reconciling insurance across the whole workforce). Two separate traps, both of which read
+  backwards, and the second of which I got wrong out loud several times before the owner's own
+  constraint forced the check.
+
+  **First: the status column is inert.** `employees.social_insurance_status` (`yes` / `no` /
+  `pending` / blank) is display and data-entry only. Measured on `origin/main`:
+  `git grep -n 'social_insurance_status\|socialInsuranceStatus' -- src/lib/payroll` returns **zero
+  hits**; the column surfaces only in the directory, the import validator, the record-health check,
+  the portal and the hiring pack. What decides is `employees.social_insurance_wage`:
+  `src/lib/payroll/copilot/service.ts:132` selects exactly `hr_id,social_insurance_wage` with **no
+  status column and no filter**, and `src/lib/payroll/copilot/assemble.ts:149` gates the entire
+  statutory block on `input.statutory.insuranceWage != null && baseSalary > 0`. So the register and
+  the filing can disagree **in both directions, silently**. Omar Anwar (B-10) sat marked `no` while
+  carrying a 16,700 wage — the register said not insured and payroll filed him anyway; the mirror
+  case is a `yes` with a null wage, where the register looks complete and the person is in no filing
+  at all. `src/lib/employees/employee-record-health.ts:85` checks only that the status is one of the
+  three valid strings and that a `yes` carries an insurance number — it never compares status to
+  wage, so neither shape is a "missing field" anywhere in the app. **Never audit enrollment by
+  status.** Query both columns and reconcile them both ways. Reconciled clean across all 106 active
+  employees on 2026-08-31: `yes` 93 (92 filed), `pending` 8 (7 filed), `no` 4 (0 filed), blank 1 (the
+  CEO). The wage rule is the owner's own — base ÷ 1.3, capped at **16,700**, with the statutory basic
+  wage printing as a flat **2,450**; `payroll_statutory_config` carries employee 11%, employer
+  18.75%, floor 2,700, effective 2026-01-01 (Law 148/2019). A `pending` person **with** a wage is
+  correct and intended: enrolled, awaiting the Authority's number.
+
+  **Second: neither statutory figure is deducted from anything.** They are called deductions and they
+  deduct nothing. `socialInsurance` appears in exactly **five** places in `assemble.ts` (132, 151,
+  157, 318, 396) and none reaches the amount paid — `totalDeductions` is
+  `crm + fingerPrint + unpaidVacations + medicalInsurance + loans + otherDeductions`, while
+  `governmentalDeductions` is a separate reported line holding
+  `socialInsurance + employmentIncomeTax`. The payable amount comes from `calculatePayrollParts`,
+  fed by the first total. The protected `src/lib/payroll/policy.ts` confirms the other side:
+  `calculateNetSalary` is `base + extraCostOfLiving + fuelAllowance` and `totalPayable = netSalary +
+  variableAdjustments`, with neither statutory figure anywhere in either. **Sato absorbs both.** I
+  asserted repeatedly that setting a wage "starts deducting 1,837/month from pay" (11% of the
+  ceiling), and it was the owner's constraint *"but do not deduct anything from net or base"* that
+  forced the check which disproved it — the plausible reading is the wrong one, and the payslip's own
+  governmental-deductions line does nothing to correct it. So **setting or correcting an insurance
+  wage is safe for take-home pay**: it changes who is filed and what the employer owes, never what
+  the employee receives. Do not warn the owner it will cost someone money, and never withhold a wage
+  for that reason — withhold one only when the person is genuinely not yet enrolled, because the wage
+  is precisely what puts them in the filing.
+  `payroll-reads-the-insurance-wage-never-the-status` ·
+  `social-insurance-and-tax-never-reduce-take-home-pay`
 
 **Which environment the code thinks it is in** (the first two relocated from `MEMORY.md`
 2026-08-27, and they live HERE now — their index lines are gone, so this block is the only thing
