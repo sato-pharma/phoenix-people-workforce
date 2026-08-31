@@ -61,6 +61,10 @@ const variables = [
     { railway: "NOTIFICATION_WEBHOOK_SECRET", github: ["NOTIFICATION_WEBHOOK_SECRET"], required: true },
     { railway: "CRON_SECRET", github: ["CRON_SECRET"], required: true },
     { railway: "ATTENDANCE_AGENT_TOKEN", github: ["ATTENDANCE_AGENT_TOKEN"], required: true },
+    // Weaker sibling of the above, handed to the browser so the admin page's "Sync Now" can reach
+    // the on-prem agent directly. Optional: unset just hides the button. It must NEVER hold the
+    // same value as ATTENDANCE_AGENT_TOKEN - that one authenticates attendance writes to Phoenix.
+    { railway: "ATTENDANCE_AGENT_BROWSER_TOKEN", github: ["ATTENDANCE_AGENT_BROWSER_TOKEN"], required: false },
     { railway: "NOTIFICATION_DASHBOARD_URL", github: ["NOTIFICATION_DASHBOARD_URL"], required: false },
     { railway: "NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY", github: ["NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY"], required: false },
     { railway: "GOOGLE_MAPS_SERVER_KEY", github: ["GOOGLE_MAPS_SERVER_KEY"], required: false },

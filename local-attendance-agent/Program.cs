@@ -62,7 +62,25 @@ builder.Services.AddHttpClient<PhoenixClient>((services, client) => {
   client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", config.AttendanceAgentToken);
 });
 
+// Lets the Phoenix admin page call this loopback agent DIRECTLY from the browser (the "Sync Now"
+// button), instead of only through the Next.js server - the server can only reach 127.0.0.1:8787
+// when it runs on this same machine (local dev), never from Railway. A cross-origin POST carrying
+// an Authorization header is preflighted, so without this the browser blocks it before it is ever
+// sent. The allowlist is explicit (not AllowAnyOrigin): this is a loopback-bound service, and
+// leaving it open to any origin would let JS on an unrelated page in the same browser reach it too.
+builder.Services.AddCors(options => {
+  options.AddPolicy("PhoenixDashboard", policy => policy
+    .WithOrigins(
+      "https://phoenix-hr.satopharma.com",
+      "https://phoenix-people-workforce-production.up.railway.app",
+      "https://phoenix-people-workforce-staging.up.railway.app",
+      "http://localhost:3000")
+    .WithMethods("GET", "POST")
+    .WithHeaders("Content-Type", "Authorization"));
+});
+
 var app = builder.Build();
+app.UseCors("PhoenixDashboard");
 var config = app.Services.GetRequiredService<AgentConfig>();
 var validator = app.Services.GetRequiredService<StartupValidator>();
 
@@ -217,8 +235,11 @@ app.MapGet("/device-punch-summary", async (HttpRequest request, AgentConfig cfg,
   }
 });
 
+// The ONLY endpoint that takes the browser token as well as the agent token. Everything else here
+// reads the device or its enrolments and stays agent-token-only. Worst case for a leaked browser
+// token is therefore a sync that the scheduler would have run anyway within two hours.
 app.MapPost("/sync-now", async (HttpRequest request, AgentConfig cfg, AttendanceSyncRunner syncRunner) => {
-  if (!Auth.IsAuthorized(request, cfg.AttendanceAgentToken)) {
+  if (!Auth.IsAuthorizedForAny(request, cfg.AttendanceAgentToken, cfg.AttendanceAgentBrowserToken)) {
     return Results.Unauthorized();
   }
 
@@ -268,6 +289,13 @@ return 0;
 sealed record AgentConfig(
   string PhoenixBaseUrl,
   string AttendanceAgentToken,
+  // Second, WEAKER credential, accepted only on /sync-now. It exists because ATTENDANCE_AGENT_TOKEN
+  // must never reach a browser: that same token is the ONLY thing authenticating
+  // POST /api/attendance/raw-punches on the public Phoenix API, so anyone holding it can write
+  // arbitrary attendance - and attendance feeds payroll. This one buys its holder exactly one
+  // thing: "make the agent read the device it is already reading every 2 hours". Optional - unset
+  // simply means the browser button is unavailable.
+  string? AttendanceAgentBrowserToken,
   string DeviceId,
   string DeviceIp,
   int DevicePort,
@@ -283,6 +311,7 @@ sealed record AgentConfig(
     return new AgentConfig(
       Required("PHOENIX_BASE_URL"),
       Required("ATTENDANCE_AGENT_TOKEN"),
+      BrowserToken("ATTENDANCE_AGENT_BROWSER_TOKEN", Required("ATTENDANCE_AGENT_TOKEN")),
       Required("DEVICE_ID"),
       Required("DEVICE_IP"),
       ParseInt("DEVICE_PORT", "4370"),
@@ -300,6 +329,23 @@ sealed record AgentConfig(
     var value = Environment.GetEnvironmentVariable(key)?.Trim();
     if (string.IsNullOrWhiteSpace(value) || value.StartsWith("replace-", StringComparison.OrdinalIgnoreCase)) {
       throw new InvalidOperationException($"{key} is required in .env.");
+    }
+    return value;
+  }
+
+  // Optional, but if present it must NOT be the agent token. Setting both to the same value would
+  // silently rebuild the exact hole the split exists to close - the page would ship the full
+  // raw-punches credential to the browser while every name in the config still said otherwise.
+  // Refusing at startup is the only place that mistake is visible; nothing downstream can see it.
+  static string? BrowserToken(string key, string agentToken) {
+    var value = Environment.GetEnvironmentVariable(key)?.Trim();
+    if (string.IsNullOrWhiteSpace(value) || value.StartsWith("replace-", StringComparison.OrdinalIgnoreCase)) {
+      return null;
+    }
+    if (string.Equals(value, agentToken, StringComparison.Ordinal)) {
+      throw new InvalidOperationException(
+        $"{key} must not be the same value as ATTENDANCE_AGENT_TOKEN. It is handed to the browser, "
+          + "and ATTENDANCE_AGENT_TOKEN authenticates attendance writes to Phoenix. Generate a separate value.");
     }
     return value;
   }
@@ -920,16 +966,35 @@ sealed record PhoenixIngestionResponse(
 
 static class Auth {
   public static bool IsAuthorized(HttpRequest request, string expectedToken) {
+    return IsAuthorizedForAny(request, expectedToken);
+  }
+
+  // Accepts a request bearing ANY of the given tokens. Only /sync-now passes more than one, so it
+  // can take the browser token as well as the full agent token; every other endpoint still takes
+  // the agent token alone. Null/blank candidates are ignored, which is what makes
+  // ATTENDANCE_AGENT_BROWSER_TOKEN optional: leave it unset and the agent's surface is exactly
+  // what it was before this existed.
+  public static bool IsAuthorizedForAny(HttpRequest request, params string?[] acceptedTokens) {
     var header = request.Headers.Authorization.ToString();
     if (!header.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)) {
       return false;
     }
 
-    var actualToken = header["Bearer ".Length..].Trim();
-    var expectedBytes = Encoding.UTF8.GetBytes(expectedToken);
-    var actualBytes = Encoding.UTF8.GetBytes(actualToken);
-    return expectedBytes.Length == actualBytes.Length
-      && CryptographicOperations.FixedTimeEquals(expectedBytes, actualBytes);
+    var actualBytes = Encoding.UTF8.GetBytes(header["Bearer ".Length..].Trim());
+    var authorized = false;
+    foreach (var expectedToken in acceptedTokens) {
+      if (string.IsNullOrWhiteSpace(expectedToken)) {
+        continue;
+      }
+
+      var expectedBytes = Encoding.UTF8.GetBytes(expectedToken);
+      // Deliberately no short-circuit: every candidate is compared even after one matches, so the
+      // time taken does not reveal WHICH token was accepted.
+      authorized |= expectedBytes.Length == actualBytes.Length
+        && CryptographicOperations.FixedTimeEquals(expectedBytes, actualBytes);
+    }
+
+    return authorized;
   }
 }
 

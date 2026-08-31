@@ -1132,6 +1132,7 @@ import {
   runModuleLockRefusalTests,
 } from "./module-locks.test.ts";
 import { runPushActionUrlResolutionTests } from "./push-action-url-resolution.test.ts";
+import { runAttendanceAgentBrowserTokenSplitTests } from "./attendance-agent-browser-token-split.test.ts";
 
 /**
  * MARK THE SUITE AS A TEST RUN — this is a data-safety gate, not a formality.
@@ -3513,6 +3514,10 @@ await runTest(
 await runTest(
   "push notification actionUrl resolves to an absolute URL before reaching OneSignal",
   runPushActionUrlResolutionTests,
+);
+await runTest(
+  "the attendance page ships the weak browser token, never the raw-punches credential",
+  runAttendanceAgentBrowserTokenSplitTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
