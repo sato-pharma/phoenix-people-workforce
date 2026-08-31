@@ -158,3 +158,132 @@ In `.github/workflows/migration-drift-check.yml` it powers both staging legs
 
 **There is no `preview-smoke` job any more**; the smoke test is a step inside `validate` (verified
 2026-08-09).
+
+---
+
+# §3 Stable Environment Facts — the accounts
+
+Companion to **[AGENTS.md §3](../AGENTS.md)**, which auto-loads in full on every request and so pays
+only for the **hook**. This part holds the **account**: the measurements, dates, PR numbers and the
+diagnosis traps that nearly sent each one the wrong way.
+
+**Adding here? Put the hook in AGENTS.md §3 and the account in this file — never the account there.**
+
+## Why production must stay in Europe
+
+The Railway region `europe-west4-drams3a` (Amsterdam) is deliberately colocated with the Frankfurt
+Supabase project (`eu-central-1`) and near the Cairo users. Measured: **~204 ms from `sfo` versus
+~75 ms from `europe-west4`**. If production is ever re-platformed, it must stay in Europe.
+
+## The Railway source branch that silently stranded five merged PRs
+
+The `production` Railway environment's service now tracks git branch `main` directly, repointed
+**2026-08-13** via `railway service source connect --environment production --branch main`.
+
+Before that it was source-configured to track a git branch literally named `staging`, which had gone
+stale. Five already-merged, already-CI-green PRs — **#2093, #2095, #2094, #2098, #2097** — sat
+unshipped in production for hours while `main` moved on, **with no error or signal anywhere**.
+GitHub shows the merge as normal either way, so nothing surfaces the drift.
+
+That is why the rule is to confirm the service source branch rather than assume a merge ships. Note
+also that `railway status --environment production --json` returns the **whole project**, so a reader
+taking `environments.edges[0]` prints the same environment whatever `-e` says. Select by
+`.environments.edges[] | select(.node.name=="production")`, print the name you matched, then read
+`.node.serviceInstances.edges[].node.latestDeployment.meta.branch`.
+
+## cron-job.org: the 30 s cap, and the mid-sweep snapshot trap
+
+Both halves were measured **2026-08-28** with a one-shot probe on `/api/cron/crm-contact-lists`. The
+API accepted and read back `requestTimeout=300`, and the execution still recorded
+`status=5 http=0 ms=30108` — the 30 s cut is a **platform cap** `requestTimeout` cannot raise.
+
+But the server finishes the work anyway. The route's own audit row — written **last** in the handler
+— landed at **20:09:43 Cairo** covering **all 82 agents, 9,518 rows, 0 failures**, about **70 s
+after** the client was killed. So a long route logs a false `Failed (timeout)` while succeeding.
+
+⚠ **A mid-sweep snapshot reads exactly like a truncated one, and this rule carried the resulting
+error for one commit.** A query run at **20:09:02**, while the sweep was still writing, returned
+"39 of 68 agents re-stamped" and was reported as proof that the work half-applies. It was just the
+run in progress. Never judge completion from row timestamps while the job may still be running —
+read the terminal artefact (the audit row, the response body from
+`GET /jobs/{id}/history/{identifier}`, the final log line), or re-query only after the route's full
+known duration has elapsed.
+
+Slicing a long route into several ticks is still right, for the honest reason: a permanently red job
+is one nobody reads, the response body is never seen, and completion otherwise depends on a detached
+request surviving a container restart. `/api/cron/crm-contact-lists` is the worked example — one
+twelfth of the roster per tick, 12 ticks 5 minutes apart inside one hour, measured at 8–10 s each.
+
+## The outbox drain that ran perfectly and did nothing for 13 days
+
+cron-job.org job **8200914** hits `/api/notifications/process?limit=50` **every 5 minutes**, returns
+**HTTP 200** in ~3–5 s, and returned `"outbox":{"attempted":0,…}` on **every single cycle from
+2026-08-14 to 2026-08-27**. It was never down, never 401, never unscheduled — so a green cron and a
+200 prove nothing here.
+
+The cause was a **head-of-line block** in `loadDueNotificationOutboxRows`
+(`src/lib/notifications/email.ts:1998-2007`): `.limit(50)` was applied **in SQL**, then
+`attempts < max_attempts` was filtered **in JS afterwards**. Fifty permanently exhausted rows
+(`attempts = 5 = max_attempts`, created 2026-08-09 → 08-14, all with `next_attempt_at IS NULL`,
+which *matches* the due predicate) filled the entire batch window; the JS filter then emptied it, so
+`attempted` was 0 forever and **nothing newer was ever reached.**
+
+The consequence was invisible from the product, because inline sends still work: **every retry was
+silently dead.** Any mail whose inline send failed queued behind the blockage and was never retried.
+
+**Cleared 2026-08-27 ~18:15 Cairo** by retiring those 50 rows to `status='skipped'` (reversible,
+`last_error` marked); the window then returned **0** rows.
+
+**FIXED 2026-08-27 — the code bug is gone:**
+
+- **#2462** (`9f61f582`) made the loader page past dead rows.
+- **#2464** (`2e93c273`) moved `attempts < max_attempts` into the SQL query itself, on **all three**
+  drains — telegram and push carried the identical defect, **25 and 16** dead rows against the same
+  50-row window — so exhausted rows can no longer consume the window.
+- **#2468** (`c943d46f`) added the alarm that would have caught this on the first cycle rather than
+  after 13 days: every run asks whether a queue had work due **before the run started** and
+  attempted nothing, and on that shape pings the dead-man's switch **fail** with the reason and
+  writes a `drain_stranded` ERROR log.
+- **#2470** (`4a64464f`) added the third channel, because those two only reach someone already
+  watching a dashboard or an inbox: it **pages a human in-app + Telegram** on the existing
+  `weekly_system_health_digest` audience (retarget or silence it at
+  `/admin/notification-recipients` — no new key, no migration), bucketed per Cairo day **and** per
+  exact set of stranded queues, so a strand that persists across ticks alerts once a day while a
+  newly stranded queue still gets through.
+
+**Deliberately no email, and do not "fix" that back** — this alert fires precisely when the
+notification pipeline is the thing not delivering, so an emailed alert would depend on the channel
+it is reporting broken. It is best-effort and never throws: a failed alert must not turn a stranded
+drain into a second, self-inflicted incident.
+
+Memory: `outbox-drain-is-blocked-by-50-exhausted-rows-head-of-line`
+
+## The Railway staging environment
+
+Verified **2026-08-13** and the owner confirmed keeping it. Same project, service
+`phoenix-people-workforce`, reachable at `https://phoenix-people-workforce-staging.up.railway.app`
+(returns 200, `/api/healthz` responds).
+
+Its service source tracks git branch `main` — not the git branch named `staging` — so confusingly,
+this Railway *environment* named "staging" was, until the production fix above, actually **fresher
+than the Railway environment named "production"**.
+
+`railway variables --environment staging` confirms `NEXT_PUBLIC_SUPABASE_URL` points at the staging
+Supabase project (`cifwmndunmlxjhyjugxa`), not production — safe to use as a real verification
+target.
+
+## The Supabase ref list, and why neither region nor org is a guard
+
+The four refs in the AGENTS.md §3 table are the complete list `list_projects` returns, verified live
+**2026-08-23**. Two belong to this app; the other two do not, and are tabled precisely so an
+unfamiliar ref is identifiable instead of alarming.
+
+**Dead refs:** `izhmxvgiktiafqusolot` (the prior free-tier staging) and `oaifhavixhdtwmseshff` (an
+older secondary project). Neither is returned by `list_projects` any more. The §3 list named only the
+first as dead until 2026-08-23; both were live in older memories, and one of them sat in the
+`reference` memory a session consults to answer "which project is which".
+
+Three of the four are `eu-central-1`, and a different organization does not stop anyone passing a
+ref — so neither region nor org is a guard. Combined with both named MCP servers seeing all four,
+the `project_id` argument remains **the only thing separating staging from production on every
+call.**
