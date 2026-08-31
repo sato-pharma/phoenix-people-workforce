@@ -17,9 +17,8 @@ import {
   finishSession,
   findCandidateForSender,
   isWhatsAppClassifyEnabled,
-  SESSION_COLUMNS,
-  type SessionRow,
 } from "@/lib/recruitment/inbound/whatsapp-classify-session";
+import { SESSION_COLUMNS, type SessionRow } from "@/lib/recruitment/inbound/whatsapp-classify-session-row";
 import { sendClassifyMenu, sendWhatsAppText } from "@/lib/recruitment/inbound/whatsapp-interactive";
 import {
   buildExtraQuestionMenu,
