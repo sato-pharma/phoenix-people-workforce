@@ -204,6 +204,60 @@ export async function runClosingEngineExportTests() {
   assert.equal(parts.filter((name) => /^xl\/slicerCaches\/slicerCache\d+\.xml$/.test(name)).length, 1, "the slicer cache");
   assert.ok(parts.includes("xl/vbaProject.bin"), "the .xlsm keeps the owner's macro buttons");
 
+  // ── The package is one Excel opens without repairing it ────────────────────────────────────
+  // Every assertion here is a defect that actually shipped. None of them is visible to any tool in
+  // this repository: an empty shared-string table and a folder entry are both schema-VALID, the
+  // Open XML SDK validator reported the same twenty pre-existing pageSetup errors before and after,
+  // and LibreOffice opened every broken build without complaint. The only symptom is Excel asking
+  // the owner whether it should try to recover the file, and the only reason these are pinned here
+  // is that nothing else can see them.
+  for (const [label, book] of [
+    ["xlsm", macroBook],
+    ["xlsx", plainBook],
+  ] as const) {
+    const opened = await JSZip.loadAsync(book);
+    const entries = Object.keys(opened.files);
+    const present = new Set(entries.filter((name) => !opened.files[name]!.dir));
+
+    // A zip item ending in "/" is not a part and cannot carry a content type. Excel writes none.
+    assert.deepEqual(
+      entries.filter((name) => opened.files[name]!.dir),
+      [],
+      `${label}: an OPC package is flat — no directory entries`,
+    );
+
+    // Excel omits the shared-string part when a workbook has none; it does not ship an empty one.
+    const sharedStrings = opened.file("xl/sharedStrings.xml");
+    if (sharedStrings) {
+      assert.match(
+        await sharedStrings.async("string"),
+        /<si\b/,
+        `${label}: a shared-string part that holds no strings must be dropped, not shipped empty`,
+      );
+    }
+
+    // …and dropping it means the override and the relationship go too. Either one left behind
+    // points at a part that is not in the zip, which is its own repair prompt.
+    const contentTypes = await opened.file("[Content_Types].xml")!.async("string");
+    for (const match of contentTypes.matchAll(/PartName="\/([^"]+)"/g)) {
+      assert.ok(present.has(match[1]!), `${label}: content type declares ${match[1]} but the part is not in the zip`);
+    }
+    for (const relsName of [...present].filter((name) => name.endsWith(".rels"))) {
+      const base = relsName.slice(0, relsName.lastIndexOf("_rels/"));
+      for (const rel of (await opened.file(relsName)!.async("string")).matchAll(/<Relationship\s[^>]*>/g)) {
+        if (/TargetMode="External"/.test(rel[0])) continue;
+        const target = /Target="([^"]+)"/.exec(rel[0])?.[1];
+        if (!target) continue;
+        const segments: string[] = [];
+        for (const segment of (target.startsWith("/") ? target.slice(1) : base + target).split("/")) {
+          if (segment === "..") segments.pop();
+          else if (segment !== "." && segment !== "") segments.push(segment);
+        }
+        assert.ok(present.has(segments.join("/")), `${label}: ${relsName} points at ${segments.join("/")}, which is not in the zip`);
+      }
+    }
+  }
+
   const plainParts = Object.keys((await JSZip.loadAsync(plainBook)).files);
   assert.ok(!plainParts.includes("xl/vbaProject.bin"), "the .xlsx has no macros in it");
   assert.equal(
