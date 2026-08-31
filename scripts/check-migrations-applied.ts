@@ -470,6 +470,30 @@ const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // 2026-09-01, the August closing must never contain Delta (3) whenever it is published, and
   // that date is the mechanism rather than a problem to solve (AGENTS.md §4).
   "20260828064500_anti_infective_delta_3_district.sql",
+  // ── Added 2026-08-31, after SIX consecutive nightly failures on the staging leg (2026-08-26
+  // through 08-31). Both files are the Delta (3) siblings of the entry directly above.
+  //
+  // Production's ledger records both under the MCP apply_migration clock — 20260829083742
+  // au_line_area_map_history_view and 20260829084033 anti_infective_delta_3_from_september — so
+  // the production leg matches by NAME and is green. Staging's ledger records NEITHER, under any
+  // version or name, while both effects are fully live there. Verified 2026-08-31 by direct
+  // inspection on BOTH projects, never from schema_migrations:
+  //   - public.au_v_line_area_map_all exists with all 13 columns on staging AND production, and
+  //     carries this file's exact grants — anon and authenticated SELECT both false,
+  //     service_role true. (Checked explicitly because re-applying a bare `create or replace
+  //     view` is precisely what silently stripped a security setting earlier in this list.)
+  //   - All 5 Delta (3) rows exist on anti_infective from 2026-09-01 with dm_seat_id
+  //     SEAT-AIF-DM-D3, and the 5 pre-split rows are closed at that same date, on both projects.
+  //   - The August golden rule holds on both: au.f_line_area_map_asof('2026-08-31') resolves 0 of
+  //     the five areas to D3, and '2026-09-30' resolves all 5. On production, cns and pedia still
+  //     resolve 0 to D3 — the move is anti-infective only (AGENTS.md §4).
+  //
+  // Nothing is left to apply. The delta_3 file is idempotent and self-guarding — it returns early
+  // when the 5 rows are already present and RAISES rather than guess if it finds a half-applied
+  // state — so this is a bookkeeping gap in staging's ledger, not missing schema. Do not "repair"
+  // it by re-running either file, and do not re-date anything.
+  "20260829113000_au_line_area_map_history_view.sql",
+  "20260829113500_anti_infective_delta_3_from_september.sql",
 ]);
 
 type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };
