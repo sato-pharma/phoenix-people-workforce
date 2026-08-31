@@ -317,6 +317,17 @@ moving one orphans that memory outright. Each names a file under
   the whole database** — say that plainly before any bulk or destructive production change, and
   **never restore a daily backup in place**, which rolls back everything since roughly 07:30 Cairo
   that day. `production-supabase-has-no-pitr-only-daily-backups`
+- 🔴 **Payroll NEVER reads `social_insurance_status` — the `social_insurance_wage` column ALONE
+  decides the statutory filing, and NEITHER statutory figure reduces take-home pay.** The status is
+  display-only (**zero** hits under `src/lib/payroll`), so register and filing disagree **both ways,
+  silently**: one man sat marked `no` while carrying a 16,700 wage and was filed anyway, and a `yes`
+  with a null wage is filed nowhere. Record-health never compares the two, so neither shape is a
+  missing field. **Audit by querying both columns, never by status.** And social insurance and income
+  tax are reported as `governmentalDeductions` while being **absent from the deductions that feed
+  payable** — the company absorbs both, so setting a wage costs the employee NOTHING. That reads
+  exactly backwards and I said the opposite out loud several times; never warn the owner a wage will
+  cost someone money. `payroll-reads-the-insurance-wage-never-the-status` ·
+  `social-insurance-and-tax-never-reduce-take-home-pay`
 
 **Which environment the code thinks it is in**
 
