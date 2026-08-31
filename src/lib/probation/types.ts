@@ -1,19 +1,15 @@
 export type TrafficStatus = "critical" | "warning" | "safe";
 
-export type ProbationDvState = {
-  dm_dv_done: boolean;
-  dm_dv_done_at: string | null;
-  dm_dv_done_manually: boolean;
-  nsm_dv_done: boolean;
-  nsm_dv_done_at: string | null;
-  nsm_dv_done_manually: boolean;
-  pm_gpm_dv_done: boolean | null; // null = CNS (not applicable)
-  pm_gpm_dv_done_at: string | null;
-  pm_gpm_dv_done_manually: boolean;
-  tm_dv_done: boolean;
-  tm_dv_done_at: string | null;
-  tm_dv_done_manually: boolean;
-};
+// A `ProbationDvState` type, and the `dv_state` field on ProbationRow that carried it, stood here
+// until 2026-09-01: twelve booleans and timestamps projected from `employee_probation`'s DV
+// checkbox columns. That table stopped being filled when the Case model took over provisioning, so
+// `dv_state` was `null` on every row it ever produced, and its last two readers went with the
+// legacy feedback panels (#2844) and the DV watchlist (#2846).
+//
+// Probation DV state now lives in `probation_dv_days`, read through
+// src/lib/probation/intelligence/dv-progress-lookup.ts. The database columns are LEFT IN PLACE --
+// nothing reads them, dropping them would be a production migration, and they are the only record
+// of what the checkbox era captured.
 
 export type ProbationRow = {
   allowedActions?: ProbationWorkflowAction[];
@@ -22,7 +18,6 @@ export type ProbationRow = {
   employment_status?: string;
   has_durable_probation_record?: boolean;
   days_remaining: number;
-  dv_state?: ProbationDvState | null;
   full_name: string;
   hire_date: string;
   hr_id: string;
