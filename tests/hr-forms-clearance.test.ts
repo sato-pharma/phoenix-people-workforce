@@ -87,11 +87,14 @@ function employeeFixture(
     nationalId: "29709091234567",
     socialInsuranceNumber: "123456789",
     socialInsuranceWage: 6000,
-    grossSalary: 11000,
+    baseSalary: 11000,
+    grossSalary: 14300,
     birthDate: "1997-09-09",
     hireDate: "2024-03-01",
     jobTitle: "Medical Representative",
-    departmentAr: "الجهاز العصبي",
+    // The department, not the line.
+    departmentAr: "المبيعات",
+    departmentId: 1,
     lineId: 1,
     residenceAddress: "5 شارع الجمهورية، وسط البلد",
     residenceCity: "القاهرة",
@@ -414,9 +417,9 @@ function testTheSettlementAmountIsNeverPrinted(): void {
   }
 
   // Rendered from a pack that holds a salary, so this cannot pass merely because the fixture is
-  // empty. The gross salary must not appear anywhere on either paper.
+  // empty. The salary must not appear anywhere on either paper.
   const pack = packFixture();
-  assert.equal(pack.employee.grossSalary, 11000, "the fixture must carry a salary for this to mean anything");
+  assert.equal(pack.employee.baseSalary, 11000, "the fixture must carry a salary for this to mean anything");
   for (const html of [renderClearanceEmployeeHtml(pack, 1), renderClearanceCompanyHtml(pack, 1)]) {
     assert.ok(!html.includes("11000"), "no salary figure may reach a clearance paper");
     assert.ok(!html.includes("11,000"), "no salary figure may reach a clearance paper, formatted either");
@@ -450,7 +453,13 @@ function testThePersonsHalfIsFilledFromTheRecord(): void {
 
   // Each paper's own extras.
   const employeeHtml = renderClearanceEmployeeHtml(pack, 1);
-  assert.ok(employeeHtml.includes("الجهاز العصبي"), "the employee's copy names the department");
+  // The DEPARTMENT that employed him, not his product line — «الجهاز العصبي» is CNS and used to
+  // print here off `lines.name`. Owner's correction, 2026-08-31.
+  assert.ok(employeeHtml.includes("المبيعات"), "the employee's copy names the department");
+  assert.ok(
+    !employeeHtml.includes("الجهاز العصبي"),
+    "a product line must never print as the department",
+  );
   assert.ok(employeeHtml.includes("01 / 03 / 2024"), "the employee's copy prints the hire date");
 
   const companyHtml = renderClearanceCompanyHtml(pack, 1);
@@ -525,6 +534,18 @@ function testTheAddressIsTheSameOnEveryPaperThatPrintsIt(): void {
  * value it turns the whole line one way and renders the other half backwards. On a national ID that
  * means the number on the signed paper is not the number on the card.
  */
+/**
+ * The opening tag of the span wrapping exactly this value — see the same helper in
+ * tests/hr-forms-custody.test.ts for why the tag is read rather than pinned whole.
+ */
+function enclosingTag(html: string, value: string): string | null {
+  const at = html.indexOf(`>${value}</span>`);
+  if (at < 0) return null;
+  const open = html.lastIndexOf("<span", at);
+  if (open < 0) return null;
+  return html.slice(open, at + 1);
+}
+
 function testEveryLatinValueIsPinnedLeftToRight(): void {
   const pack = packFixture();
 
@@ -535,8 +556,11 @@ function testEveryLatinValueIsPinnedLeftToRight(): void {
     );
 
     for (const value of ["29709091234567", "24 / 08 / 2026"]) {
+      const tag = enclosingTag(html, value);
+      assert.ok(tag, `${value} does not appear on the clearance at all`);
+      assert.ok(tag.includes('class="val"'), `${value} must print as a value cell`);
       assert.ok(
-        html.includes(`<span class="val" dir="ltr">${value}</span>`),
+        tag.includes('dir="ltr"'),
         `${value} must be pinned left-to-right, or the bidirectional algorithm reorders its groups`,
       );
     }

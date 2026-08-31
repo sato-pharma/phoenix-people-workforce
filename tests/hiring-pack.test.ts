@@ -76,11 +76,16 @@ function employeeFixture(overrides: Partial<HiringPackEmployeeFacts> = {}): Hiri
     nationalId: "29801011234567",
     socialInsuranceNumber: "123456789",
     socialInsuranceWage: 6000,
-    grossSalary: 12750.5,
+    // 12,750.50 is the figure the Arabic amount-in-words cases above are written against, and the
+    // contract prints the BASE salary — so it is the base that carries it.
+    baseSalary: 12750.5,
+    grossSalary: 16000,
     birthDate: "1998-01-01",
     hireDate: "2026-08-01",
     jobTitle: "Medical Representative",
-    departmentAr: "الجهاز العصبي",
+    // The DEPARTMENT, not the line: this person is in Sales and works the CNS line.
+    departmentAr: "المبيعات",
+    departmentId: 1,
     lineId: 1,
     residenceAddress: "12 شارع النيل، المعادي",
     residenceCity: "القاهرة",
@@ -320,7 +325,9 @@ function testForm1ClipsToItsPrintedBoxes() {
 }
 
 function testForm1WritesTheWageIntoTheRightColumns() {
-  const html = renderForm1Html(packFixture({ socialInsuranceWage: 6000 }), 1);
+  // Form 1's wage is derived from the base salary now, not read from `social_insurance_wage`:
+  // 7,800 ÷ 1.3 is exactly 6,000, which is the figure the cell expectations below are written for.
+  const html = renderForm1Html(packFixture({ baseSalary: 7800 }), 1);
   const cells = wageCells(html);
 
   assert.equal(cells.length, 18, "three wage grids of six cells each");
@@ -461,10 +468,10 @@ function testGapsSeparateBlockingFromChaseLater() {
 
   // An unnamed party or a contract with no salary is wrong to hand over.
   const missingIdentity = collectHiringPackGaps(
-    employeeFixture({ nameAr: null, grossSalary: null }),
+    employeeFixture({ nameAr: null, baseSalary: null }),
     profileFixture(),
   );
-  for (const field of ["nameAr", "grossSalary"]) {
+  for (const field of ["nameAr", "baseSalary"]) {
     const gap = missingIdentity.find((candidate) => candidate.field === field);
     assert.ok(gap, `${field} must be reported as a gap`);
     assert.equal(gap.blocking, true, `${field} must block`);
@@ -625,40 +632,42 @@ function testNoNumberCanPrintBackwards() {
 }
 
 /**
- * The bug reported 2026-08-31, the day after the facts screen became editable: editing "Gross
- * salary" and saving it successfully, then finding the printed contract still carries the OLD
- * figure. Root cause — `upsertEmployee` re-derives base/basic/gross/net together and base
- * outranks gross in that derivation (`calculateBaseSalary`), so submitting the employee's
- * unchanged base salary alongside a freshly typed gross silently rebuilt gross from that
- * untouched base. See `resolveFactsCompensationFields`.
+ * The bug reported 2026-08-31, the day after the facts screen became editable: editing the salary
+ * and saving it successfully, then finding the printed contract still carries the OLD figure.
+ *
+ * `upsertEmployee` re-derives base/basic/gross/net together from whichever ONE is supplied, and
+ * base outranks the rest in that derivation (`calculateBaseSalary`). The field is the BASE salary
+ * since the owner's correction later the same day, which makes it the anchor the derivation reads
+ * first rather than one it overwrites — but the round trip still has to be proven, because the
+ * failure mode is a save that reports success and changes nothing.
  */
-function testFactsSaveAnchorsGrossSalaryEditThroughTheRealFormula() {
+function testFactsSaveAnchorsBaseSalaryEditThroughTheRealFormula() {
   // Self-consistent under the formula: base 8000, +500 social insurance, +200 tax = gross 8700;
   // basic is 70% of base; net carries no cost-of-living/fuel here, so it equals base.
   const current = { baseSalary: 8000, basicSalary: 5600, grossSalary: 8700, netSalary: 8000 };
   const socialInsurance = 500;
   const taxes = 200;
 
-  // An edit: the user typed a new gross salary.
+  // An edit: the user typed a new base salary.
   const edited = resolveFactsCompensationFields(current, 15000);
-  assert.equal(edited.baseSalary, null, "base must not ride along unchanged once gross was edited");
-  assert.equal(edited.basicSalary, null);
+  assert.equal(edited.baseSalary, 15000);
+  assert.equal(edited.basicSalary, null, "basic must not ride along unchanged once base was edited");
+  assert.equal(edited.grossSalary, null, "gross must not ride along unchanged once base was edited");
   assert.equal(edited.netSalary, null);
-  assert.equal(edited.grossSalary, 15000);
 
   // The headline assertion: run the anchored fields through the REAL payroll derivation —
   // the same one `upsertEmployee` calls — and confirm the edit survives it.
   const derived = resolveFixedSalaryAmounts({ ...edited, socialInsurance, taxes });
   assert.equal(
-    derived.grossSalary,
+    derived.baseSalary,
     15000,
-    "the derivation must reproduce the newly typed gross salary, not silently revert to the old one",
+    "the derivation must reproduce the newly typed base salary, not silently revert to the old one",
   );
-  assert.equal(derived.baseSalary, 14300);
+  assert.equal(derived.basicSalary, 10500, "basic is 70% of the NEW base, not of the old one");
 
-  // Saving without touching gross salary (the form resubmits the current figure verbatim) must
-  // round-trip to the same base/basic/net through that same derivation.
-  const unedited = resolveFactsCompensationFields(current, current.grossSalary);
+  // Saving without touching the salary (the form resubmits the current figure verbatim) must
+  // round-trip to the same base through that same derivation.
+  const unedited = resolveFactsCompensationFields(current, current.baseSalary);
   const uneditedDerived = resolveFixedSalaryAmounts({ ...unedited, socialInsurance, taxes });
   assert.equal(uneditedDerived.baseSalary, current.baseSalary);
   assert.equal(uneditedDerived.grossSalary, current.grossSalary);
@@ -680,5 +689,5 @@ export function runHiringPackTests() {
   testGapsSeparateBlockingFromChaseLater();
   testEveryCompanySettingsGapReachesThePage();
   testNoNumberCanPrintBackwards();
-  testFactsSaveAnchorsGrossSalaryEditThroughTheRealFormula();
+  testFactsSaveAnchorsBaseSalaryEditThroughTheRealFormula();
 }

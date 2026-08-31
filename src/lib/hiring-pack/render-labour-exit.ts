@@ -68,10 +68,11 @@ export function buildExitValues(data: HiringPackData): Record<string, string> {
 
     // ── The person leaving ──────────────────────────────────────────────────────────────────
     // The Arabic name and the Arabic job title: these are Arabic-language legal documents, and
-    // `employees.job_title` is English ("Medical Rep"). The English title is a last resort, printed
-    // only so a form is not blank where a reader expects a job.
+    // `employees.job_title` is English ("Medical Rep"). It used to be printed as a last resort so
+    // the form was not blank where a reader expects a job — the owner ruled against that on
+    // 2026-08-31: the title goes on in Arabic or the box is left for the pen.
     employeeName: employee.nameAr ?? employee.fullName,
-    jobTitle: profile.jobTitleAr ?? employee.jobTitle ?? "",
+    jobTitle: profile.jobTitleAr ?? "",
     nationalId: employee.nationalId ?? "",
     address: employee.residenceAddress ?? "",
     phone: employee.mobileNumber ?? "",

@@ -12,6 +12,7 @@ import {
 } from "@/lib/employees/employee-directory";
 import { canonicalHrIdForDisplay, hrIdsMatch } from "@/lib/hr-id";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { arabicDepartmentName } from "@/lib/hiring-pack/department-names";
 import { currentTemplateVersion } from "@/lib/hiring-pack/template-registry";
 import {
   ASSET_DOCUMENTS,
@@ -126,7 +127,9 @@ const DOCUMENT_BINDINGS: Record<
 };
 
 type EmployeeDbRow = {
+  base_salary: number | string | null;
   birth_date: string | null;
+  department_id: number | null;
   employment_status: string | null;
   full_name: string | null;
   gross_salary: number | string | null;
@@ -497,11 +500,11 @@ export function collectHiringPackGaps(
     add("socialInsuranceNumber", "Insurance number", "الرقم التأميني", ["contract", ...INSURANCE], true, "employee-record");
   }
   if (!employee.birthDate) add("birthDate", "Date of birth", "تاريخ الميلاد", ["contract"], true, "employee-record");
-  if (employee.grossSalary === null) {
-    add("grossSalary", "Gross monthly salary", "الأجر الشهري الإجمالي", ["contract"], true, "employee-record");
-  }
-  if (employee.socialInsuranceWage === null) {
-    add("socialInsuranceWage", "Insurance wage", "الأجر التأميني", HIRING, true, "employee-record");
+  // One number now stands behind both: the contract prints the base salary and the insurance wage
+  // on the contract and Form 1 is derived from it, so a missing base blanks all three at once. It
+  // is reported against the hiring documents as a whole for that reason.
+  if (employee.baseSalary === null) {
+    add("baseSalary", "Base monthly salary", "الأجر الأساسي", HIRING, true, "employee-record");
   }
   // The hire date reaches the mutual-termination agreement too: its تمهيد states when the contract
   // being ended began, and that date falls back to the hire date exactly as the contract's does.
@@ -644,7 +647,7 @@ async function loadEmployeeFacts(hrId: string): Promise<HiringPackEmployeeFacts>
   const { data, error } = await supabase
     .from("employees")
     .select(
-      "hr_id, full_name, nickname, name_ar, national_id, social_insurance_number, social_insurance_wage, gross_salary, birth_date, hire_date, job_title, line_id, residence_address, residence_city, mobile_number, work_email, employment_status, last_working_date",
+      "hr_id, full_name, nickname, name_ar, national_id, social_insurance_number, social_insurance_wage, base_salary, gross_salary, birth_date, hire_date, job_title, department_id, line_id, residence_address, residence_city, mobile_number, work_email, employment_status, last_working_date",
     )
     .eq("hr_id", hrId)
     .maybeSingle<EmployeeDbRow>();
@@ -652,17 +655,22 @@ async function loadEmployeeFacts(hrId: string): Promise<HiringPackEmployeeFacts>
   if (error) throw new Error(error.message);
   if (!data) throw new HiringPackEmployeeNotFoundError(hrId);
 
-  // `employees.line_name` is NULL throughout production, so the department has to come from the
-  // lines table by id — reading the column directly would print an empty إدارة/قطاع on every
-  // contract.
+  // THE DEPARTMENT IS NOT THE LINE — owner, 2026-08-31, in those words.
+  //
+  // This read used to resolve `lines.name` by `line_id`, so a contract for a medical rep printed
+  // "CNS" or "Pedia" as his إدارة. That is his product line, not the department that employs him:
+  // in production 140 of the 162 people carrying a department are in Sales, across all three lines.
+  // The department is `employees.department_id` against the `departments` table — the same nine
+  // names the rest of the HR module uses. `department_name` on the row is NULL for every employee
+  // (measured: 0 of 180), exactly as `line_name` was, so it has to be joined by id either way.
   let departmentAr: string | null = null;
-  if (data.line_id !== null) {
-    const { data: line } = await supabase
-      .from("lines")
+  if (data.department_id !== null) {
+    const { data: department } = await supabase
+      .from("departments")
       .select("id, name")
-      .eq("id", data.line_id)
+      .eq("id", data.department_id)
       .maybeSingle<{ id: number; name: string | null }>();
-    departmentAr = cleanText(line?.name ?? null);
+    departmentAr = arabicDepartmentName(cleanText(department?.name ?? null));
   }
 
   return {
@@ -672,11 +680,13 @@ async function loadEmployeeFacts(hrId: string): Promise<HiringPackEmployeeFacts>
     nationalId: cleanText(data.national_id),
     socialInsuranceNumber: cleanText(data.social_insurance_number),
     socialInsuranceWage: toNumber(data.social_insurance_wage),
+    baseSalary: toNumber(data.base_salary),
     grossSalary: toNumber(data.gross_salary),
     birthDate: data.birth_date,
     hireDate: data.hire_date,
     jobTitle: cleanText(data.job_title),
     departmentAr,
+    departmentId: data.department_id,
     lineId: data.line_id,
     residenceAddress: cleanText(data.residence_address),
     residenceCity: cleanText(data.residence_city),
@@ -943,24 +953,27 @@ export async function listHiringPackLines(): Promise<{ id: number; name: string 
 }
 
 /**
- * Which compensation fields to hand `upsertEmployee` when only the facts screen's gross-salary
+ * Which compensation fields to hand `upsertEmployee` when only the facts screen's base-salary
  * input may have changed.
  *
- * EXPORTED FOR THE TESTS, deliberately. `upsertEmployee` does not store gross salary on its own —
- * it re-derives base, basic, gross and net together from whichever ONE of them is supplied, and
- * base outranks gross in that priority (`calculateBaseSalary` in `payroll/policy.ts`). Submitting
- * the employee's UNCHANGED base salary alongside a freshly typed gross salary made the formula
- * rebuild gross from that untouched base and silently discard what the screen just sent — a save
- * that reported success while the stored gross salary never moved, which is what printed a stale
- * figure (fixed 2026-08-31, the day after the field became editable). Passing null for base/basic/
- * net makes the submitted gross the anchor instead; an empty field falls back to the employee's
- * current values so a blank submission can never zero out a real salary.
+ * EXPORTED FOR THE TESTS, deliberately. `upsertEmployee` does not store one salary on its own — it
+ * re-derives base, basic, gross and net together from whichever ONE of them is supplied, and base
+ * outranks the others in that priority (`calculateBaseSalary` in `payroll/policy.ts`). Passing null
+ * for basic/gross/net makes the submitted base the anchor; an empty field falls back to the
+ * employee's current values so a blank submission can never zero out a real salary.
+ *
+ * THIS FIELD WAS GROSS SALARY UNTIL 2026-08-31 and the two are not interchangeable. Submitting the
+ * employee's UNCHANGED base alongside a freshly typed gross made the formula rebuild gross from
+ * that untouched base and silently discard what the screen sent — a save that reported success
+ * while the stored figure never moved, which is what printed a stale salary. Anchoring on base
+ * cannot fail that way, because base is what the derivation reads first rather than what it
+ * overwrites.
  */
 export function resolveFactsCompensationFields(
   current: Pick<EmployeeMutationInput, "baseSalary" | "basicSalary" | "netSalary" | "grossSalary">,
-  grossSalaryInput: number | null,
+  baseSalaryInput: number | null,
 ): Pick<EmployeeMutationInput, "baseSalary" | "basicSalary" | "netSalary" | "grossSalary"> {
-  if (grossSalaryInput === null) {
+  if (baseSalaryInput === null) {
     return {
       baseSalary: current.baseSalary,
       basicSalary: current.basicSalary,
@@ -968,7 +981,7 @@ export function resolveFactsCompensationFields(
       netSalary: current.netSalary,
     };
   }
-  return { baseSalary: null, basicSalary: null, grossSalary: grossSalaryInput, netSalary: null };
+  return { baseSalary: baseSalaryInput, basicSalary: null, grossSalary: null, netSalary: null };
 }
 
 /**
@@ -1032,7 +1045,7 @@ export async function saveHiringPackEmployeeFacts(
   const current = directory.employees.find((row) => hrIdsMatch(row.hrId, hrId));
   if (!current) throw new HiringPackEmployeeNotFoundError(hrId);
 
-  const compensation = resolveFactsCompensationFields(current, toNumber(input.grossSalary));
+  const compensation = resolveFactsCompensationFields(current, toNumber(input.baseSalary));
 
   // Every field below either carries the current row through untouched or applies exactly what
   // this screen's facts form edits — never a blend of the two for the same field, so a value the
@@ -1081,7 +1094,10 @@ export async function saveHiringPackEmployeeFacts(
     socialInsurance: current.socialInsurance,
     socialInsuranceNumber: cleanText(input.socialInsuranceNumber),
     socialInsuranceStatus: current.socialInsuranceStatus,
-    socialInsuranceWage: toNumber(input.socialInsuranceWage),
+    // Carried through, never submitted. The pack derives the insurance wage it PRINTS from the base
+    // salary and no longer edits this column; writing `input.socialInsuranceWage` here would send
+    // undefined and blank a real payroll figure on every save.
+    socialInsuranceWage: current.socialInsuranceWage,
     taxes: current.taxes,
     teamId: current.teamId,
     workEmail: cleanText(input.workEmail)?.toLowerCase() ?? null,

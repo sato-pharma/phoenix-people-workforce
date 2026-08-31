@@ -7,6 +7,7 @@ import {
   type ContractToken,
 } from "@/lib/hiring-pack/contract-template";
 import { resolveContractTemplate } from "@/lib/hiring-pack/contract-text";
+import { insuranceWageFromBase } from "@/lib/hiring-pack/insurance-wage";
 import {
   arabicDayName,
   ARABIC_FONT_STACK,
@@ -129,12 +130,20 @@ function buildContractValues(data: HiringPackData): Partial<Record<ContractToken
     PHONE: employee.mobileNumber ?? "",
     EMAIL: employee.workEmail ?? "",
 
-    JOB_TITLE: profile.jobTitleAr ?? employee.jobTitle ?? "",
+    // ARABIC ONLY — no fallback to `employee.jobTitle`, which is the English title off the employee
+    // record ("Medical Rep", "District Manager"). مادة (18) makes the Arabic text controlling, so an
+    // English title in مادة (1) is not a cosmetic blemish: it is the job the contract binds him to,
+    // written in the language the contract says does not govern. Owner, 2026-08-31: the job title
+    // must be written in the contract in Arabic, not English. Missing prints the dotted rule and the
+    // fill screen already flags `jobTitleAr` as a required field, which is the better failure.
+    JOB_TITLE: profile.jobTitleAr ?? "",
     DEPARTMENT: employee.departmentAr ?? "",
 
-    SALARY_FIGURES: formatMoney(employee.grossSalary),
-    SALARY_WORDS: spellEgyptianAmount(employee.grossSalary),
-    INSURANCE_WAGE: formatMoney(employee.socialInsuranceWage),
+    // The base salary, not the gross — owner, 2026-08-31. Gross carries the allowances on top, so
+    // printing it here committed the company in مادة (2) to about 1.29× the salary it meant.
+    SALARY_FIGURES: formatMoney(employee.baseSalary),
+    SALARY_WORDS: spellEgyptianAmount(employee.baseSalary),
+    INSURANCE_WAGE: formatMoney(insuranceWageFromBase(employee.baseSalary)),
 
     DURATION: describeDurationMonths(terms.durationMonths),
     START_DATE: pinLtr(formatDayMonthYear(terms.contractStartDate ?? employee.hireDate)),
@@ -195,6 +204,12 @@ function partyLine(text: string): string {
  *
  * Used by the banded layout only. The prose layout keeps the plain substitution it shipped with,
  * because an archived contract must reproduce as the document that was signed.
+ *
+ * EACH FILLED SPAN CARRIES ITS TOKEN as `data-hp-key`, which is what lets the preview screen offer
+ * that value for correction on the page itself. A data attribute is inert in print and changes
+ * nothing about the rendered document. Note this is a property of the BANDED layout only, for the
+ * same archive reason as the highlight above: the prose layout substitutes into plain text with no
+ * element to hang an attribute on, and introducing one would alter a document already signed.
  */
 function fillMarkedHtml(template: string, values: Partial<Record<ContractToken, string>>): string {
   const pattern = /\{\{([A-Z_]+)\}\}/g;
@@ -203,12 +218,14 @@ function fillMarkedHtml(template: string, values: Partial<Record<ContractToken, 
   let match: RegExpExecArray | null = pattern.exec(template);
   while (match !== null) {
     out += line(template.slice(last, match.index));
-    const raw = values[match[1] as ContractToken];
+    const token = match[1];
+    const raw = values[token as ContractToken];
     const text = typeof raw === "string" ? raw.trim() : "";
+    const key = ` data-hp-key="${escapeHtml(token)}"`;
     out +=
       text.length > 0
-        ? `<span class="fill">${escapeHtml(text)}</span>`
-        : `<span class="fill fill--blank">${CONTRACT_BLANK_RULE}</span>`;
+        ? `<span class="fill"${key}>${escapeHtml(text)}</span>`
+        : `<span class="fill fill--blank"${key}>${CONTRACT_BLANK_RULE}</span>`;
     last = match.index + match[0].length;
     match = pattern.exec(template);
   }

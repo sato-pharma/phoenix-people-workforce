@@ -44,13 +44,20 @@ export type FormPage = {
  * A key with no value prints nothing at all — deliberately. A half-filled pack still has to print,
  * because the alternative is a screen that refuses to produce the paper somebody needs today; what
  * a missing value must never do is print a guess or a placeholder that reads as data.
+ *
+ * EVERY VALUE CARRIES ITS OWN KEY as `data-hp-key`, so the preview screen can find it and let an
+ * operator correct it on the page itself. A data attribute is inert in print — it has no visual
+ * effect anywhere, on paper or on screen — so this costs the printed document nothing. The
+ * attribute is the ONLY link between a mark on the paper and the column behind it;
+ * `paper-fields.ts` holds the other half and decides which keys may be written at all.
  */
 export function renderPlacement(placement: Placement, values: Record<string, string>): string {
   const raw = values[placement.key] ?? "";
   if (!raw) return "";
+  const key = ` data-hp-key="${escapeHtml(placement.key)}"`;
 
   if (placement.kind === "tick") {
-    return `<span class="f tick" style="left:${placement.x}pt;top:${placement.y}pt;width:${placement.w}pt;height:${placement.h}pt;line-height:${placement.h}pt">${escapeHtml(raw)}</span>`;
+    return `<span class="f tick"${key} style="left:${placement.x}pt;top:${placement.y}pt;width:${placement.w}pt;height:${placement.h}pt;line-height:${placement.h}pt">${escapeHtml(raw)}</span>`;
   }
 
   if (placement.kind === "digits") {
@@ -65,14 +72,14 @@ export function renderPlacement(placement: Placement, values: Record<string, str
       .join("");
     const width = placement.pitch * placement.cells;
     const size = placement.size ?? 10;
-    return `<span class="f grid" style="left:${placement.x}pt;top:${placement.y}pt;width:${width.toFixed(2)}pt;height:${placement.h}pt;font-size:${size}pt">${cells}</span>`;
+    return `<span class="f grid"${key} style="left:${placement.x}pt;top:${placement.y}pt;width:${width.toFixed(2)}pt;height:${placement.h}pt;font-size:${size}pt">${cells}</span>`;
   }
 
   const size = placement.size ?? 9;
   // The text sits in an inner element so `FIT_TO_BOX_SCRIPT` can compress it horizontally when it
   // is wider than the rule it was measured for. Without the wrapper there is nothing to scale: the
   // outer box is what defines the limit, so scaling it would move the limit too.
-  return `<span class="f txt" style="left:${placement.x}pt;top:${placement.y}pt;width:${placement.w}pt;height:${placement.h}pt;line-height:${placement.h}pt;text-align:${placement.align};font-size:${size}pt"><span class="ff">${escapeHtml(raw)}</span></span>`;
+  return `<span class="f txt"${key} style="left:${placement.x}pt;top:${placement.y}pt;width:${placement.w}pt;height:${placement.h}pt;line-height:${placement.h}pt;text-align:${placement.align};font-size:${size}pt"><span class="ff">${escapeHtml(raw)}</span></span>`;
 }
 
 /** One printed side: the artwork, the values on it, and anything the document adds of its own. */

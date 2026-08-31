@@ -71,11 +71,14 @@ function employeeFixture(): HiringPackEmployeeFacts {
     nationalId: "29709091234567",
     socialInsuranceNumber: "123456789",
     socialInsuranceWage: 6000,
-    grossSalary: 11000,
+    baseSalary: 11000,
+    grossSalary: 14300,
     birthDate: "1997-09-09",
     hireDate: "2026-08-01",
     jobTitle: "Medical Representative",
-    departmentAr: "الجهاز العصبي",
+    // The department, not the line.
+    departmentAr: "المبيعات",
+    departmentId: 1,
     lineId: 1,
     residenceAddress: "5 شارع الجمهورية، وسط البلد",
     residenceCity: "القاهرة",
@@ -670,7 +673,7 @@ function testEveryVersionBindsAnIdentityFieldToItsValue(): void {
     // The fill spans are stripped first — they sit INSIDE the binding span in the banded layout.
     assert.ok(
       /<span class="field">[^<]*الرقم التأميني/u.test(
-        html.replace(/<\/?span class="fill[^"]*">/g, "").replace(/<\/span>/g, "</span>"),
+        html.replace(/<\/?span class="fill[^>]*>/g, "").replace(/<\/span>/g, "</span>"),
       ),
       `${template.id} must bind الرقم التأميني to the number that follows it`,
     );

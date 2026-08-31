@@ -156,11 +156,28 @@ export async function GET(request: Request, { params }: { params: Promise<{ hrId
     const copies = resolveCopies(url.searchParams.get("copies"), renderer.copies);
     const html = renderer.render(data, copies, requestedVersion);
 
-    // Stamped after the document is built, and never awaited into the response path: a print that
-    // works but fails to record itself is a far better outcome than a print that refuses because
-    // the audit write hiccupped. `recordHiringPackPrinted` swallows its own failures for the same
-    // reason.
-    void recordHiringPackPrinted(hrId, requested);
+    // ─────────────────────────────────────────────────────────────────────────────────────────
+    // `preview=1` RETURNS THE SAME DOCUMENT AND RECORDS NOTHING.
+    //
+    // The fill screen shows the real page in a panel so an operator can read it and correct values
+    // on it before committing to paper, and it reloads that panel after every single edit. Stamping
+    // `*_printed_at` on each of those loads would report a document as printed the moment somebody
+    // glanced at it, and would keep re-dating it while they were still typing — so "Printed on …"
+    // would stop meaning anything, on the one screen whose whole job is to say what state each
+    // paper is in.
+    //
+    // The BYTES ARE IDENTICAL either way, deliberately: a preview that renders through a different
+    // path is not a preview, it is a second document that happens to look similar, and the defect
+    // being fixed here is precisely somebody trusting a screen that did not match the paper.
+    // ─────────────────────────────────────────────────────────────────────────────────────────
+    const isPreview = url.searchParams.get("preview") === "1";
+    if (!isPreview) {
+      // Stamped after the document is built, and never awaited into the response path: a print that
+      // works but fails to record itself is a far better outcome than a print that refuses because
+      // the audit write hiccupped. `recordHiringPackPrinted` swallows its own failures for the same
+      // reason.
+      void recordHiringPackPrinted(hrId, requested);
+    }
 
     return new Response(html, {
       headers: {

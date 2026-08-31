@@ -85,6 +85,30 @@ const whatsappConnectCsp = contentSecurityPolicy
   )
   .concat("; frame-src 'self' https://connect.facebook.net https://*.facebook.com");
 
+// A CSP for the hiring-pack print route ONLY — the nine HR documents, which the fill screen shows in
+// an <iframe> so an operator can read the real page and correct values on it before it goes to paper.
+// The site-wide `frame-ancestors 'none'` / `X-Frame-Options: DENY` blocks that outright, even from
+// this app to itself: the frame loads as an error page carrying an opaque origin, so the parent
+// cannot reach its document and the panel renders empty with no message anywhere. (Measured in the
+// browser 2026-08-31 — "Blocked a frame with origin http://localhost:3000 from accessing a
+// cross-origin frame", which is what a SAME-origin iframe reports once the response refuses framing.
+// Nothing in the repository can see this: it is a response header meeting a browser, so every test
+// and every typecheck passes while the feature is completely dead.)
+//
+// DERIVED from the site-wide policy by swapping exactly ONE directive, like whatsappConnectCsp above
+// and for the same reason: later hardening of the base policy carries through here automatically.
+// This route is NOT one of the raw-file routes below and must NOT get their frame-ancestors-only CSP
+// — it returns HTML that runs an inline script (FIT_TO_BOX_SCRIPT, which measures Arabic text and is
+// the only thing keeping a long value inside its printed box), so script-src and the rest still have
+// something real to protect here.
+//
+// Where the builder preview origin is configured the base policy already permits 'self' and the
+// replaced directive is absent, so this leaves that policy alone rather than narrowing it.
+const hiringPackPrintCsp = contentSecurityPolicy.replace(
+  "frame-ancestors 'none'",
+  "frame-ancestors 'self'",
+);
+
 const securityHeaders = [
   {
     key: "Content-Security-Policy",
@@ -304,6 +328,16 @@ const nextConfig: NextConfig = {
           { key: "X-Frame-Options", value: "SAMEORIGIN" },
         ],
         source: "/api/recruitment/hiring-manager/candidates/:candidateId/files/:fileId",
+      },
+      // The hiring-pack documents, framed by their own fill screen — see hiringPackPrintCsp above for
+      // why this keeps the full site-wide policy rather than the frame-ancestors-only one used by the
+      // two file routes directly above it.
+      {
+        headers: [
+          { key: "Content-Security-Policy", value: hiringPackPrintCsp },
+          { key: "X-Frame-Options", value: "SAMEORIGIN" },
+        ],
+        source: "/api/hiring-pack/:hrId/print",
       },
       ...(process.env.NODE_ENV === "production"
         ? [

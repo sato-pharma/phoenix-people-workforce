@@ -59,7 +59,9 @@ function buildClearanceValues(data: HiringPackData): Partial<Record<ClearanceTok
 
     EMPLOYEE_NAME: employee.nameAr ?? employee.fullName,
     NATIONAL_ID: employee.nationalId ?? "",
-    JOB_TITLE: profile.jobTitleAr ?? employee.jobTitle ?? "",
+    // Arabic only — the English title off the employee record does not belong on an Arabic
+    // instrument. Same rule as the contract; see `render-contract.ts`.
+    JOB_TITLE: profile.jobTitleAr ?? "",
     DEPARTMENT: employee.departmentAr ?? "",
     HIRE_DATE: employee.hireDate ? formatDayMonthYear(employee.hireDate) : "",
     LAST_WORKING_DATE: lastWorkingDate ? formatDayMonthYear(lastWorkingDate) : "",
@@ -84,12 +86,17 @@ function fieldValue(field: ClearanceField, values: Partial<Record<ClearanceToken
 
   const raw = field.token ? values[field.token] : undefined;
   const text = typeof raw === "string" ? raw.trim() : "";
+  // The token travels into the markup so the preview screen can offer this value for correction on
+  // the page itself. Inert in print. Carried on the BLANK rule too, deliberately — an empty dotted
+  // rule is the single most useful thing to be able to fill in from the page.
+  const key = field.token ? ` data-hp-key="${escapeHtml(field.token)}"` : "";
+
   if (text.length === 0) {
     const rule = field.wide ? CLEARANCE_BLANK_RULE_WIDE : CLEARANCE_BLANK_RULE;
-    return `<span class="rule-line">${escapeHtml(rule)}</span>`;
+    return `<span class="rule-line"${key}>${escapeHtml(rule)}</span>`;
   }
-  if (field.ltr) return `<span class="val" dir="ltr">${escapeHtml(text)}</span>`;
-  return `<span class="val">${escapeHtml(text)}</span>`;
+  if (field.ltr) return `<span class="val" dir="ltr"${key}>${escapeHtml(text)}</span>`;
+  return `<span class="val"${key}>${escapeHtml(text)}</span>`;
 }
 
 function fieldsBlock(

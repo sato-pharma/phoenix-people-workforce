@@ -24,6 +24,7 @@ import {
   splitTaxRegistration,
   todayInCairo,
 } from "@/lib/hiring-pack/render-shared";
+import { insuranceWageFromBase } from "@/lib/hiring-pack/insurance-wage";
 import type { HiringPackData } from "@/lib/hiring-pack/types";
 
 // Rendering government Form 1: the official artwork as a vector background, the values placed over
@@ -149,7 +150,13 @@ export function renderForm1Html(data: HiringPackData, copies: number): string {
   // comprehensive figures on this form are both derived from the subscription wage, and putting the
   // gross salary in one of them — which is what happens when a person fills it in by hand in a
   // hurry — overstates the contribution base.
-  const wage = data.employee.socialInsuranceWage;
+  //
+  // It is also the same figure the contract prints, and for the same reason one step out: Form 1 is
+  // the declaration this employee is subscribed on, and the contract is what he signed. If those
+  // two named different insurance wages the discrepancy would be sitting in his own file. So both
+  // run the owner's rule off the base salary rather than reading `social_insurance_wage`, which
+  // holds a different number today (see `insurance-wage.ts`).
+  const wage = insuranceWageFromBase(data.employee.baseSalary);
   const wageGrids = FORM1_WAGE_GRIDS.map((grid) => renderWageGrid(grid, wage)).join("");
 
   const sheets: string[] = [];
