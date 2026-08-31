@@ -122,6 +122,10 @@ const TWIN_RULES: readonly TwinRule[] = [
   { from: "/organogram", to: "/employee-portals/organogram" },
   { from: "/probation", to: "/employee-portals/probation" },
   { from: "/recruitment/contact-review", to: "/employee-portals/contact-review" },
+  // The silent manager-engagement report. Its admin page sends a portal-mode viewer (a National
+  // Sales Manager) to the portal twin, which scopes him to his own line — this table is what makes
+  // that hop resolve before the (admin) layout's blanket redirect drops him on the portal home.
+  { from: "/recruitment/manager-engagement", to: "/employee-portals/recruitment-engagement" },
   { from: "/reports/vacancies", to: "/employee-portals/vacancies" },
   // nav-declared: these two pages carried a portal branch that RENDERED the portal shell
   // inline instead of redirecting — which the group layout had already made unreachable —

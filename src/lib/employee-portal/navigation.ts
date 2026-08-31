@@ -36,6 +36,11 @@ export type EmployeePortalNavVisibility = {
   // (src/lib/recruitment/applications.ts) all shipped, but no sidebar/bottom-nav link ever did — so
   // a manager notified about their candidate had no way back to the page except the command palette.
   showMyCandidatesTab?: boolean;
+  // "Manager CV Engagement" (/employee-portals/recruitment-engagement) — the SILENT report of which
+  // managers opened / answered / ignored the CVs sent to them. National-Sales-Manager-only in the
+  // portal (scoped to his own line server-side); Super Admin and CEO reach the same report through
+  // the admin twin. The manager being measured never sees it — see manager-cv-engagement.ts.
+  showManagerEngagementTab?: boolean;
   showProbationTab?: boolean;
   showOrganogramTab?: boolean;
   showPlansTab?: boolean;
@@ -494,6 +499,12 @@ export function resolveEmployeePortalNavVisibility(
       isProductManager ||
       isGroupProductManager ||
       isMarketingManager,
+    // National Sales Manager only. The report is scoped to his own line inside
+    // loadManagerCvEngagement (resolveHiringManagerScopeHrIds → LINE), so a company-wide manager
+    // never appears in it; Super Admin and CEO see every line through the admin-shell twin instead.
+    // The three roles it admits are exactly canViewManagerCvEngagement — kept in step by hand,
+    // because that gate lives in a server module this client-consumed helper must not import.
+    showManagerEngagementTab: isNationalSalesManager,
     // Personally device-tracked employees see their own punch history; a head-of-department
     // Marketing Manager also gets the tab to review their team's attendance (self + direct reports,
     // gated server-side by canViewEmployeeAttendanceReport on /employee-portals/fingerprint-analytics).

@@ -313,6 +313,12 @@ const adminNavigationSectionSeeds = [
     id: "ceo-recruitment-candidates",
     items: [
       { href: "/recruitment/candidates", icon: BriefcaseBusiness, label: "My Candidates", permissions: [{ resource: "hiring_interviews", action: "read" }], roles: ["CEO"] },
+      // The SILENT manager-engagement report: which managers opened / answered / ignored the CVs
+      // sent to them. Admin-shell row for CEO (Super Admin auto-sees via the waiver in
+      // active-path.ts); a National Sales Manager reaches the same report, scoped to his line,
+      // through the portal twin. A plain sidebar row, NOT a hub card — hub cards trip four extra CI
+      // gates for no more reach. The managers being measured never see any of it.
+      { href: "/recruitment/manager-engagement", icon: ClipboardList, label: "Manager CV Engagement", permissions: [{ resource: "hiring_interviews", action: "read" }], roles: ["CEO"] },
     ],
     label: "Hiring",
   },
@@ -1258,6 +1264,13 @@ const employeePortalNavigationSectionSeeds = [
       { href: "/employee-portals/organogram", icon: Network, label: "Organogram", permissions: [{ resource: "organogram", action: "read" }], roles: ["District Manager", "National Sales Manager", "Regional Manager", "Product Manager", "Group Product Manager", "Marketing Manager", "Training Manager"] },
       { href: "/employee-portals/vacancies", icon: BriefcaseBusiness, label: "Vacancies Report", permissions: [{ resource: "vacancies", action: "read" }], roles: ["District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager", "Training Manager"] },
       { href: "/employee-portals/recruitment-candidates", icon: UsersRound, label: "My Candidates", permissions: [{ resource: "hiring_interviews", action: "read" }], roles: ["District Manager", "Regional Manager", "National Sales Manager", "Manager", "Product Manager", "Group Product Manager", "Marketing Manager"] },
+      // Catalog entry for the SILENT manager-engagement report (real nav lives in
+      // employee-portal-layout.tsx, gated by showManagerEngagementTab → National Sales Manager only).
+      // Present here so Cmd/Ctrl+K can find it and the browser tab carries its own title; the command
+      // palette filters by these roles/permissions, so only an NSM sees it in search. Required by
+      // employee-portal-nav-catalog-sync.test.ts, which pins every real-nav portal href as either
+      // catalogued or a recorded omission.
+      { href: "/employee-portals/recruitment-engagement", icon: ClipboardList, label: "Manager CV Engagement", permissions: [{ resource: "hiring_interviews", action: "read" }], roles: ["National Sales Manager"] },
       { href: "/employee-portals/probation", icon: Hourglass, label: "Probation", permissions: [{ resource: "probation", action: "read" }], roles: ["District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager", "Training Manager", "Manager"] },
       { href: "/employee-portals/training-manager", icon: ChartColumnBig, label: "Coaching Dashboard", permissions: [{ resource: "coaching" }], roles: ["Training Manager"] },
       { href: "/employee-portals/training-manager/create-coaching-report", icon: FilePlus2, label: "Create Coaching Report", permissions: [{ resource: "coaching", action: "create" }], roles: ["Training Manager"] },

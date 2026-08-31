@@ -86,6 +86,10 @@ export function runEmployeePortalBottomNavTests() {
     // email against the CV it came from is desk work. The page still renders cards on a phone —
     // it is simply not a bottom-nav shortcut.
     "/employee-portals/contact-review",
+    // Manager CV Engagement: the silent NSM oversight report (who opened / answered / ignored the
+    // CVs sent to them). A wide read-only table — desk work, same class as Inbound Intake Health
+    // above, not a phone bottom-nav shortcut. Renders cards on a phone; simply not pinnable.
+    "/employee-portals/recruitment-engagement",
     "/employee-portals/employees",
     "/employee-portals/contracts",
     "/employee-portals/resignations",
