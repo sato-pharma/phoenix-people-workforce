@@ -982,7 +982,12 @@ let autoloadedIndexBytes = null;
 // The session guard is the one thing that did NOT test a flag, because the old early exit was
 // doing that job for it. It has to test both flags now, or a plain read-only `repo-doctor`
 // would abort with exit 1 whenever a second Claude Code session happens to be open.
-if ((fix || stripIdle) && !force) {
+//
+// NARROWED 2026-09-01 (owner-approved): this census now gates --fix ONLY. --strip-idle gets a
+// lock instead, immediately below — see that block for the measurements and the reasoning.
+// --fix deletes DIRECTORIES and keeps the blunt instrument; --strip-idle deletes only caches
+// that `pnpm install` restores, and already proves per worktree what this count only guesses at.
+if (fix && !force) {
   // Concurrent destructive cleanup is this repo's documented incident pattern
   // (AGENTS.md section 5). Count Claude Code engines only — Claude Desktop ships as
   // WindowsApps\Claude.exe and runs ~14 processes of its own.
@@ -1029,6 +1034,85 @@ if ((fix || stripIdle) && !force) {
         "time is how this repo lost work before. Close the others, or pass --force if you are sure.",
     );
   }
+}
+
+// ── --strip-idle concurrency: a LOCK, not a session census (narrowed 2026-09-01) ───
+// The census above is kept verbatim for --fix. It was the WRONG instrument for --strip-idle,
+// and provably so rather than arguably: ram-guard.ps1 has invoked --strip-idle every 20 hours
+// since 2026-08-26, and it has NEVER ONCE been allowed to run, because this repo is worked
+// with 4+ Claude Code sessions open at all times. A guard that never permits the cleanup is
+// not protecting anything — it is a cleanup that silently does not exist. Measured
+// 2026-09-01: 425,638 reclaimable path entries against 5,595 real project files, and DOUBLING
+// inside one night as worktrees went 3 -> 6. That payload is what makes file search here slow
+// (AGENTS.md section 5, "Worktree payload ... is what makes this checkout feel slow").
+//
+// What the census actually proxied for is "something might be using this worktree right now".
+// --strip-idle answers that DIRECTLY and per worktree, which a global process count cannot:
+// it re-reads git status and skips anything dirty, re-reads what is pushed and skips any
+// commit that exists nowhere upstream, requires no file touched for 120+ minutes, and
+// verifies the tree survived the strip. A session count cannot distinguish a session editing
+// THIS worktree from one editing an unrelated folder — it is strictly less informed.
+//
+// The one genuine risk the census did cover is two repo-doctors stripping simultaneously.
+// That is a mutual-exclusion problem and gets a mutual-exclusion answer. The lock lives in the
+// COMMON git dir, so every worktree of this repo contends on the same file.
+//
+// Deliberately unchanged: --fix still takes the census, --strip-idle still deletes only
+// regenerable caches, and --force still overrides everything.
+const stripLockPath = path.join(commonDir, "repo-doctor-strip.lock");
+const STRIP_LOCK_STALE_MS = 30 * 60 * 1000;
+
+/** True if the pid exists. EPERM means it exists but belongs to someone else — still alive. */
+function pidAlive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    return err.code === "EPERM";
+  }
+}
+
+if (stripIdle && !force) {
+  let holder = null;
+  try {
+    holder = JSON.parse(fs.readFileSync(stripLockPath, "utf8"));
+  } catch {
+    holder = null; // absent or unreadable/corrupt — treat as free, then overwrite it below
+  }
+  if (holder && Number.isInteger(holder.pid)) {
+    const startedMs = Date.parse(holder.startedAt ?? "");
+    const ageMs = Number.isFinite(startedMs) ? Date.now() - startedMs : Infinity;
+    // Both conditions must hold to refuse. A dead holder is a crashed run, and an ancient one
+    // is a run that died without unlinking — neither should block the cleanup forever, which
+    // is the exact failure this whole block exists to stop repeating.
+    if (pidAlive(holder.pid) && ageMs < STRIP_LOCK_STALE_MS) {
+      fail(
+        `another repo-doctor --strip-idle is already running (pid ${holder.pid}, started ` +
+          `${holder.startedAt}). Stripping the same worktrees twice at once is the one real ` +
+          `race here. Wait for it, or pass --force if you are sure it is dead.`,
+      );
+    }
+  }
+  try {
+    fs.writeFileSync(
+      stripLockPath,
+      JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString() }, null, 2),
+      "utf8",
+    );
+  } catch (err) {
+    // Fail closed, exactly like the census does when it cannot count: not being able to take
+    // the lock is precisely when it is least safe to assume nobody else holds it.
+    fail(`could not take the strip-idle lock at ${stripLockPath} (${err.message}).`);
+  }
+  // Synchronous unlink only — see the note above about process.exit() and live fetch handles.
+  process.on("exit", () => {
+    try {
+      const mine = JSON.parse(fs.readFileSync(stripLockPath, "utf8"));
+      if (mine?.pid === process.pid) fs.unlinkSync(stripLockPath);
+    } catch {
+      /* someone else's lock, or already gone — never unlink a lock we do not own */
+    }
+  });
 }
 
 if (fix) {
