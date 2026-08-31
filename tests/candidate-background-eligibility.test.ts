@@ -51,6 +51,13 @@ export function runCandidateBackgroundEligibilityTests(): void {
     ["biological science", "science"],
     ["Botany & Microbiology Department", "science"],
     ["Chemistry & Microbiology", "science"],
+    // Chemistry, added by name 2026-08-31 — a Faculty of Science department that the CV names on its
+    // OWN, so these strings never contain the word "science" and dropped toward the queue before.
+    ["Chemistry", "science"],
+    ["Chemistry Department", "science"],
+    ["Applied Chemistry", "science"],
+    ["Analytical Chemistry", "science"],
+    ["كيمياء", "science"],
     ["Pharmacy", "pharmacy"],
     ["Faculty of Pharmacy", "pharmacy"],
     ["College of Pharmacy", "pharmacy"],
@@ -82,6 +89,27 @@ export function runCandidateBackgroundEligibilityTests(): void {
     matchDiscipline("JSS Medical College"),
     null,
     "the ADJECTIVE medical is never a medicine degree — Medical Laboratory and Medical Rep both use it",
+  );
+
+  // ── Chemistry is eligible; its own false friends are not ────────────────────────────────────────
+  // Owner 2026-08-31: *"add chemistry to be approved with pharma vet science."* Folded into science —
+  // it is a Faculty of Science degree, not a sixth code. The one direction to guard is the adjective
+  // "chemical" (engineering) and geology, the other science department in the same missed CVs, which
+  // the owner named neither and which must stay out of the eligible set.
+  assert.equal(
+    matchDiscipline("Chemical Engineering"),
+    null,
+    "the ADJECTIVE chemical is engineering, never a chemistry degree — it must not read as science",
+  );
+  assert.equal(matchDiscipline("Geology"), null, "geology was deliberately left out of the eligible set");
+  const chemistry = judgeBackground({ faculty: "Chemistry Department" });
+  assert.equal(chemistry.outcome, "eligible", "a chemistry graduate is eligible for the field force");
+  assert.equal(chemistry.discipline, "science", "recorded as science — chemistry is not offered as its own code");
+  assert.ok(chemistry.autoFilable, "and may be filed without a human, like every eligible verdict");
+  assert.notEqual(
+    judgeBackground({ faculty: "Geology" }).outcome,
+    "eligible",
+    "geology is not approved — the owner named chemistry only",
   );
 
   // ── A tapped answer is exact, and beats whatever the CV says ───────────────────────────────────
