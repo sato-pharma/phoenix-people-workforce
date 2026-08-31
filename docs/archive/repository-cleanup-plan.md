@@ -1,5 +1,14 @@
 # Repository Cleanup Plan
 
+> **⚠️ ARCHIVED — historical record.** Phases 1-3 (root cleanup, branch cleanup, Excel/binary List A)
+> were executed in 2026-05. The remaining "Pending Approval" items below — employee photo PII
+> remediation, the `components/ui/button.tsx` / `lib/utils.ts` shadcn stub consolidation, and the git
+> history rewrite — were never approved and remain undone; the shadcn stub in particular is a known
+> trap (`@/lib/utils` resolves to the root `lib/utils.ts`, not `src/lib/utils.ts` — editing the `src/`
+> copy silently changes nothing) and should not be touched without the owner naming it explicitly.
+> Branch names, PR numbers, and file counts below reflect the repo state at that time. Retained for
+> reference only.
+
 **Date:** 2026-05-30
 **Status:** Phases 1-3 executed (root cleanup, branch cleanup, Excel/binary List A). Employee photo cleanup and history rewrite remain pending approval
 **Goal:** Make this repository look like a serious enterprise software project

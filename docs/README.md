@@ -54,13 +54,10 @@
 
 | Document | Description |
 |---|---|
-| [Repository Cleanup Plan](repository-cleanup-plan.md) | Full repo hygiene plan with phased actions |
-| [Repo Hygiene Audit](repo-hygiene-audit.md) | Binary files, clutter, cleanup recommendations |
 | [Security Audit (2026-05-09)](audit-2026-05-09.md) | Application security audit findings |
 | [Dead-on-Arrival Findings](dead-on-arrival-findings.md) | Four shipped features that were never reached, verified against production 2026-08-29 |
 | [Payroll & Payslips Guide](payroll-payslips-detailed.md) | Detailed payroll system technical guide |
 | [System Overview](system-overview.md) | High-level system overview |
-| [TODO](todo.md) | Active task tracking |
 | [I18n Plan](i18n-plan.md) | Internationalization roadmap |
 | [Marketing Requests MVP](marketing-requests-mvp.md) | Marketing request module plan |
 | [Workforce Lifecycle Phase 1](workforce-lifecycle-phase-1-plan.md) | Workforce lifecycle plan |
@@ -76,3 +73,6 @@ Completed, point-in-time planning and verification records. Retained for referen
 | Document | Description |
 |---|---|
 | [Employee Portal Remediation](archive/employee-portal-launch-remediation-plan.md) | Historical portal launch-readiness verification (2026-05-28) |
+| [Repository Cleanup Plan](archive/repository-cleanup-plan.md) | Repo hygiene plan, phased actions (2026-05-30) — Phases 1-3 executed, PII/shadcn-stub items still unapproved |
+| [Repo Hygiene Audit](archive/repo-hygiene-audit.md) | Binary files, clutter, cleanup catalog (2026-05-30) — mostly executed since |
+| [TODO](archive/todo.md) | Original Team Performance build-out task list — the feature has since shipped in full |
