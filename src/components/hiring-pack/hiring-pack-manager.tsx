@@ -9,11 +9,12 @@
 // address typed at hiring is the address Form 6 prints at exit; asking for it twice is how the two
 // come to disagree.
 //
-// WHAT THIS SCREEN DELIBERATELY WILL NOT LET YOU EDIT. Everything Phoenix already knows — Arabic
-// name, national ID, insurance number, salary, hire date — is shown read-only, because those values
-// belong to the employee record. A second editable copy here would start disagreeing with it within
-// a week, and then nobody would know which one the contract was printed from. A wrong name is fixed
-// on the employee, and the next print picks the fix up.
+// "WHAT PHOENIX ALREADY KNOWS" WRITES STRAIGHT TO THE EMPLOYEE RECORD. Arabic name, national ID,
+// insurance number, salary, department, address — every other screen reads the same row, so a fix
+// made here is not a second copy that can drift; it is the one the payroll and organogram tools also
+// read. Form 1's own address boxes (below, in "What you fill in") are still typed separately because
+// they are not the same shape — building number, sheyakha/qism/governorate codes are boxes the form
+// prints, not free text — but the street line can be copied over with one click rather than retyped.
 //
 // The design identity is taken from the hiring documents tracker next door — same rounded shell,
 // same field labels, same button sizes. The two screens are one workflow seen from two ends: this
@@ -24,6 +25,7 @@ import {
   Archive,
   CalendarCheck,
   CheckCircle2,
+  Copy,
   DoorOpen,
   FileSignature,
   FileText,
@@ -34,6 +36,7 @@ import {
   UserRound,
 } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
+import type { ReactNode } from "react";
 
 import {
   AdminCallout,
@@ -1136,11 +1139,29 @@ export function HiringPackManager({ canManage, candidates, initialError, initial
                   title="Identity and job"
                 />
                 <FieldGroup
+                  action={
+                    canManage && factsForm.residenceAddress?.trim() ? (
+                      <Button
+                        onClick={() =>
+                          setForm((current) => ({
+                            ...current,
+                            addressStreet: factsForm.residenceAddress ?? "",
+                          }))
+                        }
+                        size="xs"
+                        type="button"
+                        variant="ghost"
+                      >
+                        <Copy className="h-3 w-3" />
+                        Copy the address on file
+                      </Button>
+                    ) : undefined
+                  }
                   disabled={!canManage}
                   fields={FORM1_FIELDS}
                   form={form}
                   onChange={setForm}
-                  subtitle="Printed on Form 1 only. The code fields are boxes on the government form and hold numbers."
+                  subtitle="Printed on Form 1 only. The code fields are boxes on the government form and hold numbers. Street can be copied from the address on file above — building, sheyakha, qism and governorate codes still need typing."
                   title="Form 1 details"
                 />
                 <FieldGroup
@@ -1497,6 +1518,7 @@ export function HiringPackManager({ canManage, candidates, initialError, initial
 }
 
 function FieldGroup({
+  action,
   disabled,
   fields,
   form,
@@ -1504,6 +1526,7 @@ function FieldGroup({
   subtitle,
   title,
 }: {
+  action?: ReactNode;
   disabled: boolean;
   fields: readonly FieldDef[];
   form: FormState;
@@ -1513,9 +1536,12 @@ function FieldGroup({
 }) {
   return (
     <div>
-      <div className="mb-3">
-        <h3 className="text-sm font-black uppercase tracking-[0.1em] text-phx-ink">{title}</h3>
-        <p className="mt-0.5 text-xs font-semibold text-phx-ink-soft">{subtitle}</p>
+      <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <h3 className="text-sm font-black uppercase tracking-[0.1em] text-phx-ink">{title}</h3>
+          <p className="mt-0.5 text-xs font-semibold text-phx-ink-soft">{subtitle}</p>
+        </div>
+        {action ?? null}
       </div>
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
         {fields.map((field) => (

@@ -901,6 +901,35 @@ export async function listHiringPackLines(): Promise<{ id: number; name: string 
 }
 
 /**
+ * Which compensation fields to hand `upsertEmployee` when only the facts screen's gross-salary
+ * input may have changed.
+ *
+ * EXPORTED FOR THE TESTS, deliberately. `upsertEmployee` does not store gross salary on its own —
+ * it re-derives base, basic, gross and net together from whichever ONE of them is supplied, and
+ * base outranks gross in that priority (`calculateBaseSalary` in `payroll/policy.ts`). Submitting
+ * the employee's UNCHANGED base salary alongside a freshly typed gross salary made the formula
+ * rebuild gross from that untouched base and silently discard what the screen just sent — a save
+ * that reported success while the stored gross salary never moved, which is what printed a stale
+ * figure (fixed 2026-08-31, the day after the field became editable). Passing null for base/basic/
+ * net makes the submitted gross the anchor instead; an empty field falls back to the employee's
+ * current values so a blank submission can never zero out a real salary.
+ */
+export function resolveFactsCompensationFields(
+  current: Pick<EmployeeMutationInput, "baseSalary" | "basicSalary" | "netSalary" | "grossSalary">,
+  grossSalaryInput: number | null,
+): Pick<EmployeeMutationInput, "baseSalary" | "basicSalary" | "netSalary" | "grossSalary"> {
+  if (grossSalaryInput === null) {
+    return {
+      baseSalary: current.baseSalary,
+      basicSalary: current.basicSalary,
+      grossSalary: current.grossSalary,
+      netSalary: current.netSalary,
+    };
+  }
+  return { baseSalary: null, basicSalary: null, grossSalary: grossSalaryInput, netSalary: null };
+}
+
+/**
  * Save "What Phoenix already knows" — the facts block was read-only until 2026-08-31, when the
  * owner asked for every field on this screen to be editable, salary and department included.
  *
@@ -911,16 +940,16 @@ export async function listHiringPackLines(): Promise<{ id: number; name: string 
  * These have no formula behind them, so a narrow update is enough and it works for a leaver too,
  * which matters because this is also the screen that fills a departed person's Form 6.
  *
- * Salary and department are different: `grossSalary` and `socialInsuranceWage` are not
- * independent numbers, they are two outputs of the same base→basic→net→gross derivation the full
- * employee editor computes together, and "department" is not free text at all — it is the
- * employee's line assignment, which also re-derives their sales region. Writing either one
- * directly here would leave that computed breakdown, or the region, disagreeing with what was
- * just typed. So for those two fields this function re-runs the exact path the employee editor
- * uses (`upsertEmployee`), carrying every OTHER field on the record through unchanged. That
- * function refuses anyone already resigned or terminated outright ("Use the resignation workflow
- * for resigned or terminated employees") — so for a leaver, salary and department are left exactly
- * as they were, and only the identity fields above are saved. The UI locks those two inputs once
+ * Salary and department are different: `grossSalary` is not an independent number, it is one
+ * output of the same base→basic→net→gross derivation the full employee editor computes together
+ * (see `resolveFactsCompensationFields` for how the other three are resolved so that derivation
+ * anchors on the newly typed gross rather than silently discarding it), and "department" is not
+ * free text at all — it is the employee's line assignment, which also re-derives their sales
+ * region. So for those two fields this function re-runs the exact path the employee editor uses
+ * (`upsertEmployee`), carrying every OTHER field on the record through unchanged. That function
+ * refuses anyone already resigned or terminated outright ("Use the resignation workflow for
+ * resigned or terminated employees") — so for a leaver, salary and department are left exactly as
+ * they were, and only the identity fields above are saved. The UI locks those two inputs once
  * `pack.employee.departed` is true, for the same reason.
  */
 export async function saveHiringPackEmployeeFacts(
@@ -961,6 +990,8 @@ export async function saveHiringPackEmployeeFacts(
   const current = directory.employees.find((row) => hrIdsMatch(row.hrId, hrId));
   if (!current) throw new HiringPackEmployeeNotFoundError(hrId);
 
+  const compensation = resolveFactsCompensationFields(current, toNumber(input.grossSalary));
+
   // Every field below either carries the current row through untouched or applies exactly what
   // this screen's facts form edits — never a blend of the two for the same field, so a value the
   // form does not show can never be silently dropped by omission.
@@ -968,8 +999,8 @@ export async function saveHiringPackEmployeeFacts(
     areaId: current.areaId,
     bankAccount: current.bankAccount,
     bankName: current.bankName,
-    baseSalary: current.baseSalary,
-    basicSalary: current.basicSalary,
+    baseSalary: compensation.baseSalary,
+    basicSalary: compensation.basicSalary,
     birthDate: cleanText(input.birthDate),
     contractType: current.contractType,
     crmId: current.crmId,
@@ -981,7 +1012,7 @@ export async function saveHiringPackEmployeeFacts(
     fuelAllowance: current.fuelAllowance,
     fullName,
     gender: current.gender,
-    grossSalary: toNumber(input.grossSalary),
+    grossSalary: compensation.grossSalary,
     hasBankAccount: current.hasBankAccount,
     hireDate: cleanText(input.hireDate),
     hrId: current.hrId,
@@ -994,7 +1025,7 @@ export async function saveHiringPackEmployeeFacts(
     mobileNumber: cleanText(input.mobileNumber),
     nameAr: cleanText(input.nameAr),
     nationalId: cleanText(input.nationalId),
-    netSalary: current.netSalary,
+    netSalary: compensation.netSalary,
     nickname: current.nickname,
     originalHrId: current.hrId,
     payrollEligible: current.payrollEligible,

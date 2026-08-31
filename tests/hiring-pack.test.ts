@@ -24,11 +24,13 @@ import {
   renderMutualTerminationHtml,
   renderResignationHtml,
 } from "../src/lib/hiring-pack/render-labour-exit.ts";
+import { resolveFixedSalaryAmounts } from "../src/lib/payroll/policy.ts";
 import {
   addMonthsToIsoDate,
   collectHiringPackGaps,
   emptyOffboardingProfile,
   resolveContractTerms,
+  resolveFactsCompensationFields,
 } from "../src/lib/hiring-pack/service.ts";
 import type {
   ExitFacts,
@@ -621,6 +623,49 @@ function testNoNumberCanPrintBackwards() {
   }
 }
 
+/**
+ * The bug reported 2026-08-31, the day after the facts screen became editable: editing "Gross
+ * salary" and saving it successfully, then finding the printed contract still carries the OLD
+ * figure. Root cause — `upsertEmployee` re-derives base/basic/gross/net together and base
+ * outranks gross in that derivation (`calculateBaseSalary`), so submitting the employee's
+ * unchanged base salary alongside a freshly typed gross silently rebuilt gross from that
+ * untouched base. See `resolveFactsCompensationFields`.
+ */
+function testFactsSaveAnchorsGrossSalaryEditThroughTheRealFormula() {
+  // Self-consistent under the formula: base 8000, +500 social insurance, +200 tax = gross 8700;
+  // basic is 70% of base; net carries no cost-of-living/fuel here, so it equals base.
+  const current = { baseSalary: 8000, basicSalary: 5600, grossSalary: 8700, netSalary: 8000 };
+  const socialInsurance = 500;
+  const taxes = 200;
+
+  // An edit: the user typed a new gross salary.
+  const edited = resolveFactsCompensationFields(current, 15000);
+  assert.equal(edited.baseSalary, null, "base must not ride along unchanged once gross was edited");
+  assert.equal(edited.basicSalary, null);
+  assert.equal(edited.netSalary, null);
+  assert.equal(edited.grossSalary, 15000);
+
+  // The headline assertion: run the anchored fields through the REAL payroll derivation —
+  // the same one `upsertEmployee` calls — and confirm the edit survives it.
+  const derived = resolveFixedSalaryAmounts({ ...edited, socialInsurance, taxes });
+  assert.equal(
+    derived.grossSalary,
+    15000,
+    "the derivation must reproduce the newly typed gross salary, not silently revert to the old one",
+  );
+  assert.equal(derived.baseSalary, 14300);
+
+  // Saving without touching gross salary (the form resubmits the current figure verbatim) must
+  // round-trip to the same base/basic/net through that same derivation.
+  const unedited = resolveFactsCompensationFields(current, current.grossSalary);
+  const uneditedDerived = resolveFixedSalaryAmounts({ ...unedited, socialInsurance, taxes });
+  assert.equal(uneditedDerived.baseSalary, current.baseSalary);
+  assert.equal(uneditedDerived.grossSalary, current.grossSalary);
+
+  // A blank submission must never zero out a real salary.
+  assert.deepEqual(resolveFactsCompensationFields(current, null), current);
+}
+
 export function runHiringPackTests() {
   testForm1LayoutIsTheMeasuredForm();
   testWagePoundsAreOnTheLeft();
@@ -634,4 +679,5 @@ export function runHiringPackTests() {
   testGapsSeparateBlockingFromChaseLater();
   testEveryCompanySettingsGapReachesThePage();
   testNoNumberCanPrintBackwards();
+  testFactsSaveAnchorsGrossSalaryEditThroughTheRealFormula();
 }
