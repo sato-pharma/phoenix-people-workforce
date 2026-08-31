@@ -53,6 +53,11 @@ type RawReconciliationRow = {
   raw_effective_units: number | string | null;
   rollup_row_count: number | string | null;
   raw_row_count: number | string | null;
+  // Optional because a database still on the pre-2026-08-31 function does not return them. Absent
+  // is NOT the same as zero: it means geography was never checked, which parseReconciliationRow
+  // reports as geographyChecked=false rather than silently passing.
+  geo_mismatch_rows?: number | string | null;
+  unrollup_rows?: number | string | null;
 };
 
 function toNumber(value: number | string | null | undefined): number {
@@ -62,9 +67,16 @@ function toNumber(value: number | string | null | undefined): number {
 
 /**
  * Map one reconciliation RPC row into the typed shape and decide whether it reconciles. Pure and
- * unit-tested directly: units/qty must agree within epsilon and the row counts must match exactly
- * (an integer count that differs by even one means a row was dropped or double-counted). Kept
- * separate from the DB call so the reconcile verdict can be tested without a live database.
+ * unit-tested directly: units/qty must agree within epsilon, the row counts must match exactly (an
+ * integer count that differs by even one means a row was dropped or double-counted), AND no row may
+ * sit on different geography than the rollup row summarising it. Kept separate from the DB call so
+ * the reconcile verdict can be tested without a live database.
+ *
+ * The geography clause is the point. The re-stamp updates ONLY brick_id/area_code/area_name/
+ * region_code/region_name, so total_qty, effective_units and row_count are invariant under it — a
+ * quantity-only verdict could never fail for any geography, right or wrong. Measured on production
+ * 2026-08-31: 4,265 rows carried a brick their own rollup row disagreed with, and this verdict
+ * returned true for 11 of the 12 line-periods containing them.
  */
 export function parseReconciliationRow(row: RawReconciliationRow): TerritorySyncReconciliationRow {
   const rollupTotalQty = toNumber(row.rollup_total_qty);
@@ -73,10 +85,17 @@ export function parseReconciliationRow(row: RawReconciliationRow): TerritorySync
   const rawEffectiveUnits = toNumber(row.raw_effective_units);
   const rollupRowCount = toNumber(row.rollup_row_count);
   const rawRowCount = toNumber(row.raw_row_count);
+  // Absent (pre-migration database) is distinguished from zero: undefined/null means the geography
+  // proof did not run, so it must not be reported as a passing geography check.
+  const geographyChecked = row.geo_mismatch_rows !== undefined && row.geo_mismatch_rows !== null;
+  const geoMismatchRows = toNumber(row.geo_mismatch_rows);
+  const unrollupRows = toNumber(row.unrollup_rows);
   const reconciled =
     Math.abs(rollupTotalQty - rawTotalQty) < RECONCILE_EPSILON &&
     Math.abs(rollupEffectiveUnits - rawEffectiveUnits) < RECONCILE_EPSILON &&
-    rollupRowCount === rawRowCount;
+    rollupRowCount === rawRowCount &&
+    geoMismatchRows === 0 &&
+    unrollupRows === 0;
   return {
     officialLine: (row.official_line ?? "Unknown").trim() || "Unknown",
     period: (row.period ?? "").trim(),
@@ -86,6 +105,9 @@ export function parseReconciliationRow(row: RawReconciliationRow): TerritorySync
     rawEffectiveUnits,
     rollupRowCount,
     rawRowCount,
+    geoMismatchRows,
+    unrollupRows,
+    geographyChecked,
     reconciled,
   };
 }
@@ -144,6 +166,11 @@ export async function syncTerritoryData(input: {
         : a.officialLine.localeCompare(b.officialLine),
     );
   const allReconciled = reconciliation.every((row) => row.reconciled);
+  // Totalled for the audit row and the summary line: a verdict of "not reconciled" is only
+  // actionable if it says how much is off and in which direction.
+  const geoMismatchRows = reconciliation.reduce((sum, row) => sum + row.geoMismatchRows, 0);
+  const unrollupRows = reconciliation.reduce((sum, row) => sum + row.unrollupRows, 0);
+  const geographyChecked = reconciliation.every((row) => row.geographyChecked);
 
   if (restampedRows > 0) {
     invalidateSalesDashboardCache(`territory sync — ${restampedRows} row(s) re-stamped`);
@@ -159,9 +186,17 @@ export async function syncTerritoryData(input: {
       restamped_rows: restampedRows,
       refreshed_batches: refreshedBatches,
       all_reconciled: allReconciled,
+      geo_mismatch_rows: geoMismatchRows,
+      unrollup_rows: unrollupRows,
+      geography_checked: geographyChecked,
       synced_at: syncedAt,
     },
-    summary: `Territory sync: re-stamped ${restampedRows} row(s), rebuilt ${refreshedBatches} batch(es), reconciled=${allReconciled}.`,
+    summary:
+      `Territory sync: re-stamped ${restampedRows} row(s), rebuilt ${refreshedBatches} batch(es), ` +
+      `reconciled=${allReconciled}` +
+      (geographyChecked
+        ? `, geography off on ${geoMismatchRows} row(s), ${unrollupRows} row(s) with no rollup row.`
+        : " — geography NOT checked (database still on the quantity-only reconciliation function)."),
   });
 
   return {

@@ -21,18 +21,50 @@ function formatDateTime(iso: string | null): string | null {
   });
 }
 
-type LineSummary = { officialLine: string; total: number; reconciled: number; mismatched: number };
+type LineSummary = {
+  officialLine: string;
+  total: number;
+  reconciled: number;
+  mismatched: number;
+  geoMismatchRows: number;
+  unrollupRows: number;
+  geographyChecked: boolean;
+};
 
 function summarizeByLine(rows: TerritorySyncReconciliationRow[]): LineSummary[] {
   const byLine = new Map<string, LineSummary>();
   for (const row of rows) {
-    const entry = byLine.get(row.officialLine) ?? { officialLine: row.officialLine, total: 0, reconciled: 0, mismatched: 0 };
+    const entry = byLine.get(row.officialLine) ?? {
+      officialLine: row.officialLine,
+      total: 0,
+      reconciled: 0,
+      mismatched: 0,
+      geoMismatchRows: 0,
+      unrollupRows: 0,
+      geographyChecked: true,
+    };
     entry.total += 1;
     if (row.reconciled) entry.reconciled += 1;
     else entry.mismatched += 1;
+    entry.geoMismatchRows += row.geoMismatchRows;
+    entry.unrollupRows += row.unrollupRows;
+    // One unchecked period makes the whole line unchecked — the weaker claim is the honest one.
+    if (!row.geographyChecked) entry.geographyChecked = false;
     byLine.set(row.officialLine, entry);
   }
   return [...byLine.values()].sort((a, b) => a.officialLine.localeCompare(b.officialLine));
+}
+
+/** What the badge says after the line name. Spelled out rather than a bare count, because "3 off"
+ * gave the operator no way to tell a dropped row from a row sitting on the wrong area — and the
+ * geography half was invisible entirely until 2026-08-31. Never truncated. */
+function summaryDetail(line: LineSummary): string {
+  if (!line.geographyChecked) return " · geography not checked";
+  const parts: string[] = [];
+  if (line.geoMismatchRows > 0) parts.push(`${line.geoMismatchRows.toLocaleString()} row(s) on the wrong area`);
+  if (line.unrollupRows > 0) parts.push(`${line.unrollupRows.toLocaleString()} row(s) with no rollup row`);
+  if (parts.length === 0 && line.mismatched > 0) parts.push(`${line.mismatched} period(s) off`);
+  return parts.length > 0 ? ` · ${parts.join(" · ")}` : "";
 }
 
 /**
@@ -147,14 +179,18 @@ export function TerritorySyncPanel({ canRun }: { canRun: boolean }) {
               <span
                 key={line.officialLine}
                 className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 ${
-                  line.mismatched === 0
+                  line.mismatched === 0 && line.geographyChecked
                     ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"
                     : "bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300"
                 }`}
               >
-                {line.mismatched === 0 ? <CheckCircle2 className="h-3 w-3" /> : <AlertTriangle className="h-3 w-3" />}
+                {line.mismatched === 0 && line.geographyChecked ? (
+                  <CheckCircle2 className="h-3 w-3" />
+                ) : (
+                  <AlertTriangle className="h-3 w-3" />
+                )}
                 {line.officialLine}
-                {line.mismatched > 0 ? ` · ${line.mismatched} off` : ""}
+                {summaryDetail(line)}
               </span>
             ))}
           </div>
