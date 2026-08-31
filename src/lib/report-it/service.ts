@@ -2,6 +2,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { canAccess } from "@/lib/auth/permissions";
 import type { AccessContext } from "@/lib/auth/permissions";
 import { canonicalHrIdKey } from "@/lib/hr-id";
+import { ilikeAnyFilter } from "@/lib/supabase/search-filter";
 import type { ReportItPayload, ReportItReportRow } from "./types";
 
 // Roles with report_it:export permission OR users listed in report_it_dashboard_access can see all reports.
@@ -117,9 +118,8 @@ export async function listReports(
     query = query.contains("suspected_medicines", [opts.medicine]);
   }
   if (opts.submittedBy) {
-    query = query.or(
-      `submitted_by_hr_id.ilike.%${opts.submittedBy}%,submitted_by_name.ilike.%${opts.submittedBy}%`,
-    );
+    const submittedByFilter = ilikeAnyFilter(["submitted_by_hr_id", "submitted_by_name"], opts.submittedBy);
+    if (submittedByFilter) query = query.or(submittedByFilter);
   }
   if (opts.dateFrom) {
     query = query.gte("created_at", opts.dateFrom);

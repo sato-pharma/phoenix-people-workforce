@@ -40,6 +40,7 @@ import {
   type CrmMasterFilterKey,
 } from "@/lib/crm/master-datasets";
 import { CRM_VISIT_TYPE_FILTER_CODES, CRM_VISIT_TYPE_OPTIONS, resolveVisitTypeLabel } from "@/lib/crm/visit-types";
+import { ilikeAnyFilter } from "@/lib/supabase/search-filter";
 
 export { CRM_MASTER_DATASETS, CRM_MASTER_SUPPORTED_FILTERS, crmMasterSupportsFilter, type CrmMasterDataset, type CrmMasterFilterKey };
 
@@ -1534,11 +1535,14 @@ function applyMasterFilters(
   // along a rep's route), so an agent_hr_id-only filter silently showed zero rows for them —
   // including on the Double Visits tab, whose entire purpose is this exact record type.
   if (agentHrId) {
-    const escaped = sanitizeSearch(agentHrId);
-    if (escaped) {
-      q = isVisits
-        ? q.or(`agent_hr_id.ilike.%${escaped}%,double_hr_id.ilike.%${escaped}%`)
-        : q.ilike("agent_hr_id", `%${escaped}%`);
+    if (isVisits) {
+      const orFilter = ilikeAnyFilter(["agent_hr_id", "double_hr_id"], agentHrId);
+      if (orFilter) q = q.or(orFilter);
+    } else {
+      // A single-column .ilike() is its own query parameter, not part of an or(...) expression, so
+      // it carries no structural characters to break out of — sanitizeSearch is enough here.
+      const escaped = sanitizeSearch(agentHrId);
+      if (escaped) q = q.ilike("agent_hr_id", `%${escaped}%`);
     }
   }
   if (isVisits && ampm !== "all") q = q.eq("ampm", ampm);
@@ -1546,7 +1550,8 @@ function applyMasterFilters(
     // Two kinds of entry share this dropdown. The vendor's documented enum is matched on the stored
     // description — deliberately NOT sanitizeSearch()+ilike: that stripped parentheses, turning
     // "Campaign (Prospection)" into the pattern "%Campaign  Prospection%" which matched 0 of ~29k
-    // rows. sanitizeSearch stays only on the free-text search box (paren-harmless there).
+    // rows. The free-text box below had the same defect and is no longer paren-stripped either — it
+    // quotes the value instead (see ilikeAnyFilter), which keeps parentheses matchable AND safe.
     // The Phoenix-resolved entries have no distinct stored description to match on — the vendor
     // sends the same string "Unknown" for all seven codes — so they select on the numeric column.
     const codes = CRM_VISIT_TYPE_FILTER_CODES.get(visitType);
@@ -1555,15 +1560,15 @@ function applyMasterFilters(
   if (isVisits && mappingStatus === "agent_mapped") q = q.not("agent_hr_id", "is", null);
   if (isVisits && mappingStatus === "agent_unmapped") q = q.is("agent_hr_id", null);
   if (search) {
-    const escaped = sanitizeSearch(search);
-    if (escaped) {
-      const orExpr = isCheckins
-        ? `agent_hr_id.ilike.%${escaped}%,contact_name.ilike.%${escaped}%,address.ilike.%${escaped}%`
-        // Includes double_hr_id so the unified Search box fully covers what the separate "Agent HR
-        // ID" box used to (it matched agent_hr_id OR double_hr_id) — the redesign folds them into one.
-        : `agent_name.ilike.%${escaped}%,double_name.ilike.%${escaped}%,contact_name.ilike.%${escaped}%,customer_name.ilike.%${escaped}%,agent_hr_id.ilike.%${escaped}%,double_hr_id.ilike.%${escaped}%,comment.ilike.%${escaped}%`;
-      q = q.or(orExpr);
-    }
+    const orExpr = isCheckins
+      ? ilikeAnyFilter(["agent_hr_id", "contact_name", "address"], search)
+      // Includes double_hr_id so the unified Search box fully covers what the separate "Agent HR
+      // ID" box used to (it matched agent_hr_id OR double_hr_id) — the redesign folds them into one.
+      : ilikeAnyFilter(
+          ["agent_name", "double_name", "contact_name", "customer_name", "agent_hr_id", "double_hr_id", "comment"],
+          search,
+        );
+    if (orExpr) q = q.or(orExpr);
   }
   return q;
 }

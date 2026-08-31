@@ -6,6 +6,7 @@ import {
   isDisposableSalesBatchRow,
 } from "@/lib/fixture-hygiene";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { ilikeAnyFilter } from "@/lib/supabase/search-filter";
 
 export type MonitoringEventSort = "newest" | "oldest";
 
@@ -232,15 +233,13 @@ function buildMonitoringSecurityEventsQuery(
   }
 
   if (params.authFilter) {
-    const searchClauses = [
-      `actor_login_id.ilike.%${params.authFilter}%`,
-      `summary.ilike.%${params.authFilter}%`,
-      `entity_type.ilike.%${params.authFilter}%`,
-    ];
+    const searchClauses: string[] = [];
+    const textFilter = ilikeAnyFilter(["actor_login_id", "summary", "entity_type"], params.authFilter);
+    if (textFilter) searchClauses.push(textFilter);
     if (params.matchedActorLoginIds.length > 0) {
       searchClauses.push(`actor_login_id.in.(${buildAuditLoginIdClause(params.matchedActorLoginIds)})`);
     }
-    query = query.or(searchClauses.join(","));
+    if (searchClauses.length > 0) query = query.or(searchClauses.join(","));
   }
 
   return query;

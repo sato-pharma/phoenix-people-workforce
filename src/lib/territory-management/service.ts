@@ -4,6 +4,7 @@ import { loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
 import { haversineKm } from "@/lib/sales/normalizer/geo-validate";
 import { resolveRegionalManagerRegionCodes } from "@/lib/sales/portal-sos-dashboard";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { ilikeAnyFilter } from "@/lib/supabase/search-filter";
 
 // Territory Management — geographic view of how a line's bricks are allocated across its areas.
 //
@@ -836,12 +837,14 @@ export type BrickSearchHit = {
 export async function searchBricks(query: string, limit = 20): Promise<BrickSearchHit[]> {
   const term = String(query ?? "").trim();
   if (term.length < 2) return [];
+  const searchFilter = ilikeAnyFilter(["brick_name", "brick_id"], term);
+  if (!searchFilter) return [];
 
   const { data, error } = await getSupabaseAdmin()
     .from("source_of_sales_bricks")
     .select("brick_id, brick_name, block_code, area_code, region_code")
     .eq("active", true)
-    .or(`brick_name.ilike.%${term}%,brick_id.ilike.%${term}%`)
+    .or(searchFilter)
     .limit(limit);
   if (error || !data) return [];
 
