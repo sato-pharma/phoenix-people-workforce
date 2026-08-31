@@ -15,7 +15,7 @@ All commands run from the repo root.
 
 | Task | Command |
 | --- | --- |
-| Dev server (Turbopack) | `pnpm run dev` |
+| Dev server (auto: webpack on Windows) | `pnpm run dev` |
 | Production build | `pnpm run build` |
 | Lint | `pnpm run lint` |
 | Typecheck | `pnpm run typecheck` |

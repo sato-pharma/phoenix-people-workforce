@@ -95,6 +95,18 @@ const FILES_NAMING_AN_HR_SEAT: readonly string[] = [
   "app/employee-portals/account-activation/page.tsx",
   "src/components/admin/access-control-manager.tsx",
   "src/components/admin/workflow-registry-manager.tsx",
+  // Names both seats in the Retention Register's confidentiality notice, added 2026-09-01.
+  // Reviewed verdict: DISPLAY ONLY, and it describes a restriction rather than creating one. Both
+  // strings are arguments to displayTitleForRole(), which turns a role KEY into the job title the
+  // company actually uses — the notice renders "readable by the HR Business Partner … not visible
+  // to the HR Operations Coordinator". Nothing branches on either value: no gate, no query filter,
+  // no audience list. The register's real gate is canAccess(access, "retention", "read") in
+  // app/(admin)/retention/page.tsx, which this change does not touch.
+  //
+  // It is listed because the strings are seat names, which is what Rule 10 pins — and because the
+  // notice is a CLAIM about who can read the register. If retention:read ever widens, this copy
+  // starts asserting a boundary that no longer holds, so it has to be re-read rather than left.
+  "src/components/retention/retention-workspace.tsx",
   "src/config/system-navigation.ts",
   "src/lib/admin/access-control.ts",
   "src/lib/auth/hr-functions.ts",
@@ -118,7 +130,9 @@ const FILES_NAMING_AN_HR_SEAT: readonly string[] = [
   // workbook can only ever describe access the matrix has already decided.
   "src/lib/hr/job-workbook.ts",
   "src/lib/notifications/role-recipients.ts",
-  "src/lib/probation/feedback-service.ts",
+  // src/lib/probation/feedback-service.ts sat here until 2026-09-01. It named both seats in
+  // resolveSubmitterRole, mapping them to the "ta" submitter role. The file was deleted with the
+  // rest of the legacy probation feedback path — see tests/probation-legacy-feedback-retired.test.ts.
   "src/lib/probation/service.ts",
   "src/lib/recruitment/access.ts",
   "src/lib/recruitment/account-activation.ts",

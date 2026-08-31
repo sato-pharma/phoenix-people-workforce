@@ -30,9 +30,6 @@ import {
   PortalRecordFields,
   PortalResponsiveDataList,
 } from "@/components/employee-portal/portal-primitives";
-import { AggregateFeedbackReport } from "@/components/probation/aggregate-feedback-report";
-import { DvCheckboxPanel } from "@/components/probation/dv-checkbox-panel";
-import { FeedbackFormPanel } from "@/components/probation/feedback-form-panel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -58,10 +55,12 @@ type Props = {
 type ProbationTrackerCapabilities = {
   canCreate?: boolean;
   canExport?: boolean;
-  canManageDvCheckboxes?: boolean;
   canManageWorkflow?: boolean;
+  /**
+   * Gates the `manager_feedback` WORKFLOW action only. It no longer gates a feedback form: the
+   * legacy per-cycle feedback panel was retired 2026-09-01 (see the note above the component).
+   */
   canSubmitManagerFeedback?: boolean;
-  initialFeedbackEmployeeHrId?: string | null;
   viewerMode?: "employee" | "executive" | "hr" | "manager";
 };
 
@@ -271,7 +270,6 @@ export function ProbationTracker({
   const isPremium = presentation === "premium";
   const canCreate = capabilities.canCreate ?? false;
   const canExport = capabilities.canExport ?? false;
-  const canManageDvCheckboxes = capabilities.canManageDvCheckboxes ?? false;
   const canManageWorkflow = capabilities.canManageWorkflow ?? false;
   const canSubmitManagerFeedback = capabilities.canSubmitManagerFeedback ?? false;
   const viewerMode = capabilities.viewerMode ?? "hr";
@@ -289,7 +287,6 @@ export function ProbationTracker({
   const [trafficFilter, setTrafficFilter] = useState<TrafficStatus | "all">("all");
   const [employmentFilter, setEmploymentFilter] = useState<string>(allValue);
   const [rows, setRows] = useState<ProbationRow[]>(initialData ?? []);
-  const [feedbackEmployeeHrId, setFeedbackEmployeeHrId] = useState<string | null>(capabilities.initialFeedbackEmployeeHrId ?? null);
   const [selectedAction, setSelectedAction] = useState<SelectedWorkflowAction | null>(null);
   const [actionForm, setActionForm] = useState<WorkflowActionForm>(() => emptyActionForm());
   const [pendingAction, setPendingAction] = useState<string | null>(null);
@@ -481,10 +478,9 @@ export function ProbationTracker({
   }
 
   /**
-   * The three cells below are rendered by BOTH the desktop row and the phone card, so they are
-   * extracted rather than copied. Plain functions, not nested components — a nested component
-   * would remount its subtree on every parent render (the DV panel holds its own state) and
-   * `react/no-unstable-nested-components` is an error in this repo.
+   * The cells below are rendered by BOTH the desktop row and the phone card, so they are extracted
+   * rather than copied. Plain functions, not nested components — a nested component would remount
+   * its subtree on every parent render, and `react/no-unstable-nested-components` is an error here.
    */
   function progressCell(traffic: TrafficStatus, progress: number) {
     return (
@@ -503,36 +499,7 @@ export function ProbationTracker({
     );
   }
 
-  function dvCell(row: ProbationRow) {
-    if (!row.dv_state) {
-      return <span className="text-xs text-slate-400">—</span>;
-    }
-
-    return (
-      <DvCheckboxPanel
-        canManualOverride={canManageDvCheckboxes}
-        dvState={{
-          dmDvDone: row.dv_state.dm_dv_done,
-          dmDvDoneAt: row.dv_state.dm_dv_done_at,
-          dmDvDoneManually: row.dv_state.dm_dv_done_manually,
-          nsmDvDone: row.dv_state.nsm_dv_done,
-          nsmDvDoneAt: row.dv_state.nsm_dv_done_at,
-          nsmDvDoneManually: row.dv_state.nsm_dv_done_manually,
-          pmGpmDvDone: row.dv_state.pm_gpm_dv_done,
-          pmGpmDvDoneAt: row.dv_state.pm_gpm_dv_done_at,
-          pmGpmDvDoneManually: row.dv_state.pm_gpm_dv_done_manually,
-          tmDvDone: row.dv_state.tm_dv_done,
-          tmDvDoneAt: row.dv_state.tm_dv_done_at,
-          tmDvDoneManually: row.dv_state.tm_dv_done_manually,
-        }}
-        probationId={Number(row.probation_id ?? 0)}
-      />
-    );
-  }
-
   function rowActions(row: ProbationRow) {
-    const isFeedbackOpen = feedbackEmployeeHrId === row.hr_id;
-
     return (
       <div className="flex flex-wrap gap-1.5">
         {row.workflow ? (
@@ -566,15 +533,6 @@ export function ProbationTracker({
             Start review
           </Button>
         )}
-        {canManageWorkflow ? (
-          <Button
-            className={cn(probationActionButtonClassName, isFeedbackOpen ? "border-orange-300 bg-orange-50 text-orange-700" : "")}
-            onClick={() => setFeedbackEmployeeHrId(isFeedbackOpen ? null : row.hr_id)}
-            variant="secondary"
-          >
-            {isFeedbackOpen ? "Close feedback" : "Feedback"}
-          </Button>
-        ) : null}
       </div>
     );
   }
@@ -943,7 +901,6 @@ export function ProbationTracker({
                         </span>
                       ),
                     },
-                    { label: "DV Status", value: dvCell(row) },
                   ]}
                 />
               </PortalRecordCard>
@@ -967,7 +924,6 @@ export function ProbationTracker({
                   "Progress",
                   "Status",
                   "Probation Review",
-                  "DV Status",
                   "Actions",
                 ].map((column) => (
                   <th className={adminTableHeaderClassName} key={column}>
@@ -1008,7 +964,6 @@ export function ProbationTracker({
                           ) : null}
                         </div>
                       </td>
-                      <td className={cn(probationTableValueClassName, "min-w-[180px]")}>{dvCell(row)}</td>
                       <td className={cn(probationTableValueClassName, "align-top")}>{rowActions(row)}</td>
                     </tr>
                   );
@@ -1020,25 +975,17 @@ export function ProbationTracker({
         />
       </Card>
 
-      {feedbackEmployeeHrId ? (
-        <Card className={`${panelClassName} overflow-hidden`}>
-          <FeedbackFormPanel
-            employeeHrId={feedbackEmployeeHrId}
-            employeeName={rows.find((r) => r.hr_id === feedbackEmployeeHrId)?.full_name ?? feedbackEmployeeHrId}
-            onClose={() => setFeedbackEmployeeHrId(null)}
-          />
-        </Card>
-      ) : null}
+      {/*
+        RETIRED 2026-09-01 — three panels stood here and none of them could ever show anything:
+        the per-cycle feedback form, the "Probation Feedback Report", and the DV Status column.
+        All three read employee_probation / probation_feedback_submissions, and employee_probation
+        has held ZERO rows since the Case model took over provisioning, so the form always answered
+        "not eligible", the report was always empty and the DV column was always a dash.
 
-      {canManageWorkflow ? (
-        <Card className={`${panelClassName} overflow-hidden p-0`}>
-          <AdminSectionHeader
-            description="Per-role feedback submissions and DV completion for all active probation employees."
-            title="Probation Feedback Report"
-          />
-          <AggregateFeedbackReport />
-        </Card>
-      ) : null}
+        Feedback lives in the Case model now: an evaluator submits against a real double-visit at
+        /employee-portals/probation/feedback/<dvDayId>, and it is read back on the case page at
+        /probation/cases/<caseId>. Do not re-add a second feedback surface here.
+      */}
 
       {selectedAction ? (
         <AdminTableShell

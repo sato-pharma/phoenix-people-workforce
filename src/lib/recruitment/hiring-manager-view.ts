@@ -39,6 +39,7 @@ import {
   isCandidateWithinViewerTeam,
 } from "@/lib/recruitment/hiring-manager-team";
 import { getFileForDownload, listCandidateFiles, type FileDownload } from "@/lib/recruitment/files";
+import { recordManagerCvOpen } from "@/lib/recruitment/manager-cv-engagement";
 import { isCandidateSentToManager } from "@/lib/recruitment/manager-sends";
 import { getRequisition } from "@/lib/recruitment/requisitions";
 import type { RecruitmentFile } from "@/lib/recruitment/types";
@@ -138,5 +139,22 @@ export async function downloadHiringManagerCandidateFile(
   if (!files.some((file) => file.id === fileId)) {
     throw new Error("Forbidden: file does not belong to this candidate.");
   }
+
+  // SILENT OPEN SIGNAL. This is the one chokepoint every CV open passes through — the in-app preview
+  // and the download link both fetch through this route — so recording here, after the scope check
+  // has proved this caller may see this CV, is what lets the manager-engagement report ever say a
+  // manager "opened" a CV. It writes to ats_candidate_views under the OPENER's own HR_ID and changes
+  // nothing on the manager's own screen (his portal reads that table nowhere), which is the whole
+  // point: the tracking must be invisible to the person being tracked.
+  //
+  // Best-effort and deliberately not awaited into the response path's success: markCandidateSeen
+  // already no-ops on a missing table or an HR_ID-less session, and this try/catch is the belt to
+  // that suspenders — a tracking write must NEVER be the reason a manager cannot open a CV.
+  try {
+    await recordManagerCvOpen({ candidateId, viewerHrId: access.hrId });
+  } catch {
+    /* the open still succeeds; the signal is advisory */
+  }
+
   return getFileForDownload(fileId);
 }

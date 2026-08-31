@@ -77,9 +77,14 @@ export async function provisionNewHireAccess(input: {
         role: resolveEmployeeAccessRole(employee),
       };
 
-      // upsertAccessUser is Super-Admin-only. Talent Acquisition can add employees but could
-      // never create their login, so every hire they made ended up unable to sign in. Route
-      // them through the create-only, rank-bounded entry point instead of failing.
+      // upsertAccessUser is Super-Admin-only. HR Operations can add employees but could never
+      // create their login, so every hire they made ended up unable to sign in. Route them
+      // through the create-only, rank-bounded entry point instead of failing.
+      // The role named HERE and the guard inside provisionEmployeeAccountForRecruiting must
+      // name the SAME seat. They disagreed once — the guard said "HR Advisory" while this line
+      // said "HR Operations" — and the guard then rejected the only role that reaches it, so
+      // every new joiner was created with no login. tests/hr-provisioning-guard.test.ts pins
+      // the pair together; change one and that test fails.
       if (input.actor?.loginId && input.actor.role === "HR Operations") {
         await provisionEmployeeAccountForRecruiting(mutation, input.actor);
       } else {

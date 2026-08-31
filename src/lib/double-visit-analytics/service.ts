@@ -6,7 +6,13 @@ import { getEmployeeDirectoryRows, type EmployeeDirectoryRow } from "@/lib/emplo
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import { resolveJobFunctionRole } from "@/lib/employees/job-function";
 import { getProbationRows } from "@/lib/probation/service";
-import type { ProbationDvState, ProbationRow } from "@/lib/probation/types";
+import {
+  dvRequirementMetForRole,
+  getActiveProbationDvProgressByEmployee,
+} from "@/lib/probation/intelligence/dv-progress-lookup";
+import type { ProbationEvaluatorRole } from "@/lib/probation/intelligence/types";
+import type { DvProgress } from "@/lib/probation/intelligence/report-metrics";
+import type { ProbationRow } from "@/lib/probation/types";
 import { buildReportSummaryMetrics, formatActiveFilters } from "@/lib/double-visit-analytics/report-filters";
 import { normalizeRegionLabel, regionsWithinManagerHierarchy, sameWorkforceLine } from "@/lib/workforce/hierarchy-resolver";
 import { getDoubleVisitRows } from "@/lib/crm/reads";
@@ -1461,13 +1467,51 @@ function cadenceBandFromDays(days: number | null): DoubleVisitCadenceBand {
   return "healthy";
 }
 
-const PROBATION_DV_FIELD_BY_ROLE: Partial<Record<string, keyof ProbationDvState>> = {
-  "District Manager": "dm_dv_done",
-  "Group Product Manager": "pm_gpm_dv_done",
-  "National Sales Manager": "nsm_dv_done",
-  "Product Manager": "pm_gpm_dv_done",
-  "Training Manager": "tm_dv_done",
+/**
+ * The viewer's app role -> the probation evaluator TIER whose DV requirement the watchlist reports.
+ * A role that is absent here (Regional Manager, Super Admin, CEO) owes no probation double visit of
+ * its own, and its rows render "N/A" rather than a status it cannot act on.
+ *
+ * This used to map to `employee_probation`'s four boolean checkbox columns. It now names the tiers
+ * of `probation_dv_days` — the live record — because that table is the only one being filled: see
+ * the header of dv-progress-lookup.ts for the measurement.
+ */
+const PROBATION_DV_TIER_BY_ROLE: Partial<Record<string, ProbationEvaluatorRole>> = {
+  "District Manager": "dm",
+  "Group Product Manager": "pm_gpm",
+  "National Sales Manager": "nsm",
+  "Product Manager": "pm_gpm",
+  "Training Manager": "tm",
 };
+
+/**
+ * Load DV progress for the watchlist, degrading to "unknown" rather than to "not done".
+ *
+ * A read failure must never be rendered as a red Pending: that is the exact shape of the bug this
+ * replaced, where a dead data source made every probationer look neglected. `null` reaches the UI
+ * as N/A, which is honest about the fact that nothing was measured.
+ *
+ * The map covers every active case, not the viewer's scope — it is a keyed lookup consulted only
+ * for rows that have ALREADY passed the scope filters at each call site, so no unscoped
+ * probationer can reach a response through it.
+ */
+async function loadProbationDvProgress(): Promise<Map<string, DvProgress> | null> {
+  return getActiveProbationDvProgressByEmployee().catch(() => null);
+}
+
+/** Lookup key for an HR_ID. HR ids are MIXED CASE in this database — never compare them raw. */
+function probationDvKey(hrId: string | null | undefined): string {
+  return String(hrId ?? "").trim().toLowerCase();
+}
+
+function resolveProbationDvDone(
+  row: Pick<ProbationRow, "hr_id" | "line_name">,
+  tier: ProbationEvaluatorRole | undefined,
+  progressByHrId: Map<string, DvProgress> | null,
+): boolean | null {
+  if (!tier || !progressByHrId) return null;
+  return dvRequirementMetForRole(progressByHrId.get(probationDvKey(row.hr_id)), tier, row.line_name);
+}
 
 function focusMonthBuckets(startMonth: string, asOf = new Date()) {
   const [startYear, startMonthNum] = startMonth.split("-").map(Number);
@@ -1533,9 +1577,10 @@ export async function getDoubleVisitPortalFocus(access: AccessContext): Promise<
   const trendStart = `${buckets[0].month}-01`;
   const periodTo = todayIso();
 
-  const [allDvRows, probationRows] = await Promise.all([
+  const [allDvRows, probationRows, probationDvProgress] = await Promise.all([
     getLiveDoubleVisitRows(trendStart, periodTo, employees),
     getProbationRows(access).catch(() => []),
+    loadProbationDvProgress(),
   ]);
   // The probation watchlist must live inside the SAME double-visit scope as the coverage roster
   // below. getProbationRows is intentionally broader for some roles (e.g. an NSM gets his whole
@@ -1607,10 +1652,11 @@ export async function getDoubleVisitPortalFocus(access: AccessContext): Promise<
     };
   }
 
-  // Block 3 — probation watchlist. dv_state reflects the viewer's own tier (dm/nsm/pm_gpm/tm);
-  // Regional Manager has no dedicated probation DV checkbox, so it falls back to a raw DV count
-  // (any double-visitor, matched the same canonical way as everything else in this function).
-  const dvField = PROBATION_DV_FIELD_BY_ROLE[role];
+  // Block 3 — probation watchlist. "Done" means the viewer's own tier (dm/nsm/pm_gpm/tm) has met
+  // its configured DV requirement on that probationer's active case. Regional Manager owes no
+  // probation double visit of its own, so it falls back to a raw DV count (any double-visitor,
+  // matched the same canonical way as everything else in this function).
+  const dvTier = PROBATION_DV_TIER_BY_ROLE[role];
   const dvCountByHrId = new Map<string, number>();
   for (const row of allDvRows) {
     const key = canonicalHrIdKey(row.visited_employee_hr_id);
@@ -1623,7 +1669,7 @@ export async function getDoubleVisitPortalFocus(access: AccessContext): Promise<
       return {
         daysRemaining: row.days_remaining,
         dvCount: key ? dvCountByHrId.get(key) ?? 0 : 0,
-        dvDone: dvField ? Boolean(row.dv_state?.[dvField]) : null,
+        dvDone: resolveProbationDvDone(row, dvTier, probationDvProgress),
         hireDate: row.hire_date,
         hrId: row.hr_id,
         name: row.full_name,
@@ -1656,10 +1702,12 @@ export async function buildDvPlannerProbationEntries(params: {
   scopedRows: Pick<DoubleVisitDbRow, "visited_employee_hr_id" | "visit_count">[];
 }): Promise<DoubleVisitFocusProbationEntry[]> {
   const { access, employees, scopedRows } = params;
-  const probationRowsRaw = (await getProbationRows(access).catch(() => [])).filter((row) =>
-    isMedicalRepProbationRow(row, employees),
-  );
-  const dvField = PROBATION_DV_FIELD_BY_ROLE[access.role ?? ""];
+  const [probationRowsAll, probationDvProgress] = await Promise.all([
+    getProbationRows(access).catch(() => []),
+    loadProbationDvProgress(),
+  ]);
+  const probationRowsRaw = probationRowsAll.filter((row) => isMedicalRepProbationRow(row, employees));
+  const dvTier = PROBATION_DV_TIER_BY_ROLE[access.role ?? ""];
   const probationDvCountByKey = new Map<string, number>();
   for (const row of scopedRows) {
     const key = canonicalHrIdKey(row.visited_employee_hr_id);
@@ -1671,7 +1719,7 @@ export async function buildDvPlannerProbationEntries(params: {
     return {
       daysRemaining: row.days_remaining,
       dvCount: key ? probationDvCountByKey.get(key) ?? 0 : 0,
-      dvDone: dvField ? Boolean(row.dv_state?.[dvField]) : null,
+      dvDone: resolveProbationDvDone(row, dvTier, probationDvProgress),
       hireDate: row.hire_date,
       hrId: row.hr_id,
       name: row.full_name,

@@ -209,6 +209,7 @@ function buildEmployeePortalSections({
   showTeamExpensesTab = false,
   showVacanciesTab = false,
   showMyCandidatesTab = false,
+  showManagerEngagementTab = false,
   showProbationTab = false,
   showOrganogramTab = false,
   showPlansTab = false,
@@ -332,6 +333,8 @@ function buildEmployeePortalSections({
         // Sits next to Vacancies on purpose: open seat -> assigned candidate -> probation is one
         // lifecycle, and this page only ever shows candidates for THIS manager's own open seats.
         ...(showMyCandidatesTab ? [{ href: "/employee-portals/recruitment-candidates", label: "My Candidates", icon: UsersRound }] : []),
+        // NSM-only, scoped to his line server-side. Silent — the managers it measures never see it.
+        ...(showManagerEngagementTab ? [{ href: "/employee-portals/recruitment-engagement", label: "Manager CV Engagement", icon: ClipboardList }] : []),
         ...(showProbationTab ? [{ href: "/employee-portals/probation", label: "Probation Tracker", icon: ClipboardCheck }] : []),
         ...(showOrganogramTab ? [{ href: "/employee-portals/organogram", label: "Organogram", icon: Building2 }] : []),
         ...(showTeamExpensesTab ? [{ href: "/employee-portals/team-expenses", label: "Team Expenses", icon: WalletCards }] : []),
