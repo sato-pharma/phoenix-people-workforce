@@ -10,7 +10,7 @@ name: Direct Orders daily sweeps
 # Both shipped in #1738/#1748 with no schedule behind them, so the clocks were never wound.
 #
 # THE SCHEDULE MOVED TO cron-job.org ON 2026-08-23. THIS FILE IS NOW A MANUAL FALLBACK ONLY.
-# Live jobs in that account, beside the other twelve production jobs:
+# Live jobs in that account, beside the other production jobs there:
 #
 #   phoenix-direct-orders-expire-held  id 8313165  02:17 Africa/Cairo
 #   phoenix-direct-orders-probation    id 8313177  02:27 Africa/Cairo
@@ -19,13 +19,14 @@ name: Direct Orders daily sweeps
 # requester whose order expires gets the notification twice.
 #
 # WHY IT MOVED. Scheduling from here put CRON_SECRET in two independently-rotated stores: Railway
-# (which the app reads, and which the other twelve jobs already authenticate against) and this
+# (which the app reads, and which the other jobs already authenticate against) and this
 # repository's Actions secrets. The 2026-08-14 Railway rotation was never mirrored here, so both
 # steps 401'd every night from 2026-08-14 to 2026-08-22 - nine consecutive red runs - and it was
 # found by an unrelated audit, not by an alert. A lone straggler in a second store fails alone and
-# silently; a stale secret in cron-job.org breaks all fourteen jobs at once, which is impossible to
-# miss. GitHub's scheduler is also billable: when Actions billing stopped on 2026-08-23 every
-# workflow in this repository failed within seconds, a dependency cron-job.org does not have.
+# silently; a stale secret in cron-job.org breaks every job in that account at once, which is
+# impossible to miss. GitHub's scheduler is also billable: when Actions billing stopped on
+# 2026-08-23 every workflow in this repository failed within seconds, a dependency cron-job.org
+# does not have.
 #
 # THIS WORKFLOW DOES NOT ALERT ANYONE. An earlier version of this comment claimed "a red workflow
 # run emails the owner". It does not, or nobody reads it - see the nine nights above. Do not
@@ -41,11 +42,28 @@ name: Direct Orders daily sweeps
 # Africa/Cairo timezone rather than the UTC-only cron this file used to carry - so they no longer
 # drift by an hour twice a year when Egypt changes its clocks.
 #
-# Running this manually (Actions > Direct Orders daily sweeps > Run workflow) still authenticates
-# with this repository's OWN copy of CRON_SECRET, which is the copy that went stale. Re-align it
-# before relying on a manual run:
-#   railway variables --environment production --service phoenix-people-workforce --json \
-#     | jq -r .CRON_SECRET | gh secret set CRON_SECRET
+# Running this manually (Actions > Direct Orders daily sweeps > Run workflow) authenticates with
+# this repository's OWN copy of CRON_SECRET. That copy WAS the stale one when the paragraph above
+# was written on 2026-08-23 - it was re-aligned on 2026-08-24 and is current. Do NOT re-align it
+# as a ritual: AGENTS.md 2.3 says the 2026-08-23 401s are resolved and to rotate nothing.
+#
+# THE TWO STORES ARE NO LONGER INDEPENDENT, AND THE ARROW POINTS ONE WAY:
+#
+#     GitHub Actions secret CRON_SECRET  ==>  Railway production CRON_SECRET
+#
+# sync-railway-production-secrets.yml writes ~48 secrets into Railway production, CRON_SECRET among
+# them, unconditionally and without diffing - on workflow_dispatch AND on any push to main touching
+# that workflow or scripts/sync-railway-production-secrets.mjs. Measured 2026-08-31: run
+# 33407660884 (fired by #2820) logged "synced CRON_SECRET" and "completed: updated=48".
+#
+# SO THE LIVE HAZARD IS THE MIRROR IMAGE OF THE 2026-08-14 ONE. Rotating CRON_SECRET in Railway
+# alone - dashboard or CLI - does not stick. The next push touching either of those two files
+# silently overwrites it with GitHub's copy and every cron-job.org job 401s at once, with no PR
+# and nothing in this file's history to explain it. Rotate the GITHUB secret first and let the
+# sync carry it down, or set both in one sitting.
+#
+# The sync passes --skip-deploys, so a clobbered value is inert until the next deploy: the
+# breakage surfaces detached from the change that caused it, possibly days later.
 
 on:
   workflow_dispatch:
@@ -99,7 +117,7 @@ jobs:
             # matches the one Railway serves. It happened on 2026-08-14 and cost nine nights of
             # dead clocks, so say the fix out loud instead of printing a bare status code.
             if [ "$code" = "401" ]; then
-              echo "::error::${ROUTE} returned HTTP 401 - this repository's CRON_SECRET is STALE. Re-align it from Railway production (railway variables --environment production --service phoenix-people-workforce --json | jq -r .CRON_SECRET | gh secret set CRON_SECRET) and re-run this workflow."
+              echo "::error::${ROUTE} returned HTTP 401 - this repository's CRON_SECRET does not match the one Railway production serves. Re-align GitHub FROM Railway using the GUARDED form in docs/agents-production-hooks.md: strip the BOM and assert length 64 before writing, because GitHub is UPSTREAM of Railway and a bad value here is pushed into production by sync-railway-production-secrets.yml. Do not use a bare railway|jq|gh pipe. Then re-run this workflow."
             else
               echo "::error::${ROUTE} returned HTTP $code"
             fi
@@ -141,7 +159,7 @@ jobs:
             # matches the one Railway serves. It happened on 2026-08-14 and cost nine nights of
             # dead clocks, so say the fix out loud instead of printing a bare status code.
             if [ "$code" = "401" ]; then
-              echo "::error::${ROUTE} returned HTTP 401 - this repository's CRON_SECRET is STALE. Re-align it from Railway production (railway variables --environment production --service phoenix-people-workforce --json | jq -r .CRON_SECRET | gh secret set CRON_SECRET) and re-run this workflow."
+              echo "::error::${ROUTE} returned HTTP 401 - this repository's CRON_SECRET does not match the one Railway production serves. Re-align GitHub FROM Railway using the GUARDED form in docs/agents-production-hooks.md: strip the BOM and assert length 64 before writing, because GitHub is UPSTREAM of Railway and a bad value here is pushed into production by sync-railway-production-secrets.yml. Do not use a bare railway|jq|gh pipe. Then re-run this workflow."
             else
               echo "::error::${ROUTE} returned HTTP $code"
             fi
