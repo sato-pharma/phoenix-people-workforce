@@ -641,6 +641,17 @@ export function MobileOutstationWizard({
               capturedAt: draft.captured.capturedAt,
               capturedLatitude: draft.captured.capturedLatitude,
               capturedLongitude: draft.captured.capturedLongitude,
+              // Deliberately 0, and it must stay 0. A draft saved with no signal was never
+              // priced: pricing needs the route distance, the policy rates, the duplicate-day
+              // guard and the Cairo no-allowance rule, every one of them server-side. There is
+              // nothing meaningful the phone could put here, so it sends nothing and the server
+              // recalculates the whole trip on sync. Do NOT "fix" this by inventing a
+              // client-side estimate.
+              //
+              // This 0 used to be stored verbatim, which is how request 72 — the only offline
+              // submission ever made — landed with claimed 0 against an expected 448.14 and
+              // showed "EGP 0 / You claimed" on the employee's own portal card. The fix is in
+              // submitOutstationRequest, which is the only place holding the real number.
               claimedTotalAmount: 0,
               expenseType: draft.expenseType,
               goTicketAmount: Number(draft.goTicketAmount || 0),

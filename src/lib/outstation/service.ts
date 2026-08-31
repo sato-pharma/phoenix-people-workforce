@@ -65,6 +65,7 @@ import {
   applyCairoNoAllowance,
   cairoTripEarnsNoAllowance,
 } from "@/lib/outstation/cairo-allowance-rule";
+import { outstationClaimedTotal } from "@/lib/outstation/claimed-total";
 import {
   cairoDateOnly,
   isWithinDepartureWindow,
@@ -1894,7 +1895,18 @@ export async function submitOutstationRequest(
       hasArrivalPhoto: Boolean(carEvidenceImagePath),
       hasDeparturePhoto: false,
     }),
-    claimed_total_amount: input.claimedTotalAmount,
+    // The RESOLVED figure, never the raw posted one. This is also the OFFLINE entry point —
+    // syncOfflineOutstationRequest delegates here — and the offline draft replay posts a
+    // hardcoded `claimedTotalAmount: 0`, because a phone with no signal was never able to price
+    // the trip: the route distance, the policy rates, the duplicate-day guard and the Cairo
+    // no-allowance rule all live on this side. Storing that 0 verbatim is how request 72, the
+    // only offline submission ever made, landed with claimed 0 against an expected 448.14 and
+    // showed "EGP 0 / You claimed" on the employee's own portal card beside 323.14 of real fuel.
+    //
+    // `calculation.claimedTotalAmount` already carries the `posted > 0 ? posted : expected`
+    // fallback, taken from the recalculation this function just performed. Applying it here is
+    // what makes an offline submission price itself instead of claiming nothing.
+    claimed_total_amount: calculation.claimedTotalAmount,
     distance_from_residence_km: calculation.distanceFromResidenceKm,
     distance_km: calculation.distanceFromResidenceKm,
     duration_minutes: calculation.durationMinutes,
@@ -2166,7 +2178,16 @@ function mapOutstationRequestRow(row: Record<string, unknown>): OutstationExpens
       row.car_evidence_metadata,
       null,
     ),
-    claimedTotalAmount: numberValue(row.claimed_total_amount),
+    // Resolved, not raw. Rows written before 2026-08-31 can carry a hard `0` here: an offline
+    // draft replay posts `claimedTotalAmount: 0` (the phone cannot price a trip) and the insert
+    // used to store it verbatim. A stored 0 is the ABSENCE of a claim, not a claim of nothing,
+    // and rendering it bare put "EGP 0 / You claimed" on a portal card beside a trip with 323.14
+    // of real fuel behind it. Resolving here, at the single mapper every read path goes through,
+    // is what stops each surface having to remember the fallback for itself.
+    claimedTotalAmount: outstationClaimedTotal({
+      claimedTotalAmount: numberValue(row.claimed_total_amount),
+      expectedTotalAmount: numberValue(row.expected_total_amount),
+    }),
     createdAt: isoString(row.created_at),
     distanceFromResidenceKm:
       row.distance_km != null

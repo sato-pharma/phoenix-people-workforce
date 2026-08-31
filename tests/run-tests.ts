@@ -1008,6 +1008,7 @@ import { runOutstationAdminManualExpenseGateTests } from "./outstation-admin-man
 import { runOutstationDeparturePhotoRetakeTests } from "./outstation-departure-photo-retake.test.ts";
 import { runOutstationAllowanceDuplicateDayGuardTests } from "./outstation-allowance-duplicate-day-guard.test.ts";
 import { runOutstationCairoNoAllowanceTests } from "./outstation-cairo-no-allowance.test.ts";
+import { runOutstationClaimedTotalTests } from "./outstation-claimed-total.test.ts";
 import { runOutstationClaimValidationTests } from "./outstation-claim-validation.test.ts";
 import { runOutstationEvidenceWaiverTests } from "./outstation-evidence-waiver.test.ts";
 import { runOutstationNsmNoHoldTests } from "./outstation-nsm-no-hold.test.ts";
@@ -2937,6 +2938,11 @@ await runTest(
 await runTest(
   "a regional employee's trip to Cairo earns no per-diem allowance, across every write path",
   runOutstationCairoNoAllowanceTests,
+);
+
+await runTest(
+  "a stored zero claim never renders as EGP 0 over a real expected total, and the submit path stores the resolved figure",
+  runOutstationClaimedTotalTests,
 );
 
 await runTest(
