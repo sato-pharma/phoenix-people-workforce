@@ -19,7 +19,7 @@ import {
   TeamLeaderboardTable,
   TeamMembersBreakdown,
   TeamSalesVsTargetChart,
-} from "@/app/employee-portals/team-performance/team-members-breakdown.client";
+} from "@/app/employee-portals/team-performance/team-members-breakdown-dynamic";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;

@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 
-import { VsTargetDashboard } from "@/components/sales/vs-target/vs-target-dashboard";
+import { VsTargetDashboard } from "@/components/sales/vs-target/vs-target-dashboard-dynamic";
 import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
 import { buildVsTargetDashboard } from "@/lib/sales/vs-target-page";
