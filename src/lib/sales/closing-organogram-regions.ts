@@ -521,7 +521,7 @@ export async function loadOperationalRegionResolver(): Promise<OperationalRegion
         // structure, and it is not on the organogram list either way.
         if (!lineCode || !usesOrganogramRegions(lineCode)) return null;
         const asOf = closingRegionsAsOfDate(period);
-        const key = `${lineCode} ${asOf}`;
+        const key = `${lineCode} ${asOf}`;
         const hit = cache.get(key);
         if (hit !== undefined) return hit;
         const built = buildOperationalRegionMap(rowsByLine.get(lineCode) ?? [], asOf, regionNames);

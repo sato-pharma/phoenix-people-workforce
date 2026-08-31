@@ -4354,7 +4354,7 @@ export function matrixCellsFromDistributorRows(rows: Record<string, unknown>[]):
   for (const row of rows) {
     const areaCode = String(row.area_code ?? "");
     const productCode = String(row.product_code ?? "");
-    const key = `${areaCode} ${productCode}`;
+    const key = `${areaCode} ${productCode}`;
     const units = Number(row.units ?? 0);
     const value = Number(row.value ?? 0);
     const existing = byCell.get(key);
