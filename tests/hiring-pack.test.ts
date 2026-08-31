@@ -325,23 +325,62 @@ function testForm1ClipsToItsPrintedBoxes() {
 }
 
 function testForm1WritesTheWageIntoTheRightColumns() {
-  // Form 1's wage is derived from the base salary now, not read from `social_insurance_wage`:
-  // 7,800 ÷ 1.3 is exactly 6,000, which is the figure the cell expectations below are written for.
-  const html = renderForm1Html(packFixture({ baseSalary: 7800 }), 1);
+  // THE THREE COLUMNS CARRY THREE DIFFERENT FIGURES (owner, 2026-08-31). With a base of 7,800:
+  //   الأجر الشامل  = the base salary itself     = 7,800
+  //   أجر الاشتراك   = base ÷ 1.3, capped         = 6,000
+  //   الأجر الأساسي = the flat statutory figure  = 2,450
+  //
+  // 7,800 is chosen because it divides evenly, so these expectations test the COLUMN MAPPING rather
+  // than the rounding rule. `socialInsuranceWage` is overridden to a value appearing nowhere in the
+  // expected output: the fixture stores 6,000, and leaving it there would let a renderer that
+  // wrongly read the stored column pass the أجر الاشتراك assertion by coincidence.
+  const html = renderForm1Html(packFixture({ baseSalary: 7800, socialInsuranceWage: 4321 }), 1);
   const cells = wageCells(html);
 
   assert.equal(cells.length, 18, "three wage grids of six cells each");
 
-  // أجر أساسي is the only grid whose value row sits at y=448.2 — the other two are at 448.1.
-  const basic = cells.filter((cell) => cell.top === "448.2");
+  /** The six digits of one grid, read left to right: four pounds, then the two piastres. */
+  const digitsBetween = (from: number, to: number): string =>
+    cells
+      .filter((cell) => Number(cell.left) >= from && Number(cell.left) < to)
+      .sort((a, b) => Number(a.left) - Number(b.left))
+      .map((cell) => cell.digit)
+      .join("");
+
+  // The grids sit side by side across the page — الشامل on the left, الاشتراك in the middle,
+  // الأساسي on the right. Reading them by x is what proves each value landed in its OWN column.
+  assert.equal(digitsBetween(0, 200), "780000", "الأجر الشامل must carry the base salary, 7,800");
+  assert.equal(digitsBetween(200, 400), "600000", "أجر الاشتراك must carry base ÷ 1.3, 6,000");
+  assert.equal(digitsBetween(400, 999), "245000", "الأجر الأساسي must carry the flat 2,450");
+
+  assert.ok(
+    !html.includes("4321") && !html.includes("4,321"),
+    "the stored social_insurance_wage must not reach Form 1 — أجر الاشتراك is derived from the base",
+  );
+
+  // Every grid was filled from the subscription wage until 2026-08-31, which printed ONE number
+  // three times and understated الأجر الشامل by the whole ÷1.3. These two catch that regression.
+  assert.notEqual(
+    digitsBetween(0, 200),
+    digitsBetween(200, 400),
+    "الأجر الشامل and أجر الاشتراك must differ — they are not the same wage",
+  );
+  assert.notEqual(
+    digitsBetween(200, 400),
+    digitsBetween(400, 999),
+    "أجر الاشتراك and الأجر الأساسي must differ — the basic wage is a flat figure",
+  );
+
+  // أجر أساسي is the only grid whose value row sits at y=448.2 — the other two are at 448.1. Its
+  // exact cell positions stay pinned here, because a shifted column is invisible in a digit string.
   assert.deepEqual(
-    basic.map((cell) => `${cell.left}:${cell.digit}`),
+    cells.filter((cell) => cell.top === "448.2").map((cell) => `${cell.left}:${cell.digit}`),
     [
-      // Pounds, right-aligned so the units digit lands in the LAST of the five cells. 6000 is four
+      // Pounds, right-aligned so the units digit lands in the LAST of the five cells. 2,450 is four
       // digits, so the leading cell at 440.70 stays empty rather than reading ten times too large.
-      "451.80:6",
-      "462.90:0",
-      "474.00:0",
+      "451.80:2",
+      "462.90:4",
+      "474.00:5",
       "485.10:0",
       // Piastres, always two digits — an empty قرش column reads as an unfinished form.
       "496.70:0",
@@ -350,11 +389,29 @@ function testForm1WritesTheWageIntoTheRightColumns() {
     "the جنيه digits must fill the left block from the right, and the قرش block must follow it",
   );
 
-  // All three grids carry the SAME insurance wage. The gross salary must never reach this form:
-  // it would overstate the contribution base, which is the mistake hand-filling makes in a hurry.
+  // The GROSS salary must never reach this form — none of the three columns is the gross.
   assert.ok(
     !html.includes(">12750<") && !html.includes("12,750"),
-    "the gross salary must not appear on Form 1 — every grid is the insurance wage",
+    "the gross salary must not appear on Form 1",
+  );
+}
+
+function testForm1WageGridKeysAreAllMapped() {
+  // An exhaustive mapping does NOT gate the build here — `ignoreBuildErrors` lets a missing case
+  // compile, build and deploy. So the union in `form1-layout.ts` is backed by this runtime check:
+  // if a fourth grid is added or a key renamed, this fails instead of printing an empty column on
+  // a government form.
+  assert.deepEqual(
+    [...FORM1_WAGE_GRIDS].map((grid) => grid.key).sort(),
+    ["basicWage", "comprehensiveWage", "subscriptionWage"],
+    "Form 1 has exactly three wage grids and the renderer maps each one by name",
+  );
+
+  const cells = wageCells(renderForm1Html(packFixture({ baseSalary: 7800 }), 1));
+  assert.equal(
+    cells.length,
+    FORM1_WAGE_GRIDS.length * 6,
+    "every wage grid must render its six cells — an unmapped key silently prints an empty column",
   );
 }
 
@@ -683,6 +740,7 @@ export function runHiringPackTests() {
   testForm1PrintsOneSheetPairPerCopy();
   testForm1ClipsToItsPrintedBoxes();
   testForm1WritesTheWageIntoTheRightColumns();
+  testForm1WageGridKeysAreAllMapped();
   testContractPrintsFourCopiesOnA4();
   testTafqitAgreement();
   testContractTermsFallBackToTheCompanyDefault();
