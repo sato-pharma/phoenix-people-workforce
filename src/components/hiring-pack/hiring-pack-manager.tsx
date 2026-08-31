@@ -1136,6 +1136,9 @@ export function HiringPackManager({ canManage, candidates, initialError, initial
                   form={form}
                   onChange={setForm}
                   subtitle="Printed on both documents."
+                  suggestions={
+                    pack.suggestedJobTitleAr ? { jobTitleAr: pack.suggestedJobTitleAr } : undefined
+                  }
                   title="Identity and job"
                 />
                 <FieldGroup
@@ -1524,6 +1527,7 @@ function FieldGroup({
   form,
   onChange,
   subtitle,
+  suggestions,
   title,
 }: {
   action?: ReactNode;
@@ -1532,6 +1536,8 @@ function FieldGroup({
   form: FormState;
   onChange: (updater: (current: FormState) => FormState) => void;
   subtitle: string;
+  /** A previously-typed value worth offering as a one-click fill, keyed by field key. */
+  suggestions?: Partial<Record<string, string>>;
   title: string;
 }) {
   return (
@@ -1544,28 +1550,45 @@ function FieldGroup({
         {action ?? null}
       </div>
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-        {fields.map((field) => (
-          <div key={field.key}>
-            <label className={labelClassName} htmlFor={`hiring-pack-${field.key}`}>
-              {field.labelEn} <span className="text-phx-ink-faint">{field.labelAr}</span>
-            </label>
-            <Input
-              className={inputClassName}
-              disabled={disabled}
-              id={`hiring-pack-${field.key}`}
-              inputMode={field.kind === "code" || field.kind === "number" ? "numeric" : undefined}
-              maxLength={field.maxLength}
-              onChange={(event) =>
-                onChange((current) => ({ ...current, [field.key]: event.target.value }))
-              }
-              type={field.kind === "date" ? "date" : field.kind === "number" ? "number" : "text"}
-              value={form[field.key] ?? ""}
-            />
-            {field.hint ? (
-              <p className="mt-1 text-phx-xs font-semibold text-phx-ink-faint">{field.hint}</p>
-            ) : null}
-          </div>
-        ))}
+        {fields.map((field) => {
+          const suggestion = suggestions?.[field.key];
+          const currentValue = form[field.key] ?? "";
+          const showSuggestion = Boolean(
+            !disabled && suggestion && suggestion.trim() && suggestion !== currentValue,
+          );
+          return (
+            <div key={field.key}>
+              <label className={labelClassName} htmlFor={`hiring-pack-${field.key}`}>
+                {field.labelEn} <span className="text-phx-ink-faint">{field.labelAr}</span>
+              </label>
+              <Input
+                className={inputClassName}
+                disabled={disabled}
+                id={`hiring-pack-${field.key}`}
+                inputMode={field.kind === "code" || field.kind === "number" ? "numeric" : undefined}
+                maxLength={field.maxLength}
+                onChange={(event) =>
+                  onChange((current) => ({ ...current, [field.key]: event.target.value }))
+                }
+                type={field.kind === "date" ? "date" : field.kind === "number" ? "number" : "text"}
+                value={currentValue}
+              />
+              {showSuggestion ? (
+                <button
+                  className="mt-1 text-phx-xs font-semibold text-phx-accent underline decoration-dotted underline-offset-2 hover:text-phx-accent-press"
+                  onClick={() =>
+                    onChange((current) => ({ ...current, [field.key]: suggestion ?? "" }))
+                  }
+                  type="button"
+                >
+                  Use &ldquo;{suggestion}&rdquo;
+                </button>
+              ) : field.hint ? (
+                <p className="mt-1 text-phx-xs font-semibold text-phx-ink-faint">{field.hint}</p>
+              ) : null}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
