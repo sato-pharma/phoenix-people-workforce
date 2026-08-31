@@ -416,7 +416,12 @@ export function orderedProducts(rows: Split[], axis?: string[]): { code: string;
  * A family is the owner's unit of thought - "how did Conviban do here" - but its four
  * concentrations cannot be added in units, so a family line is always MONEY. Grouping is on the
  * family NAME: family_code is not unique in this master ("DO" is both Dopaminict and Dolabactin),
- * and Lacto Advanced and Lacto Basic share BOTH name and code, separated only by the line.
+ * and Lacto Advanced and Lacto Basic still SHARE the code `LA` - deliberately, because that is
+ * what lets one direct order carry both Advanced concentrations (direct-orders/product-family.ts
+ * allow-lists exactly that code). Their family NAMES were separated on 2026-08-31 - Pedia reads
+ * "Lacto Advanced" and Head Office "Lacto Basic" - so the NAME is the half of the pair that
+ * discriminates, and grouping on it can no longer weld a Head Office product into a Pedia family.
+ * Do not "tidy" the codes to match the names: that would silently un-combine the direct order.
  * A product the master gave no family stands as its own one-product family rather than being
  * collected into an "Other" bin, which would put unrelated products under a single money total.
  */
