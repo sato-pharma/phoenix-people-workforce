@@ -42,7 +42,7 @@ export default async function ManagerEngagementPage() {
       <div className="mb-4">
         <h1 className="text-lg font-semibold text-slate-900">Manager CV Engagement</h1>
         <p className="text-sm text-slate-500">
-          For every manager: how many CVs the recruitment team sent them, how many they opened, how many are still
+          For every manager: how many CVs are in their My Candidates folder, how many they opened, how many are still
           unopened, and how many they answered.
         </p>
       </div>

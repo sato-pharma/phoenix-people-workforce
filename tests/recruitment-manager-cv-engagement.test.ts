@@ -5,24 +5,30 @@ import {
   aggregateManagerCvEngagement,
   canViewManagerCvEngagement,
   engagementHrKey,
-  type EngagementSendInput,
+  type EngagementManagerMeta,
+  type EngagementMembership,
 } from "../src/lib/recruitment/manager-cv-engagement.ts";
 
 function read(relativePath: string): string {
   return readFileSync(relativePath, "utf8");
 }
 
-function send(over: Partial<EngagementSendInput> & { candidateId: string; managerHrId: string }): EngagementSendInput {
-  return {
-    candidateId: over.candidateId,
-    managerHrId: over.managerHrId,
-    managerName: over.managerName ?? "A Manager",
-    managerJobTitle: over.managerJobTitle ?? "District Manager",
-    managerArea: over.managerArea ?? "GZ3",
-    managerRegion: over.managerRegion ?? "Giza",
-    sentAt: over.sentAt ?? "2026-08-01",
-    positionLabel: over.positionLabel ?? null,
-  };
+function meta(over: Partial<EngagementManagerMeta> & { managerHrId: string }): [string, EngagementManagerMeta] {
+  const key = engagementHrKey(over.managerHrId);
+  if (!key) throw new Error("bad manager id in fixture");
+  return [
+    key,
+    {
+      managerHrId: over.managerHrId,
+      name: over.name ?? "A Manager",
+      jobTitle: over.jobTitle ?? "District Manager",
+      area: over.area ?? "Giza",
+      line: over.line ?? "CNS",
+      inactive: over.inactive ?? false,
+      employmentStatusLabel: over.employmentStatusLabel ?? null,
+      lastWorkingDate: over.lastWorkingDate ?? null,
+    },
+  ];
 }
 
 export function runRecruitmentManagerCvEngagementTests() {
@@ -48,29 +54,49 @@ export function runRecruitmentManagerCvEngagementTests() {
 
   // ── engagementHrKey collapses mixed-case HR ids to one canonical, upper spelling ────────────
   // HR ids in this codebase are mixed case, and a plain equality has under-returned by 28%
-  // elsewhere. A send stored lower ("dm-7") and a view stored upper ("DM-7") must land on one key.
+  // elsewhere. A membership stored lower ("dm-7") and a view stored upper ("DM-7") must land on one key.
   assert.equal(engagementHrKey("Dm-7"), engagementHrKey("DM-7"));
   assert.equal(engagementHrKey("dm-7"), "DM-7");
   assert.equal(engagementHrKey(""), null);
   assert.equal(engagementHrKey(null), null);
 
-  // ── The aggregator: counts, dedup, open-attribution, answered, sorting ──────────────────────
-  const sends: EngagementSendInput[] = [
-    send({ candidateId: "c1", managerHrId: "Dm-7", managerName: "Dina", sentAt: "2026-08-01" }),
-    send({ candidateId: "c2", managerHrId: "Dm-7", managerName: "Dina", sentAt: "2026-08-05" }),
-    send({ candidateId: "c3", managerHrId: "Dm-7", managerName: "Dina", sentAt: "2026-08-10" }),
-    // The SAME CV sent to the SAME manager twice — a legacy row plus a re-send. Must count once.
-    send({ candidateId: "c1", managerHrId: "Dm-7", managerName: "Dina", sentAt: "2026-08-02" }),
-    send({ candidateId: "c4", managerHrId: "nsm-1", managerName: "Nabil", managerJobTitle: "National Sales Manager", sentAt: "2026-08-03" }),
+  // ── The aggregator: counts, dedup, open-attribution, answered, sorting, manager facts ───────
+  // A membership is one (manager, candidate) pair, harvested from the folder AND the hand-push
+  // routes and unioned. A candidate that reached a manager by two routes appears twice here and
+  // must count once.
+  const memberships: EngagementMembership[] = [
+    { managerHrId: "Dm-7", candidateId: "c1" },
+    { managerHrId: "Dm-7", candidateId: "c2" },
+    { managerHrId: "Dm-7", candidateId: "c3" },
+    // The SAME CV reaching the SAME manager twice — his folder AND a hand-push. Must count once.
+    { managerHrId: "Dm-7", candidateId: "c1" },
+    { managerHrId: "nsm-1", candidateId: "c4" },
     // A candidate whose row is gone — no candidateInfo entry. Still received; never "answered".
-    send({ candidateId: "c6", managerHrId: "nsm-1", managerName: "Nabil", managerJobTitle: "National Sales Manager", sentAt: "2026-08-04" }),
+    { managerHrId: "nsm-1", candidateId: "c6" },
+    // A CV stranded on a RESIGNED manager who holds no folder — visible only because it was pushed.
+    { managerHrId: "pd-9", candidateId: "c5" },
   ];
 
-  const candidateInfo = new Map<string, { name: string | null; status: string | null }>([
-    ["c1", { name: "Aya", status: "shortlisted" }], // answered (a decision)
-    ["c2", { name: "Basma", status: "new" }], // waiting
-    ["c3", { name: "Carim", status: "sent_to_manager" }], // waiting (on the manager)
-    ["c4", { name: "Doha", status: "rejected" }], // answered (a decision)
+  const managerMeta = new Map<string, EngagementManagerMeta>([
+    meta({ managerHrId: "Dm-7", name: "Dina", area: "Delta (1)", line: "Anti Infective" }),
+    meta({ managerHrId: "nsm-1", name: "Nabil", jobTitle: "National Sales Manager", area: "Egypt", line: "Pedia" }),
+    meta({
+      managerHrId: "pd-9",
+      name: "Ahmed",
+      area: "Cairo",
+      line: "Pedia",
+      inactive: true,
+      employmentStatusLabel: "Resigned",
+      lastWorkingDate: "2026-08-20",
+    }),
+  ]);
+
+  const candidateInfo = new Map<string, { name: string | null; status: string | null; arrivedAt: string | null }>([
+    ["c1", { name: "Aya", status: "shortlisted", arrivedAt: "2026-08-01" }], // answered (a decision)
+    ["c2", { name: "Basma", status: "new", arrivedAt: "2026-08-05" }], // waiting
+    ["c3", { name: "Carim", status: "sent_to_manager", arrivedAt: "2026-08-10" }], // waiting (on the manager)
+    ["c4", { name: "Doha", status: "rejected", arrivedAt: "2026-08-03" }], // answered (a decision)
+    ["c5", { name: "Emad", status: "hired", arrivedAt: "2026-08-02" }], // answered (a decision)
     // c6 deliberately absent
   ]);
 
@@ -82,24 +108,29 @@ export function runRecruitmentManagerCvEngagementTests() {
     `${engagementHrKey("B-10")}::c4`,
   ]);
 
-  const report = aggregateManagerCvEngagement({ sends, candidateInfo, openedKeys, scoped: true });
+  const report = aggregateManagerCvEngagement({ memberships, managerMeta, candidateInfo, openedKeys, scoped: true });
 
   assert.equal(report.scoped, true, "the scoped flag passes through untouched");
-  assert.equal(report.rows.length, 2, "two distinct managers");
+  assert.equal(report.rows.length, 3, "three distinct managers");
 
-  // Sorted by most CVs received first: Dina (3) before Nabil (2).
-  const [dina, nabil] = report.rows;
+  // Sorted by most CVs received first: Dina (3) before Nabil (2) before Ahmed (1).
+  const [dina, nabil, ahmed] = report.rows;
   assert.equal(dina.managerName, "Dina");
   assert.equal(nabil.managerName, "Nabil");
+  assert.equal(ahmed.managerName, "Ahmed");
 
   // Dina: c1, c2, c3 (the duplicate c1 collapsed). Opened c1 + c3. Answered c1 only.
-  assert.equal(dina.received, 3, "the duplicate send is deduped to one CV");
+  assert.equal(dina.received, 3, "the duplicate membership is deduped to one CV");
   assert.equal(dina.opened, 2);
   assert.equal(dina.notOpened, 1);
   assert.equal(dina.answered, 1);
   assert.equal(dina.candidates.length, 3);
-  // Newest CV first inside the manager.
-  assert.equal(dina.candidates[0].candidateId, "c3", "candidates sorted newest-first by sentAt");
+  // Manager facts pass through: the LINE is shown, not the region twice, and it is not the HR prefix.
+  assert.equal(dina.managerArea, "Delta (1)");
+  assert.equal(dina.managerLine, "Anti Infective", "Dina's line comes from the directory, not her b- prefix");
+  assert.equal(dina.inactive, false);
+  // Newest CV first inside the manager (by arrival date).
+  assert.equal(dina.candidates[0].candidateId, "c3", "candidates sorted newest-first by arrivedAt");
 
   // Nabil: c4 (rejected, viewed only by the screener → not opened) + c6 (no row → not answered).
   assert.equal(nabil.received, 2);
@@ -107,10 +138,23 @@ export function runRecruitmentManagerCvEngagementTests() {
   assert.equal(nabil.notOpened, 2);
   assert.equal(nabil.answered, 1, "c4 is answered (rejected); c6 with an unknown status is NOT answered");
 
-  assert.deepEqual(report.totals, { managers: 2, received: 5, opened: 2, notOpened: 3, answered: 2 });
+  // Ahmed: a resigned manager still holding one stranded CV, flagged so the reader knows why it sits.
+  assert.equal(ahmed.received, 1);
+  assert.equal(ahmed.answered, 1, "c5 is hired");
+  assert.equal(ahmed.inactive, true, "a resigned manager is flagged, not hidden");
+  assert.equal(ahmed.employmentStatusLabel, "Resigned");
+  assert.equal(ahmed.lastWorkingDate, "2026-08-20");
+
+  assert.deepEqual(report.totals, { managers: 3, received: 6, opened: 2, notOpened: 4, answered: 3 });
 
   // ── An empty input is an empty report, not a throw ──────────────────────────────────────────
-  const empty = aggregateManagerCvEngagement({ sends: [], candidateInfo: new Map(), openedKeys: new Set(), scoped: false });
+  const empty = aggregateManagerCvEngagement({
+    memberships: [],
+    managerMeta: new Map(),
+    candidateInfo: new Map(),
+    openedKeys: new Set(),
+    scoped: false,
+  });
   assert.deepEqual(empty.rows, []);
   assert.deepEqual(empty.totals, { managers: 0, received: 0, opened: 0, notOpened: 0, answered: 0 });
   assert.equal(empty.scoped, false);
@@ -124,6 +168,14 @@ export function runRecruitmentManagerCvEngagementTests() {
     /canSeeAllRecruitment\(access\)\s*\?\s*null\s*:\s*await\s+resolveHiringManagerScopeHrIds\(access\)/,
     "loadManagerCvEngagement must see-all for Super Admin/CEO and LINE-scope a National Sales Manager",
   );
+  // RECEIVED is the whole folder, not just the hand-offs — the loader must read the folder placement
+  // (the same rule that fills My Candidates) AND both hand-push routes, then union them.
+  assert.match(domainSource, /loadAllDistrictBoards/, "received must include the manager's district folder");
+  assert.match(domainSource, /manager_notified_hr_id/, "received must include the original single-push route");
+  assert.match(domainSource, /MANAGER_SENDS_TABLE/, "received must include the multi-manager send trail");
+  // The LINE comes from the directory's line_id, never the HR-id prefix (which is stale — Dina is b-*
+  // yet Anti Infective), resolved through the lines table.
+  assert.match(domainSource, /line_id/, "the manager's line must be read from the directory, not the HR prefix");
   // Missing-table codes are treated as "not migrated yet" so the page degrades instead of 500ing.
   assert.match(domainSource, /PGRST205/, "the loader must treat a missing relation as not-migrated-yet");
 

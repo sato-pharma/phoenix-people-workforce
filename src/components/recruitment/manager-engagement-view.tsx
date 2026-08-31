@@ -62,6 +62,21 @@ function Pill({ tone, children }: { tone: "green" | "slate" | "amber"; children:
 }
 
 /**
+ * A manager who has left. Shown beside the name so the reader knows a wall of unopened CVs sitting
+ * here is stranded on somebody who is gone — those CVs need reassigning, not a nudge to the manager.
+ * The label is whatever the directory recorded (Resigned / Terminated / …), with the last working day
+ * when there is one. Kept on one line — the owner's rule is never to wrap a label.
+ */
+function InactiveBadge({ label, lastWorkingDate }: { label: string | null; lastWorkingDate: string | null }) {
+  const suffix = lastWorkingDate ? ` · left ${cairoDate(lastWorkingDate)}` : "";
+  return (
+    <span className="inline-flex shrink-0 items-center whitespace-nowrap rounded-full bg-rose-50 px-2 py-0.5 text-xs font-medium text-rose-700 ring-1 ring-inset ring-rose-200">
+      {(label || "Inactive") + suffix}
+    </span>
+  );
+}
+
+/**
  * The CVs behind one manager's numbers. ONE component, rendered in both the desktop expanded row and
  * the phone card — the same reasoning targets-workspace keeps its drill-down in a single
  * <SourceBreakdown />: two copies could drift and show a manager two different lists.
@@ -77,9 +92,7 @@ function ManagerCandidateList({ candidates }: { candidates: readonly ManagerCvEn
           <div className="min-w-0">
             <div className="text-sm font-medium text-slate-800">{candidate.candidateName || "Unnamed candidate"}</div>
             <div className="mt-0.5 text-xs text-slate-500">
-              {[candidate.positionLabel, candidate.sentAt ? `Sent ${cairoDate(candidate.sentAt)}` : null]
-                .filter(Boolean)
-                .join(" · ")}
+              {candidate.arrivedAt ? `Arrived ${cairoDate(candidate.arrivedAt)}` : ""}
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-2">
@@ -126,7 +139,7 @@ export function ManagerEngagementView({ report }: { report: ManagerCvEngagementR
     const needle = query.trim().toLowerCase();
     if (!needle) return report.rows;
     return report.rows.filter((row) =>
-      [row.managerName, row.managerJobTitle, row.managerArea, row.managerRegion]
+      [row.managerName, row.managerJobTitle, row.managerArea, row.managerLine]
         .filter(Boolean)
         .some((field) => String(field).toLowerCase().includes(needle)),
     );
@@ -138,7 +151,7 @@ export function ManagerEngagementView({ report }: { report: ManagerCvEngagementR
     <div className="space-y-6">
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
         <StatTile label="Managers" value={String(totals.managers)} hint={report.scoped ? "on your line" : "all lines"} />
-        <StatTile label="CVs received" value={String(totals.received)} hint="pushed to a manager" />
+        <StatTile label="CVs received" value={String(totals.received)} hint="in his My Candidates" />
         <StatTile label="Opened" value={String(totals.opened)} hint="manager opened the CV" />
         <StatTile label="Not opened" value={String(totals.notOpened)} hint="still unopened" tone={totals.notOpened > 0 ? "warn" : "plain"} />
         <StatTile label="Answered" value={String(totals.answered)} hint="a decision recorded" />
@@ -148,10 +161,12 @@ export function ManagerEngagementView({ report }: { report: ManagerCvEngagementR
           only counted from the day this feature shipped, so a CV a manager read on paper months ago
           reads as not-opened until he opens it in the app. Say so, once, at the top. */}
       <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
-        <span className="font-semibold">Reading &ldquo;Opened&rdquo;:</span> a CV counts as opened once the manager opens
-        it in the app from this feature&rsquo;s launch onward. &ldquo;Answered&rdquo; has full history — it reads the
-        candidate&rsquo;s recorded decision. So an older CV can show <em>not opened</em> yet <em>answered</em>: the
-        manager acted on it before opens were tracked.
+        <span className="font-semibold">Reading these numbers:</span> &ldquo;Received&rdquo; is every CV in the
+        manager&rsquo;s <em>My Candidates</em> folder — the ones in his areas plus anything sent straight to him —
+        not only what was hand-pushed. A CV counts as &ldquo;Opened&rdquo; once he opens it in the app from this
+        feature&rsquo;s launch onward, so the large &ldquo;Not opened&rdquo; on older CVs is real: nothing recorded a
+        manager opening a CV before tracking began. &ldquo;Answered&rdquo; has full history — it reads the
+        candidate&rsquo;s recorded decision — so an older CV can show <em>not opened</em> yet <em>answered</em>.
       </div>
 
       <div>
@@ -223,9 +238,14 @@ export function ManagerEngagementView({ report }: { report: ManagerCvEngagementR
                     type="button"
                   >
                     <div className="min-w-0">
-                      <div className="text-sm font-semibold text-slate-900">{row.managerName || row.managerHrId}</div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-sm font-semibold text-slate-900">{row.managerName || row.managerHrId}</span>
+                        {row.inactive ? (
+                          <InactiveBadge label={row.employmentStatusLabel} lastWorkingDate={row.lastWorkingDate} />
+                        ) : null}
+                      </div>
                       <div className="mt-0.5 text-xs text-slate-500">
-                        {[row.managerJobTitle, row.managerArea, row.managerRegion].filter(Boolean).join(" · ") || "—"}
+                        {[row.managerJobTitle, row.managerArea, row.managerLine].filter(Boolean).join(" · ") || "—"}
                       </div>
                       <ManagerCountStrip row={row} />
                     </div>
@@ -260,11 +280,14 @@ function FragmentRow({ row, isOpen, onToggle }: { row: ManagerCvEngagementRow; i
         onClick={onToggle}
       >
         <td className="px-4 py-3">
-          <div className="font-medium text-slate-800">{row.managerName || row.managerHrId}</div>
+          <div className="flex items-center gap-2">
+            <span className="font-medium text-slate-800">{row.managerName || row.managerHrId}</span>
+            {row.inactive ? <InactiveBadge label={row.employmentStatusLabel} lastWorkingDate={row.lastWorkingDate} /> : null}
+          </div>
           {row.managerJobTitle ? <div className="text-xs text-slate-500">{row.managerJobTitle}</div> : null}
         </td>
-        <td className="px-4 py-3 text-slate-600">
-          {[row.managerArea, row.managerRegion].filter(Boolean).join(" · ") || "—"}
+        <td className="whitespace-nowrap px-4 py-3 text-slate-600">
+          {[row.managerArea, row.managerLine].filter(Boolean).join(" / ") || "—"}
         </td>
         <td className="px-4 py-3 text-right tabular-nums text-slate-800">{row.received}</td>
         <td className="px-4 py-3 text-right tabular-nums text-emerald-700">{row.opened}</td>
