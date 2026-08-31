@@ -34,6 +34,9 @@
  */
 
 import { spawnSync } from "node:child_process";
+import path from "node:path";
+import fs from "node:fs";
+import { fileURLToPath } from "node:url";
 
 const override = process.env.PHOENIX_DEV_BUNDLER?.trim().toLowerCase();
 const isWindows = process.platform === "win32";
@@ -58,16 +61,35 @@ const nodeOptions = process.env.NODE_OPTIONS?.includes("--max-old-space-size")
 
 const args = ["dev", `--${bundler}`, ...passthrough];
 
+// Resolve Next's bin through the filesystem, NOT through PATH. `pnpm run dev` happens to put
+// node_modules/.bin on PATH, so `spawnSync("next", ...)` works under pnpm and fails with
+// "'next' is not recognized" the moment anyone runs `node scripts/dev-server.mjs` directly -
+// caught exactly that way on 2026-09-01, before this shipped. Resolving from THIS file's own
+// location (not process.cwd()) also means it still works when invoked from a subdirectory,
+// and it is the same form the working dev server already used:
+//   node.exe node_modules/next/dist/bin/next dev --webpack --port 3100
+// Dropping shell:true with it removes a quoting hazard too - this checkout's path contains a
+// space, and every layer that re-parses a command line is a chance to split it there.
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const nextBin = path.join(repoRoot, "node_modules", "next", "dist", "bin", "next");
+const haveBin = fs.existsSync(nextBin);
+
 console.log(
   `[dev-server] ${process.platform} -> ${bundler}` +
     (override ? " (PHOENIX_DEV_BUNDLER override)" : "") +
-    `  | next ${args.join(" ")}`,
+    `  | next ${args.join(" ")}` +
+    (haveBin ? "" : "  (next not found in node_modules - falling back to PATH)"),
 );
 
-const result = spawnSync("next", args, {
-  stdio: "inherit",
-  shell: true,
-  env: { ...process.env, NODE_OPTIONS: nodeOptions },
-});
+const result = haveBin
+  ? spawnSync(process.execPath, [nextBin, ...args], {
+      stdio: "inherit",
+      env: { ...process.env, NODE_OPTIONS: nodeOptions },
+    })
+  : spawnSync("next", args, {
+      stdio: "inherit",
+      shell: true,
+      env: { ...process.env, NODE_OPTIONS: nodeOptions },
+    });
 
 process.exit(result.status ?? 1);
