@@ -271,7 +271,17 @@ export type DoubleVisitFocusRosterEntry = {
 export type DoubleVisitFocusProbationEntry = {
   daysRemaining: number;
   dvCount: number;
-  dvDone: boolean | null; // null when the viewer's role has no dedicated probation DV checkbox (Regional Manager)
+  /**
+   * Has the VIEWER'S OWN evaluator tier met its configured DV requirement on this probationer's
+   * active case? Read from probation_dv_days via computeDvProgress — never from a second opinion.
+   *
+   * `null` renders N/A, and means "your tier owes nothing here, or nothing could be measured":
+   * the viewer holds no evaluator tier (Regional Manager), the tier's requirement is 0, the viewer
+   * is a PM/GPM on a CNS rep (the Case model exempts that pairing), or the progress read failed.
+   * A failure must land here and NOT on `false` — a red "Pending" nobody owes is what the retired
+   * employee_probation checkbox source produced for every probationer for months.
+   */
+  dvDone: boolean | null;
   hireDate: string;
   hrId: string;
   name: string;
