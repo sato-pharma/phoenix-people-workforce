@@ -119,8 +119,14 @@ export type CeoCommandCenterData = {
     topRegions: CeoTopMover[];
     /** Every line with sales this period (not just the top movers) — the basis for line scoping. */
     byLine: Array<{ label: string; totalValue: number; totalQty: number }>;
-    byRegion: Array<{ label: string; totalValue: number; totalQty: number }>;
-    byProduct: Array<{ label: string; totalValue: number; totalQty: number; line: string | null }>;
+    /**
+     * `code` is the operational region code (e.g. UE-1 vs UE-2) — two DIFFERENT organogram regions
+     * can legitimately share the same display `label` ("Upper Egypt" for both a line's normal
+     * territory and another line's Beni Suef carve-out), so the UI must key rows on `code`, never
+     * on `label`, or React collapses the two into one row.
+     */
+    byRegion: Array<{ code: string; label: string; totalValue: number; totalQty: number }>;
+    byProduct: Array<{ code: string; label: string; totalValue: number; totalQty: number; line: string | null }>;
   } | null;
   trends: {
     sales: Array<{ label: string; sales: number; target: number }>;
@@ -382,10 +388,10 @@ export async function getCeoCommandCenterData(access: AccessContext): Promise<Ce
         topLines: topMoversFromSos(sos.byLine),
         topRegions: topMoversFromSos(sos.byRegion),
         byRegion: [...sos.byRegion].sort((a, b) => b.totalValue - a.totalValue).map((r) => ({
-          label: r.label, totalValue: r.totalValue, totalQty: r.totalQty,
+          code: r.code, label: r.label, totalValue: r.totalValue, totalQty: r.totalQty,
         })),
         byProduct: [...(sos.byProduct ?? [])].sort((a, b) => b.totalValue - a.totalValue).map((p) => ({
-          label: p.label, totalValue: p.totalValue, totalQty: p.totalQty, line: (p as { line?: string | null }).line ?? null,
+          code: p.code, label: p.label, totalValue: p.totalValue, totalQty: p.totalQty, line: (p as { line?: string | null }).line ?? null,
         })),
       }
     : null;
