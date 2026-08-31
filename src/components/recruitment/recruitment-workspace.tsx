@@ -53,6 +53,7 @@ import {
   candidateFolderKinds,
   candidateFolderRefusal,
   districtManagerFolderOptions,
+  PARAMEDICAL_FOLDER_KEY,
   partitionCandidatesByFolder,
   type CandidateFolderKind,
 } from "@/lib/recruitment/candidate-folder";
@@ -2362,9 +2363,11 @@ function DuplicateFlagControl({
 /**
  * "This CV is good, but not for now" — the picker that puts a candidate on the shelf.
  *
- * THREE SHELVES, THREE DIFFERENT SECOND QUESTIONS, which is why this is a component and not two
- * dropdowns: a Medical Representative is filed by AREA, a District Manager by REGION, and anything
- * else by JOB TITLE. Picking the shelf changes what the second control even is.
+ * FOUR SHELVES AND FOUR DIFFERENT SECOND QUESTIONS, which is why this is a component and not two
+ * dropdowns: a Medical Representative is filed by AREA, a District Manager by REGION, anything else
+ * by JOB TITLE, and Paramedical by nothing at all — it holds one folder, so there is no second
+ * question to ask. Picking the shelf changes what the second control even is, or whether there is
+ * one.
  *
  * The areas come from the server (au.canonical_areas, already re-tagged for the Delta (3)
  * recruitment split — see candidate-folder-options.ts), the regions from the closed list in
@@ -2416,10 +2419,13 @@ function FileToFolderPicker({
       <select
         className="h-8 w-full min-w-0 border border-slate-300 bg-white px-2 text-xs text-slate-900"
         onChange={(e) => {
-          setKind(e.target.value as CandidateFolderKind);
+          const next = e.target.value as CandidateFolderKind;
+          setKind(next);
           // The key means something different on every shelf, so carrying "Nasr City" across to the
-          // region shelf would file the CV under a region that does not exist.
-          setKey("");
+          // region shelf would file the CV under a region that does not exist. Paramedical is the one
+          // shelf with nothing to choose — it holds a single folder — so its key is set here rather
+          // than asked for, which is also what keeps the File button reachable.
+          setKey(next === "paramedical" ? PARAMEDICAL_FOLDER_KEY : "");
         }}
         value={kind}
       >
@@ -2430,7 +2436,15 @@ function FileToFolderPicker({
         ))}
       </select>
 
-      {kind === "other" ? (
+      {kind === "paramedical" ? (
+        // NO second control, deliberately. The other three shelves ask "which one"; this one has a
+        // single folder, so the honest answer to "which folder" is that there is nothing to pick.
+        // Rendering the area select here — which is what the else-branch would do — would have
+        // offered a recruiter a list of AREAS under the heading of a degree question.
+        <p className="text-phx-xs text-slate-600">
+          One folder, for graduates outside pharmacy, science, veterinary, medicine and dentistry.
+        </p>
+      ) : kind === "other" ? (
         <>
           <Input
             list={`folder-titles-${candidate.id}`}

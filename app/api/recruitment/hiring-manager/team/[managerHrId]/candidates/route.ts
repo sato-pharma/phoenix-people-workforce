@@ -25,8 +25,15 @@ export async function GET(request: Request, { params }: { params: Promise<{ mana
     const { managerHrId } = await params;
     // `files` rides along with the list on purpose — the CV control has to be there when the card
     // is, and asking per card put it fifteen seconds behind. See listTeamManagerCandidates.
-    const { candidates, files, manager } = await listTeamManagerCandidates(access, decodeURIComponent(managerHrId));
-    return NextResponse.json({ candidates, files, manager, success: true });
+    const { candidates, districtBoards, files, manager } = await listTeamManagerCandidates(
+      access,
+      decodeURIComponent(managerHrId),
+    );
+    // `districtBoards` is that manager's own areas from the organogram, each holding the applicants
+    // who asked for it — the owner, 2026-08-31: "when he choose his district manager, he can see
+    // their folders and the CV in per folder." It comes back from the SAME call as the candidates
+    // deliberately: one gate, passed once, rather than a second route with a second copy of it.
+    return NextResponse.json({ candidates, districtBoards, files, manager, success: true });
   } catch (error) {
     return recruitmentApiError(error, "Failed to load that manager's candidates.");
   }

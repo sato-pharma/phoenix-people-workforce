@@ -6,7 +6,6 @@ import { Button } from "@/components/ui/button";
 import {
   candidateFolderKeyLabels,
   candidateFolderKindLabels,
-  candidateFolderKinds,
   candidateFolderLabel,
   candidateFolderRefusal,
   districtManagerFolderOptions,
@@ -14,7 +13,7 @@ import {
 } from "@/lib/recruitment/candidate-folder";
 import { suggestFolderFromDeclaredAnswers } from "@/lib/recruitment/candidate-folder-suggestion";
 import type { CandidateFolderAreaOption } from "@/lib/recruitment/candidate-folder-options";
-import type { ManagerFolderFiling } from "@/lib/recruitment/manager-folder-shelf";
+import { managerFolderKinds, type ManagerFolderFiling } from "@/lib/recruitment/manager-folder-shelf";
 import type { Candidate } from "@/lib/recruitment/types";
 
 /**
@@ -56,7 +55,11 @@ export function CandidateFolderControl({
   // Where the candidate's OWN answers say they belong, used to pre-select the picker. Only ever a
   // starting point — the manager can change both halves before pressing File, and a candidate who
   // never answered simply opens on the first shelf with nothing chosen.
-  const suggested = suggestFolderFromDeclaredAnswers({ ...candidate, folder: null }).suggestion;
+  // A shelf this manager cannot see is not a starting point either: a <select> whose value matches
+  // none of its options renders blank and files nothing, so the suggestion has to pass the same list
+  // the options come from rather than be trusted because it happens not to produce one today.
+  const declared = suggestFolderFromDeclaredAnswers({ ...candidate, folder: null }).suggestion;
+  const suggested = declared && managerFolderKinds.includes(declared.kind) ? declared : null;
   const [kind, setKind] = useState<CandidateFolderKind>(suggested?.kind ?? "medical_rep");
   const [key, setKey] = useState(suggested?.key ?? "");
 
@@ -139,7 +142,13 @@ export function CandidateFolderControl({
           }}
           value={kind}
         >
-          {candidateFolderKinds.map((option) => (
+          {/*
+            managerFolderKinds, NOT the recruiter's full list. Paramedical is an eligibility answer
+            the recruitment team applies, and a manager's shelf never shows it — offering it here
+            would let him file a CV onto a shelf he cannot then open, which loses it from his live
+            list and shows it nowhere. One list drives both the picker and the shelves.
+          */}
+          {managerFolderKinds.map((option) => (
             <option key={option} value={option}>
               {candidateFolderKindLabels[option]}
             </option>

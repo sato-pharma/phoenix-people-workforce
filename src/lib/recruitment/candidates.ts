@@ -8,10 +8,12 @@ import {
 } from "@/lib/uploads/exceljs-rows";
 import { assertCanDeleteRecruitment } from "@/lib/recruitment/access";
 import { candidateAppliedFor, freeAppliedForEvidence } from "@/lib/recruitment/applied-for";
+import { isBackgroundConfirmationOutcome } from "@/lib/recruitment/background-review";
 import {
   candidateFolderRefusal,
   cleanFolderKey,
   isCandidateFolderKind,
+  PARAMEDICAL_FOLDER_KEY,
 } from "@/lib/recruitment/candidate-folder";
 import { describeCandidateSource, type SourceContextRow } from "@/lib/recruitment/candidate-source-context";
 import type { CandidateUnconfirmedCvFacts } from "@/lib/recruitment/candidate-screening-facts";
@@ -692,6 +694,15 @@ export async function fileCandidateToFolder(
   const cleanKey = cleanFolderKey(key);
   if (!cleanKey) throw new Error("A folder needs a name.");
 
+  // ONE SHELF, whatever the client sent. The paramedical shelf holds exactly one folder by design —
+  // candidate-folder.ts says so and no screen offers a name field for it — but this service took
+  // whatever key arrived, so a stale tab or a hand-made request carrying
+  // `{kind: "paramedical", key: "Law"}` would quietly create a SECOND paramedical folder that no
+  // screen lists and nobody would think to look in. The CV would be filed, gone from the pool, and
+  // effectively lost. Normalised here rather than in the route so that every caller is covered by
+  // one rule: the recruiter's picker, and confirmCandidateBackground below it.
+  const folderKey = kind === "paramedical" ? PARAMEDICAL_FOLDER_KEY : cleanKey;
+
   const existing = await getCandidate(id);
   if (!existing) throw new Error("Candidate not found.");
   const refusal = candidateFolderRefusal(existing);
@@ -706,7 +717,7 @@ export async function fileCandidateToFolder(
       folder_filed_by_hr_id: access.hrId ?? null,
       // `kind` is already narrowed to CandidateFolderKind by the guard above — no cast needed.
       folder_kind: kind,
-      folder_key: cleanKey,
+      folder_key: folderKey,
       updated_at: filedAt,
     })
     .eq("id", id)
@@ -714,6 +725,63 @@ export async function fileCandidateToFolder(
     .single();
   if (error) throw error;
   return mapCandidate(data as CandidateDbRow);
+}
+
+/**
+ * Record an admin's answer on a graduation background — the manual half of the backfill.
+ *
+ * The owner, 2026-08-31: *"anyone non eligible, you will make the admin be able to check first
+ * their CV and confirm."*
+ *
+ * PARAMEDICAL ALSO FILES, IN THE SAME CALL. The owner's first instruction was a folder — "I want
+ * the non science or pharmacy or vet to be excluded in a separate folder, name this folder
+ * paramedical" — and his second was that a person confirms it. Those are one action, not two, and
+ * splitting them across two clicks is how a row ends up confirmed but not filed: invisible to the
+ * queue that would have asked again, and still sitting in the pool everybody works from.
+ *
+ * The confirmation is written FIRST and the filing second. If the filing fails, the decision
+ * survives and the row is out of the routing rule immediately — the direction that protects a
+ * candidate from being sent to a manager the admin has just excluded them from. The reverse order
+ * would file them and then, on a failure, leave a shelved CV that still reads as unanswered.
+ *
+ * A rejected CV is refused, through `candidateFolderRefusal` for the paramedical half — the same
+ * sentence the button's tooltip and the route's 400 use. The eligible half has no such refusal:
+ * saying "this person's degree is fine" about somebody already turned down is harmless and true.
+ */
+export async function confirmCandidateBackground(
+  access: AccessContext,
+  id: string,
+  outcome: string,
+): Promise<Candidate> {
+  if (!isBackgroundConfirmationOutcome(outcome)) {
+    throw new Error(`"${String(outcome ?? "").trim()}" is not a background answer.`);
+  }
+
+  const existing = await getCandidate(id);
+  if (!existing) throw new Error("Candidate not found.");
+
+  if (outcome === "paramedical") {
+    const refusal = candidateFolderRefusal(existing);
+    if (refusal) throw new Error(refusal);
+  }
+
+  const confirmedAt = new Date().toISOString();
+  const supabase = recruitmentDb();
+  const { data, error } = await supabase
+    .from("ats_candidates")
+    .update({
+      background_confirmed_at: confirmedAt,
+      background_confirmed_by_hr_id: access.hrId ?? null,
+      background_confirmed_outcome: outcome,
+      updated_at: confirmedAt,
+    })
+    .eq("id", id)
+    .select("*")
+    .single();
+  if (error) throw error;
+
+  if (outcome !== "paramedical") return mapCandidate(data as CandidateDbRow);
+  return fileCandidateToFolder(access, id, "paramedical", PARAMEDICAL_FOLDER_KEY);
 }
 
 /**

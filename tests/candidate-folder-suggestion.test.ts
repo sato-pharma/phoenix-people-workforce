@@ -38,12 +38,17 @@ function declared(
     regionCode?: string | null;
     declaredAt?: string | null;
     status?: string;
+    faculty?: string | null;
+    backgroundConfirmedOutcome?: string | null;
     folder?: { kind: string; key: string; filedAt: string; filedByHrId: string | null } | null;
   },
 ): Candidate {
   return {
     id,
     fullName: id,
+    faculty: fields.faculty ?? null,
+    backgroundConfirmedOutcome: fields.backgroundConfirmedOutcome ?? null,
+    backgroundConfirmedAt: fields.backgroundConfirmedOutcome ? "2026-08-31T09:00:00Z" : null,
     status: fields.status ?? "new",
     appliedForJobTitle: fields.title ?? null,
     preferredAreaName: fields.area ?? null,
@@ -161,18 +166,41 @@ export async function runCandidateFolderSuggestionTests() {
     declared("e", { title: "Medical Representative", area: "Alex Center", status: "rejected" }),
     declared("f", { title: "Medical Representative", area: "Alex West", declaredAt: null }), // extracted
     declared("g", { title: null, declaredAt: null }), // never answered anything
+    // Answered everything, and reads as a Commerce graduate. The owner's rule is that a degree
+    // outside the five is checked by a person first — and filing this row would not merely
+    // mis-shelve him, it would REMOVE him from the review queue, which refuses anybody already on
+    // a shelf. He would be excluded by a machine, silently, which is the one thing that must not
+    // happen here.
+    declared("law", { title: "Medical Representative", area: "Alex West", faculty: "Faculty of Commerce" }),
+    // The same degree, already answered by an admin who said it is one of the five. A confirmation
+    // that does not actually let the CV through is a button that does nothing.
+    declared("rescued", {
+      title: "Medical Representative",
+      area: "Alex West",
+      backgroundConfirmedOutcome: "eligible",
+      faculty: "Faculty of Commerce",
+    }),
+    // Unreadable, and therefore UNTOUCHED by this gate. 159 of production's 604 CVs name no faculty
+    // at all, so withholding those would empty this action for most of the pool. A parsing failure
+    // is not grounds for exclusion — the module says so itself.
+    declared("blank", { title: "Medical Representative", area: "Alex West", faculty: "qwerty zzz" }),
   ];
   const collected = collectSuggestedFilings(pool);
 
   assert.deepEqual(
     collected.filings.map((filing) => filing.candidateId).sort(),
-    ["a", "b", "c"],
-    "only the three whose own answers reach a folder",
+    ["a", "b", "blank", "c", "rescued"],
+    "the three whose own answers reach a folder, plus the admin-confirmed one and the unreadable one — never the Commerce graduate",
   );
   assert.deepEqual(
     collected.skipped.map((row) => row.candidateId).sort(),
-    ["d", "e"],
-    "answered-but-unplaceable is SHOWN — those are the people a silent screen would lose",
+    ["d", "e", "law"],
+    "answered-but-unplaceable is SHOWN, and so is the degree that needs a person — those are the people a silent screen would lose",
+  );
+  assert.match(
+    String(collected.skipped.find((row) => row.candidateId === "law")?.reason),
+    /Degrees waiting for you to check/i,
+    "the reason must name the screen that resolves it — a skip with no route out is a dead end",
   );
   assert.ok(
     !collected.skipped.some((row) => row.candidateId === "f" || row.candidateId === "g"),
@@ -225,13 +253,20 @@ export async function runCandidateFolderSuggestionTests() {
   );
   const { pool: leftInPool, shelves, filedCount } = partitionCandidatesByFolder(filedFromSuggestions);
 
-  assert.equal(filedCount, 3, "every suggestion must actually file — none may fall back to the pool");
+  // Derived, not a literal: this asserts the INVARIANT — every suggestion files — rather than a
+  // count that has to be re-typed each time the pool above gains a row, which is how a real
+  // regression gets "fixed" by editing the expected number.
+  assert.equal(
+    filedCount,
+    collected.filings.length,
+    "every suggestion must actually file — none may fall back to the pool",
+  );
   assert.equal(leftInPool.length, 0, "and none may be left where the owner said they must not appear");
 
   const repShelf = shelves.find((shelf) => shelf.kind === "medical_rep");
-  assert.equal(repShelf?.folders.length, 1, "the two Tanta reps share ONE folder");
-  assert.equal(repShelf?.folders[0]?.label, "Gharbia 1 (Tanta)");
-  assert.equal(repShelf?.folders[0]?.candidates.length, 2);
+  const tanta = repShelf?.folders.find((folder) => folder.label === "Gharbia 1 (Tanta)");
+  assert.ok(tanta, "the Tanta reps must have a folder of their own");
+  assert.equal(tanta?.candidates.length, 2, "the two Tanta reps share ONE folder");
 
   const dmShelf = shelves.find((shelf) => shelf.kind === "district_manager");
   assert.equal(dmShelf?.folders[0]?.label, "Alex-BHR", "the code files, the company's own name displays");

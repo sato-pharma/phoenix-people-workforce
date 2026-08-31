@@ -36,8 +36,20 @@ import { candidateRegionCodes, candidateRegionLabels, type CandidateRegionCode }
 import { normalizeCandidateStatus } from "@/lib/recruitment/candidate-status";
 import type { Candidate } from "@/lib/recruitment/types";
 
-/** The three shelves, in the order the owner named them and the order they render. */
-export const candidateFolderKinds = ["medical_rep", "district_manager", "other"] as const;
+/**
+ * The shelves, in the order the owner named them and the order they render.
+ *
+ * PARAMEDICAL IS LAST, AND DELIBERATELY SO. The first three are places a CV waits for a seat; this
+ * one is the answer to a different question — whether the person is eligible for the field force at
+ * all — and it is the only shelf nobody is hired out of. Putting it last keeps the three a recruiter
+ * works from at the top of the screen. Added 2026-08-31 on the owner's instruction: *"I want the non
+ * science or pharmacy or vet to be excluded in a separate folder. Name this folder paramedical."*
+ *
+ * The eligibility rule itself is NOT here — it lives in candidate-background.ts, which owns the five
+ * disciplines and the asymmetry between filing somebody in and filing somebody out. This module only
+ * knows that a shelf by this name exists.
+ */
+export const candidateFolderKinds = ["medical_rep", "district_manager", "other", "paramedical"] as const;
 
 export type CandidateFolderKind = (typeof candidateFolderKinds)[number];
 
@@ -49,6 +61,7 @@ export const candidateFolderKindLabels: Record<CandidateFolderKind, string> = {
   district_manager: "District Manager",
   medical_rep: "Medical Representative",
   other: "Other positions",
+  paramedical: "Paramedical",
 };
 
 /** What the folders inside each shelf are named for — the second line under a shelf heading. */
@@ -56,6 +69,9 @@ export const candidateFolderKindDescriptions: Record<CandidateFolderKind, string
   district_manager: "One folder per region.",
   medical_rep: "One folder per area.",
   other: "One folder per job title.",
+  // Names the five that ARE eligible rather than the many that are not — a recruiter opening this
+  // shelf needs to know the rule it was filed by, and the eligible list is the short half.
+  paramedical: "Graduates outside pharmacy, science, veterinary, medicine and dentistry.",
 };
 
 /** The word for one folder's key, used when a screen has to ask for it. */
@@ -63,7 +79,26 @@ export const candidateFolderKeyLabels: Record<CandidateFolderKind, string> = {
   district_manager: "Region",
   medical_rep: "Area",
   other: "Job title",
+  // The paramedical shelf holds exactly ONE folder (see PARAMEDICAL_FOLDER_KEY), so no screen asks
+  // for this key and this word should never reach anyone. The entry exists because the Record is
+  // exhaustive over the union, and a missing one would compile, render as undefined, and be found
+  // only by somebody reading the screen it broke.
+  paramedical: "Folder",
 };
+
+/**
+ * The paramedical shelf's ONE folder, by name.
+ *
+ * The owner asked for "a separate folder", singular — not a folder per degree. That matters more
+ * than it sounds: the point of this shelf is that a recruiter can see everyone the eligibility rule
+ * excluded, in one place, and decide. Split across thirty degree names it stops being that list and
+ * becomes thirty lists nobody opens.
+ *
+ * Every writer uses this constant rather than the string. The partition groups case-insensitively,
+ * so a stray "paramedical" would not split the folder in two — it would rename it, because the
+ * displayed label is one of the stored spellings. One constant is what keeps the heading stable.
+ */
+export const PARAMEDICAL_FOLDER_KEY = "Paramedical";
 
 export function isCandidateFolderKind(value: unknown): value is CandidateFolderKind {
   return typeof value === "string" && (candidateFolderKinds as readonly string[]).includes(value);

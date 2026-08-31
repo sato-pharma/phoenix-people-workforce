@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
 import {
   candidateFolderKey,
@@ -10,6 +12,7 @@ import {
   districtManagerFolderOptions,
   isCandidateFolderKind,
   isFiledCandidate,
+  PARAMEDICAL_FOLDER_KEY,
   partitionCandidatesByFolder,
 } from "../src/lib/recruitment/candidate-folder.ts";
 import { candidateRegionCodes } from "../src/lib/recruitment/candidate-region.ts";
@@ -62,8 +65,8 @@ export async function runCandidateFolderTests() {
   // ── 1 · The vocabulary ────────────────────────────────────────────────────
   assert.deepEqual(
     [...candidateFolderKinds],
-    ["medical_rep", "district_manager", "other"],
-    "three shelves, in the order the owner named them",
+    ["medical_rep", "district_manager", "other", "paramedical"],
+    "four shelves, in the order the owner named them — paramedical last, added 2026-08-31",
   );
   assert.ok(isCandidateFolderKind("medical_rep"));
   assert.ok(!isCandidateFolderKind("regional_manager"), "an unknown shelf must not pass the guard");
@@ -144,7 +147,11 @@ export async function runCandidateFolderTests() {
     "every candidate is in exactly one half — the invariant that stops a CV being lost between the two screens",
   );
 
-  assert.equal(shelves.length, 3, "all three shelves come back, empty ones included");
+  assert.equal(
+    shelves.length,
+    candidateFolderKinds.length,
+    "every shelf comes back, empty ones included — driven off the vocabulary so a fifth cannot silently not render",
+  );
   const medicalRep = shelves.find((shelf) => shelf.kind === "medical_rep")!;
   assert.equal(medicalRep.candidateCount, 3);
   assert.deepEqual(
@@ -184,7 +191,48 @@ export async function runCandidateFolderTests() {
   );
   assert.equal(damaged.filedCount, 0, "and it must not be counted as filed either");
 
-  // ── 8 · isFiledCandidate is the one authority every screen asks ───────────
+  // ── 8 · The paramedical shelf holds ONE folder, and nothing asks for its key ──
+  {
+    // The owner asked for "a separate folder", singular. That is not cosmetic: this shelf exists so
+    // a recruiter can see everyone the eligibility rule excluded in one place. Split per degree it
+    // becomes thirty lists nobody opens.
+    assert.equal(PARAMEDICAL_FOLDER_KEY, "Paramedical", "the owner named this folder himself");
+    assert.equal(
+      candidateFolderLabel("paramedical", PARAMEDICAL_FOLDER_KEY),
+      "Paramedical",
+      "the shelf's one folder shows the owner's own word — this is the heading he reads",
+    );
+
+    const shelf = partitionCandidatesByFolder([
+      filed("p1", { filedAt: "2026-08-31T09:00:00Z", key: PARAMEDICAL_FOLDER_KEY, kind: "paramedical" }),
+      // A hand-written SQL fix, or an older writer, could spell it differently. Case-insensitive
+      // grouping means that renames the folder rather than splitting it — which is the failure worth
+      // knowing about, and the reason every writer goes through the constant.
+      filed("p2", { filedAt: "2026-08-31T10:00:00Z", key: "paramedical", kind: "paramedical" }),
+    ]).shelves.find((entry) => entry.kind === "paramedical")!;
+    assert.equal(shelf.folders.length, 1, "one shelf, one folder — two spellings must not open a second");
+    assert.equal(shelf.candidateCount, 2);
+
+    // The recruiter's picker. Source-pinned because rendering it needs React and a candidate row.
+    // Before this branch existed the else-branch ran for paramedical, which offered a recruiter the
+    // list of AREAS, grouped by region, under the prompt for a degree.
+    const workspace = readFileSync(
+      fileURLToPath(new URL("../src/components/recruitment/recruitment-workspace.tsx", import.meta.url)),
+      "utf8",
+    );
+    assert.match(
+      workspace,
+      /kind === "paramedical" \? \(/,
+      "the picker must special-case the one shelf with nothing to choose, before it reaches the area select",
+    );
+    assert.match(
+      workspace,
+      /setKey\(next === "paramedical" \? PARAMEDICAL_FOLDER_KEY : ""\)/,
+      "…and set its key itself — the File button is disabled on an empty key, so an unasked key files nothing",
+    );
+  }
+
+  // ── 9 · isFiledCandidate is the one authority every screen asks ───────────
   assert.ok(isFiledCandidate(filed("x", { filedAt: "2026-08-30T09:00:00Z", key: "Nasr City", kind: "medical_rep" })));
   assert.ok(!isFiledCandidate(filed("y", null)));
   assert.ok(!isFiledCandidate(null));

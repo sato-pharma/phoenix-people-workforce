@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 
-import { candidateFolderKinds } from "@/lib/recruitment/candidate-folder";
 import { canSeeAllRecruitment } from "@/lib/recruitment/access";
 import { isCandidateWithinViewerTeam } from "@/lib/recruitment/hiring-manager-team";
 import { fileCandidateForManager, unfileCandidateForManager } from "@/lib/recruitment/manager-folders";
+import { managerFolderKinds } from "@/lib/recruitment/manager-folder-shelf";
 import {
   assertSameOriginMutation,
   readJsonObject,
@@ -59,8 +59,12 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ ca
     const body = await readJsonObject(request);
     const kind = str(body.kind);
     if (!kind) return validationError("A folder kind is required.");
-    if (!(candidateFolderKinds as readonly string[]).includes(kind)) {
-      return validationError(`"${kind}" is not a folder kind. Use one of: ${candidateFolderKinds.join(", ")}.`);
+    // managerFolderKinds, NOT the recruiter's full vocabulary. "paramedical" is a shelf the
+    // recruitment team files onto and a manager never sees, so accepting it here would write a
+    // filing that hides the CV from his own list and appears on no shelf he can open. The picker
+    // already omits it; this is the boundary that makes that true — hiding an option is UX only.
+    if (!(managerFolderKinds as readonly string[]).includes(kind)) {
+      return validationError(`"${kind}" is not a folder kind. Use one of: ${managerFolderKinds.join(", ")}.`);
     }
 
     const key = str(body.key);

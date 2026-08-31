@@ -7,6 +7,7 @@ import { Card } from "@/components/ui/card";
 import { CandidateCommentThread } from "@/components/employee-portal/candidate-comment-thread";
 import { CandidateCvActions } from "@/components/employee-portal/candidate-cv-actions";
 import { CandidateFolderControl } from "@/components/employee-portal/candidate-folder-control";
+import { DistrictFoldersSection } from "@/components/employee-portal/district-folders-section";
 import { ManagerFoldersSection } from "@/components/employee-portal/manager-folders-section";
 import { TeamCandidatesSection, type TeamManagerOption } from "@/components/employee-portal/team-candidates-section";
 import { cairoDateTime } from "@/lib/format/cairo-datetime";
@@ -20,6 +21,7 @@ import {
   type HiringManagerDecision,
 } from "@/lib/recruitment/candidate-status";
 import type { CandidateFolderAreaOption } from "@/lib/recruitment/candidate-folder-options";
+import type { DistrictManagerBoard } from "@/lib/recruitment/district-manager-folders";
 import {
   partitionManagerCandidates,
   withManagerFiling,
@@ -37,6 +39,17 @@ type Props = {
    */
   areaOptions: CandidateFolderAreaOption[];
   initialApplications: ApplicationWithContext[];
+  /**
+   * This manager's own districts, and inside each one a folder per area he holds — every area,
+   * including the ones nobody has applied to. Empty for anybody who holds no district seat, which is
+   * most people who reach this screen, and the section then renders nothing at all.
+   *
+   * Computed on the server from the organogram; see district-manager-folders.ts. These CVs were NOT
+   * sent to him: they are the applicants who asked for one of his areas, which is a deliberate
+   * widening — the owner, 2026-08-31: "if you need a CV from any area, he click the folder and open
+   * he find all CVs."
+   */
+  initialDistrictBoards: DistrictManagerBoard<Candidate>[];
   /**
    * What this manager has filed onto HIS OWN shelf, keyed by candidate id.
    *
@@ -505,6 +518,7 @@ function SentCandidateCard({
 export function RecruitmentCandidatesPortal({
   areaOptions,
   initialApplications,
+  initialDistrictBoards,
   initialFilings,
   initialFiles: files,
   initialSentToMe: sentToMe,
@@ -566,10 +580,16 @@ export function RecruitmentCandidatesPortal({
     }
   };
 
-  // The team check belongs in this condition, not only in the render below it. A National Sales
-  // Manager with nothing sent to him personally still has districts to look through, and without
-  // this he would be shown "No candidates yet" over a team holding ten CVs.
-  if (applications.length === 0 && sentToMe.length === 0 && initialTeam.length === 0) {
+  // The team and district checks belong in this condition, not only in the render below it. A
+  // National Sales Manager with nothing sent to him personally still has districts to look through,
+  // and without this he would be shown "No candidates yet" over a team holding ten CVs — and a
+  // district manager would be shown it over his own area folders.
+  if (
+    applications.length === 0 &&
+    sentToMe.length === 0 &&
+    initialTeam.length === 0 &&
+    initialDistrictBoards.length === 0
+  ) {
     return (
       <Card className="rounded-lg border border-gray-200 bg-white p-10 text-center shadow-[0_1px_3px_rgba(15,23,42,0.08)]">
         <p className="text-base font-semibold text-slate-700">No candidates yet</p>
@@ -643,6 +663,11 @@ export function RecruitmentCandidatesPortal({
           be somewhere he can see he kept it, or the button reads as a delete. Renders nothing at all
           until the first CV is filed. */}
       <ManagerFoldersSection renderCandidate={renderSentCard} shelves={shelves} totalFiled={filedCount} />
+
+      {/* His own areas, after the CVs he owes an answer on and before his team's. This is a place to
+          go looking rather than a queue: nobody is waiting on him for anything in here, so it must
+          not sit above the list that is. */}
+      <DistrictFoldersSection boards={initialDistrictBoards} files={files} viewerHrId={viewerHrId} />
 
       {/* After the caller's own CVs, deliberately. The ones sent to HIM are the ones he still owes an
           answer on; his team's are for oversight and carry no obligation, so they must not push his

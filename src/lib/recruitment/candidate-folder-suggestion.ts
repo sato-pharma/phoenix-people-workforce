@@ -36,6 +36,7 @@ import {
 } from "@/lib/recruitment/candidate-folder";
 import { candidateRegionCodes, type CandidateRegionCode } from "@/lib/recruitment/candidate-region";
 import { isUnreviewedCandidateStatus } from "@/lib/recruitment/candidate-status";
+import { resolveBackgroundStanding } from "@/lib/recruitment/background-review";
 import {
   candidateRoleFamily,
   candidateRoleFamilyLabels,
@@ -217,6 +218,36 @@ export function collectSuggestedFilings(candidates: readonly Candidate[]): {
     // the pool, and listing it would bury the handful that genuinely could not be placed.
     if (!cleanFolderKey(candidate.preferencesDeclaredAt)) continue;
     if (isFiledCandidate(candidate)) continue;
+
+    // THE DEGREE COMES FIRST, ahead of what they asked to do.
+    //
+    // The owner, 2026-08-31: "anyone non eligible, you will make the admin be able to check first
+    // their CV and confirm." Answering the WhatsApp questions is not that check. Without this gate
+    // the bulk "file the ones nobody has opened" action put a Commerce graduate who asked to be a
+    // medical rep straight onto the Medical Rep shelf — and filing him did not merely mis-shelve
+    // him, it REMOVED him from the review queue, which refuses anybody already on a shelf. The
+    // human check the owner asked for would then never happen, and nothing on any screen would say
+    // so.
+    //
+    // PARAMEDICAL ONLY, and the narrowness is the point. "Their degree could not be read" is not a
+    // reason to withhold anything: 159 of the 604 CVs in production name no faculty at all, so
+    // gating on "eligible" would empty this action for most of the pool and quietly break a feature
+    // that works. This module already holds the same rule for the same reason — "treating a parsing
+    // failure as grounds for exclusion is how unreadable strings become quiet removals". An unknown
+    // degree files onto its declared role shelf, where a recruiter sees it, exactly as before.
+    //
+    // The STANDING, not the parser's verdict: an admin who has already answered outranks it in both
+    // directions, so a graduate an admin confirmed eligible files here even if the parser dislikes
+    // the faculty string, and one an admin confirmed paramedical is held even if it likes it.
+    const standing = resolveBackgroundStanding(candidate);
+    if (standing.outcome === "paramedical") {
+      skipped.push({
+        candidateId: candidate.id,
+        fullName: candidate.fullName,
+        reason: "Their degree reads as something outside the five disciplines — answer it in Degrees waiting for you to check.",
+      });
+      continue;
+    }
 
     const result = suggestFolderFromDeclaredAnswers(candidate);
     if (result.suggestion) {

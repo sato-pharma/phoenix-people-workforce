@@ -259,6 +259,17 @@ export type Candidate = {
   cvExternalUrl: string | null;
   notes: string | null;
   faculty: string | null;
+  // What the applicant answered when the apply flow asked what they studied — a TAPPED discipline
+  // or free text they typed. Distinct from `faculty` above, which the CV extractor read off the
+  // document: this one is the applicant's own answer, so it outranks the CV when the two disagree.
+  // Null for everyone who arrived before the question existed, which is most of the archive.
+  declaredBackground: string | null;
+  // An ADMIN's answer on whether this graduate is in the five field-force disciplines, written only
+  // after a person opened the CV. It outranks both of the fields above, in both directions, and
+  // null — which is where every row starts — means nobody has been asked. background-review.ts.
+  backgroundConfirmedOutcome: string | null;
+  backgroundConfirmedAt: string | null;
+  backgroundConfirmedByHrId: string | null;
   university: string | null;
   degree: string | null;
   graduationYear: number | null;

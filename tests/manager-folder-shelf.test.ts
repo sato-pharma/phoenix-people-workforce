@@ -6,6 +6,7 @@ import { candidateFolderKinds } from "../src/lib/recruitment/candidate-folder.ts
 import {
   applyManagerFilings,
   isManagersOwnFiling,
+  managerFolderKinds,
   partitionManagerCandidates,
   withManagerFiling,
   type ManagerFolderFilings,
@@ -85,13 +86,68 @@ export function runManagerFolderShelfTests() {
     assert.deepEqual(seen, ["c1", "c2", "c3"], "a CV must be in the live list or on a shelf, never both and never neither");
   }
 
-  // ── All three shelves come back, empty ones included ───────────────────────────────────────────
+  // ── Every shelf a manager may USE comes back, empty ones included ──────────────────────────────
   {
     const { shelves } = partitionManagerCandidates([candidate("c1")], {});
     assert.deepEqual(
       shelves.map((shelf) => shelf.kind),
-      [...candidateFolderKinds],
+      ["medical_rep", "district_manager", "other"],
       "an empty shelf is information; a shelf that vanishes makes the feature look broken",
+    );
+    // Paramedical is a RECRUITMENT-side eligibility answer. No CV reaches a manager after being
+    // filed there, so for him it could only ever be empty — and an empty shelf he cannot use is not
+    // information, it is an invitation to file somebody out by a rule that is not his to apply.
+    assert.ok(
+      !shelves.some((shelf) => shelf.kind === "paramedical"),
+      "the paramedical shelf is never shown to a manager",
+    );
+    assert.ok(
+      (candidateFolderKinds as readonly string[]).includes("paramedical"),
+      "…while still existing for the recruitment team, which is the whole point of hiding it here",
+    );
+  }
+
+  // ── The PICKER, the SHELVES and the SERVER all read the same list ──────────────────────────────
+  {
+    // A picker is never wider than its viewer. Three things have to agree about which shelves a
+    // manager may use, and the only reason they can be trusted to is that there is one list: the
+    // <select> he files from, the shelves he can open, and the route that actually writes the row.
+    // If any one of them drifts wider, a CV lands on a shelf he cannot open — gone from his live
+    // list, visible nowhere, and with nothing on screen explaining where it went.
+    assert.deepEqual(
+      [...managerFolderKinds],
+      ["medical_rep", "district_manager", "other"],
+      "a manager files into three shelves — paramedical is the recruitment team's eligibility answer, not his",
+    );
+
+    const read = (path: string) => readFileSync(fileURLToPath(new URL(path, import.meta.url)), "utf8");
+
+    // The picker. Source-pinned because rendering it needs React and a candidate row; the failure
+    // this guards is a one-word edit back to the recruiter's list, which no behaviour test here can
+    // reach.
+    const control = read("../src/components/employee-portal/candidate-folder-control.tsx");
+    assert.match(
+      control,
+      /\{managerFolderKinds\.map\(/,
+      "the manager's folder picker must be built from managerFolderKinds, never the recruiter's full list",
+    );
+    assert.equal(
+      /\{candidateFolderKinds\.map\(/.test(control),
+      false,
+      "…and the recruiter's list must not come back into it — that is exactly the edit this pin exists to catch",
+    );
+
+    // The server, which is the boundary. Omitting an <option> is UX; this is the half that holds.
+    const route = read("../app/api/recruitment/hiring-manager/candidates/[candidateId]/folder/route.ts");
+    assert.match(
+      route,
+      /\(managerFolderKinds as readonly string\[\]\)\.includes\(kind\)/,
+      "the manager's write route must refuse a shelf he cannot see — a hidden option is not a check",
+    );
+    assert.equal(
+      /candidateFolderKinds/.test(route),
+      false,
+      "the recruiter's vocabulary must not be what the manager's route validates against",
     );
   }
 

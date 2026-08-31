@@ -11,6 +11,10 @@ import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { listApplications } from "@/lib/recruitment/applications";
 import { listCandidateFolderAreaOptions } from "@/lib/recruitment/candidate-folder-options";
 import { listCandidatesSentToManager } from "@/lib/recruitment/candidates";
+import {
+  districtBoardCandidateIds,
+  listDistrictBoardsForManager,
+} from "@/lib/recruitment/district-manager-folders-db";
 import { listCandidateCardFiles } from "@/lib/recruitment/files";
 import { listViewerTeamManagers } from "@/lib/recruitment/hiring-manager-team";
 import { listManagerFolderFilings } from "@/lib/recruitment/manager-folders";
@@ -60,12 +64,18 @@ async function AdminRecruitmentCandidatesContent() {
   // the owner asked for on 2026-08-30. Loaded here for the same reason the team picker is: this page
   // is the same component, and a CEO who could file on the portal but not here would have two
   // inboxes that disagree about which CVs are still waiting on him.
-  const [applications, sentToMe, team, filings, areaOptions] = await Promise.all([
+  // The sixth is the district boards — one folder per area this caller holds in the organogram.
+  // Loaded here for the third time on the same argument the two paragraphs above make: this page
+  // renders the identical component, and the component treats an empty board list as "this caller
+  // holds no areas". Leaving it out here would not hide the folders politely — it would tell a
+  // manager who holds ten areas that he has no candidates at all, over folders that are full.
+  const [applications, sentToMe, team, filings, areaOptions, districtBoards] = await Promise.all([
     listApplications(access),
     listCandidatesSentToManager(access.hrId),
     listViewerTeamManagers(access),
     listManagerFolderFilings(access.hrId),
     listCandidateFolderAreaOptions(),
+    listDistrictBoardsForManager(access.hrId),
   ]);
   const myCandidates = applications.filter((application) => application.candidate && application.requisition);
 
@@ -75,6 +85,9 @@ async function AdminRecruitmentCandidatesContent() {
   const initialFiles = await listCandidateCardFiles([
     ...sentToMe.map((candidate) => candidate.id),
     ...myCandidates.map((application) => application.candidate?.id ?? ""),
+    // The folders' CVs too. A View CV button that is absent because its file was never fetched is
+    // the same defect as no button at all, and the owner reported that one by name.
+    ...districtBoardCandidateIds(districtBoards),
   ]);
 
   return (
@@ -89,6 +102,7 @@ async function AdminRecruitmentCandidatesContent() {
         <RecruitmentCandidatesPortal
           areaOptions={areaOptions}
           initialApplications={myCandidates}
+          initialDistrictBoards={districtBoards}
           initialFilings={filings}
           initialFiles={initialFiles}
           initialSentToMe={sentToMe}

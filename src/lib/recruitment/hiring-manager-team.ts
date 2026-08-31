@@ -22,6 +22,12 @@ import type { AccessContext } from "@/lib/auth/permissions";
 import { canonicalHrIdKey, hrIdLookupKeys } from "@/lib/hr-id";
 import { listCandidatesSentToManager } from "@/lib/recruitment/candidates";
 import { recruitmentDb } from "@/lib/recruitment/db";
+import {
+  districtBoardsHoldingCandidate,
+  districtBoardCandidateIds,
+  listDistrictBoardsForManager,
+  type DistrictBoard,
+} from "@/lib/recruitment/district-manager-folders-db";
 import { listCandidateCardFiles } from "@/lib/recruitment/files";
 import {
   canViewerSeeManagerCandidates,
@@ -151,7 +157,12 @@ export async function listViewerTeamManagers(access: AccessContext): Promise<Tea
 export async function listTeamManagerCandidates(
   access: AccessContext,
   managerHrId: string,
-): Promise<{ candidates: Candidate[]; files: Record<string, TeamCandidateFile[]>; manager: TeamManager | null }> {
+): Promise<{
+  candidates: Candidate[];
+  districtBoards: DistrictBoard[];
+  files: Record<string, TeamCandidateFile[]>;
+  manager: TeamManager | null;
+}> {
   if (!access.hrId) throw new Error("Forbidden: no HR_ID on this session.");
   const roster = await loadTeamRoster();
   if (!canViewerSeeManagerCandidates({ managerHrId, roster, viewerHrId: access.hrId })) {
@@ -162,7 +173,18 @@ export async function listTeamManagerCandidates(
       (entry) => canonicalHrIdKey(entry.hrId) === canonicalHrIdKey(managerHrId),
     ) ?? null;
 
-  const candidates = await listCandidatesSentToManager(managerHrId);
+  // TWO LISTS FOR ONE MANAGER, and they answer two different questions the owner asked on two
+  // different days. `candidates` is what a recruiter pushed to him. `districtBoards` is his own
+  // areas from the organogram with everyone who asked for them — 2026-08-31: "make the national
+  // sales manager able to choose between his district managers and when he choose his district
+  // manager, he can see their folders and the CV in per folder."
+  //
+  // The gate above covers BOTH. It was passed before either read, and neither list is scoped by
+  // anything the caller sent beyond the manager id that gate just proved.
+  const [candidates, districtBoards] = await Promise.all([
+    listCandidatesSentToManager(managerHrId),
+    listDistrictBoardsForManager(managerHrId),
+  ]);
 
   // The CV files come back WITH the list, in one query, rather than each card asking for its own.
   // The owner's rule for this screen is that the CV must be openable — "he must be able to screen
@@ -173,9 +195,12 @@ export async function listTeamManagerCandidates(
   // Authorisation is NOT skipped by doing it here — it has already happened, once, for the whole
   // list: the caller was proven to be above this manager before any candidate row was read, and
   // every candidate in this list belongs to that manager by construction.
-  const files = await listCandidateCardFiles(candidates.map((candidate) => candidate.id));
+  const files = await listCandidateCardFiles([
+    ...candidates.map((candidate) => candidate.id),
+    ...districtBoardCandidateIds(districtBoards),
+  ]);
 
-  return { candidates, files, manager };
+  return { candidates, districtBoards, files, manager };
 }
 
 /**
@@ -201,4 +226,37 @@ export async function isCandidateWithinViewerTeam(access: AccessContext, candida
     roster,
     viewerHrId: access.hrId,
   });
+}
+
+/**
+ * May this viewer open this CV because it sits in a district folder he is entitled to look at —
+ * his OWN, or one belonging to a manager who reports to him?
+ *
+ * THE HOLE THIS CLOSES. The owner, 2026-08-30: "make the national sales manager able to choose
+ * between his district managers and when he choose his district manager, he can see their folders
+ * and the CV in per folder." The picker duly offers him those folders and the cards duly render —
+ * and every View CV button on them answered 403, because both of the checks that could have let him
+ * through ask the wrong question. `isCandidateWithinViewerTeam` needs the CV to have been PUSHED to
+ * somebody, and a CV reaches a district folder by being FOR that area, pushed to nobody;
+ * `isCandidateInViewerDistrict` asks only about the viewer's own seats, and a National Sales
+ * Manager holds none of the areas his district managers hold. So the one caller the feature was
+ * built for was the one caller it refused.
+ *
+ * It is the same gate the picker is built from — `canViewerSeeManagerCandidates`, which the team
+ * routes already use — asked about the manager whose board is holding the CV. One rule, so the set
+ * of folders he is offered and the set of CVs he may open cannot drift apart. It subsumes
+ * `isCandidateInViewerDistrict`: that function answers true only for the viewer's own boards, and
+ * this rule already returns true for the viewer himself.
+ */
+export async function isCandidateInViewerTeamDistrict(
+  access: AccessContext,
+  candidateId: string,
+): Promise<boolean> {
+  if (!access.hrId) return false;
+  const holding = await districtBoardsHoldingCandidate(candidateId);
+  if (holding.length === 0) return false;
+  const roster = await loadTeamRoster();
+  return holding.some((board) =>
+    canViewerSeeManagerCandidates({ managerHrId: board.managerHrId, roster, viewerHrId: access.hrId }),
+  );
 }

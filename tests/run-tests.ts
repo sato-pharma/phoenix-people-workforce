@@ -184,6 +184,8 @@ import { runCandidateFolderTests } from "./candidate-folders.test.ts";
 import { runCandidateFolderSuggestionTests } from "./candidate-folder-suggestion.test.ts";
 import { runHiringManagerTeamScopeTests } from "./hiring-manager-team-scope.test.ts";
 import { runManagerFolderShelfTests } from "./manager-folder-shelf.test.ts";
+import { runBackgroundReviewQueueTests } from "./background-review-queue.test.ts";
+import { runDistrictManagerFolderTests } from "./district-manager-folders.test.ts";
 import { runCandidatePositionFolderTests } from "./candidate-position-folders.test.ts";
 import { runArabicPlaceMatchTests } from "./arabic-place-match.test.ts";
 import { runCandidatePositionSuggestionTests } from "./candidate-position-suggestion.test.ts";
@@ -1136,6 +1138,7 @@ import {
 } from "./module-locks.test.ts";
 import { runPushActionUrlResolutionTests } from "./push-action-url-resolution.test.ts";
 import { runAttendanceAgentBrowserTokenSplitTests } from "./attendance-agent-browser-token-split.test.ts";
+import { runCandidateBackgroundEligibilityTests } from "./candidate-background-eligibility.test.ts";
 
 /**
  * MARK THE SUITE AS A TEST RUN — this is a data-safety gate, not a formality.
@@ -1494,6 +1497,14 @@ await runTest(
 await runTest(
   "manager CV folders (a manager's shelf never inherits the recruitment team's filing, and a CV is never in both lists)",
   runManagerFolderShelfTests,
+);
+await runTest(
+  "district CV folders (an area belongs to up to THREE district managers, and an area nobody holds is reported rather than guessed)",
+  runDistrictManagerFolderTests,
+);
+await runTest(
+  "background review queue (an admin's answer outranks the parser in BOTH directions, and actually changes who sees the CV)",
+  runBackgroundReviewQueueTests,
 );
 await runTest(
   "arabic place match (an English address naming an Arabic place: Box is not Bacos, George is not Girga)",
@@ -3534,6 +3545,10 @@ await runTest(
 await runTest(
   "the attendance page ships the weak browser token, never the raw-punches credential",
   runAttendanceAgentBrowserTokenSplitTests,
+);
+await runTest(
+  "paramedical split: veterinary and dental medicine never read as medicine, and no exclusion auto-files",
+  runCandidateBackgroundEligibilityTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
