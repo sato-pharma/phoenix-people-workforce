@@ -45,19 +45,10 @@ type ProbationDbRow = {
   probation_start_date: string | null;
   probation_end_date: string | null;
   status: string;
-  // DV checkbox columns (added in 20260629140000 migration — optional for backward compat)
-  dm_dv_done?: boolean;
-  dm_dv_done_at?: string | null;
-  dm_dv_done_manually?: boolean;
-  nsm_dv_done?: boolean;
-  nsm_dv_done_at?: string | null;
-  nsm_dv_done_manually?: boolean;
-  pm_gpm_dv_done?: boolean | null;
-  pm_gpm_dv_done_at?: string | null;
-  pm_gpm_dv_done_manually?: boolean;
-  tm_dv_done?: boolean;
-  tm_dv_done_at?: string | null;
-  tm_dv_done_manually?: boolean;
+  // The twelve DV checkbox columns (migration 20260629140000) were declared here until 2026-09-01.
+  // The SELECT is `*`, so they still arrive from the database — they are simply no longer typed or
+  // read, because nothing has written them since the Case model took over provisioning. Probation
+  // DV state is read from `probation_dv_days` via intelligence/dv-progress-lookup.ts.
 };
 
 type ProbationEvaluationDbRow = {
@@ -592,20 +583,11 @@ export async function getProbationRows(access: AccessContext): Promise<Probation
         crm_id: employee.crmId ?? "",
         days_remaining: probationDaysRemaining(employee.hireDate) ?? 0,
         employment_status: employee.employmentStatus ?? "",
-        dv_state: probation?.dm_dv_done !== undefined ? {
-          dm_dv_done: probation.dm_dv_done ?? false,
-          dm_dv_done_at: probation.dm_dv_done_at ?? null,
-          dm_dv_done_manually: probation.dm_dv_done_manually ?? false,
-          nsm_dv_done: probation.nsm_dv_done ?? false,
-          nsm_dv_done_at: probation.nsm_dv_done_at ?? null,
-          nsm_dv_done_manually: probation.nsm_dv_done_manually ?? false,
-          pm_gpm_dv_done: probation.pm_gpm_dv_done ?? null,
-          pm_gpm_dv_done_at: probation.pm_gpm_dv_done_at ?? null,
-          pm_gpm_dv_done_manually: probation.pm_gpm_dv_done_manually ?? false,
-          tm_dv_done: probation.tm_dv_done ?? false,
-          tm_dv_done_at: probation.tm_dv_done_at ?? null,
-          tm_dv_done_manually: probation.tm_dv_done_manually ?? false,
-        } : null,
+        // A `dv_state` projection of employee_probation's DV checkboxes stood here until
+        // 2026-09-01. It answered null for every row this function ever returned, because the
+        // table it read has been empty since the Case model took over provisioning. Anything
+        // needing probation DV state reads probation_dv_days through
+        // intelligence/dv-progress-lookup.ts, which is where the visits actually land.
         full_name: employee.displayName,
         hire_date: employee.hireDate ?? "",
         hr_id: employee.hrId,

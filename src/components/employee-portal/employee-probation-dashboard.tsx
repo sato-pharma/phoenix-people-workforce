@@ -843,7 +843,8 @@ export function EmployeeProbationDashboard({
         RETIRED 2026-09-01 — the per-cycle feedback panel and the DV checkbox strip stood here.
         Both read employee_probation, which has held ZERO rows since the Case model took over
         provisioning, so the panel always answered "not eligible" and the DV strip never rendered
-        (its `row.dv_state` is built from that same empty table, so it was always null).
+        (the `dv_state` it read was built from that same empty table, so it was always null; that
+        projection has since been deleted outright).
 
         Feedback lives in the Case model now: submit against a real double-visit at
         /employee-portals/probation/feedback/<dvDayId>, listed on this portal's own feedback-tasks

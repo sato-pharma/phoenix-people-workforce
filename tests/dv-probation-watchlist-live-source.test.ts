@@ -150,4 +150,39 @@ export function runDvProbationWatchlistLiveSourceTests() {
     "DV progress must be scoped to ACTIVE probation cases — otherwise a rehired employee's DV-Days " +
       "from an earlier closed case count toward the current one",
   );
+
+  // ── The dead projection is gone, and stays gone ─────────────────────────────
+  // Deleted 2026-09-01 once its last readers went (#2844 the feedback panels, #2846 this
+  // watchlist). Pinned rather than merely deleted because an unread field that still LOOKS like
+  // live probation DV state is a loaded gun: the next reader to reach for it inherits a value that
+  // has been null on every row since the Case model took over provisioning, and gets no error.
+  // The DATABASE columns are deliberately left in place — nothing reads them, dropping them is a
+  // production migration, and they are the only record of what the checkbox era captured.
+  const probationTypes = read("src/lib/probation/types.ts");
+  const probationService = read("src/lib/probation/service.ts");
+  for (const [name, source] of [
+    ["src/lib/probation/types.ts", probationTypes],
+    ["src/lib/probation/service.ts", probationService],
+  ] as const) {
+    const code = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
+    assert.ok(
+      !/dv_state/.test(code),
+      `${name} projects dv_state again. It is built from employee_probation's DV checkbox columns, ` +
+        "which nothing has written since the Case model took over provisioning — so it is null on " +
+        "every row and any reader of it silently reports 'no double visit' for everyone. Read " +
+        "probation_dv_days through intelligence/dv-progress-lookup.ts instead.",
+    );
+    assert.ok(
+      !/ProbationDvState/.test(code),
+      `${name} declares ProbationDvState again — the same dead checkbox shape under its type name`,
+    );
+  }
+  // Comments are stripped above, so the removal notes explaining WHY cannot fail this. Confirm one
+  // survives: a bare deletion is what invites the next session to rebuild exactly this.
+  assert.ok(
+    /dv_state/.test(probationService) && /dv_state/.test(probationTypes),
+    "the removal notes naming dv_state were deleted from probation service.ts / types.ts. They are " +
+      "the only thing telling the next reader that this field existed, answered null for its whole " +
+      "life, and was replaced by probation_dv_days.",
+  );
 }
