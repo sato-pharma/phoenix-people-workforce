@@ -14,7 +14,48 @@
 // Pure on purpose — no React, no database — so the screen, the export and the tests all group the
 // same way and cannot drift apart.
 
+// The company's own acronym vocabulary. Pure constants, no imports of their own, so this stays safe
+// in a client-imported module.
+import { ORG_TITLE_ACRONYMS, ORG_TITLE_PHRASES } from "@/lib/imports/org-title-case";
 import type { Candidate } from "@/lib/recruitment/types";
+
+/**
+ * Fix the acronyms in a job title and change nothing else.
+ *
+ * WHY NOT `toOrgTitleCase`, which is right there and already knows these acronyms. Because that
+ * function exists to build a display name FROM A CODE — its input is `r_and_d_manager` with the
+ * underscores swapped out, so re-casing every word is exactly what it should do. Pointed at a title
+ * a human already wrote, the same behaviour is destructive: it turned the live
+ * `Finance and Admin Manager` into `Finance And Admin Manager`, which is a regression traded for a
+ * fix. Measured on the real picker, 2026-08-31.
+ *
+ * So this borrows that module's vocabulary — one acronym set for the company, never a second copy —
+ * and applies only the two rules that are safe on human text: upper-case a word that IS an acronym,
+ * and run the `R And D` -> `R&D` phrase rule. Every other word keeps the casing somebody chose.
+ *
+ * What this repairs, all three live in `employees.job_title` on 2026-08-31 and none of them typed by
+ * a person — they are the importer's own output from before that bug was fixed:
+ *   `Ceo` -> `CEO`   ·   `Sfe Manager` -> `SFE Manager`   ·   `R And D Manager` -> `R&D Manager`
+ *
+ * Rendering, NOT rewriting. Correcting the column is a data change on 112 live employees and is not
+ * this feature's business; the raw value stays, and the screen stops shouting it.
+ */
+export function orgAcronymCase(value: string): string {
+  const perWord = value
+    .split(" ")
+    .map((word) => (ORG_TITLE_ACRONYMS.has(word.toLowerCase()) ? word.toUpperCase() : word))
+    .join(" ");
+  return ORG_TITLE_PHRASES.reduce((text, [pattern, replacement]) => text.replace(pattern, replacement), perWord);
+}
+
+/** First of these that actually holds text. */
+function firstText(...values: ReadonlyArray<string | null | undefined>): string | null {
+  for (const value of values) {
+    const trimmed = typeof value === "string" ? value.trim() : "";
+    if (trimmed) return trimmed;
+  }
+  return null;
+}
 
 /** A manager's seat as it stood when a candidate was sent to them. */
 export type ManagerSeat = {
@@ -44,8 +85,35 @@ export type ManagerGroup = {
  * screen, and "District Sales Manager · Unknown" reads as a data error the recruiter must chase
  * when in fact the employee row genuinely carries no area.
  */
-export function managerSeatLabel(seat: Pick<ManagerSeat, "jobTitle" | "areaName">): string {
-  return [seat.jobTitle, seat.areaName].filter((part): part is string => Boolean(part && part.trim())).join(" · ");
+export function managerSeatLabel(seat: {
+  jobTitle: string | null;
+  areaName: string | null;
+  /**
+   * Fallback territory. The organogram scopes a District Manager seat by REGION and carries no area
+   * at all, and three of the seventeen DMs carry no `area_name` in the directory either — so
+   * area-only rendering left "Ahmed Elsayed · District Sales Manager" with no territory whatsoever,
+   * sorted to the very top of the picker where the three least identifiable entries did the most
+   * damage. Optional so every existing caller is unchanged.
+   */
+  regionName?: string | null;
+  /**
+   * The line — CNS, Anti Infective, Pedia. The discriminator with seventeen District Managers
+   * across six regions; see the note on `HiringManagerOption.lineName` for the measurement.
+   * Optional because a frozen send stamp does not carry one: there is no `manager_notified_line`
+   * column, and inventing one for history would be a guess.
+   */
+  lineName?: string | null;
+}): string {
+  return [
+    seat.jobTitle ? orgAcronymCase(seat.jobTitle.trim()) : null,
+    // Area when there is one, region when there is not — never both, because on every District
+    // Manager in production the directory's `area_name` is a verbatim copy of its `region_name`
+    // and printing the pair would read "Giza · Giza".
+    firstText(seat.areaName, seat.regionName),
+    firstText(seat.lineName),
+  ]
+    .filter((part): part is string => Boolean(part && part.trim()))
+    .join(" · ");
 }
 
 /**
@@ -64,8 +132,15 @@ export function managerPickerLabel(manager: {
   name: string;
   jobTitle: string | null;
   areaName: string | null;
+  regionName?: string | null;
+  lineName?: string | null;
 }): string {
-  const seat = managerSeatLabel({ areaName: manager.areaName, jobTitle: manager.jobTitle });
+  const seat = managerSeatLabel({
+    areaName: manager.areaName,
+    jobTitle: manager.jobTitle,
+    lineName: manager.lineName,
+    regionName: manager.regionName,
+  });
   return seat ? `${manager.name} · ${seat}` : manager.name;
 }
 

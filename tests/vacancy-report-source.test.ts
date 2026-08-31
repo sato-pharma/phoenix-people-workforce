@@ -105,9 +105,71 @@ export function runVacancyReportSourceTests() {
     }),
   ]);
 
+  // Still exactly one row for the seat — that is what this case has always guarded. Which one
+  // changed on 2026-08-31: the OPEN row now speaks for the seat instead of the newest row, so four
+  // import-noise rows collapse onto the one that says somebody can still be hired into it.
   assert.deepEqual(
     importedDsmDuplicates.map((row) => row.vacancyCode),
-    ["VAC-1DTERM"],
+    ["VAC-B9HIRE"],
+  );
+
+  // The production shape that forced the rule, verbatim: the Anti Infective rep seat in Nasr City
+  // carried a filled row from May, an open row from 18 July and a cancelled row from 20 July, while
+  // the organogram called the seat VACANT. Rows reach the dedupe newest-first, so before this the
+  // cancelled row won and the seat disappeared from every send-a-CV and requisition picker.
+  const nasrCityRepSeat = dedupeVacancyReportRows([
+    vacancy({
+      areaId: 1095,
+      areaName: "Nasr City",
+      id: 300,
+      jobTitle: "Medical Representative",
+      lineName: "Anti Infective",
+      positionId: 2,
+      positionTitle: "Medical Representative",
+      status: "cancelled",
+      vacancyCode: "VAC-CA2-CANCELLED",
+    }),
+    vacancy({
+      areaId: 1095,
+      areaName: "Nasr City",
+      id: 298,
+      jobTitle: "Medical Representative",
+      lineName: "Anti Infective",
+      positionId: 2,
+      positionTitle: "Medical Representative",
+      status: "open",
+      vacancyCode: "VAC-CA2-OPEN",
+    }),
+    vacancy({
+      areaId: 1095,
+      areaName: "Nasr City",
+      id: 174,
+      jobTitle: "Medical Representative",
+      lineName: "Anti Infective",
+      positionId: 2,
+      positionTitle: "Medical Representative",
+      status: "filled",
+      vacancyCode: "VAC-CA2-FILLED",
+    }),
+  ]);
+
+  assert.deepEqual(
+    nasrCityRepSeat.map((row) => row.vacancyCode),
+    ["VAC-CA2-OPEN"],
+    "an open seat must survive a newer cancelled or filled row claiming the same seat",
+  );
+
+  // …and the rule must not invent an opening. A seat with no open row at all still collapses to the
+  // newest row, so nothing here can turn a filled seat into a vacancy.
+  const noOpenRowAtAll = dedupeVacancyReportRows([
+    vacancy({ id: 400, status: "filled", vacancyCode: "VAC-NEWEST-FILLED" }),
+    vacancy({ id: 401, status: "cancelled", vacancyCode: "VAC-OLDER-CANCELLED" }),
+  ]);
+
+  assert.deepEqual(
+    noOpenRowAtAll.map((row) => row.vacancyCode),
+    ["VAC-NEWEST-FILLED"],
+    "with no open row for the seat, the newest row still speaks for it",
   );
 
   const cairoDsmRows = dedupeVacancyReportRows([

@@ -59,7 +59,6 @@ import {
 import type { CandidateFolderAreaOption } from "@/lib/recruitment/candidate-folder-options";
 import {
   groupCandidatesByNotifiedManager,
-  managerPickerLabel as hiringManagerOptionLabel,
   managerSeatLabel,
   type ManagerGroup,
 } from "@/lib/recruitment/manager-grouping";
@@ -139,6 +138,16 @@ import { CvExtractionReviewBoard } from "@/components/recruitment/cv-extraction-
 import { CandidateFactsSummary } from "@/components/recruitment/candidate-facts-summary";
 import { CandidateScreeningSession } from "@/components/recruitment/candidate-screening-session";
 import { CvPreviewModal } from "@/components/recruitment/cv-preview-modal";
+// The screening queue's two pickers, used verbatim here.
+//
+// The owner, 2026-08-31: *"I tell you a thing. You should implement it everywhere if needed and if
+// applicable. I don't have to tell you everything one by one."* The pool sends CVs to the same 32
+// managers, for the same 45 open seats, out of flat dropdowns with exactly the faults the screening
+// ones were rebuilt to end — seventeen District Sales Managers no label could tell apart, and two
+// seats in Behira 1 · Pedia that read as one row typed twice. Sharing the components is also what
+// stops the two screens drifting into disagreeing about how a manager's seat is written.
+import { ManagerPicker } from "@/components/recruitment/manager-picker";
+import { FREE_POSITION, VacancyPicker } from "@/components/recruitment/vacancy-picker";
 import {
   countUnappliedCvFields,
   seedReviewFieldsFromCandidate,
@@ -1933,18 +1942,13 @@ function RequisitionsTab({
               // hiring manager and the recruitment owner, never on line or area — so a seatless
               // requisition with nobody named here is invisible to the very person meant to hire.
               <RequisitionField hint="Required — they are who sees this requisition." label="Hiring manager">
-                <SearchableSelect
-                  className={fieldClass}
-                  value={hiringManagerHrId}
-                  onChange={(e) => setHiringManagerHrId(e.target.value)}
-                >
-                  <option value="">Hiring manager…</option>
-                  {hiringManagers.map((manager) => (
-                    <option key={manager.hrId} value={manager.hrId}>
-                      {hiringManagerOptionLabel(manager)}
-                    </option>
-                  ))}
-                </SearchableSelect>
+                <ManagerPicker
+                  onChange={(hrIds) => setHiringManagerHrId(hrIds[0] ?? "")}
+                  options={hiringManagers}
+                  panelId="requisition-hiring-manager"
+                  placeholder="Hiring manager…"
+                  value={hiringManagerHrId ? [hiringManagerHrId] : []}
+                />
               </RequisitionField>
             )}
             <RequisitionField label="Recruitment owner">
@@ -2633,27 +2637,26 @@ function CandidateActionsControl({
       {canManage && openPanel === "send" ? (
         <div className="space-y-1.5 border border-orange-200 bg-orange-50/60 p-1.5">
           <PositionPicker
+            disabled={pending}
             freeArea={sendFreeArea[candidate.id] ?? ""}
             freeTitle={sendFreeTitle[candidate.id] ?? ""}
             onFreeAreaChange={(value) => setSendFreeArea((prev) => ({ ...prev, [candidate.id]: value }))}
             onFreeTitleChange={(value) => setSendFreeTitle((prev) => ({ ...prev, [candidate.id]: value }))}
             onVacancyChange={(value) => setSendPosition((prev) => ({ ...prev, [candidate.id]: value }))}
             openVacancies={openVacancies}
+            panelId={`pool-position-${candidate.id}`}
             vacancyChoice={positionChoice}
           />
           <div className="flex items-center gap-1.5">
-            <SearchableSelect
-              className="h-8 w-full min-w-0 border border-slate-300 bg-white px-2 text-xs text-slate-900"
-              value={sendTo[candidate.id] ?? ""}
-              onChange={(e) => setSendTo((prev) => ({ ...prev, [candidate.id]: e.target.value }))}
-            >
-              <option value="">Send to manager…</option>
-              {hiringManagers.map((manager) => (
-                <option key={manager.hrId} value={manager.hrId}>
-                  {hiringManagerOptionLabel(manager)}
-                </option>
-              ))}
-            </SearchableSelect>
+            <div className="min-w-0 flex-1">
+              <ManagerPicker
+                disabled={pending}
+                onChange={(hrIds) => setSendTo((prev) => ({ ...prev, [candidate.id]: hrIds[0] ?? "" }))}
+                options={hiringManagers}
+                panelId={`pool-manager-${candidate.id}`}
+                value={sendTo[candidate.id] ? [sendTo[candidate.id] as string] : []}
+              />
+            </div>
             <Button className="h-8 shrink-0" disabled={pending || !sendTo[candidate.id]} onClick={sendToManager}>
               {notified ? "Send again" : "Send"}
             </Button>
@@ -2785,14 +2788,6 @@ function scrollToManagerGroup(key: string): void {
  */
 const UNSENT_GROUP_KEY = "not-sent";
 
-/** Sentinel `<select>` value for "the seat isn't an open vacancy yet, let me type it". */
-const FREE_POSITION = "free:";
-
-/** "Nasr City · Medical Representative · Anti Infective" — an open vacancy, as a recruiter reads it. */
-function vacancyOptionLabel(vacancy: VacancyReportRow): string {
-  return [vacancy.areaName, vacancy.jobTitle, vacancy.lineName].filter(Boolean).join(" · ");
-}
-
 /**
  * Which position a CV being sent to a manager is FOR.
  *
@@ -2807,49 +2802,52 @@ function vacancyOptionLabel(vacancy: VacancyReportRow): string {
  * covers it.
  */
 function PositionPicker({
+  disabled = false,
   freeArea,
   freeTitle,
   onFreeAreaChange,
   onFreeTitleChange,
   onVacancyChange,
   openVacancies,
+  panelId,
   vacancyChoice,
 }: {
+  disabled?: boolean;
   freeArea: string;
   freeTitle: string;
   onFreeAreaChange: (value: string) => void;
   onFreeTitleChange: (value: string) => void;
   onVacancyChange: (value: string) => void;
   openVacancies: VacancyReportRow[];
+  /** Unique on screen: a row's send panel and the bulk bar can both be open at once. */
+  panelId: string;
   vacancyChoice: string;
 }) {
+  // Area, then line, then title — the order `listOpenVacancyOptions` uses on the screening page, so
+  // both screens read the same way inside a group. The picker itself does the title grouping.
   const sorted = [...openVacancies].sort(
     (left, right) =>
+      Number(!left.areaName) - Number(!right.areaName) ||
       (left.areaName ?? "").localeCompare(right.areaName ?? "") ||
       (left.lineName ?? "").localeCompare(right.lineName ?? "") ||
       (left.jobTitle ?? "").localeCompare(right.jobTitle ?? ""),
   );
   return (
     <div className="space-y-1.5">
-      <select
-        aria-label="Which position is this CV for"
-        className="h-8 w-full rounded-md border border-slate-300 bg-white px-2 text-xs text-slate-900 outline-none focus:border-orange-400"
-        onChange={(event) => onVacancyChange(event.target.value)}
-        title="The position this CV is for — the manager sees it filed under this"
+      <VacancyPicker
+        disabled={disabled}
+        onChange={onVacancyChange}
+        panelId={panelId}
+        vacancies={sorted.map((vacancy) => ({
+          areaName: vacancy.areaName,
+          id: vacancy.id,
+          jobTitle: vacancy.jobTitle ?? "",
+          lineName: vacancy.lineName,
+          managerName: vacancy.managerName,
+          regionName: vacancy.regionName,
+        }))}
         value={vacancyChoice}
-      >
-        <option value="">For which position? (optional)</option>
-        {sorted.length > 0 ? (
-          <optgroup label="Open vacancies">
-            {sorted.map((vacancy) => (
-              <option key={vacancy.id} value={String(vacancy.id)}>
-                {vacancyOptionLabel(vacancy)}
-              </option>
-            ))}
-          </optgroup>
-        ) : null}
-        <option value={FREE_POSITION}>Another position — type it</option>
-      </select>
+      />
       {vacancyChoice === FREE_POSITION ? (
         <div className="grid grid-cols-2 gap-1.5">
           <input
@@ -4038,27 +4036,27 @@ function CandidatesTab({
             </span>
             <div className="w-56 sm:w-64">
               <PositionPicker
+                disabled={pending}
                 freeArea={bulkFreeArea}
                 freeTitle={bulkFreeTitle}
                 onFreeAreaChange={setBulkFreeArea}
                 onFreeTitleChange={setBulkFreeTitle}
                 onVacancyChange={setBulkPosition}
                 openVacancies={openVacancies}
+                panelId="pool-position-bulk"
                 vacancyChoice={bulkPosition}
               />
             </div>
-            <SearchableSelect
-              className={`${fieldClass} sm:w-72`}
-              value={bulkManagerHrId}
-              onChange={(e) => setBulkManagerHrId(e.target.value)}
-            >
-              <option value="">Send all of them to…</option>
-              {hiringManagers.map((manager) => (
-                <option key={manager.hrId} value={manager.hrId}>
-                  {hiringManagerOptionLabel(manager)}
-                </option>
-              ))}
-            </SearchableSelect>
+            <div className="w-56 sm:w-72">
+              <ManagerPicker
+                disabled={pending}
+                onChange={(hrIds) => setBulkManagerHrId(hrIds[0] ?? "")}
+                options={hiringManagers}
+                panelId="pool-manager-bulk"
+                placeholder="Send all of them to…"
+                value={bulkManagerHrId ? [bulkManagerHrId] : []}
+              />
+            </div>
             <Button
               disabled={pending || !bulkManagerHrId}
               onClick={() =>

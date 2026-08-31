@@ -343,9 +343,13 @@ export function CvDocumentView({ className, downloadUrl, fileName, mimeType, fit
         // this is a reading surface, and a toolbar that competes with the CV for attention has
         // already lost the point.
         <div className="sticky top-0 z-10 flex items-center justify-end gap-1 border-b border-slate-200/70 bg-slate-100/90 px-3 py-1.5 backdrop-blur">
+          {/* The icon stays 14px — this is still meant to be quiet — but the BUTTON is 32px square.
+              `p-1` around a 14px icon measured 22px at 375px, under the 24px floor a pointer target
+              is meant to clear, and small enough that zooming a CV on a phone is a game of chance.
+              The chrome is transparent until hover, so the larger target costs nothing visually. */}
           <button
             aria-label="Zoom out"
-            className="rounded p-1 text-slate-600 transition hover:bg-white hover:text-slate-900 disabled:opacity-40"
+            className="flex h-8 w-8 items-center justify-center rounded text-slate-600 transition hover:bg-white hover:text-slate-900 disabled:opacity-40"
             disabled={zoom <= MIN_ZOOM + 0.001}
             onClick={() => setManualZoom(clampZoom(zoom - ZOOM_STEP))}
             type="button"
@@ -357,7 +361,7 @@ export function CvDocumentView({ className, downloadUrl, fileName, mimeType, fit
           </span>
           <button
             aria-label="Zoom in"
-            className="rounded p-1 text-slate-600 transition hover:bg-white hover:text-slate-900 disabled:opacity-40"
+            className="flex h-8 w-8 items-center justify-center rounded text-slate-600 transition hover:bg-white hover:text-slate-900 disabled:opacity-40"
             disabled={zoom >= MAX_ZOOM - 0.001}
             onClick={() => setManualZoom(clampZoom(zoom + ZOOM_STEP))}
             type="button"
@@ -365,7 +369,7 @@ export function CvDocumentView({ className, downloadUrl, fileName, mimeType, fit
             <Plus className="h-3.5 w-3.5" />
           </button>
           <button
-            className={`ml-1 rounded px-2 py-1 text-phx-xs font-bold transition ${
+            className={`ml-1 flex h-8 items-center rounded px-2.5 text-phx-xs font-bold transition ${
               manualZoom === null ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-white hover:text-slate-900"
             }`}
             onClick={() => setManualZoom(null)}

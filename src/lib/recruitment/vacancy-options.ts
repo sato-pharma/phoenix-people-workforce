@@ -99,26 +99,37 @@ async function loadManagerSeatRows(): Promise<ManagerSeatRow[]> {
  *
  * Looked up through `hrIdLookupKeys` rather than a bare `.eq`. The ids here cross tables that
  * disagree about case — `employees` holds upper-case — and PostgREST matches case-sensitively, so an
- * exact match on the wrong spelling returns no row and the stand-in silently loses their name. At
- * most five ids reach this, one per vacant manager seat in production, which keeps the `in` filter
- * far below the length at which it starts returning nothing at all.
+ * exact match on the wrong spelling returns no row and the manager silently loses their name.
+ *
+ * CHUNKED at 50 keys. This used to serve one caller with at most five ids, so the `in` filter could
+ * not get long enough to matter; it now also resolves every manager NAMED on an open vacancy — 16
+ * distinct people across 45 seats in production 2026-08-31, and `hrIdLookupKeys` turns each into two
+ * or three spellings, which lands close enough to the length at which PostgREST starts returning
+ * zero rows and no error at all to be worth not finding out about in a year's time.
  */
+const HR_ID_LOOKUP_CHUNK = 50;
+
 async function namesByHrId(hrIds: readonly string[]): Promise<Map<string, string>> {
   const resolved = new Map<string, string>();
   if (hrIds.length === 0) return resolved;
 
-  const { data, error } = await getSupabaseAdmin()
-    .from("employees")
-    .select("hr_id,full_name,nickname")
-    .in("hr_id", [...new Set(hrIds.flatMap((hrId) => hrIdLookupKeys(hrId)))]);
-  if (error || !data) return resolved;
-
+  const keys = [...new Set(hrIds.flatMap((hrId) => hrIdLookupKeys(hrId)))];
   const byCanonical = new Map<string, string>();
-  for (const row of data as Array<{ hr_id?: string | null; full_name?: string | null; nickname?: string | null }>) {
-    const key = canonicalHrIdKey(row.hr_id);
-    const fullName = String(row.full_name ?? "").trim();
-    if (!key || !fullName) continue;
-    byCanonical.set(key, resolveEmployeeDisplayName(fullName, row.nickname ?? null, row.hr_id ?? null));
+  for (let start = 0; start < keys.length; start += HR_ID_LOOKUP_CHUNK) {
+    const { data, error } = await getSupabaseAdmin()
+      .from("employees")
+      .select("hr_id,full_name,nickname")
+      .in("hr_id", keys.slice(start, start + HR_ID_LOOKUP_CHUNK));
+    // A failed chunk costs the names in it and nothing else. The caller falls back to whatever the
+    // row itself said, which is what shipped before this lookup existed.
+    if (error || !data) continue;
+
+    for (const row of data as Array<{ hr_id?: string | null; full_name?: string | null; nickname?: string | null }>) {
+      const key = canonicalHrIdKey(row.hr_id);
+      const fullName = String(row.full_name ?? "").trim();
+      if (!key || !fullName) continue;
+      byCanonical.set(key, resolveEmployeeDisplayName(fullName, row.nickname ?? null, row.hr_id ?? null));
+    }
   }
   for (const hrId of hrIds) {
     const name = byCanonical.get(canonicalHrIdKey(hrId) ?? "");
@@ -235,7 +246,26 @@ export async function listOpenVacancyOptions(): Promise<VacancyOption[]> {
         left.jobTitle.localeCompare(right.jobTitle),
     );
 
-  return withEscalatedManagers(options, seatIdByVacancyId);
+  // The manager has to read the same way here as in the manager picker one row below it on the
+  // screening page. `position_vacancies.manager_name` is a full legal name — "Hany Saad Mohamed
+  // Omar", "Sameh Shabaan El Hoseiny El Hoseiny" — while every other surface in the app shows the
+  // name the company actually uses him by, through `resolveEmployeeDisplayName`: "Hany Saad",
+  // "Sameh El Hoseiny". Picking a vacancy PRE-SELECTS that manager, so the two fields sit an inch
+  // apart and used to name the same person two different ways at the moment a recruiter is checking
+  // the CV is going to the right place.
+  //
+  // The row's own wording stays as the fallback rather than being blanked: it is the only name a
+  // manager who is not in `employees` has, and a nameless manager is worse than a formal one.
+  const named = await namesByHrId([
+    ...new Set(options.map((option) => option.managerHrId).filter((hrId): hrId is string => Boolean(hrId))),
+  ]);
+
+  return withEscalatedManagers(
+    options.map((option) =>
+      option.managerHrId ? { ...option, managerName: named.get(option.managerHrId) ?? option.managerName } : option,
+    ),
+    seatIdByVacancyId,
+  );
 }
 
 /**

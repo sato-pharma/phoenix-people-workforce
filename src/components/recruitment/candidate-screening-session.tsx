@@ -37,7 +37,9 @@ import {
 import { CandidateFactsSummary } from "@/components/recruitment/candidate-facts-summary";
 import { CvDocumentView } from "@/components/recruitment/cv-preview-modal";
 import type { HiringManagerOption } from "@/lib/recruitment/hiring-manager-notify";
-import { managerPickerLabel, managerSeatLabel } from "@/lib/recruitment/manager-grouping";
+import { ManagerPicker } from "@/components/recruitment/manager-picker";
+import { FREE_POSITION, NO_POSITION, VacancyPicker } from "@/components/recruitment/vacancy-picker";
+import { managerSeatLabel } from "@/lib/recruitment/manager-grouping";
 import { positionFolderLabel } from "@/lib/recruitment/position-folder";
 import { suggestPositions } from "@/lib/recruitment/position-suggestion";
 // Type-only: vacancy-options reads the service-role client and must never enter this bundle.
@@ -112,34 +114,15 @@ function describeForOrder(candidate: Candidate): ScreeningOrderInput {
  */
 const SEEN_DWELL_MS = 2500;
 
-/**
- * The picker value meaning "not one of the open seats — I'll type it".
- *
- * A sentinel rather than an empty string, because empty already means something different and
- * important: no position at all, which is a legitimate send. Prefixed so it can never collide with
- * a vacancy id, which is always a number.
- */
-const FREE_POSITION = "free:";
-/**
- * "Send without a position", chosen deliberately.
- *
- * Needed only because a suggestion fills the picker when nothing has been chosen: with "" meaning
- * both "untouched" and "none", a recruiter who disagreed with the suggestion had no way to say so —
- * selecting the blank option handed them the suggestion straight back. This value says no, and
- * means it.
- */
-const NO_POSITION = "none:";
+// The two picker sentinels — "I'll type it" and "deliberately none" — now live beside the picker
+// that offers them, so the component and the screen reading its value cannot drift apart on what
+// the strings are. Both are prefixed so they can never collide with a vacancy id, which is a number.
 
-/** "Nasr City · Medical Representative · Pedia" — a vacancy, as it reads in the picker. */
-function vacancyPickerLabel(vacancy: VacancyOption): string {
-  return positionFolderLabel({
-    areaName: vacancy.areaName,
-    jobTitle: vacancy.jobTitle,
-    lineName: vacancy.lineName,
-    regionName: vacancy.regionName,
-    vacancyId: vacancy.id,
-  });
-}
+// `vacancyPickerLabel` lived here and is gone with the flat `<select>` it fed. A one-line label is
+// the wrong shape now: the picker puts the job title and the line in HEADINGS and the area on the
+// row, so re-flattening all four into "Nasr City · Medical Representative · Pedia" would print the
+// two headings again on every row beneath them. `positionFolderLabel` is still the right answer for
+// a FROZEN send stamp, which has no headings around it — see `priorSendPosition` below.
 
 /** "26 Aug, 05:07" — Cairo, per the standing rule that no raw UTC ever reaches a person. */
 const seenAtFormat = new Intl.DateTimeFormat("en-GB", {
@@ -149,6 +132,17 @@ const seenAtFormat = new Intl.DateTimeFormat("en-GB", {
   month: "short",
   timeZone: "Africa/Cairo",
 });
+
+/**
+ * "Ahmed, Sara and Mona" — never an ellipsis, never a count standing in for the names.
+ *
+ * The owner's standing rule is that a person reads names, not codes and not totals. "Sent to 3
+ * managers" is the sentence that makes somebody open the audit trail to find out which three.
+ */
+function joinNames(names: string[]): string {
+  if (names.length <= 1) return names[0] ?? "";
+  return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+}
 
 function formatSeenAt(value: string | null | undefined): string | null {
   if (!value) return null;
@@ -356,14 +350,21 @@ export function CandidateScreeningSession({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const noteRef = useRef<HTMLInputElement | null>(null);
-  const managerRef = useRef<HTMLSelectElement | null>(null);
+  // An input, not a select, since 2026-08-31: the manager picker is a searchable combobox now. The
+  // `M` hotkey still focuses it, which is the only thing this ref has ever been for.
+  const managerRef = useRef<HTMLInputElement | null>(null);
 
   // ── Sending, from inside the queue ─────────────────────────────────────────
   //
   // The chosen manager is remembered ACROSS candidates on purpose. Screening is done in runs —
   // eleven CVs went to one manager in a single sitting on 2026-08-26 — so re-picking the same
   // person from a 31-name list eleven times is the paperwork this mode exists to delete.
-  const [sendManagerHrId, setSendManagerHrId] = useState("");
+  //
+  // A LIST since 2026-08-31, on the owner's instruction: "make me able to multiple select
+  // managers." One CV that both the Giza CNS District Manager and the National Sales Manager should
+  // see is an ordinary thing to want, and it used to mean sending, waiting, re-picking and sending
+  // again — with nothing on screen afterwards saying it had gone to two people.
+  const [sendManagerHrIds, setSendManagerHrIds] = useState<string[]>([]);
   /**
    * The position being hired for — remembered across candidates for exactly the same reason as the
    * manager, and more so: filling one vacancy means reading a run of CVs for that one vacancy.
@@ -558,7 +559,10 @@ export function CandidateScreeningSession({
       const managerHrId = vacancy?.managerHrId;
       if (!managerHrId) return;
       if (!hiringManagers.some((manager) => manager.hrId === managerHrId)) return;
-      setSendManagerHrId(managerHrId);
+      // REPLACES the selection rather than adding to it. Picking a different vacancy is a change of
+      // mind about who this CV is for, not a second recipient — appending would silently accumulate
+      // every manager whose vacancy had been browsed on the way to the right one.
+      setSendManagerHrIds([managerHrId]);
     },
     [hiringManagers, openVacancies],
   );
@@ -605,9 +609,18 @@ export function CandidateScreeningSession({
     positionChoice === "" && suggestion.confident?.vacancy.managerHrId
       ? suggestion.confident.vacancy.managerHrId
       : "";
-  const effectiveManagerHrId =
-    sendManagerHrId ||
-    (hiringManagers.some((manager) => manager.hrId === suggestedManagerHrId) ? suggestedManagerHrId : "");
+  // Memoised because it is an ARRAY: a fresh literal on every render would change the identity of
+  // the send callback below on every render too, and that callback is what a keyboard shortcut and
+  // the decision bar both hold.
+  const effectiveManagerHrIds = useMemo(
+    () =>
+      sendManagerHrIds.length > 0
+        ? sendManagerHrIds
+        : hiringManagers.some((manager) => manager.hrId === suggestedManagerHrId)
+          ? [suggestedManagerHrId]
+          : [],
+    [hiringManagers, sendManagerHrIds, suggestedManagerHrId],
+  );
 
   /**
    * "So-and-so is standing in — that post has nobody in it."
@@ -617,53 +630,83 @@ export function CandidateScreeningSession({
    * then be describing a route that is no longer being taken.
    */
   const coveredPost = effectiveVacancy?.standingInFor ?? null;
+  const vacancyManagerHrId = effectiveVacancy?.managerHrId ?? null;
   const standInManagerName =
-    coveredPost && effectiveManagerHrId === effectiveVacancy?.managerHrId
-      ? hiringManagers.find((manager) => manager.hrId === effectiveManagerHrId)?.name ??
-        effectiveVacancy.managerName
+    coveredPost && vacancyManagerHrId && effectiveManagerHrIds.includes(vacancyManagerHrId)
+      ? hiringManagers.find((manager) => manager.hrId === vacancyManagerHrId)?.name ??
+        effectiveVacancy?.managerName ??
+        null
       : null;
 
+  /**
+   * Send this CV to everyone chosen.
+   *
+   * ONE REQUEST PER MANAGER, in sequence, against the route that already existed. The route notifies
+   * one manager and stamps the candidate for that manager, which is the right unit — each recipient
+   * gets their own notification, their own audit row and their own seat stamp, exactly as a single
+   * send always did. Fanning out inside the server would have meant a second write path for the same
+   * act, and a partial failure there would be invisible.
+   *
+   * Sequential rather than `Promise.all` on purpose: these writes land in the notification outbox and
+   * the audit log, and firing five at once at a route that reads and re-writes the same candidate row
+   * is how two of them end up racing over the same stamp.
+   *
+   * PARTIAL SUCCESS IS REPORTED AS PARTIAL. Three sends where the second fails must not read as
+   * "sent" and must not read as "failed" — both are lies, and the second one would have a recruiter
+   * re-send to the two managers who already have it. So the successes are confirmed by name and the
+   * failures are named too.
+   */
   const sendToManager = useCallback(async () => {
-    if (!current || busy || !effectiveManagerHrId) return;
+    if (!current || busy || effectiveManagerHrIds.length === 0) return;
     setBusy(true);
     setError(null);
-    try {
-      const res = await fetch(`/api/recruitment/candidates/${current.id}/notify-manager`, {
-        // The position, when one is chosen. A picked vacancy sends only its ID — the server reads
-        // the seat back and stamps that, so the words on this screen can never disagree with the
-        // words in the folder. A typed one sends the words, and the server cleans them.
-        body: JSON.stringify({
-          managerHrId: effectiveManagerHrId,
-          ...(positionChoice === FREE_POSITION
-            ? { positionAreaName: freeAreaName, positionJobTitle: freeJobTitle }
-            : effectivePosition
-              ? { vacancyId: Number(effectivePosition) }
-              : {}),
-        }),
-        headers: { "Content-Type": "application/json" },
-        method: "POST",
-      });
-      const data = (await res.json().catch(() => ({}))) as {
-        result?: { managerName?: string };
-        message?: string;
-      };
-      if (!res.ok) throw new Error(data.message ?? "Could not send this CV to that manager.");
-      // The NAME the server confirmed, not the one this component guessed from its own list — per
-      // the standing rule that a raw HR_ID never reaches a person, and because the server is the
-      // thing that knows who was actually told. Read from `result`, which is the envelope both
-      // notify-manager routes answer with; reading it off the top level silently missed every time
-      // and fell through to the local guess, which was right only because the list is the same one.
-      const managerName =
-        data.result?.managerName ??
-        hiringManagers.find((manager) => manager.hrId === effectiveManagerHrId)?.name ??
-        effectiveManagerHrId;
-      setSentInSession((previous) => ({ ...previous, [current.id]: managerName }));
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Could not send this CV to that manager.");
-    } finally {
-      setBusy(false);
+    // The position, when one is chosen. A picked vacancy sends only its ID — the server reads the
+    // seat back and stamps that, so the words on this screen can never disagree with the words in
+    // the folder. A typed one sends the words, and the server cleans them.
+    const position =
+      positionChoice === FREE_POSITION
+        ? { positionAreaName: freeAreaName, positionJobTitle: freeJobTitle }
+        : effectivePosition
+          ? { vacancyId: Number(effectivePosition) }
+          : {};
+    const sent: string[] = [];
+    const failed: string[] = [];
+    for (const managerHrId of effectiveManagerHrIds) {
+      const localName = hiringManagers.find((manager) => manager.hrId === managerHrId)?.name ?? managerHrId;
+      try {
+        const res = await fetch(`/api/recruitment/candidates/${current.id}/notify-manager`, {
+          body: JSON.stringify({ managerHrId, ...position }),
+          headers: { "Content-Type": "application/json" },
+          method: "POST",
+        });
+        const data = (await res.json().catch(() => ({}))) as {
+          result?: { managerName?: string };
+          message?: string;
+        };
+        if (!res.ok) throw new Error(data.message ?? `Could not send this CV to ${localName}.`);
+        // The NAME the server confirmed, not the one this component guessed from its own list — per
+        // the standing rule that a raw HR_ID never reaches a person, and because the server is the
+        // thing that knows who was actually told. Read from `result`, which is the envelope both
+        // notify-manager routes answer with; reading it off the top level silently missed every time
+        // and fell through to the local guess, which was right only because the list is the same one.
+        sent.push(data.result?.managerName ?? localName);
+      } catch {
+        failed.push(localName);
+      }
     }
-  }, [busy, current, effectiveManagerHrId, effectivePosition, freeAreaName, freeJobTitle, hiringManagers, positionChoice]);
+    if (sent.length > 0) setSentInSession((previous) => ({ ...previous, [current.id]: joinNames(sent) }));
+    if (failed.length > 0) setError(`Could not send this CV to ${joinNames(failed)}.`);
+    setBusy(false);
+  }, [
+    busy,
+    current,
+    effectiveManagerHrIds,
+    effectivePosition,
+    freeAreaName,
+    freeJobTitle,
+    hiringManagers,
+    positionChoice,
+  ]);
 
   const decidedCount = Object.keys(decided).length;
 
@@ -819,7 +862,15 @@ export function CandidateScreeningSession({
             />
           </div>
         </div>
-        <p className="min-w-0 flex-1 truncate text-sm font-semibold">{candidateDisplayName(current.fullName)}</p>
+        {/* The name claims a real minimum before anything else in this row is allowed to squeeze it.
+            `min-w-0 flex-1` gave it only what its six siblings left over: 17 CSS pixels at 824px and
+            16 at 375px, against a 173px name — so "Abdallah Mohamed Elaraby" rendered as one letter
+            and an ellipsis, the person whose CV is on screen, unreadable, at every width the pane
+            was measured at. With a floor the header wraps instead of shaving, which is the right
+            trade: the row is allowed to get taller, the name is not allowed to disappear. */}
+        <p className="min-w-56 flex-1 truncate text-sm font-semibold">
+          {candidateDisplayName(current.fullName)}
+        </p>
         {/* Which group this person is in, and how many are in it. Without this the queue's order is
             invisible and reads as random — and the one thing a screener must never have to wonder
             is why they are being shown this person now. */}
@@ -1025,39 +1076,25 @@ export function CandidateScreeningSession({
                     filing — the manager's screen keeps those under their own heading. */}
                 {openVacancies.length > 0 ? (
                   <div className="space-y-1.5">
-                    <select
-                      aria-label="Which position is this CV for"
-                      className="h-8 w-full rounded-md border border-slate-300 bg-white px-2 text-xs text-slate-900 outline-none focus:border-orange-400"
-                      onChange={(event) => choosePosition(event.target.value)}
-                      title="The position this CV is for — the manager sees it filed under this"
+                    {/* Grouped by job title then line, searchable, and showing the manager each seat
+                        pre-selects — the same treatment as the manager picker below it, because it is
+                        the same failure: 35 open seats across 34 areas in one flat native list, with
+                        Nasr City's two differing only by a line the label did not carry.
+
+                        The seats this CV looks like it is for are offered FIRST, under their own
+                        heading, and pre-selected when there is only one of them. Never labelled as a
+                        machine's opinion — the standing rule is that assistive inference is invisible
+                        to users — and never the whole answer: every open vacancy is still listed
+                        below it, in full. */}
+                    <VacancyPicker
+                      disabled={busy}
+                      offerNoPosition={Boolean(suggestion.confident)}
+                      onChange={choosePosition}
+                      suggestedIds={suggestion.shortlist.map((entry) => entry.vacancy.id)}
+                      suggestionLabel={suggestion.confident ? "Looks like this one" : "Looks like one of these"}
+                      vacancies={openVacancies}
                       value={positionChoice === NO_POSITION ? NO_POSITION : effectivePosition}
-                    >
-                      <option value="">For which position? (optional)</option>
-                      {/* The seats this CV looks like it is for, offered first and pre-selected when
-                          there is only one of them. Never labelled as a machine's opinion — the
-                          standing rule is that assistive inference is invisible to users — and never
-                          the whole answer: every open vacancy is still listed below, in full. */}
-                      {suggestion.shortlist.length > 0 ? (
-                        <optgroup label={suggestion.confident ? "Looks like this one" : "Looks like one of these"}>
-                          {suggestion.shortlist.map((entry) => (
-                            <option key={`suggested-${entry.vacancy.id}`} value={String(entry.vacancy.id)}>
-                              {vacancyPickerLabel(entry.vacancy)}
-                            </option>
-                          ))}
-                        </optgroup>
-                      ) : null}
-                      {suggestion.confident ? (
-                        <option value={NO_POSITION}>No position — send without one</option>
-                      ) : null}
-                      <optgroup label="Open vacancies">
-                        {openVacancies.map((vacancy) => (
-                          <option key={vacancy.id} value={String(vacancy.id)}>
-                            {vacancyPickerLabel(vacancy)}
-                          </option>
-                        ))}
-                      </optgroup>
-                      <option value={FREE_POSITION}>Another position — type it</option>
-                    </select>
+                    />
                     {/* WHY it looks like that, in facts off this CV — where they live, what they do
                         now — so a recruiter can check it against the page in front of them instead
                         of trusting it. No score and no percentage: a number invites believing the
@@ -1105,29 +1142,33 @@ export function CandidateScreeningSession({
                   </div>
                 ) : null}
                 <div className="flex items-center gap-1.5">
-                  <select
-                    aria-label="Send this CV to a manager"
-                    className="h-8 min-w-0 flex-1 rounded-md border border-slate-300 bg-white px-2 text-xs text-slate-900 outline-none focus:border-orange-400"
-                    onChange={(event) => setSendManagerHrId(event.target.value)}
-                    ref={managerRef}
-                    title="Choose a manager — press M"
-                    value={effectiveManagerHrId}
-                  >
-                    <option value="">Send to a manager…</option>
-                    {hiringManagers.map((manager) => (
-                      <option key={manager.hrId} value={manager.hrId}>
-                        {managerPickerLabel(manager)}
-                      </option>
-                    ))}
-                  </select>
+                  {/* Searchable, grouped down the org chart, and showing the LINE — see
+                      manager-picker.tsx for the measurement that made a plain <select> untenable:
+                      16 of the 30 entries were indistinguishable from their own label. */}
+                  <ManagerPicker
+                    disabled={busy}
+                    inputRef={managerRef}
+                    // The owner asked for several managers at once HERE, on the screening queue —
+                    // "make me able to multiple select managers". The pool's sends stay single.
+                    multiple
+                    onChange={setSendManagerHrIds}
+                    options={hiringManagers}
+                    value={effectiveManagerHrIds}
+                  />
                   <button
                     className="flex h-8 shrink-0 items-center gap-1.5 rounded-md bg-orange-600 px-3 text-xs font-bold text-white transition hover:bg-orange-700 disabled:opacity-40"
-                    disabled={busy || !effectiveManagerHrId}
+                    disabled={busy || effectiveManagerHrIds.length === 0}
                     onClick={() => void sendToManager()}
                     type="button"
                   >
                     <Send className="h-3.5 w-3.5" />
                     {sentNow || priorSend ? "Send again" : "Send"}
+                    {/* How many people this press is about to reach. A button that says only "Send"
+                        while four managers are chosen is the last moment a mistaken fourth pick
+                        could have been caught, and it says nothing. */}
+                    {effectiveManagerHrIds.length > 1 ? (
+                      <span className="rounded bg-white/20 px-1 tabular-nums">{effectiveManagerHrIds.length}</span>
+                    ) : null}
                   </button>
                 </div>
                 {/* WHY this manager, when the seat's own manager post is empty. The owner, 2026-08-28:
