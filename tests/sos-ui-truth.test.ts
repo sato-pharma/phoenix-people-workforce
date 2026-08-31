@@ -52,13 +52,17 @@ export function runSosUiTruthTests() {
   // ── 2. The closing export carries the on-screen filter ──────────────────────
   {
     const workspace = code(read("src/components/sales/monthly-closing-workspace.tsx"));
-    // Scope to handleExport only. The neighbouring publish call posts line+period and SHOULD —
-    // publishing is a per-(line, period) act and has no filter.
-    const exportStart = workspace.indexOf("async function handleExport()");
-    assert.ok(exportStart >= 0, "handleExport must exist");
-    // Bound handleExport by its own closing brace at this indent — a real end of function. The
-    // comment above says "scope to handleExport only"; 1400 bytes did that only by luck of
-    // length, and the neighbouring publish call is exactly what it was trying to stay out of.
+    // Scope to the function that actually issues the export request. The neighbouring publish call
+    // posts line+period and SHOULD — publishing is a per-(line, period) act and has no filter.
+    //
+    // That function is `runExport`, not `handleExport`, since 2026-08-30: the screen grew a SECOND
+    // export button (the premium workbook, added beside the original rather than replacing it), and
+    // the two share one request body precisely so they cannot drift apart. This pin followed the
+    // body rather than the old function name — the invariant was never "handleExport contains a
+    // fetch", it is "what the export posts is what the screen is showing".
+    const exportStart = workspace.indexOf("async function runExport(");
+    assert.ok(exportStart >= 0, "runExport must exist — it is the one place an export request is built");
+    // Bound it by its own closing brace at this indent — a real end of function, not a byte window.
     const exportEnd = workspace.slice(exportStart).search(/^  \}$/m);
     const exportBody = workspace.slice(exportStart, exportEnd >= 0 ? exportStart + exportEnd : workspace.length);
 
@@ -71,6 +75,18 @@ export function runSosUiTruthTests() {
         new RegExp(`${field}:\\s*filter\\.${field}`).test(exportBody),
         `the export body must carry filter.${field}`,
       );
+    }
+
+    // BOTH buttons must go through it. A second button that built its own request is exactly how
+    // one of the two workbooks would quietly start covering the whole line while the screen showed
+    // one region — the divergence this whole section exists to prevent, reintroduced by a copy.
+    for (const handler of ["handleExport", "handlePremiumExport"]) {
+      const start = workspace.indexOf(`async function ${handler}()`);
+      assert.ok(start >= 0, `${handler} must exist`);
+      const end = workspace.slice(start).search(/^  \}$/m);
+      const body = workspace.slice(start, end >= 0 ? start + end : workspace.length);
+      assert.match(body, /await runExport\(\{/, `${handler} must build its request through runExport, never its own`);
+      assert.ok(!/fetch\(/.test(body), `${handler} must not issue its own fetch`);
     }
 
     const route = code(read("app/api/sales/monthly-closing/export/route.ts"));
