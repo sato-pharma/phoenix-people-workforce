@@ -826,6 +826,7 @@ import { runPayrollResignationCandidateVisibilityTests } from "./payroll-resigna
 import { runAnalyticsConfidentialProductCodeNormalizeTests } from "./analytics-confidential-product-code-normalize.test.ts";
 import { runAnalyticsDimProductsHeadOfficeExclusionTests } from "./analytics-dim-products-head-office-exclusion.test.ts";
 import { runMigrationsSecdefRevokeGuardTests } from "./migrations-secdef-revoke-guard.test.ts";
+import { runNoNulBytesInSourceTests } from "./no-nul-bytes-in-source.test.ts";
 import { runAutomatedPayrollSplitTests } from "./automated-payroll-split.test.ts";
 import { runAutomatedPayrollExportOrderTests } from "./automated-payroll-export-order.test.ts";
 import { runAutomatedPayrollPart1ScopeTests } from "./automated-payroll-part1-scope.test.ts";
@@ -2416,6 +2417,7 @@ await runTest("direct orders pharmacy validation (live-capture evidence only, se
 await runTest("analytics confidential product_code normalize (sos_fact/weekly_fact/dim_products case-insensitive exclusion)", runAnalyticsConfidentialProductCodeNormalizeTests);
 await runTest("analytics dim_products excludes confidential Head Office line (filter dropdown leak fix)", runAnalyticsDimProductsHeadOfficeExclusionTests);
 await runTest("migrations secdef revoke guard (new public SECURITY DEFINER fns must revoke PUBLIC EXECUTE)", runMigrationsSecdefRevokeGuardTests);
+await runTest("no raw NUL bytes in tracked source (git/grep treat such files as binary and skip them silently)", runNoNulBytesInSourceTests);
 await runTest("territory drilldown root-scope line resolution (fail-closed)", runTerritoryRootScopeTests);
 await runTest("territory drilldown pharmacy line filter (defense in depth)", runTerritoryLineFilterTests);
 await runTest("territory drilldown internal self-reconciliation", runTerritoryReconciliationTests);

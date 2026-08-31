@@ -235,7 +235,7 @@ export function buildOrgPlacementTree(nodes: readonly OrgTreeNode[]): OrgPlaceme
   const cellSet = new Map<string, { lineCode: string; regionCode: string }>();
   for (const [seatId, cell] of ownCell) {
     if (!occupiedSeats.has(seatId)) continue;
-    cellSet.set(`${cell.lineCode} ${cell.regionCode}`, cell);
+    cellSet.set(`${cell.lineCode}|${cell.regionCode}`, cell);
   }
 
   const options = (names: Map<string, string>) =>
