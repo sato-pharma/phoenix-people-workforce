@@ -7,7 +7,10 @@ import {
   listCandidateComments,
   resolveCommentAuthor,
 } from "@/lib/recruitment/candidate-comments";
-import { isCandidateWithinViewerTeam } from "@/lib/recruitment/hiring-manager-team";
+import {
+  isCandidateInViewerTeamDistrict,
+  isCandidateWithinViewerTeam,
+} from "@/lib/recruitment/hiring-manager-team";
 import {
   assertSameOriginMutation,
   readJsonObject,
@@ -22,9 +25,14 @@ export const dynamic = "force-dynamic";
 /**
  * Whether this caller may read and write comments on this candidate.
  *
- * Two ways in, and they are the same two the rest of the module already recognises: Talent
- * Acquisition and Super Admin see every candidate, and a manager sees a CV that was pushed to them
- * or to somebody beneath them in the org.
+ * Three ways in, and they are the same three the rest of the module already recognises: Talent
+ * Acquisition and Super Admin see every candidate, a manager sees a CV that was pushed to them or to
+ * somebody beneath them in the org, and — since 2026-08-31 — a manager sees an applicant who asked
+ * for one of his own areas.
+ *
+ * THE THIRD IS WHAT MAKES A DISTRICT FOLDER USABLE. Those CVs were pushed to nobody, so without it
+ * every card in a folder would render a comment box that answers 403 on load. The permission itself
+ * is unchanged: this is still `hiring_interviews`, and the scope is still the caller's own seats.
  *
  * ASKED FOR BOTH VERBS, not just the write. A comment is a manager's opinion of a named job
  * applicant, so reading one is exactly as sensitive as writing one — gating only the POST would put
@@ -33,7 +41,10 @@ export const dynamic = "force-dynamic";
 async function assertCanComment(access: Parameters<typeof isCandidateWithinViewerTeam>[0], candidateId: string) {
   if (canSeeAllRecruitment(access)) return;
   if (await isCandidateWithinViewerTeam(access, candidateId)) return;
-  throw new Error("Forbidden: that candidate is not with you or with anyone reporting to you.");
+  if (await isCandidateInViewerTeamDistrict(access, candidateId)) return;
+  throw new Error(
+    "Forbidden: that candidate is not with you, with anyone reporting to you, or in one of your areas.",
+  );
 }
 
 export async function GET(request: Request, { params }: { params: Promise<{ candidateId: string }> }) {

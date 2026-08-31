@@ -25,12 +25,19 @@
 // Since 2026-08-30 there is a THIRD: a candidate pushed to somebody who reports to this caller, so a
 // National Sales Manager can open the CVs sitting with his district managers. That one is an org
 // walk and lives in hiring-manager-team.ts, which owns the rule about who may look at whom.
+//
+// Since 2026-08-31 there is a FOURTH, and it is the first that does not depend on a push at all: an
+// applicant who ASKED for an area this caller holds. It lives in district-manager-folders-db.ts, and
+// it is the same placement that decides which folder the CV appears in — one rule, asked twice.
 
 import type { AccessContext } from "@/lib/auth/permissions";
 import { hrIdsMatch } from "@/lib/hr-id";
 import { canSeeAllRecruitment } from "@/lib/recruitment/access";
 import { recruitmentDb } from "@/lib/recruitment/db";
-import { isCandidateWithinViewerTeam } from "@/lib/recruitment/hiring-manager-team";
+import {
+  isCandidateInViewerTeamDistrict,
+  isCandidateWithinViewerTeam,
+} from "@/lib/recruitment/hiring-manager-team";
 import { getFileForDownload, listCandidateFiles, type FileDownload } from "@/lib/recruitment/files";
 import { isCandidateSentToManager } from "@/lib/recruitment/manager-sends";
 import { getRequisition } from "@/lib/recruitment/requisitions";
@@ -80,6 +87,15 @@ async function assertCandidateInHiringManagerScope(access: AccessContext, candid
   // view would render a card whose View CV button answers 403, which is a worse screen than not
   // showing the card at all. The org walk itself lives in hiring-manager-team.ts.
   if (await isCandidateWithinViewerTeam(access, candidateId)) return;
+  // THE FOURTH, added 2026-08-31: an applicant who asked to work in an area held in the organogram
+  // by this caller, OR by a manager who reports to him. Nobody pushed this CV to anybody — it
+  // reached the folder because of WHERE it is for — so none of the three checks above can see it,
+  // and without this every card in a district folder would offer a View CV button that answers 403.
+  // The team half matters as much as the own-areas half: a National Sales Manager holds none of the
+  // areas his district managers hold, so scoping this to the caller's own seats refused the exact
+  // person the folders were built for. The rule is asked, never restated: see
+  // isCandidateInViewerTeamDistrict.
+  if (await isCandidateInViewerTeamDistrict(access, candidateId)) return;
 
   const supabase = recruitmentDb();
   const { data, error } = await supabase

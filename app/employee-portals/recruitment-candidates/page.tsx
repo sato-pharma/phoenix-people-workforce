@@ -10,6 +10,10 @@ import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { listApplications } from "@/lib/recruitment/applications";
 import { listCandidateFolderAreaOptions } from "@/lib/recruitment/candidate-folder-options";
 import { listCandidatesSentToManager } from "@/lib/recruitment/candidates";
+import {
+  districtBoardCandidateIds,
+  listDistrictBoardsForManager,
+} from "@/lib/recruitment/district-manager-folders-db";
 import { listCandidateCardFiles } from "@/lib/recruitment/files";
 import { listViewerTeamManagers } from "@/lib/recruitment/hiring-manager-team";
 import { listManagerFolderFilings } from "@/lib/recruitment/manager-folders";
@@ -54,12 +58,17 @@ export default async function EmployeePortalRecruitmentCandidatesPage() {
   //   • areaOptions — the area list for the folder picker, tagged with each area's RECRUITMENT
   //     region (which is not always its sales region — the Delta (3) split). Loaded here because it
   //     reads the org chart and the portal component is "use client".
-  const [applications, sentToMe, team, filings, areaOptions] = await Promise.all([
+  //   • districtBoards — one folder per area this caller holds in the organogram, filled with the
+  //     CVs of applicants who asked for that area. The owner, 2026-08-31: "you will make a folder
+  //     per district manager. Each folder has his areas ... he click the folder and open he find all
+  //     CVs." Scoped to his own seats, and empty for anybody who holds none.
+  const [applications, sentToMe, team, filings, areaOptions, districtBoards] = await Promise.all([
     listApplications(access),
     listCandidatesSentToManager(access.hrId),
     listViewerTeamManagers(access),
     listManagerFolderFilings(access.hrId),
     listCandidateFolderAreaOptions(),
+    listDistrictBoardsForManager(access.hrId),
   ]);
   const myCandidates = applications.filter((application) => application.candidate && application.requisition);
 
@@ -76,17 +85,22 @@ export default async function EmployeePortalRecruitmentCandidatesPage() {
   const initialFiles = await listCandidateCardFiles([
     ...sentToMe.map((candidate) => candidate.id),
     ...myCandidates.map((application) => application.candidate?.id ?? ""),
+    // The district folders' CVs too, and for the same reason: a folder whose cards have no View CV
+    // button is a folder a manager cannot use. Deduplicated — one applicant can sit in three
+    // managers' folders and in this caller's own sent list at once.
+    ...districtBoardCandidateIds(districtBoards),
   ]);
 
   return (
     <EmployeePortalPageShell
       badge="Hiring"
-      description="CVs sent to you by the recruitment team, candidates assigned to your open positions, and the CVs sitting with the managers who report to you — read the CV, answer, comment, and keep the good ones in your own folders."
+      description="CVs sent to you by the recruitment team, candidates assigned to your open positions, a folder for every area you hold, and the CVs sitting with the managers who report to you — read the CV, answer, comment, and keep the good ones in your own folders."
       title="My Candidates"
     >
       <RecruitmentCandidatesPortal
         areaOptions={areaOptions}
         initialApplications={myCandidates}
+        initialDistrictBoards={districtBoards}
         initialFilings={filings}
         initialFiles={initialFiles}
         initialSentToMe={sentToMe}

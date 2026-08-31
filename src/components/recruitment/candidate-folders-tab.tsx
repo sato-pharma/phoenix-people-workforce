@@ -21,6 +21,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { FolderInput, FolderOpen, Undo2 } from "lucide-react";
 
+import { BackgroundReviewPanel } from "@/components/recruitment/background-review-panel";
 import { Button } from "@/components/ui/button";
 import { deleteRequest, postJson } from "@/components/recruitment/recruitment-fetch";
 import { candidateDisplayName } from "@/lib/recruitment/candidate-display";
@@ -111,6 +112,11 @@ export function CandidateFoldersTab({
       ) : null}
 
       <DeclaredFilingsPanel candidates={candidates} />
+
+      {/* Above the shelves and below the one-press panel, in the order the two decisions happen: the
+          people who told us where they belong are filed first, and what is left is the queue of
+          degrees somebody has to read. Both sit on the Folders tab because both END in a folder. */}
+      <BackgroundReviewPanel candidates={candidates} onOpenCandidate={onOpenCandidate} />
 
       {shelves.map((shelf) => (
         <section className="rounded-lg border border-phx-line bg-white" key={shelf.kind}>

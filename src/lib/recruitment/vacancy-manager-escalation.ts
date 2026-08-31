@@ -94,8 +94,14 @@ function indexBySeatId(rows: readonly ManagerSeatRow[]): Map<string, ManagerSeat
  * not contain, or when the links form a cycle. A cycle cannot occur in a tree that is built
  * correctly, which is exactly why it is worth refusing on: an org tree that has one is broken, and
  * the answer this would otherwise invent would be indistinguishable from a real one.
+ *
+ * EXPORTED for district-manager-folders.ts, which asks the same question about a different subject:
+ * who opens the folders of a district whose manager post is empty. Two vacant DM seats in production
+ * — PEDIA Alex-BHR and PEDIA Cairo, holding 11 areas between them — would otherwise own folders
+ * belonging to nobody, and the owner's instruction in the identical case was "route him to the
+ * district manager's manager". One climb rather than two is what keeps both screens agreeing.
  */
-function climbToOccupiedSeat(
+export function climbToOccupiedSeat(
   managerSeatId: string,
   bySeatId: Map<string, ManagerSeatRow>,
 ): ManagerStandIn | null {

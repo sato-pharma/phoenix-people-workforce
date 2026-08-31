@@ -323,19 +323,31 @@ export function cleanTypedJobTitle(raw: string | null | undefined): string | nul
 //
 // This is a NEW vocabulary, not borrowed: nothing else in the app buckets candidates by degree yet,
 // so the codes are defined here and the answer is stored as its own declaration on the candidate.
-export const candidateBackgroundCodes = ["pharmacy", "science", "vet"] as const;
+//
+// MEDICINE AND DENTISTRY ADDED 2026-08-31, on the owner's instruction: *"medicine and dentistry are
+// accepted. And add them in the question."* They were reachable before only by tapping "Other" and
+// typing, which filed a fully eligible graduate as an unrecognised answer — the exact shape the
+// paramedical split must not produce. Measured in production the same day, 10 candidates carry a
+// medicine or dentistry faculty read off their CV, and the one person who had answered the question
+// with something outside the three codes had typed "Bachelor of Commerce", so nothing already
+// stored is disturbed by widening the list.
+export const candidateBackgroundCodes = ["pharmacy", "science", "vet", "medicine", "dentistry"] as const;
 export type CandidateBackgroundCode = (typeof candidateBackgroundCodes)[number];
 
 /** What the applicant reads. "Veterinary" rather than the owner's shorthand "vet" — it is clearer
  *  on the phone and well inside the 24-character row ceiling. */
 export const candidateBackgroundLabels: Record<CandidateBackgroundCode, string> = {
+  dentistry: "Dentistry",
+  medicine: "Medicine",
   pharmacy: "Pharmacy",
   science: "Science",
   vet: "Veterinary",
 };
 
-// Order is the owner's: the three degrees a field applicant actually holds, then "Other" last —
-// offering "Other" early invites it, the same reasoning as the role menu.
+// Order is the owner's: the degrees a field applicant actually holds, then "Other" last — offering
+// "Other" early invites it, the same reasoning as the role menu. The three commonest stay first so
+// the tap most applicants need is the one they reach without reading to the bottom; medicine and
+// dentistry follow because production says they are the rarer pair (10 against 201).
 const BACKGROUND_MENU_ORDER: readonly string[] = [...candidateBackgroundCodes, OTHER_ROW_VALUE];
 
 export function backgroundMenu(): ClassifyMenu {
@@ -360,11 +372,21 @@ export function isOfferedBackground(value: string): value is CandidateBackground
 
 export const BACKGROUND_OTHER_MAX = 80;
 
+/**
+ * The example CANNOT be a degree the menu already offers.
+ *
+ * It read "Dentistry" until 2026-08-31, which was correct while dentistry was reachable only by
+ * typing. Now that it is a row, an example naming it would tell the one applicant who got here by
+ * mistake to type an answer they should have tapped — and a typed "Dentistry" is stored as free
+ * text rather than as the code, so it would land in the review queue instead of being recognised as
+ * eligible. "Commerce" is the honest example: it is what the only real "Other" answer in production
+ * actually was, and it is not on the menu and never will be.
+ */
 export function backgroundOtherPromptText(): string {
   return [
     "No problem — please type what you graduated in.",
     "",
-    "Send it as a normal message, for example \"Dentistry\".",
+    "Send it as a normal message, for example \"Commerce\".",
   ].join("\n");
 }
 

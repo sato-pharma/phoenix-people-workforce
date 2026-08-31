@@ -23,6 +23,7 @@
 // service-role client into the browser bundle.
 
 import {
+  candidateFolderKinds,
   partitionCandidatesByFolder,
   type CandidateFolderKind,
   type CandidateFolderShelf,
@@ -59,19 +60,57 @@ export function applyManagerFilings(
 }
 
 /**
+ * Shelves a MANAGER is never shown.
+ *
+ * "Paramedical" is a recruitment-side eligibility answer — it holds people who are not candidates
+ * for the field force at all, and by design no CV reaches a district manager after being filed
+ * there. For a manager that shelf can only ever be empty.
+ *
+ * The empty-shelf rule below is right for the other three and wrong for this one, and the difference
+ * is whether emptiness is INFORMATION. "You have filed nobody by area yet" tells a manager something
+ * true about his own filing. A permanently empty Paramedical shelf tells him nothing, and worse
+ * invites him to file somebody into it — which would take a CV off Talent Acquisition's screen by a
+ * rule that is theirs to apply and not his.
+ */
+const SHELVES_HIDDEN_FROM_MANAGERS: ReadonlySet<CandidateFolderKind> = new Set(["paramedical"]);
+
+/**
+ * The shelves a manager may file into — the SAME list his shelf display is built from.
+ *
+ * Exported so the picker and the shelves come from one answer rather than two expressions that
+ * agree today. The house rule this serves is the one the team scope module states outright: a picker
+ * is never wider than its viewer. A dropdown offering "Paramedical" while the shelf list hides it
+ * would let a manager file a CV into a shelf he can then never open again — the CV would be gone
+ * from his live list and visible nowhere, which is the exact "lost between two screens" failure the
+ * single-partition design exists to prevent.
+ */
+export const managerFolderKinds: readonly CandidateFolderKind[] = candidateFolderKinds.filter(
+  (kind) => !SHELVES_HIDDEN_FROM_MANAGERS.has(kind),
+);
+
+/**
  * A manager's inbox split into what still needs him and what he has shelved.
  *
  * One call, one partition, exactly as the recruiter's screen does it — so a CV is in `live` or on a
- * shelf and never in both or neither. `shelves` always contains all three, empty ones included:
+ * shelf and never in both or neither. Every shelf a manager may use comes back, empty ones included:
  * an empty shelf says nothing has been filed there yet, while a shelf that disappears when it
  * empties makes the feature look broken the first time somebody opens it.
+ *
+ * FILTERING IS ON THE SHELF LIST ONLY, never on the candidates. This screen shows the manager's OWN
+ * filings (see `applyManagerFilings`), so a recruiter's paramedical filing never reaches it anyway —
+ * but dropping candidates as well as shelves is precisely how one would go missing from both halves,
+ * which is the invariant the single-partition design exists to protect.
  */
 export function partitionManagerCandidates(
   candidates: readonly Candidate[],
   filings: ManagerFolderFilings,
 ): { live: Candidate[]; shelves: CandidateFolderShelf[]; filedCount: number } {
   const { pool, shelves, filedCount } = partitionCandidatesByFolder(applyManagerFilings(candidates, filings));
-  return { filedCount, live: pool, shelves };
+  return {
+    filedCount,
+    live: pool,
+    shelves: shelves.filter((shelf) => !SHELVES_HIDDEN_FROM_MANAGERS.has(shelf.kind)),
+  };
 }
 
 /**

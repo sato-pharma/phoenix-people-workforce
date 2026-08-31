@@ -379,8 +379,10 @@ export function runWhatsAppSelfClassificationTests() {
   assert.equal(bgMenu.step, "background", "the background menu must carry its own step");
   assert.deepEqual(
     bgMenu.rows.map((row) => row.id),
-    ["pharmacy", "science", "vet", OTHER_ROW_VALUE].map((value) => classifyRowId("background", value)),
-    "the background menu offers Pharmacy, Science, Veterinary, then Other last",
+    ["pharmacy", "science", "vet", "medicine", "dentistry", OTHER_ROW_VALUE].map((value) =>
+      classifyRowId("background", value),
+    ),
+    "the background menu offers Pharmacy, Science, Veterinary, Medicine, Dentistry, then Other last",
   );
   const bgTitleById = new Map(bgMenu.rows.map((row) => [row.id, row.title]));
   assert.equal(bgTitleById.get(classifyRowId("background", "vet")), "Veterinary", "the applicant reads Veterinary, not the shorthand");
@@ -391,11 +393,22 @@ export function runWhatsAppSelfClassificationTests() {
   );
 
   // The guard rejects the "Other" escape (its branch is handled explicitly) and any stale value, and
-  // accepts exactly the three real codes.
+  // accepts exactly the real codes.
+  //
+  // The rejected example was "dentistry" until 2026-08-31, when the owner made medicine and dentistry
+  // offered answers. That assertion PINNED THE ANTI-PATTERN: it passed only for as long as a fully
+  // eligible graduate had no row to tap, so widening the menu turned it red — which is the check
+  // working, not a regression. "Commerce" replaces it because it is genuinely off-menu and is the
+  // real typed answer production holds, so this keeps proving a stale value is refused.
   assert.ok(!isOfferedBackground(OTHER_ROW_VALUE), "the background escape must never pass the vocabulary guard");
-  assert.ok(!isOfferedBackground("dentistry"), "a value we do not offer is rejected");
+  assert.ok(!isOfferedBackground("commerce"), "a value we do not offer is rejected");
   for (const code of candidateBackgroundCodes) {
     assert.ok(isOfferedBackground(code), `${code} is an offered background`);
+  }
+  // The two the owner added by name, asserted individually: a loop over the union would pass even if
+  // both were dropped from it again, and this is the pair he asked for in words.
+  for (const added of ["medicine", "dentistry"]) {
+    assert.ok(isOfferedBackground(added), `${added} is an offered background — owner's instruction 2026-08-31`);
   }
 
   // The row ids round-trip through the parser, and the background step is a first-class tappable step.

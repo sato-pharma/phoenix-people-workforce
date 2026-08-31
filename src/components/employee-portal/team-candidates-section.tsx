@@ -2,12 +2,13 @@
 
 import { useState } from "react";
 
-import { CandidateCommentThread } from "@/components/employee-portal/candidate-comment-thread";
-import { CandidateCvActions } from "@/components/employee-portal/candidate-cv-actions";
+// The card itself lives in candidate-read-card.tsx, shared with the district folders. Both screens
+// show a manager a CV he can read and comment on but must not answer, and the day they stopped being
+// one component is the day one of them would quietly lose the View CV button.
+import { CandidateReadCard } from "@/components/employee-portal/candidate-read-card";
+import { DistrictFoldersSection } from "@/components/employee-portal/district-folders-section";
 import { Card } from "@/components/ui/card";
-import { APPLIED_FOR_SOURCE_LABEL, candidateRowAppliedFor } from "@/lib/recruitment/applied-for";
-import { candidateStatusLabel } from "@/lib/recruitment/candidate-status";
-import { cairoDateTime } from "@/lib/format/cairo-datetime";
+import type { DistrictManagerBoard } from "@/lib/recruitment/district-manager-folders";
 import type { Candidate, TeamCandidateFile } from "@/lib/recruitment/types";
 
 /**
@@ -51,6 +52,10 @@ export function TeamCandidatesSection({
 }) {
   const [selected, setSelected] = useState<TeamManagerOption | null>(null);
   const [candidates, setCandidates] = useState<Candidate[] | null>(null);
+  // That manager's OWN areas from the organogram, each with everyone who asked for it. Separate
+  // state from `candidates` because it answers a different question — what was sent to him, against
+  // what has arrived for his territory — and merging the two would hide which is which.
+  const [districtBoards, setDistrictBoards] = useState<DistrictManagerBoard<Candidate>[]>([]);
   const [files, setFiles] = useState<Record<string, TeamCandidateFile[]>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -63,11 +68,13 @@ export function TeamCandidatesSection({
     if (selected && selected.hrId === manager.hrId) {
       setSelected(null);
       setCandidates(null);
+      setDistrictBoards([]);
       setFiles({});
       return;
     }
     setSelected(manager);
     setCandidates(null);
+    setDistrictBoards([]);
     setFiles({});
     setError(null);
     setBusy(true);
@@ -80,6 +87,9 @@ export function TeamCandidatesSection({
         throw new Error(typeof data.message === "string" ? data.message : "Failed to load those candidates.");
       }
       setCandidates(Array.isArray(data.candidates) ? (data.candidates as Candidate[]) : []);
+      setDistrictBoards(
+        Array.isArray(data.districtBoards) ? (data.districtBoards as DistrictManagerBoard<Candidate>[]) : [],
+      );
       // The CV files arrive WITH the list. Every card can then offer View CV / Download the moment
       // it renders, instead of each one asking separately and the control turning up much later.
       setFiles(
@@ -158,7 +168,7 @@ export function TeamCandidatesSection({
             </Card>
           ) : (
             (candidates ?? []).map((candidate) => (
-              <TeamCandidateCard
+              <CandidateReadCard
                 candidate={candidate}
                 files={files[candidate.id] ?? []}
                 key={candidate.id}
@@ -166,84 +176,22 @@ export function TeamCandidatesSection({
               />
             ))
           )}
+
+          {/* His folders, under what was sent to him. The owner, 2026-08-31: "when he choose his
+              district manager, he can see their folders and the CV in per folder." Rendered by the
+              same component the manager himself sees, so the two never drift into different screens
+              of the same thing — only the heading changes, because it is now somebody else's. */}
+          {busy ? null : (
+            <DistrictFoldersSection
+              boards={districtBoards}
+              files={files}
+              heading={`${managerLabel(selected)}'s areas`}
+              subheading={`Every area ${managerLabel(selected)} holds in the organogram, and the CVs of applicants who asked to work in it.`}
+              viewerHrId={viewerHrId}
+            />
+          )}
         </div>
       ) : null}
     </section>
-  );
-}
-
-function Field({ label, value }: { label: string; value: string | null }) {
-  return (
-    <div>
-      <p className="whitespace-nowrap text-phx-xs uppercase tracking-wide text-slate-400">{label}</p>
-      <p className="text-sm text-slate-700" dir="auto">
-        {value?.trim() ? value : "—"}
-      </p>
-    </div>
-  );
-}
-
-/**
- * One CV as the manager above sees it: everything needed to form an opinion, and nowhere to decide.
- *
- * The status pill is what the manager below has already answered, and it is shown prominently on
- * purpose — the first thing a National Sales Manager needs to know about a CV in his district is
- * whether his district manager has dealt with it yet.
- */
-function TeamCandidateCard({
-  candidate,
-  files,
-  viewerHrId,
-}: {
-  candidate: Candidate;
-  files: TeamCandidateFile[];
-  viewerHrId: string | null;
-}) {
-  const appliedFor = candidateRowAppliedFor(candidate);
-  return (
-    <Card className="space-y-4 rounded-lg border border-gray-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.08)] sm:p-6">
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div>
-          <p className="text-base font-semibold text-slate-900" dir="auto">
-            {candidate.fullName}
-          </p>
-          <p
-            className="text-xs text-slate-500"
-            title={
-              appliedFor.source
-                ? `${APPLIED_FOR_SOURCE_LABEL[appliedFor.source]}: ${appliedFor.evidence}`
-                : undefined
-            }
-          >
-            {appliedFor.text ? `Applying for ${appliedFor.text}` : "No role stated on the application"}
-          </p>
-        </div>
-        <span className="inline-block whitespace-nowrap rounded border border-slate-200 bg-slate-50 px-2 py-0.5 text-phx-xs font-semibold text-slate-600">
-          {candidateStatusLabel(candidate.status)}
-        </span>
-      </div>
-
-      <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
-        <Field label="Phone" value={candidate.phone} />
-        <Field label="Email" value={candidate.email} />
-        <Field label="Governorate" value={candidate.governorate} />
-        <Field label="Current job title" value={candidate.currentJobTitle} />
-        <Field label="Current employer" value={candidate.currentEmployer} />
-        <Field
-          label="Years of experience"
-          value={candidate.yearsExperience === null ? null : String(candidate.yearsExperience)}
-        />
-        <Field label="CV received" value={cairoDateTime(candidate.createdAt)} />
-        <Field label="Sent to them" value={candidate.managerNotified ? cairoDateTime(candidate.managerNotified.sentAt) : null} />
-        <Field
-          label="Their answer"
-          value={candidate.statusNote?.trim() ? candidate.statusNote : null}
-        />
-      </div>
-
-      <CandidateCvActions candidateId={candidate.id} initialFiles={files} />
-
-      <CandidateCommentThread candidateId={candidate.id} viewerHrId={viewerHrId} />
-    </Card>
   );
 }
