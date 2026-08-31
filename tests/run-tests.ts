@@ -1043,6 +1043,7 @@ import { runSchemaShapeDefaultAclTests } from "./schema-shape-default-acl.test.t
 import { runSchemaShapePrivateUsageTests } from "./schema-shape-private-usage.test.ts";
 import { runSchemaShapeSnapshotInPublicTests } from "./schema-shape-snapshot-in-public.test.ts";
 import { runTerritorySyncTests } from "./territory-sync.test.ts";
+import { runTerritoryRestampAreaChangeTests } from "./territory-restamp-area-change.test.ts";
 import { runFinanceCommandCenterTests } from "./finance-command-center.test.ts";
 import { runMarketingManagerMonthlyClosingTests } from "./marketing-manager-monthly-closing.test.ts";
 import { runPortalHomePlanCountCanonicalTests } from "./portal-home-plan-count-canonical.test.ts";
@@ -3071,6 +3072,10 @@ await runTest(
 await runTest(
   "territory sync (rollup==source reconciles within epsilon; row-count off-by-one fails; period window clamps)",
   runTerritorySyncTests,
+);
+await runTest(
+  "territory re-stamp fires on an AREA re-parent, not brick alone (14 rows / EGP 5,274.90 were stranded in 2026-07 while the sync reported 0 re-stamped)",
+  runTerritoryRestampAreaChangeTests,
 );
 await runTest(
   "finance command center (deductions from committed payroll only; one round trip; unbooked predicate parity)",

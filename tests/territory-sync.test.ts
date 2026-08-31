@@ -73,6 +73,86 @@ export function runTerritorySyncTests() {
   assert.equal(oneSided.rawTotalQty, 0, "a missing raw side coerces to 0, not NaN");
   assert.equal(oneSided.reconciled, false, "rollup present with no raw counterpart cannot reconcile");
 
+  // --- the geography half of the verdict -------------------------------------------------------
+  //
+  // The re-stamp UPDATE writes ONLY brick_id/area_code/area_name/region_code/region_name, so
+  // total_qty, effective_units and row_count are mathematically INVARIANT under it. A quantity-only
+  // verdict therefore certifies the one thing the sync never changes and is blind to the only thing
+  // it does. Measured on production 2026-08-31: 4,265 import rows carried a brick their own rollup
+  // row disagreed with, and this verdict returned true for 11 of the 12 line-periods holding them.
+
+  // THE HEADLINE ASSERTION. Quantities perfect, geography wrong -> must NOT reconcile.
+  const geoDrift = parseReconciliationRow({
+    official_line: "Anti Infective",
+    period: "2026-07",
+    rollup_total_qty: 100,
+    raw_total_qty: 100,
+    rollup_effective_units: 100,
+    raw_effective_units: 100,
+    rollup_row_count: 10,
+    raw_row_count: 10,
+    geo_mismatch_rows: 947,
+    unrollup_rows: 0,
+  });
+  assert.equal(
+    geoDrift.reconciled,
+    false,
+    "identical quantities cannot reconcile a line whose rows sit on a different brick than their rollup",
+  );
+  assert.equal(geoDrift.geoMismatchRows, 947, "the drift count is carried through for the operator, not just the boolean");
+
+  // A grain group the rollup rebuild missed entirely. An inner join would hide these, so they are
+  // counted separately and are equally disqualifying.
+  const unrollup = parseReconciliationRow({
+    official_line: "CNS",
+    period: "2026-07",
+    rollup_total_qty: 100,
+    raw_total_qty: 100,
+    rollup_effective_units: 100,
+    raw_effective_units: 100,
+    rollup_row_count: 10,
+    raw_row_count: 10,
+    geo_mismatch_rows: 0,
+    unrollup_rows: 6,
+  });
+  assert.equal(unrollup.reconciled, false, "rows with no rollup row at all must fail reconciliation");
+
+  // Geography present and clean is the only shape that now earns a green verdict.
+  const geoClean = parseReconciliationRow({
+    official_line: "Pedia",
+    period: "2026-08",
+    rollup_total_qty: 100,
+    raw_total_qty: 100,
+    rollup_effective_units: 100,
+    raw_effective_units: 100,
+    rollup_row_count: 10,
+    raw_row_count: 10,
+    geo_mismatch_rows: 0,
+    unrollup_rows: 0,
+  });
+  assert.equal(geoClean.reconciled, true, "matching quantities and clean geography reconcile");
+  assert.equal(geoClean.geographyChecked, true, "columns present means the geography proof actually ran");
+
+  // ABSENT is not zero. A database still on the pre-2026-08-31 function returns neither column; the
+  // row must report that geography was never checked rather than showing a clean bill of health.
+  assert.equal(clean.geographyChecked, false, "a response without the geography columns is 'not checked', not 'passed'");
+  assert.equal(
+    parseReconciliationRow({
+      official_line: "CNS",
+      period: "2026-07",
+      rollup_total_qty: 1,
+      raw_total_qty: 1,
+      rollup_effective_units: 1,
+      raw_effective_units: 1,
+      rollup_row_count: 1,
+      raw_row_count: 1,
+      geo_mismatch_rows: null,
+      unrollup_rows: null,
+    }).geographyChecked,
+    false,
+    "an explicit null is 'not checked' too — only a real number counts as a completed check",
+  );
+
   // --- computeSyncPeriods: the trailing window the sync re-stamps -----------------------------
 
   const anchor = new Date("2026-08-15T12:00:00Z");

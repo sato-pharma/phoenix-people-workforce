@@ -101,7 +101,13 @@ export type TerritoryBrickPharmacies = {
 /**
  * One official_line x period row of the post-sync reconciliation proof: the rebuilt directory
  * rollup (what the drilldown reads) summed against the raw validated import rows on the same
- * grain. `reconciled` is true when every measure matches within epsilon.
+ * grain. `reconciled` is true when every measure matches within epsilon AND no row sits on a
+ * different brick/area/region than the rollup row summarising it.
+ *
+ * The geography half exists because the re-stamp writes ONLY geography, so the three quantity
+ * measures are invariant under it: comparing them alone proves the one thing the sync cannot
+ * change. On 2026-08-31 that blind proof reported 11 of 12 line-periods reconciled while 4,265
+ * rows sat on a brick their own rollup disagreed with.
  */
 export type TerritorySyncReconciliationRow = {
   officialLine: string;
@@ -112,6 +118,17 @@ export type TerritorySyncReconciliationRow = {
   rawEffectiveUnits: number;
   rollupRowCount: number;
   rawRowCount: number;
+  /** Import rows whose brick/area/region differs from the rollup row they were summarised into. */
+  geoMismatchRows: number;
+  /** Import rows that join to no rollup row at all — a grain group the rebuild missed entirely. */
+  unrollupRows: number;
+  /**
+   * Whether the geography columns were actually present in the RPC response. False means the
+   * database is still on the pre-2026-08-31 function, so `reconciled` below carries the old
+   * quantity-only meaning and proves nothing about geography — the panel must not show it as a
+   * clean bill of health.
+   */
+  geographyChecked: boolean;
   reconciled: boolean;
 };
 
