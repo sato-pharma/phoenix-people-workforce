@@ -1140,6 +1140,7 @@ import {
 import { runPushActionUrlResolutionTests } from "./push-action-url-resolution.test.ts";
 import { runAttendanceAgentBrowserTokenSplitTests } from "./attendance-agent-browser-token-split.test.ts";
 import { runCandidateBackgroundEligibilityTests } from "./candidate-background-eligibility.test.ts";
+import { runHrProvisioningGuardTests } from "./hr-provisioning-guard.test.ts";
 
 /**
  * MARK THE SUITE AS A TEST RUN — this is a data-safety gate, not a formality.
@@ -3551,6 +3552,10 @@ await runTest(
 await runTest(
   "paramedical split: veterinary and dental medicine never read as medicine, and no exclusion auto-files",
   runCandidateBackgroundEligibilityTests,
+);
+await runTest(
+  "new-hire login provisioning admits HR Operations, the one seat that can reach it",
+  runHrProvisioningGuardTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
