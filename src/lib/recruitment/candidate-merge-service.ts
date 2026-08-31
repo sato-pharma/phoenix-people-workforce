@@ -15,6 +15,7 @@ import {
   borrowableFields,
   describeBorrowedFields,
   mergeBlockReason,
+  mergeScreeningExtraAnswers,
   type BorrowedField,
   type MergeApplicationFacts,
 } from "@/lib/recruitment/candidate-merge";
@@ -157,6 +158,10 @@ export async function mergeCandidates(
 
   // Captured BEFORE the duplicate is deleted — after step 3 there is nothing left to read.
   const borrowed = borrowableFields(survivor, duplicate);
+  const { changed: extraAnswersChanged, merged: mergedExtraAnswers } = mergeScreeningExtraAnswers(
+    survivor.screeningExtraAnswers,
+    duplicate.screeningExtraAnswers,
+  );
   // 40% of full_name holds a whole forwarded-mail envelope, so the stored value is not the name —
   // candidateDisplayName is what turns it back into one.
   const duplicateName = candidateDisplayName(duplicate.fullName) || "this duplicate record";
@@ -174,8 +179,9 @@ export async function mergeCandidates(
   if (deleteError) throw deleteError;
 
   let merged = survivor;
-  if (borrowed.length > 0) {
-    const payload = borrowedPayload(borrowed);
+  if (borrowed.length > 0 || extraAnswersChanged) {
+    const payload: Record<string, unknown> = { ...borrowedPayload(borrowed) };
+    if (extraAnswersChanged) payload.screening_extra_answers = mergedExtraAnswers;
     const { data, error } = await supabase
       .from("ats_candidates")
       .update({ ...payload, updated_at: new Date().toISOString() })
@@ -186,7 +192,7 @@ export async function mergeCandidates(
     merged = mapCandidate(data as CandidateDbRow);
   }
 
-  const summary = buildSummary({ borrowed, duplicateName, movedApplications, movedFiles });
+  const summary = buildSummary({ borrowed, duplicateName, extraAnswersChanged, movedApplications, movedFiles });
   await recordMergeEvent({
     actorHrId: access.hrId ?? null,
     candidateId: survivorId,
@@ -225,6 +231,7 @@ function borrowedPayload(borrowed: readonly BorrowedField[]): Record<string, str
 function buildSummary(input: {
   borrowed: readonly BorrowedField[];
   duplicateName: string;
+  extraAnswersChanged: boolean;
   movedApplications: number;
   movedFiles: number;
 }): string {
@@ -235,11 +242,10 @@ function buildSummary(input: {
     moved.push(input.movedApplications === 1 ? "1 application" : `${input.movedApplications} applications`);
   }
   if (moved.length > 0) parts.push(`Moved ${moved.join(" and ")} across.`);
-  parts.push(
-    input.borrowed.length > 0
-      ? `Filled in the ${describeBorrowedFields(input.borrowed)}.`
-      : "Nothing was missing here, so no details changed.",
-  );
+  const filledIn: string[] = [];
+  if (input.borrowed.length > 0) filledIn.push(describeBorrowedFields(input.borrowed));
+  if (input.extraAnswersChanged) filledIn.push("screening question answers");
+  parts.push(filledIn.length > 0 ? `Filled in the ${filledIn.join(" and ")}.` : "Nothing was missing here, so no details changed.");
   return parts.join(" ");
 }
 

@@ -116,6 +116,28 @@ function educationLines(row: CvLibraryRow): string[] {
   return [row.educationDegree, row.educationFaculty, row.educationInstitution].filter(Boolean);
 }
 
+/**
+ * The admin-defined extra questions, one "label: answer" line each, in the admin builder's own
+ * order. A variable count, unlike StackedCell's fixed three slots, so it gets its own cell: nothing
+ * at all for the (currently near-universal) case of zero answers, rather than an empty column that
+ * still costs a header.
+ */
+function ScreeningAnswersCell({ row }: { row: CvLibraryRow }) {
+  if (row.screeningAnswers.length === 0) return <td className={cellClassName} />;
+  return (
+    <td className={cellClassName}>
+      {row.screeningAnswers.map((entry) => (
+        <div className="mb-1.5 last:mb-0" key={entry.label}>
+          <div className="whitespace-nowrap text-phx-2xs font-bold uppercase tracking-wider text-slate-400">
+            {entry.label}
+          </div>
+          <div className="whitespace-nowrap font-semibold text-phx-ink">{entry.answer}</div>
+        </div>
+      ))}
+    </td>
+  );
+}
+
 function regionTitle(row: CvLibraryRow): string | undefined {
   if (row.regionForeignCountry) return `This CV gives an address in ${row.regionForeignCountry}.`;
   return row.regionDeclared ? DECLARED_REGION_TITLE : undefined;
@@ -184,9 +206,16 @@ const exportHeaders = [
   "Region",
   "Area asked for",
   "CV file",
+  "Screening answers",
 ] as const;
 
-const exportWidths = [30, 14, 28, 26, 18, 14, 20, 26, 40, 18, 18, 22, 30];
+const exportWidths = [30, 14, 28, 26, 18, 14, 20, 26, 40, 18, 18, 22, 30, 44];
+
+/** "Question: answer" pairs, joined so the export carries the same facts as the screen without one
+ *  column per admin-defined question — the question list is unbounded and admin-growable. */
+function screeningAnswersText(row: CvLibraryRow): string {
+  return row.screeningAnswers.map((entry) => `${entry.label}: ${entry.answer}`).join("; ");
+}
 
 async function downloadWorkbook(rows: CvLibraryRow[], fileName: string) {
   // Lazy-load exceljs (~1MB) only when an export is triggered, keeping it out of this client
@@ -214,6 +243,7 @@ async function downloadWorkbook(rows: CvLibraryRow[], fileName: string) {
       row.regionLabel,
       row.preferredArea,
       row.cvFileName,
+      screeningAnswersText(row),
     ]),
   );
 
@@ -522,6 +552,7 @@ export function CvDatabaseManager({ rows }: { rows: CvLibraryRow[] }) {
                   ...(row.preferredArea ? [{ label: "Area asked for", value: row.preferredArea }] : []),
                   { label: "Governorate", value: emptyText(row.governorate) },
                   { label: "CV file", value: emptyText(row.cvFileName) },
+                  ...row.screeningAnswers.map((entry) => ({ label: entry.label, value: entry.answer })),
                 ]}
               />
             </PortalRecordCard>
@@ -545,6 +576,11 @@ export function CvDatabaseManager({ rows }: { rows: CvLibraryRow[] }) {
                       in place, so nothing is lost by not giving each its own header. */}
                   <th className={headCellClassName}>Where</th>
                   <th className={headCellClassName}>Education</th>
+                  {/* Empty for almost every existing candidate — the admin question list is new and
+                      most rows predate it. Costs nothing until an admin adds a question and someone
+                      answers it, same as every other "nothing at all when there's nothing to say"
+                      cell on this table. */}
+                  <th className={headCellClassName}>Screening</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-phx-line">
@@ -606,6 +642,7 @@ export function CvDatabaseManager({ rows }: { rows: CvLibraryRow[] }) {
                       secondary={educationLines(row)[1] ?? ""}
                       tertiary={educationLines(row)[2] ?? ""}
                     />
+                    <ScreeningAnswersCell row={row} />
                   </tr>
                 ))}
               </tbody>

@@ -62,6 +62,15 @@ import {
   mirrorWhatsAppEventToOwner,
 } from "@/lib/recruitment/inbound/whatsapp-conversation-mirror";
 import { sendClassifyMenu, sendWhatsAppText } from "@/lib/recruitment/inbound/whatsapp-interactive";
+// The admin-defined extra-question loop this conversation optionally continues into once the fixed
+// six finish. Only referenced inside handleClassifyText's salary branch below (a function body, not
+// module-top-level), so the resulting import cycle with whatsapp-screening-questions-session.ts
+// (which imports finishSession/findCandidateForSender/SessionRow/SESSION_COLUMNS back from here)
+// resolves fine — nothing on either side is evaluated before both modules finish loading.
+import {
+  listActiveScreeningQuestions,
+  startExtraQuestionLoop,
+} from "@/lib/recruitment/inbound/whatsapp-screening-questions-session";
 
 const SESSIONS_TABLE = "ats_whatsapp_classification_sessions";
 
@@ -71,7 +80,10 @@ export function isWhatsAppClassifyEnabled(): boolean {
   return flag === "true" && Boolean(process.env.WHATSAPP_ACCESS_TOKEN?.trim());
 }
 
-type SessionRow = {
+// Exported so whatsapp-screening-questions-session.ts (the admin-defined extra-question loop that
+// continues this conversation once the fixed six finish) can read and extend the same row shape
+// without redefining it. Nothing else about this type or this file's own use of it changes.
+export type SessionRow = {
   id: string;
   wa_id: string;
   phone_number_id: string | null;
@@ -120,7 +132,9 @@ export function sessionAreaLabel(session: {
   return session.area_name ?? session.area_other_text ?? null;
 }
 
-const SESSION_COLUMNS =
+// Exported for the same reason SessionRow is: the extra-question loop selects this plus its own two
+// columns, so the two files can never drift on what the base row looks like.
+export const SESSION_COLUMNS =
   "id,wa_id,phone_number_id,step,job_title_family,job_title_other_text,background,background_other_text,region_code,region_other_text,area_name,area_other_text,experience,expected_salary,last_prompt_wamid,applied_candidate_id";
 
 /**
@@ -702,10 +716,13 @@ export async function handleClassifyText(input: {
       return "advanced";
     }
 
-    // step === "salary" — the last answer of all, typed. Finishes the conversation, so every path
-    // (rep or manager, tapped or typed) lands here and gets the same thank-you and the same mirror.
-    // Stored VERBATIM: an expected salary is "12000", a range, "negotiable" or Arabic numerals, and
-    // coercing it to a number would throw away the truthful answer.
+    // step === "salary" — the last of the fixed six, typed. Finishes THAT set, so every path (rep or
+    // manager, tapped or typed) lands here. What happens next depends on whether the owner has
+    // defined any active extra question at this exact moment: none -> finish exactly as this always
+    // has; one or more -> hand off to the extra-question loop, which calls this same finishSession,
+    // unmodified, once IT completes. Stored VERBATIM: an expected salary is "12000", a range,
+    // "negotiable" or Arabic numerals, and coercing it to a number would throw away the truthful
+    // answer.
     const typedSalary = cleanTypedAnswer(input.text, EXPECTED_SALARY_MAX);
     if (!typedSalary) {
       await sendPromptText(withPhone, salaryTooLongText());
@@ -715,7 +732,13 @@ export async function handleClassifyText(input: {
       .from(SESSIONS_TABLE)
       .update({ expected_salary: typedSalary, updated_at: nowIso })
       .eq("id", session.id);
-    await finishSession({ ...session, expected_salary: typedSalary }, input.phoneNumberId);
+    const finishedFixedSix = { ...session, expected_salary: typedSalary };
+    const activeExtraQuestions = await listActiveScreeningQuestions();
+    if (activeExtraQuestions.length > 0) {
+      await startExtraQuestionLoop(finishedFixedSix, input.phoneNumberId, activeExtraQuestions);
+    } else {
+      await finishSession(finishedFixedSix, input.phoneNumberId);
+    }
     return "advanced";
   } catch (error) {
     logError("WhatsApp classification failed to handle a typed answer", {
@@ -728,7 +751,10 @@ export async function handleClassifyText(input: {
 
 // ── Finishing: confirm to the applicant, then write to the candidate ─────────────────────────────
 
-async function finishSession(session: SessionRow, fallbackPhoneNumberId: string | null): Promise<void> {
+// Exported so the extra-question loop can call it directly once IT finishes — same thank-you text,
+// same six-column write, same owner Telegram mirror, same closeSession, for every session whether or
+// not it ever saw an admin-defined question.
+export async function finishSession(session: SessionRow, fallbackPhoneNumberId: string | null): Promise<void> {
   const roleLabel = sessionRoleLabel(session);
   const backgroundLabel = sessionBackgroundLabel(session);
   const regionLabel = sessionRegionLabel(session);
@@ -796,7 +822,9 @@ async function finishSession(session: SessionRow, fallbackPhoneNumberId: string 
  * already records `sender_identifier` (`+<waId>`) beside the candidate it produced, which is the
  * authoritative link and needs no normalisation of our own.
  */
-async function findCandidateForSender(waId: string): Promise<string | null> {
+// Exported for the same reason finishSession is — the extra-question loop needs the same lookup to
+// resolve the owner-mirror candidate name and to write its own answers onto the right candidate row.
+export async function findCandidateForSender(waId: string): Promise<string | null> {
   const supabase = recruitmentDb();
   const { data, error } = await supabase
     .from("ats_cv_intake_events")

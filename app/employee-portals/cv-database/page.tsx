@@ -9,6 +9,7 @@ import { canAccess, isHrAuthorityRole, resolveNavigationMode } from "@/lib/auth/
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { cvLibraryRowsFromCandidates } from "@/lib/cv/cv-library";
 import { listCandidates } from "@/lib/recruitment/candidates";
+import { listScreeningQuestions } from "@/lib/recruitment/inbound/whatsapp-screening-questions-admin";
 
 export const dynamic = "force-dynamic";
 
@@ -28,7 +29,9 @@ export default async function EmployeePortalCvDatabasePage() {
     );
   }
 
-  const rows = cvLibraryRowsFromCandidates(await listCandidates());
+  const [candidates, screeningQuestions] = await Promise.all([listCandidates(), listScreeningQuestions()]);
+  const questionLabels = new Map(screeningQuestions.map((question) => [question.questionKey, question.bodyText]));
+  const rows = cvLibraryRowsFromCandidates(candidates, questionLabels);
 
   return (
     <EmployeePortalPageShell

@@ -62,6 +62,7 @@ function candidate(overrides: Partial<Candidate> = {}): Candidate {
     preferredRegionCode: null,
     preferredRegionName: null,
     professionalSummary: null,
+    screeningExtraAnswers: {},
     sentFor: null,
     source: "whatsapp",
     status: "Candidate Created",

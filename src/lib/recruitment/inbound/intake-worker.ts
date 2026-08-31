@@ -15,6 +15,7 @@ import { formatCoveringMessage } from "@/lib/recruitment/candidate-source-contex
 import { clearWhatsAppMessages, sweepOldWhatsAppMessages } from "@/lib/recruitment/inbound/whatsapp-message-buffer";
 import { downloadWhatsAppMedia, WhatsAppMediaTooLargeError } from "@/lib/recruitment/inbound/whatsapp-media";
 import { applyPendingClassification } from "@/lib/recruitment/inbound/whatsapp-classify-session";
+import { applyPendingExtraAnswers } from "@/lib/recruitment/inbound/whatsapp-screening-questions-session";
 import {
   candidateDisplayName,
   mirrorWhatsAppEventToOwner,
@@ -139,6 +140,8 @@ async function processWhatsAppRow(payload: WhatsAppQueuePayload): Promise<Inboun
   // here, the moment the candidate exists. Best-effort and flag-gated.
   if (!isImport && result.candidateId && (result.outcome === "candidate_created" || result.outcome === "candidate_matched")) {
     await applyPendingClassification({ candidateId: result.candidateId, waId: payload.from }).catch(() => {});
+    // Same race, for the admin-defined extra questions that can finish after the fixed six.
+    await applyPendingExtraAnswers({ candidateId: result.candidateId, waId: payload.from }).catch(() => {});
   }
 
   // Show the owner who just wrote in. The advertised number is moving to the Cloud API line, which
