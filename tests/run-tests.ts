@@ -1140,6 +1140,7 @@ import { runPushActionUrlResolutionTests } from "./push-action-url-resolution.te
 import { runAttendanceAgentBrowserTokenSplitTests } from "./attendance-agent-browser-token-split.test.ts";
 import { runCandidateBackgroundEligibilityTests } from "./candidate-background-eligibility.test.ts";
 import { runHrProvisioningGuardTests } from "./hr-provisioning-guard.test.ts";
+import { runHrNavNoEmptyInboxRowsTests } from "./hr-nav-no-empty-inbox-rows.test.ts";
 
 /**
  * MARK THE SUITE AS A TEST RUN — this is a data-safety gate, not a formality.
@@ -3554,6 +3555,10 @@ await runTest(
 await runTest(
   "new-hire login provisioning admits HR Operations, the one seat that can reach it",
   runHrProvisioningGuardTests,
+);
+await runTest(
+  "no HR sidebar row opens an inbox the seat holds no grant for (Other Approvals, Leave Management)",
+  runHrNavNoEmptyInboxRowsTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
