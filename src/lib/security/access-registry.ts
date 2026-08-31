@@ -754,6 +754,16 @@ export const accessRegistry = [
   // answers 403 — never an empty list — when it is not.
   sessionApi({ methods: readOnly, pattern: "/api/recruitment/hiring-manager/team", permission: { resource: "hiring_interviews", action: "read" } }),
   sessionApi({ audit: { classification: "export", required: true }, methods: readOnly, pattern: "/api/recruitment/hiring-manager/team/*/candidates", permission: { resource: "hiring_interviews", action: "read" } }),
+  // The SILENT Manager CV Engagement report's OWN CV preview — deliberately NOT the hiring-manager
+  // file routes above. Gated by canViewManagerCvEngagement (the report's audience: Super Admin, CEO
+  // and the three NSMs), an in-route domain predicate rather than a permission resource, so the guard
+  // is "domain-helper" with permission null exactly like /api/dev-auth/preview and
+  // /api/admin/system-issues. Unlike the audited hiring-manager file routes, these record NOTHING: no
+  // "opened" mark (which would pollute the very engagement signal the report measures) and no access
+  // audit — so audit stays not-required. Read-only; no mutation, no CSRF surface. Listed as two
+  // entries so the bytes route (/files/*) and the list route (/files) each resolve to their own.
+  sessionApi({ methods: readOnly, pattern: "/api/recruitment/manager-engagement/candidates/*/files", permission: null, guard: "domain-helper" }),
+  sessionApi({ methods: readOnly, pattern: "/api/recruitment/manager-engagement/candidates/*/files/*", permission: null, guard: "domain-helper" }),
   sessionApi({ methods: readOnly, pattern: "/api/reports/vacancies", permission: { resource: "vacancies", action: "read" } }),
   // Listed AHEAD of the blanket /api/reports/** below, which would otherwise swallow it. The
   // permission is identical — this entry exists to DECLARE the audit. It is the one organogram

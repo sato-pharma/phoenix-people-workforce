@@ -14,12 +14,24 @@
 
 import { useMemo, useState } from "react";
 
+import { CvPreviewModal } from "@/components/recruitment/cv-preview-modal";
 import { candidateStatusLabel } from "@/lib/recruitment/candidate-status";
 import type {
   ManagerCvEngagementCandidate,
   ManagerCvEngagementReport,
   ManagerCvEngagementRow,
 } from "@/lib/recruitment/manager-cv-engagement";
+
+/** One row of the report's own file-list response — the CV file is the one whose kind is "cv". */
+type CandidateFileSummary = { id: string; fileName: string; kind: string; mimeType: string | null };
+
+// The two non-area buckets in the expanded list, always sorted after the real areas. "No area named"
+// is the district catch-all the folder rule fills (REGION_FOLDER_LABEL in district-manager-folders.ts);
+// "Sent directly" is where a hand-push that belongs to no folder lands. Held as local strings so this
+// "use client" file need not import the pure folder module — were that label ever renamed, the group
+// would simply sort among the areas rather than break.
+const NO_AREA_LABEL = "No area named";
+const SENT_DIRECTLY_LABEL = "Sent directly";
 
 // Every time this report shows a person is Cairo local time, never a raw UTC string — the owner's
 // standing rule. Written here rather than imported across a domain boundary, matching the copy in
@@ -62,37 +74,150 @@ function Pill({ tone, children }: { tone: "green" | "slate" | "amber"; children:
 }
 
 /**
- * The CVs behind one manager's numbers. ONE component, rendered in both the desktop expanded row and
- * the phone card — the same reasoning targets-workspace keeps its drill-down in a single
- * <SourceBreakdown />: two copies could drift and show a manager two different lists.
+ * A manager who has left. Shown beside the name so the reader knows a wall of unopened CVs sitting
+ * here is stranded on somebody who is gone — those CVs need reassigning, not a nudge to the manager.
+ * The label is whatever the directory recorded (Resigned / Terminated / …), with the last working day
+ * when there is one. Kept on one line — the owner's rule is never to wrap a label.
+ */
+function InactiveBadge({ label, lastWorkingDate }: { label: string | null; lastWorkingDate: string | null }) {
+  const suffix = lastWorkingDate ? ` · left ${cairoDate(lastWorkingDate)}` : "";
+  return (
+    <span className="inline-flex shrink-0 items-center whitespace-nowrap rounded-full bg-rose-50 px-2 py-0.5 text-xs font-medium text-rose-700 ring-1 ring-inset ring-rose-200">
+      {(label || "Inactive") + suffix}
+    </span>
+  );
+}
+
+/**
+ * The candidate's name, as the button that pops the CV up in place.
+ *
+ * The owner asked for exactly this on 2026-09-01: press the name and the CV appears without the page
+ * moving. CvPreviewModal is a fixed full-screen overlay (createPortal to <body>), so nothing on the
+ * report shifts or scrolls under it. The files are fetched only on the FIRST click — a report can list
+ * hundreds of CVs, and fetching each one's file list on render is the fifteen-second stall
+ * CandidateCvActions documents next door.
+ *
+ * It fetches from the report's OWN file routes, which record no open — see the note in
+ * manager-cv-engagement.ts on why oversight must never count as the manager opening his own CV.
+ */
+function EngagementCvName({ candidate }: { candidate: ManagerCvEngagementCandidate }) {
+  const [open, setOpen] = useState(false);
+  const [file, setFile] = useState<CandidateFileSummary | null>(null);
+  const [state, setState] = useState<"idle" | "loading" | "none" | "error">("idle");
+
+  const label = candidate.candidateName || "Unnamed candidate";
+
+  async function handleClick() {
+    if (state === "loading") return;
+    if (file) {
+      setOpen(true);
+      return;
+    }
+    setState("loading");
+    try {
+      const res = await fetch(`/api/recruitment/manager-engagement/candidates/${candidate.candidateId}/files`);
+      const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+      if (!res.ok) throw new Error("files unavailable");
+      const files = Array.isArray(data.files) ? (data.files as CandidateFileSummary[]) : [];
+      const cv = files.find((entry) => entry.kind === "cv") ?? null;
+      if (!cv) {
+        setState("none");
+        return;
+      }
+      setFile(cv);
+      setState("idle");
+      setOpen(true);
+    } catch {
+      setState("error");
+    }
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+      <button
+        className="text-left text-sm font-medium text-slate-800 underline-offset-2 hover:text-slate-950 hover:underline disabled:opacity-60"
+        disabled={state === "loading"}
+        onClick={handleClick}
+        type="button"
+      >
+        {label}
+      </button>
+      {state === "loading" ? <span className="text-xs text-slate-400">Opening…</span> : null}
+      {state === "none" ? <span className="text-xs text-slate-400">No CV file on record</span> : null}
+      {state === "error" ? <span className="text-xs text-rose-500">Couldn&rsquo;t open the CV</span> : null}
+      {open && file ? (
+        <CvPreviewModal
+          downloadUrl={`/api/recruitment/manager-engagement/candidates/${candidate.candidateId}/files/${file.id}`}
+          fileName={file.fileName}
+          mimeType={file.mimeType}
+          onClose={() => setOpen(false)}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * The CVs behind one manager's numbers, GROUPED BY AREA. ONE component, rendered in both the desktop
+ * expanded row and the phone card — the same reasoning targets-workspace keeps its drill-down in a
+ * single <SourceBreakdown />: two copies could drift and show a manager two different lists.
+ *
+ * The owner asked (2026-09-01) that the expanded list be grouped by the CV's area. The candidates
+ * already arrive newest-first, so bucketing them in order keeps that order inside each area. Named
+ * areas sort first (A→Z), then the district catch-all, then anything hand-pushed with no folder.
  */
 function ManagerCandidateList({ candidates }: { candidates: readonly ManagerCvEngagementCandidate[] }) {
+  const groups = useMemo(() => {
+    const byArea = new Map<string, ManagerCvEngagementCandidate[]>();
+    for (const candidate of candidates) {
+      const key = candidate.area?.trim() || SENT_DIRECTLY_LABEL;
+      const list = byArea.get(key);
+      if (list) list.push(candidate);
+      else byArea.set(key, [candidate]);
+    }
+    const rank = (name: string) => (name === SENT_DIRECTLY_LABEL ? 2 : name === NO_AREA_LABEL ? 1 : 0);
+    return [...byArea.keys()]
+      .sort((left, right) => rank(left) - rank(right) || left.localeCompare(right))
+      .map((area) => ({ area, list: byArea.get(area) ?? [] }));
+  }, [candidates]);
+
   if (candidates.length === 0) {
     return <p className="text-sm text-slate-500">No CVs recorded for this manager.</p>;
   }
+
   return (
-    <ul className="divide-y divide-slate-100">
-      {candidates.map((candidate) => (
-        <li className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 py-2.5" key={candidate.candidateId}>
-          <div className="min-w-0">
-            <div className="text-sm font-medium text-slate-800">{candidate.candidateName || "Unnamed candidate"}</div>
-            <div className="mt-0.5 text-xs text-slate-500">
-              {[candidate.positionLabel, candidate.sentAt ? `Sent ${cairoDate(candidate.sentAt)}` : null]
-                .filter(Boolean)
-                .join(" · ")}
-            </div>
+    <div className="space-y-4">
+      {groups.map(({ area, list }) => (
+        <div key={area}>
+          <div className="mb-1 flex items-center gap-2">
+            <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">{area}</span>
+            <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[11px] font-medium tabular-nums text-slate-500">
+              {list.length}
+            </span>
           </div>
-          <div className="flex shrink-0 items-center gap-2">
-            {candidate.opened ? <Pill tone="green">Opened</Pill> : <Pill tone="slate">Not opened</Pill>}
-            {candidate.answered ? (
-              <Pill tone="green">{candidateStatusLabel(candidate.status)}</Pill>
-            ) : (
-              <Pill tone="amber">Awaiting</Pill>
-            )}
-          </div>
-        </li>
+          <ul className="divide-y divide-slate-100">
+            {list.map((candidate) => (
+              <li className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 py-2.5" key={candidate.candidateId}>
+                <div className="min-w-0">
+                  <EngagementCvName candidate={candidate} />
+                  <div className="mt-0.5 text-xs text-slate-500">
+                    {candidate.arrivedAt ? `Arrived ${cairoDate(candidate.arrivedAt)}` : ""}
+                  </div>
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  {candidate.opened ? <Pill tone="green">Opened</Pill> : <Pill tone="slate">Not opened</Pill>}
+                  {candidate.answered ? (
+                    <Pill tone="green">{candidateStatusLabel(candidate.status)}</Pill>
+                  ) : (
+                    <Pill tone="amber">Awaiting</Pill>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
       ))}
-    </ul>
+    </div>
   );
 }
 
@@ -126,7 +251,7 @@ export function ManagerEngagementView({ report }: { report: ManagerCvEngagementR
     const needle = query.trim().toLowerCase();
     if (!needle) return report.rows;
     return report.rows.filter((row) =>
-      [row.managerName, row.managerJobTitle, row.managerArea, row.managerRegion]
+      [row.managerName, row.managerJobTitle, row.managerArea, row.managerLine]
         .filter(Boolean)
         .some((field) => String(field).toLowerCase().includes(needle)),
     );
@@ -138,7 +263,7 @@ export function ManagerEngagementView({ report }: { report: ManagerCvEngagementR
     <div className="space-y-6">
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
         <StatTile label="Managers" value={String(totals.managers)} hint={report.scoped ? "on your line" : "all lines"} />
-        <StatTile label="CVs received" value={String(totals.received)} hint="pushed to a manager" />
+        <StatTile label="CVs received" value={String(totals.received)} hint="in his My Candidates" />
         <StatTile label="Opened" value={String(totals.opened)} hint="manager opened the CV" />
         <StatTile label="Not opened" value={String(totals.notOpened)} hint="still unopened" tone={totals.notOpened > 0 ? "warn" : "plain"} />
         <StatTile label="Answered" value={String(totals.answered)} hint="a decision recorded" />
@@ -148,10 +273,12 @@ export function ManagerEngagementView({ report }: { report: ManagerCvEngagementR
           only counted from the day this feature shipped, so a CV a manager read on paper months ago
           reads as not-opened until he opens it in the app. Say so, once, at the top. */}
       <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
-        <span className="font-semibold">Reading &ldquo;Opened&rdquo;:</span> a CV counts as opened once the manager opens
-        it in the app from this feature&rsquo;s launch onward. &ldquo;Answered&rdquo; has full history — it reads the
-        candidate&rsquo;s recorded decision. So an older CV can show <em>not opened</em> yet <em>answered</em>: the
-        manager acted on it before opens were tracked.
+        <span className="font-semibold">Reading these numbers:</span> &ldquo;Received&rdquo; is every CV in the
+        manager&rsquo;s <em>My Candidates</em> folder — the ones in his areas plus anything sent straight to him —
+        not only what was hand-pushed. A CV counts as &ldquo;Opened&rdquo; once he opens it in the app from this
+        feature&rsquo;s launch onward, so the large &ldquo;Not opened&rdquo; on older CVs is real: nothing recorded a
+        manager opening a CV before tracking began. &ldquo;Answered&rdquo; has full history — it reads the
+        candidate&rsquo;s recorded decision — so an older CV can show <em>not opened</em> yet <em>answered</em>.
       </div>
 
       <div>
@@ -223,9 +350,14 @@ export function ManagerEngagementView({ report }: { report: ManagerCvEngagementR
                     type="button"
                   >
                     <div className="min-w-0">
-                      <div className="text-sm font-semibold text-slate-900">{row.managerName || row.managerHrId}</div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-sm font-semibold text-slate-900">{row.managerName || row.managerHrId}</span>
+                        {row.inactive ? (
+                          <InactiveBadge label={row.employmentStatusLabel} lastWorkingDate={row.lastWorkingDate} />
+                        ) : null}
+                      </div>
                       <div className="mt-0.5 text-xs text-slate-500">
-                        {[row.managerJobTitle, row.managerArea, row.managerRegion].filter(Boolean).join(" · ") || "—"}
+                        {[row.managerJobTitle, row.managerArea, row.managerLine].filter(Boolean).join(" · ") || "—"}
                       </div>
                       <ManagerCountStrip row={row} />
                     </div>
@@ -260,11 +392,14 @@ function FragmentRow({ row, isOpen, onToggle }: { row: ManagerCvEngagementRow; i
         onClick={onToggle}
       >
         <td className="px-4 py-3">
-          <div className="font-medium text-slate-800">{row.managerName || row.managerHrId}</div>
+          <div className="flex items-center gap-2">
+            <span className="font-medium text-slate-800">{row.managerName || row.managerHrId}</span>
+            {row.inactive ? <InactiveBadge label={row.employmentStatusLabel} lastWorkingDate={row.lastWorkingDate} /> : null}
+          </div>
           {row.managerJobTitle ? <div className="text-xs text-slate-500">{row.managerJobTitle}</div> : null}
         </td>
-        <td className="px-4 py-3 text-slate-600">
-          {[row.managerArea, row.managerRegion].filter(Boolean).join(" · ") || "—"}
+        <td className="whitespace-nowrap px-4 py-3 text-slate-600">
+          {[row.managerArea, row.managerLine].filter(Boolean).join(" / ") || "—"}
         </td>
         <td className="px-4 py-3 text-right tabular-nums text-slate-800">{row.received}</td>
         <td className="px-4 py-3 text-right tabular-nums text-emerald-700">{row.opened}</td>
