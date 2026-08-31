@@ -20,6 +20,7 @@ import { hrIdLookupKeys } from "@/lib/hr-id";
 import { logError } from "@/lib/observability/log";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { CrmCheckinRow, CrmVisitRow } from "@/lib/crm/types";
+import { ilikeAnyFilter } from "@/lib/supabase/search-filter";
 import type {
   VisitsReportData,
   VisitsReportExportResult,
@@ -974,12 +975,8 @@ function applyVisitsReportFilters(
   if (filters.visitType) result = result.eq("visit_type_description", filters.visitType);
   const term = filters.search?.trim();
   if (term) {
-    const escaped = term.replace(/[%,()]/g, " ").trim();
-    if (escaped) {
-      result = result.or(
-        `agent_name.ilike.%${escaped}%,double_name.ilike.%${escaped}%,contact_name.ilike.%${escaped}%,comment.ilike.%${escaped}%`,
-      );
-    }
+    const orExpr = ilikeAnyFilter(["agent_name", "double_name", "contact_name", "comment"], term);
+    if (orExpr) result = result.or(orExpr);
   }
   if (filters.mappingStatus === "agent_unmapped") result = result.is("agent_hr_id", null);
   else if (filters.mappingStatus === "double_unmapped") result = result.is("double_hr_id", null);

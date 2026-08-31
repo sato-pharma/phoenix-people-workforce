@@ -10,6 +10,7 @@ import { normalizeCodeKey } from "@/lib/sales/normalizer/resolvers";
 import type { CustomerBrickCorrection } from "@/lib/sales/normalizer/types";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { excelCellText, loadExcelWorkbook } from "@/lib/uploads/exceljs-rows";
+import { ilikeAnyFilter } from "@/lib/supabase/search-filter";
 import { validateSpreadsheetFile, xlsxSpreadsheetValidation } from "@/lib/uploads/spreadsheets";
 
 // The customer -> brick crosswalk (code / name / address -> brick), for the read-only "Database
@@ -105,8 +106,8 @@ export async function listCustomerMapPage(input: {
     if (sourceFilter) query = query.eq("source", sourceFilter);
     const search = String(input.search ?? "").trim();
     if (search) {
-      const safe = search.replace(/[%,]/g, " ");
-      query = query.or(`customer_code.ilike.%${safe}%,customer_name.ilike.%${safe}%,address.ilike.%${safe}%`);
+      const filter = ilikeAnyFilter(["customer_code", "customer_name", "address"], search);
+      if (filter) query = query.or(filter);
     }
     return query.order("customer_code", { ascending: true }).range(offset, offset + limit - 1);
   };

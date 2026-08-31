@@ -3,6 +3,7 @@ import { canonicalHrIdForDisplay, canonicalHrIdKey } from "@/lib/hr-id";
 import { getBlockedIps, type BlockedIp } from "@/lib/auth/ip-blocklist";
 import { deriveAppErrorStatus, getCurrentReleaseTag, shouldPersistErrorEvents, signatureKey, type IssueStatus } from "@/lib/error-monitor/derived-status";
 import { logError } from "@/lib/observability/log";
+import { ilikeAnyFilter } from "@/lib/supabase/search-filter";
 
 export type ErrorEventSource = "server" | "client";
 
@@ -221,7 +222,8 @@ export async function getErrorEvents(filter: ErrorEventFilter = {}): Promise<Err
 
   if (filter.hrId) query = query.ilike("hr_id", `%${filter.hrId}%`);
   if (filter.moduleKey) {
-    query = query.or(`module_key.ilike.%${filter.moduleKey}%,module_label.ilike.%${filter.moduleKey}%`);
+    const moduleFilter = ilikeAnyFilter(["module_key", "module_label"], filter.moduleKey);
+    if (moduleFilter) query = query.or(moduleFilter);
   }
   if (filter.source) query = query.eq("source", filter.source);
   if (filter.dateFrom) query = query.gte("created_at", filter.dateFrom);
