@@ -66,7 +66,9 @@ function buildCustodyValues(data: HiringPackData): Partial<Record<CustodyToken, 
     // so the two papers in one person's file name the same party the same way.
     EMPLOYEE_NAME: employee.nameAr ?? employee.fullName,
     NATIONAL_ID: employee.nationalId ?? "",
-    JOB_TITLE: profile.jobTitleAr ?? employee.jobTitle ?? "",
+    // Arabic only — the English title off the employee record does not belong on an Arabic
+    // instrument. Same rule as the contract; see `render-contract.ts`.
+    JOB_TITLE: profile.jobTitleAr ?? "",
     DEPARTMENT: employee.departmentAr ?? "",
     HR_ID: employee.hrId,
     PHONE: employee.mobileNumber ?? "",
@@ -94,15 +96,19 @@ function buildCustodyValues(data: HiringPackData): Partial<Record<CustodyToken, 
 function fieldValue(field: CustodyField, values: Partial<Record<CustodyToken, string>>): string {
   const raw = field.token ? values[field.token] : undefined;
   const text = typeof raw === "string" ? raw.trim() : "";
+  // The token travels into the markup so the preview screen can offer this value for correction on
+  // the page itself. Inert in print. Carried on the BLANK rule too, deliberately — an empty dotted
+  // rule is the single most useful thing to be able to fill in from the page.
+  const key = field.token ? ` data-hp-key="${escapeHtml(field.token)}"` : "";
 
   if (text.length === 0) {
     const rule = field.wide ? CUSTODY_BLANK_RULE_WIDE : CUSTODY_BLANK_RULE;
-    return `<span class="rule-line">${escapeHtml(rule)}</span>`;
+    return `<span class="rule-line"${key}>${escapeHtml(rule)}</span>`;
   }
   if (field.ltr) {
-    return `<span class="val" dir="ltr">${escapeHtml(text)}</span>`;
+    return `<span class="val" dir="ltr"${key}>${escapeHtml(text)}</span>`;
   }
-  return `<span class="val">${escapeHtml(text)}</span>`;
+  return `<span class="val"${key}>${escapeHtml(text)}</span>`;
 }
 
 /** A labelled box. `wide` ones take the whole row instead of sharing it. */

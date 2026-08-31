@@ -143,19 +143,24 @@ export type HiringPackProfileInput = {
  * What "What Phoenix already knows" edits, when it is edited at all.
  *
  * Every field here writes straight to `employees` — there is no second copy, on purpose (see the
- * screen's own note on that). `lineId` is what "Department" actually is: the employee's line
- * assignment, with the Arabic name in `HiringPackEmployeeFacts.departmentAr` derived from it, not
- * a free-text field of its own. `grossSalary` and `socialInsuranceWage` are re-run through the
- * same payroll formula and region derivation the full employee editor uses, and are refused for
+ * screen's own note on that). `baseSalary` is re-run through the same payroll formula the full
+ * employee editor uses, and `lineId` through the same region derivation; both are refused for
  * anyone already resigned or terminated — see `saveHiringPackEmployeeFacts`.
+ *
+ * `lineId` is the product line. It is NOT the department: that used to be the same field, and the
+ * owner corrected it on 2026-08-31. The department comes from `employees.department_id` and is not
+ * edited here.
+ *
+ * There is no insurance wage to submit. It is derived from the base salary now
+ * (`insurance-wage.ts`), so an editable box for it would take a number and then ignore it.
  */
 export type HiringPackEmployeeFactsInput = {
   fullName?: string | null;
   nameAr?: string | null;
   nationalId?: string | null;
   socialInsuranceNumber?: string | null;
-  socialInsuranceWage?: number | null;
-  grossSalary?: number | null;
+  /** «الأجر الأساسي» — the figure the contract prints and the insurance wage is derived from. */
+  baseSalary?: number | null;
   birthDate?: string | null;
   hireDate?: string | null;
   jobTitle?: string | null;
@@ -263,12 +268,24 @@ export type HiringPackEmployeeFacts = {
   nationalId: string | null;
   socialInsuranceNumber: string | null;
   socialInsuranceWage: number | null;
+  /**
+   * The contract's salary — «الأجر الأساسي», the figure مادة (2) names and مادة (10) spells out.
+   *
+   * The pack printed `grossSalary` here until 2026-08-31, when the owner corrected it: "the salary
+   * and department we use is the base salary". Gross is base plus its allowances (measured across
+   * production it runs about 1.29× base), so every contract printed to date overstates the salary
+   * it commits the company to.
+   */
+  baseSalary: number | null;
   grossSalary: number | null;
   birthDate: string | null;
   hireDate: string | null;
   jobTitle: string | null;
+  /** Arabic for the department that employs this person — NOT his product line. */
   departmentAr: string | null;
-  /** The line `departmentAr` was derived from — the value an edit to "Department" actually writes. */
+  /** The department `departmentAr` was resolved from. */
+  departmentId: number | null;
+  /** The product line. Sales geography, never the contract's إدارة — see `departmentAr`. */
   lineId: number | null;
   residenceAddress: string | null;
   residenceCity: string | null;

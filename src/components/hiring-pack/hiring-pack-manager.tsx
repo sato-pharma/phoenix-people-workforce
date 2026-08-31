@@ -45,6 +45,12 @@ import {
   AdminStatCard,
   AdminTableShell,
 } from "@/components/admin/admin-design-system";
+import { HiringPackPaperEditor } from "@/components/hiring-pack/paper-editor";
+import {
+  INSURANCE_WAGE_CEILING,
+  INSURANCE_WAGE_DIVISOR,
+  insuranceWageFromBase,
+} from "@/lib/hiring-pack/insurance-wage";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -327,6 +333,21 @@ const DEFAULT_COPIES: Record<HiringPackDocument, number> = {
   clearanceCompany: systemContractDefaults.clearanceCompanyCopies,
 };
 
+/**
+ * How many copies a document is about to be produced in, from whatever is in its box.
+ *
+ * Shared by the print button and the preview so the two cannot disagree: a preview showing one copy
+ * of a contract that prints as four is a preview of a different document, and the count is exactly
+ * the sort of thing nobody re-checks after reading the page. The clamp matches the route's own —
+ * see `resolveCopies` there — because a value the server would reject must not be shown here as
+ * though it had been accepted.
+ */
+function resolveCopyCount(raw: string | undefined, document: HiringPackDocument): number {
+  const requested = Number.parseInt(raw ?? "", 10);
+  if (!Number.isFinite(requested) || requested < 1) return DEFAULT_COPIES[document];
+  return Math.min(requested, 20);
+}
+
 type FormState = Record<string, string>;
 
 function emptyForm(): FormState {
@@ -407,14 +428,13 @@ const FACTS_KEYS = [
   "hireDate",
   "jobTitle",
   "lineId",
-  "grossSalary",
-  "socialInsuranceWage",
+  "baseSalary",
   "mobileNumber",
   "workEmail",
   "residenceAddress",
 ] as const;
 
-/** Text/date fields on the facts editor. Salary, insurance wage and department get their own JSX — see below. */
+/** Text/date fields on the facts editor. Salary and line get their own JSX — see below. */
 const FACTS_TEXT_FIELDS: readonly {
   key: (typeof FACTS_KEYS)[number];
   labelEn: string;
@@ -447,9 +467,9 @@ function emptyFactsForm(): FormState {
 function factsFormFromPack(pack: HiringPackData): FormState {
   const { employee } = pack;
   return {
+    baseSalary: employee.baseSalary === null ? "" : String(employee.baseSalary),
     birthDate: employee.birthDate ?? "",
     fullName: employee.fullName,
-    grossSalary: employee.grossSalary === null ? "" : String(employee.grossSalary),
     hireDate: employee.hireDate ?? "",
     jobTitle: employee.jobTitle ?? "",
     lineId: employee.lineId === null ? "" : String(employee.lineId),
@@ -458,7 +478,6 @@ function factsFormFromPack(pack: HiringPackData): FormState {
     nationalId: employee.nationalId ?? "",
     residenceAddress: employee.residenceAddress ?? "",
     socialInsuranceNumber: employee.socialInsuranceNumber ?? "",
-    socialInsuranceWage: employee.socialInsuranceWage === null ? "" : String(employee.socialInsuranceWage),
     workEmail: employee.workEmail ?? "",
   };
 }
@@ -466,12 +485,11 @@ function factsFormFromPack(pack: HiringPackData): FormState {
 /** What the facts editor sends. Blank text clears the field; blank numbers and the line clear too. */
 function factsPayloadFromForm(state: FormState) {
   const line = Number.parseInt(state.lineId ?? "", 10);
-  const gross = Number.parseFloat(state.grossSalary ?? "");
-  const wage = Number.parseFloat(state.socialInsuranceWage ?? "");
+  const base = Number.parseFloat(state.baseSalary ?? "");
   return {
+    baseSalary: Number.isFinite(base) ? base : null,
     birthDate: state.birthDate?.trim() || null,
     fullName: state.fullName?.trim() || null,
-    grossSalary: Number.isFinite(gross) ? gross : null,
     hireDate: state.hireDate?.trim() || null,
     jobTitle: state.jobTitle?.trim() || null,
     lineId: Number.isFinite(line) ? line : null,
@@ -480,7 +498,6 @@ function factsPayloadFromForm(state: FormState) {
     nationalId: state.nationalId?.trim() || null,
     residenceAddress: state.residenceAddress?.trim() || null,
     socialInsuranceNumber: state.socialInsuranceNumber?.trim() || null,
-    socialInsuranceWage: Number.isFinite(wage) ? wage : null,
     workEmail: state.workEmail?.trim() || null,
   };
 }
@@ -609,6 +626,10 @@ export function HiringPackManager({ canManage, candidates, initialError, initial
   const [factsForm, setFactsForm] = useState<FormState>(
     initialPack ? factsFormFromPack(initialPack) : emptyFactsForm(),
   );
+  // What the papers will print as the insurance wage, off the base salary AS TYPED — not off the
+  // saved record. Someone correcting a base salary should see the insurance wage move with it
+  // before they press Save, because that figure goes on Form 1 and they cannot edit it directly.
+  const typedInsuranceWage = insuranceWageFromBase(Number.parseFloat(factsForm.baseSalary ?? ""));
   const [copies, setCopies] = useState<Record<HiringPackDocument, string>>(() =>
     signDatesShape((document) => String(DEFAULT_COPIES[document])),
   );
@@ -620,6 +641,17 @@ export function HiringPackManager({ canManage, candidates, initialError, initial
   >("");
   const [error, setError] = useState<string | null>(initialError);
   const [notice, setNotice] = useState<string | null>(null);
+  /**
+   * Which document is open on screen as the page it prints as, if any.
+   *
+   * `versionId` is only ever set from the Archive, where the point is to look at a SUPERSEDED
+   * template. Null means the same thing it means to the print route: not "the current text", but
+   * "whichever version this employee's signature resolves to".
+   */
+  const [preview, setPreview] = useState<{
+    document: HiringPackDocument;
+    versionId: string | null;
+  } | null>(null);
 
   const blockingGaps = useMemo(() => (pack?.gaps ?? []).filter((gap) => gap.blocking), [pack]);
   const advisoryGaps = useMemo(() => (pack?.gaps ?? []).filter((gap) => !gap.blocking), [pack]);
@@ -658,6 +690,9 @@ export function HiringPackManager({ canManage, candidates, initialError, initial
       setSelectedHrId(hrId);
       setNotice(null);
       setError(null);
+      // A preview is one person's paper. Leaving it open across a change of employee would show the
+      // previous person's document under the new person's name until it happened to reload.
+      setPreview(null);
       if (!hrId) {
         setPack(null);
         setForm(emptyForm());
@@ -815,11 +850,7 @@ export function HiringPackManager({ canManage, candidates, initialError, initial
   const openPrint = useCallback(
     (document: HiringPackDocument, versionId?: string) => {
       if (!pack) return;
-      const requested = Number.parseInt(copies[document], 10);
-      const count =
-        Number.isFinite(requested) && requested >= 1
-          ? Math.min(requested, 20)
-          : DEFAULT_COPIES[document];
+      const count = resolveCopyCount(copies[document], document);
       // No `version` parameter is the normal case, and it does NOT mean "print the current text":
       // the route resolves the version this employee signed. The parameter is only for deliberately
       // asking for a superseded template from the Archive.
@@ -829,6 +860,18 @@ export function HiringPackManager({ canManage, candidates, initialError, initial
     },
     [copies, pack],
   );
+
+  /**
+   * Open a document on screen as the page it prints as.
+   *
+   * Deliberately does NOT go through `openPrint`: the preview asks the same route for the same
+   * bytes but with `preview=1`, which is what stops a look at the paper being recorded as a print.
+   */
+  const openPreview = useCallback((document: HiringPackDocument, versionId?: string) => {
+    setError(null);
+    setNotice(null);
+    setPreview({ document, versionId: versionId ?? null });
+  }, []);
 
   const setCopiesFor = useCallback((document: HiringPackDocument, value: string) => {
     setCopies((current) => ({ ...current, [document]: value }));
@@ -876,6 +919,26 @@ export function HiringPackManager({ canManage, candidates, initialError, initial
             <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
             <span>{notice}</span>
           </AdminCallout>
+        ) : null}
+
+        {/*
+          THE OPEN DOCUMENT SITS AT THE TOP, above the fill boxes rather than beside the card it was
+          opened from. Whichever of the nine is open, it appears in the same place — and the values
+          in it are the same values the boxes below hold, so having both on screen at once is what
+          makes the connection between them obvious instead of something to be learned.
+        */}
+        {pack && preview ? (
+          <HiringPackPaperEditor
+            copies={resolveCopyCount(copies[preview.document], preview.document)}
+            documentKey={preview.document}
+            documentLabel={DOCUMENT_LABELS[preview.document]}
+            hrId={pack.employee.hrId}
+            key={`${pack.employee.hrId}-${preview.document}-${preview.versionId ?? "current"}`}
+            onClose={() => setPreview(null)}
+            onPackChange={applyPack}
+            pack={pack}
+            versionId={preview.versionId}
+          />
         ) : null}
 
         <AdminTableShell
@@ -1025,7 +1088,7 @@ export function HiringPackManager({ canManage, candidates, initialError, initial
 
                 <div>
                   <h3 className="text-sm font-black uppercase tracking-[0.1em] text-phx-ink">
-                    Salary and department
+                    Salary, line and department
                   </h3>
                   <p className="mt-0.5 text-xs font-semibold text-phx-ink-soft">
                     {employee.departed
@@ -1034,43 +1097,42 @@ export function HiringPackManager({ canManage, candidates, initialError, initial
                   </p>
                   <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                     <div>
-                      <label className={labelClassName} htmlFor="hiring-pack-fact-grossSalary">
-                        Gross salary <span className="text-phx-ink-faint">EGP</span>
+                      <label className={labelClassName} htmlFor="hiring-pack-fact-baseSalary">
+                        Base salary <span className="text-phx-ink-faint">الأجر الأساسي · EGP</span>
                       </label>
                       <Input
                         className={inputClassName}
                         disabled={!canManage || employee.departed}
-                        id="hiring-pack-fact-grossSalary"
+                        id="hiring-pack-fact-baseSalary"
                         inputMode="decimal"
                         onChange={(event) =>
-                          setFactsForm((current) => ({ ...current, grossSalary: event.target.value }))
+                          setFactsForm((current) => ({ ...current, baseSalary: event.target.value }))
                         }
                         type="number"
-                        value={factsForm.grossSalary ?? ""}
+                        value={factsForm.baseSalary ?? ""}
                       />
                     </div>
                     <div>
-                      <label className={labelClassName} htmlFor="hiring-pack-fact-socialInsuranceWage">
-                        Insurance wage <span className="text-phx-ink-faint">EGP</span>
+                      <label className={labelClassName} htmlFor="hiring-pack-fact-insuranceWage">
+                        Insurance wage <span className="text-phx-ink-faint">الأجر التأميني · EGP</span>
                       </label>
                       <Input
                         className={inputClassName}
-                        disabled={!canManage || employee.departed}
-                        id="hiring-pack-fact-socialInsuranceWage"
-                        inputMode="decimal"
-                        onChange={(event) =>
-                          setFactsForm((current) => ({
-                            ...current,
-                            socialInsuranceWage: event.target.value,
-                          }))
+                        disabled
+                        id="hiring-pack-fact-insuranceWage"
+                        value={
+                          typedInsuranceWage === null ? "" : typedInsuranceWage.toLocaleString("en-US")
                         }
-                        type="number"
-                        value={factsForm.socialInsuranceWage ?? ""}
                       />
+                      <p className="mt-1 text-phx-xs font-semibold text-phx-ink-faint">
+                        Base ÷ {INSURANCE_WAGE_DIVISOR}, up to the{" "}
+                        {INSURANCE_WAGE_CEILING.toLocaleString("en-US")} ceiling. Change the base
+                        salary and this follows.
+                      </p>
                     </div>
                     <div>
                       <label className={labelClassName} htmlFor="hiring-pack-fact-lineId">
-                        Department <span className="text-phx-ink-faint">القسم</span>
+                        Line <span className="text-phx-ink-faint">الخط</span>
                       </label>
                       {lines.length > 0 ? (
                         <SearchableSelect
@@ -1092,17 +1154,27 @@ export function HiringPackManager({ canManage, candidates, initialError, initial
                         </SearchableSelect>
                       ) : (
                         <>
-                          <Input
-                            className={inputClassName}
-                            disabled
-                            id="hiring-pack-fact-lineId"
-                            value={employee.departmentAr ?? ""}
-                          />
+                          <Input className={inputClassName} disabled id="hiring-pack-fact-lineId" value="" />
                           <p className="mt-1 text-phx-xs font-semibold text-phx-ink-faint">
-                            The department list did not load — reload the page to edit this.
+                            The line list did not load — reload the page to edit this.
                           </p>
                         </>
                       )}
+                    </div>
+                    <div>
+                      <label className={labelClassName} htmlFor="hiring-pack-fact-department">
+                        Department <span className="text-phx-ink-faint">الإدارة</span>
+                      </label>
+                      <Input
+                        className={inputClassName}
+                        disabled
+                        id="hiring-pack-fact-department"
+                        value={employee.departmentAr ?? ""}
+                      />
+                      <p className="mt-1 text-phx-xs font-semibold text-phx-ink-faint">
+                        This is what the papers print, and it is not the line. Change it on the
+                        employee record.
+                      </p>
                     </div>
                   </div>
                 </div>
@@ -1201,6 +1273,7 @@ export function HiringPackManager({ canManage, candidates, initialError, initial
                 gaps={gapsFor(pack.gaps, "contract")}
                 onCopiesChange={(value) => setCopiesFor("contract", value)}
                 footnote={contractVersionNote(pack.profile.contractTemplateVersion)}
+                onPreview={() => openPreview("contract")}
                 onPrint={() => openPrint("contract")}
                 onSign={() => void recordSignature("contract")}
                 onSignDateChange={(value) => setSignDateFor("contract", value)}
@@ -1217,6 +1290,7 @@ export function HiringPackManager({ canManage, candidates, initialError, initial
                 copies={copies.form1}
                 gaps={gapsFor(pack.gaps, "form1")}
                 onCopiesChange={(value) => setCopiesFor("form1", value)}
+                onPreview={() => openPreview("form1")}
                 onPrint={() => openPrint("form1")}
                 onSign={() => void recordSignature("form1")}
                 onSignDateChange={(value) => setSignDateFor("form1", value)}
@@ -1247,6 +1321,7 @@ export function HiringPackManager({ canManage, candidates, initialError, initial
                 gaps={gapsFor(pack.gaps, "custodyLaptop")}
                 onCopiesChange={(value) => setCopiesFor("custodyLaptop", value)}
                 footnote="The device details, values and handover date print blank — Phoenix holds no asset register, and a serial number is read off the machine rather than recalled. The name, ID, job title and address are filled."
+                onPreview={() => openPreview("custodyLaptop")}
                 onPrint={() => openPrint("custodyLaptop")}
                 onSign={() => undefined}
                 onSignDateChange={() => undefined}
@@ -1265,6 +1340,7 @@ export function HiringPackManager({ canManage, candidates, initialError, initial
                 gaps={gapsFor(pack.gaps, "custodyMobile")}
                 onCopiesChange={(value) => setCopiesFor("custodyMobile", value)}
                 footnote="Same paper as the laptop receipt, with the phone's own item list and an IMEI and SIM block in place of the Windows fields."
+                onPreview={() => openPreview("custodyMobile")}
                 onPrint={() => openPrint("custodyMobile")}
                 onSign={() => undefined}
                 onSignDateChange={() => undefined}
@@ -1405,6 +1481,7 @@ export function HiringPackManager({ canManage, candidates, initialError, initial
                 copies={copies.form6}
                 gaps={gapsFor(pack.gaps, "form6")}
                 onCopiesChange={(value) => setCopiesFor("form6", value)}
+                onPreview={() => openPreview("form6")}
                 onPrint={() => openPrint("form6")}
                 onSign={() => void recordSignature("form6")}
                 onSignDateChange={(value) => setSignDateFor("form6", value)}
@@ -1427,6 +1504,7 @@ export function HiringPackManager({ canManage, candidates, initialError, initial
                   copies={copies.resignation}
                   gaps={gapsFor(pack.gaps, "resignation")}
                   onCopiesChange={(value) => setCopiesFor("resignation", value)}
+                  onPreview={() => openPreview("resignation")}
                   onPrint={() => openPrint("resignation")}
                   onSign={() => void recordSignature("resignation")}
                   onSignDateChange={(value) => setSignDateFor("resignation", value)}
@@ -1444,6 +1522,7 @@ export function HiringPackManager({ canManage, candidates, initialError, initial
                   copies={copies.mutualTermination}
                   gaps={gapsFor(pack.gaps, "mutualTermination")}
                   onCopiesChange={(value) => setCopiesFor("mutualTermination", value)}
+                  onPreview={() => openPreview("mutualTermination")}
                   onPrint={() => openPrint("mutualTermination")}
                   onSign={() => void recordSignature("mutualTermination")}
                   onSignDateChange={(value) => setSignDateFor("mutualTermination", value)}
@@ -1476,6 +1555,7 @@ export function HiringPackManager({ canManage, candidates, initialError, initial
                 copies={copies.clearanceEmployee}
                 gaps={gapsFor(pack.gaps, "clearanceEmployee")}
                 onCopiesChange={(value) => setCopiesFor("clearanceEmployee", value)}
+                onPreview={() => openPreview("clearanceEmployee")}
                 onPrint={() => openPrint("clearanceEmployee")}
                 onSign={() => void recordSignature("clearanceEmployee")}
                 onSignDateChange={(value) => setSignDateFor("clearanceEmployee", value)}
@@ -1492,6 +1572,7 @@ export function HiringPackManager({ canManage, candidates, initialError, initial
                 copies={copies.clearanceCompany}
                 gaps={gapsFor(pack.gaps, "clearanceCompany")}
                 onCopiesChange={(value) => setCopiesFor("clearanceCompany", value)}
+                onPreview={() => openPreview("clearanceCompany")}
                 onPrint={() => openPrint("clearanceCompany")}
                 onSign={() => void recordSignature("clearanceCompany")}
                 onSignDateChange={(value) => setSignDateFor("clearanceCompany", value)}
@@ -1513,6 +1594,7 @@ export function HiringPackManager({ canManage, candidates, initialError, initial
 
         <TemplateArchive
           employeeSelected={Boolean(pack)}
+          onPreview={(document, versionId) => openPreview(document, versionId)}
           onPrint={(document, versionId) => openPrint(document, versionId)}
         />
       </div>
@@ -1633,9 +1715,12 @@ function contractVersionNote(signedVersionId: string | null): string | null {
  */
 function TemplateArchive({
   employeeSelected,
+  onPreview,
   onPrint,
 }: {
   employeeSelected: boolean;
+  /** Read a superseded template on screen before committing it to paper. */
+  onPreview: (document: HiringPackDocument, versionId: string) => void;
   onPrint: (document: HiringPackDocument, versionId: string) => void;
 }) {
   const archived = archivedTemplateVersions();
@@ -1689,16 +1774,28 @@ function TemplateArchive({
                   ) : null}
                   <p className="mt-1 text-xs leading-5 text-phx-ink-faint">{entry.note}</p>
                 </div>
-                <Button
-                  className="h-10 shrink-0 gap-2 rounded-xl"
-                  disabled={!employeeSelected}
-                  onClick={() => onPrint(entry.document, entry.id)}
-                  type="button"
-                  variant="outline"
-                >
-                  <Printer className="h-4 w-4" />
-                  Print this version
-                </Button>
+                <div className="flex shrink-0 flex-wrap items-center gap-2">
+                  <Button
+                    className="h-10 gap-2 rounded-xl"
+                    disabled={!employeeSelected}
+                    onClick={() => onPreview(entry.document, entry.id)}
+                    type="button"
+                    variant="outline"
+                  >
+                    <FileText className="h-4 w-4" />
+                    Read it
+                  </Button>
+                  <Button
+                    className="h-10 gap-2 rounded-xl"
+                    disabled={!employeeSelected}
+                    onClick={() => onPrint(entry.document, entry.id)}
+                    type="button"
+                    variant="outline"
+                  >
+                    <Printer className="h-4 w-4" />
+                    Print this version
+                  </Button>
+                </div>
               </div>
             );
           })}
@@ -1726,6 +1823,7 @@ function DocumentCard({
   footnote,
   gaps,
   onCopiesChange,
+  onPreview,
   onPrint,
   onSign,
   onSignDateChange,
@@ -1744,6 +1842,8 @@ function DocumentCard({
   footnote?: string | null;
   gaps: HiringPackGap[];
   onCopiesChange: (value: string) => void;
+  /** Open this document on screen as the page it prints as, with its values editable in place. */
+  onPreview: () => void;
   onPrint: () => void;
   onSign: () => void;
   onSignDateChange: (value: string) => void;
@@ -1812,7 +1912,22 @@ function DocumentCard({
               value={copies}
             />
           </div>
-          <Button className="h-11 gap-2 rounded-2xl" onClick={onPrint}>
+          {/*
+            PREVIEW LEADS, PRINT FOLLOWS. The preview is the same page the printer gets, so reading
+            it costs nothing and catches a wrong value while it is still free to fix — which is the
+            whole reason it exists. Print stays one click away for the case where nothing needs
+            checking, and it is the button that stamps the document as printed.
+          */}
+          <Button className="h-11 gap-2 rounded-2xl" onClick={onPreview} type="button">
+            <FileText className="h-4 w-4" />
+            Preview &amp; edit
+          </Button>
+          <Button
+            className="h-11 gap-2 rounded-2xl"
+            onClick={onPrint}
+            type="button"
+            variant="outline"
+          >
             <Printer className="h-4 w-4" />
             Print
           </Button>

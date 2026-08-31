@@ -75,11 +75,14 @@ function employeeFixture(
     nationalId: "29709091234567",
     socialInsuranceNumber: "123456789",
     socialInsuranceWage: 6000,
-    grossSalary: 11000,
+    baseSalary: 11000,
+    grossSalary: 14300,
     birthDate: "1997-09-09",
     hireDate: "2026-08-01",
     jobTitle: "Medical Representative",
-    departmentAr: "الجهاز العصبي",
+    // The department, not the line.
+    departmentAr: "المبيعات",
+    departmentId: 1,
     lineId: 1,
     residenceAddress: "5 شارع الجمهورية، وسط البلد",
     residenceCity: "القاهرة",
@@ -272,7 +275,10 @@ function testThePersonsHalfIsFilledFromTheRecord(): void {
     assert.ok(html.includes("نور عادل"), "the Arabic name is printed, not the English one");
     assert.ok(html.includes("29709091234567"), "the national ID is filled");
     assert.ok(html.includes("مندوب دعاية طبية"), "the Arabic job title is filled");
-    assert.ok(html.includes("الجهاز العصبي"), "the department is filled");
+    // The DEPARTMENT that employs him, not his product line — «الجهاز العصبي» is CNS and used to
+    // print here off `lines.name`. Owner's correction, 2026-08-31.
+    assert.ok(html.includes("المبيعات"), "the department is filled");
+    assert.ok(!html.includes("الجهاز العصبي"), "a product line must never print as the department");
     assert.ok(html.includes("H-3003"), "the employee code is filled");
     assert.ok(html.includes("01200000000"), "the phone number is filled");
     assert.ok(html.includes("5 شارع الجمهورية، وسط البلد"), "the address is filled");
@@ -342,6 +348,24 @@ function testAnEmptyRecordStillPrints(): void {
  * theoretical here: this company's own tax card number once printed reversed, and a national ID or
  * an IMEI printed backwards on a signed receipt identifies a different person or a different phone.
  */
+/**
+ * The opening tag of the span that wraps exactly this value, or null if nothing wraps it.
+ *
+ * Read this way rather than by pinning the whole serialization. The assertion's subject is that the
+ * value is direction-pinned, and the tag now carries a second attribute — the marker that lets the
+ * value be corrected on the printed page — which has nothing to do with direction. An exact-string
+ * pin fails on that, reporting a direction bug that does not exist; a loose `includes` of just
+ * `dir="ltr"` would pass even if the pin sat on some other value entirely. Finding the tag that
+ * actually encloses this value and reading its attributes is what the test means.
+ */
+function enclosingTag(html: string, value: string): string | null {
+  const at = html.indexOf(`>${value}</span>`);
+  if (at < 0) return null;
+  const open = html.lastIndexOf("<span", at);
+  if (open < 0) return null;
+  return html.slice(open, at + 1);
+}
+
 function testEveryLatinValueIsPinnedLeftToRight(): void {
   const pack = packFixture();
   for (const [name, render] of [
@@ -350,8 +374,14 @@ function testEveryLatinValueIsPinnedLeftToRight(): void {
   ] as const) {
     const html = render(pack, 1);
     for (const value of ["29709091234567", "01200000000", "H-3003"]) {
+      const tag = enclosingTag(html, value);
+      assert.ok(tag, `${name}: ${value} does not appear on the receipt at all`);
       assert.ok(
-        html.includes(`<span class="val" dir="ltr">${value}</span>`),
+        tag.includes('class="val"'),
+        `${name}: ${value} must print as a value cell, not as loose text`,
+      );
+      assert.ok(
+        tag.includes('dir="ltr"'),
         `${name}: ${value} must be pinned dir="ltr" — an unpinned digit run reorders inside RTL text`,
       );
     }
