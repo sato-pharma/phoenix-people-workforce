@@ -273,6 +273,11 @@ export type Candidate = {
   // live here rather than in columns because they are variable-length arrays; every scalar
   // extraction field has its own column above.
   positionSpecificFields: Record<string, unknown>;
+  // Answers to the Super-Admin-defined extra questions the WhatsApp bot asks after the fixed six
+  // (whatsapp-screening-questions.ts), keyed by question_key. A DIFFERENT thing from
+  // positionSpecificFields above — that is CV-extraction data, this is chatbot-collected screening
+  // data — never conflate the two.
+  screeningExtraAnswers: Record<string, string>;
   /**
    * The last time this candidate was pushed straight to a manager, with NO requisition in between.
    * Null means nobody has been told — which, before 2026-08-15, was true of 214 of the 221 people

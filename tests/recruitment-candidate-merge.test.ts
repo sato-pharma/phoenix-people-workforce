@@ -8,6 +8,7 @@ import {
   isActiveApplicationStage,
   mergeBlockReason,
   mergeableFields,
+  mergeScreeningExtraAnswers,
 } from "../src/lib/recruitment/candidate-merge.ts";
 
 /**
@@ -193,4 +194,45 @@ export function runRecruitmentCandidateMergeTests() {
       `${norm} is maintained only in TypeScript, so a merge that writes the plain column without it leaves the survivor invisible to the dedup that would have caught the next copy`,
     );
   }
+  assert.ok(
+    service.includes("mergeScreeningExtraAnswers("),
+    "the DB half stopped calling the pure screening-answers merge helper — it must not reimplement the union inline, where this test cannot see it",
+  );
+
+  // ── screening_extra_answers: the jsonb analogue of borrowableFields ─────────────────────────────
+  // A jsonb bag of admin-growable keys does not fit mergeableFields' one-column-one-blank-check
+  // shape, so it gets its own pure function. Same law as every scalar field: the SURVIVOR always
+  // wins on a real collision, and the duplicate only ever fills a gap.
+  assert.deepEqual(
+    mergeScreeningExtraAnswers({}, {}),
+    { changed: false, merged: {} },
+    "two empty answer bags merge to nothing, and nothing changed",
+  );
+
+  const survivorOnly = mergeScreeningExtraAnswers({ has_license: "Yes" }, {});
+  assert.deepEqual(survivorOnly, { changed: false, merged: { has_license: "Yes" } });
+
+  const duplicateOnly = mergeScreeningExtraAnswers({}, { has_license: "No" });
+  assert.deepEqual(
+    duplicateOnly,
+    { changed: true, merged: { has_license: "No" } },
+    "the duplicate's own answer is the only one on file, so it must survive the merge",
+  );
+
+  // THE HEADLINE for this field, mirroring the scalar headline above: on a genuine collision the
+  // SURVIVOR's answer is kept, never overwritten by the duplicate's — even though jsonb assignment
+  // makes "last one wins" trivial to get backwards by writing `{...survivor, ...duplicate}` instead.
+  const collidingAnswers = mergeScreeningExtraAnswers(
+    { has_license: "Yes", preferred_shift: "Morning" },
+    { has_license: "No", years_driving: "3" },
+  );
+  assert.deepEqual(
+    collidingAnswers,
+    { changed: true, merged: { has_license: "Yes", preferred_shift: "Morning", years_driving: "3" } },
+    "a key both sides answered keeps the SURVIVOR's answer; a key only the duplicate answered is unioned in",
+  );
+
+  // Disjoint keys: the whole point of "union", not "the bigger bag wins".
+  const disjoint = mergeScreeningExtraAnswers({ a: "1", b: "2" }, { c: "3", d: "4" });
+  assert.deepEqual(disjoint, { changed: true, merged: { a: "1", b: "2", c: "3", d: "4" } });
 }

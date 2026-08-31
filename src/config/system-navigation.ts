@@ -30,6 +30,7 @@ import {
   IdCard,
   Inbox,
   Landmark,
+  ListChecks,
   Lock,
   Package,
   LayoutDashboard,
@@ -2241,6 +2242,13 @@ export const accessCommunicationPageItems: readonly AdminToolsPageItem[] = [
     icon: Lock,
     label: "Temporary Module Locks",
     description: "Temporarily close a module on one account, and release it again.",
+    roles: ["Super Admin"],
+  },
+  {
+    href: "/admin/screening-questions",
+    icon: ListChecks,
+    label: "WhatsApp Screening Questions",
+    description: "Add, reorder or retire the extra questions the CV-intake bot asks after the fixed six.",
     roles: ["Super Admin"],
   },
   {

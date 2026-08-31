@@ -175,6 +175,10 @@ export function mapCandidate(row: CandidateDbRow): Candidate {
       row.position_specific_fields && typeof row.position_specific_fields === "object"
         ? (row.position_specific_fields as Record<string, unknown>)
         : {},
+    screeningExtraAnswers:
+      row.screening_extra_answers && typeof row.screening_extra_answers === "object"
+        ? (row.screening_extra_answers as Record<string, string>)
+        : {},
     // Present only when the identifying half of the stamp is there. The write path sets every
     // stamp column in ONE update, so a partial stamp cannot normally exist — but reading it
     // defensively means the worst case is "never sent" rather than a send attributed to nobody at

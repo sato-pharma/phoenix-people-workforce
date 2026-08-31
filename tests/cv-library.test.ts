@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-import { cvLibraryRowFromCandidate, summarizeCvLibrary, type CvLibraryRow } from "../src/lib/cv/cv-library.ts";
+import {
+  cvLibraryRowFromCandidate,
+  cvLibraryRowsFromCandidates,
+  summarizeCvLibrary,
+  type CvLibraryRow,
+} from "../src/lib/cv/cv-library.ts";
 import { candidateScreeningFacts } from "../src/lib/recruitment/candidate-screening-facts.ts";
 import type { Candidate } from "../src/lib/recruitment/types.ts";
 
@@ -30,6 +35,7 @@ function candidate(overrides: Partial<Candidate>): Candidate {
     medicalRepEmployer: null,
     medicalRepExperienceFrom: null,
     medicalRepExperienceTo: null,
+    screeningExtraAnswers: {},
     university: null,
     yearsExperience: null,
     ...overrides,
@@ -108,13 +114,14 @@ export function runCvLibraryTests() {
   // is ever rendered — `regionLabel` is what reaches the cell — so neither can leak a "null".
   const blank = cvLibraryRowFromCandidate(candidate({}));
   for (const [key, value] of Object.entries(blank)) {
-    if (key === "regionCode" || key === "regionDeclared") continue;
+    if (key === "regionCode" || key === "regionDeclared" || key === "screeningAnswers") continue;
     assert.ok(typeof value === "string", `${key} must be a string`);
     assert.ok(!/^(null|undefined|NaN)$/.test(value), `${key} rendered as "${value}"`);
   }
   assert.equal(blank.regionCode, null, "an unknown region must be null, so the filter can ask for it");
   assert.equal(typeof blank.regionDeclared, "boolean");
   assert.equal(typeof blank.regionLabel, "string", "the field the cell actually renders is always a string");
+  assert.deepEqual(blank.screeningAnswers, [], "no question list and no answers means an empty array, never null");
 
   // ---------------------------------------------------------------------------
   // The summary counts what it says it counts.
@@ -161,12 +168,16 @@ export function runCvLibraryTests() {
   // ---------------------------------------------------------------------------
   for (const path of ["app/(admin)/cv-database/page.tsx", "app/employee-portals/cv-database/page.tsx"]) {
     const page = readFileSync(path, "utf8");
-    // Match the CALL, not the import. The first cut of this guard tested for the bare identifier
+    // Match the CALLS, not the imports. The first cut of this guard tested for the bare identifier
     // `listCandidates`, which the import line satisfies on its own — so gutting the loader body
     // left the test green.
     assert.ok(
-      /const rows = cvLibraryRowsFromCandidates\(await listCandidates\(\)\);/.test(page),
-      `${path} must actually call listCandidates() and map it — importing the loader is not loading`,
+      /await Promise\.all\(\[listCandidates\(\), listScreeningQuestions\(\)\]\)/.test(page),
+      `${path} must actually call listCandidates() and listScreeningQuestions() — importing the loaders is not loading`,
+    );
+    assert.ok(
+      /cvLibraryRowsFromCandidates\(candidates, questionLabels\)/.test(page),
+      `${path} must map the candidates through the resolved question-label map, not the bare pool`,
     );
     assert.ok(/<CvDatabaseManager rows=\{rows\} \/>/.test(page), `${path} must pass rows to the manager`);
   }
@@ -269,11 +280,17 @@ export function runCvLibraryTests() {
   const head = manager.slice(manager.indexOf("<thead"), manager.indexOf("</thead>"));
   const body = manager.slice(manager.indexOf("<tbody"), manager.indexOf("</tbody>"));
   const headings = (head.match(/<th[\s>]/g) ?? []).length;
-  const cells = (body.match(/<td[\s>]/g) ?? []).length + (body.match(/<StackedCell[\s>]/g) ?? []).length;
-  // FIVE, exactly. This was ">= 8" while the table had eight columns, and eight columns is what
-  // made it 2460px wide inside a 1758px container — 702px of every row sat off-screen behind a
-  // horizontal scrollbar. Held as an equality, not a floor: a floor is what let it grow.
-  assert.equal(headings, 4, "the CV Database table is not four columns wide, so it will scroll again");
+  const cells =
+    (body.match(/<td[\s>]/g) ?? []).length +
+    (body.match(/<StackedCell[\s>]/g) ?? []).length +
+    (body.match(/<ScreeningAnswersCell[\s>]/g) ?? []).length;
+  // FIVE, exactly — four from the 2026-08-30 rebuild plus the Screening column added for the
+  // admin-configurable WhatsApp questions. This was ">= 8" while the table had eight columns, and
+  // eight columns is what made it 2460px wide inside a 1758px container — 702px of every row sat
+  // off-screen behind a horizontal scrollbar. Held as an equality, not a floor: a floor is what let
+  // it grow. The new column costs nothing on today's data (empty until an admin adds a question and
+  // someone answers it), but the ceiling still has to be a deliberate, counted choice.
+  assert.equal(headings, 5, "the CV Database table is not five columns wide, so it will scroll again");
   assert.equal(
     cells,
     headings,
@@ -462,14 +479,14 @@ export function runCvLibraryTests() {
   // several columns one line each — which is the idiom this table already used, applied further.
   assert.equal(
     (managerCode.match(/<th className=\{headCellClassName\}>/g) ?? []).length,
-    4,
-    "the desktop table grew back past four columns, which is what put it wider than its container",
+    5,
+    "the desktop table grew past its five deliberate columns, which is what put it wider than its container",
   );
 
   // The export must not shrink with the screen. Stacking two facts into one cell is a layout
   // decision; the spreadsheet still carries one column per fact, because a merged column is the one
   // thing nobody can filter or pivot on afterwards.
-  for (const header of ["Total experience", "Governorate", "Region", "Area asked for", "CV file"]) {
+  for (const header of ["Total experience", "Governorate", "Region", "Area asked for", "CV file", "Screening answers"]) {
     assert.ok(
       new RegExp(`"${header}"`).test(managerCode),
       `the export lost its "${header}" column when the screen stopped giving it one`,
@@ -508,5 +525,82 @@ export function runCvLibraryTests() {
   assert.ok(
     /const cellClassName = "[^"]*text-\[13px\]/.test(managerCode),
     "the table cell font size was renamed to a named size, which tailwind-merge will silently drop",
+  );
+
+  // ---------------------------------------------------------------------------
+  // SCREENING ANSWERS — the admin-configurable WhatsApp extra questions, joined onto the row.
+  // ---------------------------------------------------------------------------
+
+  // No question list at all: the default empty map, same as every fixture above this section used
+  // implicitly. Must never throw just because a candidate has no screeningExtraAnswers key.
+  assert.deepEqual(cvLibraryRowFromCandidate(candidate({})).screeningAnswers, []);
+
+  // A question list with an answered and an unanswered question. Only the answered one appears, and
+  // it carries the CURRENT prompt text, not the raw key.
+  const twoQuestionLabels = new Map([
+    ["has_license", "Do you already have a valid driving license?"],
+    ["preferred_shift", "Which shift do you prefer?"],
+  ]);
+  const oneAnswered = cvLibraryRowFromCandidate(
+    candidate({ screeningExtraAnswers: { has_license: "Yes" } }),
+    twoQuestionLabels,
+  );
+  assert.deepEqual(oneAnswered.screeningAnswers, [
+    { answer: "Yes", label: "Do you already have a valid driving license?" },
+  ]);
+
+  // Both answered: order follows the label map's own order (the admin builder's sort_order), not
+  // the order keys happen to sit in the candidate's jsonb answers.
+  const bothAnswered = cvLibraryRowFromCandidate(
+    candidate({
+      screeningExtraAnswers: { preferred_shift: "Morning", has_license: "No" },
+    }),
+    twoQuestionLabels,
+  );
+  assert.deepEqual(bothAnswered.screeningAnswers, [
+    { answer: "No", label: "Do you already have a valid driving license?" },
+    { answer: "Morning", label: "Which shift do you prefer?" },
+  ]);
+
+  // A retired question still resolves a real label, as long as the caller's map still carries it —
+  // this function trusts whatever map it is given; it is the PAGE's job (listScreeningQuestions
+  // returns active and inactive alike) to keep a retired question's key in that map so its
+  // already-recorded answer never goes unlabelled.
+  const retiredStillLabelled = cvLibraryRowFromCandidate(
+    candidate({ screeningExtraAnswers: { has_license: "Yes" } }),
+    new Map([["has_license", "Do you already have a valid driving license?"]]),
+  );
+  assert.equal(retiredStillLabelled.screeningAnswers[0]!.label, "Do you already have a valid driving license?");
+
+  // A key present in the candidate's answers but absent from the label map (should not happen in
+  // practice — the map always includes every key any candidate can have answered — but the row
+  // mapper must not crash or invent a label for it).
+  const unknownKeyIgnored = cvLibraryRowFromCandidate(
+    candidate({ screeningExtraAnswers: { some_removed_question: "answer" } }),
+    twoQuestionLabels,
+  );
+  assert.deepEqual(unknownKeyIgnored.screeningAnswers, []);
+
+  // cvLibraryRowsFromCandidates threads the same label map through every row.
+  const threaded = cvLibraryRowsFromCandidates(
+    [candidate({ id: "a", screeningExtraAnswers: { has_license: "Yes" } }), candidate({ id: "b" })],
+    twoQuestionLabels,
+  );
+  assert.deepEqual(threaded[0]!.screeningAnswers, [
+    { answer: "Yes", label: "Do you already have a valid driving license?" },
+  ]);
+  assert.deepEqual(threaded[1]!.screeningAnswers, [], "a candidate who never saw the new questions gets nothing");
+
+  // The manager renders the answers as extra PortalRecordFields entries on the mobile card and as
+  // its own desktop-table cell — never a fixed field the way the six built-in questions are.
+  assert.ok(
+    /row\.screeningAnswers\.map\(\(entry\) => \(\{ label: entry\.label, value: entry\.answer \}\)\)/.test(
+      managerCode,
+    ),
+    "the mobile card stopped listing the admin-defined screening answers",
+  );
+  assert.ok(
+    /<ScreeningAnswersCell row=\{row\} \/>/.test(managerCode),
+    "the desktop table stopped rendering the admin-defined screening answers",
   );
 }

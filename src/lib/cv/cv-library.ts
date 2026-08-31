@@ -70,6 +70,14 @@ export type CvLibraryRow = {
   /** The area they asked for, in their own words. Empty for anyone who was never asked. */
   preferredArea: string;
   cvFileName: string;
+  /**
+   * Answers to the Super-Admin-defined extra WhatsApp screening questions
+   * (whatsapp-screening-questions.ts), labelled against the CURRENT question list — including
+   * retired ones, so a later prompt-text fix benefits old answers too and a retired question's
+   * historical answer still shows rather than vanishing. Empty for every candidate until an admin
+   * adds a question and someone answers it. Ordered the same way the admin builder orders them.
+   */
+  screeningAnswers: { label: string; answer: string }[];
 };
 
 export type CvLibrarySummary = {
@@ -148,11 +156,24 @@ function educationInstitution(candidate: Candidate): string {
   return year ? `${university} (${year})` : university;
 }
 
-export function cvLibraryRowFromCandidate(candidate: Candidate): CvLibraryRow {
+/**
+ * `questionLabels` is the current admin-defined question list (question_key -> body_text),
+ * including retired ones — the same rows `listScreeningQuestions()` returns, in the admin's own
+ * sort order. Map iteration order follows insertion order, so building it from that already-sorted
+ * list is what keeps a candidate's answers in the same order the builder shows them. Defaults to
+ * empty so this stays callable (and testable) without a question list at all.
+ */
+export function cvLibraryRowFromCandidate(
+  candidate: Candidate,
+  questionLabels: ReadonlyMap<string, string> = new Map(),
+): CvLibraryRow {
   const months = medicalSalesMonths(candidate);
   const years = candidate.yearsExperience;
   // The recruitment pool's own resolver, not a second copy of the rule.
   const facts = candidateScreeningFacts(candidate);
+  const screeningAnswers = Array.from(questionLabels.entries())
+    .map(([key, label]) => ({ answer: text(candidate.screeningExtraAnswers[key]), label }))
+    .filter((entry) => entry.answer.length > 0);
   return {
     cvFileName: text(candidate.cvReferenceName),
     currentEmployer: text(candidate.currentEmployer),
@@ -173,13 +194,17 @@ export function cvLibraryRowFromCandidate(candidate: Candidate): CvLibraryRow {
     medicalSalesEmployer: text(candidate.medicalRepEmployer),
     name: text(candidate.fullName),
     receivedOn: cairoDayKey(candidate.createdAt),
+    screeningAnswers,
     totalExperience:
       years === null || years === undefined ? "" : formatDurationMonths(Math.round(Number(years) * 12)),
   };
 }
 
-export function cvLibraryRowsFromCandidates(candidates: readonly Candidate[]): CvLibraryRow[] {
-  return candidates.map(cvLibraryRowFromCandidate);
+export function cvLibraryRowsFromCandidates(
+  candidates: readonly Candidate[],
+  questionLabels: ReadonlyMap<string, string> = new Map(),
+): CvLibraryRow[] {
+  return candidates.map((candidate) => cvLibraryRowFromCandidate(candidate, questionLabels));
 }
 
 export function summarizeCvLibrary(rows: readonly CvLibraryRow[]): CvLibrarySummary {

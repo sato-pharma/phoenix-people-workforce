@@ -9,6 +9,10 @@ import {
   startClassification,
 } from "@/lib/recruitment/inbound/whatsapp-classify-session";
 import { bufferWhatsAppMessage, takeRecentWhatsAppMessages } from "@/lib/recruitment/inbound/whatsapp-message-buffer";
+import {
+  handleExtraQuestionReply,
+  handleExtraQuestionText,
+} from "@/lib/recruitment/inbound/whatsapp-screening-questions-session";
 import { handleTextOnlyMessage } from "@/lib/recruitment/inbound/whatsapp-text-only-applicant";
 import {
   isWhatsAppImportSender,
@@ -111,6 +115,24 @@ export async function POST(request: Request) {
           });
           return "no_session" as const;
         });
+        // "not_ours" means the row id was not one of the fixed six's three-part ids — tried next as
+        // an admin-defined extra question (a four-part id). The two namespaces never both match, so
+        // this never double-handles a tap the fixed six already own.
+        if (replyOutcome === "not_ours") {
+          const extraReplyOutcome = await handleExtraQuestionReply({
+            phoneNumberId: message.deliveredToPhoneNumberId,
+            rowId: message.interactiveReplyId,
+            waId: message.from,
+          }).catch((extraError) => {
+            logError("WhatsApp screening extra-question reply handling threw", {
+              error: extraError,
+              labels: { event: "whatsapp_extra_question_reply_threw", wamid: message.wamid },
+            });
+            return "no_session" as const;
+          });
+          outcomes.push({ outcome: `extra_${extraReplyOutcome}`, wamid: message.wamid });
+          continue;
+        }
         outcomes.push({ outcome: `classify_${replyOutcome}`, wamid: message.wamid });
         continue;
       }
@@ -141,6 +163,30 @@ export async function POST(request: Request) {
         if (textOutcome === "advanced" || textOutcome === "unusable_text") {
           outcomes.push({ outcome: `classify_${textOutcome}`, wamid: message.wamid });
           continue;
+        }
+        // "not_awaiting_text" means the fixed six have no open free-text step for this sender — tried
+        // next as an admin-defined free-text question. Anything neither owns falls through to the
+        // existing buffering behaviour below, unchanged.
+        if (textOutcome === "not_awaiting_text") {
+          const extraTextOutcome = await handleExtraQuestionText({
+            phoneNumberId: message.deliveredToPhoneNumberId,
+            text: message.text,
+            waId: message.from,
+          }).catch((extraError) => {
+            logError("WhatsApp screening extra-question text handling threw", {
+              error: extraError,
+              labels: { event: "whatsapp_extra_question_text_threw", wamid: message.wamid },
+            });
+            return "no_session" as const;
+          });
+          if (
+            extraTextOutcome === "advanced" ||
+            extraTextOutcome === "unusable_text" ||
+            extraTextOutcome === "completed"
+          ) {
+            outcomes.push({ outcome: `extra_${extraTextOutcome}`, wamid: message.wamid });
+            continue;
+          }
         }
       }
 

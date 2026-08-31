@@ -94,7 +94,9 @@ export type ClassifyRow = {
 };
 
 export type ClassifyMenu = {
-  step: ClassifyStep;
+  // "extra" is an admin-defined question (whatsapp-screening-questions.ts) — same menu shape, same
+  // Meta-limit checks, just not one of the fixed six steps this file owns.
+  step: ClassifyStep | "extra";
   body: string;
   buttonLabel: string;
   sectionTitle: string;

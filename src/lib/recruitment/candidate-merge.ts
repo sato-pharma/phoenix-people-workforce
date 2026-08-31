@@ -175,3 +175,28 @@ export function mergeBlockReason(input: {
 export function canMergeCandidates(input: Parameters<typeof mergeBlockReason>[0]): boolean {
   return mergeBlockReason(input) === null;
 }
+
+export type ScreeningExtraAnswersMergeResult = {
+  changed: boolean;
+  merged: Record<string, string>;
+};
+
+/**
+ * The jsonb analogue of `borrowableFields` above, for `screening_extra_answers`
+ * (whatsapp-screening-questions.ts). It does not fit `mergeableFields`'s shape — that array is
+ * scalar columns, one blank-or-not check each, and this is a bag of admin-growable keys — so it
+ * gets its own function rather than a shoehorned entry.
+ *
+ * Same principle as every other merge field: the survivor's own answer to a question always wins.
+ * The duplicate only fills in keys the survivor never answered, so a real recorded answer is never
+ * overwritten and neither side's history is silently dropped — the "optional field written
+ * unconditionally is a silent erase" failure mode this codebase has been bitten by before.
+ */
+export function mergeScreeningExtraAnswers(
+  survivor: Readonly<Record<string, string>>,
+  duplicate: Readonly<Record<string, string>>,
+): ScreeningExtraAnswersMergeResult {
+  const merged = { ...duplicate, ...survivor };
+  const changed = Object.keys(merged).length > Object.keys(survivor).length;
+  return { changed, merged };
+}
