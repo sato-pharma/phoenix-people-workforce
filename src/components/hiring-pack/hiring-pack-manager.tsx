@@ -394,6 +394,94 @@ function exitPayloadFromForm(state: FormState): OffboardingProfileInput {
   return payload as OffboardingProfileInput;
 }
 
+/** The keys the facts editor writes — "What Phoenix already knows", once it stopped being read-only. */
+const FACTS_KEYS = [
+  "fullName",
+  "nameAr",
+  "nationalId",
+  "socialInsuranceNumber",
+  "birthDate",
+  "hireDate",
+  "jobTitle",
+  "lineId",
+  "grossSalary",
+  "socialInsuranceWage",
+  "mobileNumber",
+  "workEmail",
+  "residenceAddress",
+] as const;
+
+/** Text/date fields on the facts editor. Salary, insurance wage and department get their own JSX — see below. */
+const FACTS_TEXT_FIELDS: readonly {
+  key: (typeof FACTS_KEYS)[number];
+  labelEn: string;
+  labelAr: string;
+  kind: "text" | "date" | "email";
+}[] = [
+  { key: "fullName", labelAr: "الاسم", labelEn: "Name", kind: "text" },
+  { key: "nameAr", labelAr: "الاسم بالعربية", labelEn: "Name (Arabic)", kind: "text" },
+  { key: "nationalId", labelAr: "الرقم القومي", labelEn: "National ID", kind: "text" },
+  {
+    key: "socialInsuranceNumber",
+    labelAr: "رقم التأمينات",
+    labelEn: "Insurance no.",
+    kind: "text",
+  },
+  { key: "birthDate", labelAr: "تاريخ الميلاد", labelEn: "Date of birth", kind: "date" },
+  { key: "hireDate", labelAr: "تاريخ التعيين", labelEn: "Hire date", kind: "date" },
+  { key: "jobTitle", labelAr: "المسمى الوظيفي", labelEn: "Job title", kind: "text" },
+  { key: "mobileNumber", labelAr: "رقم الموبايل", labelEn: "Mobile", kind: "text" },
+  { key: "workEmail", labelAr: "البريد الإلكتروني", labelEn: "Work email", kind: "email" },
+  { key: "residenceAddress", labelAr: "العنوان", labelEn: "Address", kind: "text" },
+];
+
+function emptyFactsForm(): FormState {
+  const state: FormState = {};
+  for (const key of FACTS_KEYS) state[key] = "";
+  return state;
+}
+
+function factsFormFromPack(pack: HiringPackData): FormState {
+  const { employee } = pack;
+  return {
+    birthDate: employee.birthDate ?? "",
+    fullName: employee.fullName,
+    grossSalary: employee.grossSalary === null ? "" : String(employee.grossSalary),
+    hireDate: employee.hireDate ?? "",
+    jobTitle: employee.jobTitle ?? "",
+    lineId: employee.lineId === null ? "" : String(employee.lineId),
+    mobileNumber: employee.mobileNumber ?? "",
+    nameAr: employee.nameAr ?? "",
+    nationalId: employee.nationalId ?? "",
+    residenceAddress: employee.residenceAddress ?? "",
+    socialInsuranceNumber: employee.socialInsuranceNumber ?? "",
+    socialInsuranceWage: employee.socialInsuranceWage === null ? "" : String(employee.socialInsuranceWage),
+    workEmail: employee.workEmail ?? "",
+  };
+}
+
+/** What the facts editor sends. Blank text clears the field; blank numbers and the line clear too. */
+function factsPayloadFromForm(state: FormState) {
+  const line = Number.parseInt(state.lineId ?? "", 10);
+  const gross = Number.parseFloat(state.grossSalary ?? "");
+  const wage = Number.parseFloat(state.socialInsuranceWage ?? "");
+  return {
+    birthDate: state.birthDate?.trim() || null,
+    fullName: state.fullName?.trim() || null,
+    grossSalary: Number.isFinite(gross) ? gross : null,
+    hireDate: state.hireDate?.trim() || null,
+    jobTitle: state.jobTitle?.trim() || null,
+    lineId: Number.isFinite(line) ? line : null,
+    mobileNumber: state.mobileNumber?.trim() || null,
+    nameAr: state.nameAr?.trim() || null,
+    nationalId: state.nationalId?.trim() || null,
+    residenceAddress: state.residenceAddress?.trim() || null,
+    socialInsuranceNumber: state.socialInsuranceNumber?.trim() || null,
+    socialInsuranceWage: Number.isFinite(wage) ? wage : null,
+    workEmail: state.workEmail?.trim() || null,
+  };
+}
+
 /** A stored date, shown the way the owner reads dates. */
 function formatDate(iso: string | null): string {
   if (!iso) return "Not recorded";
@@ -504,14 +592,19 @@ type Props = {
   candidates: HiringPackCandidate[];
   initialError: string | null;
   initialPack: HiringPackData | null;
+  /** Every sales line, for the "Department" picker on the facts editor. */
+  lines: { id: number; name: string }[];
 };
 
-export function HiringPackManager({ canManage, candidates, initialError, initialPack }: Props) {
+export function HiringPackManager({ canManage, candidates, initialError, initialPack, lines }: Props) {
   const [pack, setPack] = useState<HiringPackData | null>(initialPack);
   const [selectedHrId, setSelectedHrId] = useState(initialPack?.employee.hrId ?? "");
   const [form, setForm] = useState<FormState>(initialPack ? formFromPack(initialPack) : emptyForm());
   const [exitForm, setExitForm] = useState<FormState>(
     initialPack ? exitFormFromPack(initialPack) : emptyExitForm(),
+  );
+  const [factsForm, setFactsForm] = useState<FormState>(
+    initialPack ? factsFormFromPack(initialPack) : emptyFactsForm(),
   );
   const [copies, setCopies] = useState<Record<HiringPackDocument, string>>(() =>
     signDatesShape((document) => String(DEFAULT_COPIES[document])),
@@ -520,7 +613,7 @@ export function HiringPackManager({ canManage, candidates, initialError, initial
     signedDatesFromPack(initialPack),
   );
   const [busy, setBusy] = useState<
-    "" | "load" | "save" | "save-exit" | `sign-${HiringPackDocument}`
+    "" | "load" | "save" | "save-exit" | "save-facts" | `sign-${HiringPackDocument}`
   >("");
   const [error, setError] = useState<string | null>(initialError);
   const [notice, setNotice] = useState<string | null>(null);
@@ -544,6 +637,7 @@ export function HiringPackManager({ canManage, candidates, initialError, initial
     setPack(next);
     setForm(formFromPack(next));
     setExitForm(exitFormFromPack(next));
+    setFactsForm(factsFormFromPack(next));
     setSignDates(signedDatesFromPack(next));
   }, []);
 
@@ -645,6 +739,36 @@ export function HiringPackManager({ canManage, candidates, initialError, initial
     }
   }, [applyPack, exitForm, pack, readError]);
 
+  /**
+   * Save "What Phoenix already knows" — the employee record itself, not a hiring-pack satellite
+   * table. See `saveHiringPackEmployeeFacts` for why departed employees only get the identity and
+   * contact fields written: salary and department go through the same full-record path the
+   * employee editor uses, and that path refuses anyone already resigned or terminated.
+   */
+  const saveFacts = useCallback(async () => {
+    if (!pack) return;
+    setBusy("save-facts");
+    setError(null);
+    setNotice(null);
+    try {
+      const response = await fetch(`/api/hiring-pack/${encodeURIComponent(pack.employee.hrId)}/facts`, {
+        body: JSON.stringify(factsPayloadFromForm(factsForm)),
+        headers: { "Content-Type": "application/json" },
+        method: "PUT",
+      });
+      if (!response.ok) {
+        setError(await readError(response));
+        return;
+      }
+      applyPack((await response.json()) as HiringPackData);
+      setNotice("Saved to the employee record.");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not save.");
+    } finally {
+      setBusy("");
+    }
+  }, [applyPack, factsForm, pack, readError]);
+
   const recordSignature = useCallback(
     async (document: HiringPackDocument) => {
       if (!pack) return;
@@ -715,36 +839,6 @@ export function HiringPackManager({ canManage, candidates, initialError, initial
   const currentCount = candidates.length - departedCount;
 
   const employee = pack?.employee ?? null;
-  const facts: { label: string; value: string }[] = employee
-    ? [
-        { label: "HR ID", value: employee.hrId },
-        { label: "Name", value: employee.fullName },
-        { label: "الاسم بالعربية", value: employee.nameAr ?? "Missing" },
-        { label: "National ID", value: employee.nationalId ?? "Missing" },
-        { label: "Insurance no.", value: employee.socialInsuranceNumber ?? "Missing" },
-        { label: "Date of birth", value: formatDate(employee.birthDate) },
-        { label: "Hire date", value: formatDate(employee.hireDate) },
-        { label: "Job title", value: employee.jobTitle ?? "Missing" },
-        { label: "Department", value: employee.departmentAr ?? "Missing" },
-        {
-          label: "Gross salary",
-          value:
-            employee.grossSalary === null
-              ? "Missing"
-              : `${employee.grossSalary.toLocaleString("en-US")} EGP`,
-        },
-        {
-          label: "Insurance wage",
-          value:
-            employee.socialInsuranceWage === null
-              ? "Missing"
-              : `${employee.socialInsuranceWage.toLocaleString("en-US")} EGP`,
-        },
-        { label: "Mobile", value: employee.mobileNumber ?? "Missing" },
-        { label: "Work email", value: employee.workEmail ?? "Missing" },
-        { label: "Address", value: employee.residenceAddress ?? "Missing" },
-      ]
-    : [];
 
   return (
     <div className="relative overflow-hidden rounded-[34px] border border-phx-line bg-phx-paper p-4 shadow-[0_24px_70px_rgba(15,23,42,0.1)] sm:p-6">
@@ -879,27 +973,136 @@ export function HiringPackManager({ canManage, candidates, initialError, initial
             ) : null}
 
             <AdminTableShell
-              description="From the employee record. Change these on the employee, not here — the next print picks the change up."
+              action={
+                canManage ? (
+                  <Button
+                    className="h-11 gap-2 rounded-2xl"
+                    disabled={busy === "save-facts"}
+                    onClick={() => void saveFacts()}
+                  >
+                    {busy === "save-facts" ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Save className="h-4 w-4" />
+                    )}
+                    Save
+                  </Button>
+                ) : undefined
+              }
+              description="Editing here writes straight to the employee record — every other screen reads the change from the same place."
               title={`What Phoenix already knows · ${employee.fullName}`}
             >
-              <div className="grid gap-3 px-5 py-5 sm:grid-cols-2 sm:px-6 xl:grid-cols-3">
-                {facts.map((fact) => (
-                  <div
-                    className="rounded-xl border border-phx-line bg-white/95 px-3.5 py-2.5 shadow-sm"
-                    key={fact.label}
-                  >
-                    <span className={factLabelClassName}>{fact.label}</span>
-                    <p
-                      className={cn(
-                        "mt-1 text-sm font-bold",
-                        fact.value === "Missing" ? "text-rose-600" : "text-phx-ink",
+              <div className="flex flex-col gap-6 px-5 py-5 sm:px-6">
+                <div className="rounded-xl border border-phx-line bg-white/95 px-3.5 py-2.5 shadow-sm sm:max-w-xs">
+                  <span className={factLabelClassName}>HR ID</span>
+                  <p className="mt-1 text-sm font-bold text-phx-ink" dir="auto">
+                    {employee.hrId}
+                  </p>
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                  {FACTS_TEXT_FIELDS.map((field) => (
+                    <div key={field.key}>
+                      <label className={labelClassName} htmlFor={`hiring-pack-fact-${field.key}`}>
+                        {field.labelEn} <span className="text-phx-ink-faint">{field.labelAr}</span>
+                      </label>
+                      <Input
+                        className={inputClassName}
+                        disabled={!canManage}
+                        id={`hiring-pack-fact-${field.key}`}
+                        onChange={(event) =>
+                          setFactsForm((current) => ({ ...current, [field.key]: event.target.value }))
+                        }
+                        type={field.kind}
+                        value={factsForm[field.key] ?? ""}
+                      />
+                    </div>
+                  ))}
+                </div>
+
+                <div>
+                  <h3 className="text-sm font-black uppercase tracking-[0.1em] text-phx-ink">
+                    Salary and department
+                  </h3>
+                  <p className="mt-0.5 text-xs font-semibold text-phx-ink-soft">
+                    {employee.departed
+                      ? "This person has left, so these stay locked here — pay after departure runs through the resignation/settlement workflow, not this screen."
+                      : "Changes here go through the same record the payroll and organogram tools read."}
+                  </p>
+                  <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                    <div>
+                      <label className={labelClassName} htmlFor="hiring-pack-fact-grossSalary">
+                        Gross salary <span className="text-phx-ink-faint">EGP</span>
+                      </label>
+                      <Input
+                        className={inputClassName}
+                        disabled={!canManage || employee.departed}
+                        id="hiring-pack-fact-grossSalary"
+                        inputMode="decimal"
+                        onChange={(event) =>
+                          setFactsForm((current) => ({ ...current, grossSalary: event.target.value }))
+                        }
+                        type="number"
+                        value={factsForm.grossSalary ?? ""}
+                      />
+                    </div>
+                    <div>
+                      <label className={labelClassName} htmlFor="hiring-pack-fact-socialInsuranceWage">
+                        Insurance wage <span className="text-phx-ink-faint">EGP</span>
+                      </label>
+                      <Input
+                        className={inputClassName}
+                        disabled={!canManage || employee.departed}
+                        id="hiring-pack-fact-socialInsuranceWage"
+                        inputMode="decimal"
+                        onChange={(event) =>
+                          setFactsForm((current) => ({
+                            ...current,
+                            socialInsuranceWage: event.target.value,
+                          }))
+                        }
+                        type="number"
+                        value={factsForm.socialInsuranceWage ?? ""}
+                      />
+                    </div>
+                    <div>
+                      <label className={labelClassName} htmlFor="hiring-pack-fact-lineId">
+                        Department <span className="text-phx-ink-faint">القسم</span>
+                      </label>
+                      {lines.length > 0 ? (
+                        <SearchableSelect
+                          className={cn(inputClassName, "w-full")}
+                          disabled={!canManage || employee.departed}
+                          id="hiring-pack-fact-lineId"
+                          onValueChange={(value) =>
+                            setFactsForm((current) => ({ ...current, lineId: value }))
+                          }
+                          placeholder="Select a line"
+                          value={factsForm.lineId ?? ""}
+                        >
+                          <option value="">Not set</option>
+                          {lines.map((line) => (
+                            <option key={line.id} value={String(line.id)}>
+                              {line.name}
+                            </option>
+                          ))}
+                        </SearchableSelect>
+                      ) : (
+                        <>
+                          <Input
+                            className={inputClassName}
+                            disabled
+                            id="hiring-pack-fact-lineId"
+                            value={employee.departmentAr ?? ""}
+                          />
+                          <p className="mt-1 text-phx-xs font-semibold text-phx-ink-faint">
+                            The department list did not load — reload the page to edit this.
+                          </p>
+                        </>
                       )}
-                      dir="auto"
-                    >
-                      {fact.value}
-                    </p>
+                    </div>
                   </div>
-                ))}
+                </div>
               </div>
             </AdminTableShell>
 

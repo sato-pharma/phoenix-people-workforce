@@ -15,6 +15,7 @@ import {
   isHiringPackEmployeeMissing,
   isHiringPackSchemaMissing,
   listHiringPackCandidates,
+  listHiringPackLines,
 } from "@/lib/hiring-pack/service";
 import type { HiringPackCandidate, HiringPackData } from "@/lib/hiring-pack/types";
 
@@ -93,6 +94,7 @@ async function HiringPackContent({
   hrId: string | null;
 }) {
   let candidates: HiringPackCandidate[] = [];
+  let lines: { id: number; name: string }[] = [];
   let initialPack: HiringPackData | null = null;
   let initialError: string | null = null;
 
@@ -100,6 +102,12 @@ async function HiringPackContent({
     candidates = await listHiringPackCandidates();
   } catch (error) {
     initialError = hiringPackPageError(error);
+  }
+
+  try {
+    lines = await listHiringPackLines();
+  } catch {
+    lines = [];
   }
 
   if (hrId) {
@@ -116,6 +124,7 @@ async function HiringPackContent({
       candidates={candidates}
       initialError={initialError}
       initialPack={initialPack}
+      lines={lines}
     />
   );
 }
