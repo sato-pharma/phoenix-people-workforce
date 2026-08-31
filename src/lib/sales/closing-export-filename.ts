@@ -44,11 +44,20 @@ export function regionScopeLabel(regionNames: Iterable<string | null | undefined
 }
 
 /**
- * Build the download name. `kind: "details"` marks the row-level workbook the scoped sales roles
- * get, so it cannot be confused with the full matrix export of the same month, line and region.
+ * Build the download name. `kind` marks a workbook that is not the default matrix export, so two files
+ * covering the same month, line and region cannot be confused with each other:
+ *   "details" — the row-level workbook the scoped sales roles get.
+ *   "premium" — the reader's ten-sheet workbook behind the closing screen's SECOND export button.
  */
 export function closingFileName(parts: {
-  kind?: "details";
+  /**
+   * "xlsx" (the default) or "xlsm". The premium workbook is the owner's macro-enabled engine and
+   * can be served either way: everything a reader uses — the pivots, the slicers, the Rep Card
+   * dropdown — works without macros, and only the four print buttons are VBA. A .xlsm attachment is
+   * frequently stripped by mail systems, so the extension has to follow what was actually built.
+   */
+  extension?: "xlsm" | "xlsx";
+  kind?: "details" | "premium";
   line: string | null | undefined;
   period: string | null | undefined;
   region: string;
@@ -57,5 +66,5 @@ export function closingFileName(parts: {
   // monthLabel turns "2026-07" into "Jul 2026" — the same wording the sheets inside use, so the
   // file and its contents never disagree about which month this is.
   const month = slugSegment(monthLabel((parts.period ?? "").trim()));
-  return `${stem}-${month}-${slugSegment(parts.line)}-${slugSegment(parts.region)}.xlsx`;
+  return `${stem}-${month}-${slugSegment(parts.line)}-${slugSegment(parts.region)}.${parts.extension ?? "xlsx"}`;
 }

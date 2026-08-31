@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, CalendarRange, CheckCircle2, Download, EyeOff, Loader2, Lock, LockOpen, RefreshCw, Send, Table2 } from "lucide-react";
+import { AlertTriangle, CalendarRange, CheckCircle2, Download, EyeOff, Loader2, Lock, LockOpen, RefreshCw, Send, Sparkles, Table2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import {
@@ -57,6 +57,7 @@ export function MonthlyClosingWorkspace({ canPublish = false, initialCoverage = 
   const [coverage, setCoverage] = useState<MonthlySourceCoverage | null>(initialCoverage);
   const [isLoading, setIsLoading] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [isExportingPremium, setIsExportingPremium] = useState(false);
   const [error, setError] = useState<string | null>(initialError);
   const [filter, setFilter] = useState<MonthlyClosingFilter>(emptyMonthlyClosingFilter);
   const [published, setPublished] = useState<boolean | null>(null);
@@ -262,14 +263,20 @@ export function MonthlyClosingWorkspace({ canPublish = false, initialCoverage = 
     }
   }
 
-  async function handleExport() {
+  /**
+   * Ask one export route for its workbook and hand it to the browser.
+   *
+   * TWO buttons share this: the closing's own workbook and the premium one beside it. They differ
+   * only in the route they call, so the selection they send, the errors they surface and the name
+   * the file lands under cannot drift apart. Both send the ON-SCREEN filter, because a workbook that
+   * quietly covered the whole line while the screen showed one region is the usual reason a report
+   * and its export disagree.
+   */
+  async function runExport(input: { fallbackName: string; setBusy: (busy: boolean) => void; url: string }) {
     if (!selectedLine || !selectedPeriod) return;
-    setIsExporting(true);
+    input.setBusy(true);
     try {
-      const response = await fetch("/api/sales/monthly-closing/export", {
-        // Send the on-screen filter too. Without it the workbook was always the full national
-        // matrix while the screen showed a filtered one, so "export what I am looking at" produced
-        // a different set of numbers — the usual reason a report and its export disagree.
+      const response = await fetch(input.url, {
         body: JSON.stringify({
           areaCodes: filter.areaCodes,
           line: selectedLine,
@@ -291,7 +298,7 @@ export function MonthlyClosingWorkspace({ canPublish = false, initialCoverage = 
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = url;
-      anchor.download = match?.[1] ?? "phoenix-monthly-closing.xlsx";
+      anchor.download = match?.[1] ?? input.fallbackName;
       document.body.appendChild(anchor);
       anchor.click();
       anchor.remove();
@@ -299,8 +306,36 @@ export function MonthlyClosingWorkspace({ canPublish = false, initialCoverage = 
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Export failed.");
     } finally {
-      setIsExporting(false);
+      input.setBusy(false);
     }
+  }
+
+  /** The closing's own workbook: matrix, distributor comparison, store split, and the invoice rows. */
+  async function handleExport() {
+    await runExport({
+      fallbackName: "phoenix-monthly-closing.xlsx",
+      setBusy: setIsExporting,
+      url: "/api/sales/monthly-closing/export",
+    });
+  }
+
+  /**
+   * The premium workbook, added 2026-08-30 at the owner's instruction as a SECOND button rather than
+   * a replacement, so both formats stay available and the reader picks whichever they read more
+   * comfortably. Same line, same month, same filter, same numbers.
+   *
+   * What comes back is the owner's OWN .xlsm engine with the month written into it -- its Excel
+   * Tables, pivots, slicers and the Rep Card's formulas all live -- plus the pages that were added
+   * to it: Watch List, Top Customers, Details and Family by Month. Thirteen sheets. It serves as
+   * .xlsx by default and only as .xlsm when the caller asks for the macros, because a
+   * macro-enabled attachment is stripped by too many mail systems to be the default.
+   */
+  async function handlePremiumExport() {
+    await runExport({
+      fallbackName: "phoenix-monthly-closing-premium.xlsx",
+      setBusy: setIsExportingPremium,
+      url: "/api/sales/monthly-closing/premium-export",
+    });
   }
 
   if (initialError && !matrix) {
@@ -515,22 +550,44 @@ export function MonthlyClosingWorkspace({ canPublish = false, initialCoverage = 
                     regions={filterOptions.regions}
                     value={filter}
                   />
-                  <button
-                    className={cn(
-                      "inline-flex h-10 shrink-0 items-center gap-2 border border-[#0B0B0B] bg-[#0B0B0B] px-4 text-sm font-bold text-white transition hover:bg-phx-accent disabled:opacity-50",
-                    )}
-                    disabled={isExporting || isMultiPeriod || filteredMatrix.columns.length === 0}
-                    onClick={() => void handleExport()}
-                    title={
-                      isMultiPeriod
-                        ? `This workbook carries the month's own invoice rows on its Data sheet, which is built one month at a time — so it cannot yet cover ${periodSpan}. Pick a single month to export, or use the Performance Review's export, which covers the whole selection.`
-                        : undefined
-                    }
-                    type="button"
-                  >
-                    {isExporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-                    Export XLSX
-                  </button>
+                  <div className="flex shrink-0 flex-col gap-2 sm:flex-row sm:items-center">
+                    {/* Two workbooks of the same month, side by side. The owner's instruction (2026-08-30) was
+                        that the premium sheet be added BESIDE this button rather than replacing it, so whoever is
+                        reading picks the format they read more comfortably. Both carry the same line, the same
+                        month and the same on-screen filter. */}
+                    <button
+                      className={cn(
+                        "inline-flex h-10 shrink-0 items-center gap-2 border border-[#0B0B0B] bg-[#0B0B0B] px-4 text-sm font-bold text-white transition hover:bg-phx-accent disabled:opacity-50",
+                      )}
+                      disabled={isExporting || isExportingPremium || isMultiPeriod || filteredMatrix.columns.length === 0}
+                      onClick={() => void handleExport()}
+                      title={
+                        isMultiPeriod
+                          ? `This workbook carries the month's own invoice rows on its Data sheet, which is built one month at a time — so it cannot yet cover ${periodSpan}. Pick a single month to export, or use the Performance Review's export, which covers the whole selection.`
+                          : "The full closing workbook: the matrix, the distributor comparison, the store split, and every invoice row behind them."
+                      }
+                      type="button"
+                    >
+                      {isExporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                      Export XLSX
+                    </button>
+                    <button
+                      className={cn(
+                        "inline-flex h-10 shrink-0 items-center gap-2 border border-[#0B0B0B] bg-white px-4 text-sm font-bold text-[#0B0B0B] transition hover:border-phx-accent hover:bg-phx-accent hover:text-white disabled:opacity-50",
+                      )}
+                      disabled={isExporting || isExportingPremium || isMultiPeriod || filteredMatrix.columns.length === 0}
+                      onClick={() => void handlePremiumExport()}
+                      title={
+                        isMultiPeriod
+                          ? `This workbook is built one month at a time, so it cannot yet cover ${periodSpan}. Pick a single month to export it.`
+                          : "The same month, read the other way: an overview, the rep and district-manager rankings, top achievers, the watch list, both matrices with each region foldable, area by product, the families and the biggest customers."
+                      }
+                      type="button"
+                    >
+                      {isExportingPremium ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                      Export Premium XLSX
+                    </button>
+                  </div>
                 </div>
                 {/* Owner decision (2026-08-08): this screen must match the exported workbook, so
                     it now carries the same store split the export always applied — see

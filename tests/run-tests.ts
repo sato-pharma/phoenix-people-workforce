@@ -1021,6 +1021,7 @@ import { runClosingDirectAreaIdentityTests } from "./closing-direct-area-identit
 import { runMonthlyClosingExportAreaMergeStaticTests } from "./monthly-closing-export-area-merge-static.test.ts";
 import { runSalesStoreOverrideTests } from "./sales-store-override.test.ts";
 import { runClosingExportFilenameTests } from "./closing-export-filename.test.ts";
+import { runClosingEngineExportTests } from "./closing-engine-export.test.ts";
 import { runWeeklyPlansDistrictManagerBypassTests } from "./weekly-plans-district-manager-bypass.test.ts";
 import { runNotificationRecipientAddressResolutionTests } from "./notification-recipient-address-resolution.test.ts";
 import { runRecipientAssuranceGuardTests } from "./recipient-assurance-guard.test.ts";
@@ -2982,6 +2983,10 @@ await runTest(
 await runTest(
   "the closing workbook download is named by month, line and region (and never by a raw period code)",
   runClosingExportFilenameTests,
+);
+await runTest(
+  "the premium closing export FILLS the owner's .xlsm engine (pivots, slicers, Rep Card formulas and VBA all survive), never adds units across products, never scores an untargeted area at 0%, and moves every footnote, merge, colour band and sheet-local print area with the real row count",
+  runClosingEngineExportTests,
 );
 await runTest(
   "District Manager weekly/monthly plans skip the CEO decide stage (server guard, no CEO notification, HR bucket, read-only CEO queue)",

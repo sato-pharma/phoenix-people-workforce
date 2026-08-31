@@ -492,6 +492,26 @@ and never `docs/`, and four of §4's slugs exist nowhere else, so moving one orp
   **`unpublishClosing` is deliberately NOT gated** — it is the recovery path, and a recovery path
   that stops working when you need it is not one. Do not add an override flag, and do not offer to
   publish a running month "just to see".
+- 🔒 **THE OLD MONTHLY CLOSING EXPORT IS FROZEN — every new closing feature ships BESIDE it.** Owner
+  2026-08-31, the second time in two days: *"The old monthly closing sheet don't mess it. Anything we
+  will do will be aside it."* That covers the route, the workbook, its sheet set, its layout and the
+  black **Export XLSX** button — no restyle, no refactor, no "obviously right" fix. It is the
+  auditor's file: people already forward it and reconcile against it, so a second format is additive
+  while a changed first format invalidates every copy in circulation. New capability goes in the
+  **premium** export beside it. The one thing that legitimately spans both is the shared `runExport`
+  that makes each button post the on-screen filter — keeping that shared is what stops the old one
+  diverging from the screen, and `tests/sos-ui-truth.test.ts` pins it.
+  `the-old-monthly-closing-export-is-never-touched`
+- 🔒 **The premium closing workbook FILLS the `.xlsm` engine — it never rebuilds one.** The engine is
+  the `Data` sheet's two Excel Tables (`SalesData`, `AreaBook`) plus `PickList`, which drive 3 pivots
+  **by table name**, 2 slicers, and the `Rep Card`'s 120 INDEX/MATCH formulas. A from-scratch
+  server-side workbook throws all of that away and leaves dead text that looks nearly identical —
+  which is exactly what shipped on 2026-08-30 and had to be undone. **Never round-trip the workbook
+  through ExcelJS**: loading and re-saving silently destroys the pivots, slicers, tables and VBA.
+  Rewrite the data parts inside the zip and leave every other part byte-identical. Ship the template
+  **EMPTY**, never pre-filled with a real month — a filler that skips a sheet then hands someone
+  another line's real numbers under the right heading, and wrong-but-plausible is far worse than
+  blank. `premium-closing-export-fills-the-xlsm-engine-never-rebuilds-it`
 - **Every weekly report and export MUST set `excludeUnmapped`** — an unmapped SKU double-counts
   against the real product. **An export must MATCH the screen**: never drop a sheet or column
   silently because it cannot be filtered — label it instead. The Weekly **Summarized Report's layout

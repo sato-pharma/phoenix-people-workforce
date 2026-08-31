@@ -1,0 +1,684 @@
+{
+  "builtFrom": "phoenix-closing-2026-07-CNS.xlsm",
+  "sheets": {
+    "Overview": {
+      "file": "xl/worksheets/sheet1.xml",
+      "kind": "data",
+      "state": "visible",
+      "headerRows": 8,
+      "firstDataRow": 9,
+      "dataCols": "A:J",
+      "trailerRows": [
+        18,
+        19,
+        20
+      ],
+      "trailerGap": 2,
+      "volatile": [
+        "A1",
+        "B5",
+        "D5",
+        "F5",
+        "I5",
+        "B6",
+        "D6",
+        "F6",
+        "I6",
+        "I4",
+        "H8",
+        "I8"
+      ],
+      "stampCells": [
+        {
+          "col": "B",
+          "s": 9
+        },
+        {
+          "col": "C",
+          "s": 19
+        },
+        {
+          "col": "D",
+          "s": 11
+        },
+        {
+          "col": "E",
+          "s": 13
+        },
+        {
+          "col": "F",
+          "s": 15
+        },
+        {
+          "col": "G",
+          "s": 21
+        },
+        {
+          "col": "H",
+          "s": 11
+        },
+        {
+          "col": "I",
+          "s": 17
+        },
+        {
+          "col": "J",
+          "s": 19
+        }
+      ],
+      "rowAttrs": "ht=\"16.5\" customHeight=\"1\" x14ac:dyDescent=\"0.25\""
+    },
+    "Rep Ranking": {
+      "file": "xl/worksheets/sheet2.xml",
+      "kind": "data",
+      "state": "visible",
+      "headerRows": 4,
+      "firstDataRow": 5,
+      "dataCols": "A:J",
+      "trailerRows": [],
+      "trailerGap": 0,
+      "volatile": [
+        "A1",
+        "J4"
+      ],
+      "stampCells": [
+        {
+          "col": "A",
+          "s": 19
+        },
+        {
+          "col": "B",
+          "s": 9
+        },
+        {
+          "col": "C",
+          "s": 9
+        },
+        {
+          "col": "D",
+          "s": 9
+        },
+        {
+          "col": "E",
+          "s": 9
+        },
+        {
+          "col": "F",
+          "s": 11
+        },
+        {
+          "col": "G",
+          "s": 13
+        },
+        {
+          "col": "H",
+          "s": 15
+        },
+        {
+          "col": "I",
+          "s": 21
+        },
+        {
+          "col": "J",
+          "s": 17
+        }
+      ],
+      "rowAttrs": "ht=\"16.5\" customHeight=\"1\" x14ac:dyDescent=\"0.25\""
+    },
+    "Rep Card": {
+      "file": "xl/worksheets/sheet3.xml",
+      "kind": "formula",
+      "state": "visible",
+      "headerRows": 16,
+      "productStampRow": 17,
+      "trailerRows": [
+        32,
+        33,
+        34,
+        35,
+        36
+      ],
+      "volatile": [
+        "A1",
+        "B5",
+        "B14",
+        "B17"
+      ]
+    },
+    "Top Achievers": {
+      "file": "xl/worksheets/sheet4.xml",
+      "kind": "data",
+      "state": "visible",
+      "headerRows": 8,
+      "firstDataRow": 9,
+      "dataCols": "A:I",
+      "trailerRows": [
+        20,
+        21
+      ],
+      "trailerGap": 2,
+      "volatile": [
+        "A1",
+        "B5",
+        "G5",
+        "B6"
+      ],
+      "stampCells": [
+        {
+          "col": "B",
+          "s": 19
+        },
+        {
+          "col": "C",
+          "s": 9
+        },
+        {
+          "col": "D",
+          "s": 9
+        },
+        {
+          "col": "E",
+          "s": 9
+        },
+        {
+          "col": "F",
+          "s": 11
+        },
+        {
+          "col": "G",
+          "s": 13
+        },
+        {
+          "col": "H",
+          "s": 15
+        },
+        {
+          "col": "I",
+          "s": 21
+        }
+      ],
+      "rowAttrs": "ht=\"18.95\" customHeight=\"1\" x14ac:dyDescent=\"0.25\""
+    },
+    "Closing Matrix": {
+      "file": "xl/worksheets/sheet5.xml",
+      "kind": "pivot",
+      "state": "visible",
+      "headerRows": 6,
+      "firstDataRow": null,
+      "dataCols": null,
+      "trailerRows": [],
+      "trailerGap": 0,
+      "volatile": [
+        "A1"
+      ],
+      "stampCells": [],
+      "rowAttrs": ""
+    },
+    "Units Matrix": {
+      "file": "xl/worksheets/sheet6.xml",
+      "kind": "pivot",
+      "state": "visible",
+      "headerRows": 6,
+      "firstDataRow": null,
+      "dataCols": null,
+      "trailerRows": [],
+      "trailerGap": 0,
+      "volatile": [
+        "A1"
+      ],
+      "stampCells": [],
+      "rowAttrs": ""
+    },
+    "Area x Product": {
+      "file": "xl/worksheets/sheet7.xml",
+      "kind": "pivot",
+      "state": "visible",
+      "headerRows": 1,
+      "firstDataRow": null,
+      "dataCols": null,
+      "trailerRows": [],
+      "trailerGap": 0,
+      "volatile": [
+        "A1"
+      ],
+      "stampCells": [],
+      "rowAttrs": ""
+    },
+    "Family Performance": {
+      "file": "xl/worksheets/sheet8.xml",
+      "kind": "data",
+      "state": "visible",
+      "headerRows": 4,
+      "firstDataRow": 5,
+      "dataCols": "A:H",
+      "trailerRows": [
+        12,
+        13
+      ],
+      "trailerGap": 1,
+      "volatile": [
+        "A1"
+      ],
+      "stampCells": [
+        {
+          "col": "B",
+          "s": 9
+        },
+        {
+          "col": "C",
+          "s": 19
+        },
+        {
+          "col": "D",
+          "s": 11
+        },
+        {
+          "col": "E",
+          "s": 13
+        },
+        {
+          "col": "F",
+          "s": 15
+        },
+        {
+          "col": "G",
+          "s": 21
+        },
+        {
+          "col": "H",
+          "s": 15
+        }
+      ],
+      "rowAttrs": "ht=\"18.95\" customHeight=\"1\" x14ac:dyDescent=\"0.25\""
+    },
+    "Data": {
+      "file": "xl/worksheets/sheet9.xml",
+      "kind": "data",
+      "state": "veryHidden",
+      "headerRows": 1,
+      "firstDataRow": 2,
+      "dataCols": "A:AC",
+      "trailerRows": [],
+      "trailerGap": 0,
+      "volatile": [
+        "AC1"
+      ],
+      "stampCells": [
+        {
+          "col": "A",
+          "s": 0
+        },
+        {
+          "col": "B",
+          "s": 0
+        },
+        {
+          "col": "C",
+          "s": 0
+        },
+        {
+          "col": "D",
+          "s": 0
+        },
+        {
+          "col": "E",
+          "s": 0
+        },
+        {
+          "col": "F",
+          "s": 0
+        },
+        {
+          "col": "G",
+          "s": 0
+        },
+        {
+          "col": "H",
+          "s": 0
+        },
+        {
+          "col": "I",
+          "s": 0
+        },
+        {
+          "col": "J",
+          "s": 0
+        },
+        {
+          "col": "K",
+          "s": 0
+        },
+        {
+          "col": "L",
+          "s": 0
+        },
+        {
+          "col": "M",
+          "s": 0
+        },
+        {
+          "col": "N",
+          "s": 0
+        },
+        {
+          "col": "P",
+          "s": 0
+        },
+        {
+          "col": "Q",
+          "s": 0
+        },
+        {
+          "col": "R",
+          "s": 0
+        },
+        {
+          "col": "S",
+          "s": 0
+        },
+        {
+          "col": "T",
+          "s": 0
+        },
+        {
+          "col": "U",
+          "s": 0
+        },
+        {
+          "col": "V",
+          "s": 0
+        },
+        {
+          "col": "W",
+          "s": 0
+        },
+        {
+          "col": "X",
+          "s": 0
+        },
+        {
+          "col": "Y",
+          "s": 0
+        },
+        {
+          "col": "Z",
+          "s": 0
+        },
+        {
+          "col": "AA",
+          "s": 0
+        },
+        {
+          "col": "AC",
+          "s": 0
+        }
+      ],
+      "rowAttrs": "x14ac:dyDescent=\"0.25\""
+    },
+    "Watch List": {
+      "file": "xl/worksheets/sheet10.xml",
+      "kind": "data",
+      "state": "visible",
+      "headerRows": 4,
+      "firstDataRow": 5,
+      "dataCols": "A:L",
+      "trailerRows": [],
+      "trailerGap": 0,
+      "volatile": [
+        "A1"
+      ],
+      "stampCells": [
+        {
+          "col": "A",
+          "s": 9
+        },
+        {
+          "col": "B",
+          "s": 9
+        },
+        {
+          "col": "C",
+          "s": 9
+        },
+        {
+          "col": "D",
+          "s": 9
+        },
+        {
+          "col": "E",
+          "s": 9
+        },
+        {
+          "col": "F",
+          "s": 11
+        },
+        {
+          "col": "G",
+          "s": 11
+        },
+        {
+          "col": "H",
+          "s": 11
+        },
+        {
+          "col": "I",
+          "s": 11
+        },
+        {
+          "col": "J",
+          "s": 52
+        },
+        {
+          "col": "K",
+          "s": 15
+        },
+        {
+          "col": "L",
+          "s": 21
+        }
+      ],
+      "rowAttrs": "ht=\"16.5\" customHeight=\"1\" x14ac:dyDescent=\"0.25\""
+    },
+    "Top Customers": {
+      "file": "xl/worksheets/sheet11.xml",
+      "kind": "data",
+      "state": "visible",
+      "headerRows": 4,
+      "firstDataRow": 5,
+      "dataCols": "A:H",
+      "trailerRows": [
+        10315,
+        10316,
+        10317
+      ],
+      "trailerGap": 2,
+      "volatile": [
+        "A1"
+      ],
+      "stampCells": [
+        {
+          "col": "A",
+          "s": 19
+        },
+        {
+          "col": "B",
+          "s": 9
+        },
+        {
+          "col": "C",
+          "s": 9
+        },
+        {
+          "col": "D",
+          "s": 9
+        },
+        {
+          "col": "E",
+          "s": 9
+        },
+        {
+          "col": "F",
+          "s": 11
+        },
+        {
+          "col": "G",
+          "s": 54
+        },
+        {
+          "col": "H",
+          "s": 54
+        }
+      ],
+      "rowAttrs": "ht=\"16.5\" customHeight=\"1\" x14ac:dyDescent=\"0.25\""
+    },
+    "Details": {
+      "file": "xl/worksheets/sheet12.xml",
+      "kind": "data",
+      "state": "visible",
+      "headerRows": 4,
+      "firstDataRow": 5,
+      "dataCols": "A:R",
+      "trailerRows": [],
+      "trailerGap": 0,
+      "volatile": [
+        "A1"
+      ],
+      "stampCells": [
+        {
+          "col": "A",
+          "s": 9
+        },
+        {
+          "col": "B",
+          "s": 9
+        },
+        {
+          "col": "C",
+          "s": 9
+        },
+        {
+          "col": "D",
+          "s": 9
+        },
+        {
+          "col": "E",
+          "s": 9
+        },
+        {
+          "col": "F",
+          "s": 9
+        },
+        {
+          "col": "G",
+          "s": 9
+        },
+        {
+          "col": "H",
+          "s": 9
+        },
+        {
+          "col": "I",
+          "s": 9
+        },
+        {
+          "col": "J",
+          "s": 56
+        },
+        {
+          "col": "K",
+          "s": 11
+        },
+        {
+          "col": "L",
+          "s": 11
+        },
+        {
+          "col": "M",
+          "s": 11
+        },
+        {
+          "col": "N",
+          "s": 11
+        },
+        {
+          "col": "O",
+          "s": 11
+        },
+        {
+          "col": "P",
+          "s": 15
+        },
+        {
+          "col": "Q",
+          "s": 21
+        },
+        {
+          "col": "R",
+          "s": 9
+        }
+      ],
+      "rowAttrs": "ht=\"16.5\" customHeight=\"1\" x14ac:dyDescent=\"0.25\""
+    },
+    "Family by Month": {
+      "file": "xl/worksheets/sheet13.xml",
+      "kind": "data",
+      "state": "visible",
+      "headerRows": 4,
+      "firstDataRow": 5,
+      "dataCols": "A:H",
+      "trailerRows": [
+        12,
+        13
+      ],
+      "trailerGap": 1,
+      "volatile": [
+        "A1"
+      ],
+      "stampCells": [
+        {
+          "col": "B",
+          "s": 9
+        },
+        {
+          "col": "C",
+          "s": 19
+        },
+        {
+          "col": "D",
+          "s": 11
+        },
+        {
+          "col": "E",
+          "s": 15
+        },
+        {
+          "col": "F",
+          "s": 15
+        },
+        {
+          "col": "G",
+          "s": 21
+        },
+        {
+          "col": "H",
+          "s": 15
+        }
+      ],
+      "rowAttrs": "ht=\"18.95\" customHeight=\"1\" x14ac:dyDescent=\"0.25\""
+    }
+  },
+  "lastRowOf": {
+    "Overview": 20,
+    "Rep Ranking": 5,
+    "Rep Card": 36,
+    "Top Achievers": 21,
+    "Closing Matrix": 6,
+    "Units Matrix": 6,
+    "Area x Product": 1,
+    "Family Performance": 13,
+    "Data": 2,
+    "Watch List": 5,
+    "Top Customers": 10317,
+    "Details": 5
+  }
+}
