@@ -667,7 +667,7 @@ export function RecruitmentCandidatesPortal({
       {/* His own areas, after the CVs he owes an answer on and before his team's. This is a place to
           go looking rather than a queue: nobody is waiting on him for anything in here, so it must
           not sit above the list that is. */}
-      <DistrictFoldersSection boards={initialDistrictBoards} files={files} viewerHrId={viewerHrId} />
+      <DistrictFoldersSection boards={initialDistrictBoards} files={files} ownFolders viewerHrId={viewerHrId} />
 
       {/* After the caller's own CVs, deliberately. The ones sent to HIM are the ones he still owes an
           answer on; his team's are for oversight and carry no obligation, so they must not push his

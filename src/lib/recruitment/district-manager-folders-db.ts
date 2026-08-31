@@ -45,6 +45,7 @@ import {
   type DistrictSeatRow,
   type UnplacedDeclaration,
 } from "@/lib/recruitment/district-manager-folders";
+import { isReturnSuppressed, loadManagerReturnSuppressions } from "@/lib/recruitment/district-returns";
 import type { Candidate } from "@/lib/recruitment/types";
 
 /** A board carrying whole candidate records, which is what every screen renders. */
@@ -183,8 +184,14 @@ export async function listDistrictBoardsForManager(
   if (rows.length === 0) return [];
   if (boardsForManager(districtManagerBoards(rows), managerHrId).length === 0) return [];
 
-  const candidates = await loadRoutableCandidates();
-  const { boards } = placeCandidatesInDistrictFolders({ candidates, rows });
+  // His returns are read alongside the CV sweep, not before it: a CV he has handed back to the
+  // administrator drops out of his folders here, and stays in every other line's. The report path
+  // (loadAllDistrictBoards) deliberately does NOT do this — a returned CV was still received.
+  const [candidates, suppressedReturns] = await Promise.all([
+    loadRoutableCandidates(),
+    loadManagerReturnSuppressions(managerHrId),
+  ]);
+  const { boards } = placeCandidatesInDistrictFolders({ candidates, rows, suppressedReturns });
   return boardsForManager(boards, managerHrId);
 }
 
@@ -235,6 +242,26 @@ export async function districtBoardsHoldingCandidate(candidateId: string): Promi
 }
 
 export async function isCandidateInViewerDistrict(
+  viewerHrId: string | null | undefined,
+  candidateId: string,
+): Promise<boolean> {
+  if (!(await isCandidateInViewerDistrictScope(viewerHrId, candidateId))) return false;
+  // A CV he returned to the administrator is no longer his to open — the same decision that drops it
+  // from his folder revokes his access to its file and comment thread. Checked after the cheaper
+  // placement so the read only happens for a CV that was actually in his district.
+  return !(await isReturnSuppressed(viewerHrId, candidateId));
+}
+
+/**
+ * The SAME "is this CV in his district" question, but blind to any return he has already made.
+ *
+ * This is what the return route gates on, and the difference is the whole point: isCandidateInViewer
+ * District above answers "may he still OPEN it", which a returned CV fails; this answers "was it ever
+ * his to return", which a returned CV still passes. Gating the return on the suppression-aware check
+ * would make the second press a 403 instead of the honest "already returned", and would forbid a
+ * manager from ever correcting a note on a return he just made.
+ */
+export async function isCandidateInViewerDistrictScope(
   viewerHrId: string | null | undefined,
   candidateId: string,
 ): Promise<boolean> {

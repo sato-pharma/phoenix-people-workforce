@@ -764,6 +764,17 @@ export const accessRegistry = [
   // entries so the bytes route (/files/*) and the list route (/files) each resolve to their own.
   sessionApi({ methods: readOnly, pattern: "/api/recruitment/manager-engagement/candidates/*/files", permission: null, guard: "domain-helper" }),
   sessionApi({ methods: readOnly, pattern: "/api/recruitment/manager-engagement/candidates/*/files/*", permission: null, guard: "domain-helper" }),
+  // A district manager hands a CV back to the administrator ("area not match — or any other
+  // situation"), and the administrator later clears it from the Returned CVs queue. TWO DIFFERENT
+  // GRANTS on purpose: returning is `hiring_interviews:update` — the same folder grant every district
+  // manager already holds, so it is registered as its own entry AHEAD of the /api/recruitment/
+  // candidates/** blanket (which would otherwise mis-declare it as candidates:read, a grant a DM does
+  // not hold). Clearing the queue is `recruitment:update` — the recruiting-admin grant a DM does NOT
+  // hold, so the person clearing a return is never the person who filed it. Both mutate and carry
+  // assertSameOriginMutation. Per-record scoping (the CV is actually in the caller's district) lives
+  // in the handler, exactly as the hiring-manager write routes above.
+  sessionApi({ methods: ["POST"], pattern: "/api/recruitment/candidates/*/district-return", permission: { resource: "hiring_interviews", action: "update" }, csrfRequired: true }),
+  sessionApi({ methods: ["POST"], pattern: "/api/recruitment/district-returns/*/resolve", permission: { resource: "recruitment", action: "update" }, csrfRequired: true }),
   sessionApi({ methods: readOnly, pattern: "/api/reports/vacancies", permission: { resource: "vacancies", action: "read" } }),
   // Listed AHEAD of the blanket /api/reports/** below, which would otherwise swallow it. The
   // permission is identical — this entry exists to DECLARE the audit. It is the one organogram

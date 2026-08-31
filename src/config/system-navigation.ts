@@ -739,11 +739,9 @@ const adminNavigationSectionSeeds = [
     // SFE Manager still sees no heading — see flatSidebarRoles.
     label: "People Management",
   },
-  // Collapsed to a single standalone sidebar button that opens the Recruitment &
-  // Hiring hub (app/(admin)/admin/recruitment-hiring/page.tsx, items in
-  // recruitmentHiringPageItems below) — same pattern as the other consolidated
-  // sections above. All four items share the exact same roles, so the button's
-  // gate is just that same role list.
+  // The Recruitment & Hiring hub button (app/(admin)/admin/recruitment-hiring/page.tsx, items in
+  // recruitmentHiringPageItems below), plus the Returned CVs queue beside it — same pattern as the
+  // other consolidated sections above. Both rows share the exact same gate.
   {
     id: "recruitment-hiring",
     items: [
@@ -753,6 +751,12 @@ const adminNavigationSectionSeeds = [
       // sidebar opening a hub whose seven cards are all filtered out for her — the same empty-hub
       // defect already recorded above for SFE Manager and Finance Manager on People Management.
       { href: "/admin/recruitment-hiring", icon: BriefcaseBusiness, label: "Recruitment & Hiring", permissions: [{ resource: "recruitment", action: "read" }], roles: hrAuthorityNavigationRoles },
+      // Returned CVs — where a district manager's "return this CV to the administrator" lands, one
+      // pile per returning manager and reason (app/(admin)/recruitment/returned-cvs/page.tsx). A
+      // plain sidebar row rather than a ninth hub card, which would trip four unrelated CI gates for
+      // no more reach — the same choice Manager CV Engagement made. The recruitment:read clause is
+      // what its page gate reads too, so the two cannot drift (every-offered-link-opens.test.ts).
+      { href: "/recruitment/returned-cvs", icon: Undo2, label: "Returned CVs", permissions: [{ resource: "recruitment", action: "read" }], roles: hrAuthorityNavigationRoles },
     ],
     label: "Recruitment & Hiring",
   },

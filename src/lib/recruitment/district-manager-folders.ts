@@ -190,6 +190,9 @@ function text(value: string | null | undefined): string {
   return String(value ?? "").trim();
 }
 
+/** Shared empty set so the common no-suppressions call allocates nothing. */
+const EMPTY_SUPPRESSIONS: ReadonlySet<string> = new Set<string>();
+
 /**
  * One key for a REGION name, tolerant of the one way the organogram splits a region and the apply
  * flow does not.
@@ -337,6 +340,24 @@ export function districtManagerBoards<T = DistrictFolderCandidate>(
 }
 
 /**
+ * One key for "manager M has handed candidate C back", shared by the placement rule below and by the
+ * loader that reads the returns table (district-returns.ts). BOTH sides route the hr id through
+ * `canonicalHrIdKey`, so the case stored in the table never has to agree with the case the org tree
+ * carries — the same normalisation `boardsForManager` already leans on. The candidate id is a uuid
+ * and stable, so it is used verbatim.
+ *
+ * A return is per MANAGER, not per CV: the same Nasr City CV sits in three managers' folders, and a
+ * return by one of them must leave it untouched for the other two. Keying the suppression on the
+ * manager as well as the candidate is what makes that true.
+ */
+export function districtReturnSuppressionKey(
+  managerHrId: string | null | undefined,
+  candidateId: string,
+): string {
+  return `${canonicalHrIdKey(managerHrId) ?? ""}::${text(candidateId)}`;
+}
+
+/**
  * The same boards, with every candidate dropped into every folder that should hold them.
  *
  * ── TWO WAYS IN, AND THE SECOND ONE IS THE BACKFILL ─────────────────────────────────────────────
@@ -374,8 +395,16 @@ export function districtManagerBoards<T = DistrictFolderCandidate>(
 export function placeCandidatesInDistrictFolders<T extends DistrictFolderCandidate>(input: {
   rows: readonly DistrictSeatRow[];
   candidates: readonly T[];
+  /**
+   * The returns a manager has made — keys from `districtReturnSuppressionKey`. A candidate carrying
+   * a key for a given board's manager is dropped from THAT board only; every other line that shares
+   * the area keeps him. Omitted by the whole-company report loader on purpose (a returned CV was
+   * still received), and passed only by the manager-scoped folder loader. See district-returns.ts.
+   */
+  suppressedReturns?: ReadonlySet<string>;
 }): { boards: DistrictManagerBoard<T>[]; unplaced: UnplacedDeclaration[]; placements: number } {
   const boards = districtManagerBoards<T>(input.rows);
+  const suppressed = input.suppressedReturns ?? EMPTY_SUPPRESSIONS;
 
   type Target = { board: DistrictManagerBoard<T>; folder: DistrictAreaFolder<T> };
 
@@ -430,6 +459,17 @@ export function placeCandidatesInDistrictFolders<T extends DistrictFolderCandida
 
   const fileInto = (targets: readonly Target[], candidate: T): void => {
     for (const target of targets) {
+      // A CV the board's own manager has returned is dropped HERE, at the single choke point every
+      // placement passes through, so both the area path and the region catch-all honour it with no
+      // second copy. The skip is silent by design: the CV is not "unplaced" (it matched a folder
+      // fine — a person chose to hand it back), and it stays in every OTHER manager's folder because
+      // the key carries this target's manager, not the candidate alone.
+      if (
+        suppressed.size > 0 &&
+        suppressed.has(districtReturnSuppressionKey(target.board.managerHrId, candidate.id))
+      ) {
+        continue;
+      }
       target.folder.candidates.push(candidate);
       target.board.candidateCount += 1;
       placements += 1;
