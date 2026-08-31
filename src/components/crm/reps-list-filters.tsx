@@ -20,6 +20,26 @@ import type { CoverageFilterOptions, CoverageFilterSelection } from "@/lib/crm/r
 // prunes correctly, but only after a round trip that looks to the user like the filter was ignored.
 
 const LABEL_CLASS = "block text-phx-3xs font-black uppercase tracking-[0.16em] text-slate-400";
+/**
+ * `text-sm`, and DO NOT shrink it to make a long rep name fit on a phone. That was tried here on
+ * 2026-09-01 and is wrong twice over.
+ *
+ * The measurement is real: at 375px the Medical rep picker holds 322px of text in a 307px box, so
+ * the browser clips a typical 34-character name. It is the one control on this board that cannot
+ * honour the owner's fits-the-screen golden rule by wrapping, because a native `<select>` never
+ * wraps its selected option at any font size.
+ *
+ * But `text-xs` does not fix it and cannot. `app/globals.css` RULE 3 floors EVERY form control
+ * inside `.admin-shell` and `.employee-portal-shell` at `max(16px, 1em)` below 768px, deliberately:
+ * iOS Safari zooms the whole page in when a control under 16px takes focus and LEAVES it zoomed
+ * after blur. So a smaller class here computes to 16px anyway — measured, `text-xs` and `text-sm`
+ * both resolve to 16px at 375px — and if it ever did apply it would reintroduce the zoom defect
+ * that rule was written to kill. Shrinking a phone control is not available as a tool here.
+ *
+ * The real answer is already in place: nothing on this screen lives only inside this select. The
+ * chosen rep's full name is printed in the section heading above it and on every rep card, so the
+ * clipped text is a duplicate, never the only copy. Fix a future complaint there, not with a size.
+ */
 const SELECT_CLASS =
   "h-9 w-full border border-slate-200 bg-white px-2 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400 disabled:bg-slate-50 disabled:text-slate-400";
 

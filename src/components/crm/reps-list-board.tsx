@@ -90,8 +90,24 @@ function hrefWithRep(basePath: string, board: RepsListBoard, repKey: string | nu
   return search ? `${basePath}?${search}` : basePath;
 }
 
+/**
+ * "84 contacts · 12 pharmacies", or just the contacts when the rep holds no pharmacies.
+ *
+ * A PHARMACY IS NOT A CONTACT (owner, 2026-09-01), so the two are never added together and the word
+ * "contacts" never covers both. A rep with pharmacies and no doctors then reads honestly —
+ * "0 contacts · 12 pharmacies" is a real statement about that list, not an empty one.
+ */
+function listLabel(contactCount: number, pharmacyCount: number): string {
+  const contacts = `${contactCount} ${contactCount === 1 ? "contact" : "contacts"}`;
+  if (pharmacyCount === 0) return contacts;
+  return `${contacts} · ${pharmacyCount} ${pharmacyCount === 1 ? "pharmacy" : "pharmacies"}`;
+}
+
 function RepCard({ href, rep }: { href: string; rep: RepsListRep }) {
-  const hasList = rep.agentCrmId != null && rep.contactCount > 0;
+  // Pharmacies count towards HAVING a list even though they are not contacts: a rep holding only
+  // pharmacies does have a mirrored list, and calling that "no list in the CRM" would be a false
+  // finding pointing at a sync problem that is not there.
+  const hasList = rep.agentCrmId != null && rep.contactCount + rep.pharmacyCount > 0;
   return (
     <Link
       className="block border border-slate-200 bg-white px-4 py-3 transition-colors hover:border-orange-400 hover:bg-orange-50"
@@ -107,16 +123,22 @@ function RepCard({ href, rep }: { href: string; rep: RepsListRep }) {
           Saying it in words is the finding — this rep exists in the organogram and the CRM mirror
           holds nothing for them, which is a sync or account problem, not a rep with no doctors. */}
       <p className={`mt-1 text-phx-2xs font-black uppercase tracking-[0.1em] ${hasList ? "text-slate-400" : "text-amber-700"}`}>
-        {hasList ? `${rep.contactCount} contacts` : "No list mirrored from the CRM"}
+        {hasList ? listLabel(rep.contactCount, rep.pharmacyCount) : "No list mirrored from the CRM"}
       </p>
     </Link>
   );
 }
 
-/** A tile's share of the whole list, so a count is readable without doing the arithmetic. */
-function shareOf(count: number, total: number): string {
-  if (total <= 0) return "no contacts";
-  return `${Math.round((count / total) * 100)}% of the list`;
+/**
+ * A list's share of the CONTACTS, so a count is readable without doing the arithmetic.
+ *
+ * The denominator is contacts (AM + PM), never the row total: PM and AM are the two halves of the
+ * contact list and must add to 100%. Folding pharmacies into the denominator would make them add
+ * to less than that and quietly restate the very thing the owner separated on 2026-09-01.
+ */
+function shareOf(count: number, contacts: number): string {
+  if (contacts <= 0) return "no contacts";
+  return `${Math.round((count / contacts) * 100)}% of contacts`;
 }
 
 export function RepsListBoardView({ basePath, board }: { basePath: string; board: RepsListBoard }) {
@@ -184,17 +206,19 @@ export function RepsListBoardView({ basePath, board }: { basePath: string; board
           ) : (
             <>
               <div className="grid grid-cols-2 gap-2 p-5 pb-0 sm:grid-cols-3 lg:grid-cols-6">
-                {/* The three list names are the CRM's own and the owner's own — PM list, AM list,
+                {/* The list names are the CRM's own and the owner's own — PM list, AM list,
                     Pharmacist. The sub-line carries each one's share rather than a description,
-                    because naming what a list "is" invents a meaning the CRM never stated. */}
-                <Tile label="Contacts" sub="all three lists" value={String(list.counts.total)} />
-                <Tile label="PM list" sub={shareOf(list.counts.pm, list.counts.total)} value={String(list.counts.pm)} />
-                <Tile label="AM list" sub={shareOf(list.counts.am, list.counts.total)} value={String(list.counts.am)} />
-                <Tile
-                  label="Pharmacists"
-                  sub={shareOf(list.counts.pharmacy, list.counts.total)}
-                  value={String(list.counts.pharmacy)}
-                />
+                    because naming what a list "is" invents a meaning the CRM never stated.
+
+                    A PHARMACY IS NOT A CONTACT. Owner, 2026-09-01: "you will not count the
+                    pharmacies as contacts... the contacts is divided into AM and PM, and the
+                    pharmacies are separate." So the Contacts tile is PM + AM, the two beneath it
+                    are its halves and add to 100%, and Pharmacies stands apart with its own count
+                    and no share — a share would only re-imply the total he separated them out of. */}
+                <Tile label="Contacts" sub="PM and AM lists" value={String(list.counts.contacts)} />
+                <Tile label="PM list" sub={shareOf(list.counts.pm, list.counts.contacts)} value={String(list.counts.pm)} />
+                <Tile label="AM list" sub={shareOf(list.counts.am, list.counts.contacts)} value={String(list.counts.am)} />
+                <Tile label="Pharmacies" sub="counted apart from contacts" value={String(list.counts.pharmacy)} />
                 {/* The VALUE is the mapped bricks alone. Counting the unmapped localities here
                     too would have this tile report bricks that do not exist — on a rep whose whole
                     area is unmapped it read "Bricks 8 / 0 mapped", which is a contradiction. */}

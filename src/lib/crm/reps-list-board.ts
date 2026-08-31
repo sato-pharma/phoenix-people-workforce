@@ -51,9 +51,15 @@ export type RepsListRep = {
    * and collapsing that to the first would state something untrue about where the person works.
    */
   areaNames: string[];
+  /**
+   * AM + PM only. A pharmacy is NOT a contact — the owner's rule, 2026-09-01 — so the picker's
+   * "N contacts" and the pharmacy figure beside it are two separate things, counted apart.
+   */
   contactCount: number;
   hrId: string;
   name: string;
+  /** Pharmacies on this rep's list. Counted apart from `contactCount` and never folded into it. */
+  pharmacyCount: number;
   /** The cascade's own key for this rep — what rides in the URL. */
   repKey: string;
 };
@@ -203,9 +209,11 @@ export async function getRepsListBoard(input: {
       return {
         agentCrmId: summary?.agentCrmId ?? null,
         areaNames: [...(areaNamesBySeat.get(rep.seatId) ?? [])].sort((left, right) => left.localeCompare(right)),
-        contactCount: summary ? summary.pmCount + summary.amCount + summary.pharmacyCount : 0,
+        // Contacts are PM + AM. The pharmacy count rides beside them, never inside them.
+        contactCount: summary ? summary.pmCount + summary.amCount : 0,
         hrId: rep.hrId,
         name: rep.repName,
+        pharmacyCount: summary?.pharmacyCount ?? 0,
         repKey: rep.repKey,
       };
     })
@@ -214,7 +222,26 @@ export async function getRepsListBoard(input: {
   // Only an explicitly selected rep opens a list. The board's first screen is the cascade, exactly
   // as specified — a rep is chosen, then that rep's contacts appear.
   const selected = selection.rep ? (reps.find((rep) => rep.repKey === selection.rep) ?? null) : null;
-  const list = selected?.agentCrmId != null ? await getRepsListForAgent(selected.agentCrmId) : null;
+
+  // COMPANY-WIDE ON PURPOSE, and not a widened picker. A shared customer's other half is by
+  // definition on another rep's list, often outside this viewer's scope, so a map restricted to
+  // the scope would leave the commonest case saying only "shared with someone". This never becomes
+  // a list a viewer can browse — a name is printed only on a row the viewer can already see.
+  //
+  // BUILT FROM `tree.reps`, NOT FROM `summaries`. getDoctorListRepSummaries constructs every row
+  // with `name: ""` and never fills it — the name is resolved against the org tree by whichever
+  // board is assembling the screen. Reading `summary.name` here therefore produced an EMPTY MAP,
+  // and an empty map means every match is dropped for want of a name: the whole shared-customer
+  // feature rendered nothing, on every rep, with no error anywhere. Measured 2026-09-01 — agent
+  // 1131 has 18 shared contacts and the board showed 0. Do not reintroduce `summaries` here.
+  const repNameByAgentId = new Map<number, string>();
+  for (const rep of tree.reps) {
+    const summary = summaryByHrId.get(lower(rep.hrId));
+    const name = rep.repName?.trim();
+    if (summary?.agentCrmId != null && name) repNameByAgentId.set(summary.agentCrmId, name);
+  }
+
+  const list = selected?.agentCrmId != null ? await getRepsListForAgent(selected.agentCrmId, repNameByAgentId) : null;
 
   const syncedAt = reps.reduce<string | null>((latest, rep) => {
     const summary = summaryByHrId.get(lower(rep.hrId));

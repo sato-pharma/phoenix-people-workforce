@@ -38,8 +38,23 @@
  */
 
 import { getAgentContactList, type DoctorListRow } from "@/lib/crm/contact-lists";
+import {
+  clusterRows,
+  findNeighbours,
+  findSharedCustomers,
+  nameKey,
+  phoneKey,
+  scoreLocationConfidence,
+  type CheckinPoint,
+  type LocationConfidence,
+  type NearbyContact,
+  type RosterEntry,
+  type SharedWith,
+} from "@/lib/crm/location-confidence";
 import { isCrmSchemaMissingError } from "@/lib/crm/schema";
 import {
+  CRM_CHECKINS_TABLE,
+  CRM_CONTACTS_TABLE,
   CRM_CUSTOMER_BRICK_RESOLUTIONS_TABLE,
   CRM_REGION_BRICK_RESOLUTIONS_TABLE,
 } from "@/lib/crm/tables";
@@ -55,7 +70,7 @@ const IN_CHUNK = 50;
 /** PostgREST caps a page at 1000 rows. Both resolution tables are read whole, so both are paged. */
 const PAGE_SIZE = 1000;
 
-/** One brick heading on the board, with the contacts that sit under it. */
+/** One brick heading on the board, with the rows — contacts AND pharmacies — that sit under it. */
 export type RepsListGroup = {
   /** Sales area code the brick belongs to (e.g. `GZ3`). Null for an unmapped group. */
   areaCode: string | null;
@@ -68,7 +83,7 @@ export type RepsListGroup = {
   areaName: string | null;
   /** Brick id (e.g. `B198-5`). Null for an unmapped group. Never rendered — the name is. */
   brickId: string | null;
-  contacts: DoctorListRow[];
+  rows: RepsListContact[];
   /**
    * What the group heading says. A real brick's own name when mapped (these are Arabic locality
    * names in production — بشتيل, الكيت كات); otherwise the CRM region name, which the caller marks
@@ -79,10 +94,67 @@ export type RepsListGroup = {
   mapped: boolean;
 };
 
+/**
+ * Where a rep actually STOOD the last time they checked in on this contact.
+ *
+ * This is the address the board shows. It is an OBSERVATION, not a record: `ireports360_checkins`
+ * carries the rep's own GPS fix and the address it resolves to, so it says where the doctor is
+ * TODAY, while the contact's `address` field says where the CRM was told they were, whenever that
+ * was last edited. The two disagree often enough that showing only the second is how a rep ends up
+ * at a clinic that has moved.
+ *
+ * THE BOARD ONCE SHOWED BOTH, LABELLED "Current" AND "Old". The owner removed the old one on
+ * 2026-09-01 — "remove the old, doesn't make any relevance" — so a row now carries ONE address.
+ * The CRM's own is still read, but only as the fallback for a contact nobody has checked in on;
+ * it is never shown beside an observed one.
+ *
+ * Coverage measured on production 2026-09-01: 7,933 of 9,518 contacts (83.3%) have at least one
+ * check-in, and every one of those carries BOTH coordinates and an address — so this is a real
+ * column, not a mostly-empty one. Of the remaining 1,585, some 1,468 have a CRM address and 117
+ * have no address anywhere, which is the only case that renders as an absence.
+ */
+export type ContactSeenAt = {
+  address: string | null;
+  /** ISO timestamp of that check-in, so the page can say how fresh the observation is. */
+  at: string | null;
+  lat: number;
+  lon: number;
+};
+
+/**
+ * A contact row, the location a rep last observed for it, and the three judgements the board makes
+ * about that location. All three are optional: they are annotations on a contact, and a list that
+ * could not read check-ins is still a correct contact list.
+ */
+export type RepsListContact = DoctorListRow & {
+  /** Which neighbourhood in its group this contact stands in, numbered from 0. Null when it stands alone. */
+  cluster?: number | null;
+  /** How well every check-in on this contact agrees with the pin being shown. Null when none exist. */
+  confidence?: LocationConfidence | null;
+  /** Other contacts in the SAME group standing at effectively the same address. */
+  nearby?: NearbyContact[] | null;
+  seenAt?: ContactSeenAt | null;
+  /** Other reps carrying what the evidence says is this same customer. */
+  sharedWith?: SharedWith[] | null;
+};
+
+/**
+ * A PHARMACY IS NOT A CONTACT. Owner's rule, 2026-09-01, in his own words: "you will not count the
+ * pharmacies as contacts. Everyone should have contacts and pharmacies. The contacts is divided
+ * into AM and PM, and the pharmacies are separate."
+ *
+ * So `contacts` is AM + PM and nothing else, and it is the only figure a screen may ever label
+ * "contacts". `total` stays because the list still has a row count and the board needs one for
+ * "N of M shown" — but it is deliberately NOT named `contacts`, and printing it under that word is
+ * the exact mistake this comment exists to stop.
+ */
 export type RepsListCounts = {
   am: number;
+  /** AM + PM. The owner's definition of a contact — pharmacies are never in here. */
+  contacts: number;
   pharmacy: number;
   pm: number;
+  /** Every row on the list, contacts PLUS pharmacies. Never shown under the word "contacts". */
   total: number;
 };
 
@@ -112,15 +184,17 @@ const normalizeRegionKey = (value: string | null | undefined): string => (value 
  * every unmapped group is pushed BELOW every mapped one regardless of size, because a heading that
  * is really a "still needs mapping" note must never outrank a real brick on the page.
  */
-export function groupContactsByBrick(rows: readonly DoctorListRow[], index: BrickIndex): RepsListForRep {
+export function groupContactsByBrick(rows: readonly RepsListContact[], index: BrickIndex): RepsListForRep {
   const groups = new Map<string, RepsListGroup>();
-  const counts: RepsListCounts = { am: 0, pharmacy: 0, pm: 0, total: 0 };
+  const counts: RepsListCounts = { am: 0, contacts: 0, pharmacy: 0, pm: 0, total: 0 };
 
   for (const row of rows) {
     counts.total += 1;
     if (row.listType === "PM") counts.pm += 1;
     else if (row.listType === "AM") counts.am += 1;
     else counts.pharmacy += 1;
+    // See RepsListCounts: contacts are AM + PM. A pharmacy row increments `total` and nothing else.
+    if (row.listType !== "Pharmacy") counts.contacts += 1;
 
     // Precise first: the contact's own mapping, then its region's. See the header.
     const brickId =
@@ -140,7 +214,7 @@ export function groupContactsByBrick(rows: readonly DoctorListRow[], index: Bric
         areaCode: isMapped ? (meta?.areaCode ?? null) : null,
         areaName: isMapped ? (meta?.areaName ?? null) : null,
         brickId: isMapped ? brickId : null,
-        contacts: [],
+        rows: [],
         heading: isMapped
           ? (meta?.name ?? "").trim() || "Unnamed brick"
           : (row.region ?? "").trim() || "No CRM region recorded",
@@ -148,24 +222,49 @@ export function groupContactsByBrick(rows: readonly DoctorListRow[], index: Bric
       };
       groups.set(key, group);
     }
-    group.contacts.push(row);
+    group.rows.push(row);
   }
 
   const ordered = [...groups.values()].sort((left, right) => {
     if (left.mapped !== right.mapped) return left.mapped ? -1 : 1;
-    if (left.contacts.length !== right.contacts.length) return right.contacts.length - left.contacts.length;
+    if (left.rows.length !== right.rows.length) return right.rows.length - left.rows.length;
     return left.heading.localeCompare(right.heading);
   });
 
   for (const group of ordered) {
-    group.contacts.sort((left, right) => left.name.localeCompare(right.name));
+    group.rows.sort((left, right) => left.name.localeCompare(right.name));
+    // NEIGHBOURS ARE FOUND PER GROUP, WHICH IS WHAT MAKES "in the same brick" STRUCTURAL. The owner
+    // asked to highlight doctors in one brick who are very near each other; a group already IS one
+    // brick (or one unmapped region), so the comparison can never reach across a heading and claim
+    // two people are together when the page has just told the reader they are in different places.
+    const found = findNeighbours(
+      group.rows.map((row) => ({
+        contactCrmId: row.contactCrmId,
+        lat: row.seenAt?.lat ?? null,
+        lon: row.seenAt?.lon ?? null,
+        name: row.name,
+      })),
+    );
+    for (const row of group.rows) row.nearby = found.get(row.contactCrmId) ?? null;
+    // Then gather each cluster onto consecutive rows — the owner's follow-up the same day: "make
+    // them under each other". The alphabetical sort above is the input, and `clusterRows` keeps
+    // as much of it as gathering allows, so this is a reorder rather than a different sort.
+    //
+    // The same pass NUMBERS the neighbourhoods, because his next instruction was that each one
+    // carries its own colour rather than all of them sharing a single tint. The number is computed
+    // here, beside the clustering that defines it, and not in the browser: a colour chosen from
+    // "does this row have neighbours" cannot tell one block from the next, which is precisely the
+    // distinction he asked to see. Scoped to the group, so numbering restarts in every brick.
+    const clustered = clusterRows(group.rows, found);
+    group.rows = clustered.rows;
+    for (const row of group.rows) row.cluster = clustered.clusterOf.get(row.contactCrmId) ?? null;
   }
 
   const unmapped = ordered.filter((group) => !group.mapped);
   return {
     counts,
     groups: ordered,
-    unmappedContactCount: unmapped.reduce((total, group) => total + group.contacts.length, 0),
+    unmappedContactCount: unmapped.reduce((total, group) => total + group.rows.length, 0),
     unmappedRegionCount: unmapped.length,
   };
 }
@@ -279,21 +378,191 @@ async function loadBrickMeta(
 }
 
 /**
- * One rep's contact list, grouped by brick.
+ * The most recent check-in per contact — the "current address", as observed rather than recorded.
  *
- * The three reads are sequenced rather than parallel because each narrows the next: the contacts
- * decide which contact-mappings to ask for, and both mapping sources together decide which brick
- * names are worth fetching. On the largest measured list (197 contacts) that is four round trips.
+ * Ordered newest-first and kept on FIRST SIGHT of each contact, so what lands is the latest fix.
+ * Chunked at `IN_CHUNK` for the same reason every other `.in()` here is: PostgREST returns zero
+ * rows and no error for a long list, which reads exactly like "nobody has ever visited these".
+ *
+ * A check-in with no coordinates is skipped outright. The whole point of this column is that the
+ * address is CLICKABLE to a real pin, and an address with no pin behind it promises a map it
+ * cannot open — the CRM address is already on the row for the text-only case.
  */
-export async function getRepsListForAgent(agentCrmId: number): Promise<RepsListForRep> {
-  const rows = await getAgentContactList(agentCrmId);
-  if (rows.length === 0) {
-    return { counts: { am: 0, pharmacy: 0, pm: 0, total: 0 }, groups: [], unmappedContactCount: 0, unmappedRegionCount: 0 };
+type ContactCheckins = { points: CheckinPoint[]; seenAt: ContactSeenAt };
+
+async function loadCheckins(contactIds: readonly number[]): Promise<Map<number, ContactCheckins>> {
+  const byContact = new Map<number, ContactCheckins>();
+  const supabase = getSupabaseAdmin();
+  const ids = [...new Set(contactIds)];
+  for (let from = 0; from < ids.length; from += IN_CHUNK) {
+    const chunk = ids.slice(from, from + IN_CHUNK);
+    for (let page = 0; ; page += 1) {
+      const { data, error } = await supabase
+        .from(CRM_CHECKINS_TABLE)
+        .select("contact_crm_id, agent_crm_id, lat, lon, address, check_date")
+        .in("contact_crm_id", chunk)
+        .not("lat", "is", null)
+        .not("lon", "is", null)
+        .order("check_date", { ascending: false })
+        // A stable tiebreak, or two rows sharing a timestamp can swap between pages — which both
+        // duplicates one check-in and drops another, quietly changing the score.
+        .order("crm_checkin_id", { ascending: false })
+        .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1);
+      if (error) {
+        // The board is about the contact list; a missing or unreadable check-in table costs the
+        // observed address and nothing else, so it degrades to the CRM address rather than 500ing.
+        if (isCrmSchemaMissingError(error)) return byContact;
+        throw new Error(`Could not read contact check-ins: ${error.message}`);
+      }
+      const rows = (data ?? []) as Array<{
+        address: string | null;
+        agent_crm_id: number | null;
+        check_date: string | null;
+        contact_crm_id: number;
+        lat: number;
+        lon: number;
+      }>;
+      for (const row of rows) {
+        const existing = byContact.get(row.contact_crm_id);
+        if (existing) {
+          existing.points.push({ agentCrmId: row.agent_crm_id, at: row.check_date, lat: row.lat, lon: row.lon });
+          continue;
+        }
+        // Newest first, so the FIRST row seen for a contact is the pin the board shows.
+        byContact.set(row.contact_crm_id, {
+          points: [{ agentCrmId: row.agent_crm_id, at: row.check_date, lat: row.lat, lon: row.lon }],
+          seenAt: { address: row.address?.trim() || null, at: row.check_date, lat: row.lat, lon: row.lon },
+        });
+      }
+      if (rows.length < PAGE_SIZE) break;
+    }
+  }
+  return byContact;
+}
+
+/**
+ * Every contact in the company, reduced to the four fields identity matching needs.
+ *
+ * A COMPANY-WIDE READ IS THE POINT, and it is safe here because nothing from it reaches the screen
+ * except a rep's NAME on a row the viewer can already see. Sharing cannot be detected from one rep's
+ * own list by construction: the other half of the pair is, by definition, on somebody else's.
+ *
+ * Deliberately NOT `unstable_cache`d. At roughly 9,500 rows this sits close enough to the 2 MB data
+ * cache entry limit to be a hazard, and exceeding that limit throws only in dev and kills the dev
+ * server outright. Four narrow columns fetched fresh cost far less than that failure mode.
+ */
+async function loadContactRoster(): Promise<RosterEntry[]> {
+  const supabase = getSupabaseAdmin();
+  const { count, error: countError } = await supabase
+    .from(CRM_CONTACTS_TABLE)
+    .select("contact_crm_id", { count: "exact", head: true });
+  if (countError) {
+    if (isCrmSchemaMissingError(countError)) return [];
+    throw new Error(`Could not size the contact roster: ${countError.message}`);
   }
 
-  const [brickByContactId, brickByRegionName] = await Promise.all([
-    loadContactBrickMap(rows.map((row) => row.contactCrmId)),
+  // Counted first, then every page requested at once. Sequential paging over ten pages is ten round
+  // trips on a board a human is waiting for; the count makes the fan-out exact rather than a guess.
+  const pages = Math.max(1, Math.ceil((count ?? 0) / PAGE_SIZE));
+  const results = await Promise.all(
+    Array.from({ length: pages }, (_unused, page) =>
+      supabase
+        .from(CRM_CONTACTS_TABLE)
+        .select("contact_crm_id, agent_crm_id, contact_name, phone")
+        .order("contact_crm_id", { ascending: true })
+        .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1),
+    ),
+  );
+
+  const roster: RosterEntry[] = [];
+  for (const { data, error } of results) {
+    if (error) {
+      if (isCrmSchemaMissingError(error)) return [];
+      throw new Error(`Could not read the contact roster: ${error.message}`);
+    }
+    for (const row of (data ?? []) as Array<{
+      agent_crm_id: number;
+      contact_crm_id: number;
+      contact_name: string | null;
+      phone: string | null;
+    }>) {
+      roster.push({
+        agentCrmId: row.agent_crm_id,
+        contactCrmId: row.contact_crm_id,
+        name: row.contact_name?.trim() || "",
+        nameKey: nameKey(row.contact_name),
+        phoneKey: phoneKey(row.phone),
+      });
+    }
+  }
+  return roster;
+}
+
+/**
+ * The pin for a set of contacts OUTSIDE the rep being viewed — the other half of a candidate match.
+ *
+ * Only ever asked for the handful of contacts that already matched on name or phone, so this stays
+ * a single small request rather than a second pass over all 111,914 check-ins.
+ */
+async function loadPinsFor(contactIds: readonly number[]): Promise<Map<number, { lat: number; lon: number }>> {
+  const pins = new Map<number, { lat: number; lon: number }>();
+  const ids = [...new Set(contactIds)];
+  if (ids.length === 0) return pins;
+  const supabase = getSupabaseAdmin();
+  for (let from = 0; from < ids.length; from += IN_CHUNK) {
+    const chunk = ids.slice(from, from + IN_CHUNK);
+    const { data, error } = await supabase
+      .from(CRM_CHECKINS_TABLE)
+      .select("contact_crm_id, lat, lon, check_date")
+      .in("contact_crm_id", chunk)
+      .not("lat", "is", null)
+      .not("lon", "is", null)
+      .order("check_date", { ascending: false })
+      .limit(PAGE_SIZE);
+    if (error) {
+      if (isCrmSchemaMissingError(error)) return pins;
+      throw new Error(`Could not read check-ins for the shared-customer check: ${error.message}`);
+    }
+    for (const row of (data ?? []) as Array<{ contact_crm_id: number; lat: number; lon: number }>) {
+      if (!pins.has(row.contact_crm_id)) pins.set(row.contact_crm_id, { lat: row.lat, lon: row.lon });
+    }
+  }
+  return pins;
+}
+
+/**
+ * One rep's contact list, grouped by brick.
+ *
+ * The reads are staged rather than one flat parallel batch because each stage narrows the next:
+ * the contacts decide which contact-mappings and check-ins to ask for, and both mapping sources
+ * together decide which brick names are worth fetching. On the largest measured list (197
+ * contacts) that is four round trips.
+ */
+export async function getRepsListForAgent(
+  agentCrmId: number,
+  /**
+   * agentCrmId -> the rep's readable name, for the "also on X's list" line. REQUIRED rather than
+   * optional on purpose: with an empty map the sharing check silently finds nothing, which looks
+   * exactly like a company with no shared customers instead of like a caller that forgot.
+   */
+  repNames: ReadonlyMap<number, string>,
+): Promise<RepsListForRep> {
+  const rows = await getAgentContactList(agentCrmId);
+  if (rows.length === 0) {
+    return {
+      counts: { am: 0, contacts: 0, pharmacy: 0, pm: 0, total: 0 },
+      groups: [],
+      unmappedContactCount: 0,
+      unmappedRegionCount: 0,
+    };
+  }
+
+  const contactIds = rows.map((row) => row.contactCrmId);
+  const [brickByContactId, brickByRegionName, checkins, roster] = await Promise.all([
+    loadContactBrickMap(contactIds),
     loadRegionBrickMap(),
+    loadCheckins(contactIds),
+    loadContactRoster(),
   ]);
 
   const needed = new Set<string>();
@@ -301,7 +570,94 @@ export async function getRepsListForAgent(agentCrmId: number): Promise<RepsListF
     const brickId = brickByContactId.get(row.contactCrmId) ?? brickByRegionName.get(normalizeRegionKey(row.region));
     if (brickId) needed.add(brickId);
   }
-  const metaByBrickId = await loadBrickMeta([...needed]);
 
-  return groupContactsByBrick(rows, { brickByContactId, brickByRegionName, metaByBrickId });
+  // Narrow the roster to the contacts that could possibly be the same customer BEFORE asking for any
+  // more check-ins. Matching keys come from the roster on both sides so the two halves of a pair are
+  // normalized identically — reading one side off the display row instead would compare a real name
+  // against the `Contact 12345` placeholder a nameless row falls back to.
+  const rosterById = new Map(roster.map((entry) => [entry.contactCrmId, entry]));
+  const mineNameKeys = new Set<string>();
+  const minePhoneKeys = new Set<string>();
+  for (const id of contactIds) {
+    const entry = rosterById.get(id);
+    if (!entry) continue;
+    if (entry.nameKey) mineNameKeys.add(entry.nameKey);
+    if (entry.phoneKey) minePhoneKeys.add(entry.phoneKey);
+  }
+  const mineIds = new Set(contactIds);
+  const candidateIds = roster
+    .filter(
+      (entry) =>
+        entry.agentCrmId !== agentCrmId &&
+        !mineIds.has(entry.contactCrmId) &&
+        ((entry.nameKey !== "" && mineNameKeys.has(entry.nameKey)) ||
+          (entry.phoneKey != null && minePhoneKeys.has(entry.phoneKey))),
+    )
+    .map((entry) => entry.contactCrmId);
+
+  const [metaByBrickId, otherPins] = await Promise.all([loadBrickMeta([...needed]), loadPinsFor(candidateIds)]);
+
+  const pins = new Map(otherPins);
+  for (const [contactCrmId, found] of checkins) pins.set(contactCrmId, { lat: found.seenAt.lat, lon: found.seenAt.lon });
+  const sharedByContact = findSharedCustomers(
+    rows.map((row) => ({ agentCrmId: row.agentCrmId, contactCrmId: row.contactCrmId })),
+    roster,
+    pins,
+    repNames,
+  );
+
+  // A SHARED CUSTOMER'S VISITS ARE SPLIT ACROSS TWO CONTACT ROWS, AND THE SCORE HAS TO SEE BOTH.
+  //
+  // The CRM files every visit against the contact row of the rep who made it, and gives each rep
+  // their own row for the same doctor. So scoring this row alone counts only OUR rep's visits, and
+  // the "confirmed by more than one rep" term can never fire on precisely the contacts where a
+  // second observer actually exists — the shared ones. The board then said both things at once: a
+  // violet row naming the other rep, and a popup underneath it reading "only one rep has ever
+  // checked in here". Measured 2026-09-01: doctor حمادة الشهالي is rows 95283 (14 visits) and 100196
+  // (12 visits) under two different reps, and 374 shared contacts are in that shape.
+  //
+  // Fetched only for the rows that actually MATCHED, not for every identity candidate — that is a
+  // far smaller set than `candidateIds` and keeps this to one extra round trip.
+  const partnerIds = new Set<number>();
+  for (const list of sharedByContact.values()) {
+    for (const entry of list) for (const id of entry.contactCrmIds) partnerIds.add(id);
+  }
+  const partnerCheckins = partnerIds.size > 0 ? await loadCheckins([...partnerIds]) : new Map<number, ContactCheckins>();
+
+  // Every annotation rides ON the row rather than in a lookup beside it: this object crosses the
+  // server-to-client boundary, where a Map would arrive as `{}` — the same serialization trap that
+  // has bitten `unstable_cache` here before.
+  const annotated: RepsListContact[] = rows.map((row) => {
+    const found = checkins.get(row.contactCrmId) ?? null;
+    const sharedWith = sharedByContact.get(row.contactCrmId) ?? null;
+
+    // Only reps who contributed at least one real visit are named in the popup's explanation. A rep
+    // who shares the customer but has never checked in changes nothing about the score, and naming
+    // them as evidence would overstate what was actually counted.
+    const sharedPoints: CheckinPoint[] = [];
+    const sharedRepNames: string[] = [];
+    for (const entry of sharedWith ?? []) {
+      const before = sharedPoints.length;
+      for (const id of entry.contactCrmIds) {
+        const partner = partnerCheckins.get(id);
+        if (partner) sharedPoints.push(...partner.points);
+      }
+      if (sharedPoints.length > before) sharedRepNames.push(entry.repName);
+    }
+
+    return {
+      ...row,
+      confidence: scoreLocationConfidence(
+        found ? { lat: found.seenAt.lat, lon: found.seenAt.lon } : null,
+        found ? [...found.points, ...sharedPoints] : [],
+        Date.now(),
+        sharedPoints.length > 0 ? { count: sharedPoints.length, repNames: sharedRepNames } : undefined,
+      ),
+      nearby: null,
+      seenAt: found?.seenAt ?? null,
+      sharedWith,
+    };
+  });
+
+  return groupContactsByBrick(annotated, { brickByContactId, brickByRegionName, metaByBrickId });
 }

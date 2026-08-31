@@ -438,6 +438,29 @@ and never `docs/`, and four of §4's slugs exist nowhere else, so moving one orp
 
 - **Before building any new UI, inspect the sibling pages in that module and match their exact
   design identity.** Never invent a one-off look.
+- 🔒 **THE FITS-THE-SCREEN GOLDEN RULE — never a horizontal scroll, always mobile AND desktop
+  friendly.** Owner 2026-09-01, who asked for it as a golden word and said it twice in one breath:
+  *"never make horizontal scrolling. Must fit in the same screen... always mobile friendly and
+  desktop friendly."* Content must **fit**, not sit behind a sideways drag nobody performs — he
+  asked for an Address column that was **already there**, off-screen behind 1120px of `min-width`,
+  which is the whole argument for the rule. **A board bound by it must NOT use
+  `PortalDesktopTable`**: that primitive hard-codes `overflow-x-auto` and a 980px floor, i.e. the
+  scroll being forbidden. Render `<div className="hidden md:block">` + `<table className="w-full
+  table-fixed">` + a `<colgroup>` instead, as `src/components/crm/reps-list-tables.tsx` does. **Fit
+  by MERGING columns, not by shrinking type** — he retired two columns by moving grade and phone
+  under the contact name in the same cell. **This does NOT relax the no-ellipsis rule: WRAPPING is
+  the permitted answer** (`break-words`, `align-top`), because vertical space is free and horizontal
+  space is not; the older "never let text wrap" was aimed at ellipsis-style truncation and he has now
+  explicitly asked for stacked wrapping cells, so the golden rule governs where the two collide.
+  **Measure, never guess** — `table-fixed` percentages clip silently (a 9% column cut "Pharmacist"
+  by 4px with no visual warning): check `el.scrollWidth > el.clientWidth` across `main` at desktop
+  **and** at 375px. **A native `<select>` is the one control this rule cannot fix** — it never wraps
+  its selected option, and you may NOT shrink it on a phone: `app/globals.css` RULE 3 floors every
+  form control at `max(16px, 1em)` below 768px because iOS Safari zooms the page in on a smaller one
+  and leaves it zoomed, so a smaller class is inert (measured — `text-xs` and `text-sm` both compute
+  to 16px at 375px) and would reintroduce that defect if it ever applied. Print the full value
+  somewhere outside the control instead.
+  `never-horizontal-scroll-always-mobile-and-desktop-friendly`
 - Admin shell: **desktop shows full tables/dashboards, mobile never does** — mobile gets cards.
 - **One production deployment per task.** Bundle all phases into one PR; do not deploy per step.
 - Use the **`gh` CLI** for all GitHub operations, not the GitHub MCP tools.
@@ -446,6 +469,17 @@ and never `docs/`, and four of §4's slugs exist nowhere else, so moving one orp
 **Product rules that must not be "fixed" back**
 
 - No payslip on any overview/landing page for any role — not the amount, not even the month label.
+- 🔒 **A PHARMACY IS NOT A CONTACT — a CRM contact count is AM + PM only.** Owner 2026-09-01: *"you
+  will not count the pharmacies as contacts. So everyone should have contacts and pharmacies. The
+  contacts is divided into AM and PM, and the pharmacies are separate."* The CRM's three
+  `list_type`s are **two things**: `PM` + `AM` are *contacts*, `Pharmacy` is *pharmacies*, counted
+  and shown beside them and never folded in. Adding all three inflates the figure the 90-120 rule
+  actually judges — on the rep this was caught with, "157 contacts" was really **114 contacts and 43
+  pharmacies**. So: never `rows.length` beside the word "contacts" (route every printed size through
+  one splitting helper); a share of the list is a share of **contacts**, so PM + AM total 100%; and
+  **never name a row bag `contacts` when it holds pharmacies** — `RepsListGroup.contacts` was
+  renamed `.rows` the same day precisely because the next session reads the field name and reprints
+  the bug. `a-pharmacy-is-not-a-contact`
 - Marketing Manager is hidden from the portal Incentive tab; GPM still sees it.
 - The Organogram / AU seat model is the source of truth for org-structure and vacancy data.
 - All SoS sales, historical and future, attribute to **today's** geography — never as-was.
