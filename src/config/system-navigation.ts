@@ -1677,7 +1677,25 @@ const hrNavigationSectionSeeds = [
       // the row sits in the Leave section of an admin shell only HR Operations sees, where there is
       // no personal vacation report for it to be confused with.
       { href: "/hr/admin/vacation-report", icon: FileSpreadsheet, label: "Vacation Report", permissions: [{ resource: "leave", action: "read" }], roles: ["HR Operations"] },
-      { href: "/hr/admin/approvals-hub", icon: Inbox, label: "Other Approvals", permissions: [{ resource: "leave", action: "read" }], navBadge: "approvals-hub-pending" },
+      // excludedRoles: HR Advisory, 2026-09-01 — same shape as the Leave Management row above and
+      // the same cause. The row is offered on `leave:read`, which Advisory holds only for HER OWN
+      // vacation requests, while the page behind it shows exactly three modules: resignation,
+      // contract renewal and outstation (leave/excuse/plan migrated out to their own dedicated
+      // pages — see MIGRATED_DEEPLINK_BASES in app/(admin)/admin/approvals-hub/page.tsx).
+      //
+      // Her composed matrix holds NO grant for any of those three: resignations, contracts and
+      // outstation are all ABSENT, not merely read-only. So the inbox could never contain one row
+      // for her. Measured off the composed matrix rather than inferred from the job description,
+      // because the JD would have suggested resignations were hers — the People section still
+      // carries /hr/resignations and /hr/contracts rows, and those correctly do not render for her
+      // for exactly this reason.
+      //
+      // HR Operations keeps the row: she holds resignations and contracts at read/create/update/
+      // export, and leave administration is her second JD area.
+      //
+      // An always-empty inbox reads as a broken page rather than as "not for you" — and this one
+      // also carries a pending-count badge, so it advertises work that can never become hers.
+      { href: "/hr/admin/approvals-hub", icon: Inbox, label: "Other Approvals", permissions: [{ resource: "leave", action: "read" }], excludedRoles: ["HR Advisory"], navBadge: "approvals-hub-pending" },
     ],
     label: "Leave Management",
   },

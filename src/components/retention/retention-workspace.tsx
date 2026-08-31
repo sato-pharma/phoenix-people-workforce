@@ -31,6 +31,16 @@ import {
 import { useCallback, useMemo, useState } from "react";
 
 import { PremiumHero } from "@/components/ui/premium-hero";
+// The confidentiality notice below names two seats, and it must name them the way the people
+// reading it are addressed everywhere else in the product — by JOB TITLE. "HR Advisory" and
+// "HR Operations" are internal ROLE KEYS: they are what the permission matrix is keyed on, not
+// what anyone is called. The owner's standing rule is human-readable names, never raw codes
+// (AGENTS.md §4), and this notice is the one paragraph on the page an interviewer is meant to
+// read aloud, so a key leaking here is read aloud too.
+//
+// Resolved through the helper rather than hard-coded so the notice cannot drift from
+// HR_SEAT_JOB_TITLES — the one place a seat's displayed title is decided.
+import { displayTitleForRole } from "@/lib/auth/hr-functions";
 import type {
   CreateRetentionConversationInput,
   RetentionConversation,
@@ -251,8 +261,9 @@ export function RetentionWorkspace({
         <ShieldAlert aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-orange-400" />
         <p className="text-[11px] font-semibold leading-relaxed text-slate-200">
           <span className="font-black text-white">Confidential.</span> This register is readable by
-          HR Advisory, the Super Admin and the CEO only. It is not visible to HR Operations, to a
-          line manager, or to the person&apos;s own team — say so when you open the conversation.
+          the {displayTitleForRole("HR Advisory")}, the Super Admin and the CEO only. It is not
+          visible to the {displayTitleForRole("HR Operations")}, to a line manager, or to the
+          person&apos;s own team — say so when you open the conversation.
         </p>
       </div>
 

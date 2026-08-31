@@ -38,11 +38,24 @@ export default async function AttendanceManagementPage() {
     return navigationItemVisible(item, permissionLookup, access.role);
   });
 
+  // The hero eyebrow reads "Attendance", not "HR Operations". Two things were wrong with the seat
+  // name, and the second is the one that mattered.
+  //
+  // First, an eyebrow is a DOMAIN label everywhere else in this shell — "Sales", "Leave",
+  // "Coaching", "People" — never a role; and "HR Operations" is an internal role KEY besides, which
+  // the owner's standing rule keeps out of the UI in favour of human-readable names (AGENTS.md §4).
+  //
+  // Second and worse: this hub serves BOTH HR seats. The HR Business Partner reaches it on
+  // attendance:read, which her job description earns her by name — "identify turnover, vacancy,
+  // attendance, performance or engagement patterns that need management attention" — so the old
+  // eyebrow stamped her own page with the OTHER seat's name.
+  //
+  // "Attendance" / "Attendance Management" mirrors "Leave" / "Leave Management" on the sibling hub.
   return (
     <div className="space-y-6">
       <AdminPageHero
         description="Every attendance report, review queue, policy control, and calendar — in one place."
-        eyebrow="HR Operations"
+        eyebrow="Attendance"
         icon={<Fingerprint className="h-3.5 w-3.5" />}
         title="Attendance Management"
       />
