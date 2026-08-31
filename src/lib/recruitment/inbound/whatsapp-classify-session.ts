@@ -23,6 +23,7 @@ import { logError, logWarning } from "@/lib/observability/log";
 import { candidateRegionLabels, recruitmentRegionForArea, type CandidateRegionCode } from "@/lib/recruitment/candidate-region";
 import { candidateRoleFamilyLabels, type CandidateRoleFamily } from "@/lib/recruitment/candidate-role-family";
 import { recruitmentDb, textOrNull } from "@/lib/recruitment/db";
+import { SESSION_COLUMNS, type SessionRow } from "@/lib/recruitment/inbound/whatsapp-classify-session-row";
 import {
   AREA_OTHER_MAX,
   areaMenu,
@@ -63,10 +64,11 @@ import {
 } from "@/lib/recruitment/inbound/whatsapp-conversation-mirror";
 import { sendClassifyMenu, sendWhatsAppText } from "@/lib/recruitment/inbound/whatsapp-interactive";
 // The admin-defined extra-question loop this conversation optionally continues into once the fixed
-// six finish. Only referenced inside handleClassifyText's salary branch below (a function body, not
-// module-top-level), so the resulting import cycle with whatsapp-screening-questions-session.ts
-// (which imports finishSession/findCandidateForSender/SessionRow/SESSION_COLUMNS back from here)
-// resolves fine — nothing on either side is evaluated before both modules finish loading.
+// six finish. whatsapp-screening-questions-session.ts imports finishSession/findCandidateForSender/
+// isWhatsAppClassifyEnabled back from this file — all `function` declarations, which are hoisted and
+// safe to read across a circular import. SessionRow/SESSION_COLUMNS, the other two symbols that file
+// needs, live in whatsapp-classify-session-row.ts instead of here specifically to avoid this cycle:
+// SESSION_COLUMNS is a `const`, and a `const` read from a module still mid-initialization throws.
 import {
   listActiveScreeningQuestions,
   startExtraQuestionLoop,
@@ -79,35 +81,6 @@ export function isWhatsAppClassifyEnabled(): boolean {
   const flag = String(process.env.RECRUITMENT_WHATSAPP_CLASSIFY_ENABLED ?? "").trim().toLowerCase();
   return flag === "true" && Boolean(process.env.WHATSAPP_ACCESS_TOKEN?.trim());
 }
-
-// Exported so whatsapp-screening-questions-session.ts (the admin-defined extra-question loop that
-// continues this conversation once the fixed six finish) can read and extend the same row shape
-// without redefining it. Nothing else about this type or this file's own use of it changes.
-export type SessionRow = {
-  id: string;
-  wa_id: string;
-  phone_number_id: string | null;
-  step: string;
-  job_title_family: string | null;
-  /** What they typed after choosing "Other". Null for every other answer. */
-  job_title_other_text: string | null;
-  /** Graduation background CODE (pharmacy/science/vet), or "other" when they typed their own. */
-  background: string | null;
-  /** What they typed after choosing "Other" on the background question. Null otherwise. */
-  background_other_text: string | null;
-  region_code: string | null;
-  /** What they typed after choosing "my region is not listed". Null otherwise. */
-  region_other_text: string | null;
-  area_name: string | null;
-  /** What they typed after choosing "my area is not listed", or when the region had no areas. */
-  area_other_text: string | null;
-  /** Years-of-experience CODE (fresh/lt_1/1_3/3_5/gt_5). No "Other" — the bands are exhaustive. */
-  experience: string | null;
-  /** Expected monthly salary, VERBATIM as the applicant typed it. Never coerced to a number. */
-  expected_salary: string | null;
-  last_prompt_wamid: string | null;
-  applied_candidate_id: string | null;
-};
 
 /**
  * The region and area as they should be READ BACK. Same single-source rule as `sessionRoleLabel`:
@@ -131,11 +104,6 @@ export function sessionAreaLabel(session: {
 }): string | null {
   return session.area_name ?? session.area_other_text ?? null;
 }
-
-// Exported for the same reason SessionRow is: the extra-question loop selects this plus its own two
-// columns, so the two files can never drift on what the base row looks like.
-export const SESSION_COLUMNS =
-  "id,wa_id,phone_number_id,step,job_title_family,job_title_other_text,background,background_other_text,region_code,region_other_text,area_name,area_other_text,experience,expected_salary,last_prompt_wamid,applied_candidate_id";
 
 /**
  * The role as it should be READ BACK — their typed words when they chose "Other", otherwise the
