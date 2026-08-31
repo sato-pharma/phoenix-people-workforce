@@ -76,6 +76,7 @@ import {
 import type { LucideIcon } from "lucide-react";
 
 import {
+  adminShellEmployeeRoles,
   type NavigationMode,
   type PermissionAction,
   type PermissionResource,
@@ -371,23 +372,44 @@ const adminNavigationSectionSeeds = [
   // moved here from the People Management hub page so all approval surfaces are
   // reachable from one sidebar group.
   //
-  // ── REMOVED 2026-08-30 (owner's collapse, phase 4) ────────────────────────────────
-  // A "My Requests" section stood here holding two rows — Request Vacation
-  // (/workspace/leave-management/vacation-request) and Submit Excuse (/workspace/excuses), both
-  // gated to adminShellEmployeeRoles minus the Finance Manager, who reaches the same two pages
-  // through his own consolidated Leave Management button instead (still below, unchanged).
+  // ── My Requests ──────────────────────────────────────────────────────────────
+  // Admin-shell roles have no employee portal, so their OWN vacation/excuse submission lives
+  // under /workspace. Both pages already existed and already admitted these roles
+  // (requireAdminShellEmployeeWorkspaceAccess → adminShellEmployeeRoles), but nothing in the
+  // sidebar pointed at them — so an SFE Manager had no way to file his own leave. This list
+  // mirrors that server guard rather than inventing a new one.
   //
-  // They were added in the first place because admin-shell roles have no employee portal and so had
-  // no way to file their own leave. That reason still holds — what changed is where the door is.
-  // Those two pages are now TABS in the personal workspace strip (src/lib/workspace/
-  // personal-workspace-nav.ts), reached from "My Workspace" in the account menu, alongside the
-  // thirteen other personal pages that had no door at all. Keeping the rail rows as well would put
-  // a person's own vacation form on the company navigation rail beside payroll and sales, which is
-  // the mixing of "the company" with "me" that phase 4 exists to undo.
-  //
-  // Nobody lost access: the pages, their guards and their permissions are untouched, and every role
-  // that saw these rows resolves both hrefs as workspace tabs (measured — see the phase 4 table in
-  // docs/navigation-restructure.md). This is a navigation move, not a revocation.
+  // RESTORED 2026-08-31 (owner instruction). Phase 4 (2026-08-30) had removed these two rows and
+  // moved them into the "My Workspace" tab strip; the owner asked for the sidebar rows back for
+  // every admin-shell role that lost them, while KEEPING the workspace tabs exactly as they are.
+  // So this is now ADDITIVE — both doors exist side by side: the rail rows here AND the personal-
+  // workspace tabs (src/lib/workspace/personal-workspace-nav.ts, deliberately untouched). Do not
+  // re-remove either half without the owner. The HR seats (HR Advisory / HR Operations) reach the
+  // same two pages through the /hr "My Requests" section (hr-self), so they are unaffected by this.
+  {
+    id: "my-requests",
+    items: [
+      // The permission mirrors the page's own guard (requireAdminShellEmployeeWorkspaceAccess with
+      // action "create"). This row was role-only until 2026-08-10, and the two gates disagreed:
+      // the Finance Manager was the one adminShellEmployeeRole without leave:create, so the row
+      // rendered for him and then bounced him to his landing page with no message. He was granted
+      // the permission (see permissions.ts) so the row now works — this gate is the belt: a future
+      // role added to adminShellEmployeeRoles without leave:create simply does not see the row,
+      // instead of seeing a button that throws them out.
+      // Finance Manager excluded 2026-08-10 (owner) from both rows below: they are folded into his
+      // own consolidated "Leave Management" button instead (see the finance-leave-management
+      // section and financeLeaveManagementVacationItems/financeLeaveManagementExcuseItems). Every
+      // other adminShellEmployeeRole is unaffected — this is a navigation move, not a revocation;
+      // he keeps leave:create and reaches the identical page through the new button.
+      { href: "/workspace/leave-management/vacation-request", icon: CalendarCheck, label: "Request Vacation", permissions: [{ resource: "leave", action: "create" }], roles: adminShellEmployeeRoles, excludedRoles: ["Finance Manager"] },
+      { href: "/workspace/excuses", icon: CalendarClock, label: "Submit Excuse", roles: adminShellEmployeeRoles, excludedRoles: ["Finance Manager"] },
+    ],
+    // This section was born headless (it postdates the pre-2026-08-02 sidebar, so it has no
+    // "before" to restore). Given a title on 2026-08-08 so it is not the one unlabelled block
+    // left floating among the restored headings — which is the exact look being undone here.
+    // SFE Manager still sees no heading — see flatSidebarRoles.
+    label: "My Requests",
+  },
   {
     // Named "Approvals Hub" until 2026-08-30; ruling 10 calls this "Approvals" and the shorter
     // label is the owner's own word for it. The four rows below deliberately do NOT collapse into
