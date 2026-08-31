@@ -114,14 +114,40 @@ export async function runDirectOrdersSweepLivenessTests() {
     );
   }
 
-  // The workflow must keep naming the stale-secret cause on a 401. A bare "HTTP 401" is what made
+  // The workflow must keep naming the CRON_SECRET mismatch on a 401. A bare "HTTP 401" is what made
   // nine identical red runs look like nine unrelated glitches.
+  //
+  // The pin here was the literal `/CRON_SECRET is STALE/` until 2026-08-31. That wording named the
+  // right variable and the WRONG DIRECTION: `sync-railway-production-secrets.yml` pushes GitHub
+  // INTO Railway, so "re-align it from Railway" is half the story, and the bare
+  // `railway | jq | gh` pipe it recommended can carry a UTF-8 BOM straight into production. Pin the
+  // INTENT — diagnose the cause, and say which store is authoritative — never one phrasing.
   {
     const workflow = readFileSync(WORKFLOW, "utf8");
-    assert.match(
-      workflow,
-      /CRON_SECRET is STALE/,
-      `${WORKFLOW} must diagnose a 401 as a stale CRON_SECRET rather than printing a bare status code`,
+    const failures401 = workflow.match(/^.*returned HTTP 401.*$/gm) ?? [];
+    assert.ok(
+      failures401.length > 0,
+      `${WORKFLOW} must diagnose a 401 rather than printing a bare status code`,
+    );
+    for (const line of failures401) {
+      assert.match(
+        line,
+        /CRON_SECRET/,
+        `${WORKFLOW} must name CRON_SECRET as the cause on a 401, not just the status code`,
+      );
+      assert.match(
+        line,
+        /UPSTREAM of Railway/,
+        `${WORKFLOW}'s 401 hint must say which store is authoritative — sync-railway-production-` +
+          "secrets.yml pushes GitHub INTO Railway, so rotating Railway alone does not stick: the " +
+          "next qualifying push reverts it and 401s every cron-job.org job at once",
+      );
+    }
+    assert.ok(
+      !/jq\s+-r\s+\.?CRON_SECRET\s*\|\s*gh secret set/.test(workflow),
+      `${WORKFLOW} must not recommend the bare railway|jq|gh pipe — it can store a UTF-8 BOM, and ` +
+        "because GitHub is upstream that BOM reaches production. Point at the guarded form " +
+        "(strip BOM, assert length 64, fingerprint before writing) in docs/agents-production-hooks.md",
     );
     assert.ok(
       !/a red workflow run emails the owner/.test(workflow),

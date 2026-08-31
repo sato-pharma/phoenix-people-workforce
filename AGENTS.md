@@ -287,8 +287,13 @@ moving one orphans that memory outright. Each names a file under
   **not** proof of authentication — the grace window hides a 401. The 2026-08-23 401s are RESOLVED:
   **rotate NOTHING.** Always print `len` (the fingerprint is `Bearer …`, 71).
   `a-partial-cron-secret-rotation-leaves-two-fingerprints`
-- **`CRON_SECRET` lives in TWO stores**, so a half-rotation 401s; and **a nightly-failing cron alerts
-  NOBODY** or is ignored. The 4 OFF iReports360 jobs are DELIBERATE.
+- **`CRON_SECRET` lives in TWO stores and the arrow points GitHub → Railway**, so a half-rotation
+  401s. `sync-railway-production-secrets.yml` rewrites ~48 Railway production variables,
+  `CRON_SECRET` among them, unconditionally — on dispatch AND on any push to `main` touching that
+  workflow or its `.mjs`. **So rotating in Railway alone does not stick**: the next such push
+  reverts it and every cron-job.org job 401s at once, and `--skip-deploys` means the breakage waits
+  for the next deploy and surfaces detached from its cause. Rotate GitHub first. Also **a
+  nightly-failing cron alerts NOBODY** or is ignored. The 4 OFF iReports360 jobs are DELIBERATE.
   `github-actions-cron-secret-went-stale-after-a-railway-rotation` ·
   `a-cron-that-fails-nightly-can-do-so-forever-unwatched`
 - **The cron-job.org REST API allows 100 requests per DAY** — 429 on EVERY endpoint with no

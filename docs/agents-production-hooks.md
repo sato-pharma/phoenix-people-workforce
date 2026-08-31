@@ -80,9 +80,56 @@ production-ops guidance. They stay in the index.
   **not** proof of authentication - the grace window hides a 401. The 2026-08-23 401s are RESOLVED:
   **rotate NOTHING.** Always print `len` (the fingerprint is `Bearer …`, 71).
   `a-partial-cron-secret-rotation-leaves-two-fingerprints`
-- **`CRON_SECRET` lives in TWO stores**, so a half-rotation 401s; and **a nightly-failing cron
-  alerts NOBODY** or is ignored. The 4 OFF iReports360 jobs are DELIBERATE.
-  `github-actions-cron-secret-went-stale-after-a-railway-rotation` ·
+- **`CRON_SECRET` lives in TWO stores, and since the sync workflow existed the arrow points one
+  way: GitHub Actions -> Railway production.** A half-rotation 401s.
+  `sync-railway-production-secrets.yml` rewrites ~48 Railway production variables, `CRON_SECRET`
+  among them, **unconditionally and without diffing** - on `workflow_dispatch` AND on any push to
+  `main` touching that workflow or `scripts/sync-railway-production-secrets.mjs`.
+
+  Measured **2026-08-31**: PR #2820 touched the `.mjs`, which fired run **33407660884** at
+  15:18:11Z; its log reads `synced CRON_SECRET` and `completed: updated=48, skipped=7`. A
+  production redeploy at 15:45:00Z activated the freshly-written value, and
+  `ireports360-sync-cron` wrote 122 `audit_logs` notification rows at **15:48:20Z** - a cron route
+  authenticating against the synced secret three minutes later. So the repository's copy is
+  **current, not stale**: it was re-aligned on 2026-08-24, the day after the schedule moved off
+  GitHub. **The comment in `direct-orders-sweeps.yml` telling you to re-align it was written
+  2026-08-23 and was true only that day** - it has been corrected in place.
+
+  **The live hazard is therefore the mirror image of the 2026-08-14 one.** That incident was a
+  Railway rotation never mirrored *up* to GitHub, and it 401'd the two sweeps for nine nights. The
+  standing risk now is a Railway rotation never mirrored up: it does not stick at all, because the
+  next push touching either of those two files silently overwrites it with GitHub's copy - and
+  that breaks **every** cron-job.org job at once, not two. Nothing in the PR, the workflow history
+  or the app announces it. Compounding it, the sync passes `--skip-deploys`, so the clobbered value
+  is inert until the next deploy: the breakage surfaces **detached from the change that caused
+  it**, possibly days later, with a deploy of unrelated code as its apparent trigger.
+
+  **Rotate the GitHub secret first and let the sync carry it down, or set both in one sitting.**
+  Do not rotate as a ritual - AGENTS.md 2.3 records that the 2026-08-23 401s are resolved and that
+  the standing instruction is to rotate nothing.
+
+  **The guarded re-align** — the bare `railway | jq | gh` pipe is not safe here, because a past
+  rotation stored a UTF-8 BOM unnoticed ([[railway-stdin-bom-trap]]) and GitHub is upstream, so a
+  poisoned value does not sit harmlessly in a repo secret: the next qualifying push writes it into
+  Railway production. Assert the bytes *before* writing, and never let the value reach a file, a
+  log, or the session:
+
+  ```bash
+  raw="$(railway variables --environment production --service phoenix-people-workforce --json \
+          | sed '1s/^\xEF\xBB\xBF//')"                              # strip UTF-8 BOM
+  secret="$(printf '%s' "$raw" | jq -r '.CRON_SECRET' | tr -d '\r\n')"   # strip CR/LF
+  [ "${#secret}" -eq 64 ] || { echo 'refusing: unexpected length'; exit 1; }
+  printf '%s' "Bearer ${secret}" | sha256sum | cut -c1-16           # must equal the live fleet fp
+  printf '%s' "$secret" | gh secret set CRON_SECRET --repo Gawish-1997/phoenix-people-workforce
+  ```
+
+  `updated_at` moving proves the write landed; the pre-pipe fingerprint proves *what* landed. A
+  GitHub secret cannot be read back, so those two together are the strongest proof available short
+  of firing a workflow — and **do not fire `direct-orders-sweeps.yml` to test it**: it has no route
+  selector and runs `direct-orders-probation`, which emails the owner and the CEO.
+
+  Also **a nightly-failing cron alerts NOBODY** or is ignored. The 4 OFF iReports360 jobs are
+  DELIBERATE. `github-actions-cron-secret-went-stale-after-a-railway-rotation` ·
   `a-cron-that-fails-nightly-can-do-so-forever-unwatched`
 - **The cron-job.org REST API allows 100 requests per DAY** - 429 on EVERY endpoint with no
   `Retry-After`, and a bulk edit costs ~34 and CANNOT be rolled back.
