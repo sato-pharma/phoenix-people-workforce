@@ -139,6 +139,32 @@ export type HiringPackProfileInput = {
   notes?: string | null;
 };
 
+/**
+ * What "What Phoenix already knows" edits, when it is edited at all.
+ *
+ * Every field here writes straight to `employees` — there is no second copy, on purpose (see the
+ * screen's own note on that). `lineId` is what "Department" actually is: the employee's line
+ * assignment, with the Arabic name in `HiringPackEmployeeFacts.departmentAr` derived from it, not
+ * a free-text field of its own. `grossSalary` and `socialInsuranceWage` are re-run through the
+ * same payroll formula and region derivation the full employee editor uses, and are refused for
+ * anyone already resigned or terminated — see `saveHiringPackEmployeeFacts`.
+ */
+export type HiringPackEmployeeFactsInput = {
+  fullName?: string | null;
+  nameAr?: string | null;
+  nationalId?: string | null;
+  socialInsuranceNumber?: string | null;
+  socialInsuranceWage?: number | null;
+  grossSalary?: number | null;
+  birthDate?: string | null;
+  hireDate?: string | null;
+  jobTitle?: string | null;
+  lineId?: number | null;
+  mobileNumber?: string | null;
+  workEmail?: string | null;
+  residenceAddress?: string | null;
+};
+
 export type HiringPackProfile = Required<{
   [K in keyof HiringPackProfileInput]: HiringPackProfileInput[K] extends infer V
     ? Exclude<V, undefined>
@@ -242,11 +268,23 @@ export type HiringPackEmployeeFacts = {
   hireDate: string | null;
   jobTitle: string | null;
   departmentAr: string | null;
+  /** The line `departmentAr` was derived from — the value an edit to "Department" actually writes. */
+  lineId: number | null;
   residenceAddress: string | null;
   residenceCity: string | null;
   mobileNumber: string | null;
   workEmail: string | null;
   employmentStatus: string | null;
+  /**
+   * Whether this person has left, mirroring `HiringPackCandidate.departed`.
+   *
+   * Salary and department are edited by rerunning the same payroll-formula-and-region path the
+   * full employee editor uses (see `saveHiringPackEmployeeFacts`), and that path refuses anyone
+   * already resigned or terminated. This flag is what the screen uses to lock those two fields —
+   * a departed person's pay is governed by the resignation/settlement workflow from here on, not
+   * by this screen.
+   */
+  departed: boolean;
   /**
    * The last working day as the EMPLOYEE RECORD holds it.
    *

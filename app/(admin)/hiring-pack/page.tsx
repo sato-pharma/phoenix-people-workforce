@@ -11,6 +11,7 @@ import {
   isHiringPackEmployeeMissing,
   isHiringPackSchemaMissing,
   listHiringPackCandidates,
+  listHiringPackLines,
 } from "@/lib/hiring-pack/service";
 import type { HiringPackCandidate, HiringPackData } from "@/lib/hiring-pack/types";
 
@@ -70,6 +71,7 @@ async function HiringPackContent({
   hrId: string | null;
 }) {
   let candidates: HiringPackCandidate[] = [];
+  let lines: { id: number; name: string }[] = [];
   let initialPack: HiringPackData | null = null;
   let initialError: string | null = null;
 
@@ -77,6 +79,14 @@ async function HiringPackContent({
     candidates = await listHiringPackCandidates();
   } catch (error) {
     initialError = hiringPackPageError(error);
+  }
+
+  // Never blocks the screen — the department picker just falls back to free text (see the
+  // manager component) if this list cannot be loaded.
+  try {
+    lines = await listHiringPackLines();
+  } catch {
+    lines = [];
   }
 
   // A `?hrId=` deep link opens straight on that person — that is how the hiring documents tracker
@@ -96,6 +106,7 @@ async function HiringPackContent({
       candidates={candidates}
       initialError={initialError}
       initialPack={initialPack}
+      lines={lines}
     />
   );
 }

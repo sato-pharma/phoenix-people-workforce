@@ -82,12 +82,14 @@ function employeeFixture(overrides: Partial<HiringPackEmployeeFacts> = {}): Hiri
     hireDate: "2024-03-01",
     jobTitle: "Medical Representative",
     departmentAr: "الجهاز العصبي",
+    lineId: 1,
     residenceAddress: "8 شارع الهرم، الجيزة",
     residenceCity: "الجيزة",
     mobileNumber: "01100000000",
     workEmail: "kareem@example.com",
     employmentStatus: "resigned",
     lastWorkingDate: LAST_WORKING_DATE,
+    departed: true,
     ...overrides,
   };
 }

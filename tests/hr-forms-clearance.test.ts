@@ -92,12 +92,14 @@ function employeeFixture(
     hireDate: "2024-03-01",
     jobTitle: "Medical Representative",
     departmentAr: "الجهاز العصبي",
+    lineId: 1,
     residenceAddress: "5 شارع الجمهورية، وسط البلد",
     residenceCity: "القاهرة",
     mobileNumber: "01200000000",
     workEmail: "nour@example.com",
     employmentStatus: "resigned",
     lastWorkingDate: LAST_WORKING_DATE,
+    departed: true,
     ...overrides,
   };
 }

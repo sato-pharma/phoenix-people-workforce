@@ -5,7 +5,12 @@ import {
   DEPARTED_EMPLOYMENT_STATUSES_IN_LIST,
   hasDepartedEmployment,
 } from "@/lib/auth/session-lifecycle";
-import { canonicalHrIdForDisplay } from "@/lib/hr-id";
+import {
+  getEmployeeDirectory,
+  upsertEmployee,
+  type EmployeeMutationInput,
+} from "@/lib/employees/employee-directory";
+import { canonicalHrIdForDisplay, hrIdsMatch } from "@/lib/hr-id";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { currentTemplateVersion } from "@/lib/hiring-pack/template-registry";
 import {
@@ -21,6 +26,7 @@ import type {
   HiringPackData,
   HiringPackDocument,
   HiringPackEmployeeFacts,
+  HiringPackEmployeeFactsInput,
   HiringPackGap,
   HiringPackProfile,
   HiringPackProfileInput,
@@ -671,11 +677,13 @@ async function loadEmployeeFacts(hrId: string): Promise<HiringPackEmployeeFacts>
     hireDate: data.hire_date,
     jobTitle: cleanText(data.job_title),
     departmentAr,
+    lineId: data.line_id,
     residenceAddress: cleanText(data.residence_address),
     residenceCity: cleanText(data.residence_city),
     mobileNumber: cleanText(data.mobile_number),
     workEmail: cleanText(data.work_email),
     employmentStatus: cleanText(data.employment_status),
+    departed: hasDepartedEmployment(data.employment_status),
     lastWorkingDate: data.last_working_date,
   };
 }
@@ -877,6 +885,137 @@ export async function getHiringPack(hrIdInput: string): Promise<HiringPackData> 
     gaps: collectHiringPackGaps(employee, profile, offboarding, exit),
     terms: resolveContractTerms(employee, profile, offboarding, exit),
   };
+}
+
+/** Every sales line, for the "Department" picker on the facts editor. */
+export async function listHiringPackLines(): Promise<{ id: number; name: string }[]> {
+  const { data, error } = await getSupabaseAdmin()
+    .from("lines")
+    .select("id, name")
+    .order("name", { ascending: true });
+
+  if (error) throw new Error(error.message);
+  return (data ?? [])
+    .filter((row): row is { id: number; name: string } => Boolean(row.name))
+    .map((row) => ({ id: row.id, name: row.name }));
+}
+
+/**
+ * Save "What Phoenix already knows" — the facts block was read-only until 2026-08-31, when the
+ * owner asked for every field on this screen to be editable, salary and department included.
+ *
+ * TWO WRITE PATHS, SPLIT ON WHETHER THE PERSON HAS LEFT.
+ *
+ * Everyone gets the identity/contact fields — name, Arabic name, national ID, insurance number,
+ * birth date, hire date, job title, mobile, email, address — written directly to `employees`.
+ * These have no formula behind them, so a narrow update is enough and it works for a leaver too,
+ * which matters because this is also the screen that fills a departed person's Form 6.
+ *
+ * Salary and department are different: `grossSalary` and `socialInsuranceWage` are not
+ * independent numbers, they are two outputs of the same base→basic→net→gross derivation the full
+ * employee editor computes together, and "department" is not free text at all — it is the
+ * employee's line assignment, which also re-derives their sales region. Writing either one
+ * directly here would leave that computed breakdown, or the region, disagreeing with what was
+ * just typed. So for those two fields this function re-runs the exact path the employee editor
+ * uses (`upsertEmployee`), carrying every OTHER field on the record through unchanged. That
+ * function refuses anyone already resigned or terminated outright ("Use the resignation workflow
+ * for resigned or terminated employees") — so for a leaver, salary and department are left exactly
+ * as they were, and only the identity fields above are saved. The UI locks those two inputs once
+ * `pack.employee.departed` is true, for the same reason.
+ */
+export async function saveHiringPackEmployeeFacts(
+  hrIdInput: string,
+  input: HiringPackEmployeeFactsInput,
+  // Kept for signature parity with `saveHiringPackProfile`/`saveOffboardingProfile` — `employees`
+  // has no `updated_by_hr_id` column to stamp, unlike those two satellite tables.
+  _actorHrId?: string | null,
+): Promise<HiringPackData> {
+  const hrId = requireHrId(hrIdInput);
+  const employee = await loadEmployeeFacts(hrId);
+
+  const fullName = cleanText(input.fullName);
+  if (!fullName) throw new Error("Full name is required.");
+
+  if (employee.departed) {
+    const { error } = await getSupabaseAdmin()
+      .from("employees")
+      .update({
+        birth_date: cleanText(input.birthDate),
+        full_name: fullName,
+        hire_date: cleanText(input.hireDate),
+        job_title: cleanText(input.jobTitle),
+        mobile_number: cleanText(input.mobileNumber),
+        name_ar: cleanText(input.nameAr),
+        national_id: cleanText(input.nationalId),
+        residence_address: cleanText(input.residenceAddress),
+        social_insurance_number: cleanText(input.socialInsuranceNumber),
+        updated_at: new Date().toISOString(),
+        work_email: cleanText(input.workEmail)?.toLowerCase() ?? null,
+      })
+      .eq("hr_id", hrId);
+    if (error) throw new Error(error.message);
+    return getHiringPack(hrId);
+  }
+
+  const directory = await getEmployeeDirectory();
+  const current = directory.employees.find((row) => hrIdsMatch(row.hrId, hrId));
+  if (!current) throw new HiringPackEmployeeNotFoundError(hrId);
+
+  // Every field below either carries the current row through untouched or applies exactly what
+  // this screen's facts form edits — never a blend of the two for the same field, so a value the
+  // form does not show can never be silently dropped by omission.
+  const merged: EmployeeMutationInput = {
+    areaId: current.areaId,
+    bankAccount: current.bankAccount,
+    bankName: current.bankName,
+    baseSalary: current.baseSalary,
+    basicSalary: current.basicSalary,
+    birthDate: cleanText(input.birthDate),
+    contractType: current.contractType,
+    crmId: current.crmId,
+    crmUsername: current.crmUsername,
+    departmentId: current.departmentId,
+    education: current.education,
+    employmentStatus: current.employmentStatus,
+    extraCostOfLiving: current.extraCostOfLiving,
+    fuelAllowance: current.fuelAllowance,
+    fullName,
+    gender: current.gender,
+    grossSalary: toNumber(input.grossSalary),
+    hasBankAccount: current.hasBankAccount,
+    hireDate: cleanText(input.hireDate),
+    hrId: current.hrId,
+    jobTitle: cleanText(input.jobTitle),
+    lineId: input.lineId ?? null,
+    managerHrId: current.managerHrId,
+    medicalInsurance: current.medicalInsurance,
+    medicalInsuranceNumber: current.medicalInsuranceNumber,
+    medicalInsuranceStatus: current.medicalInsuranceStatus,
+    mobileNumber: cleanText(input.mobileNumber),
+    nameAr: cleanText(input.nameAr),
+    nationalId: cleanText(input.nationalId),
+    netSalary: current.netSalary,
+    nickname: current.nickname,
+    originalHrId: current.hrId,
+    payrollEligible: current.payrollEligible,
+    positionId: current.positionId,
+    regionName: current.regionName,
+    residenceAddress: cleanText(input.residenceAddress),
+    residenceArea: current.residenceArea,
+    residenceCity: current.residenceCity,
+    salaryDetails: current.salaryDetails ?? null,
+    salaryPaymentMode: current.salaryPaymentMode,
+    socialInsurance: current.socialInsurance,
+    socialInsuranceNumber: cleanText(input.socialInsuranceNumber),
+    socialInsuranceStatus: current.socialInsuranceStatus,
+    socialInsuranceWage: toNumber(input.socialInsuranceWage),
+    taxes: current.taxes,
+    teamId: current.teamId,
+    workEmail: cleanText(input.workEmail)?.toLowerCase() ?? null,
+  };
+
+  await upsertEmployee(merged);
+  return getHiringPack(hrId);
 }
 
 export async function saveHiringPackProfile(

@@ -79,6 +79,7 @@ function employeeFixture(overrides: Partial<HiringPackEmployeeFacts> = {}): Hiri
     hireDate: "2026-08-01",
     jobTitle: "Medical Representative",
     departmentAr: "الجهاز العصبي",
+    lineId: 1,
     residenceAddress: "12 شارع النيل، المعادي",
     residenceCity: "القاهرة",
     mobileNumber: "01000000000",
@@ -87,6 +88,7 @@ function employeeFixture(overrides: Partial<HiringPackEmployeeFacts> = {}): Hiri
     // Employed, so no departure date. The exit half of the module reads this to decide
     // whether somebody is leaving at all — see tests/hr-forms-exit-documents.test.ts.
     lastWorkingDate: null,
+    departed: false,
     ...overrides,
   };
 }
