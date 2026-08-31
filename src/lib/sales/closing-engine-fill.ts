@@ -77,6 +77,7 @@ type SheetSpec = {
 const MANIFEST = CLOSING_ENGINE_TEMPLATE_MANIFEST as unknown as { sheets: Record<string, SheetSpec> };
 
 const DATA_SHEET = "Data";
+const SHARED_STRINGS_PART = "xl/sharedStrings.xml";
 const REP_CARD = "Rep Card";
 
 function xmlEscape(value: string): string {
@@ -247,7 +248,30 @@ export async function fillClosingEngine(fill: ClosingEngineFill, options: FillOp
 
   await fillRepCard(zip, fill);
   await updateReferences(zip, fill);
+  await dropDeadSharedStrings(zip);
   if (options.macroFree) await stripMacros(zip);
+
+  // Directory entries must not reach the file, and this has to be the LAST thing done to the zip.
+  // An OPC package is a flat set of parts: an item whose name ends in "/" is not a part at all and
+  // cannot have a content type, because [Content_Types].xml maps by extension and a folder has
+  // none. Excel writes none of them. The template carries five -- `xl/`, `xl/worksheets/`,
+  // `xl/pivotCache/`, `xl/tables/`, `xl/_rels/` -- measured present the instant it is loaded and
+  // before anything is written, because `JSZip.defaults.createFolders` is true and every
+  // `zip.file()` call materialises a folder object for each parent segment. So the template build
+  // put them in its own output, and every write below would put them back: hence last, after the
+  // final `zip.file()`, not near the load.
+  //
+  // NEVER `zip.remove()` here: JSZip treats a folder as a subtree and removing one deletes every
+  // part beneath it. That produced a 700-byte "workbook" containing nothing at all. Drop the entry
+  // itself and leave the children alone -- which is measured sufficient on its own; `generateAsync`
+  // has no `createFolders` of its own to set, and passing one is a no-op the types reject.
+  //
+  // This is a real packaging defect and worth keeping fixed, but it was NOT the repair prompt the
+  // owner hit -- a build with zero directory entries still prompted. `dropDeadSharedStrings` is
+  // what fixed that. Do not read this block as the cure for a future one.
+  for (const name of Object.keys(zip.files)) {
+    if (zip.files[name]?.dir) delete zip.files[name];
+  }
 
   const out = await zip.generateAsync({
     type: "nodebuffer",
@@ -534,6 +558,47 @@ async function updateReferences(zip: JSZip, fill: ClosingEngineFill): Promise<vo
       `${open}Data!$AC$1:$AC$${Math.max(pickListRows, 1)}${close}`,
   );
   zip.file("xl/workbook.xml", workbook);
+}
+
+/**
+ * Drop the shared-string table when nothing is left in it.
+ *
+ * THIS IS THE REPAIR PROMPT. The owner's engine carries 20,138 shared strings; the template build
+ * strips every one of them, because this file writes text as inline strings instead. What it left
+ * behind was `<sst count="0" uniqueCount="0"/>` -- a part still declared in `[Content_Types].xml`,
+ * still related from the workbook, holding nothing, referenced by no cell. Excel answers that with
+ * "We found a problem with some content in ...", repairs the workbook and rebuilds the part.
+ *
+ * An empty `<sst>` is schema-VALID, which is the whole reason this survived every check that was
+ * run against it: the Open XML SDK validator reported the same twenty pre-existing pageSetup errors
+ * for this file as for the owner's untouched one, and LibreOffice opened it without a murmur. The
+ * only thing that saw it was diffing the package against a workbook Excel itself had written.
+ *
+ * Excel simply omits the part when a workbook has no strings, so that is what this does -- part,
+ * content type and relationship together, since any one left behind is its own repair prompt.
+ * Guarded on the table actually being empty: a template that keeps its strings keeps its part.
+ */
+async function dropDeadSharedStrings(zip: JSZip): Promise<void> {
+  const file = zip.file(SHARED_STRINGS_PART);
+  if (!file) return;
+
+  const sst = await file.async("string");
+  // Both spellings: a table with entries opens each one `<si>`, an empty one self-closes the root.
+  if (/<si\b/.test(sst)) return;
+
+  zip.remove(SHARED_STRINGS_PART);
+
+  const ctFile = zip.file("[Content_Types].xml");
+  if (ctFile) {
+    const ct = await ctFile.async("string");
+    zip.file("[Content_Types].xml", ct.replace(/<Override PartName="\/xl\/sharedStrings\.xml"[^>]*\/>/g, ""));
+  }
+
+  const relsFile = zip.file("xl/_rels/workbook.xml.rels");
+  if (relsFile) {
+    const rels = await relsFile.async("string");
+    zip.file("xl/_rels/workbook.xml.rels", rels.replace(/<Relationship\b[^>]*sharedStrings\.xml[^>]*\/>/g, ""));
+  }
 }
 
 /**
