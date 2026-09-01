@@ -64,12 +64,13 @@ export async function GET(request: Request) {
       lineFilterMode: parseMode(searchParams.get("linesMode")),
     };
 
-    const { data, scope, comparison } = await getPortalWeeklyDashboard(filters, access);
+    const { data, scope, comparison, fieldForce } = await getPortalWeeklyDashboard(filters, access, { includeFieldForce: true });
     return NextResponse.json({
       success: true,
       data,
       scope: toPortalWeeklyScopeView(scope),
       comparison,
+      fieldForce,
     });
   } catch (error) {
     if (isForbiddenError(error)) {

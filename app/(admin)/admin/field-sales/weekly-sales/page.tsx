@@ -17,6 +17,7 @@ import {
   type PortalWeeklyFilters,
   type PortalWeeklyScopeView,
 } from "@/lib/sales/weekly/portal-weekly-dashboard";
+import type { PortalWeeklyFieldForce } from "@/lib/sales/weekly/portal-weekly-field-force";
 import type { WeeklyDashboard } from "@/lib/sales/weekly/types";
 
 export const runtime = "nodejs";
@@ -78,12 +79,16 @@ async function CompanyWeeklyContent({
   let data: WeeklyDashboard | null = null;
   let scope: PortalWeeklyScopeView | null = null;
   let comparison: PortalWeeklyComparison | null = null;
+  let fieldForce: PortalWeeklyFieldForce | null = null;
   let loadError: string | null = null;
   try {
-    const result = await getPortalWeeklyDashboard(filters, access);
+    // Company scope, so this is every rep on every tracked line — the CEO / Super Admin view of the
+    // same Field Force tab the district and national managers open.
+    const result = await getPortalWeeklyDashboard(filters, access, { includeFieldForce: true });
     data = result.data;
     scope = toPortalWeeklyScopeView(result.scope);
     comparison = result.comparison;
+    fieldForce = result.fieldForce;
   } catch (error) {
     loadError = error instanceof Error ? error.message : "Failed to load Weekly Sales.";
   }
@@ -94,6 +99,7 @@ async function CompanyWeeklyContent({
         initialData={data}
         scope={scope}
         initialComparison={comparison}
+        initialFieldForce={fieldForce}
       />
     );
   }
