@@ -33,7 +33,6 @@ classifier — the load-bearing set changes as the index does.
 - **A Windows USER env var SHADOWS every .env.local, silently.** — `windows-env-var-shadows-every-env-local-key`
 - **The local attendance agent dies at EVERY logon and loses NOTHING — do not escalate…** — `attendance-agent-crashes-at-logon-but-loses-no-attendance`
 - **ExcelJS emits two schema-invalid OOXML fragments, so Excel silently REPAIRS the…** — `exceljs-writes-two-schema-invalid-ooxml-fragments`
-- **TZ=Africa/Cairo date SILENTLY RETURNS UTC** — `tz-africa-cairo-silently-returns-utc-in-msys` **(slug also stays INLINE in `AGENTS.md` — load-bearing: `MEMORY.md` does not link this file, so the inline copy is its only reachability. See the caveat above.)**
 - **Deleting a branch does not remove its pushed commit** — `deleting-a-branch-does-not-remove-a-pushed-commit` · `reusing-a-squash-merged-branch-makes-a-conflicting-pr`
 - **git push hangs — kill at ~60s and retry.** — `git-push-to-origin-hangs-retry-immediately` · `git-push-oom-is-a-500mb-postbuffer-in-repo-config`
 - **A merge to main mid-session silently orphans your next push.** — `a-merge-mid-session-orphans-your-next-push-silently` · `two-sessions-fixed-one-bug-main-was-never-ci-validated`
