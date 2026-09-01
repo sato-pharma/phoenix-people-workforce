@@ -361,12 +361,18 @@ body {
    and keeps its bar exactly as shipped — owner, 2026-08-29. The `--` free class
    names are deliberate: the retired `.phx-navrow--inpage` / `--fallback` markers
    are gone for good and nothing here keys a `:has()` on anything. */
+/* Each row's ground is a shallow vertical gradient, but this mask can only be a
+   SOLID colour — so each value below is its row's gradient MIDPOINT, and the two
+   must be changed together. The residual mismatch is ~5/255 at the row's top and
+   bottom edges, which is invisible on black; widening either gradient in
+   horizontal-nav-rows.tsx without revisiting these puts a real seam at both ends
+   of the row. */
 .admin-shell .phx-navrow-upper {
-  --phx-navrow-ground: #000000;
+  --phx-navrow-ground: #050505;
 }
 
 .admin-shell .phx-navrow-lower {
-  --phx-navrow-ground: #080808;
+  --phx-navrow-ground: #080706;
 }
 
 .admin-shell .phoenix-navrow-scroll {
