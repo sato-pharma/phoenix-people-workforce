@@ -42,6 +42,7 @@
     "ops:a9-mm-rebuild:dry-run": "pnpm run ops:a9-mm-rebuild -- --dry-run --backup",
     "ops:provision-accounts": "node --env-file-if-exists=.env.local --experimental-strip-types --experimental-specifier-resolution=node --experimental-loader ./scripts/alias-loader.mjs scripts/provision-missing-employee-accounts.ts",
     "ops:backfill-access-profiles": "node --env-file-if-exists=.env.local --experimental-strip-types --experimental-specifier-resolution=node --experimental-loader ./scripts/alias-loader.mjs scripts/backfill-missing-access-profiles.ts",
+    "sales:check-truth": "node --env-file-if-exists=.env.local --experimental-strip-types --experimental-specifier-resolution=node --experimental-loader ./tests/alias-loader.mjs scripts/check-sales-truth.ts",
     "check:edit": "pnpm run typecheck",
     "analyze": "next build --experimental-analyze",
     "db:rls:create-staging-env": "node --experimental-strip-types --experimental-specifier-resolution=node tests/scripts/create-staging-rls-env-local.ts",

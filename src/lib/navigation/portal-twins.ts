@@ -151,6 +151,7 @@ const TWIN_RULES: readonly TwinRule[] = [
   { from: "/sales/monthly-closing/performance-review", to: SOS },
   { from: "/sales/normalizer", to: SOS },
   { from: "/sales/targets", to: SOS },
+  { from: "/sales/truth-check", to: SOS },
   { from: "/sales/upload", to: SOS },
   { from: "/sales/vs-target", to: "/employee-portals/sales-vs-target" },
   { from: "/sales/weekly/distributor-editor", to: SOS },

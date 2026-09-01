@@ -954,6 +954,7 @@ import { runStoreSplitMatrixTests } from "./store-split-matrix.test.ts";
 import { runStoreSplitDetailReportTests } from "./store-split-detail-report.test.ts";
 import { runMonthlyClosingExportSplitStaticTests } from "./monthly-closing-export-split-static.test.ts";
 import { runClosingExportMatchesScreenTests } from "./closing-export-matches-screen.test.ts";
+import { runSalesTruthNoMismatchTests } from "./sales-truth-no-mismatch.test.ts";
 import { runClosingPerformanceReviewTests } from "./closing-performance-review.test.ts";
 import { runMonthlyClosingPeriodMergeTests } from "./monthly-closing-period-merge.test.ts";
 import { runClosingReviewFilterTests } from "./closing-review-filters.test.ts";
@@ -2375,6 +2376,7 @@ await runTest("SoS backfill matches the empty-string brick sentinel, not just NU
 await runTest("SoS seat attribution (today's wiring, departed reps keep their credit)", runSosSeatAttributionPeriodTests);
 await runTest('Monthly closing lock (database triggers, not a disabled button)', runMonthlyClosingLockTests);
 await runTest('CLOSING GOLDEN RULE (a month is never published during that month, Cairo boundary)', runClosingPeriodGateTests);
+await runTest('SALES TRUTH (one area, one number — every surface reconciles to Monthly Closing)', runSalesTruthNoMismatchTests);
 await runTest('RULE #1 Monthly Closing is the only truth (the official-number engine never imports the weekly pipeline)', runOfficialNumbersExcludeWeeklyTests);
 await runTest('Lacto (line, family) key (family_code LA is shared across Pedia + Head Office; never group on it alone)', runLactoLineFamilyGroupingTests);
 await runTest('identity-card DESIGN LOCK (the portal identity banner always renders PhoenixSignatureCard)', runIdentityCardSignatureLockTests);
