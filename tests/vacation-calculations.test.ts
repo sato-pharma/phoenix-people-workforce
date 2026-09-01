@@ -4,6 +4,7 @@ import {
   calculateFirstYearVacationEntitlement,
   calculateVacationDurationDays,
   calculateVacationPayment,
+  getCompletedVacationPeriodEntitlementDays,
   getEmergencyVacationBalancePeriod,
   getVacationBalancePeriod,
   getVacationPolicyToday,
@@ -260,5 +261,53 @@ export function runVacationCalculationTests() {
     }),
     1,
     "A single-day annual request starting today should still count as one vacation day",
+  );
+
+  // Regression: getDeferredDebtFromPreviousPeriods (service.ts) walks an employee's history one
+  // period at a time, calling getVacationBalancePeriod with referenceDate === periodStart to
+  // identify each past period. For the very first iteration that referenceDate always equals
+  // hireDate itself, so the first-year branch's monthly-accrual math reads back 0 months elapsed
+  // — the period the debt walk sees for year one always carries entitlementDays: 0, even though
+  // a completed first year actually earned the full 15.
+  const hireDate = "2025-07-21";
+  const firstYearPeriodAsSeenByDebtWalk = getVacationBalancePeriod({ hireDate, referenceDate: hireDate });
+  assert.deepEqual(
+    firstYearPeriodAsSeenByDebtWalk,
+    { entitlementDays: 0, periodEnd: "2026-07-21", periodStart: hireDate },
+    "Documents the known quirk: querying a first-year period at its own start reads 0 accrued days",
+  );
+
+  // getCompletedVacationPeriodEntitlementDays is what the debt walk now asks for the entitlement
+  // of an already-elapsed period, instead of trusting period.entitlementDays verbatim — so a
+  // first-year period the debt walk visits reports the full 15, not the 0 that period carries.
+  assert.equal(
+    getCompletedVacationPeriodEntitlementDays({ hireDate, period: firstYearPeriodAsSeenByDebtWalk! }),
+    15,
+    "A completed first year earned the full 15 days, not the 0 its own periodStart-anchored lookup reports — " +
+      "otherwise every paid day taken in year one is wrongly carried as debt against year two",
+  );
+
+  // A standard (non-first-year) completed period is unaffected — its entitlementDays already
+  // reflects the full flat 21 regardless of referenceDate, so it passes through unchanged.
+  assert.equal(
+    getCompletedVacationPeriodEntitlementDays({
+      hireDate,
+      period: { entitlementDays: 21, periodStart: "2026-07-21" },
+    }),
+    21,
+    "A completed standard year should pass its entitlementDays through unchanged",
+  );
+
+  // The A-7 calendar-year-reset exception must not be swept up by the periodStart === hireDate
+  // check — even in the edge case where an employee happened to be hired on their calendar-year
+  // reset date, their period's entitlementDays is already correct and must not be overridden.
+  assert.equal(
+    getCompletedVacationPeriodEntitlementDays({
+      employeeHrId: "A-7",
+      hireDate: "2025-01-01",
+      period: { entitlementDays: 21, periodStart: "2025-01-01" },
+    }),
+    21,
+    "Calendar-year-reset employees keep their period's own entitlementDays even when periodStart equals hireDate",
   );
 }

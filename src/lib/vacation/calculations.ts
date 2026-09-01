@@ -221,6 +221,24 @@ export function getVacationBalancePeriod(input: {
   };
 }
 
+/**
+ * The entitlement a period earned in full, once that period has already elapsed —
+ * for carrying unpaid debt forward into the next period (getDeferredDebtFromPreviousPeriods).
+ * Not interchangeable with getVacationBalancePeriod's own entitlementDays: that value is
+ * accrued AS OF a referenceDate, so calling it with referenceDate === periodStart (which the
+ * debt walk does, to identify each historical period) always reads back 0 months accrued for
+ * a first-year period — silently treating the whole first year as earning nothing before
+ * charging every paid day taken in it as debt against year two.
+ */
+export function getCompletedVacationPeriodEntitlementDays(input: {
+  employeeHrId?: string | null;
+  hireDate: string;
+  period: { entitlementDays: number; periodStart: string };
+}) {
+  if (usesCalendarYearVacationReset(input.employeeHrId)) return input.period.entitlementDays;
+  return input.period.periodStart === input.hireDate ? firstYearAnnualEntitlementDays : input.period.entitlementDays;
+}
+
 export function getEmergencyVacationBalancePeriod(referenceDate: string) {
   const date = dateOnlyOrNull(referenceDate);
   if (!date) return null;

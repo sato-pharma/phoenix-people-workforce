@@ -43,6 +43,7 @@ import {
   calculateVacationPayment,
   compareDateOnly,
   getAnnualVacationMinimumStartDate,
+  getCompletedVacationPeriodEntitlementDays,
   getVacationPolicyToday,
   getVacationPolicyWarnings,
   getVacationBalancePeriod,
@@ -2346,7 +2347,12 @@ async function getDeferredDebtFromPreviousPeriods(input: {
       vacationType: "annual",
     });
 
-    currentDebt = Math.max(0, currentDebt + usedPaidDays - period.entitlementDays);
+    const entitlementDays = getCompletedVacationPeriodEntitlementDays({
+      employeeHrId: input.employeeHrId,
+      hireDate: input.hireDate,
+      period,
+    });
+    currentDebt = Math.max(0, currentDebt + usedPaidDays - entitlementDays);
     periodStart = period.periodEnd;
   }
 
