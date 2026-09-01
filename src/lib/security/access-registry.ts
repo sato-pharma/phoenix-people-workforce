@@ -999,6 +999,12 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/sales/targets/template", permission: { resource: "sales", action: "import" } }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/sales/targets/save", permission: { resource: "sales", action: "import" }, csrfExemptReason: "Authenticated admin JSON-only targets upsert (sales:import); map-or-reject validated server-side, rejects confidential products." }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/sales/targets/upload", permission: { resource: "sales", action: "import" }, csrfExemptReason: "Authenticated admin targets XLSX import (sales:import); parsed + map-or-reject validated server-side before persist." }),
+  // Sales Truth Check — reconciles every sales surface against Monthly Closing, area by area.
+  // An explicit entry rather than the /api/sales/** blanket below, which carries no audit
+  // classification: the response names every area of every line with its month's sales value, so
+  // it is the same disclosure shape as the territory-management reads above and is audited like
+  // them. Read-only and GET-only — it recomputes nothing and persists nothing.
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: ["GET"], pattern: "/api/sales/truth-check", permission: { resource: "sales", action: "read" } }),
   sessionApi({ methods: allMethods, pattern: "/api/sales/**", permission: { resource: "sales", action: "read" } }),
   sessionApi({ methods: ["GET"], pattern: "/api/report-it/list", permission: { resource: "report_it", action: "read" }, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/report-it/submit", permission: { resource: "report_it", action: "create" }, guard: "domain-helper", csrfExemptReason: "JSON-only employee ADR submission; all authenticated roles can submit their own reports." }),

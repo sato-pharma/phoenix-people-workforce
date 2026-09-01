@@ -2018,6 +2018,16 @@ export const sourceOfSalesPageItems: readonly AdminToolsPageItem[] = [
     excludedRoles: ["SFE Manager"],
     permissions: [{ action: "import", resource: "sales" }],
   },
+  {
+    href: "/sales/truth-check",
+    icon: ShieldCheck,
+    label: "Sales Truth Check",
+    description: "Prove every sales report agrees with Monthly Closing, area by area.",
+    // Same Super-Admin/system-scope-only boundary as Monthly Closing above. It prints whole-company
+    // per-area sales for every line, so it is gated exactly like the closing itself.
+    excludedRoles: ["SFE Manager"],
+    permissions: [{ action: "read", resource: "sales" }],
+  },
 ] as const satisfies readonly AdminToolsPageItem[];
 
 // ── Sales Analytics cards — RETIRED, DELIBERATELY UNWIRED ──────────────────────────
