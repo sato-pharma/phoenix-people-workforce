@@ -70,6 +70,7 @@ import { HrMyRecord } from "@/components/hr/hr-my-record";
 import { HrTodayPanel } from "@/components/hr/hr-today-panel";
 import { HR_SEAT_JOB_TITLES, type HrFunctionKey } from "@/lib/auth/hr-functions";
 import type { HrCommandCenterData, HrCommandGroup, HrCommandTile } from "@/lib/hr/command-center";
+import { cn } from "@/lib/utils";
 
 const GROUP_ICONS: Record<HrFunctionKey, LucideIcon> = {
   engagement_retention: HeartPulse,
@@ -300,18 +301,32 @@ export function HrCommandCenter({
   return (
     <div className="min-w-0 max-w-full overflow-x-hidden">
       <AdminHeroFrame className="z-10 overflow-visible">
-        {/* `relative` and width-capped ON PURPOSE, and the two go together.
-            CeoHeroIdentity's medallion is absolutely positioned, so it anchors to the nearest
-            POSITIONED ancestor — with none here it anchored to the hero frame itself and flew to
-            the far edge of a ~1200px band, leaving a wide dead strip between the greeting and the
-            badge that read as a stretched banner rather than a designed one. Making this box
-            positioned and capping it re-anchors the badge to the end of the TEXT's measure, so the
-            identity reads as one tight cluster.
+        {/* Width-capped ON PURPOSE, and `relative` ONLY while there is no photo on file.
+            CeoHeroIdentity absolutely positions BOTH its portrait and its initials medallion, so
+            each anchors to the nearest POSITIONED ancestor — which makes this one class decide
+            where the whole identity sits.
+
+            NO PHOTO (the medallion): positioned here, so the badge anchors to the end of the
+            TEXT's measure and the identity reads as one tight cluster. Anchored to the frame
+            instead it flew to the far edge of a ~1200px band, leaving a wide dead strip between
+            the greeting and the badge that read as a stretched banner rather than a designed one.
+
+            PHOTO (the portrait): NOT positioned, so the frame is the anchor and the portrait
+            bleeds into the banner's own right corner — the owner's rule, and pixel-for-pixel what
+            the CEO, SFE and Finance heroes already do (each wraps CeoHeroIdentity in a plain,
+            unpositioned padding box). Pinning it to this capped box instead parked the photo
+            mid-banner, floating in the middle of the dark surface.
+
             The cap is on the CONTENT, not on the frame: the dark surface still spans the full page
             width, so the band's height and full-bleed look are untouched — only the spread of what
             sits inside it changes. Scoped to this page; the CEO, Finance and SFE heroes are not
             touched. */}
-        <div className="relative w-full max-w-4xl p-5 sm:p-6 lg:p-8">
+        <div
+          className={cn(
+            "w-full max-w-4xl p-5 sm:p-6 lg:p-8",
+            !viewerImageUrl && "relative",
+          )}
+        >
           <div className="mb-5 inline-flex items-center gap-2 border border-orange-400/40 bg-orange-500/15 px-3 py-1.5 text-phx-3xs font-black uppercase tracking-[0.22em] text-orange-100">
             <UsersRound aria-hidden="true" className="h-3.5 w-3.5" />
             HR Command Center
