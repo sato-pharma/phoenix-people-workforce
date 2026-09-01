@@ -87,24 +87,22 @@ protection, CI cost, the deploy path, or the region.
 
 ### 2.1 Session-level traps
 
-**Each line is a cue, not the fact.** The full account of every one — measurements, dates, PR
-numbers, the diagnosis traps that cost real time — is in
-**[docs/agents-session-traps.md](docs/agents-session-traps.md)**. Search it for the hook's wording.
-Which memory file backs which hook is in
+**Each line is a cue, not the fact.** The account of every one — measurements, dates, PR numbers,
+the diagnosis traps — is in **[docs/agents-session-traps.md](docs/agents-session-traps.md)**; search
+it for the hook's wording. Which memory backs which hook:
 [docs/agents-memory-map.md](docs/agents-memory-map.md).
 
 **Shell and tooling**
 
 - **`grep -r` hangs on this checkout — use `git grep` or `rg`.**
-- **`pnpm run <script>` PURGES `node_modules`** when the lockfile moved. Invoke `node scripts/…` directly.
-- **MSYS mangles paths silently, three ways:** `git show <ref>:<path>` returns EMPTY; `grep -c $'\r'` matches EVERY line of a pure-LF file; and a `git grep`/`rg` PATTERN holding a leading-slash path matches NOTHING — 41 real hits read as 0, i.e. *the code is clean*. Export `MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*'` before any such sweep, and never quote a count from one without it.
-- **`TZ=Africa/Cairo date` silently returns UTC in MSYS — 3h early, no error**, so recent work reads as old. The tell is a Cairo reading at `+0000`, never right; the machine clock is ALREADY `+0300`, so use plain `date` or node, never `TZ=`. `tz-africa-cairo-silently-returns-utc-in-msys`
+- **MSYS mangles paths silently, three ways:** `git show <ref>:<path>` returns EMPTY; `grep -c $'\r'` matches EVERY line of a pure-LF file; and a `git grep`/`rg` PATTERN holding a leading-slash path matches NOTHING — 41 hits read as 0, i.e. *the code is clean*. Export `MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*'` first; never quote a count without it.
+- **`TZ=Africa/Cairo date` silently returns UTC in MSYS — 3h early, no error**, so recent work reads as old. The tell is a Cairo reading at `+0000`; the clock is ALREADY `+0300`, so use plain `date` or node, never `TZ=`. `tz-africa-cairo-silently-returns-utc-in-msys`
 - **A role probe cannot trust the HTTP status code**, and **a POST to ANY `/api/**` path returns 403 even when the route does not exist** — probe with GET.
 - **`curl -d "@-"` creates NOTHING on Windows** — write the JSON to a file, pass `-d @file.json`.
 - **Reads of `.env*` are auto-approved deliberately, for EVERY key** — licence to inspect, never to propagate. Do not re-litigate or narrow it.
-- **A permission allow-rule stores the LITERAL command, so an inline env var bakes a live credential into `settings.local.json` in plaintext.** Grep any `settings.*.json` for `TOKEN=`/`KEY=`/`SECRET=` before sharing or merging it.
+- **A permission allow-rule stores the LITERAL command, so an inline env var bakes a live credential into `settings.local.json` in plaintext.** Grep `settings.*.json` for `TOKEN=`/`KEY=`/`SECRET=` before sharing or merging.
 - **`mcp__supabase-staging__*` is broken** — route staging work through `mcp__supabase-production__*` passing the staging `project_id`.
-- **The Supabase MCP returns ONLY the last result set of a multi-statement `execute_sql`** — earlier ones vanish with no error, so a block that verifies in statement one and summarizes in statement two certifies a check you never saw. One question per call.
+- **The Supabase MCP returns ONLY the last result set of a multi-statement `execute_sql`** — earlier ones vanish with no error, so a block that verifies in statement one and summarizes in two certifies a check you never saw. One question per call.
 - **A Windows USER env var SHADOWS every `.env.local`, silently.** Re-probe all three; never print the value.
 - **The local attendance agent dies at EVERY logon and loses NOTHING — do not escalate it.** Never disable the 2-hourly task, never launch a second agent (it can fire a PRODUCTION sync).
 - **ExcelJS emits two schema-invalid OOXML fragments, so Excel silently REPAIRS the workbook** — both need the `.xlsx` zip post-processed.
@@ -112,7 +110,7 @@ Which memory file backs which hook is in
 **Git**
 
 - **Deleting a branch does not remove its pushed commit**, and **reusing a squash-merged branch makes a conflicting PR.**
-- **`git push` hangs — kill at ~60s and retry.** The OOM was a 500MB `http.postBuffer`, fixed 2026-08-23 to 8MB; do NOT restore it.
+- **`git push` hangs — kill at ~60s and retry.** The OOM was a 500MB `http.postBuffer`, now 8MB; do NOT restore it.
 - **A merge to `main` mid-session silently orphans your next push.**
 - **`refs/deleted-*` is NOT automatic — a plain `git branch -D` archives NOTHING.** Keep the SHA the delete prints; archive with `git update-ref` *before* deleting. `refs/backups/*` on ORIGIN is the only copy that survives losing this laptop.
 - **An empty `git log <branch> --not --remotes=origin` is NOT proof a branch is safe to delete** — `git fetch` never prunes, so the check compares the branch against itself. Gate deletion on the merged PR.
@@ -128,9 +126,9 @@ Which memory file backs which hook is in
 - **`check-runs: 0` also means CONFLICTED** — a conflicted PR runs no CI at all, which reads as "not started".
 - **ONE new hub page trips FOUR separate CI gates.**
 - **A red `main` still builds, ships and serves perfectly**, and a green PR is not a green `main` — after merging, check the run on `main`'s NEW head.
-- **A docs-only PR's `validate` runs NO tests — it skips the expensive steps and passes in ~10s.** The fast path is `pull_request`-ONLY, so the suite's FIRST run is the push to `main` — production's branch. Three PRs shipped `main` red this way on 2026-09-01; a `validate` under ~30s is the tell.
+- **A docs-only PR's `validate` runs NO tests — it skips the expensive steps, ~10s.** The fast path is `pull_request`-ONLY, so the suite's FIRST run is the push to `main` — production's branch. Three PRs shipped `main` red this way; a `validate` under ~30s is the tell.
 - **Runs NEVER CREATED is an Actions OUTAGE, not billing** — billing creates the run and fails it in seconds. Check githubstatus BEFORE touching the spending limit. A `workflow_dispatch` run never enters a PR's `statusCheckRollup`.
-- **Recover a PR with `gh run rerun <id>` on its OWN `pull_request`-sourced run** — it keeps the `event`, so its checks DO reach the rollup. Then WAIT: dispatch lags 20–30 MINUTES during an outage and events are NOT dropped. Fire ONE recovery event, leave it half an hour.
+- **Recover a PR with `gh run rerun <id>` on its OWN `pull_request`-sourced run** — it keeps the `event`, so its checks DO reach the rollup. Then WAIT: dispatch lags 20–30 MINUTES during an outage and events are NOT dropped. Fire ONE recovery event and leave it.
 - **An extra SHA does not merely waste a run — it ACTIVELY KILLS the real head's**, because `ci.yml`'s concurrency group is the same for every commit on a PR. Never push an empty commit to force a `synchronize`.
 - **`actions/runs?head_sha=` needs the FULL 40-char SHA** — an abbreviated one returns `total=0` with no error.
 - **A push to `main` during an outage ships to PRODUCTION with no CI run at all.** Recover with `gh workflow run ci.yml --ref main`.
@@ -148,11 +146,11 @@ Which memory file backs which hook is in
 
 **Database, grants and RLS**
 
-- **A write REVOKE does NOT make a table read-only** — `ON DELETE CASCADE` and `SECURITY DEFINER` both run as the table OWNER, and `has_table_privilege` sees neither bypass. Fixed on prod 2026-08-14; **do not redo or undo.**
+- **A write REVOKE does NOT make a table read-only** — `ON DELETE CASCADE` and `SECURITY DEFINER` both run as the table OWNER, and `has_table_privilege` sees neither bypass. Fixed on prod; **do not redo or undo.**
 - **An append-only table needs a STATEMENT-level `BEFORE TRUNCATE` trigger** — `TRUNCATE` fires no ROW triggers, and a revoke never binds the OWNER. Prove all three verbs are refused.
 - **RLS on with no `authenticated` grant is the NORM here — 222 of 308 tables — not a defect class to sweep.**
 - **ONE `auth.users` row with `banned_until = 'infinity'` 500s the ENTIRE GoTrue admin API** — page-shaped, so a small `per_page` probe passes. Retire with the app's finite `876000h`.
-- **`au.f_monthly_achievement` SERVES A PRECOMPUTED ROLLUP, and its fingerprint covers the CONFIG surface — NOT the sales data.** So repairing an import or rollup row changes NOTHING on Sales vs Target or its five sibling surfaces: no error, no staleness marker, the old number just keeps coming. Run `au.f_refresh_monthly_attribution(period)` after ANY sales-row repair, and diff stored against live first so the refresh is a check, not a hope. `attribution-rollup-fingerprint-ignores-the-sales-data`
+- **`au.f_monthly_achievement` SERVES A PRECOMPUTED ROLLUP, and its fingerprint covers the CONFIG surface — NOT the sales data.** So repairing an import or rollup row changes NOTHING on Sales vs Target or its five siblings — no error, no staleness marker, the old number just keeps coming. Run `au.f_refresh_monthly_attribution(period)` after ANY sales-row repair, diffing stored against live first so the refresh is a check, not a hope. `attribution-rollup-fingerprint-ignores-the-sales-data`
 - **The ATS data model carries four traps that each read as normal.** The offer chain was live in the registry with a HOLE past `approved_at`; the `ats_candidate_*` children have NO FK and one is a VIEW; a CV RE-READ never wrote what it read (`applied_fields` is NOT the writer); and `medical_rep` reads 12 fields where `universal` reads 38. **NEVER raw-SQL `national_id`/`email`/`phone`** — the `_norm` dedupe index is app-maintained. `offer-chain-was-live-in-the-registry-with-a-hole-past-approval` · `ats-candidate-children-one-has-no-fk-and-one-is-a-view` · `cv-extraction-reads-governorate-but-never-applies-it` · `the-medical-rep-cv-schema-reads-12-fields-universal-reads-38`
 - **A CV import OVERWROTE a candidate's whole identity — detect it with a per-candidate SENDER COUNT, where healthy is 1.** The allowlist holds an INBOX, not a sender, so never resolve a CV by sender; and the CV file lives in `ats_files`, NOT `cv_external_url`, which is empty for EVERY candidate and reads `NO FILE`. `a-cv-import-overwrote-a-candidates-whole-identity` · `the-email-import-allowlist-holds-an-inbox-not-a-sender` · `cv-file-is-in-ats-files-not-cv-external-url`
 
@@ -184,7 +182,7 @@ Which memory file backs which hook is in
 - **A feature can ship green, deploy cleanly, and be reachable by NOBODY — and zero usage is what both look like.** Exercise the path end to end before concluding it is adoption.
 - **A merged fix on a path nobody has exercised is untested, not proven.**
 - **`cn()` SILENTLY DROPPED every `text-phx-*` size, and only `getComputedStyle` in a real browser can see it.** The literal `text-[13px]` form was always safe: **the rename to a named size is what creates the bug.** `tailwind-merge-strips-custom-named-font-sizes`
-- **Arabic + English in ONE value needs direction PER LINE; `dir="auto"` on the block is the WRONG fix** — `auto` reads only the FIRST strong character, so the ENGLISH half renders backwards: the exact mirror of the bug being fixed. SINGLE-language free text is the opposite case, where block-level `dir="auto"` is correct and already house style. Measure production for Arabic before "fixing" a screen. `bilingual-bodies-need-direction-per-line-not-per-block`
+- **Arabic + English in ONE value needs direction PER LINE; `dir="auto"` on the block is the WRONG fix** — `auto` reads only the FIRST strong character, so the ENGLISH half renders backwards, the exact mirror of the bug. SINGLE-language free text is the opposite case: block-level `dir="auto"` is correct there, and house style. Measure production for Arabic before "fixing" a screen. `bilingual-bodies-need-direction-per-line-not-per-block`
 - **`@/lib/utils` resolves to the ROOT `lib/utils.ts`, NOT `src/lib/utils.ts`** — editing the `src/` copy changes nothing, with no error. `at-slash-lib-shadows-src-lib-via-tsconfig-paths`
 
 **Memory and this index**
@@ -200,15 +198,14 @@ Which memory file backs which hook is in
 
 - **Another SESSION can remove a worktree under you.**
 - **A gitignored `_wt-*/` scratch folder makes a worktree look clean.**
-- **The pre-push gate is GONE — a bare worktree pushes fine.** What it cannot do is RUN a suite; junction `node_modules`, invoke `node` directly, never `pnpm`.
-- **"Permission denied" on `git worktree remove` still DEREGISTERS the worktree.**
-- **`--fix` needs exactly ONE live session; `--strip-idle` does NOT** (narrowed 2026-09-01) — it gates per worktree on dirty/unpushed/120-min-idle behind a lock, so RUN it with sessions open: the old census meant it never once ran. **`--fix` can NEVER clear a `_wt-*` husk** — use `rmdir /s /q` from PowerShell, not Bash.
+- **The pre-push gate is GONE — a bare worktree pushes fine.** What it cannot do is RUN a suite.
+- **`--fix` needs exactly ONE live session; `--strip-idle` does NOT** — it gates per worktree on dirty/unpushed/120-min-idle behind a lock, so RUN it with sessions open; the old census meant it never once ran. **`--fix` can NEVER clear a `_wt-*` husk** — use `rmdir /s /q` from PowerShell, not Bash.
 - **repo-doctor's RETIRABLE verdict names the branch a folder HAD at scan time.** Treat any scan older than the current command as fiction — re-read at the moment of removal.
 - **Every retirement gate can PASS on a worktree in active use** — nothing catches a live PROCESS. Two signals see what the gates cannot: the newest mtime under `.next/`, and HEAD moving between the gate read and the removal. Read the tip at the GATE and reuse that SHA.
-- **Closing the session does NOT release its worktree, and the release is not INSTANT.** Two clean closes and a kill of the owning `claude.exe` all left the folder locked; `git worktree remove` then fails *Permission denied*, deregisters anyway, and leaves the husk. **Nothing points at the holder** — a `Win32_Process` sweep for the path, a `ParentProcessId` sweep and the Restart Manager API each report NOTHING, because a working-directory reference is not a file handle. `git fsmonitor--daemon` is the prime suspect: ANY `git -C <worktree>` spawns one **including your own read-only gate scans**, it outlives the session, and its command line never names the tree it serves. Stop every `git fsmonitor--daemon` — free, they are a cache and respawn on demand — then **RETRY `rmdir /s /q` over several minutes**; it cleared ~5 min after the last kill, not on the next attempt.
+- **Closing the session does NOT release its worktree, and the release is not INSTANT.** `git worktree remove` then fails *Permission denied*, deregisters anyway, and leaves the husk. **Nothing points at the holder** — a `Win32_Process` sweep, a `ParentProcessId` sweep and the Restart Manager API all report NOTHING, because a working-directory reference is not a file handle. Blame `git fsmonitor--daemon`: ANY `git -C <worktree>` spawns one **including your own read-only gate scans**, and it outlives the session. Stop them all — free, they are a cache and respawn — then **RETRY `rmdir /s /q` over several minutes**; it cleared ~5 min after the last kill, not on the next attempt.
 - **A squash-merged branch reads as "on NO origin ref" — that means BACKED UP, not stranded.** Never push a merged branch to "rescue" it; `git branch rescue/<name> <tip>` is the zero-risk move.
 - **Self-removing a worktree MUTES its own session-end guard.**
-- **`next dev` in a worktree needs the explicit `--webpack` flag** — TURBOPACK rejects the §5 junction, not Next; `pnpm run dev` now chooses for you (`scripts/dev-server.mjs`). **The watchdog's 6 GB kills are NOT a bundler trait** — SEVEN webpack servers died at the same ceiling right after that launcher merged. It is a watchdog-THRESHOLD problem (this server legitimately reaches ~6 GB), made acute by running two servers at once; `--max-old-space-size` is a measured no-op because the growth is off-heap.
+- **`next dev` in a worktree needs the explicit `--webpack` flag** — TURBOPACK rejects the §5 junction, not Next; `pnpm run dev` now chooses for you (`scripts/dev-server.mjs`). **The watchdog's 6 GB kills are NOT a bundler trait** — SEVEN webpack servers died at the same ceiling. It is a watchdog-THRESHOLD problem: this server legitimately reaches ~6 GB, made acute by two servers at once, and `--max-old-space-size` is a measured no-op because the growth is off-heap.
 
 **Next.js runtime**
 
@@ -220,14 +217,14 @@ Which memory file backs which hook is in
 
 - **A MINIMIZED window makes every browser reading LIE — check `document.visibilityState` FIRST.** rAF stops entirely, so **dnd-kit cannot run at all** while plain `.click()` still works. `javascript_tool` does not await a returned promise, and the isolated world cannot see React fibers.
 - **Click by TEXT — blind coordinate clicks once fired a real production collection run.**
-- **Dev login is `GET /api/dev-auth?role=<Role>`, and it DOES role-switch the Browser pane** via an httpOnly cookie. **It DOES take `hrId`** — `?role=National%20Sales%20Manager&hrId=a-12&next=<path>` signs you in as THAT person, which is the only way to verify anything scoped to one manager's own team. **Header-only is the SEPARATE `x-phoenix-*` path**, which the pane cannot set — that is what role SWEEPS use.
+- **Dev login is `GET /api/dev-auth?role=<Role>`, and it DOES role-switch the Browser pane** via an httpOnly cookie. **It DOES take `hrId`** — `?role=National%20Sales%20Manager&hrId=a-12&next=<path>` signs you in as THAT person, the only way to verify anything scoped to one manager's team. **Header-only is the SEPARATE `x-phoenix-*` path**, which the pane cannot set; that is what role SWEEPS use.
 - **Turbopack 500s with `0xc0000142` when the commit charge is exhausted** — close a session, do not debug the code.
 - **Verify a 375px mobile layout with NO dev server.**
 
 **Machine ceiling**
 
-- **A freeze leaves NO dump** — an empty the Windows Minidump folder is the EXPECTED signature, and the tell is `dwm.exe` dying `0xC00001AD`. The ceiling is COMMIT, not RAM; §5 carries the mechanics and the live-read rule. **Never judge a process by `VirtualSize`.**
-- **Two decoys sit on that diagnosis:** `nvlddmkm` is what dies when the compositor is starved, not the cause; but the `node.exe` figures in **Event 2004 ARE real**. The largest leak found so far is a throwaway ExcelJS probe (22 → 41 GB in 40s, off-heap). Delete such probes when done.
+- **A freeze leaves NO dump** — an EMPTY Windows Minidump folder is the EXPECTED signature, and the tell is `dwm.exe` dying `0xC00001AD`. The ceiling is COMMIT, not RAM; §5 carries the mechanics and the live-read rule. **Never judge a process by `VirtualSize`.**
+- **Two decoys sit on that diagnosis:** `nvlddmkm` is what dies when the compositor is starved, not the cause; but the `node.exe` figures in **Event 2004 ARE real**. The largest leak so far is a throwaway ExcelJS probe (22 → 41 GB in 40s, off-heap). Delete such probes when done.
 - **An interrupted session leaves the tree BROKEN ON PURPOSE.** Before acting on a bare "commit it", `git grep BREAK-`.
 ### 2.2 The memory index
 
