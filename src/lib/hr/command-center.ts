@@ -58,6 +58,7 @@ import { toHrNamespacePath } from "@/lib/navigation/shell-headers";
 import { listOffers } from "@/lib/offers/service";
 import { getProbationRows, isProbationDecisionOutstanding } from "@/lib/probation/service";
 import { getRecruitmentDashboard } from "@/lib/recruitment/dashboard";
+import type { ApplicationStage } from "@/lib/recruitment/types";
 import { getResignationsDashboardData } from "@/lib/resignations/service";
 import { getRetentionDashboardData } from "@/lib/retention/service";
 import { listAllSupportRequests } from "@/lib/support-requests/service";
@@ -629,24 +630,89 @@ function recentCairoMonths(count: number): { key: string; label: string }[] {
 }
 
 /**
+ * The live recruiting pipeline, grouped into the stages a person actually thinks in.
+ *
+ * WHY GROUPED AT ALL. `applicationStages` holds 28 stages, 23 of them live, and eight of those 23
+ * are offer states — the offer pipeline alone is a third of the vocabulary. Plotting it raw would
+ * put a 23-column axis on somebody's landing page with most columns permanently at zero, the same
+ * dead ink the deductions chart below filters out, except structural rather than seasonal. These
+ * seven groups are the ATS board's own order, so a bar's POSITION on the axis is how far along the
+ * candidates in it have got.
+ *
+ * TERMINAL STAGES ARE ABSENT BY DESIGN, not by omission. `terminalApplicationStages` — hired,
+ * rejected, withdrawn, offer declined, offer expired — are finished applications, and a funnel that
+ * counts them measures history rather than workload. The "Active Candidates" tile beside this chart
+ * excludes exactly the same five (`isTerminalApplicationStage`), so the chart's columns add up to
+ * that tile rather than to a larger number one click away.
+ *
+ * EXHAUSTIVE, AND CHECKED AT RUNTIME. Every stage in the vocabulary appears exactly once, here or
+ * in `terminalApplicationStages` — asserted in tests/hr-command-center.test.ts. A `Record` keyed on
+ * the union would NOT have caught a gap: `ignoreBuildErrors` is on in next.config, so a missing key
+ * compiles, builds and DEPLOYS (AGENTS.md §2.1), and a stage absent from every group is a live
+ * candidate this chart cannot see, with nothing anywhere reporting the loss.
+ */
+export const RECRUITING_PIPELINE_GROUPS: readonly {
+  label: string;
+  stages: readonly ApplicationStage[];
+}[] = [
+  { label: "Applied", stages: ["application_received", "in_candidate_pool"] },
+  { label: "Screening", stages: ["cv_screening", "phone_screening", "shortlisted"] },
+  {
+    label: "Interview",
+    stages: [
+      "interview_scheduling",
+      "hr_interview",
+      "hiring_manager_interview",
+      "manager_interview_completed",
+    ],
+  },
+  { label: "Selection", stages: ["final_selection", "backup_candidate"] },
+  {
+    label: "Offer",
+    stages: [
+      "offer_initiated",
+      "offer_draft",
+      "offer_pending_approval",
+      "offer_approved",
+      "offer_generated",
+      "offer_sent",
+      "offer_negotiation",
+      "offer_accepted",
+    ],
+  },
+  { label: "Joining", stages: ["pre_boarding"] },
+  // NOT a pipeline position. A candidate parked here has stopped moving, which is the one thing a
+  // funnel of live stages would otherwise hide completely — they would simply be missing. Kept
+  // LAST so the six columns before it still read left-to-right as progress.
+  { label: "Parked", stages: ["on_hold", "call_back", "no_response"] },
+];
+
+/**
  * The charts each function contributes. Same contract as TILES_BY_FUNCTION: keyed by function,
  * read through the seat's own bundle, and returning an empty array when the source did not load.
  *
- * FOUR OF THE EIGHT FUNCTIONS RETURN NOTHING, and each is a decision rather than a gap:
+ * TWO OF THE EIGHT FUNCTIONS RETURN NOTHING, and both are decisions rather than gaps:
  *
- *   `hr_governance`     — no source at all (SOURCES_BY_FUNCTION.hr_governance is empty).
- *   `engagement_retention` — its two sources are small queues, not populations. A bar chart over
- *                         four support requests is a tile with extra ink.
- *   `workforce_insight` — its one source is the directory, and `people_records` already plots the
- *                         directory's only honest shape (joiners and leavers). A seat holding both
- *                         would be shown the same chart twice under two headings.
- *   `recruiting`        — the pipeline-by-stage chart belongs here and is the one gap worth
- *                         filling next; it is left out today rather than guessed at, because the
- *                         stage vocabulary lives in applicationStageLabels and deserves its own
- *                         pass rather than a five-minute mapping.
+ *   `hr_governance`     — no source at all (SOURCES_BY_FUNCTION.hr_governance is empty). There is
+ *                         nothing to plot, so a chart here could only be invented.
+ *   `engagement_retention` — its two sources are EMPTY IN PRODUCTION and have never held a row.
+ *                         Measured 2026-09-01 against ozucdzovmcqvepbozvqf:
+ *                         `employee_support_requests` 0 rows ever, `hr_retention_conversations`
+ *                         0 rows ever. A chart here would print its `emptyLabel` on her landing
+ *                         page every day until somebody starts using two modules that shipped but
+ *                         were never adopted — which is a tile's job, and the three retention
+ *                         tiles already do it. Re-measure before adding one: the argument is the
+ *                         POPULATION, not the module.
  *
- * Do not "complete the set" by inventing one. A chart of a single number, or of a population of
- * four, is the ambitious-but-empty dashboard the owner rejected in the first place.
+ * `recruiting` and `workforce_insight` stood empty here too until 2026-09-01, and are now filled at
+ * the owner's instruction ("add the missing charts"). The note that occupied `workforce_insight`'s
+ * place — that `people_records` already plots the directory, so a seat holding both would see one
+ * chart twice — was wrong on its own terms: NO SEAT HOLDS BOTH. `people_records` is HR Operations'
+ * and `workforce_insight` is HR Advisory's, so what that note actually described was HR Advisory
+ * being shown no directory chart at all. She carried exactly one chart before this change.
+ *
+ * Do not "complete the set" by inventing one. A chart of a single number, or of a population that
+ * does not exist, is the ambitious-but-empty dashboard the owner rejected in the first place.
  */
 const CHARTS_BY_FUNCTION: Record<
   HrFunctionKey,
@@ -827,7 +893,52 @@ const CHARTS_BY_FUNCTION: Record<
     ];
   },
 
-  recruiting: () => [],
+  /**
+   * Where the live candidates actually are.
+   *
+   * THE GAP THIS CLOSES. HR Advisory's recruiting tiles say how many requisitions are open, how
+   * many candidates are active, how many offers are out and how many seats nobody has raised a
+   * requisition for. Not one of them says WHERE the live ones are sitting, and that is the only
+   * question a pipeline asks. Production on 1 September 2026: eleven candidates in the pool, two
+   * in CV screening, one at HR interview. That is a pool nobody is working, and through the tile
+   * "Active Candidates 14" it reads exactly like a healthy funnel.
+   *
+   * ONE BAR PER GROUP, IN PIPELINE ORDER — see RECRUITING_PIPELINE_GROUPS for why the 28-stage
+   * vocabulary is collapsed into seven and why the terminal stages are absent from all of them.
+   *
+   * A SINGLE SERIES, deliberately. The obvious second one is "how long they have been there", and
+   * `stageCounts` carries no age at all — deriving one from the application's `created_at` would
+   * measure the CANDIDATE's age rather than the STAGE's, so somebody who moved forward yesterday
+   * would plot as three weeks stale. That is a worse answer than no answer.
+   */
+  recruiting: (loaded) => {
+    const dashboard = loaded.recruitment;
+    if (!dashboard) return [];
+    const series: HrCommandChartSeries[] = [
+      { color: CHART_COLORS.primary, key: "candidates", name: "Live candidates" },
+    ];
+    // `?? 0` per stage rather than per group: `stageCounts` is initialised for the whole
+    // vocabulary by getRecruitmentDashboard, but the empty fixture in the test passes `{}`, and a
+    // builder that only works against a fully-populated record is a builder the test cannot read.
+    const counts = dashboard.summary.stageCounts;
+    const rows = RECRUITING_PIPELINE_GROUPS.map((group) => ({
+      candidates: group.stages.reduce((total, stage) => total + (counts[stage] ?? 0), 0),
+      label: group.label,
+    }));
+    return [
+      {
+        caption:
+          "Every application that has not finished, by how far it has got. Hired, rejected and withdrawn are not counted here — this is the work in front of you, not the history behind it.",
+        emptyLabel: "No application is live at any stage of the pipeline.",
+        href: "/hr/recruitment",
+        hrefLabel: "Open Recruitment",
+        key: "recruiting-pipeline",
+        rows,
+        series,
+        title: "Live candidates, by pipeline stage",
+      },
+    ];
+  },
 
   /**
    * The exception queue as a fortnight rather than a number.
@@ -864,7 +975,73 @@ const CHARTS_BY_FUNCTION: Record<
     ];
   },
 
-  workforce_insight: () => [],
+  /**
+   * The structure split the way the four tiles beside it cannot: filled against vacant, per line.
+   *
+   * WHY IT EARNS ITS PLACE. Those tiles are "Active Headcount", "Vacant Seats", "No Manager Set"
+   * and "Lines Covered" — four company totals. "Vacant Seats 33" says nothing about whether the
+   * hole is spread evenly or concentrated, and in production on 1 September 2026 it is heavily
+   * concentrated: Pedia stands at 27 active people against 20 open vacancy rows, while Head Office
+   * has 13 people and none. Those are two different conversations with two different managers, and
+   * a single total hides both of them.
+   *
+   * THE SEAT COUNT COMES FROM `openWorkforceSeats`, never from the raw vacancy list — the same
+   * deduplication the "Vacant Seats" tile above it uses. Counting `lookups.workforceVacancies`
+   * directly would plot columns summing to 45 under a tile reading 33, one click apart.
+   *
+   * NOT A DUPLICATE OF `people_records`' joiners-and-leavers chart. That one is the directory over
+   * TIME; this is the directory over STRUCTURE. And no seat holds both functions in any case —
+   * `people_records` belongs to HR Operations, `workforce_insight` to HR Advisory.
+   */
+  workforce_insight: (loaded) => {
+    const directory = loaded.directory;
+    if (!directory) return [];
+    const series: HrCommandChartSeries[] = [
+      { color: CHART_COLORS.secondary, key: "filled", name: "Filled" },
+      { color: CHART_COLORS.overdue, key: "vacant", name: "Vacant" },
+    ];
+    // Keyed on the line NAME, not the id. An employee row and a vacancy row reach this builder
+    // through two different services and only the name is carried by both; the name is also what
+    // every other line-shaped surface in this app labels with (owner's standing rule: human names,
+    // never raw codes). A row with no line is kept and SAID so rather than dropped — production
+    // holds two active people and nineteen records with no line at all, and silently discarding
+    // them would make the columns disagree with the "Active Headcount" tile.
+    const totals = new Map<string, { filled: number; vacant: number }>();
+    const bucketFor = (lineName: string | null | undefined) => {
+      const label = lineName?.trim() || "No line set";
+      const existing = totals.get(label);
+      if (existing) return existing;
+      const created = { filled: 0, vacant: 0 };
+      totals.set(label, created);
+      return created;
+    };
+    // Only ACTIVE employees fill a seat, matching openWorkforceSeats on the other side of the
+    // chart: a resigned person still holding a directory row would otherwise be counted as filling
+    // the very seat the red column is reporting as empty.
+    for (const employee of directory.employees) {
+      if (!isActiveDirectoryEmployee(employee)) continue;
+      bucketFor(employee.lineName).filled += 1;
+    }
+    for (const seat of openWorkforceSeats(directory)) {
+      bucketFor(seat.lineName).vacant += 1;
+    }
+    const rows = [...totals.entries()]
+      .map(([label, counts]) => ({ filled: counts.filled, label, vacant: counts.vacant }))
+      .sort((left, right) => right.filled + right.vacant - (left.filled + left.vacant));
+    return [
+      {
+        caption:
+          "Everyone active, and every seat still empty, counted per business line. A line whose red column rivals its dark one cannot deliver, however healthy the company total looks.",
+        emptyLabel: "No active employee and no open seat is on record.",
+        href: "/hr/reports/vacancies",
+        hrefLabel: "Open Vacancy Report",
+        key: "structure-by-line",
+        rows,
+        series,
+        title: "Filled and vacant seats, by business line",
+      },
+    ];
+  },
 };
 
 /**
