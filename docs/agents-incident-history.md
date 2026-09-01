@@ -287,3 +287,14 @@ Three of the four are `eu-central-1`, and a different organization does not stop
 ref — so neither region nor org is a guard. Combined with both named MCP servers seeing all four,
 the `project_id` argument remains **the only thing separating staging from production on every
 call.**
+
+
+---
+
+## Relocated from AGENTS.md — 2026-09-01 (batch 2)
+
+Verbatim, unabridged. The cue — and every memory slug — stays in `AGENTS.md`; the account is here.
+
+- **The OUTBOX DRAIN is the one that needs care — it ran perfectly and did nothing for 13 days.** **A green cron and a 200 prove nothing here**, and **`attempted: 0` cannot by itself tell idle from broken — read `drainHealth` in the response body.** The head-of-line block is **FIXED 2026-08-27** on all three drains (outbox, telegram, push), with a dead-man's-switch alarm and an in-app + Telegram page behind it. **That alert is deliberately never email, and do not "fix" that back** — it fires precisely when the notification pipeline is the thing not delivering, so an emailed alert would depend on the channel it reports broken; it is best-effort and never throws. **Never infer a cron's health from database state alone, or from its status code** — read its execution history *and* its response body (on cron-job.org the job-list endpoint returns an empty body; only `GET /jobs/{id}/history/{identifier}` carries it). To check the drain, run its own window query — `status in ('pending','failed')` AND `(next_attempt_at is null or next_attempt_at <= now())` ordered by `created_at` **limit 50** — and count how many of those 50 are already exhausted. `outbox-drain-is-blocked-by-50-exhausted-rows-head-of-line`
+
+- **The production scheduler is the third-party `cron-job.org`, and it is running, not stalled.** Daily notifications and iReports sync/reconcile fire from that account. The 8 GCP Cloud Scheduler jobs still fire but **401 on every route** — a red herring, not proof anything is down. **Never tell the owner notifications/iReports are stalled without checking `cron-job.org` first.** **It cuts every request at 30 s, a PLATFORM cap `requestTimeout` cannot raise — but the server DOES finish the work afterwards**, so a long route logs a false `Failed (timeout)` while succeeding. ⚠ **A MID-SWEEP SNAPSHOT READS EXACTLY LIKE A TRUNCATED ONE.** Never judge completion from row timestamps while the job may still be running — read the terminal artefact (the audit row, the response body of `GET /jobs/{id}/history/{identifier}`, the final log line), or re-query only after the route's full known duration has elapsed. Slicing a long route into several ticks is still right: a permanently red job is one nobody reads. `src/lib/cron-control/*` is a dashboard over the dead GCP scheduler and remains inert.

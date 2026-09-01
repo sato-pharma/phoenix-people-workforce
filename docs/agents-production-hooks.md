@@ -266,3 +266,37 @@ pointer: the index carries the hook, this block carries the detail.)
   2026-08-28. **Confirm by listing DEPLOYMENTS, never by probing the running app**, and never
   `railway redeploy` to make a variable "take" — that is a second build of the same commit.
 
+
+
+---
+
+## Relocated from AGENTS.md — 2026-09-01 (batch 2)
+
+Verbatim, unabridged. The cue — and every memory slug — stays in `AGENTS.md`; the account is here.
+
+- **Owner-confirmed exception (2026-08-02):** `mcp__45bb6356-8105-4482-9464-25bfd754baec__*` is the owner's own claude.ai Supabase connector. He confirmed ownership and instructed its removal from the deny list, so it is callable. **VERIFIED 2026-08-23: it is back IN that list, so the previous sentence no longer describes live state.** `permissions.deny` in `~/.claude/settings.json` currently holds **two** entries — `mcp__b345e47e-…` *and* this connector — and a `deny` is a silent hard block rather than a prompt, so a session following the sentence above hits a wall with no dialog to explain it. **OWNER DECISION 2026-08-23: leave it DENIED.** He was asked directly and answered plainly, so this is settled — the connector stays in `permissions.deny`. Do not re-allow it, do not propose re-allowing it, and do not read a blocked call as a bug to chase. Nothing is lost by the block: the two named servers in §3 cover routine work, and this connector's grant was always the broader, riskier one. Note its consent grant is **broader than either named server** — read+write on Secrets, Environment, and Projects, meaning it can read project secrets and create or delete projects. Reach for the named servers first; use this one only when it is actually the right tool. Its DB writes fall under the pre-authorized grant above (announce destructive/bulk prod changes; no wait), but **creating/deleting a project or reading secrets is NOT covered — get an explicit go for those** (see §6).
+
+- 🔴 **`railway service source connect` is NOT environment-scoped — `--environment staging` REPOINTED
+  PRODUCTION.** The git source is a **service-level** setting shared by every environment of that
+  service, so connecting a branch repoints them all; `-e` only *resolves* which service is meant. The
+  rule that follows is absolute: **a branch cannot be staged on Railway without shipping it**, so
+  never reach for this command to preview anything, and §7's "smoke-test on staging before a risky
+  production deploy" needs a **separate Railway service**, not a repointed branch. The damage is
+  never the feature — it is that production silently **rolls back** whatever was merged since, and
+  `healthz` reporting `status: ok` hides that completely, so **read the `revision`.** Also
+  `railway status --environment X --json` returns the WHOLE project, so a reader taking
+  `environments.edges[0]` prints the same environment whatever `-e` says: select by
+  `.environments.edges[] | select(.node.name=="production")` and print the name you matched.
+  `railway-service-source-connect-is-not-environment-scoped`
+
+- 🔴 **Payroll NEVER reads `social_insurance_status` — the `social_insurance_wage` column ALONE
+  decides the statutory filing, and NEITHER statutory figure reduces take-home pay.** The status is
+  display-only (**zero** hits under `src/lib/payroll`), so register and filing disagree **both ways,
+  silently**: one man sat marked `no` while carrying a 16,700 wage and was filed anyway, and a `yes`
+  with a null wage is filed nowhere. Record-health never compares the two, so neither shape is a
+  missing field. **Audit by querying both columns, never by status.** And social insurance and income
+  tax are reported as `governmentalDeductions` while being **absent from the deductions that feed
+  payable** — the company absorbs both, so setting a wage costs the employee NOTHING. That reads
+  exactly backwards and I said the opposite out loud several times; never warn the owner a wage will
+  cost someone money. `payroll-reads-the-insurance-wage-never-the-status` ·
+  `social-insurance-and-tax-never-reduce-take-home-pay`
