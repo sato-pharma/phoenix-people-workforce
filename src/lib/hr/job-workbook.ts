@@ -130,8 +130,15 @@ export type SeatWorkbook = {
 // renamed or moved is then one edit, and the test that checks these against the real page files and
 // the real navigation checks them once each rather than once per mention.
 
+// `approvalsHub` was here until 2026-09-01 and is deliberately gone. Its only user was ops-2-1,
+// which taught the Operations seat to "decide excuses and permission requests in Other Approvals" —
+// wrong on two counts even before the row was retired from her rail that day. Excuses, vacation and
+// plans LEFT that inbox for their own dedicated pages (see the MIGRATED_DEEPLINK_BASES map in
+// app/(admin)/admin/approvals-hub/page.tsx, which bounces stale ?module=excuse links away from it),
+// so the hub now carries resignation, contract and outstation only; and the excuse decision itself
+// belongs to leaveExcuseApproverAdminNavigationRoles — Super Admin, CEO and Financial Advisor — a
+// list this seat has never been on. Do not re-add the entry to point a line here.
 const S = {
-  approvalsHub: { href: "/hr/admin/approvals-hub", label: "Other Approvals" },
   attendance: { href: "/hr/attendance", label: "Attendance" },
   attendanceDayReport: { href: "/hr/attendance/employee-day-report", label: "Employee Day-by-Day Report" },
   attendanceDevices: { href: "/hr/attendance/device-user-mapping", label: "Device User Mapping" },
@@ -659,10 +666,14 @@ const OPS_SECTIONS: readonly WorkbookSection[] = [
         id: "ops-2-1",
         responsibility:
           "Review attendance records, fingerprint inputs, approved leave, permissions, excuses and relevant field-activity inputs according to company rules.",
-        screens: [S.attendance, S.attendanceExceptions, S.approvalsHub],
+        screens: [S.attendance, S.attendanceExceptions],
         steps: [
           "Work the exception queue. It is simply the list of days the rules could not settle on their own.",
-          "Decide excuses and permission requests in Other Approvals. They arrive there from the employees' own portals.",
+          // The duty above says REVIEW, and review is what this seat does: an excuse or permission
+          // request is DECIDED by the approver chain, and it reaches her as an already-settled input
+          // on the attendance record. The old wording sent her to Other Approvals to decide them
+          // herself — a screen those requests had already left, on an approver list she is not on.
+          "An approved excuse or permission already shows against the day. Read it there and let it stand — you are checking that the record matches the rules, not re-deciding the request.",
         ],
         evidence:
           "Every decision is saved with your name and the date, right beside the fingerprint record it was about. So it can be read back years later with the same facts in front of you.",
