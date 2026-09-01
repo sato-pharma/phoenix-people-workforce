@@ -85,29 +85,20 @@ function offeredHrefs(seat: HrBundleName): Set<string> {
  * 2026-09-01, which is exactly that failure in miniature: the comment said "every source" while
  * six tiles — three clearance figures on HR Operations' board and three retention ones on HR
  * Advisory's — were never built and so never had their hrefs checked. Measured: the loop below
- * read 31 tiles before those two keys were added and 37 after. (A seventh, "No Clearance Opened",
- * is conditional on a non-empty `awaiting` and so is still unreached by an empty fixture.) Adding
- * a source to SOURCES_BY_FUNCTION means adding it here too, or its tiles ship unchecked. `deductions` needs the cast because its buckets are keyed by a
- * category union this test has no reason to enumerate; `Object.values({})` is `[]` either way.
+ * read 31 tiles before those two keys were added and 37 after.
+ *
+ * `clearance` is gone again, and for a different reason: the module was removed later the same
+ * day, so the key no longer exists on HrCommandSources at all. Its absence here is now enforced by
+ * the compiler rather than by this comment. Adding a source to SOURCES_BY_FUNCTION still means
+ * adding it here too, or its tiles ship unchecked — that half is unchanged, and it is the half
+ * nothing enforces.
+ *
+ * `deductions` needs the cast because its buckets are keyed by a category union this test has no
+ * reason to enumerate; `Object.values({})` is `[]` either way.
  */
 function emptySources(): HrCommandSources {
   return {
     attendanceExceptions: [],
-    clearance: {
-      awaiting: [],
-      checklists: [],
-      schemaReady: true,
-      stations: [],
-      stats: {
-        amountOutstanding: 0,
-        blockedStations: 0,
-        cancelled: 0,
-        open: 0,
-        overdue: 0,
-        ready: 0,
-        released: 0,
-      },
-    },
     contracts: {
       rows: [],
       summary: {
