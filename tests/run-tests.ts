@@ -2087,7 +2087,8 @@ await runTest(
   "HR Business Partner module opening 2026-09-01 (all 17 modules are rows she is offered, grouped "
   + "where the owner was shown; her payslip and directory pay audience is District Sales Managers, "
   + "Medical Representatives and herself and NOTHING else; hr_calendar:update and employees:update "
-  + "stay refused; and HR Operations gains none of it)",
+  + "stay refused; Workforce Compliance is on neither HR rail; and the only thing HR Operations "
+  + "gains is the Planning Calendar the owner named for her, at read and nothing else)",
   runHrAdvisoryModuleAccessTests,
 );
 await runTest(

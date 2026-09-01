@@ -223,11 +223,28 @@ export async function runHrAdvisoryModuleAccessTests() {
   assert.equal(byHref.get("/hr/employees")?.section, "People");
   assert.equal(byHref.get("/hr/contracts")?.section, "People");
 
-  // Workforce Compliance sat in her sidebar rendering for nobody, because it gates on hr_calendar
-  // and she held no such grant. The Company Calendar widening fixed it; this asserts the fix.
-  assert.ok(
+  // Workforce Compliance is NOT here — and this assertion asserted its exact opposite until now.
+  //
+  // The row sat in the /hr rail rendering for nobody: it gates on `hr_calendar` and she held no
+  // such grant. The Company Calendar widening fixed that, and this line was written at 07:01 to
+  // pin the fix. It was already wrong when it was written. At 06:58, on the other branch, the
+  // owner had the row deleted from hrNavigationSectionSeeds for BOTH seats — "Remove workforce
+  // compliance" — overruling the argument that the page calls itself "Operational HR Governance".
+  //
+  // The two commits are three minutes apart and merged cleanly twenty-three minutes later, because
+  // they touch different regions of different files. Git had nothing to report. The combined state
+  // was simply false, and this test was the only thing that said so — which is why the line is
+  // INVERTED here rather than deleted. A removal that leaves no assertion behind is one the next
+  // session re-derives from the grant and quietly undoes.
+  //
+  // The widening it was celebrating is untouched and still asserted: `hr_calendar:read` in part 4,
+  // and /hr/hr-calendar in the required list above. What went is the second row that grant lit.
+  assert.equal(
     byHref.has("/hr/admin/field-workforce-compliance"),
-    "Workforce Compliance must now render for her — it was listed and invisible before hr_calendar:read",
+    false,
+    "Workforce Compliance is back on the HR Business Partner rail. The owner removed it from the "
+      + "/hr rail on 2026-09-01; holding hr_calendar:read is not a reason to re-add it, and the "
+      + "page's own title is the argument he already rejected. The ADMIN rail still carries it.",
   );
 
   // ── 8. What HR Operations must NOT have gained ────────────────────────────
@@ -237,10 +254,27 @@ export async function runHrAdvisoryModuleAccessTests() {
     false,
     "Manager Engagement must not appear for HR Operations",
   );
-  assert.equal(
+  // The Planning Calendar is the OTHER half of the same merge collision as Workforce Compliance
+  // above, and it landed the opposite way round: this line asserted Operations must NOT have it,
+  // while on the other branch the owner was naming /admin/weekly-plans/calendar in his own list of
+  // modules to open on her seat. Both statements were true of their own branch and false of the
+  // merge. She holds weekly_plans:read through `time_attendance`, added that day and argued at
+  // length at its own place in hr-functions.ts — he was told, before agreeing, that it lets her
+  // see where every medical rep plans to be.
+  //
+  // What is asserted instead is the boundary that actually still holds: READ and nothing else.
+  // Approving or rejecting a plan belongs to the sales ladder, and a write action reaching an HR
+  // seat is the failure this line now watches for.
+  assert.ok(
     operationsRows.has("/hr/admin/weekly-plans/calendar"),
-    false,
-    "the Planning Calendar is workforce_insight's, and Operations has no reason to read a rep's plan",
+    "the Planning Calendar must render for HR Operations — owner instruction, 2026-09-01",
+  );
+  const operationsPlanActions = hrBundleGrants("HR Operations").weekly_plans ?? [];
+  assert.deepEqual(
+    [...operationsPlanActions].sort(),
+    ["read"],
+    "HR Operations may READ the field force's plans and nothing else — approving one belongs to "
+      + "the sales ladder, and no HR seat holds a weekly_plans write action of any kind",
   );
   assert.ok(
     operationsRows.has("/hr/admin/payslips-center"),

@@ -178,8 +178,15 @@ export const HR_FUNCTIONS: readonly HrFunction[] = [
       // Read-only, and deliberately no create: the Planning Calendar is a window onto where the
       // field force will be, which is how an HR seat schedules an interview or a training day
       // without asking a manager. Submitting a plan is the field force's own job — the retired
-      // seat held exactly this pair (owner, 2026-07-25) and it belongs to the insight function,
-      // so it does NOT reach HR Operations, who has no reason to read a rep's call plan.
+      // seat held exactly this pair (owner, 2026-07-25).
+      //
+      // This clause used to end "so it does NOT reach HR Operations, who has no reason to read a
+      // rep's call plan". That stopped being true on 2026-09-01, when the owner named
+      // /admin/weekly-plans/calendar in his list of modules to open on the Operations seat. She now
+      // holds the same READ_ONLY grant through `time_attendance` — attached there, not moved from
+      // here, because this function is HR Advisory's alone and moving it would have dragged
+      // organogram, employees and attendance across with it. The two copies are deliberate; the
+      // reason each seat has one is different, and the comment at each says which.
       weekly_plans: READ_ONLY,
       employee_profile: READ_ONLY,
       attendance: READ_ONLY,
