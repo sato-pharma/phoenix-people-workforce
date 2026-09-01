@@ -1,5 +1,6 @@
 import {
   Activity,
+  BookUser,
   BriefcaseBusiness,
   Building2,
   CalendarCheck2,
@@ -99,6 +100,10 @@ export const PORTAL_NAV_REGISTRY: PortalNavEntry[] = [
   // geography-rooted sales tree; Management is the brick-allocation / rep-residence map.
   { label: "Drilldown", fullLabel: "Sales Drilldown", href: "/employee-portals/territory-drilldown", icon: MapPinned, flags: ["showTerritoryDrilldownTab"], permission: { resource: "sales", action: "read" } },
   { label: "CRM", fullLabel: "CRM", href: "/employee-portals/crm", icon: Database, flags: ["showCrmMasterTab"], permission: { resource: "crm_visits", action: "read" } },
+  // The short label is "Reps", not "Reps List": the bottom nav shows `label` alone, and this board
+  // is the one page on it a manager reads standing in a pharmacy. Reachable from the phone by the
+  // owner's golden rule for it — "must be mobile friendly", never desktop-only.
+  { label: "Reps", fullLabel: "Reps List", href: "/employee-portals/reps-list", icon: BookUser, flags: ["showRepsListTab"], permission: { resource: "crm_visits", action: "read" } },
   { label: "Territory", fullLabel: "Territory Management", href: "/employee-portals/territory-management", icon: Waypoints, flags: ["showTerritoryManagementTab"], permission: { resource: "sales", action: "read" } },
   { label: "Targets", fullLabel: "Targets", href: "/employee-portals/targets", icon: Target, flags: ["showTargetsTab"], permission: { resource: "sales", action: "read" } },
   { label: "ROI Tracker", fullLabel: "Marketing ROI Tracker", href: "/employee-portals/roi-tracker", icon: Target, flags: ["showMarketingRoiTrackingTab"] },

@@ -97,7 +97,9 @@ const COLLAPSED_INTO_HUBS = [
   // → /admin/crm-tools
   "/admin/crm",
   "/admin/reps-plans",
-  "/admin/doctor-list",
+  // Was "/admin/doctor-list" until 2026-08-31, when the owner retired that board and Reps List took
+  // its card. The route still exists as a redirect stub, so the guard follows the live href.
+  "/admin/reps-list",
   "/admin/plan-verification",
   "/admin/crm-integrity",
   "/admin/brick-coverage",

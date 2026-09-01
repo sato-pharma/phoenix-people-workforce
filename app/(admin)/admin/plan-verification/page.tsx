@@ -1,4 +1,10 @@
-// TAB TWO of the District Manager page — the plans a manager verifies.
+// Plan Verification — the plans a manager verifies.
+//
+// WAS TAB TWO of a two-tab District Manager page until 2026-08-31. The owner retired tab one
+// (Doctor List) and its tab strip together — "retire it and its DM tab" — so this board now stands
+// on its own and src/components/crm/district-manager-tabs.tsx is gone. A one-item tab strip is not
+// a tab strip. Its replacement, Reps List, is a page of its own at /admin/reps-list and reaches the
+// same managers through the CRM hub and the sidebar, not through a tab beside this one.
 //
 // The owner's specification: weekly and monthly plans the DM can verify or leave pending, with the
 // verification written back into the CRM. Reject and return-for-edit were explicitly dropped, and
@@ -13,7 +19,6 @@
 // Period and plan ride in the URL, so every change re-runs the gate server-side.
 import { redirect } from "next/navigation";
 
-import { DistrictManagerTabs } from "@/components/crm/district-manager-tabs";
 import { PlanVerificationBoardView } from "@/components/crm/plan-verification-board";
 import { canAccess } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
@@ -82,25 +87,19 @@ export default async function PlanVerificationPage({ searchParams }: PageProps) 
 
   if (!board) {
     return (
-      <div className="space-y-0">
-        <DistrictManagerTabs active="plan-verification" />
-        <div className="border border-rose-200 bg-rose-50 px-5 py-4">
-          <p className="text-sm font-bold text-rose-800">Plans could not load.</p>
-          <p className="mt-1 text-xs text-rose-700">{loadError}</p>
-        </div>
+      <div className="border border-rose-200 bg-rose-50 px-5 py-4">
+        <p className="text-sm font-bold text-rose-800">Plans could not load.</p>
+        <p className="mt-1 text-xs text-rose-700">{loadError}</p>
       </div>
     );
   }
 
   return (
-    <div className="space-y-0">
-      <DistrictManagerTabs active="plan-verification" />
-      <PlanVerificationBoardView
-        basePath="/admin/plan-verification"
-        board={board}
-        canVerify={canVerify}
-        years={years}
-      />
-    </div>
+    <PlanVerificationBoardView
+      basePath="/admin/plan-verification"
+      board={board}
+      canVerify={canVerify}
+      years={years}
+    />
   );
 }

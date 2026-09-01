@@ -49,6 +49,7 @@ import {
   CalendarCheck2,
   MapPinned,
   Waypoints,
+  BookUser,
 } from "lucide-react";
 import { EmployeePortalBottomNav } from "@/components/employee-portal/employee-portal-bottom-nav";
 import { SessionSecurityGuard } from "@/components/auth/session-security-guard";
@@ -201,6 +202,7 @@ function buildEmployeePortalSections({
   showMyPerformanceTab: _showMyPerformanceTab = true,
   showTeamPerformanceTab = false,
   showMedRepsPerformanceTab = false,
+  showRepsListTab = false,
   showMedicalRepExpensesTab = false,
   showDsmsPerformanceTab = false,
   showTeamCalendarTab = false,
@@ -347,6 +349,10 @@ function buildEmployeePortalSections({
         // Full scoped CRM Master — self for a Medical Rep, the team's rows for DSM/RM/NSM. My Visits
         // above stays: it is the always-on self view every portal role keeps.
         ...(showCrmMasterTab ? [{ href: "/employee-portals/crm", label: "CRM", icon: Database }] : []),
+        // Sits directly under CRM because it is the same scoping shape one level in: CRM above is
+        // the team's activity rows, this is the team's assignment — each rep's own CRM contact list,
+        // grouped by brick. The admin twin is /admin/reps-list.
+        ...(showRepsListTab ? [{ href: "/employee-portals/reps-list", label: "Reps List", icon: BookUser }] : []),
         ...(showDoubleVisitAnalyticsTab ? [{ href: "/employee-portals/double-visit-analytics", label: "Double-Visit Analytics", icon: Activity }] : []),
         ...(showDoubleVisitReportTab ? [{ href: "/employee-portals/dv-planner", label: "DV Planner", icon: CalendarCheck2 }] : []),
         ...(showDoubleVisitReportTab ? [{ href: "/employee-portals/double-visit-report", label: "Double Visit Report", icon: FileSpreadsheet }] : []),
