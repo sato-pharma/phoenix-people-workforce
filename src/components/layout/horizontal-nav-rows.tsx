@@ -43,6 +43,20 @@
 // emptied their own row leaves them no way back in except the editor — which is
 // the exact trip the "+" exists to save.
 //
+// ── The portal's OWN entry point ────────────────────────────────────────────
+// The employee portal has no /admin/sidebar-layout editor, so a portal account
+// with no saved layout had no OTHER way to reach `pinHrefToRow` — until
+// 2026-09-01 that was solved by forcing both rows to render even fully empty
+// (`alwaysOfferAdd`). On screen that was two dead, full-width strips holding
+// nothing but a "+", stacked above the dashboard on every portal page and
+// squarely on top of the identity card on mobile — reported as clutter the
+// same day it shipped. `usePortalCompactNavAdd` below replaces that: ONE small
+// "+", rendered by the portal's own header beside search, that targets
+// whichever row is still empty (upper first, then lower) and disappears once
+// both carry a tab — at which point each row shows its own trailing "+" same
+// as admin and HR always have. Admin and HR are untouched: they never set
+// `alwaysOfferAdd` and keep the editor page as their entry point, as shipped.
+//
 // Like the sidebar, this is UX and never the security boundary: the items come
 // from `getSections` (already permission- and role-filtered) and are only
 // REARRANGED by `applyPersonalLayout`, which cannot introduce an href.
@@ -76,7 +90,11 @@ import {
   usesAdminChrome,
   type PermissionLookup,
 } from "@/lib/navigation/active-path";
-import { applyPersonalLayout, type PersonalNavigationLayout } from "@/lib/navigation/personal-layout";
+import {
+  applyPersonalLayout,
+  type PersonalLayoutRowSet,
+  type PersonalNavigationLayout,
+} from "@/lib/navigation/personal-layout";
 import { cn } from "@/lib/utils";
 
 /** What a rendered row needs. Resolved once by the provider and shared by both rows. */
@@ -91,10 +109,8 @@ type ResolvedRows = {
   lowerAddable: readonly NavigationSection[];
   /** Whether to render a "+" at all — every surface that carries rows, which is wider than the chrome. */
   canAdd: boolean;
-  /** Has this viewer ever saved a layout? One of the two cases where an EMPTY row still shows its "+". */
+  /** Has this viewer ever saved a layout? The one case where an EMPTY row still shows its own "+". */
   hasSavedLayout: boolean;
-  /** The other: a surface with no layout editor, where the "+" is the only way in. */
-  alwaysOfferAdd: boolean;
 };
 
 const EMPTY_ROWS: ResolvedRows = {
@@ -106,7 +122,6 @@ const EMPTY_ROWS: ResolvedRows = {
   lowerAddable: [],
   canAdd: false,
   hasSavedLayout: false,
-  alwaysOfferAdd: false,
 };
 
 /**
@@ -212,12 +227,6 @@ export function HorizontalNavProvider({
       lowerAddable: addableFor(applied.lowerRow),
       canAdd: carriesNavRows(navigationMode),
       hasSavedLayout: layout !== null,
-      // THE PORTAL HAS NO LAYOUT EDITOR. /admin/sidebar-layout is admin-only, and a null layout
-      // resolves to empty rows — so without this the portal's "+" would appear only for someone who
-      // already had a layout, which in the portal is nobody, ever. The row would be permanently
-      // invisible and the feature dead on arrival, with zero usage looking exactly like zero
-      // adoption. Admin and HR keep the shipped rule, where the editor page IS the entry point.
-      alwaysOfferAdd: navigationMode === "employee-portal",
       // Resolved against the FULL gated set, not just the rows, so a tab stays lit on its child
       // routes and the deepest match still wins over a shallower one sitting in another zone.
       activeHref: active,
@@ -402,7 +411,7 @@ function NavRowStrip({
  * frame. Omitting it keeps the admin/HR frame exactly as shipped.
  */
 export function UpperNavRow({ className }: { className?: string } = {}) {
-  const { upperRow, activeHref, upperAddable, alwaysOfferAdd, canAdd, dark, hasSavedLayout } =
+  const { upperRow, activeHref, upperAddable, canAdd, dark, hasSavedLayout } =
     useContext(HorizontalNavContext);
   return (
     <NavRowStrip
@@ -425,7 +434,7 @@ export function UpperNavRow({ className }: { className?: string } = {}) {
       )}
       dark={dark}
       items={upperRow}
-      keepWhenEmpty={canAdd && (hasSavedLayout || alwaysOfferAdd)}
+      keepWhenEmpty={canAdd && hasSavedLayout}
       trailing={
         canAdd ? (
           <NavRowAddButton
@@ -455,7 +464,7 @@ export function UpperNavRow({ className }: { className?: string } = {}) {
  * admin chrome gives it a full-bleed dark bar, the employee portal a rounded translucent card.
  */
 export function LowerNavRow({ className }: { className?: string } = {}) {
-  const { lowerRow, activeHref, alwaysOfferAdd, canAdd, dark, hasSavedLayout, lowerAddable } =
+  const { lowerRow, activeHref, canAdd, dark, hasSavedLayout, lowerAddable } =
     useContext(HorizontalNavContext);
   return (
     <NavRowStrip
@@ -476,7 +485,7 @@ export function LowerNavRow({ className }: { className?: string } = {}) {
       )}
       dark={dark}
       items={lowerRow}
-      keepWhenEmpty={canAdd && (hasSavedLayout || alwaysOfferAdd)}
+      keepWhenEmpty={canAdd && hasSavedLayout}
       trailing={
         canAdd ? (
           <NavRowAddButton
@@ -489,4 +498,21 @@ export function LowerNavRow({ className }: { className?: string } = {}) {
       }
     />
   );
+}
+
+/**
+ * The portal header's own "+", described in the comment above. Returns `null` once there is
+ * nothing left for it to do — either the viewer cannot add at all, or both rows already carry a
+ * tab and each shows its own trailing "+" via `UpperNavRow`/`LowerNavRow` above.
+ */
+export function usePortalCompactNavAdd(): {
+  pinned: readonly NavigationSectionItem[];
+  sections: readonly NavigationSection[];
+  target: keyof PersonalLayoutRowSet;
+} | null {
+  const { canAdd, lowerAddable, lowerRow, upperAddable, upperRow } = useContext(HorizontalNavContext);
+  if (!canAdd) return null;
+  if (upperRow.length === 0) return { pinned: upperRow, sections: upperAddable, target: "upperRow" };
+  if (lowerRow.length === 0) return { pinned: lowerRow, sections: lowerAddable, target: "lowerRow" };
+  return null;
 }
