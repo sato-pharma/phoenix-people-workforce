@@ -409,7 +409,9 @@ and never `docs/`, and four of §4's slugs exist nowhere else, so moving one orp
 - Reply in **English always**, regardless of the language he writes in.
 - Report every time in **Africa/Cairo** local time, never raw UTC.
 - Show **human-readable names**, never raw codes or IDs, in both UI and chat.
-- **Never truncate text with an ellipsis and never let text wrap** to multiple lines in the UI.
+- **Never truncate text with an ellipsis.** The other half of this line — "never let text wrap" —
+  was written against ellipsis-style truncation and is **superseded** by the no-horizontal-scroll
+  golden rule under *How to build*: where the two collide, wrapping wins.
 - When asked for N recommendations, give only the ones grounded in a real confirmed need. **Never
   pad a list to hit a number.**
 - End every reply with a single recommended next step.
@@ -439,6 +441,20 @@ and never `docs/`, and four of §4's slugs exist nowhere else, so moving one orp
 - **Before building any new UI, inspect the sibling pages in that module and match their exact
   design identity.** Never invent a one-off look.
 - Admin shell: **desktop shows full tables/dashboards, mobile never does** — mobile gets cards.
+- 🔒 **NO SCREEN MAY EVER SCROLL HORIZONTALLY — every screen must fit a phone AND a desktop.** Owner
+  golden rule 2026-09-01, said twice in one breath and marked a golden word. Content must **fit**,
+  not "scroll to see the rest": he asked for an Address column that was **already there**, sitting
+  off-screen behind 1120px of `min-width`. So **`overflow-x-auto` over a `min-width` floor IS the
+  bug, not the fix** — and `PortalDesktopTable` hard-codes exactly that (`minWidth` 980px), so a
+  board bound by this rule must not use it; render `<table className="w-full table-fixed">` with a
+  `<colgroup>`, as `src/components/crm/reps-list-tables.tsx` does. Fit by **merging** columns (grade
+  and phone stacked under the name), never by shrinking type, and **measure** — `table-fixed`
+  percentages clip silently, so check `scrollWidth > clientWidth` over `main` at desktop **and**
+  375px. A native `<select>` is the one control this cannot fix and you may **not** shrink it
+  (`globals.css` floors form controls at `max(16px, 1em)` below 768px because iOS Safari zooms in and
+  stays zoomed) — put the value somewhere outside the control instead. The admin sidebar's own
+  scroll is by design and out of scope. **Wrapping is the permitted answer; the ellipsis ban is
+  untouched.** `never-horizontal-scroll-always-mobile-and-desktop-friendly`
 - **One production deployment per task.** Bundle all phases into one PR; do not deploy per step.
 - Use the **`gh` CLI** for all GitHub operations, not the GitHub MCP tools.
 - Before wiring any email recipients, **ask who receives it**.
@@ -448,6 +464,20 @@ and never `docs/`, and four of §4's slugs exist nowhere else, so moving one orp
 - No payslip on any overview/landing page for any role — not the amount, not even the month label.
 - Marketing Manager is hidden from the portal Incentive tab; GPM still sees it.
 - The Organogram / AU seat model is the source of truth for org-structure and vacancy data.
+- 🔒 **A pharmacy is NOT a contact — a CRM contact count is `PM` + `AM` only.** Owner 2026-09-01:
+  *"You will not count the pharmacies as contacts. So everyone should have contacts and pharmacies.
+  The contacts is divided into AM and PM, and the pharmacies are separate."* The CRM's three
+  `list_type`s are **two things**: contacts (`PM`+`AM`) and pharmacies (`Pharmacy`). Adding all three
+  prints one number that matches no rule he has and inflates every rep — on the rep measured when
+  this was fixed, "157 contacts" was really **114 contacts and 43 pharmacies**, a 38% overstatement
+  of the very thing being judged. **Never put `rows.length` beside the word "contacts"**: route every
+  printed size through one splitting helper (`describeMix` in `src/components/crm/reps-list-tables.tsx`),
+  keep pharmacies **out of any percentage denominator** (PM and AM are the two halves and total
+  100%), and give the pharmacy count its own tile — he said everyone *should have* both, so a rep
+  with pharmacies and no doctors is a real finding, not an empty list. **A field named `contacts`
+  that holds pharmacies is the trap** — `RepsListGroup.contacts` was renamed `.rows` for exactly that
+  reason. Say **"Pharmacist"** for a row's list-type label, **"Pharmacies"** when naming a count.
+  `a-pharmacy-is-not-a-contact`
 - All SoS sales, historical and future, attribute to **today's** geography — never as-was.
 - 🔒 **A CRM account label is `[Name ]( Area / Line )`, and `E`/`F` are RETIRED line codes.** Between
   the brackets is the **area**; the letter after the final `/` or `-` is the **line**; a name, when
