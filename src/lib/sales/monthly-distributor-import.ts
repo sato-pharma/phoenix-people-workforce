@@ -2408,6 +2408,77 @@ function addDashboardTotals<T extends DistributorSalesTotal>(current: T, row: Di
   current.totalValue += row.totalValue;
 }
 
+/**
+ * Merge dashboard groups that are the SAME real place, and heal their label from the master.
+ *
+ * `aggregateDashboardGroups` groups on `group_key`, which `sourceOfSalesSummaryRows` builds as
+ * `code|name` **as captured at import time** (`"CA|Cairo"`). So one code that arrived under two
+ * different names in two different sheets produces two groups. The label heal then rewrote BOTH
+ * to the master name — which is why the dashboard used to show several visually identical rows.
+ * Measured against production, period 2026-07, by running this loader before and after the fix:
+ *
+ *     regions   23 rows ->   7    16 merged. `AB|Alex-BHR` + `AB|Cairo` + `AB|Giza` +
+ *                                 `AB|Delta (1)` all rendered as "Alex-BHR".
+ *     areas    101 rows ->  55    46 merged. The 55 are 50 named areas + 5 rows carrying an EMPTY
+ *                                 code (unmapped sales, one per region), deliberately left split.
+ *     bricks   504 rows -> 504    0 merged — bricks were ALREADY clean. 29 of them are the same
+ *                                 empty-code unmapped rows, and the one repeated NAME, فوه, is two
+ *                                 genuinely different bricks (B200-5 in Kafr El-Sheikh 2, B199-9 in
+ *                                 Kafr El-Sheikh 1) that must stay apart.
+ *     products  25 rows ->  25    unchanged; product keys carry no region name, so never affected.
+ *
+ * Do NOT quote a smaller "real" count for areas or bricks off a SQL sweep bucketing by
+ * `coalesce(group_code, group_label)` — that collapses every empty-code row into one and
+ * understates the answer. It produced a bogus "51 areas / 476 bricks" while this was being written.
+ *
+ * Every period from 2026-01 to 2026-07 is affected; 2026-08 escaped only because it has a single
+ * batch. **No value was ever lost or double-counted** — the 16 phantom REGION rows held EGP 24,266
+ * of 61,641,432 (0.04%), split off the real row rather than invented. The damage was the row count
+ * and every per-row share computed from it.
+ *
+ * The fix is that identity is the CODE, not the key: whenever the master resolves the group's
+ * code, every group carrying that code is ONE row. A code the master does not know — and an empty
+ * code, which is what every unmapped row carries — keeps its own `group_key` and is left entirely
+ * alone. Without a master entry there is nothing to prove two keys are the same place, and merging
+ * on an unknown or blank code would fuse genuinely distinct groups: `فوه` above is two real bricks,
+ * and folding the five empty-code area rows together would destroy the per-region split of
+ * unmapped value. A row still repeating on screen after this is therefore a DATA finding
+ * (unmapped, or a name reused across two codes), not a grouping defect.
+ *
+ * Merging here (rather than in `buildSourceOfSalesDashboard`) is deliberate on three counts:
+ * the masters are only loaded in this function; it is sum-preserving, so the geo reconciliation
+ * guard that fails closed on `byRegion`'s total is unaffected; and it repairs every historical
+ * period on read, with no re-import — the same self-heal intent the label override already had.
+ * Fixing `group_key` at import time instead would leave all seven affected periods broken.
+ */
+export function mergeDashboardGroupsByCode(
+  groups: SourceOfSalesDashboardGroup[],
+  /** Master lookup: return null when the master does not know this code (⇒ do not merge). */
+  resolve: (code: string) => { label?: string; line?: string | null } | null,
+): SourceOfSalesDashboardGroup[] {
+  const merged = new Map<string, SourceOfSalesDashboardGroup>();
+  for (const group of groups) {
+    const resolved = group.code ? resolve(normalizeCode(group.code)) : null;
+    // Unknown code (or no code at all) ⇒ identity stays the raw group_key, which
+    // aggregateDashboardGroups already guarantees unique. Never merge on a bare label.
+    const identity = resolved ? `code\u0000${normalizeCode(group.code ?? "")}` : `key\u0000${group.key}`;
+    const existing = merged.get(identity);
+    if (existing) {
+      addDashboardTotals(existing, group);
+      continue;
+    }
+    merged.set(identity, {
+      ...group,
+      label: resolved?.label || group.label,
+      line: resolved?.line ?? group.line,
+    });
+  }
+
+  return [...merged.values()]
+    .map(roundedTotals)
+    .sort((left, right) => right.totalValue - left.totalValue || left.label.localeCompare(right.label));
+}
+
 function aggregateDashboardGroups(
   summaries: SourceOfSalesSummaryRecord[],
   groupType: string,
@@ -2805,22 +2876,23 @@ export async function loadSourceOfSalesDashboard(
     }
   }
 
-  // The master is the source of truth for names: whenever it has a name for the group's code, use it.
-  const byRegion = dashboard.byRegion.map((group) => {
-    const name = group.code ? regionNameByCode.get(normalizeCode(group.code)) : undefined;
-    return name && name !== group.label ? { ...group, label: name } : group;
+  // The master is the source of truth for IDENTITY as well as for names: it both heals the label
+  // and decides which groups are the same place. See mergeDashboardGroupsByCode for why a code the
+  // master does not know is deliberately left unmerged rather than folded in on its label.
+  const byRegion = mergeDashboardGroupsByCode(dashboard.byRegion, (code) => {
+    const name = regionNameByCode.get(code);
+    return name ? { label: name } : null;
   });
-  const byArea = dashboard.byArea.map((group) => {
-    const info = group.code ? areaInfoByCode.get(normalizeCode(group.code)) : undefined;
-    const label = info?.name || group.label;
-    // The area's parent column (group.line) holds the region label; resolve it to the region name too.
-    const parentName = info?.regionCode ? regionNameByCode.get(info.regionCode) : undefined;
-    const line = parentName || group.line;
-    return label !== group.label || line !== group.line ? { ...group, label, line } : group;
+  const byArea = mergeDashboardGroupsByCode(dashboard.byArea, (code) => {
+    const info = areaInfoByCode.get(code);
+    if (!info) return null;
+    // The area's parent column (group.line) holds the region label; resolve it to the region name
+    // too. `label`/`line` fall back to the group's own values when the master row is name-less.
+    return { label: info.name || undefined, line: (info.regionCode ? regionNameByCode.get(info.regionCode) : undefined) ?? undefined };
   });
-  const byBrick = dashboard.byBrick.map((group) => {
-    const name = group.code ? brickNameById.get(normalizeCode(group.code)) : undefined;
-    return name && name !== group.label ? { ...group, label: name } : group;
+  const byBrick = mergeDashboardGroupsByCode(dashboard.byBrick, (code) => {
+    const name = brickNameById.get(code);
+    return name ? { label: name } : null;
   });
 
   return { ...dashboard, byArea, byBrick, byRegion };

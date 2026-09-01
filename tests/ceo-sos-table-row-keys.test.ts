@@ -23,12 +23,22 @@ function readSource(rel: string): string {
 //               CONSTRUCTION: one row out per distinct key in.
 //   • `code`  — `string | null`. Several groups legitimately share one region/product code, and it
 //               can be null outright, so `key={row.code}` can even render `key={null}`.
-//   • `label` — self-healed to the master table's name by loadSourceOfSalesDashboard, which
-//               deliberately collapses distinct groups onto one display name.
+//   • `label` — self-healed to the master table's name by loadSourceOfSalesDashboard, so several
+//               groups can still share one display name.
 //
 // Live /admin on 2026-09-01 showed the shape this fixture models: 23 region rows carrying only 7
 // distinct labels — Cairo x5, Alex-BHR x4, Others x4, Delta (1) x3, Upper Egypt x3, Delta (2) x2,
-// Giza x2 — every one of which must stay its own row.
+// Giza x2.
+//
+// READ THAT SHAPE AS THE BUG, NOT AS THE SPEC. The owner reported those repeats the same day and
+// they are fixed: `loadSourceOfSalesDashboard` now merges groups on the master-resolved CODE
+// (`mergeDashboardGroupsByCode`), so the 23 rows are 7. This test still asserts 5 rows from the
+// same fixture because it exercises the PURE builder, which has no master tables and therefore
+// still emits one row per `group_key` — that is correct and load-bearing, and the merge deliberately
+// lives one level up. What survives the fix is the reason for keying on `key`: two groups whose
+// codes the master cannot adjudicate stay unmerged and can still collide on a label. So `key` is
+// still the only safe React key — but a repeated label on the RENDERED page is now a finding.
+// tests/sos-dashboard-group-merge.test.ts pins the merge itself.
 function summary(input: Partial<SourceOfSalesSummaryRecord> & { groupType: string }): SourceOfSalesSummaryRecord {
   return {
     batchId: "batch-1",

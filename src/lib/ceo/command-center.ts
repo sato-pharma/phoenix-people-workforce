@@ -121,11 +121,17 @@ export type CeoCommandCenterData = {
     byLine: Array<{ label: string; totalValue: number; totalQty: number }>;
     /**
      * `key` is `SourceOfSalesDashboardGroup.key` (the raw distributor sheet's group_key, e.g.
-     * `"D1|Delta (1)"`) — the field the dashboard's own grouping Map is keyed on, so it is
-     * guaranteed unique. `code`/`label` are NOT: `buildSourceOfSalesDashboard` self-heals a
-     * group's `label` to its master-table name, so two rows with different raw codes (or a null
-     * code) can legitimately end up sharing one display label. The UI must key rows on `key`,
-     * never on `label` or `code`, or React collapses distinct rows into one.
+     * `"D1|Delta (1)"`), which stays unique across the array. **Still key the UI's rows on it,
+     * never on `label` or `code`** — but the reason has narrowed, so do not read this note as a
+     * licence to expect repeated labels.
+     *
+     * It used to be that duplicate labels here were routine: groups were merged on `group_key`
+     * (`code|name` as captured at import) and only THEN relabelled from the master, so one code
+     * that arrived under two names produced two identical-looking rows — 23 region rows for 7 real
+     * regions in 2026-07. `loadSourceOfSalesDashboard` now merges on the master-resolved CODE, so
+     * that class is gone and a repeated label is a finding worth chasing, not the normal case.
+     * What remains is the residue the master cannot adjudicate: two groups whose codes it does not
+     * know (or a null code) are deliberately left unmerged and can still collide on a label.
      */
     byRegion: Array<{ key: string; label: string; totalValue: number; totalQty: number }>;
     byProduct: Array<{ key: string; label: string; totalValue: number; totalQty: number; line: string | null }>;
