@@ -1,7 +1,8 @@
 /**
  * The papers this module prints, in the order a career runs through them.
  *
- * JOINING: the employment contract and social-insurance Form 1 (طلب اشتراك مؤمن عليه).
+ * JOINING: the employment contract, social-insurance Form 1 (طلب اشتراك مؤمن عليه), and Sato's own
+ *   worker-data form (استمارة بيانات العامل) — the service-file intake sheet filled on the day of hire.
  * DURING: a custody receipt (إقرار استلام عهدة) each time a company device is handed over —
  *   one numbered form for a laptop, another for a phone or tablet.
  * LEAVING: social-insurance Form 6 (إخطار بإنتهاء اشتراك مؤمن عليه), ONE of the two Ministry of
@@ -13,6 +14,7 @@
 export type HiringPackDocument =
   | "contract"
   | "form1"
+  | "workerDataForm"
   | "custodyLaptop"
   | "custodyMobile"
   | "form6"
@@ -23,6 +25,19 @@ export type HiringPackDocument =
 
 /** The joining half — printed when somebody arrives. */
 export const HIRING_DOCUMENTS = ["contract", "form1"] as const;
+
+/**
+ * The onboarding forms that are Sato's OWN paperwork rather than a signed instrument or a government
+ * form — today just the worker-data form.
+ *
+ * A GROUP OF ITS OWN, not folded into `HIRING_DOCUMENTS`, and the distinction is the whole point:
+ * `HIRING_DOCUMENTS` feeds `SIGNABLE_DOCUMENTS`, and the worker-data form must NOT be signable. It
+ * carries a signature on paper but the app records no signed date against the person — like the
+ * custody receipts, and for the same reason (see `SIGNABLE_DOCUMENTS`): it is a sheet filed in a
+ * drawer, and recording nothing is honest where recording a half-truth is not. That is also why it
+ * needed no migration to add.
+ */
+export const ONBOARDING_FORM_DOCUMENTS = ["workerDataForm"] as const;
 
 /**
  * The custody receipts — printed whenever a device changes hands, which is not a moment in a
@@ -68,6 +83,7 @@ export const EXIT_DOCUMENTS = [
  */
 export const HIRING_PACK_DOCUMENTS: readonly HiringPackDocument[] = [
   ...HIRING_DOCUMENTS,
+  ...ONBOARDING_FORM_DOCUMENTS,
   ...ASSET_DOCUMENTS,
   ...EXIT_DOCUMENTS,
 ];

@@ -53,6 +53,7 @@ import {
 } from "@/lib/hiring-pack/insurance-wage";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ChoiceGroup } from "@/components/ui/choice-group";
 import { Input } from "@/components/ui/input";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { systemContractDefaults } from "@/config/system-settings";
@@ -311,6 +312,7 @@ const EXIT_ROUTES: readonly { value: ExitRoute; labelEn: string; labelAr: string
 const DOCUMENT_LABELS: Record<HiringPackDocument, string> = {
   contract: "Contract",
   form1: "Form 1",
+  workerDataForm: "Worker data form",
   custodyLaptop: "Laptop custody receipt",
   custodyMobile: "Phone/tablet custody receipt",
   form6: "Form 6",
@@ -320,10 +322,22 @@ const DOCUMENT_LABELS: Record<HiringPackDocument, string> = {
   clearanceCompany: "Company clearance",
 };
 
+/**
+ * The two ends of one employment, shown one at a time. A person is only ever arriving or leaving on
+ * the day HR prints, so the screen offers one package rather than one long scroll that mixes a
+ * joining form with a departure form. Labels stay short so the two-segment switcher never has to
+ * scroll sideways on a phone — the fits-the-screen rule (AGENTS.md §4).
+ */
+const PACKAGE_TABS = [
+  { label: "New hires package", value: "newHire" },
+  { label: "Leaver package", value: "leaver" },
+] as const satisfies ReadonlyArray<{ label: string; value: "newHire" | "leaver" }>;
+
 /** The standing copy count for each document — each one the form's own stated requirement. */
 const DEFAULT_COPIES: Record<HiringPackDocument, number> = {
   contract: systemContractDefaults.contractCopies,
   form1: systemContractDefaults.form1Copies,
+  workerDataForm: systemContractDefaults.workerDataFormCopies,
   custodyLaptop: systemContractDefaults.custodyLaptopCopies,
   custodyMobile: systemContractDefaults.custodyMobileCopies,
   form6: systemContractDefaults.form6Copies,
@@ -577,6 +591,7 @@ function signDatesShape(value: (document: HiringPackDocument) => string): Record
   return {
     contract: value("contract"),
     form1: value("form1"),
+    workerDataForm: value("workerDataForm"),
     custodyLaptop: value("custodyLaptop"),
     custodyMobile: value("custodyMobile"),
     form6: value("form6"),
@@ -592,8 +607,11 @@ function signedDatesFromPack(pack: HiringPackData | null): Record<HiringPackDocu
   return {
     contract: pack?.profile.contractSignedDate ?? "",
     form1: pack?.profile.form1SignedDate ?? "",
-    // The custody receipts store no signature date — one person can hold three devices on three
-    // receipts, so there is no single date to put here. See `SIGNABLE_DOCUMENTS`.
+    // The worker data form and the custody receipts store no signature date. The worker form is a
+    // data-capture sheet, not a signable instrument (null binding, excluded from `SIGNABLE_DOCUMENTS`);
+    // the custody receipts have no single date because one person can hold three devices on three
+    // receipts. See `SIGNABLE_DOCUMENTS`.
+    workerDataForm: "",
     custodyLaptop: "",
     custodyMobile: "",
     form6: pack?.offboarding.form6SignedDate ?? "",
@@ -652,6 +670,14 @@ export function HiringPackManager({ canManage, candidates, initialError, initial
     document: HiringPackDocument;
     versionId: string | null;
   } | null>(null);
+  /**
+   * Which package is on screen. The joining papers and the leaving papers are one workflow seen from
+   * two ends (see the file header), but a person is only ever at one end on the day HR prints, so the
+   * screen shows one package at a time rather than a single scroll that mixes an arrival form with a
+   * departure form. The facts editors, their Save buttons and every document card keep their own
+   * state regardless of which package is showing — switching is a view, it saves and discards nothing.
+   */
+  const [activePackage, setActivePackage] = useState<"newHire" | "leaver">("newHire");
 
   const blockingGaps = useMemo(() => (pack?.gaps ?? []).filter((gap) => gap.blocking), [pack]);
   const advisoryGaps = useMemo(() => (pack?.gaps ?? []).filter((gap) => !gap.blocking), [pack]);
@@ -1181,409 +1207,453 @@ export function HiringPackManager({ canManage, candidates, initialError, initial
               </div>
             </AdminTableShell>
 
-            <AdminTableShell
-              action={
-                canManage ? (
-                  <Button
-                    className="h-11 gap-2 rounded-2xl"
-                    disabled={busy === "save"}
-                    onClick={() => void save()}
-                  >
-                    {busy === "save" ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <Save className="h-4 w-4" />
-                    )}
-                    Save
-                  </Button>
-                ) : undefined
-              }
-              description="Everything the two documents ask for that the employee record cannot answer."
-              title="What you fill in"
-            >
-              <div className="flex flex-col gap-6 px-5 py-5 sm:px-6">
-                <FieldGroup
-                  disabled={!canManage}
-                  fields={IDENTITY_FIELDS}
-                  form={form}
-                  onChange={setForm}
-                  subtitle="Printed on both documents."
-                  suggestions={
-                    pack.suggestedJobTitleAr ? { jobTitleAr: pack.suggestedJobTitleAr } : undefined
-                  }
-                  title="Identity and job"
-                />
-                <FieldGroup
+            <ChoiceGroup
+              aria-label="Which package to prepare"
+              className="grid-cols-2"
+              onChange={setActivePackage}
+              options={PACKAGE_TABS}
+              value={activePackage}
+            />
+
+            {activePackage === "newHire" ? (
+              <div className="flex flex-col gap-5">
+                <AdminTableShell
                   action={
-                    canManage && factsForm.residenceAddress?.trim() ? (
+                    canManage ? (
                       <Button
-                        onClick={() =>
-                          setForm((current) => ({
-                            ...current,
-                            addressStreet: factsForm.residenceAddress ?? "",
-                          }))
-                        }
-                        size="xs"
-                        type="button"
-                        variant="ghost"
+                        className="h-11 gap-2 rounded-2xl"
+                        disabled={busy === "save"}
+                        onClick={() => void save()}
                       >
-                        <Copy className="h-3 w-3" />
-                        Copy the address on file
+                        {busy === "save" ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Save className="h-4 w-4" />
+                        )}
+                        Save
                       </Button>
                     ) : undefined
                   }
-                  disabled={!canManage}
-                  fields={FORM1_FIELDS}
-                  form={form}
-                  onChange={setForm}
-                  subtitle="Printed on Form 1 only. The code fields are boxes on the government form and hold numbers. Street can be copied from the address on file above — building, sheyakha, qism and governorate codes still need typing."
-                  title="Form 1 details"
-                />
-                <FieldGroup
-                  disabled={!canManage}
-                  fields={TERM_FIELDS}
-                  form={form}
-                  onChange={setForm}
-                  subtitle={`Blank uses the standard term — ${pack.terms.durationMonths} months, ${pack.terms.probationMonths}-month probation, ${pack.terms.underperformanceThresholdPct}% over ${pack.terms.underperformanceMonths} months, ${pack.terms.trainingBondMonths}-month training bond.`}
-                  title="Contract terms"
-                />
-                <div>
-                  <label className={labelClassName} htmlFor="hiring-pack-notes">
-                    Notes <span className="text-phx-ink-faint">ملاحظات</span>
-                  </label>
-                  <textarea
-                    className={cn(inputClassName, "h-24 w-full resize-y px-3 py-2 leading-relaxed")}
-                    disabled={!canManage}
-                    id="hiring-pack-notes"
-                    onChange={(event) =>
-                      setForm((current) => ({ ...current, notes: event.target.value }))
-                    }
-                    placeholder="Internal only. Never printed on either document."
-                    value={form.notes}
+                  description="Everything the two documents ask for that the employee record cannot answer."
+                  title="What you fill in"
+                >
+                  <div className="flex flex-col gap-6 px-5 py-5 sm:px-6">
+                    <FieldGroup
+                      disabled={!canManage}
+                      fields={IDENTITY_FIELDS}
+                      form={form}
+                      onChange={setForm}
+                      subtitle="Printed on both documents."
+                      suggestions={
+                        pack.suggestedJobTitleAr ? { jobTitleAr: pack.suggestedJobTitleAr } : undefined
+                      }
+                      title="Identity and job"
+                    />
+                    <FieldGroup
+                      action={
+                        canManage && factsForm.residenceAddress?.trim() ? (
+                          <Button
+                            onClick={() =>
+                              setForm((current) => ({
+                                ...current,
+                                addressStreet: factsForm.residenceAddress ?? "",
+                              }))
+                            }
+                            size="xs"
+                            type="button"
+                            variant="ghost"
+                          >
+                            <Copy className="h-3 w-3" />
+                            Copy the address on file
+                          </Button>
+                        ) : undefined
+                      }
+                      disabled={!canManage}
+                      fields={FORM1_FIELDS}
+                      form={form}
+                      onChange={setForm}
+                      subtitle="Printed on Form 1 only. The code fields are boxes on the government form and hold numbers. Street can be copied from the address on file above — building, sheyakha, qism and governorate codes still need typing."
+                      title="Form 1 details"
+                    />
+                    <FieldGroup
+                      disabled={!canManage}
+                      fields={TERM_FIELDS}
+                      form={form}
+                      onChange={setForm}
+                      subtitle={`Blank uses the standard term — ${pack.terms.durationMonths} months, ${pack.terms.probationMonths}-month probation, ${pack.terms.underperformanceThresholdPct}% over ${pack.terms.underperformanceMonths} months, ${pack.terms.trainingBondMonths}-month training bond.`}
+                      title="Contract terms"
+                    />
+                    <div>
+                      <label className={labelClassName} htmlFor="hiring-pack-notes">
+                        Notes <span className="text-phx-ink-faint">ملاحظات</span>
+                      </label>
+                      <textarea
+                        className={cn(inputClassName, "h-24 w-full resize-y px-3 py-2 leading-relaxed")}
+                        disabled={!canManage}
+                        id="hiring-pack-notes"
+                        onChange={(event) =>
+                          setForm((current) => ({ ...current, notes: event.target.value }))
+                        }
+                        placeholder="Internal only. Never printed on either document."
+                        value={form.notes}
+                      />
+                    </div>
+                  </div>
+                </AdminTableShell>
+
+                <div className="grid gap-3 lg:grid-cols-2">
+                  <DocumentCard
+                    busy={busy === "sign-contract"}
+                    canManage={canManage}
+                    copies={copies.contract}
+                    gaps={gapsFor(pack.gaps, "contract")}
+                    onCopiesChange={(value) => setCopiesFor("contract", value)}
+                    footnote={contractVersionNote(pack.profile.contractTemplateVersion)}
+                    onPreview={() => openPreview("contract")}
+                    onPrint={() => openPrint("contract")}
+                    onSign={() => void recordSignature("contract")}
+                    onSignDateChange={(value) => setSignDateFor("contract", value)}
+                    printedAt={pack.profile.contractPrintedAt}
+                    printingNote="One page per sheet — single-sided. Five pages per copy, on A4."
+                    signDate={signDates.contract}
+                    signedDate={pack.profile.contractSignedDate}
+                    subtitle="عقد عمل محدد المدة"
+                    title="Employment contract"
+                  />
+                  <DocumentCard
+                    busy={busy === "sign-form1"}
+                    canManage={canManage}
+                    copies={copies.form1}
+                    gaps={gapsFor(pack.gaps, "form1")}
+                    onCopiesChange={(value) => setCopiesFor("form1", value)}
+                    onPreview={() => openPreview("form1")}
+                    onPrint={() => openPrint("form1")}
+                    onSign={() => void recordSignature("form1")}
+                    onSignDateChange={(value) => setSignDateFor("form1", value)}
+                    printedAt={pack.profile.form1PrintedAt}
+                    printingNote="MUST be printed double-sided. Set the printer to two-sided, flip on the long edge, US Legal paper."
+                    signDate={signDates.form1}
+                    signedDate={pack.profile.form1SignedDate}
+                    subtitle="نموذج ١ — طلب اشتراك مؤمن عليه"
+                    title="Social insurance Form 1"
+                  />
+                </div>
+
+                {/*
+                  The worker-data form — استمارة بيانات العامل — is Sato's own service-file intake sheet,
+                  filled on the first day and kept in the personnel file (its header says "تُحفظ بملف
+                  الخدمة"). It is not signature-tracked, for the same reason the custody receipts are not:
+                  a paper filed in a drawer, where the honest record is none. See `SIGNABLE_DOCUMENTS`.
+                */}
+                <div className="grid gap-3">
+                  <DocumentCard
+                    busy={false}
+                    canManage={canManage}
+                    copies={copies.workerDataForm}
+                    gaps={gapsFor(pack.gaps, "workerDataForm")}
+                    onCopiesChange={(value) => setCopiesFor("workerDataForm", value)}
+                    footnote="A service-file sheet, not a government form. Everything Phoenix already knows — name, national ID, job, insurance number — is filled; the fields it holds no record of (marital status, military-service position, bank and IBAN, next of kin) print blank for a pen."
+                    onPreview={() => openPreview("workerDataForm")}
+                    onPrint={() => openPrint("workerDataForm")}
+                    onSign={() => undefined}
+                    onSignDateChange={() => undefined}
+                    printedAt={null}
+                    printingNote="One copy, single-sided A4. Kept in the service file — not attached to the contract copies."
+                    signDate=""
+                    signedDate={null}
+                    signable={false}
+                    subtitle="استمارة بيانات العامل — تُحفظ بملف الخدمة"
+                    title="Worker data form"
+                  />
+                </div>
+
+                {/*
+                  THE CUSTODY RECEIPTS SIT BETWEEN THE TWO HALVES, because that is where they belong in
+                  a career: they are printed whenever a device changes hands, which is neither arrival
+                  nor departure and is usually both at least once in between.
+
+                  Both are always offered, unlike the two exit forms. The exit forms are alternatives —
+                  one is signed and the other must not be — while these two are simply different
+                  devices, and somebody who is handed a laptop and a phone on his first morning needs
+                  both papers on his first morning.
+                */}
+                <div className="grid gap-3 lg:grid-cols-2">
+                  <DocumentCard
+                    busy={false}
+                    canManage={canManage}
+                    copies={copies.custodyLaptop}
+                    gaps={gapsFor(pack.gaps, "custodyLaptop")}
+                    onCopiesChange={(value) => setCopiesFor("custodyLaptop", value)}
+                    footnote="The device details, values and handover date print blank — Phoenix holds no asset register, and a serial number is read off the machine rather than recalled. The name, ID, job title and address are filled."
+                    onPreview={() => openPreview("custodyLaptop")}
+                    onPrint={() => openPrint("custodyLaptop")}
+                    onSign={() => undefined}
+                    onSignDateChange={() => undefined}
+                    printedAt={null}
+                    printingNote="Two copies — the form says so itself. Single-sided A4; the return protocol is the last sheet of each copy."
+                    signDate=""
+                    signedDate={null}
+                    signable={false}
+                    subtitle="إقرار استلام عهدة — نموذج رقم ١ (حاسب محمول)"
+                    title="Custody receipt — laptop"
+                  />
+                  <DocumentCard
+                    busy={false}
+                    canManage={canManage}
+                    copies={copies.custodyMobile}
+                    gaps={gapsFor(pack.gaps, "custodyMobile")}
+                    onCopiesChange={(value) => setCopiesFor("custodyMobile", value)}
+                    footnote="Same paper as the laptop receipt, with the phone's own item list and an IMEI and SIM block in place of the Windows fields."
+                    onPreview={() => openPreview("custodyMobile")}
+                    onPrint={() => openPrint("custodyMobile")}
+                    onSign={() => undefined}
+                    onSignDateChange={() => undefined}
+                    printedAt={null}
+                    printingNote="Two copies. Single-sided A4. Print one form per device — البند (14) requires a separate numbered receipt for each."
+                    signDate=""
+                    signedDate={null}
+                    signable={false}
+                    subtitle="إقرار استلام عهدة — نموذج رقم ٢ (هاتف / جهاز لوحي)"
+                    title="Custody receipt — phone or tablet"
                   />
                 </div>
               </div>
-            </AdminTableShell>
+            ) : null}
 
-            <div className="grid gap-3 lg:grid-cols-2">
-              <DocumentCard
-                busy={busy === "sign-contract"}
-                canManage={canManage}
-                copies={copies.contract}
-                gaps={gapsFor(pack.gaps, "contract")}
-                onCopiesChange={(value) => setCopiesFor("contract", value)}
-                footnote={contractVersionNote(pack.profile.contractTemplateVersion)}
-                onPreview={() => openPreview("contract")}
-                onPrint={() => openPrint("contract")}
-                onSign={() => void recordSignature("contract")}
-                onSignDateChange={(value) => setSignDateFor("contract", value)}
-                printedAt={pack.profile.contractPrintedAt}
-                printingNote="One page per sheet — single-sided. Five pages per copy, on A4."
-                signDate={signDates.contract}
-                signedDate={pack.profile.contractSignedDate}
-                subtitle="عقد عمل محدد المدة"
-                title="Employment contract"
-              />
-              <DocumentCard
-                busy={busy === "sign-form1"}
-                canManage={canManage}
-                copies={copies.form1}
-                gaps={gapsFor(pack.gaps, "form1")}
-                onCopiesChange={(value) => setCopiesFor("form1", value)}
-                onPreview={() => openPreview("form1")}
-                onPrint={() => openPrint("form1")}
-                onSign={() => void recordSignature("form1")}
-                onSignDateChange={(value) => setSignDateFor("form1", value)}
-                printedAt={pack.profile.form1PrintedAt}
-                printingNote="MUST be printed double-sided. Set the printer to two-sided, flip on the long edge, US Legal paper."
-                signDate={signDates.form1}
-                signedDate={pack.profile.form1SignedDate}
-                subtitle="نموذج ١ — طلب اشتراك مؤمن عليه"
-                title="Social insurance Form 1"
-              />
-            </div>
+            {activePackage === "leaver" ? (
+              <div className="flex flex-col gap-5">
+                <AdminTableShell
+                  action={
+                    canManage ? (
+                      <Button
+                        className="h-11 gap-2 rounded-2xl"
+                        disabled={busy === "save-exit"}
+                        onClick={() => void saveExit()}
+                      >
+                        {busy === "save-exit" ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Save className="h-4 w-4" />
+                        )}
+                        Save exit details
+                      </Button>
+                    ) : undefined
+                  }
+                  description="Filled in when somebody leaves. Everything else on these forms — name, national ID, address, job title — is reused from what was typed at hiring."
+                  title="End of service"
+                >
+                  <div className="flex flex-col gap-6 px-5 py-5 sm:px-6">
+                    {pack.exit ? (
+                      <div className="rounded-xl border border-phx-line bg-phx-paper px-3.5 py-2.5">
+                        <span className={factLabelClassName}>Recorded departure</span>
+                        <p className="mt-1 text-sm font-bold text-phx-ink">
+                          Last working day {formatDate(pack.exit.lastWorkingDate)}
+                          {pack.exit.status ? ` · ${pack.exit.status}` : ""}
+                        </p>
+                        <p className="mt-1 text-xs font-semibold text-phx-ink-soft">
+                          From the resignation record. Type a date below only if the paper says something
+                          different — that record copies one date into four columns, so it is a starting
+                          point rather than a confirmation.
+                        </p>
+                      </div>
+                    ) : null}
 
-            {/*
-              THE CUSTODY RECEIPTS SIT BETWEEN THE TWO HALVES, because that is where they belong in
-              a career: they are printed whenever a device changes hands, which is neither arrival
-              nor departure and is usually both at least once in between.
+                    <div>
+                      <div className="mb-3">
+                        <h3 className="text-sm font-black uppercase tracking-[0.1em] text-phx-ink">
+                          Which exit form
+                        </h3>
+                        <p className="mt-0.5 text-xs font-semibold text-phx-ink-soft">
+                          One is signed, never both. Form 6 is filed with social insurance either way.
+                        </p>
+                      </div>
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        {EXIT_ROUTES.map((route) => {
+                          const selected = exitRoute === route.value;
+                          return (
+                            <button
+                              className={cn(
+                                "rounded-2xl border px-4 py-3 text-left transition",
+                                selected
+                                  ? "border-phx-accent-line bg-phx-accent/10 shadow-sm"
+                                  : "border-phx-line bg-white/95 hover:border-phx-accent-line",
+                              )}
+                              disabled={!canManage}
+                              key={route.value}
+                              onClick={() =>
+                                setExitForm((current) => ({
+                                  ...current,
+                                  // Pressing the chosen route again clears it, which is the only way
+                                  // back to "not decided yet" once somebody has clicked the wrong one.
+                                  exitRoute: selected ? "" : route.value,
+                                }))
+                              }
+                              type="button"
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="text-sm font-black text-phx-ink">{route.labelEn}</span>
+                                <span className="text-sm font-bold text-phx-ink-soft" dir="rtl">
+                                  {route.labelAr}
+                                </span>
+                              </div>
+                              <p className="mt-1 text-xs font-semibold text-phx-ink-soft">{route.note}</p>
+                              {selected ? (
+                                <Badge className="mt-2" variant="success">
+                                  Chosen
+                                </Badge>
+                              ) : null}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
 
-              Both are always offered, unlike the two exit forms. The exit forms are alternatives —
-              one is signed and the other must not be — while these two are simply different
-              devices, and somebody who is handed a laptop and a phone on his first morning needs
-              both papers on his first morning.
-            */}
-            <div className="grid gap-3 lg:grid-cols-2">
-              <DocumentCard
-                busy={false}
-                canManage={canManage}
-                copies={copies.custodyLaptop}
-                gaps={gapsFor(pack.gaps, "custodyLaptop")}
-                onCopiesChange={(value) => setCopiesFor("custodyLaptop", value)}
-                footnote="The device details, values and handover date print blank — Phoenix holds no asset register, and a serial number is read off the machine rather than recalled. The name, ID, job title and address are filled."
-                onPreview={() => openPreview("custodyLaptop")}
-                onPrint={() => openPrint("custodyLaptop")}
-                onSign={() => undefined}
-                onSignDateChange={() => undefined}
-                printedAt={null}
-                printingNote="Two copies — the form says so itself. Single-sided A4; the return protocol is the last sheet of each copy."
-                signDate=""
-                signedDate={null}
-                signable={false}
-                subtitle="إقرار استلام عهدة — نموذج رقم ١ (حاسب محمول)"
-                title="Custody receipt — laptop"
-              />
-              <DocumentCard
-                busy={false}
-                canManage={canManage}
-                copies={copies.custodyMobile}
-                gaps={gapsFor(pack.gaps, "custodyMobile")}
-                onCopiesChange={(value) => setCopiesFor("custodyMobile", value)}
-                footnote="Same paper as the laptop receipt, with the phone's own item list and an IMEI and SIM block in place of the Windows fields."
-                onPreview={() => openPreview("custodyMobile")}
-                onPrint={() => openPrint("custodyMobile")}
-                onSign={() => undefined}
-                onSignDateChange={() => undefined}
-                printedAt={null}
-                printingNote="Two copies. Single-sided A4. Print one form per device — البند (14) requires a separate numbered receipt for each."
-                signDate=""
-                signedDate={null}
-                signable={false}
-                subtitle="إقرار استلام عهدة — نموذج رقم ٢ (هاتف / جهاز لوحي)"
-                title="Custody receipt — phone or tablet"
-              />
-            </div>
-
-            <AdminTableShell
-              action={
-                canManage ? (
-                  <Button
-                    className="h-11 gap-2 rounded-2xl"
-                    disabled={busy === "save-exit"}
-                    onClick={() => void saveExit()}
-                  >
-                    {busy === "save-exit" ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <Save className="h-4 w-4" />
-                    )}
-                    Save exit details
-                  </Button>
-                ) : undefined
-              }
-              description="Filled in when somebody leaves. Everything else on these forms — name, national ID, address, job title — is reused from what was typed at hiring."
-              title="End of service"
-            >
-              <div className="flex flex-col gap-6 px-5 py-5 sm:px-6">
-                {pack.exit ? (
-                  <div className="rounded-xl border border-phx-line bg-phx-paper px-3.5 py-2.5">
-                    <span className={factLabelClassName}>Recorded departure</span>
-                    <p className="mt-1 text-sm font-bold text-phx-ink">
-                      Last working day {formatDate(pack.exit.lastWorkingDate)}
-                      {pack.exit.status ? ` · ${pack.exit.status}` : ""}
-                    </p>
-                    <p className="mt-1 text-xs font-semibold text-phx-ink-soft">
-                      From the resignation record. Type a date below only if the paper says something
-                      different — that record copies one date into four columns, so it is a starting
-                      point rather than a confirmation.
-                    </p>
+                    <FieldGroup
+                      disabled={!canManage}
+                      fields={EXIT_FIELDS}
+                      form={exitForm}
+                      onChange={setExitForm}
+                      subtitle="The last working day is what Form 6 files with the Authority — it is the value on these forms that costs money if it is wrong."
+                      title="Departure"
+                    />
+                    <FieldGroup
+                      disabled={!canManage}
+                      fields={EXIT_PARTY_FIELDS}
+                      form={exitForm}
+                      onChange={setExitForm}
+                      subtitle="Blank uses the manager who signs employment contracts as الطرف الأول."
+                      title="Who signs"
+                    />
+                    <div>
+                      <label className={labelClassName} htmlFor="hiring-pack-exit-notes">
+                        Exit notes <span className="text-phx-ink-faint">ملاحظات</span>
+                      </label>
+                      <textarea
+                        className={cn(inputClassName, "h-24 w-full resize-y px-3 py-2 leading-relaxed")}
+                        disabled={!canManage}
+                        id="hiring-pack-exit-notes"
+                        onChange={(event) =>
+                          setExitForm((current) => ({ ...current, notes: event.target.value }))
+                        }
+                        placeholder="Internal only. Never printed on any exit document."
+                        value={exitForm.notes}
+                      />
+                    </div>
                   </div>
-                ) : null}
+                </AdminTableShell>
 
-                <div>
-                  <div className="mb-3">
-                    <h3 className="text-sm font-black uppercase tracking-[0.1em] text-phx-ink">
-                      Which exit form
-                    </h3>
-                    <p className="mt-0.5 text-xs font-semibold text-phx-ink-soft">
-                      One is signed, never both. Form 6 is filed with social insurance either way.
-                    </p>
-                  </div>
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    {EXIT_ROUTES.map((route) => {
-                      const selected = exitRoute === route.value;
-                      return (
-                        <button
-                          className={cn(
-                            "rounded-2xl border px-4 py-3 text-left transition",
-                            selected
-                              ? "border-phx-accent-line bg-phx-accent/10 shadow-sm"
-                              : "border-phx-line bg-white/95 hover:border-phx-accent-line",
-                          )}
-                          disabled={!canManage}
-                          key={route.value}
-                          onClick={() =>
-                            setExitForm((current) => ({
-                              ...current,
-                              // Pressing the chosen route again clears it, which is the only way
-                              // back to "not decided yet" once somebody has clicked the wrong one.
-                              exitRoute: selected ? "" : route.value,
-                            }))
-                          }
-                          type="button"
-                        >
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="text-sm font-black text-phx-ink">{route.labelEn}</span>
-                            <span className="text-sm font-bold text-phx-ink-soft" dir="rtl">
-                              {route.labelAr}
-                            </span>
-                          </div>
-                          <p className="mt-1 text-xs font-semibold text-phx-ink-soft">{route.note}</p>
-                          {selected ? (
-                            <Badge className="mt-2" variant="success">
-                              Chosen
-                            </Badge>
-                          ) : null}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                <FieldGroup
-                  disabled={!canManage}
-                  fields={EXIT_FIELDS}
-                  form={exitForm}
-                  onChange={setExitForm}
-                  subtitle="The last working day is what Form 6 files with the Authority — it is the value on these forms that costs money if it is wrong."
-                  title="Departure"
-                />
-                <FieldGroup
-                  disabled={!canManage}
-                  fields={EXIT_PARTY_FIELDS}
-                  form={exitForm}
-                  onChange={setExitForm}
-                  subtitle="Blank uses the manager who signs employment contracts as الطرف الأول."
-                  title="Who signs"
-                />
-                <div>
-                  <label className={labelClassName} htmlFor="hiring-pack-exit-notes">
-                    Exit notes <span className="text-phx-ink-faint">ملاحظات</span>
-                  </label>
-                  <textarea
-                    className={cn(inputClassName, "h-24 w-full resize-y px-3 py-2 leading-relaxed")}
-                    disabled={!canManage}
-                    id="hiring-pack-exit-notes"
-                    onChange={(event) =>
-                      setExitForm((current) => ({ ...current, notes: event.target.value }))
-                    }
-                    placeholder="Internal only. Never printed on any exit document."
-                    value={exitForm.notes}
+                <div className="grid gap-3 lg:grid-cols-2">
+                  <DocumentCard
+                    busy={busy === "sign-form6"}
+                    canManage={canManage}
+                    copies={copies.form6}
+                    gaps={gapsFor(pack.gaps, "form6")}
+                    onCopiesChange={(value) => setCopiesFor("form6", value)}
+                    onPreview={() => openPreview("form6")}
+                    onPrint={() => openPrint("form6")}
+                    onSign={() => void recordSignature("form6")}
+                    onSignDateChange={(value) => setSignDateFor("form6", value)}
+                    printedAt={pack.offboarding.form6PrintedAt}
+                    printingNote="MUST be printed double-sided, three copies. Set the printer to two-sided, flip on the long edge, US Legal paper."
+                    signDate={signDates.form6}
+                    signedDate={pack.offboarding.form6SignedDate}
+                    subtitle="نموذج ٦ — إخطار بإنتهاء اشتراك مؤمن عليه"
+                    title="Social insurance Form 6"
+                  />
+                  {/*
+                    Only the chosen route's card is offered. Showing both would invite printing both,
+                    and the two forms assert incompatible facts about the same departure — the owner's
+                    rule is that one is signed, never both.
+                  */}
+                  {exitRoute === "resignation" ? (
+                    <DocumentCard
+                      busy={busy === "sign-resignation"}
+                      canManage={canManage}
+                      copies={copies.resignation}
+                      gaps={gapsFor(pack.gaps, "resignation")}
+                      onCopiesChange={(value) => setCopiesFor("resignation", value)}
+                      onPreview={() => openPreview("resignation")}
+                      onPrint={() => openPrint("resignation")}
+                      onSign={() => void recordSignature("resignation")}
+                      onSignDateChange={(value) => setSignDateFor("resignation", value)}
+                      printedAt={pack.offboarding.resignationPrintedAt}
+                      printingNote="One page, single-sided, US Letter. The right-hand endorsement column is filled at the labour office."
+                      signDate={signDates.resignation}
+                      signedDate={pack.offboarding.resignationSignedDate}
+                      subtitle="طلب استقالة — مادة ١٦٧"
+                      title="Resignation request"
+                    />
+                  ) : exitRoute === "mutualTermination" ? (
+                    <DocumentCard
+                      busy={busy === "sign-mutualTermination"}
+                      canManage={canManage}
+                      copies={copies.mutualTermination}
+                      gaps={gapsFor(pack.gaps, "mutualTermination")}
+                      onCopiesChange={(value) => setCopiesFor("mutualTermination", value)}
+                      onPreview={() => openPreview("mutualTermination")}
+                      onPrint={() => openPrint("mutualTermination")}
+                      onSign={() => void recordSignature("mutualTermination")}
+                      onSignDateChange={(value) => setSignDateFor("mutualTermination", value)}
+                      printedAt={pack.offboarding.mutualTerminationPrintedAt}
+                      printingNote="Three pages per copy, single-sided, US Letter. Both parties sign every copy."
+                      signDate={signDates.mutualTermination}
+                      signedDate={pack.offboarding.mutualTerminationSignedDate}
+                      subtitle="إنهاء علاقة العمل بالتوافق بين الطرفين"
+                      title="Mutual termination agreement"
+                    />
+                  ) : (
+                    <AdminCallout>
+                      <DoorOpen className="mt-0.5 h-4 w-4 shrink-0" />
+                      <span>
+                        Choose an exit form above — a resignation or a mutual termination — and it
+                        appears here ready to print. Only one is ever signed.
+                      </span>
+                    </AdminCallout>
+                  )}
+                  {/*
+                    The clearance pair, and note the contrast with the two cards above: BOTH are shown,
+                    always, because they are complements rather than alternatives. One certifies the
+                    employee is clear of the company and he keeps it; the other certifies the company is
+                    clear of him and the company files it. Hiding either would leave the party who does
+                    not keep it unprotected.
+                  */}
+                  <DocumentCard
+                    busy={busy === "sign-clearanceEmployee"}
+                    canManage={canManage}
+                    copies={copies.clearanceEmployee}
+                    gaps={gapsFor(pack.gaps, "clearanceEmployee")}
+                    onCopiesChange={(value) => setCopiesFor("clearanceEmployee", value)}
+                    onPreview={() => openPreview("clearanceEmployee")}
+                    onPrint={() => openPrint("clearanceEmployee")}
+                    onSign={() => void recordSignature("clearanceEmployee")}
+                    onSignDateChange={(value) => setSignDateFor("clearanceEmployee", value)}
+                    printedAt={pack.offboarding.clearanceEmployeePrintedAt}
+                    printingNote="Single-sided, A4, background graphics ON. Seven departments sign it by hand and the company stamps it — it is not valid until all of them are on it, and final dues are not released before that."
+                    signDate={signDates.clearanceEmployee}
+                    signedDate={pack.offboarding.clearanceEmployeeSignedDate}
+                    subtitle="إخلاء طرف موظف — تشهد به الشركة، ويحتفظ به الموظف"
+                    title="Employee clearance"
+                  />
+                  <DocumentCard
+                    busy={busy === "sign-clearanceCompany"}
+                    canManage={canManage}
+                    copies={copies.clearanceCompany}
+                    gaps={gapsFor(pack.gaps, "clearanceCompany")}
+                    onCopiesChange={(value) => setCopiesFor("clearanceCompany", value)}
+                    onPreview={() => openPreview("clearanceCompany")}
+                    onPrint={() => openPrint("clearanceCompany")}
+                    onSign={() => void recordSignature("clearanceCompany")}
+                    onSignDateChange={(value) => setSignDateFor("clearanceCompany", value)}
+                    printedAt={pack.offboarding.clearanceCompanyPrintedAt}
+                    printingNote="Single-sided, A4, background graphics ON. The settlement amount prints blank on purpose — this paper is a release of claims, so the figure has to be the one finance actually paid."
+                    signDate={signDates.clearanceCompany}
+                    signedDate={pack.offboarding.clearanceCompanySignedDate}
+                    subtitle="إخلاء طرف شركة — يقر به الموظف، وتحتفظ به الشركة"
+                    title="Company clearance"
                   />
                 </div>
               </div>
-            </AdminTableShell>
-
-            <div className="grid gap-3 lg:grid-cols-2">
-              <DocumentCard
-                busy={busy === "sign-form6"}
-                canManage={canManage}
-                copies={copies.form6}
-                gaps={gapsFor(pack.gaps, "form6")}
-                onCopiesChange={(value) => setCopiesFor("form6", value)}
-                onPreview={() => openPreview("form6")}
-                onPrint={() => openPrint("form6")}
-                onSign={() => void recordSignature("form6")}
-                onSignDateChange={(value) => setSignDateFor("form6", value)}
-                printedAt={pack.offboarding.form6PrintedAt}
-                printingNote="MUST be printed double-sided, three copies. Set the printer to two-sided, flip on the long edge, US Legal paper."
-                signDate={signDates.form6}
-                signedDate={pack.offboarding.form6SignedDate}
-                subtitle="نموذج ٦ — إخطار بإنتهاء اشتراك مؤمن عليه"
-                title="Social insurance Form 6"
-              />
-              {/*
-                Only the chosen route's card is offered. Showing both would invite printing both,
-                and the two forms assert incompatible facts about the same departure — the owner's
-                rule is that one is signed, never both.
-              */}
-              {exitRoute === "resignation" ? (
-                <DocumentCard
-                  busy={busy === "sign-resignation"}
-                  canManage={canManage}
-                  copies={copies.resignation}
-                  gaps={gapsFor(pack.gaps, "resignation")}
-                  onCopiesChange={(value) => setCopiesFor("resignation", value)}
-                  onPreview={() => openPreview("resignation")}
-                  onPrint={() => openPrint("resignation")}
-                  onSign={() => void recordSignature("resignation")}
-                  onSignDateChange={(value) => setSignDateFor("resignation", value)}
-                  printedAt={pack.offboarding.resignationPrintedAt}
-                  printingNote="One page, single-sided, US Letter. The right-hand endorsement column is filled at the labour office."
-                  signDate={signDates.resignation}
-                  signedDate={pack.offboarding.resignationSignedDate}
-                  subtitle="طلب استقالة — مادة ١٦٧"
-                  title="Resignation request"
-                />
-              ) : exitRoute === "mutualTermination" ? (
-                <DocumentCard
-                  busy={busy === "sign-mutualTermination"}
-                  canManage={canManage}
-                  copies={copies.mutualTermination}
-                  gaps={gapsFor(pack.gaps, "mutualTermination")}
-                  onCopiesChange={(value) => setCopiesFor("mutualTermination", value)}
-                  onPreview={() => openPreview("mutualTermination")}
-                  onPrint={() => openPrint("mutualTermination")}
-                  onSign={() => void recordSignature("mutualTermination")}
-                  onSignDateChange={(value) => setSignDateFor("mutualTermination", value)}
-                  printedAt={pack.offboarding.mutualTerminationPrintedAt}
-                  printingNote="Three pages per copy, single-sided, US Letter. Both parties sign every copy."
-                  signDate={signDates.mutualTermination}
-                  signedDate={pack.offboarding.mutualTerminationSignedDate}
-                  subtitle="إنهاء علاقة العمل بالتوافق بين الطرفين"
-                  title="Mutual termination agreement"
-                />
-              ) : (
-                <AdminCallout>
-                  <DoorOpen className="mt-0.5 h-4 w-4 shrink-0" />
-                  <span>
-                    Choose an exit form above — a resignation or a mutual termination — and it
-                    appears here ready to print. Only one is ever signed.
-                  </span>
-                </AdminCallout>
-              )}
-              {/*
-                The clearance pair, and note the contrast with the two cards above: BOTH are shown,
-                always, because they are complements rather than alternatives. One certifies the
-                employee is clear of the company and he keeps it; the other certifies the company is
-                clear of him and the company files it. Hiding either would leave the party who does
-                not keep it unprotected.
-              */}
-              <DocumentCard
-                busy={busy === "sign-clearanceEmployee"}
-                canManage={canManage}
-                copies={copies.clearanceEmployee}
-                gaps={gapsFor(pack.gaps, "clearanceEmployee")}
-                onCopiesChange={(value) => setCopiesFor("clearanceEmployee", value)}
-                onPreview={() => openPreview("clearanceEmployee")}
-                onPrint={() => openPrint("clearanceEmployee")}
-                onSign={() => void recordSignature("clearanceEmployee")}
-                onSignDateChange={(value) => setSignDateFor("clearanceEmployee", value)}
-                printedAt={pack.offboarding.clearanceEmployeePrintedAt}
-                printingNote="Single-sided, A4, background graphics ON. Seven departments sign it by hand and the company stamps it — it is not valid until all of them are on it, and final dues are not released before that."
-                signDate={signDates.clearanceEmployee}
-                signedDate={pack.offboarding.clearanceEmployeeSignedDate}
-                subtitle="إخلاء طرف موظف — تشهد به الشركة، ويحتفظ به الموظف"
-                title="Employee clearance"
-              />
-              <DocumentCard
-                busy={busy === "sign-clearanceCompany"}
-                canManage={canManage}
-                copies={copies.clearanceCompany}
-                gaps={gapsFor(pack.gaps, "clearanceCompany")}
-                onCopiesChange={(value) => setCopiesFor("clearanceCompany", value)}
-                onPreview={() => openPreview("clearanceCompany")}
-                onPrint={() => openPrint("clearanceCompany")}
-                onSign={() => void recordSignature("clearanceCompany")}
-                onSignDateChange={(value) => setSignDateFor("clearanceCompany", value)}
-                printedAt={pack.offboarding.clearanceCompanyPrintedAt}
-                printingNote="Single-sided, A4, background graphics ON. The settlement amount prints blank on purpose — this paper is a release of claims, so the figure has to be the one finance actually paid."
-                signDate={signDates.clearanceCompany}
-                signedDate={pack.offboarding.clearanceCompanySignedDate}
-                subtitle="إخلاء طرف شركة — يقر به الموظف، وتحتفظ به الشركة"
-                title="Company clearance"
-              />
-            </div>
+            ) : null}
           </>
         ) : (
           <AdminCallout>

@@ -203,6 +203,12 @@ export const systemContractDefaults = {
   /** Form 1 back-page instruction 1 — "من أصل وصورتين". An original and two copies. */
   form1Copies: 3,
   /**
+   * The worker-data form — استمارة بيانات العامل. Its own header says "تُحفظ بملف الخدمة": it is
+   * filed once in the personnel file, so a single copy. Written out rather than aliased for the same
+   * reason every count here is — a change to one paper's requirement must not silently move another.
+   */
+  workerDataFormCopies: 1,
+  /**
    * Form 6 carries the identical instruction on its own back page — "من أصل وصورتين" — and the
    * owner restated it when he sent the form: three copies, printed on both sides. The two numbers
    * agree, which is exactly why this is written out rather than aliased to `form1Copies`: they

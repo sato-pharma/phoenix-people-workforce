@@ -87,6 +87,11 @@ const DOCUMENT_BINDINGS: Record<
     printedColumn: "form1_printed_at",
     checklistName: "Social insurance form",
   },
+  // The worker-data form carries no stored state either, for the same reason the custody receipts
+  // do not (see `SIGNABLE_DOCUMENTS`): it is a sheet filed in the personnel drawer, not a signature
+  // Phoenix tracks against the person. A null binding makes `recordHiringPackPrinted` a no-op for it
+  // and `markHiringPackSigned` refuse it — both correct, and it needed no migration to add.
+  workerDataForm: { table: null, signedColumn: null, printedColumn: null, checklistName: null },
   // The two custody receipts carry no stored state at all: they print, and the signed paper is
   // filed. Written out one per form rather than shared, so that giving either one a real register
   // later is an edit to that form's row and cannot silently move the other's.

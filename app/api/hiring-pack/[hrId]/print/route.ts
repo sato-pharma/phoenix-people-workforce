@@ -14,6 +14,7 @@ import {
 } from "@/lib/hiring-pack/render-custody";
 import { renderForm1Html } from "@/lib/hiring-pack/render-form1";
 import { renderForm6Html } from "@/lib/hiring-pack/render-form6";
+import { renderWorkerFormHtml } from "@/lib/hiring-pack/render-worker-form";
 import {
   renderMutualTerminationHtml,
   renderResignationHtml,
@@ -61,6 +62,10 @@ const RENDERERS: Record<
 > = {
   contract: { render: renderContractHtml, copies: systemContractDefaults.contractCopies },
   form1: { render: renderForm1Html, copies: systemContractDefaults.form1Copies },
+  workerDataForm: {
+    render: renderWorkerFormHtml,
+    copies: systemContractDefaults.workerDataFormCopies,
+  },
   custodyLaptop: {
     render: renderCustodyLaptopHtml,
     copies: systemContractDefaults.custodyLaptopCopies,

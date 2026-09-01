@@ -28,6 +28,7 @@ import {
 import {
   ASSET_DOCUMENTS,
   HIRING_PACK_DOCUMENTS,
+  ONBOARDING_FORM_DOCUMENTS,
   SIGNABLE_DOCUMENTS,
   isSignableDocument,
 } from "../src/lib/hiring-pack/types.ts";
@@ -480,9 +481,14 @@ function testACustodyReceiptRecordsNoSignatureAgainstThePerson(): void {
   }
 
   // And the control: every OTHER document still is, or this test would pass on a build where
-  // signing was broken for everything.
+  // signing was broken for everything. "Other" now means two classes of non-signable paper, not
+  // one: the custody receipts above, and the worker-data form — a service-file sheet filed in a
+  // drawer, kept out of SIGNABLE_DOCUMENTS for the same reason. Both are skipped here.
   for (const document of HIRING_PACK_DOCUMENTS) {
     if (ASSET_DOCUMENTS.includes(document as (typeof ASSET_DOCUMENTS)[number])) continue;
+    if (ONBOARDING_FORM_DOCUMENTS.includes(document as (typeof ONBOARDING_FORM_DOCUMENTS)[number])) {
+      continue;
+    }
     assert.equal(
       isSignableDocument(document),
       true,

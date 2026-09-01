@@ -562,19 +562,27 @@ export function runHiringPackPaperEditorTests() {
     assert.ok(contract.includes("12,750"), "the contract must print the base salary");
     assert.ok(!contract.includes("16,000"), "the gross salary must not reach the contract");
 
-    // ...and the insurance wage on it follows the rule rather than the stored column.
+    // ...and the insurance wage on the CONTRACT is now a reference to the law, not a figure. The
+    // owner's 2026-08-30 contract (v3) sets it "وفقًا لأحكام قانون التأمينات الاجتماعية" and prints
+    // no number — the numeric wage moved to Form 1, the insurance declaration itself (asserted just
+    // below). Two things must still hold: the clause must ADDRESS the insurance wage (so a dropped
+    // salary clause is caught), and the stored column must NEVER leak onto the paper.
     assert.equal(pack.employee.socialInsuranceWage, 4_500);
     assert.ok(
-      contract.includes("9,808"),
-      "the contract's insurance wage must be 12,750 ÷ 1.3, rounded",
+      contract.includes("قانون التأمينات الاجتماعية"),
+      "the contract must set the insurance wage by reference to the Social Insurance Law",
     );
     assert.ok(
       !contract.includes("4,500"),
-      "the stored social_insurance_wage column must no longer reach the contract",
+      "the stored social_insurance_wage column must never reach the contract",
+    );
+    assert.ok(
+      !contract.includes("9,808"),
+      "the numeric insurance wage belongs on Form 1, not the contract (owner's v3)",
     );
 
-    // Form 1 is the insurance declaration itself, so it must name the SAME wage as the contract
-    // the same person signed. 9,808 reaches it one digit per box, so assert on the digits.
+    // Form 1 is the insurance declaration itself, so it — not the contract — carries the numeric
+    // wage. 9,808 (12,750 ÷ 1.3, rounded) reaches it one digit per box, so assert on the digits.
     const form1 = renderForm1Html(pack, 1);
     for (const digit of ["9", "8", "0"]) {
       assert.ok(form1.includes(`>${digit}<`), `Form 1 must carry the digit ${digit} of the wage`);

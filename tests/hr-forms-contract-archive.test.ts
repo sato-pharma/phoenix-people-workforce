@@ -255,7 +255,7 @@ function testTheArchiveListIsWhatTheScreenShows() {
   const archived = archivedTemplateVersions();
   assert.deepEqual(
     archived.map((entry) => entry.id),
-    ["contract-v1"],
+    ["contract-v2", "contract-v1"],
     "the Archive screen lists exactly the superseded versions, newest supersession first",
   );
   for (const entry of archived) {
@@ -267,13 +267,13 @@ function testTheArchiveListIsWhatTheScreenShows() {
   // Every version of the contract, newest first — what the Archive pages through.
   assert.deepEqual(
     templateVersionsFor("contract").map((entry) => entry.id),
-    ["contract-v2", "contract-v1"],
+    ["contract-v3", "contract-v2", "contract-v1"],
   );
 }
 
 function testResolveReproducesTheVersionThatWasSigned() {
   const unsigned = resolveTemplateVersion("contract", null);
-  assert.equal(unsigned.version.id, "contract-v2");
+  assert.equal(unsigned.version.id, "contract-v3");
   assert.equal(unsigned.reproducedFromSignature, false);
 
   const signedAgainstV1 = resolveTemplateVersion("contract", "contract-v1");
@@ -287,13 +287,13 @@ function testResolveReproducesTheVersionThatWasSigned() {
   // An id from a branch that never shipped must not make an employee's file unprintable — it falls
   // back to the current version and SAYS it did, so the screen can explain itself.
   const unknown = resolveTemplateVersion("contract", "contract-v99");
-  assert.equal(unknown.version.id, "contract-v2");
+  assert.equal(unknown.version.id, "contract-v3");
   assert.equal(unknown.reproducedFromSignature, false);
 
   // A stored id belonging to another document is the same case, and the cross-check matters: a
   // lookup by id alone would happily hand back the Form 1 entry for a contract.
   const crossed = resolveTemplateVersion("contract", "form1-v1");
-  assert.equal(crossed.version.id, "contract-v2");
+  assert.equal(crossed.version.id, "contract-v3");
   assert.equal(crossed.reproducedFromSignature, false);
 }
 
@@ -343,7 +343,7 @@ function textFingerprint(id: string): string {
     .digest("hex");
 }
 
-function testBothContractTextsArePinned() {
+function testEveryContractTextIsPinned() {
   assert.equal(
     textFingerprint("contract-v1"),
     "4bb91f57b38d36c372ae28ae682a598251739d6d10fae5c739d21befe694b801",
@@ -354,15 +354,23 @@ function testBothContractTextsArePinned() {
   assert.equal(
     textFingerprint("contract-v2"),
     "5cefbac9fddf4981fde2806d413e38adabdec6017462b1db4dcfb9d0dc640286",
-    "VERSION 2'S ARABIC HAS CHANGED. This is the contract Phoenix prints today. If the owner "
+    "VERSION 2'S ARABIC HAS CHANGED. This version has been signed and is now archived. If the owner "
+      + "supplied a new draft, that is a further version: archive this one and append the new text — "
+      + "never edit this text in place.",
+  );
+  assert.equal(
+    textFingerprint("contract-v3"),
+    "d52db4746a92a72c71d50c1bc9ee9461adfcc30e3bd3140557ec89c26223b735",
+    "VERSION 3'S ARABIC HAS CHANGED. This is the contract Phoenix prints today. If the owner "
       + "supplied a new draft, archive this version and append the new one; do not edit this text.",
   );
 }
 
-function testTheStructureOfBothVersionsHoldsUp() {
+function testTheStructureOfEveryVersionHoldsUp() {
   const v1 = contractTemplateById("contract-v1");
   const v2 = contractTemplateById("contract-v2");
-  assert.ok(v1 && v2);
+  const v3 = contractTemplateById("contract-v3");
+  assert.ok(v1 && v2 && v3);
 
   assert.equal(v1.articles.length, 19, "version 1 lost or gained an article");
   assert.equal(v2.articles.length, 19, "version 2 lost or gained an article");
@@ -371,8 +379,10 @@ function testTheStructureOfBothVersionsHoldsUp() {
   assert.equal(v2.articles[0].number, "مادة (1)");
   assert.equal(v2.articles[18].number, "مادة (19)");
 
-  // The layouts are genuinely different documents, not a restyling: version 2 titles every article
-  // and bands the parties, version 1 runs as prose. Both must stay printable, so both are asserted.
+  // The layouts are genuinely different documents, not a restyling: version 1 runs as untitled
+  // prose; version 2 titles every article and bands the parties; version 3 keeps version 2's banded,
+  // titled layout but consolidates the same subject matter into thirteen articles. All three must
+  // stay printable, so each is asserted in its own right.
   assert.equal(v1.layout, "prose");
   assert.equal(v2.layout, "banded");
   assert.equal(
@@ -391,6 +401,22 @@ function testTheStructureOfBothVersionsHoldsUp() {
     v2.subtitleAr,
     "محرر طبقًا لأحكام قانون العمل المصري رقم 14 لسنة 2025 ولائحته التنفيذية",
   );
+
+  assert.equal(v3.articles.length, 13, "version 3 lost or gained an article");
+  assert.equal(v3.articles[0].number, "مادة (1)");
+  assert.equal(v3.articles[12].number, "مادة (13)");
+  assert.equal(v3.layout, "banded");
+  assert.equal(
+    v3.articles.filter((article) => article.titleAr !== null).length,
+    13,
+    "version 3 titles all thirteen articles; a null title prints an empty heading cell",
+  );
+  assert.equal(v3.articles[0].titleAr, "التمهيد واللوائح والملاحق");
+  assert.equal(v3.articles[12].titleAr, "الإخطارات والاختصاص وأحكام عامة");
+  assert.equal(
+    v3.subtitleAr,
+    "محرر طبقًا لقانون العمل المصري رقم 14 لسنة 2025 والقرارات المنفذة له",
+  );
 }
 
 function testEveryTokenAVersionUsesIsOneTheRendererFills() {
@@ -399,7 +425,8 @@ function testEveryTokenAVersionUsesIsOneTheRendererFills() {
   // Arabic compiles perfectly and prints literal braces onto a signature page; this catches it.
   const v1 = contractTemplateById("contract-v1");
   const v2 = contractTemplateById("contract-v2");
-  assert.ok(v1 && v2);
+  const v3 = contractTemplateById("contract-v3");
+  assert.ok(v1 && v2 && v3);
 
   assert.deepEqual(contractTemplateTokens(v1), [
     "ADDRESS",
@@ -464,6 +491,40 @@ function testEveryTokenAVersionUsesIsOneTheRendererFills() {
     "UNDERPERFORMANCE_PCT",
     "UNIFIED_REGISTER",
   ]);
+  // Version 3 references a strict subset of version 2's blanks: it no longer states an insurance-wage
+  // figure, an underperformance threshold or a training-bond duration, so INSURANCE_WAGE, TRAINING_BOND,
+  // UNDERPERFORMANCE_MONTHS and UNDERPERFORMANCE_PCT are gone. A stray {{TOKEN}} the renderer cannot
+  // fill would print literal braces onto a signature page; this pins the set that survived.
+  assert.deepEqual(contractTemplateTokens(v3), [
+    "ADDRESS",
+    "BIRTH_DATE",
+    "BIRTH_PLACE",
+    "COMMERCIAL_REGISTER",
+    "COMMERCIAL_REGISTER_OFFICE",
+    "COMPANY_BRANCH_REGISTRY",
+    "COMPANY_CITY",
+    "COMPANY_HEAD_OFFICE_FULL",
+    "COMPANY_LEGAL_FORM",
+    "COMPANY_NAME",
+    "CONTRACT_DATE",
+    "CONTRACT_SIGNATORY",
+    "CONTRACT_SIGNATORY_TITLE",
+    "DEPARTMENT",
+    "DURATION",
+    "EMAIL",
+    "EMPLOYEE_NAME",
+    "INSURANCE_NUMBER",
+    "JOB_TITLE",
+    "NATIONALITY",
+    "NATIONAL_ID",
+    "PHONE",
+    "QUALIFICATION",
+    "SALARY_FIGURES",
+    "SALARY_WORDS",
+    "START_DATE",
+    "TAX_CARD",
+    "UNIFIED_REGISTER",
+  ]);
 }
 
 function testAMissingValuePrintsADottedRuleAndNotAnEmptyGap() {
@@ -500,7 +561,7 @@ function testPrintingLeavesNoTokenOnThePage() {
 function testASignedContractReprintsItsOwnVersion() {
   const current = renderContractHtml(packFixture(), 1);
   assert.ok(
-    current.includes("محرر طبقًا لأحكام قانون العمل المصري رقم 14 لسنة 2025 ولائحته التنفيذية"),
+    current.includes("محرر طبقًا لقانون العمل المصري رقم 14 لسنة 2025 والقرارات المنفذة له"),
     "an unsigned contract prints the current version",
   );
 
@@ -688,8 +749,8 @@ export function runHrFormsContractArchiveTests(): void {
   testTheArchiveListIsWhatTheScreenShows();
   testResolveReproducesTheVersionThatWasSigned();
   testTheRegistryAndTheContractTextsAgree();
-  testBothContractTextsArePinned();
-  testTheStructureOfBothVersionsHoldsUp();
+  testEveryContractTextIsPinned();
+  testTheStructureOfEveryVersionHoldsUp();
   testEveryTokenAVersionUsesIsOneTheRendererFills();
   testAMissingValuePrintsADottedRuleAndNotAnEmptyGap();
   testPrintingLeavesNoTokenOnThePage();
