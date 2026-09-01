@@ -1178,6 +1178,8 @@ import { runDvProbationWatchlistLiveSourceTests } from "./dv-probation-watchlist
 import { runCeoSosTableRowKeysTests } from "./ceo-sos-table-row-keys.test.ts";
 import { runSosDashboardGroupMergeTests } from "./sos-dashboard-group-merge.test.ts";
 
+import { runWeeklyFieldForceTests } from "./weekly-field-force.test.ts";
+
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -3596,6 +3598,8 @@ await runTest(
   "SoS dashboard merges region/area/brick groups by master-resolved code, sum-preserving, leaving unknown codes unmerged",
   runSosDashboardGroupMergeTests,
 );
+
+await runTest("weekly field force (line+area -> rep, units never summed across products, exact vs allocated)", runWeeklyFieldForceTests);
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);

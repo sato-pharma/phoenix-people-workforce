@@ -31,20 +31,31 @@ import {
   Sparkles,
   TrendingUp,
   Truck,
+  Users,
 } from "lucide-react";
 
 import { MultiSelectFilter, type MultiSelectFilterMode } from "@/components/ui/multi-select-filter";
+import { PortalWeeklyFieldForceView } from "@/components/sales/weekly/portal-weekly-field-force-view";
 import type {
   PortalWeeklyComparison,
   PortalWeeklyScopeView,
 } from "@/lib/sales/weekly/portal-weekly-dashboard";
+import type { PortalWeeklyFieldForce } from "@/lib/sales/weekly/portal-weekly-field-force";
 import type { WeeklyDashboard, WeeklyRanked } from "@/lib/sales/weekly/types";
 
 type Props = {
   initialData: WeeklyDashboard;
   scope: PortalWeeklyScopeView;
   initialComparison: PortalWeeklyComparison | null;
+  initialFieldForce: PortalWeeklyFieldForce | null;
 };
+
+/**
+ * Which tab is showing. "field" is the DEFAULT by the owner's instruction (2026-09-01): opening
+ * Weekly Sales must land on the medical reps, because that is what the screen is read for. The
+ * distributor view it used to open on is still one click away and is otherwise unchanged.
+ */
+type WeeklyTab = "field" | "distribution";
 
 // ── Formatting ───────────────────────────────────────────────────────────────
 function formatEgp(value: number): string {
@@ -91,13 +102,16 @@ const EMPTY_INT_SELECTION: string[] = [];
 type CachedPayload = {
   data: WeeklyDashboard;
   comparison: PortalWeeklyComparison | null;
+  fieldForce: PortalWeeklyFieldForce | null;
 };
 
-export function PortalWeeklyDashboard({ initialData, scope, initialComparison }: Props) {
+export function PortalWeeklyDashboard({ initialData, scope, initialComparison, initialFieldForce }: Props) {
   const vis = scope.visibility;
 
   const [data, setData] = useState<WeeklyDashboard>(initialData);
   const [comparison, setComparison] = useState<PortalWeeklyComparison | null>(initialComparison);
+  const [fieldForce, setFieldForce] = useState<PortalWeeklyFieldForce | null>(initialFieldForce);
+  const [activeTab, setActiveTab] = useState<WeeklyTab>("field");
   const [loading, setLoading] = useState(false);
   const [refreshTick, setRefreshTick] = useState(0);
 
@@ -148,7 +162,11 @@ export function PortalWeeklyDashboard({ initialData, scope, initialComparison }:
     const query = buildQuery();
     if (firstRun.current) {
       firstRun.current = false;
-      cacheRef.current.set(query, { data: initialData, comparison: initialComparison });
+      cacheRef.current.set(query, {
+        data: initialData,
+        comparison: initialComparison,
+        fieldForce: initialFieldForce,
+      });
       return;
     }
 
@@ -156,6 +174,7 @@ export function PortalWeeklyDashboard({ initialData, scope, initialComparison }:
     if (cached) {
       setData(cached.data);
       setComparison(cached.comparison);
+      setFieldForce(cached.fieldForce);
       return;
     }
 
@@ -171,10 +190,12 @@ export function PortalWeeklyDashboard({ initialData, scope, initialComparison }:
           const payload: CachedPayload = {
             data: json.data as WeeklyDashboard,
             comparison: (json.comparison ?? null) as PortalWeeklyComparison | null,
+            fieldForce: (json.fieldForce ?? null) as PortalWeeklyFieldForce | null,
           };
           cacheRef.current.set(query, payload);
           setData(payload.data);
           setComparison(payload.comparison);
+          setFieldForce(payload.fieldForce);
         }
       } catch (error) {
         if (!(error instanceof DOMException && error.name === "AbortError")) {
@@ -188,7 +209,7 @@ export function PortalWeeklyDashboard({ initialData, scope, initialComparison }:
       clearTimeout(timer);
       controller.abort();
     };
-  }, [buildQuery, initialData, initialComparison, refreshTick]);
+  }, [buildQuery, initialData, initialComparison, initialFieldForce, refreshTick]);
 
   const refresh = () => {
     cacheRef.current.clear();
@@ -251,76 +272,10 @@ export function PortalWeeklyDashboard({ initialData, scope, initialComparison }:
   const totalDistributors = data.distributors.length;
   const allUploaded = totalDistributors > 0 && uploadedCount >= totalDistributors;
 
-  return (
-    <div className="space-y-5">
-      {/* Scope bar */}
-      <div className="flex flex-col gap-3 rounded-sm border border-slate-200 bg-white px-4 py-3 shadow-[0_10px_30px_rgba(15,23,42,0.05)] ring-1 ring-slate-200/60 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex min-w-0 items-center gap-3">
-          <span className="h-9 w-[3px] shrink-0 bg-orange-500" />
-          <div className="min-w-0">
-            <p className="text-phx-2xs font-black uppercase tracking-[0.18em] text-slate-400">Your scope</p>
-            <p className="whitespace-nowrap text-sm font-black text-slate-900">{scope.scopeSummary}</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={refresh}
-            disabled={loading}
-            className="inline-flex items-center gap-1.5 rounded-sm border border-slate-200 bg-white px-2.5 py-1.5 text-phx-2xs font-black uppercase tracking-wide text-slate-700 transition hover:border-orange-300 hover:text-orange-600 disabled:opacity-50"
-          >
-            <RefreshCw className={`h-3 w-3 ${loading ? "animate-spin" : ""}`} />
-            Sync now
-          </button>
-          {totalDistributors > 0 ? (
-            <span
-              className={`hidden items-center gap-1.5 whitespace-nowrap rounded-sm border px-2.5 py-1 text-phx-2xs font-black uppercase tracking-wide sm:inline-flex ${
-                allUploaded
-                  ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                  : "border-amber-200 bg-amber-50 text-amber-700"
-              }`}
-            >
-              {allUploaded ? <CheckCircle2 className="h-3 w-3" /> : <Clock className="h-3 w-3" />}
-              {uploadedCount}/{totalDistributors} uploaded
-            </span>
-          ) : null}
-          {loading ? (
-            <span className="flex items-center gap-1.5 text-phx-2xs font-bold uppercase tracking-wide text-orange-600">
-              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-orange-500" />
-              Updating
-            </span>
-          ) : null}
-        </div>
-      </div>
-
-      {isEmpty ? (
-        <EmptyState isProductScoped={isProductScoped} isEmpty={data.scopeEmpty} />
-      ) : (
-        <>
-          {/* KPI strip */}
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-6">
-            <StatTile
-              accent="#F97316"
-              icon={Coins}
-              label="Sales Value"
-              value={formatEgp(data.kpis.salesValue)}
-              delta={
-                comparison
-                  ? (() => {
-                      const prevTotal = Object.values(comparison.prevValueByCode.product).reduce((a, b) => a + b, 0);
-                      return prevTotal > 0 ? (data.kpis.salesValue - prevTotal) / prevTotal : null;
-                    })()
-                  : null
-              }
-            />
-            <StatTile accent="#0EA5E9" icon={Boxes} label="Sales Units" value={formatNumber(data.kpis.salesUnits)} sub="net of returns" />
-            <StatTile accent="#8B5CF6" icon={Package} label="Stock Units" value={formatNumber(data.kpis.stockUnits)} />
-            <StatTile accent="#22C55E" icon={Truck} label="Distributors" value={formatNumber(data.kpis.distributorCount)} />
-            <StatTile accent="#F59E0B" icon={MapPin} label="Regions" value={formatNumber(data.kpis.regionCount)} />
-            <StatTile accent="#14B8A6" icon={Layers} label="Products" value={formatNumber(data.kpis.productCount)} />
-          </div>
-
-          {/* Filters */}
+  // The filter bar governs BOTH tabs, so it is defined once and rendered inside each. Rendering it
+  // here rather than above the tab content keeps the Distribution tab's own order (KPIs, then
+  // filters) exactly as it shipped — the owner asked for a new default tab, not a re-laid-out old one.
+  const filtersSection = (
           <Section
             title="Filters"
             overflowVisible
@@ -404,6 +359,86 @@ export function PortalWeeklyDashboard({ initialData, scope, initialComparison }:
               ) : null}
             </div>
           </Section>
+  );
+
+  return (
+    <div className="space-y-5">
+      {/* Scope bar */}
+      <div className="flex flex-col gap-3 rounded-sm border border-slate-200 bg-white px-4 py-3 shadow-[0_10px_30px_rgba(15,23,42,0.05)] ring-1 ring-slate-200/60 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="h-9 w-[3px] shrink-0 bg-orange-500" />
+          <div className="min-w-0">
+            <p className="text-phx-2xs font-black uppercase tracking-[0.18em] text-slate-400">Your scope</p>
+            <p className="whitespace-nowrap text-sm font-black text-slate-900">{scope.scopeSummary}</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={refresh}
+            disabled={loading}
+            className="inline-flex items-center gap-1.5 rounded-sm border border-slate-200 bg-white px-2.5 py-1.5 text-phx-2xs font-black uppercase tracking-wide text-slate-700 transition hover:border-orange-300 hover:text-orange-600 disabled:opacity-50"
+          >
+            <RefreshCw className={`h-3 w-3 ${loading ? "animate-spin" : ""}`} />
+            Sync now
+          </button>
+          {totalDistributors > 0 ? (
+            <span
+              className={`hidden items-center gap-1.5 whitespace-nowrap rounded-sm border px-2.5 py-1 text-phx-2xs font-black uppercase tracking-wide sm:inline-flex ${
+                allUploaded
+                  ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                  : "border-amber-200 bg-amber-50 text-amber-700"
+              }`}
+            >
+              {allUploaded ? <CheckCircle2 className="h-3 w-3" /> : <Clock className="h-3 w-3" />}
+              {uploadedCount}/{totalDistributors} uploaded
+            </span>
+          ) : null}
+          {loading ? (
+            <span className="flex items-center gap-1.5 text-phx-2xs font-bold uppercase tracking-wide text-orange-600">
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-orange-500" />
+              Updating
+            </span>
+          ) : null}
+        </div>
+      </div>
+
+      {/* Tabs. Field Force is the default landing view — see WeeklyTab. */}
+      <WeeklyTabBar active={activeTab} onChange={setActiveTab} repCount={fieldForce?.totals.repsWithSales ?? 0} />
+
+      {isEmpty ? (
+        <EmptyState isProductScoped={isProductScoped} isEmpty={data.scopeEmpty} />
+      ) : activeTab === "field" ? (
+        <>
+          {filtersSection}
+          <PortalWeeklyFieldForceView fieldForce={fieldForce} scopeSummary={scope.scopeSummary} />
+        </>
+      ) : (
+        <>
+          {/* KPI strip */}
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-6">
+            <StatTile
+              accent="#F97316"
+              icon={Coins}
+              label="Sales Value"
+              value={formatEgp(data.kpis.salesValue)}
+              delta={
+                comparison
+                  ? (() => {
+                      const prevTotal = Object.values(comparison.prevValueByCode.product).reduce((a, b) => a + b, 0);
+                      return prevTotal > 0 ? (data.kpis.salesValue - prevTotal) / prevTotal : null;
+                    })()
+                  : null
+              }
+            />
+            <StatTile accent="#0EA5E9" icon={Boxes} label="Sales Units" value={formatNumber(data.kpis.salesUnits)} sub="net of returns" />
+            <StatTile accent="#8B5CF6" icon={Package} label="Stock Units" value={formatNumber(data.kpis.stockUnits)} />
+            <StatTile accent="#22C55E" icon={Truck} label="Distributors" value={formatNumber(data.kpis.distributorCount)} />
+            <StatTile accent="#F59E0B" icon={MapPin} label="Regions" value={formatNumber(data.kpis.regionCount)} />
+            <StatTile accent="#14B8A6" icon={Layers} label="Products" value={formatNumber(data.kpis.productCount)} />
+          </div>
+
+          {filtersSection}
 
           {/* Top movers */}
           {comparison && (comparison.gainers.length > 0 || comparison.decliners.length > 0) ? (
@@ -499,6 +534,80 @@ export function PortalWeeklyDashboard({ initialData, scope, initialComparison }:
           <CompletenessTracker data={data} />
         </>
       )}
+    </div>
+  );
+}
+
+// ── Tabs ─────────────────────────────────────────────────────────────────────
+
+/**
+ * The two views of one week's sales.
+ *
+ * "Field Force" leads because it answers the question the screen is opened for — how each medical
+ * rep is doing, week by week, per product. "Distribution" is the original dashboard: the same
+ * numbers cut by distributor, region and product, which is the supply-side view of the same sheet.
+ */
+function WeeklyTabBar({
+  active,
+  onChange,
+  repCount,
+}: {
+  active: WeeklyTab;
+  onChange: (next: WeeklyTab) => void;
+  repCount: number;
+}) {
+  const tabs: { key: WeeklyTab; label: string; hint: string; icon: typeof Users }[] = [
+    { key: "field", label: "Field Force", hint: "Reps week by week, per product", icon: Users },
+    { key: "distribution", label: "Distribution", hint: "Distributors, regions and products", icon: Truck },
+  ];
+  return (
+    <div className="overflow-hidden rounded-sm border border-slate-200 bg-white shadow-[0_10px_30px_rgba(15,23,42,0.05)] ring-1 ring-slate-200/60">
+      <div className="flex flex-col sm:flex-row">
+        {tabs.map((tab) => {
+          const isActive = active === tab.key;
+          const Icon = tab.icon;
+          return (
+            <button
+              key={tab.key}
+              type="button"
+              onClick={() => onChange(tab.key)}
+              aria-current={isActive ? "page" : undefined}
+              className={`relative flex flex-1 items-center gap-3 px-4 py-3 text-left transition ${
+                isActive ? "bg-slate-900" : "bg-white hover:bg-slate-50"
+              }`}
+            >
+              <span
+                className={`absolute inset-x-0 bottom-0 h-0.5 transition-all ${
+                  isActive ? "bg-orange-500" : "bg-transparent"
+                }`}
+              />
+              <span
+                className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-sm ${
+                  isActive ? "bg-orange-500 text-white" : "bg-slate-100 text-slate-400"
+                }`}
+              >
+                <Icon className="h-4 w-4" />
+              </span>
+              <span className="min-w-0">
+                <span
+                  className={`block whitespace-nowrap text-sm font-black tracking-tight ${
+                    isActive ? "text-white" : "text-slate-900"
+                  }`}
+                >
+                  {tab.label}
+                </span>
+                <span
+                  className={`block whitespace-nowrap text-phx-2xs font-bold uppercase tracking-wide ${
+                    isActive ? "text-slate-400" : "text-slate-400"
+                  }`}
+                >
+                  {tab.key === "field" && repCount > 0 ? `${repCount} reps selling` : tab.hint}
+                </span>
+              </span>
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }
