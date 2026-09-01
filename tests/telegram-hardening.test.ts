@@ -64,9 +64,14 @@ export function runTelegramHardeningTests() {
   // fail-closed by the unknown-module safety net regardless of any template card.
   assert.equal(defaultTelegramPolicyFor("attendance").enabled, true, "attendance must have an explicit enabled policy");
   assert.equal(defaultTelegramPolicyFor("field_workforce_compliance").enabled, true, "field_workforce_compliance must have an explicit enabled policy");
+  // Same class of bug, found 2026-09-01 by a cancellation that reached its requester on ONE channel:
+  // direct_orders is a live Telegram sender (src/lib/direct-orders/service.ts) that had no policy row,
+  // so every message it sent was dropped by the unknown-module fail-safe.
+  assert.equal(defaultTelegramPolicyFor("direct_orders").enabled, true, "direct_orders must have an explicit enabled policy");
+  assert.equal(defaultTelegramPolicyFor("direct_orders").genericOnly, false, "direct_orders must carry full content — an approver cannot act on a generic ping");
   // The modules with real live callers are present in the default policy list.
   const moduleNames = new Set(defaultTelegramModulePolicies().map((policy) => policy.module));
-  for (const expected of ["offers", "coaching", "outstation", "weekly_plans", "birthday", "attendance", "field_workforce_compliance"]) {
+  for (const expected of ["offers", "coaching", "outstation", "weekly_plans", "birthday", "attendance", "field_workforce_compliance", "direct_orders"]) {
     assert.ok(moduleNames.has(expected), `default policies should include ${expected}`);
   }
   // Orphaned entries with zero real callers under ANY spelling (verified by grepping every

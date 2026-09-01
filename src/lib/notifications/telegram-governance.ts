@@ -49,6 +49,14 @@ const defaultTelegramPolicies: TelegramModulePolicy[] = [
   { enabled: true, genericOnly: false, module: "birthday", notes: "Non-sensitive celebratory reminders. (Real module string is singular; see note above.)", optional: true },
   { enabled: true, genericOnly: false, module: "attendance", notes: "Attendance digest, disputes, and missing-punch workflow alerts.", optional: false },
   { enabled: true, genericOnly: false, module: "field_workforce_compliance", notes: "Monthly field workforce compliance digest to compliance reviewers.", optional: false },
+  // direct_orders had no policy entry at all, so every direct-order Telegram message — submitted,
+  // approved, held, expired, cancelled — was dropped by the unknown-module fail-safe while
+  // service.ts carefully asked for the channel. It bites hardest on cancellation, which drops
+  // email ON PURPOSE ("not news worth an inbox entry") on the assumption that in-app AND Telegram
+  // still carry it; with Telegram dead the requester was left with the in-app bell alone.
+  // Not genericOnly: the pharmacy, product, quantity and value ARE the content an approver acts on,
+  // and a generic "you have a notification" ping cannot be approved or rejected.
+  { enabled: true, genericOnly: false, module: "direct_orders", notes: "Live sender that had no policy until 2026-09-01; full content so approvers and requesters can act.", optional: false },
   { enabled: false, genericOnly: false, module: "holiday_confirmation", notes: "Disabled by default; low-volume admin confirmation reminder, email is sufficient today.", optional: true },
   // Early Birds is in-app + Telegram ONLY (owner rule 2026-08-09; email is hard-blocked in
   // early-birds-channel-guard.ts). Telegram is therefore not optional garnish here — with email
