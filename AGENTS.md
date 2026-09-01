@@ -13,9 +13,12 @@ hook here and the account in `docs/` — never the account here.** §2.1 and §4
 of essays once already, at a measured cost of roughly 13,000 tokens of context on every request; the
 2026-09-01 consolidation moved that back into `docs/` where it belongs.
 
-**Memory slugs stay in this file.** `scripts/memory-index-reachability.mjs` scans `AGENTS.md` only —
-never `docs/` — and matches the **backticked** form, so deleting a slug from here orphans that memory
-outright. Compress the prose around a slug; never drop the slug.
+**Memory slugs live in [docs/agents-memory-map.md](docs/agents-memory-map.md), not here — except 17.**
+`scripts/memory-index-reachability.mjs` scans `AGENTS.md` only, never `docs/`, and matches the
+**backticked** form, so a slug removed from here orphans that memory **unless `MEMORY.md` also links
+it**. Only 17 memories depend on this file; those stay inline and are marked in the map. The other
+133 references moved out on 2026-09-01 (6,921 bytes off every request). **Re-run the classifier
+before removing any slug** — which are load-bearing changes as the index does.
 
 ## 0. How this repo is actually run (calibrate to this)
 
@@ -86,43 +89,43 @@ protection, CI cost, the deploy path, or the region.
 **Each line is a cue, not the fact.** The full account of every one — measurements, dates, PR
 numbers, the diagnosis traps that cost real time — is in
 **[docs/agents-session-traps.md](docs/agents-session-traps.md)**. Search it for the hook's wording.
-Each hook names the memory file holding its own record, under
-`C:\Users\satoh\.claude\projects\F--Phoenix-Workforce-phoenix-workforce\memory\`.
+Which memory file backs which hook is in
+[docs/agents-memory-map.md](docs/agents-memory-map.md).
 
 **Shell and tooling**
 
-- **`grep -r` hangs on this checkout — use `git grep` or `rg`.** `shell-grep-unusable-use-git-grep-or-rg`
-- **`pnpm run <script>` PURGES `node_modules`** when the lockfile moved. Invoke `node scripts/…` directly. `pnpm-run-tries-to-purge-node-modules-when-the-lockfile-moved`
-- **MSYS mangles paths silently, three ways:** `git show <ref>:<path>` returns EMPTY; `grep -c $'\r'` matches EVERY line of a pure-LF file; and a `git grep`/`rg` PATTERN holding a leading-slash path matches NOTHING — 41 real hits read as 0, i.e. *the code is clean*. Export `MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*'` before any such sweep, and never quote a count from one without it. `git-ref-colon-path-is-mangled-by-msys-returns-empty`
-- **A role probe cannot trust the HTTP status code**, and **a POST to ANY `/api/**` path returns 403 even when the route does not exist** — probe with GET. `a-role-probe-cannot-trust-the-http-status-code` · `a-post-to-any-api-path-returns-403-even-if-it-does-not-exist`
-- **`curl -d "@-"` creates NOTHING on Windows** — write the JSON to a file, pass `-d @file.json`. `cron-job-org-is-managed-by-a-rest-api-not-just-the-web-ui`
-- **Reads of `.env*` are auto-approved deliberately, for EVERY key** — licence to inspect, never to propagate. Do not re-litigate or narrow it. `env-file-reads-fully-auto-approved-2026-08-09`
-- **A permission allow-rule stores the LITERAL command, so an inline env var bakes a live credential into `settings.local.json` in plaintext.** Grep any `settings.*.json` for `TOKEN=`/`KEY=`/`SECRET=` before sharing or merging it. `permission-allowlist-rules-can-embed-a-live-secret`
-- **`mcp__supabase-staging__*` is broken** — route staging work through `mcp__supabase-production__*` passing the staging `project_id`. `supabase-staging-named-server-broken-2026-08-10`
+- **`grep -r` hangs on this checkout — use `git grep` or `rg`.**
+- **`pnpm run <script>` PURGES `node_modules`** when the lockfile moved. Invoke `node scripts/…` directly.
+- **MSYS mangles paths silently, three ways:** `git show <ref>:<path>` returns EMPTY; `grep -c $'\r'` matches EVERY line of a pure-LF file; and a `git grep`/`rg` PATTERN holding a leading-slash path matches NOTHING — 41 real hits read as 0, i.e. *the code is clean*. Export `MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*'` before any such sweep, and never quote a count from one without it.
+- **A role probe cannot trust the HTTP status code**, and **a POST to ANY `/api/**` path returns 403 even when the route does not exist** — probe with GET.
+- **`curl -d "@-"` creates NOTHING on Windows** — write the JSON to a file, pass `-d @file.json`.
+- **Reads of `.env*` are auto-approved deliberately, for EVERY key** — licence to inspect, never to propagate. Do not re-litigate or narrow it.
+- **A permission allow-rule stores the LITERAL command, so an inline env var bakes a live credential into `settings.local.json` in plaintext.** Grep any `settings.*.json` for `TOKEN=`/`KEY=`/`SECRET=` before sharing or merging it.
+- **`mcp__supabase-staging__*` is broken** — route staging work through `mcp__supabase-production__*` passing the staging `project_id`.
 - **The Supabase MCP returns ONLY the last result set of a multi-statement `execute_sql`** — earlier ones vanish with no error, so a block that verifies in statement one and summarizes in statement two certifies a check you never saw. One question per call.
-- **A Windows USER env var SHADOWS every `.env.local`, silently.** Re-probe all three; never print the value. `windows-env-var-shadows-every-env-local-key`
-- **The local attendance agent dies at EVERY logon and loses NOTHING — do not escalate it.** Never disable the 2-hourly task, never launch a second agent (it can fire a PRODUCTION sync). `attendance-agent-crashes-at-logon-but-loses-no-attendance`
-- **ExcelJS emits two schema-invalid OOXML fragments, so Excel silently REPAIRS the workbook** — both need the `.xlsx` zip post-processed. `exceljs-writes-two-schema-invalid-ooxml-fragments`
+- **A Windows USER env var SHADOWS every `.env.local`, silently.** Re-probe all three; never print the value.
+- **The local attendance agent dies at EVERY logon and loses NOTHING — do not escalate it.** Never disable the 2-hourly task, never launch a second agent (it can fire a PRODUCTION sync).
+- **ExcelJS emits two schema-invalid OOXML fragments, so Excel silently REPAIRS the workbook** — both need the `.xlsx` zip post-processed.
 
 **Git**
 
-- **Deleting a branch does not remove its pushed commit**, and **reusing a squash-merged branch makes a conflicting PR.** `deleting-a-branch-does-not-remove-a-pushed-commit` · `reusing-a-squash-merged-branch-makes-a-conflicting-pr`
-- **`git push` hangs — kill at ~60s and retry.** The OOM was a 500MB `http.postBuffer`, fixed 2026-08-23 to 8MB; do NOT restore it. `git-push-to-origin-hangs-retry-immediately` · `git-push-oom-is-a-500mb-postbuffer-in-repo-config`
-- **A merge to `main` mid-session silently orphans your next push.** `a-merge-mid-session-orphans-your-next-push-silently` · `two-sessions-fixed-one-bug-main-was-never-ci-validated`
-- **`refs/deleted-*` is NOT automatic — a plain `git branch -D` archives NOTHING.** Keep the SHA the delete prints; archive with `git update-ref` *before* deleting. `refs/backups/*` on ORIGIN is the only copy that survives losing this laptop. `deleted-branch-tips-live-in-refs-deleted-branches`
-- **An empty `git log <branch> --not --remotes=origin` is NOT proof a branch is safe to delete** — `git fetch` never prunes, so the check compares the branch against itself. Gate deletion on the merged PR. `not-remotes-flips-when-remote-refs-are-pruned` · `repo-doctor-no-origin-ref-is-usually-squash-residue`
-- **A UTC merge time read against a Cairo commit time INVERTS the merged/stranded verdict.** The answer is CONTENT (`git patch-id --stable`), never a timestamp. `a-utc-timestamp-compared-against-cairo-manufactures-a-false-signal`
-- **`git` "Authentication failed" can be the credential HELPER going OOM, not a bad token** — change NO credentials. `git-auth-failed-can-be-the-credential-helper-going-oom`
-- **`F:\PHX backup` is the disaster-recovery set, and a bundle restore silently returns ZERO refs without `core.longpaths`.** Three of its sections hold LIVE keys. `phx-backup-disaster-recovery-set`
+- **Deleting a branch does not remove its pushed commit**, and **reusing a squash-merged branch makes a conflicting PR.**
+- **`git push` hangs — kill at ~60s and retry.** The OOM was a 500MB `http.postBuffer`, fixed 2026-08-23 to 8MB; do NOT restore it.
+- **A merge to `main` mid-session silently orphans your next push.**
+- **`refs/deleted-*` is NOT automatic — a plain `git branch -D` archives NOTHING.** Keep the SHA the delete prints; archive with `git update-ref` *before* deleting. `refs/backups/*` on ORIGIN is the only copy that survives losing this laptop.
+- **An empty `git log <branch> --not --remotes=origin` is NOT proof a branch is safe to delete** — `git fetch` never prunes, so the check compares the branch against itself. Gate deletion on the merged PR.
+- **A UTC merge time read against a Cairo commit time INVERTS the merged/stranded verdict.** The answer is CONTENT (`git patch-id --stable`), never a timestamp.
+- **`git` "Authentication failed" can be the credential HELPER going OOM, not a bad token** — change NO credentials.
+- **`F:\PHX backup` is the disaster-recovery set, and a bundle restore silently returns ZERO refs without `core.longpaths`.** Three of its sections hold LIVE keys.
 
 **CI and PRs**
 
-- **CI jobs failing in SECONDS mean billing, not code.** `ci-jobs-failing-in-seconds-means-billing-not-code`
-- **`secret-scan` is a required check — there are 4 — and it is the one that never runs on a `main` push.** Its absence from a merge commit is CORRECT. `github-personal-account-no-ghas-oss-scanning`
-- **`gh pr checks` LAGS behind the real job state.** `gh-pr-checks-lags-behind-the-real-job-state`
-- **`check-runs: 0` also means CONFLICTED** — a conflicted PR runs no CI at all, which reads as "not started". `a-conflicted-pr-runs-no-ci-at-all`
-- **ONE new hub page trips FOUR separate CI gates.** `adding-a-hub-page-trips-four-separate-ci-gates`
-- **A red `main` still builds, ships and serves perfectly**, and a green PR is not a green `main` — after merging, check the run on `main`'s NEW head. `a-red-main-ships-and-looks-fine-build-ignores-type-errors`
+- **CI jobs failing in SECONDS mean billing, not code.**
+- **`secret-scan` is a required check — there are 4 — and it is the one that never runs on a `main` push.** Its absence from a merge commit is CORRECT.
+- **`gh pr checks` LAGS behind the real job state.**
+- **`check-runs: 0` also means CONFLICTED** — a conflicted PR runs no CI at all, which reads as "not started".
+- **ONE new hub page trips FOUR separate CI gates.**
+- **A red `main` still builds, ships and serves perfectly**, and a green PR is not a green `main` — after merging, check the run on `main`'s NEW head.
 - **Runs NEVER CREATED is an Actions OUTAGE, not billing** — billing creates the run and fails it in seconds. Check githubstatus BEFORE touching the spending limit. A `workflow_dispatch` run never enters a PR's `statusCheckRollup`.
 - **Recover a PR with `gh run rerun <id>` on its OWN `pull_request`-sourced run** — it keeps the `event`, so its checks DO reach the rollup. Then WAIT: dispatch lags 20–30 MINUTES during an outage and events are NOT dropped. Fire ONE recovery event, leave it half an hour.
 - **An extra SHA does not merely waste a run — it ACTIVELY KILLS the real head's**, because `ci.yml`'s concurrency group is the same for every commit on a PR. Never push an empty commit to force a `synchronize`.
@@ -132,93 +135,93 @@ Each hook names the memory file holding its own record, under
 
 **Migrations**
 
-- **A migration FILE written is not a migration APPLIED**, and **a merged migration file does not mean the grants are live.** `migration-file-written-is-not-migration-applied` · `merged-migration-file-does-not-mean-grants-are-live`
-- **Migration timestamps COLLIDE across parallel branches**, and **the ledger version never matches the filename.** `migration-timestamp-collides-across-parallel-branches` · `migration-ledger-version-never-matches-the-filename`
-- **A PostgREST `.in()` carrying several hundred ids returns ZERO rows and NO error.** Chunk at ~50 and print the intermediate count. `postgrest-in-with-hundreds-of-ids-silently-returns-nothing`
-- **A `neq` against an ABSENT jsonb key matches ZERO rows**, and **an unbounded `.select()` stops at 1000** with no marker. Write the OR-form; `count(*)` before trusting any select, then page with an explicit `.order()`. `postgrest-neq-on-an-absent-jsonb-key-matches-nothing` · `postgrest-unbounded-select-silently-stops-at-1000-rows`
-- **`n_live_tup` is STALE in production — it reports LIVE tables as empty.** Sweep with a real `count(*)` via `query_to_xml`. `n-live-tup-is-stale-use-real-count`
-- **A Supabase client request that times out at 15s STILL COMMITS**, leaving a half-applied state with no audit row. Do heavy multi-step mutations in ONE `plpgsql` function. `supabase-client-15s-timeout-commits-anyway-half-applies`
+- **A migration FILE written is not a migration APPLIED**, and **a merged migration file does not mean the grants are live.**
+- **Migration timestamps COLLIDE across parallel branches**, and **the ledger version never matches the filename.**
+- **A PostgREST `.in()` carrying several hundred ids returns ZERO rows and NO error.** Chunk at ~50 and print the intermediate count.
+- **A `neq` against an ABSENT jsonb key matches ZERO rows**, and **an unbounded `.select()` stops at 1000** with no marker. Write the OR-form; `count(*)` before trusting any select, then page with an explicit `.order()`.
+- **`n_live_tup` is STALE in production — it reports LIVE tables as empty.** Sweep with a real `count(*)` via `query_to_xml`.
+- **A Supabase client request that times out at 15s STILL COMMITS**, leaving a half-applied state with no audit row. Do heavy multi-step mutations in ONE `plpgsql` function.
 - **A missing TABLE answers `PGRST205`, NOT `42P01`** — so the obvious guard fires never and the deploy-before-migration window 500s a whole page. Treat both codes as one set behind one helper. `a-missing-table-answers-pgrst205-not-42p01`
 
 **Database, grants and RLS**
 
-- **A write REVOKE does NOT make a table read-only** — `ON DELETE CASCADE` and `SECURITY DEFINER` both run as the table OWNER, and `has_table_privilege` sees neither bypass. Fixed on prod 2026-08-14; **do not redo or undo.** `a-write-revoke-does-not-stop-a-cascade-or-a-secdef-function`
-- **An append-only table needs a STATEMENT-level `BEFORE TRUNCATE` trigger** — `TRUNCATE` fires no ROW triggers, and a revoke never binds the OWNER. Prove all three verbs are refused. `append-only-tables-need-a-truncate-trigger`
-- **RLS on with no `authenticated` grant is the NORM here — 222 of 308 tables — not a defect class to sweep.** `rls-policy-without-an-authenticated-grant-is-usually-correct`
-- **ONE `auth.users` row with `banned_until = 'infinity'` 500s the ENTIRE GoTrue admin API** — page-shaped, so a small `per_page` probe passes. Retire with the app's finite `876000h`. `banned-until-infinity-breaks-the-whole-auth-admin-api`
+- **A write REVOKE does NOT make a table read-only** — `ON DELETE CASCADE` and `SECURITY DEFINER` both run as the table OWNER, and `has_table_privilege` sees neither bypass. Fixed on prod 2026-08-14; **do not redo or undo.**
+- **An append-only table needs a STATEMENT-level `BEFORE TRUNCATE` trigger** — `TRUNCATE` fires no ROW triggers, and a revoke never binds the OWNER. Prove all three verbs are refused.
+- **RLS on with no `authenticated` grant is the NORM here — 222 of 308 tables — not a defect class to sweep.**
+- **ONE `auth.users` row with `banned_until = 'infinity'` 500s the ENTIRE GoTrue admin API** — page-shaped, so a small `per_page` probe passes. Retire with the app's finite `876000h`.
 - **`au.f_monthly_achievement` SERVES A PRECOMPUTED ROLLUP, and its fingerprint covers the CONFIG surface — NOT the sales data.** So repairing an import or rollup row changes NOTHING on Sales vs Target or its five sibling surfaces: no error, no staleness marker, the old number just keeps coming. Run `au.f_refresh_monthly_attribution(period)` after ANY sales-row repair, and diff stored against live first so the refresh is a check, not a hope. `attribution-rollup-fingerprint-ignores-the-sales-data`
 
 **Probing, attributing and reporting production**
 
-- **A 200 from a health endpoint can be blind to the thing that is broken** — OpenAI's `/v1/models` certifies a key with no balance. The BILL cannot be read from the API at all. `openai-key-is-401-and-cv-extraction-silently-falls-back-to-rules` · `openai-spend-cannot-be-read-from-the-api-reconstruct-it`
-- **`app_error_events` returning 0 rows means QUIET, not broken.** Prove the route with 405 against a 404 control; never POST a synthetic error to production. `app-error-events-is-user-triggered-zero-is-not-broken`
-- **The Error Monitor HIDES rows whose `environment` is NULL**, and a `create table … as select` copies rows but never RLS — **measure the new table's ACL, never assume it either way.** `error-monitor-hides-null-environment-rows` · `ad-hoc-backup-tables-are-anon-readable`
-- **`updated_by_hr_id` LIES about who wrote a row.** `how-to-attribute-a-production-write`
-- **HR ids are MIXED CASE, so a plain `.eq` silently under-returns** — one `.eq` hid 28% of reps' own orders, and on `au.occupancy_history` the loss is TOTAL (0 of 120 join), where a row matching nobody reads as *a vacant seat* rather than a bug. Lower BOTH sides. `activity-events-hr-id-is-mixed-case-not-lowercase` · `direct-order-hr-id-columns-are-mixed-case-and-access-hrid-is-lowercase`
-- **The Sato logo's wordmark is WHITE, so "SATO" vanishes on white paper.** `sato-logo-wordmark-is-white-invisible-on-paper`
+- **A 200 from a health endpoint can be blind to the thing that is broken** — OpenAI's `/v1/models` certifies a key with no balance. The BILL cannot be read from the API at all.
+- **`app_error_events` returning 0 rows means QUIET, not broken.** Prove the route with 405 against a 404 control; never POST a synthetic error to production.
+- **The Error Monitor HIDES rows whose `environment` is NULL**, and a `create table … as select` copies rows but never RLS — **measure the new table's ACL, never assume it either way.**
+- **`updated_by_hr_id` LIES about who wrote a row.**
+- **HR ids are MIXED CASE, so a plain `.eq` silently under-returns** — one `.eq` hid 28% of reps' own orders, and on `au.occupancy_history` the loss is TOTAL (0 of 120 join), where a row matching nobody reads as *a vacant seat* rather than a bug. Lower BOTH sides.
+- **The Sato logo's wordmark is WHITE, so "SATO" vanishes on white paper.**
 
 **Validation**
 
 - **A repo-wide pattern sweep must grep the TESTS for the old string too — a pinning test can pin the ANTI-pattern.** `runTest` rethrows, so a loop over N routes reports only the FIRST. Run `git grep -l '<the exact old line>' -- tests` first.
 - **A test name appended beside an existing one in `tests/run-tests.ts` becomes an ARGUMENT, not a registration.** One `await runTest(name, fn)` per test; check by AST.
-- **RAM-saturated? WAIT — do not skip validation for it.** `dont-skip-validation-for-ram-wait-instead`
-- **Source-pinning tests slice a fixed BYTE window and false-FAIL** when the file shifts. `source-pinning-tests-slice-a-fixed-byte-window`
-- **A heredoc eats backslashes** and yields a test that only ever passes. `heredoc-eats-backslashes-and-makes-a-test-that-only-passes`
-- **`parseDiagnostics` is SYNTAX-ONLY — it cannot see a typecheck error.** `parse-diagnostics-cannot-see-a-typecheck-error`
-- **`setState` inside `useEffect` is a lint ERROR here.** `set-state-in-effect-is-a-lint-error-here`
-- **A green TEST run carries NO type signal** — `pnpm run test` strips types. Only the PR's `typecheck` job answers. `a-green-test-run-carries-no-type-signal-at-all`
+- **RAM-saturated? WAIT — do not skip validation for it.**
+- **Source-pinning tests slice a fixed BYTE window and false-FAIL** when the file shifts.
+- **A heredoc eats backslashes** and yields a test that only ever passes.
+- **`parseDiagnostics` is SYNTAX-ONLY — it cannot see a typecheck error.**
+- **`setState` inside `useEffect` is a lint ERROR here.**
+- **A green TEST run carries NO type signal** — `pnpm run test` strips types. Only the PR's `typecheck` job answers.
 - **The SUITE runs with PRODUCTION credentials while a test sets `APP_ENV=production`**, so any module writing on `isProductionRuntime()` writes to PROD from `pnpm run test`. Gate such a write on `PHOENIX_TEST_SUITE`. `the-test-suite-runs-with-production-credentials-and-app-env-production`
-- **A test can NEVER hand a function a `process.env` literal** — both spellings fail, and each error only surfaces once you have fixed the other. `a-test-can-never-hand-a-function-a-process-env-literal`
-- **An exhaustive `Record` does NOT gate the build** — `ignoreBuildErrors` lets a missing key compile, build and DEPLOY. Back it with a RUNTIME assertion in a registered test. `an-exhaustive-record-does-not-gate-the-build-here`
-- **A narrowed SELECT disarms every gate downstream of it** — test the SELECT, not the branch. `a-narrowed-select-disarms-every-gate-downstream-of-it`
-- **An OPTIONAL field written UNCONDITIONALLY is a silent erase.** The PATTERN regenerates, not the two fixed call sites. `optional-field-written-unconditionally-is-a-silent-erase`
-- **A feature can ship green, deploy cleanly, and be reachable by NOBODY — and zero usage is what both look like.** Exercise the path end to end before concluding it is adoption. `capture-evidence-was-dead-on-arrival-for-doctor-customers`
-- **A merged fix on a path nobody has exercised is untested, not proven.** `payroll-mutations-were-unaudited-until-2026-08-21`
+- **A test can NEVER hand a function a `process.env` literal** — both spellings fail, and each error only surfaces once you have fixed the other.
+- **An exhaustive `Record` does NOT gate the build** — `ignoreBuildErrors` lets a missing key compile, build and DEPLOY. Back it with a RUNTIME assertion in a registered test.
+- **A narrowed SELECT disarms every gate downstream of it** — test the SELECT, not the branch.
+- **An OPTIONAL field written UNCONDITIONALLY is a silent erase.** The PATTERN regenerates, not the two fixed call sites.
+- **A feature can ship green, deploy cleanly, and be reachable by NOBODY — and zero usage is what both look like.** Exercise the path end to end before concluding it is adoption.
+- **A merged fix on a path nobody has exercised is untested, not proven.**
 - **`cn()` SILENTLY DROPPED every `text-phx-*` size, and only `getComputedStyle` in a real browser can see it.** The literal `text-[13px]` form was always safe: **the rename to a named size is what creates the bug.** `tailwind-merge-strips-custom-named-font-sizes`
 - **Arabic + English in ONE value needs direction PER LINE; `dir="auto"` on the block is the WRONG fix** — `auto` reads only the FIRST strong character, so the ENGLISH half renders backwards: the exact mirror of the bug being fixed. SINGLE-language free text is the opposite case, where block-level `dir="auto"` is correct and already house style. Measure production for Arabic before "fixing" a screen. `bilingual-bodies-need-direction-per-line-not-per-block`
 - **`@/lib/utils` resolves to the ROOT `lib/utils.ts`, NOT `src/lib/utils.ts`** — editing the `src/` copy changes nothing, with no error. `at-slash-lib-shadows-src-lib-via-tsconfig-paths`
 
 **Memory and this index**
 
-- **Sweep memories by CLAIM, never by filename or topic**, and never rewrite a dated record. `staleness-sweeps-scoped-by-topic-miss-the-dangerous-ones`
+- **Sweep memories by CLAIM, never by filename or topic**, and never rewrite a dated record.
 
 **Parallel sessions**
 
-- **A parallel session can collide with NO git trace at all** — `gh pr list`, `git log` and `git worktree list` were all clean while another session edited the same file. Read the SessionStart working-tree line as a collision signal. A stale lock proves the PID is dead, not that the folder is unattended. Resolve by MERGING, never discarding. `feedback-parallel-session-pr-collision`
-- **ONE approval can reach SEVERAL sessions — N sessions holding the same "yes" is N executions.** Before executing a protected action on a terse approval, check how many sessions are live, say so, and re-verify the target immediately before acting. `mergedBy` naming the owner is NOT evidence of a human click. `one-approval-can-reach-more-than-one-session`
+- **A parallel session can collide with NO git trace at all** — `gh pr list`, `git log` and `git worktree list` were all clean while another session edited the same file. Read the SessionStart working-tree line as a collision signal. A stale lock proves the PID is dead, not that the folder is unattended. Resolve by MERGING, never discarding.
+- **ONE approval can reach SEVERAL sessions — N sessions holding the same "yes" is N executions.** Before executing a protected action on a terse approval, check how many sessions are live, say so, and re-verify the target immediately before acting. `mergedBy` naming the owner is NOT evidence of a human click.
 
 **Worktrees** (see also §5)
 
-- **Another SESSION can remove a worktree under you.** `another-session-can-remove-a-worktree-under-you`
-- **A gitignored `_wt-*/` scratch folder makes a worktree look clean.** `gitignored-wt-scratch-makes-a-worktree-look-clean`
-- **The pre-push gate is GONE — a bare worktree pushes fine.** What it cannot do is RUN a suite; junction `node_modules`, invoke `node` directly, never `pnpm`. `bare-worktree-cannot-push-pre-push-gate-needs-node-modules`
-- **"Permission denied" on `git worktree remove` still DEREGISTERS the worktree.** `worktree-remove-permission-denied-still-deregisters`
-- **`--fix` / `--strip-idle` need exactly ONE live session**, and **`--fix` can NEVER clear a `_wt-*` husk** — use `rmdir /s /q` from PowerShell, not Bash. `repo-doctor-strip-idle-cannot-run-with-sessions-open` · `repo-doctor-fix-cannot-delete-a-wt-husk-pnpm-junctions-eperm`
+- **Another SESSION can remove a worktree under you.**
+- **A gitignored `_wt-*/` scratch folder makes a worktree look clean.**
+- **The pre-push gate is GONE — a bare worktree pushes fine.** What it cannot do is RUN a suite; junction `node_modules`, invoke `node` directly, never `pnpm`.
+- **"Permission denied" on `git worktree remove` still DEREGISTERS the worktree.**
+- **`--fix` / `--strip-idle` need exactly ONE live session**, and **`--fix` can NEVER clear a `_wt-*` husk** — use `rmdir /s /q` from PowerShell, not Bash.
 - **repo-doctor's RETIRABLE verdict names the branch a folder HAD at scan time.** Treat any scan older than the current command as fiction — re-read at the moment of removal.
 - **Every retirement gate can PASS on a worktree in active use** — nothing catches a live PROCESS. Two signals see what the gates cannot: the newest mtime under `.next/`, and HEAD moving between the gate read and the removal. Read the tip at the GATE and reuse that SHA.
-- **A squash-merged branch reads as "on NO origin ref" — that means BACKED UP, not stranded.** Never push a merged branch to "rescue" it; `git branch rescue/<name> <tip>` is the zero-risk move. `repo-doctor-no-origin-ref-is-usually-squash-residue`
-- **Self-removing a worktree MUTES its own session-end guard.** `self-removing-a-worktree-mutes-its-own-session-end-guard`
-- **`next dev` in a worktree needs the explicit `--webpack` flag** — TURBOPACK rejects the §5 junction, not Next; `pnpm run dev` now chooses for you (`scripts/dev-server.mjs`). **The watchdog's 6 GB kills are NOT a bundler trait** — SEVEN webpack servers died at the same ceiling right after that launcher merged. It is a watchdog-THRESHOLD problem (this server legitimately reaches ~6 GB), made acute by running two servers at once; `--max-old-space-size` is a measured no-op because the growth is off-heap. `turbopack-cannot-resolve-a-junctioned-node-modules-here`
+- **A squash-merged branch reads as "on NO origin ref" — that means BACKED UP, not stranded.** Never push a merged branch to "rescue" it; `git branch rescue/<name> <tip>` is the zero-risk move.
+- **Self-removing a worktree MUTES its own session-end guard.**
+- **`next dev` in a worktree needs the explicit `--webpack` flag** — TURBOPACK rejects the §5 junction, not Next; `pnpm run dev` now chooses for you (`scripts/dev-server.mjs`). **The watchdog's 6 GB kills are NOT a bundler trait** — SEVEN webpack servers died at the same ceiling right after that launcher merged. It is a watchdog-THRESHOLD problem (this server legitimately reaches ~6 GB), made acute by running two servers at once; `--max-old-space-size` is a measured no-op because the growth is off-heap.
 
 **Next.js runtime**
 
-- **A >2MB `unstable_cache` entry KILLS the dev server** — throws only in dev, uncatchable, muted in prod. `next-2mb-data-cache-throws-only-in-dev-and-kills-the-server`
-- **`unstable_cache` SERIALIZES, so a returned `Map` comes back `{}`** — the page works on exactly ONE render, then throws for the whole revalidate window, rendered as the admin error boundary (which reads as a permission redirect). Cache the ROWS. `unstable-cache-serializes-a-map-into-an-empty-object`
-- **Standalone tracing copies FILES, not pnpm SYMLINKS**, and **a top-level `import sharp` 500s a whole PAGE** when the `.so` is missing. `next-tracing-copies-files-not-pnpm-symlinks` · `next-standalone-trace-misses-a-native-librarys-so-dependency`
+- **A >2MB `unstable_cache` entry KILLS the dev server** — throws only in dev, uncatchable, muted in prod.
+- **`unstable_cache` SERIALIZES, so a returned `Map` comes back `{}`** — the page works on exactly ONE render, then throws for the whole revalidate window, rendered as the admin error boundary (which reads as a permission redirect). Cache the ROWS.
+- **Standalone tracing copies FILES, not pnpm SYMLINKS**, and **a top-level `import sharp` 500s a whole PAGE** when the `.so` is missing.
 
 **Browser and dev-auth**
 
-- **A MINIMIZED window makes every browser reading LIE — check `document.visibilityState` FIRST.** rAF stops entirely, so **dnd-kit cannot run at all** while plain `.click()` still works. `javascript_tool` does not await a returned promise, and the isolated world cannot see React fibers. `a-minimized-window-makes-every-browser-test-lie`
-- **Click by TEXT — blind coordinate clicks once fired a real production collection run.** `blind-coordinate-clicks-fired-a-production-collection-run`
-- **Dev login is `GET /api/dev-auth?role=<Role>`, and it DOES role-switch the Browser pane** via an httpOnly cookie. **It DOES take `hrId`** — `?role=National%20Sales%20Manager&hrId=a-12&next=<path>` signs you in as THAT person, which is the only way to verify anything scoped to one manager's own team. **Header-only is the SEPARATE `x-phoenix-*` path**, which the pane cannot set — that is what role SWEEPS use. `dev-auth-is-header-only-browser-pane-cannot-use-it`
-- **Turbopack 500s with `0xc0000142` when the commit charge is exhausted** — close a session, do not debug the code. `turbopack-500s-with-0xc0000142-when-commit-is-full`
-- **Verify a 375px mobile layout with NO dev server.** `verify-a-mobile-layout-without-a-dev-server`
+- **A MINIMIZED window makes every browser reading LIE — check `document.visibilityState` FIRST.** rAF stops entirely, so **dnd-kit cannot run at all** while plain `.click()` still works. `javascript_tool` does not await a returned promise, and the isolated world cannot see React fibers.
+- **Click by TEXT — blind coordinate clicks once fired a real production collection run.**
+- **Dev login is `GET /api/dev-auth?role=<Role>`, and it DOES role-switch the Browser pane** via an httpOnly cookie. **It DOES take `hrId`** — `?role=National%20Sales%20Manager&hrId=a-12&next=<path>` signs you in as THAT person, which is the only way to verify anything scoped to one manager's own team. **Header-only is the SEPARATE `x-phoenix-*` path**, which the pane cannot set — that is what role SWEEPS use.
+- **Turbopack 500s with `0xc0000142` when the commit charge is exhausted** — close a session, do not debug the code.
+- **Verify a 375px mobile layout with NO dev server.**
 
 **Machine ceiling**
 
-- **The ceiling is the Windows COMMIT limit, not RAM — and a freeze leaves NO dump.** The limit FLOATS (47.79 GB floor, ~79.79 GB as the pagefile grows): **read it live, never quote it.** An empty `C:\Windows\Minidump` is the EXPECTED signature; the tell is `dwm.exe` dying `0xC00001AD`. **Never judge a process by `VirtualSize`.** `commit-limit-not-ram-is-the-freeze-ceiling-pagefile-now-16gb`
+- **A freeze leaves NO dump** — an empty the Windows Minidump folder is the EXPECTED signature, and the tell is `dwm.exe` dying `0xC00001AD`. The ceiling is COMMIT, not RAM; §5 carries the mechanics and the live-read rule. **Never judge a process by `VirtualSize`.**
 - **Two decoys sit on that diagnosis:** `nvlddmkm` is what dies when the compositor is starved, not the cause; but the `node.exe` figures in **Event 2004 ARE real**. The largest leak found so far is a throwaway ExcelJS probe (22 → 41 GB in 40s, off-heap). Delete such probes when done.
-- **An interrupted session leaves the tree BROKEN ON PURPOSE.** Before acting on a bare "commit it", `git grep BREAK-`. `an-interrupted-session-leaves-the-tree-deliberately-broken`
+- **An interrupted session leaves the tree BROKEN ON PURPOSE.** Before acting on a bare "commit it", `git grep BREAK-`.
 ### 2.2 The memory index
 
 **Each line is a cue.** Why each rule exists, every trim pass with its byte counts, what earns a line,
@@ -230,9 +233,11 @@ and the arithmetic behind the budget are in
 - 🔒 **THE DISPLACEMENT RULE — never add an index line without freeing at least as many bytes in the same edit.** The file is append-only in practice, so any "trim it when it gets big" plan loses to the append rate by construction.
 - 🔒 **IGNORE the "compact it to under 17.1KB" message.** It fires on EVERY edit to `MEMORY.md`, looks authoritative, and asks for something arithmetically impossible — measured unreachable twice, because the dominant cost is filenames plus `[]()` link syntax, which shrinks ONLY by deleting a memory. Landing under the cliff with real headroom is a SUCCESS.
 - **Route by KIND of fact, never by topic** — an agent-operating trap to §2.1, a production or approval hook to §2.3, an owner product rule to §4. **Reach is identical; only scannability differs.**
-- **Never delete a hook to make room, and correct the FILE before the hook.** The frontmatter `description` decides whether a memory is recalled at all. A stale hook costs more than a missing one — it gets defended rather than looked up. The floor is structural. `memory-index-floor-is-13kb-dont-gut-it-chasing-17`
-- **What earns a line — all three:** a session would act WRONGLY without it, it is durable (never a count, a status or a date), and it is not derivable in one step. **Sweep by CLAIM, never by filename or topic.** `staleness-sweeps-scoped-by-topic-miss-the-dangerous-ones`
-- **A relocation spanning git and `~/.claude/` must finish BOTH halves or neither, in that order** — the destination must be **merged** before the index line is trimmed. `scripts/memory-index-reachability.mjs` matches a **backticked slug in `AGENTS.md`**, so a hook written on an unmerged branch correctly still reads as an orphan. **Before cutting any section out of this file, check which slugs appear ONLY there.**
+- **Never delete a hook to make room, and correct the FILE before the hook.** The frontmatter `description` decides whether a memory is recalled at all. A stale hook costs more than a missing one — it gets defended rather than looked up. The floor is structural.
+- **What earns a line — all three:** a session would act WRONGLY without it, it is durable (never a count, a status or a date), and it is not derivable in one step. **Sweep by CLAIM, never by filename or topic.**
+- **A relocation spanning git and `~/.claude/` must finish BOTH halves or neither, in that order** — the destination must be **merged** before the index line is trimmed. `scripts/memory-index-reachability.mjs` matches a **backticked slug in `AGENTS.md`**, so a hook written on an unmerged branch correctly still reads as an orphan. **Before cutting any section out of this file, check which slugs appear ONLY there** — and note that
+since 2026-09-01 most slugs sit in [docs/agents-memory-map.md](docs/agents-memory-map.md) instead, with
+only the 17 load-bearing ones inline.
 - **No required check can gate any of this.** `MEMORY.md` lives outside the repository, so CI never sees it — the displacement rule is behavioural.
 
 ### 2.3 Production and approval hooks
@@ -243,29 +248,29 @@ incidents, and the diagnosis traps that nearly sent each the wrong way — is in
 
 **Railway deploys**
 
-- **A deploy applies NO migrations**, and **auto-deploy can silently SKIP a race.** A merge that never shipped looks identical to one that did until you read `/api/healthz`. `railway-deploy-applies-no-migrations` · `railway-auto-deploy-can-silently-skip-a-race`
-- **`railway variables --stdin` stores a BOM**, which then travels inside the value. `railway-stdin-bom-trap`
-- **`railway ssh` JOINS argv and lands as ROOT.** `railway-ssh-joins-argv-and-lands-as-root`
-- 🔴 **`railway service source connect` is NOT environment-scoped — `--environment staging` REPOINTED PRODUCTION.** The git source is a **service-level** setting shared by every environment. So **a branch cannot be staged on Railway without shipping it** — never reach for this command to preview anything, and §7's staging smoke-test needs a **separate Railway service**. The damage is that production silently **rolls back** whatever was merged since, and `healthz` reporting `status: ok` hides it completely — **read the `revision`.** Also `railway status --environment X --json` returns the WHOLE project, so select by `.environments.edges[] | select(.node.name=="production")` and print the name you matched. `railway-service-source-connect-is-not-environment-scoped`
+- **A deploy applies NO migrations**, and **auto-deploy can silently SKIP a race.** A merge that never shipped looks identical to one that did until you read `/api/healthz`.
+- **`railway variables --stdin` stores a BOM**, which then travels inside the value.
+- **`railway ssh` JOINS argv and lands as ROOT.**
+- 🔴 **`railway service source connect` is NOT environment-scoped — `--environment staging` REPOINTED PRODUCTION.** The git source is **service-level**, shared by every environment, so **a branch cannot be staged on Railway without shipping it** — never use it to preview, and §7's staging smoke-test needs a **separate service**. Production silently ROLLS BACK whatever was merged since, and `healthz` reporting `status: ok` hides it — **read the `revision`.** `railway status --environment X --json` returns the WHOLE project; select by `.environments.edges[] | select(.node.name=="production")`.
 
 **Cron and secrets**
 
-- **A PARTIAL `CRON_SECRET` rotation leaves TWO fingerprints**, and Healthchecks reading `up` is **not** proof of authentication — the grace window hides a 401. The 2026-08-23 401s are RESOLVED: **rotate NOTHING.** Always print `len` (the fingerprint is `Bearer …`, 71). `a-partial-cron-secret-rotation-leaves-two-fingerprints`
-- **`CRON_SECRET` lives in TWO stores and the arrow points GitHub → Railway.** `sync-railway-production-secrets.yml` rewrites ~48 Railway production variables unconditionally, so **rotating in Railway alone does not stick** — the next push reverts it and every cron-job.org job 401s at once. Rotate GitHub first. Also **a nightly-failing cron alerts NOBODY**. The 4 OFF iReports360 jobs are DELIBERATE. `github-actions-cron-secret-went-stale-after-a-railway-rotation` · `a-cron-that-fails-nightly-can-do-so-forever-unwatched`
-- **The cron-job.org REST API allows 100 requests per DAY** — 429 on EVERY endpoint with no `Retry-After`, and a bulk edit costs ~34 and CANNOT be rolled back. `cron-job-org-rest-api-is-100-requests-per-day`
+- **A PARTIAL `CRON_SECRET` rotation leaves TWO fingerprints**, and Healthchecks reading `up` is **not** proof of authentication — the grace window hides a 401. The 2026-08-23 401s are RESOLVED: **rotate NOTHING.** Always print `len` (the fingerprint is `Bearer …`, 71).
+- **`CRON_SECRET` lives in TWO stores and the arrow points GitHub → Railway.** `sync-railway-production-secrets.yml` rewrites ~48 Railway production variables unconditionally, so **rotating in Railway alone does not stick** — the next push reverts it and every cron-job.org job 401s at once. **Rotate GitHub first.** A nightly-failing cron alerts NOBODY; the 4 OFF iReports360 jobs are DELIBERATE.
+- **The cron-job.org REST API allows 100 requests per DAY** — 429 on EVERY endpoint with no `Retry-After`, and a bulk edit costs ~34 and CANNOT be rolled back.
 
 **Production data**
 
-- **NEVER rotate the Supabase DB password with `ALTER ROLE`** — Supavisor holds its own copy; use the dashboard only. `28P01` vs `XX000` tells a stale password from a wrong host. `never-rotate-the-supabase-db-password-with-alter-role`
-- **`expense_claims` is the ONE live RLS read path in production.** Put a precondition in every production `WHERE` when another session shares the queue, and remember **"Log out everywhere" is THREE writes.** `expense-claims-rls-read-path-is-live-in-prod` · `guard-every-prod-write-when-another-session-shares-the-queue` · `force-logout-everywhere-needs-three-writes`
-- 🔴 **Production has NO PITR — 7 daily physical backups are the whole recovery story.** **Healthy WAL archiving is not PITR.** Recovery granularity is one day and the restore unit is the whole database — say that plainly before any bulk or destructive production change, and **never restore a daily backup in place**, which rolls back everything since roughly 07:30 Cairo that day. `production-supabase-has-no-pitr-only-daily-backups`
-- 🔴 **Payroll NEVER reads `social_insurance_status` — the `social_insurance_wage` column ALONE decides the statutory filing, and NEITHER statutory figure reduces take-home pay.** The status is display-only, so register and filing disagree **both ways, silently**. **Audit by querying both columns, never by status.** Social insurance and income tax are reported as `governmentalDeductions` while being **absent from the deductions that feed payable** — the company absorbs both, so setting a wage costs the employee NOTHING. Never warn the owner a wage will cost someone money. `payroll-reads-the-insurance-wage-never-the-status` · `social-insurance-and-tax-never-reduce-take-home-pay`
+- **NEVER rotate the Supabase DB password with `ALTER ROLE`** — Supavisor holds its own copy; use the dashboard only. `28P01` vs `XX000` tells a stale password from a wrong host.
+- **`expense_claims` is the ONE live RLS read path in production.** Put a precondition in every production `WHERE` when another session shares the queue, and remember **"Log out everywhere" is THREE writes.**
+- 🔴 **Production has NO PITR — 7 daily physical backups are the whole recovery story**, and healthy WAL archiving is not PITR. Granularity is one day and the restore unit is the whole database: say so plainly before any bulk or destructive production change, and **never restore a daily backup in place** — it rolls back everything since roughly 07:30 Cairo that day.
+- 🔴 **Payroll NEVER reads `social_insurance_status` — the `social_insurance_wage` column ALONE decides the statutory filing, and NEITHER statutory figure reduces take-home pay.** The status is display-only, so register and filing disagree **both ways, silently** — **audit by querying both columns, never by status.** Both are reported as `governmentalDeductions` yet are **absent from the deductions that feed payable**: the company absorbs them, so setting a wage costs the employee NOTHING. Never warn the owner a wage will cost someone money. `payroll-reads-the-insurance-wage-never-the-status` · `social-insurance-and-tax-never-reduce-take-home-pay`
 
 **Which environment the code thinks it is in**
 
-- **A LOCAL run writes PRODUCTION but silently skips every email**, and **the local Resend key CANNOT send.** Send from production with `railway run`. `local-run-against-prod-db-silently-skips-every-email` · `local-resend-key-is-restricted-use-railway-run-to-send-from-production`
-- **STAGING cannot rehearse a PRODUCTION shape.** `staging-cannot-rehearse-shapes-only-prod-surgery-made`
-- **`APP_ENV` was UNSET on Railway `staging`, so staging identified itself as PRODUCTION** — `isProductionRuntime()` and `currentEnvironmentLabel()` both read `APP_ENV || VERCEL_ENV || NODE_ENV`, and a Next.js production build sets `NODE_ENV=production` on staging too. **Fixed 2026-08-27.** `app-env-unset-on-staging-made-it-look-like-production`
+- **A LOCAL run writes PRODUCTION but silently skips every email**, and **the local Resend key CANNOT send.** Send from production with `railway run`.
+- **STAGING cannot rehearse a PRODUCTION shape.**
+- **`APP_ENV` was UNSET on Railway `staging`, so staging identified itself as PRODUCTION** — `isProductionRuntime()` and `currentEnvironmentLabel()` both read `APP_ENV || VERCEL_ENV || NODE_ENV`, and a Next.js production build sets `NODE_ENV=production` on staging too. **Fixed 2026-08-27.**
 - **The email fail-safe did NOT cover staging.** `isForceTestingDelivery()` returns `!isProductionRuntime()` when `PHOENIX_EMAIL_FORCE_TESTING` is unset — inverted exactly where it was needed. Staging is safe only because that variable is set explicitly: **one variable, nothing behind it.**
 - **FIXED 2026-08-27 (PR #2479) — the `APP_ENV`/cron-secret hole is closed, all 22 of 22.** **Treat `!isProductionRuntime()` as an auth fallback with suspicion anyway:** it reads as "only in dev" and means "anywhere not labelled production".
 - **The `railway` CLI is linked to `production` here**, so every variable command needs an explicit `-e staging`. Omitting it writes to PRODUCTION — and for `APP_ENV=staging` that would redirect **real employee email** into test inboxes. Setting a variable **does** trigger a redeploy (unless `--skip-deploys`), and the change is inert until that deploy reaches `SUCCESS`.
@@ -280,7 +285,7 @@ are in [docs/agents-incident-history.md](docs/agents-incident-history.md).
 - **Do not assume "merge to `main` ships to production" — confirm the Railway `production` service source branch first.** It tracks `main` directly (repointed 2026-08-13), but it has silently drifted before and stranded five merged, green PRs for hours with no signal. `railway status --environment production --json` returns the WHOLE project, so select by `.environments.edges[] | select(.node.name=="production")`, print the name you matched, then read `.node.serviceInstances.edges[].node.latestDeployment.meta.branch`. See §2.3.
 - **GCP is DEAD, not standby.** Billing closed 2026-08-01; every API in project `phoenix-workforce-498619` returns `BILLING_DISABLED`. Do not "verify production" against Cloud Run.
 - **The production scheduler is the third-party `cron-job.org`, and it is running, not stalled.** The 8 GCP Cloud Scheduler jobs still fire but **401 on every route** — a red herring. **Never tell the owner notifications/iReports are stalled without checking `cron-job.org` first.** **It cuts every request at 30 s, a PLATFORM cap `requestTimeout` cannot raise — but the server DOES finish the work afterwards**, so a long route logs a false `Failed (timeout)` while succeeding. ⚠ **A MID-SWEEP SNAPSHOT READS EXACTLY LIKE A TRUNCATED ONE** — read the terminal artefact (the audit row, the response body of `GET /jobs/{id}/history/{identifier}`, the final log line), never row timestamps mid-run. `src/lib/cron-control/*` is a dashboard over the dead GCP scheduler and remains inert.
-- **The OUTBOX DRAIN is the one that needs care — it ran perfectly and did nothing for 13 days.** **A green cron and a 200 prove nothing here**, and **`attempted: 0` cannot by itself tell idle from broken — read `drainHealth` in the response body.** The head-of-line block is **FIXED 2026-08-27** on all three drains, with a dead-man's-switch alarm behind it. **That alert is deliberately never email, and do not "fix" that back** — it fires precisely when the notification pipeline is the thing not delivering. To check the drain, run its own window query — `status in ('pending','failed')` AND `(next_attempt_at is null or next_attempt_at <= now())` ordered by `created_at` **limit 50** — and count how many of those 50 are already exhausted. `outbox-drain-is-blocked-by-50-exhausted-rows-head-of-line`
+- **The OUTBOX DRAIN is the one that needs care — it ran perfectly and did nothing for 13 days.** **A green cron and a 200 prove nothing here**, and **`attempted: 0` cannot by itself tell idle from broken — read `drainHealth` in the response body.** The head-of-line block is **FIXED 2026-08-27** on all three drains, with a dead-man's-switch alarm behind it. **That alert is deliberately never email, and do not "fix" that back** — it fires precisely when the notification pipeline is the thing not delivering. To check the drain, run its own window query — `status in ('pending','failed')` AND `(next_attempt_at is null or next_attempt_at <= now())` ordered by `created_at` **limit 50** — and count how many of those 50 are already exhausted.
 - **There IS a live Railway `staging` environment**, same project, service `phoenix-people-workforce`, at `https://phoenix-people-workforce-staging.up.railway.app`. Its service source tracks git branch `main` (not the branch named `staging`), and its `NEXT_PUBLIC_SUPABASE_URL` points at the staging Supabase project — safe as a real verification target.
 - Vercel: fully legacy/decommissioned — never deploy to or verify against it.
 - **Supabase project refs — the complete list `list_projects` returns.** Two of these four belong to this app; the other two do not, and are listed so an unfamiliar ref is identifiable instead of alarming.
@@ -327,12 +332,12 @@ numbers, production measurements, the owner's own words at length — is in
 - **Ask when the answer changes the outcome; decide when it does not.** Scope, business rules and data-correctness questions are always worth asking; permission to do obvious low-risk work is not.
 - **Ask business-fact questions as an XLSX with dropdowns, not in prose** (his rule, 2026-08-03). Whenever the doubt is "which of these does each of these belong to" — bricks to areas, people to seats, products to lines — build one row per item with a locked data-validation list, include the context that makes the call easy and a free-text Note column, send the file, and read the answers back. Applies **everywhere in the repo**. Never guess an item to avoid asking, and never hand back a list for him to answer in chat.
 - Take ownership. Automate the work rather than returning a checklist he has to execute.
-- **"continue verifying" means RESUME the paused Source of Sales audit — never restart it.** The 20 finder agents already ran; **he stopped the run specifically to save usage**. Read `sos-audit-2026-08-09/CHECKPOINT.md` first, then resume. Never `resumeFromRunId`. Never overwrite the inputs. `continue-verifying-resumes-sos-audit` · `sos-deep-audit-paused-checkpoint`
+- **"continue verifying" means RESUME the paused Source of Sales audit — never restart it.** The 20 finder agents already ran; **he stopped the run specifically to save usage**. Read `sos-audit-2026-08-09/CHECKPOINT.md` first, then resume. Never `resumeFromRunId`. Never overwrite the inputs.
 
 **How to build**
 
 - **Before building any new UI, inspect the sibling pages in that module and match their exact design identity.** Never invent a one-off look.
-- 🔒 **THE FITS-THE-SCREEN GOLDEN RULE — never a horizontal scroll, always mobile AND desktop friendly.** Owner 2026-09-01, said twice in one breath as a golden word. Content must **fit**, not sit behind a sideways drag nobody performs — he asked for an Address column that was **already there**, off-screen behind 1120px of `min-width`. So **`overflow-x-auto` over a `min-width` floor IS the bug, not the fix**, and a board bound by this rule must NOT use `PortalDesktopTable` (it hard-codes that scroll and a 980px floor); render `<table className="w-full table-fixed">` with a `<colgroup>`, as `src/components/crm/reps-list-tables.tsx` does. **Fit by MERGING columns, not by shrinking type.** **WRAPPING is the permitted answer** (`break-words`, `align-top`) — the ellipsis ban is untouched. **Measure, never guess:** `table-fixed` percentages clip silently, so check `scrollWidth > clientWidth` over `main` at desktop **and** 375px. **A native `<select>` is the one control this cannot fix** and you may NOT shrink it — `app/globals.css` floors form controls at `max(16px, 1em)` below 768px because iOS Safari zooms in and stays zoomed, so a smaller class is inert; print the value outside the control instead. The admin sidebar's own scroll is by design. `never-horizontal-scroll-always-mobile-and-desktop-friendly`
+- 🔒 **THE FITS-THE-SCREEN GOLDEN RULE — never a horizontal scroll, always mobile AND desktop friendly.** `overflow-x-auto` over a `min-width` floor IS the bug, not the fix, so a board bound by this rule must NOT use `PortalDesktopTable`; render `<table className="w-full table-fixed">` with a `<colgroup>`. **Fit by MERGING columns, never by shrinking type; WRAPPING is the permitted answer** and the ellipsis ban is untouched. **Measure, never guess** — `scrollWidth > clientWidth` over `main` at desktop AND 375px. A native `<select>` is the one control this cannot fix and may NOT be shrunk. `never-horizontal-scroll-always-mobile-and-desktop-friendly`
 - Admin shell: **desktop shows full tables/dashboards, mobile never does** — mobile gets cards.
 - **One production deployment per task.** Bundle all phases into one PR; do not deploy per step.
 - Use the **`gh` CLI** for all GitHub operations, not the GitHub MCP tools.
@@ -341,42 +346,42 @@ numbers, production measurements, the owner's own words at length — is in
 **Product rules that must not be "fixed" back**
 
 - No payslip on any overview/landing page for any role — not the amount, not even the month label.
-- 🔒 **A PHARMACY IS NOT A CONTACT — a CRM contact count is `PM` + `AM` only.** Owner 2026-09-01: *"you will not count the pharmacies as contacts. So everyone should have contacts and pharmacies. The contacts is divided into AM and PM, and the pharmacies are separate."* Adding all three `list_type`s inflates the figure the 90–120 rule judges — on the rep this was caught with, "157 contacts" was really **114 contacts and 43 pharmacies**. So: never `rows.length` beside the word "contacts" (route every printed size through one splitting helper); PM + AM total 100% and pharmacies stay out of the denominator; give the pharmacy count its own tile; and **never name a row bag `contacts` when it holds pharmacies** — `RepsListGroup.contacts` was renamed `.rows` precisely because the next session reads the field name and reprints the bug. Say **"Pharmacist"** for a row label, **"Pharmacies"** for a count. `a-pharmacy-is-not-a-contact`
+- 🔒 **A PHARMACY IS NOT A CONTACT — a CRM contact count is `PM` + `AM` only.** Pharmacies are separate: they stay OUT of the denominator the 90–120 rule judges and get their own tile. Never put `rows.length` beside the word "contacts" — route every printed size through one splitting helper — and **never name a row bag `contacts` when it holds pharmacies**, because the next session reads the field name and reprints the bug. Row label **"Pharmacist"**, count **"Pharmacies"**. `a-pharmacy-is-not-a-contact`
 - Marketing Manager is hidden from the portal Incentive tab; GPM still sees it.
 - The Organogram / AU seat model is the source of truth for org-structure and vacancy data.
 - All SoS sales, historical and future, attribute to **today's** geography — never as-was.
-- 🔒 **A CRM account label is `[Name ]( Area / Line )`, and `E`/`F` are RETIRED line codes.** Between the brackets is the **area**; the letter after the final `/` or `-` is the **line**. **`E` became `A`; `F` became `P`** — `A`, `C`, `P` are the live codes, so an account still ending `/ E` or `/ F` is an old-naming placeholder and **never an open question**. **The CRM admin never deletes an account** — on a resignation he deactivates it, strips the name, keeps the area, then **clones** a new one, so the leaver's identity is **unrecoverable from the CRM**. **Cloning is safe; RENAMING is what corrupts numbers** — a relabelled hand-over rewrote 1,136 of a leaver's calls under the joiner's name.
-- **Delta (3) territory move — LIVE, dated 2026-09-01, applied as a migration 2026-08-29.** The five areas (`D11`, `D24`, `D25`, `OT2`, `OT9`) sit on a dated PAIR. **Nothing is owed on 1 September**: the date does the work, so do not re-apply, re-date, or "finish" anything. The resolver gap is **CLOSED in both directions** (#2608, #2613). Keep the rollback pre-image `delta3_defer_backup_20260829.line_area_map_pre`. The recruitment side is **CLOSED** (#2665) and `recruitmentAreaRegionOverrides` is **PERMANENT**, not a shim. **The SALES geography is DELIBERATELY LEFT ALONE — owner chose this 2026-08-29 (Option A):** canonical/SoS/rollup region codes still file the five under D1/D2/OT and **STAY there**, because the move is carried entirely by the dated `line_area_map`. **Do NOT repoint `code_region_code`** — that would diverge it from the region the sales rows carry and can silently hide a district manager's own sales.
+- 🔒 **A CRM account label is `[Name ]( Area / Line )`, and `E`/`F` are RETIRED line codes.** The area sits between the brackets, the line is the letter after the final `/` or `-`. **`E` became `A`; `F` became `P`** — live codes are `A`, `C`, `P`, so a trailing `/ E` or `/ F` is old naming and **never an open question**. **The CRM admin never deletes an account**: he deactivates, strips the name, keeps the area, then CLONES — so a leaver's identity is unrecoverable from the CRM. **Cloning is safe; RENAMING is what corrupts numbers.**
+- **Delta (3) territory move — LIVE, dated 2026-09-01, applied as a migration 2026-08-29.** The five areas (`D11`, `D24`, `D25`, `OT2`, `OT9`) sit on a dated PAIR, so **nothing is owed on 1 September** — do not re-apply, re-date or "finish" it. Resolver gap CLOSED both directions (#2608, #2613); recruitment CLOSED (#2665) and `recruitmentAreaRegionOverrides` is PERMANENT. Keep the pre-image `delta3_defer_backup_20260829.line_area_map_pre`. **The SALES geography is DELIBERATELY LEFT ALONE (owner, Option A) — do NOT repoint `code_region_code`**, which can silently hide a district manager's own sales.
 - 🔒 **THE AUGUST / DELTA (3) GOLDEN RULE — the August closing NEVER contains Delta (3), whenever it is published.** Owner 2026-08-29, "golden rule, no negotiation", twice in one breath. **Already enforced — do not rebuild it**, at four levels including `runClosingPeriodDatingTests`, which is registered in `tests/run-tests.ts` and runs in the required CI `validate` job. **Never resolve closing geography at the run date**, and never offer to publish August "now that the move is live" — the date is the mechanism.
 - 🔒 **Delta (3) is ANTI-INFECTIVE ONLY.** On CNS and Pedia the five areas do not move at all, in BOTH months. A sweep that finds them "half-migrated" across lines is reading the **CORRECT** state.
-- 🔒 **THE CLOSING GOLDEN RULE — a closing is never done or sent during the month it covers.** *"Closing after the month closes."* Publishable on the **first day of the following month, Africa/Cairo**. Preparing a running month is fine; **releasing** it is what is forbidden, because publishing notifies every sales and product manager and a sent mail cannot be recalled. Enforced by `src/lib/sales/closing-period-gate.ts` + `tests/closing-period-gate.test.ts` in the required `validate` check. **`unpublishClosing` is deliberately NOT gated** — it is the recovery path. Do not add an override flag, and do not offer to publish a running month "just to see".
+- 🔒 **THE CLOSING GOLDEN RULE — a closing is never done or sent during the month it covers.** Publishable on the **first day of the following month, Africa/Cairo**. Preparing a running month is fine; **releasing** it is what is forbidden, because publishing notifies every sales and product manager and a sent mail cannot be recalled. Enforced by `src/lib/sales/closing-period-gate.ts` + `tests/closing-period-gate.test.ts` in the required `validate` check. **`unpublishClosing` is deliberately NOT gated** — it is the recovery path. Do not add an override flag.
 - 🔒 **THE OLD MONTHLY CLOSING EXPORT IS FROZEN — every new closing feature ships BESIDE it.** Owner 2026-08-31: *"The old monthly closing sheet don't mess it. Anything we will do will be aside it."* Route, workbook, sheet set, layout and the black **Export XLSX** button — no restyle, no refactor. It is the auditor's file. New capability goes in the **premium** export. The one shared thing is `runExport`, pinned by `tests/sos-ui-truth.test.ts`. `the-old-monthly-closing-export-is-never-touched`
 - 🔒 **The premium closing workbook FILLS the `.xlsm` engine — it never rebuilds one.** The engine is two Excel Tables plus `PickList`, driving 3 pivots **by table name**, 2 slicers and 120 INDEX/MATCH formulas. **Never round-trip the workbook through ExcelJS** — loading and re-saving silently destroys the pivots, slicers, tables and VBA. Rewrite the data parts inside the zip. Ship the template **EMPTY**: a filler that skips a sheet hands someone another line's real numbers under the right heading. `premium-closing-export-fills-the-xlsm-engine-never-rebuilds-it`
-- **Every weekly report and export MUST set `excludeUnmapped`** — an unmapped SKU double-counts against the real product. **An export must MATCH the screen**: never drop a sheet or column silently because it cannot be filtered — label it instead. The Weekly **Summarized Report's layout and scope are LOCKED**. `unmapped-products-must-never-reach-a-report` · `an-export-must-match-the-screen-never-different-data` · `weekly-summarized-report-owner-rules`
-- **The system FLAGS an expense; it NEVER auto-rejects one.** **Never auto-publish a deductions month** and never approve a batch on your own initiative — CRM-derived detections run ~80% accurate, so it is always recommend, he confirms, then publish. **A same-day check against the CRM reads zero** because visits are entered through and after the working day — never report that as a measured zero. `system-flags-expenses-never-rejects` · `never-auto-publish-deductions-owner-confirms-first` · `dv-evidence-window-same-day-submits`
-- **CRM visit types `-5` (Public Holiday) and `-6` (Casual Leave) are WORKING days, never absence.** `-4` is the only real leave type, and only **FWC** reaches salary. `public-holiday-and-casual-leave-are-working-days`
-- **The Ready-sheet >25th full-pay waiver is for genuine RESIGNATIONS only** — terminated and inactive leavers stay prorated with zero allowances. **A regional employee travelling TO Cairo earns no outstation per-diem** (live, #2160 — do not undo). **DSM and Medical Rep titles auto-provision their real role**, and the title-governance guard was DELIBERATELY relaxed for those two. `resignation-full-pay-rule-is-resignation-only` · `cairo-trip-no-per-diem-allowance-live-prod-2026-08-15` · `field-force-provisioning-live-and-guard-relaxed-2026-08-14`
-- **Social-insurance Form 1 prints exactly as the Authority issues it** — page 2 carries nothing Phoenix wrote, and the whole form is duplex. `government-form1-prints-exactly-as-issued`
-- **The organogram XLSX carries a Mobile column**, by his explicit override of the work-fields-only export rule on 2026-08-23. Fetched at export time: do not remove it. `organogram-export-carries-the-mobile-by-owner-override`
-- **The public Territory Management preview link must NEVER display or offer the line** — pinned to Pedia server-side. **The organogram CHART and the employee detail popup read two different sources**, so a per-person field on the chart means editing the seat report's select. **The one-press WhatsApp button STAYS on the CEO and NSM rows** — he was asked directly and said keep it. `territory-preview-link-must-never-show-the-line` · `organogram-chart-source-is-au-seat-model-not-directory` · `whatsapp-button-on-leadership-rows-is-an-owner-decision`
+- **Every weekly report and export MUST set `excludeUnmapped`** — an unmapped SKU double-counts against the real product. **An export must MATCH the screen**: never drop a sheet or column silently because it cannot be filtered — label it instead. The Weekly **Summarized Report's layout and scope are LOCKED**.
+- **The system FLAGS an expense; it NEVER auto-rejects one.** **Never auto-publish a deductions month** and never approve a batch on your own initiative — CRM-derived detections run ~80% accurate, so it is always recommend, he confirms, then publish. **A same-day check against the CRM reads zero** because visits are entered through and after the working day — never report that as a measured zero.
+- **CRM visit types `-5` (Public Holiday) and `-6` (Casual Leave) are WORKING days, never absence.** `-4` is the only real leave type, and only **FWC** reaches salary.
+- **The Ready-sheet >25th full-pay waiver is for genuine RESIGNATIONS only** — terminated and inactive leavers stay prorated with zero allowances. **A regional employee travelling TO Cairo earns no outstation per-diem** (live, #2160 — do not undo). **DSM and Medical Rep titles auto-provision their real role**, and the title-governance guard was DELIBERATELY relaxed for those two.
+- **Social-insurance Form 1 prints exactly as the Authority issues it** — page 2 carries nothing Phoenix wrote, and the whole form is duplex.
+- **The organogram XLSX carries a Mobile column**, by his explicit override of the work-fields-only export rule on 2026-08-23. Fetched at export time: do not remove it.
+- **The public Territory Management preview link must NEVER display or offer the line** — pinned to Pedia server-side. **The organogram CHART and the employee detail popup read two different sources**, so a per-person field on the chart means editing the seat report's select. **The one-press WhatsApp button STAYS on the CEO and NSM rows** — he was asked directly and said keep it.
 - 🔴 **The CEO is NOT a district, and a picker is never wider than its viewer.** An org walk that climbs to `AA` presents the whole board's scope as the CEO's own doctor panel, and a cached company-wide filter tree offered a Medical Rep the names of all ~73 reps. **The damage is an EMPTY board**, which reads as "you covered nothing" rather than as a bug. Pass the viewer's scope to the PICKER as well as the query. `the-ceo-is-not-a-district-and-a-picker-is-not-wider-than-its-viewer`
 - 🔴 **An NSM's outstation expense is NEVER held** — *"once submitted, once accepted."* **NSM only** — it does not extend to the three photo-waived roles. `nsm-outstation-expense-is-never-held`
 - 🔴 **The mailbox-monitor app-password entry is `___`, never "Phoenix".** The monitor UI must never print the word Phoenix anywhere in that instruction. `mailbox-monitor-app-password-entry-is-three-underscores-never-phoenix`
 - 🔒 **Turbify CANNOT issue app passwords centrally — the owner is STAYING, so do not re-pitch a migration.** There is no API and never was. Employee mailboxes are **unmonitorable at scale**, and it is SETTLED — costed at ~$420/month for 60 seats on 2026-08-28, answered *"NO LEAVE ME AS I AM NOW."* `turbify-cannot-issue-app-passwords-centrally-owner-stays`
-- 🔴 **A password reset does NOT revoke a Turbify mailbox — the app passwords survive it.** A reset locks a leaver out of the WEB mailbox and nothing else; every phone and Outlook client keeps sending and receiving company mail, and **the control panel shows nothing wrong**. **Both steps are required** — reset AND delete the app passwords, or delete/suspend the mailbox. Never tell the owner (or write in a UI) that a reset closes a leaver's mail access: it manufactures a false belief that the door is shut. Tracked in `public.mailbox_offboarding_tasks`, where a row is an **attestation**, never an observation. `a-password-reset-does-not-revoke-a-turbify-mailbox`
+- 🔴 **A password reset does NOT revoke a Turbify mailbox — the app passwords survive it.** It locks the WEB mailbox only; every phone and Outlook client keeps sending and receiving company mail, and the control panel shows nothing wrong. **Both steps are required** — reset AND delete the app passwords, or delete/suspend the mailbox. Never tell the owner (or write in a UI) that a reset closes a leaver's mail access. Tracked in `public.mailbox_offboarding_tasks`, where a row is an **attestation**, never an observation. `a-password-reset-does-not-revoke-a-turbify-mailbox`
 
 ### 4.1 Marketing customer, venue and licence validation
 
 Full account: **[docs/agents-owner-rules.md](docs/agents-owner-rules.md) §4.1**.
 
-- 🔒 **Venue validation is GPS + a live picture ALWAYS — and leg 3 (the registered code, else the licence) is a PHARMACY rule ONLY.** Owner 2026-08-26, amended 2026-08-29. A venue outside the pharmacy trade is judged by no route at all — `resolveVenueIdentityRoute` answers **`admin`**, never `none`. **Do not over-apply it:** a codeless PHARMACY is still refused, and the code route stays closed to a nursery. The licence is a **fallback identity route**, never evidence in its own right. Direct-order desk only (#2434), **not** marketing. **`nursery` is the venue type for ANY venue with no distributor account, and that is the OWNER'S OWN FILING** — a clinic filed as a nursery is **correct, not a data-quality defect**. `venue-validation-rule-gps-photo-then-code-or-licence`
-- 🔴 **Marketing pharmacies are TERRITORIAL, and a NULL `area_id` makes one invisible.** **Owner rule: the REGISTERED CODE beats live GPS.** `seeded-marketing-pharmacies-have-no-area-and-are-invisible`
-- 🔴 **A licence verdict is PERMANENT and has no correction path.** Write-once at approval — not even a Super Admin can correct a wrong one, and it is then displayed indefinitely. **Ask the owner before the first one is recorded.** `a-licence-verdict-is-permanent-and-has-no-correction-path`
-- 🔴 **`system_validated` means NO HUMAN LOOKED.** The screen is **Super Admin only** — not SFE. `marketing-system-validated-means-no-human-looked`
-- 🔴 **A venue's evidence was WRITE-ONCE, writable only at insert** — fixed in #2352. **AREA governs both sight and reuse; never backfill ownership.** `marketing-venue-evidence-was-writable-only-at-insert`
-- 🔴 **The badge read a FROZEN note, never the live evidence** (#2354). EITHER half reaching `complete` clears it. `marketing-badge-read-a-frozen-note-not-the-live-evidence`
-- 🔴 **A duplicate merge STRANDS the desk validation on the retired row.** Repair it with hand SQL, not code. `a-duplicate-merge-strands-the-desk-validation-on-the-retired-row`
-- 🔴 **The screen that SHOWS a badge is not the screen a rep can OPEN.** Check the gate before wiring any `actionUrl`. `the-screen-that-shows-a-badge-is-not-the-screen-a-rep-can-open`
+- 🔒 **Venue validation is GPS + a live picture ALWAYS — and leg 3 (the registered code, else the licence) is a PHARMACY rule ONLY.** Owner 2026-08-26, amended 2026-08-29. A venue outside the pharmacy trade is judged by no route at all — `resolveVenueIdentityRoute` answers **`admin`**, never `none`. **Do not over-apply it:** a codeless PHARMACY is still refused, and the code route stays closed to a nursery. The licence is a **fallback identity route**, never evidence in its own right. Direct-order desk only (#2434), **not** marketing. **`nursery` is the venue type for ANY venue with no distributor account, and that is the OWNER'S OWN FILING** — a clinic filed as a nursery is **correct, not a data-quality defect**.
+- 🔴 **Marketing pharmacies are TERRITORIAL, and a NULL `area_id` makes one invisible.** **Owner rule: the REGISTERED CODE beats live GPS.**
+- 🔴 **A licence verdict is PERMANENT and has no correction path.** Write-once at approval — not even a Super Admin can correct a wrong one, and it is then displayed indefinitely. **Ask the owner before the first one is recorded.**
+- 🔴 **`system_validated` means NO HUMAN LOOKED.** The screen is **Super Admin only** — not SFE.
+- 🔴 **A venue's evidence was WRITE-ONCE, writable only at insert** — fixed in #2352. **AREA governs both sight and reuse; never backfill ownership.**
+- 🔴 **The badge read a FROZEN note, never the live evidence** (#2354). EITHER half reaching `complete` clears it.
+- 🔴 **A duplicate merge STRANDS the desk validation on the retired row.** Repair it with hand SQL, not code.
+- 🔴 **The screen that SHOWS a badge is not the screen a rep can OPEN.** Check the gate before wiring any `actionUrl`.
 
 ## 5. Session, worktree, and parallel-work safety
 
@@ -395,31 +400,28 @@ are in [docs/agents-worktree-and-machine-limits.md](docs/agents-worktree-and-mac
 - **Remove worktrees with `node scripts/new-session.mjs --remove <task>`**, only after approval. It runs three gates in cost order — untracked `.xlsx`/`.pdf` rescue scan, uncommitted work, then commits on no remote branch **and** with no merged PR — drops the junction with `cmd /c rmdir`, and re-reads the folder's branch live rather than trusting an earlier scan. **A squash-merged branch legitimately holds commits `main` does not**, so the last gate asks `gh pr list --head <branch> --state merged`, never reachability.
 - **`git worktree remove` leaves a HUSK, and nothing built into git can see it.** It leaves the gitignored payload — `node_modules/`, `.next/` — with no `.git` file and no registry entry, so `git worktree prune` cannot find it. **Run `pnpm run repo:doctor`** after any removal: it reports by default, `--fix` deletes only husks proven to hold zero files, and it refuses to act while more than one session is live.
 - **A memory file with no index line is invisible, not merely hard to find.** `pnpm run repo:doctor` reports them (and pointers whose file is gone) in a MEMORY INDEX section; `--deep` lists every one. It is read-only.
-- **Worktree payload — not git, not tsc — is what makes this checkout feel slow.** Roughly 99% of the path count is worktrees. Tools honouring `.gitignore` never see it, which is why validation looks healthy while the session crawls. **Do not tune `tsconfig`/`eslint` for this — those excludes are already correct.** Retire merged worktrees and clear husks instead. Cost is path COUNT, not gigabytes.
+- **Worktree payload — not git, not tsc — is what makes this checkout feel slow.** Roughly 99% of the path count is worktrees, and tools honouring `.gitignore` never see it, so validation looks healthy while the session crawls. **Do not tune `tsconfig`/`eslint` — those excludes are already correct.** Retire merged worktrees and clear husks. Cost is path COUNT, not gigabytes.
 
-**Machine limits.** RAM is soldered at 16 GB. One dev server at a time, ever. One typecheck/build at
-a time locally; parallel validation belongs to CI.
+**Machine limits.** RAM is soldered at 16 GB. One dev server at a time, ever; one typecheck/build at a
+time locally — parallel validation belongs to CI.
 
-**The binding limit is the Windows COMMIT charge, not RAM — and it is not a constant.** It is
-`RAM + the pagefile as currently ALLOCATED`, so the **47.79 GB verified on 2026-08-26 is the FLOOR,
-not the ceiling** — it floats to ~79.79 GB as Windows grows that file. Never treat a bigger number as
-a reset, and **never budget headroom against a limit you did not just read**:
-`Win32_OperatingSystem.TotalVirtualMemorySize` is the limit and `FreeVirtualMemory` the headroom,
-both in KB, and `node scripts/new-session.mjs --status` prints both live. **Sessions were never the
-ceiling** — an idle session is ~0.5 GB, while a dev server, build or cold typecheck is ~3.5 GB, so
-the real limit is about 5 concurrent HEAVY jobs. Watch the **headroom**, not a session count.
+**The binding limit is the Windows COMMIT charge, not RAM, and it is not a constant** — it is RAM plus
+the pagefile *as currently allocated*, so it FLOATS (47.79 GB is a floor, not a ceiling). **Never budget
+headroom against a limit you did not just read:** `Win32_OperatingSystem.TotalVirtualMemorySize` is the
+limit and `FreeVirtualMemory` the headroom, both KB, and `node scripts/new-session.mjs --status` prints
+both live. **Sessions were never the ceiling** — idle ~0.5 GB vs ~3.5 GB for a dev server, build or cold
+typecheck, so the real limit is about 5 concurrent HEAVY jobs. Watch the headroom, not a session count.
 
 Route work by tier:
 
 | Tier | Where | Use for |
 | --- | --- | --- |
-| **A — Cloud session** *(the default)* | Isolated cloud clone, ends in a PR | Any independent task not needing localhost browser verification, local files, or local credentials. Run on Sonnet by default. |
+| **A — Cloud session** *(the default)* | Isolated cloud clone, ends in a PR | Any independent task not needing localhost browser verification, local files, or local credentials. Sonnet by default. |
 | **B — Local worktree** (max 2–3 woken) | Sibling `_wt-<task>` | Only tasks needing browser preview, dev-auth role sweeps, or local creds. |
-| **C — Main checkout** (exactly one session — the control tower) | primary repo folder | Reviews, merge/deploy decisions, DB operations, deployed-env verification, worktree triage. Never feature edits. |
+| **C — Main checkout** (exactly one — the control tower) | primary repo folder | Reviews, merge/deploy decisions, DB operations, deployed-env verification, worktree triage. Never feature edits. |
 
-Only the control-tower session rewrites the shared memory index; other sessions may append memory
-files but never reorganize the index. Cloud sessions cannot see local state — put everything they
-need in the task prompt.
+Only the control-tower session rewrites the memory index; others may append memory files but never
+reorganize it. Cloud sessions cannot see local state — put everything they need in the task prompt.
 
 ## 6. Approval rules
 
