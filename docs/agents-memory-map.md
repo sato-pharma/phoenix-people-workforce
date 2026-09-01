@@ -11,7 +11,7 @@ references costing 7,783 bytes — 11% of the file — re-sent on every turn, to
 
 **Reachability is unaffected, and that was checked rather than assumed.**
 `scripts/memory-index-reachability.mjs` treats a backticked slug in `AGENTS.md` as proof a
-memory is reachable. Only **17** memory files depended on that — every other slug named a file
+memory is reachable. Only **18** memory files depended on that — every other slug named a file
 `MEMORY.md` already links. Those 16 therefore **stay inline in `AGENTS.md`** and must never be
 moved here; the rest are listed below and remain reachable through the index. Before removing
 any slug from `AGENTS.md`, re-run the classifier — the load-bearing set changes as the index does.
@@ -21,6 +21,7 @@ any slug from `AGENTS.md`, re-run the classifier — the load-bearing set change
 - **grep -r hangs on this checkout — use git grep or rg.** — `shell-grep-unusable-use-git-grep-or-rg`
 - **pnpm run <script> PURGES node_modules** — `pnpm-run-tries-to-purge-node-modules-when-the-lockfile-moved`
 - **MSYS mangles paths silently, three ways:** — `git-ref-colon-path-is-mangled-by-msys-returns-empty`
+- **`TZ=Africa/Cairo date` silently returns UTC in MSYS — 3h early, no error** — `tz-africa-cairo-silently-returns-utc-in-msys` **(inline — load-bearing)**
 - **A role probe cannot trust the HTTP status code** — `a-role-probe-cannot-trust-the-http-status-code` · `a-post-to-any-api-path-returns-403-even-if-it-does-not-exist`
 - **curl -d "@-" creates NOTHING on Windows** — `cron-job-org-is-managed-by-a-rest-api-not-just-the-web-ui`
 - **Reads of .env* are auto-approved deliberately, for EVERY key** — `env-file-reads-fully-auto-approved-2026-08-09`

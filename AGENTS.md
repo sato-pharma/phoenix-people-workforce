@@ -13,10 +13,10 @@ hook here and the account in `docs/` — never the account here.** §2.1 and §4
 of essays once already, at a measured cost of roughly 13,000 tokens of context on every request; the
 2026-09-01 consolidation moved that back into `docs/` where it belongs.
 
-**Memory slugs live in [docs/agents-memory-map.md](docs/agents-memory-map.md), not here — except 17.**
+**Memory slugs live in [docs/agents-memory-map.md](docs/agents-memory-map.md), not here — except 18.**
 `scripts/memory-index-reachability.mjs` scans `AGENTS.md` only, never `docs/`, and matches the
 **backticked** form, so a slug removed from here orphans that memory **unless `MEMORY.md` also links
-it**. Only 17 memories depend on this file; those stay inline and are marked in the map. The other
+it**. Only 18 memories depend on this file; those stay inline and are marked in the map. The other
 133 references moved out on 2026-09-01 (6,921 bytes off every request). **Re-run the classifier
 before removing any slug** — which are load-bearing changes as the index does.
 
@@ -97,6 +97,7 @@ Which memory file backs which hook is in
 - **`grep -r` hangs on this checkout — use `git grep` or `rg`.**
 - **`pnpm run <script>` PURGES `node_modules`** when the lockfile moved. Invoke `node scripts/…` directly.
 - **MSYS mangles paths silently, three ways:** `git show <ref>:<path>` returns EMPTY; `grep -c $'\r'` matches EVERY line of a pure-LF file; and a `git grep`/`rg` PATTERN holding a leading-slash path matches NOTHING — 41 real hits read as 0, i.e. *the code is clean*. Export `MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*'` before any such sweep, and never quote a count from one without it.
+- **`TZ=Africa/Cairo date` silently returns UTC in MSYS — 3h early, no error**, so recent work reads as old. The tell is a Cairo reading at `+0000`, never right; the machine clock is ALREADY `+0300`, so use plain `date` or node, never `TZ=`. `tz-africa-cairo-silently-returns-utc-in-msys`
 - **A role probe cannot trust the HTTP status code**, and **a POST to ANY `/api/**` path returns 403 even when the route does not exist** — probe with GET.
 - **`curl -d "@-"` creates NOTHING on Windows** — write the JSON to a file, pass `-d @file.json`.
 - **Reads of `.env*` are auto-approved deliberately, for EVERY key** — licence to inspect, never to propagate. Do not re-litigate or narrow it.
@@ -237,7 +238,7 @@ and the arithmetic behind the budget are in
 - **What earns a line — all three:** a session would act WRONGLY without it, it is durable (never a count, a status or a date), and it is not derivable in one step. **Sweep by CLAIM, never by filename or topic.**
 - **A relocation spanning git and `~/.claude/` must finish BOTH halves or neither, in that order** — the destination must be **merged** before the index line is trimmed. `scripts/memory-index-reachability.mjs` matches a **backticked slug in `AGENTS.md`**, so a hook written on an unmerged branch correctly still reads as an orphan. **Before cutting any section out of this file, check which slugs appear ONLY there** — and note that
 since 2026-09-01 most slugs sit in [docs/agents-memory-map.md](docs/agents-memory-map.md) instead, with
-only the 17 load-bearing ones inline.
+only the 18 load-bearing ones inline.
 - **No required check can gate any of this.** `MEMORY.md` lives outside the repository, so CI never sees it — the displacement rule is behavioural.
 
 ### 2.3 Production and approval hooks
