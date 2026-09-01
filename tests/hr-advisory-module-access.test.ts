@@ -256,10 +256,30 @@ export async function runHrAdvisoryModuleAccessTests() {
     false,
     "Manager Engagement must not appear for HR Operations",
   );
-  assert.equal(
+  // The Planning Calendar came out of a merge collision, and it is worth saying which way round.
+  // This line used to assert Operations must NOT have it, quoting the workforce_insight comment
+  // in hr-functions.ts. On the other seat's branch, at the same hour, the owner was naming
+  // /admin/weekly-plans/calendar in his own list of modules to open on HER rail. Both statements
+  // were true of their own branch and false of the merge, and only the suite could see it: the
+  // two branches touch different regions of different files and git reported nothing.
+  //
+  // She holds weekly_plans:read through `time_attendance` — attached there rather than borrowed
+  // from workforce_insight, argued at length at its own place in hr-functions.ts, and he was told
+  // before agreeing that it lets her see where every medical rep plans to be.
+  //
+  // What is asserted instead is the boundary that actually still holds: READ and nothing else.
+  // Approving or rejecting a plan belongs to the sales ladder, and a write action reaching an HR
+  // seat is the failure this line now watches for.
+  assert.ok(
     operationsRows.has("/hr/admin/weekly-plans/calendar"),
-    false,
-    "the Planning Calendar is workforce_insight's, and Operations has no reason to read a rep's plan",
+    "the Planning Calendar must render for HR Operations — owner instruction, 2026-09-01",
+  );
+  const operationsPlanActions = hrBundleGrants("HR Operations").weekly_plans ?? [];
+  assert.deepEqual(
+    [...operationsPlanActions].sort(),
+    ["read"],
+    "HR Operations may READ the field force's plans and nothing else — approving one belongs to "
+      + "the sales ladder, and no HR seat holds a weekly_plans write action of any kind",
   );
   assert.ok(
     operationsRows.has("/hr/admin/payslips-center"),

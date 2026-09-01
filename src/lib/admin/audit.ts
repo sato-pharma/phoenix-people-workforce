@@ -54,11 +54,14 @@ export type AuditEntityType =
   | "field_workforce_compliance_import"
   // The hiring-document checklist. Four types because the module writes four different
   // things and "who changed the checklist" is a different question from "who filed a scan".
-  // Clearance & offboarding (Phase 6, 2026-08-28). Split in two on purpose: a station decision
-  // is routine, and a settlement release is the row that says a departure was closed out. Both
-  // use writeRequiredAuditLog - an unattributable release is treated as a failed release.
-  | "hr_clearance_decision"
-  | "hr_clearance_release"
+  // `hr_clearance_decision` and `hr_clearance_release` were written here from 2026-08-28 until the
+  // Clearance & Offboarding module was removed on 2026-09-01. They are gone from this union
+  // because nothing writes them any more — NOT because the rows are gone. Production `audit_logs`
+  // still holds every one of them, and it should: they are the evidence trail behind settlements
+  // that were released while the module was live. This union types the WRITE payload only, so
+  // dropping the two names cannot hide a historical row from any reader. Do not re-add them to
+  // "support" the old rows, and do not delete those rows to "finish" the removal.
+  //
   // A stay discussion or an exit interview was captured. The audit row records WHO and WHICH
   // conversation, never the content: the register holds what someone said in confidence about
   // their manager and their pay, and audit_logs is read far more widely than the register is.

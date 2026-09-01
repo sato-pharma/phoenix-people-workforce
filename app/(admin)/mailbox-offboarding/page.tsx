@@ -21,16 +21,16 @@ function mailboxPageError(error: unknown) {
 
 export default async function MailboxOffboardingPage() {
   const access = await resolveAccessContextFromPage();
-  if (!(await canAccess(access, "clearance", "read"))) {
+  if (!(await canAccess(access, "mailbox_offboarding", "read"))) {
     redirect("/employee-portals");
   }
 
-  // Read and write are separate gates, exactly as on the clearance page: the CEO reads this
+  // Read and write are separate gates: the CEO reads this
   // register, HR Operations acts on it. The workspace hides every control when this is false and
   // the route handler asserts the same permission again — the page check is UX, the route is the
   // security boundary.
-  const canRecord = await canAccess(access, "clearance", "update");
-  const canOpen = await canAccess(access, "clearance", "create");
+  const canRecord = await canAccess(access, "mailbox_offboarding", "update");
+  const canOpen = await canAccess(access, "mailbox_offboarding", "create");
 
   let initialData: MailboxOffboardingDashboardData | null = null;
   let initialError: string | null = null;

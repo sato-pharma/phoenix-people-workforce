@@ -90,17 +90,50 @@ export function runHrNavNoEmptyInboxRowsTests() {
       "when it was excluded on 2026-08-29",
   );
 
-  // ── The other seat must keep both ───────────────────────────────────────────
+  // ── The other seat keeps Leave Management ───────────────────────────────────
   // Excluding one seat from a shared row is one edit away from deleting the row. HR Operations
-  // holds resignations and contracts at read/create/update/export and owns leave administration.
-  for (const href of [OTHER_APPROVALS_HREF, LEAVE_MANAGEMENT_HREF]) {
-    assert.equal(
-      operations.has(href),
-      true,
-      `the HR Operations Coordinator lost "${href}". Excluding HR Advisory from a shared row must ` +
-        "narrow it for HER only — removing the row outright takes it from the seat whose job it is",
-    );
-  }
+  // owns leave administration, so this one must survive every narrowing aimed at HR Advisory.
+  assert.equal(
+    operations.has(LEAVE_MANAGEMENT_HREF),
+    true,
+    `the HR Operations Coordinator lost "${LEAVE_MANAGEMENT_HREF}". Excluding HR Advisory from a ` +
+      "shared row must narrow it for HER only — removing the row outright takes it from the seat " +
+      "whose job it is",
+  );
+
+  // ── Other Approvals is off HER rail too, for a DIFFERENT reason ─────────────
+  //
+  // This is the one assertion in the file that is not about emptiness, and the distinction is the
+  // reason it is spelled out rather than folded into the loop above. HR Advisory is excluded
+  // because the inbox can never hold a row for her. HR Operations is excluded because the owner
+  // asked for it off her rail on 2026-09-01 while tidying the seat — "Remove other approvals from
+  // the sidebar" — and her queue is NOT empty: she holds resignations and contracts at
+  // read/create/update/export, which the block at the end of this file still proves.
+  //
+  // So a future session that re-derives this from grants will conclude the row belongs to her and
+  // be wrong. It is an instruction, not a defect, and the page stays reachable from the admin rail
+  // and by URL.
+  assert.equal(
+    operations.has(OTHER_APPROVALS_HREF),
+    false,
+    'the HR Operations Coordinator is offered "Other Approvals" again. The owner removed it from '
+      + "her rail on 2026-09-01. Her grants DO populate that queue, so do not restore the row on "
+      + "the grounds that she can use it — that reverses an instruction rather than fixing a bug.",
+  );
+
+  // ── Workforce Compliance, same instruction, same day ────────────────────────
+  //
+  // Gated on `hr_calendar`, which she holds, and the page is headed "Operational HR Governance" —
+  // so the row looked correct and was argued for on exactly those grounds before the owner
+  // overruled it: it is a field-force board and her seat is people operations. The page's own
+  // title is therefore NOT evidence the row belongs back.
+  assert.equal(
+    operations.has("/hr/admin/field-workforce-compliance"),
+    false,
+    'the HR Operations Coordinator is offered "Workforce Compliance" again. The owner removed it '
+      + "on 2026-09-01, overruling the argument that the page calls itself Operational HR "
+      + "Governance. Do not re-add it on that argument.",
+  );
 
   // ── Why the exclusion is correct, not merely current ────────────────────────
   // Tie the verdict to its cause, and RE-DECIDED on 2026-09-01 when she was granted contracts.

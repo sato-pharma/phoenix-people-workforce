@@ -3,7 +3,7 @@
 /**
  * Mailbox offboarding workspace — the Turbify leaver register.
  *
- * DESIGN IDENTITY is the clearance workspace's, deliberately (AGENTS.md §4: match the sibling
+ * DESIGN IDENTITY is the HR admin workspaces', deliberately (AGENTS.md §4: match the sibling
  * pages, never invent a one-off look). Same `PremiumHero`, same centred metric tile with its 9px
  * uppercase micro-label and `text-3xl font-black tabular-nums` figure, same orange accent, same
  * square corners and slate borders, same desktop-table / mobile-card split.
@@ -996,7 +996,7 @@ export function MailboxOffboardingWorkspace({
   return (
     <div className="min-w-0 max-w-full overflow-x-hidden">
       <PremiumHero
-        kicker="Clearance & Offboarding"
+        kicker="Resignation & Offboarding"
         subtitle="Every leaver who still holds a company mailbox, and what has actually been done about it. Phoenix cannot close a Turbify mailbox — it records who closed it, and refuses to call a mailbox shut until it is."
         title="Mailbox revocation"
       />

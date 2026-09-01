@@ -171,17 +171,17 @@ const GATE_SHAPE_NOT_MACHINE_READABLE: Record<string, string> = {
     "exactly the two seats by construction rather than by a second list agreeing with the first",
   "/hr/probation": "canReadAllProbation(access) — true for both seats",
   // All three added 2026-09-01 with the owner's module opening, and all three verified by CALLING
-  // the predicate for each seat rather than by reading it. Measured: Advisory true/true/true,
-  // Operations true/false/false.
+  // the predicate for each seat rather than by reading it.
   "/hr/probation/dashboard":
     "canReadAllProbation(access) — the same predicate as /hr/probation above, true for BOTH seats. " +
     "The page is the read-only outcomes view of the tracker beside it and has no write path",
   "/hr/admin/weekly-plans/calendar":
     'an OR chain — canAccess(weekly_plans, read) || role is CEO || role is Super Admin — which is ' +
-    "why it cannot be parsed. TRUE for Advisory (workforce_insight grants weekly_plans:read), FALSE " +
-    "for Operations, who is deliberately never granted it and is correctly not offered the row. " +
-    "Read-only: the grant carries no create, so she reads where the field force will be and " +
-    "submits nothing",
+    "why it cannot be parsed. TRUE for BOTH seats after the two 2026-09-01 changes were merged: " +
+    "Advisory has held weekly_plans:read all along through workforce_insight, and Operations gained " +
+    "it that day through time_attendance at the owner's request. The row therefore carries no roles " +
+    "gate. Read-only either way — approving a plan belongs to the sales ladder and neither seat " +
+    "holds any weekly_plans write action",
   "/hr/recruitment/manager-engagement":
     "canViewManagerCvEngagement(access) — a ROLE SET, not a resource, so the row carries roles: " +
     '["HR Advisory"] beside its recruitment permission and the two must be read together. TRUE for ' +
@@ -217,7 +217,10 @@ const GATE_SHAPE_NOT_MACHINE_READABLE: Record<string, string> = {
     "offered to Operations only. The page is read-only, with no write path to withhold",
   "/hr/attendance": "shell gate only — no permission gate underneath it",
   "/hr/leave-management": "shell gate only — no permission gate underneath it",
-  "/hr/admin/approvals-hub": "shell gate, plus a deep-link redirect that is routing rather than access",
+  // "/hr/admin/approvals-hub" was here until 2026-09-01. The row left the HR rail that day (owner:
+  // "Remove other approvals from the sidebar"), and this map only covers rows the rail still
+  // offers — a verdict kept for a route nobody is offered is a claim nothing re-checks. The ADMIN
+  // rail keeps /admin/approvals-hub; if the /hr row is ever restored, its verdict comes back too.
 };
 
 /**

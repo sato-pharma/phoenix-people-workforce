@@ -172,10 +172,22 @@ export async function runPhase22RoleMatrixSecurityTests() {
   assert.equal(await canAccess(hrOperations, "contracts", "update"), true, "the records half");
   assert.equal(await canAccess(hrAdvisory, "contracts", "update"), false);
   // Owner-requested 2026-07-25 on the retired seat: the read-only Planning Calendar, no submission.
-  // It follows workforce_insight, so HR Advisory keeps it and HR Operations never had a reason for it.
+  // It follows workforce_insight, which is why HR Advisory has always had it.
   assert.equal(await canAccess(hrAdvisory, "weekly_plans", "read"), true);
   assert.equal(await canAccess(hrAdvisory, "weekly_plans", "create"), false, "reading where the field force will be is not submitting a plan");
-  assert.equal(await canAccess(hrOperations, "weekly_plans", "read"), false);
+  // CHANGED 2026-09-01 (owner). This line asserted `false` for HR Operations until that day, and the
+  // note above read "HR Operations never had a reason for it". He named /admin/weekly-plans/calendar
+  // as a page he wants in her sidebar, and was told before agreeing that it shows her where every
+  // medical rep plans to be. The grant is attached to time_attendance, so it traces to her own JD
+  // line ("Attendance, Leave & Working-Time Administration") instead of borrowing Advisory's
+  // function — see src/lib/auth/hr-functions.ts.
+  //
+  // The separation this block exists to protect is INTACT, and is now pinned more tightly than
+  // before: READ is shared, every WRITE is still refused. Do not "restore" the false — assert the
+  // two write lines instead if you are checking the boundary still holds.
+  assert.equal(await canAccess(hrOperations, "weekly_plans", "read"), true, "owner 2026-09-01 — the Planning Calendar is a row in her sidebar");
+  assert.equal(await canAccess(hrOperations, "weekly_plans", "create"), false, "reading the plan calendar is not submitting a plan");
+  assert.equal(await canAccess(hrOperations, "weekly_plans", "update"), false, "approving or editing a plan belongs to the sales ladder, never to HR");
 
   // ── Salary redaction, inherited by both seats ───────────────────────────────────────────────
   // Owner-requested 2026-07-25 on the retired seat: even with full employee-directory read

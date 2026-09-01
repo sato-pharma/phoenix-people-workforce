@@ -35,8 +35,10 @@ import {
   permissionResources,
   type PhoenixRole,
 } from "../src/lib/auth/permissions.ts";
+import { deductionsCategories } from "../src/lib/deductions/types.ts";
 import {
   buildHrCommandGroups,
+  DEDUCTION_CATEGORY_LABELS,
   hrBundleForRole,
   sourcesFor,
   type HrCommandSources,
@@ -83,29 +85,20 @@ function offeredHrefs(seat: HrBundleName): Set<string> {
  * 2026-09-01, which is exactly that failure in miniature: the comment said "every source" while
  * six tiles — three clearance figures on HR Operations' board and three retention ones on HR
  * Advisory's — were never built and so never had their hrefs checked. Measured: the loop below
- * read 31 tiles before those two keys were added and 37 after. (A seventh, "No Clearance Opened",
- * is conditional on a non-empty `awaiting` and so is still unreached by an empty fixture.) Adding
- * a source to SOURCES_BY_FUNCTION means adding it here too, or its tiles ship unchecked. `deductions` needs the cast because its buckets are keyed by a
- * category union this test has no reason to enumerate; `Object.values({})` is `[]` either way.
+ * read 31 tiles before those two keys were added and 37 after.
+ *
+ * `clearance` is gone again, and for a different reason: the module was removed later the same
+ * day, so the key no longer exists on HrCommandSources at all. Its absence here is now enforced by
+ * the compiler rather than by this comment. Adding a source to SOURCES_BY_FUNCTION still means
+ * adding it here too, or its tiles ship unchecked — that half is unchanged, and it is the half
+ * nothing enforces.
+ *
+ * `deductions` needs the cast because its buckets are keyed by a category union this test has no
+ * reason to enumerate; `Object.values({})` is `[]` either way.
  */
 function emptySources(): HrCommandSources {
   return {
     attendanceExceptions: [],
-    clearance: {
-      awaiting: [],
-      checklists: [],
-      schemaReady: true,
-      stations: [],
-      stats: {
-        amountOutstanding: 0,
-        blockedStations: 0,
-        cancelled: 0,
-        open: 0,
-        overdue: 0,
-        ready: 0,
-        released: 0,
-      },
-    },
     contracts: {
       rows: [],
       summary: {
@@ -311,6 +304,112 @@ export async function runHrCommandCenterTests() {
     "/hr/admin/deductions is offered to HR Operations again — that row was removed in #2554 " +
       "because the page admits {Super Admin, CEO} by name. If it is back, this whole file's " +
       "offered-set check has stopped discriminating and every tile assertion above is blind",
+  );
+
+  // ── Every chart plots what it says it plots ───────────────────────────────────────────────────
+  // A chart fails differently from a tile. A tile with a wrong key renders `undefined` and is
+  // obvious; a chart whose series key is absent from its rows renders a clean, empty, entirely
+  // plausible plot — recharts does not complain about a dataKey that matches nothing. So the
+  // series/row agreement is asserted here rather than left to be noticed on the page.
+  let chartsChecked = 0;
+  let seriesChecked = 0;
+
+  for (const seat of seats) {
+    const offered = offeredHrefs(seat);
+    const chartKeys = new Set<string>();
+
+    for (const group of buildHrCommandGroups(seat, emptySources())) {
+      for (const chart of group.charts) {
+        chartsChecked += 1;
+
+        assert.ok(
+          !chartKeys.has(chart.key),
+          `${seat}: duplicate chart key "${chart.key}" — React will drop one of them`,
+        );
+        chartKeys.add(chart.key);
+
+        for (const field of ["caption", "emptyLabel", "hrefLabel", "title"] as const) {
+          assert.ok(
+            chart[field].length > 0,
+            `${seat}/${chart.key}: empty ${field} — an unlabelled chart is a rectangle`,
+          );
+        }
+
+        assert.ok(
+          chart.href.startsWith("/hr/"),
+          `${seat}/${chart.key}: links to ${chart.href}, outside the /hr namespace — AppShell ` +
+            "would bounce it and the seat would pay a redirect per click",
+        );
+        assert.ok(
+          offered.has(chart.href),
+          `${seat}: chart "${chart.title}" links to ${chart.href}, which is not a row this seat ` +
+            "is offered — it holds no grant that opens that page",
+        );
+
+        assert.ok(
+          chart.series.length > 0,
+          `${seat}/${chart.key}: no series — nothing would be drawn`,
+        );
+
+        for (const series of chart.series) {
+          seriesChecked += 1;
+          assert.match(
+            series.color,
+            /^#[0-9A-Fa-f]{6}$/,
+            `${seat}/${chart.key}: series "${series.key}" colour ${series.color} is not a hex ` +
+              "literal — it is handed to recharts as an SVG fill, and a Tailwind class renders black",
+          );
+          for (const row of chart.rows) {
+            assert.equal(
+              typeof row[series.key],
+              "number",
+              `${seat}/${chart.key}: row "${String(row.label)}" carries no numeric "${series.key}" ` +
+                "— recharts plots a missing dataKey as an empty chart with no error at all",
+            );
+          }
+        }
+
+        for (const row of chart.rows) {
+          assert.equal(
+            typeof row.label,
+            "string",
+            `${seat}/${chart.key}: a row has no string label, so the x axis would be blank`,
+          );
+        }
+      }
+    }
+  }
+
+  // Controls. Both halves matter: the loop above passes vacuously on a page with no charts at all,
+  // which is precisely the state the owner rejected on 2026-09-01 ("there are no any chart").
+  assert.ok(
+    chartsChecked >= 6,
+    `only ${chartsChecked} charts were built across both seats — the catalogue returned almost ` +
+      "nothing and every assertion above passed by reading an empty page",
+  );
+  assert.ok(
+    seriesChecked >= 12,
+    `only ${seriesChecked} series were checked — the row/series agreement assertion, which is the ` +
+      "only thing standing between a typo and a silently empty plot, read almost nothing",
+  );
+
+  // ── The deduction axis can label every category ───────────────────────────────────────────────
+  // `DEDUCTION_CATEGORY_LABELS` is typed as an exhaustive Record, and that type is NOT the guard:
+  // this repo builds with `ignoreBuildErrors`, so a category added to `deductionsCategories`
+  // without a label here would compile, build and deploy, and land on her page as an axis column
+  // labelled `undefined`. AGENTS.md §2.1: back an exhaustive Record with a runtime assertion.
+  for (const category of deductionsCategories) {
+    const label = DEDUCTION_CATEGORY_LABELS[category];
+    assert.ok(
+      typeof label === "string" && label.length > 0,
+      `deduction category "${category}" has no axis label in DEDUCTION_CATEGORY_LABELS — the ` +
+        "deductions chart would print `undefined` under that column",
+    );
+  }
+  assert.ok(
+    deductionsCategories.length >= 5,
+    `deductionsCategories holds only ${deductionsCategories.length} entries — the loop above is ` +
+      "not checking a real vocabulary",
   );
 
   // ── No tile prints a code where a name belongs ────────────────────────

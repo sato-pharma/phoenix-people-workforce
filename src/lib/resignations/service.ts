@@ -1209,8 +1209,8 @@ async function deactivateEmployeeAccessIfSupported(supabase: SupabaseClient, emp
 /**
  * Opens the leaver's Turbify mailbox revocation task.
  *
- * BEST-EFFORT ON PURPOSE, and swallowed the same way a clearance checklist is: a mailbox task must
- * never be the reason a resignation fails to record. A resignation that does not save is a payroll
+ * BEST-EFFORT ON PURPOSE, and swallowed: a mailbox task must never be the reason a resignation
+ * fails to record. A resignation that does not save is a payroll
  * and headcount problem within the hour; a mailbox task that does not open is caught by the daily
  * sweep, which exists precisely because this call is allowed to fail quietly.
  *

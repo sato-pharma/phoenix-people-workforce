@@ -405,8 +405,8 @@ export async function createRetentionConversation(
   const themes = normalizeThemes(input.themes);
 
   const supabase = getSupabaseAdmin();
-  // Snapshot the person, for the same reason the clearance checklist does: an exit interview is
-  // about someone who has left the directory by the time anyone reads the roll-up.
+  // Snapshot the person: an exit interview is about someone who has left the directory by the
+  // time anyone reads the roll-up.
   const { data: employee, error: employeeError } = await supabase
     .from("employees")
     .select("hr_id,full_name,nickname,job_title")

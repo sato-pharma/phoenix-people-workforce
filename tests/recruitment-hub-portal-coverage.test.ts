@@ -173,9 +173,18 @@ export function runRecruitmentHubPortalCoverageTests() {
   // Management, which is why the entry carries a permission clause as well as a role list.
   // She clears the two cards gated on employee_documents — Hiring Documents and HR Forms
   // — because people_records grants her that resource: hiring paperwork is genuinely shared work,
-  // not recruiting. She clears NONE of the five gated on recruitment / candidates / vacancies /
-  // offers, which is the separation that matters. Named individually rather than counted, so a
-  // recruiting card leaking to her fails with the card in the message.
+  // not recruiting. She clears NONE of the five gated on recruitment / candidates / offers, which
+  // is the separation that matters. Named individually rather than counted, so a recruiting card
+  // leaking to her fails with the card in the message.
+  //
+  // ON 2026-09-01 this assertion earned its keep. The owner asked for the Vacancies Report in her
+  // sidebar, which needs vacancies:read — and CV Database was gated on that same resource, so the
+  // list came back with '/cv-database' in it. Shown the leak, he answered "block the cv database
+  // for her too", and the CV Database moved to `recruitment:read`, the resource it always should
+  // have carried: it opens the candidate pool. So the separation is held by grants again, and it is
+  // held on the PAGE, not merely in this catalogue — an excludedRoles entry was tried first and
+  // rejected, because hiding a card leaves the URL open. tests/cv-database-recruiting-boundary.test.ts
+  // pins that half.
   const opsCards = hubCardsFor("HR Operations").map((c) => c.href).sort();
   assert.deepEqual(
     opsCards,

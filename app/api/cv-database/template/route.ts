@@ -30,7 +30,10 @@ export async function GET(request: Request) {
     if (!isHrAuthorityRole(access.role)) {
       throw new Error(`Forbidden: ${access.role} cannot read cv_database.`);
     }
-    await assertPermission(access, "vacancies", "read");
+    // recruitment:read — the same gate the page carries, moved with it on 2026-09-01. This route
+    // hands back the blank CV intake template, a recruiting artefact; leaving it on vacancies:read
+    // would have left an authenticated download open to a seat whose page had just been closed.
+    await assertPermission(access, "recruitment", "read");
 
     const workbook = await generateCvDatabaseTemplateWorkbook();
     const buffer = await workbook.xlsx.writeBuffer();

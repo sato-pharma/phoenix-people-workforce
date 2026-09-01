@@ -575,7 +575,7 @@ import { runAdminPayslipImageExportTests } from "./admin-payslip-image-export.te
 import { runEmployeePayrollEligibilityTests } from "./employee-payroll-eligibility.test.ts";
 import { runEmployeeAccessProvisioningTests } from "./employee-access-provisioning.test.ts";
 import { runHrFunctionGovernanceTests } from "./hr-function-governance.test.ts";
-import { runHrClearanceRetentionTests } from "./hr-clearance-retention.test.ts";
+import { runHrRetentionRegisterTests } from "./hr-retention-register.test.ts";
 import { runMailboxOffboardingTests } from "./mailbox-offboarding.test.ts";
 import { runMailboxBulkRecordingTests } from "./mailbox-bulk-recording.test.ts";
 import { runHrAdvisoryModuleAccessTests } from "./hr-advisory-module-access.test.ts";
@@ -584,6 +584,7 @@ import { runHrCommandCenterTests } from "./hr-command-center.test.ts";
 import { runHrJobWorkbookTests } from "./hr-job-workbook.test.ts";
 import { runHrOperationsCompanyScopeTests } from "./hr-operations-company-scope.test.ts";
 import { runHrSeatRouteCoherenceTests } from "./hr-seat-route-coherence.test.ts";
+import { runCvDatabaseRecruitingBoundaryTests } from "./cv-database-recruiting-boundary.test.ts";
 import { runTitlePermissionGovernanceTests } from "./title-permission-governance.test.ts";
 import { runOrganogramHardeningTests } from "./organogram-hardening.test.ts";
 import { runVacancyReportOrganogramConsistencyTests } from "./vacancy-report-organogram-consistency.test.ts";
@@ -2073,6 +2074,11 @@ await runTest(
   runHrSeatRouteCoherenceTests,
 );
 await runTest(
+  "CV database recruiting boundary (HR Operations holds vacancies:read for the Vacancies Report and "
+  + "must still be refused the candidate pool — on the page, the portal mirror and the template route)",
+  runCvDatabaseRecruitingBoundaryTests,
+);
+await runTest(
   "HR command centre (every tile on a seat's landing dashboard links to a row that seat is "
   + "offered, so no figure leads to a page it cannot open)",
   runHrCommandCenterTests,
@@ -2081,7 +2087,8 @@ await runTest(
   "HR Business Partner module opening 2026-09-01 (all 17 modules are rows she is offered, grouped "
   + "where the owner was shown; her payslip and directory pay audience is District Sales Managers, "
   + "Medical Representatives and herself and NOTHING else; hr_calendar:update and employees:update "
-  + "stay refused; and HR Operations gains none of it)",
+  + "stay refused; Workforce Compliance is on neither HR rail; and the only thing HR Operations "
+  + "gains is the Planning Calendar the owner named for her, at read and nothing else)",
   runHrAdvisoryModuleAccessTests,
 );
 await runTest(
@@ -2104,10 +2111,11 @@ await runTest(
   runHrJobWorkbookTests,
 );
 await runTest(
-  "HR clearance & retention (both resources registered in the RUNTIME array as well as the union "
-  + "- the sidebar lookup fails open on a key it has never seen - and the two seats' grants do "
-  + "not cross: clearance is HR Operations', retention is HR Advisory's)",
-  runHrClearanceRetentionTests,
+  "HR retention register & offboarding grant (both resources registered in the RUNTIME array as "
+  + "well as the union - the sidebar lookup fails open on a key it has never seen - the two seats' "
+  + "grants do not cross, and the removed Clearance module left behind no grant, no fetch and no "
+  + "tile, while its still-live database objects keep their revoked ACL)",
+  runHrRetentionRegisterTests,
 );
 await runTest(
   "mailbox offboarding (a password reset is NOT a revocation - Yahoo app passwords survive a "

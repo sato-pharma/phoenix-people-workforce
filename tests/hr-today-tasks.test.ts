@@ -281,7 +281,6 @@ export async function runHrTodayTasksTests() {
     // seat's day collapses to a handful of rows while the other's is full.
     const EMPTY_SOURCE: Record<string, unknown> = {
       attendanceExceptions: [],
-      clearance: { awaiting: [], checklists: [] },
       contracts: { rows: [] },
       deductions: { pending: {}, willPublish: {} },
       directory: { employees: [], lookups: { workforceVacancies: [] } },
