@@ -124,8 +124,15 @@ export const systemLegalEntity = {
   responsibleManagerAr: "الدكتور/ أنور إبراهيم أحمد إبراهيم",
   responsibleManagerTitleAr: "المدير المسئول",
   registration: {
-    /** رقم المنشأة — eight digits, the establishment's NOSI number (the form prints 8 boxes). */
-    insuranceEstablishmentNumber: "",
+    /**
+     * رقم المنشأة — the establishment's NOSI number. The form prints 8 boxes, filled left to right
+     * (see `form1-layout.ts` / `form6-layout.ts`, `cells: 8`), so a shorter number leaves the last
+     * box(es) blank — which is normal, NOSI establishment numbers are not fixed-width.
+     *
+     * Set 2026-09-01 to the owner's stated company number, "2807693" (7 digits → box 8 stays blank).
+     * If it should carry a leading zero ("02807693"), change it here — nothing else needs touching.
+     */
+    insuranceEstablishmentNumber: "2807693",
     /** قطاع المنشأة — two digits. */
     insuranceSectorCode: "",
     /** رقم التسجيل الضريبي — printed as three groups (nnn/nnnnn/nnn). */

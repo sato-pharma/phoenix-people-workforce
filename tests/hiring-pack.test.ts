@@ -579,7 +579,10 @@ function testEveryCompanySettingsGapReachesThePage() {
   const companyGaps = collectHiringPackGaps(employeeFixture(), profileFixture()).filter(
     (gap) => gap.source === "company-settings",
   );
-  assert.ok(companyGaps.length > 0, "the fixture leaves the company registration blank on purpose");
+  assert.ok(
+    companyGaps.length > 0,
+    "at least one company registration field is blank, so the directional check below runs against a real gap",
+  );
 
   for (const gap of companyGaps) {
     const printedKey = printedKeyByGapField[gap.field];
@@ -592,10 +595,20 @@ function testEveryCompanySettingsGapReachesThePage() {
 
   for (const [field, printedKey] of Object.entries(printedKeyByGapField)) {
     assert.ok(placedKeys.has(printedKey), `${printedKey} lost its placement on Form 1`);
-    assert.ok(
-      companyGaps.some((gap) => gap.field === field),
-      `${field} prints on Form 1 but is never reported when it is blank`,
-    );
+    // Each value here is real company config, so a field may legitimately be filled — the
+    // establishment number was set 2026-09-01. The invariant is directional: a BLANK field must be
+    // chased as a gap, and a FILLED one must NOT be, or HR is sent chasing a number already on the
+    // form. This reads the live setting rather than assuming blank, so setting one cannot silently
+    // turn this pin red — while a field that prints but is never reported when blank still fails.
+    const isBlank = !systemLegalEntity.registration[
+      field as keyof typeof systemLegalEntity.registration
+    ];
+    const reported = companyGaps.some((gap) => gap.field === field);
+    if (isBlank) {
+      assert.ok(reported, `${field} prints on Form 1 but is never reported when it is blank`);
+    } else {
+      assert.ok(!reported, `${field} is filled in company settings but still reported as a blank gap`);
+    }
   }
 }
 
