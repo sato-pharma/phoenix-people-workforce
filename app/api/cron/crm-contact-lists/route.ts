@@ -124,7 +124,10 @@ export async function GET(request: Request) {
     try {
       revalidateTag(CRM_CONTACT_LIST_SUMMARIES_CACHE_TAG, "max");
     } catch (error) {
-      logError("crm-contact-lists: cache revalidation failed", error);
+      logError("crm-contact-lists: cache revalidation failed", {
+        error,
+        labels: { event: "cache_revalidate_failed", job: JOB_NAME },
+      });
     }
 
     // Refusals and failures are the two outcomes that mean "the mirror is older than it looks", so
