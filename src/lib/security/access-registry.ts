@@ -330,6 +330,18 @@ export const accessRegistry = [
   // `admin:read` — this route CLOSES a module on somebody's account, so it declares the update it
   // actually performs and carries the CSRF requirement a mutation owes.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "POST", "DELETE"], pattern: "/api/admin/module-locks", permission: { resource: "admin", action: "update" }, csrfRequired: true }),
+  // WhatsApp screening questions, and the AI question-prompt helper beside them. Their own
+  // entries rather than the /api/admin/** blanket below, which states `admin:read`, because
+  // that is no longer what gates them. On 2026-09-01 the owner asked for this screen to reach
+  // the HR Business Partner; `admin:update` was the wrong door to widen, since it also gates
+  // module locks, scope visibility, salary flags and a notification TEST-SEND endpoint. So the
+  // screen was re-gated to `recruitment:update` with the admin assertion kept underneath as the
+  // fallback -- which is exactly the pharmacy-search shape above: `guard: "domain-helper"`
+  // because enforcement is assertScreeningQuestionsAccess() rather than a bare assertPermission
+  // call, while `permission` still records the resource a normal user is checked against, so
+  // this registry keeps saying what actually gates the route.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "POST", "DELETE"], pattern: "/api/admin/screening-questions", permission: { resource: "recruitment", action: "update" }, guard: "domain-helper", csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "POST"], pattern: "/api/admin/question-prompts", permission: { resource: "recruitment", action: "update" }, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ methods: allMethods, pattern: "/api/admin/**", permission: { resource: "admin", action: "read" } }),
 
   sessionApi({ methods: allMethods, pattern: "/api/attendance/agent/**", permission: { resource: "employees", action: "read" } }),
