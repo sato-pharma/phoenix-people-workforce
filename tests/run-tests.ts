@@ -688,6 +688,7 @@ import { runHiringDocumentsAccessTests } from "./hiring-documents-access.test.ts
 import { runHiringDocumentsAuditTests } from "./hiring-documents-audit.test.ts";
 import { runHiringDocumentsDeadlineTests } from "./hiring-documents-deadline.test.ts";
 import { runHiringDocumentsStatusNotesTests } from "./hiring-documents-status-notes.test.ts";
+import { runHiringPackInsuranceWageTests } from "./hiring-pack-insurance-wage.test.ts";
 import { runHiringPackPaperEditorTests } from "./hiring-pack-paper-editor.test.ts";
 import { runHiringPackTests } from "./hiring-pack.test.ts";
 import { runHrFormsClearanceTests } from "./hr-forms-clearance.test.ts";
@@ -2269,6 +2270,11 @@ await runTest("hiring document capture (polish keeps colour, pages become one A4
 await runTest("hiring document deadlines (a blur that changed nothing must not write, in both renders)", runHiringDocumentsDeadlineTests);
 await runTest("hiring document status notes (an omitted notes key must not blank the cell)", runHiringDocumentsStatusNotesTests);
 await runTest("hiring pack (Form 1 coordinate map, blank back page, تفقيط agreement)", runHiringPackTests);
+await runTest(
+  "hiring pack insurance wage (Form 1 rule pinned to the owner's Yasmen setup: base 18,000 → 13,846, "
+    + "flat basic 2,450, divisor 1.3, ceiling 16,700, null base prints blank)",
+  runHiringPackInsuranceWageTests,
+);
 await runTest(
   "hiring pack paper editor (whole-record payload, binding allow-list, renderers stamp their keys)",
   runHiringPackPaperEditorTests,
