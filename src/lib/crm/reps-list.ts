@@ -39,6 +39,11 @@
 
 import { getAgentContactList, type DoctorListRow } from "@/lib/crm/contact-lists";
 import {
+  loadTradeCounterparties,
+  matchContactTrade,
+  type ContactTrade,
+} from "@/lib/crm/contact-trade";
+import {
   clusterRows,
   findNeighbours,
   findSharedCustomers,
@@ -139,6 +144,12 @@ export type RepsListContact = DoctorListRow & {
   seenAt?: ContactSeenAt | null;
   /** Other reps carrying what the evidence says is this same customer. */
   sharedWith?: SharedWith[] | null;
+  /**
+   * Business Phoenix has actually done with this row — direct orders for a pharmacy, marketing
+   * requests for a doctor. Null on the overwhelming majority of rows, which is the honest answer:
+   * see `contact-trade.ts` for why a name alone can never establish this and what the area adds.
+   */
+  trade?: ContactTrade | null;
 };
 
 /**
@@ -602,7 +613,29 @@ export async function getRepsListForAgent(
     )
     .map((entry) => entry.contactCrmId);
 
-  const [metaByBrickId, otherPins] = await Promise.all([loadBrickMeta([...needed]), loadPinsFor(candidateIds)]);
+  const [metaByBrickId, otherPins, counterparties] = await Promise.all([
+    loadBrickMeta([...needed]),
+    loadPinsFor(candidateIds),
+    loadTradeCounterparties(),
+  ]);
+
+  // HAS PHOENIX ACTUALLY TRADED WITH THIS ROW? Matched here rather than inside `contact-trade.ts`
+  // because the area a contact sits in is the SAME two-step brick resolution the grouping below
+  // uses, and resolving it twice is how the badge and the group heading come to disagree about
+  // where a doctor is. See that file's header for why the area — not the name — is what makes a
+  // match trustworthy.
+  const tradeByContact = matchContactTrade(
+    rows.map((row) => {
+      const brickId =
+        brickByContactId.get(row.contactCrmId) ?? brickByRegionName.get(normalizeRegionKey(row.region)) ?? null;
+      return {
+        areaCode: brickId ? (metaByBrickId.get(brickId)?.areaCode ?? null) : null,
+        contactCrmId: row.contactCrmId,
+        name: row.name,
+      };
+    }),
+    counterparties,
+  );
 
   const pins = new Map(otherPins);
   for (const [contactCrmId, found] of checkins) pins.set(contactCrmId, { lat: found.seenAt.lat, lon: found.seenAt.lon });
@@ -691,6 +724,7 @@ export async function getRepsListForAgent(
       nearby: null,
       seenAt: found?.seenAt ?? null,
       sharedWith,
+      trade: tradeByContact.get(row.contactCrmId) ?? null,
     };
   });
 

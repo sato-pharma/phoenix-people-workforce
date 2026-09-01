@@ -564,6 +564,53 @@ function SharedLine({ row }: { row: RepsListContact }) {
   );
 }
 
+/** "2 direct orders, 1 approved" — count first, because the count is what was asked for. */
+function describeTrade(noun: string, total: number, approved: number): string {
+  const head = `${total} ${total === 1 ? noun : `${noun}s`}`;
+  if (approved === 0) return `${head}, none approved`;
+  if (approved === total) return total === 1 ? `${head}, approved` : `${head}, all approved`;
+  return `${head}, ${approved} approved`;
+}
+
+/**
+ * Business Phoenix has actually done with this row — the owner's ask, 2026-09-01: "if a pharmacy in
+ * the contact list and we meet direct order, show", and when asked what to show, "my objective is
+ * two quantity ... I don't need the value now."
+ *
+ * So this line carries COUNTS and no money, and it states the approved figure beside the total
+ * because the two diverge sharply in production: of the 89 direct orders raised through Phoenix only
+ * 47 are approved, and of the 27 marketing requests NONE is — 15 sit in `pending_approval`. A bare
+ * "3 marketing requests" on a doctor's row would read to a rep as three things the company bought
+ * for them, when so far it is three things nobody has yet agreed to.
+ *
+ * Emerald, and deliberately the only positive-toned line on a row: the slate chip above it says
+ * something looks wrong and the violet line says a customer is shared, while this one says the
+ * company has a trading relationship here. A reader should not have to decode which is which.
+ *
+ * It is rare BY CONSTRUCTION, not by accident — see `contact-trade.ts` for why a name alone cannot
+ * establish this. A row with no line means Phoenix has no record of trading with that contact, which
+ * on the overwhelming majority of a 9,518-row list is simply true.
+ */
+function TradeLine({ row }: { row: RepsListContact }) {
+  const trade = row.trade ?? null;
+  if (!trade) return null;
+  const parts: string[] = [];
+  if (trade.directOrders > 0) {
+    parts.push(describeTrade("direct order", trade.directOrders, trade.directOrdersApproved));
+  }
+  if (trade.marketingRequests > 0) {
+    parts.push(describeTrade("marketing request", trade.marketingRequests, trade.marketingRequestsApproved));
+  }
+  if (parts.length === 0) return null;
+  // No `dir` — this is an English sentence made of digits and English words, and a `dir="auto"`
+  // block here would take its direction from whatever followed it in the DOM (AGENTS.md §2.1).
+  return (
+    <span className="mt-1 block break-words text-phx-3xs font-semibold text-emerald-700">
+      {parts.join(" · ")}
+    </span>
+  );
+}
+
 /**
  * ONE address, polished and clickable — the owner's shape as of 2026-09-01.
  *
@@ -710,6 +757,12 @@ function ContactCell({ onOpenInsights, row }: { onOpenInsights: () => void; row:
         <span className="text-slate-400">{phone ? ` · ${phone}` : " · no phone"}</span>
       </span>
       <SharedLine row={row} />
+      {/* MERGED INTO THIS CELL RATHER THAN GIVEN A COLUMN. The table is `table-fixed` across six
+          columns totalling 100% and the owner's golden rule forbids a horizontal scroll on any
+          screen, so a seventh column could only be bought by squeezing the other six — and he has
+          already settled how to resolve exactly this collision: fit by MERGING columns, never by
+          shrinking type. Grade and phone are here for the same reason. */}
+      <TradeLine row={row} />
     </div>
   );
 }
@@ -766,6 +819,10 @@ function GroupTable({
               words is a riddle. */}
           <InsightsChip onOpen={() => onOpenInsights(row)} row={row} />
           <SharedLine row={row} />
+          {/* The mobile half of the same instruction — "always mobile friendly and desktop
+              friendly". A trade record a rep can only see on a laptop is one they cannot check
+              while standing in the pharmacy, which is the whole occasion for this board. */}
+          <TradeLine row={row} />
           <PortalRecordFields
             fields={[
               { label: "Specialty", value: row.speciality ?? "Unspecified" },
