@@ -823,6 +823,44 @@ easy to skip.
 Fail-closed is deliberate on both sides: the detector answers `false` if it cannot resolve the file
 list, and refuses to assume docs-only. Do not "fix" the asymmetry by extending the fast path to
 pushes — that would remove the only run that catches this class of failure at all.
+## `node --test` on a test file in this repo proves nothing
+
+Measured 2026-09-01. Every suite here is an **exported function** — `tests/memory-index-reachability.test.ts`
+is one `export function runMemoryIndexReachabilityTests()` spanning lines 50-266 — and `tests/run-tests.ts`
+imports it and passes it to `runTest(name, fn)`. The file itself never calls `test()`.
+
+Node's runner does not treat that as an empty file. It treats the FILE as the test, and a file that imports
+cleanly is a file that passed:
+
+```
+node --experimental-strip-types --test tests/memory-index-reachability.test.ts
+OK testsmemory-index-reachability.test.ts (137ms)
+  tests 1 | pass 1 | fail 0
+```
+
+That run asserts NOTHING. It was produced twice on this repo while quoting it as verification, and the second
+time the file under test had been **deliberately broken** — a load-bearing slug stripped out of `AGENTS.md`,
+exactly the condition the suite exists to catch. Still `pass 1`. The failure mode is the dangerous direction:
+it never goes red, so it reads as a clean verification rather than as a broken harness.
+
+This matters most on a **docs-only PR**, where `validate` fast-paths and runs no tests at all (see the
+docs-only section above). A session reaching for a local run precisely because CI will not do one is the
+session most likely to get the vacuous green.
+
+The real invocation imports the module and calls the export:
+
+```
+node --experimental-strip-types --input-type=module -e "
+  const m = await import('file:///F:/Phoenix%20Workforce/phoenix-workforce/tests/<name>.test.ts');
+  await m.run<Name>Tests();
+"
+```
+
+And per AGENTS.md 2.1, a local green only counts once the same command has been shown to go RED on the
+suite's own headline assertion. Breaking it produced the right one:
+
+> every memory the map marks load-bearing must still be named in AGENTS.md
+
 ## Relocated from AGENTS.md — 2026-09-01
 
 Verbatim, unabridged. These entries had grown from cues into full accounts inside `AGENTS.md`,

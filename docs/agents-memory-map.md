@@ -11,10 +11,13 @@ references costing 7,783 bytes — 11% of the file — re-sent on every turn, to
 
 **Reachability is unaffected, and that was checked rather than assumed.**
 `scripts/memory-index-reachability.mjs` treats a backticked slug in `AGENTS.md` as proof a
-memory is reachable. Only **18** memory files depended on that — every other slug named a file
-`MEMORY.md` already links. Those 18 therefore **stay inline in `AGENTS.md`** and must never be
-moved here; the rest are listed below and remain reachable through the index. Before removing
-any slug from `AGENTS.md`, re-run the classifier — the load-bearing set changes as the index does.
+memory is reachable. The rows marked **(inline — load-bearing)** are the ones where that is the
+ONLY reference — every other slug here names a file `MEMORY.md` still links. Marked slugs therefore
+**stay inline in `AGENTS.md`** and must never be moved here; the rest remain reachable through the
+index. No count is given on purpose: the set has already changed three times (it grew again on
+2026-09-01, when twelve slugs moved the OTHER way, out of `MEMORY.md` and into `AGENTS.md`, to buy
+index budget under the loader cliff). Before removing any slug from `AGENTS.md`, re-run the
+classifier — the load-bearing set changes as the index does.
 
 ## 2.1 Session-level traps
 
@@ -56,6 +59,8 @@ any slug from `AGENTS.md`, re-run the classifier — the load-bearing set change
 - **RLS on with no authenticated grant is the NORM here — 222 of 308 tables — not a…** — `rls-policy-without-an-authenticated-grant-is-usually-correct`
 - **ONE auth.users row with banned_until = 'infinity' 500s the ENTIRE GoTrue admin API** — `banned-until-infinity-breaks-the-whole-auth-admin-api`
 - **au.f_monthly_achievement SERVES A PRECOMPUTED ROLLUP, and its fingerprint covers…** — `attribution-rollup-fingerprint-ignores-the-sales-data` **(inline — load-bearing)**
+- **The ATS data model carries four traps that each read as normal.** `offer-chain-was-live-in-the-registry-with-a-hole-past-approval` **(inline — load-bearing)** `ats-candidate-children-one-has-no-fk-and-one-is-a-view` **(inline — load-bearing)** `cv-extraction-reads-governorate-but-never-applies-it` **(inline — load-bearing)** `the-medical-rep-cv-schema-reads-12-fields-universal-reads-38` **(inline — load-bearing)**
+- **A CV import OVERWROTE a candidate's whole identity** `a-cv-import-overwrote-a-candidates-whole-identity` **(inline — load-bearing)** `the-email-import-allowlist-holds-an-inbox-not-a-sender` **(inline — load-bearing)** `cv-file-is-in-ats-files-not-cv-external-url` **(inline — load-bearing)**
 - **A 200 from a health endpoint can be blind to the thing that is broken** — `openai-key-is-401-and-cv-extraction-silently-falls-back-to-rules` · `openai-spend-cannot-be-read-from-the-api-reconstruct-it`
 - **app_error_events returning 0 rows means QUIET, not broken.** — `app-error-events-is-user-triggered-zero-is-not-broken`
 - **The Error Monitor HIDES rows whose environment is NULL** — `error-monitor-hides-null-environment-rows` · `ad-hoc-backup-tables-are-anon-readable`
@@ -118,6 +123,7 @@ any slug from `AGENTS.md`, re-run the classifier — the load-bearing set change
 - **expense_claims is the ONE live RLS read path in production.** — `expense-claims-rls-read-path-is-live-in-prod` · `guard-every-prod-write-when-another-session-shares-the-queue` · `force-logout-everywhere-needs-three-writes`
 - **Production has NO PITR — 7 daily physical backups are the whole recovery story** — `production-supabase-has-no-pitr-only-daily-backups`
 - **Payroll NEVER reads social_insurance_status — the social_insurance_wage column…** — `payroll-reads-the-insurance-wage-never-the-status` **(inline — load-bearing)** · `social-insurance-and-tax-never-reduce-take-home-pay` **(inline — load-bearing)**
+- **A HELD payroll row is DROPPED at publish, silently.** `a-held-payroll-row-is-dropped-at-publish-and-leaves-no-trace` **(inline — load-bearing)**
 - **A LOCAL run writes PRODUCTION but silently skips every email** — `local-run-against-prod-db-silently-skips-every-email` · `local-resend-key-is-restricted-use-railway-run-to-send-from-production`
 - **STAGING cannot rehearse a PRODUCTION shape.** — `staging-cannot-rehearse-shapes-only-prod-surgery-made`
 - **APP_ENV was UNSET on Railway staging, so staging identified itself as PRODUCTION** — `app-env-unset-on-staging-made-it-look-like-production`
@@ -145,6 +151,7 @@ any slug from `AGENTS.md`, re-run the classifier — the load-bearing set change
 - **The mailbox-monitor app-password entry is ___, never "Phoenix".** — `mailbox-monitor-app-password-entry-is-three-underscores-never-phoenix` **(inline — load-bearing)**
 - **Turbify CANNOT issue app passwords centrally — the owner is STAYING, so do not…** — `turbify-cannot-issue-app-passwords-centrally-owner-stays` **(inline — load-bearing)**
 - **A password reset does NOT revoke a Turbify mailbox — the app passwords survive it.** — `a-password-reset-does-not-revoke-a-turbify-mailbox` **(inline — load-bearing)**
+- **Four sales-attribution facts that silently change a number.** `ez-is-credited-evenly-across-cairo-giza-cns-reps` **(inline — load-bearing)** `closing-reads-distributor-product-rollup-not-fact-rollup` **(inline — load-bearing)** `a-case-duplicate-line-map-row-doubled-a-whole-line` **(inline — load-bearing)** `owner-sheet-vocabulary-stores-is-office-upa-is-a-channel` **(inline — load-bearing)**
 
 ## 4.1 Marketing customer, venue and licence validation
 
