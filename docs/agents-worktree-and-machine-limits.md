@@ -241,3 +241,78 @@ see* above and was dropped the same day. The cue — and every memory slug — s
 - **Start a session with `node scripts/new-session.mjs <task>` — one command for the whole four-step ritual** ([scripts/new-session.mjs](scripts/new-session.mjs), also wired as `pnpm run session:new`; invoke `node` directly per §2.1): fetch `origin/main`, create `_wt-<task>` on `codex/<task>`, junction `node_modules` from the primary, copy the gitignored env files. It refuses to start below 6 GB of free commit charge. `--status` prints live headroom and which folders can actually run, `--repair` fixes a worktree missing either piece, `--from <ref>` branches from something other than `origin/main`. **`git worktree add` is only step one of four** — it never copies gitignored files, so a hand-made worktree has no `.env.local` (dev-auth and the dev server then fail silently, with no error) and no `node_modules` (nothing runs at all). By hand that is `git worktree add` **plus** `pnpm run worktree:sync-env` **plus** the junction.
 
 - **Remove worktrees with `node scripts/new-session.mjs --remove <task>`** (`pnpm run session:remove`), only after approval. It runs three gates in cost order before touching anything — untracked `.xlsx`/`.pdf` rescue scan, then uncommitted work, then commits that are on no remote branch **and** have no merged PR — drops the `node_modules` junction with `cmd /c rmdir` so no husk is left, and re-reads the folder's branch live rather than trusting an earlier scan (a parallel session can repoint a tree first). **A squash-merged branch legitimately holds commits `main` does not**, so the last gate asks `gh pr list --head <branch> --state merged`, never reachability: pure reachability calls every successfully merged worktree stranded, and the advice that follows from it — "push the branch" — is how you get a conflicting PR that runs no CI at all. By hand it is `git worktree remove` plus that same PR check; `git branch --merged` is always wrong here. Stale worktrees must not accumulate.
+
+## Section 5 was trimmed to its floor, and §2.1's `--fix` hook was wrong — 2026-09-01
+
+**What was done.** §5 went from **5,838 → 5,696 bytes, −142 B (2.4%)**. `AGENTS.md` as a whole went
+**69,590 → 69,500, −90 B**, because the same pass spent **+52 B** in §2.1 correcting a hook that was
+factually wrong about a destructive command. Invariants held across the whole file: **241 bullets,
+12 🔒, 15 🔴, 31 memory slugs — an identical slug set before and after.** Proven by arming the guard
+first: removing `tailwind-merge-strips-custom-named-font-sizes` made `runMemoryIndexReachabilityTests`
+go RED with *"every memory the map marks load-bearing must still be named in AGENTS.md"*; all three
+memory-index suites were green after restoring it, and `repo-doctor` reports 0 orphans.
+
+### The §2.1 correction — `--fix` does not exclude `_wt-*`
+
+§5 and §2.1 disagreed about `pnpm run repo:doctor --fix`, which deletes directories. §5 said it
+*"deletes only husks proven to hold zero files"*; §2.1 said **"`--fix` can NEVER clear a `_wt-*`
+husk"**. Settled against `scripts/repo-doctor.mjs` rather than against either sentence:
+
+- A husk is *"defined by proof, not by name: not registered as a worktree, no `.git` entry, and a
+  full recursive walk finding ZERO files"* (header comment). **There is no `_wt-` exclusion anywhere
+  in the script** — `else if (files === 0 && !unreadable) husks.push(row)` is the whole test.
+- The `--fix` loop re-proves emptiness immediately before each `fs.rmSync`, skipping anything that
+  gained a file or became a live worktree since the inventory.
+- So a `_wt-*` husk **is** cleared by `--fix` when it holds zero files. What `--fix` cannot clear is
+  a husk still carrying its `node_modules`/`.next` payload — reported NEEDS-REVIEW and never touched
+  — or one whose `rmSync` fails on the `git fsmonitor--daemon` lock described elsewhere in this file.
+
+§2.1's hook now reads *"`--fix` clears a husk only if it holds ZERO files, and can still FAIL on a
+locked one — then use `rmdir /s /q` from PowerShell, not Bash."* That is 52 bytes more expensive and
+worth it: the old wording sent a session to hand-delete a folder that the safe, re-proving path would
+have removed for it. §2.2 already says a stale hook costs more than a missing one, because it gets
+defended rather than looked up.
+
+### What came out of §5
+
+Five edits, each verified to leave no claim without a home:
+
+- **The session-count clause on the husk bullet** (−55). §2.1 states it more precisely and with the
+  contrast that matters — *"`--fix` needs exactly ONE live session; `--strip-idle` does NOT"*. §5's
+  copy said only "it refuses to act while more than one session is live", which is the weaker half.
+- **`(47.79 GB is a floor, not a ceiling)`** (−37). The very next sentence is **"Never budget headroom
+  against a limit you did not just read"**, and the two lines after it name the exact WMI fields and
+  the `--status` flag that read it. A stale figure sitting in front of that instruction is an
+  invitation to do the one thing the paragraph forbids. The floor-not-ceiling *point* survives in the
+  retained "**it is not a constant** … so it FLOATS".
+- **`gh pr list --head <branch> --state merged` spelled out a second time** (−29). §2's hard-learned
+  rules already carry the command verbatim — *"Merged-branch checks must be squash-aware. Use
+  `gh pr list --head <branch> --state merged`; `git branch --merged` is always wrong here."* §5 keeps
+  the reason, which is the part §2 does not have: **a squash-merged branch legitimately holds commits
+  `main` does not.**
+- **Two connectives** (−21): "outright" and "of them".
+
+### The finding: the section-by-section campaign is finished
+
+§5 is the third section measured at its floor, after §2.1 (3.7%) and §4 (1.9%). §5 yielded 2.4%, and
+as with both earlier passes roughly a third of that came from a duplicate rather than from wording.
+The section map after this pass:
+
+| Section | Bytes | State |
+| --- | --- | --- |
+| 2.1 Session-level traps | 19,060 | trimmed to floor 2026-09-01 |
+| 4 + 4.1 Standing owner rules | 13,995 | trimmed to floor 2026-09-01 |
+| 5 Session/worktree safety | 5,696 | trimmed to floor 2026-09-01 |
+| 2.3 Production and approval hooks | 5,723 | not passed over |
+| 3 Stable Environment Facts | 5,520 | not passed over |
+| 7 Validation | 3,503 | not passed over |
+| everything else (0,1,2,2.2,6,8,9) | ~16,000 | small, mostly structural |
+
+**Do not run another editing pass over §2.1, §4 or §5.** What is left in them is the rules themselves,
+and blunting one costs far more than the context it occupies. The two remaining ≥5KB sections (§2.3
+and §3) have not been measured and are the only places a further pass could pay.
+
+**The lever from here is the displacement rule applied to new hooks, not more editing.** Every pass so
+far has recovered roughly what one or two new hooks add: PR #2880 alone put an 884-byte hook into §2.1
+on the morning §2.1 was trimmed by 729. Cue in `AGENTS.md`, account in `docs/`, at the moment the hook
+is written.
