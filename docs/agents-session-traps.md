@@ -917,3 +917,57 @@ stays in `AGENTS.md`; the account lives here.
   `outstation_expense_requests.notes` carried Arabic in 17 of 48 rows; `coaching_reports` in **0 of
   112**. A screen with no bilingual data does not have this bug.
   `bilingual-bodies-need-direction-per-line-not-per-block`
+
+## Section 2.1 was trimmed to its floor — 2026-09-01
+
+**What was done.** A wording-only pass over §2.1, plus two whole bullets removed as duplicates:
+19,789 → 19,060 bytes, **−729 B (3.7%)**. No hook and no memory slug was lost — 15 slug-shaped
+tokens before and after, and all 30 memory files named in `AGENTS.md` are still named there. Proven
+by arming the guard first: deleting `tailwind-merge-strips-custom-named-font-sizes` made
+`runMemoryIndexReachabilityTests` go RED with *"every memory the map marks load-bearing must still
+be named in AGENTS.md"*, and all three memory-index suites were green after restoring it.
+
+**The two bullets that went were de-duplicated, not deleted.** §2.2 says never delete a hook to make
+room; neither of these lost a claim, because a fuller statement of each already sits elsewhere in
+the same auto-loaded file:
+
+- *"`pnpm run <script>` PURGES `node_modules` when the lockfile moved. Invoke `node scripts/…`
+  directly."* — §5 carries a strict superset: *"Never `pnpm install` inside a worktree, and never
+  `pnpm run` there. `pnpm run` purges `node_modules` outright once it sees the lockfile has moved,
+  destroying the junction before your script starts. Invoke `node scripts/…` directly."* — and adds
+  what the junction IS enough for. The general trigger ("once it sees the lockfile has moved") is
+  stated there too, so nothing narrowed.
+- *"'Permission denied' on `git worktree remove` still DEREGISTERS the worktree."* — absorbed
+  word-for-word by the hook PR #2880 added the same morning, which reads *"`git worktree remove`
+  then fails Permission denied, deregisters anyway, and leaves the husk."*
+
+Reach is identical either way — everything in `AGENTS.md` auto-loads in full — so de-duplicating
+costs scannability only, never recall. That is §2.2's *"Reach is identical; only scannability
+differs"* being spent on purpose.
+
+**PR #2880's own hook was compressed 884 → 692 B** in the same pass. It was the largest bullet in
+§2.1, about four times the section average, and its 33-line account had already shipped to
+`docs/agents-worktree-and-machine-limits.md` in the same PR — so the evidence it carried inline
+("two clean closes and a kill of the owning `claude.exe`", the daemon's command line never naming
+the tree it serves) has a home and did not need to be paid for on every request. Every instruction
+survived: what fails, that nothing points at the holder, that your own read-only gate scans spawn
+the daemon, and the stop-then-retry-for-minutes fix with its ~5 min figure.
+
+**The dates removed are pure provenance and all still live in `docs/`** — `http.postBuffer` fixed
+2026-08-23, the REVOKE fix on prod 2026-08-14, the three docs-only PRs of 2026-09-01, `--strip-idle`
+narrowed 2026-09-01, the dev-server launcher merge. §2.2 already requires a hook to be *"durable
+(never a count, a status or a date)"*, so this is the rule being applied rather than evidence being
+lost. Every number a session actually judges against was kept: 222 of 308 tables, 41 hits, ~6 GB,
+20–30 MINUTES, `876000h`, ~5 min, 40-char SHA.
+
+**The finding that matters more than the 729 bytes: §2.1 has no structural fat left.** It is 96
+bullets in 19,060 bytes — about 198 bytes each — and every one is a claim whose account is already
+in this file. A second wording pass will not pay. The measured yield here was 3.7%, and roughly a
+third of that came from the two duplicates rather than from wording; the first sixteen wording edits
+together bought only 282 B.
+
+**The growth pressure is additions, not slack.** PR #2880 put a single 884-byte hook into §2.1 that
+same morning — more than this entire trim recovered. If §2.1 has to shrink again, the lever is the
+displacement rule applied to *new* hooks at the moment they are written (cue here, account in
+`docs/`), not another editing pass over what is already there. Re-reading this section and finding
+it terse is the expected state, not an invitation to compress it further.
