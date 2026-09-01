@@ -18,6 +18,8 @@
  *    August 2026 sit on nobody's current list.
  */
 
+import { unstable_cache } from "next/cache";
+
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { CRM_CONTACTS_TABLE } from "@/lib/crm/tables";
 import { LIST_TYPES, type CrmListType } from "@/lib/crm/contacts-web-client";
@@ -132,49 +134,107 @@ export async function getAgentContactList(agentCrmId: number): Promise<DoctorLis
 }
 
 /**
+ * The cache tag for the rep summaries below.
+ *
+ * `syncCrmContactLists` (app/api/cron/crm-contact-lists/route.ts) is the ONLY writer of
+ * `ireports360_contacts`, so it is the only thing that can move these numbers. It busts this tag on
+ * every successful slice, which is what keeps the cache from being a staleness bug: a TTL alone
+ * would leave the picker quoting yesterday's counts for up to five minutes after the morning sweep.
+ */
+export const CRM_CONTACT_LIST_SUMMARIES_CACHE_TAG = "crm-contact-list-summaries";
+
+/**
  * One summary row per agent that has a mirrored list, for the rep picker.
  *
  * Counts come from the mirror rather than from the CRM's own counter column, so what the picker
  * promises and what the board then shows are the same number by construction.
+ *
+ * ## Why this reads the whole table, and why that is now paid at most once every five minutes
+ *
+ * There is no per-agent aggregate in the database — the counts are a GROUP BY that PostgREST cannot
+ * express without a view — so producing 69 summary rows means reading all 9,542 contact rows. That
+ * is inherent. What was NOT inherent was doing it SEQUENTIALLY, on every render, on all three
+ * boards that call this: `/employee-portals/reps-list`, `/admin/reps-list` and Plan Verification.
+ * The portal board is the one the nav registry calls "the page a manager reads standing in a
+ * pharmacy", and its FIRST screen — the rep picker, before any rep is chosen — paid ten serial
+ * round trips to Amsterdam to put a contact count on about five cards.
+ *
+ * Two changes, and they fix different halves:
+ *
+ *  1. THE PAGES ARE FETCHED AT ONCE, not one after another. Counted first so the fan-out is exact,
+ *     the same shape `loadContactRoster` in reps-list.ts already uses. Ten serial hops become one
+ *     count plus ten parallel ones.
+ *  2. THE RESULT IS CACHED. It is ~69 small objects — far below the 2 MB data-cache entry limit
+ *     that kills the dev server, and a plain array, so nothing is lost to serialization the way a
+ *     returned `Map` would be. The underlying mirror is rewritten by ONE cron, in twelve slices
+ *     five minutes apart, once a day at 05:00-05:55 Cairo, so a 300-second window is far fresher
+ *     than the data it covers — and the tag above closes even that.
+ *
+ * THE ORDER IS NOT DECORATION. Ranged paging with no ORDER BY has no defined row order between
+ * requests, so a row can be returned twice or skipped entirely and the counts come out quietly
+ * wrong. `(agent_crm_id, contact_crm_id, list_type)` is the table's own conflict key, so ordering on
+ * it is a total order and the sweep is deterministic.
+ *
+ * The try/catch stays OUT of the cached function deliberately, for the same reason
+ * `loadBrickCentroids` does it: a transient database error must throw, never be written into the
+ * cache as an empty roster that then reads as "no rep has a list" for five minutes.
  */
-export async function getDoctorListRepSummaries(): Promise<DoctorListRepSummary[]> {
-  const byAgent = new Map<number, DoctorListRepSummary>();
-  for (let from = 0; ; from += PAGE_SIZE) {
-    const { data, error } = await getSupabaseAdmin()
+export const getDoctorListRepSummaries = unstable_cache(
+  async (): Promise<DoctorListRepSummary[]> => {
+    const supabase = getSupabaseAdmin();
+    const { count, error: countError } = await supabase
       .from(CRM_CONTACTS_TABLE)
-      .select("agent_crm_id, agent_hr_id, list_type, synced_at")
-      .range(from, from + PAGE_SIZE - 1);
-    if (error) throw new Error(`Could not read the doctor lists: ${error.message}`);
-    const page = (data ?? []) as unknown as Pick<
-      ContactRecord,
-      "agent_crm_id" | "agent_hr_id" | "list_type" | "synced_at"
-    >[];
-    for (const record of page) {
-      const existing = byAgent.get(record.agent_crm_id) ?? {
-        agentCrmId: record.agent_crm_id,
-        amCount: 0,
-        hrId: record.agent_hr_id,
-        inExpectedBand: false,
-        name: "",
-        pharmacyCount: 0,
-        pmCount: 0,
-        syncedAt: record.synced_at,
-      };
-      const listType = normalizeListType(record.list_type);
-      if (listType === "PM") existing.pmCount += 1;
-      else if (listType === "AM") existing.amCount += 1;
-      else existing.pharmacyCount += 1;
-      if (!existing.hrId && record.agent_hr_id) existing.hrId = record.agent_hr_id;
-      if (record.synced_at && (!existing.syncedAt || record.synced_at > existing.syncedAt)) {
-        existing.syncedAt = record.synced_at;
+      .select("contact_crm_id", { count: "exact", head: true });
+    if (countError) throw new Error(`Could not size the doctor lists: ${countError.message}`);
+
+    const pages = Math.max(1, Math.ceil((count ?? 0) / PAGE_SIZE));
+    const results = await Promise.all(
+      Array.from({ length: pages }, (_unused, page) =>
+        supabase
+          .from(CRM_CONTACTS_TABLE)
+          .select("agent_crm_id, agent_hr_id, list_type, synced_at")
+          .order("agent_crm_id", { ascending: true })
+          .order("contact_crm_id", { ascending: true })
+          .order("list_type", { ascending: true })
+          .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1),
+      ),
+    );
+
+    const byAgent = new Map<number, DoctorListRepSummary>();
+    for (const { data, error } of results) {
+      if (error) throw new Error(`Could not read the doctor lists: ${error.message}`);
+      const page = (data ?? []) as unknown as Pick<
+        ContactRecord,
+        "agent_crm_id" | "agent_hr_id" | "list_type" | "synced_at"
+      >[];
+      for (const record of page) {
+        const existing = byAgent.get(record.agent_crm_id) ?? {
+          agentCrmId: record.agent_crm_id,
+          amCount: 0,
+          hrId: record.agent_hr_id,
+          inExpectedBand: false,
+          name: "",
+          pharmacyCount: 0,
+          pmCount: 0,
+          syncedAt: record.synced_at,
+        };
+        const listType = normalizeListType(record.list_type);
+        if (listType === "PM") existing.pmCount += 1;
+        else if (listType === "AM") existing.amCount += 1;
+        else existing.pharmacyCount += 1;
+        if (!existing.hrId && record.agent_hr_id) existing.hrId = record.agent_hr_id;
+        if (record.synced_at && (!existing.syncedAt || record.synced_at > existing.syncedAt)) {
+          existing.syncedAt = record.synced_at;
+        }
+        byAgent.set(record.agent_crm_id, existing);
       }
-      byAgent.set(record.agent_crm_id, existing);
     }
-    if (page.length < PAGE_SIZE) break;
-  }
-  for (const summary of byAgent.values()) summary.inExpectedBand = isInExpectedBand(summary.pmCount);
-  return [...byAgent.values()];
-}
+    for (const summary of byAgent.values()) summary.inExpectedBand = isInExpectedBand(summary.pmCount);
+    return [...byAgent.values()];
+  },
+  ["crm-doctor-list-rep-summaries"],
+  { revalidate: 300, tags: [CRM_CONTACT_LIST_SUMMARIES_CACHE_TAG] },
+);
 
 export type DoctorListBoard = {
   /** The rep whose list is on screen, or null when the mirror is empty. */

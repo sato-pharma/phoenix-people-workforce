@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import {
   assertContactGridShape,
@@ -419,4 +420,55 @@ export function runCrmContactListsTests() {
     if (previous === undefined) delete process.env.IREPORTS360_WEB_BASE_URL;
     else process.env.IREPORTS360_WEB_BASE_URL = previous;
   }
+  // ── THE REP-PICKER SUMMARIES ARE CACHED, PARALLEL AND DETERMINISTICALLY ORDERED ──────────────
+  // `getDoctorListRepSummaries` produces ~69 summary rows by reading all 9,542 rows of
+  // ireports360_contacts — there is no per-agent aggregate in the database, so the whole-table read
+  // is inherent. Doing it SEQUENTIALLY on every render was not: three boards call this, and the
+  // portal board's FIRST screen (the rep picker, before any rep is chosen) paid ten serial round
+  // trips to Amsterdam to put a contact count on about five cards.
+  //
+  // The harness cannot run Next.js, so this locks the SOURCE SHAPE — the same weaker-but-honest
+  // instrument tests/crm-brick-centroids-cache.test.ts uses for the identical migration on
+  // loadBrickCentroids. Four invariants, each of which fails silently if it regresses:
+  {
+    const source = readFileSync("src/lib/crm/contact-lists.ts", "utf8");
+    const start = source.indexOf("export const getDoctorListRepSummaries");
+    assert.ok(start > 0, "getDoctorListRepSummaries must exist — three boards read their picker counts from it");
+    const block = source.slice(start, source.indexOf("\n);", start));
+
+    assert.ok(
+      /^export const getDoctorListRepSummaries = unstable_cache\(/m.test(source.slice(start)),
+      "the summaries must go through unstable_cache: a module-level variable is cold in most route segments (the exact fault loadBrickCentroids was moved off), and without a cache every render re-reads 9,542 rows",
+    );
+
+    // PARALLEL, not one page after another. This is the half that fixes the cold path.
+    assert.ok(
+      block.includes("await Promise.all(") && block.includes("count: \"exact\", head: true"),
+      "the pages must be counted first and then fetched AT ONCE — a `for` loop awaiting each range in turn is ten serial hops to Amsterdam on a page a manager opens from a phone",
+    );
+    assert.ok(
+      !/for \(let from = 0; ; from \+= PAGE_SIZE\)/.test(block),
+      "the open-ended sequential paging loop must not come back",
+    );
+
+    // ORDER BY the table's own conflict key. Without it, ranged paging has no defined row order
+    // between requests, so a contact can be counted twice or skipped and the picker's numbers come
+    // out quietly wrong — a wrong count reads exactly like a real one.
+    for (const column of ["agent_crm_id", "contact_crm_id", "list_type"]) {
+      assert.ok(
+        block.includes(`.order("${column}", { ascending: true })`),
+        `the sweep must order by ${column}: (agent_crm_id, contact_crm_id, list_type) is the table's conflict key, and only a total order makes ranged paging deterministic`,
+      );
+    }
+
+    // A CACHE WITH NO INVALIDATION IS A STALENESS BUG WEARING A PERFORMANCE COSTUME. The contacts
+    // cron is the ONLY writer of ireports360_contacts, so it is the only thing that can move these
+    // counts, and it must bust the tag on every successful slice.
+    const cron = readFileSync("app/api/cron/crm-contact-lists/route.ts", "utf8");
+    assert.ok(
+      cron.includes("CRM_CONTACT_LIST_SUMMARIES_CACHE_TAG") && cron.includes("revalidateTag("),
+      "the contacts sync must revalidate the summaries tag — it is the only writer of the table behind them, and a TTL alone leaves the picker quoting pre-sweep counts for five minutes after each of the twelve slices",
+    );
+  }
+
 }

@@ -1,6 +1,8 @@
+import { revalidateTag } from "next/cache";
 import { NextResponse } from "next/server";
 
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
+import { CRM_CONTACT_LIST_SUMMARIES_CACHE_TAG } from "@/lib/crm/contact-lists";
 import { isIReports360Configured } from "@/lib/crm/config";
 import {
   CONTACT_SYNC_SLICE_COUNT,
@@ -112,6 +114,18 @@ export async function GET(request: Request) {
       deadlineAt: sweepAll ? undefined : startedAt + SLICE_BUDGET_MS,
       targets: sliceTargets,
     });
+
+    // THE MIRROR JUST MOVED, SO THE CACHED PICKER COUNTS ARE NOW WRONG. getDoctorListRepSummaries
+    // caches its ~69 summary rows for 300s (contact-lists.ts); without this line the three boards
+    // that read it — /employee-portals/reps-list, /admin/reps-list and Plan Verification — would
+    // quote pre-sweep counts for up to five minutes after each of the twelve slices. Wrapped
+    // because a revalidate failure must never turn a SUCCESSFUL sync into a 500: the rows are
+    // written, and the TTL is the fallback.
+    try {
+      revalidateTag(CRM_CONTACT_LIST_SUMMARIES_CACHE_TAG, "max");
+    } catch (error) {
+      logError("crm-contact-lists: cache revalidation failed", error);
+    }
 
     // Refusals and failures are the two outcomes that mean "the mirror is older than it looks", so
     // they are named in the audit row rather than buried in a count nobody reads. `skipped` is the
