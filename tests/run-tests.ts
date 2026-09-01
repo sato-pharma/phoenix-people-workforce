@@ -1173,6 +1173,8 @@ process.env.PHOENIX_TEST_SUITE = "1";
 (process.env as Record<string, string | undefined>).NODE_ENV = "test";
 import { runDvProbationWatchlistLiveSourceTests } from "./dv-probation-watchlist-live-source.test.ts";
 
+import { runWeeklyFieldForceTests } from "./weekly-field-force.test.ts";
+
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -3565,6 +3567,8 @@ await runTest(
   "the DV probation watchlist reads probation_dv_days, not the retired employee_probation checkboxes",
   runDvProbationWatchlistLiveSourceTests,
 );
+
+await runTest("weekly field force (line+area -> rep, units never summed across products, exact vs allocated)", runWeeklyFieldForceTests);
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);

@@ -17,6 +17,12 @@ import {
   resolveWeeklyAccessScope,
   type WeeklyAccessScope,
 } from "@/lib/sales/weekly/access";
+import { loadWeeklyAreaSplitIndex } from "@/lib/sales/weekly/branch-area-split";
+import {
+  buildPortalWeeklyFieldForce,
+  loadFieldForceSeatIndex,
+  type PortalWeeklyFieldForce,
+} from "@/lib/sales/weekly/portal-weekly-field-force";
 import { loadWeeklyDashboard } from "@/lib/sales/weekly/service";
 import type {
   WeeklyDashboard,
@@ -331,32 +337,71 @@ export type PortalWeeklyFilters = {
 export async function getPortalWeeklyDashboard(
   filters: PortalWeeklyFilters,
   ctx: AccessContext,
+  // OPT-IN, deliberately. Building the field force costs the row grain plus two supporting index
+  // reads, and two of this function's four callers never show it: the export route builds its own
+  // workbook, and the CEO command centre reads only a trend line. Defaulting it ON would have made
+  // both slower for nothing.
+  options?: { includeFieldForce?: boolean },
 ): Promise<{
   data: WeeklyDashboard;
   scope: PortalWeeklyScope;
   comparison: PortalWeeklyComparison | null;
+  fieldForce: PortalWeeklyFieldForce | null;
 }> {
   const scope = await resolvePortalWeeklyScope(ctx);
+  const includeFieldForce = options?.includeFieldForce === true;
 
-  const data = await loadWeeklyDashboard({
-    cycleMonths: filters.cycleMonths,
-    cycleMonthMode: filters.cycleMonthMode,
-    weekNumbers: filters.weekNumbers,
-    weekNumberMode: filters.weekNumberMode,
-    distributorCodes: filters.distributorCodes,
-    distributorFilterMode: filters.distributorFilterMode,
-    regionCodes: filters.regionCodes,
-    regionFilterMode: filters.regionFilterMode,
-    productCodes: filters.productCodes,
-    productFilterMode: filters.productFilterMode,
-    lineCodes: filters.lineCodes,
-    lineFilterMode: filters.lineFilterMode,
-    accessScope: scope.accessScope,
-    allWeeks: true,
-  });
+  // The two supporting indexes the Field Force tab needs are independent of the dashboard load, so
+  // they are fetched ALONGSIDE it rather than after it — the tab costs one round trip of latency,
+  // not three. Both fail soft on their own, which is why neither can take the page down.
+  const [data, areaSplit, seatIndex] = await Promise.all([
+    loadWeeklyDashboard({
+      cycleMonths: filters.cycleMonths,
+      cycleMonthMode: filters.cycleMonthMode,
+      weekNumbers: filters.weekNumbers,
+      weekNumberMode: filters.weekNumberMode,
+      distributorCodes: filters.distributorCodes,
+      distributorFilterMode: filters.distributorFilterMode,
+      regionCodes: filters.regionCodes,
+      regionFilterMode: filters.regionFilterMode,
+      productCodes: filters.productCodes,
+      productFilterMode: filters.productFilterMode,
+      lineCodes: filters.lineCodes,
+      lineFilterMode: filters.lineFilterMode,
+      accessScope: scope.accessScope,
+      allWeeks: true,
+      // The row grain the Field Force tab is built from. Deliberately NOT paired with
+      // excludeUnmapped: the two tabs sit on one screen under one filter bar, so the rep rows must
+      // add to the KPI strip above them. Dropping unmapped SKUs here would make the field force
+      // read SHORT against the same page's own total, which is the one discrepancy a reader cannot
+      // explain. Unmapped products surface on the Completeness tracker instead, where they belong.
+      includeFactRows: includeFieldForce,
+    }),
+    // The owner's depot-split rule. Fails soft to an empty index, which simply means no branch is
+    // split and only hand-mapped branches reach a rep.
+    includeFieldForce ? loadWeeklyAreaSplitIndex().catch(() => null) : Promise.resolve(null),
+    includeFieldForce ? loadFieldForceSeatIndex() : Promise.resolve(null),
+  ]);
 
   const trimmed = trimWeeklyFilterOptions(data, scope);
   const comparison = await computeWeeklyComparison(filters, scope, trimmed);
 
-  return { data: trimmed, scope, comparison };
+  const fieldForce = seatIndex
+    ? buildPortalWeeklyFieldForce({
+        rows: data.factRows ?? [],
+        areaSplit,
+        seatIndex,
+        // The dashboard's stable product universe, so column N is the same product on every rep's
+        // row and in every scope — the same reason the NSM/DSM workbook takes a productAxis.
+        productAxis: trimmed.availableProducts.map((option) => ({ code: option.code, name: option.name })),
+        weekComparison: trimmed.weekComparison,
+        seatIndexUnavailable: seatIndex.seats.length === 0,
+      })
+    : null;
+
+  // Never ship the row grain to the browser. It is thousands of rows per month and the client has no
+  // use for it — everything the screen renders is already aggregated into `fieldForce`.
+  const { factRows: _factRows, ...clientSafe } = trimmed;
+
+  return { data: clientSafe, scope, comparison, fieldForce };
 }

@@ -18,6 +18,7 @@ import {
   type PortalWeeklyFilters,
   type PortalWeeklyScopeView,
 } from "@/lib/sales/weekly/portal-weekly-dashboard";
+import type { PortalWeeklyFieldForce } from "@/lib/sales/weekly/portal-weekly-field-force";
 import type { WeeklyDashboard } from "@/lib/sales/weekly/types";
 
 export const runtime = "nodejs";
@@ -65,12 +66,14 @@ async function PortalWeeklyContent({
   let data: WeeklyDashboard | null = null;
   let scope: PortalWeeklyScopeView | null = null;
   let comparison: PortalWeeklyComparison | null = null;
+  let fieldForce: PortalWeeklyFieldForce | null = null;
   let loadError: string | null = null;
   try {
-    const result = await getPortalWeeklyDashboard(filters, access);
+    const result = await getPortalWeeklyDashboard(filters, access, { includeFieldForce: true });
     data = result.data;
     scope = toPortalWeeklyScopeView(result.scope);
     comparison = result.comparison;
+    fieldForce = result.fieldForce;
   } catch (error) {
     loadError = error instanceof Error ? error.message : "Failed to load Weekly Sales.";
   }
@@ -81,6 +84,7 @@ async function PortalWeeklyContent({
         initialData={data}
         scope={scope}
         initialComparison={comparison}
+        initialFieldForce={fieldForce}
       />
     );
   }
@@ -110,7 +114,7 @@ export default async function PortalWeeklySalesPage({
   return (
     <EmployeePortalPageShell
       badge="Sales Operations"
-      description="De-cumulated weekly distributor sell-in across your scope — value, units, regions, products and week-over-week trends."
+      description="Your medical reps week by week, per product — plus the de-cumulated distributor sell-in behind it."
       errorBoundaryTitle="Weekly Sales unavailable"
       title="Weekly Sales"
     >
