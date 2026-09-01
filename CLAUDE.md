@@ -24,14 +24,13 @@ All commands run from the repo root.
 | Whole gate, by hand — **only when the owner names it** | `pnpm run ci` |
 
 **CI is the gate. Do not run a local full validation.** `check:harden` was retired on 2026-08-18 at
-the owner's instruction, together with the `ask-before-validation` hook and the ask-before-you-
-validate rule. Do not reintroduce them and do not invent a replacement — no "quick subset" of lint +
-typecheck before pushing, no `pnpm run ci` as a pre-push ritual. **Push the branch and let the PR's
-checks answer**; `.github/workflows/ci.yml` lists every step itself, and `validate`, `lint`,
-`typecheck` and `secret-scan` are required checks that still block the merge. Migrations and
-production deploys are the two things CI never sees — those still get a check immediately before the
-action. Verifying a UI change in the browser is not validation at all — reload and look. Full rule
-and the per-change matrix: [AGENTS.md §7](AGENTS.md).
+the owner's instruction, together with the `ask-before-validation` hook. Do not reintroduce them and
+do not invent a replacement — no "quick subset" of lint + typecheck before pushing, no `pnpm run ci`
+as a pre-push ritual. **Push the branch and let the PR's checks answer**; `validate`, `lint`,
+`typecheck` and `secret-scan` are required checks that block the merge. Migrations and production
+deploys are the two things CI never sees — those still get a check immediately before the action.
+Verifying a UI change in the browser is not validation at all — reload and look. Full rule and the
+per-change matrix: [AGENTS.md §7](AGENTS.md).
 
 ## The two rules that apply to every change
 
@@ -63,9 +62,9 @@ and the per-change matrix: [AGENTS.md §7](AGENTS.md).
 
 ## Protected Files — OWNER APPROVAL REQUIRED
 
-These files are **permanently locked** by the owner. No AI session, developer, or automated
-tool may read-then-edit, refactor, rename constants, adjust formulas, or change any value inside
-them without the owner explicitly approving that specific change in the active conversation first.
+These files are **permanently locked** by the owner. No AI session, developer, or automated tool may
+read-then-edit, refactor, rename constants, adjust formulas, or change any value inside them without
+the owner explicitly approving that specific change in the active conversation first.
 
 | File | What it protects |
 | --- | --- |
@@ -74,37 +73,22 @@ them without the owner explicitly approving that specific change in the active c
 | `src/components/employee-portal/identity-card.tsx` | Employee portal identity banner — must always use `PhoenixSignatureCard`; do NOT swap it for another component |
 | `src/lib/sales/office-allocation.ts` (the `GOLDEN RULE · LOCKED` region) | The Office allocation golden rule — units spread by each area's share of the line's non-Office **value**. **Enforced mechanically**, not just behaviourally: see below |
 
-**The Office golden rule is the one lock a session cannot talk itself past.** Locked 2026-08-11 at
-the owner's instruction. `tests/office-golden-rule-lock.test.ts` pins the formula with a source
-fingerprint, a behaviour fingerprint, and four verbatim clause checks, and it runs in the required
-CI `validate` job — so a PR that changes the rule goes red and cannot merge. Changing it needs the
-owner's password via `pnpm run office-rule:unlock`; the password exists only as a scrypt verifier and
-is not recoverable from this repository. Do not re-pin the fingerprints by hand, and do not "fix" a
-red lock test by editing `src/lib/sales/office-golden-rule.ts` — that edit is precisely what the
-check exists to catch. The rule itself is documented clause by clause in that same file.
-
 **If any request would touch one of these files** (fix, refactor, rename, extend, delete): STOP. Show
 the owner the exact change you intend to make and why it is necessary, and continue only after the
 owner approves that specific change in the conversation.
 
-**This lock is now behavioral ONLY — no prompt backs it any more.** On 2026-08-14 the owner
-instructed that `permissions.ask` be emptied in `.claude/settings.json` (the `deny` list was cleared
-that day too, then its one block on the untrusted `mcp__b345e47e-…` connector restored per
-AGENTS.md §8 — a silent hard block, not a prompt. **Two files, and they hold different lists:**
-this repo file denies that one connector, while user-level `~/.claude/settings.json` denies TWO —
-the same one and, since 2026-08-23, the owner's own `mcp__45bb6356-…`. Both counts read live
-2026-08-29; check the file you actually mean), so the three
-file paths above no longer have an entry there and **no dialog will fire on any of them.** (`office-allocation.ts` was never in that
-list — it has the CI lock instead, which is untouched and still turns a PR red.) `permissions.defaultMode` is **`default`** in user-level settings,
-changed from `auto` on 2026-08-31 at the owner's instruction so that a would-be block becomes a
-prompt instead; several hundred allow rules still wave routine calls through. So nothing except the
-agent's own compliance now stands between a request and an edit to a protected file. **Never read
-the absence of a prompt as approval** — that was already the rule while the entries existed, and it
-is the entire story now that they are gone. Ask the owner in plain words and wait for a plain answer.
-The pre-2026-08-14 file is recoverable from the commit *before* the lists were emptied:
-`git checkout 6fd35986^ -- .claude/settings.json` (`6fd35986` is the `chore(claude)` commit, #2117,
-that emptied both lists). Plain `git checkout .claude/settings.json` will NOT work once that commit
-is checked out — it only restores that commit's already-empty version.
+**The Office golden rule is the one lock a session cannot talk itself past.** Locked 2026-08-11 at
+the owner's instruction. `tests/office-golden-rule-lock.test.ts` pins the formula with a source
+fingerprint, a behaviour fingerprint, and four verbatim clause checks, and it runs in the required CI
+`validate` job — so a PR that changes the rule goes red and cannot merge. Changing it needs the
+owner's password via `pnpm run office-rule:unlock`; the password exists only as a scrypt verifier and
+is not recoverable from this repository. Do not re-pin the fingerprints by hand, and do not "fix" a
+red lock test by editing `src/lib/sales/office-golden-rule.ts` — that edit is precisely what the
+check exists to catch.
 
-**Do not reintroduce a passphrase here.** A shared one was removed 2026-07-31 (it sat in a committed
-file, so it authenticated nobody); approval belongs in the conversation, not in version control.
+**The other three locks are behavioral ONLY — no prompt backs them.** `permissions.ask` is empty, so
+no dialog fires on any of those paths. **Never read the absence of a prompt as approval:** ask the
+owner in plain words and wait for a plain answer. Do not reintroduce a passphrase here — a shared one
+was removed 2026-07-31 because it sat in a committed file and authenticated nobody. Full history of
+the settings changes, and how to recover the pre-2026-08-14 file:
+[docs/agents-incident-history.md](docs/agents-incident-history.md).
