@@ -245,20 +245,20 @@ only the 18 load-bearing ones inline.
 
 ### 2.3 Production and approval hooks
 
-**Each line is the rule, not the evidence.** The full account of every one — measurements, dates,
-incidents, and the diagnosis traps that nearly sent each the wrong way — is in
-**[docs/agents-production-hooks.md](docs/agents-production-hooks.md)**, verbatim and unabridged.
+**Each line is the rule, not the evidence.** The account of every one — measurements, dates, incidents,
+and the diagnosis traps that nearly sent each the wrong way — is in
+**[docs/agents-production-hooks.md](docs/agents-production-hooks.md)**, verbatim.
 
 **Railway deploys**
 
 - **A deploy applies NO migrations**, and **auto-deploy can silently SKIP a race.** A merge that never shipped looks identical to one that did until you read `/api/healthz`.
 - **`railway variables --stdin` stores a BOM**, which then travels inside the value.
 - **`railway ssh` JOINS argv and lands as ROOT.**
-- 🔴 **`railway service source connect` is NOT environment-scoped — `--environment staging` REPOINTED PRODUCTION.** The git source is **service-level**, shared by every environment, so **a branch cannot be staged on Railway without shipping it** — never use it to preview, and §7's staging smoke-test needs a **separate service**. Production silently ROLLS BACK whatever was merged since, and `healthz` reporting `status: ok` hides it — **read the `revision`.** `railway status --environment X --json` returns the WHOLE project; select by `.environments.edges[] | select(.node.name=="production")`.
+- 🔴 **`railway service source connect` is NOT environment-scoped — `--environment staging` REPOINTED PRODUCTION.** The git source is **service-level**, shared by every environment, so **a branch cannot be staged on Railway without shipping it** — never use it to preview, and §7's staging smoke-test needs a **separate service**. Production silently ROLLS BACK whatever was merged since, and `healthz` reporting `status: ok` hides it — **read the `revision`.**
 
 **Cron and secrets**
 
-- **A PARTIAL `CRON_SECRET` rotation leaves TWO fingerprints**, and Healthchecks reading `up` is **not** proof of authentication — the grace window hides a 401. The 2026-08-23 401s are RESOLVED: **rotate NOTHING.** Always print `len` (the fingerprint is `Bearer …`, 71).
+- **A PARTIAL `CRON_SECRET` rotation leaves TWO fingerprints**, and Healthchecks reading `up` is **not** proof of authentication — the grace window hides a 401. The past 401s are RESOLVED: **rotate NOTHING.** Always print `len` (the fingerprint is `Bearer …`, 71).
 - **`CRON_SECRET` lives in TWO stores and the arrow points GitHub → Railway.** `sync-railway-production-secrets.yml` rewrites ~48 Railway production variables unconditionally, so **rotating in Railway alone does not stick** — the next push reverts it and every cron-job.org job 401s at once. **Rotate GitHub first.** A nightly-failing cron alerts NOBODY; the 4 OFF iReports360 jobs are DELIBERATE.
 - **The cron-job.org REST API allows 100 requests per DAY** — 429 on EVERY endpoint with no `Retry-After`, and a bulk edit costs ~34 and CANNOT be rolled back.
 
@@ -274,9 +274,9 @@ incidents, and the diagnosis traps that nearly sent each the wrong way — is in
 
 - **A LOCAL run writes PRODUCTION but silently skips every email**, and **the local Resend key CANNOT send.** Send from production with `railway run`.
 - **STAGING cannot rehearse a PRODUCTION shape.**
-- **`APP_ENV` was UNSET on Railway `staging`, so staging identified itself as PRODUCTION** — `isProductionRuntime()` and `currentEnvironmentLabel()` both read `APP_ENV || VERCEL_ENV || NODE_ENV`, and a Next.js production build sets `NODE_ENV=production` on staging too. **Fixed 2026-08-27.**
+- **`APP_ENV` was UNSET on Railway `staging`, so staging identified itself as PRODUCTION** — `isProductionRuntime()` and `currentEnvironmentLabel()` both read `APP_ENV || VERCEL_ENV || NODE_ENV`, and a Next.js production build sets `NODE_ENV=production` on staging too. **Fixed.**
 - **The email fail-safe did NOT cover staging.** `isForceTestingDelivery()` returns `!isProductionRuntime()` when `PHOENIX_EMAIL_FORCE_TESTING` is unset — inverted exactly where it was needed. Staging is safe only because that variable is set explicitly: **one variable, nothing behind it.**
-- **FIXED 2026-08-27 (PR #2479) — the `APP_ENV`/cron-secret hole is closed, all 22 of 22.** **Treat `!isProductionRuntime()` as an auth fallback with suspicion anyway:** it reads as "only in dev" and means "anywhere not labelled production".
+- **The `APP_ENV`/cron-secret hole is CLOSED — do not re-chase it.** **Treat `!isProductionRuntime()` as an auth fallback with suspicion anyway:** it reads as "only in dev" and means "anywhere not labelled production".
 - **The `railway` CLI is linked to `production` here**, so every variable command needs an explicit `-e staging`. Omitting it writes to PRODUCTION — and for `APP_ENV=staging` that would redirect **real employee email** into test inboxes. Setting a variable **does** trigger a redeploy (unless `--skip-deploys`), and the change is inert until that deploy reaches `SUCCESS`.
 - **That deploy fires in SECONDS but serves in MINUTES — reading the gap as "no deploy" is a mistake already made here.** **Confirm by listing DEPLOYMENTS, never by probing the running app**, and never `railway redeploy` to make a variable "take".
 

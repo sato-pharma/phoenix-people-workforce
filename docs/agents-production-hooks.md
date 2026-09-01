@@ -279,3 +279,77 @@ the same day. The slug stays in `AGENTS.md`.
 Verbatim, unabridged. The cue — and every memory slug — stays in `AGENTS.md`; the account is here.
 
 - **Owner-confirmed exception (2026-08-02):** `mcp__45bb6356-8105-4482-9464-25bfd754baec__*` is the owner's own claude.ai Supabase connector. He confirmed ownership and instructed its removal from the deny list, so it is callable. **VERIFIED 2026-08-23: it is back IN that list, so the previous sentence no longer describes live state.** `permissions.deny` in `~/.claude/settings.json` currently holds **two** entries — `mcp__b345e47e-…` *and* this connector — and a `deny` is a silent hard block rather than a prompt, so a session following the sentence above hits a wall with no dialog to explain it. **OWNER DECISION 2026-08-23: leave it DENIED.** He was asked directly and answered plainly, so this is settled — the connector stays in `permissions.deny`. Do not re-allow it, do not propose re-allowing it, and do not read a blocked call as a bug to chase. Nothing is lost by the block: the two named servers in §3 cover routine work, and this connector's grant was always the broader, riskier one. Note its consent grant is **broader than either named server** — read+write on Secrets, Environment, and Projects, meaning it can read project secrets and create or delete projects. Reach for the named servers first; use this one only when it is actually the right tool. Its DB writes fall under the pre-authorized grant above (announce destructive/bulk prod changes; no wait), but **creating/deleting a project or reading secrets is NOT covered — get an explicit go for those** (see §6).
+
+## Section 2.3 was trimmed to its floor — 2026-09-01
+
+**What was done.** §2.3 went from **5,723 → 5,526 bytes, −197 B (3.4%)**, the best yield of the four
+section passes run on 2026-09-01. `AGENTS.md` went **69,500 → 69,303**. Invariants held across the
+whole file: **241 bullets, 12 🔒, 15 🔴, 31 memory slugs — an identical slug set before and after.**
+Proven by arming the guard first: removing `payroll-reads-the-insurance-wage-never-the-status` made
+`runMemoryIndexReachabilityTests` go RED with *"every memory the map marks load-bearing must still be
+named in AGENTS.md"*; all three memory-index suites were green after restoring it.
+
+### The one real duplicate: the `railway status` jq selector
+
+§2.3's `railway service source connect` bullet ended with *"`railway status --environment X --json`
+returns the WHOLE project; select by `.environments.edges[] | select(.node.name=="production")`."*
+That same selector sits in §3, in the bullet about confirming the production service source branch,
+and **§3's copy is the fuller one** — it names the real `--environment production`, says to print the
+name you matched, and carries the follow-on read
+`.node.serviceInstances.edges[].node.latestDeployment.meta.branch` that §2.3's copy did not have.
+§3's bullet already cross-references *"See §2.3"* for the environment-scoping rule, which stays where
+it is. So the shorter copy went (−137 B) and the operation is still fully described, once, in the
+place you need it.
+
+Reach is unchanged — the whole file auto-loads — so this cost scannability only. That is §2.2's
+*"Reach is identical; only scannability differs"* spent deliberately, for the fourth time today.
+
+### Three hooks that were a status, a date, a PR number and a count
+
+§2.2 requires a hook to be **"durable (never a count, a status or a date)"**. Three lines in §2.3 were
+all four at once, and each has its full record in this file:
+
+- *"**FIXED 2026-08-27 (PR #2479) — the `APP_ENV`/cron-secret hole is closed, all 22 of 22.**"* →
+  *"**The `APP_ENV`/cron-secret hole is CLOSED — do not re-chase it.**"* (−23). The instruction a
+  session acts on is "do not re-chase it"; the date, the PR and the 22-of-22 sweep count are
+  provenance, and a count in particular goes stale the moment the surface grows.
+- *"**Fixed 2026-08-27.**"* on the `APP_ENV`-unset-on-staging bullet → *"**Fixed.**"* (−11).
+- *"The 2026-08-23 401s are RESOLVED"* → *"The past 401s are RESOLVED"* (−6). What stops the mistake
+  is **rotate NOTHING**, not the date it was decided.
+
+The preamble also lost *"full"* and *"and unabridged"* (−20), matching the wording §2, §4 and §5 now
+use.
+
+### Nothing else in §2.3 is fat
+
+The section is 22 bullets in 5,526 bytes, ~250 each. The two largest were left untouched on purpose:
+
+- The **payroll insurance** hook (663 B) is the longest line in the section and every clause of it is
+  load-bearing — that the wage column alone decides the filing, that the status is display-only, that
+  the register and the filing disagree *both ways*, that neither figure reduces take-home pay, and
+  the standing instruction never to warn the owner that setting a wage costs an employee money. It
+  carries two memory slugs. Shortening it is how someone ends up auditing by status.
+- The **HELD payroll row** hook (447 B) is the same shape: the filter, the silence, HELD = OWED PART
+  2 ONLY, and the double-pay that follows from getting it wrong.
+
+**PITR** (375 B) was also left verbatim. It is the sentence that has to be said out loud before any
+bulk production change, and every clause of it — one-day granularity, whole-database restore unit,
+never restore in place, roughly 07:30 Cairo — changes what a session does.
+
+### Where the campaign stands after four passes
+
+| Section | Before | After | Yield |
+| --- | --- | --- | --- |
+| 2.1 Session-level traps | 19,789 | 19,060 | −729 (3.7%) |
+| 4 + 4.1 Standing owner rules | 14,264 | 13,995 | −269 (1.9%) |
+| 5 Session/worktree safety | 5,838 | 5,696 | −142 (2.4%) |
+| 2.3 Production and approval hooks | 5,723 | 5,526 | −197 (3.4%) |
+
+**1,337 bytes across four passes.** In every one, the largest single cut was a duplicate rather than
+wording — and in every one the wording-only remainder came to roughly 1% of the section. §3 (5,520 B)
+is now the only section over 5KB that has not been passed over; on this evidence it should be
+expected to yield around 150 bytes, not more.
+
+**The arithmetic that matters is still on the other side.** PR #2880 added 884 bytes to §2.1 in one
+commit — two thirds of everything four editing passes have recovered. Cue in `AGENTS.md`, account in
+`docs/`, enforced when the hook is written, is the only lever with a better rate than that.
