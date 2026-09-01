@@ -191,14 +191,23 @@ export function runMemoryIndexReachabilityTests() {
   // ── 7. the convention this whole matcher rests on is real, in the live file ───────────────────
   // Everything above is fixtures. This is the one assertion against the actual AGENTS.md: if a
   // future rewrite stops naming memories as backticked slugs — switching to links, say — the
-  // matcher goes blind and every relocated hook silently reads as an orphan again. Counted 137 on
-  // 2026-08-29; the floor is set well below that so ordinary retirement never trips it.
+  // matcher goes blind and every relocated hook silently reads as an orphan again.
+  //
+  // The floor was 50, calibrated against 137 slugs counted 2026-08-29. It went RED on 2026-09-01:
+  // the owner-approved relocation moved 133 duplicate slug references into
+  // docs/agents-memory-map.md, taking 8,108 bytes off EVERY request, and left 26 here — the 18
+  // load-bearing ones plus a few genuinely named only in AGENTS.md. Nothing became unreachable:
+  // repo-doctor read 0 orphans before and after. The floor was measuring the old DUPLICATION, not
+  // reachability. It now guards what it was always for — the CONVENTION existing at all.
+  //
+  // Do NOT raise it back by re-adding duplicate slugs: that is the footprint this repo just paid
+  // to remove. The real per-memory guarantee is repo-doctor's live reachability scan, not a count.
   const agents = readFileSync(join(process.cwd(), "AGENTS.md"), "utf8");
   const slugs = new Set(
     [...agents.matchAll(new RegExp(TICK + "([a-z0-9]+(?:-[a-z0-9]+){2,})" + TICK, "g"))].map((m) => m[1]),
   );
   assert.ok(
-    slugs.size >= 50,
+    slugs.size >= 15,
     `AGENTS.md names only ${slugs.size} backticked slugs; the reachability matcher assumes that `
       + "convention, so a collapse here means relocated memories are being reported as orphans",
   );
