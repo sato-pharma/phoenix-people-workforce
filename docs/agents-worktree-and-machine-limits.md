@@ -163,12 +163,13 @@ without it, because the growth is off-heap.
 
 ---
 
-## Relocated from AGENTS.md — 2026-09-01 (batch 3)
+## `new-session.mjs` — the four-step ritual, and how to undo it
 
-Verbatim, unabridged. The cue — and every memory slug — stays in `AGENTS.md`; the account is here.
+Relocated from `AGENTS.md` §5, verbatim. The sections above describe the worktree rules; this one
+describes the script that enforces them, which is the part a session cannot derive by reading them.
+A third bullet relocated here on 2026-09-01 duplicated *The husk that nothing built into git can
+see* above and was dropped the same day. The cue — and every memory slug — stays in `AGENTS.md`.
 
 - **Start a session with `node scripts/new-session.mjs <task>` — one command for the whole four-step ritual** ([scripts/new-session.mjs](scripts/new-session.mjs), also wired as `pnpm run session:new`; invoke `node` directly per §2.1): fetch `origin/main`, create `_wt-<task>` on `codex/<task>`, junction `node_modules` from the primary, copy the gitignored env files. It refuses to start below 6 GB of free commit charge. `--status` prints live headroom and which folders can actually run, `--repair` fixes a worktree missing either piece, `--from <ref>` branches from something other than `origin/main`. **`git worktree add` is only step one of four** — it never copies gitignored files, so a hand-made worktree has no `.env.local` (dev-auth and the dev server then fail silently, with no error) and no `node_modules` (nothing runs at all). By hand that is `git worktree add` **plus** `pnpm run worktree:sync-env` **plus** the junction.
 
 - **Remove worktrees with `node scripts/new-session.mjs --remove <task>`** (`pnpm run session:remove`), only after approval. It runs three gates in cost order before touching anything — untracked `.xlsx`/`.pdf` rescue scan, then uncommitted work, then commits that are on no remote branch **and** have no merged PR — drops the `node_modules` junction with `cmd /c rmdir` so no husk is left, and re-reads the folder's branch live rather than trusting an earlier scan (a parallel session can repoint a tree first). **A squash-merged branch legitimately holds commits `main` does not**, so the last gate asks `gh pr list --head <branch> --state merged`, never reachability: pure reachability calls every successfully merged worktree stranded, and the advice that follows from it — "push the branch" — is how you get a conflicting PR that runs no CI at all. By hand it is `git worktree remove` plus that same PR check; `git branch --merged` is always wrong here. Stale worktrees must not accumulate.
-
-- **`git worktree remove` leaves a HUSK, and nothing built into git can see it.** It deletes tracked files and the registry entry but leaves the gitignored payload — `node_modules/` and `.next/` — on disk, with no `.git` file and no registry entry, so `git worktree prune` cannot find it and husks accumulate forever, invisible to every "list the worktrees" check. `bash-guard.mjs` hands any removal-shaped command to `worktree-exit-guard.mjs --pre-removal`, which reports unpushed commits and uncommitted files and writes them to `.claude/worktree-exit.log` *before* the directory is deleted; it never blocks. **Run `pnpm run repo:doctor`** ([scripts/repo-doctor.mjs](scripts/repo-doctor.mjs)) after any removal: it reports by default, `--fix` deletes only husks proven to hold zero files, and it refuses to act while more than one Claude Code session is live. Anything holding even one file is reported NEEDS REVIEW and never touched.
