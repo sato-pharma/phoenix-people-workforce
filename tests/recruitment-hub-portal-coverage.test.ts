@@ -176,6 +176,13 @@ export function runRecruitmentHubPortalCoverageTests() {
   // not recruiting. She clears NONE of the five gated on recruitment / candidates / vacancies /
   // offers, which is the separation that matters. Named individually rather than counted, so a
   // recruiting card leaking to her fails with the card in the message.
+  //
+  // AS OF 2026-09-01 that separation is no longer held by her grants alone. The owner asked for the
+  // Vacancies Report in her sidebar, which needs vacancies:read, and CV Database is gated on the
+  // same resource — so this assertion started failing with '/cv-database' in the list, exactly as
+  // designed. The card now carries excludedRoles: ["HR Operations"] instead. Read that as the rule
+  // being stated out loud rather than weakened: before, one added grant could leak a recruiting
+  // card silently, and now it cannot.
   const opsCards = hubCardsFor("HR Operations").map((c) => c.href).sort();
   assert.deepEqual(
     opsCards,

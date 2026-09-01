@@ -170,6 +170,17 @@ const GATE_SHAPE_NOT_MACHINE_READABLE: Record<string, string> = {
     "hrBundleForRole(access.role) — the same lookup that decides the seat's grants, so it admits " +
     "exactly the two seats by construction rather than by a second list agreeing with the first",
   "/hr/probation": "canReadAllProbation(access) — true for both seats",
+  // Added 2026-09-01 with the owner's HR sidebar grouping. Verified by CALLING each gate for both
+  // seats, not by reading it: canReadAllProbation true/true, weekly_plans:read true/true.
+  "/hr/probation/dashboard":
+    "canReadAllProbation(access) — true for both seats, the same predicate and the same verdict as " +
+    "/hr/probation above; the two rows sit together under Performance & Probation",
+  "/hr/admin/weekly-plans/calendar":
+    'hoisted const canReadPlans = await canAccess(access, "weekly_plans", "read") — true for BOTH ' +
+    "seats, but the row carries roles: [HR Operations] so only she is offered it. Advisory has held " +
+    "weekly_plans:read all along through workforce_insight; Operations gained it on 2026-09-01 " +
+    "through time_attendance. The page is read-only — approving a plan is the sales ladder's, and " +
+    "neither seat holds any weekly_plans write action",
   "/hr/recruitment/contact-review": "canReviewCandidateContacts(access) — true for Advisory, the only seat offered it",
   "/hr/recruitment/intake-health": "canViewInboundIntakeHealth(access) — true for Advisory, the only seat offered it",
   "/hr/recruitment/whatsapp-replies":

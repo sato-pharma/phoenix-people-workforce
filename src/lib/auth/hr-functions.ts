@@ -216,16 +216,27 @@ export const HR_FUNCTIONS: readonly HrFunction[] = [
       organogram: READ_ONLY,
       contracts: ["read", "create", "update", "export"],
       resignations: ["read", "create", "update", "export"],
-      // `vacancies: create` and NOTHING else. POST /api/employees/[hrId]/resign asserts
-      // employees:update + resignations:create + vacancies:create together, because the one RPC it
-      // calls — phx_resign_employee_and_open_vacancy — records the departure AND opens the seat the
-      // departure just emptied. Without this third grant the seat that OWNS offboarding (ops 6)
-      // cannot record a single resignation. It is not `read`: the Vacancies Report and the CV
-      // Database gate on vacancies:read (a nav entry with no action resolves to `read`), and those
-      // are Advisory's recruiting pages, not this seat's. It is not organizational change either —
-      // organogram:update stays denied to both seats, and this path can only ever fire for a person
-      // who is actually leaving.
-      vacancies: ["create"],
+      // `vacancies: [read, create]`. The `create` half is offboarding: POST
+      // /api/employees/[hrId]/resign asserts employees:update + resignations:create +
+      // vacancies:create together, because the one RPC it calls —
+      // phx_resign_employee_and_open_vacancy — records the departure AND opens the seat the
+      // departure just emptied. Without it the seat that OWNS offboarding (ops 6) cannot record a
+      // single resignation.
+      //
+      // `read` was ADDED 2026-09-01 on the owner's explicit instruction. It was create-only until
+      // then, and this note read "the Vacancies Report and the CV Database are Advisory's
+      // recruiting pages, not this seat's". He asked for the Vacancies Report in her sidebar, was
+      // shown that granting it widens this seat past offboarding, and confirmed. Do not narrow it
+      // back without him. Two consequences, both stated to him before he agreed and both intended:
+      // she can read the whole company vacancy board, and the CV Database row — gated on this same
+      // resource — now renders in her Recruitment section.
+      //
+      // Still NOT `export`: nothing in this codebase asserts vacancies:export (the CV template
+      // route asserts vacancies:read), so adding it would be a grant she could never spend, which
+      // is the half-granted shape tests/hr-seat-route-coherence.test.ts exists to catch. Still not
+      // organizational change either — organogram:update stays denied to both seats, and the
+      // resignation path can only ever fire for a person who is actually leaving.
+      vacancies: ["read", "create"],
       // READ ONLY, and `update` was CONSIDERED and REFUSED on 2026-08-28 — do not add it as a
       // convenience. hr_calendar:update gates exactly one action in this codebase: saving an HR
       // decision on a Field Workforce Compliance recommendation. That looked like hers (Workforce
@@ -264,6 +275,21 @@ export const HR_FUNCTIONS: readonly HrFunction[] = [
     grants: {
       attendance: MAINTAIN,
       leave: MAINTAIN,
+      // READ ONLY, added 2026-09-01 on the owner's explicit instruction, to open the Planning
+      // Calendar (/admin/weekly-plans/calendar) in her sidebar. That page is the field force's
+      // submitted weekly and monthly plans, the official holidays, and the conflicts between them —
+      // working-time administration, which is this function's own JD line, which is why the grant
+      // is attached HERE rather than invented as a new function or borrowed from workforce_insight
+      // (HR Advisory's, and the reason this resource was absent from this bundle until now).
+      //
+      // He was told before agreeing that it lets her see where every medical rep plans to be.
+      //
+      // READ and nothing else: approving or rejecting a plan belongs to the sales ladder, and this
+      // seat holds no weekly_plans write action of any kind. The plans LIST at /admin/weekly-plans
+      // opens on this same grant and is deliberately NOT linked for her — it is the approval
+      // workspace, not a calendar. That needs no reachability-backlog entry: the reverse guard is
+      // keyed by route and the admin shell already offers that address to other roles.
+      weekly_plans: READ_ONLY,
     },
   },
   {

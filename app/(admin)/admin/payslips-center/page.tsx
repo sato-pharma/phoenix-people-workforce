@@ -1,6 +1,5 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
-import { FileDown, FileText } from "lucide-react";
+import { FileText } from "lucide-react";
 
 import {
   AdminInsightChip,
@@ -9,7 +8,10 @@ import {
   AdminTableShell,
   adminPanelClassName,
 } from "@/components/admin/admin-design-system";
-import { Badge } from "@/components/ui/badge";
+// The payslip history moved into this client component on 2026-09-01 so it can be cards on a phone
+// and a table from `md` up — see its header. This page became reachable from the HR sidebar that
+// day, and the HR shell is used on a phone.
+import { PayslipsCenterRows } from "@/components/payroll/payslips-center-rows";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { canAccess, getPayrollScope } from "@/lib/auth/permissions";
@@ -33,15 +35,6 @@ function formatMoney(value: number) {
   }).format(value);
 }
 
-function periodLabel(month: number, year: number) {
-  return new Intl.DateTimeFormat("en", { month: "short", year: "numeric" }).format(
-    new Date(Date.UTC(year, month - 1, 1)),
-  );
-}
-
-function payslipStatusTone(status: string) {
-  return status === "approved" || status === "locked" ? "success" : "neutral";
-}
 
 export default async function AdminPayslipsCenterPage(
   props: AdminPayslipsCenterPageProps,
@@ -125,57 +118,7 @@ export default async function AdminPayslipsCenterPage(
           </Card>
         ) : (
           <AdminTableShell description={employeeSummary} title="Employee Payslip History">
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[980px] text-left text-sm">
-                <thead>
-                  <tr className="border-b border-phx-line bg-phx-paper text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-soft">
-                    {["Employee", "HR ID", "Period", "Line", "Gross", "Additions", "Deductions", "Net", "Status", "Action"].map((column) => (
-                      <th className="px-3 py-3" key={column}>{column}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-phx-line">
-                  {data.rows.map((row) => (
-                    <tr className="transition hover:bg-[#FCFDFE]" key={`${row.batchId}-${row.recordId}`}>
-                      <td className="px-3 py-3">
-                        <p className="font-semibold text-phx-ink">{formatEmployeeDisplayName(row.fullName)}</p>
-                        <p className="mt-1 text-xs text-phx-ink-soft">{row.jobTitle}</p>
-                      </td>
-                      <td className="px-3 py-3 font-mono text-xs text-phx-ink-soft">{row.hrId || row.employeeCode || "-"}</td>
-                      <td className="px-3 py-3 font-semibold text-phx-ink">{periodLabel(row.month, row.year)}</td>
-                      <td className="px-3 py-3 text-phx-ink-soft">{row.line}</td>
-                      <td className="px-3 py-3 font-semibold text-phx-ink">{formatMoney(row.grossSalary)}</td>
-                      <td className="px-3 py-3 text-emerald-700">{formatMoney(row.totalAdditions)}</td>
-                      <td className="px-3 py-3 text-rose-700">{formatMoney(row.totalDeductions)}</td>
-                      <td className="px-3 py-3 font-black text-phx-ink">{formatMoney(row.netSalary)}</td>
-                      <td className="px-3 py-3">
-                        <Badge variant={payslipStatusTone(row.status)}>{row.status}</Badge>
-                      </td>
-                      <td className="px-3 py-3">
-                        <div className="flex flex-wrap gap-2">
-                          <Link
-                            className="inline-flex h-9 items-center justify-center rounded-xl border border-phx-line px-4 text-sm font-semibold text-phx-ink transition hover:bg-phx-paper"
-                            href={`/api/payroll/${row.batchId}/payslips?employeeHrId=${encodeURIComponent(row.hrId || row.employeeCode)}`}
-                            target="_blank"
-                          >
-                            Open Payslip
-                          </Link>
-                          {canExportPayslipImage ? (
-                            <Link
-                              className="inline-flex h-9 items-center justify-center rounded-xl border border-phx-accent-line bg-phx-accent-soft px-4 text-sm font-semibold text-[#9A3412] transition hover:bg-[#FFEDD5]"
-                              href={`/api/payroll/${row.batchId}/payslips/image?employeeHrId=${encodeURIComponent(row.hrId || row.employeeCode)}`}
-                            >
-                              <FileDown className="mr-2 h-4 w-4" />
-                              Export PDF
-                            </Link>
-                          ) : null}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <PayslipsCenterRows canExportPayslipImage={canExportPayslipImage} rows={data.rows} />
           </AdminTableShell>
         )}
     </div>

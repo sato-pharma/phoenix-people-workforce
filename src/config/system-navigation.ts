@@ -1616,7 +1616,9 @@ const hrNavigationSectionSeeds = [
       { href: "/hr/employees", icon: UsersRound, label: "Employee Directory", permissions: [{ resource: "employees", action: "update" }] },
       { href: "/hr/employee-360", icon: IdCard, label: "Employee 360", permissions: [{ resource: "employee_profile", action: "read" }] },
       { href: "/hr/organogram", icon: Network, label: "Organogram", permissions: [{ resource: "organogram" }] },
-      { href: "/hr/probation", icon: Hourglass, label: "Probation", permissions: [{ resource: "probation" }] },
+      // Probation MOVED OUT of this section on 2026-09-01 (owner) to "Performance & Probation",
+      // where its case list and its decision dashboard now sit together. Do not add a second
+      // Probation row back here — one module in two sections is what that move undid.
       { href: "/hr/contracts", icon: CalendarClock, label: "Contract Renewal", permissions: [{ resource: "contracts" }] },
       { href: "/hr/resignations", icon: FileSpreadsheet, label: "Resignations", permissions: [{ resource: "resignations" }] },
       // The offboarding arc, in the order it actually happens: the departure is recorded, the
@@ -1642,7 +1644,11 @@ const hrNavigationSectionSeeds = [
     id: "hr-recruitment",
     items: [
       { href: "/hr/recruitment", icon: BriefcaseBusiness, label: "Recruitment", permissions: [{ resource: "recruitment" }] },
-      { href: "/hr/cv-database", icon: FileSpreadsheet, label: "CV Database", permissions: [{ resource: "vacancies" }] },
+      // excludedRoles: HR Operations, 2026-09-01 — the same boundary as the /cv-database module
+      // entry, restated here because this catalogue is authored rather than derived. Her new
+      // vacancies:read (for the Vacancies Report under People) would otherwise put a recruiting row
+      // in a seat the repo deliberately keeps out of recruiting.
+      { href: "/hr/cv-database", icon: FileSpreadsheet, label: "CV Database", permissions: [{ resource: "vacancies" }], excludedRoles: ["HR Operations"] },
       { href: "/hr/offers", icon: MailCheck, label: "Job Offers", permissions: [{ resource: "offers" }] },
       { href: "/hr/hiring-documents", icon: FileCheck2, label: "Hiring Documents", permissions: [{ resource: "employee_documents" }] },
       { href: "/hr/hiring-pack", icon: FileSignature, label: "HR Forms", permissions: [{ resource: "employee_documents" }] },
@@ -1671,6 +1677,25 @@ const hrNavigationSectionSeeds = [
       { href: "/hr/attendance/device-user-mapping", icon: Fingerprint, label: "Device User Mapping", permissions: [{ resource: "employees", action: "update" }] },
       { href: "/hr/attendance/policies", icon: CalendarClock, label: "Attendance Policies", permissions: [{ resource: "employees", action: "update" }] },
       { href: "/hr/hr-calendar", icon: CalendarDays, label: "Company Calendar", permissions: [{ resource: "hr_calendar" }] },
+      // Owner instruction 2026-09-01, and the grant behind it (weekly_plans:read on
+      // time_attendance) was added in the same change — see src/lib/auth/hr-functions.ts.
+      //
+      // Labelled "Planning Calendar", NOT "Company Planning Calendar" as the admin module registry
+      // spells it, and deliberately: the row directly above is the OFFICIAL company calendar
+      // (holidays, HR events) and this one is the field force's submitted weekly and monthly plans.
+      // Two adjacent rows both beginning "Company Calendar" is a pair nobody can tell apart from
+      // the rail, and the rail is where the choice is made.
+      //
+      // The plans LIST at /admin/weekly-plans opens on this same grant and is deliberately NOT a
+      // row: it is the plan APPROVAL workspace, which belongs to the sales ladder, and this seat
+      // holds no weekly_plans write action. It needs no backlog entry — the reverse guard is keyed
+      // by route, and the admin shell already offers that address to the CEO and SFE Manager.
+      //
+      // roles: HR Operations, matching the two HR-Operations-only rows above it. HR Advisory has
+      // held weekly_plans:read all along through workforce_insight, so a permission-only row would
+      // render for her too and quietly widen a seat nobody asked to widen. The owner asked for this
+      // page in the Operations seat; this keeps the change the size of the request.
+      { href: "/hr/admin/weekly-plans/calendar", icon: CalendarRange, label: "Planning Calendar", permissions: [{ resource: "weekly_plans", action: "read" }], roles: ["HR Operations"] },
     ],
     label: "Attendance",
   },
@@ -1725,6 +1750,17 @@ const hrNavigationSectionSeeds = [
       // payslips:read — the grant that shows her HER OWN payslip — and the hub then listed 0 of 7.
       // Her own payslip is unaffected: that is the employee-portal path, not this admin hub.
       { href: "/hr/admin/payroll-management", icon: FileSpreadsheet, label: "Payroll Management", permissions: [{ resource: "payroll" }, { resource: "payslips" }, { resource: "deductions", action: "read" }], excludedRoles: ["HR Advisory"] },
+      // Owner instruction 2026-09-01, and the only row in this change that needed NO permission
+      // work at all: HR Operations was given payslips:[read, export] when the seat was composed,
+      // and getPayrollScope was widened to return COMPANY for her on 2026-08-29 specifically so
+      // this page would stop bouncing her. Both gates have admitted her for three days; nothing
+      // ever linked the page, so the capability shipped and was reachable by nobody — the exact
+      // shape AGENTS.md records as "granted, deployed, and reachable by NOBODY".
+      //
+      // excludedRoles: HR Advisory, for the same reason as the row above. Payroll appears nowhere
+      // in the HR Business Partner job description, and her payslips:read is the grant that shows
+      // her HER OWN payslip through the employee-portal path, which this row does not affect.
+      { href: "/hr/admin/payslips-center", icon: ScrollText, label: "Payslips Center", permissions: [{ resource: "payslips", action: "read" }], excludedRoles: ["HR Advisory"] },
       // NO "Deductions" row here, deliberately. The legacy Deductions Governance page was retired in
       // the C6 cutover (2026-08-30); its unified replacement app/(admin)/admin/deductions/page.tsx
       // gates on a hard-coded `VIEW_ROLES = {Super Admin, CEO}` — a role set, not a permission — and
@@ -1742,12 +1778,32 @@ const hrNavigationSectionSeeds = [
     id: "hr-performance",
     items: [
       { href: "/hr/admin/field-workforce-compliance", icon: ClipboardCheck, label: "Workforce Compliance", permissions: [{ resource: "hr_calendar" }] },
+      // PROBATION MOVED HERE from the People section, 2026-09-01 (owner). It sat under People
+      // because it is an employee-lifecycle stage; it belongs here because the function that grants
+      // it is `performance_probation`, and because the owner asked for the case list and the
+      // decision dashboard together — leaving one under People and putting the other here would
+      // split one job across two headings.
+      { href: "/hr/probation", icon: Hourglass, label: "Probation Cases", permissions: [{ resource: "probation" }] },
+      // The ADMIN shell collapsed its five probation rows into one hub on 2026-08-30, after the
+      // owner was asked directly, and that note says not to restore them without a fresh
+      // instruction. THIS IS THAT INSTRUCTION, 2026-09-01, and it applies to the HR namespace only:
+      // he named /probation and /probation/dashboard as two separate rows he wants this seat to
+      // have. The admin shell's single hub row is untouched.
+      //
+      // Reachable, not just granted: the page's own gate is canReadAllProbation, a role predicate
+      // that already names HR Operations — so this row was a missing link, not a missing grant.
+      { href: "/hr/probation/dashboard", icon: LayoutDashboard, label: "Probation Dashboard", permissions: [{ resource: "probation", action: "read" }] },
       // The coaching grant is real and JD-traced (performance follow-up), so the page is listed
-      // rather than left reachable-but-hidden. The Field Coaching HUB and Coaching Analytics are
-      // deliberately not here: those are the SFE Manager's sales-management surfaces.
+      // rather than left reachable-but-hidden.
       { href: "/hr/coaching", icon: ClipboardCheck, label: "Field Coaching", permissions: [{ resource: "coaching" }] },
+      // Coaching Analytics was deliberately NOT here until 2026-09-01 — this note read "the Field
+      // Coaching HUB and Coaching Analytics are the SFE Manager's sales-management surfaces". The
+      // owner named the page explicitly, had that earlier decision put back to him, and reversed
+      // it. The grant was always hers (coaching:read, via performance_probation) and the page's own
+      // gate admits her; only the link was missing.
+      { href: "/hr/coaching/analytics", icon: ChartColumnBig, label: "Coaching Analytics", permissions: [{ resource: "coaching" }] },
     ],
-    label: "Performance",
+    label: "Performance & Probation",
   },
   {
     id: "hr-self",
@@ -2548,7 +2604,11 @@ export const attendanceManagementPageItems: readonly AdminToolsPageItem[] = [
     label: "Company Planning Calendar",
     description: "Company-wide submitted weekly and monthly plans, holidays, and conflicts.",
     permissions: [{ resource: "weekly_plans", action: "read" }],
-    roles: ["CEO", "Super Admin"],
+    // HR Operations added 2026-09-01 (owner), and it has to be added HERE first: the /hr namespace
+    // may only ever NARROW this registry, never widen it, and tests/hr-url-namespace.test.ts fails
+    // an /hr row whose page the module closure does not already offer that seat. Her Planning
+    // Calendar row is that narrowing, not a second grant.
+    roles: ["CEO", "Super Admin", "HR Operations"],
   },
   {
     href: "/hr-calendar",
@@ -2868,6 +2928,17 @@ export const recruitmentHiringPageItems: readonly AdminToolsPageItem[] = [
     description: "Browse and search the candidate CV database.",
     permissions: [{ resource: "vacancies" }],
     roles: hrAuthorityNavigationRoles,
+    // HR Operations excluded BY NAME, 2026-09-01. Until that day she was kept off this card by not
+    // holding `vacancies` at all; the owner then asked for the Vacancies Report in her sidebar,
+    // which needs vacancies:read, and that one grant would have handed her a recruiting card as a
+    // side effect nobody asked for. tests/recruitment-hub-portal-coverage.test.ts pins the rule
+    // this protects — she may clear the two SHARED hiring-paperwork cards and no recruiting one —
+    // so the separation is now stated rather than merely implied by a missing grant.
+    //
+    // NOTE this is presentation, not revocation: the page's own gate is isHrAuthorityRole &&
+    // vacancies:read, and she passes both, so /cv-database is reachable by direct URL. Closing that
+    // would mean taking her back off vacancies:read, which is the grant the owner asked for.
+    excludedRoles: ["HR Operations"],
   },
   {
     href: "/hiring-documents",
@@ -3210,7 +3281,11 @@ export const probationPageItems: readonly AdminToolsPageItem[] = [
     label: "Probation Dashboard",
     description: "Company-wide decision dashboard — who is due, overdue, and where each case stands.",
     permissions: [{ resource: "probation", action: "read" }],
-    roles: ["Super Admin", "Training Manager", "Marketing Manager", "SFE Manager"],
+    // HR Operations added 2026-09-01 (owner), and it has to be added HERE first — the /hr namespace
+    // may only NARROW this registry (tests/hr-url-namespace.test.ts). She was already admitted by
+    // the page's own gate: canViewAllProbation names both HR seats by role, so this closes the gap
+    // between a page that let her in and a registry that never offered it to her.
+    roles: ["Super Admin", "Training Manager", "Marketing Manager", "SFE Manager", "HR Operations"],
   },
   {
     href: "/probation/analytics",
