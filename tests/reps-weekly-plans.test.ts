@@ -1,0 +1,376 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+
+import {
+  FIELD_WEEK_LENGTH,
+  FIELD_WEEK_START_DOW,
+  formatPlanDay,
+  formatPlanWeekLabel,
+  listPlanWeeks,
+  resolvePlanWeek,
+  weekContains,
+  weekEndFor,
+  weekStartFor,
+} from "../src/lib/crm/plan-week.ts";
+import { foldRepPlanStatus } from "../src/lib/crm/reps-weekly-plans-board.ts";
+
+/**
+ * Reps Weekly Plans — tab two of the Reps List board, specified by the owner on 2026-09-01: "another
+ * tab called Reps Weekly Plans... I can filter by medical rep name, and then I can choose the week,
+ * either historical or in the future. If historical, I see the status of this plan — was it verified
+ * or no. And if it will be not yet, I have a verify button that every district manager can verify
+ * his medical reps plan."
+ *
+ * FOUR THINGS ARE PINNED HERE, and each of them fails silently rather than loudly.
+ *
+ * 1. THE FIELD WEEK RUNS SATURDAY TO FRIDAY. Every calendar helper in JavaScript assumes Sunday, and
+ *    an off-by-one here does not throw — it moves a whole week's plans one day, so a manager opening
+ *    "this week" is shown six of his rep's days plus one of last week's, and the Saturday he is
+ *    actually being asked to verify is on the previous page. Nothing on screen would say so.
+ *
+ * 2. NOT FILED IS NOT PENDING. A rep who filed nothing and a rep waiting on his manager's signature
+ *    are different facts, and only the second is the manager's move. Folding them together turns "he
+ *    did not plan his week" into "you have not signed it" — it points the blame at the wrong person,
+ *    and it is one `?? 0` away at all times.
+ *
+ * 3. THE FITS-THE-SCREEN GOLDEN RULE. Every other table that renders these same plan rows goes
+ *    through `PortalDesktopTable` over a min-width floor of 720–1240px, which is exactly the
+ *    horizontal scroll the owner's golden rule forbids. Reusing one of them would look like a
+ *    tidy-up and would reintroduce the scroll on the board he asked to be phone-friendly.
+ *
+ * 4. THE SERVER/CLIENT BOUNDARY OF THE STATUS FORMATTERS. `planStatusClass` and `planStatusLabel`
+ *    are called from a SERVER component here. Defined inside — or imported through — a "use client"
+ *    module they reach the server as client references rather than functions, and every plan fails
+ *    to render. That already happened once, one file over, to `planPeriodText`.
+ *
+ * ## Why this board exists at all, which is the finding worth keeping
+ *
+ * `/admin/plan-verification` verifies plans and has since it shipped. But it lives in the ADMIN
+ * shell, and `portalNavigationRoles` puts District Manager and Regional Manager — the only two seats
+ * holding `crm_plans:approve` — in the EMPLOYEE PORTAL. `app/(admin)/layout.tsx` redirects every
+ * portal-mode viewer out of `/admin/**`, `portal-twins.ts` registers no twin for it, and the portal
+ * builds its own sidebar so the row never appeared either. The two roles the feature was written for
+ * could not reach the only screen that used their permission, leaving Super Admin the sole account
+ * able to press Verify. Nothing errored, nothing 403'd, and CI was green throughout — which is why
+ * the portal half of this tab is asserted below by name.
+ */
+export async function runRepsWeeklyPlansTests() {
+  // ---------------------------------------------------------------------------------------------
+  // 1. The field week is Saturday to Friday
+  // ---------------------------------------------------------------------------------------------
+  {
+    assert.equal(FIELD_WEEK_START_DOW, 6, "the field week starts on Saturday (getUTCDay() === 6)");
+    assert.equal(FIELD_WEEK_LENGTH, 7, "a week is seven days");
+
+    // 2026-08-29 is a Saturday and 2026-09-04 the Friday that closes its week. Both verified against
+    // the runtime rather than assumed, so a wrong literal here cannot quietly define the week.
+    assert.equal(new Date("2026-08-29T00:00:00Z").getUTCDay(), 6, "2026-08-29 must really be a Saturday");
+    assert.equal(new Date("2026-09-04T00:00:00Z").getUTCDay(), 5, "2026-09-04 must really be a Friday");
+
+    assert.equal(weekStartFor("2026-08-29"), "2026-08-29", "a Saturday is its own week start");
+    assert.equal(weekStartFor("2026-09-04"), "2026-08-29", "the Friday closing the week belongs to it");
+    assert.equal(weekEndFor("2026-08-29"), "2026-09-04", "the week ends on the Friday six days later");
+
+    // Every one of the seven days must land on the SAME Saturday. This is the assertion a
+    // Sunday-based helper fails: it would split this week across two.
+    const days = ["2026-08-29", "2026-08-30", "2026-08-31", "2026-09-01", "2026-09-02", "2026-09-03", "2026-09-04"];
+    for (const day of days) {
+      assert.equal(
+        weekStartFor(day),
+        "2026-08-29",
+        `${day} is inside the Saturday-to-Friday week starting 2026-08-29 — a Sunday-start convention would move it`,
+      );
+      assert.ok(weekContains("2026-08-29", day), `${day} must be reported inside its own week`);
+    }
+
+    // The day either side is NOT in it, which is what an off-by-one breaks.
+    assert.equal(weekStartFor("2026-08-28"), "2026-08-22", "the Friday BEFORE belongs to the previous week");
+    assert.equal(weekStartFor("2026-09-05"), "2026-09-05", "the next Saturday opens the next week");
+    assert.ok(!weekContains("2026-08-29", "2026-08-28"), "the previous Friday is not in this week");
+    assert.ok(!weekContains("2026-08-29", "2026-09-05"), "the next Saturday is not in this week");
+    assert.ok(!weekContains("2026-08-29", null), "no date at all is in no week");
+  }
+
+  // ---------------------------------------------------------------------------------------------
+  // 2. The picker offers future weeks FIRST
+  // ---------------------------------------------------------------------------------------------
+  {
+    const weeks = listPlanWeeks({ back: 5, forward: 2, todayIso: "2026-09-01" });
+    assert.equal(weeks.length, 8, "back + forward + the current week");
+    assert.equal(weeks[0]?.offset, 2, "the furthest FUTURE week is first — a plan is verified before the week it covers, so next week is what this tab is opened to act on");
+    assert.equal(weeks.at(-1)?.offset, -5, "the oldest week is last");
+
+    for (let index = 1; index < weeks.length; index += 1) {
+      assert.equal(
+        weeks[index]!.offset,
+        weeks[index - 1]!.offset - 1,
+        "offsets must descend one week at a time, with no gap and no repeat",
+      );
+    }
+
+    const current = weeks.filter((week) => week.offset === 0);
+    assert.equal(current.length, 1, "exactly one week is 'this week'");
+    assert.equal(current[0]?.key, "2026-08-29", "and it is the Saturday of the week holding 2026-09-01");
+    assert.equal(current[0]?.end, "2026-09-04", "its end is the Friday");
+
+    // Every option is a real Saturday. A key that is not one would make `?week=` resolve to a
+    // different week than the one the option named.
+    for (const week of weeks) {
+      assert.equal(new Date(`${week.key}T00:00:00Z`).getUTCDay(), 6, `${week.key} must be a Saturday`);
+      assert.equal(week.key, weekStartFor(week.key), "an offered key must be its own week start");
+    }
+  }
+
+  // ---------------------------------------------------------------------------------------------
+  // 3. A hand-typed week never throws and never lands mid-week
+  // ---------------------------------------------------------------------------------------------
+  {
+    assert.equal(resolvePlanWeek("2026-08-29", "2026-09-01"), "2026-08-29", "a valid Saturday is taken as given");
+    assert.equal(
+      resolvePlanWeek("2026-09-02", "2026-09-01"),
+      "2026-08-29",
+      "a mid-week date is NORMALISED to its Saturday rather than used as a week start — otherwise the board would read a seven-day window straddling two field weeks and show a rep's Wednesday-to-Tuesday",
+    );
+    for (const junk of ["", "next week", "2026-13-45", "../../etc/passwd", null, undefined]) {
+      assert.equal(
+        resolvePlanWeek(junk, "2026-09-01"),
+        "2026-08-29",
+        "junk falls back to the current week — the falls-back-never-throws posture every other filter on these boards has",
+      );
+    }
+  }
+
+  // ---------------------------------------------------------------------------------------------
+  // 4. NOT FILED is not PENDING
+  // ---------------------------------------------------------------------------------------------
+  {
+    assert.equal(
+      foldRepPlanStatus([]),
+      null,
+      "a rep who filed NOTHING is null, never 0 — 0 is New, which reads as 'filed and awaiting you' and blames the manager for a week the rep never planned",
+    );
+    assert.equal(foldRepPlanStatus([{ status: 0 }]), 0, "one pending plan is pending");
+    assert.equal(foldRepPlanStatus([{ status: 1 }]), 1, "one supervisor-verified plan is verified");
+    assert.equal(
+      foldRepPlanStatus([{ status: 1 }, { status: 0 }]),
+      0,
+      "the LOWEST wins: a rep with one signed plan and one pending plan still needs his manager",
+    );
+    assert.equal(
+      foldRepPlanStatus([{ status: 2 }, { status: 1 }]),
+      1,
+      "two signed plans fold to the lower signature, never to the higher",
+    );
+    assert.equal(
+      foldRepPlanStatus([{ status: null }]),
+      0,
+      "a plan with no status recorded counts as New — that is what the vendor sends on a fresh plan, and reading it as verified would sign something nobody signed",
+    );
+    assert.equal(
+      foldRepPlanStatus([{ status: null }, { status: 2 }]),
+      0,
+      "and it still wins over a signed one",
+    );
+  }
+
+  // ---------------------------------------------------------------------------------------------
+  // 5. The labels are words, never raw codes
+  // ---------------------------------------------------------------------------------------------
+  {
+    const label = formatPlanWeekLabel("2026-08-29");
+    assert.ok(!label.includes(","), `the week label must carry no comma: got "${label}" — en-GB inserts one after the weekday and the picker has no room for it`);
+    assert.ok(!label.includes("Sept"), `en-GB abbreviates September to four letters, which makes the picker ragged: got "${label}"`);
+    assert.ok(label.includes("Sat") && label.includes("Fri"), `the label must name both ends of the week: got "${label}"`);
+    assert.ok(label.includes("2026"), `the label must carry the year: got "${label}"`);
+    assert.ok(!/\d{4}-\d{2}-\d{2}/.test(label), `no raw ISO date may reach a label — owner's standing rule that a screen never shows a raw code: got "${label}"`);
+
+    const day = formatPlanDay("2026-08-30");
+    assert.equal(day, "Sun 30 Aug", `one planned day reads as a person says it: got "${day}"`);
+    assert.ok(!/\d{4}/.test(day), "a day inside a week the heading already dated needs no year");
+  }
+
+  // ---------------------------------------------------------------------------------------------
+  // 6. THE FITS-THE-SCREEN GOLDEN RULE
+  // ---------------------------------------------------------------------------------------------
+  {
+    const board = readFileSync("src/components/crm/reps-weekly-plans-board.tsx", "utf8");
+
+    // The NAME is allowed to appear — the file explains in a comment why it is not used, and that
+    // comment is the thing stopping the next session from "tidying up" by reaching for it. What is
+    // forbidden is importing or rendering it.
+    assert.ok(
+      !board.includes("<PortalDesktopTable") && !/import \{[^}]*PortalDesktopTable/.test(board),
+      "the doctors table must NOT use PortalDesktopTable: all three tables in plan-verification-tables.tsx do, over min-width floors of 720-1240px, and a min-width floor IS the horizontal scroll the owner's golden rule forbids",
+    );
+    assert.ok(
+      !board.includes("minWidth=") && !board.includes("min-w-["),
+      "no min-width floor anywhere on this board — that is the bug, not the fix",
+    );
+    assert.ok(
+      !board.includes("overflow-x-auto"),
+      "no horizontal scroll container: `overflow-x-auto` over a min-width is exactly the pattern the golden rule names",
+    );
+    assert.ok(
+      board.includes('<table className="w-full table-fixed border-collapse text-left text-sm">'),
+      "the table must be w-full table-fixed, so the columns share whatever width the viewport has",
+    );
+    assert.ok(board.includes("<colgroup>"), "table-fixed without a colgroup lets the browser guess the widths");
+
+    // The widths must actually add up. A colgroup summing to more than 100% reintroduces the
+    // overflow the golden rule forbids, and one summing to less leaves a gap on the right.
+    const widths = [...board.matchAll(/<col className="w-\[(\d+)%\]" \/>/g)].map((match) => Number(match[1]));
+    assert.ok(widths.length >= 5, `the doctors table declares its column widths: found ${widths.length}`);
+    assert.equal(
+      widths.reduce((total, width) => total + width, 0),
+      100,
+      `the column widths must sum to exactly 100%: got ${widths.join(" + ")}`,
+    );
+
+    assert.ok(
+      board.includes('className="hidden md:block"'),
+      "the table is desktop-only — the owner's admin-shell rule: desktop gets tables, mobile never does",
+    );
+    assert.ok(
+      board.includes("md:hidden"),
+      "and mobile gets CARDS. Without them a phone would show nothing at all where the table was, which reads as an empty plan",
+    );
+
+    assert.ok(
+      !board.includes("truncate") && !board.includes("text-ellipsis") && !board.includes("…"),
+      "nothing on this board may be truncated with an ellipsis — a standing owner rule, and the reason wrapping is the permitted way to fit",
+    );
+  }
+
+  // ---------------------------------------------------------------------------------------------
+  // 7. The status formatters are callable from the SERVER
+  // ---------------------------------------------------------------------------------------------
+  {
+    const vocabulary = readFileSync("src/lib/crm/plan-verification.ts", "utf8");
+    // The directive is a FILE-LEADING one, so that is what is checked. The string itself appears in
+    // this module's prose, explaining the trap — which is exactly the comment worth keeping.
+    assert.ok(
+      !vocabulary.trimStart().startsWith('"use client"') && !vocabulary.trimStart().startsWith("'use client'"),
+      "plan-verification.ts must carry NO directive: it is called from both sides, and a directive would hand the server a client reference instead of a function",
+    );
+    assert.ok(
+      vocabulary.includes("export function planStatusClass("),
+      "the status COLOUR lives beside the status LABEL, in the module with no directive — defined inside plan-verify-button.tsx it could not be called from a server component",
+    );
+
+    const board = readFileSync("src/components/crm/reps-weekly-plans-board.tsx", "utf8");
+    assert.ok(
+      !board.startsWith('"use client"'),
+      "the board itself is a SERVER component — marking it client would ship the whole doctors table to the browser and move the access decision off the server",
+    );
+    assert.ok(
+      /import \{[\s\S]{0,200}planStatusClass,[\s\S]{0,200}\} from "@\/lib\/crm\/plan-verification"/.test(board),
+      "the server board must import planStatusClass from the no-directive module, never from plan-verify-button.tsx — that import is the exact shape of the planPeriodText failure one file over",
+    );
+    assert.ok(
+      !/planStatusClass[\s\S]{0,80}from "@\/components\/crm\/plan-verify-button"/.test(board),
+      "and specifically NOT through the client button",
+    );
+  }
+
+  // ---------------------------------------------------------------------------------------------
+  // 8. The plans tab has its OWN gate, on BOTH doors
+  // ---------------------------------------------------------------------------------------------
+  {
+    const pages = [
+      { path: "app/(admin)/admin/reps-list/page.tsx", what: "the admin door" },
+      { path: "app/employee-portals/reps-list/page.tsx", what: "the PORTAL door — the only one a district manager has" },
+    ];
+
+    for (const page of pages) {
+      const source = readFileSync(page.path, "utf8");
+
+      assert.ok(
+        source.includes("RepsWeeklyPlansBoardView"),
+        `${page.what} must render the plans tab at all`,
+      );
+      assert.ok(
+        source.includes("canAccessPlanVerification(access)") && source.includes('canAccess(access, "crm_plans", "read")'),
+        `${page.what} must gate the plans tab on the PLAN role list and crm_plans:read — Reps List admits National Sales Manager and SFE Manager, and plan verification deliberately admits neither`,
+      );
+      assert.ok(
+        source.includes('canAccess(access, "crm_plans", "approve")'),
+        `${page.what} must read approve separately from read: more seats may read a plan than may sign one`,
+      );
+      assert.ok(
+        source.includes("getPlanVerificationScope(access)"),
+        `${page.what} must build the plans tab from the PLAN scope`,
+      );
+      assert.ok(
+        source.includes("getDoctorListScope(access)"),
+        `${page.what} must still build the contact tab from the Reps List scope — one scope for both tabs would either widen who may sign a plan or narrow who may read a list`,
+      );
+      assert.ok(
+        /const tab = canSeePlans \? resolveRepsListTab\(params\?\.tab\) : "contacts"/.test(source),
+        `${page.what} must resolve the tab THROUGH the gate, so a hand-typed ?tab=plans from a seat without it lands on the contact list rather than on a refusal`,
+      );
+    }
+
+    // The portal page is the whole point of this build, so it is asserted by name rather than only
+    // through the loop above: without it the two roles holding crm_plans:approve have no door.
+    const portal = readFileSync("app/employee-portals/reps-list/page.tsx", "utf8");
+    // The CALL, not the import. Asserting the name alone passed on a page that imported the board
+    // and never invoked it — which is precisely the shape of the bug this whole tab exists to fix:
+    // everything present, nothing reachable, no error anywhere.
+    assert.ok(
+      portal.includes("await getRepsWeeklyPlansBoard({"),
+      "the PORTAL page must CALL the weekly-plans board. District Manager and Regional Manager are portal-shell roles and are redirected out of /admin/**, so this page is the only screen from which either can verify a plan",
+    );
+    assert.ok(
+      portal.includes("<RepsWeeklyPlansBoardView"),
+      "and must render it — a loaded board nothing renders is the same invisible feature by another route",
+    );
+  }
+
+  // ---------------------------------------------------------------------------------------------
+  // 9. The tab strip disappears for a viewer with only one tab
+  // ---------------------------------------------------------------------------------------------
+  {
+    const tabs = readFileSync("src/components/crm/reps-list-tabs.tsx", "utf8");
+    assert.ok(
+      tabs.includes("if (!canSeePlans) return null;"),
+      "a viewer who may not verify plans sees NO tab strip — a tab that answers 'not available to your role' when pressed is worse than no tab",
+    );
+    assert.ok(
+      tabs.includes('query.set("tab", "plans")') && tabs.includes('query.set("week", input.week)'),
+      "switching to the plans tab must carry the week, or every switch silently resets it",
+    );
+    assert.ok(
+      /if \(input\.selection\.rep\) query\.set\("rep", input\.selection\.rep\)/.test(tabs),
+      "switching tabs KEEPS the rep: a manager who has just read a rep's contact list and presses Plans means THAT rep's plans",
+    );
+
+    const filters = readFileSync("src/components/crm/reps-list-filters.tsx", "utf8");
+    assert.ok(
+      filters.includes("preserve"),
+      "the shared cascade must carry the tab and week through a pick, or choosing a line on the plans tab bounces the manager back to tab one on the current week",
+    );
+  }
+
+  // ---------------------------------------------------------------------------------------------
+  // 10. Plans are matched to reps on the NUMERIC agent id
+  // ---------------------------------------------------------------------------------------------
+  {
+    const lib = readFileSync("src/lib/crm/reps-weekly-plans-board.ts", "utf8");
+    assert.ok(
+      lib.includes("plansByAgent.get(rep.agentCrmId)"),
+      "reps and plans are joined on the numeric CRM agent id",
+    );
+    assert.ok(
+      !/plansBy(HrId|Hr)|\.agentHrId\)/.test(lib),
+      "NEVER on the hr id: hr ids are mixed case in this database, so a plain equality under-returns — and an under-returning join here would tell a district manager his rep filed nothing, which is an accusation and the worst direction for this error to fall in",
+    );
+    assert.ok(
+      lib.includes("getPlanVerificationScope") || lib.includes("PlanVerificationScope") || lib.includes("CrmManagerScope"),
+      "the module is built around the plan scope",
+    );
+    assert.ok(
+      /if \(input\.scope\.kind === "none"\)/.test(lib),
+      "a seat with no reports returns an explained empty board, never an unscoped one",
+    );
+  }
+}

@@ -143,20 +143,45 @@ export function pruneLineFirst(tree: CoverageFilterTree, raw: CoverageFilterSele
 }
 
 /**
- * Assembles the board for one viewer and one selection.
+ * Everything both Reps List tabs need before they diverge: the scope, the cascade, the rep cards
+ * and the selected rep.
+ *
+ * EXTRACTED SO THE TWO TABS CANNOT DRIFT. Tab one lists the selected rep's contacts; tab two shows
+ * that rep's weekly plan for a chosen week. They are different screens over the same question —
+ * "which rep, and may this viewer see him" — and the moment each answers it for itself is the
+ * moment one of them can offer a rep the other refuses. That is the same fault the owner caught on
+ * 2026-08-28 (a picker wider than its viewer), one level up.
  *
  * `searchParams` is taken raw and normalised here rather than by the pages, so a hand-typed filter
- * that no longer exists in the org tree is pruned identically on both.
+ * that no longer exists in the org tree is pruned identically on every surface.
  */
-export async function getRepsListBoard(input: {
+export type RepsCascade = {
+  options: CoverageFilterOptions;
+  /**
+   * Agent id -> rep name, COMPANY-WIDE. Built here because it is derived from the unrestricted
+   * tree this function already holds; what it is for, and why it is the one read that wants the
+   * unrestricted tree, is written out where it is built below.
+   */
+  repNameByAgentId: Map<number, string>;
+  reps: RepsListRep[];
+  scopeLabel: string;
+  scopeReason: string | null;
+  selected: RepsListRep | null;
+  selection: CoverageFilterSelection;
+  syncedAt: string | null;
+};
+
+export async function buildRepsCascade(input: {
   scope: CrmManagerScope;
   params: { area?: string; line?: string; region?: string; rep?: string };
-}): Promise<RepsListBoard> {
+}): Promise<RepsCascade> {
   const scopeLabel = input.scope.kind === "none" ? "No reach" : input.scope.label;
   if (input.scope.kind === "none") {
     return {
-      list: null,
       options: EMPTY_OPTIONS,
+      // A fresh Map per call, never a shared literal: a caller that mutated a shared one would
+      // leak one viewer's names into the next request served by the same process.
+      repNameByAgentId: new Map<number, string>(),
       reps: [],
       scopeLabel,
       scopeReason: input.scope.reason,
@@ -257,15 +282,36 @@ export async function getRepsListBoard(input: {
     if (summary?.agentCrmId != null && name) repNameByAgentId.set(summary.agentCrmId, name);
   }
 
-  const list = selected?.agentCrmId != null ? await getRepsListForAgent(selected.agentCrmId, repNameByAgentId) : null;
-
   const syncedAt = reps.reduce<string | null>((latest, rep) => {
     const summary = summaryByHrId.get(lower(rep.hrId));
     const at = summary?.syncedAt ?? null;
     return at && (!latest || at > latest) ? at : latest;
   }, null);
 
-  return { list, options, reps, scopeLabel, scopeReason: null, selected, selection, syncedAt };
+  return { options, repNameByAgentId, reps, scopeLabel, scopeReason: null, selected, selection, syncedAt };
+}
+
+/** Assembles tab one — the cascade plus the selected rep's contact list, grouped by brick. */
+export async function getRepsListBoard(input: {
+  scope: CrmManagerScope;
+  params: { area?: string; line?: string; region?: string; rep?: string };
+}): Promise<RepsListBoard> {
+  const cascade = await buildRepsCascade(input);
+  const list =
+    cascade.selected?.agentCrmId != null
+      ? await getRepsListForAgent(cascade.selected.agentCrmId, cascade.repNameByAgentId)
+      : null;
+
+  return {
+    list,
+    options: cascade.options,
+    reps: cascade.reps,
+    scopeLabel: cascade.scopeLabel,
+    scopeReason: cascade.scopeReason,
+    selected: cascade.selected,
+    selection: cascade.selection,
+    syncedAt: cascade.syncedAt,
+  };
 }
 
 /** Re-exported so the pages never import the cascade module directly. */

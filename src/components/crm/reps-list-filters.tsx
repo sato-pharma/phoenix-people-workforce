@@ -54,10 +54,21 @@ const LEVELS = [
 export function RepsListFilters({
   basePath,
   options,
+  preserve,
   selection,
 }: {
   basePath: string;
   options: CoverageFilterOptions;
+  /**
+   * Query parameters that are not part of the cascade and must survive a pick — the open tab and
+   * the chosen week.
+   *
+   * Without this the cascade rebuilt the URL from its own four levels alone, so on the Reps Weekly
+   * Plans tab choosing a line would drop the tab and the week and bounce the manager back to tab
+   * one on the current week. The cascade is shared by both tabs precisely so they can never offer
+   * different reps; carrying the rest of the URL is the price of sharing it.
+   */
+  preserve?: Record<string, string | undefined>;
   selection: CoverageFilterSelection;
 }) {
   const router = useRouter();
@@ -65,6 +76,9 @@ export function RepsListFilters({
 
   const apply = (key: string, value: string, clears: readonly string[]) => {
     const next = new URLSearchParams();
+    for (const [name, carried] of Object.entries(preserve ?? {})) {
+      if (carried) next.set(name, carried);
+    }
     for (const level of LEVELS) {
       if (level.key === key) continue;
       if (clears.includes(level.key)) continue;

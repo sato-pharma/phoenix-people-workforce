@@ -306,6 +306,7 @@ import { runCrmRepDoctorListsTests } from "./crm-rep-doctor-lists.test.ts";
 import { runCrmContactListsTests } from "./crm-contact-lists.test.ts";
 import { runRepsListTests } from "./reps-list.test.ts";
 import { runCrmPlanVerificationTests } from "./crm-plan-verification.test.ts";
+import { runRepsWeeklyPlansTests } from "./reps-weekly-plans.test.ts";
 import { runCrmRepDoctorTrendTests } from "./crm-rep-doctor-trend.test.ts";
 import { runLocationIqGeocodeConfidenceTests } from "./locationiq-geocode-confidence.test.ts";
 import { runPrivateCalendarTests } from "./private-calendar.test.ts";
@@ -2993,6 +2994,24 @@ await runTest(
   + "`crm_plans` is asserted present in the RUNTIME permissionResources array, where an unseen key "
   + "makes the sidebar's lookup fail OPEN and offers a CRM-writing button to every role)",
   runCrmPlanVerificationTests,
+);
+
+await runTest(
+  "reps weekly plans — tab two of Reps List, and the only door a district manager has to plan "
+  + "verification (the seats holding crm_plans:approve are PORTAL seats, and /admin/plan-verification "
+  + "is admin-shell only with no twin registered, so until this tab existed Super Admin was the sole "
+  + "account able to press Verify on a feature specified as the plans a district manager verifies — "
+  + "nothing errored, which is why green CI never showed it. The field week runs SATURDAY to Friday, "
+  + "where every calendar helper assumes Sunday and an off-by-one silently hides the Saturday being "
+  + "verified on the previous page; a rep who filed NOTHING folds to null and never to New, because "
+  + "printing them alike blames the manager for a week the rep never planned; the doctors table is "
+  + "table-fixed over a colgroup summing to 100% with no min-width floor anywhere, since every "
+  + "existing table over these same rows uses PortalDesktopTable at 720-1240px, which IS the "
+  + "horizontal scroll the owner's golden rule forbids; and planStatusClass is asserted to live in "
+  + "the module with NO directive, because a server component importing it through a use-client "
+  + "file receives a client reference rather than a function — which already happened to "
+  + "planPeriodText one file over)",
+  runRepsWeeklyPlansTests,
 );
 
 await runTest(
