@@ -6,6 +6,7 @@ import type { DoctorListRow } from "../src/lib/crm/contact-lists.ts";
 import {
   buildCoverageFilterTree,
   narrowCoverageOptions,
+  restrictCoverageFilterTree,
   type CoverageFilterMapRow,
 } from "../src/lib/crm/coverage-filters.ts";
 import {
@@ -979,8 +980,86 @@ export function runRepsListTests() {
       "the rep-name map must NOT read summary.name: it is empty by construction, and an empty map silently discards every shared-customer match instead of failing",
     );
     assert.ok(
-      mapBlock.includes("tree.reps"),
-      "the map is built from the org tree, the only source that actually holds a rep's name — and unscoped on purpose, because a shared customer's other half is by definition on another rep's list",
+      mapBlock.includes("companyTree.reps"),
+      "the map is built from the UNRESTRICTED org tree, the only source that both holds a rep's name and reaches past the viewer's own team",
+    );
+    assert.ok(
+      !/\btree\.reps\b/.test(mapBlock),
+      "the map must NOT read the scope-restricted `tree`: it holds the viewer's own reps alone, so a partner outside his team cannot be named and findSharedCustomers discards the match entirely",
+    );
+  }
+
+  // ── THE NAME MAP MUST BE THE UNRESTRICTED TREE, NOT THE SCOPED ONE ───────────────────────────
+  // The same failure a second time, one variable along, and PORTAL-ONLY — which is why it survived
+  // review: /admin/reps-list runs at company scope, where restrictCoverageFilterTree is a no-op, so
+  // the board looked right on the surface a reviewer opens. A District Manager's board is the one
+  // that was blind.
+  //
+  // The chain is silent at every link. `tree` is restricted for the picker (correctly), the name map
+  // was read off it, findSharedCustomers refuses to print a raw id and so DISCARDS a partner it
+  // cannot name rather than degrading to "shared with someone", and the discarded entry is also what
+  // carries `contactCrmIds` — so the partner's check-ins are never fetched and the confidence score
+  // quietly loses its second observer too. No error, no empty state, no marker: a manager just sees
+  // a company with no shared customers.
+  //
+  // Measured on production 2026-09-01: of 3,334 cross-rep same-name pairs 2,842 (85%) sit under a
+  // different manager, and of the 62 shared-phone pairs ALL 62 do.
+  //
+  // Pinned as BEHAVIOUR and not only as source text, because the source pin above can only say which
+  // identifier is read — it cannot show that reading the wrong one costs a real row.
+  {
+    const company = cascadeTree();
+    // A District Manager whose team is Ahmed Fathy alone. Mohamed Adel is another manager's rep.
+    const scopedToOwnTeam = restrictCoverageFilterTree(company, ["A-1"]);
+
+    const agentByHrId = new Map([
+      ["A-1", 1001],
+      ["A-2", 2002],
+    ]);
+    const namesFrom = (source: { reps: readonly { hrId: string; repName: string }[] }) => {
+      const names = new Map<number, string>();
+      for (const rep of source.reps) {
+        const agentCrmId = agentByHrId.get(rep.hrId);
+        if (agentCrmId != null) names.set(agentCrmId, rep.repName);
+      }
+      return names;
+    };
+
+    assert.equal(
+      namesFrom(scopedToOwnTeam).size,
+      1,
+      "the restricted tree holds the viewer's own rep alone — this is the trap, and it is invisible at company scope",
+    );
+    assert.equal(namesFrom(company).size, 2, "the company tree can name the partner rep");
+
+    // One doctor, two reps, standing in the same place: exactly the shape the board tints violet.
+    const roster: RosterEntry[] = [
+      { agentCrmId: 1001, contactCrmId: 11, name: "Dr Adel", nameKey: "dr adel", phoneKey: null, regionKey: null, speciality: "Pediatrics" },
+      { agentCrmId: 2002, contactCrmId: 22, name: "Dr Adel", nameKey: "dr adel", phoneKey: null, regionKey: null, speciality: "Pediatrics" },
+    ];
+    const pins = new Map([
+      [11, { lat: 30, lon: 31 }],
+      [22, { lat: 30, lon: 31 }],
+    ]);
+    const mine = [{ agentCrmId: 1001, contactCrmId: 11 }];
+
+    const withCompanyNames = findSharedCustomers(mine, roster, pins, namesFrom(company)).get(11) ?? [];
+    const withScopedNames = findSharedCustomers(mine, roster, pins, namesFrom(scopedToOwnTeam)).get(11) ?? [];
+
+    assert.equal(
+      withCompanyNames.length,
+      1,
+      "with the company tree the shared customer is found and the partner rep can be named",
+    );
+    assert.deepEqual(
+      withCompanyNames[0]?.contactCrmIds,
+      [22],
+      "and the partner's own contact row is carried out, which is what later fetches his check-ins for the confidence score",
+    );
+    assert.equal(
+      withScopedNames.length,
+      0,
+      "PINNED: a scope-restricted name map finds NOTHING on identical data — the row loses its violet tint and the score loses the second rep, with nothing on screen saying so",
     );
   }
 
