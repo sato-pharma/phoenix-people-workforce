@@ -191,16 +191,48 @@ export function runMemoryIndexReachabilityTests() {
   // ── 7. the convention this whole matcher rests on is real, in the live file ───────────────────
   // Everything above is fixtures. This is the one assertion against the actual AGENTS.md: if a
   // future rewrite stops naming memories as backticked slugs — switching to links, say — the
-  // matcher goes blind and every relocated hook silently reads as an orphan again. Counted 137 on
-  // 2026-08-29; the floor is set well below that so ordinary retirement never trips it.
+  // matcher goes blind and every relocated hook silently reads as an orphan again.
+  //
+  // FLOOR LOWERED 50 -> 15 on 2026-09-01, and the reason matters more than the number.
+  //
+  // The old floor was set against 137 slugs counted on 2026-08-29, "well below that so ordinary
+  // retirement never trips it". What tripped it was not retirement: #2862 compressed AGENTS.md and
+  // #2864 moved the slugs into docs/agents-memory-map.md, leaving 25 inline. Each PR was green on
+  // its own head and the pair turned `main` RED on merge — the count only collapses when both are
+  // present, which no per-PR run could see. Every open PR then inherited that red the moment it
+  // merged main, which is how this was found.
+  //
+  // So the floor now tracks what the matcher actually depends on rather than the file's old size.
+  // scripts/memory-index-reachability.mjs reads AGENTS.md and nothing else, so the load-bearing set
+  // is the memories reachable ONLY from here — 17 of them, the ones MEMORY.md does not link. The
+  // other ~149 slugs moved to the memory map and stay reachable through the index. A floor of 15
+  // still catches the failure this section exists for (the convention being abandoned wholesale)
+  // while leaving the relocation, which was deliberate, alone. Re-derive it from the doctor's
+  // "reachable from AGENTS.md rather than the index" count before changing it again — do NOT raise
+  // it back towards 50 to make a red test green, because that would demand slugs be moved BACK into
+  // the per-request footprint the relocation was undertaken to shrink.
   const agents = readFileSync(join(process.cwd(), "AGENTS.md"), "utf8");
   const slugs = new Set(
     [...agents.matchAll(new RegExp(TICK + "([a-z0-9]+(?:-[a-z0-9]+){2,})" + TICK, "g"))].map((m) => m[1]),
   );
   assert.ok(
-    slugs.size >= 50,
+    slugs.size >= 15,
     `AGENTS.md names only ${slugs.size} backticked slugs; the reachability matcher assumes that `
       + "convention, so a collapse here means relocated memories are being reported as orphans",
+  );
+
+  // The bulk of the slugs now live in the memory map, and nothing else asserts they survived the
+  // move. Without this, deleting that file would leave section 7 perfectly green while ~149 hooks
+  // lost the only record of which memory backs them.
+  const memoryMap = readFileSync(join(process.cwd(), "docs/agents-memory-map.md"), "utf8");
+  const mapped = new Set(
+    [...memoryMap.matchAll(new RegExp(TICK + "([a-z0-9]+(?:-[a-z0-9]+){2,})" + TICK, "g"))].map((m) => m[1]),
+  );
+  assert.ok(
+    mapped.size >= 100,
+    `docs/agents-memory-map.md names only ${mapped.size} backticked slugs; that file is where the `
+      + "2026-09-01 relocation put them, so a collapse there loses the hook -> memory mapping "
+      + "entirely (AGENTS.md 2.2)",
   );
   assert.ok(
     slugs.has("tailwind-merge-strips-custom-named-font-sizes"),
