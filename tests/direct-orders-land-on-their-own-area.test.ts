@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 
 import {
-  DIRECT_AREA_STAMPED_FROM_PERIOD,
+  OVERLAY_OWNED_DIRECT_PERIODS,
   directRowsCarryOwnArea,
   isSyntheticDirectArea,
 } from "../src/lib/sales/closing-direct-area.ts";
@@ -162,13 +162,17 @@ export async function runDirectOrdersLandOnTheirOwnAreaTests() {
     assert.equal(grandUnits(injected, iA), before + 55, "and the grand total still holds");
   }
 
-  // ── 5. THE PERIOD FLOOR. An older month must not fold even when handed a real area ─────────
-  // The sharp case, and the reason this is a floor rather than a has-an-area test: 2026-01 has 19
-  // of 71 direct rows carrying a manually-placed area, and 2026-07 has 35 of 51 — July's being the
-  // owner's own finalized mapping. July's mapping table covers Anti Infective and Pedia only, so
-  // July CNS reaches THIS code path in production, over a locked closing. If the SQL floor is ever
-  // removed, or a caller hands these cells in directly, the fold must still refuse.
-  for (const period of ["2026-01", "2026-07"]) {
+  // ── 5. OVERLAY-OWNED JULY must not fold, even when handed a real area ─────────────────────
+  // The sharp case. July 2026 has 35 of 51 direct rows carrying a manually-placed area, and that
+  // placement is the OWNER'S OWN finalized mapping, applied separately by
+  // `applyJulyDirectAreasToBreakdown` — which refuses to run unless the `__DIRECT__` bucket
+  // reconciles to the penny. Folding the row's own area HERE would shrink that bucket, fail the
+  // check, and paper the published July sheet with a "they are not the same money" warning.
+  // Production's rows now carry the same 11 areas (stamped 2026-09-01 so Sales vs Target agrees),
+  // which is precisely why the overlay — not the row — must stay the thing that places them.
+  // If the SQL mirror is ever removed, or a caller hands these cells in directly, this must refuse.
+  {
+    const period = "2026-07";
     const matrix = baseMatrix(period);
     const iA = columnOf(matrix, "P-A");
     const before = grandUnits(matrix, iA);
@@ -180,20 +184,51 @@ export async function runDirectOrdersLandOnTheirOwnAreaTests() {
     assert.equal(
       areaRow(injected, "CA", "A1")?.cells[iA]?.salesUnits,
       4,
-      `${period} predates the Direct Orders module stamping an area — its direct money must NOT move onto Area One`,
+      "July's direct money belongs to the owner's overlay — it must NOT move onto Area One here",
     );
-    assert.equal(areaRow(injected, "CA", "A1")?.isDirect ?? false, false, `${period}: and the area must not be flagged direct-bearing`);
+    assert.equal(areaRow(injected, "CA", "A1")?.isDirect ?? false, false, "July: and the area must not be flagged direct-bearing");
     const rows = directRows(injected);
-    assert.equal(rows.length, 1, `${period}: the money keeps the anonymous Direct row it has always had`);
-    assert.equal(rows[0]?.cells[iA]?.salesUnits, 216, `${period}: and keeps every unit`);
-    assert.equal(grandUnits(injected, iA), before + 216, `${period}: the grand total is unchanged by the floor`);
+    assert.equal(rows.length, 1, "July: the money keeps the anonymous Direct row the overlay reconciles against");
+    assert.equal(rows[0]?.cells[iA]?.salesUnits, 216, "July: and keeps every unit");
+    assert.equal(grandUnits(injected, iA), before + 216, "July: the grand total is unchanged");
   }
 
-  // The floor is one exported rule, not a literal repeated at each call site.
-  assert.equal(DIRECT_AREA_STAMPED_FROM_PERIOD, "2026-08");
-  assert.equal(directRowsCarryOwnArea("2026-07"), false, "July is below the floor");
-  assert.equal(directRowsCarryOwnArea("2026-08"), true, "August is the first month at or above it");
-  assert.equal(directRowsCarryOwnArea("2026-09"), true, "and every later month stays above it");
+  // ── 5b. JANUARY DOES fold — owner ruling 2026-09-01: honour the manual areas ──────────────
+  // THE HEADLINE for the January half of the sales-truth repair. 2026-01 carries 17 Anti Infective
+  // direct rows on 10 real areas, manually placed, no bricks, every one resolving through
+  // `au.sos_area_crosswalk`. No overlay owns January, so the row's own area is the only placement
+  // there is. Until 2026-09-01 a blanket pre-August floor discarded them: the closing left
+  // 189,319.95 EGP sitting in the Direct band while Sales vs Target credited the ten areas, and
+  // that was the last month `scripts/check-sales-truth.ts` still reported as a mismatch.
+  {
+    const period = "2026-01";
+    const matrix = baseMatrix(period);
+    const iA = columnOf(matrix, "P-A");
+    const before = grandUnits(matrix, iA);
+    const cells: MonthlyClosingDirectCell[] = [
+      { areaCode: "A1", productCode: "P-A", regionCode: "CA", salesUnits: 216, salesValue: 57024 },
+    ];
+    const injected = injectDirectIntoMatrix(matrix, cells);
+
+    assert.equal(
+      areaRow(injected, "CA", "A1")?.cells[iA]?.salesUnits,
+      220,
+      "January's manually-placed area is honoured — its direct money lands on Area One beside the 4 distributor units",
+    );
+    assert.equal(directRows(injected).length, 0, "January: nothing is left stranded in an anonymous Direct row");
+    assert.equal(grandUnits(injected, iA), before + 216, "January: and every unit is still counted exactly once");
+  }
+
+  // The rule is one exported list, not a literal repeated at each call site.
+  assert.deepEqual(
+    [...OVERLAY_OWNED_DIRECT_PERIODS],
+    ["2026-07"],
+    "July is the only month whose direct placement comes from an overlay rather than the row",
+  );
+  assert.equal(directRowsCarryOwnArea("2026-07"), false, "July's placement belongs to the owner's overlay");
+  assert.equal(directRowsCarryOwnArea("2026-01"), true, "January's manual areas are honoured");
+  assert.equal(directRowsCarryOwnArea("2026-08"), true, "and every month the Direct Orders module stamped");
+  assert.equal(directRowsCarryOwnArea("2026-09"), true, "including every later month");
   assert.equal(directRowsCarryOwnArea(""), false, "an unknown period never folds");
 
   // ── 6. The National bucket is untouched by any of this ─────────────────────────────────────
