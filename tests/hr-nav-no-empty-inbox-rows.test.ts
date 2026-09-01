@@ -103,18 +103,34 @@ export function runHrNavNoEmptyInboxRowsTests() {
   }
 
   // ── Why the exclusion is correct, not merely current ────────────────────────
-  // Tie the verdict to its cause. If HR Advisory is ever granted one of these modules, the
-  // exclusion above stops being right and this fails — deliberately — so the row is reconsidered
-  // instead of the grant arriving with the sidebar quietly still hiding its page.
+  // Tie the verdict to its cause, and RE-DECIDED on 2026-09-01 when she was granted contracts.
+  //
+  // The original reason was "she holds none of resignations/contracts/outstation". That stopped
+  // being true the day the owner asked for Contract Renewal in her sidebar, and this assertion
+  // fired — which is what it is for. The verdict did not change, but the reason had to:
+  //
+  //   the hub is getAwaitingMyActionItems(access, "admin") — an inbox of things awaiting MY
+  //   ACTION. Her contracts grant is READ. She advises on a renewal and cannot decide one, so no
+  //   row in that inbox can ever be hers to act on and the page is still structurally empty for
+  //   her, exactly as before. An empty inbox reads as a broken page, and this one also carries a
+  //   pending-count badge, so it would advertise work that can never become hers.
+  //
+  // So the test now asks the sharper question: not "does she hold the resource at all" but "can
+  // she ACT on it". The day she is granted update or approve on any of the three, the exclusion is
+  // genuinely wrong and this fires again.
   const advisoryGrants = permissionMatrix["HR Advisory" as PhoenixRole];
+  const actionableActions = ["update", "approve"] as const;
   for (const resource of OTHER_APPROVALS_MODULES) {
     const actions = advisoryGrants?.[resource] ?? [];
+    const actionable = actions.filter((action) =>
+      (actionableActions as readonly string[]).includes(action),
+    );
     assert.equal(
-      actions.length,
+      actionable.length,
       0,
-      `HR Advisory now holds ${resource}: ${JSON.stringify(actions)}. "Other Approvals" is ` +
-        "excluded for her on the grounds that she holds NONE of resignations/contracts/outstation " +
-        "— that reason no longer holds, so re-decide the row rather than leaving a stale exclusion",
+      `HR Advisory now holds ${resource}: ${JSON.stringify(actions)} — including an ACTIONABLE ` +
+        'action. "Other Approvals" is excluded for her because she can decide nothing in it; that ' +
+        "reason no longer holds, so re-decide the row rather than leaving a stale exclusion",
     );
   }
 }

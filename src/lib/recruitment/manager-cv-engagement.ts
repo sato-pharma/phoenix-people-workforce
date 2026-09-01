@@ -48,8 +48,19 @@ import { getFileForDownload, listCandidateFiles, type FileDownload } from "@/lib
 import { MANAGER_SENDS_TABLE } from "@/lib/recruitment/manager-sends";
 import type { RecruitmentFile } from "@/lib/recruitment/types";
 
-/** The roles that may open the report at all — the owner's list, verbatim. NOT SFE, NOT HR. */
-const managerCvEngagementRoles: readonly PhoenixRole[] = ["Super Admin", "CEO", "National Sales Manager"];
+/**
+ * The roles that may open the report at all.
+ *
+ * The original list was the owner's, verbatim, and read "NOT SFE, NOT HR". He AMENDED it on
+ * 2026-09-01, asked directly and answering yes, to add the HR Business Partner: chasing the
+ * managers who have not answered on a candidate is her recruiting job, and until then the report
+ * that measures it was the one recruiting screen she could not open.
+ *
+ * The amendment is HR Advisory alone. SFE is still out, and so is HR Operations — she runs
+ * records, attendance and payroll inputs, and no part of that reads a hiring manager's response
+ * time. Written as a role set rather than a permission for the reason below.
+ */
+const managerCvEngagementRoles: readonly PhoenixRole[] = ["Super Admin", "CEO", "National Sales Manager", "HR Advisory"];
 
 /**
  * May this viewer open the silent manager-engagement report?

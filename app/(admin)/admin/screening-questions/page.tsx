@@ -1,10 +1,10 @@
 import { BuiltInQuestionsEditor, type BuiltInPromptRow } from "@/components/admin/built-in-questions-editor";
 import { ScreeningQuestionsManager } from "@/components/admin/screening-questions-manager";
 import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
-import { assertPermission } from "@/lib/auth/permissions";
 import { builtInPrompts } from "@/lib/recruitment/inbound/whatsapp-question-prompts";
 import { loadQuestionPromptOverrides } from "@/lib/recruitment/inbound/whatsapp-question-prompts-store";
 import {
+  assertScreeningQuestionsAccess,
   listScreeningQuestions,
   type ScreeningQuestionAdminRow,
 } from "@/lib/recruitment/inbound/whatsapp-screening-questions-admin";
@@ -27,10 +27,10 @@ export default async function ScreeningQuestionsPage() {
 
   try {
     const access = await resolveAuthenticatedPageAccess();
-    // `admin:update` — the Super Admin alone. Asserted here as well as in the two routes behind it,
-    // because a page that renders the builder and then fails on save is worse than one that never
-    // renders it.
-    await assertPermission(access, "admin", "update");
+    // `recruitment:update`, falling back to `admin:update` — see assertScreeningQuestionsAccess.
+    // Asserted here as well as in the two routes behind it, because a page that renders the
+    // builder and then fails on save is worse than one that never renders it.
+    await assertScreeningQuestionsAccess(access);
     questions = await listScreeningQuestions();
 
     const overrides = await loadQuestionPromptOverrides();
