@@ -12,7 +12,7 @@ references costing 7,783 bytes — 11% of the file — re-sent on every turn, to
 **Reachability is unaffected, and that was checked rather than assumed.**
 `scripts/memory-index-reachability.mjs` treats a backticked slug in `AGENTS.md` as proof a
 memory is reachable. Only **18** memory files depended on that — every other slug named a file
-`MEMORY.md` already links. Those 16 therefore **stay inline in `AGENTS.md`** and must never be
+`MEMORY.md` already links. Those 18 therefore **stay inline in `AGENTS.md`** and must never be
 moved here; the rest are listed below and remain reachable through the index. Before removing
 any slug from `AGENTS.md`, re-run the classifier — the load-bearing set changes as the index does.
 
