@@ -136,8 +136,11 @@ export function ProbationDashboardView({ data }: { data: ProbationDashboard }) {
         ))}
       </div>
 
-      {/* Table */}
-      <div className="overflow-x-auto rounded-lg border border-slate-200">
+      {/* DESKTOP TABLE. Eight columns need ~900px, so it is hidden below md and the phone gets the
+          card list underneath — the owner's standing rule that mobile never shows a full table.
+          This screen entered the HR sidebar on 2026-09-01, which is what put a phone in front of
+          it for the first time. */}
+      <div className="hidden overflow-x-auto rounded-lg border border-slate-200 md:block">
         <table className="w-full min-w-[900px] text-sm">
           <thead className="bg-slate-50 text-left text-phx-xs uppercase tracking-wide text-slate-500">
             <tr>
@@ -210,6 +213,99 @@ export function ProbationDashboardView({ data }: { data: ProbationDashboard }) {
           </tbody>
         </table>
       </div>
+
+      {/* MOBILE — cards, never the table. Every column above survives as a labelled line: a
+          probation card that drops DV or the SFE/HR status hides exactly the thing the reader
+          opened the dashboard to check. */}
+      <div className="space-y-3 md:hidden">
+        {rows.map((row) => (
+          <div className="rounded-lg border border-slate-200 bg-white p-3" key={`card-${row.caseId}`}>
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div className="min-w-0">
+                <p className="break-words text-sm font-semibold text-slate-800">
+                  {row.employeeName ?? row.employeeHrId}
+                </p>
+                <p className="mt-0.5 break-words text-xs text-slate-400">{row.jobTitle ?? ""}</p>
+              </div>
+              <span className={`inline-flex shrink-0 items-center rounded border px-2 py-0.5 text-xs font-medium ${RISK_STYLE[row.risk]}`}>
+                {row.riskLabel}
+              </span>
+            </div>
+
+            {row.crmUnmapped && (
+              <p className="mt-2 rounded border border-amber-200 bg-amber-50 px-2 py-1 text-phx-2xs font-medium text-amber-700">
+                CRM unmapped — Double-Visit credit cannot be attributed. A zero here is a data gap,
+                not poor performance.
+              </p>
+            )}
+
+            <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
+              <div>
+                <dt className="font-semibold uppercase tracking-wide text-slate-400">Line / Manager</dt>
+                <dd className="mt-0.5 break-words text-slate-600">
+                  {row.lineName ?? "—"}
+                  <span className="block text-slate-400">{row.managerName ?? "—"}</span>
+                </dd>
+              </div>
+              <div>
+                <dt className="font-semibold uppercase tracking-wide text-slate-400">Day</dt>
+                <dd className="mt-0.5 text-slate-700">
+                  {row.currentDay ?? "—"}
+                  {row.daysRemaining != null && (
+                    <span className="ml-1 text-slate-400">({row.daysRemaining}d left)</span>
+                  )}
+                </dd>
+              </div>
+              <div>
+                <dt className="font-semibold uppercase tracking-wide text-slate-400">DV</dt>
+                <dd className="mt-0.5 text-slate-700">
+                  {row.dvFeedbackCompleted}/{row.dvRequired}
+                  {row.feedbackOverdue > 0 && (
+                    <span className="ml-1 text-rose-600">{row.feedbackOverdue} overdue</span>
+                  )}
+                </dd>
+              </div>
+              <div>
+                <dt className="font-semibold uppercase tracking-wide text-slate-400">SFE / HR</dt>
+                <dd className="mt-0.5">
+                  <span className={row.sfeStatus === "submitted" ? "text-emerald-600" : "text-slate-400"}>
+                    SFE {row.sfeStatus === "submitted" ? "✓" : "—"}
+                  </span>
+                  {" · "}
+                  <span className={row.hrStatus === "submitted" ? "text-emerald-600" : "text-slate-400"}>
+                    HR {row.hrStatus === "submitted" ? "✓" : "—"}
+                  </span>
+                </dd>
+              </div>
+              <div>
+                <dt className="font-semibold uppercase tracking-wide text-slate-400">Score</dt>
+                <dd className="mt-0.5 text-slate-800">
+                  {row.finalScore ?? row.provisionalScore ?? "—"}
+                  {row.contradictionsCount > 0 && (
+                    <span className="ml-1 text-amber-600">⚠{row.contradictionsCount}</span>
+                  )}
+                  {row.openActions > 0 && (
+                    <span className="ml-1 text-blue-600">&bull;{row.openActions} act</span>
+                  )}
+                </dd>
+              </div>
+            </dl>
+
+            <Link
+              className="mt-3 inline-flex h-9 w-full items-center justify-center rounded border border-slate-200 text-xs font-medium text-blue-600"
+              href={`/probation/cases/${row.caseId}`}
+            >
+              Open case
+            </Link>
+          </div>
+        ))}
+        {rows.length === 0 && (
+          <p className="rounded-lg border border-slate-200 px-3 py-6 text-center text-sm text-slate-400">
+            No cases match this filter.
+          </p>
+        )}
+      </div>
+
       <p className="text-phx-xs text-slate-400">
         {rows.length} of {data.rows.length} cases · generated {data.generatedAt.slice(0, 16).replace("T", " ")}
       </p>

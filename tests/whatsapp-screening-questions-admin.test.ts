@@ -1,14 +1,27 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-import { isRolePermissionWithinHardBoundary, phoenixRoles } from "../src/lib/auth/permissions.ts";
+import {
+  isRolePermissionWithinHardBoundary,
+  permissionMatrix,
+  phoenixRoles,
+} from "../src/lib/auth/permissions.ts";
 import {
   disambiguateQuestionKey,
   slugifyQuestionKey,
 } from "../src/lib/recruitment/inbound/whatsapp-screening-questions-admin.ts";
 
 /**
- * The Super-Admin-only admin CRUD service behind /admin/screening-questions.
+ * The admin CRUD service behind /admin/screening-questions.
+ *
+ * WHO MAY OPEN IT, and why that changed. It was Super Admin alone, via `admin:update`. The owner
+ * asked on 2026-09-01 for the HR Business Partner to reach it. `admin:update` was the wrong door
+ * to widen - it also gates module locks, scope visibility, salary flags, the email-notification
+ * configuration and a notification TEST-SEND endpoint, and firing a test email is a standing
+ * prohibition here - so the PAGE was re-gated to `recruitment:update`, with the admin assertion
+ * kept underneath as the fallback that still produces the refusal for everyone else. The two
+ * totality checks below pin BOTH halves: that `admin:update` stayed Super-Admin-only, and that
+ * the effective audience is exactly Super Admin plus HR Advisory and nobody else.
  *
  * The pure pieces (key generation, the permission gate) are tested directly. Everything else in
  * whatsapp-screening-questions-admin.ts touches the database, and — like every other DB-touching
@@ -52,10 +65,11 @@ export function runWhatsAppScreeningQuestionsAdminTests() {
     "keeps counting past a collision on the first suffix too",
   );
 
-  // ── Permission gate: admin:update is a hard boundary, Super Admin only ─────────────────────────
-  // Mirrors the exact call the page and the route both make. A totality check across every role,
-  // not just a couple of examples — this is the one thing standing between this screen and every
-  // other role in the company.
+  // ── Permission gate, half one: admin:update is STILL a hard boundary, Super Admin only ─────
+  // This is the assertion proving the 2026-09-01 widening did not take the easy route. Opening
+  // this screen to the HR Business Partner by granting her `admin:update` would have handed her
+  // sixteen other assertions with it, one of which sends a test email. If this line ever goes
+  // red for a second role, that is what happened.
   for (const role of phoenixRoles) {
     assert.equal(
       isRolePermissionWithinHardBoundary(role, "admin", "update"),
@@ -63,6 +77,22 @@ export function runWhatsAppScreeningQuestionsAdminTests() {
       `admin:update must be allowed for Super Admin and refused for every other role — got the wrong answer for "${role}"`,
     );
   }
+
+  // ── Permission gate, half two: the EFFECTIVE audience of this screen ───────────────────
+  // `assertScreeningQuestionsAccess` admits `recruitment:update` OR `admin:update`, so the real
+  // boundary is the union of the two. A totality check across every role, with the answer listed
+  // by name: the owner asked for ONE seat, and this is where a later grant that quietly adds a
+  // second one — by widening `recruitment:update` somewhere else entirely — has to go red.
+  const holdsUpdate = (role: (typeof phoenixRoles)[number], resource: "admin" | "recruitment") =>
+    (permissionMatrix[role]?.[resource] ?? []).includes("update");
+  const effectiveAudience = phoenixRoles.filter(
+    (role) => holdsUpdate(role, "recruitment") || holdsUpdate(role, "admin"),
+  );
+  assert.deepEqual(
+    [...effectiveAudience].sort(),
+    ["HR Advisory", "Super Admin"],
+    "exactly two seats may edit the questions an applicant is asked on WhatsApp: the Super Admin, and the HR Business Partner the owner named on 2026-09-01",
+  );
 
   // ── The DB-touching half, pinned against its own source ────────────────────────────────────────
   // Same style as recruitment-candidate-merge.test.ts's childTables ordering pin: these properties
@@ -122,15 +152,30 @@ export function runWhatsAppScreeningQuestionsAdminTests() {
     "saveScreeningQuestionSet must never delete a row — only deleteScreeningQuestion may, and only when unanswered",
   );
 
-  // ── The route and page both re-assert the same hard boundary, not just import it ───────────────
+  // ── The gate itself: one function, two steps, and a fallback that cannot be dropped ────────
+  // The page and both save routes call this and not a copy of it, so the three cannot drift. If
+  // the `canAccess` line is ever widened past `recruitment:update` the totality check above goes
+  // red; if the `assertPermission` fallback is ever deleted, this does.
+  const gateStart = service.indexOf("export async function assertScreeningQuestionsAccess");
+  assert.ok(gateStart !== -1, "the shared gate must stay exported — the page and both routes call it by name");
+  const gateBody = service.slice(gateStart, service.indexOf("\n}", gateStart));
+  assert.ok(
+    /canAccess\(access, "recruitment", "update"\)/.test(gateBody),
+    "the gate's first step is recruitment:update — the honest description of editing the questions an applicant is asked",
+  );
+  assert.ok(
+    /assertPermission\(access, "admin", "update"\)/.test(gateBody),
+    "the gate must keep the admin:update fallback — it is what produces the refusal, and its message, for every role outside the audience",
+  );
+  // ── The route and page both re-assert the boundary themselves, not just import it ──────────
   const route = readFileSync(new URL("../app/api/admin/screening-questions/route.ts", import.meta.url), "utf8");
   for (const verb of ["GET", "POST", "DELETE"]) {
     const fnStart = route.indexOf(`export async function ${verb}(`);
     assert.ok(fnStart !== -1, `route.ts is missing a ${verb} handler`);
     const fnBody = route.slice(fnStart, route.indexOf("\n}", fnStart));
     assert.ok(
-      /assertPermission\(access, "admin", "update"\)/.test(fnBody),
-      `${verb} must assert admin:update itself — a page that hides the link is not the security boundary`,
+      /assertScreeningQuestionsAccess\(access\)/.test(fnBody),
+      `${verb} must assert the screen's own gate itself — a page that hides the link is not the security boundary`,
     );
   }
   for (const verb of ["POST", "DELETE"]) {
@@ -147,7 +192,7 @@ export function runWhatsAppScreeningQuestionsAdminTests() {
     "utf8",
   );
   assert.ok(
-    /assertPermission\(access, "admin", "update"\)/.test(page),
-    "the page must also assert admin:update server-side, not rely on the route alone",
+    /assertScreeningQuestionsAccess\(access\)/.test(page),
+    "the page must also assert the gate server-side, not rely on the route alone",
   );
 }

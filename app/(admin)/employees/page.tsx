@@ -65,8 +65,15 @@ async function EmployeesContent({ access }: { access: AccessContext }) {
     initialError = employeePageError(error);
   }
 
+  // The page admits anyone with employees:read, but the write controls need employees:update —
+  // exactly what POST /api/employees asserts. Passing the real capability is what let the sidebar
+  // row move from `update` to `read` (src/config/system-navigation.ts): before this prop existed,
+  // offering the page to a reader meant offering her Save buttons the API refuses.
+  const canEdit = await canAccess(access, "employees", "update");
+
   return (
     <EmployeeManagement
+      canEdit={canEdit}
       initialData={initialData}
       initialError={initialError}
     />

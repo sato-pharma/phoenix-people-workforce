@@ -65,6 +65,17 @@ import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
 
 
 type EmployeeManagementProps = {
+  /**
+   * False for a viewer who may READ the directory but not change it — today that is the HR
+   * Business Partner, whose grant is employees:[read, export].
+   *
+   * This screen used to take no capability props at all, which is why the sidebar row for it was
+   * gated on `employees:update` rather than `read`: with no read-only mode, offering it to a
+   * reader meant offering Save buttons the API refuses. The API is unchanged and remains the
+   * boundary — POST /api/employees asserts employees:update — so this prop hides controls that
+   * would fail, and grants nothing.
+   */
+  canEdit?: boolean;
   initialData?: EmployeeDirectoryData | null;
   initialError?: string | null;
 };
@@ -758,6 +769,7 @@ function DirectoryAvatar({
 }
 
 export function EmployeeManagement({
+  canEdit = true,
   initialData = null,
   initialError = null,
 }: EmployeeManagementProps) {
@@ -1610,7 +1622,10 @@ export function EmployeeManagement({
                 <Download className="h-4 w-4 text-phx-accent" />
                 <span className="hidden sm:inline">Export</span>
               </a>
-              <div className="h-5 w-px bg-white/15" />
+              {/* Export stays for a read-only viewer — employees:export is a separate grant she
+                  holds. Upload writes the whole directory from a sheet and is hidden without it. */}
+              {canEdit ? <div className="h-5 w-px bg-white/15" /> : null}
+              {canEdit ? (
               <label className="inline-flex h-10 cursor-pointer items-center justify-center gap-2.5 rounded-xl px-5 text-xs font-semibold text-slate-200 transition-all hover:bg-white/10 hover:text-white focus-visible:outline-2 focus-visible:outline-phx-accent focus-visible:outline-offset-1">
                 {isImportingTemplate ? (
                   <LoadingSpinner />
@@ -1626,6 +1641,7 @@ export function EmployeeManagement({
                   type="file"
                 />
               </label>
+              ) : null}
             </div>
             <Button
               className="h-10 gap-2 rounded-2xl border border-white/20 bg-white/10 px-4 text-xs font-semibold text-slate-100 backdrop-blur transition-all hover:border-phx-accent-line hover:bg-white/[0.16] hover:text-white focus-visible:outline-2 focus-visible:outline-phx-accent focus-visible:outline-offset-1"
@@ -1636,10 +1652,16 @@ export function EmployeeManagement({
               {isLoading ? <LoadingSpinner /> : <RefreshCw className="h-4 w-4" />}
               <span className="hidden lg:inline">Sync</span>
             </Button>
-            <Button className="h-11 gap-2 rounded-2xl bg-phx-accent px-6 text-xs font-bold text-white shadow-[0_14px_30px_rgba(249,115,22,0.3)] transition-all hover:bg-phx-accent-hover hover:shadow-[0_18px_36px_rgba(249,115,22,0.4)] focus-visible:outline-2 focus-visible:outline-phx-accent focus-visible:outline-offset-1" onClick={startCreate}>
-              <UserPlus className="h-4 w-4" />
-              Add Employee
-            </Button>
+            {canEdit ? (
+              <Button className="h-11 gap-2 rounded-2xl bg-phx-accent px-6 text-xs font-bold text-white shadow-[0_14px_30px_rgba(249,115,22,0.3)] transition-all hover:bg-phx-accent-hover hover:shadow-[0_18px_36px_rgba(249,115,22,0.4)] focus-visible:outline-2 focus-visible:outline-phx-accent focus-visible:outline-offset-1" onClick={startCreate}>
+                <UserPlus className="h-4 w-4" />
+                Add Employee
+              </Button>
+            ) : (
+              <span className="inline-flex h-10 items-center rounded-2xl border border-white/20 bg-white/10 px-4 text-xs font-bold uppercase tracking-[0.12em] text-slate-200">
+                View only
+              </span>
+            )}
           </div>
         }
         description=""
@@ -1983,6 +2005,7 @@ export function EmployeeManagement({
                             <Info className="h-3.5 w-3.5" />
                             View
                           </Button>
+                          {canEdit ? (
                           <Button
                             className="h-9 flex-1 gap-1.5 rounded-xl border-phx-line text-xs font-bold text-phx-ink-2 hover:bg-phx-paper-2 hover:text-phx-ink"
                             onClick={() => startEdit(employee)}
@@ -1991,6 +2014,8 @@ export function EmployeeManagement({
                             <Pencil className="h-3.5 w-3.5" />
                             Edit
                           </Button>
+                          ) : null}
+                          {canEdit ? (
                           <Button
                             className="h-9 flex-1 gap-1.5 rounded-xl border-phx-line text-xs font-bold text-phx-ink-2 hover:bg-phx-paper-2 hover:text-phx-ink"
                             onClick={() => startSeatTransfer(employee)}
@@ -1999,6 +2024,8 @@ export function EmployeeManagement({
                             <ArrowLeftRight className="h-3.5 w-3.5" />
                             Seat
                           </Button>
+                          ) : null}
+                          {canEdit ? (
                           <Button
                             className="h-9 flex-1 gap-1.5 rounded-xl border-rose-200 bg-rose-50 text-xs font-bold text-rose-700 hover:bg-rose-100"
                             onClick={() => startResignation(employee)}
@@ -2007,6 +2034,7 @@ export function EmployeeManagement({
                             <UserX className="h-3.5 w-3.5" />
                             Resign
                           </Button>
+                          ) : null}
                         </>
                       }
                       key={employeeRowKey(employee, index)}
@@ -2125,9 +2153,11 @@ export function EmployeeManagement({
                         key={employeeRowKey(employee, index)}
                       >
                       <td className="px-6 py-4">
+                        {/* A reader clicking a name gets the Master Details drawer rather than an
+                            edit form she cannot save: the same gesture, sent where it can land. */}
                         <button
                           className="flex items-center gap-3 rounded-lg text-left group/name focus-visible:outline-2 focus-visible:outline-phx-accent focus-visible:outline-offset-1"
-                          onClick={() => startEdit(employee)}
+                          onClick={() => (canEdit ? startEdit(employee) : setMasterDetailsEmployee(employee))}
                           type="button"
                         >
                           <DirectoryAvatar
@@ -2227,6 +2257,8 @@ export function EmployeeManagement({
                           >
                             <Info className="h-4 w-4" />
                           </Button>
+                          {canEdit ? (
+                          <>
                           <Button
                             className="h-8 w-8 rounded-xl p-0 text-phx-ink-soft hover:bg-phx-paper-2 hover:text-phx-ink hover:scale-110 transition-all focus-visible:outline-2 focus-visible:outline-phx-accent focus-visible:outline-offset-1"
                             onClick={() => startEdit(employee)}
@@ -2251,6 +2283,8 @@ export function EmployeeManagement({
                           >
                             <UserX className="h-4 w-4" />
                           </Button>
+                          </>
+                          ) : null}
                         </div>
                       </td>
                       </tr>

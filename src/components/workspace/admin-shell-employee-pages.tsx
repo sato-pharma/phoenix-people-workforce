@@ -59,6 +59,7 @@ import {
 import { compactDeductionsHrId } from "@/lib/deductions/candidate-key";
 import { getPortalDeductions } from "@/lib/deductions/portal.ts";
 import { canonicalHrIdKey } from "@/lib/hr-id";
+import { hrBundleForRole } from "@/lib/hr/command-center";
 import { currentCairoDateOnlyIso, currentCairoDateParts } from "@/lib/i18n/format";
 import {
   getMarketingRequestDecisionSummary,
@@ -272,9 +273,20 @@ function buildResidenceShortSummary(residence: {
  * Each of the three sources is loaded independently and may fail alone: the tile then reads "—"
  * and says which source did not answer. A zero would read as "no leave left" or "never at work
  * this month", which is the misleading-zero this repo's rules forbid.
+ *
+ * THE TWO HR SEATS DO NOT SEE THIS PAGE. Owner instruction, 2026-09-01: "make the overview
+ * dashboard merged between HR overview and my workspace into one landing overview page." Their
+ * landing page now carries this content as its own "My Record" section, built from the same three
+ * services, so a second copy of it at this address would be exactly the two-overview-pages problem
+ * the merge removed. Only the DASHBOARD redirects — every /workspace/* page underneath it
+ * (payslips, excuses, vacation request…) is untouched and is linked from that section.
+ *
+ * Every other admin-shell role still lands here. This is a redirect for two roles, not a retirement
+ * of the page.
  */
 export async function WorkspaceDashboardPage() {
   const access = await requireAdminShellEmployeeWorkspaceAccess({ resource: "employee_profile" });
+  if (hrBundleForRole(access.role)) redirect("/hr/admin/hr-command-center");
   const { year, month } = currentCairoDateParts();
   const monthStart = `${year}-${String(month).padStart(2, "0")}-01`;
   const today = currentCairoDateOnlyIso();

@@ -255,6 +255,23 @@ export function countUnoccupiedWorkforceSeats(input: {
   employees: WorkforceSeatRow[];
   vacancies: WorkforceVacancySeatRow[];
 }) {
+  return listUnoccupiedWorkforceSeats(input).length;
+}
+
+/**
+ * The same rule, returning the SEATS rather than how many there are.
+ *
+ * Added 2026-09-01 for the HR landing page, which needs the deduped rows themselves: its
+ * "Seats Not Recruited" tile subtracts open requisitions from open seats, and subtracting from
+ * the raw `position_vacancies` list would have carried the inflation described above straight
+ * into the answer. `countUnoccupiedWorkforceSeats` is now `.length` of this, so the two can
+ * never drift — the defect this docblock records is a defect precisely because the rule had
+ * more than one implementation.
+ */
+export function listUnoccupiedWorkforceSeats<V extends WorkforceVacancySeatRow>(input: {
+  employees: WorkforceSeatRow[];
+  vacancies: readonly V[];
+}): V[] {
   const occupiedSeatKeys = new Set<string>();
   for (const employee of input.employees) {
     const key = seatOccupancyKey(organogramSeat(employee));
@@ -263,7 +280,7 @@ export function countUnoccupiedWorkforceSeats(input: {
 
   const countedSeatKeys = new Set<string>();
   const countedVacancyCodes = new Set<string>();
-  let openSeats = 0;
+  const openSeats: V[] = [];
 
   for (const vacancy of input.vacancies) {
     const seat = organogramSeat(vacancy);
@@ -284,7 +301,7 @@ export function countUnoccupiedWorkforceSeats(input: {
     if (seatKey) {
       if (occupiedSeatKeys.has(seatKey) || countedSeatKeys.has(seatKey)) continue;
       countedSeatKeys.add(seatKey);
-      openSeats += 1;
+      openSeats.push(vacancy);
       continue;
     }
 
@@ -296,7 +313,7 @@ export function countUnoccupiedWorkforceSeats(input: {
       if (countedVacancyCodes.has(vacancyCode)) continue;
       countedVacancyCodes.add(vacancyCode);
     }
-    openSeats += 1;
+    openSeats.push(vacancy);
   }
 
   return openSeats;

@@ -1,14 +1,14 @@
 // Recruitment / ATS — admin CRUD for the Super-Admin-defined extra WhatsApp screening questions
 // (whatsapp-screening-questions.ts / whatsapp-screening-questions-session.ts).
 //
-// Called only from app/api/admin/screening-questions/route.ts, itself gated on `admin:update` — the
-// hard Super-Admin-only boundary in src/lib/auth/permissions.ts. This file trusts that gate and adds
-// no authorization logic of its own.
+// The gate for every screen and route in this family now lives HERE, as
+// assertScreeningQuestionsAccess below, so the page and its two save routes cannot drift apart.
 //
 // Named apart from the pre-existing screening.ts / screening-filter.ts / candidate-screening-facts.ts
 // family on purpose — those are the CV review queue, a different thing entirely, and sharing the name
 // would be actively confusing in file search and the sidebar.
 
+import { assertPermission, canAccess, type AccessContext } from "@/lib/auth/permissions";
 import { recruitmentDb } from "@/lib/recruitment/db";
 import { invalidateScreeningQuestionCache } from "@/lib/recruitment/inbound/whatsapp-screening-questions-session";
 import {
@@ -17,6 +17,29 @@ import {
   type ScreeningQuestionKind,
   type ScreeningQuestionOption,
 } from "@/lib/recruitment/inbound/whatsapp-screening-questions";
+
+/**
+ * WHO MAY EDIT THE WHATSAPP SCREENING QUESTIONS.
+ *
+ * Was `admin:update` — the Super Admin alone. The owner asked on 2026-09-01 for this screen to
+ * reach the HR Business Partner, and `admin:update` was the wrong door to widen: it also gates
+ * module locks, scope visibility, salary flags, the email-notification configuration and a
+ * notification TEST-SEND endpoint (17 assertions in all), and firing a test email is a standing
+ * prohibition in this repo. So the PAGE was re-gated instead of the RESOURCE being widened.
+ *
+ * `recruitment:update` is the honest description of the act: these are the questions an applicant
+ * is asked on WhatsApp, and running the intake is the recruiting function. Anyone who held the
+ * screen before still holds it — the admin assertion is the fallback, unchanged, and it is what
+ * produces the refusal (and its message) for everyone else.
+ *
+ * Exported and called by the page AND both save routes. A page that renders the builder and then
+ * fails on save is worse than one that never renders it, which is why all three call this and not
+ * a copy of it.
+ */
+export async function assertScreeningQuestionsAccess(access: AccessContext): Promise<void> {
+  if (await canAccess(access, "recruitment", "update")) return;
+  await assertPermission(access, "admin", "update");
+}
 
 const QUESTIONS_TABLE = "ats_whatsapp_screening_questions";
 

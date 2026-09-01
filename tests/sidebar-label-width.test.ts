@@ -19,6 +19,7 @@ import {
   permissionActions,
   permissionMatrix,
   permissionResources,
+  usesHrNamespace,
   type NavigationMode,
   type PhoenixRole,
 } from "../src/lib/auth/permissions.ts";
@@ -79,6 +80,19 @@ function worstCaseRows(): Measured[] {
   ];
   for (const [shell, sections, mode] of shells) {
     for (const role of ROLES) {
+      // An HR seat NEVER renders adminNavigationSections. `usesHrNamespace` is the same predicate
+      // proxy.ts rewrites on and hr-url-namespace.test.ts pins, so the pairing below is not a
+      // context this role "might" reach - it is one it provably cannot. Charging it anyway is not
+      // conservatism, it is a false positive with a real cost: on 2026-09-01 it read a section of
+      // the ADMIN rail that happened to hold exactly one row HR Advisory's grants admit, called
+      // that a 20px hub chrome, and demanded "Manager CV Engagement" be renamed everywhere - a
+      // page <h1>, a portal tab and two files of prose - to fit a rail she is never served.
+      //
+      // This narrows the model by exactly one role/shell pairing and nothing else. Every HR label
+      // is still charged the ADMIN budget, through the `["admin", hrNavigationSections, "hr"]`
+      // entry above; every other role still walks the admin rail; and the hub rule still applies
+      // in full wherever a section really can collapse to one row.
+      if (mode === "admin" && usesHrNamespace(role)) continue;
       for (const section of getSections(sections, mode, lookupForRole(role), role)) {
         const isHub = section.items.length === 1;
         for (const navItem of section.items) {
