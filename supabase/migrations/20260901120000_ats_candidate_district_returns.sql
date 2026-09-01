@@ -47,14 +47,23 @@
 --
 -- Suppression = a row whose status is 'open' or 'resolved'. 'reinstated' does not suppress.
 --
--- ── NOT APPLIED YET ─────────────────────────────────────────────────────────────────────────────
+-- ── APPLIED ON PROD ─────────────────────────────────────────────────────────────────────────────
 --
--- Applying a migration to production is one of the two protected actions in AGENTS.md §6 and needs
--- the owner's explicit approval in the conversation. This file is written and reviewed; it has been
--- run against NOTHING here. When approved it must land BEFORE the code deploy reaches production —
--- the loader reads this table, and a deploy that arrived first would 500 the My Candidates folder on
--- an unknown relation (a missing table answers PGRST205, which the loader degrades on, so in
--- practice the folder would silently show every CV again rather than crash — still the wrong order).
+-- Applied 2026-09-01 to PRODUCTION (ozucdzovmcqvepbozvqf) and to STAGING (cifwmndunmlxjhyjugxa).
+-- Verified against pg_class rather than the ledger: the table is present in both, with all four
+-- indexes, all five CHECK constraints, the FK, RLS enabled, and grants to postgres/service_role
+-- only — no authenticated, no anon, which is the closed default this schema intends.
+--
+-- The ledger recorded it as version 20260831234847, NOT the 20260901120000 in this filename. That
+-- mismatch is normal here (AGENTS.md §2.1, "the ledger version never matches the filename") and it
+-- bites: a schema_migrations query filtered on the filename's timestamp comes back EMPTY for a
+-- table that plainly exists, which reads as "never applied". Ask pg_class, never the ledger.
+--
+-- The ordering this note used to demand was honoured. The migration landed 02:48:47 Cairo; the code
+-- that reads the table (#2849, 998d4cd85) deployed 02:51:23 Cairo, about two and a half minutes
+-- later. Had the deploy arrived first, the My Candidates folder would have degraded on PGRST205 —
+-- which is what a missing TABLE answers, never 42P01 — and silently shown every CV again rather
+-- than crash. Quiet and wrong, which is exactly why the order mattered.
 --
 -- ADDITIVE. One new table, no existing row touched, nothing dropped. Reversible: drop the table.
 
