@@ -28,7 +28,10 @@ import { runFinanceManagerSixModuleAccessTests } from "./finance-manager-six-mod
 import { runSidebarLabelFontSyncTests } from "./sidebar-label-font-sync.test.ts";
 import { runSidebarLabelWidthTests } from "./sidebar-label-width.test.ts";
 import { runAutomatedPayrollPageWidthTests } from "./automated-payroll-page-width.test.ts";
-import { runWorkspaceSingleHeroTests } from "./workspace-single-hero.test.ts";
+import {
+  runWorkspaceSingleHeroTests,
+  runWorkspaceSingleTabStripTests,
+} from "./workspace-single-hero.test.ts";
 import { runSidebarRoleScopedHeadingsTests } from "./sidebar-role-scoped-headings.test.ts";
 import { runPersonalWorkspaceNavTests } from "./personal-workspace-nav.test.ts";
 import { runSosProductMappingCheckTests } from "./sos-product-mapping-checks.test.ts";
@@ -1246,6 +1249,11 @@ await runTest("automated payroll pages render full width", runAutomatedPayrollPa
 await runTest("sidebar width guard measures the font the app actually renders", runSidebarLabelFontSyncTests);
 await runTest("sidebar labels never clip (no ellipsis, no wrap)", runSidebarLabelWidthTests);
 await runTest("workspace pages render exactly one hero", runWorkspaceSingleHeroTests);
+await runTest(
+  "workspace pages render exactly one personal tab strip (the two HR seats carry it under the "
+  + "identity banner instead, and both halves are gated on the same usesHrNamespace predicate)",
+  runWorkspaceSingleTabStripTests,
+);
 await runTest(
   "sidebar headings and hub rows are restored for Super Admin/CEO while the SFE Manager stays flat",
   runSidebarRoleScopedHeadingsTests,

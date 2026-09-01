@@ -47,6 +47,7 @@ import { writeAuditLog } from "@/lib/admin/audit";
 import {
   buildPermissionLookup,
   permissionMatrix,
+  usesHrNamespace,
   type AccessContext,
 } from "@/lib/auth/permissions";
 import {
@@ -134,6 +135,9 @@ function WorkspaceFrame({
 }: {
   /**
    * Pass this on a PERSONAL page and the tab strip appears; omit it and the frame renders bare.
+   * Passing it on one of the two HR seats also renders bare — they carry the same list under their
+   * identity banner instead, and the reason that is decided here rather than by the strip is in the
+   * comment on `const tabs` below.
    *
    * That is the whole switch, and it is a prop rather than something the frame works out for
    * itself because five pages using this frame are not personal at all — the marketing request,
@@ -160,9 +164,28 @@ function WorkspaceFrame({
   icon: ReactNode;
   title: string;
 }) {
-  const tabs = access
-    ? resolvePersonalWorkspaceTabs(access, buildPermissionLookup(permissionMatrix, access.role))
-    : [];
+  // NOT ON THE TWO HR SEATS — they already carry this exact list, one row higher.
+  //
+  // The owner's instruction, 2026-09-01: *"Make the my pages as a strip or as a line in the top of
+  // the page under the identity banner. And make it fixed in every page she opens."* That strip is
+  // `HrMyPagesStrip`, mounted in AppShell inside the sticky header, so it is on EVERY `/hr` page
+  // rather than only the ones using this frame. It is built from `resolvePersonalWorkspaceTabs` —
+  // the same call, the same permission lookup — so what it lists and what this renders are the
+  // same links, and an HR seat opening a personal page got both: two rows of identical tabs,
+  // stacked. Measured on the local dev server at 1440px before this gate: 1446px of tab content in
+  // a 1082px column, which is also the horizontal scroll the owner's golden rule forbids.
+  //
+  // Gated on `usesHrNamespace`, the SAME predicate `HrMyPagesStrip` returns null on, so exactly one
+  // of the two ever renders. Deriving the condition some other way — a pathname test, an "is this
+  // page under /hr" check — would put the two halves of one decision in two places, and the next
+  // seat added to `hrNamespaceRoles` would silently get the duplicate back.
+  //
+  // Every other role is untouched: this strip is the only navigation the fifteen personal pages
+  // have (see PersonalWorkspaceTabs), and removing it outright would strand them again.
+  const tabs =
+    access && !usesHrNamespace(access.role)
+      ? resolvePersonalWorkspaceTabs(access, buildPermissionLookup(permissionMatrix, access.role))
+      : [];
   return (
     <div className="space-y-6">
       {hero ?? (

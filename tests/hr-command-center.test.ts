@@ -37,8 +37,13 @@ import {
 } from "../src/lib/auth/permissions.ts";
 import { deductionsCategories } from "../src/lib/deductions/types.ts";
 import {
+  applicationStages,
+  terminalApplicationStages,
+} from "../src/lib/recruitment/types.ts";
+import {
   buildHrCommandGroups,
   DEDUCTION_CATEGORY_LABELS,
+  RECRUITING_PIPELINE_GROUPS,
   hrBundleForRole,
   sourcesFor,
   type HrCommandSources,
@@ -313,6 +318,7 @@ export async function runHrCommandCenterTests() {
   // series/row agreement is asserted here rather than left to be noticed on the page.
   let chartsChecked = 0;
   let seriesChecked = 0;
+  const chartsPerSeat = new Map<HrBundleName, number>();
 
   for (const seat of seats) {
     const offered = offeredHrefs(seat);
@@ -321,6 +327,7 @@ export async function runHrCommandCenterTests() {
     for (const group of buildHrCommandGroups(seat, emptySources())) {
       for (const chart of group.charts) {
         chartsChecked += 1;
+        chartsPerSeat.set(seat, (chartsPerSeat.get(seat) ?? 0) + 1);
 
         assert.ok(
           !chartKeys.has(chart.key),
@@ -383,14 +390,77 @@ export async function runHrCommandCenterTests() {
   // Controls. Both halves matter: the loop above passes vacuously on a page with no charts at all,
   // which is precisely the state the owner rejected on 2026-09-01 ("there are no any chart").
   assert.ok(
-    chartsChecked >= 6,
+    chartsChecked >= 8,
     `only ${chartsChecked} charts were built across both seats — the catalogue returned almost ` +
       "nothing and every assertion above passed by reading an empty page",
   );
   assert.ok(
-    seriesChecked >= 12,
+    seriesChecked >= 15,
     `only ${seriesChecked} series were checked — the row/series agreement assertion, which is the ` +
       "only thing standing between a typo and a silently empty plot, read almost nothing",
+  );
+
+  // The control that a company-wide total cannot give. Until 2026-09-01 the two seats read 5 and
+  // 1: four of the eight functions returned no chart, and the four HR Advisory holds contributed
+  // between them exactly one. The totals above were GREEN throughout — six charts across both
+  // seats is six charts — so the owner's complaint ("there are no any chart") was true of one
+  // account while the only assertion guarding it passed. A per-seat floor is the assertion that
+  // can tell those two states apart, which is why it is here rather than a larger global number.
+  for (const seat of seats) {
+    const built = chartsPerSeat.get(seat) ?? 0;
+    assert.ok(
+      built >= 3,
+      `${seat} is shown ${built} chart(s). Every seat gets a shape for its own work, not just ` +
+        "the seat whose functions happened to be built first — see CHARTS_BY_FUNCTION for the " +
+        "two functions that legitimately return none, and why neither is a gap",
+    );
+  }
+
+  // ── The recruiting funnel can see every stage there is ────────────────────────────────────────
+  // Same class of guard as the deduction axis below, and the same reason: `RECRUITING_PIPELINE_
+  // GROUPS` is typed against `ApplicationStage`, and that type is NOT the guard — this repo builds
+  // with `ignoreBuildErrors`, so a stage added to `applicationStages` and put in no group compiles,
+  // builds and DEPLOYS. What ships then is worse than a wrong label: candidates in that stage
+  // simply do not appear in the funnel, the columns still add up to a plausible number, and
+  // nothing anywhere reports the loss. `applicationStages` has grown three times already: the four
+  // screening states, the two interview-completion states and the five-stage offer pipeline were
+  // each appended after the original seventeen, and types.ts marks all three blocks with their own
+  // comment. There is no reason to think it has finished growing.
+  const groupedStages = RECRUITING_PIPELINE_GROUPS.flatMap((group) => group.stages);
+  const seenTwice = groupedStages.filter(
+    (stage, index) => groupedStages.indexOf(stage) !== index,
+  );
+  assert.deepEqual(
+    seenTwice,
+    [],
+    `recruiting funnel: ${seenTwice.join(", ")} appears in more than one group, so those ` +
+      "candidates are counted once per group and the columns sum above the Active Candidates tile",
+  );
+  for (const group of RECRUITING_PIPELINE_GROUPS) {
+    assert.ok(
+      group.stages.length > 0,
+      `recruiting funnel: group "${group.label}" holds no stage, so it is a permanently empty ` +
+        "column — the dead ink the whole grouping exists to remove",
+    );
+  }
+  const covered = new Set<string>([...groupedStages, ...terminalApplicationStages]);
+  const uncovered = applicationStages.filter((stage) => !covered.has(stage));
+  assert.deepEqual(
+    uncovered,
+    [],
+    `recruiting funnel: ${uncovered.join(", ")} belongs to no pipeline group and is not terminal, ` +
+      "so a live candidate sitting there is INVISIBLE on the chart — no error, no gap in the " +
+      "axis, just a smaller number. Put the stage in a group in RECRUITING_PIPELINE_GROUPS",
+  );
+  const strayGroupings = groupedStages.filter((stage) =>
+    (terminalApplicationStages as readonly string[]).includes(stage),
+  );
+  assert.deepEqual(
+    strayGroupings,
+    [],
+    `recruiting funnel: ${strayGroupings.join(", ")} is a terminal stage inside a live group. ` +
+      "The funnel is the work in front of the seat; counting finished applications in it makes " +
+      "the chart disagree with the Active Candidates tile beside it",
   );
 
   // ── The deduction axis can label every category ───────────────────────────────────────────────
