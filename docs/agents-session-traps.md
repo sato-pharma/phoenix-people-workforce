@@ -786,3 +786,49 @@ Phoenix business rules, and the index line at its cliff is the wrong place for t
   Committing over it ships the break and destroys the proof.
   `an-interrupted-session-leaves-the-tree-deliberately-broken`
 
+
+---
+
+## Added 2026-09-01 (relocated from `AGENTS.md` §2.1, verbatim)
+
+### Validation
+
+- **The SUITE runs with PRODUCTION credentials while a test sets `APP_ENV=production`.** So
+  `isProductionRuntime()` is TRUE for part of every run, and any module that writes on it writes to
+  PROD from a bare `pnpm run test`. Gate such a write on `PHOENIX_TEST_SUITE` — set in
+  `tests/run-tests.ts`, read nowhere else. `NODE_ENV` alone is not enough: it depends on two other
+  tests' restore discipline, and it is READ-ONLY in the type system, so assign it through a mutable
+  view. `the-test-suite-runs-with-production-credentials-and-app-env-production`
+
+- **Arabic + English in ONE value needs direction PER LINE, and `dir="auto"` on the block is the
+  WRONG fix.** Nothing in this repo can see either state, and both shipped through four green
+  checks. `auto` reads only the FIRST strong character, so a bilingual body turns wholly RTL and the
+  ENGLISH half then renders backwards (`Thanks for contacting Sato Pharma.` becomes
+  `.Thanks for contacting Sato Pharma`) — the exact mirror of the bug being fixed.
+
+  **SINGLE-language free text is the opposite case.** Block-level `dir="auto"` is correct there and
+  is already house style across 57 files. Do not "fix" those.
+
+  **Measure production for Arabic before changing a screen.**
+  `outstation_expense_requests.notes` carried Arabic in 17 of 48 rows; `coaching_reports` in **0 of
+  112**. A screen with no bilingual data does not have this bug.
+  `bilingual-bodies-need-direction-per-line-not-per-block`
+
+
+---
+
+## Relocated from AGENTS.md — 2026-09-01
+
+Verbatim, unabridged. These entries had grown from cues into full accounts inside `AGENTS.md`,
+which auto-loads in full on every request. Per AGENTS.md §2.2 the cue — and every memory slug —
+stays in `AGENTS.md`; the account lives here.
+
+- **`next dev` in a worktree needs the explicit `--webpack` flag** — TURBOPACK is what rejects the §5 junction, not Next. Measured 2026-08-29: `--webpack` served a junctioned worktree fine (`Ready in 1770ms`, HMR and all). With and without `--turbopack` are NOT the same as `--webpack`, and this line said "CANNOT run" off exactly that gap. `turbopack-cannot-resolve-a-junctioned-node-modules-here` **`pnpm run dev` now CHOOSES for you** (`scripts/dev-server.mjs`: webpack on win32, turbopack elsewhere) — the platform guard has been deleted three times, most recently by #1435, so the measurements live in that file. **CORRECTED 2026-09-01 — the watchdog's 6 GB kills are NOT a turbopack trait, and this line said they were.** **SEVEN** webpack servers were killed at the same ceiling in the 38 minutes AFTER that launcher merged (02:19–02:46 Cairo, 6.03–7.23 GB, one started by the launcher itself WITH a memory cap set) — indistinguishable from the eight before it; 100 attempts / 98 succeeded all-time. So **the bundler is never the fix for the kill/restart sawtooth**. **You cannot attribute a kill to a bundler from `mem-watchdog.log`**: both spawn the same `start-server.js` child, so grepping the logged cmd for `turbopack` returns 0 of 100 and reads as *no turbopack kill ever happened* — attribute by TIMESTAMP, and count with `-CaseSensitive` or `KILL` also matches every `killed OK`. Turbopack's OWN failures are WEDGING (no answer to `GET /` in 25-60s) and the junction above. The sawtooth is a **watchdog-THRESHOLD** problem — this dev server legitimately reaches ~6 GB — made acute by running **two** servers at once (§5: one, ever); each cycle re-drove RAM to 94% and re-evicted the desktop to the pagefile. **`--max-old-space-size` cannot help**: measured no-op, `heap_size_limit` 4288 MB with AND without it, because the growth is off-heap.
+
+- **Dev login is `GET /api/dev-auth?role=<Role>`, and it DOES role-switch the Browser pane** — navigate to that URL, it sets an httpOnly dev-preview COOKIE and redirects. No proxy. **It DOES take `hrId` (and `loginId`), corrected 2026-08-30** — `app/api/dev-auth/route.ts` reads both from the query string and bakes them into the session token, so `?role=National%20Sales%20Manager&hrId=a-12&next=<path>` signs you in as THAT person, not merely as that role. This line said "no `hrId`" until it was measured, and without it there is no way to verify anything scoped to one manager's own team in a browser. Round-tripped in the pane 2026-08-29: Super Admin landed on `/admin` (79 admin links), Medical Rep on `/employee-portals` (69 portal links, 0 admin), and back. **Header-only is the SEPARATE `x-phoenix-*` path**, which the pane cannot set — that is what role SWEEPS use, because each cookie switch replaces the browser's whole session. A HIDDEN pane mixes correct rects with 0×0 ones; re-measure visible, but do NOT retract the number. `dev-auth-is-header-only-browser-pane-cannot-use-it`
+
+- **Arabic + English in ONE value needs direction PER LINE, and `dir="auto"` on the block is the WRONG fix** — nothing in this repo can see either state, and both shipped through four green checks. `auto` reads only the FIRST strong character, so a bilingual body turns wholly RTL and the ENGLISH half then renders backwards (`Thanks for contacting Sato Pharma.` → `.Thanks for contacting Sato Pharma`): the exact mirror of the bug being fixed. SINGLE-language free text is the opposite case — block-level `dir="auto"` is correct there and is already house style (57 files). Measure production for Arabic before "fixing" a screen: `outstation_expense_requests.notes` had it in 17 of 48, `coaching_reports` in **0 of 112**. `bilingual-bodies-need-direction-per-line-not-per-block`
+
+- **`git show <ref>:<path>` returns EMPTY under MSYS**, and **`grep -c $'\r'` matches EVERY line of a pure-LF file** — use the PowerShell tool, or count raw bytes in node. A CRLF working copy can read as CLEAN too: git normalises before comparing. **MSYS mangles a SEARCH PATTERN the same way: a `git grep`/`rg` pattern holding a leading-slash path matches NOTHING, silently** — `redirect("/employee-portals/` returned 0 against 41 real hits, and a zero here reads as *the code is clean*. Export `MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*'` before any such sweep, and never quote a count from one without it. `git-ref-colon-path-is-mangled-by-msys-returns-empty`
+
+- **The GitHub repo is `phoenix-people-workforce` — the FOLDER, the npm package, `supabase/config.toml` and the dead GCP project are all `phoenix-workforce`.** A `repos/Gawish-1997/phoenix-workforce/…` path built from the checkout name 404s `Not Found`, and on `/deployments` or `/commits/<sha>` that reads as *the deploy never happened* or as API lag. Every path committed here is already correct — the wrong name comes from the folder, never from a doc. `gh repo view --json nameWithOwner` settles it in one call. No memory file; the account in the doc is the record.
