@@ -1118,6 +1118,7 @@ import { runMemoryIndexReachabilityTests } from "./memory-index-reachability.tes
 import { runSessionStartMemoryIndexGuardTests } from "./session-start-memory-index-guard.test.ts";
 import { runAutoloadFootprintBudgetTests } from "./autoload-footprint-budget.test.ts";
 import { runRepoDoctorUnpushedCommitsTests } from "./repo-doctor-unpushed-commits.test.ts";
+import { runRepoDoctorArchiveRefsTests } from "./repo-doctor-archive-refs.test.ts";
 
 import { runCvRereadAppliesWhatItReadsTests } from "./cv-reread-applies-what-it-reads.test.ts";
 import { runCandidateNameFromCvTests } from "./candidate-name-from-cv.test.ts";
@@ -3420,6 +3421,14 @@ await runTest(
   + "remote ref GitHub already deleted is backed up and must not be flagged, work that exists "
   + "nowhere upstream still is, and a target it cannot read reports unknown rather than clean)",
   runRepoDoctorUnpushedCommitsTests,
+);
+
+await runTest(
+  "Repo doctor audits EVERY archive ref, including `codex/<task>` names (a for-each-ref glob "
+  + "does not cross a slash, so the old single star saw 137 of 306 archives and pronounced them "
+  + "all backed up while 23 existed nowhere but this laptop; a repo it cannot read must report "
+  + "unknown rather than none)",
+  runRepoDoctorArchiveRefsTests,
 );
 
 await runTest(
