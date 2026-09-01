@@ -67,7 +67,13 @@ import { PageTransition } from "@/components/ui/page-transition";
 import type { EmployeePortalShellData } from "@/lib/employee-portal/service";
 import type { EmployeePortalNavVisibility } from "@/lib/employee-portal/navigation";
 import { isEmployeePortalOwnedRoute } from "@/lib/employee-portal/routes";
-import { HorizontalNavProvider, LowerNavRow, UpperNavRow } from "@/components/layout/horizontal-nav-rows";
+import {
+  HorizontalNavProvider,
+  LowerNavRow,
+  UpperNavRow,
+  usePortalCompactNavAdd,
+} from "@/components/layout/horizontal-nav-rows";
+import { NavRowAddButton } from "@/components/layout/nav-row-add-button";
 import type { NavigationSection } from "@/config/system-navigation";
 import type { PersonalNavigationLayout } from "@/lib/navigation/personal-layout";
 import { resolveDeepestActiveHref } from "@/lib/navigation/active-path";
@@ -642,6 +648,10 @@ export function EmployeePortalTopNav({
   const [searchQuery, setSearchQuery] = useState("");
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const closeMobileMenu = () => setMobileMenuOpen(false);
+  // Replaces the two full-width empty nav-row bars the portal used to force open — see
+  // usePortalCompactNavAdd for why. Reads HorizontalNavContext, so this component must sit
+  // inside the same HorizontalNavProvider that wraps the sidebar/rows below it.
+  const compactNavAdd = usePortalCompactNavAdd();
 
   const employeeName = data.employee.fullName.trim();
   const firstName = employeeName.split(/\s+/)[0] || "Employee";
@@ -773,6 +783,14 @@ export function EmployeePortalTopNav({
               </div>
             ) : null}
           </div>
+          {compactNavAdd ? (
+            <NavRowAddButton
+              dark={false}
+              pinned={compactNavAdd.pinned}
+              sections={compactNavAdd.sections}
+              target={compactNavAdd.target}
+            />
+          ) : null}
           <InAppNotificationsBell isAdminMode={false} />
           <InternalMessagesMenu isAdminMode={false} />
           <div className="hidden items-center gap-1.5 rounded border border-slate-200 bg-white px-2.5 py-1.5 text-phx-xs font-semibold text-slate-500 lg:flex">
@@ -1132,24 +1150,25 @@ export function EmployeePortalChrome({
         <div className="pointer-events-none absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r from-sky-500 via-orange-500 to-emerald-500" />
         <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(rgba(15,23,42,0.035)_1px,transparent_1px),linear-gradient(90deg,rgba(15,23,42,0.035)_1px,transparent_1px)] bg-[size:56px_56px] [mask-image:linear-gradient(180deg,rgba(0,0,0,0.52),transparent_58%)]" />
         <div className="pointer-events-none absolute inset-x-0 top-0 h-[520px] bg-[linear-gradient(180deg,rgba(255,255,255,0.92),rgba(255,255,255,0)_72%)]" />
-        <EmployeePortalTopNav
-          activePathOverride={activePathOverride}
-          data={data}
-          disableSessionGuard={disableSessionGuard}
-          visibility={visibility}
-        />
-        <div className="relative mx-auto flex w-full max-w-[1580px] items-start gap-4 px-3 py-4 sm:px-4 sm:py-5 lg:gap-7 lg:px-8 lg:py-7">
-          <EmployeePortalSidebar activePathOverride={activePathOverride} visibility={visibility} />
-          {/* The two horizontal rows, now on the portal as well — 116 accounts, 72% of everyone
-              with a login, and until this the only workspace with no arrangeable row at all. The
-              sections are handed in rather than read from system-navigation.ts because the portal
-              builds its own tree; see portalNavigationSections above. Both rows render nothing but
-              their "+" until the viewer puts a tab in them. */}
-          <HorizontalNavProvider
-            navigationMode="employee-portal"
-            personalLayout={personalLayout}
-            sections={portalNavigationSections(visibility)}
-          >
+        {/* The two horizontal rows, now on the portal as well — 116 accounts, 72% of everyone with a
+            login, and until this the only workspace with no arrangeable row at all. The sections are
+            handed in rather than read from system-navigation.ts because the portal builds its own
+            tree; see portalNavigationSections above. The provider now wraps the header too, not just
+            the rows below it — the header's own compact "+" (usePortalCompactNavAdd, rendered by
+            EmployeePortalTopNav) needs the same context, since it is this row's entry point now. */}
+        <HorizontalNavProvider
+          navigationMode="employee-portal"
+          personalLayout={personalLayout}
+          sections={portalNavigationSections(visibility)}
+        >
+          <EmployeePortalTopNav
+            activePathOverride={activePathOverride}
+            data={data}
+            disableSessionGuard={disableSessionGuard}
+            visibility={visibility}
+          />
+          <div className="relative mx-auto flex w-full max-w-[1580px] items-start gap-4 px-3 py-4 sm:px-4 sm:py-5 lg:gap-7 lg:px-8 lg:py-7">
+            <EmployeePortalSidebar activePathOverride={activePathOverride} visibility={visibility} />
             <div className="phx-navrow-scope flex min-w-0 flex-1 flex-col">
               {/* FROZEN CHROME, portal edition. Both rows pin as one block directly beneath the
                   portal's fixed header, so they stay put while the page scrolls — the same
@@ -1160,7 +1179,8 @@ export function EmployeePortalChrome({
                   keeps the block under that header (z-30) and above the page. The portal is a light
                   card layout, so the rows take the sidebar's own frame — same rounded edge, border,
                   translucent white and ring — rather than the admin chrome's full-bleed bar; the
-                  shadow is lighter because these are thin strips, not a full-height panel. */}
+                  shadow is lighter because these are thin strips, not a full-height panel. Neither
+                  row keeps itself open empty any more (2026-09-01) — see usePortalCompactNavAdd. */}
               <div className="sticky top-[56px] z-20 lg:top-[64px]">
                 <UpperNavRow className="mb-2 rounded-sm border border-slate-200/90 bg-white/96 px-3 py-1.5 shadow-[0_10px_30px_rgba(15,23,42,0.08)] ring-1 ring-white/80 backdrop-blur sm:px-4" />
                 <LowerNavRow className="mb-4 rounded-sm border border-slate-200/90 bg-white/96 px-3 py-1.5 shadow-[0_10px_30px_rgba(15,23,42,0.08)] ring-1 ring-white/80 backdrop-blur sm:px-4" />
@@ -1169,8 +1189,8 @@ export function EmployeePortalChrome({
                 <PageTransition>{children}</PageTransition>
               </main>
             </div>
-          </HorizontalNavProvider>
-        </div>
+          </div>
+        </HorizontalNavProvider>
         <EmployeePortalBottomNav activePathOverride={activePathOverride} visibility={visibility} />
       </div>
       </ModuleLockProvider>

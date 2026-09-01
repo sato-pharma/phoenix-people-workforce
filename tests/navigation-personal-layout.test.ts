@@ -1095,12 +1095,18 @@ export function runNavigationPersonalLayoutTests() {
       /if \(items\.length === 0 && !keepWhenEmpty\) return null;/.test(rows),
       "an empty row renders nothing UNLESS this viewer has a layout — otherwise a lone + appears on 243 pages for 158 people who never asked for it",
     );
-    // Also repointed: `alwaysOfferAdd` was added beside `hasSavedLayout` for the portal, which has
-    // no editor page and so has no other way to a first layout. Same property, one more way in.
+    // `alwaysOfferAdd` (2026-09-01, removed same day) forced both rows open EMPTY on the portal, so
+    // an account with no saved layout got two full-width "+"-only bars stacked above the dashboard —
+    // reported as clutter the day it shipped. `keepWhenEmpty` is uniform across every mode now; the
+    // portal's entry point moved to the header instead (`usePortalCompactNavAdd`, pinned below).
     assert.equal(
-      rows.split("keepWhenEmpty={canAdd && (hasSavedLayout || alwaysOfferAdd)}").length - 1,
+      rows.split("keepWhenEmpty={canAdd && hasSavedLayout}").length - 1,
       2,
       "both rows must survive being emptied, or the one you emptied has no way back",
+    );
+    assert.ok(
+      !/alwaysOfferAdd\s*[:?]/.test(rows),
+      "alwaysOfferAdd forced two empty full-width bars onto the portal — the FIELD must not come back (mentioning its name in a comment, to explain why, is fine)",
     );
     assert.ok(
       /target="upperRow"/.test(rows) && /target="lowerRow"/.test(rows),
@@ -1434,16 +1440,44 @@ export function runNavigationPersonalLayoutTests() {
       "portalNavigationSections must derive from the one section builder, never a second list",
     );
 
-    // THE PORTAL HAS NO LAYOUT EDITOR. /admin/sidebar-layout is admin-only and a null layout
-    // resolves to EMPTY rows — so without this the portal's "+" would appear only for someone who
-    // already had a layout, which in the portal is nobody, ever. The feature would be dead on
-    // arrival, and from outside zero usage looks exactly like zero adoption. Admin and HR keep the
-    // rule as shipped, where the editor page is the entry point. (`canAdd` and the two
-    // `keepWhenEmpty` sites are pinned once, above, beside the rest of the "+" wiring.)
+    // THE PORTAL HAS NO LAYOUT EDITOR. /admin/sidebar-layout is admin-only, so without SOME entry
+    // point the portal's "+" would be reachable by nobody, ever — the feature would be dead on
+    // arrival, and from outside zero usage looks exactly like zero adoption. That entry point used
+    // to be forcing both rows open empty (`alwaysOfferAdd`, removed above); since 2026-09-01 it is
+    // ONE compact "+" in the portal's own header, next to search, that targets whichever row is
+    // still empty and steps aside once both carry a tab (each row's own trailing "+" takes over
+    // then, same as admin and HR). Admin and HR are untouched — they never had `alwaysOfferAdd` and
+    // keep the editor page as their entry point, as shipped.
     const rows = readFileSync("src/components/layout/horizontal-nav-rows.tsx", "utf8");
     assert.ok(
-      rows.includes('alwaysOfferAdd: navigationMode === "employee-portal",'),
-      "the portal must always offer its +, having no editor page to arrange a layout from",
+      /export function usePortalCompactNavAdd\(\)/.test(rows),
+      "the portal's header needs its own hook onto HorizontalNavContext — the editor page it would otherwise need does not exist",
+    );
+    assert.ok(
+      /if \(upperRow\.length === 0\) return \{ pinned: upperRow, sections: upperAddable, target: "upperRow" \};/.test(
+        rows,
+      ) &&
+        /if \(lowerRow\.length === 0\) return \{ pinned: lowerRow, sections: lowerAddable, target: "lowerRow" \};/.test(
+          rows,
+        ),
+      "the compact + must target whichever row is still empty, upper first — never both at once",
+    );
+    assert.ok(
+      portalLayout.includes("usePortalCompactNavAdd()"),
+      "the portal header must actually call the hook, or the + never appears anywhere",
+    );
+    assert.ok(
+      /<NavRowAddButton\s+dark=\{false\}\s+pinned=\{compactNavAdd\.pinned\}\s+sections=\{compactNavAdd\.sections\}\s+target=\{compactNavAdd\.target\}\s*\/>/.test(
+        portalLayout,
+      ),
+      "the header must render the SAME add button the rows use, or pin/unpin behaves differently from the header",
+    );
+    // The provider must wrap the header too now, not just the rows below it — usePortalCompactNavAdd
+    // reads HorizontalNavContext, and a header outside the provider would read the untyped default
+    // (canAdd: false) and never show its +.
+    assert.ok(
+      /<HorizontalNavProvider[\s\S]*?<EmployeePortalTopNav/.test(portalLayout),
+      "HorizontalNavProvider must open BEFORE EmployeePortalTopNav, or the header's + has no context to read",
     );
   }
 }
