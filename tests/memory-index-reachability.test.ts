@@ -188,17 +188,22 @@ export function runMemoryIndexReachabilityTests() {
   assert.match(brokenOnly, /1 broken pointer\(s\)/);
   assert.doesNotMatch(brokenOnly, /Every memory file is reachable/);
 
-  // ── 7. the convention this whole matcher rests on is real, in the live files ────────────────
+  // ── 7. the convention this whole matcher rests on is real, in the live files ────
   // Everything above is fixtures. This is the assertion against the actual AGENTS.md: if a future
   // rewrite stops naming memories as backticked slugs — switching to links, say — the matcher goes
   // blind and every relocated hook silently reads as an orphan again.
   //
   // THIS USED TO BE A COUNT, `slugs.size >= 50`, AND THE COUNT WAS THE WRONG INSTRUMENT. It went red
-  // on 2026-09-01 when the slug references were deliberately moved into docs/agents-memory-map.md to
-  // get 7,783 bytes off a file `CLAUDE.md` re-sends on every request. The count fell 137 — 26 and
-  // main went red, but nothing was actually orphaned: repo-doctor measured 969 memory files, 952
-  // index pointers, 18 reachable through AGENTS.md and ZERO orphans, because every relocated slug
-  // named a file `MEMORY.md` already links. The floor was reporting a defect that did not exist.
+  // on 2026-09-01 when the slug references were deliberately moved into docs/agents-memory-map.md,
+  // taking 8,916 bytes off a file `CLAUDE.md` re-sends on every request (75,406 — 66,490). Unique
+  // slugs fell 156 — 26 and main went red, but nothing was actually orphaned: repo-doctor measured
+  // 969 memory files, 952 index pointers, 18 reachable through AGENTS.md and ZERO orphans, because
+  // every relocated slug named a file `MEMORY.md` already links. The floor reported a defect that
+  // did not exist, and it failed for the exact change it should have been indifferent to.
+  //
+  // (Three different byte figures were quoted for that relocation while it was being fixed — 6,921,
+  // 7,783 and 8,108 — and a stale slug count of 137 from 2026-08-29. The numbers above are the ones
+  // the repository actually yields; re-measure rather than copying any of the others forward.)
   //
   // It was also measuring noise. Of the 26 matches left in AGENTS.md only 18 are memory slugs at
   // all; the other 8 are `x-phoenix-role`, `europe-west4-drams3a`, `eu-central-1`, `overflow-x-auto`
@@ -211,6 +216,10 @@ export function runMemoryIndexReachabilityTests() {
   // without giving it an index line and that memory becomes unrecallable, which is the exact
   // invisibility this whole file exists to prevent. A count could be satisfied by any 50 slugs; this
   // cannot be satisfied by anything except the right ones.
+  //
+  // Do NOT restore a floor by re-adding duplicate slugs to AGENTS.md: that duplication is the
+  // footprint this repo just paid to remove, and the per-memory guarantee now lives in the
+  // by-name check below and in repo-doctor's live reachability scan — never in a count.
   //
   // NOT checked in the other direction, deliberately: "every AGENTS.md slug appears in the map"
   // would fail on those same 8 non-memory strings, and widening the pattern to exclude them would

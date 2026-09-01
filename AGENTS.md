@@ -127,6 +127,7 @@ Which memory file backs which hook is in
 - **`check-runs: 0` also means CONFLICTED** — a conflicted PR runs no CI at all, which reads as "not started".
 - **ONE new hub page trips FOUR separate CI gates.**
 - **A red `main` still builds, ships and serves perfectly**, and a green PR is not a green `main` — after merging, check the run on `main`'s NEW head.
+- **A docs-only PR's `validate` runs NO tests — it skips the expensive steps and passes in ~10s.** The fast path is `pull_request`-ONLY, so the suite's FIRST run is the push to `main` — production's branch. Three PRs shipped `main` red this way on 2026-09-01; a `validate` under ~30s is the tell.
 - **Runs NEVER CREATED is an Actions OUTAGE, not billing** — billing creates the run and fails it in seconds. Check githubstatus BEFORE touching the spending limit. A `workflow_dispatch` run never enters a PR's `statusCheckRollup`.
 - **Recover a PR with `gh run rerun <id>` on its OWN `pull_request`-sourced run** — it keeps the `event`, so its checks DO reach the rollup. Then WAIT: dispatch lags 20–30 MINUTES during an outage and events are NOT dropped. Fire ONE recovery event, leave it half an hour.
 - **An extra SHA does not merely waste a run — it ACTIVELY KILLS the real head's**, because `ci.yml`'s concurrency group is the same for every commit on a PR. Never push an empty commit to force a `synchronize`.
@@ -197,7 +198,7 @@ Which memory file backs which hook is in
 - **A gitignored `_wt-*/` scratch folder makes a worktree look clean.**
 - **The pre-push gate is GONE — a bare worktree pushes fine.** What it cannot do is RUN a suite; junction `node_modules`, invoke `node` directly, never `pnpm`.
 - **"Permission denied" on `git worktree remove` still DEREGISTERS the worktree.**
-- **`--fix` / `--strip-idle` need exactly ONE live session**, and **`--fix` can NEVER clear a `_wt-*` husk** — use `rmdir /s /q` from PowerShell, not Bash.
+- **`--fix` needs exactly ONE live session; `--strip-idle` does NOT** (narrowed 2026-09-01) — it gates per worktree on dirty/unpushed/120-min-idle behind a lock, so RUN it with sessions open: the old census meant it never once ran. **`--fix` can NEVER clear a `_wt-*` husk** — use `rmdir /s /q` from PowerShell, not Bash.
 - **repo-doctor's RETIRABLE verdict names the branch a folder HAD at scan time.** Treat any scan older than the current command as fiction — re-read at the moment of removal.
 - **Every retirement gate can PASS on a worktree in active use** — nothing catches a live PROCESS. Two signals see what the gates cannot: the newest mtime under `.next/`, and HEAD moving between the gate read and the removal. Read the tip at the GATE and reuse that SHA.
 - **A squash-merged branch reads as "on NO origin ref" — that means BACKED UP, not stranded.** Never push a merged branch to "rescue" it; `git branch rescue/<name> <tip>` is the zero-risk move.
