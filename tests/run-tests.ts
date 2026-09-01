@@ -1176,6 +1176,7 @@ process.env.PHOENIX_TEST_SUITE = "1";
 (process.env as Record<string, string | undefined>).NODE_ENV = "test";
 import { runDvProbationWatchlistLiveSourceTests } from "./dv-probation-watchlist-live-source.test.ts";
 import { runCeoSosTableRowKeysTests } from "./ceo-sos-table-row-keys.test.ts";
+import { runSosDashboardGroupMergeTests } from "./sos-dashboard-group-merge.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -3590,6 +3591,10 @@ await runTest(
 await runTest(
   "CEO SoS region/product rows key on the unique group key, never the nullable repeating code or the self-healed label",
   runCeoSosTableRowKeysTests,
+);
+await runTest(
+  "SoS dashboard merges region/area/brick groups by master-resolved code, sum-preserving, leaving unknown codes unmerged",
+  runSosDashboardGroupMergeTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
