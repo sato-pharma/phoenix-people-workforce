@@ -2,8 +2,8 @@
  * The daily mailbox-offboarding sweep — the safety net under the exit workflow.
  *
  * WHY A SWEEP AT ALL, when the exit workflow already opens a task. Because the exit workflow is
- * best-effort by design: a mailbox task must never be the reason a resignation fails to record,
- * exactly as a clearance checklist must not. So the open is wrapped and swallowed at the call
+ * best-effort by design: a mailbox task must never be the reason a resignation fails to record.
+ * So the open is wrapped and swallowed at the call
  * site, and something has to notice when it did not happen. Without this, a swallowed failure is
  * indistinguishable from "nobody has left" — which is precisely the shape that let 52 mailboxes
  * accumulate with nothing anywhere reporting them.
@@ -44,8 +44,9 @@ import {
 import type { MailboxOffboardingTask } from "./types";
 
 /**
- * The page this alert links to. Gated on `clearance` read — which both recipient roles of
- * `resignation_workflow_alert` hold (Super Admin has everything; HR Operations owns clearance).
+ * The page this alert links to. Gated on `mailbox_offboarding` read — which both recipient roles
+ * of `resignation_workflow_alert` hold (Super Admin has everything; HR Operations owns the
+ * register).
  * Checked deliberately: an actionUrl pointing at a screen the recipient is 403'd from is a defect
  * this repository has shipped before.
  */

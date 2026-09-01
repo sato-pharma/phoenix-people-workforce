@@ -86,8 +86,11 @@ export const HR_FUNCTIONS: readonly HrFunction[] = [
       recruitment: ["read", "create", "update", "approve", "export", "import"],
       candidates: ["read", "create", "update", "delete", "export", "import"],
       // READ + EXPORT ONLY — deliberately not MAINTAIN. Recruiting READS the vacancy board (the
-      // Vacancies Report and CV Database both gate on vacancies:read) and exports the CV template,
-      // and that is every vacancies action anything in this codebase actually asserts for her.
+      // Vacancies Report gates on vacancies:read), and that is every vacancies action anything in
+      // this codebase asserts for her. The CV Database and its template route used to be named here
+      // too; both moved to recruitment:read on 2026-09-01 — she holds that in full, so this seat is
+      // unaffected. `export` is left as it stands: nothing asserts vacancies:export today either,
+      // and narrowing an Advisory grant is not a side effect the CV Database change gets to have.
       // `create` is asserted in exactly ONE place — POST /api/employees/[hrId]/resign — which she
       // cannot reach and must not: recording a departure is ops 6, not recruiting. Holding a grant
       // she can never spend is not harmless, it is the half-granted shape that
@@ -175,8 +178,15 @@ export const HR_FUNCTIONS: readonly HrFunction[] = [
       // Read-only, and deliberately no create: the Planning Calendar is a window onto where the
       // field force will be, which is how an HR seat schedules an interview or a training day
       // without asking a manager. Submitting a plan is the field force's own job — the retired
-      // seat held exactly this pair (owner, 2026-07-25) and it belongs to the insight function,
-      // so it does NOT reach HR Operations, who has no reason to read a rep's call plan.
+      // seat held exactly this pair (owner, 2026-07-25).
+      //
+      // This clause used to end "so it does NOT reach HR Operations, who has no reason to read a
+      // rep's call plan". That stopped being true on 2026-09-01, when the owner named
+      // /admin/weekly-plans/calendar in his list of modules to open on the Operations seat. She now
+      // holds the same READ_ONLY grant through `time_attendance` — attached there, not moved from
+      // here, because this function is HR Advisory's alone and moving it would have dragged
+      // organogram, employees and attendance across with it. The two copies are deliberate; the
+      // reason each seat has one is different, and the comment at each says which.
       weekly_plans: READ_ONLY,
       employee_profile: READ_ONLY,
       attendance: READ_ONLY,
@@ -203,12 +213,12 @@ export const HR_FUNCTIONS: readonly HrFunction[] = [
     key: "people_records",
     label: "People Records & Lifecycle",
     summary:
-      "Personnel files, master data, contracts, onboarding, resignations, clearance and HR letters.",
+      "Personnel files, master data, contracts, onboarding, resignations, offboarding and HR letters.",
     jdSections: [
       "ops 1 — Employee Records & Personnel Files",
       "ops 4 — Contracts, Probation & Employee Lifecycle",
       "ops 5 — Onboarding & Joining Administration",
-      "ops 6 — Resignation, Clearance & Offboarding",
+      "ops 6 — Resignation & Offboarding",
       "ops 7 — Employee HR Services",
     ],
     grants: {
@@ -232,16 +242,32 @@ export const HR_FUNCTIONS: readonly HrFunction[] = [
       organogram: READ_ONLY,
       contracts: ["read", "create", "update", "export"],
       resignations: ["read", "create", "update", "export"],
-      // `vacancies: create` and NOTHING else. POST /api/employees/[hrId]/resign asserts
-      // employees:update + resignations:create + vacancies:create together, because the one RPC it
-      // calls — phx_resign_employee_and_open_vacancy — records the departure AND opens the seat the
-      // departure just emptied. Without this third grant the seat that OWNS offboarding (ops 6)
-      // cannot record a single resignation. It is not `read`: the Vacancies Report and the CV
-      // Database gate on vacancies:read (a nav entry with no action resolves to `read`), and those
-      // are Advisory's recruiting pages, not this seat's. It is not organizational change either —
-      // organogram:update stays denied to both seats, and this path can only ever fire for a person
-      // who is actually leaving.
-      vacancies: ["create"],
+      // `vacancies: [read, create]`. The `create` half is offboarding: POST
+      // /api/employees/[hrId]/resign asserts employees:update + resignations:create +
+      // vacancies:create together, because the one RPC it calls —
+      // phx_resign_employee_and_open_vacancy — records the departure AND opens the seat the
+      // departure just emptied. Without it the seat that OWNS offboarding (ops 6) cannot record a
+      // single resignation.
+      //
+      // `read` was ADDED 2026-09-01 on the owner's explicit instruction. It was create-only until
+      // then, and this note read "the Vacancies Report and the CV Database are Advisory's
+      // recruiting pages, not this seat's". He asked for the Vacancies Report in her sidebar, was
+      // shown that granting it widens this seat past offboarding, and confirmed. Do not narrow it
+      // back without him. The intended consequence, stated before he agreed: she can read the whole
+      // company vacancy board.
+      //
+      // The OTHER consequence was that the CV Database rode this same resource and came with it —
+      // and he refused that outright the same day: "block the cv database for her too". So the CV
+      // Database, its portal mirror and its template route moved to recruitment:read, which she does
+      // not hold. **Do not re-gate any of them on `vacancies` to make a screen appear** — that is
+      // the exact edit this grant makes tempting and the one he ruled out.
+      //
+      // Still NOT `export`: nothing in this codebase asserts vacancies:export at all, so adding it
+      // would be a grant she could never spend, which
+      // is the half-granted shape tests/hr-seat-route-coherence.test.ts exists to catch. Still not
+      // organizational change either — organogram:update stays denied to both seats, and the
+      // resignation path can only ever fire for a person who is actually leaving.
+      vacancies: ["read", "create"],
       // READ ONLY, and `update` was CONSIDERED and REFUSED on 2026-08-28 — do not add it as a
       // convenience. hr_calendar:update gates exactly one action in this codebase: saving an HR
       // decision on a Field Workforce Compliance recommendation. That looked like hers (Workforce
@@ -256,16 +282,15 @@ export const HR_FUNCTIONS: readonly HrFunction[] = [
       // fix is to split the decision path by recommendation kind first, then grant.
       hr_calendar: READ_ONLY,
       support_requests: MAINTAIN,
-      // ops 6 - Resignation, Clearance & Offboarding. Added 2026-08-28 (Phase 6). This is the
-      // half of ops 6 that had nowhere to live: `resignations` records that someone left, and
-      // until now nothing recorded the clearance behind it.
+      // ops 6 - Resignation & Offboarding. Added 2026-08-28 (Phase 6), renamed from `clearance`
+      // on 2026-09-01 when the Clearance & Offboarding module was removed at the owner's
+      // instruction. This is the half of ops 6 that had nowhere to live: `resignations` records
+      // that someone left, and nothing recorded whether his company mailbox was actually closed.
       //
-      // MAINTAIN, not allActions, and it does NOT reach payroll. Recording that a settlement was
-      // released is gated on every station being decided - phx_hr_clearance_release refuses
-      // otherwise, in the database, not in a page - but it writes no money. "May not approve
-      // final settlement" is a named boundary in this same job description and stays enforced by
-      // the payroll entries in HR_ROLE_BOUNDARIES.
-      clearance: MAINTAIN,
+      // MAINTAIN, not allActions, and it does NOT reach payroll. "May not approve final
+      // settlement" is a named boundary in this same job description and stays enforced by the
+      // payroll entries in HR_ROLE_BOUNDARIES.
+      mailbox_offboarding: MAINTAIN,
       // NO `delete` anywhere in this function. Removing an employee, a contract or a resignation
       // destroys a personnel record, and both job descriptions require records that "can support
       // internal review, external inspection or audit". Deletion stays Super Admin.
@@ -280,6 +305,21 @@ export const HR_FUNCTIONS: readonly HrFunction[] = [
     grants: {
       attendance: MAINTAIN,
       leave: MAINTAIN,
+      // READ ONLY, added 2026-09-01 on the owner's explicit instruction, to open the Planning
+      // Calendar (/admin/weekly-plans/calendar) in her sidebar. That page is the field force's
+      // submitted weekly and monthly plans, the official holidays, and the conflicts between them —
+      // working-time administration, which is this function's own JD line, which is why the grant
+      // is attached HERE rather than invented as a new function or borrowed from workforce_insight
+      // (HR Advisory's, and the reason this resource was absent from this bundle until now).
+      //
+      // He was told before agreeing that it lets her see where every medical rep plans to be.
+      //
+      // READ and nothing else: approving or rejecting a plan belongs to the sales ladder, and this
+      // seat holds no weekly_plans write action of any kind. The plans LIST at /admin/weekly-plans
+      // opens on this same grant and is deliberately NOT linked for her — it is the approval
+      // workspace, not a calendar. That needs no reachability-backlog entry: the reverse guard is
+      // keyed by route and the admin shell already offers that address to other roles.
+      weekly_plans: READ_ONLY,
     },
   },
   {
@@ -436,7 +476,7 @@ export const HR_ROLE_BOUNDARIES: readonly {
   { resource: "employees", action: "delete", why: "may not terminate or destroy a record (hrbp + ops)" },
   { resource: "contracts", action: "delete", why: "may not destroy a contract record (ops)" },
   { resource: "resignations", action: "delete", why: "may not destroy an exit record (ops)" },
-  { resource: "clearance", action: "delete", why: "may not destroy the evidence a settlement was released against (ops)" },
+  { resource: "mailbox_offboarding", action: "delete", why: "may not destroy the attestation that a leaver's mailbox was closed (ops)" },
   { resource: "retention", action: "delete", why: "may not destroy an exit interview - it is the evidence behind a turnover theme (hrbp)" },
   { resource: "organogram", action: "update", why: "may not make organizational changes (hrbp + ops)" },
   { resource: "user_admin", action: "read", why: "role, scope and permission admin stays Super Admin" },

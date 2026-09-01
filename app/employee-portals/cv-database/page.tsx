@@ -20,7 +20,9 @@ export default async function EmployeePortalCvDatabasePage() {
   if (resolveNavigationMode(access) !== "employee-portal") {
     redirect("/cv-database");
   }
-  if (!isHrAuthorityRole(access.role) || !(await canAccess(access, "vacancies", "read"))) {
+  // recruitment:read, not vacancies:read — the admin copy's header carries the reasoning and the
+  // measurement. The two gates must stay identical, or this shell becomes the way around that one.
+  if (!isHrAuthorityRole(access.role) || !(await canAccess(access, "recruitment", "read"))) {
     return (
       <EmployeePortalEmptyState
         message="The CV database is available to Talent Acquisition and Super Admin only."

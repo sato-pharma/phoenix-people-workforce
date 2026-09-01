@@ -38,8 +38,8 @@ import {
 // array "leaks the tab to every role". Those comments are correct and the hole
 // is closed today — but nothing was testing that it stays closed, and a comment
 // is not a check. The resources those comments guard are Mailbox Monitor,
-// Clearance and the Retention Register, which holds what people said in
-// confidence about their manager and their pay.
+// Mailbox Revocation and the Retention Register, which holds what people said
+// in confidence about their manager and their pay.
 //
 // So this file asserts the property directly, in five parts:
 //

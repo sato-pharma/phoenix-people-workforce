@@ -372,8 +372,13 @@ export const accessRegistry = [
   sessionApi({ methods: allMethods, pattern: "/api/coaching/**", permission: { resource: "coaching", action: "read" }, guard: "domain-helper" }),
   sessionApi({ methods: allMethods, pattern: "/api/contracts/**", permission: { resource: "contracts", action: "update" }, csrfRequired: true }),
   sessionApi({ audit: { classification: "export", required: true }, methods: readOnly, pattern: "/api/coaching/reports/export", permission: { resource: "coaching", action: "export" }, guard: "domain-helper" }),
-  sessionApi({ methods: allMethods, pattern: "/api/cv-database/**", permission: { resource: "vacancies", action: "read" } }),
-  sessionApi({ audit: { classification: "export", required: true }, methods: readOnly, pattern: "/api/cv-database/template", permission: { resource: "vacancies", action: "export" } }),
+  // `recruitment`, not `vacancies` — moved 2026-09-01 with the route itself, so this declaration
+  // keeps describing what the handler enforces. See app/(admin)/cv-database/page.tsx for why.
+  // The template row's action is `read` because that is what the handler asserts; the `export`
+  // written here before matched nothing in that file and was already describing a gate that did not
+  // exist. The audit classification stays `export` — it is a download, whatever verb admits it.
+  sessionApi({ methods: allMethods, pattern: "/api/cv-database/**", permission: { resource: "recruitment", action: "read" } }),
+  sessionApi({ audit: { classification: "export", required: true }, methods: readOnly, pattern: "/api/cv-database/template", permission: { resource: "recruitment", action: "read" } }),
   sessionApi({ audit: { classification: "export", required: true }, methods: readOnly, pattern: "/api/employees/template", permission: { resource: "employees", action: "export" } }),
   sessionApi({ methods: allMethods, pattern: "/api/employees/**", permission: { resource: "employees", action: "read" }, csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST", "DELETE"], pattern: "/api/employee-portal/profile-photo", permission: { resource: "employee_profile", action: "update" }, csrfRequired: true }),
@@ -798,24 +803,19 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "export", required: true }, methods: readOnly, pattern: "/api/reports/organogram/contact-numbers", permission: { resource: "organogram", action: "read" } }),
   sessionApi({ methods: readOnly, pattern: "/api/reports/**", permission: { resource: "organogram", action: "read" } }),
   sessionApi({ methods: allMethods, pattern: "/api/resignations/**", permission: { resource: "resignations", action: "read" }, csrfRequired: true }),
-  // Clearance & offboarding (Phase 6). Split GET from POST because the audit answer differs: the
-  // read writes nothing, while every mutation writes a REQUIRED audit row. The POST is one endpoint
-  // carrying three actions and the handler asserts each separately — "open" as create, "decide" and
-  // "release" as update — so the baseline declared here is the weaker of the two, update. Release is
-  // deliberately NOT gated on "approve": approving the settlement is a payroll decision HR
-  // Operations may not make, and this route only records that clearance is complete.
-  sessionApi({ methods: readOnly, pattern: "/api/clearance", permission: { resource: "clearance", action: "read" } }),
-  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/clearance", permission: { resource: "clearance", action: "update" }, csrfRequired: true }),
-  // Turbify mailbox revocation register. Gated on `clearance` rather than a resource of its own:
-  // a leaver's mailbox IS the "IT & System Access" clearance station given a table, and a second
-  // offboarding grant is a second thing to drift out of step with the first.
+  // Turbify mailbox revocation register (Phase 6). Split GET from POST because the audit answer
+  // differs: the read writes nothing, while every mutation writes a REQUIRED audit row.
+  //
+  // It held the `clearance` resource until 2026-09-01, when the Clearance & Offboarding module was
+  // removed at the owner's instruction and this register became that grant's only consumer. It
+  // took `mailbox_offboarding` rather than inherit a permission named after a deleted module.
   //
   // The POST carries two actions and the handler asserts each separately — "open" as create,
-  // "record" as update — so, as with /api/clearance directly above, the baseline declared here is
-  // the weaker of the two. Every write is an attestation that a named admin performed a step in a
-  // system Phoenix cannot observe, so the audit row is required, not best-effort.
-  sessionApi({ methods: readOnly, pattern: "/api/mailbox-offboarding", permission: { resource: "clearance", action: "read" } }),
-  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/mailbox-offboarding", permission: { resource: "clearance", action: "update" }, csrfRequired: true }),
+  // "record" as update — so the baseline declared here is the weaker of the two. Every write is an
+  // attestation that a named admin performed a step in a system Phoenix cannot observe, so the
+  // audit row is required, not best-effort.
+  sessionApi({ methods: readOnly, pattern: "/api/mailbox-offboarding", permission: { resource: "mailbox_offboarding", action: "read" } }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/mailbox-offboarding", permission: { resource: "mailbox_offboarding", action: "update" }, csrfRequired: true }),
   // Retention register (Phase 6). The GET returns stay and exit conversations, which hold what an
   // employee said in confidence about their manager and their pay — the permission is the whole
   // protection, since RLS is disabled-by-default here like every other table in this app.

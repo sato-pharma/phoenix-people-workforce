@@ -1,7 +1,7 @@
 /**
- * Phase 6 — Clearance & Offboarding, and the Retention Register.
+ * Phase 6 — the Retention Register, and the offboarding grant beside it.
  *
- * WHAT THIS FILE IS FOR. Two new permission resources landed at once, and the three ways a new
+ * WHAT THIS FILE IS FOR. Two permission resources landed at once, and the three ways a new
  * resource has silently gone wrong in this repository are all covered here:
  *
  * 1. **The sidebar's permission lookup FAILS OPEN on a key it has never seen.** A resource added to
@@ -9,18 +9,31 @@
  *    tab to every role in the company, and no existing test notices. For `retention` that would
  *    mean handing every Medical Rep what their colleagues said in confidence about their manager
  *    and their pay.
- * 2. **A grant widened sideways under cover of a rename.** `clearance` belongs to HR Operations and
- *    `retention` to HR Advisory — they must NOT cross, because splitting them is the whole reason
- *    the function catalogue exists. A single "helpful" edit granting both to both would look
- *    tidier and would be the privacy defect.
+ * 2. **A grant widened sideways under cover of a rename.** `mailbox_offboarding` belongs to HR
+ *    Operations and `retention` to HR Advisory — they must NOT cross, because splitting them is the
+ *    whole reason the function catalogue exists. A single "helpful" edit granting both to both
+ *    would look tidier and would be the privacy defect.
  * 3. **A nav row advertising a permission its page does not gate on.** That defect shipped twice
  *    (the Deductions row, #2554; the contract-renewal tiles, #2568). tests/hr-command-center.test.ts
  *    reads the tile→sidebar half; this file reads the resource→bundle half underneath it.
  *
- * AND THE GATE ITSELF. `phx_hr_clearance_release` refusing to record a settlement while a station
- * is undecided is the one rule in Phase 6 that protects money. It is enforced in plpgsql rather
- * than in a page precisely so a future page cannot bypass it, which means the thing worth pinning
- * is that the SQL still contains it — a page-level test would pass while the gate was gone.
+ * WHAT CHANGED ON 2026-09-01, and why this file still reads a migration named "clearance". The
+ * Clearance & Offboarding module was removed at the owner's instruction: the page, the API route,
+ * the service, the tiles and the tasks are gone, and `clearance` is no longer a permission resource
+ * at all. The DATABASE OBJECTS ARE NOT GONE — six tables and five security definer functions from
+ * `20260828160000_hr_clearance_and_retention.sql` are still live in production, holding the
+ * evidence trail behind every settlement released while the module ran. Dropping them is a
+ * production migration nobody has approved, and a migration file is history that is never edited.
+ *
+ * So the SQL pins below split in two, deliberately:
+ *
+ *   • The SECURITY pins STAY, on all six tables and all five functions. An orphaned SECURITY
+ *     DEFINER function bypasses RLS by design and is reachable over PostgREST RPC by anyone the
+ *     ACL still admits. Code no longer calling it makes that MORE important to keep pinned, not
+ *     less — nothing in the app would fail if the grant were widened.
+ *   • The BEHAVIOURAL pins are gone — the wording of the release refusal, the 'ready' test, the
+ *     reason-required constraint. No code path can reach them any more, so a test asserting they
+ *     still behave correctly asserts something nobody can observe.
  */
 
 import assert from "node:assert/strict";
@@ -45,9 +58,12 @@ const MIGRATION = path.join(
   "20260828160000_hr_clearance_and_retention.sql",
 );
 
+/** The two resources this file governs. */
+const PAIR = ["mailbox_offboarding", "retention"] as const;
+
 /** Who may hold each resource at all, after hard boundaries. Everyone else must hold nothing. */
-const EXPECTED_HOLDERS: Record<"clearance" | "retention", PhoenixRole[]> = {
-  clearance: ["Super Admin", "HR Operations", "CEO"],
+const EXPECTED_HOLDERS: Record<(typeof PAIR)[number], PhoenixRole[]> = {
+  mailbox_offboarding: ["Super Admin", "HR Operations", "CEO"],
   retention: ["Super Admin", "HR Advisory", "CEO"],
 };
 
@@ -55,9 +71,9 @@ function actionsFor(role: PhoenixRole, resource: PermissionResource): Permission
   return permissionMatrix[role]?.[resource] ?? [];
 }
 
-export async function runHrClearanceRetentionTests() {
+export async function runHrRetentionRegisterTests() {
   // ── 1. Registered in BOTH places, or the sidebar fails open ───────────────────────────────────
-  for (const resource of ["clearance", "retention"] as const) {
+  for (const resource of PAIR) {
     assert.ok(
       permissionResources.includes(resource),
       `"${resource}" is missing from the runtime permissionResources array. The type union alone ` +
@@ -68,13 +84,32 @@ export async function runHrClearanceRetentionTests() {
   // A control. Without it, a permissionResources that had grown to include every string would
   // satisfy the loop above.
   assert.ok(
-    !(permissionResources as string[]).includes("clearances"),
+    !(permissionResources as string[]).includes("retentions"),
     "permissionResources contains a resource nobody declared — the check above is not discriminating",
   );
 
+  // ── 1b. The removed module leaves no grant behind ─────────────────────────────────────────────
+  // A resource outliving its pages is not harmless: `permissionMatrix` is what the sidebar, the
+  // module catalogue and every `assertPermission` read, so a `clearance` left standing would keep
+  // appearing in the permission admin UI as a module somebody can be granted, pointing at nothing.
+  // The mailbox register was this grant's only other consumer and took a name of its own.
+  assert.ok(
+    !(permissionResources as string[]).includes("clearance"),
+    "`clearance` is still a permission resource. The Clearance & Offboarding module was removed on " +
+      "2026-09-01 — a grant that survives its pages is offered in the permission admin as a module " +
+      "nobody can open, and is the kind of orphan a later session re-attaches a page to.",
+  );
+  for (const role of phoenixRoles) {
+    assert.equal(
+      (permissionMatrix[role] as Record<string, unknown> | undefined)?.clearance,
+      undefined,
+      `${role} still carries a clearance grant in permissionMatrix`,
+    );
+  }
+
   // ── 2. Exactly the intended roles, and the two HR seats do not cross ──────────────────────────
   for (const [resource, expected] of Object.entries(EXPECTED_HOLDERS) as [
-    "clearance" | "retention",
+    (typeof PAIR)[number],
     PhoenixRole[],
   ][]) {
     const holders = phoenixRoles.filter((role) => actionsFor(role, resource).length > 0);
@@ -93,17 +128,17 @@ export async function runHrClearanceRetentionTests() {
       "they think of their manager and their pay; that is hrbp 3, held by HR Advisory alone.",
   );
   assert.equal(
-    actionsFor("HR Advisory", "clearance").length,
+    actionsFor("HR Advisory", "mailbox_offboarding").length,
     0,
-    "HR Advisory holds clearance. Coordinating clearance and recording a settlement release is " +
-      "ops 6, and it belongs to HR Operations.",
+    "HR Advisory holds the mailbox revocation register. Closing a leaver's company mail is ops 6, " +
+      "and it belongs to HR Operations.",
   );
 
   // ── 3. Nobody but the Super Admin may delete either ───────────────────────────────────────────
-  // A clearance trail is the evidence a settlement was released against, and a retention
-  // conversation is the evidence behind a turnover theme a CEO reads. Both job descriptions
-  // require records that survive an audit.
-  for (const resource of ["clearance", "retention"] as const) {
+  // A mailbox revocation row is the attestation that a leaver's company mail was actually shut, and
+  // a retention conversation is the evidence behind a turnover theme a CEO reads. Both job
+  // descriptions require records that survive an audit.
+  for (const resource of PAIR) {
     const deleters = phoenixRoles.filter((role) => actionsFor(role, resource).includes("delete"));
     assert.deepEqual(
       deleters,
@@ -111,7 +146,7 @@ export async function runHrClearanceRetentionTests() {
       `"${resource}" can be deleted by ${deleters.join(", ") || "nobody"} — only Super Admin may`,
     );
   }
-  for (const resource of ["clearance", "retention"] as const) {
+  for (const resource of PAIR) {
     assert.ok(
       HR_ROLE_BOUNDARIES.some((entry) => entry.resource === resource && entry.action === "delete"),
       `HR_ROLE_BOUNDARIES has no delete entry for "${resource}" — the boundary holds today only ` +
@@ -130,8 +165,8 @@ export async function runHrClearanceRetentionTests() {
     "HR Advisory's composed bundle carries no retention grant — it must come from engagement_retention",
   );
   assert.ok(
-    (operations.clearance ?? []).length > 0,
-    "HR Operations' composed bundle carries no clearance grant — it must come from people_records",
+    (operations.mailbox_offboarding ?? []).length > 0,
+    "HR Operations' composed bundle carries no mailbox_offboarding grant — it must come from people_records",
   );
   assert.ok(
     HR_ROLE_BUNDLES["HR Advisory"].includes("engagement_retention"),
@@ -139,7 +174,7 @@ export async function runHrClearanceRetentionTests() {
   );
   assert.ok(
     HR_ROLE_BUNDLES["HR Operations"].includes("people_records"),
-    "HR Operations no longer holds people_records — the clearance grant above is not traceable",
+    "HR Operations no longer holds people_records — the offboarding grant above is not traceable",
   );
 
   // A bundle grant that the hard boundary then strips is a LIE IN THE WORKBOOK, not a safety net.
@@ -166,106 +201,22 @@ export async function runHrClearanceRetentionTests() {
   // Driven through the REAL builders, so the hrefs asserted are the hrefs the page emits.
   // tests/hr-command-center.test.ts then checks every such href against the seat's own sidebar.
   assert.ok(
-    sourcesFor("HR Operations").includes("clearance"),
-    "HR Operations' dashboard never loads clearance, so her landing page cannot show it",
-  );
-  assert.ok(
     sourcesFor("HR Advisory").includes("retention"),
     "HR Advisory's dashboard never loads the retention register, so her landing page cannot show it",
-  );
-  assert.ok(
-    !sourcesFor("HR Advisory").includes("clearance"),
-    "HR Advisory's dashboard loads clearance — she has no grant to open the page it links to",
   );
   assert.ok(
     !sourcesFor("HR Operations").includes("retention"),
     "HR Operations' dashboard loads the retention register, which she may not read at all",
   );
-
-  const operationsSources: HrCommandSources = {
-    directory: {
-      employees: [],
-      lookups: { medicalRepVacancies: [], workforceVacancies: [] },
-      summary: {
-        activeEmployees: 0,
-        employeesWithoutManagers: 0,
-        uniqueLines: 0,
-      },
-    } as unknown as NonNullable<HrCommandSources["directory"]>,
-    clearance: {
-      checklists: [],
-      stations: [],
-      // Two departures recorded before the auto-open trigger existed, so they have no checklist.
-      // This is the launch-day shape: every stat below can read low or zero while real leavers are
-      // waiting, which is exactly what the "No Clearance Opened" tile exists to say out loud.
-      awaiting: [
-        {
-          resignationId: "11111111-1111-1111-1111-111111111111",
-          employeeHrId: "A-16",
-          employeeName: "Fixture One",
-          jobTitle: "Talent Acquisition",
-          lineName: null,
-          lastWorkingDate: "2026-08-31",
-        },
-        {
-          resignationId: "22222222-2222-2222-2222-222222222222",
-          employeeHrId: "B-74",
-          employeeName: "Fixture Two",
-          jobTitle: "Office Coordinator",
-          lineName: null,
-          lastWorkingDate: "2026-08-31",
-        },
-      ],
-      schemaReady: true,
-      stats: {
-        open: 3,
-        ready: 2,
-        released: 0,
-        cancelled: 0,
-        overdue: 1,
-        blockedStations: 0,
-        amountOutstanding: 0,
-      },
-    },
-  };
-  const operationsTiles = buildHrCommandGroups("HR Operations", operationsSources).flatMap(
-    (group) => group.tiles,
-  );
-  const clearanceTiles = operationsTiles.filter((t) => t.href === "/hr/clearance");
-  assert.ok(
-    clearanceTiles.length >= 3,
-    `HR Operations' dashboard shows ${clearanceTiles.length} clearance tiles — expected at least 3`,
-  );
-  assert.equal(
-    clearanceTiles.find((t) => t.key === "clearance-overdue")?.value,
-    1,
-    "the Past Last Day tile does not read the stat it claims to — a tile wired to the wrong figure " +
-      "is worse than no tile, because it looks answered",
-  );
-  // The launch-day misleading zero. With no checklists yet, open/ready/overdue all read low and
-  // the page says "nothing waiting on you" while real departures sit unstarted. The tile must
-  // appear, must count the awaiting list rather than any stat, and must not render as neutral.
-  const awaitingTile = clearanceTiles.find((t) => t.key === "clearance-awaiting");
-  assert.ok(
-    awaitingTile,
-    "no No-Clearance-Opened tile. Departures recorded before the auto-open trigger would be " +
-      "invisible on the one page HR Operations lands on, behind three tiles all reading zero",
-  );
-  assert.equal(
-    awaitingTile?.value,
-    2,
-    "the No Clearance Opened tile does not count the awaiting list",
-  );
-  assert.equal(
-    awaitingTile?.tone,
-    "rose",
-    "a departure with no clearance started must not render as a neutral figure",
-  );
-  assert.equal(
-    clearanceTiles.find((t) => t.key === "clearance-overdue")?.tone,
-    "rose",
-    "an overdue clearance is somebody waiting to be paid off and must not render as a neutral figure",
-  );
+  // The removed module must not leave a fetch behind either. A source key with no tiles is a live
+  // Supabase round trip on every landing-page render, paid for by a seat who sees nothing for it.
+  for (const seat of ["HR Advisory", "HR Operations"] as const) {
+    assert.ok(
+      !(sourcesFor(seat) as string[]).includes("clearance"),
+      `${seat}'s dashboard still fetches clearance — the module is gone, so that is a round trip ` +
+        "nobody can see the result of",
+    );
+  }
 
   const advisoryTiles = buildHrCommandGroups("HR Advisory", {
     supportRequests: [],
@@ -286,7 +237,7 @@ export async function runHrClearanceRetentionTests() {
         resignationsInWindow: 4,
       },
     },
-  }).flatMap((group) => group.tiles);
+  } as unknown as HrCommandSources).flatMap((group) => group.tiles);
   const retentionTiles = advisoryTiles.filter((t) => t.href === "/hr/retention");
   assert.ok(
     retentionTiles.length >= 3,
@@ -304,35 +255,24 @@ export async function runHrClearanceRetentionTests() {
     );
   }
 
-  // ── 6. The database gate, pinned in the SQL that enforces it ──────────────────────────────────
+  // Nothing on either seat's landing page may still point at the deleted pages. A tile linking to a
+  // route that no longer exists renders as a perfectly ordinary figure and 404s on click.
+  const everyTile = [
+    ...advisoryTiles,
+    ...buildHrCommandGroups("HR Operations", {} as HrCommandSources).flatMap((g) => g.tiles),
+  ];
+  for (const tile of everyTile) {
+    assert.ok(
+      !tile.href.includes("/clearance"),
+      `the tile "${tile.label}" still links to ${tile.href}, which was deleted on 2026-09-01`,
+    );
+  }
+
+  // ── 6. The database objects, pinned in the SQL that created them ──────────────────────────────
   // Matched by content rather than by a byte window: a source-pinning test that slices a fixed
   // offset false-fails the moment anything above it shifts (AGENTS.md §2.1).
   const sql = readFileSync(MIGRATION, "utf8");
 
-  assert.ok(
-    sql.includes("create or replace function public.phx_hr_clearance_release"),
-    "the release function is gone from the migration — nothing then stops a settlement being " +
-      "recorded while stations are still outstanding",
-  );
-  assert.ok(
-    sql.includes("Clearance is not complete - still outstanding:"),
-    "the release gate no longer names the outstanding stations. A refusal a person can act on is " +
-      "the difference between this gate and a boolean; do not reduce it to one.",
-  );
-  assert.ok(
-    sql.includes("if v_status <> 'ready' then"),
-    "the release gate no longer tests for 'ready' — it would accept a half-done clearance",
-  );
-  assert.ok(
-    sql.includes("v_status := public.phx_hr_clearance_refresh_status(p_checklist_id);"),
-    "the release gate no longer recomputes the status before reading it, so a concurrent decision " +
-      "could be gated against a stale stored value",
-  );
-  assert.ok(
-    sql.includes("constraint hr_clearance_items_reason_required"),
-    "a blocked or waived station no longer requires a written reason — a waiver with a reason IS " +
-      "the only override this design has, and an unreasoned waiver defeats the whole gate",
-  );
   assert.ok(
     sql.includes("constraint hr_retention_kind_fields"),
     "the stay/exit field constraint is gone — a stay discussion carrying is_regrettable would " +
@@ -340,7 +280,10 @@ export async function runHrClearanceRetentionTests() {
   );
 
   // RLS on every one of the six, with no permissive policy. Retention in particular holds what an
-  // employee said in confidence; anon reaching it directly would not show up in any page test.
+  // employee said in confidence; anon reaching it directly would not show up in any page test. The
+  // three hr_clearance_* tables are still listed on purpose — they are still in production, still
+  // hold real settlement evidence, and no longer have any page whose breakage would reveal a
+  // widened ACL.
   const rlsTables = [
     "hr_clearance_stations",
     "hr_clearance_checklists",
@@ -370,6 +313,10 @@ export async function runHrClearanceRetentionTests() {
   // signed-in employee could have called phx_hr_clearance_release over PostgREST RPC and released
   // their own settlement with the permission layer never consulted. CI's migration-check caught it;
   // this keeps it caught if the block is ever trimmed.
+  //
+  // ALL FIVE ARE STILL LIVE FUNCTIONS IN PRODUCTION. The app stopped calling them on 2026-09-01;
+  // that removed the caller, not the function, and an unreachable-from-the-UI definer function with
+  // a loose ACL is the worst version of this, not the safe one.
   const definerFunctions = [
     "phx_hr_clearance_refresh_status",
     "phx_hr_clearance_open",
@@ -395,37 +342,11 @@ export async function runHrClearanceRetentionTests() {
   }
 
   // ── 7. Every route action has a caller, or it is a promise the UI never keeps ──────────────────
-  // Both modules shipped an endpoint nothing could reach. The clearance route accepted "open" —
-  // the manual path the auto-open trigger's own comment promises ("HR can open one by hand") — and
-  // no control sent it, so all 54 resignations predating the trigger had no checklist and no way
-  // to get one, the two HR leavers among them. The retention route exported PATCH and the register
-  // only ever POSTed, so a stay discussion's follow-up could be raised and never closed: the
-  // overdue count could rise and never fall. Neither is visible in a permission table or in a
-  // type — the route compiles, the permission resolves, the button simply does not exist. So the
-  // check is that the set of actions the server accepts equals the set the client sends.
-  const clearanceRoute = readFileSync(
-    path.join(process.cwd(), "app", "api", "clearance", "route.ts"),
-    "utf8",
-  );
-  const clearanceUi = readFileSync(
-    path.join(process.cwd(), "src", "components", "clearance", "clearance-workspace.tsx"),
-    "utf8",
-  );
-  const acceptedActions = [...clearanceRoute.matchAll(/payload\.action === "([a-z]+)"/g)].map(
-    (match) => match[1],
-  );
-  assert.ok(
-    acceptedActions.length >= 3,
-    `only ${acceptedActions.length} clearance actions were found in the route — the matcher is stale`,
-  );
-  for (const action of acceptedActions) {
-    assert.ok(
-      clearanceUi.includes(`action: "${action}"`),
-      `the clearance route accepts "${action}" but nothing in clearance-workspace.tsx sends it — ` +
-        "either wire a control for it or delete the branch",
-    );
-  }
-
+  // The retention route exported PATCH while the register only ever POSTed, so a stay discussion's
+  // follow-up could be raised and never closed: the overdue count could rise and never fall. That
+  // is not visible in a permission table or in a type — the route compiles, the permission
+  // resolves, the button simply does not exist. So the check is that the set of actions the server
+  // accepts equals the set the client sends.
   const retentionRoute = readFileSync(
     path.join(process.cwd(), "app", "api", "retention", "route.ts"),
     "utf8",
@@ -449,19 +370,4 @@ export async function runHrClearanceRetentionTests() {
         "either wire a control for it or delete the handler",
     );
   }
-
-  // The awaiting list is what makes "open" reachable, so pin that it survives to the client.
-  const clearanceTypes = readFileSync(
-    path.join(process.cwd(), "src", "lib", "clearance", "types.ts"),
-    "utf8",
-  );
-  assert.ok(
-    clearanceTypes.includes("awaiting: ClearanceAwaitingResignation[];"),
-    "ClearanceDashboardData no longer carries the awaiting list — the pre-trigger backlog, and the " +
-      "only route to the manual open, become invisible",
-  );
-  assert.ok(
-    clearanceUi.includes("Awaiting clearance"),
-    "the clearance workspace no longer renders the awaiting-clearance backlog",
-  );
 }

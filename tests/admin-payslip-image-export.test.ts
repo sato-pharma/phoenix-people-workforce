@@ -18,6 +18,15 @@ const adminPayslipsCenterSource = readFileSync(
   "utf8",
 );
 
+// The rows moved out of the page into a client component on 2026-09-01, when the Payslips Center
+// was linked into the HR sidebar and its ten-column table had to become cards on a phone. The page
+// still owns the PREDICATE; the component owns the LINKS. Reading both, and pinning the handoff
+// between them below, is what stops the split from quietly unpinning the export button.
+const adminPayslipsCenterRowsSource = readFileSync(
+  new URL("../src/components/payroll/payslips-center-rows.tsx", import.meta.url),
+  "utf8",
+);
+
 export function runAdminPayslipImageExportTests() {
   assert.match(
     imageRouteSource,
@@ -86,9 +95,28 @@ export function runAdminPayslipImageExportTests() {
       "a second role literal here is how the button and its guard drift apart.",
   );
 
+  // The handoff. The page computes the predicate and must PASS it to the component; the component
+  // must gate the button on that prop. Either half alone is satisfiable while the button is wrong —
+  // a component that ignores the prop and renders the link unconditionally would pass the link
+  // assertion below, and a page that stops passing it would leave the component gating on
+  // `undefined` and hiding the button from Finance. Both are pinned.
   assert.match(
     adminPayslipsCenterSource,
-    /\/payslips\/image\?employeeHrId=/,
-    "Admin payslips center must link each row to the image export endpoint.",
+    /<PayslipsCenterRows[\s\S]{0,200}?canExportPayslipImage=\{canExportPayslipImage\}/,
+    "Admin payslips center must hand the export predicate to the rows component it renders.",
+  );
+  assert.match(
+    adminPayslipsCenterRowsSource,
+    /canExportPayslipImage \? \(/,
+    "The payslips rows component must gate the export link on the predicate the page passes in.",
+  );
+
+  // Both halves of the responsive list carry the link — cards below `md`, table from `md` up — so
+  // this counts rather than merely matching. A single hit means one half lost its export button,
+  // which on a phone is invisible to anyone testing on a desktop.
+  assert.equal(
+    adminPayslipsCenterRowsSource.match(/\/payslips\/image\?employeeHrId=/g)?.length,
+    2,
+    "Admin payslips center must link BOTH the card and the table row to the image export endpoint.",
   );
 }

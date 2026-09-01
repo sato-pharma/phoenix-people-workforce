@@ -130,15 +130,21 @@ export type SeatWorkbook = {
 // renamed or moved is then one edit, and the test that checks these against the real page files and
 // the real navigation checks them once each rather than once per mention.
 
+// `approvalsHub` was here until 2026-09-01 and is deliberately gone. Its only user was ops-2-1,
+// which taught the Operations seat to "decide excuses and permission requests in Other Approvals" —
+// wrong on two counts even before the row was retired from her rail that day. Excuses, vacation and
+// plans LEFT that inbox for their own dedicated pages (see the MIGRATED_DEEPLINK_BASES map in
+// app/(admin)/admin/approvals-hub/page.tsx, which bounces stale ?module=excuse links away from it),
+// so the hub now carries resignation, contract and outstation only; and the excuse decision itself
+// belongs to leaveExcuseApproverAdminNavigationRoles — Super Admin, CEO and Financial Advisor — a
+// list this seat has never been on. Do not re-add the entry to point a line here.
 const S = {
-  approvalsHub: { href: "/hr/admin/approvals-hub", label: "Other Approvals" },
   attendance: { href: "/hr/attendance", label: "Attendance" },
   attendanceDayReport: { href: "/hr/attendance/employee-day-report", label: "Employee Day-by-Day Report" },
   attendanceDevices: { href: "/hr/attendance/device-user-mapping", label: "Device User Mapping" },
   attendanceExceptions: { href: "/hr/attendance/exceptions", label: "Attendance Exceptions" },
   attendanceMonthly: { href: "/hr/attendance/monthly-summary", label: "Monthly Summary" },
   attendancePolicies: { href: "/hr/attendance/policies", label: "Attendance Policies" },
-  clearance: { href: "/hr/clearance", label: "Clearance" },
   coaching: { href: "/hr/coaching", label: "Field Coaching" },
   companyCalendar: { href: "/hr/hr-calendar", label: "Company Calendar" },
   contactReview: { href: "/hr/recruitment/contact-review", label: "Missing Contact Details" },
@@ -150,6 +156,7 @@ const S = {
   hiringPack: { href: "/hr/hiring-pack", label: "HR Forms" },
   intakeHealth: { href: "/hr/recruitment/intake-health", label: "Inbound Intake Health" },
   leave: { href: "/hr/leave-management", label: "Leave Management" },
+  mailboxOffboarding: { href: "/hr/mailbox-offboarding", label: "Mailbox Revocation" },
   offers: { href: "/hr/offers", label: "Job Offers" },
   organogram: { href: "/hr/organogram", label: "Organogram" },
   overview: { href: "/hr/admin/hr-command-center", label: "HR Overview" },
@@ -659,10 +666,14 @@ const OPS_SECTIONS: readonly WorkbookSection[] = [
         id: "ops-2-1",
         responsibility:
           "Review attendance records, fingerprint inputs, approved leave, permissions, excuses and relevant field-activity inputs according to company rules.",
-        screens: [S.attendance, S.attendanceExceptions, S.approvalsHub],
+        screens: [S.attendance, S.attendanceExceptions],
         steps: [
           "Work the exception queue. It is simply the list of days the rules could not settle on their own.",
-          "Decide excuses and permission requests in Other Approvals. They arrive there from the employees' own portals.",
+          // The duty above says REVIEW, and review is what this seat does: an excuse or permission
+          // request is DECIDED by the approver chain, and it reaches her as an already-settled input
+          // on the attendance record. The old wording sent her to Other Approvals to decide them
+          // herself — a screen those requests had already left, on an approver list she is not on.
+          "An approved excuse or permission already shows against the day. Read it there and let it stand — you are checking that the record matches the rules, not re-deciding the request.",
         ],
         evidence:
           "Every decision is saved with your name and the date, right beside the fingerprint record it was about. So it can be read back years later with the same facts in front of you.",
@@ -880,8 +891,9 @@ const OPS_SECTIONS: readonly WorkbookSection[] = [
   },
   {
     number: 6,
-    title: "Resignation, Clearance & Offboarding",
-    // The checklist opens itself and refuses release on its own; chasing seven departments does not.
+    title: "Resignation & Offboarding",
+    // Phoenix records the exit and tracks the one station it can observe - the company mailbox.
+    // Clearing the other departments is a person doing it, not a system watching it.
     mode: "system-and-person",
     lines: [
       {
@@ -900,37 +912,37 @@ const OPS_SECTIONS: readonly WorkbookSection[] = [
       {
         id: "ops-6-2",
         responsibility: "Coordinate clearance with concerned departments and maintain evidence of completion.",
-        screens: [S.clearance],
+        screens: [S.mailboxOffboarding],
         steps: [
-          "The clearance checklist opens by itself when you record the resignation, with all seven departments already on it.",
-          "Chase each department and record its answer as it comes back.",
+          "Chase each department on the signed clearance paper. Phoenix does not hold that checklist - print the pair from HR Forms and file the signed originals.",
+          "Company mail is the one station Phoenix does track. Record the revocation there, because a password reset does not close a leaver's mailbox on its own.",
         ],
         evidence:
-          "Each answer carries who gave it and when. So 'IT cleared him' is a record, not something somebody remembers.",
+          "The mailbox revocation carries who did it and when, so 'IT cleared him' is a record for the station that is hardest to verify by looking.",
         fn: "people_records",
       },
       {
         id: "ops-6-3",
         responsibility:
           "Ensure company assets, documents and required approvals are addressed before final settlement processing.",
-        screens: [S.clearance],
+        screens: [S.hiringPack],
         steps: [
-          "Release is the last step, and the system refuses it until every department has answered.",
+          "The settlement is released against the signed clearance papers, not against a screen.",
         ],
         evidence:
-          "That refusal happens in the database, not on the page, and it names the departments still open. So it cannot be got round by reloading, and it tells you exactly who to chase.",
+          "Both papers are printed from the current template and archived when the owner revises the wording, so the version somebody signed is always recoverable.",
         fn: "people_records",
       },
       {
         id: "ops-6-4",
         responsibility:
           "Maintain accurate records for resignations, terminations, non-renewals and other exits.",
-        screens: [S.resignations, S.clearance],
+        screens: [S.resignations],
         steps: [
           "Record every exit the same way, whatever the reason. That is what makes them countable afterwards.",
         ],
         evidence:
-          "Your account cannot delete a resignation or a clearance. An exit record can be corrected and can never be removed, which is what both job descriptions mean by records that survive an inspection.",
+          "Your account cannot delete a resignation. An exit record can be corrected and can never be removed, which is what both job descriptions mean by records that survive an inspection.",
         fn: "people_records",
       },
     ],
@@ -1076,7 +1088,7 @@ const OPS_SECTIONS: readonly WorkbookSection[] = [
         id: "ops-9-2",
         responsibility:
           "Maintain organized records that can support internal review, external inspection or audit when needed.",
-        screens: [S.hiringDocuments, S.clearance, S.resignations],
+        screens: [S.hiringDocuments, S.resignations],
         steps: [
           "File it when it happens, not when somebody asks for it.",
         ],

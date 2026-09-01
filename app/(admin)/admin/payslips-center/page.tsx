@@ -1,6 +1,5 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
-import { FileDown, FileText } from "lucide-react";
+import { FileText } from "lucide-react";
 
 import {
   AdminInsightChip,
@@ -9,7 +8,10 @@ import {
   AdminTableShell,
   adminPanelClassName,
 } from "@/components/admin/admin-design-system";
-import { Badge } from "@/components/ui/badge";
+// The payslip history moved into this client component on 2026-09-01 so it can be cards on a phone
+// and a table from `md` up — see its header. This page became reachable from the HR sidebar that
+// day, and the HR shell is used on a phone.
+import { PayslipsCenterRows } from "@/components/payroll/payslips-center-rows";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { canAccess } from "@/lib/auth/permissions";
@@ -33,15 +35,6 @@ function formatMoney(value: number) {
   }).format(value);
 }
 
-function periodLabel(month: number, year: number) {
-  return new Intl.DateTimeFormat("en", { month: "short", year: "numeric" }).format(
-    new Date(Date.UTC(year, month - 1, 1)),
-  );
-}
-
-function payslipStatusTone(status: string) {
-  return status === "approved" || status === "locked" ? "success" : "neutral";
-}
 
 export default async function AdminPayslipsCenterPage(
   props: AdminPayslipsCenterPageProps,
@@ -144,135 +137,7 @@ export default async function AdminPayslipsCenterPage(
           </Card>
         ) : (
           <AdminTableShell description={employeeSummary} title="Employee Payslip History">
-            {/* DESKTOP — the full ten-column history. Hidden below md, where it cannot fit: ten
-                columns of currency need roughly 980px, and the owner's standing rule is that a
-                phone gets cards rather than a sideways drag. The mobile half is below. */}
-            <div className="hidden overflow-x-auto md:block">
-              <table className="w-full min-w-[980px] text-left text-sm">
-                <thead>
-                  <tr className="border-b border-phx-line bg-phx-paper text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-soft">
-                    {["Employee", "HR ID", "Period", "Line", "Gross", "Additions", "Deductions", "Net", "Status", "Action"].map((column) => (
-                      <th className="px-3 py-3" key={column}>{column}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-phx-line">
-                  {data.rows.map((row) => (
-                    <tr className="transition hover:bg-[#FCFDFE]" key={`${row.batchId}-${row.recordId}`}>
-                      <td className="px-3 py-3">
-                        <p className="font-semibold text-phx-ink">{formatEmployeeDisplayName(row.fullName)}</p>
-                        <p className="mt-1 text-xs text-phx-ink-soft">{row.jobTitle}</p>
-                      </td>
-                      <td className="px-3 py-3 font-mono text-xs text-phx-ink-soft">{row.hrId || row.employeeCode || "-"}</td>
-                      <td className="px-3 py-3 font-semibold text-phx-ink">{periodLabel(row.month, row.year)}</td>
-                      <td className="px-3 py-3 text-phx-ink-soft">{row.line}</td>
-                      <td className="px-3 py-3 font-semibold text-phx-ink">{formatMoney(row.grossSalary)}</td>
-                      <td className="px-3 py-3 text-emerald-700">{formatMoney(row.totalAdditions)}</td>
-                      <td className="px-3 py-3 text-rose-700">{formatMoney(row.totalDeductions)}</td>
-                      <td className="px-3 py-3 font-black text-phx-ink">{formatMoney(row.netSalary)}</td>
-                      <td className="px-3 py-3">
-                        <Badge variant={payslipStatusTone(row.status)}>{row.status}</Badge>
-                      </td>
-                      <td className="px-3 py-3">
-                        <div className="flex flex-wrap gap-2">
-                          <Link
-                            className="inline-flex h-9 items-center justify-center rounded-xl border border-phx-line px-4 text-sm font-semibold text-phx-ink transition hover:bg-phx-paper"
-                            href={`/api/payroll/${row.batchId}/payslips?employeeHrId=${encodeURIComponent(row.hrId || row.employeeCode)}`}
-                            target="_blank"
-                          >
-                            Open Payslip
-                          </Link>
-                          {canExportPayslipImage ? (
-                            <Link
-                              className="inline-flex h-9 items-center justify-center rounded-xl border border-phx-accent-line bg-phx-accent-soft px-4 text-sm font-semibold text-[#9A3412] transition hover:bg-[#FFEDD5]"
-                              href={`/api/payroll/${row.batchId}/payslips/image?employeeHrId=${encodeURIComponent(row.hrId || row.employeeCode)}`}
-                            >
-                              <FileDown className="mr-2 h-4 w-4" />
-                              Export PDF
-                            </Link>
-                          ) : null}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            {/* MOBILE — cards, never the table. The owner's standing rule. Same rows, same order,
-                nothing dropped: every column above appears here as a labelled line, because a card
-                that quietly omits Additions or Deductions makes the Net look unexplained. */}
-            <div className="space-y-3 md:hidden">
-              {data.rows.map((row) => (
-                <div
-                  className="rounded-2xl border border-phx-line bg-white p-4"
-                  key={`card-${row.batchId}-${row.recordId}`}
-                >
-                  <div className="flex flex-wrap items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <p className="break-words text-sm font-black text-phx-ink">
-                        {formatEmployeeDisplayName(row.fullName)}
-                      </p>
-                      <p className="mt-1 break-words text-xs text-phx-ink-soft">{row.jobTitle}</p>
-                    </div>
-                    <Badge variant={payslipStatusTone(row.status)}>{row.status}</Badge>
-                  </div>
-
-                  <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
-                    <div>
-                      <dt className="font-bold uppercase tracking-[0.1em] text-phx-ink-soft">Period</dt>
-                      <dd className="mt-0.5 font-semibold text-phx-ink">{periodLabel(row.month, row.year)}</dd>
-                    </div>
-                    <div>
-                      <dt className="font-bold uppercase tracking-[0.1em] text-phx-ink-soft">HR ID</dt>
-                      <dd className="mt-0.5 break-words font-mono text-phx-ink-soft">
-                        {row.hrId || row.employeeCode || "-"}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt className="font-bold uppercase tracking-[0.1em] text-phx-ink-soft">Line</dt>
-                      <dd className="mt-0.5 break-words text-phx-ink-soft">{row.line}</dd>
-                    </div>
-                    <div>
-                      <dt className="font-bold uppercase tracking-[0.1em] text-phx-ink-soft">Gross</dt>
-                      <dd className="mt-0.5 font-semibold text-phx-ink">{formatMoney(row.grossSalary)}</dd>
-                    </div>
-                    <div>
-                      <dt className="font-bold uppercase tracking-[0.1em] text-phx-ink-soft">Additions</dt>
-                      <dd className="mt-0.5 font-semibold text-emerald-700">{formatMoney(row.totalAdditions)}</dd>
-                    </div>
-                    <div>
-                      <dt className="font-bold uppercase tracking-[0.1em] text-phx-ink-soft">Deductions</dt>
-                      <dd className="mt-0.5 font-semibold text-rose-700">{formatMoney(row.totalDeductions)}</dd>
-                    </div>
-                  </dl>
-
-                  <div className="mt-3 flex items-baseline justify-between gap-2 border-t border-phx-line pt-3">
-                    <span className="text-xs font-bold uppercase tracking-[0.1em] text-phx-ink-soft">Net</span>
-                    <span className="text-base font-black text-phx-ink">{formatMoney(row.netSalary)}</span>
-                  </div>
-
-                  <div className="mt-3 grid gap-2">
-                    <Link
-                      className="inline-flex h-10 items-center justify-center rounded-xl border border-phx-line px-4 text-sm font-semibold text-phx-ink transition hover:bg-phx-paper"
-                      href={`/api/payroll/${row.batchId}/payslips?employeeHrId=${encodeURIComponent(row.hrId || row.employeeCode)}`}
-                      target="_blank"
-                    >
-                      Open Payslip
-                    </Link>
-                    {canExportPayslipImage ? (
-                      <Link
-                        className="inline-flex h-10 items-center justify-center rounded-xl border border-phx-accent-line bg-phx-accent-soft px-4 text-sm font-semibold text-[#9A3412] transition hover:bg-[#FFEDD5]"
-                        href={`/api/payroll/${row.batchId}/payslips/image?employeeHrId=${encodeURIComponent(row.hrId || row.employeeCode)}`}
-                      >
-                        <FileDown className="mr-2 h-4 w-4" />
-                        Export PDF
-                      </Link>
-                    ) : null}
-                  </div>
-                </div>
-              ))}
-            </div>
+            <PayslipsCenterRows canExportPayslipImage={canExportPayslipImage} rows={data.rows} />
           </AdminTableShell>
         )}
     </div>

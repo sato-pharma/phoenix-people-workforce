@@ -66,6 +66,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { AdminHeroFrame } from "@/components/admin/admin-design-system";
 import { CeoHeroIdentity } from "@/components/admin/ceo-hero-identity";
+import { HrCommandCharts } from "@/components/hr/hr-command-charts";
 import { HrMyRecord } from "@/components/hr/hr-my-record";
 import { HrTodayPanel } from "@/components/hr/hr-today-panel";
 import { HR_SEAT_JOB_TITLES, type HrFunctionKey } from "@/lib/auth/hr-functions";
@@ -97,8 +98,8 @@ const GRID_BY_COUNT: Record<number, string> = {
   4: "sm:grid-cols-2 lg:grid-cols-4",
   5: "sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5",
   6: "sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6",
-  // 7-10 exist because people_records now carries up to TEN tiles (records, resignations, four
-  // clearance tiles, contracts). Without them the `??` fallback below silently applies a 4-column
+  // 7-10 exist because people_records carries the most tiles of any function (records,
+  // resignations, contracts). Without them the `??` fallback below silently applies a 4-column
   // grid, which leaves nine tiles as 4 + 4 + 1 - a ragged single tile that reads as a rendering
   // fault. Every value here is a LITERAL class string because Tailwind cannot build a class name
   // at runtime: `lg:grid-cols-${n}` is purged from the stylesheet and the grid silently collapses
@@ -534,13 +535,19 @@ export function HrCommandCenter({
               />
             </button>
             {isCollapsed ? null : (
-              <div
-                className={`grid grid-cols-2 gap-2 p-5 ${grid}`}
-                id={`hr-group-tiles-${group.functionKey}`}
-              >
-                {group.tiles.map((tile) => (
-                  <MetricTile key={tile.key} tile={tile} />
-                ))}
+              <div id={`hr-group-tiles-${group.functionKey}`}>
+                {/* The shape first, then the figures. A chart is the answer to a question the
+                    tiles below it cannot reach — "is that a bad Tuesday or a fortnight of drift"
+                    — so it reads before them, not as an appendix underneath.
+                    Suppressed while a filter is active: the filter matches tile LABELS, so a
+                    chart left standing beside two matched tiles would be showing a whole function
+                    under a heading that says the page is showing two figures. */}
+                {isFiltering ? null : <HrCommandCharts charts={group.charts} />}
+                <div className={`grid grid-cols-2 gap-2 p-5 ${grid}`}>
+                  {group.tiles.map((tile) => (
+                    <MetricTile key={tile.key} tile={tile} />
+                  ))}
+                </div>
               </div>
             )}
           </section>

@@ -23,6 +23,7 @@ import { ModuleLockProvider } from "@/components/layout/module-lock-context";
 import { ModuleLockedNotice } from "@/components/layout/module-locked-notice";
 import { CommandPalette } from "@/components/layout/command-palette";
 import { DocumentTitleSync } from "@/components/layout/document-title-sync";
+import { HrMyPagesStrip } from "@/components/hr/hr-my-pages-strip";
 import { HorizontalNavProvider, LowerNavRow, UpperNavRow } from "@/components/layout/horizontal-nav-rows";
 import { RouteTransitionProvider } from "@/components/layout/route-transition-provider";
 import { Sidebar } from "@/components/layout/sidebar";
@@ -182,6 +183,16 @@ export async function AppShell({
                       viewer={viewer}
                     />
                   )}
+                  {/* The two HR seats' own personal pages, directly under the identity banner and
+                      above the nav rows — owner instruction 2026-09-01, "make it fix it in every
+                      page she opens". It renders null for every other role, and null again for an
+                      HR seat with no personal pages, so no other account gains a strip. It has to
+                      be INSIDE this sticky container for the reason the comment above gives: two
+                      stickies at top-0 overlap rather than stack. */}
+                  <HrMyPagesStrip
+                    access={access}
+                    pathname={toHrNamespacePath(requestHeaders.get(PATH_HEADER) ?? "")}
+                  />
                   <UpperNavRow />
                   <LowerNavRow />
                 </div>
