@@ -188,19 +188,66 @@ export function runMemoryIndexReachabilityTests() {
   assert.match(brokenOnly, /1 broken pointer\(s\)/);
   assert.doesNotMatch(brokenOnly, /Every memory file is reachable/);
 
-  // ── 7. the convention this whole matcher rests on is real, in the live file ───────────────────
-  // Everything above is fixtures. This is the one assertion against the actual AGENTS.md: if a
-  // future rewrite stops naming memories as backticked slugs — switching to links, say — the
-  // matcher goes blind and every relocated hook silently reads as an orphan again. Counted 137 on
-  // 2026-08-29; the floor is set well below that so ordinary retirement never trips it.
+  // ── 7. the convention this whole matcher rests on is real, in the live files ────────────────
+  // Everything above is fixtures. This is the assertion against the actual AGENTS.md: if a future
+  // rewrite stops naming memories as backticked slugs — switching to links, say — the matcher goes
+  // blind and every relocated hook silently reads as an orphan again.
+  //
+  // THIS USED TO BE A COUNT, `slugs.size >= 50`, AND THE COUNT WAS THE WRONG INSTRUMENT. It went red
+  // on 2026-09-01 when the slug references were deliberately moved into docs/agents-memory-map.md to
+  // get 7,783 bytes off a file `CLAUDE.md` re-sends on every request. The count fell 137 — 26 and
+  // main went red, but nothing was actually orphaned: repo-doctor measured 969 memory files, 952
+  // index pointers, 18 reachable through AGENTS.md and ZERO orphans, because every relocated slug
+  // named a file `MEMORY.md` already links. The floor was reporting a defect that did not exist.
+  //
+  // It was also measuring noise. Of the 26 matches left in AGENTS.md only 18 are memory slugs at
+  // all; the other 8 are `x-phoenix-role`, `europe-west4-drams3a`, `eu-central-1`, `overflow-x-auto`
+  // and friends — header names, regions and a CSS class that happen to be lowercase and hyphenated.
+  // A threshold over that mixture cannot say anything precise about memory reachability.
+  //
+  // So the check is now the invariant itself, by NAME rather than by count, and it is strictly
+  // stronger than the floor it replaces. The map marks every memory whose ONLY pointer is AGENTS.md
+  // as "(inline — load-bearing)". Each of those MUST still be backticked in AGENTS.md: remove one
+  // without giving it an index line and that memory becomes unrecallable, which is the exact
+  // invisibility this whole file exists to prevent. A count could be satisfied by any 50 slugs; this
+  // cannot be satisfied by anything except the right ones.
+  //
+  // NOT checked in the other direction, deliberately: "every AGENTS.md slug appears in the map"
+  // would fail on those same 8 non-memory strings, and widening the pattern to exclude them would
+  // put a second, drifting copy of the convention in this file.
+  const slugsIn = (text: string) =>
+    new Set(
+      [...text.matchAll(new RegExp(TICK + "([a-z0-9]+(?:-[a-z0-9]+){2,})" + TICK, "g"))].map((m) => m[1]),
+    );
+
   const agents = readFileSync(join(process.cwd(), "AGENTS.md"), "utf8");
-  const slugs = new Set(
-    [...agents.matchAll(new RegExp(TICK + "([a-z0-9]+(?:-[a-z0-9]+){2,})" + TICK, "g"))].map((m) => m[1]),
-  );
+  const slugs = slugsIn(agents);
   assert.ok(
-    slugs.size >= 50,
-    `AGENTS.md names only ${slugs.size} backticked slugs; the reachability matcher assumes that `
-      + "convention, so a collapse here means relocated memories are being reported as orphans",
+    slugs.size > 0,
+    "AGENTS.md names no backticked slugs at all; the reachability matcher assumes that convention, "
+      + "so a collapse here means relocated memories are being reported as orphans",
+  );
+
+  const memoryMap = readFileSync(join(process.cwd(), "docs/agents-memory-map.md"), "utf8");
+  const loadBearing: string[] = [];
+  for (const line of memoryMap.split(/\r?\n/)) {
+    if (!/inline\s*[—-]\s*load-bearing/.test(line)) continue;
+    for (const slug of slugsIn(line)) loadBearing.push(slug);
+  }
+  // The marker is what makes the assertion below mean anything. If a rewrite drops the convention,
+  // `loadBearing` empties and the loop passes vacuously — green while saying nothing.
+  assert.ok(
+    loadBearing.length >= 10,
+    `docs/agents-memory-map.md marks only ${loadBearing.length} rows "(inline — load-bearing)"; that `
+      + "marker is the only record of which memories AGENTS.md is the ONLY pointer for, so losing it "
+      + "makes the check below vacuous rather than false",
+  );
+  assert.deepEqual(
+    loadBearing.filter((slug) => !slugs.has(slug)),
+    [],
+    "every memory the map marks load-bearing must still be named in AGENTS.md — each one listed here "
+      + "has had its last pointer removed and can no longer be recalled by anything (AGENTS.md 2.2, "
+      + "both halves or neither)",
   );
   assert.ok(
     slugs.has("tailwind-merge-strips-custom-named-font-sizes"),
