@@ -43,8 +43,7 @@ file holding the full account, under
 - **`pnpm run <script>` tries to PURGE `node_modules`** when the lockfile has moved, destroying the
   install before the script runs. Invoke directly: `node scripts/repo-doctor.mjs`.
   `pnpm-run-tries-to-purge-node-modules-when-the-lockfile-moved`
-- **`git show <ref>:<path>` returns EMPTY under MSYS** — the colon path is mangled. Use the PowerShell
-  tool. `git-ref-colon-path-is-mangled-by-msys-returns-empty`
+- **`git show <ref>:<path>` returns EMPTY under MSYS**, and **`grep -c $'\r'` matches EVERY line of a pure-LF file** — use the PowerShell tool, or count raw bytes in node. A CRLF working copy can read as CLEAN too: git normalises before comparing. **MSYS mangles a SEARCH PATTERN the same way: a `git grep`/`rg` pattern holding a leading-slash path matches NOTHING, silently** — `redirect("/employee-portals/` returned 0 against 41 real hits, and a zero here reads as *the code is clean*. Export `MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*'` before any such sweep, and never quote a count from one without it. `git-ref-colon-path-is-mangled-by-msys-returns-empty`
 - **`grep -c $'\r'` under MSYS reports a match on EVERY line of a pure-LF file, and a working copy can
   carry CRLF that `git status` calls clean.** Two separate faults that present as one argument, and
   between them they cost two sessions two rounds on 2026-08-29. The instrument first: MSYS translates
@@ -718,8 +717,7 @@ Phoenix business rules, and the index line at its cliff is the wrong place for t
   path (`isLocalDevHeaderRequest`, gated on `PHOENIX_ENABLE_DEV_AUTH_HEADERS=true`), which the pane
   genuinely cannot set. The cookie route is a different mechanism: `app/api/dev-auth/route.ts` sets an
   httpOnly `phoenix_dev_preview` cookie and 302s to the role's landing page, and
-  `accessContextFromDevPreviewToken` is consulted BEFORE the header path — so no proxy and no `hrId`
-  are needed. Measured in the pane on 2026-08-29 by navigating to the URL three times:
+  `accessContextFromDevPreviewToken` is consulted BEFORE the header path — so no proxy is needed. Measured in the pane on 2026-08-29 by navigating to the URL three times:
 
   | Navigated to | Landed on | `/admin` links | `/employee-portals` links |
   | --- | --- | --- | --- |
@@ -738,10 +736,19 @@ Phoenix business rules, and the index line at its cliff is the wrong place for t
   further up this file: each cookie switch replaces the browser's session, so sweeping N roles
   through the cookie clobbers it N times. The slug below is now a misnomer; the file it names leads
   with the correction.
+  **CORRECTED 2026-08-30 — it DOES take `hrId`, and `loginId` too.** The paragraph above said the
+  cookie route needs neither, and that was measured wrong. `app/api/dev-auth/route.ts` reads both
+  from the query string and bakes them into the session token, so
+  `?role=National%20Sales%20Manager&hrId=a-12&next=<path>` signs you in as THAT PERSON, not merely as
+  that role. It matters because without it there is no way to verify anything scoped to one manager's
+  own team in a browser — a role alone lands you on the right page as nobody in particular. Header-only
+  is the separate `x-phoenix-*` path, which the pane cannot set.
+
   **A HIDDEN pane also mixes correct rects with 0×0 ones** inside one measuring sweep, so a layout
   reading taken while it is hidden is part real and part garbage. Re-measure with the pane visible;
   do NOT retract the number — the 125px read was REAL and the repo MODEL of it was wrong (#2353).
   `dev-auth-is-header-only-browser-pane-cannot-use-it`
+
 - **Turbopack 500s with `0xc0000142` when the commit charge is exhausted** — close a session, do not
   debug the code. `turbopack-500s-with-0xc0000142-when-commit-is-full`
 - **Verify a 375px mobile layout with NO dev server.** `verify-a-mobile-layout-without-a-dev-server`
@@ -786,3 +793,32 @@ Phoenix business rules, and the index line at its cliff is the wrong place for t
   Committing over it ships the break and destroys the proof.
   `an-interrupted-session-leaves-the-tree-deliberately-broken`
 
+
+## Relocated from AGENTS.md — 2026-09-01
+
+Verbatim, unabridged. These entries had grown from cues into full accounts inside `AGENTS.md`,
+which auto-loads in full on every request. Per AGENTS.md §2.2 the cue — and every memory slug —
+stays in `AGENTS.md`; the account lives here.
+
+- **`next dev` in a worktree needs the explicit `--webpack` flag** — TURBOPACK is what rejects the §5 junction, not Next. Measured 2026-08-29: `--webpack` served a junctioned worktree fine (`Ready in 1770ms`, HMR and all). With and without `--turbopack` are NOT the same as `--webpack`, and this line said "CANNOT run" off exactly that gap. `turbopack-cannot-resolve-a-junctioned-node-modules-here` **`pnpm run dev` now CHOOSES for you** (`scripts/dev-server.mjs`: webpack on win32, turbopack elsewhere) — the platform guard has been deleted three times, most recently by #1435, so the measurements live in that file. **CORRECTED 2026-09-01 — the watchdog's 6 GB kills are NOT a turbopack trait, and this line said they were.** **SEVEN** webpack servers were killed at the same ceiling in the 38 minutes AFTER that launcher merged (02:19–02:46 Cairo, 6.03–7.23 GB, one started by the launcher itself WITH a memory cap set) — indistinguishable from the eight before it; 100 attempts / 98 succeeded all-time. So **the bundler is never the fix for the kill/restart sawtooth**. **You cannot attribute a kill to a bundler from `mem-watchdog.log`**: both spawn the same `start-server.js` child, so grepping the logged cmd for `turbopack` returns 0 of 100 and reads as *no turbopack kill ever happened* — attribute by TIMESTAMP, and count with `-CaseSensitive` or `KILL` also matches every `killed OK`. Turbopack's OWN failures are WEDGING (no answer to `GET /` in 25-60s) and the junction above. The sawtooth is a **watchdog-THRESHOLD** problem — this dev server legitimately reaches ~6 GB — made acute by running **two** servers at once (§5: one, ever); each cycle re-drove RAM to 94% and re-evicted the desktop to the pagefile. **`--max-old-space-size` cannot help**: measured no-op, `heap_size_limit` 4288 MB with AND without it, because the growth is off-heap.
+
+- **The SUITE runs with PRODUCTION credentials while a test sets `APP_ENV=production`.** So
+  `isProductionRuntime()` is TRUE for part of every run, and any module that writes on it writes to
+  PROD from a bare `pnpm run test`. Gate such a write on `PHOENIX_TEST_SUITE` — set in
+  `tests/run-tests.ts`, read nowhere else. `NODE_ENV` alone is not enough: it depends on two other
+  tests' restore discipline, and it is READ-ONLY in the type system, so assign it through a mutable
+  view. `the-test-suite-runs-with-production-credentials-and-app-env-production`
+
+- **Arabic + English in ONE value needs direction PER LINE, and `dir="auto"` on the block is the
+  WRONG fix.** Nothing in this repo can see either state, and both shipped through four green
+  checks. `auto` reads only the FIRST strong character, so a bilingual body turns wholly RTL and the
+  ENGLISH half then renders backwards (`Thanks for contacting Sato Pharma.` becomes
+  `.Thanks for contacting Sato Pharma`) — the exact mirror of the bug being fixed.
+
+  **SINGLE-language free text is the opposite case.** Block-level `dir="auto"` is correct there and
+  is already house style across 57 files. Do not "fix" those.
+
+  **Measure production for Arabic before changing a screen.**
+  `outstation_expense_requests.notes` carried Arabic in 17 of 48 rows; `coaching_reports` in **0 of
+  112**. A screen with no bilingual data does not have this bug.
+  `bilingual-bodies-need-direction-per-line-not-per-block`

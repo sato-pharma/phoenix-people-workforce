@@ -287,3 +287,52 @@ Three of the four are `eu-central-1`, and a different organization does not stop
 ref — so neither region nor org is a guard. Combined with both named MCP servers seeing all four,
 the `project_id` argument remains **the only thing separating staging from production on every
 call.**
+
+
+---
+
+## Relocated from AGENTS.md — 2026-09-01 (batch 2)
+
+Verbatim, unabridged. The cue — and every memory slug — stays in `AGENTS.md`; the account is here.
+
+- **The OUTBOX DRAIN is the one that needs care — it ran perfectly and did nothing for 13 days.** **A green cron and a 200 prove nothing here**, and **`attempted: 0` cannot by itself tell idle from broken — read `drainHealth` in the response body.** The head-of-line block is **FIXED 2026-08-27** on all three drains (outbox, telegram, push), with a dead-man's-switch alarm and an in-app + Telegram page behind it. **That alert is deliberately never email, and do not "fix" that back** — it fires precisely when the notification pipeline is the thing not delivering, so an emailed alert would depend on the channel it reports broken; it is best-effort and never throws. **Never infer a cron's health from database state alone, or from its status code** — read its execution history *and* its response body (on cron-job.org the job-list endpoint returns an empty body; only `GET /jobs/{id}/history/{identifier}` carries it). To check the drain, run its own window query — `status in ('pending','failed')` AND `(next_attempt_at is null or next_attempt_at <= now())` ordered by `created_at` **limit 50** — and count how many of those 50 are already exhausted. `outbox-drain-is-blocked-by-50-exhausted-rows-head-of-line`
+
+- **The production scheduler is the third-party `cron-job.org`, and it is running, not stalled.** Daily notifications and iReports sync/reconcile fire from that account. The 8 GCP Cloud Scheduler jobs still fire but **401 on every route** — a red herring, not proof anything is down. **Never tell the owner notifications/iReports are stalled without checking `cron-job.org` first.** **It cuts every request at 30 s, a PLATFORM cap `requestTimeout` cannot raise — but the server DOES finish the work afterwards**, so a long route logs a false `Failed (timeout)` while succeeding. ⚠ **A MID-SWEEP SNAPSHOT READS EXACTLY LIKE A TRUNCATED ONE.** Never judge completion from row timestamps while the job may still be running — read the terminal artefact (the audit row, the response body of `GET /jobs/{id}/history/{identifier}`, the final log line), or re-query only after the route's full known duration has elapsed. Slicing a long route into several ticks is still right: a permanently red job is one nobody reads. `src/lib/cron-control/*` is a dashboard over the dead GCP scheduler and remains inert.
+
+---
+
+## The protected-file lock, and why no prompt backs it any more (relocated from `CLAUDE.md`, 2026-09-01)
+
+`CLAUDE.md` lists four permanently-locked files. Three of them are held by **behaviour alone**. This
+is the history behind that, moved out of `CLAUDE.md` because it auto-loads on every request and this
+account is only wanted once a session is already looking.
+
+**The lock is now behavioral ONLY — no prompt backs it.** On 2026-08-14 the owner instructed that
+`permissions.ask` be emptied in `.claude/settings.json`. The `deny` list was cleared that day too,
+then its one block on the untrusted `mcp__b345e47e-…` connector was restored per AGENTS.md §8 — a
+silent hard block, not a prompt.
+
+**Two files, and they hold different lists.** This repo file denies that one connector, while
+user-level `~/.claude/settings.json` denies TWO — the same one and, since 2026-08-23, the owner's own
+`mcp__45bb6356-…`. Both counts read live 2026-08-29; check the file you actually mean.
+
+So the three file paths in `CLAUDE.md`'s table no longer have an entry there and **no dialog will
+fire on any of them.** (`office-allocation.ts` was never in that list — it has the CI lock instead,
+which is untouched and still turns a PR red.)
+
+`permissions.defaultMode` is **`default`** in user-level settings, changed from `auto` on 2026-08-31
+at the owner's instruction so that a would-be block becomes a prompt instead. Several hundred allow
+rules still wave routine calls through. **So nothing except the agent's own compliance now stands
+between a request and an edit to a protected file.**
+
+**Never read the absence of a prompt as approval** — that was already the rule while the entries
+existed, and it is the entire story now that they are gone. Ask the owner in plain words and wait for
+a plain answer.
+
+**Recovering the pre-2026-08-14 file.** It is recoverable from the commit *before* the lists were
+emptied: `git checkout 6fd35986^ -- .claude/settings.json` (`6fd35986` is the `chore(claude)` commit,
+#2117, that emptied both lists). Plain `git checkout .claude/settings.json` will NOT work once that
+commit is checked out — it only restores that commit's already-empty version.
+
+**Do not reintroduce a passphrase.** A shared one was removed 2026-07-31 (it sat in a committed file,
+so it authenticated nobody); approval belongs in the conversation, not in version control.
