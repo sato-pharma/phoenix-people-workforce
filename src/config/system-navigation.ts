@@ -1616,6 +1616,24 @@ const hrNavigationSectionSeeds = [
       { href: "/hr/employees", icon: UsersRound, label: "Employee Directory", permissions: [{ resource: "employees", action: "update" }] },
       { href: "/hr/employee-360", icon: IdCard, label: "Employee 360", permissions: [{ resource: "employee_profile", action: "read" }] },
       { href: "/hr/organogram", icon: Network, label: "Organogram", permissions: [{ resource: "organogram" }] },
+      // ONBOARDING PAPERWORK — HER COPY of the two rows the Recruitment section carries below.
+      // Listed twice with mutually-exclusive gates, the same pattern Organogram already uses:
+      // getSections dedupes by href and keeps the FIRST occurrence, so for HR Operations this copy
+      // wins, the Recruitment copies drop out, and that section is left with zero visible rows for
+      // her — which removes the heading entirely rather than hiding it.
+      //
+      // Why the move: both screens gate on `employee_documents`, a personnel-file grant she holds
+      // company-wide since #2806. They are onboarding paperwork, not recruiting. Reading them under
+      // a "Recruitment" heading advertised a function this seat does not hold — on the very seat the
+      // owner had just blocked from the CV Database — which is the same defect class as the role key
+      // that leaked into the Attendance hero on 2026-09-01 (#2842): correct page, wrong label.
+      //
+      // HR Advisory is unaffected: `roles` hides this copy from her, so she keeps both rows under
+      // Recruitment where they belong for a recruiting seat. `excludedRoles` keeps the Super Admin
+      // there too — navigationItemVisible waives the `roles` check for that role but never
+      // `excludedRoles`, so without it these rows would silently relocate on his rail as well.
+      { href: "/hr/hiring-documents", icon: FileCheck2, label: "Hiring Documents", permissions: [{ resource: "employee_documents" }], roles: ["HR Operations"], excludedRoles: ["Super Admin"] },
+      { href: "/hr/hiring-pack", icon: FileSignature, label: "HR Forms", permissions: [{ resource: "employee_documents" }], roles: ["HR Operations"], excludedRoles: ["Super Admin"] },
       // Probation MOVED OUT of this section on 2026-09-01 (owner) to "Performance & Probation",
       // where its case list and its decision dashboard now sit together. Do not add a second
       // Probation row back here — one module in two sections is what that move undid.

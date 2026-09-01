@@ -1,12 +1,16 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
+import { getNavigationSections } from "../src/config/system-navigation.ts";
 import {
+  buildPermissionLookup,
   canAccess,
   createAccessContext,
   isHrAuthorityRole,
+  permissionMatrix,
   type PhoenixRole,
 } from "../src/lib/auth/permissions.ts";
+import { getSections } from "../src/lib/navigation/active-path.ts";
 
 /**
  * The CV Database is a RECRUITING screen, and HR Operations is not a recruiting seat.
@@ -111,6 +115,62 @@ export async function runCvDatabaseRecruitingBoundaryTests() {
       /excludedRoles/,
       `The ${href} nav entry must not use excludedRoles — an exclusion hides the row and leaves the `
         + "URL open, which is exactly the half-fix this rule replaced.",
+    );
+  }
+
+  // ---------------------------------------------------------------- no recruiting HEADING either
+  //
+  // Blocking the page is half the instruction. The seat was still reading its two onboarding
+  // document screens under a section headed "Recruitment", which announces a function she does not
+  // hold on the very rail the CV Database was just taken off. Same defect class as the role key
+  // that leaked into the Attendance hero (#2842): the page is right, the label is not.
+  //
+  // The fix is a second copy of the two rows in "People", gated to her — so the assertion below is
+  // deliberately BOTH halves. Deleting the heading by deleting the rows would pass a check that
+  // only looked for the absence of "Recruitment", and would cost her two screens the owner granted
+  // company-wide in #2806.
+  const railSections = (role: PhoenixRole) =>
+    getSections(getNavigationSections("hr"), "hr", buildPermissionLookup(permissionMatrix, role), role);
+
+  const operations = railSections("HR Operations" as PhoenixRole);
+  const operationsRows = operations.flatMap((section) => section.items);
+
+  assert.ok(
+    operationsRows.length >= 25,
+    `the HR Operations rail built only ${operationsRows.length} rows — the shell did not build, so `
+      + "every assertion below would pass vacuously",
+  );
+
+  assert.equal(
+    operations.some((section) => section.label === "Recruitment"),
+    false,
+    'the HR Operations Coordinator is offered a "Recruitment" section. She holds no recruiting '
+      + "grant — that is the whole point of the CV Database block above — so the heading names a "
+      + "function this seat does not have.",
+  );
+
+  for (const href of ["/hr/hiring-documents", "/hr/hiring-pack"]) {
+    const home = operations.find((section) => section.items.some((item) => item.href === href));
+    assert.equal(
+      home?.label,
+      "People",
+      `HR Operations lost ${href} from "People". Removing the Recruitment heading must RELOCATE `
+        + "these two rows, never drop them — she holds employee_documents company-wide (#2806), and "
+        + "they are onboarding paperwork rather than recruiting screens.",
+    );
+  }
+
+  // The other two seats keep them exactly where they were. A row listed in two sections is one
+  // careless edit away from moving for everybody, and for a recruiting seat "Recruitment" is the
+  // correct home.
+  for (const seat of ["HR Advisory", "Super Admin"] as const) {
+    const home = railSections(seat as PhoenixRole)
+      .find((section) => section.items.some((item) => item.href === "/hr/hiring-documents"));
+    assert.equal(
+      home?.label,
+      "Recruitment",
+      `${seat} no longer finds Hiring Documents under "Recruitment". Narrowing a shared row for `
+        + "HR Operations must narrow it for HER only.",
     );
   }
 }
