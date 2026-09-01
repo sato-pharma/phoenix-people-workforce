@@ -157,6 +157,7 @@ up. **Adding a trap? Put the hook here and the account in the doc — never the 
 - **An append-only table needs a STATEMENT-level `BEFORE TRUNCATE` trigger** — `TRUNCATE` fires no ROW triggers, and a revoke never binds the OWNER. Prove all three verbs are refused against a real database. `append-only-tables-need-a-truncate-trigger`
 - **RLS on with no `authenticated` grant is the NORM here — 222 of 308 tables — not a defect class to sweep.** Granting is a pure widening. `rls-policy-without-an-authenticated-grant-is-usually-correct`
 - **ONE `auth.users` row with `banned_until = 'infinity'` 500s the ENTIRE GoTrue admin API** — page-shaped, so a small `per_page` probe passes. Retire with the app's finite `876000h`. `banned-until-infinity-breaks-the-whole-auth-admin-api`
+- **`au.f_monthly_achievement` SERVES A PRECOMPUTED ROLLUP, and its fingerprint covers the CONFIG surface — NOT the sales data.** So repairing an import or rollup row changes NOTHING on Sales vs Target or its five sibling surfaces: no error, no staleness marker, the old number just keeps coming. Run `au.f_refresh_monthly_attribution(period)` after ANY sales-row repair, and diff stored against live first so the refresh is a check, not a hope. `attribution-rollup-fingerprint-ignores-the-sales-data`
 
 **Probing, attributing and reporting production**
 
