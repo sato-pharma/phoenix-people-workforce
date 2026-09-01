@@ -3735,9 +3735,10 @@ export function injectDirectIntoMatrix(
     const productCode = normalizeCode(cell.productCode);
     const index = colIndex.get(productCode);
     if (index === undefined) return; // product not part of this line's columns
-    // The period floor, not the presence of an area, decides this. 2026-01 and 2026-07 carry areas
-    // of manual provenance that older code never read and that published months depend on staying
-    // where they are — see DIRECT_AREA_STAMPED_FROM_PERIOD.
+    // The overlay-owned rule, not the presence of an area, decides this. July's placement is the
+    // owner's own mapping and is applied separately by applyJulyDirectAreasToBreakdown, so the
+    // row's own area must not fold there; every other month honours a manually-placed area (owner
+    // ruling 2026-09-01) — see OVERLAY_OWNED_DIRECT_PERIODS.
     const areaCode = directRowsCarryOwnArea(matrix.period) ? normalizeCode(cell.areaCode ?? "") : "";
     if (areaCode) {
       const key = `${areaCode}|${productCode}`;
@@ -4607,8 +4608,8 @@ export async function loadMonthlyClosingParts(input?: {
   const cells: MonthlyClosingAggregateCell[] = matrixCellsFromDistributorRows(distributorRows);
   const officeData: MonthlyClosingAggregateCell[] = officeCellsFromDistributorRows(distributorRows);
 
-  // Belt and braces with the SQL floor: strip the area at the boundary for any month whose direct
-  // rows predate the Direct Orders module stamping one. Doing it HERE means every downstream
+  // Belt and braces with the SQL mirror: strip the area at the boundary for any month an overlay
+  // places instead of the row (July). Doing it HERE means every downstream
   // consumer — the organogram allocator as well as the injector — sees exactly what it saw before,
   // so no second copy of the rule can drift out of step with this one.
   const directCarriesArea = directRowsCarryOwnArea(selectedPeriod);

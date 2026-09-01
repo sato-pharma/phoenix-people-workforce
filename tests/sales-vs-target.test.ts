@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import type { AchievementRow } from "../src/lib/sales/monthly-targets.ts";
 import {
   buildTrend,
   coverageRatio,
+  dropRowsWithNoSalesLine,
   growthOf,
   isValidVsTargetPeriod,
   pickLandingPeriod,
@@ -305,5 +307,41 @@ export function runSalesVsTargetTests() {
     visibleLevelsForBound({ kind: "none" }).area,
     false,
     "a viewer with no territory is offered no levels at all",
+  );
+  // ── Head Office never reaches an achievement number ────────────────────────
+  // Measured on production 2026-09-01: `au.f_monthly_attribution`'s unmapped branch returned 104
+  // rows carrying NO line at all across 2026-01 … 2026-07 — every one of them RY001
+  // ROYANOXICAM 8MG 20 TAB, whose line is Head Office — worth 10,458.00 EGP. Monthly Closing never
+  // books Head Office, so every company total taken from this loader read HIGH by that amount while
+  // the closing read correct. The golden rule is that Head Office is FILTERED, never mapped.
+  const withHeadOffice = [
+    { lineCode: "anti_infective", areaCode: "D23", actualValue: 55_407.6 },
+    { lineCode: null, areaCode: "AB4", actualValue: 714 },
+    { lineCode: "   ", areaCode: "D14", actualValue: 462 },
+    { lineCode: "", areaCode: "CA4", actualValue: 252 },
+    { lineCode: "pedia", areaCode: "GZ3", actualValue: 12_705.75 },
+  ];
+  const lined = dropRowsWithNoSalesLine(withHeadOffice);
+  assert.deepEqual(
+    lined.map((row) => row.areaCode),
+    ["D23", "GZ3"],
+    "THE HEADLINE: a row carrying no sales line is Head Office money that Monthly Closing never " +
+      "books. It must be dropped — null, empty AND whitespace-only alike — or the dashboard, the " +
+      "portal, Business Review and Employee 360 all quote a company total the closing disagrees with.",
+  );
+  assert.equal(
+    lined.reduce((sum, row) => sum + row.actualValue, 0),
+    68_113.35,
+    "the money that survives is exactly the lined money — dropping must never touch a real line",
+  );
+  assert.deepEqual(dropRowsWithNoSalesLine([]), [], "an empty range drops to an empty range, never throws");
+
+  // The filter is worthless if the loader stops calling it, and no unit test can see that wiring —
+  // the loader needs a database. Pinned by reading the source, whole-file, never a byte window.
+  const vsTargetSource = readFileSync(new URL("../src/lib/sales/vs-target.ts", import.meta.url), "utf8");
+  assert.ok(
+    vsTargetSource.includes("return dropRowsWithNoSalesLine(rows.map((row) => ({"),
+    "loadAchievementRangeUncached must wrap its mapper in dropRowsWithNoSalesLine — filtering BEFORE " +
+      "the cache, so a cached range can never replay the Head Office leak",
   );
 }

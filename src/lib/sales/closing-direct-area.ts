@@ -28,34 +28,43 @@
 export const SYNTHETIC_DIRECT_AREA_CODE = "DIRECT";
 
 /**
- * The first period whose direct rows carry an area the **Direct Orders module itself** wrote.
+ * The periods whose direct placement comes from a hand-mapped OVERLAY rather than from the row.
  *
- * A direct row having an `area_code` is NOT enough to trust it — three different things put one
- * there, and only the third is the customer's own geography:
+ * A direct row's own `area_code` is the normal authority — `au.f_monthly_attribution` reads it and
+ * credits that area's rep, so the closing must agree or the two report different money for the same
+ * sale. Owner ruling 2026-09-01: **honour the manual areas.** Where a row carries a hand-placed
+ * area, the closing places the money there.
  *
- *   * **2026-02 … 2026-06** — nothing. 0 of 554 rows carry an area or a brick.
- *   * **2026-01 (19 of 71 rows) and 2026-07 (35 of 51)** — areas of manual provenance, no bricks.
- *     July's placement is the OWNER'S OWN finalized mapping, which lives in `july-2026-direct-orders.ts`
- *     and must win: it covers Anti Infective and Pedia only, and July CNS is a locked closing.
- *   * **2026-08 onward** — all 22 rows carry an area AND a brick, written by `direct_order_request`.
- *     `au.f_monthly_attribution` reads that area and credits its rep, so the closing must agree.
+ * July 2026 is the one exception, and it is not about trusting the row — it is about which copy of
+ * the same mapping wins:
  *
- * Reading an area off an older row would move published months: it would fold July CNS onto areas
- * behind the owner's mapping, and it would shrink the `__DIRECT__` bucket that
- * `applyJulyDirectAreasToBreakdown` reconciles against — failing that check and papering the
- * published July sheet with a "they are not the same money" warning. Hence a floor, not a
- * has-an-area test. The same floor is repeated in SQL so the two closing RPCs cannot hand an older
- * month an area at all.
+ *   * **2026-01** — 17 Anti Infective rows on 10 real areas, manually placed, no bricks, all
+ *     resolving through `au.sos_area_crosswalk`. Honoured from 2026-09-01. Before that a blanket
+ *     pre-August floor discarded them, so the closing left 189,319.95 EGP in the Direct band while
+ *     Sales vs Target credited the ten areas — the last surface disagreement
+ *     `scripts/check-sales-truth.ts` reported.
+ *   * **2026-02 … 2026-06** — nothing. 0 of 554 rows carry an area or a brick, so this is inert.
+ *   * **2026-07** — the OWNER'S OWN finalized mapping, which lives in `july-2026-direct-orders.ts`
+ *     and is applied by `applyJulyDirectAreasToBreakdown`. That refuses to run unless the
+ *     `__DIRECT__` bucket reconciles to the penny, so emitting the row's own area here would shrink
+ *     the bucket, fail the check, and paper the published July sheet with a "they are not the same
+ *     money" warning. The rows now carry the same 11 areas (stamped on production 2026-09-01 so
+ *     Sales vs Target agrees), which is exactly why the overlay must stay the one that places them.
+ *   * **2026-08 onward** — every row carries an area AND a brick, written by `direct_order_request`.
+ *
+ * The same list is mirrored in SQL, in `phx_monthly_closing_direct` and
+ * `phx_closing_channel_breakdown`. Changing one without the other splits the closing from itself.
  */
-export const DIRECT_AREA_STAMPED_FROM_PERIOD = "2026-08";
+export const OVERLAY_OWNED_DIRECT_PERIODS: readonly string[] = ["2026-07"];
 
 /**
- * True when this period's direct rows carry geography written by the Direct Orders module, and the
- * closing should therefore place direct money on its own area. `YYYY-MM` sorts lexically, so a plain
- * string compare is the whole rule.
+ * True when the closing should place this period's direct money on the row's own area — every
+ * period except one an overlay already places. An unknown period never folds.
  */
 export function directRowsCarryOwnArea(period: string | null | undefined): boolean {
-  return String(period ?? "").trim() >= DIRECT_AREA_STAMPED_FROM_PERIOD;
+  const trimmed = String(period ?? "").trim();
+  if (trimmed === "") return false;
+  return !OVERLAY_OWNED_DIRECT_PERIODS.includes(trimmed);
 }
 
 /**

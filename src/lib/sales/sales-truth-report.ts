@@ -15,9 +15,10 @@
 //   2. "Source of Sales" — the area each sale is filed under in the import rollup, which is what
 //      the Source of Sales screen renders. Distributor money comes from the closing's own
 //      phx_closing_distributor_product (identical predicates, areas untouched); direct money is
-//      read from source_of_sales_fact_rollup, because phx_monthly_closing_direct deliberately
-//      BLANKS the area for every month before 2026-08 and would therefore hide the very
-//      attribution this surface exists to check.
+//      read from source_of_sales_fact_rollup, because phx_monthly_closing_direct blanks the area
+//      for the overlay-owned months — July 2026 alone since 2026-09-01, every month before
+//      2026-08 before that — and would therefore hide the very attribution this surface exists to
+//      check.
 //
 // ── WHY THE DELIBERATE TRANSFORMS ARE NORMALISED AWAY, NOT REPORTED ──────────────────────────
 // Monthly Closing applies three transforms the database knows nothing about, and every one of them
