@@ -1933,6 +1933,50 @@ const HR_SEAT_SALARY_REDACTED_HR_IDS = new Set(
   ["B-10", "AA", "A-12", "AB", "OF-0002", "B-185", "A-9"].map((id) => normalizeHrId(id)),
 );
 
+/**
+ * THE PAY THE HR BUSINESS PARTNER MAY SEE — one list, two screens.
+ *
+ * The owner set this boundary on 2026-09-01, about the Payslips Center: "you will make her able to
+ * see the district managers, the Medicare reps, and herself only in the payslips." The Employee
+ * Directory opened to her in the same breath, and it carries base/basic/gross/net salary columns —
+ * so the same sentence has to govern both, or the restriction he asked for is undone by the screen
+ * next to it.
+ *
+ * Spelled as `salary_records.job_title` and `employees.jobTitle` actually hold them, and compared
+ * case-INSENSITIVELY: both columns are free text and already carry casing drift ("Sfe Manager"
+ * beside "SFE Manager"). Exact-after-lowercasing, never a prefix — "Regional Sales Manager" must
+ * never be admitted by "District Sales Manager".
+ *
+ * This is HER boundary. It does not touch HR Operations, who runs payroll inputs company-wide.
+ */
+export const HR_ADVISORY_COMPENSATION_JOB_TITLES = [
+  "District Sales Manager",
+  "Medical Representative",
+] as const;
+
+function compensationMatchKey(value: string | null | undefined): string {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+/**
+ * May the HR Business Partner see this person's pay?
+ *
+ * `viewerHrId` is compared separately from the titles because her OWN title is not on the list,
+ * and folding it in would open every other HR Business Partner's pay to her. HR ids are mixed
+ * case in this database, so both sides are lowered before they are compared.
+ */
+export function matchesHrAdvisoryCompensationAudience(
+  row: { hrId: string | null | undefined; jobTitle: string | null | undefined },
+  viewerHrId: string | null | undefined,
+): boolean {
+  const titleKey = compensationMatchKey(row.jobTitle);
+  if (HR_ADVISORY_COMPENSATION_JOB_TITLES.some((title) => compensationMatchKey(title) === titleKey)) {
+    return true;
+  }
+  const selfKey = compensationMatchKey(viewerHrId);
+  return selfKey.length > 0 && compensationMatchKey(row.hrId) === selfKey;
+}
+
 /** True when `context` must not see (or write) the real salary figures for `hrId`. */
 export function isSalaryRedactedForViewer(
   context: Pick<AccessContext, "role">,
@@ -1943,7 +1987,15 @@ export function isSalaryRedactedForViewer(
 }
 
 function redactSalaryFields(row: EmployeeDirectoryRow, context: AccessContext): EmployeeDirectoryRow {
-  if (!isSalaryRedactedForViewer(context, row.hrId)) return row;
+  // Two rules, either of which blanks the money. The named-seniors rule above covers both HR seats
+  // and predates this; the second is the HR Business Partner's compensation audience, added
+  // 2026-09-01 when the Employee Directory was opened to her — see
+  // HR_ADVISORY_COMPENSATION_JOB_TITLES. She keeps every other column on every row: this hides pay,
+  // never people, so the directory she was given is the whole directory.
+  const outsideHerCompensationAudience =
+    context.role === "HR Advisory" &&
+    !matchesHrAdvisoryCompensationAudience({ hrId: row.hrId, jobTitle: row.jobTitle }, context.hrId);
+  if (!isSalaryRedactedForViewer(context, row.hrId) && !outsideHerCompensationAudience) return row;
   return {
     ...row,
     baseSalary: null,

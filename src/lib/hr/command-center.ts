@@ -31,13 +31,18 @@
  * every tile below reads a value something in the product actually writes.
  */
 
-import type { AccessContext } from "@/lib/auth/permissions";
+import {
+  buildPermissionLookup,
+  permissionMatrix,
+  type AccessContext,
+} from "@/lib/auth/permissions";
 import {
   getHrFunction,
   HR_ROLE_BUNDLES,
   type HrBundleName,
   type HrFunctionKey,
 } from "@/lib/auth/hr-functions";
+import { getEmployeeAttendanceData } from "@/lib/attendance/employee-attendance";
 import { getAttendanceExceptions } from "@/lib/attendance/exceptions";
 import { getClearanceDashboardData } from "@/lib/clearance/service";
 import { getContractRenewalDashboardData } from "@/lib/contracts/service";
@@ -47,13 +52,23 @@ import {
   isActiveDirectoryEmployee,
 } from "@/lib/employees/employee-directory";
 import { hasMissingEmployeeRecordData } from "@/lib/employees/employee-record-health";
-import { currentCairoDateParts } from "@/lib/i18n/format";
+import { getExcuseWorkspace } from "@/lib/excuses/service";
+import { currentCairoDateOnlyIso, currentCairoDateParts } from "@/lib/i18n/format";
+import { toHrNamespacePath } from "@/lib/navigation/shell-headers";
 import { listOffers } from "@/lib/offers/service";
 import { getProbationRows, isProbationDecisionOutstanding } from "@/lib/probation/service";
 import { getRecruitmentDashboard } from "@/lib/recruitment/dashboard";
 import { getResignationsDashboardData } from "@/lib/resignations/service";
 import { getRetentionDashboardData } from "@/lib/retention/service";
 import { listAllSupportRequests } from "@/lib/support-requests/service";
+import { getVacationRequestPageData } from "@/lib/vacation/service";
+import { resolvePersonalWorkspaceTabs } from "@/lib/workspace/personal-workspace-nav";
+import {
+  buildHrTodayTasks,
+  openWorkforceSeats,
+  splitVacanciesByRequisition,
+  type HrTask,
+} from "@/lib/hr/today-tasks";
 
 /** Matches the tones the finance command centre's MetricTile accepts, deliberately. */
 export type HrCommandTone = "amber" | "emerald" | "rose" | "slate";
@@ -67,6 +82,20 @@ export type HrCommandTile = {
   sub: string;
   tone: HrCommandTone;
   value: number;
+  /**
+   * Rendered in the figure's place when the fact is NOT a count.
+   *
+   * Exactly one tile needs this and it needs it badly: "Payroll Month" printed
+   * `Number(monthKey.slice(5))`, so HR Operations' board carried a tile reading **9** in the same
+   * 30px black type as a queue depth. Nine what? It is September — a name written as a code, on a
+   * page whose every other figure is a countable thing, and the owner's standing rule is that a
+   * screen shows human-readable names and never raw codes.
+   *
+   * `value` is still populated, so anything that sorts or sums tiles keeps working; this only
+   * changes what is DRAWN. Reach for it when a tile's fact has no unit — never to dress a real
+   * count up as prose.
+   */
+  valueLabel?: string;
 };
 
 export type HrCommandGroup = {
@@ -76,9 +105,53 @@ export type HrCommandGroup = {
   tiles: HrCommandTile[];
 };
 
+/**
+ * The viewer's OWN employment record, merged onto this page on 2026-09-01 at the owner's
+ * instruction: "make the overview dashboard merged between HR overview and my workspace into one
+ * landing overview page."
+ *
+ * It used to be a second landing page at /workspace, one sidebar row below this one. Two overview
+ * pages for one seat is one too many — she signs in, lands here, and the four facts about her own
+ * employment (leave, excuses, attendance) were a click away on a page that repeated this one's
+ * furniture. They are the same fields the /workspace dashboard renders, from the same three
+ * services, so the merged section and the pages behind it cannot disagree.
+ *
+ * NO PAYROLL FIGURE APPEARS IN IT, and none may be added: the owner's standing rule is that no
+ * overview or landing page shows a payslip for any role — not the amount and not the month label.
+ * Payslips stay one click away, in `pages`.
+ *
+ * EVERY FIELD IS NULLABLE AND MEANS "this source did not answer", never zero. A zero here would
+ * read as "you have no leave left" or "you were never at work this month".
+ */
+export type HrPersonalRecord = {
+  /** This month's fingerprint record. Null when the attendance source did not answer. */
+  attendance: { exceptions: number; monthLabel: string; recordedDays: number } | null;
+  /** This month's excuse allowance. Null when the excuse source did not answer. */
+  excuses: { allowance: number; pending: number; remaining: number; used: number } | null;
+  /** Annual leave, recomputed live (never a stored snapshot). Null when it did not answer. */
+  leave: { balanceDays: number; entitlementDays: number; usedDays: number } | null;
+  /**
+   * Her own personal pages, already in the /hr namespace. Resolved with the SAME function the
+   * workspace tab strip uses, which mirrors each page's own guard verbatim — so this list can
+   * never offer a page the guard would then bounce her off.
+   */
+  pages: { href: string; label: string }[];
+  /** Her own excuse requests, newest first. Null when the source did not answer. */
+  requests:
+    | { date: string; durationHours: number; id: string; status: string; type: string }[]
+    | null;
+};
+
 export type HrCommandCenterData = {
   groups: HrCommandGroup[];
+  /** The viewer's own record — the merged half of this page. Never another employee's. */
+  personal: HrPersonalRecord;
   seat: HrBundleName;
+  /**
+   * The seat's actual work, as named rows. The tiles below answer "how many"; this answers "which"
+   * — see src/lib/hr/today-tasks.ts for why a landing page needs the second question answered.
+   */
+  tasks: HrTask[];
   /**
    * Sources that threw. Named rather than counted so the page can say WHICH figures are missing:
    * a dashboard silently short a group reads as "nothing to do today", which is the one wrong
@@ -125,7 +198,13 @@ const SOURCES_BY_FUNCTION: Record<HrFunctionKey, readonly SourceKey[]> = {
   // HR Advisory a figure linking to /hr/clearance, which she has no grant to open.
   people_records: ["clearance", "contracts", "directory", "resignations"],
   performance_probation: ["probation"],
-  recruiting: ["recruitment", "offers"],
+  // `directory` is a REAL recruiting dependency, declared here rather than left to luck. The
+  // recruiting tiles and tasks compare open requisitions against open organogram SEATS, and until
+  // 2026-09-01 that comparison worked only because the one seat holding `recruiting` also holds
+  // `workforce_insight`, which loads the directory for its own reasons. Move recruiting into a
+  // bundle without it and the comparison would silently stop happening — no error, just the
+  // "Open Vacancies 3" answer coming back.
+  recruiting: ["directory", "recruitment", "offers"],
   time_attendance: ["attendanceExceptions"],
   workforce_insight: ["directory"],
 };
@@ -169,6 +248,14 @@ function currentCairoMonthKey(): string {
   return `${year}-${String(month).padStart(2, "0")}`;
 }
 
+/** "September" for the running Cairo month. See `HrCommandTile.valueLabel` for why. */
+function currentCairoMonthLabel(): string {
+  const { year, month } = currentCairoDateParts();
+  return new Intl.DateTimeFormat("en-GB", { month: "long", timeZone: "UTC" }).format(
+    new Date(`${year}-${String(month).padStart(2, "0")}-01T00:00:00Z`),
+  );
+}
+
 /** Whole days between an ISO timestamp and now, floored at 0. Null input means "no age". */
 function daysSince(iso: string | null | undefined): number {
   if (!iso) return 0;
@@ -194,6 +281,7 @@ function tile(
   return { href, key, label, sub, tone, value };
 }
 
+
 /**
  * The tiles each function contributes, given whatever loaded. Returns null when the function's
  * source is unavailable, which drops the group rather than rendering a row of zeroes that would
@@ -213,13 +301,36 @@ const TILES_BY_FUNCTION: Record<
       (stage.interview_scheduling ?? 0) +
       (stage.hr_interview ?? 0) +
       (stage.hiring_manager_interview ?? 0);
+    // "Open Vacancies" until 2026-09-01, when the owner asked how it could possibly read 3. It
+    // was counting ATS REQUISITIONS, which is a true number and the wrong word: production held
+    // exactly 5 requisitions ever, and all 3 in an open status pointed at seats already FILLED,
+    // while 45 seats stood genuinely empty in the organogram with no requisition against any of
+    // them. So the label now says what it counts, and the tile beside it carries the number the
+    // word "vacancy" made anyone expect. Both come from one helper (`splitVacanciesByRequisition`)
+    // that the task list also calls, so the two cannot drift apart again.
     const tiles = [
-      tile("open-requisitions", "Open Vacancies", dashboard.summary.openRequisitions, "approved & live", "/hr/recruitment", dashboard.summary.openRequisitions > 0 ? "amber" : "slate"),
+      tile("open-requisitions", "Open Requisitions", dashboard.summary.openRequisitions, "raised in the ATS", "/hr/recruitment", dashboard.summary.openRequisitions > 0 ? "amber" : "slate"),
       tile("in-screening", "In Screening", screening, "awaiting your review", "/hr/recruitment", screening > 0 ? "amber" : "slate"),
       tile("interviewing", "Interviewing", interviewing, "scheduled or in progress", "/hr/recruitment"),
       tile("active-applications", "Active Candidates", dashboard.summary.activeApplications, "still in the pipeline", "/hr/cv-database"),
       tile("hired", "Hired", dashboard.summary.hires, "converted to employees", "/hr/recruitment", dashboard.summary.hires > 0 ? "emerald" : "slate"),
     ];
+    // The seat side of the same question. Absent rather than zero when the directory did not
+    // load: printing 0 there would say "every empty seat is being recruited", which is the exact
+    // false all-clear this pair of tiles exists to stop.
+    if (loaded.directory) {
+      const { staleRequisitions, unrecruitedSeats } = splitVacanciesByRequisition(
+        dashboard.requisitions,
+        openWorkforceSeats(loaded.directory),
+      );
+      tiles.splice(
+        1,
+        0,
+        tile("seats-unrecruited", "Seats Not Recruited", unrecruitedSeats.length, "no requisition raised", "/hr/reports/vacancies", unrecruitedSeats.length > 0 ? "rose" : "emerald"),
+        tile("requisitions-stale", "On A Filled Seat", staleRequisitions.length, "requisition still open", "/hr/recruitment", staleRequisitions.length > 0 ? "amber" : "emerald"),
+      );
+    }
+
     // Offers load separately, so a failure there costs this one tile rather than the whole group.
     if (loaded.offers) {
       const awaiting = loaded.offers.filter((offer) => offer.status === "sent").length;
@@ -267,8 +378,18 @@ const TILES_BY_FUNCTION: Record<
   workforce_insight: (loaded) => {
     const directory = loaded.directory;
     if (!directory) return null;
-    const openSeats =
-      directory.lookups.medicalRepVacancies.length + directory.lookups.workforceVacancies.length;
+    // TWO separate inflations had to come out of this one tile, both measured 2026-09-01.
+    //
+    // First: `workforceVacancies` is EVERY open seat while `medicalRepVacancies` is the
+    // medical-rep SUBSET of that same list (vacancy-closer.ts: one calls getOpenVacancies(), the
+    // other filters it). Adding them counted all 43 medical-rep seats twice and printed 88.
+    //
+    // Second: the raw list is one row per vacancy EVENT, not per seat, so even a single read of
+    // it prints 45 where the Organogram, the Vacancy Report, the CEO landing and the Admin Data
+    // Health card all print 33 — this tile LINKS to /hr/reports/vacancies, so the two numbers sit
+    // one click apart. `listUnoccupiedWorkforceSeats` is the one place that dedup rule lives.
+    // Only ACTIVE employees may mark a seat filled: a resigned person's seat is still vacant.
+    const openSeats = openWorkforceSeats(directory).length;
     return [
       tile("headcount", "Active Headcount", directory.summary.activeEmployees, "on the payroll", "/hr/employee-360", "emerald"),
       tile("open-seats", "Vacant Seats", openSeats, "in the organogram", "/hr/reports/vacancies", openSeats > 0 ? "amber" : "slate"),
@@ -356,7 +477,12 @@ const TILES_BY_FUNCTION: Record<
     return [
       tile("deductions-pending", "Awaiting Decision", pendingCandidates, "this month", "/hr/admin/payroll-management", pendingCandidates > 0 ? "amber" : "emerald"),
       tile("deductions-ready", "Ready To Publish", willPublishCandidates, "this month", "/hr/admin/payroll-management"),
-      tile("payroll-month", "Payroll Month", Number(currentCairoMonthKey().slice(5)), "running period", "/hr/admin/payroll-management"),
+      // The month is the one fact on this page with no unit, so it is the one tile that draws a
+      // NAME. `value` still holds the month number for anything that reads tiles numerically.
+      {
+        ...tile("payroll-month", "Payroll Month", Number(currentCairoMonthKey().slice(5)), "running period", "/hr/admin/payroll-management"),
+        valueLabel: currentCairoMonthLabel(),
+      },
     ];
   },
 
@@ -412,6 +538,91 @@ const SOURCE_LABELS: Record<SourceKey, string> = {
   supportRequests: "HR support requests",
 };
 
+/**
+ * The viewer's own employment record.
+ *
+ * Loaded UNCONDITIONALLY, unlike everything above it, and that asymmetry is the point. The tile
+ * sources are gated on the seat's function bundle because reading them is doing HR work — reading
+ * the deductions month under a seat whose job description forbids it would be wrong even though
+ * the query would succeed. These three sources are about the person holding the seat, and every
+ * employee holds one of these regardless of which functions they were granted. `SourceKey` and
+ * `sourcesFor` are therefore deliberately untouched, and `tests/hr-command-center.test.ts` still
+ * asserts exactly what it did about them.
+ *
+ * Each source fails alone and independently of the tiles: a dead attendance table costs the two
+ * attendance fields and nothing else on the page.
+ */
+async function loadPersonalRecord(access: AccessContext): Promise<HrPersonalRecord> {
+  const { year, month } = currentCairoDateParts();
+  const monthStart = `${year}-${String(month).padStart(2, "0")}-01`;
+  const monthLabel = new Intl.DateTimeFormat("en-GB", {
+    month: "long",
+    timeZone: "UTC",
+    year: "numeric",
+  }).format(new Date(`${monthStart}T00:00:00Z`));
+
+  const [excuses, leave, attendance] = await Promise.all([
+    getExcuseWorkspace(access).catch(() => null),
+    getVacationRequestPageData(access)
+      .then((data) => data.balance)
+      .catch(() => null),
+    access.hrId
+      ? getEmployeeAttendanceData(access.hrId, monthStart, currentCairoDateOnlyIso()).catch(
+          () => null,
+        )
+      : Promise.resolve(null),
+  ]);
+
+  // Her personal pages, minus the one she is already on. `/workspace` used to be a second landing
+  // page in its own right; this page IS that page now, so linking to it would send her in a
+  // circle. `toHrNamespacePath` because these seats live at /hr/… — a bare /workspace address
+  // redirects them straight back here, which would read as a broken link.
+  const pages = resolvePersonalWorkspaceTabs(
+    access,
+    buildPermissionLookup(permissionMatrix, access.role),
+  )
+    .filter((tab) => tab.href !== "/workspace")
+    .map((tab) => ({ href: toHrNamespacePath(tab.href), label: tab.label }));
+
+  return {
+    attendance: attendance
+      ? {
+          exceptions: attendance.rows.filter((row) => row.hasException).length,
+          monthLabel,
+          recordedDays: attendance.rows.length,
+        }
+      : null,
+    excuses: excuses
+      ? {
+          allowance: excuses.monthly.allowance,
+          pending: excuses.monthly.pending,
+          remaining: excuses.monthly.remaining,
+          used: excuses.monthly.used,
+        }
+      : null,
+    leave: leave
+      ? {
+          balanceDays: leave.balanceAfterDays,
+          entitlementDays: leave.entitlementDays,
+          usedDays: leave.usedPaidDays,
+        }
+      : null,
+    pages,
+    requests: excuses
+      ? [...excuses.requests]
+          .sort((a, b) => b.excuseDate.localeCompare(a.excuseDate))
+          .slice(0, 5)
+          .map((request) => ({
+            date: request.excuseDate,
+            durationHours: request.durationHours,
+            id: request.id,
+            status: request.status,
+            type: request.excuseType,
+          }))
+      : null,
+  };
+}
+
 export async function getHrCommandCenterData(
   access: AccessContext,
 ): Promise<HrCommandCenterData | null> {
@@ -421,6 +632,11 @@ export async function getHrCommandCenterData(
   const needed = new Set(sourcesFor(seat));
   const failures: SourceKey[] = [];
   const loaded: HrCommandSources = {};
+
+  // Her own record starts loading HERE, beside the tile sources rather than after them, so the
+  // merged page costs the same wall-clock as the two separate pages did — the slowest source, not
+  // the sum. It is awaited below.
+  const personalPromise = loadPersonalRecord(access);
 
   // Only the sources the bundle justifies, all at once. A seat's dashboard is as slow as its
   // slowest source, not the sum of them.
@@ -484,7 +700,9 @@ export async function getHrCommandCenterData(
 
   return {
     groups: buildHrCommandGroups(seat, loaded),
+    personal: await personalPromise,
     seat,
+    tasks: buildHrTodayTasks(loaded, seat),
     unavailableSources: failures.map((key) => SOURCE_LABELS[key]).sort(),
   };
 }

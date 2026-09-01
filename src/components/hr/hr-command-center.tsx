@@ -23,9 +23,7 @@
  * neither seat has a photo on file yet; `CeoHeroIdentity`'s initials medallion is what fills that
  * gap instead of an empty slot until whoever holds the seat uploads a real one at /admin/profile.
  *
- * EVERYTHING BELOW THE HERO IS A REUSE, NOT AN INVENTION. The status strip is `AdminInsightChip`
- * exactly as it renders on 55 other pages, tallying a signal the data layer already computed
- * (`tile.tone`) rather than a second opinion on urgency. The group header's icon badge borrows
+ * EVERYTHING BELOW THE HERO IS A REUSE, NOT AN INVENTION. The group header's icon badge borrows
  * `AdminStatCard`'s icon-container language. The tile's hover lift and corner arrow reuse
  * `AdminLinkHint`'s icon and QueueRow's "this goes somewhere" idea, gated behind `group/tile` —
  * declared on the tile long before anything consumed it. None of it touches the tile's RESTING
@@ -58,6 +56,7 @@ import {
   Search,
   ShieldCheck,
   TriangleAlert,
+  UserRound,
   UsersRound,
   X,
   type LucideIcon,
@@ -65,8 +64,10 @@ import {
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { AdminHeroFrame, AdminInsightChip } from "@/components/admin/admin-design-system";
+import { AdminHeroFrame } from "@/components/admin/admin-design-system";
 import { CeoHeroIdentity } from "@/components/admin/ceo-hero-identity";
+import { HrMyRecord } from "@/components/hr/hr-my-record";
+import { HrTodayPanel } from "@/components/hr/hr-today-panel";
 import { HR_SEAT_JOB_TITLES, type HrFunctionKey } from "@/lib/auth/hr-functions";
 import type { HrCommandCenterData, HrCommandGroup, HrCommandTile } from "@/lib/hr/command-center";
 
@@ -144,187 +145,17 @@ function MetricTile({ tile }: { tile: HrCommandTile }) {
       <div className="text-[9px] font-black uppercase leading-tight tracking-[0.14em] text-slate-500">
         {tile.label}
       </div>
-      <p className={`mt-4 text-3xl font-black leading-none tabular-nums ${toneClass}`}>
-        {tile.value.toLocaleString("en-US")}
+      {/* `valueLabel` wins when the fact has no unit — see HrCommandTile.valueLabel. `break-words`
+          because a label is prose and prose is the thing that can outgrow its box: the owner's
+          golden rule is that this page never scrolls sideways, and wrapping is the permitted
+          answer. `tabular-nums` is inert on letters, so one class list serves both cases. */}
+      <p className={`mt-4 break-words text-3xl font-black leading-none tabular-nums ${toneClass}`}>
+        {tile.valueLabel ?? tile.value.toLocaleString("en-US")}
       </p>
       <p className="mt-2 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">
         {tile.sub}
       </p>
     </Link>
-  );
-}
-
-/**
- * ── The workload ring ────────────────────────────────────────────────────────
- *
- * The one genuine PICTURE on this page, and it is drawn from data that already exists: how much of
- * the seat's board is clear against how much is waiting. Nothing here is a new figure — `attention`
- * is the same amber/rose count the strip and the group badges use, so the ring can never disagree
- * with the numbers beside it.
- *
- * WHY A RING AND NOT A TREND LINE. The obvious "dashboard" move is `AreaSparkline`, and it would be
- * a lie here: this payload has no history in it at all. A sparkline drawn from a single day's
- * numbers invents a shape, and an invented shape on an HR board is the false promise the owner's
- * rule for this page type forbids. A proportion is the honest picture of a snapshot.
- *
- * Hand-drawn SVG for the same reason `AreaSparkline` and `TwoSeriesBars` are: this codebase pulls
- * in no charting library, and one ring does not justify becoming the first.
- */
-function WorkloadRing({ attention, total }: { attention: number; total: number }) {
-  const radius = 46;
-  const circumference = 2 * Math.PI * radius;
-  const share = total > 0 ? Math.min(1, attention / total) : 0;
-  const allClear = attention === 0;
-
-  return (
-    <div className="relative h-[132px] w-[132px] shrink-0">
-      {/* A soft bloom behind the ring so it reads as lit rather than printed - the same warm
-          ember the hero and the finance banner use, at a strength that survives on white. */}
-      <span
-        aria-hidden="true"
-        className={`pointer-events-none absolute inset-2 rounded-full blur-2xl ${
-          allClear ? "bg-emerald-400/20" : "bg-orange-400/25"
-        }`}
-      />
-      <svg
-        aria-hidden="true"
-        className="relative h-full w-full -rotate-90"
-        viewBox="0 0 120 120"
-      >
-        <defs>
-          <linearGradient id="hr-ring-attention" x1="0" x2="1" y1="0" y2="1">
-            <stop offset="0%" stopColor="#FB923C" />
-            <stop offset="55%" stopColor="#F97316" />
-            <stop offset="100%" stopColor="#EA580C" />
-          </linearGradient>
-          <linearGradient id="hr-ring-clear" x1="0" x2="1" y1="0" y2="1">
-            <stop offset="0%" stopColor="#34D399" />
-            <stop offset="100%" stopColor="#059669" />
-          </linearGradient>
-        </defs>
-        {/* The track is the whole board; the arc is the part of it that is waiting. */}
-        <circle
-          cx="60"
-          cy="60"
-          fill="none"
-          r={radius}
-          stroke="#E2E8F0"
-          strokeWidth="11"
-        />
-        <circle
-          cx="60"
-          cy="60"
-          fill="none"
-          r={radius}
-          stroke={allClear ? "url(#hr-ring-clear)" : "url(#hr-ring-attention)"}
-          strokeDasharray={`${(allClear ? 1 : share) * circumference} ${circumference}`}
-          strokeLinecap="round"
-          strokeWidth="11"
-          style={{ transition: "stroke-dasharray 600ms ease-out" }}
-        />
-      </svg>
-      {/* Centre label. The ring shows the proportion; this says what the proportion IS, because a
-          ring alone cannot be read as a number and the owner reads numbers. */}
-      <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <span
-          className={`text-[30px] font-black leading-none tabular-nums ${
-            allClear ? "text-emerald-600" : "text-orange-600"
-          }`}
-        >
-          {attention}
-        </span>
-        <span className="mt-1 whitespace-nowrap text-[9px] font-black uppercase tracking-[0.12em] text-slate-400">
-          of {total} waiting
-        </span>
-      </div>
-    </div>
-  );
-}
-
-/**
- * Where the waiting work actually sits, one bar per function. Bars are scaled against the BUSIEST
- * group rather than against the page total, because the question this answers is "which of these
- * do I open first" — and a total-scaled bar renders every group as a sliver the moment the board
- * has more than a handful of items.
- *
- * Groups with nothing waiting still render, greyed, rather than dropping out: the owner's rule for
- * this page type is that an empty stage stays visible ("relevant even if empty"), and a chart that
- * silently omits the quiet functions teaches the reader they do not exist.
- */
-function AttentionByGroup({
-  groups,
-  onJump,
-}: {
-  groups: HrCommandGroup[];
-  onJump: (functionKey: string) => void;
-}) {
-  const rows = groups.map((group) => ({
-    count: group.tiles.filter(needsAttention).length,
-    functionKey: group.functionKey,
-    label: group.label,
-  }));
-  const busiest = Math.max(...rows.map((row) => row.count), 1);
-
-  return (
-    <div className="min-w-0 flex-1 space-y-2.5">
-      {rows.map((row) => {
-        const Icon = GROUP_ICONS[row.functionKey];
-        const quiet = row.count === 0;
-        return (
-          <button
-            className="group/bar block w-full px-1 py-1 text-left transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500"
-            key={row.functionKey}
-            onClick={() => onJump(row.functionKey)}
-            type="button"
-          >
-            {/* Label ABOVE its bar, never beside it. A label in a fixed side column has to be
-                given a width, and any width is a guess: measured at 1440px, a 132px column was
-                overrun by 39px by "People Records & Lifecycle" and 35px by "Performance &
-                Probation", so both ran under their own bar. Stacking removes the guess — the
-                label takes the width it needs, at any length and in any locale, and the owner's
-                standing rule (never truncate, never wrap) holds by construction rather than by a
-                number somebody has to keep correct. The hairline leader carries the eye across to
-                the count, so the gap reads as deliberate rather than as a hole. */}
-            <span className="flex items-center gap-2">
-              <Icon
-                aria-hidden="true"
-                className={`h-3.5 w-3.5 shrink-0 ${quiet ? "text-slate-300" : "text-orange-500"}`}
-              />
-              <span
-                className={`shrink-0 whitespace-nowrap text-[10px] font-black uppercase tracking-[0.1em] ${
-                  quiet ? "text-slate-400" : "text-slate-700"
-                }`}
-              >
-                {row.label}
-              </span>
-              <span aria-hidden="true" className="h-px min-w-4 flex-1 bg-slate-200/80" />
-              <span
-                className={`shrink-0 text-[13px] font-black leading-none tabular-nums ${
-                  quiet ? "text-slate-300" : "text-orange-700"
-                }`}
-              >
-                {row.count}
-              </span>
-            </span>
-            <span className="relative mt-1.5 block h-2 w-full overflow-hidden bg-slate-100">
-              <span
-                className={`absolute inset-y-0 left-0 ${
-                  quiet
-                    ? "bg-slate-200"
-                    : "bg-gradient-to-r from-orange-400 via-orange-500 to-orange-600 shadow-[0_0_10px_rgba(249,115,22,0.35)]"
-                }`}
-                style={{
-                  transition: "width 600ms ease-out",
-                  // A quiet group keeps a visible 3% stub so the row still reads as a bar with
-                  // nothing in it, rather than as a missing bar.
-                  width: quiet ? "3%" : `${Math.max(8, (row.count / busiest) * 100)}%`,
-                }}
-              />
-            </span>
-          </button>
-        );
-      })}
-    </div>
   );
 }
 
@@ -502,33 +333,11 @@ export function HrCommandCenter({
         </div>
       </AdminHeroFrame>
 
-      {/* ── Today at a glance. The page's one picture, and its answer to "where does my day go".
-          A light surface below the dark hero rather than inside it, so it can never disturb
-          CeoHeroIdentity's vertically-centred initials medallion. ── */}
-      <section className="border-b border-slate-200/70 bg-gradient-to-b from-white via-white to-slate-50/70 px-5 py-5">
-        <div className="mb-4 flex flex-wrap items-center gap-2">
-          <span className="h-2 w-2 rounded-full bg-gradient-to-r from-orange-500 to-amber-400 shadow-[0_0_8px_rgba(249,115,22,0.5)]" />
-          <h2 className="whitespace-nowrap text-[11px] font-black uppercase tracking-[0.16em] text-slate-950">
-            Today at a glance
-          </h2>
-          {attentionCount > 0 ? (
-            <AdminInsightChip tone="orange">
-              <span className="whitespace-nowrap">
-                {attentionCount} {attentionCount === 1 ? "item needs" : "items need"} your attention
-                today
-              </span>
-            </AdminInsightChip>
-          ) : (
-            <AdminInsightChip tone="emerald">
-              <span className="whitespace-nowrap">All caught up - nothing waiting on you</span>
-            </AdminInsightChip>
-          )}
-        </div>
-        <div className="flex flex-col items-center gap-6 sm:flex-row sm:items-center sm:gap-8">
-          <WorkloadRing attention={attentionCount} total={totalTileCount} />
-          <AttentionByGroup groups={data.groups} onJump={jumpToGroup} />
-        </div>
-      </section>
+      {/* ── Your day. The page's opening answer to "what do I do today", as a list of real
+          tasks that open into the actual named rows behind them. This replaced a ring reading
+          "5 of 18 waiting" whose denominator counted TILES rather than work — see the header of
+          hr-today-panel.tsx and of src/lib/hr/today-tasks.ts. ── */}
+      <HrTodayPanel icons={GROUP_ICONS} tasks={data.tasks} />
 
       {/* ── Toolbar. Filter, attention-only, and a jump chip per group. Not sticky on purpose:
           AppShell already freezes the page chrome, and a second sticky at the same offset is the
@@ -537,8 +346,13 @@ export function HrCommandCenter({
         <div className="flex flex-wrap items-center gap-2">
           {/* Full width on a phone, sharing the row from `sm` up. Measured at 375px: sharing the
               row there leaves the field 127px, which clips its own placeholder — and the owner's
-              standing rule is that text is never truncated. */}
-          <div className="relative w-full min-w-0 sm:w-auto sm:max-w-xs sm:flex-1">
+              standing rule is that text is never truncated.
+              `sm:min-w-60` is that same rule at the OTHER end. The jump chips beside it are
+              `shrink-0` and the field is `flex-1`, so every chip's width came out of the field:
+              measured at 1440px it was squeezed to a 10px box holding 102px of placeholder — a
+              clipped control that looked like a rendering fault. With a floor the chips wrap to
+              the next line instead, which is what `flex-wrap` on this row is for. */}
+          <div className="relative w-full min-w-0 sm:w-auto sm:min-w-60 sm:max-w-xs sm:flex-1">
             <Search
               aria-hidden="true"
               className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400"
@@ -605,6 +419,17 @@ export function HrCommandCenter({
                   </button>
                 );
               })}
+              {/* The merged personal section gets a chip too — it is a section of this page now,
+                  not a second page, and leaving it off the jump row would be the one part of the
+                  page you can only reach by scrolling. */}
+              <button
+                className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap border border-slate-200 bg-white px-2.5 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-slate-500 transition-colors hover:border-orange-200 hover:bg-orange-50 hover:text-orange-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500"
+                onClick={() => jumpToGroup("my-record")}
+                type="button"
+              >
+                <UserRound aria-hidden="true" className="h-3.5 w-3.5" />
+                My Record
+              </button>
             </div>
           ) : null}
         </div>
@@ -706,6 +531,12 @@ export function HrCommandCenter({
           </section>
         );
       })}
+
+      {/* ── Her own record, merged in from the /workspace dashboard on 2026-09-01 at the owner's
+          instruction. Hidden while a filter is active, because the filter is over the COMPANY
+          figures above and a personal leave balance is not one of them — leaving it visible under
+          "Showing 2 of 18 figures" would make the count read as a lie. ── */}
+      {isFiltering ? null : <HrMyRecord record={data.personal} />}
     </div>
   );
 }
