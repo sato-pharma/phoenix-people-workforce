@@ -582,6 +582,7 @@ import { runHrCommandCenterTests } from "./hr-command-center.test.ts";
 import { runHrJobWorkbookTests } from "./hr-job-workbook.test.ts";
 import { runHrOperationsCompanyScopeTests } from "./hr-operations-company-scope.test.ts";
 import { runHrSeatRouteCoherenceTests } from "./hr-seat-route-coherence.test.ts";
+import { runCvDatabaseRecruitingBoundaryTests } from "./cv-database-recruiting-boundary.test.ts";
 import { runTitlePermissionGovernanceTests } from "./title-permission-governance.test.ts";
 import { runOrganogramHardeningTests } from "./organogram-hardening.test.ts";
 import { runVacancyReportOrganogramConsistencyTests } from "./vacancy-report-organogram-consistency.test.ts";
@@ -2069,6 +2070,11 @@ await runTest(
   "HR seat route coherence (no HR seat holds PART of a route handler's permission set, so no page "
   + "its own sidebar offers can 403 it halfway)",
   runHrSeatRouteCoherenceTests,
+);
+await runTest(
+  "CV database recruiting boundary (HR Operations holds vacancies:read for the Vacancies Report and "
+  + "must still be refused the candidate pool — on the page, the portal mirror and the template route)",
+  runCvDatabaseRecruitingBoundaryTests,
 );
 await runTest(
   "HR command centre (every tile on a seat's landing dashboard links to a row that seat is "

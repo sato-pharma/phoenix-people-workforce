@@ -360,8 +360,13 @@ export const accessRegistry = [
   sessionApi({ methods: allMethods, pattern: "/api/coaching/**", permission: { resource: "coaching", action: "read" }, guard: "domain-helper" }),
   sessionApi({ methods: allMethods, pattern: "/api/contracts/**", permission: { resource: "contracts", action: "update" }, csrfRequired: true }),
   sessionApi({ audit: { classification: "export", required: true }, methods: readOnly, pattern: "/api/coaching/reports/export", permission: { resource: "coaching", action: "export" }, guard: "domain-helper" }),
-  sessionApi({ methods: allMethods, pattern: "/api/cv-database/**", permission: { resource: "vacancies", action: "read" } }),
-  sessionApi({ audit: { classification: "export", required: true }, methods: readOnly, pattern: "/api/cv-database/template", permission: { resource: "vacancies", action: "export" } }),
+  // `recruitment`, not `vacancies` — moved 2026-09-01 with the route itself, so this declaration
+  // keeps describing what the handler enforces. See app/(admin)/cv-database/page.tsx for why.
+  // The template row's action is `read` because that is what the handler asserts; the `export`
+  // written here before matched nothing in that file and was already describing a gate that did not
+  // exist. The audit classification stays `export` — it is a download, whatever verb admits it.
+  sessionApi({ methods: allMethods, pattern: "/api/cv-database/**", permission: { resource: "recruitment", action: "read" } }),
+  sessionApi({ audit: { classification: "export", required: true }, methods: readOnly, pattern: "/api/cv-database/template", permission: { resource: "recruitment", action: "read" } }),
   sessionApi({ audit: { classification: "export", required: true }, methods: readOnly, pattern: "/api/employees/template", permission: { resource: "employees", action: "export" } }),
   sessionApi({ methods: allMethods, pattern: "/api/employees/**", permission: { resource: "employees", action: "read" }, csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST", "DELETE"], pattern: "/api/employee-portal/profile-photo", permission: { resource: "employee_profile", action: "update" }, csrfRequired: true }),

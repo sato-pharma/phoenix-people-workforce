@@ -1644,11 +1644,11 @@ const hrNavigationSectionSeeds = [
     id: "hr-recruitment",
     items: [
       { href: "/hr/recruitment", icon: BriefcaseBusiness, label: "Recruitment", permissions: [{ resource: "recruitment" }] },
-      // excludedRoles: HR Operations, 2026-09-01 — the same boundary as the /cv-database module
-      // entry, restated here because this catalogue is authored rather than derived. Her new
-      // vacancies:read (for the Vacancies Report under People) would otherwise put a recruiting row
-      // in a seat the repo deliberately keeps out of recruiting.
-      { href: "/hr/cv-database", icon: FileSpreadsheet, label: "CV Database", permissions: [{ resource: "vacancies" }], excludedRoles: ["HR Operations"] },
+      // `recruitment`, matching the page's own gate. This row carried excludedRoles: HR Operations
+      // for part of 2026-09-01, which hid it from her rail while the page stayed open to a typed
+      // URL. Naming the resource the page actually asserts removes the row AND shuts the door in
+      // one place, with no second list to keep in step by hand.
+      { href: "/hr/cv-database", icon: FileSpreadsheet, label: "CV Database", permissions: [{ resource: "recruitment" }] },
       { href: "/hr/offers", icon: MailCheck, label: "Job Offers", permissions: [{ resource: "offers" }] },
       { href: "/hr/hiring-documents", icon: FileCheck2, label: "Hiring Documents", permissions: [{ resource: "employee_documents" }] },
       { href: "/hr/hiring-pack", icon: FileSignature, label: "HR Forms", permissions: [{ resource: "employee_documents" }] },
@@ -2926,19 +2926,16 @@ export const recruitmentHiringPageItems: readonly AdminToolsPageItem[] = [
     icon: FileSpreadsheet,
     label: "CV Database",
     description: "Browse and search the candidate CV database.",
-    permissions: [{ resource: "vacancies" }],
+    // `recruitment`, not `vacancies` — this card opens the candidate pool, and the page's own gate
+    // asserts recruitment:read (app/(admin)/cv-database/page.tsx carries the reasoning and the
+    // measurement). Naming the same resource here is what keeps card and page agreeing with nothing
+    // to maintain: HR Operations holds vacancies:read for the Vacancies Report and no recruitment at
+    // all, so she drops off this card BY GRANT rather than by an excludedRoles list — which is what
+    // sat here for part of 2026-09-01 and hid the card while leaving the URL open.
+    // tests/recruitment-hub-portal-coverage.test.ts pins the rule this protects: she may clear the
+    // two SHARED hiring-paperwork cards and no recruiting one.
+    permissions: [{ resource: "recruitment" }],
     roles: hrAuthorityNavigationRoles,
-    // HR Operations excluded BY NAME, 2026-09-01. Until that day she was kept off this card by not
-    // holding `vacancies` at all; the owner then asked for the Vacancies Report in her sidebar,
-    // which needs vacancies:read, and that one grant would have handed her a recruiting card as a
-    // side effect nobody asked for. tests/recruitment-hub-portal-coverage.test.ts pins the rule
-    // this protects — she may clear the two SHARED hiring-paperwork cards and no recruiting one —
-    // so the separation is now stated rather than merely implied by a missing grant.
-    //
-    // NOTE this is presentation, not revocation: the page's own gate is isHrAuthorityRole &&
-    // vacancies:read, and she passes both, so /cv-database is reachable by direct URL. Closing that
-    // would mean taking her back off vacancies:read, which is the grant the owner asked for.
-    excludedRoles: ["HR Operations"],
   },
   {
     href: "/hiring-documents",

@@ -86,8 +86,11 @@ export const HR_FUNCTIONS: readonly HrFunction[] = [
       recruitment: ["read", "create", "update", "approve", "export", "import"],
       candidates: ["read", "create", "update", "delete", "export", "import"],
       // READ + EXPORT ONLY — deliberately not MAINTAIN. Recruiting READS the vacancy board (the
-      // Vacancies Report and CV Database both gate on vacancies:read) and exports the CV template,
-      // and that is every vacancies action anything in this codebase actually asserts for her.
+      // Vacancies Report gates on vacancies:read), and that is every vacancies action anything in
+      // this codebase asserts for her. The CV Database and its template route used to be named here
+      // too; both moved to recruitment:read on 2026-09-01 — she holds that in full, so this seat is
+      // unaffected. `export` is left as it stands: nothing asserts vacancies:export today either,
+      // and narrowing an Advisory grant is not a side effect the CV Database change gets to have.
       // `create` is asserted in exactly ONE place — POST /api/employees/[hrId]/resign — which she
       // cannot reach and must not: recording a departure is ops 6, not recruiting. Holding a grant
       // she can never spend is not harmless, it is the half-granted shape that
@@ -227,12 +230,17 @@ export const HR_FUNCTIONS: readonly HrFunction[] = [
       // then, and this note read "the Vacancies Report and the CV Database are Advisory's
       // recruiting pages, not this seat's". He asked for the Vacancies Report in her sidebar, was
       // shown that granting it widens this seat past offboarding, and confirmed. Do not narrow it
-      // back without him. Two consequences, both stated to him before he agreed and both intended:
-      // she can read the whole company vacancy board, and the CV Database row — gated on this same
-      // resource — now renders in her Recruitment section.
+      // back without him. The intended consequence, stated before he agreed: she can read the whole
+      // company vacancy board.
       //
-      // Still NOT `export`: nothing in this codebase asserts vacancies:export (the CV template
-      // route asserts vacancies:read), so adding it would be a grant she could never spend, which
+      // The OTHER consequence was that the CV Database rode this same resource and came with it —
+      // and he refused that outright the same day: "block the cv database for her too". So the CV
+      // Database, its portal mirror and its template route moved to recruitment:read, which she does
+      // not hold. **Do not re-gate any of them on `vacancies` to make a screen appear** — that is
+      // the exact edit this grant makes tempting and the one he ruled out.
+      //
+      // Still NOT `export`: nothing in this codebase asserts vacancies:export at all, so adding it
+      // would be a grant she could never spend, which
       // is the half-granted shape tests/hr-seat-route-coherence.test.ts exists to catch. Still not
       // organizational change either — organogram:update stays denied to both seats, and the
       // resignation path can only ever fire for a person who is actually leaving.
