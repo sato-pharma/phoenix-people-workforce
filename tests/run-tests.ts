@@ -575,7 +575,7 @@ import { runAdminPayslipImageExportTests } from "./admin-payslip-image-export.te
 import { runEmployeePayrollEligibilityTests } from "./employee-payroll-eligibility.test.ts";
 import { runEmployeeAccessProvisioningTests } from "./employee-access-provisioning.test.ts";
 import { runHrFunctionGovernanceTests } from "./hr-function-governance.test.ts";
-import { runHrClearanceRetentionTests } from "./hr-clearance-retention.test.ts";
+import { runHrRetentionRegisterTests } from "./hr-retention-register.test.ts";
 import { runMailboxOffboardingTests } from "./mailbox-offboarding.test.ts";
 import { runMailboxBulkRecordingTests } from "./mailbox-bulk-recording.test.ts";
 import { runHrAdvisoryModuleAccessTests } from "./hr-advisory-module-access.test.ts";
@@ -2110,10 +2110,11 @@ await runTest(
   runHrJobWorkbookTests,
 );
 await runTest(
-  "HR clearance & retention (both resources registered in the RUNTIME array as well as the union "
-  + "- the sidebar lookup fails open on a key it has never seen - and the two seats' grants do "
-  + "not cross: clearance is HR Operations', retention is HR Advisory's)",
-  runHrClearanceRetentionTests,
+  "HR retention register & offboarding grant (both resources registered in the RUNTIME array as "
+  + "well as the union - the sidebar lookup fails open on a key it has never seen - the two seats' "
+  + "grants do not cross, and the removed Clearance module left behind no grant, no fetch and no "
+  + "tile, while its still-live database objects keep their revoked ACL)",
+  runHrRetentionRegisterTests,
 );
 await runTest(
   "mailbox offboarding (a password reset is NOT a revocation - Yahoo app passwords survive a "

@@ -22,6 +22,18 @@
  * even if empty" — an HR seat that opens on a blank screen learns nothing about what the screen is
  * for. A clear task shows its `clearLabel` in the emerald tone; it never disappears.
  *
+ * IT MUST COVER THE SEAT'S OWN FUNCTIONS, AND FOR ONE DAY IT DID NOT. The first version emitted
+ * tasks for `performance_probation`, `engagement_retention`, `recruiting` and `workforce_insight`
+ * only. HR Advisory holds four of those five and got a full panel; HR Operations holds exactly ONE
+ * of them, so the panel that answers "what do I do today" answered it for one fifth of her job and
+ * said nothing about attendance exceptions, settlements or contract renewals — the work she
+ * actually opens this page to do. Fixed 2026-09-01 by adding `time_attendance` and `people_records`.
+ *
+ * THE TWO REMAINING GAPS ARE DECISIONS, NOT OMISSIONS, and each is argued at its own place in
+ * buildHrTodayTasks: `payroll_inputs` is read-only for this seat and its source carries no names,
+ * and `hr_governance` has no source at all because its grants are a library and a landing
+ * permission. Both are written out below so the next reader does not "finish the set".
+ *
  * WHY THE RECRUITING TASKS ARE SHAPED THE WAY THEY ARE. `openRequisitions` and open organogram
  * seats are two different populations, and on the day this was written they did not overlap at all:
  * 45 seats stood open with no requisition raised against any of them, while all three "open"
@@ -172,6 +184,26 @@ function pluralise(count: number, singular: string, plural: string): string {
 }
 
 /**
+ * A date-only column as "05 Sep 2026". Cairo, because the owner reports every time in Cairo.
+ *
+ * `timeZone: "UTC"` against a `T00:00:00Z` instant is what makes that true rather than ironic: the
+ * value is a calendar DAY with no time in it, so re-projecting it into Africa/Cairo would shift a
+ * midnight-anchored date and print the day before. The Cairo rule is honoured by NOT converting a
+ * value that has no instant to convert. Matches cairoDate in hr-my-record.tsx exactly.
+ */
+function cairoDay(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const parsed = new Date(`${iso}T00:00:00Z`);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "2-digit",
+    month: "short",
+    timeZone: "UTC",
+    year: "numeric",
+  }).format(parsed);
+}
+
+/**
  * Builds one task. `urgency` is derived from the rows themselves rather than passed in, so a task
  * can never be styled as calm while holding something that has waited a fortnight.
  */
@@ -271,6 +303,105 @@ export function buildHrTodayTasks(loaded: HrCommandSources): HrTask[] {
       }),
     );
   }
+
+  // ── Time & attendance ──────────────────────────────────────────────────────
+  // HR Operations' actual daily queue, and until 2026-09-01 it produced no task at all. Her bundle
+  // is people_records / time_attendance / payroll_inputs / performance_probation / hr_governance,
+  // and only the fourth of those emitted anything here — so a panel whose whole job is to answer
+  // "what do I do today" could speak about exactly one fifth of her job, and stayed silent about
+  // the exception queue she works every morning. The tiles knew about it; "Your day" did not.
+  if (loaded.attendanceExceptions) {
+    const pending = loaded.attendanceExceptions.filter((row) => row.status === "pending");
+    tasks.push(
+      task({
+        action: "Review",
+        clearLabel: "Every attendance exception has been decided.",
+        detail:
+          "A day the attendance rules could not settle on their own. It stays unresolved on the record until you review it.",
+        functionKey: "time_attendance",
+        href: "/hr/attendance",
+        hrefLabel: "Open Attendance",
+        items: pending.map((row) => {
+          const days = daysSince(row.createdAt);
+          return {
+            age: waitingLabel(days),
+            href: "/hr/attendance",
+            id: String(row.id),
+            // The DAY in question, then why it was raised. An exception is only meaningful
+            // alongside the date it belongs to, and that date is not the date it was raised.
+            meta: [cairoDay(row.exceptionDate), row.reason].filter(Boolean).join(" · "),
+            // `employeeHrId` is the fallback and never the first choice — the owner's standing
+            // rule is a human-readable name, never a raw code.
+            name: row.employeeName ?? row.employeeHrId,
+            sortKey: days,
+            urgent: days >= OVERDUE_DAYS,
+          };
+        }),
+        key: "attendance-exceptions",
+        subject: "Attendance exceptions",
+        title: (count) =>
+          `Review ${count} attendance ${pluralise(count, "exception", "exceptions")}`,
+      }),
+    );
+  }
+
+  // ── People records ─────────────────────────────────────────────────────────
+  if (loaded.contracts) {
+    // `hr_review` ONLY. The other live statuses are waiting on somebody else — `requested` on the
+    // queue, `manager_review` on the line manager — and a task is only a task when the person
+    // reading it is the one holding it up.
+    const atHrReview = loaded.contracts.rows.flatMap((row) =>
+      row.workflow && row.workflow.status === "hr_review" ? [row.workflow] : [],
+    );
+    tasks.push(
+      task({
+        action: "Review",
+        clearLabel: "No contract renewal is waiting on HR.",
+        detail: "The line manager has had their say and the renewal is now sitting on your review.",
+        functionKey: "people_records",
+        href: "/hr/contracts",
+        hrefLabel: "Open Contracts",
+        items: atHrReview.map((row) => {
+          // Since it REACHED HR, not since the request was raised — the age that matters is how
+          // long it has been hers.
+          const days = daysSince(row.managerReviewedAt ?? row.createdAt);
+          const renewal = cairoDay(row.requestedRenewalDate);
+          return {
+            age: waitingLabel(days),
+            href: "/hr/contracts",
+            id: row.id,
+            meta: [row.jobTitle, row.lineName, renewal ? `renewal ${renewal}` : null]
+              .filter(Boolean)
+              .join(" · "),
+            name: row.employeeName,
+            sortKey: days,
+            urgent: days >= OVERDUE_DAYS,
+          };
+        }),
+        key: "contracts-hr-review",
+        subject: "Contract renewals",
+        title: (count) => `Review ${count} contract ${pluralise(count, "renewal", "renewals")}`,
+      }),
+    );
+  }
+
+  // ── Payroll inputs: NO TASK, deliberately ──────────────────────────────────
+  // This is the same decision `hr_governance` takes in TILES_BY_FUNCTION, for a sharper reason.
+  // `payroll_inputs` grants `deductions:read` and nothing else: approving a disciplinary penalty
+  // is a JD boundary (HR_ROLE_BOUNDARIES), and the owner's standing rule is that the system FLAGS
+  // an expense and never decides one. A task is an instruction to ACT, so "Decide 12 deductions"
+  // would be this panel telling her to do something she has no grant to do and no authority over.
+  // The month's counts stay where they belong — as tiles that report, linking to Payroll
+  // Management where she reconciles them.
+  //
+  // The second reason is narrower and would block it anyway: the loaded source here is
+  // getCompanyMonthSummaryByCategory, which returns per-category buckets and no employee names at
+  // all. Every row in this panel is a real named record (see the file header); a task built from
+  // that source could only list categories, which is a count wearing a row's clothes.
+
+  // ── HR governance: NO TASK ─────────────────────────────────────────────────
+  // No source, by construction — SOURCES_BY_FUNCTION.hr_governance is empty because its grants are
+  // a document library and a landing permission, neither of which is a queue.
 
   // ── Engagement & retention ─────────────────────────────────────────────────
   if (loaded.supportRequests) {

@@ -44,9 +44,9 @@ import {
 } from "@/lib/auth/hr-functions";
 import { getEmployeeAttendanceData } from "@/lib/attendance/employee-attendance";
 import { getAttendanceExceptions } from "@/lib/attendance/exceptions";
-import { getClearanceDashboardData } from "@/lib/clearance/service";
 import { getContractRenewalDashboardData } from "@/lib/contracts/service";
 import { getCompanyMonthSummaryByCategory } from "@/lib/deductions/service";
+import { deductionsCategories, type DeductionsCategory } from "@/lib/deductions/types";
 import {
   getEmployeeDirectory,
   isActiveDirectoryEmployee,
@@ -84,7 +84,67 @@ export type HrCommandTile = {
   value: number;
 };
 
+/**
+ * One plotted series inside an HrCommandChart. `color` is a hex literal rather than a Tailwind
+ * class because it is handed to recharts as an SVG fill, and Tailwind cannot build a class name at
+ * runtime anyway. The values come from the house palette the analytics dashboards already use.
+ */
+export type HrCommandChartSeries = {
+  color: string;
+  key: string;
+  name: string;
+};
+
+/**
+ * A shape, where a tile gives a number.
+ *
+ * WHY THIS EXISTS. The owner's verdict on this page, 2026-09-01: "there are too many key codes,
+ * there are no any chart." He was right on both halves — HR Operations was shown 22 figures and not
+ * one shape, and a figure cannot answer the questions this seat actually has. "Attendance
+ * Exceptions 14" does not say whether that is a bad Tuesday or a fortnight of drift; "Renewals In
+ * Flight 6" does not say whether next month holds six renewals or sixty.
+ *
+ * DECLARED PER FUNCTION, exactly like the tiles, and for exactly the same reason: CHARTS_BY_FUNCTION
+ * is keyed by HrFunctionKey and read by looping `HR_ROLE_BUNDLES[seat]`, so a seat can only ever be
+ * shown a chart drawn from a source its own bundle already loads. Move a function between bundles
+ * and its chart moves with it. There is no second list to keep in step.
+ *
+ * EVERY ROW IS COUNTED FROM REAL RECORDS. Nothing here is smoothed, forecast, extrapolated or
+ * back-filled — each bar is a `filter().length` over rows already on the page. A dashboard chart
+ * that models anything is a chart that can be wrong in a way no reader can check.
+ *
+ * IT IS PLAIN DATA, deliberately: numbers and strings only, no functions and no JSX. This crosses
+ * the server/client boundary as props, and the formatter that renders it lives on the client side
+ * (AnalyticsTrendChart) precisely so nothing unserializable has to make the trip.
+ *
+ * AN EMPTY CHART STILL RENDERS ITS NAME. `emptyLabel` is shown in place of the plot when every bar
+ * is zero, because a chart that vanishes when there is nothing in it teaches a new seat that the
+ * measure does not exist — the same rule the tasks follow with `clearLabel`.
+ */
+export type HrCommandChart = {
+  /** What the shape MEANS, in a sentence. Never a restatement of the title. */
+  caption: string;
+  /** Shown instead of a flat plot when every bar is zero. Says what the chart would show. */
+  emptyLabel: string;
+  href: string;
+  hrefLabel: string;
+  key: string;
+  /**
+   * The plotted rows. Each carries `label` (the x axis) plus one numeric field per series key.
+   * Deliberately loose in type and strict in construction — every producer below builds it from a
+   * literal so a typo in a series key cannot silently plot nothing.
+   */
+  rows: Record<string, number | string>[];
+  series: HrCommandChartSeries[];
+  title: string;
+};
+
 export type HrCommandGroup = {
+  /**
+   * The function's charts, drawn above its tiles. Empty for a function whose sources cannot
+   * honestly support one — never a placeholder, and never a chart of a single number.
+   */
+  charts: HrCommandChart[];
   functionKey: HrFunctionKey;
   label: string;
   summary: string;
@@ -153,7 +213,6 @@ type SourceKey =
   | "deductions"
   | "directory"
   | "offers"
-  | "clearance"
   | "probation"
   | "recruitment"
   | "resignations"
@@ -179,10 +238,7 @@ const SOURCES_BY_FUNCTION: Record<HrFunctionKey, readonly SourceKey[]> = {
   // renewal tiles there offered HR Advisory a figure linking to /hr/contracts, which she has no
   // grant to open. That is the Deductions defect (see system-navigation.ts, hr-payroll) rebuilt
   // one layer down, and tests/hr-command-center.test.ts now fails on it mechanically.
-  // `clearance` belongs HERE for the same reason `contracts` does: people_records is the only
-  // function that grants it. Putting it under hr_governance - held by BOTH seats - would offer
-  // HR Advisory a figure linking to /hr/clearance, which she has no grant to open.
-  people_records: ["clearance", "contracts", "directory", "resignations"],
+  people_records: ["contracts", "directory", "resignations"],
   performance_probation: ["probation"],
   // `directory` is a REAL recruiting dependency, declared here rather than left to luck. The
   // recruiting tiles and tasks compare open requisitions against open organogram SEATS, and until
@@ -216,7 +272,6 @@ export function sourcesFor(seat: HrBundleName): SourceKey[] {
  */
 export type HrCommandSources = Partial<{
   attendanceExceptions: Awaited<ReturnType<typeof getAttendanceExceptions>>;
-  clearance: Awaited<ReturnType<typeof getClearanceDashboardData>>;
   contracts: Awaited<ReturnType<typeof getContractRenewalDashboardData>>;
   deductions: Awaited<ReturnType<typeof getCompanyMonthSummaryByCategory>>;
   directory: Awaited<ReturnType<typeof getEmployeeDirectory>>;
@@ -400,23 +455,6 @@ const TILES_BY_FUNCTION: Record<
         tile("resignations-open", "Resignations In Flight", summary.pending + summary.approved, "not yet completed", "/hr/resignations", summary.pending > 0 ? "amber" : "slate"),
       );
     }
-    if (loaded.clearance) {
-      const stats = loaded.clearance.stats;
-      tiles.push(
-        tile("clearance-open", "Clearances Open", stats.open, "stations to chase", "/hr/clearance", stats.open > 0 ? "amber" : "emerald"),
-        tile("clearance-ready", "Ready To Release", stats.ready, "your step", "/hr/clearance", stats.ready > 0 ? "amber" : "emerald"),
-        tile("clearance-overdue", "Past Last Day", stats.overdue, "still unreleased", "/hr/clearance", stats.overdue > 0 ? "rose" : "emerald"),
-      );
-      // Without this tile the three above all read 0 on the day this shipped — "nothing waiting on
-      // you" — while 54 recorded departures had no checklist at all, because the auto-open trigger
-      // only fires on resignations recorded after it. A count of zero that means "not started" is
-      // the misleading-zero trap, and this is the landing page it would have appeared on.
-      if (loaded.clearance.awaiting.length > 0) {
-        tiles.push(
-          tile("clearance-awaiting", "No Clearance Opened", loaded.clearance.awaiting.length, "departures to start", "/hr/clearance", "rose"),
-        );
-      }
-    }
     if (loaded.contracts) {
       const summary = loaded.contracts.summary;
       tiles.push(
@@ -477,6 +515,332 @@ const TILES_BY_FUNCTION: Record<
 };
 
 /**
+ * The house chart palette, as the analytics dashboards already use it. Orange is the accent this
+ * whole admin shell is built on; slate is the settled/decided counterpart; rose and emerald are the
+ * same alarm and all-clear the tiles and tasks use, so a red bar and a red tile mean one thing.
+ */
+const CHART_COLORS = {
+  decided: "#CBD5E1",
+  good: "#10B981",
+  overdue: "#F43F5E",
+  primary: "#F97316",
+  secondary: "#0F172A",
+} as const;
+
+/**
+ * Axis labels for the deduction categories, in the owner's vocabulary rather than the column's.
+ *
+ * A `Record<DeductionsCategory, string>` so adding a category to `deductionsCategories` is a type
+ * error here rather than a blank axis label. That type check is NOT the guard, though — this repo
+ * builds with `ignoreBuildErrors`, so a missing key would compile, build and deploy. The real guard
+ * is a runtime assertion over `deductionsCategories` in tests/hr-command-center.test.ts.
+ */
+export const DEDUCTION_CATEGORY_LABELS: Record<DeductionsCategory, string> = {
+  crm: "CRM",
+  fingerprint: "Fingerprint",
+  insufficient_balance_vacation: "Insufficient balance",
+  loan: "Loan",
+  no_records_activity: "No records activity",
+  other: "Other",
+  unpaid_vacation: "Unpaid vacation",
+};
+
+// "Is there anything to plot?" is deliberately NOT decided here. It is a rendering question — plot
+// versus `emptyLabel` — and it is answered in hr-command-charts.tsx. It cannot be a shared helper
+// in this file either way: this module imports the Supabase services, so a client component may
+// only ever `import type` from it, never a value.
+
+/**
+ * The last `count` days, oldest first, as `{ iso, label }`.
+ *
+ * Anchored on the Cairo calendar date rather than on `new Date()` so the axis a Cairo reader sees
+ * ends on the day she is actually having. Stepped in UTC from a midnight-anchored instant, which is
+ * the arithmetic that cannot drift: adding 86.4e6 ms to a `T00:00:00Z` date is exact, where adding
+ * a day to a local-time instant is not across a DST boundary.
+ */
+function recentCairoDays(count: number): { iso: string; label: string }[] {
+  const today = Date.parse(`${currentCairoDateOnlyIso()}T00:00:00Z`);
+  const format = new Intl.DateTimeFormat("en-GB", {
+    day: "2-digit",
+    month: "short",
+    timeZone: "UTC",
+  });
+  const days: { iso: string; label: string }[] = [];
+  for (let back = count - 1; back >= 0; back -= 1) {
+    const at = new Date(today - back * 86_400_000);
+    days.push({ iso: at.toISOString().slice(0, 10), label: format.format(at) });
+  }
+  return days;
+}
+
+/**
+ * `count` months starting at the Cairo current month and running FORWARD, as `{ key, label }`
+ * where `key` is `YYYY-MM`. Used by the forward-looking workload charts (renewals, probation).
+ */
+function upcomingCairoMonths(count: number): { key: string; label: string }[] {
+  const { month, year } = currentCairoDateParts();
+  const format = new Intl.DateTimeFormat("en-GB", { month: "short", timeZone: "UTC", year: "2-digit" });
+  const months: { key: string; label: string }[] = [];
+  for (let ahead = 0; ahead < count; ahead += 1) {
+    // Month is 1-based here and 0-based in Date; the +ahead rolls the year over on its own.
+    const at = new Date(Date.UTC(year, month - 1 + ahead, 1));
+    months.push({ key: at.toISOString().slice(0, 7), label: format.format(at) });
+  }
+  return months;
+}
+
+/** The same, running BACKWARD and ending on the current month. Used by the movement charts. */
+function recentCairoMonths(count: number): { key: string; label: string }[] {
+  const { month, year } = currentCairoDateParts();
+  const format = new Intl.DateTimeFormat("en-GB", { month: "short", timeZone: "UTC", year: "2-digit" });
+  const months: { key: string; label: string }[] = [];
+  for (let back = count - 1; back >= 0; back -= 1) {
+    const at = new Date(Date.UTC(year, month - 1 - back, 1));
+    months.push({ key: at.toISOString().slice(0, 7), label: format.format(at) });
+  }
+  return months;
+}
+
+/**
+ * The charts each function contributes. Same contract as TILES_BY_FUNCTION: keyed by function,
+ * read through the seat's own bundle, and returning an empty array when the source did not load.
+ *
+ * FOUR OF THE EIGHT FUNCTIONS RETURN NOTHING, and each is a decision rather than a gap:
+ *
+ *   `hr_governance`     — no source at all (SOURCES_BY_FUNCTION.hr_governance is empty).
+ *   `engagement_retention` — its two sources are small queues, not populations. A bar chart over
+ *                         four support requests is a tile with extra ink.
+ *   `workforce_insight` — its one source is the directory, and `people_records` already plots the
+ *                         directory's only honest shape (joiners and leavers). A seat holding both
+ *                         would be shown the same chart twice under two headings.
+ *   `recruiting`        — the pipeline-by-stage chart belongs here and is the one gap worth
+ *                         filling next; it is left out today rather than guessed at, because the
+ *                         stage vocabulary lives in applicationStageLabels and deserves its own
+ *                         pass rather than a five-minute mapping.
+ *
+ * Do not "complete the set" by inventing one. A chart of a single number, or of a population of
+ * four, is the ambitious-but-empty dashboard the owner rejected in the first place.
+ */
+const CHARTS_BY_FUNCTION: Record<
+  HrFunctionKey,
+  (loaded: HrCommandSources) => HrCommandChart[]
+> = {
+  engagement_retention: () => [],
+  hr_governance: () => [],
+
+  /**
+   * This month's detections, by category, split into what a publish would actually take and what
+   * is still awaiting a decision.
+   *
+   * This is the one chart that earns its place by making a NUMBER READABLE rather than by showing
+   * a trend: the two tiles beside it collapse seven categories into two totals, and "Awaiting
+   * Decision 31" says nothing about whether that is thirty-one fingerprint days or thirty-one
+   * unpaid vacations — which are different conversations with different managers. Seven categories
+   * is also exactly the count at which a row of tiles stops being readable and a chart starts.
+   *
+   * COUNTS, NEVER AMOUNTS. The buckets carry `totalAmount` and it is deliberately not plotted: no
+   * overview or landing page in this app shows a payroll figure, for any role (owner's standing
+   * rule), and money on the landing page is money in a screenshot.
+   */
+  payroll_inputs: (loaded) => {
+    const summary = loaded.deductions;
+    if (!summary) return [];
+    const series: HrCommandChartSeries[] = [
+      { color: CHART_COLORS.primary, key: "pending", name: "Awaiting decision" },
+      { color: CHART_COLORS.secondary, key: "ready", name: "Ready to publish" },
+    ];
+    // Only the categories that actually detected something this month. `no_records_activity` is
+    // retired — its connector has no population left (see connectors/no-records-activity.ts) — so
+    // plotting the full vocabulary would put a permanently empty column on her landing page every
+    // month, which is the dead ink this chart exists to remove. Nothing carrying data is ever
+    // dropped, and when NO category has any the chart says so through `emptyLabel` rather than
+    // drawing an empty axis.
+    const rows = deductionsCategories
+      .map((category) => ({
+        label: DEDUCTION_CATEGORY_LABELS[category],
+        pending: summary.pending[category]?.candidateCount ?? 0,
+        ready: summary.willPublish[category]?.candidateCount ?? 0,
+      }))
+      .filter((row) => row.pending > 0 || row.ready > 0);
+    return [
+      {
+        caption:
+          "Detections this month, by category. The dark half is what pressing Publish would take; the orange half is still waiting on somebody's decision and will not be deducted.",
+        emptyLabel: "Nothing has been detected this month in any category.",
+        href: "/hr/admin/payroll-management",
+        hrefLabel: "Open Payroll Management",
+        key: "deductions-by-category",
+        rows,
+        series,
+        title: "Deductions this month, by category",
+      },
+    ];
+  },
+
+  /**
+   * Two charts, because `people_records` is the function that carries the most tiles by far (ten)
+   * and the two questions behind them are different: how the headcount is MOVING, and what is
+   * COMING.
+   */
+  people_records: (loaded) => {
+    const charts: HrCommandChart[] = [];
+
+    if (loaded.directory) {
+      const months = recentCairoMonths(6);
+      const series: HrCommandChartSeries[] = [
+        { color: CHART_COLORS.good, key: "joiners", name: "Joined" },
+        { color: CHART_COLORS.overdue, key: "leavers", name: "Left" },
+      ];
+      // `slice(0, 7)` on a date-only column is the month key. Deliberately NOT parsed into a Date
+      // first: these are calendar days with no instant, and re-projecting one through a timezone
+      // is how a 1 September hire lands in August.
+      const rows = months.map((month) => ({
+        joiners: loaded.directory!.employees.filter(
+          (employee) => (employee.hireDate ?? "").slice(0, 7) === month.key,
+        ).length,
+        label: month.label,
+        leavers: loaded.directory!.employees.filter(
+          (employee) => (employee.lastWorkingDate ?? "").slice(0, 7) === month.key,
+        ).length,
+      }));
+      charts.push({
+        caption:
+          "Everyone whose hire date or last working day falls in each month, counted from the employee records themselves. The current month is still running.",
+        emptyLabel: "No hire or leaving date falls in the last six months.",
+        href: "/hr/employee-360",
+        hrefLabel: "Open Employee 360",
+        key: "headcount-movement",
+        rows,
+        series,
+        title: "Joiners and leavers, last 6 months",
+      });
+    }
+
+    if (loaded.contracts) {
+      const months = upcomingCairoMonths(6);
+      const series: HrCommandChartSeries[] = [
+        { color: CHART_COLORS.primary, key: "due", name: "Renewal due" },
+        { color: CHART_COLORS.decided, key: "inFlight", name: "Already in flight" },
+      ];
+      // A renewal already carrying a live workflow is counted in the SECOND series, not both —
+      // otherwise the month's bar would double-count the work that is already under way, which is
+      // the opposite of what a workload chart is for.
+      const rows = months.map((month) => {
+        const inMonth = loaded.contracts!.rows.filter(
+          (row) => (row.contract_renewal_date ?? "").slice(0, 7) === month.key,
+        );
+        const inFlight = inMonth.filter(
+          (row) =>
+            row.workflow !== null &&
+            row.workflow.status !== "renewed" &&
+            row.workflow.status !== "not_renewed" &&
+            row.workflow.status !== "cancelled",
+        ).length;
+        return { due: inMonth.length - inFlight, inFlight, label: month.label };
+      });
+      charts.push({
+        caption:
+          "What is coming, from each contract's own renewal date. The grey half already has a renewal request moving; the orange half has nobody on it yet.",
+        emptyLabel: "No contract comes up for renewal in the next six months.",
+        href: "/hr/contracts",
+        hrefLabel: "Open Contracts",
+        key: "contract-renewals-ahead",
+        rows,
+        series,
+        title: "Contract renewals due, next 6 months",
+      });
+    }
+
+    return charts;
+  },
+
+  /**
+   * When the probation windows in flight actually close.
+   *
+   * The two tiles beside this say how many cases exist and how many need a verdict. Neither says
+   * WHEN, and when is the only thing that matters about a probation window: a decision not taken
+   * before the end date confirms the employee by default, silently. A seat looking at "Awaiting
+   * Decision 7" cannot tell whether that is a comfortable month or four verdicts due this week.
+   */
+  performance_probation: (loaded) => {
+    const rows = loaded.probation;
+    if (!rows) return [];
+    const series: HrCommandChartSeries[] = [
+      { color: CHART_COLORS.overdue, key: "outstanding", name: "Still needs a verdict" },
+      { color: CHART_COLORS.decided, key: "decided", name: "Already decided" },
+    ];
+    // Buckets rather than a day axis: a probation window is weeks long, so a per-day plot would be
+    // ninety mostly-empty columns. "Already past" leads because it is the one bucket that is a
+    // problem rather than a plan.
+    const buckets: { label: string; match: (days: number) => boolean }[] = [
+      { label: "Already past", match: (days) => days < 0 },
+      { label: "This week", match: (days) => days >= 0 && days <= 7 },
+      { label: "Next week", match: (days) => days > 7 && days <= 14 },
+      { label: "2-4 weeks", match: (days) => days > 14 && days <= 28 },
+      { label: "1-2 months", match: (days) => days > 28 && days <= 60 },
+      { label: "Later", match: (days) => days > 60 },
+    ];
+    const plotted = buckets.map((bucket) => {
+      const inBucket = rows.filter((row) => bucket.match(row.days_remaining));
+      const outstanding = inBucket.filter((row) => isProbationDecisionOutstanding(row)).length;
+      return { decided: inBucket.length - outstanding, label: bucket.label, outstanding };
+    });
+    return [
+      {
+        caption:
+          "Every probation window in flight, by when it closes. A window that closes with no verdict recorded confirms the employee by default — the red columns are the ones that can still be decided.",
+        emptyLabel: "No probation window is open.",
+        href: "/hr/probation",
+        hrefLabel: "Open Probation",
+        key: "probation-windows",
+        rows: plotted,
+        series,
+        title: "Probation windows, by when they close",
+      },
+    ];
+  },
+
+  recruiting: () => [],
+
+  /**
+   * The exception queue as a fortnight rather than a number.
+   *
+   * "Attendance Exceptions 14" cannot distinguish a bad Tuesday from two weeks of steady drift, and
+   * those are different problems with different fixes. Plotted by the day the exception was RAISED
+   * rather than the day it covers, because this chart is about the arrival rate of her own workload;
+   * the day it covers is on the row itself, in "Your day".
+   */
+  time_attendance: (loaded) => {
+    const exceptions = loaded.attendanceExceptions;
+    if (!exceptions) return [];
+    const series: HrCommandChartSeries[] = [
+      { color: CHART_COLORS.primary, key: "pending", name: "Still pending" },
+      { color: CHART_COLORS.decided, key: "decided", name: "Decided" },
+    ];
+    const rows = recentCairoDays(14).map((day) => {
+      const raised = exceptions.filter((row) => (row.createdAt ?? "").slice(0, 10) === day.iso);
+      const pending = raised.filter((row) => row.status === "pending").length;
+      return { decided: raised.length - pending, label: day.label, pending };
+    });
+    return [
+      {
+        caption:
+          "Exceptions by the day they were raised. Orange is what is still on your desk; grey has been decided. A tall orange run is a rule that needs looking at, not a busy morning.",
+        emptyLabel: "No attendance exception has been raised in the last fortnight.",
+        href: "/hr/attendance",
+        hrefLabel: "Open Attendance",
+        key: "attendance-exception-flow",
+        rows,
+        series,
+        title: "Attendance exceptions raised, last 14 days",
+      },
+    ];
+  },
+
+  workforce_insight: () => [],
+};
+
+/**
  * Runs `load`, and on any failure records the source name and returns null instead of throwing.
  *
  * Deliberately catches everything. The callers are real services that throw on a missing table, an
@@ -499,7 +863,6 @@ async function safe<T>(
 /** Human wording for the unavailable notice. A source key means nothing to the person reading it. */
 const SOURCE_LABELS: Record<SourceKey, string> = {
   attendanceExceptions: "Attendance exceptions",
-  clearance: "Clearance checklists",
   contracts: "Contract renewals",
   deductions: "Deductions month",
   directory: "Employee directory",
@@ -654,11 +1017,6 @@ export async function getHrCommandCenterData(
           loaded.attendanceExceptions = value;
         })
       : null,
-    needed.has("clearance")
-      ? safe("clearance", () => getClearanceDashboardData(access), failures).then((value) => {
-          loaded.clearance = value;
-        })
-      : null,
     needed.has("retention")
       ? safe("retention", () => getRetentionDashboardData(access), failures).then((value) => {
           loaded.retention = value;
@@ -688,6 +1046,12 @@ export async function getHrCommandCenterData(
  * order its permissions are declared in. A group is skipped when its builder returns null (the
  * source failed) or an empty array (the function contributes no tiles by design, which today is
  * `hr_governance` alone) — the two are different reasons and both correctly render nothing.
+ *
+ * THE TILE BUILDER STILL GOVERNS WHETHER THE GROUP EXISTS, and charts ride along inside it. That
+ * asymmetry is deliberate: a chart is a second reading of a source the tiles already report, so a
+ * function that contributes no tiles has nothing for a chart to be a second reading OF. Letting a
+ * chart resurrect a group whose tiles were dropped would put a plot on the page for a source the
+ * builder just decided it could not read — the misleading-zero trap, drawn rather than printed.
  */
 export function buildHrCommandGroups(
   seat: HrBundleName,
@@ -699,6 +1063,7 @@ export function buildHrCommandGroups(
     if (!tiles || tiles.length === 0) continue;
     const definition = getHrFunction(functionKey);
     groups.push({
+      charts: CHARTS_BY_FUNCTION[functionKey](loaded),
       functionKey,
       label: definition.label,
       summary: definition.summary,

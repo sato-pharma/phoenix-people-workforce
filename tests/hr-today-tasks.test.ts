@@ -17,6 +17,7 @@
 import { strict as assert } from "node:assert";
 import { readFileSync } from "node:fs";
 
+import { HR_ROLE_BUNDLES } from "../src/lib/auth/hr-functions.ts";
 import {
   buildHrTodayTasks,
   openWorkforceSeats,
@@ -201,6 +202,8 @@ export async function runHrTodayTasksTests() {
     // task entirely, on purpose, because rendering it at zero would claim an all-clear nobody
     // measured. The assertion below pins that distinction in both directions.
     const emptySources = {
+      attendanceExceptions: [],
+      contracts: { rows: [] },
       directory: { employees: [], lookups: { workforceVacancies: [] } },
       offers: [],
       probation: [],
@@ -254,6 +257,82 @@ export async function runHrTodayTasksTests() {
       todayTasks,
       /loaded\.probation\.filter\(\(row\) => isProbationDecisionOutstanding\(row\)\)/,
       "the probation task must call the shared predicate, never re-implement 'pass or terminate means done' — a second local copy is what let the CEO count drift",
+    );
+  }
+
+  // ── 5. "Your day" must speak about the seat's OWN job ──────────────────────
+  {
+    // THE DEFECT THIS PINS, measured on 2026-09-01. The first version of this file emitted tasks
+    // for performance_probation, engagement_retention, recruiting and workforce_insight only.
+    // HR Advisory holds four of those and got a full panel. HR Operations holds exactly ONE, so
+    // the panel that answers "what do I do today" answered it for one fifth of her job and said
+    // nothing about the attendance exception queue she works every morning or the contract
+    // renewals sitting on her review.
+    //
+    // Nothing failed. Every number on the page was true. The panel was simply silent about four
+    // fifths of the seat, which is indistinguishable from a quiet day.
+    //
+    // Sources present and EMPTY, so this measures COVERAGE and never counts: an absent source
+    // drops its task by design (asserted in section 3), and an absent source is exactly how the
+    // gap would come back unnoticed.
+    const allSourcesEmpty = {
+      attendanceExceptions: [],
+      contracts: { rows: [] },
+      directory: { employees: [], lookups: { workforceVacancies: [] } },
+      offers: [],
+      probation: [],
+      recruitment: { applications: [], requisitions: [] },
+      retention: { conversations: [] },
+      supportRequests: [],
+    };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- literal fixtures, not fetches
+    const covered = new Set(buildHrTodayTasks(allSourcesEmpty as any).map((item) => item.functionKey));
+
+    /**
+     * Functions that produce no task ON PURPOSE, each argued at its own place in
+     * buildHrTodayTasks. Written down rather than inferred, so deleting a task by accident fails
+     * here instead of quietly emptying somebody's morning.
+     *
+     *   payroll_inputs — grants `deductions:read` and nothing more. A task is an instruction to
+     *                    ACT, and the decision behind these counts is a JD boundary this seat is
+     *                    deliberately outside of. Its source carries no employee names either.
+     *   hr_governance  — no source at all: its grants are a document library and a landing
+     *                    permission, neither of which is a queue.
+     */
+    const FUNCTIONS_WITH_NO_TASK = new Set(["hr_governance", "payroll_inputs"]);
+
+    const gaps: string[] = [];
+    for (const [seat, functions] of Object.entries(HR_ROLE_BUNDLES)) {
+      for (const functionKey of functions) {
+        if (FUNCTIONS_WITH_NO_TASK.has(functionKey)) {
+          assert.equal(
+            covered.has(functionKey),
+            false,
+            `"${functionKey}" is listed as producing no task but produced one — remove it from FUNCTIONS_WITH_NO_TASK`,
+          );
+          continue;
+        }
+        if (!covered.has(functionKey)) {
+          gaps.push(`${seat} holds "${functionKey}" and "Your day" says nothing about it`);
+        }
+      }
+    }
+
+    assert.deepEqual(
+      gaps,
+      [],
+      `"Your day" is silent about part of a seat's own job, which reads to her as a quiet day rather than as a missing panel:${String.fromCharCode(10)}  ${gaps.join(String.fromCharCode(10) + "  ")}`,
+    );
+
+    // Controls. The loop above passes vacuously if the bundles are empty or if every function is
+    // waved through as a documented exception.
+    assert.ok(
+      covered.size >= 5,
+      `only ${covered.size} functions produce any task at all — the coverage assertion above is reading a nearly empty catalogue`,
+    );
+    assert.ok(
+      covered.has("time_attendance") && covered.has("people_records"),
+      "the two functions added on 2026-09-01 no longer produce a task — HR Operations is back to a panel that covers one fifth of her job",
     );
   }
 }

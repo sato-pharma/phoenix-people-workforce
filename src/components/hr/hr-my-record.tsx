@@ -30,7 +30,6 @@
  */
 
 import {
-  ArrowUpRight,
   CalendarClock,
   CircleAlert,
   Fingerprint,
@@ -38,7 +37,6 @@ import {
   UserRound,
   type LucideIcon,
 } from "lucide-react";
-import Link from "next/link";
 
 import type { HrPersonalRecord } from "@/lib/hr/command-center";
 
@@ -127,7 +125,9 @@ function OwnStat({
 }
 
 export function HrMyRecord({ record }: { record: HrPersonalRecord }) {
-  const { attendance, excuses, leave, pages, requests } = record;
+  // `pages` is deliberately NOT destructured: it still travels on HrPersonalRecord because the
+  // shell strip is built from the same resolver, but this card no longer renders it.
+  const { attendance, excuses, leave, requests } = record;
 
   return (
     <section className="border-t border-slate-100" id="hr-group-my-record">
@@ -232,28 +232,13 @@ export function HrMyRecord({ record }: { record: HrPersonalRecord }) {
         </div>
       ) : null}
 
-      {pages.length > 0 ? (
-        <div className="border-t border-slate-100 px-5 pb-6 pt-4">
-          <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">
-            My pages
-          </p>
-          <div className="mt-2 flex flex-wrap gap-2">
-            {pages.map((page) => (
-              <Link
-                className="group/page inline-flex items-center gap-1.5 border border-slate-200 bg-white px-3 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-slate-600 transition-colors hover:border-orange-200 hover:bg-orange-50 hover:text-orange-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500"
-                href={page.href}
-                key={page.href}
-              >
-                {page.label}
-                <ArrowUpRight
-                  aria-hidden="true"
-                  className="h-3 w-3 text-slate-300 transition-colors group-hover/page:text-orange-500"
-                />
-              </Link>
-            ))}
-          </div>
-        </div>
-      ) : null}
+      {/* "My pages" WAS the last block of this card. It moved into the shell chrome on 2026-09-01
+          at the owner's instruction — "make the my pages as a strip or as a line in the top of the
+          page under the identity banner… fix it in every page she opens" — and now renders once,
+          on every page, from src/components/hr/hr-my-pages-strip.tsx.
+          Do NOT restore it here: two copies of the same twelve links, one of them reachable only by
+          returning to the dashboard, is the navigation step the move removed. The `pages` prop is
+          still part of this component's data because the same resolver feeds the strip. */}
     </section>
   );
 }

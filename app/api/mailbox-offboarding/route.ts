@@ -21,13 +21,13 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * Gated on `clearance`, not on a new resource of its own.
+ * Gated on `mailbox_offboarding`, its own resource.
  *
- * A leaver's mailbox IS clearance — the "IT & System Access" station on every checklist reads
- * "email, Phoenix and all system access revoked", and this register is that sentence given a
- * table. Minting a `mailbox_offboarding` resource would have to be granted to exactly the roles
- * that already hold `clearance`, would add a fourth CI gate to trip, and would create a second
- * place where an offboarding grant can drift out of step with the first.
+ * It rode on `clearance` until 2026-09-01, on the reasoning that a leaver's mailbox IS the "IT &
+ * System Access" station of a clearance checklist given a table. That reasoning ended with the
+ * module: the Clearance & Offboarding pages were removed at the owner's instruction, this register
+ * became the resource's only consumer, and a permission named after a page nobody can open is one
+ * a later reader widens without understanding what he is widening.
  */
 function mailboxApiError(error: unknown) {
   if (isForbiddenError(error)) return { message: mailboxOffboardingErrorMessage(error), status: 403 };
@@ -45,7 +45,7 @@ function mailboxApiError(error: unknown) {
 export async function GET(request: Request) {
   try {
     const access = await resolveAccessContext(request);
-    await assertPermission(access, "clearance", "read");
+    await assertPermission(access, "mailbox_offboarding", "read");
     return NextResponse.json(await getMailboxOffboardingDashboardData());
   } catch (error) {
     const { message, status } = mailboxApiError(error);
@@ -56,7 +56,7 @@ export async function GET(request: Request) {
 /**
  * Two mutations, separated by `action`.
  *
- * `record` is gated on `update` and `open` on `create`, matching the clearance route exactly. The
+ * `record` is gated on `update` and `open` on `create`. The
  * page hides the controls when the permission is absent, but that is UX — this is the boundary.
  */
 export async function POST(request: Request) {
@@ -81,7 +81,7 @@ export async function POST(request: Request) {
     const actor = resolveEmployeeIdentityId(access) ?? access.loginId ?? access.role;
 
     if (payload.action === "open") {
-      await assertPermission(access, "clearance", "create");
+      await assertPermission(access, "mailbox_offboarding", "create");
       if (!payload.employeeHrId) {
         return NextResponse.json(
           { error: "missing_employee", message: "An employee is required to open a mailbox task." },
@@ -93,7 +93,7 @@ export async function POST(request: Request) {
     }
 
     if (payload.action === "record") {
-      await assertPermission(access, "clearance", "update");
+      await assertPermission(access, "mailbox_offboarding", "update");
       if (!payload.taskId || !isMailboxStep(payload.step)) {
         return NextResponse.json(
           { error: "missing_step", message: "A task and a known step are required." },
@@ -118,7 +118,7 @@ export async function POST(request: Request) {
     /**
      * One step, many tasks, ONE round trip.
      *
-     * Gated on `clearance:update`, exactly like `record` — bulk is a shortcut through the same
+     * Gated on `mailbox_offboarding:update`, exactly like `record` — bulk is a shortcut through the same
      * work, never a second door into it, so it must not be reachable by anyone who cannot record
      * a single row.
      *
@@ -127,7 +127,7 @@ export async function POST(request: Request) {
      * unable to tell which of the other rows landed. The caller reads `outcomes` and says so.
      */
     if (payload.action === "record_bulk") {
-      await assertPermission(access, "clearance", "update");
+      await assertPermission(access, "mailbox_offboarding", "update");
       const taskIds = Array.isArray(payload.taskIds) ? payload.taskIds : [];
       if (taskIds.length === 0 || !isMailboxBulkStep(payload.step)) {
         return NextResponse.json(

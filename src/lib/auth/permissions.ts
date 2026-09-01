@@ -125,7 +125,7 @@ export type PermissionResource =
   | "user_activity"
   | "synthetic_journeys"
   | "mailbox_monitor"
-  | "clearance"
+  | "mailbox_offboarding"
   | "retention";
 
 /**
@@ -195,10 +195,16 @@ export const permissionResources: PermissionResource[] = [
   // Mailbox compliance monitor — Super Admin only (hard boundary below). Omitting this would leak
   // the tab to every role.
   "mailbox_monitor",
-  // Phase 6 (2026-08-28). Omitting either would offer Clearance and the Retention Register to every
-  // role in the company - including the leaver's own colleagues, and Retention holds what people
-  // said in confidence about their manager and their pay.
-  "clearance",
+  // Phase 6 (2026-08-28). Omitting either would offer the Mailbox Revocation register and the
+  // Retention Register to every role in the company - including the leaver's own colleagues, and
+  // Retention holds what people said in confidence about their manager and their pay.
+  //
+  // `mailbox_offboarding` was called `clearance` until 2026-09-01, when the Clearance & Offboarding
+  // module was removed at the owner's instruction. The mailbox register was the one surviving
+  // consumer of that resource, so it took a name of its own rather than keep a grant named after a
+  // module that no longer exists - a resource whose name no longer matches anything is how a later
+  // reader talks himself into "helpfully" widening it.
+  "mailbox_offboarding",
   "retention",
 ];
 
@@ -525,10 +531,11 @@ function hardBoundaryAllowedActions(role: PhoenixRole, resource: PermissionResou
       if (role === "HR Operations") return ["read", "create", "update", "export", "import"];
       if (role === "HR Advisory") return ["read", "export"];
       return [];
-    case "clearance":
-      // ops 6 - Resignation, Clearance & Offboarding. HR Operations runs it; the CEO observes.
-      // No delete for anyone but Super Admin: a clearance trail is the evidence a settlement was
-      // released against, and both job descriptions require records that survive an audit.
+    case "mailbox_offboarding":
+      // ops 6 - Resignation & Offboarding. HR Operations runs it; the CEO observes.
+      // No delete for anyone but Super Admin: a mailbox revocation row is an ATTESTATION that a
+      // leaver's company mail was actually closed, and both job descriptions require records that
+      // survive an audit.
       if (role === "Super Admin") return allActions;
       if (role === "HR Operations") return ["read", "create", "update", "export"];
       if (role === "CEO") return ["read", "export"];
@@ -724,7 +731,7 @@ const defaultPermissionMatrix: PermissionMap = {
     resignations: allActions,
     permission_admin: allActions,
     mailbox_monitor: allActions,
-    clearance: allActions,
+    mailbox_offboarding: allActions,
     retention: allActions,
     workflow_registry: allActions,
     sales: allActions,
@@ -812,8 +819,8 @@ const defaultPermissionMatrix: PermissionMap = {
     hiring_interviews: ["read", "update"],
     report_it: ["read", "create", "export"],
     // SoD: read/export only, matching `resignations` above - the CEO observes an exit, he does
-    // not clear a station or record that a final settlement was released.
-    clearance: ["read", "export"],
+    // not record that a leaver's mailbox was actually closed.
+    mailbox_offboarding: ["read", "export"],
     retention: ["read", "export"],
   },
   // ── The two HR seats, composed from functions ─────────────────────────────────────────────

@@ -1649,18 +1649,14 @@ const hrNavigationSectionSeeds = [
       { href: "/hr/contracts", icon: CalendarClock, label: "Contract Renewal", permissions: [{ resource: "contracts" }] },
       { href: "/hr/resignations", icon: FileSpreadsheet, label: "Resignations", permissions: [{ resource: "resignations" }] },
       // The offboarding arc, in the order it actually happens: the departure is recorded, the
-      // stations are cleared, the conversation is captured. Each row advertises the permission its
+      // mailbox is closed, the conversation is captured. Each row advertises the permission its
       // page really gates on - the Deductions note under Payroll is what happens when they drift.
       //
-      // Only ONE of these two ever renders for a given seat, by design. Clearance is in
+      // Only ONE of these two ever renders for a given seat, by design. Mailbox Revocation is in
       // people_records (HR Operations); Retention is in engagement_retention (HR Advisory). The
       // sidebar does not enforce that - the route handler does - but the split is the reason a
       // reader of this file should not "helpfully" grant both to both.
-      { href: "/hr/clearance", icon: ClipboardCheck, label: "Clearance", permissions: [{ resource: "clearance" }] },
-      // Gated on `clearance` rather than a resource of its own: a leaver's mailbox IS the "IT &
-      // System Access" station given a table, and a second offboarding grant is a second thing to
-      // drift out of step with the first.
-      { href: "/hr/mailbox-offboarding", icon: MailX, label: "Mailbox Revocation", permissions: [{ resource: "clearance" }] },
+      { href: "/hr/mailbox-offboarding", icon: MailX, label: "Mailbox Revocation", permissions: [{ resource: "mailbox_offboarding" }] },
       { href: "/hr/retention", icon: HeartPulse, label: "Retention Register", permissions: [{ resource: "retention" }] },
       { href: "/hr/reports/vacancies", icon: BriefcaseBusiness, label: "Vacancies Report", permissions: [{ resource: "vacancies" }] },
       { href: "/hr/admin/support-requests", icon: LifeBuoy, label: "HR Support Requests", permissions: [{ resource: "support_requests" }] },
@@ -3119,18 +3115,11 @@ export const peopleManagementPageItems: readonly AdminToolsPageItem[] = [
     excludedRoles: ["Finance Manager"],
   },
   {
-    href: "/clearance",
-    icon: ClipboardCheck,
-    label: "Clearance & Offboarding",
-    description: "Every station a leaver has to clear, and the final settlement release.",
-    permissions: [{ resource: "clearance" }],
-  },
-  {
     href: "/mailbox-offboarding",
     icon: MailX,
     label: "Mailbox Revocation",
     description: "Every leaver still holding a company mailbox, and what has been done about it.",
-    permissions: [{ resource: "clearance" }],
+    permissions: [{ resource: "mailbox_offboarding" }],
   },
   {
     href: "/retention",

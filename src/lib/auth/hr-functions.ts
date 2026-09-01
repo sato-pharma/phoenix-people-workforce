@@ -206,12 +206,12 @@ export const HR_FUNCTIONS: readonly HrFunction[] = [
     key: "people_records",
     label: "People Records & Lifecycle",
     summary:
-      "Personnel files, master data, contracts, onboarding, resignations, clearance and HR letters.",
+      "Personnel files, master data, contracts, onboarding, resignations, offboarding and HR letters.",
     jdSections: [
       "ops 1 — Employee Records & Personnel Files",
       "ops 4 — Contracts, Probation & Employee Lifecycle",
       "ops 5 — Onboarding & Joining Administration",
-      "ops 6 — Resignation, Clearance & Offboarding",
+      "ops 6 — Resignation & Offboarding",
       "ops 7 — Employee HR Services",
     ],
     grants: {
@@ -275,16 +275,15 @@ export const HR_FUNCTIONS: readonly HrFunction[] = [
       // fix is to split the decision path by recommendation kind first, then grant.
       hr_calendar: READ_ONLY,
       support_requests: MAINTAIN,
-      // ops 6 - Resignation, Clearance & Offboarding. Added 2026-08-28 (Phase 6). This is the
-      // half of ops 6 that had nowhere to live: `resignations` records that someone left, and
-      // until now nothing recorded the clearance behind it.
+      // ops 6 - Resignation & Offboarding. Added 2026-08-28 (Phase 6), renamed from `clearance`
+      // on 2026-09-01 when the Clearance & Offboarding module was removed at the owner's
+      // instruction. This is the half of ops 6 that had nowhere to live: `resignations` records
+      // that someone left, and nothing recorded whether his company mailbox was actually closed.
       //
-      // MAINTAIN, not allActions, and it does NOT reach payroll. Recording that a settlement was
-      // released is gated on every station being decided - phx_hr_clearance_release refuses
-      // otherwise, in the database, not in a page - but it writes no money. "May not approve
-      // final settlement" is a named boundary in this same job description and stays enforced by
-      // the payroll entries in HR_ROLE_BOUNDARIES.
-      clearance: MAINTAIN,
+      // MAINTAIN, not allActions, and it does NOT reach payroll. "May not approve final
+      // settlement" is a named boundary in this same job description and stays enforced by the
+      // payroll entries in HR_ROLE_BOUNDARIES.
+      mailbox_offboarding: MAINTAIN,
       // NO `delete` anywhere in this function. Removing an employee, a contract or a resignation
       // destroys a personnel record, and both job descriptions require records that "can support
       // internal review, external inspection or audit". Deletion stays Super Admin.
@@ -470,7 +469,7 @@ export const HR_ROLE_BOUNDARIES: readonly {
   { resource: "employees", action: "delete", why: "may not terminate or destroy a record (hrbp + ops)" },
   { resource: "contracts", action: "delete", why: "may not destroy a contract record (ops)" },
   { resource: "resignations", action: "delete", why: "may not destroy an exit record (ops)" },
-  { resource: "clearance", action: "delete", why: "may not destroy the evidence a settlement was released against (ops)" },
+  { resource: "mailbox_offboarding", action: "delete", why: "may not destroy the attestation that a leaver's mailbox was closed (ops)" },
   { resource: "retention", action: "delete", why: "may not destroy an exit interview - it is the evidence behind a turnover theme (hrbp)" },
   { resource: "organogram", action: "update", why: "may not make organizational changes (hrbp + ops)" },
   { resource: "user_admin", action: "read", why: "role, scope and permission admin stays Super Admin" },
