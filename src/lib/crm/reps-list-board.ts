@@ -228,14 +228,30 @@ export async function getRepsListBoard(input: {
   // the scope would leave the commonest case saying only "shared with someone". This never becomes
   // a list a viewer can browse — a name is printed only on a row the viewer can already see.
   //
-  // BUILT FROM `tree.reps`, NOT FROM `summaries`. getDoctorListRepSummaries constructs every row
-  // with `name: ""` and never fills it — the name is resolved against the org tree by whichever
-  // board is assembling the screen. Reading `summary.name` here therefore produced an EMPTY MAP,
-  // and an empty map means every match is dropped for want of a name: the whole shared-customer
-  // feature rendered nothing, on every rep, with no error anywhere. Measured 2026-09-01 — agent
-  // 1131 has 18 shared contacts and the board showed 0. Do not reintroduce `summaries` here.
+  // BUILT FROM `companyTree.reps`, NOT FROM `tree.reps` — THE ONE READ IN THIS FILE THAT WANTS THE
+  // UNRESTRICTED TREE. `tree` is scope-restricted a few lines above, which is right for every
+  // option list, for the rep cards and for the selection, and wrong here and only here. Built from
+  // `tree` the map holds the viewer's OWN reps alone, so a partner outside his team cannot be
+  // named — and `findSharedCustomers` does not degrade an unnameable partner to "shared with
+  // someone", it discards the match outright (`if (!repName) return`). The discarded entry is also
+  // what carries `contactCrmIds`, so the partner's check-ins are never fetched and the confidence
+  // score silently loses its second observer as well: both of the bugs fixed on 2026-09-01,
+  // reopened for team-scoped viewers only. /admin/reps-list was never affected — a company scope
+  // restricts nothing, so only the portal board was blind. Measured on production 2026-09-01: of
+  // 3,334 cross-rep same-name pairs 2,842 (85%) sit under a different manager, and of the 62
+  // shared-phone pairs ALL 62 do.
+  //
+  // AND NOT FROM `summaries`. getDoctorListRepSummaries constructs every row with `name: ""` and
+  // never fills it — the name is resolved against the org tree by whichever board is assembling the
+  // screen. Reading `summary.name` here therefore produced an EMPTY MAP, and an empty map means
+  // every match is dropped for want of a name: the whole shared-customer feature rendered nothing,
+  // on every rep, with no error anywhere. Measured 2026-09-01 — agent 1131 has 18 shared contacts
+  // and the board showed 0. Do not reintroduce `summaries` here.
+  //
+  // The owner was asked directly on 2026-09-01 and approved the one thing this widens: a manager
+  // may read the NAME of a rep outside his own team, on a shared row he can already see.
   const repNameByAgentId = new Map<number, string>();
-  for (const rep of tree.reps) {
+  for (const rep of companyTree.reps) {
     const summary = summaryByHrId.get(lower(rep.hrId));
     const name = rep.repName?.trim();
     if (summary?.agentCrmId != null && name) repNameByAgentId.set(summary.agentCrmId, name);
