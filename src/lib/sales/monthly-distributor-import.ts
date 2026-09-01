@@ -2479,6 +2479,36 @@ export function mergeDashboardGroupsByCode(
     .sort((left, right) => right.totalValue - left.totalValue || left.label.localeCompare(right.label));
 }
 
+/**
+ * What the SoS tables print for a group the master cannot name.
+ *
+ * Every unmapped row arrives from the import with an EMPTY code and an EMPTY label — sales whose
+ * area or brick could not be resolved to a master row. Measured on production period 2026-07:
+ * 5 such area rows worth EGP 149,289 (one per region) and 29 brick rows worth EGP 1,324,399.
+ *
+ * Until now those rendered as "-", because `cellDisplay` in the SoS workspace falls back to a dash
+ * on any falsy value. A dash reads as a rendering fault, so the rows were invisible as a FINDING —
+ * which is exactly what they are: real money that reached no area or brick. Worse, the dash was
+ * screen-only; the XLSX export wrote the raw empty string, so screen and export disagreed. Naming
+ * them here, in the data layer, makes both say the same word.
+ *
+ * This deliberately does NOT merge them. Each unmapped row keeps its own parent — the five area
+ * rows carry their region, the 29 brick rows carry their area — and that parent is rendered beside
+ * the label, so the rows stay distinguishable rather than becoming a wall of identical text.
+ * Folding them together would print one meaningless total and destroy the per-parent split that
+ * makes an unmapped row actionable. See mergeDashboardGroupsByCode for the guard that keeps a
+ * blank code from ever becoming an identity.
+ */
+export const UNMAPPED_GROUP_LABEL = "Unmapped";
+
+export function labelUnmappedGroups(
+  groups: SourceOfSalesDashboardGroup[],
+): SourceOfSalesDashboardGroup[] {
+  return groups.map((group) =>
+    String(group.label ?? "").trim() ? group : { ...group, label: UNMAPPED_GROUP_LABEL },
+  );
+}
+
 function aggregateDashboardGroups(
   summaries: SourceOfSalesSummaryRecord[],
   groupType: string,
@@ -2879,21 +2909,21 @@ export async function loadSourceOfSalesDashboard(
   // The master is the source of truth for IDENTITY as well as for names: it both heals the label
   // and decides which groups are the same place. See mergeDashboardGroupsByCode for why a code the
   // master does not know is deliberately left unmerged rather than folded in on its label.
-  const byRegion = mergeDashboardGroupsByCode(dashboard.byRegion, (code) => {
+  const byRegion = labelUnmappedGroups(mergeDashboardGroupsByCode(dashboard.byRegion, (code) => {
     const name = regionNameByCode.get(code);
     return name ? { label: name } : null;
-  });
-  const byArea = mergeDashboardGroupsByCode(dashboard.byArea, (code) => {
+  }));
+  const byArea = labelUnmappedGroups(mergeDashboardGroupsByCode(dashboard.byArea, (code) => {
     const info = areaInfoByCode.get(code);
     if (!info) return null;
     // The area's parent column (group.line) holds the region label; resolve it to the region name
     // too. `label`/`line` fall back to the group's own values when the master row is name-less.
     return { label: info.name || undefined, line: (info.regionCode ? regionNameByCode.get(info.regionCode) : undefined) ?? undefined };
-  });
-  const byBrick = mergeDashboardGroupsByCode(dashboard.byBrick, (code) => {
+  }));
+  const byBrick = labelUnmappedGroups(mergeDashboardGroupsByCode(dashboard.byBrick, (code) => {
     const name = brickNameById.get(code);
     return name ? { label: name } : null;
-  });
+  }));
 
   return { ...dashboard, byArea, byBrick, byRegion };
 }

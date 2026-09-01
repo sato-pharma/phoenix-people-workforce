@@ -3,7 +3,9 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import {
+  labelUnmappedGroups,
   mergeDashboardGroupsByCode,
+  UNMAPPED_GROUP_LABEL,
   type SourceOfSalesDashboardGroup,
 } from "../src/lib/sales/monthly-distributor-import.ts";
 
@@ -174,9 +176,49 @@ export function runSosDashboardGroupMergeTests() {
   assert.deepEqual(
     unmapped.map((row) => row.label),
     ["", "", ""],
-    "a blank-code row is never relabelled either — the guard short-circuits before the resolver is consulted at all",
+    "the MERGE never relabels a blank-code row — the guard short-circuits before the resolver is consulted at all. The loader names it 'Unmapped' afterwards, in a separate step asserted below",
   );
 
+  // ── An unmapped row must SAY so, not render as a dash ───────────────────────────────────────
+  // Those same rows are real money that reached no master row: 5 area rows worth EGP 149,289 and
+  // 29 brick rows worth EGP 1,324,399 in production 2026-07. They used to render as "-", because
+  // `cellDisplay` in the SoS workspace turns any falsy label into a dash — which reads as a broken
+  // cell rather than as a finding. The dash was also screen-only: the XLSX export wrote the raw
+  // empty string, so the screen and the export disagreed about the same row. Naming them in the
+  // loader makes both say the same word, without merging anything.
+  const named = labelUnmappedGroups(unmappedRows);
+
+  assert.equal(UNMAPPED_GROUP_LABEL, "Unmapped", "the exact word asked for — not 'N/A', not 'Other'");
+  assert.deepEqual(
+    named.map((row) => row.label),
+    [UNMAPPED_GROUP_LABEL, UNMAPPED_GROUP_LABEL, UNMAPPED_GROUP_LABEL],
+    "every blank-label group is named — otherwise the row renders as a dash and reads as a rendering fault instead of the data finding it actually is",
+  );
+  assert.equal(
+    named.length,
+    unmappedRows.length,
+    "naming NEVER merges: three rows stay three. Each carries a different parent, and folding them would print one meaningless total and destroy the per-parent split that makes an unmapped row actionable",
+  );
+  assert.deepEqual(
+    named.map((row) => row.line),
+    ["Delta (2)", "Delta (1)", "Upper Egypt"],
+    "and each keeps its parent, which the table renders beside the label — that column is the only thing keeping three rows all reading 'Unmapped' distinguishable from each other",
+  );
+  assert.equal(
+    named.reduce((total, row) => total + row.totalValue, 0),
+    unmappedRows.reduce((total, row) => total + row.totalValue, 0),
+    "naming moves no money",
+  );
+  assert.deepEqual(
+    labelUnmappedGroups([group("AB", "Alex-BHR", 10)]).map((row) => row.label),
+    ["Alex-BHR"],
+    "a group the master DID name is left completely alone",
+  );
+  assert.deepEqual(
+    labelUnmappedGroups([group("", "   ", 10)]).map((row) => row.label),
+    [UNMAPPED_GROUP_LABEL],
+    "a whitespace-only label counts as blank — it renders as a dash exactly like an empty string does",
+  );
   // A merge keyed on the LABEL rather than the code would silently fuse the two Cairos below
   // (one is really Alex-BHR's, one is really Cairo's). Pin that it does not.
   const twoCairos = mergeDashboardGroupsByCode(
@@ -208,12 +250,12 @@ export function runSosDashboardGroupMergeTests() {
   // reported and stay broken on the two that were not.
   const importSource = readSource("../src/lib/sales/monthly-distributor-import.ts");
   for (const dimension of ["byRegion", "byArea", "byBrick"]) {
-    assert.match(
-      importSource,
-      new RegExp(`const ${dimension} = mergeDashboardGroupsByCode\\(dashboard\\.${dimension},`),
-      `loadSourceOfSalesDashboard merges ${dimension} by master-resolved code — a plain .map() here relabels without merging, which is precisely the bug`,
-    );
-  }
+    assert.ok(
+      importSource.includes(
+        `const ${dimension} = labelUnmappedGroups(mergeDashboardGroupsByCode(dashboard.${dimension},`,
+      ),
+      `loadSourceOfSalesDashboard both MERGES ${dimension} by master-resolved code and NAMES what stays unmapped. A plain .map() here relabels without merging (the original bug); dropping labelUnmappedGroups puts the blank rows back to rendering as a dash. Both halves are pinned together because a future edit that reverts either one leaves the other looking fine`,
+    );  }
 
   // The pure builder must NOT merge: it has no masters, and tests/ceo-sos-table-row-keys.test.ts
   // depends on it keeping one row per group_key.
