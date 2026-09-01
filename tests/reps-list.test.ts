@@ -8,6 +8,11 @@ import {
   narrowCoverageOptions,
   type CoverageFilterMapRow,
 } from "../src/lib/crm/coverage-filters.ts";
+import {
+  matchContactTrade,
+  venueKey,
+  type TradeCounterparty,
+} from "../src/lib/crm/contact-trade.ts";
 import { DOCTOR_LIST_ACCESS_ROLES } from "../src/lib/crm/doctor-list-access.ts";
 import {
   clusterRows,
@@ -1454,6 +1459,203 @@ export function runRepsListTests() {
       (board.match(/role="dialog"/g) ?? []).length,
       1,
       "both popups must go through the one DialogShell, so neither can lose its backdrop, its Escape key or its close button",
+    );
+  }
+
+  // ── HAS PHOENIX ACTUALLY TRADED WITH THIS ROW? ───────────────────────────────────────────────
+  //
+  // The owner's ask, 2026-09-01: "if a pharmacy in the contact list and we meet direct order,
+  // show", scoped a moment later to "two quantity ... I don't need the value now".
+  //
+  // Every rule below exists because the join it stands in for DOES NOT EXIST. Phoenix has no key
+  // from a direct-order pharmacy to a CRM contact, so the match is inferred from the name — and a
+  // name alone is catastrophically wrong here in a way that is invisible on screen: a badge reading
+  // "1 direct order" is indistinguishable from a true one whichever row it lands on.
+  {
+    const party = (over: Partial<TradeCounterparty> = {}): TradeCounterparty => ({
+      approved: 1,
+      areaCode: "D21",
+      channel: "direct-order",
+      contactCrmId: null,
+      count: 2,
+      name: "المدينة",
+      ...over,
+    });
+
+    // THE ELEVEN-PHARMACY CASE, THE REASON THIS MODULE IS AREA-GATED AT ALL. Measured on production
+    // 2026-09-01: the direct-order venue `المدينة` name-matches ELEVEN CRM pharmacies, because "City
+    // Pharmacy" is the "Main Street" of Egyptian pharmacy names. Exactly ONE of them is in the area
+    // the order was raised in. Without the gate, ten reps are told they sold to a pharmacy they have
+    // never sold to — and each of those ten badges looks exactly like the one true one.
+    {
+      const towns = ["D11", "D12", "D13", "D15", "D16", "D22", "D23", "D26", "GZ1", "GZ3"];
+      const contacts = [
+        { areaCode: "D21", contactCrmId: 1, name: "صيدلية المدينة" },
+        ...towns.map((areaCode, index) => ({ areaCode, contactCrmId: index + 2, name: "صيدلية المدينة" })),
+      ];
+      const found = matchContactTrade(contacts, [party()]);
+      assert.equal(found.size, 1, "a generic pharmacy name must attach to the ONE contact in the order's own area, never to all eleven namesakes");
+      assert.equal(found.get(1)?.directOrders, 2, "and it must be the Belkas row — the one whose area matches the order");
+    }
+
+    // THE AREA IS A VETO, NOT A TIE-BREAK. Four production venues — مستشفى زمزم, احمد صالح, ريهام,
+    // أيمن صالح — each share a name with a CRM row in a DIFFERENT area. They are different
+    // businesses. A name match with no area agreement must produce nothing at all.
+    {
+      const found = matchContactTrade([{ areaCode: "AB2", contactCrmId: 1, name: "صيدلية المدينة" }], [party()]);
+      assert.equal(found.size, 0, "same name in a different area is a different business, and showing a trade there is a false record");
+    }
+
+    // AN UNPLACEABLE COUNTERPARTY MATCHES NOTHING. 41% of CRM contacts resolve to no brick and so to
+    // no area; a venue with no area is the same problem from the other side. Either way there is no
+    // evidence, and the safe direction is silence.
+    {
+      const found = matchContactTrade(
+        [{ areaCode: "D21", contactCrmId: 1, name: "صيدلية المدينة" }],
+        [party({ areaCode: null })],
+      );
+      assert.equal(found.size, 0, "a venue Phoenix cannot place cannot corroborate anything, so it must attach to no row");
+      const unplaceable = matchContactTrade([{ areaCode: null, contactCrmId: 1, name: "صيدلية المدينة" }], [party()]);
+      assert.equal(unplaceable.size, 0, "a contact Phoenix cannot place is equally unmatched — the gate has to hold from both sides");
+    }
+
+    // THE ONE PLACE AMBIGUITY IS TOLERATED. Two CRM rows reading `حضانه نور المصطفي`, both in Shebeen
+    // El Kom, are one nursery the CRM holds twice — a real production shape. The rep looking at
+    // either copy should see the order, so an EXACT name in the SAME area attaches to all of them.
+    {
+      const found = matchContactTrade(
+        [
+          { areaCode: "D12", contactCrmId: 1, name: "حضانه نور المصطفي" },
+          { areaCode: "D12", contactCrmId: 2, name: "حضانة نور المصطفى" },
+        ],
+        [party({ areaCode: "D12", approved: 1, count: 1, name: "حضانه نور المصطفي" })],
+      );
+      assert.equal(found.size, 2, "one venue duplicated in the CRM within a single town is still that venue, and both rows must carry its order");
+    }
+
+    // A PREFIX IS HOW REAL ORDERS ARE WRITTEN. A rep types the venue with its location appended, so
+    // exact matching alone misses `ريهام عادل بلقاس ن` against the CRM's `صيدلية ريهام عادل` in
+    // Belkas — a genuine production pair, and one of only a handful this board has at all.
+    {
+      const found = matchContactTrade(
+        [{ areaCode: "D21", contactCrmId: 1, name: "صيدلية ريهام عادل" }],
+        [party({ name: "ريهام عادل بلقاس ن" })],
+      );
+      assert.equal(found.get(1)?.directOrders, 2, "a venue written with its town appended is still that venue when nothing else in the area competes");
+    }
+
+    // AND THE PREFIX IS WHERE IT GOES WRONG. `محمد حسام` is a prefix of `محمد حسام على`, and
+    // `انجي جاد` of `انجي جاد عبداللة` — both real, both in one area, both DIFFERENT doctors. A
+    // prefix landing on more than one contact is not a weaker match, it is a question the data
+    // cannot answer, so it must attach to NEITHER rather than to both or to an arbitrary one.
+    {
+      // No exact spelling anywhere, and the shorter name prefixes BOTH — so there is no basis to
+      // choose, and choosing anyway would print a marketing request against a doctor who never had
+      // one. Both surnames are held by real people in one area.
+      const twoSurnames = [
+        { areaCode: "UE5", contactCrmId: 1, name: "انجي جاد عبداللة" },
+        { areaCode: "UE5", contactCrmId: 2, name: "انجي جاد محمود" },
+      ];
+      const found = matchContactTrade(twoSurnames, [
+        party({ areaCode: "UE5", channel: "marketing", count: 3, name: "انجي جاد" }),
+      ]);
+      assert.equal(found.size, 0, "a prefix landing on two real doctors must attach to NEITHER: it is not a weaker match, it is a question the data cannot answer");
+
+      // AND THIS IS WHAT SAVES THE PAIR IN PRODUCTION. The CRM really does hold `انجى جاد` beside
+      // `انجي جاد عبداللة`, and `محمد حسام` beside `محمد حسام على`. Rule 2 fires on the exact
+      // spelling and the longer namesake is never reached, so the ambiguity above never arises —
+      // but only while exact keeps its precedence over prefix.
+      const withExact = [{ areaCode: "UE5", contactCrmId: 3, name: "انجى جاد" }, ...twoSurnames];
+      const exact = matchContactTrade(withExact, [
+        party({ areaCode: "UE5", channel: "marketing", count: 3, name: "انجي جاد" }),
+      ]);
+      assert.equal(exact.size, 1, "an exact name must beat the prefix rule outright rather than being dragged into its ambiguity");
+      assert.equal(exact.get(3)?.marketingRequests, 3, "and it must land on the exactly-named doctor, not on either longer namesake");
+    }
+
+    // A SHORT PREFIX IS NOT EVIDENCE. Without the floor, the four-letter `ريهام` would prefix-match
+    // every `ريهام <surname>` in its area.
+    {
+      const found = matchContactTrade(
+        [{ areaCode: "D21", contactCrmId: 1, name: "ريهام عادل" }],
+        [party({ name: "ريهام" })],
+      );
+      assert.equal(found.size, 0, "a name too short to identify anybody must not fire the prefix rule, however unique it happens to be today");
+    }
+
+    // AN ID A HUMAN WROTE DOWN OUTRANKS EVERYTHING INFERRED — and is deliberately NOT area-gated,
+    // because it already names one specific contact and there is nothing left to disambiguate.
+    {
+      const found = matchContactTrade(
+        [{ areaCode: null, contactCrmId: 4242, name: "someone else entirely" }],
+        [party({ areaCode: null, channel: "marketing", contactCrmId: 4242, count: 3, name: "unrelated" })],
+      );
+      assert.equal(found.get(4242)?.marketingRequests, 3, "an explicit crm_code must bind on its own, with no name or area test — a human recorded it and nothing inferred outranks that");
+    }
+
+    // THE TWO CHANNELS ARE COUNTED APART. A pharmacy's orders and a doctor's marketing requests are
+    // different questions, and the owner asked for TWO quantities, not one total.
+    {
+      const found = matchContactTrade(
+        [{ areaCode: "D12", contactCrmId: 7, name: "محمد جابر" }],
+        [
+          party({ areaCode: "D12", approved: 1, count: 2, name: "محمد جابر" }),
+          party({ areaCode: "D12", approved: 0, channel: "marketing", count: 1, name: "محمد جابر" }),
+        ],
+      );
+      const trade = found.get(7);
+      assert.equal(trade?.directOrders, 2, "direct orders are their own count");
+      assert.equal(trade?.marketingRequests, 1, "marketing requests are their own count, never folded into the orders");
+      assert.equal(trade?.marketingRequestsApproved, 0, "and the approved figure is tracked per channel too — none of the 27 Phoenix marketing requests is approved");
+    }
+
+    // THE NORMALIZER'S THREE SYSTEMATIC DIFFERENCES. The CRM writes `صيدلية X` and `د. X` where an
+    // order writes `X`; أ/إ/آ, ى/ي and ة/ه are the same letters carelessly typed. Each is a real
+    // divergence between a list the CRM exported and a form a rep filled in.
+    assert.equal(venueKey("صيدلية المدينة"), venueKey("المدينه"), "the CRM's صيدلية prefix and the ة/ه spelling must not separate a pharmacy from itself");
+    assert.equal(venueKey("د. أحمد"), venueKey("احمد"), "the د. honorific and the أ/ا spelling must not separate a doctor from himself");
+    assert.ok(venueKey("محمد حسام").includes(" "), "spaces must SURVIVE normalization: the prefix rule respects word boundaries, and fusing tokens would let one name prefix-match an unrelated longer one");
+  }
+
+  // ── THE WIRING, PINNED ON SOURCE ─────────────────────────────────────────────────────────────
+  //
+  // Each of these fails silently and identically: a board that renders perfectly and shows no trade
+  // on any row, which is also what a quiet month looks like.
+  {
+    const loader = readFileSync("src/lib/crm/reps-list.ts", "utf8");
+    assert.ok(
+      /trade: tradeByContact\.get\(row\.contactCrmId\) \?\? null/.test(loader),
+      "the trade must be ATTACHED to the row — computing it and dropping it leaves every badge missing with no error anywhere",
+    );
+    assert.ok(
+      /areaCode: brickId \? \(metaByBrickId\.get\(brickId\)\?\.areaCode \?\? null\) : null/.test(loader),
+      "the contact's area must come from the SAME brick resolution the grouping uses; resolving it a second way is how the badge and the group heading come to disagree",
+    );
+
+    const trade = readFileSync("src/lib/crm/contact-trade.ts", "utf8");
+    // THE OWNER'S OWN SCOPING, 2026-09-01: "submitted through phoenix only, not import by xlsx".
+    // The marketing tables carry a seeded catalogue far larger than the requests actually raised —
+    // 286 of 332 pharmacies and 156 of 199 customers have no capture behind them — so losing this
+    // filter would put a badge on rows nobody has ever traded with, which is the exact opposite of
+    // what the board is for.
+    assert.ok(
+      /\.eq\("origin", "phoenix"\)/.test(trade),
+      "marketing requests must stay scoped to origin=phoenix: the owner excluded the xlsx-imported catalogue explicitly, and it dwarfs the real requests",
+    );
+
+    const board = readFileSync("src/components/crm/reps-list-tables.tsx", "utf8");
+    assert.ok(
+      board.includes("<TradeLine row={row} />"),
+      "the trade line must render on the board at all",
+    );
+    assert.equal(
+      (board.match(/<TradeLine row=\{row\} \/>/g) ?? []).length,
+      2,
+      "it must render on BOTH halves — the desktop cell and the mobile card. The owner's golden rule is that this board works on a phone, and a trade record only a laptop can see cannot be checked standing in the pharmacy",
+    );
+    assert.ok(
+      !/table-fixed[\s\S]{0,900}<col className="w-\[\d+%\]" \/>[\s\S]{0,60}<col[\s\S]{0,600}<th className=\{THEAD\}>Direct orders/.test(board),
+      "the trade must NOT become a seventh column: the table is table-fixed at 100% and the owner's golden rule forbids a horizontal scroll, so it is merged into the Contact cell instead",
     );
   }
 
