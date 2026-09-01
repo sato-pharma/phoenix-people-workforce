@@ -15,6 +15,7 @@
 import type { ContractTemplate } from "./contract-template";
 import { CONTRACT_TEMPLATE_V1 } from "./contract-text-v1";
 import { CONTRACT_TEMPLATE_V2 } from "./contract-text-v2";
+import { CONTRACT_TEMPLATE_V3 } from "./contract-text-v3";
 import { currentTemplateVersion, resolveTemplateVersion } from "./template-registry";
 
 export type { ContractTemplate, ContractToken } from "./contract-template";
@@ -31,6 +32,7 @@ export { fillContractTokens, CONTRACT_BLANK_RULE } from "./contract-template";
 export const CONTRACT_TEMPLATES: readonly ContractTemplate[] = [
   CONTRACT_TEMPLATE_V1,
   CONTRACT_TEMPLATE_V2,
+  CONTRACT_TEMPLATE_V3,
 ];
 
 /** One version by id, or null when the id is not one of ours. */

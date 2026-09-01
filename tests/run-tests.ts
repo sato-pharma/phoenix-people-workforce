@@ -698,6 +698,7 @@ import { runHrFormsClearanceTests } from "./hr-forms-clearance.test.ts";
 import { runHrFormsContractArchiveTests } from "./hr-forms-contract-archive.test.ts";
 import { runHrFormsCustodyTests } from "./hr-forms-custody.test.ts";
 import { runHrFormsExitDocumentTests } from "./hr-forms-exit-documents.test.ts";
+import { runHrFormsWorkerDataTests } from "./hr-forms-worker-data.test.ts";
 import { runOfferBuiltinTemplateTests } from "./offer-builtin-templates.test.ts";
 import { runOfferLetterPayAndRenderTests } from "./offer-letter-pay-and-render.test.ts";
 import { runOfferPdfRuntimeTests } from "./offer-pdf-runtime.test.ts";
@@ -2310,6 +2311,13 @@ await runTest(
     + "never printed, no sign-off is pre-ticked, every exit paper agrees on one departure date, and "
     + "a gap names only the paper that prints the value)",
   runHrFormsClearanceTests,
+);
+await runTest(
+  "HR Forms worker data (استمارة بيانات العامل — what Phoenix knows fills and the eight unknown "
+    + "fields print a dotted rule for a pen, every Latin and numeric value is pinned dir=ltr, no "
+    + "{{token}} or paper-editor key reaches the paper, the declaration prints whole, and the form is "
+    + "filed not signature-tracked)",
+  runHrFormsWorkerDataTests,
 );
 
 await runTest(
