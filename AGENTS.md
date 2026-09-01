@@ -197,7 +197,7 @@ Which memory file backs which hook is in
 - **A gitignored `_wt-*/` scratch folder makes a worktree look clean.**
 - **The pre-push gate is GONE — a bare worktree pushes fine.** What it cannot do is RUN a suite; junction `node_modules`, invoke `node` directly, never `pnpm`.
 - **"Permission denied" on `git worktree remove` still DEREGISTERS the worktree.**
-- **`--fix` / `--strip-idle` need exactly ONE live session**, and **`--fix` can NEVER clear a `_wt-*` husk** — use `rmdir /s /q` from PowerShell, not Bash.
+- **`--fix` needs exactly ONE live session; `--strip-idle` does NOT** (narrowed 2026-09-01) — it gates per worktree on dirty/unpushed/120-min-idle behind a lock, so RUN it with sessions open: the old census meant it never once ran. **`--fix` can NEVER clear a `_wt-*` husk** — use `rmdir /s /q` from PowerShell, not Bash.
 - **repo-doctor's RETIRABLE verdict names the branch a folder HAD at scan time.** Treat any scan older than the current command as fiction — re-read at the moment of removal.
 - **Every retirement gate can PASS on a worktree in active use** — nothing catches a live PROCESS. Two signals see what the gates cannot: the newest mtime under `.next/`, and HEAD moving between the gate read and the removal. Read the tip at the GATE and reuse that SHA.
 - **A squash-merged branch reads as "on NO origin ref" — that means BACKED UP, not stranded.** Never push a merged branch to "rescue" it; `git branch rescue/<name> <tip>` is the zero-risk move.
