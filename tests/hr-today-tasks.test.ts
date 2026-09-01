@@ -18,10 +18,17 @@ import { strict as assert } from "node:assert";
 import { readFileSync } from "node:fs";
 
 import {
+  HR_ROLE_BUNDLES,
+  type HrBundleName,
+  type HrFunctionKey,
+} from "../src/lib/auth/hr-functions.ts";
+import { sourcesFor } from "../src/lib/hr/command-center.ts";
+import {
   buildHrTodayTasks,
   openWorkforceSeats,
   splitVacanciesByRequisition,
 } from "../src/lib/hr/today-tasks.ts";
+import { currentCairoDateOnlyIso } from "../src/lib/i18n/format.ts";
 import { countUnoccupiedWorkforceSeats } from "../src/lib/platform/metrics.ts";
 import { isProbationDecisionOutstanding } from "../src/lib/probation/service.ts";
 import type { ProbationDecision, ProbationRow } from "../src/lib/probation/types.ts";
@@ -209,11 +216,11 @@ export async function runHrTodayTasksTests() {
       supportRequests: [],
     };
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- literal fixtures, not fetches
-    const tasks = buildHrTodayTasks(emptySources as any);
+    const tasks = buildHrTodayTasks(emptySources as any, "HR Advisory");
     assert.ok(tasks.length > 0, "a landing page whose sources all loaded empty must still render its queues, not nothing");
 
     assert.deepEqual(
-      buildHrTodayTasks({}),
+      buildHrTodayTasks({}, "HR Advisory"),
       [],
       "a source that did NOT load must drop its task rather than render at zero — 'nothing is waiting' and 'we could not look' are different answers, and only one of them is an all-clear",
     );
@@ -254,6 +261,258 @@ export async function runHrTodayTasksTests() {
       todayTasks,
       /loaded\.probation\.filter\(\(row\) => isProbationDecisionOutstanding\(row\)\)/,
       "the probation task must call the shared predicate, never re-implement 'pass or terminate means done' — a second local copy is what let the CEO count drift",
+    );
+  }
+
+  // ── 5. BOTH seats get a day, not one of them ─────────────────────────
+  {
+    // THE DEFECT THIS PINS. "Your day" is the whole point of this landing page — it is the
+    // panel that replaced a ring reading "5 of 18 waiting" after the owner said it showed nothing.
+    // But until 2026-09-01 every task in it was built from a source in HR Advisory's bundle. HR
+    // Operations holds seven sources, this page already fetched all seven for her tiles, and
+    // exactly two of them answered anything here: her landing page opened on a two-row panel over
+    // a wall of counters, with clearance, contracts, resignations and the attendance desk — her
+    // entire job — present as figures and absent as work.
+    //
+    // The pin is deliberately NOT a list of expected keys, which would agree with itself forever.
+    // It drives the REAL builder once per seat with that seat's REAL source set (from
+    // `sourcesFor`, the same function the page loads by) and asserts the two properties that
+    // actually matter: no seat is offered a task keyed to a function it does not hold, and no
+    // seat's day collapses to a handful of rows while the other's is full.
+    const EMPTY_SOURCE: Record<string, unknown> = {
+      attendanceExceptions: [],
+      clearance: { awaiting: [], checklists: [] },
+      contracts: { rows: [] },
+      deductions: { pending: {}, willPublish: {} },
+      directory: { employees: [], lookups: { workforceVacancies: [] } },
+      offers: [],
+      probation: [],
+      recruitment: { applications: [], requisitions: [] },
+      resignations: { records: [] },
+      retention: { conversations: [] },
+      supportRequests: [],
+    };
+
+    const seats = Object.keys(HR_ROLE_BUNDLES) as HrBundleName[];
+
+    // A source with no fixture would silently drive that seat SHORT, and the count assertion
+    // below would then be measuring the fixture rather than the product.
+    for (const name of seats) {
+      for (const key of sourcesFor(name)) {
+        assert.ok(
+          key in EMPTY_SOURCE,
+          `no fixture for source '${key}' — add one, or this test drives ${name} with a source the page really loads and proves less than it claims`,
+        );
+      }
+    }
+
+    const dayFor = (name: HrBundleName) => {
+      const sources = Object.fromEntries(sourcesFor(name).map((key) => [key, EMPTY_SOURCE[key]]));
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- literal fixtures, not fetches
+      return buildHrTodayTasks(sources as any, name);
+    };
+
+    const days = new Map(seats.map((name) => [name, dayFor(name)] as const));
+
+    for (const [name, tasks] of days) {
+      const bundle = HR_ROLE_BUNDLES[name] as readonly HrFunctionKey[];
+      for (const item of tasks) {
+        assert.ok(
+          bundle.includes(item.functionKey),
+          `${name} is offered task '${item.key}' keyed to '${item.functionKey}', a function that seat does not hold — it draws another seat's icon and files the work under another seat's heading`,
+        );
+      }
+
+      const keys = tasks.map((item) => item.key);
+      assert.equal(
+        new Set(keys).size,
+        keys.length,
+        `${name}: task keys are React keys and must be unique`,
+      );
+
+      // Eight is the floor, not the target: HR Advisory had nine the day this was written and HR
+      // Operations had TWO. A seat that drops back under this has lost its day again.
+      assert.ok(
+        tasks.length >= 8,
+        `${name} gets only ${tasks.length} task(s) — this page's opening panel IS the seat's day, and a day with ${tasks.length} rows in it is the two-row board this test exists to stop. Tasks: ${keys.join(", ") || "(none)"}`,
+      );
+    }
+
+    // Each seat's day must actually SPAN its bundle. Counting rows alone would pass on nine
+    // recruiting tasks, which is what HR Operations effectively had: everything from one half of
+    // the department and nothing from hers.
+    const functionsWithAQueue: Record<HrBundleName, HrFunctionKey[]> = {
+      "HR Advisory": [
+        "engagement_retention",
+        "performance_probation",
+        "recruiting",
+        "workforce_insight",
+      ],
+      "HR Operations": ["people_records", "performance_probation", "time_attendance"],
+    };
+    for (const name of seats) {
+      const covered = new Set((days.get(name) ?? []).map((item) => item.functionKey));
+      for (const functionKey of functionsWithAQueue[name]) {
+        assert.ok(
+          covered.has(functionKey),
+          `${name} has no task at all under '${functionKey}' — the page loads that function's source for her tiles, so the figures are on the screen and the work behind them is not`,
+        );
+      }
+    }
+
+    // And the two days are genuinely different work, not one list shown twice.
+    const advisoryKeys = new Set((days.get("HR Advisory") ?? []).map((item) => item.key));
+    const operationsKeys = new Set((days.get("HR Operations") ?? []).map((item) => item.key));
+    for (const key of ["screen-candidates", "chase-offers", "answer-support-requests"]) {
+      assert.ok(advisoryKeys.has(key), `HR Advisory lost her '${key}' task`);
+      assert.ok(
+        !operationsKeys.has(key),
+        `HR Operations is offered '${key}', which reads a source her bundle does not justify loading`,
+      );
+    }
+    for (const key of [
+      "process-resignations",
+      "release-settlements",
+      "chase-clearance-stations",
+      "open-clearance-checklists",
+      "sign-off-contract-renewals",
+      "raise-contract-renewals",
+      "review-attendance-exceptions",
+    ]) {
+      assert.ok(operationsKeys.has(key), `HR Operations lost her '${key}' task`);
+      assert.ok(
+        !advisoryKeys.has(key),
+        `HR Advisory is offered '${key}', which reads a source her bundle does not justify loading`,
+      );
+    }
+  }
+
+  // ── 6. The leaver and contract rows tell the truth about a date ───────────
+  {
+    // Every one of the four new queues is measured from a DEADLINE rather than from an arrival,
+    // which is the opposite sign to everything above them. Getting that backwards would render a
+    // contract that lapsed a fortnight ago as "renews in 14 days", in calm slate, at the bottom.
+    const today = currentCairoDateOnlyIso();
+    const shift = (offsetDays: number) =>
+      new Date(Date.parse(`${today}T00:00:00Z`) + offsetDays * 86_400_000)
+        .toISOString()
+        .slice(0, 10);
+
+    const named = (list: ReturnType<typeof buildHrTodayTasks>, key: string) => {
+      const found = list.find((item) => item.key === key);
+      if (!found) throw new Error(`task '${key}' was not built at all`);
+      return found;
+    };
+
+    const contractRow = (hrId: string, renewalDate: string, workflow: unknown = null) => ({
+      area: "Cairo 1",
+      contract_renewal_date: renewalDate,
+      full_name: `Employee ${hrId}`,
+      hr_id: hrId,
+      job_title: "Medical Rep",
+      line: "CNS",
+      workflow,
+    });
+
+    const contractSources = {
+      contracts: {
+        rows: [
+          contractRow("a-1", shift(-3)),
+          contractRow("a-2", shift(30)),
+          contractRow("a-3", shift(200)),
+          contractRow("a-4", shift(5), { id: "REQ-1", status: "manager_review" }),
+          contractRow("a-5", shift(2), {
+            createdAt: null,
+            id: "REQ-2",
+            managerReviewedAt: null,
+            status: "hr_review",
+          }),
+        ],
+      },
+    };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- literal fixtures, not fetches
+    const contractTasks = buildHrTodayTasks(contractSources as any, "HR Operations");
+
+    const raise = named(contractTasks, "raise-contract-renewals");
+    assert.deepEqual(
+      raise.items.map((item) => item.id),
+      ["a-1", "a-2"],
+      "only a contract inside the horizon AND with no renewal request in flight is work: a-3 is 200 days out, a-4 and a-5 already have a request, and a-1 has already lapsed",
+    );
+    assert.equal(
+      raise.items[0].age,
+      "lapsed 3 days ago",
+      "a renewal date that has passed reads as lapsed, never as a future renewal",
+    );
+    assert.equal(raise.items[0].urgent, true, "a lapsed contract is urgent");
+    assert.equal(raise.items[1].age, "renews in 30 days");
+    assert.equal(raise.items[1].urgent, false, "30 days out is a diary note, not a problem");
+    assert.equal(raise.urgency, "overdue", "a task holding a lapsed contract is not calm");
+
+    const signOff = named(contractTasks, "sign-off-contract-renewals");
+    assert.deepEqual(
+      signOff.items.map((item) => item.id),
+      ["REQ-2"],
+      "only a request actually sitting at hr_review is waiting on HR — manager_review is somebody else's step",
+    );
+
+    const clearanceSources = {
+      clearance: {
+        awaiting: [],
+        checklists: [
+          {
+            daysSinceLastWorkingDate: 9,
+            employeeName: "Mona Adel",
+            id: "CL-1",
+            isOverdue: true,
+            jobTitle: "Medical Rep",
+            lineName: "CNS",
+            outstandingLabels: ["IT", "Fleet"],
+            status: "open",
+          },
+          {
+            daysSinceLastWorkingDate: 2,
+            employeeName: "Karim Fouad",
+            id: "CL-2",
+            isOverdue: true,
+            jobTitle: "District Manager",
+            lineName: "Pedia",
+            outstandingLabels: [],
+            status: "ready",
+          },
+        ],
+      },
+    };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- literal fixtures, not fetches
+    const clearanceTasks = buildHrTodayTasks(clearanceSources as any, "HR Operations");
+
+    const chase = named(clearanceTasks, "chase-clearance-stations");
+    assert.deepEqual(
+      chase.items.map((item) => item.id),
+      ["CL-1"],
+      "a checklist already READY is a release, not a chase",
+    );
+    assert.equal(
+      chase.items[0].meta,
+      "waiting on IT, Fleet",
+      "the chase row names the exact stations the release gate refuses on — that is the answer to 'why can I not release this one', and it is worth more than repeating the job title",
+    );
+    assert.equal(
+      chase.items[0].age,
+      "last day was 9 days ago",
+      "a last working day that has passed reads as passed",
+    );
+
+    const release = named(clearanceTasks, "release-settlements");
+    assert.deepEqual(
+      release.items.map((item) => item.id),
+      ["CL-2"],
+      "only a READY checklist is waiting on her release",
+    );
+    assert.equal(
+      release.items[0].urgent,
+      true,
+      "the module's own isOverdue decides urgency here, so this row and the Clearance page agree",
     );
   }
 }
