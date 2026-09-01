@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { RepsListContacts } from "@/components/crm/reps-list-tables";
 import { RepsListFilters } from "@/components/crm/reps-list-filters";
+import { cairoStamp, Section, Tile } from "@/components/crm/reps-list-chrome";
 import type { RepsListBoard, RepsListRep } from "@/lib/crm/reps-list-board";
 
 // Server half of Reps List. The Section/Tile vocabulary is copied verbatim from
@@ -13,71 +14,6 @@ import type { RepsListBoard, RepsListRep } from "@/lib/crm/reps-list-board";
 // clicks on the medical rep, all his contact list appears"), and it is also the only honest layout —
 // a company-scoped viewer reaches ~73 reps, so a picker plus a list on one screen would either
 // default to an arbitrary rep or render nothing under a full page of chrome.
-
-function Section({
-  action,
-  children,
-  description,
-  title,
-}: {
-  action?: React.ReactNode;
-  children: React.ReactNode;
-  description?: string;
-  title: string;
-}) {
-  return (
-    <div className="border-b border-slate-200 bg-white last:border-b-0">
-      <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-200 bg-slate-900 px-5 py-3.5">
-        <div className="min-w-0 flex-1">
-          <h2 className="text-phx-xs font-black uppercase tracking-[0.14em] text-white">{title}</h2>
-          {description ? <p className="mt-0.5 text-phx-2xs text-slate-400">{description}</p> : null}
-        </div>
-        {action}
-      </div>
-      {children}
-    </div>
-  );
-}
-
-function Tile({
-  label,
-  sub,
-  tone,
-  value,
-}: {
-  label: string;
-  sub?: string;
-  tone?: "amber" | "emerald" | "rose";
-  value: string;
-}) {
-  const valueClass =
-    tone === "emerald"
-      ? "text-emerald-700"
-      : tone === "amber"
-        ? "text-amber-700"
-        : tone === "rose"
-          ? "text-rose-700"
-          : "text-slate-900";
-  return (
-    <div className="border border-slate-200 px-3 py-2.5">
-      <p className="text-phx-3xs font-black uppercase tracking-[0.14em] text-slate-400">{label}</p>
-      <p className={`text-lg font-black ${valueClass}`}>{value}</p>
-      {sub ? <p className="text-phx-2xs text-slate-400">{sub}</p> : null}
-    </div>
-  );
-}
-
-/** Cairo wall-clock, per the owner's standing rule that no raw UTC is ever shown. */
-function cairoStamp(iso: string): string {
-  return new Intl.DateTimeFormat("en-GB", {
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    month: "short",
-    timeZone: "Africa/Cairo",
-    year: "numeric",
-  }).format(new Date(iso));
-}
 
 /** The current filters as a query string, with `rep` replaced (or dropped when null). */
 function hrefWithRep(basePath: string, board: RepsListBoard, repKey: string | null): string {

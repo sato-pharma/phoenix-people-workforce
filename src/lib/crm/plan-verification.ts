@@ -59,6 +59,20 @@ export function planStatusLabel(status: number | null | undefined): string {
   return `Unknown status ${status}`;
 }
 
+/**
+ * The colour a status is printed in. Amber = waiting on a human, emerald = signed by the
+ * supervisor, sky = signed a level higher.
+ *
+ * It lives HERE, in the module with no directive, for the same reason planPeriodText does: both
+ * tabs print a status and one of them renders on the SERVER. Defined inside a "use client" file
+ * it would reach that server as a client reference rather than a function, and every plan would
+ * fail to render.
+ */
+export function planStatusClass(status: number | null | undefined): string {
+  if (status === PLAN_STATUS_NEW) return "text-amber-700";
+  if (status === PLAN_STATUS_AREA_MANAGER_VERIFIED) return "text-sky-700";
+  return "text-emerald-700";
+}
 /** True for any status the CRM regards as signed off, at either level. */
 export function isPlanVerified(status: number | null | undefined): boolean {
   return status === PLAN_STATUS_SUPERVISOR_VERIFIED || status === PLAN_STATUS_AREA_MANAGER_VERIFIED;

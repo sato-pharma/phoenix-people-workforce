@@ -155,7 +155,7 @@ export function monthBounds(month: number, year: number): { start: string; end: 
  */
 export function summarisePlans(
   rows: readonly RawPlanRow[],
-  input: { kind: PlanKind; keepMonth?: { month: number; year: number } },
+  input: { kind: PlanKind; keepMonth?: { month: number; year: number }; keepRange?: { end: string; start: string } },
 ): PlanSummary[] {
   const byPlan = new Map<number, PlanSummary & { contactIds: Set<number> }>();
   for (const row of rows) {
@@ -199,6 +199,12 @@ export function summarisePlans(
       // The straddle rule: a plan belongs to the month it STARTS in, and only that month.
       if (summary.firstDate < bounds.start || summary.firstDate > bounds.end) continue;
     }
+    if (input.keepRange && summary.firstDate) {
+      // The SAME straddle rule, one week wide: a plan belongs to the week it STARTS in. Measured on
+      // production 2026-09-01 across all 2,391 weekly plans, none crosses a Saturday, so this drops
+      // nothing today — it is what keeps the week tab correct on the day one does.
+      if (summary.firstDate < input.keepRange.start || summary.firstDate > input.keepRange.end) continue;
+    }
     summaries.push(summary);
   }
 
@@ -219,15 +225,31 @@ export function summarisePlans(
 const SUMMARY_COLUMNS =
   "agent_crm_id, agent_hr_id, contact_crm_id, crm_plan_id, plan_date, plan_month, plan_status, plan_year, synced_at";
 
-/** Reads every summary-shaped row for one period, paged. Scope is applied IN SQL, not afterwards. */
-async function fetchSummaryRows(input: {
+/**
+ * The window of plan rows a fetch asks for.
+ *
+ * A monthly plan carries a month and a year and no dates at all, so it can only be selected by
+ * those columns. A weekly plan carries dates and no month, so it can only be selected by a date
+ * range — which is also what lets the Reps Weekly Plans tab ask for exactly one week instead of a
+ * whole month it would then throw most of away.
+ */
+type PlanWindow =
+  | { end: string; kind: "dates"; start: string }
+  | { kind: "month"; month: number; year: number };
+
+/**
+ * Reads every summary-shaped row in one window, paged. Scope is applied IN SQL, not afterwards.
+ *
+ * The two callers differ only in the window, so the chunking, the paging and the missing-schema
+ * posture live here once. Getting any of those three subtly different between the month board and
+ * the week tab is precisely how two screens start disagreeing about whether a rep filed.
+ */
+async function fetchPlanRows(input: {
   kind: PlanKind;
-  month: number;
-  year: number;
   scope: PlanVerificationScope;
+  window: PlanWindow;
 }): Promise<RawPlanRow[]> {
   const supabase = getSupabaseAdmin();
-  const bounds = monthBounds(input.month, input.year);
 
   // A scoped viewer's allow-list is chunked because a long `.in()` silently returns nothing.
   // A company-scoped viewer runs one unfiltered pass.
@@ -245,14 +267,10 @@ async function fetchSummaryRows(input: {
     let offset = 0;
     for (;;) {
       let query = supabase.from(CRM_PLAN_ENTRIES_TABLE).select(SUMMARY_COLUMNS).eq("plan_kind", input.kind);
-      if (input.kind === "weekly") {
-        // Wider than the month on purpose — see PLAN_STRADDLE_MARGIN_DAYS. `summarisePlans` throws
-        // away anything that does not START inside the month.
-        query = query
-          .gte("plan_date", addDays(bounds.start, -PLAN_STRADDLE_MARGIN_DAYS))
-          .lte("plan_date", addDays(bounds.end, PLAN_STRADDLE_MARGIN_DAYS));
+      if (input.window.kind === "dates") {
+        query = query.gte("plan_date", input.window.start).lte("plan_date", input.window.end);
       } else {
-        query = query.eq("plan_month", input.month).eq("plan_year", input.year);
+        query = query.eq("plan_month", input.window.month).eq("plan_year", input.window.year);
       }
       if (chunk) query = query.in("agent_hr_id", [...chunk]);
       const { data, error } = await query
@@ -269,6 +287,66 @@ async function fetchSummaryRows(input: {
     }
   }
   return rows;
+}
+
+/** Reads every summary-shaped row for one MONTH, paged. The month board's window. */
+async function fetchSummaryRows(input: {
+  kind: PlanKind;
+  month: number;
+  year: number;
+  scope: PlanVerificationScope;
+}): Promise<RawPlanRow[]> {
+  const bounds = monthBounds(input.month, input.year);
+  return fetchPlanRows({
+    kind: input.kind,
+    scope: input.scope,
+    window:
+      input.kind === "weekly"
+        ? // Wider than the month on purpose — see PLAN_STRADDLE_MARGIN_DAYS. `summarisePlans` throws
+          // away anything that does not START inside the month.
+          {
+            end: addDays(bounds.end, PLAN_STRADDLE_MARGIN_DAYS),
+            kind: "dates",
+            start: addDays(bounds.start, -PLAN_STRADDLE_MARGIN_DAYS),
+          }
+        : { kind: "month", month: input.month, year: input.year },
+  });
+}
+
+/**
+ * Every weekly plan in the viewer's reach that STARTS inside one field week.
+ *
+ * The Reps Weekly Plans tab's read. It deliberately does NOT narrow to the selected rep in SQL:
+ * the only column that could do that is `agent_hr_id`, and hr ids are mixed case in this database,
+ * so an `.in()` on them under-returns silently — and under-returning here would tell a district
+ * manager his rep filed nothing. The caller matches on the NUMERIC agent id instead, the same rule
+ * `repsWithNoPlan` states and for the same reason. A week is small enough that this costs nothing:
+ * measured on production 2026-09-01, the mirror holds about seventy weekly plans per week
+ * company-wide.
+ *
+ * Rep NAMES are not resolved here. The tab already knows the rep — it picked him from the org tree
+ * — and `PlanSummary.repName` is left empty for the caller to fill from that same tree, which is
+ * the one source both tabs share.
+ */
+export async function getWeeklyPlansForWeek(input: {
+  scope: PlanVerificationScope;
+  weekEnd: string;
+  weekStart: string;
+}): Promise<PlanSummary[]> {
+  if (input.scope.kind === "none") return [];
+  const rows = await fetchPlanRows({
+    kind: "weekly",
+    scope: input.scope,
+    // The margin is the same belt-and-braces the month window uses: fetch wider, then keep only
+    // plans that START in the week. No plan in production crosses a Saturday, so the margin costs
+    // a few rows and buys correctness if one ever does.
+    window: {
+      end: addDays(input.weekEnd, PLAN_STRADDLE_MARGIN_DAYS),
+      kind: "dates",
+      start: addDays(input.weekStart, -PLAN_STRADDLE_MARGIN_DAYS),
+    },
+  });
+  return summarisePlans(rows, { keepRange: { end: input.weekEnd, start: input.weekStart }, kind: "weekly" });
 }
 
 /**

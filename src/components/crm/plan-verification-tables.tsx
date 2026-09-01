@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
   PortalDesktopTable,
@@ -9,14 +9,15 @@ import {
   PortalRecordFields,
   PortalResponsiveDataList,
 } from "@/components/employee-portal/portal-primitives";
+import { VerifyButton } from "@/components/crm/plan-verify-button";
 import { ExportXlsxButton } from "@/components/ui/export-xlsx-button";
 import { SortableTh, TableSearchInput } from "@/components/ui/sortable-table";
 import { useSortableTable } from "@/components/ui/use-sortable-table";
 import {
   PLAN_DOCTORS_ANCHOR_ID,
-  PLAN_STATUS_AREA_MANAGER_VERIFIED,
   PLAN_STATUS_NEW,
   planPeriodText,
+  planStatusClass,
   planStatusLabel,
   type PlanKind,
 } from "@/lib/crm/plan-verification";
@@ -37,12 +38,6 @@ const THEAD = "px-3 py-2.5 text-phx-2xs font-black uppercase tracking-[0.12em] t
 const SELECT_CLASS =
   "h-9 w-full border border-slate-200 bg-white px-2 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400";
 const LABEL_CLASS = "block text-phx-3xs font-black uppercase tracking-[0.16em] text-slate-400";
-
-function statusClass(status: number | null): string {
-  if (status === PLAN_STATUS_NEW) return "text-amber-700";
-  if (status === PLAN_STATUS_AREA_MANAGER_VERIFIED) return "text-sky-700";
-  return "text-emerald-700";
-}
 
 function gradeClass(grade: string | null): string {
   if (grade === "A" || grade === "A+") return "text-rose-700";
@@ -149,102 +144,6 @@ export function PlanVerificationFilters({
   );
 }
 
-/**
- * The Verify button.
- *
- * TWO CLICKS, ON PURPOSE. This writes into the customer's CRM and emails the medical rep, and
- * neither can be taken back from here — there is no unverify. So the first click arms and the
- * second commits, and the armed state says what is about to happen rather than just "Confirm?".
- * A native `confirm()` dialog was not used because the admin shell has none anywhere else.
- */
-function VerifyButton({ canVerify, plan }: { canVerify: boolean; plan: PlanSummary }) {
-  const router = useRouter();
-  const [armed, setArmed] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [note, setNote] = useState<string | null>(null);
-  const [pending, startTransition] = useTransition();
-  const [busy, setBusy] = useState(false);
-
-  async function commit() {
-    setBusy(true);
-    setError(null);
-    setNote(null);
-    try {
-      const response = await fetch("/api/crm/plan-verification/verify", {
-        body: JSON.stringify({ crmPlanId: plan.crmPlanId }),
-        headers: { "Content-Type": "application/json" },
-        method: "POST",
-      });
-      const payload = (await response.json().catch(() => ({}))) as {
-        error?: string;
-        repNotified?: boolean;
-        repNotifyReason?: string | null;
-      };
-      if (!response.ok) {
-        setError(payload.error ?? `The CRM refused the change (HTTP ${response.status}).`);
-        setArmed(false);
-        return;
-      }
-      // A verified plan whose rep could not be told is still verified. Saying so beats both hiding
-      // it and reporting the whole action as failed.
-      if (payload.repNotified === false) {
-        setNote(`Verified. The rep could not be notified: ${payload.repNotifyReason ?? "unknown reason"}.`);
-      }
-      setArmed(false);
-      startTransition(() => router.refresh());
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "The request could not be sent.");
-      setArmed(false);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  // A plan that is not pending, and a viewer who may not verify, both render the same thing: the
-  // status in words. Hiding the button is UX — the route refuses the POST independently, which is
-  // the boundary.
-  if (plan.status !== PLAN_STATUS_NEW || !canVerify) {
-    return (
-      <span className={`text-phx-2xs font-black uppercase tracking-[0.1em] ${statusClass(plan.status)}`}>
-        {planStatusLabel(plan.status)}
-      </span>
-    );
-  }
-
-  return (
-    <div className="space-y-1">
-      <div className="flex items-center gap-2">
-        <button
-          className={
-            armed
-              ? "h-8 border border-orange-500 bg-orange-500 px-3 text-phx-2xs font-black uppercase tracking-[0.1em] text-white disabled:opacity-60"
-              : "h-8 border border-slate-300 bg-white px-3 text-phx-2xs font-black uppercase tracking-[0.1em] text-slate-700 hover:border-orange-400 disabled:opacity-60"
-          }
-          disabled={busy || pending}
-          onClick={() => {
-            if (armed) void commit();
-            else setArmed(true);
-          }}
-          type="button"
-        >
-          {busy ? "Sending" : armed ? "Confirm — writes to the CRM" : "Verify"}
-        </button>
-        {armed && !busy ? (
-          <button
-            className="h-8 px-2 text-phx-2xs font-bold uppercase tracking-[0.1em] text-slate-400 hover:text-slate-700"
-            onClick={() => setArmed(false)}
-            type="button"
-          >
-            Cancel
-          </button>
-        ) : null}
-      </div>
-      {error ? <p className="text-phx-2xs font-semibold text-rose-700">{error}</p> : null}
-      {note ? <p className="text-phx-2xs font-semibold text-amber-700">{note}</p> : null}
-    </div>
-  );
-}
-
 const PLAN_COLS = [
   { accessor: (r: PlanSummary) => r.repName, defaultDir: "asc" as const, key: "repName", type: "string" as const },
   { accessor: (r: PlanSummary) => r.firstDate ?? "", key: "firstDate", type: "string" as const },
@@ -334,7 +233,7 @@ export function PlanListTable({
             accent={plan.status === PLAN_STATUS_NEW ? "amber" : "slate"}
             meta={`${planPeriodText(plan)} · ${plan.contacts} doctors`}
             status={
-              <span className={`text-phx-2xs font-black uppercase tracking-[0.1em] ${statusClass(plan.status)}`}>
+              <span className={`text-phx-2xs font-black uppercase tracking-[0.1em] ${planStatusClass(plan.status)}`}>
                 {planStatusLabel(plan.status)}
               </span>
             }
@@ -402,7 +301,7 @@ export function PlanListTable({
                     <td className="px-3 py-2 text-slate-600">{planPeriodText(plan)}</td>
                     <td className="px-3 py-2 font-black text-slate-900">{plan.contacts}</td>
                     <td className="px-3 py-2 text-slate-600">{plan.entries}</td>
-                    <td className={`px-3 py-2 font-black ${statusClass(plan.status)}`}>{planStatusLabel(plan.status)}</td>
+                    <td className={`px-3 py-2 font-black ${planStatusClass(plan.status)}`}>{planStatusLabel(plan.status)}</td>
                     <td className="px-3 py-2">
                       <div className="flex items-center gap-2">
                         {/* The same button the mobile card has always carried. Desktop had none, so the
