@@ -197,20 +197,21 @@ export function runMemoryIndexReachabilityTests() {
   //
   // The old floor was set against 137 slugs counted on 2026-08-29, "well below that so ordinary
   // retirement never trips it". What tripped it was not retirement: #2862 compressed AGENTS.md and
-  // #2864 moved the slugs into docs/agents-memory-map.md, leaving 25 inline. Each PR was green on
-  // its own head and the pair turned `main` RED on merge — the count only collapses when both are
-  // present, which no per-PR run could see. Every open PR then inherited that red the moment it
-  // merged main, which is how this was found.
+  // #2864 moved the duplicate slug references into docs/agents-memory-map.md, taking 8,108 bytes
+  // off EVERY request. Each PR was green on its own head and the pair turned `main` RED on merge —
+  // the count only collapses when both are present, which no per-PR run could see. Every open PR
+  // then inherited that red the moment it merged main, which is how this was found.
   //
-  // So the floor now tracks what the matcher actually depends on rather than the file's old size.
-  // scripts/memory-index-reachability.mjs reads AGENTS.md and nothing else, so the load-bearing set
-  // is the memories reachable ONLY from here — 17 of them, the ones MEMORY.md does not link. The
-  // other ~149 slugs moved to the memory map and stay reachable through the index. A floor of 15
-  // still catches the failure this section exists for (the convention being abandoned wholesale)
-  // while leaving the relocation, which was deliberate, alone. Re-derive it from the doctor's
-  // "reachable from AGENTS.md rather than the index" count before changing it again — do NOT raise
-  // it back towards 50 to make a red test green, because that would demand slugs be moved BACK into
-  // the per-request footprint the relocation was undertaken to shrink.
+  // NOTHING BECAME UNREACHABLE: repo-doctor read 0 orphans before and after. The floor was
+  // measuring the old DUPLICATION, not reachability, and it now guards what it was always for —
+  // the CONVENTION existing at all. Measured on 2026-09-01: 26 backticked slugs remain in
+  // AGENTS.md and 149 are in the memory map, against a floor of 15.
+  //
+  // Do NOT raise it back by re-adding duplicate slugs — that is the footprint this repo just paid
+  // to remove, and it would demand slugs move BACK into the per-request cost the relocation was
+  // undertaken to shrink. The real per-memory guarantee is repo-doctor's live reachability scan,
+  // not a count; re-derive this number from its "reachable from AGENTS.md rather than the index"
+  // figure before ever changing it again.
   const agents = readFileSync(join(process.cwd(), "AGENTS.md"), "utf8");
   const slugs = new Set(
     [...agents.matchAll(new RegExp(TICK + "([a-z0-9]+(?:-[a-z0-9]+){2,})" + TICK, "g"))].map((m) => m[1]),

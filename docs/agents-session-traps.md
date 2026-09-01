@@ -794,6 +794,35 @@ Phoenix business rules, and the index line at its cliff is the wrong place for t
   `an-interrupted-session-leaves-the-tree-deliberately-broken`
 
 
+## A docs-only PR's `validate` never runs the tests
+
+**Measured 2026-09-01, after three PRs shipped `main` red without a single red PR check.**
+
+`ci.yml` detects a documentation-only change and skips the expensive STEPS while still reporting
+every required check name — so a docs PR costs seconds instead of four minutes. That part works as
+designed. What is easy to miss is that **the fast path is `pull_request`-only**:
+
+| event | detector answers | what runs |
+| --- | --- | --- |
+| `pull_request`, docs-only | `docs_only=true (documentation only)` | nothing expensive — `validate` passes in ~10s |
+| push to `main` | `docs_only=false (not a pull_request — always run everything)` | the full suite |
+
+Both lines above are quoted from the real job logs of #2868 and its merge commit `9c161d35f`.
+
+So for a docs-only change the test suite's **first ever run is the push to `main`** — the branch
+that deploys to production. A green PR there is not weak evidence, it is **no evidence**: the tests
+were never executed. #2862, #2864 and #2866 each showed `validate pass` in about ten seconds, and
+`main` was red from #2864 onward because the relocation dropped `AGENTS.md` below a slug floor
+pinned in `tests/memory-index-reachability.test.ts`. Nobody noticed for three merges.
+
+**The tell is the duration.** A `validate` that finishes in ~10s ran no tests; one that takes
+minutes did. When a docs-only PR goes green, the check that matters is the run on `main`'s NEW head
+after merging — which AGENTS.md already told us to do, and which the ten-second green makes very
+easy to skip.
+
+Fail-closed is deliberate on both sides: the detector answers `false` if it cannot resolve the file
+list, and refuses to assume docs-only. Do not "fix" the asymmetry by extending the fast path to
+pushes — that would remove the only run that catches this class of failure at all.
 ## Relocated from AGENTS.md — 2026-09-01
 
 Verbatim, unabridged. These entries had grown from cues into full accounts inside `AGENTS.md`,
