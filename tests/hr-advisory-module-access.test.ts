@@ -232,12 +232,11 @@ export async function runHrAdvisoryModuleAccessTests() {
   // modules... I don't want any crowd... remove them from this sidebar", and "I told you to remove
   // the workforce compliance. Remove it."
   //
-  // The two recruitment rows are DELETED outright, because `recruitment` is her grant alone and no
-  // other seat rendered them. Workforce Compliance is excluded BY ROLE instead: it gates on
-  // hr_calendar:read, which HR Operations holds too, so deleting the line would have stripped it
-  // from a second seat's sidebar as a side effect. Both halves are pinned — here that it is gone
-  // for her, and in section 8 below that it survived for Operations — so a later edit cannot undo
-  // one without noticing the other.
+  // All three are DELETED outright. The two recruitment rows were always safe to delete, because
+  // `recruitment` is her grant alone and no other seat rendered them. Workforce Compliance was
+  // first excluded BY ROLE instead — it gates on hr_calendar:read, which HR Operations holds
+  // too, so deleting the line would have reached a seat the owner had not named — and then he
+  // was asked and said "yes remove it". Section 8 below pins the Operations half.
   for (const href of [
     "/hr/recruitment/contact-review",
     "/hr/recruitment/intake-health",
@@ -266,8 +265,14 @@ export async function runHrAdvisoryModuleAccessTests() {
     operationsRows.has("/hr/admin/payslips-center"),
     "the Payslips Center row must render for HR Operations too — she is the company-wide viewer",
   );
-  assert.ok(
+  // Workforce Compliance is gone for BOTH seats. It was excluded for Advisory alone first, since
+  // hr_calendar:read is shared and deleting the line would have reached a seat the owner had not
+  // named; he was then asked directly and said "yes remove it". Pinned for Operations as well so
+  // that a later edit restoring the row has to justify it against the instruction, not just
+  // against Advisory's half of it.
+  assert.equal(
     operationsRows.has("/hr/admin/field-workforce-compliance"),
-    "HR Operations keeps Workforce Compliance — it was excluded for HR Advisory, not deleted, and this is the half that proves the difference",
+    false,
+    "Workforce Compliance was removed from BOTH HR rails on 2026-09-01 — field-force compliance is not an HR seat's work",
   );
 }

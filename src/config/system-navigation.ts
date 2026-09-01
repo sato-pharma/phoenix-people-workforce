@@ -1812,13 +1812,17 @@ const hrNavigationSectionSeeds = [
       // sales-management surface"; the owner overrode that the same day. No grant changed — the
       // page gates on coaching:read, which performance_probation has always given both seats.
       { href: "/hr/coaching/analytics", icon: ChartColumnBig, label: "Coaching Analytics", permissions: [{ resource: "coaching" }] },
-      // excludedRoles: HR Advisory, 2026-09-01 — "I told you to remove the workforce compliance.
-      // Remove it." Cut from HER rail only, and by role rather than by deleting the line, because
-      // the row gates on hr_calendar:read and BOTH HR seats hold that grant: deleting it would have
-      // silently stripped the row from HR Operations' sidebar as well, which is not what he asked
-      // for and not this task's to take. Same shape as the Leave Management and Payroll exclusions
-      // above. If he wants it gone for Operations too, that is one word and one field.
-      { href: "/hr/admin/field-workforce-compliance", icon: ClipboardCheck, label: "Workforce Compliance", permissions: [{ resource: "hr_calendar" }], excludedRoles: ["HR Advisory"] },
+      // NO "Workforce Compliance" (/hr/admin/field-workforce-compliance) row, for EITHER HR seat.
+      // "I told you to remove the workforce compliance. Remove it." (2026-09-01). It was first
+      // cut from HR Advisory alone, by excludedRoles rather than deletion, because the row gates
+      // on hr_calendar:read and BOTH seats hold that grant — so deleting it would have taken it
+      // from HR Operations too, which had not been asked for. He was asked directly and answered
+      // "yes remove it", so the line is gone rather than narrowed.
+      //
+      // The PAGE is untouched and still reachable for every role that gates into it from the
+      // ADMIN catalogue (adminNavigationSectionSeeds carries its own row, excluding SFE Manager).
+      // What is gone is the /hr rail entry — field-force compliance is sales-management work, not
+      // an HR seat's.
     ],
     label: "Performance",
   },
