@@ -56,7 +56,7 @@ import { reverseGuardRecordedRoutes } from "./navigation-reachability-backlog";
  * false accusation at a time.
  *
  *   1. The sidebar — `getSections(getNavigationSections(mode), …)`, both shells.
- *   2. Hub cards, admin shell only. `command-palette.tsx:55-63` folds `hubPageItemGroups` into Cmd+K
+ *   2. Hub cards, admin shell only. `command-palette-items.ts` folds `hubPageItemGroups` into Cmd+K
  *      for `navigationMode === "admin"` and nothing else, so a hub card is offered to an admin-shell
  *      role whether or not the hub page that contains it is itself reachable. That is what makes the
  *      plan's "fixpoint, 3 passes" unnecessary — there is no reachability precondition to converge.
@@ -223,7 +223,7 @@ export async function runNavigationGrantedButUnreachableTests(): Promise<void> {
     }
     if (mode === "admin") {
       // Cmd+K offers every hub card the role passes, with no requirement that the hub page
-      // containing it is itself reachable — command-palette.tsx:55-63.
+      // containing it is itself reachable — src/lib/navigation/command-palette-items.ts.
       for (const group of hubPageItemGroups) {
         for (const item of group.items) {
           if (navigationItemVisible(item, lookup, role)) hrefs.add(item.href);

@@ -1,20 +1,16 @@
 "use client";
 
 import { CornerDownLeft, Search as SearchIcon } from "lucide-react";
-import type { LucideIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { type KeyboardEvent as ReactKeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
 
 import type { PermissionLookup } from "@/components/layout/sidebar";
 import { announceRouteTransition } from "@/components/layout/route-transition-provider";
-import { getNavigationSections, hubPageItemGroups } from "@/config/system-navigation";
 import type { NavigationMode, PhoenixRole } from "@/lib/auth/permissions";
-import { getSections, navigationItemVisible } from "@/lib/navigation/active-path";
+import { buildCommandPaletteItems, type CommandPaletteItem } from "@/lib/navigation/command-palette-items";
 
 /** Custom event the topbar (or anything else) can dispatch to open the palette. */
 export const COMMAND_PALETTE_EVENT = "phoenix:command-palette";
-
-type PaletteItem = { href: string; icon: LucideIcon; label: string; section: string };
 
 export function CommandPalette({
   navigationMode,
@@ -35,35 +31,10 @@ export function CommandPalette({
   const openRef = useRef(false);
   const previouslyFocusedRef = useRef<HTMLElement | null>(null);
 
-  const items = useMemo<PaletteItem[]>(() => {
-    const sidebarItems = getSections(
-      getNavigationSections(navigationMode),
-      navigationMode,
-      permissionLookup,
-      currentRole,
-    ).flatMap((section) =>
-      section.items.map((item) => ({ href: item.href, icon: item.icon, label: item.label, section: section.label })),
-    );
-
-    // The sidebar collapses most admin sections into a single hub button, so a
-    // search bar built only from `sidebarItems` would surface hub buttons but
-    // hide every module they lead to. Fold each hub's own card list back in
-    // (filtered by the same permission/role gates the hub page itself applies)
-    // so Cmd/Ctrl+K can still jump directly to any module, not just what's
-    // currently rendered in the collapsed sidebar.
-    const seenHrefs = new Set(sidebarItems.map((item) => item.href));
-    const hubItems: PaletteItem[] =
-      navigationMode === "admin"
-        ? hubPageItemGroups.flatMap((group) =>
-            group.items
-              .filter((item) => navigationItemVisible(item, permissionLookup, currentRole))
-              .filter((item) => !seenHrefs.has(item.href))
-              .map((item) => ({ href: item.href, icon: item.icon, label: item.label, section: group.label })),
-          )
-        : [];
-
-    return [...sidebarItems, ...hubItems];
-  }, [currentRole, navigationMode, permissionLookup]);
+  const items = useMemo<CommandPaletteItem[]>(
+    () => buildCommandPaletteItems(navigationMode, permissionLookup, currentRole),
+    [currentRole, navigationMode, permissionLookup],
+  );
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -207,7 +178,7 @@ export function CommandPalette({
                 const Icon = item.icon;
                 const active = index === activeIndex;
                 return (
-                  <li key={`${item.href}-${item.label}`}>
+                  <li key={item.href}>
                     <button
                       className={`flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors ${active ? "bg-orange-50" : "hover:bg-slate-50"}`}
                       data-active={active ? "true" : undefined}

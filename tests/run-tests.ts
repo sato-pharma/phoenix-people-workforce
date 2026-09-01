@@ -16,6 +16,7 @@ import { runWeeklySystemHealthDigestTests } from "./weekly-system-health-digest.
 import { runMailboxComplianceMonitorTests } from "./mailbox-compliance-monitor.test.ts";
 import { runCalculatorEngineTests } from "./calculator-engine.test.ts";
 import { runNavigationActivePathTests } from "./navigation-active-path.test.ts";
+import { runCommandPaletteItemsTests } from "./command-palette-items.test.ts";
 import { runNavSingleGateNoBypassTests } from "./nav-single-gate-no-bypass.test.ts";
 import { runNavRolesNameOnlyPermissionHoldersTests } from "./nav-roles-name-only-permission-holders.test.ts";
 import { runNavigationGrantedButUnreachableTests } from "./navigation-granted-but-unreachable.test.ts";
@@ -1224,6 +1225,7 @@ await runTest("error monitor per-user attempts (30d default window + real-accoun
 await runTest("gcp-metrics service health reader (availability/latency/instances + {available:false} guard)", runGcpMetricsTests);
 await runTest("weekly system health digest", runWeeklySystemHealthDigestTests);
 await runTest("navigation active path", runNavigationActivePathTests);
+await runTest("command palette items (one row per href — the hub fold-in must not duplicate a destination)", runCommandPaletteItemsTests);
 await runTest("nav single gate no bypass", runNavSingleGateNoBypassTests);
 await runTest(
   "nav roles name only permission holders (a roles: name the matrix refuses grants nothing and must not be written)",

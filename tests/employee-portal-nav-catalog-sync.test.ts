@@ -12,7 +12,7 @@ import { portalCatalogRecordedRoutes } from "./navigation-reachability-backlog";
 //
 // The catalog no longer drives curation — Modules Control and src/lib/employee-portal/
 // module-curation.ts were retired — but it is NOT decorative, and two live consumers read it:
-//   · the command palette (src/components/layout/command-palette.tsx) builds Cmd/Ctrl+K from it,
+//   · the command palette (src/lib/navigation/command-palette-items.ts) builds Cmd/Ctrl+K from it,
 //     so a portal page absent from the catalog cannot be reached by search; and
 //   · DocumentTitleSync (src/components/layout/document-title-sync.tsx) takes the browser tab
 //     title from it, so an absent page shows the bare brand instead of its own label.
@@ -77,8 +77,18 @@ export function runEmployeePortalNavCatalogSyncTests() {
 
   // (3) The catalog must still reach a live consumer. Curation was retired, so this pins the two
   //     that remain — lose both and the catalog is dead weight and this guard guards nothing.
-  const paletteSource = readFileSync("src/components/layout/command-palette.tsx", "utf8");
+  // The palette COMPONENT no longer names the catalog: its item list was lifted into
+  // command-palette-items.ts so the one-row-per-href rule could be tested without a DOM (#2897).
+  // Pin the module that reads the catalog today, and pin that the component still renders what
+  // that module returns — either half alone would pass while the catalog fed nothing.
+  const paletteSource = readFileSync("src/lib/navigation/command-palette-items.ts", "utf8");
   assert.match(paletteSource, /getNavigationSections\(/, "the command palette still builds from the nav catalog");
+  const paletteComponentSource = readFileSync("src/components/layout/command-palette.tsx", "utf8");
+  assert.match(
+    paletteComponentSource,
+    /buildCommandPaletteItems\(/,
+    "the command palette still renders the catalog-derived item list",
+  );
   const titleSource = readFileSync("src/components/layout/document-title-sync.tsx", "utf8");
   assert.match(titleSource, /getNavigationSections\(/, "DocumentTitleSync still builds from the nav catalog");
 }
