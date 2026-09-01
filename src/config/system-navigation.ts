@@ -1625,9 +1625,9 @@ const hrNavigationSectionSeeds = [
       { href: "/hr/employees", icon: UsersRound, label: "Employee Directory", permissions: [{ resource: "employees", action: "read" }] },
       { href: "/hr/employee-360", icon: IdCard, label: "Employee 360", permissions: [{ resource: "employee_profile", action: "read" }] },
       { href: "/hr/organogram", icon: Network, label: "Organogram", permissions: [{ resource: "organogram" }] },
-      // Probation moved OUT of this section on 2026-09-01, down to "Performance & Probation", where
-      // it now sits beside the outcomes dashboard. It is one module and it was in two minds here:
-      // People is who is on the payroll, probation is how a new joiner is performing.
+      // Probation moved OUT of this section on 2026-09-01, down to its own "Probation" section,
+      // where it sits beside the outcomes dashboard. It is one module and it was in two minds
+      // here: People is who is on the payroll, probation is how a new joiner is performing.
       { href: "/hr/contracts", icon: CalendarClock, label: "Contract Renewal", permissions: [{ resource: "contracts" }] },
       { href: "/hr/resignations", icon: FileSpreadsheet, label: "Resignations", permissions: [{ resource: "resignations" }] },
       // The offboarding arc, in the order it actually happens: the departure is recorded, the
@@ -1661,8 +1661,16 @@ const hrNavigationSectionSeeds = [
       { href: "/hr/offers", icon: MailCheck, label: "Job Offers", permissions: [{ resource: "offers" }] },
       { href: "/hr/hiring-documents", icon: FileCheck2, label: "Hiring Documents", permissions: [{ resource: "employee_documents" }] },
       { href: "/hr/hiring-pack", icon: FileSignature, label: "HR Forms", permissions: [{ resource: "employee_documents" }] },
-      { href: "/hr/recruitment/contact-review", icon: IdCard, label: "Missing Contact Details", permissions: [{ resource: "recruitment" }] },
-      { href: "/hr/recruitment/intake-health", icon: HeartPulse, label: "Inbound Intake Health", permissions: [{ resource: "recruitment" }] },
+      // NO "Missing Contact Details" (/hr/recruitment/contact-review) and NO "Inbound Intake
+      // Health" (/hr/recruitment/intake-health) row. Both sat here until 2026-09-01, when the
+      // owner cut them: "I think there are irrelevant modules... I don't want any crowd... remove
+      // them from this sidebar." They are intake PLUMBING — one lists candidate records missing a
+      // phone or an email, the other counts what the WhatsApp and mailbox importers ingested —
+      // and neither is work an HR Business Partner is measured on. `recruitment` is HER grant
+      // alone (HR Operations holds none of it), so these two rendered for exactly one seat and
+      // deleting the lines takes nothing from anybody else. Both PAGES stay live and gated as they
+      // were — it is the rail that is quieter. Do not re-add them "for completeness": the
+      // crowding IS the defect he named.
       { href: "/hr/recruitment/whatsapp-replies", icon: MessageSquareText, label: "WhatsApp Replies", permissions: [{ resource: "recruitment" }] },
       // Added 2026-09-01. The page was `admin:update` — Super Admin alone — and was re-gated to
       // `recruitment:update` rather than the resource being widened, because `admin:update` also
@@ -1776,16 +1784,27 @@ const hrNavigationSectionSeeds = [
     ],
     label: "Payroll",
   },
+  // Probation and Performance are TWO sections, not one. They were merged into a single
+  // "Performance & Probation" earlier on 2026-09-01; the owner split them again the same day —
+  // "separate performance from probation" — and he is right that they are two jobs. Probation is a
+  // dated gate with a pass/fail at the end of it; coaching is continuous and has no end. Note the
+  // `performance_probation` FUNCTION in hr-functions.ts keeps its combined name: that is a grant
+  // bundle, not a rail, and renaming it would move permissions rather than links.
   {
-    id: "hr-performance",
+    id: "hr-probation",
     items: [
-      // Moved here from People on 2026-09-01, and now the section's first row: the probation
-      // tracker and the outcomes dashboard read the same cycle and belong side by side.
+      // Moved here from People on 2026-09-01: the probation tracker and the outcomes dashboard read
+      // the same cycle and belong side by side.
       { href: "/hr/probation", icon: Hourglass, label: "Probation", permissions: [{ resource: "probation" }] },
       // Added 2026-09-01. Its gate is canReadAllProbation, which already named both HR seats — so
       // like Returned CVs this page admitted them all along and simply had no row.
       { href: "/hr/probation/dashboard", icon: LayoutDashboard, label: "Probation Dashboard", permissions: [{ resource: "probation" }] },
-      { href: "/hr/admin/field-workforce-compliance", icon: ClipboardCheck, label: "Workforce Compliance", permissions: [{ resource: "hr_calendar" }] },
+    ],
+    label: "Probation",
+  },
+  {
+    id: "hr-performance",
+    items: [
       // The coaching grant is real and JD-traced (performance follow-up), so the page is listed
       // rather than left reachable-but-hidden.
       { href: "/hr/coaching", icon: ClipboardCheck, label: "Field Coaching", permissions: [{ resource: "coaching" }] },
@@ -1793,9 +1812,15 @@ const hrNavigationSectionSeeds = [
       // sales-management surface"; the owner overrode that the same day. No grant changed — the
       // page gates on coaching:read, which performance_probation has always given both seats.
       { href: "/hr/coaching/analytics", icon: ChartColumnBig, label: "Coaching Analytics", permissions: [{ resource: "coaching" }] },
+      // excludedRoles: HR Advisory, 2026-09-01 — "I told you to remove the workforce compliance.
+      // Remove it." Cut from HER rail only, and by role rather than by deleting the line, because
+      // the row gates on hr_calendar:read and BOTH HR seats hold that grant: deleting it would have
+      // silently stripped the row from HR Operations' sidebar as well, which is not what he asked
+      // for and not this task's to take. Same shape as the Leave Management and Payroll exclusions
+      // above. If he wants it gone for Operations too, that is one word and one field.
+      { href: "/hr/admin/field-workforce-compliance", icon: ClipboardCheck, label: "Workforce Compliance", permissions: [{ resource: "hr_calendar" }], excludedRoles: ["HR Advisory"] },
     ],
-    // Renamed 2026-09-01 with the probation rows moved in from People.
-    label: "Performance & Probation",
+    label: "Performance",
   },
   {
     id: "hr-self",

@@ -187,8 +187,11 @@ const GATE_SHAPE_NOT_MACHINE_READABLE: Record<string, string> = {
     '["HR Advisory"] beside its recruitment permission and the two must be read together. TRUE for ' +
     "Advisory by the owner's own amendment that day, FALSE for Operations. The report is read-only " +
     "and holds no salary, personnel record or payroll figure",
-  "/hr/recruitment/contact-review": "canReviewCandidateContacts(access) — true for Advisory, the only seat offered it",
-  "/hr/recruitment/intake-health": "canViewInboundIntakeHealth(access) — true for Advisory, the only seat offered it",
+  // NO contact-review / intake-health entries. Both were listed here while the rail carried them;
+  // the owner cut both rows on 2026-09-01 as intake plumbing that crowded the sidebar, so there
+  // is no longer an HR row pointing at either page and nothing for this map to answer for. The
+  // PAGES and their gates are untouched — canReviewCandidateContacts and canViewInboundIntakeHealth
+  // still admit Advisory — so if a row is ever restored, restore the two lines with it.
   "/hr/recruitment/whatsapp-replies":
     "canViewWhatsAppOutboundLog(access) — true for Advisory, the only seat offered it. Verified by " +
     "CALLING the predicate for each seat, not by reading it: recruitmentManageRoles is [Super Admin, " +

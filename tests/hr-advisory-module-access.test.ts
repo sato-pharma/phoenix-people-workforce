@@ -211,9 +211,13 @@ export async function runHrAdvisoryModuleAccessTests() {
   // ── 7. Where they were grouped ─────────────────────────────────────────────
   // The grouping is the half of the answer he asked to see before any of it was built, so a later
   // edit that scatters probation back across two sections should have to say so out loud.
-  assert.equal(byHref.get("/hr/probation")?.section, "Performance & Probation", "Probation moved out of People");
-  assert.equal(byHref.get("/hr/probation/dashboard")?.section, "Performance & Probation");
-  assert.equal(byHref.get("/hr/coaching/analytics")?.section, "Performance & Probation");
+  // Two sections, not one. They were briefly merged as "Performance & Probation"; the owner split
+  // them the same day ("separate performance from probation"), so a later edit that quietly folds
+  // them back together has to fail here rather than just look tidier in the file.
+  assert.equal(byHref.get("/hr/probation")?.section, "Probation", "Probation moved out of People");
+  assert.equal(byHref.get("/hr/probation/dashboard")?.section, "Probation");
+  assert.equal(byHref.get("/hr/coaching")?.section, "Performance");
+  assert.equal(byHref.get("/hr/coaching/analytics")?.section, "Performance");
   assert.equal(byHref.get("/hr/recruitment/returned-cvs")?.section, "Recruitment");
   assert.equal(byHref.get("/hr/admin/screening-questions")?.section, "Recruitment");
   assert.equal(byHref.get("/hr/recruitment/manager-engagement")?.section, "Recruitment");
@@ -223,12 +227,28 @@ export async function runHrAdvisoryModuleAccessTests() {
   assert.equal(byHref.get("/hr/employees")?.section, "People");
   assert.equal(byHref.get("/hr/contracts")?.section, "People");
 
-  // Workforce Compliance sat in her sidebar rendering for nobody, because it gates on hr_calendar
-  // and she held no such grant. The Company Calendar widening fixed it; this asserts the fix.
-  assert.ok(
-    byHref.has("/hr/admin/field-workforce-compliance"),
-    "Workforce Compliance must now render for her — it was listed and invisible before hr_calendar:read",
-  );
+  // ── What the owner cut back out ───────────────────────────────────────────
+  // Three rows reached her rail and were then removed on 2026-09-01: "I think there are irrelevant
+  // modules... I don't want any crowd... remove them from this sidebar", and "I told you to remove
+  // the workforce compliance. Remove it."
+  //
+  // The two recruitment rows are DELETED outright, because `recruitment` is her grant alone and no
+  // other seat rendered them. Workforce Compliance is excluded BY ROLE instead: it gates on
+  // hr_calendar:read, which HR Operations holds too, so deleting the line would have stripped it
+  // from a second seat's sidebar as a side effect. Both halves are pinned — here that it is gone
+  // for her, and in section 8 below that it survived for Operations — so a later edit cannot undo
+  // one without noticing the other.
+  for (const href of [
+    "/hr/recruitment/contact-review",
+    "/hr/recruitment/intake-health",
+    "/hr/admin/field-workforce-compliance",
+  ]) {
+    assert.equal(
+      byHref.has(href),
+      false,
+      `${href} was cut from the HR Business Partner's sidebar on 2026-09-01 — do not re-add it`,
+    );
+  }
 
   // ── 8. What HR Operations must NOT have gained ────────────────────────────
   const operationsRows = new Set(hrRowsFor("HR Operations").map((row) => row.href));
@@ -245,5 +265,9 @@ export async function runHrAdvisoryModuleAccessTests() {
   assert.ok(
     operationsRows.has("/hr/admin/payslips-center"),
     "the Payslips Center row must render for HR Operations too — she is the company-wide viewer",
+  );
+  assert.ok(
+    operationsRows.has("/hr/admin/field-workforce-compliance"),
+    "HR Operations keeps Workforce Compliance — it was excluded for HR Advisory, not deleted, and this is the half that proves the difference",
   );
 }
