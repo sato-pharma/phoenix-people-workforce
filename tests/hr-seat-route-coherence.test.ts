@@ -208,7 +208,10 @@ const GATE_SHAPE_NOT_MACHINE_READABLE: Record<string, string> = {
     "offered to Operations only. The page is read-only, with no write path to withhold",
   "/hr/attendance": "shell gate only — no permission gate underneath it",
   "/hr/leave-management": "shell gate only — no permission gate underneath it",
-  "/hr/admin/approvals-hub": "shell gate, plus a deep-link redirect that is routing rather than access",
+  // "/hr/admin/approvals-hub" was here until 2026-09-01. The row left the HR rail that day (owner:
+  // "Remove other approvals from the sidebar"), and this map only covers rows the rail still
+  // offers — a verdict kept for a route nobody is offered is a claim nothing re-checks. The ADMIN
+  // rail keeps /admin/approvals-hub; if the /hr row is ever restored, its verdict comes back too.
 };
 
 /**

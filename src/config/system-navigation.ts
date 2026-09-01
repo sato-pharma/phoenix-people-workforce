@@ -1737,25 +1737,22 @@ const hrNavigationSectionSeeds = [
       // the row sits in the Leave section of an admin shell only HR Operations sees, where there is
       // no personal vacation report for it to be confused with.
       { href: "/hr/admin/vacation-report", icon: FileSpreadsheet, label: "Vacation Report", permissions: [{ resource: "leave", action: "read" }], roles: ["HR Operations"] },
-      // excludedRoles: HR Advisory, 2026-09-01 — same shape as the Leave Management row above and
-      // the same cause. The row is offered on `leave:read`, which Advisory holds only for HER OWN
-      // vacation requests, while the page behind it shows exactly three modules: resignation,
-      // contract renewal and outstation (leave/excuse/plan migrated out to their own dedicated
-      // pages — see MIGRATED_DEEPLINK_BASES in app/(admin)/admin/approvals-hub/page.tsx).
+      // "Other Approvals" IS NOT ON THIS RAIL AT ALL — retired from /hr on 2026-09-01, in two steps
+      // on the same day and for two DIFFERENT reasons, which is why it is written down.
       //
-      // Her composed matrix holds NO grant for any of those three: resignations, contracts and
-      // outstation are all ABSENT, not merely read-only. So the inbox could never contain one row
-      // for her. Measured off the composed matrix rather than inferred from the job description,
-      // because the JD would have suggested resignations were hers — the People section still
-      // carries /hr/resignations and /hr/contracts rows, and those correctly do not render for her
-      // for exactly this reason.
+      //   HR Advisory  the inbox could never hold a row for her (#2842). It shows resignation,
+      //                contract renewal and outstation; her composed matrix holds none of the
+      //                three, and the row was offered on `leave:read` — the grant everyone has for
+      //                their OWN vacation. An always-empty inbox carrying a pending badge.
+      //   HR Operations  the owner asked for it off her rail while tidying the seat: "Remove other
+      //                approvals from the sidebar." Hers was NEVER empty — she holds resignations
+      //                and contracts at read/create/update/export — so no emptiness argument
+      //                applies and re-deriving this from grants will get it wrong.
       //
-      // HR Operations keeps the row: she holds resignations and contracts at read/create/update/
-      // export, and leave administration is her second JD area.
-      //
-      // An always-empty inbox reads as a broken page rather than as "not for you" — and this one
-      // also carries a pending-count badge, so it advertises work that can never become hers.
-      { href: "/hr/admin/approvals-hub", icon: Inbox, label: "Other Approvals", permissions: [{ resource: "leave", action: "read" }], excludedRoles: ["HR Advisory"], navBadge: "approvals-hub-pending" },
+      // With both seats gone the row served nobody in a namespace that exists for those two seats,
+      // so it is deleted rather than excluded twice; tests/hr-url-namespace.test.ts enforces exactly
+      // that ("no /hr row may be invisible to BOTH seats") and is what caught the half-measure.
+      // The page is untouched: the ADMIN rail keeps /admin/approvals-hub, and the URL still works.
     ],
     label: "Leave Management",
   },
@@ -1795,7 +1792,16 @@ const hrNavigationSectionSeeds = [
   {
     id: "hr-performance",
     items: [
-      { href: "/hr/admin/field-workforce-compliance", icon: ClipboardCheck, label: "Workforce Compliance", permissions: [{ resource: "hr_calendar" }] },
+      // "Workforce Compliance" IS NOT ON THIS RAIL — removed 2026-09-01 by owner instruction,
+      // "Remove workforce compliance." This session had argued to KEEP it an hour earlier, on the
+      // grounds that the page is headed "Operational HR Governance" and is gated on `hr_calendar`,
+      // which HR Operations holds. The owner overruled that: it is a field-force board and her seat
+      // is people operations. So the page's own title is NOT evidence the row belongs back — it is
+      // the argument that was already heard and rejected.
+      //
+      // HR Advisory never had it (she holds no `hr_calendar`), so removing HR Operations left the
+      // row visible to neither HR seat; deleted rather than excluded, per hr-url-namespace. The
+      // ADMIN rail keeps /admin/field-workforce-compliance for the roles whose board it is.
       // PROBATION MOVED HERE from the People section, 2026-09-01 (owner). It sat under People
       // because it is an employee-lifecycle stage; it belongs here because the function that grants
       // it is `performance_probation`, and because the owner asked for the case list and the
