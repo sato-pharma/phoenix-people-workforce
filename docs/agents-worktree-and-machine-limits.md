@@ -102,6 +102,41 @@ naive watchers.
 worktrees and clear husks instead. The cost is path **COUNT**, not gigabytes: pnpm hardlinks, so the
 disk figure badly understates the damage.
 
+## Why `--strip-idle` no longer takes the session census
+
+**Narrowed 2026-09-01, owner-approved.** `repo-doctor --fix` still refuses to act while more than
+one Claude Code session is running. `--strip-idle` no longer does, and the reason is measured
+rather than argued: `ram-guard.ps1` has invoked `--strip-idle` every 20 hours since
+**2026-08-26**, and the census refused **every single run**, because this repo is worked with 4+
+sessions open at all times. A guard that never permits the cleanup is not protecting anything — it
+is a cleanup that silently does not exist. Measured the morning of 2026-09-01: **425,638
+reclaimable path entries against 5,595 real project files**, doubling inside one night as worktrees
+went 3 → 6.
+
+**What replaced it is strictly better informed.** A global process count cannot tell a session
+editing *this* worktree from one editing an unrelated folder. `--strip-idle` now answers that
+question directly, per worktree, re-reading each signal at the moment of deletion rather than
+reusing the inventory taken seconds earlier:
+
+- skips a worktree with **any uncommitted file** — that work exists only on this disk;
+- skips one with **any commit found nowhere upstream** — not backed up;
+- skips one **touched within 120 minutes** (`--strip-idle=<minutes>` raises the bar);
+- verifies `git status` **after** the strip, and reports a strip it could not verify.
+
+The one real risk the census did cover — two repo-doctors stripping at once — is a mutual-exclusion
+problem and gets a lock in the **common git dir**, so every worktree of this repo contends on the
+same file.
+
+**It deletes only `node_modules` and `.next`, and the junction is safe.** §5 has worktrees
+junction their `node_modules` into the primary checkout, so `fs.rmSync(…, {recursive: true})`
+looks alarming. Verified 2026-09-01 on a real Windows junction: `lstat` reports it as a symlink,
+Node unlinks the link, and **the target survives**. Restore a stripped worktree with `pnpm install`
+there, or `node scripts/new-session.mjs --repair <task>`.
+
+**A run that strips nothing is a healthy run, not a broken one.** 2026-09-01, all three worktrees
+were skipped — two touched within 13 minutes, one holding 3 uncommitted files. Do not reach for
+`--force`: it deletes `node_modules` out from under a session that is mid-edit.
+
 ## The commit-charge ceiling, and why the old session count was wrong
 
 RAM is soldered at **16 GB** and cannot be upgraded. The pagefile can.
