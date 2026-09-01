@@ -38,6 +38,8 @@ function person(
     backgroundConfirmedByHrId: null,
     backgroundConfirmedOutcome: null,
     declaredBackground: null,
+    declaredExpectedSalary: null,
+    declaredExperience: null,
     faculty: null,
     folder: null,
     fullName: `Candidate ${id}`,

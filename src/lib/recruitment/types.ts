@@ -253,6 +253,12 @@ export type Candidate = {
   currentRoleResponsibilities: string | null;
   yearsExperience: number | null;
   expectedSalary: number | null;
+  // The expected salary the applicant TYPED on WhatsApp, in their own words. `expectedSalary`
+  // above is numeric and holds the parsed figure; this one holds "Negotiable", "25 k to 30 k",
+  // "13,000 start up مع العمولات" — all truthful answers a recruiter reads and a numeric column
+  // cannot store. Writing verbatim text into the numeric column is what silently lost 31 salary
+  // answers, and the rest of each of those conversations with them.
+  declaredExpectedSalary: string | null;
   noticePeriod: string | null;
   source: string | null;
   cvReferenceName: string | null;
@@ -264,6 +270,12 @@ export type Candidate = {
   // document: this one is the applicant's own answer, so it outranks the CV when the two disagree.
   // Null for everyone who arrived before the question existed, which is most of the archive.
   declaredBackground: string | null;
+  // The experience BAND the applicant tapped on WhatsApp ("1 - 3 years", "Fresh graduate").
+  // A band, not a number, so it is its own field rather than a second opinion on
+  // `yearsExperience` — which the CV reader derives by counting work-history dates. Written
+  // since 2026-08-31 and, until now, read by nothing: it was absent from this type and from
+  // the row mapper, so 21 stored answers could not reach a screen at all.
+  declaredExperience: string | null;
   // An ADMIN's answer on whether this graduate is in the five field-force disciplines, written only
   // after a person opened the CV. It outranks both of the fields above, in both directions, and
   // null — which is where every row starts — means nobody has been asked. background-review.ts.

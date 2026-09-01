@@ -47,6 +47,18 @@ export const mergeableFields = [
   { column: "current_role_responsibilities", key: "currentRoleResponsibilities", label: "current responsibilities" },
   { column: "years_experience", key: "yearsExperience", label: "years of experience" },
   { column: "expected_salary", key: "expectedSalary", label: "expected salary" },
+  // The three answers the applicant gave on WhatsApp about themselves. They belong here for the
+  // same reason the numeric salary beside them does — a merge that dropped them would put the
+  // survivor's card straight back to showing nothing for somebody who answered every question,
+  // which is the exact complaint this whole path exists to answer.
+  //
+  // The region and area answers are deliberately NOT here. `preferred_region_code` and
+  // `preferred_region_name` are a PAIR — a tapped code and the words typed instead of one — and
+  // borrowing them independently could pair one record's code with another's free text, inventing
+  // a preference neither person stated.
+  { column: "declared_expected_salary", key: "declaredExpectedSalary", label: "expected salary in their words" },
+  { column: "declared_background", key: "declaredBackground", label: "what they said they studied" },
+  { column: "declared_experience", key: "declaredExperience", label: "the experience band they chose" },
   { column: "notice_period", key: "noticePeriod", label: "notice period" },
   { column: "cv_reference_name", key: "cvReferenceName", label: "CV file" },
   { column: "cv_external_url", key: "cvExternalUrl", label: "CV link" },

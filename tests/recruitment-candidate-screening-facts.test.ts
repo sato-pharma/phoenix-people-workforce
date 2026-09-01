@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 
+import { candidateRegionCodes } from "../src/lib/recruitment/candidate-region.ts";
 import {
   candidateScreeningFacts,
   candidateScreeningRoleFamily,
@@ -8,6 +9,54 @@ import {
 } from "../src/lib/recruitment/candidate-screening-facts.ts";
 
 export function runCandidateScreeningFactsTests() {
+  // --- THE WHATSAPP ANSWERS REACH A SCREEN AT ALL. The owner reported that not all of the
+  // --- questions he answers on WhatsApp showed up while screening, and he was right: the area was
+  // --- resolved here and rendered by nobody, the background and the salary were stored and read by
+  // --- nothing, and the experience band never even reached the Candidate type. Each of these is a
+  // --- fact only the applicant can supply, so a null here is data loss, not a hedge.
+  const answered = candidateScreeningFacts({
+    declaredBackground: "Veterinary",
+    declaredExperience: "1 - 3 years",
+    declaredExpectedSalary: "25 k to 30 k",
+    preferredAreaName: "Alexandria 2",
+    preferredRegionCode: candidateRegionCodes[0],
+  });
+  assert.deepEqual(answered.background, { confirmed: true, value: "Veterinary" });
+  assert.deepEqual(answered.declaredExperience, { confirmed: true, value: "1 - 3 years" });
+  assert.deepEqual(answered.expectedSalary, { confirmed: true, value: "25 k to 30 k" });
+  assert.deepEqual(answered.area, { confirmed: true, value: "Alexandria 2" });
+  assert.equal(answered.region?.value.declared, true);
+
+  // --- The salary a person TYPED outranks the parsed figure, always. The figure is lossy by
+  // --- construction — "25 k to 30 k" has no single number in it — so printing one where the
+  // --- applicant gave a range would show a precision nobody offered.
+  const bothSalaries = candidateScreeningFacts({
+    declaredExpectedSalary: "Negotiable",
+    expectedSalary: 12000,
+  });
+  assert.deepEqual(bothSalaries.expectedSalary, { confirmed: true, value: "Negotiable" });
+
+  // --- A figure typed into the ATS by hand, or stored before the verbatim column existed, still
+  // --- shows — formatted, so "12000" does not read as a year.
+  assert.deepEqual(candidateScreeningFacts({ expectedSalary: 12000 }).expectedSalary, {
+    confirmed: true,
+    value: "12,000",
+  });
+
+  // --- Nobody answered: three nulls, not three empty strings. A blank string would render an empty
+  // --- cell under a heading, which reads as a broken screen rather than as "not asked".
+  const silent = candidateScreeningFacts({ declaredBackground: "  ", declaredExperience: "" });
+  assert.equal(silent.background, null);
+  assert.equal(silent.declaredExperience, null);
+  assert.equal(silent.expectedSalary, null);
+
+  // --- A DECLARED region survives with no address at all. 20 candidates in production are in
+  // --- exactly this state, and while the region rode as a hint on the "Lives in" cell — which is
+  // --- only rendered when there IS a governorate — their answer had nowhere to appear.
+  const noAddress = candidateScreeningFacts({ preferredRegionCode: candidateRegionCodes[0] });
+  assert.equal(noAddress.governorate, null);
+  assert.equal(noAddress.region?.value.declared, true, "the region they asked for must survive a missing address");
+
   // --- THE SAFETY PROPERTY. A confirmed column always wins, so a CV read can never contradict what
   // --- a person typed or what intake already accepted. If this ever flips, a hedged guess starts
   // --- overwriting recorded fact on screen, which is the failure the "confirmed" flag exists to
