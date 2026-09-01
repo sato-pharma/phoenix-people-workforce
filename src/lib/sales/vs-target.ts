@@ -285,6 +285,32 @@ export const loadAchievementCacheStamp = cache(async (): Promise<string | null> 
   }
 });
 
+/**
+ * Achievement rows carrying NO sales line at all — dropped, never mapped.
+ *
+ * `au.f_monthly_attribution`'s last branch emits every fact row whose `official_line` finds no entry
+ * in `au.sos_official_line_map`, with `line_code` null and `unmapped_reason` 'unmapped_line'. In
+ * production that is exactly ONE product: RY001 ROYANOXICAM 8MG 20 TAB, whose line is **Head
+ * Office** — 104 rows and 10,458.00 EGP across 2026-01 … 2026-07, measured on production 2026-09-01.
+ *
+ * Head Office is not a tracked line. Monthly Closing never books it (`resolveTargetLineCode` answers
+ * null and the line is skipped), and the golden rule is that Head Office is FILTERED before any
+ * number is quoted — never given a line to make it tidy. Leaving these rows in is what made every
+ * company-level total taken from this loader read high by their value while Monthly Closing read
+ * correct: two reports disagreeing over money that belongs to neither of them.
+ *
+ * Dropped here, at the one chokepoint all six consumers of `loadAchievementRange` share, so the
+ * answer cannot differ between the dashboard, the portal, Business Review and Employee 360 — and
+ * before the cache, so a cached range can never replay the leak.
+ *
+ * Pure, so the rule is testable with no database.
+ */
+export function dropRowsWithNoSalesLine<Row extends { lineCode: string | null }>(
+  rows: readonly Row[],
+): Row[] {
+  return rows.filter((row) => String(row.lineCode ?? "").trim().length > 0);
+}
+
 /** The uncached RPC read + pure map. Body is byte-identical to the pre-cache loader. */
 async function loadAchievementRangeUncached(from: string, to: string): Promise<AchievementRow[]> {
   const supabase = getSupabaseAdmin();
@@ -294,7 +320,7 @@ async function loadAchievementRangeUncached(from: string, to: string): Promise<A
     { p_from: from, p_to: to },
     ["period", "line_code", "region_code", "area_code", "product_code"],
   );
-  return rows.map((row) => ({
+  return dropRowsWithNoSalesLine(rows.map((row) => ({
     period: str(row.period),
     lineCode: str(row.line_code) || null,
     regionCode: str(row.region_code) || null,
@@ -314,7 +340,7 @@ async function loadAchievementRangeUncached(from: string, to: string): Promise<A
     achievementUnits: optNum(row.achievement_units),
     hasTarget: row.has_target === true,
     hasActual: row.has_actual === true,
-  }));
+  })));
 }
 
 export async function loadAchievementRange(from: string, to: string): Promise<AchievementRow[]> {

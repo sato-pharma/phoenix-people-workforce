@@ -129,3 +129,47 @@ than a fixed session number: `Win32_OperatingSystem.TotalVirtualMemorySize` is t
 
 Why such a freeze leaves no crash dump, and why `VirtualSize` misleads: AGENTS.md §2.1, *Machine
 ceiling*.
+
+## The dev-server bundler, and why the watchdog sawtooth is NOT a turbopack trait
+
+**Corrected 2026-09-01.** `AGENTS.md` §2.1 previously said the watchdog's 6 GB kills were a
+turbopack trait. They are not.
+
+`pnpm run dev` now **chooses the bundler for you** — `scripts/dev-server.mjs` picks webpack on
+`win32` and turbopack elsewhere. That platform guard has been deleted three times, most recently by
+#1435, so the measurements justifying it live in that file rather than here.
+
+**The measurement that overturned the old claim.** In the 38 minutes *after* that launcher merged
+(02:19–02:46 Cairo), **SEVEN** webpack servers were killed at the same ceiling — 6.03–7.23 GB, one
+of them started by the launcher itself *with* a memory cap set. That is indistinguishable from the
+eight kills before it. All-time: 100 attempts, 98 succeeded. **So the bundler is never the fix for
+the kill/restart sawtooth.**
+
+**You cannot attribute a kill to a bundler from `mem-watchdog.log`.** Both bundlers spawn the same
+`start-server.js` child, so grepping the logged command line for `turbopack` returns 0 of 100 — which
+reads as *no turbopack kill ever happened*. Attribute by **timestamp** instead. And count with
+`-CaseSensitive`, or `KILL` also matches every `killed OK` line.
+
+**What turbopack's own failures actually look like:** wedging (no answer to `GET /` in 25–60s), and
+the junctioned-`node_modules` refusal documented above. Neither is the sawtooth.
+
+**The sawtooth is a watchdog-THRESHOLD problem.** This dev server legitimately reaches ~6 GB. It was
+made acute by running **two** servers at once — the rule is one, ever — because each kill/restart
+cycle re-drove RAM to 94% and re-evicted the desktop to the pagefile.
+
+**`--max-old-space-size` cannot help.** Measured a no-op: `heap_size_limit` reads 4288 MB with and
+without it, because the growth is off-heap.
+
+
+---
+
+## `new-session.mjs` — the four-step ritual, and how to undo it
+
+Relocated from `AGENTS.md` §5, verbatim. The sections above describe the worktree rules; this one
+describes the script that enforces them, which is the part a session cannot derive by reading them.
+A third bullet relocated here on 2026-09-01 duplicated *The husk that nothing built into git can
+see* above and was dropped the same day. The cue — and every memory slug — stays in `AGENTS.md`.
+
+- **Start a session with `node scripts/new-session.mjs <task>` — one command for the whole four-step ritual** ([scripts/new-session.mjs](scripts/new-session.mjs), also wired as `pnpm run session:new`; invoke `node` directly per §2.1): fetch `origin/main`, create `_wt-<task>` on `codex/<task>`, junction `node_modules` from the primary, copy the gitignored env files. It refuses to start below 6 GB of free commit charge. `--status` prints live headroom and which folders can actually run, `--repair` fixes a worktree missing either piece, `--from <ref>` branches from something other than `origin/main`. **`git worktree add` is only step one of four** — it never copies gitignored files, so a hand-made worktree has no `.env.local` (dev-auth and the dev server then fail silently, with no error) and no `node_modules` (nothing runs at all). By hand that is `git worktree add` **plus** `pnpm run worktree:sync-env` **plus** the junction.
+
+- **Remove worktrees with `node scripts/new-session.mjs --remove <task>`** (`pnpm run session:remove`), only after approval. It runs three gates in cost order before touching anything — untracked `.xlsx`/`.pdf` rescue scan, then uncommitted work, then commits that are on no remote branch **and** have no merged PR — drops the `node_modules` junction with `cmd /c rmdir` so no husk is left, and re-reads the folder's branch live rather than trusting an earlier scan (a parallel session can repoint a tree first). **A squash-merged branch legitimately holds commits `main` does not**, so the last gate asks `gh pr list --head <branch> --state merged`, never reachability: pure reachability calls every successfully merged worktree stranded, and the advice that follows from it — "push the branch" — is how you get a conflicting PR that runs no CI at all. By hand it is `git worktree remove` plus that same PR check; `git branch --merged` is always wrong here. Stale worktrees must not accumulate.
