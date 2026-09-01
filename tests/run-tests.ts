@@ -1174,6 +1174,7 @@ process.env.PHOENIX_TEST_SUITE = "1";
 // typecheck job -- which is exactly how this one was caught.
 (process.env as Record<string, string | undefined>).NODE_ENV = "test";
 import { runDvProbationWatchlistLiveSourceTests } from "./dv-probation-watchlist-live-source.test.ts";
+import { runCeoSosTableRowKeysTests } from "./ceo-sos-table-row-keys.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -3571,6 +3572,10 @@ await runTest(
 await runTest(
   "the DV probation watchlist reads probation_dv_days, not the retired employee_probation checkboxes",
   runDvProbationWatchlistLiveSourceTests,
+);
+await runTest(
+  "CEO SoS region/product rows key on the unique group key, never the nullable repeating code or the self-healed label",
+  runCeoSosTableRowKeysTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
