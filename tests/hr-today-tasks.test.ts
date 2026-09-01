@@ -271,7 +271,7 @@ export async function runHrTodayTasksTests() {
     // But until 2026-09-01 every task in it was built from a source in HR Advisory's bundle. HR
     // Operations holds seven sources, this page already fetched all seven for her tiles, and
     // exactly two of them answered anything here: her landing page opened on a two-row panel over
-    // a wall of counters, with clearance, contracts, resignations and the attendance desk — her
+    // a wall of counters, with contracts, resignations and the attendance desk — her
     // entire job — present as figures and absent as work.
     //
     // The pin is deliberately NOT a list of expected keys, which would agree with itself forever.
@@ -330,10 +330,12 @@ export async function runHrTodayTasksTests() {
         `${name}: task keys are React keys and must be unique`,
       );
 
-      // Eight is the floor, not the target: HR Advisory had nine the day this was written and HR
-      // Operations had TWO. A seat that drops back under this has lost its day again.
+      // Six is the floor, not the target. HR Advisory has nine; HR Operations has six, against
+      // the TWO she had the day this was written. The floor was eight until the Clearance module
+      // was removed (owner, 2026-09-01) and took three of her tasks with it — — lower it again
+      // only for a deletion of that kind, never to make a thinning panel go green.
       assert.ok(
-        tasks.length >= 8,
+        tasks.length >= 6,
         `${name} gets only ${tasks.length} task(s) — this page's opening panel IS the seat's day, and a day with ${tasks.length} rows in it is the two-row board this test exists to stop. Tasks: ${keys.join(", ") || "(none)"}`,
       );
     }
@@ -372,9 +374,6 @@ export async function runHrTodayTasksTests() {
     }
     for (const key of [
       "process-resignations",
-      "release-settlements",
-      "chase-clearance-stations",
-      "open-clearance-checklists",
       "sign-off-contract-renewals",
       "raise-contract-renewals",
       "review-attendance-exceptions",
@@ -456,63 +455,67 @@ export async function runHrTodayTasksTests() {
       "only a request actually sitting at hr_review is waiting on HR — manager_review is somebody else's step",
     );
 
-    const clearanceSources = {
-      clearance: {
-        awaiting: [],
-        checklists: [
-          {
-            daysSinceLastWorkingDate: 9,
-            employeeName: "Mona Adel",
-            id: "CL-1",
-            isOverdue: true,
-            jobTitle: "Medical Rep",
-            lineName: "CNS",
-            outstandingLabels: ["IT", "Fleet"],
-            status: "open",
-          },
-          {
-            daysSinceLastWorkingDate: 2,
-            employeeName: "Karim Fouad",
-            id: "CL-2",
-            isOverdue: true,
-            jobTitle: "District Manager",
-            lineName: "Pedia",
-            outstandingLabels: [],
-            status: "ready",
-          },
+    // `lastDayLabel` and `daysUntil` OUTLIVE the clearance tasks that were their first callers,
+    // so their semantics are pinned here on the one that survives. The pair is easy to get
+    // backwards: `daysSince` counts UP from something that happened, `daysUntil` counts DOWN to a
+    // deadline, and a sign flip renders somebody who left last week as "last day in 5 days" —
+    // a leaver who is already gone, shown to HR as one they still have a week to handle.
+    const resignationRow = (
+      id: string,
+      effectiveDate: string,
+      status: string,
+    ) => ({
+      effectiveDate,
+      employeeName: `Employee ${id}`,
+      id,
+      jobTitle: "Medical Rep",
+      lineName: "CNS",
+      status,
+    });
+
+    const resignationSources = {
+      resignations: {
+        records: [
+          resignationRow("R-1", shift(-5), "under_review"),
+          resignationRow("R-0", shift(0), "submitted"),
+          resignationRow("R-2", shift(3), "submitted"),
+          resignationRow("R-3", shift(40), "submitted"),
+          resignationRow("R-4", shift(1), "completed"),
         ],
       },
     };
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- literal fixtures, not fetches
-    const clearanceTasks = buildHrTodayTasks(clearanceSources as any, "HR Operations");
+    const resignationTasks = buildHrTodayTasks(resignationSources as any, "HR Operations");
 
-    const chase = named(clearanceTasks, "chase-clearance-stations");
+    const processing = named(resignationTasks, "process-resignations");
     assert.deepEqual(
-      chase.items.map((item) => item.id),
-      ["CL-1"],
-      "a checklist already READY is a release, not a chase",
+      processing.items.map((item) => item.id),
+      ["R-1", "R-0", "R-2", "R-3"],
+      "only a resignation still waiting on HR is work, and the closest deadline sorts first — a last day already passed outranks one falling today, and R-4 is completed and has already moved",
     );
     assert.equal(
-      chase.items[0].meta,
-      "waiting on IT, Fleet",
-      "the chase row names the exact stations the release gate refuses on — that is the answer to 'why can I not release this one', and it is worth more than repeating the job title",
+      processing.items[0].age,
+      "last day was 5 days ago",
+      "an effective date in the PAST must read as passed; the sign flip here shows a leaver who has already gone as one leaving next week",
     );
     assert.equal(
-      chase.items[0].age,
-      "last day was 9 days ago",
-      "a last working day that has passed reads as passed",
-    );
-
-    const release = named(clearanceTasks, "release-settlements");
-    assert.deepEqual(
-      release.items.map((item) => item.id),
-      ["CL-2"],
-      "only a READY checklist is waiting on her release",
-    );
-    assert.equal(
-      release.items[0].urgent,
+      processing.items[0].urgent,
       true,
-      "the module's own isOverdue decides urgency here, so this row and the Clearance page agree",
+      "a last working day that has already passed is urgent by definition",
+    );
+    assert.equal(
+      processing.items[1].age,
+      "last day is today",
+      "the day itself is its own case: \"last day in 0 days\" is what a naive countdown prints, and it reads as a diary note on the one day the leaver actually walks out",
+    );
+    assert.equal(processing.items[1].urgent, true, "today is inside any urgency window");
+    assert.equal(processing.items[2].age, "last day in 3 days");
+    assert.equal(processing.items[2].urgent, true, "inside a week is urgent");
+    assert.equal(processing.items[3].age, "last day in 40 days");
+    assert.equal(
+      processing.items[3].urgent,
+      false,
+      "40 days out is a diary note — the 7-day threshold is the whole distinction",
     );
   }
 }

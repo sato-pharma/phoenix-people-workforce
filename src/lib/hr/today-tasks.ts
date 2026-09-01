@@ -341,7 +341,7 @@ export function buildHrTodayTasks(loaded: HrCommandSources, seat: HrBundleName):
     );
   }
 
-  // ── The leaver desk: resignations, then clearance ──────────────────────────
+  // ── The leaver desk: resignations ──────────────────────────────────────────
   // THE OTHER SEAT'S DAY BEGINS HERE. Everything from "Engagement & retention" down was HR
   // Advisory's work — the support inbox, the retention register, the recruiting pipeline — and
   // everything in this block is HR Operations': the leavers, the contracts and the attendance
@@ -366,7 +366,7 @@ export function buildHrTodayTasks(loaded: HrCommandSources, seat: HrBundleName):
         action: "Process",
         clearLabel: "No resignation is waiting on HR.",
         detail:
-          "A resignation has been submitted and is waiting on HR. Nothing downstream of it can start until it moves — not the clearance, not the final settlement, not the seat going back on the organogram.",
+          "A resignation has been submitted and is waiting on HR. Nothing downstream of it can start until it moves — not the final settlement, not the seat going back on the organogram.",
         functionKey: "people_records",
         href: "/hr/resignations",
         hrefLabel: "Open Resignations",
@@ -393,114 +393,13 @@ export function buildHrTodayTasks(loaded: HrCommandSources, seat: HrBundleName):
     );
   }
 
-  if (loaded.clearance) {
-    const checklists = loaded.clearance.checklists;
-
-    // Her step and nobody else's: every station has cleared, the settlement is unreleased.
-    const readyToRelease = checklists.filter((row) => row.status === "ready");
-    tasks.push(
-      task({
-        action: "Release",
-        clearLabel: "No final settlement is waiting on your release.",
-        detail:
-          "Every station has cleared this leaver and the settlement is waiting on you — the last step before they are paid off.",
-        functionKey: "people_records",
-        href: "/hr/clearance",
-        hrefLabel: "Open Clearance",
-        items: readyToRelease.map((row) => ({
-          age: lastDayLabel(
-            row.daysSinceLastWorkingDate === null ? null : -row.daysSinceLastWorkingDate,
-          ),
-          href: "/hr/clearance",
-          id: row.id,
-          meta: [row.jobTitle, row.lineName].filter(Boolean).join(" · "),
-          name: row.employeeName,
-          sortKey: row.daysSinceLastWorkingDate ?? 0,
-          // `isOverdue` is the module's OWN predicate for "last day passed, still unreleased".
-          // Reading it rather than re-deriving it keeps this row and the Clearance page agreeing.
-          urgent: row.isOverdue,
-        })),
-        key: "release-settlements",
-        subject: "Final settlements",
-        title: (count) =>
-          `Release ${count} final ${pluralise(count, "settlement", "settlements")}`,
-      }),
-    );
-
-    // Not hers to clear — hers to chase. The meta names the exact stations still outstanding, so
-    // she can pick up the phone from this row without opening the checklist to find out who.
-    const stuck = checklists.filter((row) => row.status === "open" && row.isOverdue);
-    tasks.push(
-      task({
-        action: "Chase",
-        clearLabel: "Every open clearance is still inside its last working day.",
-        detail:
-          "The last working day has passed and stations are still outstanding, so this leaver cannot be settled until somebody signs them off.",
-        functionKey: "people_records",
-        href: "/hr/clearance",
-        hrefLabel: "Open Clearance",
-        items: stuck.map((row) => ({
-          age: lastDayLabel(
-            row.daysSinceLastWorkingDate === null ? null : -row.daysSinceLastWorkingDate,
-          ),
-          href: "/hr/clearance",
-          id: row.id,
-          // The blocking stations, NAMED. `outstandingLabels` is the exact set the release gate
-          // refuses on, so this line answers "why can I not release this one" without a click.
-          meta:
-            row.outstandingLabels.length > 0
-              ? `waiting on ${row.outstandingLabels.join(", ")}`
-              : [row.jobTitle, row.lineName].filter(Boolean).join(" · "),
-          name: row.employeeName,
-          sortKey: row.daysSinceLastWorkingDate ?? 0,
-          urgent: true,
-        })),
-        key: "chase-clearance-stations",
-        subject: "Unfinished clearances",
-        title: (count) =>
-          `Chase ${count} unfinished ${pluralise(count, "clearance", "clearances")}`,
-      }),
-    );
-
-    // Departures with no checklist at all — the ones predating the auto-open trigger.
-    //
-    // NOT MARKED URGENT, on purpose. There were 54 of these the day the clearance module shipped;
-    // most left months ago and were settled outside Phoenix, which is why they were deliberately
-    // not backfilled (see ClearanceAwaitingResignation in src/lib/clearance/types.ts). Flagging
-    // them red would put a permanent, unclearable overdue task at the top of her board every
-    // morning — the same defect `isMissingRequiredManager` was introduced to remove one task
-    // further down this file. So they are named, counted honestly, and left amber, sitting below
-    // the work that actually moved today. Newest departure first: those are the real ones.
-    tasks.push(
-      task({
-        action: "Open",
-        clearLabel: "Every recorded departure has a clearance checklist.",
-        detail:
-          "The person has left and no clearance checklist was ever opened, so nothing is tracking the laptop, the car or the custody they still hold.",
-        functionKey: "people_records",
-        href: "/hr/clearance",
-        hrefLabel: "Open Clearance",
-        items: loaded.clearance.awaiting.map((row) => {
-          const until = daysUntil(row.lastWorkingDate);
-          return {
-            age: lastDayLabel(until),
-            href: "/hr/clearance",
-            id: row.resignationId,
-            meta: [row.jobTitle, row.lineName].filter(Boolean).join(" · "),
-            name: row.employeeName,
-            // Newest departure first, and a row with no date at all sorts to the bottom rather
-            // than to the top: an undated leaver is the least likely of these to still be live.
-            sortKey: until === null ? -1_000_000 : until,
-            urgent: false,
-          };
-        }),
-        key: "open-clearance-checklists",
-        subject: "Unopened clearances",
-        title: (count) =>
-          `Open a clearance for ${count} ${pluralise(count, "departure", "departures")}`,
-      }),
-    );
-  }
+  // NO CLEARANCE TASKS HERE, DELIBERATELY. The Clearance module is being removed (owner,
+  // 2026-09-01), so this panel must not grow a dependency on it. Three tasks were written
+  // against it and taken back out before merge: Release final settlements, Chase unfinished
+  // clearances, and Open a clearance for a departure that never got one.
+  //
+  // Do NOT re-add them from the clearance source when this list reads thin. Once the module
+  // goes, that source stops existing and the reference is a type error, not a missing feature.
 
   // ── Contracts ──────────────────────────────────────────────────────────────
   if (loaded.contracts) {
