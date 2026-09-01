@@ -108,7 +108,6 @@ Which memory file backs which hook is in
 - **A Windows USER env var SHADOWS every `.env.local`, silently.** Re-probe all three; never print the value.
 - **The local attendance agent dies at EVERY logon and loses NOTHING — do not escalate it.** Never disable the 2-hourly task, never launch a second agent (it can fire a PRODUCTION sync).
 - **ExcelJS emits two schema-invalid OOXML fragments, so Excel silently REPAIRS the workbook** — both need the `.xlsx` zip post-processed.
-- **`TZ=Africa/Cairo date` SILENTLY RETURNS UTC** — MSYS ships no tzdata, so the one command a session reaches for to obey "report in Cairo" is the command that breaks it, by exactly 3 hours, making recent events look older than they are. The tell is a Cairo reading with a `+0000` offset; Cairo is never UTC+0. **The machine clock is ALREADY Cairo (`+0300`)** — plain `date` and Windows file mtimes are correct, and only the explicit `TZ=` override lies. Read it with `node -e "new Date().toLocaleString('en-GB',{timeZone:'Africa/Cairo'})"`. `tz-africa-cairo-silently-returns-utc-in-msys`
 
 **Git**
 

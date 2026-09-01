@@ -861,6 +861,34 @@ suite's own headline assertion. Breaking it produced the right one:
 
 > every memory the map marks load-bearing must still be named in AGENTS.md
 
+## `TZ=Africa/Cairo date` silently returns UTC
+
+MSYS ships no tzdata. So the one command a session reaches for in order to obey the owner's
+standing rule — report every time in Africa/Cairo — is the command that breaks it, by exactly
+three hours, with no error and no warning. Recent events read as older than they are, which is
+the direction that matters: work done ten minutes ago looks like work done before the session
+started, and a freshly written file looks stale enough to ignore.
+
+**The tell is a Cairo reading carrying a `+0000` offset.** Cairo is never UTC+0, in any season.
+
+**The machine clock is ALREADY Cairo (`+0300`).** Plain `date` is correct, and so are Windows
+file mtimes. Only the explicit `TZ=` override lies, so the fix is to stop passing it — not to
+correct for it, and never to add three hours by hand.
+
+Read it explicitly with node when a timezone must be named:
+
+```
+node -e "new Date().toLocaleString('en-GB',{timeZone:'Africa/Cairo'})"
+```
+
+**This account was recovered on 2026-09-01 from a duplicate.** The hook existed twice in
+`AGENTS.md` — the terse consolidated form at the top of the Shell and tooling group, and a
+594-byte pre-consolidation copy that a long-running branch reintroduced when it merged `main`
+in twice. The duplicate cost 594 bytes on EVERY request while `docs/` carried no account of the
+trap at all, which is the exact inversion AGENTS.md 2.2 exists to prevent: the hook belongs
+there, the evidence belongs here. Dropping the copy took the bytes back and this section is
+where its extra detail went.
+
 ## Relocated from AGENTS.md — 2026-09-01
 
 Verbatim, unabridged. These entries had grown from cues into full accounts inside `AGENTS.md`,
