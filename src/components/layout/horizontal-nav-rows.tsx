@@ -361,8 +361,8 @@ function NavRowStrip({
                   // tailwind-merge so the ring animates too; the light branch keeps the original.
                   dark
                     ? active
-                      ? "group relative bg-[#17120c] text-[#F8B56B] shadow-[inset_0_0_0_1px_#33261a,inset_0_1px_0_rgba(248,181,107,0.12)] transition-[background-color,color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#F8B56B]/70"
-                      : "group relative text-[#C9D4E2] hover:bg-[#131313] hover:text-[#F0D5B0] hover:shadow-[inset_0_0_0_1px_#1f1f1f] transition-[background-color,color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#F8B56B]/70"
+                      ? "group relative bg-[linear-gradient(180deg,#241a10_0%,#1a1209_55%,#140d06_100%)] text-[#FFC98A] shadow-[inset_0_0_0_1px_rgba(248,181,107,0.26),inset_0_1px_0_rgba(255,214,168,0.16),inset_0_-2px_0_#F8B56B,0_3px_12px_-4px_rgba(248,181,107,0.45)] transition-[background-color,color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#F8B56B]/70"
+                      : "group relative text-[#C9D4E2] hover:bg-[#151311] hover:text-[#F0D5B0] hover:shadow-[inset_0_0_0_1px_#241f19,inset_0_1px_0_rgba(255,255,255,0.045)] transition-[background-color,color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#F8B56B]/70"
                     : active
                       ? "bg-phx-accent-soft text-phx-accent"
                       : "text-phx-ink-soft hover:bg-phx-paper hover:text-phx-ink",
@@ -382,6 +382,7 @@ function NavRowStrip({
                     "h-3.5 w-3.5 shrink-0",
                     // An idle icon at full strength competes with its own label. Dark only.
                     dark && !active && "opacity-70 transition-opacity group-hover:opacity-100",
+                    dark && active && "drop-shadow-[0_0_6px_rgba(248,181,107,0.5)]",
                   )}
                 />
                 <span>{item.label}</span>
@@ -429,7 +430,15 @@ export function UpperNavRow({ className }: { className?: string } = {}) {
             // `phx-navrow-upper` only tells the stylesheet what colour this row's ground is, so the
             // scroll-shadow gradients in app/globals.css can mask themselves against it. It is not
             // a `--` marker of the retired in-page/fallback kind and nothing keys a `:has()` on it.
-            dark ? "phx-navrow-upper border-[#1c1c1c] bg-[#000000]" : "border-phx-line bg-white",
+            //
+            // The ground is a shallow vertical gradient rather than flat #000000 — a lit surface
+            // instead of a void. Keep the range under ~12/255: the mask that hides the scroll glow
+            // is a SOLID colour (`--phx-navrow-ground`), so it can only match a gradient this
+            // subtle. Widening the gradient here without teaching that mask about it puts a visible
+            // seam at both ends of the row.
+            dark
+              ? "phx-navrow-upper border-[#241f19] bg-[linear-gradient(180deg,#0b0a08_0%,#050505_60%,#000000_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.045)]"
+              : "border-phx-line bg-white",
           ),
       )}
       dark={dark}
@@ -475,11 +484,13 @@ export function LowerNavRow({ className }: { className?: string } = {}) {
           cn(
             "border-b px-3 py-1.5 sm:px-6",
             // #050505 against the upper row's #000000 was a 5/255 step — invisible, so the two rows
-            // read as one tall slab and neither looked deliberate. #080808 plus a 1px top highlight
-            // separates them at a glance while staying unmistakably black. Same masking role for
-            // `phx-navrow-lower` as its sibling above.
+            // read as one tall slab and neither looked deliberate. A slightly lifted gradient plus
+            // a WARM top hairline separates them at a glance while staying unmistakably black; the
+            // amber tint is what makes the seam read as intended rather than as a rendering edge.
+            // Same masking role for `phx-navrow-lower` as its sibling above, and the same ceiling on
+            // how far the gradient may travel.
             dark
-              ? "phx-navrow-lower border-[#1c1c1c] bg-[#080808] shadow-[inset_0_1px_0_rgba(255,255,255,0.035)]"
+              ? "phx-navrow-lower border-[#241f19] bg-[linear-gradient(180deg,#0d0b09_0%,#080706_55%,#040404_100%)] shadow-[inset_0_1px_0_rgba(248,181,107,0.08)]"
               : "border-phx-line bg-white/95",
           ),
       )}

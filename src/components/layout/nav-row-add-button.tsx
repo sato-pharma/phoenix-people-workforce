@@ -149,7 +149,7 @@ export function NavRowAddButton({
         className={cn(
           "inline-flex shrink-0 items-center justify-center rounded-lg p-1.5 transition-colors",
           dark
-            ? "text-[#7C8DA3] hover:bg-[#141414] hover:text-[#F8B56B]"
+            ? "text-[#7C8DA3] transition-[background-color,color,box-shadow] hover:bg-[#151311] hover:text-[#F8B56B] hover:shadow-[inset_0_0_0_1px_#241f19,inset_0_1px_0_rgba(255,255,255,0.045)]"
             : "text-phx-ink-soft hover:bg-phx-paper hover:text-phx-accent",
         )}
         onClick={() => {
