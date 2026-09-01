@@ -1680,7 +1680,13 @@ const hrNavigationSectionSeeds = [
       // Added 2026-09-01. The audience is a ROLE SET, not a permission — canViewManagerCvEngagement
       // — so this row carries `roles` rather than a grant, and the two must be read together: the
       // owner amended that list the same day to add HR Advisory and nobody else in HR.
-      { href: "/hr/recruitment/manager-engagement", icon: Radar, label: "Manager Engagement", permissions: [{ resource: "recruitment" }], roles: ["HR Advisory"] },
+      // Labelled "Manager CV Engagement", matching the page h1, the admin row, the portal tab and
+      // the portal page title — every other surface in the app. It was briefly shortened to
+      // "Manager Engagement" to fit a 137px budget the width model charged this label; that charge
+      // was an ADMIN rail + hub-chrome pairing an HR seat provably never renders, and once
+      // sidebar-label-width stopped charging it the reason for the short name went away. The full
+      // name measures 153px against this rail's 157px budget, so it fits and the drift is closed.
+      { href: "/hr/recruitment/manager-engagement", icon: Radar, label: "Manager CV Engagement", permissions: [{ resource: "recruitment" }], roles: ["HR Advisory"] },
     ],
     label: "Recruitment",
   },
