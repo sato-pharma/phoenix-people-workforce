@@ -430,6 +430,36 @@ export function runRepsListTests() {
       !/\btruncate\b|text-ellipsis/.test(source),
       "and nothing may be truncated to make it fit — the golden rule replaced a scroll with wrapping, not with hidden text",
     );
+
+    // The percentages themselves, because `table-fixed` obeys them exactly and fails silently.
+    // A column narrower than its own heading does not clip and does not scroll — the text simply
+    // hangs outside the column into its neighbour's padding, which no assertion above can see and
+    // which nothing in this repo can measure. It shipped that way on 2026-09-01: Confidence at 11%
+    // gave the header 95px at a 1280 viewport and 74px at 768, against the 106px the word needs.
+    // Sliced between the colgroup markers rather than by a byte window, which shifts when the file
+    // moves and false-fails.
+    const colgroup = source.slice(source.indexOf("<colgroup>"), source.indexOf("</colgroup>"));
+    const widths = [...colgroup.matchAll(/w-\[(\d+)%\]/g)].map((match) => Number(match[1]));
+    assert.equal(
+      widths.length,
+      7,
+      "the colgroup should declare six columns, one of which (Address) carries both a with-List and a without-List width",
+    );
+    const [contact, specialty, list, brick, confidence, addressWithList, addressWithoutList] = widths;
+    assert.equal(
+      contact + specialty + list + brick + confidence + addressWithList,
+      100,
+      "the Contacts tab's six columns must total exactly 100% — table-fixed scales anything else, so a total under 100 leaves dead space and over 100 squeezes every column at once",
+    );
+    assert.equal(
+      contact + specialty + brick + confidence + addressWithoutList,
+      100,
+      "and the Pharmacies tab's five must total 100% too: dropping the List column is what frees its share for Address",
+    );
+    assert.ok(
+      confidence >= 16,
+      `the Confidence column must stay at 16% or wider (it is ${confidence}%): its heading is the single unbreakable word "Confidence", which needs 106px at this uppercase tracking, and 16% is what clears that at the 768px viewport where the desktop table first appears. A single word cannot wrap, so a narrower column puts the heading outside its own cell — silently, because nothing clips and nothing scrolls`,
+    );
   }
 
   // ── A region name matches case- and whitespace-insensitively ────────────────────────────────

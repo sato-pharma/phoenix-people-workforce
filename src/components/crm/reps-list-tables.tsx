@@ -795,21 +795,32 @@ function GroupTable({
           <table className="w-full table-fixed border-collapse text-left text-sm">
             {/* Widths measured, not guessed: at a 938px viewport the table has ~845px to share, and
                 "Pharmacist" plus its padding needs 104px of that — 13%. A 9% List column clipped it
-                by 4px, which is the shape of bug this golden rule exists to stop. The Confidence
-                column added on 2026-09-01 took its 11% from Contact and Brick for that reason: List
-                could not give any back without reintroducing the clip.
+                by 4px, which is the shape of bug this golden rule exists to stop.
+
+                Confidence needs 16%, and the 11% it shipped with on 2026-09-01 was too little.
+                Measured in the browser the day after: the header is the single unbreakable word
+                "Confidence", which at this uppercase tracking needs 106px whatever the viewport,
+                while 11% gave it 95px at 1280 and 74px at 768 — so it hung 11px and then 32px past
+                its own column. Nothing was hidden (the cell is overflow-visible, so it bled into
+                Address's padding rather than clipping) and the page never scrolled, but a header
+                sitting outside its column is the same measurement failure this comment warns about,
+                one breakpoint away from touching the next heading. A single word cannot wrap, so
+                width is the only fix. The 5% comes from Address, the one column that can spare it:
+                it is the widest, it wraps at spaces, and it holds no unbreakable token.
 
                 On the Pharmacies tab the List column is dropped rather than left reading
                 "Pharmacist" 40 times, and its 13% goes to Address — the column carrying the long
                 bilingual strings and the neighbours sentence, and so the one that actually spends
-                width. Nothing is hidden by the drop: the tab heading already says what the list is. */}
+                width. Nothing is hidden by the drop: the tab heading already says what the list is.
+
+                Both tabs total 100%: 21+13+13+11+16+26 with List, 21+13+11+16+39 without. */}
             <colgroup>
               <col className="w-[21%]" />
               <col className="w-[13%]" />
               {showList ? <col className="w-[13%]" /> : null}
               <col className="w-[11%]" />
-              <col className="w-[11%]" />
-              <col className={showList ? "w-[31%]" : "w-[44%]"} />
+              <col className="w-[16%]" />
+              <col className={showList ? "w-[26%]" : "w-[39%]"} />
             </colgroup>
             <thead>
               <tr className="bg-slate-900 text-left">
