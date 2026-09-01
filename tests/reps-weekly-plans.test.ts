@@ -12,6 +12,8 @@ import {
   weekEndFor,
   weekStartFor,
 } from "../src/lib/crm/plan-week.ts";
+import { buildPlanDoctorDays } from "../src/lib/crm/plan-doctors.ts";
+import type { PlanEntryRow } from "../src/lib/crm/plan-board.ts";
 import { foldRepPlanStatus } from "../src/lib/crm/reps-weekly-plans-board.ts";
 
 /**
@@ -194,32 +196,59 @@ export async function runRepsWeeklyPlansTests() {
   // ---------------------------------------------------------------------------------------------
   {
     const board = readFileSync("src/components/crm/reps-weekly-plans-board.tsx", "utf8");
+    const tables = readFileSync("src/components/crm/reps-list-tables.tsx", "utf8");
 
-    // The NAME is allowed to appear — the file explains in a comment why it is not used, and that
-    // comment is the thing stopping the next session from "tidying up" by reaching for it. What is
-    // forbidden is importing or rendering it.
+    // THE DOCTORS TABLE MOVED on 2026-09-01, into the contact list's own file — the owner asked for
+    // it to be "exactly as the contact list", and the only way two tables stay exactly alike is for
+    // there to be one of them. So the golden rule is asserted where the table now LIVES, and the
+    // board is still checked for the pattern it must never grow back.
     assert.ok(
-      !board.includes("<PortalDesktopTable") && !/import \{[^}]*PortalDesktopTable/.test(board),
+      board.includes("<PlanDoctorsTable days={board.days} />"),
+      "the board must render the CONTACT LIST's own table for the plan's doctors — a second table written beside it could match on the day it was written and silently stop matching on the next change to a cell",
+    );
+
+    const start = tables.indexOf("function PlanDayTable(");
+    const end = tables.indexOf("export function PlanDoctorsTable(");
+    assert.ok(start > 0 && end > start, "PlanDayTable and PlanDoctorsTable must both exist, in that order");
+    // Sliced between two NAMED anchors rather than at byte offsets: a fixed window false-fails the
+    // moment anything above it shifts, which is a trap this repo has already paid for once.
+    const plans = tables.slice(start, end);
+
+    // The NAME is allowed to appear elsewhere — a comment explaining why it is not used is the thing
+    // stopping the next session from "tidying up" by reaching for it. Importing or rendering it is
+    // what is forbidden.
+    assert.ok(
+      !plans.includes("<PortalDesktopTable") && !/import \{[^}]*PortalDesktopTable/.test(tables),
       "the doctors table must NOT use PortalDesktopTable: all three tables in plan-verification-tables.tsx do, over min-width floors of 720-1240px, and a min-width floor IS the horizontal scroll the owner's golden rule forbids",
     );
+    for (const [what, source] of [
+      ["the plans table", plans],
+      ["the board around it", board],
+    ] as const) {
+      assert.ok(
+        !source.includes("minWidth=") && !source.includes("min-w-["),
+        `no min-width floor anywhere on ${what} — that is the bug, not the fix`,
+      );
+      assert.ok(
+        !source.includes("overflow-x-auto"),
+        `no horizontal scroll container on ${what}: \`overflow-x-auto\` over a min-width is exactly the pattern the golden rule names`,
+      );
+      assert.ok(
+        !source.includes("truncate") && !source.includes("text-ellipsis") && !source.includes("…"),
+        `nothing on ${what} may be truncated with an ellipsis — a standing owner rule, and the reason wrapping is the permitted way to fit`,
+      );
+    }
+
     assert.ok(
-      !board.includes("minWidth=") && !board.includes("min-w-["),
-      "no min-width floor anywhere on this board — that is the bug, not the fix",
-    );
-    assert.ok(
-      !board.includes("overflow-x-auto"),
-      "no horizontal scroll container: `overflow-x-auto` over a min-width is exactly the pattern the golden rule names",
-    );
-    assert.ok(
-      board.includes('<table className="w-full table-fixed border-collapse text-left text-sm">'),
+      plans.includes('<table className="w-full table-fixed border-collapse text-left text-sm">'),
       "the table must be w-full table-fixed, so the columns share whatever width the viewport has",
     );
-    assert.ok(board.includes("<colgroup>"), "table-fixed without a colgroup lets the browser guess the widths");
+    assert.ok(plans.includes("<colgroup>"), "table-fixed without a colgroup lets the browser guess the widths");
 
     // The widths must actually add up. A colgroup summing to more than 100% reintroduces the
     // overflow the golden rule forbids, and one summing to less leaves a gap on the right.
-    const widths = [...board.matchAll(/<col className="w-\[(\d+)%\]" \/>/g)].map((match) => Number(match[1]));
-    assert.ok(widths.length >= 5, `the doctors table declares its column widths: found ${widths.length}`);
+    const widths = [...plans.matchAll(/<col className="w-\[(\d+)%\]" \/>/g)].map((match) => Number(match[1]));
+    assert.equal(widths.length, 6, `the doctors table declares six column widths: found ${widths.length}`);
     assert.equal(
       widths.reduce((total, width) => total + width, 0),
       100,
@@ -227,18 +256,123 @@ export async function runRepsWeeklyPlansTests() {
     );
 
     assert.ok(
-      board.includes('className="hidden md:block"'),
+      plans.includes('className="hidden md:block"'),
       "the table is desktop-only — the owner's admin-shell rule: desktop gets tables, mobile never does",
     );
     assert.ok(
-      board.includes("md:hidden"),
+      plans.includes("renderCard={"),
       "and mobile gets CARDS. Without them a phone would show nothing at all where the table was, which reads as an empty plan",
     );
+  }
 
-    assert.ok(
-      !board.includes("truncate") && !board.includes("text-ellipsis") && !board.includes("…"),
-      "nothing on this board may be truncated with an ellipsis — a standing owner rule, and the reason wrapping is the permitted way to fit",
+  // ---------------------------------------------------------------------------------------------
+  // 6b. THE TABLE IS THE CONTACT LIST'S OWN — same columns, same cells
+  //
+  // The owner, 2026-09-01: "you will show the address exactly as the contact list, exactly as the
+  // contact list, as we are showing in the contact list. You will make the table exactly as in the
+  // contact list." Copying six headings is the easy half and the half that decays. What makes it
+  // real is that both tables render the SAME cell components over the SAME row type, so a change to
+  // one reaches both — and that is what these assertions pin.
+  // ---------------------------------------------------------------------------------------------
+  {
+    const tables = readFileSync("src/components/crm/reps-list-tables.tsx", "utf8");
+    const plans = tables.slice(
+      tables.indexOf("function PlanDayTable("),
+      tables.indexOf("export function PlanDoctorsTable("),
     );
+    const contacts = tables.slice(
+      tables.indexOf("function GroupTable("),
+      tables.indexOf("export function RepsListContacts("),
+    );
+
+    for (const heading of ["Contact", "Specialty", "List", "Brick", "Confidence", "Address"]) {
+      assert.ok(
+        plans.includes(`<th className={THEAD}>${heading}</th>`),
+        `the plan's doctors carry the contact list's own "${heading}" column`,
+      );
+      assert.ok(
+        contacts.includes(`<th className={THEAD}>${heading}</th>`),
+        `and the contact list still has "${heading}" itself — otherwise the two have drifted and this test is pinning a shape that no longer exists`,
+      );
+    }
+
+    // The cells themselves, not lookalikes. AddressCell is the one that matters most: it holds the
+    // per-segment <bdi> that stops a bilingual address rendering backwards, the Maps link and the
+    // "seen <date>" stamp — three things a re-implementation gets subtly wrong.
+    for (const cell of [
+      "<AddressCell locality=",
+      "<ConfidenceChip onOpen=",
+      "<ContactCell onOpenInsights=",
+      "LIST_LABEL[",
+    ]) {
+      assert.ok(plans.includes(cell), `the plan's table must render the contact list's own ${cell} cell`);
+    }
+    assert.ok(
+      !plans.includes("polishAddress("),
+      "and must NOT polish the address itself — that is AddressCell's job, and a second call site is a second place for the bidi handling to drift",
+    );
+  }
+
+  // ---------------------------------------------------------------------------------------------
+  // 6c. THE PLAN IS GROUPED DAY BY DAY
+  //
+  // The owner, 2026-09-01: "when you are showing the rep plan, differentiate day by day, group day
+  // by day." Three things here fail quietly rather than loudly: an undated row sorting FIRST makes a
+  // whole plan read as broken before the reader has seen a real day; a doctor who is not on the
+  // rep's list vanishing hides 18.4% of August's plan rows; and losing the AM-before-PM order inside
+  // a day makes the block unusable as a route.
+  // ---------------------------------------------------------------------------------------------
+  {
+    const entry = (over: Partial<PlanEntryRow>): PlanEntryRow => ({
+      address: null,
+      ampm: null,
+      contactCrmId: null,
+      contactName: "Doctor",
+      frequency: null,
+      grade: null,
+      onRepList: false,
+      planDate: null,
+      region: null,
+      speciality: null,
+      ...over,
+    });
+
+    const days = buildPlanDoctorDays(
+      [
+        entry({ ampm: "PM", contactCrmId: 2, contactName: "Zeinab", planDate: "2026-08-30" }),
+        entry({ ampm: "AM", contactCrmId: 3, contactName: "Bassem", planDate: "2026-08-30" }),
+        entry({ ampm: "AM", contactCrmId: 4, contactName: "Adel", planDate: "2026-08-30" }),
+        entry({ ampm: "AM", contactCrmId: 5, contactName: "Undated" }),
+        entry({ ampm: "AM", contactCrmId: 6, contactName: "Hanan", planDate: "2026-08-29" }),
+      ],
+      new Map([[3, { brick: { heading: "بشتيل", mapped: true }, contact: { name: "Bassem" } as never }]]),
+    );
+
+    assert.deepEqual(
+      days.map((day) => day.date),
+      ["2026-08-29", "2026-08-30", null],
+      "days come out in calendar order and the UNDATED block sorts LAST — the mirror reads them nulls-first, which grouped by day would open every such plan with the heading 'No day recorded'",
+    );
+    assert.equal(days[0].label, "Sat 29 Aug", "the heading is how a person says the day, never a raw ISO date");
+    assert.equal(days[2].label, "No day recorded", "and the undated block says so in words rather than showing a blank");
+    assert.deepEqual(
+      days[1].rows.map((row) => row.entry.contactName),
+      ["Adel", "Bassem", "Zeinab"],
+      "inside a day: AM before PM, then by name — the order a manager reads a route in",
+    );
+    assert.equal(days[1].rows.length, 3, "every planned call keeps its row");
+    assert.ok(days[1].rows[1].contact !== null, "a doctor on the rep's list carries his contact row");
+    assert.equal(
+      days[1].rows[0].contact,
+      null,
+      "and one who is NOT on it keeps his row with contact:null — 1,796 of August's 9,769 doctor-plan pairs are off-list, and dropping them would hide a rep planning outside his own assignment, which is one of the more useful things a verifying manager can be shown",
+    );
+    assert.equal(days[1].rows[1].contact?.brick.heading, "بشتيل", "the brick comes from the contact list's own grouping");
+
+    const keys = new Set(days.flatMap((day) => day.rows.map((row) => row.key)));
+    assert.equal(keys.size, 5, "every row's React key is distinct — the same doctor can legitimately be planned twice");
+
+    assert.deepEqual(buildPlanDoctorDays([], new Map()), [], "an empty plan is an empty array, never a fabricated day");
   }
 
   // ---------------------------------------------------------------------------------------------
@@ -371,6 +505,79 @@ export async function runRepsWeeklyPlansTests() {
     assert.ok(
       /if \(input\.scope\.kind === "none"\)/.test(lib),
       "a seat with no reports returns an explained empty board, never an unscoped one",
+    );
+  }
+
+  // ---------------------------------------------------------------------------------------------
+  // 11. UNVERIFY REACHES THE CRM, AND THE REP HEARS ABOUT IT
+  //
+  // The owner, 2026-09-01: "I want to be able to verify and unverify from Phoenix." The decision
+  // itself is pinned in tests/crm-plan-verification.test.ts; what is pinned HERE is that the
+  // decision is actually reachable end to end — because the two ways this feature can be shipped
+  // broken are both silent. A local-only unverify leaves the CRM reading "verified" to everyone who
+  // matters, and a stale idempotency key makes the SECOND verify of a plan deliver nothing at all.
+  // ---------------------------------------------------------------------------------------------
+  {
+    const service = readFileSync("src/lib/crm/plan-verification-service.ts", "utf8");
+    assert.ok(
+      service.includes("export async function setPlanVerification("),
+      "the service takes the DIRECTION as a parameter — a function still called verifyPlan that also unverifies is a name that will eventually be believed over the code",
+    );
+    assert.ok(
+      service.includes("decidePlanVerification({ action, currentStatus: plan.status })"),
+      "and asks the pure rule in the direction the manager pressed, against a FRESH read of the status",
+    );
+    assert.ok(
+      service.includes("iReports360SetPlanStatus"),
+      "an unverify is a CRM WRITE, not a local edit of Phoenix's own copy: the CRM is where the rep and every other manager look, so a verification taken back only here would leave the plan reading 'verified' to all of them",
+    );
+    assert.ok(
+      !/There is no code path here that lowers a status/.test(service),
+      "the comment claiming this file cannot lower a status had to GO, not be softened — a comment asserting an invariant the code no longer holds is worse than no comment",
+    );
+
+    const route = readFileSync("app/api/crm/plan-verification/verify/route.ts", "utf8");
+    assert.ok(
+      route.includes("isPlanVerificationAction(action)"),
+      "the route VALIDATES the action rather than falling back: a typo'd action quietly becoming 'verify' would write a signature into the customer's CRM that nobody asked for",
+    );
+    assert.ok(
+      /body\?\.action === undefined \? "verify"/.test(route),
+      "an ABSENT action still means verify — that is the shape every caller sent before unverify existed, and the safe default if the field is lost in transit",
+    );
+    assert.ok(
+      route.includes('await assertPermission(access, "crm_plans", "approve")'),
+      "and unverify passes the SAME permission gate as verify — it is the same write to the same CRM, not a lesser action",
+    );
+
+    const button = readFileSync("src/components/crm/plan-verify-button.tsx", "utf8");
+    assert.ok(
+      button.includes("PLAN_STATUS_SUPERVISOR_VERIFIED") && button.includes('"unverify"'),
+      "the button offers Unverify on a plan this feature verified",
+    );
+    assert.ok(
+      /if \(action === null \|\| !canVerify\)/.test(button),
+      "and offers NEITHER verb on a plan an area manager signed — Phoenix never wrote that signature, so it is not Phoenix's to take back",
+    );
+    assert.ok(
+      button.includes("armed") && /armed \? words\.armed : words\.idle/.test(button),
+      "unverify is armed exactly as heavily as verify: same write, same CRM, same email to the rep, and on a board where the plan under the cursor changes with every click of the rep picker",
+    );
+
+    const notifications = readFileSync("src/lib/crm/plan-notifications.ts", "utf8");
+    assert.ok(
+      notifications.includes("export async function notifyRepPlanStatusChanged("),
+      "the rep is told about BOTH directions — an unverify he is never told about is the worse half of the pair, because his plan is now waiting on HIM and nothing else he can see would say so",
+    );
+    assert.ok(
+      /idempotencyKey: `crm_plan_\$\{undone \? "unverified" : "verified"\}:\$\{input\.crmPlanId\}:\$\{input\.repHrId\}:\$\{changeMinute\(input\.changedAt\)\}`/.test(
+        notifications,
+      ),
+      "the idempotency key carries the DIRECTION and the MINUTE. Without them the sequence verify -> unverify -> verify meets a key already spent on the first verify, and the rep simply never hears that his plan was signed — no error, and a delivery audit showing a send from days earlier as though it covered this one",
+    );
+    assert.ok(
+      service.includes("const changedAt = new Date().toISOString();") && service.includes("changedAt,"),
+      "and the service stamps that minute ONCE, so the mirror row and the notification agree about when the change happened",
     );
   }
 }

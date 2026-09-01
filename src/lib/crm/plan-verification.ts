@@ -24,8 +24,26 @@
  * The rep's supervisor in this business is the district manager — that is the seat that owns the
  * rep's plan. Area-manager verification is a second, higher signature the owner has not asked for,
  * and it is the one status a district manager must never be able to overwrite: a plan already at 2
- * has been signed by someone above them, and moving it back to 1 would erase that. Hence
- * `decidePlanVerification` refuses rather than downgrades.
+ * has been signed by someone above them, and moving it back to 1 would erase that.
+ *
+ * ## Unverify — added 2026-09-01, and deliberately NOT the mirror image of verify
+ *
+ * The owner: "I want to be able to verify and unverify from Phoenix." So a verification can now be
+ * taken back, which until that day this module could not express at all. It is not symmetric,
+ * because the two refusals it inherits are about different things:
+ *
+ *   - 1 -> 0 is ALLOWED. That is a manager undoing his OWN signature, which is the whole request.
+ *     A plan misread and signed at 4am previously had no way back except asking the vendor.
+ *   - 2 -> 0 is REFUSED, exactly as 2 -> 1 always was. Phoenix never writes 2, so it is never
+ *     Phoenix's signature to take back; clearing it would erase a decision made a level above the
+ *     person clicking, with nothing on any screen afterwards to say it had happened.
+ *   - 0 is refused in its own words rather than "already verified" — "nothing to take back" and
+ *     "somebody already signed this" are different facts, and the manager should be told which.
+ *
+ * The VENDOR enforces none of this: its status endpoint accepts a lowering write, proven live
+ * against a phantom plan id. Every rule above is Phoenix's own, which is exactly why it is written
+ * down here, pure, beside the codes it applies to, rather than left to what the CRM happens to
+ * reject.
  */
 
 /** Submitted by the rep, nobody has verified it. The CRM calls this "New"; the UI says "Pending". */
@@ -119,14 +137,65 @@ export type PlanVerificationDecision =
   | { allowed: true; nextStatus: number }
   | { allowed: false; reason: string };
 
+/** The two directions a manager can move a plan. */
+export type PlanVerificationAction = "unverify" | "verify";
+
 /**
- * Whether this plan may be verified now, and to what.
+ * Whether a value off a request body names an action.
+ *
+ * The route validates through this rather than falling back to "verify" on anything unrecognised.
+ * A typo'd action must be refused, not quietly promoted into the one direction that writes a
+ * signature into the customer's CRM.
+ */
+export function isPlanVerificationAction(value: unknown): value is PlanVerificationAction {
+  return value === "verify" || value === "unverify";
+}
+
+/** What happened, past tense — for the audit line and the sentence the rep reads. */
+export function planActionPastTense(action: PlanVerificationAction): string {
+  return action === "unverify" ? "unverified" : "verified";
+}
+
+/**
+ * Whether this plan may be verified — or unverified — now, and to what.
  *
  * Pure on purpose: the interesting cases are refusals, and a refusal that needs a database and a
- * live vendor to exercise is a refusal nobody tests.
+ * live vendor to exercise is a refusal nobody tests. Six of the eight branches here are refusals.
+ *
+ * `action` DEFAULTS TO "verify" so every caller written before unverify existed keeps its exact
+ * meaning, and so an action lost in transit can never lower a status by accident.
  */
-export function decidePlanVerification(input: { currentStatus: number | null }): PlanVerificationDecision {
+export function decidePlanVerification(input: {
+  action?: PlanVerificationAction;
+  currentStatus: number | null;
+}): PlanVerificationDecision {
   const { currentStatus } = input;
+  const action = input.action ?? "verify";
+
+  // Asked once, for both directions: a plan with no status is not a plan to act on either way.
+  if (currentStatus == null) {
+    return { allowed: false, reason: "This plan has no status yet — refresh the plans and try again." };
+  }
+
+  if (action === "unverify") {
+    if (currentStatus === PLAN_STATUS_SUPERVISOR_VERIFIED) {
+      // The manager taking back his own signature — the whole of what unverify is for.
+      return { allowed: true, nextStatus: PLAN_STATUS_NEW };
+    }
+    if (currentStatus === PLAN_STATUS_NEW) {
+      return { allowed: false, reason: "This plan is already pending — there is nothing to take back." };
+    }
+    if (currentStatus === PLAN_STATUS_AREA_MANAGER_VERIFIED) {
+      // Phoenix never wrote this signature, so it is not Phoenix's to clear. Same rule as the
+      // verify side and for the same reason — see the header.
+      return {
+        allowed: false,
+        reason: "An area manager verified this plan, so it cannot be unverified from Phoenix.",
+      };
+    }
+    return { allowed: false, reason: `This plan carries an unrecognised status (${currentStatus}).` };
+  }
+
   if (currentStatus === PLAN_STATUS_NEW) {
     return { allowed: true, nextStatus: PLAN_STATUS_SUPERVISOR_VERIFIED };
   }
@@ -137,9 +206,6 @@ export function decidePlanVerification(input: { currentStatus: number | null }):
     // The one case that must never become a write: a district manager overwriting an area
     // manager's signature would look like a correction and would actually be a downgrade.
     return { allowed: false, reason: "An area manager has already verified this plan." };
-  }
-  if (currentStatus == null) {
-    return { allowed: false, reason: "This plan has no status yet — refresh the plans and try again." };
   }
   return { allowed: false, reason: `This plan carries an unrecognised status (${currentStatus}).` };
 }

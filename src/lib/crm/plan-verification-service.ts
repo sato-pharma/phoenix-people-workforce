@@ -19,18 +19,35 @@
  * system contradicting itself. Their outcomes come back in the result instead, so the UI can say
  * "verified, but the rep could not be emailed" rather than picking one of the two to hide.
  *
- * WHAT THIS DELIBERATELY CANNOT DO: unverify, reject, or return a plan for editing. The owner
- * dropped reject and return-for-edit when he specified the tab, and "leave pending" is the absence
- * of an action rather than an action of its own. There is no code path here that lowers a status.
+ * UNVERIFY EXISTS FROM 2026-09-01 — the owner: "I want to be able to verify and unverify from
+ * Phoenix." This file previously said in as many words that no code path here could lower a status;
+ * that is no longer true, and the paragraph has been replaced rather than softened, because a
+ * comment claiming an invariant the code no longer holds is worse than none.
+ *
+ * The direction is a PARAMETER, and everything else about the six steps is unchanged: an unverify
+ * is a fresh read, a scope check, the same pure decision, a CRM write, then the mirror. It is not a
+ * shortcut past any of them, and in particular it is NOT a local edit of Phoenix's own copy — the
+ * CRM is where the rep and every other manager look, so a verification taken back only in Phoenix
+ * would leave the plan reading "verified" to everybody who matters.
+ *
+ * WHAT THIS STILL CANNOT DO: reject a plan, or return one for editing. The owner dropped both when
+ * he specified the tab, and the vendor has no status for either — writing one of the three codes it
+ * does have and calling it "rejected" in Phoenix's UI would be Phoenix inventing a state the CRM
+ * cannot show. It also cannot clear an AREA MANAGER's verification; see `plan-verification.ts`.
  */
 
 import { getIReports360Config } from "@/lib/crm/config";
 import { getPlanForVerification } from "@/lib/crm/plan-board";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { iReports360Login, iReports360SetPlanStatus } from "@/lib/crm/client";
-import { notifyRepPlanVerified } from "@/lib/crm/plan-notifications";
+import { notifyRepPlanStatusChanged } from "@/lib/crm/plan-notifications";
 import { CRM_PLAN_ENTRIES_TABLE } from "@/lib/crm/tables";
-import { decidePlanVerification, planStatusLabel } from "@/lib/crm/plan-verification";
+import {
+  decidePlanVerification,
+  planActionPastTense,
+  planStatusLabel,
+  type PlanVerificationAction,
+} from "@/lib/crm/plan-verification";
 import { scopeAllowsAgent, type PlanVerificationScope } from "@/lib/crm/plan-verification-access";
 import { writeAuditLog } from "@/lib/admin/audit";
 
@@ -54,9 +71,11 @@ async function resolveActorName(hrId: string | null, fallback: string | null): P
   return name || fallback;
 }
 
-export type VerifyPlanOutcome =
+export type PlanVerificationOutcome =
   | {
       ok: true;
+      /** Which direction actually ran, echoed back so the UI never has to assume. */
+      action: PlanVerificationAction;
       /** The status now stored in the CRM and mirrored in Phoenix. */
       status: number;
       statusLabel: string;
@@ -67,19 +86,25 @@ export type VerifyPlanOutcome =
   | { ok: false; reason: string; status: number };
 
 /**
- * Verifies one plan.
+ * Moves one plan's verification, in either direction.
+ *
+ * Named for what it does rather than `verifyPlan`, which it replaced on 2026-09-01: a function
+ * called "verify" that also unverifies is a name that will eventually be believed over the code.
  *
  * `actor` carries the viewer's identity for the audit row and the "verified by" line in the rep's
  * notification. `scope` must be the scope resolved from the live AccessContext — passing a wider
- * one is how a manager verifies another district's plan.
+ * one is how a manager signs another district's plan.
  */
-export async function verifyPlan(input: {
+export async function setPlanVerification(input: {
+  /** Defaults to "verify": an action lost between the browser and here can never lower a status. */
+  action?: PlanVerificationAction;
   actorHrId: string | null;
   actorLoginId: string | null;
   actorName: string | null;
   crmPlanId: number;
   scope: PlanVerificationScope;
-}): Promise<VerifyPlanOutcome> {
+}): Promise<PlanVerificationOutcome> {
+  const action = input.action ?? "verify";
   if (!Number.isInteger(input.crmPlanId) || input.crmPlanId <= 0) {
     return { ok: false, reason: "That is not a valid plan id.", status: 400 };
   }
@@ -98,9 +123,10 @@ export async function verifyPlan(input: {
     return { ok: false, reason: "That plan is not in Phoenix's mirror.", status: 404 };
   }
 
-  // 3. The pure rule. Refuses an already-verified plan and, critically, refuses to lower a plan an
-  //    area manager has signed.
-  const decision = decidePlanVerification({ currentStatus: plan.status });
+  // 3. The pure rule, asked in the direction the manager pressed. It refuses an already-verified
+  //    plan, refuses an unverify of one nobody signed, and — in BOTH directions — refuses to touch
+  //    a plan an area manager has signed.
+  const decision = decidePlanVerification({ action, currentStatus: plan.status });
   if (!decision.allowed) {
     return { ok: false, reason: decision.reason, status: 409 };
   }
@@ -118,9 +144,12 @@ export async function verifyPlan(input: {
   // 5. The mirror follows the CRM, never leads it. Every entry of the plan carries the header's
   //    status, so all of them move together — a partially stamped plan would render as a plan with
   //    no single status, which is a shape this feature has measured never to occur.
+  // Stamped once and reused: the mirror row and the notification's idempotency key must agree
+  // about WHEN this change happened, or a verify and a later re-verify can collide on one key.
+  const changedAt = new Date().toISOString();
   const { error } = await getSupabaseAdmin()
     .from(CRM_PLAN_ENTRIES_TABLE)
-    .update({ plan_status: decision.nextStatus, updated_at: new Date().toISOString() })
+    .update({ plan_status: decision.nextStatus, updated_at: changedAt })
     .eq("crm_plan_id", input.crmPlanId);
   if (error) {
     // The CRM IS updated at this point. Reporting a plain failure would be a lie in the other
@@ -128,7 +157,7 @@ export async function verifyPlan(input: {
     // re-reads the status from the CRM and the mirror catches up on its own.
     return {
       ok: false,
-      reason: `The CRM accepted the verification, but Phoenix could not update its own copy (${error.message}). The next plan refresh will correct it.`,
+      reason: `The CRM accepted the change, but Phoenix could not update its own copy (${error.message}). The next plan refresh will correct it.`,
       status: 502,
     };
   }
@@ -141,16 +170,23 @@ export async function verifyPlan(input: {
     actorLoginId: input.actorLoginId ?? null,
     entityId: String(input.crmPlanId),
     entityType: "crm_plan_verification",
-    newValues: { planStatus: decision.nextStatus },
+    newValues: { action, planStatus: decision.nextStatus },
     oldValues: { planStatus: plan.status },
+    // The verb comes from the ACTION, not from the status pair. Both are recorded either way, but
+    // an audit trail read months later should say what somebody did, not leave a reader to work it
+    // out from two numbers.
     summary:
-      `${actorName || "A manager"} verified ${plan.kind} plan ` +
+      `${actorName || "A manager"} ${planActionPastTense(action)} ${plan.kind} plan ` +
       `${input.crmPlanId} (CRM account ${plan.agentCrmId}): ` +
       `${planStatusLabel(plan.status)} -> ${planStatusLabel(decision.nextStatus)}`,
   }).catch(() => undefined);
 
-  // 6b. Tell the rep. Also non-fatal, and its outcome is returned rather than swallowed.
-  const notified = await notifyRepPlanVerified({
+  // 6b. Tell the rep. Also non-fatal, and its outcome is returned rather than swallowed. A rep whose
+  //     plan has been handed BACK to him needs this more than one whose plan was signed: the
+  //     unverified plan is now waiting on HIM, and nothing else on his screen would say so.
+  const notified = await notifyRepPlanStatusChanged({
+    action,
+    changedAt,
     crmPlanId: input.crmPlanId,
     firstDate: plan.firstDate,
     kind: plan.kind,
@@ -165,6 +201,7 @@ export async function verifyPlan(input: {
 
   return {
     ok: true,
+    action,
     repNotified: notified.sent,
     repNotifyReason: notified.reason,
     status: decision.nextStatus,

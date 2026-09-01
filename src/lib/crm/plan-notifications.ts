@@ -4,6 +4,8 @@
  *   1. a rep's plan arrives unverified  ->  tell that rep's district manager;
  *   2. the district manager verifies it ->  tell the medical rep.
  *
+ * The second now covers UNVERIFY as well (2026-09-01) — the same recipient, the opposite sentence.
+ *
  * ## Channels: in-app and email, deliberately not more
  *
  * He asked for emails. In-app costs nothing and puts the same sentence in the product where the
@@ -30,7 +32,7 @@
 
 import { createSystemNotification } from "@/lib/notifications/system";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-import { planStatusLabel, type PlanKind } from "@/lib/crm/plan-verification";
+import { planStatusLabel, type PlanKind, type PlanVerificationAction } from "@/lib/crm/plan-verification";
 
 /**
  * The most new plans one sync run will announce.
@@ -192,14 +194,46 @@ export async function announceNewPlansToManagers(plans: readonly NewPlanAnnounce
 }
 
 /**
- * Notification 2 — tell the rep their plan has been verified.
+ * The idempotency key's discriminator — the change's own minute, in UTC.
  *
- * Also best-effort, and for a sharper reason than the first: the CRM has ALREADY been written by
- * the time this runs. Throwing here would report a failure for an action that fully succeeded, and
- * a manager who then clicked Verify again would be told the plan is already verified — which reads
- * as the system contradicting itself. The caller surfaces `emailed: false` instead.
+ * WITHOUT IT, UNVERIFY SILENTLY BREAKS RE-VERIFY. The key used to be
+ * `crm_plan_verified:{plan}:{rep}` and nothing else, which was correct while verification was a
+ * one-way door: a plan could only ever be verified once, so the key could only ever be claimed
+ * once. Now that a manager can hand a plan back, the sequence verify -> unverify -> verify is
+ * ordinary, and its second verify would meet a key already spent — the rep would simply never hear
+ * that his plan had been signed, with no error anywhere and the delivery audit showing a send that
+ * happened days earlier as though it covered this one.
+ *
+ * A minute rather than the full timestamp: two clicks racing each other still collapse to one
+ * message, which is the thing an idempotency key is actually for here. Anything longer-lived than a
+ * click is a real second event and should reach the rep.
+ *
+ * An unparseable stamp falls back to the raw string rather than to a constant. Failing OPEN (a
+ * possible duplicate) beats failing closed (a silent no-send), because only one of those two is
+ * visible to anybody.
  */
-export async function notifyRepPlanVerified(input: {
+function changeMinute(iso: string): string {
+  const parsed = new Date(iso);
+  return Number.isNaN(parsed.getTime()) ? iso : parsed.toISOString().slice(0, 16);
+}
+
+/**
+ * Notification 2 — tell the rep his plan was verified, or handed back to him.
+ *
+ * Both directions, one function, since 2026-09-01: the owner asked to be able to unverify, and an
+ * unverify the rep is never told about is the worse half of the pair. His plan is now waiting on
+ * HIM again, and nothing else he can see would say so — the CRM shows "New" exactly as it does for
+ * a plan nobody has looked at yet.
+ *
+ * Best-effort, for a sharper reason than the first notification: the CRM has ALREADY been written
+ * by the time this runs. Throwing here would report a failure for an action that fully succeeded,
+ * and a manager who then clicked again would be told the plan is already in that state — which
+ * reads as the system contradicting itself. The caller surfaces `repNotified: false` instead.
+ */
+export async function notifyRepPlanStatusChanged(input: {
+  action: PlanVerificationAction;
+  /** When the change happened. Feeds the idempotency key — see `changeMinute`. */
+  changedAt: string;
   crmPlanId: number;
   firstDate?: string | null;
   kind: PlanKind;
@@ -225,6 +259,22 @@ export async function notifyRepPlanVerified(input: {
   const period = planPeriodLabel(input);
   const by = input.verifiedByName?.trim() || "your manager";
   const actionUrl = `/admin/plan-verification?plan=${input.crmPlanId}`;
+  const undone = input.action === "unverify";
+
+  // The unverify wording says what CHANGED and what did not. A rep reading "your plan is pending
+  // again" would reasonably fear his week had been wiped; nothing on the plan is touched, only the
+  // signature on it, and the sentence says so rather than leaving him to find out.
+  const title = undone ? "Your plan is waiting for verification again" : "Your plan was verified";
+  const message = undone
+    ? `${by} took the verification off your ${input.kind} plan for ${period}.`
+    : `${by} verified your ${input.kind} plan for ${period}.`;
+  const subject = undone
+    ? `Your ${input.kind} plan for ${period} is pending again`
+    : `Your ${input.kind} plan for ${period} was verified`;
+  const summary = undone
+    ? `${by} took the verification off your ${input.kind} plan for ${period}. It reads "${planStatusLabel(input.status)}" in the CRM again. The plan itself is unchanged — only the verification was removed.`
+    : `${by} verified your ${input.kind} plan for ${period}. It now reads "${planStatusLabel(input.status)}" in the CRM.`;
+
   try {
     await createSystemNotification({
       actionUrl,
@@ -237,21 +287,23 @@ export async function notifyRepPlanVerified(input: {
         employeeHrId: input.repHrId,
         notificationType: "general",
         ...(rep.work_email ? { recipients: [rep.work_email] } : {}),
-        subject: `Your ${input.kind} plan for ${period} was verified`,
-        summary: `${by} verified your ${input.kind} plan for ${period}. It now reads "${planStatusLabel(input.status)}" in the CRM.`,
+        subject,
+        summary,
       },
-      eventType: "plan_verified",
+      eventType: undone ? "plan_unverified" : "plan_verified",
       metadata: {
         crmPlanId: input.crmPlanId,
-        idempotencyKey: `crm_plan_verified:${input.crmPlanId}:${input.repHrId}`,
+        // Plan, rep, DIRECTION and minute. The last two are what make a verify after an unverify a
+        // new event rather than a repeat of the first one — see `changeMinute`.
+        idempotencyKey: `crm_plan_${undone ? "unverified" : "verified"}:${input.crmPlanId}:${input.repHrId}:${changeMinute(input.changedAt)}`,
         planKind: input.kind,
       },
-      message: `${by} verified your ${input.kind} plan for ${period}.`,
+      message,
       module: "crm",
       priority: "normal",
       recipientHrId: input.repHrId,
       ...(input.verifiedByHrId ? { subjectHrId: input.verifiedByHrId } : {}),
-      title: "Your plan was verified",
+      title,
     });
     return { reason: null, sent: true };
   } catch (error) {
