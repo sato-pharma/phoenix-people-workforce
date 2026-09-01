@@ -1,79 +1,26 @@
-// Doctor List — READ-ONLY board inside the Phoenix admin shell.
+// RETIRED 2026-08-31, by the owner, in the conversation.
 //
-// The rep's assigned doctors as the CRM itself holds them: name, specialty, grade, address. Not
-// visits — the owner's own wording when he specified this ("Not visits."). Activity lives on Rep
-// Doctor Lists and Doctor Coverage next door.
+// Doctor List — replaced by Reps List (/admin/reps-list), which this stub redirects to.
 //
-// This is the ONLY board in Phoenix that can show a doctor who was assigned to a rep and never
-// touched. Every other CRM board is built from visit or plan history and is blind to those — 448 of
-// them company-wide on the first sweep, 2026-08-28.
+// His words when he specified the replacement: "if you have another one named rep list, then retire
+// it — retire it and build instead of it this one." Both halves were done: this route, and the
+// District Manager tab strip that carried it (src/components/crm/district-manager-tabs.tsx, now
+// deleted — Plan Verification stands on its own).
 //
-// TAB ONE of the District Manager page. The role list is NOT maintained here — it lives in
-// src/lib/crm/doctor-list-access.ts, together with the scope that decides WHOSE reps a viewer sees.
-// A district manager sees his own reps and nobody else's; the same scope filters the rows and the
-// picker, from one call, so the two cannot drift apart.
+// NOTHING WAS LOST. Reps List reads the same source (the CRM's own contact list, not visits), uses
+// the same access module (src/lib/crm/doctor-list-access.ts) and the same reps-per-manager scope. It
+// adds the Line -> Region -> Area -> Rep cascade the owner asked for, and groups each rep's contacts
+// by the brick they sit in instead of listing them flat. So this is a rename plus a rebuild, not a
+// withdrawal, and the two boards must not both exist — a second door onto the same data is how the
+// two diverge on the first edit.
 //
-// The rep rides in the URL, so every change re-runs the gate server-side (same posture as the two
-// boards beside it).
+// The redirect deliberately PRESERVES nothing from the old URL. Its only parameter was `?rep=<CRM
+// agent id>`, and Reps List keys reps by the cascade's own seat-derived key instead. Carrying the
+// number across would land a bookmark on the wrong person, which is worse than landing on the board.
 import { redirect } from "next/navigation";
 
-import { DistrictManagerTabs } from "@/components/crm/district-manager-tabs";
-import { DoctorListBoardView } from "@/components/crm/doctor-list-board";
-import { canAccess } from "@/lib/auth/permissions";
-import { resolveAccessContextFromPage } from "@/lib/auth/server";
-import { getDoctorListBoard } from "@/lib/crm/contact-lists";
-import { canAccessDoctorList, getDoctorListScope } from "@/lib/crm/doctor-list-access";
-
-export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-type PageProps = {
-  searchParams?: Promise<{ rep?: string }>;
-};
-
-export default async function DoctorListPage({ searchParams }: PageProps) {
-  const access = await resolveAccessContextFromPage();
-  // Two gates, both server-side: the explicit role list, then the permission matrix that is the
-  // real security boundary. No access redirects rather than explaining — inside the admin shell an
-  // unreachable page should behave as if it does not exist for that role.
-  if (!canAccessDoctorList(access)) redirect("/admin");
-  if (!(await canAccess(access, "crm_visits", "read"))) redirect("/admin");
-
-  const params = await searchParams;
-  // An unparseable ?rep= falls back to the loader's own default rather than erroring. A hand-typed
-  // agent id that matches nobody lands on the first rep, which is a readable board, not a blank one.
-  const parsed = Number.parseInt(params?.rep ?? "", 10);
-  const agentCrmId = Number.isFinite(parsed) ? parsed : undefined;
-
-  // Data fetch and JSX stay separated (react-hooks/error-boundaries: JSX must not be constructed
-  // inside try/catch). A data failure renders a plain explanation, never a crash page.
-  let board: Awaited<ReturnType<typeof getDoctorListBoard>> | null = null;
-  let loadError: string | null = null;
-  try {
-    // The scope comes from the live AccessContext, never from the query string — a role read off a
-    // URL would let any viewer name himself Super Admin and take the company branch.
-    const scope = await getDoctorListScope(access);
-    board = await getDoctorListBoard({ agentCrmId, scope });
-  } catch (error) {
-    loadError = error instanceof Error ? error.message : "Doctor list data is unavailable.";
-  }
-
-  if (!board) {
-    return (
-      <div className="space-y-0">
-        <DistrictManagerTabs active="doctor-list" />
-        <div className="border border-rose-200 bg-rose-50 px-5 py-4">
-          <p className="text-sm font-bold text-rose-800">Doctor lists could not load.</p>
-          <p className="mt-1 text-xs text-rose-700">{loadError}</p>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-0">
-      <DistrictManagerTabs active="doctor-list" />
-      <DoctorListBoardView basePath="/admin/doctor-list" board={board} />
-    </div>
-  );
+export default async function RetiredDoctorListPage() {
+  redirect("/admin/reps-list");
 }

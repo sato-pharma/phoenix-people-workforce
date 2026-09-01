@@ -202,6 +202,13 @@ export type DoctorListBoard = {
  * and the reason `selected` is deliberately never looked up outside this filtered list: a hand-typed
  * `?rep=` id belonging to another district finds nothing and falls back to the viewer's own first
  * rep, which is a readable board rather than a leak or a blank page.
+ *
+ * NO ROUTE CALLS THIS ANY MORE. Its page (/admin/doctor-list) was retired on 2026-08-31 and Reps
+ * List replaced it, assembling the same data through `getRepsListBoard`. It is kept rather than
+ * deleted because it is the reference implementation of the scope rule above and its tests pin that
+ * rule directly; the two loaders it leans on — `getDoctorListRepSummaries` and `getAgentContactList`
+ * — are very much live and feed the replacement. Do not wire a new page to this one: the board that
+ * ships is Reps List, and a second door onto the same data is how the two diverge on the first edit.
  */
 export async function getDoctorListBoard(input: {
   agentCrmId?: number;

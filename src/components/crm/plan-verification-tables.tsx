@@ -22,9 +22,11 @@ import {
 } from "@/lib/crm/plan-verification";
 import type { PlanEntryRow, PlanMissingRep, PlanSummary } from "@/lib/crm/plan-board";
 
-// Client half of Plan Verification. Styling copies doctor-list-tables.tsx verbatim — flat borders,
-// slate-900 header rows, orange accent — because this is tab two of the same District Manager page
-// and must not read as a one-off (owner's standing rule).
+// Client half of Plan Verification. Styling copies reps-list-tables.tsx verbatim — flat borders,
+// slate-900 header rows, orange accent — because that board sits beside this one in the same shell
+// and neither must read as a one-off (owner's standing rule). The reference was doctor-list-tables.tsx
+// until 2026-08-31, when that board and the District Manager tab strip were retired; Reps List
+// carries the same vocabulary forward, so nothing about the look changed with it.
 //
 // The period, the kind and the chosen plan all ride in the URL, so every change re-runs the
 // server-side scope gate rather than filtering a payload already in the browser. That is the

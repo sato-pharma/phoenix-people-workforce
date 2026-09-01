@@ -11,8 +11,12 @@ import { PLAN_DOCTORS_ANCHOR_ID, PLAN_STATUS_NEW, planPeriodText } from "@/lib/c
 import type { PlanVerificationBoard } from "@/lib/crm/plan-board";
 
 // Server half of Plan Verification. The Section/Tile vocabulary is copied verbatim from
-// doctor-list-board.tsx, the other tab of the same page — flat borders, slate-900 header bar, KPI
+// reps-list-board.tsx, its neighbour in the same shell — flat borders, slate-900 header bar, KPI
 // tiles, orange accent. Never a one-off look (owner's standing rule).
+//
+// That reference used to be doctor-list-board.tsx, tab one of the same District Manager page. The
+// board and the tab strip were retired on 2026-08-31 and Reps List carries the identical vocabulary
+// forward, so the look is unchanged — only the file to copy it from moved.
 
 function Section({
   action,

@@ -117,7 +117,10 @@ export function runCrmHubCardReachabilityTests() {
   const CRM_ROWS_COLLAPSED_2026_08_30 = [
     "/admin/crm",
     "/admin/reps-plans",
-    "/admin/doctor-list",
+    // Was "/admin/doctor-list" until 2026-08-31, when the owner retired that board and replaced it
+    // with Reps List. Same card, same slot, same roles — only the route and the label moved, so the
+    // href is updated here rather than dropped: dropping it would quietly stop guarding the slot.
+    "/admin/reps-list",
     "/admin/plan-verification",
     "/admin/crm-integrity",
     "/admin/brick-coverage",
