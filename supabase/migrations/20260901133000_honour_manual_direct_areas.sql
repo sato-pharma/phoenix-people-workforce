@@ -77,6 +77,15 @@ begin
   end if;
 
   v_hits := (length(v_def) - length(replace(v_def, v_old_pred, ''))) / length(v_old_pred);
+
+  -- Idempotent: already rewritten is a clean no-op, not a failure. Anything else still aborts,
+  -- so a genuinely drifted definition cannot slip through as "already done".
+  if v_hits = 0
+     and (length(v_def) - length(replace(v_def, v_new_pred, ''))) / length(v_new_pred) = 2 then
+    raise notice 'phx_closing_channel_breakdown already carries the overlay rule - nothing to rewrite';
+    return;
+  end if;
+
   if v_hits <> 2 then
     raise exception 'phx_closing_channel_breakdown: expected 2 occurrences of the period floor (area_code, brick_id), found % - the definition has drifted, aborting', v_hits;
   end if;
@@ -125,3 +134,25 @@ begin
   end loop;
 end
 $verify$;
+
+-- Reassert the ACL these two functions already carry, so the migration is self-sufficient.
+--
+-- CREATE OR REPLACE does not reset a function's ACL, so against production this is a no-op —
+-- both functions already sit at `postgres, service_role` (plus analytics_readonly on the direct
+-- one) with no PUBLIC entry. It matters on a fresh replay, where the function would otherwise be
+-- created with the default PUBLIC EXECUTE. anon and authenticated inherit EXECUTE *through*
+-- PUBLIC, so revoking only those two would be a no-op: PUBLIC is the operative grantee.
+revoke execute on function public.phx_monthly_closing_direct(text, text) from public;
+grant  execute on function public.phx_monthly_closing_direct(text, text) to service_role;
+
+revoke execute on function public.phx_closing_channel_breakdown(text, text, text[], text[], text[], text[], text[]) from public;
+grant  execute on function public.phx_closing_channel_breakdown(text, text, text[], text[], text[], text[], text[]) to service_role;
+
+-- analytics_readonly is a production-only role; a fresh local or staging database may not have it.
+do $acl$
+begin
+  if exists (select 1 from pg_roles where rolname = 'analytics_readonly') then
+    execute 'grant execute on function public.phx_monthly_closing_direct(text, text) to analytics_readonly';
+  end if;
+end
+$acl$;

@@ -25,8 +25,12 @@ import {
  *
  * And "older month" does NOT mean "has no area" — that assumption is exactly the trap. 2026-01 has
  * 19 of 71 direct rows carrying a manually-placed area and 2026-07 has 35 of 51, July's being the
- * owner's own finalized mapping. The rule is therefore a PERIOD FLOOR
- * (`DIRECT_AREA_STAMPED_FROM_PERIOD`), and scenario 5 is the one that pins it.
+ * owner's own finalized mapping.
+ *
+ * So the rule is NOT a period floor. Owner ruling 2026-09-01: honour the manual areas. Every period
+ * places direct money on the row's own area, except the ones an overlay already places —
+ * `OVERLAY_OWNED_DIRECT_PERIODS`, which holds July 2026 alone. Scenario 5 pins that July does not
+ * fold; scenario 5b pins that January does.
  */
 
 const references: SalesReferenceData = {
