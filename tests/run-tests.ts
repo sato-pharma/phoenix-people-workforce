@@ -578,6 +578,7 @@ import { runHrFunctionGovernanceTests } from "./hr-function-governance.test.ts";
 import { runHrClearanceRetentionTests } from "./hr-clearance-retention.test.ts";
 import { runMailboxOffboardingTests } from "./mailbox-offboarding.test.ts";
 import { runMailboxBulkRecordingTests } from "./mailbox-bulk-recording.test.ts";
+import { runHrAdvisoryModuleAccessTests } from "./hr-advisory-module-access.test.ts";
 import { runHrCommandCenterTests } from "./hr-command-center.test.ts";
 import { runHrJobWorkbookTests } from "./hr-job-workbook.test.ts";
 import { runHrOperationsCompanyScopeTests } from "./hr-operations-company-scope.test.ts";
@@ -2073,6 +2074,13 @@ await runTest(
   "HR command centre (every tile on a seat's landing dashboard links to a row that seat is "
   + "offered, so no figure leads to a page it cannot open)",
   runHrCommandCenterTests,
+);
+await runTest(
+  "HR Business Partner module opening 2026-09-01 (all 17 modules are rows she is offered, grouped "
+  + "where the owner was shown; her payslip and directory pay audience is District Sales Managers, "
+  + "Medical Representatives and herself and NOTHING else; hr_calendar:update and employees:update "
+  + "stay refused; and HR Operations gains none of it)",
+  runHrAdvisoryModuleAccessTests,
 );
 await runTest(
   "HR Operations on company scope (the owner's 2026-08-29 ruling: company scope is inert against "

@@ -170,6 +170,23 @@ const GATE_SHAPE_NOT_MACHINE_READABLE: Record<string, string> = {
     "hrBundleForRole(access.role) — the same lookup that decides the seat's grants, so it admits " +
     "exactly the two seats by construction rather than by a second list agreeing with the first",
   "/hr/probation": "canReadAllProbation(access) — true for both seats",
+  // All three added 2026-09-01 with the owner's module opening, and all three verified by CALLING
+  // the predicate for each seat rather than by reading it. Measured: Advisory true/true/true,
+  // Operations true/false/false.
+  "/hr/probation/dashboard":
+    "canReadAllProbation(access) — the same predicate as /hr/probation above, true for BOTH seats. " +
+    "The page is the read-only outcomes view of the tracker beside it and has no write path",
+  "/hr/admin/weekly-plans/calendar":
+    'an OR chain — canAccess(weekly_plans, read) || role is CEO || role is Super Admin — which is ' +
+    "why it cannot be parsed. TRUE for Advisory (workforce_insight grants weekly_plans:read), FALSE " +
+    "for Operations, who is deliberately never granted it and is correctly not offered the row. " +
+    "Read-only: the grant carries no create, so she reads where the field force will be and " +
+    "submits nothing",
+  "/hr/recruitment/manager-engagement":
+    "canViewManagerCvEngagement(access) — a ROLE SET, not a resource, so the row carries roles: " +
+    '["HR Advisory"] beside its recruitment permission and the two must be read together. TRUE for ' +
+    "Advisory by the owner's own amendment that day, FALSE for Operations. The report is read-only " +
+    "and holds no salary, personnel record or payroll figure",
   "/hr/recruitment/contact-review": "canReviewCandidateContacts(access) — true for Advisory, the only seat offered it",
   "/hr/recruitment/intake-health": "canViewInboundIntakeHealth(access) — true for Advisory, the only seat offered it",
   "/hr/recruitment/whatsapp-replies":

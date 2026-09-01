@@ -46,7 +46,10 @@ export function runRecruitmentManagerCvEngagementTests() {
   assert.equal(canViewManagerCvEngagement({ role: "SFE Manager", scope: "self" }), false, "SFE Manager must NOT see it");
   // NOT the broader recruitment audience either: HR Advisory can read every requisition, but the
   // engagement report is a narrower list than canSeeAllRecruitment on purpose.
-  assert.equal(canViewManagerCvEngagement({ role: "HR Advisory", scope: "self" }), false, "HR Advisory is not on the list");
+  // Owner amendment 2026-09-01: the HR Business Partner opens this report. HR Operations does NOT —
+  // that split is the assertion worth keeping, because "add HR" would have been the easy reading.
+  assert.equal(canViewManagerCvEngagement({ role: "HR Advisory", scope: "self" }), true, "HR Advisory opens it (owner, 2026-09-01)");
+  assert.equal(canViewManagerCvEngagement({ role: "HR Operations", scope: "self" }), false, "HR Operations must NOT see it");
   // NOT the managers being measured.
   assert.equal(canViewManagerCvEngagement({ role: "District Manager", scope: "self" }), false, "a measured manager cannot see it");
   assert.equal(canViewManagerCvEngagement({ role: "Regional Manager", scope: "self" }), false, "Regional Manager is not on the list");
