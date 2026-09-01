@@ -538,3 +538,47 @@ running month "just to see".
   `/validation`. Check the gate before wiring any `actionUrl`.
   `the-screen-that-shows-a-badge-is-not-the-screen-a-rep-can-open`
 
+
+## Section 4 was trimmed to its floor — 2026-09-01
+
+**What was done.** §4 (with §4.1) went from **14,264 → 13,995 bytes, −269 B (1.9%)**, and a further
+**−130 B** came out of §0 where two §4 rules were stated a second time. `AGENTS.md` total −399 B.
+
+**Nothing was reworded that carries a rule.** Every one of the fourteen edits removed a date, a PR
+number, or connective filler. Verified mechanically against `origin/main`: **50 bullets before and
+after, 10 🔒 markers, 11 🔴 markers, 14 slugs, 30 memory files still reachable — all unchanged.** A
+sweep of the imperative vocabulary (`NEVER`, `never`, `Never`, `must`, `do NOT`, `DELIBERATELY`,
+`LOCKED`, `ONLY`) found **no count changed anywhere in the section**.
+
+**Every owner quotation was kept verbatim** — *"golden rule, no negotiation"*, *"The old monthly
+closing sheet don't mess it. Anything we will do will be aside it."*, *"NO LEAVE ME AS I AM NOW."*,
+*"once submitted, once accepted."* Those are the authority behind the rules they sit in; only the
+date stamp in front of them went.
+
+**The dates and PR numbers removed are all recorded in this file**, checked before each cut:
+2026-08-03 (XLSX-with-dropdowns), #2608/#2613/#2665 (Delta 3 resolver and recruitment), 2026-08-29
+(the August golden rule), 2026-08-31 (the frozen closing export), 2026-08-28 and the $420/month
+figure (Turbify — the figure was **kept** in `AGENTS.md`, only the date went), #2160 (the Cairo
+per-diem), 2026-08-23 (the organogram Mobile column), 2026-08-26/2026-08-29 (venue validation),
+#2434, #2352, #2354 (§4.1). §4's own preamble already says incident narratives, PR numbers and
+production measurements live here, so this is the section's stated rule applied to itself.
+
+**Load-bearing dates were NOT touched.** The Delta (3) bullet keeps *"LIVE, dated 2026-09-01,
+applied as a migration 2026-08-29"* and *"nothing is owed on 1 September"*, because there the dates
+**are** the mechanism — the move sits on a dated pair and the closing gate resolves on the date, not
+the run time. The same reasoning kept every threshold a session judges against.
+
+**The two §0 duplicates.** §0's calibration paragraph repeated two rules that §4 states as bullets:
+*"Reply in English always, whatever language he writes in"* (§4, How to answer) and *"Never hand
+back a list of manual steps you could have executed yourself"* (§4, How to take work — *"Take
+ownership. Automate the work rather than returning a checklist he has to execute."*). §4 is the
+canonical home for a standing rule, so the §0 copies went and the §4 bullets stayed. Reach is
+identical — the whole file auto-loads — so this cost scannability in the narrative section only.
+
+**§4 has no structural fat left**, the same finding as §2.1. It is 50 bullets in 13,995 bytes, ~280
+each, and the length is real: these are compound rules with the counter-case attached ("do this, and
+here is the thing that reads like a reason not to"). That counter-case is the part that stops a
+session undoing the rule, so it cannot be cut. The measured yield was 1.9%, and a third of the total
+came from two duplicates rather than from wording. **Do not run another editing pass over §4** — the
+remaining bytes are the rules themselves, and the cost of blunting one of them is far higher than
+the context they occupy.
