@@ -1738,12 +1738,16 @@ const hrNavigationSectionSeeds = [
       // contract renewal and outstation (leave/excuse/plan migrated out to their own dedicated
       // pages — see MIGRATED_DEEPLINK_BASES in app/(admin)/admin/approvals-hub/page.tsx).
       //
-      // Her composed matrix holds NO grant for any of those three: resignations, contracts and
-      // outstation are all ABSENT, not merely read-only. So the inbox could never contain one row
-      // for her. Measured off the composed matrix rather than inferred from the job description,
-      // because the JD would have suggested resignations were hers — the People section still
-      // carries /hr/resignations and /hr/contracts rows, and those correctly do not render for her
-      // for exactly this reason.
+      // Her composed matrix cannot ACT on any of those three. Resignations and outstation are
+      // absent outright; contracts is `read` and nothing more — enough to watch a renewal
+      // date from the People row, never enough to approve one here. So the inbox could never carry
+      // a row she could clear, and it carries a pending badge advertising work that cannot be hers.
+      //
+      // CORRECTED 2026-09-01: this note used to say all three were "ABSENT, not merely
+      // read-only", and that was wrong about contracts — she holds contracts:read, which is why
+      // /hr/contracts DOES render for her in the People section above while /hr/resignations
+      // correctly does not. The exclusion is right; the reason given for it was not, and a wrong
+      // reason sends the next reader hunting for a missing grant that is deliberately present.
       //
       // HR Operations keeps the row: she holds resignations and contracts at read/create/update/
       // export, and leave administration is her second JD area.
