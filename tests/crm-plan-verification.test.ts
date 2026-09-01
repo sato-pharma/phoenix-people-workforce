@@ -8,7 +8,9 @@ import {
   PLAN_STATUS_NEW,
   PLAN_STATUS_SUPERVISOR_VERIFIED,
   decidePlanVerification,
+  isPlanVerificationAction,
   isPlanVerified,
+  planActionPastTense,
   planStatusLabel,
 } from "../src/lib/crm/plan-verification.ts";
 import {
@@ -92,7 +94,11 @@ export function runCrmPlanVerificationTests() {
   assert.equal(isPlanVerified(PLAN_STATUS_AREA_MANAGER_VERIFIED), true);
 
   const pending = decidePlanVerification({ currentStatus: PLAN_STATUS_NEW });
-  assert.equal(pending.allowed, true);
+  assert.equal(
+    pending.allowed,
+    true,
+    "no action means VERIFY — every caller written before unverify existed omits it, so a flipped default would turn each of them into an undo",
+  );
   assert.equal(
     pending.allowed && pending.nextStatus,
     PLAN_STATUS_SUPERVISOR_VERIFIED,
@@ -116,6 +122,68 @@ export function runCrmPlanVerificationTests() {
   const unknown = decidePlanVerification({ currentStatus: 7 });
   assert.equal(unknown.allowed, false);
   assert.match(unknown.allowed ? "" : unknown.reason, /7/, "the refusal names the status it did not recognise");
+
+  // ── 1b. UNVERIFY — the owner's 2026-09-01 ask, and the one asymmetry in it ─────────────────────
+  //
+  // "I want to be able to verify and unverify from Phoenix." The interesting half is what unverify
+  // still REFUSES: it is not the mirror image of verify, and every assertion below is a refusal
+  // that would be trivially easy to lose by making it one.
+
+  const undo = decidePlanVerification({ action: "unverify", currentStatus: PLAN_STATUS_SUPERVISOR_VERIFIED });
+  assert.equal(undo.allowed, true, "a manager must be able to take back the signature this feature wrote");
+  assert.equal(
+    undo.allowed ? undo.nextStatus : -1,
+    PLAN_STATUS_NEW,
+    "unverifying returns the plan to Pending — the state it was in before anybody signed it",
+  );
+
+  const undoSigned = decidePlanVerification({ action: "unverify", currentStatus: PLAN_STATUS_AREA_MANAGER_VERIFIED });
+  assert.equal(
+    undoSigned.allowed,
+    false,
+    "an AREA MANAGER's signature is not Phoenix's to clear: Phoenix never writes status 2, so unverifying it would erase a decision made a level above the person clicking, with nothing left on any screen to say it had happened",
+  );
+  assert.match(
+    undoSigned.allowed ? "" : undoSigned.reason,
+    /area manager/i,
+    "and the refusal has to name who signed it, or it reads as a bug",
+  );
+
+  const undoPending = decidePlanVerification({ action: "unverify", currentStatus: PLAN_STATUS_NEW });
+  assert.equal(undoPending.allowed, false, "there is nothing to take back off a plan nobody has signed");
+  assert.doesNotMatch(
+    undoPending.allowed ? "" : undoPending.reason,
+    /already verified/i,
+    'a pending plan must NOT be refused with the verify side\'s words: "already verified" and "nothing to take back" are different facts and the manager is entitled to know which one he hit',
+  );
+
+  assert.equal(
+    decidePlanVerification({ action: "unverify", currentStatus: null }).allowed,
+    false,
+    "a plan with no status is not a plan to act on in either direction",
+  );
+  assert.equal(decidePlanVerification({ action: "unverify", currentStatus: 7 }).allowed, false);
+
+  // THE DEFAULT IS VERIFY, and it must stay that way. Every caller written before unverify existed
+  // omits the action; if the default ever flipped, or an absent action fell through to whatever the
+  // status suggests, a lost field on the wire would silently LOWER a status instead of raising one.
+  const defaulted = decidePlanVerification({ currentStatus: PLAN_STATUS_NEW });
+  assert.equal(defaulted.allowed && defaulted.nextStatus, PLAN_STATUS_SUPERVISOR_VERIFIED, "no action means VERIFY");
+  assert.equal(
+    decidePlanVerification({ currentStatus: PLAN_STATUS_SUPERVISOR_VERIFIED }).allowed,
+    false,
+    "and specifically NOT unverify: an omitted action on a verified plan is refused, never treated as an undo",
+  );
+
+  // The route validates through this rather than falling back, so a typo cannot become a CRM write.
+  assert.equal(isPlanVerificationAction("verify"), true);
+  assert.equal(isPlanVerificationAction("unverify"), true);
+  assert.equal(isPlanVerificationAction("Verify"), false, "the check is exact — no case folding, no trimming");
+  assert.equal(isPlanVerificationAction(undefined), false);
+  assert.equal(isPlanVerificationAction("reject"), false, "reject is not a thing this system can do");
+
+  assert.equal(planActionPastTense("verify"), "verified");
+  assert.equal(planActionPastTense("unverify"), "unverified");
 
   // ── 2. Grouping entries into plans, and the month-straddle rule ────────────────────────────────
   const bounds = monthBounds(8, 2026);

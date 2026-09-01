@@ -4,29 +4,36 @@ import { PlanWeekPicker } from "@/components/crm/plan-week-picker";
 import { VerifyButton } from "@/components/crm/plan-verify-button";
 import { cairoStamp, Section, Tile } from "@/components/crm/reps-list-chrome";
 import { RepsListFilters } from "@/components/crm/reps-list-filters";
-import type { PlanEntryRow, PlanSummary } from "@/lib/crm/plan-board";
+import { PlanDoctorsTable } from "@/components/crm/reps-list-tables";
+import type { PlanSummary } from "@/lib/crm/plan-board";
 import {
   PLAN_STATUS_AREA_MANAGER_VERIFIED,
   PLAN_STATUS_NEW,
+  PLAN_STATUS_SUPERVISOR_VERIFIED,
   planStatusClass,
   planStatusLabel,
 } from "@/lib/crm/plan-verification";
-import { formatPlanDay } from "@/lib/crm/plan-week";
 import type { RepsWeeklyPlanRep, RepsWeeklyPlansBoard } from "@/lib/crm/reps-weekly-plans-board";
 
 // Server half of Reps Weekly Plans — tab two of the Reps List board.
 //
-// It borrows nothing from plan-verification-tables.tsx and that is deliberate twice over. The look
-// comes from reps-list-chrome.tsx, shared with tab one, because two tabs inside one border must be
-// one screen (owner's standing rule: match the sibling pages, never a one-off). And the doctors
-// table is written here rather than reused because all three tables next door render through
-// `PortalDesktopTable` over a min-width floor of 720–1240px — a horizontal scroll, which is the one
-// thing the fits-the-screen golden rule forbids outright.
+// It borrows nothing from plan-verification-tables.tsx and that is deliberate: all three tables in
+// there render through `PortalDesktopTable` over a min-width floor of 720–1240px, which is the
+// horizontal scroll the fits-the-screen golden rule forbids outright. The look comes instead from
+// reps-list-chrome.tsx, shared with tab one, because two tabs inside one border must read as one
+// screen (owner's standing rule: match the sibling pages, never a one-off).
 //
-// NOTHING HERE IS A CLIENT COMPONENT except the three controls that must be: the cascade, the week
-// picker and the Verify button. Choosing a rep swaps the whole board, exactly as tab one does, so
-// the doctors always land at the top of the page — the reason the period board needs a
-// scroll-into-view effect does not exist on this one.
+// THE DOCTORS TABLE IS TAB ONE'S OWN, IMPORTED. It was written here for the first build and moved
+// into reps-list-tables.tsx on 2026-09-01, when the owner asked for it to be "exactly as the contact
+// list": the brick, the polished bilingual address with its check-in stamp, the confidence chip, the
+// neighbourhood tints and the measured column widths all live in that file, and a second table here
+// could match them on the day it was written and silently stop matching on the next change to any
+// one of them. See `PlanDoctorsTable` there for what differs — days instead of bricks, and the shift.
+//
+// EVERYTHING ELSE HERE IS A SERVER COMPONENT. The four client pieces are the ones that must be: the
+// cascade, the week picker, the Verify/Unverify button and that doctors table. Choosing a rep swaps
+// the whole board, exactly as tab one does, so the doctors always land at the top of the page — the
+// reason the period board needs a scroll-into-view effect does not exist on this one.
 
 /** The current filters as a query string, with `rep` replaced (or dropped when null). */
 function hrefWithRep(basePath: string, board: RepsWeeklyPlansBoard, repKey: string | null): string {
@@ -77,105 +84,6 @@ function RepCard({ href, rep }: { href: string; rep: RepsWeeklyPlanRep }) {
   );
 }
 
-/**
- * The doctors on one plan.
- *
- * FIVE columns, not seven. Day and AM/PM are one cell and grade rides inside Specialty, because the
- * golden rule says fit by MERGING columns rather than shrinking the type — and seven columns at the
- * 768px breakpoint is where the min-width floor next door came from. Widths are shares of whatever
- * the viewport gives, so a long Arabic doctor name WRAPS. Wrapping is the permitted answer here;
- * the ellipsis ban is untouched, and nothing on this table is hidden.
- */
-function PlanDoctors({ rows }: { rows: PlanEntryRow[] }) {
-  const THEAD = "px-3 py-2.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-white";
-  // Day, then AM before PM, then by name — the order a manager reads a route in. The plan arrives
-  // in the vendor's own order, which is neither.
-  const ordered = [...rows].sort((left, right) => {
-    const byDay = (left.planDate ?? "").localeCompare(right.planDate ?? "");
-    if (byDay !== 0) return byDay;
-    const byShift = (left.ampm ?? "").localeCompare(right.ampm ?? "");
-    if (byShift !== 0) return byShift;
-    return left.contactName.localeCompare(right.contactName);
-  });
-
-  // A blank address says WHICH blank it is. "Not on his list" is a rep planning a doctor he was
-  // never assigned — the more interesting of the two, and exactly what a verifying manager is
-  // looking for — while "No address recorded" is a CRM gap. A dash would hide both.
-  const address = (row: PlanEntryRow) => row.address ?? (row.onRepList ? "No address recorded" : "Not on his list");
-  const addressTone = (row: PlanEntryRow) =>
-    row.address ? "text-slate-600" : row.onRepList ? "text-slate-400" : "text-amber-700";
-  const speciality = (row: PlanEntryRow) =>
-    [row.grade ? `Grade ${row.grade}` : null, row.speciality].filter(Boolean).join(" · ") || "Not recorded";
-
-  return (
-    <>
-      <div className="hidden md:block">
-        <table className="w-full table-fixed border-collapse text-left text-sm">
-          {/* Shares, never pixels. Address takes the largest because it is the only free-text column
-              and the one a route is read from; Day is the narrowest because "Sun 30 Aug" over
-              "AM" is two short lines whatever the viewport. */}
-          <colgroup>
-            <col className="w-[13%]" />
-            <col className="w-[25%]" />
-            <col className="w-[19%]" />
-            <col className="w-[15%]" />
-            <col className="w-[28%]" />
-          </colgroup>
-          <thead>
-            <tr className="bg-slate-900 text-left">
-              <th className={THEAD}>Day</th>
-              <th className={THEAD}>Doctor</th>
-              <th className={THEAD}>Specialty</th>
-              <th className={THEAD}>Locality</th>
-              <th className={THEAD}>Address</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {ordered.map((row, index) => (
-              <tr className="align-top" key={`${row.contactCrmId ?? "x"}-${row.planDate ?? "x"}-${index}`}>
-                <td className="px-3 py-2 font-black text-slate-900">
-                  {row.planDate ? formatPlanDay(row.planDate) : "No day"}
-                  {row.ampm ? (
-                    <span className="mt-0.5 block text-phx-3xs font-black uppercase tracking-[0.12em] text-slate-400">
-                      {row.ampm}
-                    </span>
-                  ) : null}
-                </td>
-                <td className="px-3 py-2 font-semibold text-slate-900">{row.contactName}</td>
-                <td className="px-3 py-2 text-slate-600">{speciality(row)}</td>
-                <td className="px-3 py-2 text-slate-600">{row.region ?? "No locality"}</td>
-                <td className={`px-3 py-2 ${addressTone(row)}`}>{address(row)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {/* Mobile never gets the table — the owner's admin-shell rule, and the only honest way to
-          hold five columns at 375px without either scrolling sideways or shrinking the type. */}
-      <div className="space-y-2 md:hidden">
-        {ordered.map((row, index) => (
-          <div
-            className="border border-slate-200 px-3 py-2.5"
-            key={`${row.contactCrmId ?? "x"}-${row.planDate ?? "x"}-${index}`}
-          >
-            <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <p className="text-sm font-black text-slate-900">{row.contactName}</p>
-              <p className="text-phx-2xs font-black uppercase tracking-[0.1em] text-slate-400">
-                {row.planDate ? formatPlanDay(row.planDate) : "No day"}
-                {row.ampm ? ` · ${row.ampm}` : ""}
-              </p>
-            </div>
-            <p className="mt-0.5 text-phx-2xs text-slate-600">{speciality(row)}</p>
-            <p className="mt-0.5 text-phx-2xs text-slate-500">{row.region ?? "No locality"}</p>
-            <p className={`mt-0.5 text-phx-2xs ${addressTone(row)}`}>{address(row)}</p>
-          </div>
-        ))}
-      </div>
-    </>
-  );
-}
-
 function PlanPanel({
   basePath,
   board,
@@ -190,7 +98,12 @@ function PlanPanel({
   selected: RepsWeeklyPlanRep;
 }) {
   const pending = (plan.status ?? PLAN_STATUS_NEW) === PLAN_STATUS_NEW;
-  const days = new Set(board.entries.map((row) => row.planDate).filter(Boolean)).size;
+  // A plan whose rows carry no date at all still has a block on screen, but it is not a day he
+  // planned to work — so it is excluded here rather than counted as one.
+  const days = board.days.filter((day) => day.date != null).length;
+  // Only a signature THIS feature wrote can be taken back. An area manager's cannot — see
+  // `decidePlanVerification` — so the sentence below must not promise it.
+  const undoable = plan.status === PLAN_STATUS_SUPERVISOR_VERIFIED;
 
   return (
     <>
@@ -219,9 +132,13 @@ function PlanPanel({
                 is told why here; the route refuses the write independently, which is the boundary. */}
             {pending
               ? canVerify
-                ? "Verifying writes the status into the CRM itself and emails the rep. It cannot be undone from here."
+                ? "Verifying writes the status into the CRM itself and emails the rep. You can take it back afterwards from this same button."
                 : "This plan is waiting for the rep's district or regional manager to verify it."
-              : "Already verified in the CRM. There is no unverify."}
+              : undoable
+                ? canVerify
+                  ? "Verified in the CRM. Unverifying writes that back too and tells the rep his plan is waiting for him again — the plan itself is not changed."
+                  : "Verified in the CRM by the rep's district or regional manager."
+                : "An area manager verified this plan. Phoenix never wrote that signature, so it cannot take it back either."}
           </p>
         </div>
         <VerifyButton canVerify={canVerify} plan={plan} />
@@ -256,8 +173,11 @@ function PlanPanel({
           </p>
         </div>
       ) : (
-        <div className="border-t border-slate-100 p-5">
-          <PlanDoctors rows={board.entries} />
+        // No padding around it: the day headings are full-bleed bars, exactly as the brick headings
+        // are on tab one, and a padded box around them would make the two tabs stop matching at the
+        // one place the owner asked for them to match most closely.
+        <div className="border-t border-slate-100">
+          <PlanDoctorsTable days={board.days} />
         </div>
       )}
     </>

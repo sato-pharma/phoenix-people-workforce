@@ -35,8 +35,10 @@ import {
   type PlanEntryRow,
   type PlanSummary,
 } from "@/lib/crm/plan-board";
+import { buildPlanDoctorDays, indexContactList, type PlanDoctorDay } from "@/lib/crm/plan-doctors";
 import { PLAN_STATUS_NEW } from "@/lib/crm/plan-verification";
 import { cairoTodayIso, listPlanWeeks, resolvePlanWeek, weekEndFor, type PlanWeek } from "@/lib/crm/plan-week";
+import { getRepsListForAgent } from "@/lib/crm/reps-list";
 import { buildRepsCascade, type RepsListRep } from "@/lib/crm/reps-list-board";
 import type { CoverageFilterOptions, CoverageFilterSelection } from "@/lib/crm/coverage-filters";
 import type { CrmManagerScope } from "@/lib/crm/manager-scope";
@@ -55,7 +57,16 @@ export type RepsWeeklyPlanRep = RepsListRep & {
 };
 
 export type RepsWeeklyPlansBoard = {
-  /** The doctors on the plan on screen. Empty when no plan is selected. */
+  /**
+   * The plan on screen, GROUPED BY DAY and joined to the rep's contact list — what the table
+   * renders. The owner, 2026-09-01: "differentiate day by day, group day by day", and make the
+   * table "exactly as in the contact list". Empty when no plan is selected.
+   */
+  days: PlanDoctorDay[];
+  /**
+   * The same doctors, flat and unjoined. Kept beside `days` because the tiles count over them and
+   * because it is the honest record of what the PLAN says, before anything the contact list adds.
+   */
   entries: PlanEntryRow[];
   options: CoverageFilterOptions;
   /** Every plan the selected rep filed for this week, newest-status-first. */
@@ -126,6 +137,7 @@ export async function getRepsWeeklyPlansBoard(input: {
   const cascade = await buildRepsCascade({ params: input.params, scope: input.scope });
 
   const base = {
+    days: [] as PlanDoctorDay[],
     entries: [] as PlanEntryRow[],
     options: cascade.options,
     plans: [] as PlanSummary[],
@@ -190,7 +202,29 @@ export async function getRepsWeeklyPlansBoard(input: {
 
   // The agent id is passed so the doctors carry their addresses: the plan rows hold none, and the
   // address lives on the rep's own assigned list, which is keyed by agent.
-  const entries = selectedPlan ? await getPlanEntries(selectedPlan.crmPlanId, selectedPlan.agentCrmId) : [];
+  //
+  // THE CONTACT LIST IS READ ALONGSIDE IT, and that is the second half of the owner's instruction
+  // to make this table "exactly as in the contact list". The plan mirror holds a name, a grade, a
+  // speciality and a CRM region; the brick, the observed address with its check-in date, the
+  // confidence, the neighbours, the list type and the phone all live on the contact row. Copying
+  // the contact list's column headings without this read would produce six columns with nothing to
+  // put in four of them.
+  //
+  // The two reads run TOGETHER rather than in sequence. They are independent — one is keyed by plan,
+  // the other by agent — and the contact read is the slower of the pair, so serialising them would
+  // add its whole latency to the page for nothing.
+  //
+  // `getRepsListForAgent` NEVER THROWS OUT OF HERE. It is annotation on a plan the manager came to
+  // sign; a contact mirror that was briefly unreachable must not be able to hide the plan itself.
+  // The table then renders every row as "not on his list", which is what an empty index means.
+  const [entries, contactList] = selectedPlan
+    ? await Promise.all([
+        getPlanEntries(selectedPlan.crmPlanId, selectedPlan.agentCrmId),
+        getRepsListForAgent(selectedPlan.agentCrmId, cascade.repNameByAgentId).catch(() => null),
+      ])
+    : [[] as PlanEntryRow[], null];
 
-  return { ...base, entries, plans, reps, selected, selectedPlan };
+  const days = buildPlanDoctorDays(entries, indexContactList(contactList));
+
+  return { ...base, days, entries, plans, reps, selected, selectedPlan };
 }

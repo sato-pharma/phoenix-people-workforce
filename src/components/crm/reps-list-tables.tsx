@@ -11,6 +11,7 @@ import { ExportXlsxButton } from "@/components/ui/export-xlsx-button";
 import { TableSearchInput } from "@/components/ui/sortable-table";
 import { polishAddress, polishAddressText } from "@/lib/crm/address-polish";
 import type { DoctorListRow } from "@/lib/crm/contact-lists";
+import type { PlanDoctorDay, PlanDoctorRow } from "@/lib/crm/plan-doctors";
 import { classifyCrmContactSpeciality, type CrmContactKind } from "@/lib/crm/contact-taxonomy";
 import {
   confidenceLabel,
@@ -1238,6 +1239,295 @@ export function RepsListContacts({
         </div>
       )}
 
+      {confidenceFor ? <ConfidenceDialog onClose={closeConfidence} row={confidenceFor} /> : null}
+      {insightsFor ? <InsightsDialog onClose={closeInsights} row={insightsFor} /> : null}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * The same rows, on the Reps Weekly Plans tab.
+ *
+ * The owner, 2026-09-01: "you will show the address exactly as the contact list, exactly as the
+ * contact list, as we are showing in the contact list. You will make the table exactly as in the
+ * contact list."
+ *
+ * IT LIVES IN THIS FILE FOR THAT SENTENCE. Everything that decides how a contact row LOOKS is
+ * already here — the six columns and their measured widths, ContactCell, AddressCell with its
+ * per-segment <bdi>, the confidence chip, the insight chip, the neighbourhood tints, LIST_LABEL.
+ * A second table written next door could match all of that on the day it was written and silently
+ * stop matching on the next change to any one of them, which is precisely the drift the instruction
+ * is about. Here, a change to a cell reaches both tabs or neither.
+ *
+ * WHAT DIFFERS, AND ONLY THIS: the blocks are DAYS rather than bricks, because a plan is read a day
+ * at a time ("differentiate day by day, group day by day"); the shift rides inside the Contact cell
+ * for the same reason grade and phone do; and a doctor who is not on the rep's list still gets a
+ * row, saying so in the four columns his contact record would have filled.
+ * ---------------------------------------------------------------------------------------------- */
+
+/** The day's own heading — the brick heading's shape, so the two tabs read as one board. */
+function PlanDayHeading({ day }: { day: PlanDoctorDay }) {
+  const dated = day.date != null;
+  const doctors = new Set(day.rows.map((row) => row.entry.contactCrmId ?? row.entry.contactName)).size;
+  return (
+    <div
+      className={`flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-y px-5 py-2.5 ${
+        dated ? "border-slate-200 bg-slate-50" : "border-amber-200 bg-amber-50"
+      }`}
+    >
+      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+        <h3 className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-900">{day.label}</h3>
+        {dated ? null : (
+          <span className="text-phx-2xs font-black uppercase tracking-[0.1em] text-amber-700">
+            The CRM recorded no date on these rows
+          </span>
+        )}
+      </div>
+      {/* Calls and doctors are counted apart: a doctor planned AM and PM is one doctor and two
+          calls, and a single number here would have to be wrong about one of them. */}
+      <span className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">
+        {`${day.rows.length} ${day.rows.length === 1 ? "call" : "calls"} · ${doctors} ${
+          doctors === 1 ? "doctor" : "doctors"
+        }`}
+      </span>
+    </div>
+  );
+}
+
+/** AM / PM, where the contact list puts nothing. Absent on a plan row the CRM left without one. */
+function ShiftLine({ ampm }: { ampm: string | null }) {
+  if (!ampm?.trim()) return null;
+  return (
+    <span className="mt-0.5 block text-phx-3xs font-black uppercase tracking-[0.12em] text-slate-400">
+      {ampm.trim()}
+    </span>
+  );
+}
+
+/**
+ * A doctor the rep planned who is NOT on his current list — 18.4% of August's doctor-plan pairs.
+ *
+ * The plan carries his name, his grade and his speciality and nothing else, so the four columns the
+ * contact record would fill say what is missing rather than sitting blank. It is amber, not rose:
+ * planning off-list is a thing to ASK about, not a fault — the doctor may have moved list last week
+ * — and it is one of the more useful things a verifying manager can be shown.
+ */
+function OffListContactCell({ row }: { row: PlanDoctorRow }) {
+  return (
+    <div className="break-words">
+      <span className="block font-semibold text-slate-900" dir="auto">
+        {row.entry.contactName}
+      </span>
+      <span className="mt-0.5 block text-phx-2xs font-semibold">
+        <span className={gradeClass(row.entry.grade)}>{row.entry.grade ?? NO_GRADE}</span>
+        <span className="text-slate-400"> · not on his list</span>
+      </span>
+      <ShiftLine ampm={row.ampm} />
+    </div>
+  );
+}
+
+/** One day's calls, in the contact list's own six columns. */
+function PlanDayTable({
+  day,
+  onOpenConfidence,
+  onOpenInsights,
+}: {
+  day: PlanDoctorDay;
+  onOpenConfidence: (row: RepsListContact) => void;
+  onOpenInsights: (row: RepsListContact) => void;
+}) {
+  const offListBrick = (row: PlanDoctorRow) => row.entry.region?.trim() || "No CRM region recorded";
+  const speciality = (row: PlanDoctorRow) =>
+    row.contact?.contact.speciality?.trim() || row.entry.speciality?.trim() || UNSPECIFIED;
+
+  return (
+    <PortalResponsiveDataList
+      empty={<p className="px-3 py-6 text-center text-xs text-slate-400">Nothing planned on this day.</p>}
+      getKey={(row) => row.key}
+      items={day.rows}
+      renderCard={(row) => {
+        const joined = row.contact;
+        if (!joined) {
+          return (
+            <PortalRecordCard
+              accent="slate"
+              meta={
+                <>
+                  <span className={gradeClass(row.entry.grade)}>{row.entry.grade ?? NO_GRADE}</span>
+                  {row.ampm?.trim() ? <span>{` · ${row.ampm.trim()}`}</span> : null}
+                </>
+              }
+              status={
+                <span className="text-phx-2xs font-black uppercase tracking-[0.1em] text-amber-700">
+                  Not on his list
+                </span>
+              }
+              title={row.entry.contactName}
+            >
+              <PortalRecordFields
+                fields={[
+                  { label: "Specialty", value: speciality(row) },
+                  { label: "Brick", value: offListBrick(row) },
+                ]}
+              />
+              <p className="mt-2 text-xs text-amber-700">
+                This doctor is not on the rep&apos;s current contact list, so Phoenix holds no address, brick
+                or check-in history for him.
+              </p>
+            </PortalRecordCard>
+          );
+        }
+        const contact = joined.contact;
+        const tint = tintFor(contact);
+        return (
+          <PortalRecordCard
+            accent={contact.listType === "Pharmacy" ? "sky" : "slate"}
+            meta={
+              <>
+                <span className={gradeClass(contact.grade)}>{contact.grade ?? NO_GRADE}</span>
+                <span>{phoneOf(contact) ? ` · ${phoneOf(contact)}` : " · no phone"}</span>
+                {row.ampm?.trim() ? <span>{` · ${row.ampm.trim()}`}</span> : null}
+              </>
+            }
+            status={
+              <span className="text-phx-2xs font-black uppercase tracking-[0.1em] text-slate-400">
+                {LIST_LABEL[contact.listType]}
+              </span>
+            }
+            title={contact.name}
+          >
+            <InsightsChip onOpen={() => onOpenInsights(contact)} row={contact} />
+            <SharedLine row={contact} />
+            <TradeLine row={contact} />
+            <PortalRecordFields
+              fields={[
+                { label: "Specialty", value: speciality(row) },
+                {
+                  label: "Brick",
+                  value: joined.brick.mapped ? joined.brick.heading : `${joined.brick.heading} — no brick yet`,
+                },
+              ]}
+            />
+            <div className={`mt-2 text-xs ${tint ? `${tint.fill} ${tint.bar} border-l-2 p-2` : ""}`}>
+              <AddressCell locality={contact.region} row={contact} />
+            </div>
+            <div className="mt-2">
+              <ConfidenceChip onOpen={() => onOpenConfidence(contact)} row={contact} />
+            </div>
+          </PortalRecordCard>
+        );
+      }}
+      renderTable={() => (
+        // The contact list's table, verbatim: no PortalDesktopTable, no min-width floor, a colgroup
+        // summing to exactly 100%. The widths are the measured ones from GroupTable above — see the
+        // long comment there for why Confidence is 16% and List is 13%.
+        <div className="hidden md:block">
+          <table className="w-full table-fixed border-collapse text-left text-sm">
+            <colgroup>
+              <col className="w-[21%]" />
+              <col className="w-[13%]" />
+              <col className="w-[13%]" />
+              <col className="w-[11%]" />
+              <col className="w-[16%]" />
+              <col className="w-[26%]" />
+            </colgroup>
+            <thead>
+              <tr className="bg-slate-900 text-left">
+                <th className={THEAD}>Contact</th>
+                <th className={THEAD}>Specialty</th>
+                <th className={THEAD}>List</th>
+                <th className={THEAD}>Brick</th>
+                <th className={THEAD}>Confidence</th>
+                <th className={THEAD}>Address</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {day.rows.map((row) => {
+                const contact = row.contact?.contact ?? null;
+                const shared = (contact?.sharedWith?.length ?? 0) > 0;
+                const tint = contact ? tintFor(contact) : null;
+                return (
+                  <tr
+                    className={`align-top ${shared ? "bg-violet-50 hover:bg-violet-100" : "bg-white hover:bg-slate-50"}`}
+                    key={row.key}
+                  >
+                    <td className="px-3 py-2">
+                      {contact ? (
+                        <>
+                          <ContactCell onOpenInsights={() => onOpenInsights(contact)} row={contact} />
+                          <ShiftLine ampm={row.ampm} />
+                        </>
+                      ) : (
+                        <OffListContactCell row={row} />
+                      )}
+                    </td>
+                    <td className="break-words px-3 py-2 text-slate-600">{speciality(row)}</td>
+                    <td
+                      className={`break-words px-3 py-2 ${contact ? "text-slate-400" : "font-semibold text-amber-700"}`}
+                    >
+                      {contact ? LIST_LABEL[contact.listType] : "Not on his list"}
+                    </td>
+                    <td
+                      className={`break-words px-3 py-2 font-semibold ${
+                        row.contact?.brick.mapped ? "text-slate-600" : "text-amber-700"
+                      }`}
+                      dir="auto"
+                    >
+                      {row.contact ? row.contact.brick.heading : offListBrick(row)}
+                    </td>
+                    <td className="px-3 py-2">
+                      {contact ? (
+                        <ConfidenceChip onOpen={() => onOpenConfidence(contact)} row={contact} />
+                      ) : (
+                        <span className="text-phx-2xs font-semibold text-slate-400">No contact record</span>
+                      )}
+                    </td>
+                    <td className={`px-3 py-2 text-slate-600 ${tint && !shared ? tint.fill : ""}`}>
+                      {contact ? (
+                        <AddressCell locality={contact.region} row={contact} />
+                      ) : (
+                        <span className="font-semibold text-amber-700">
+                          Not on his list, so no address is recorded
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    />
+  );
+}
+
+/**
+ * The plan's doctors, one block per day, in the contact list's own table.
+ *
+ * ONE dialog pair for the whole plan, opened with whichever row was clicked — the same reason
+ * RepsListContacts has one: a dialog per row is hundreds of mounted overlays, and a dialog per day
+ * would put a hook count inside a map, which React forbids outright.
+ */
+export function PlanDoctorsTable({ days }: { days: PlanDoctorDay[] }) {
+  const [confidenceFor, setConfidenceFor] = useState<RepsListContact | null>(null);
+  const [insightsFor, setInsightsFor] = useState<RepsListContact | null>(null);
+  const closeConfidence = useCallback(() => setConfidenceFor(null), []);
+  const closeInsights = useCallback(() => setInsightsFor(null), []);
+  const openConfidence = useCallback((row: RepsListContact) => setConfidenceFor(row), []);
+  const openInsights = useCallback((row: RepsListContact) => setInsightsFor(row), []);
+
+  return (
+    <div>
+      <div className="border border-slate-200">
+        {days.map((day) => (
+          <div key={day.date ?? "undated"}>
+            <PlanDayHeading day={day} />
+            <PlanDayTable day={day} onOpenConfidence={openConfidence} onOpenInsights={openInsights} />
+          </div>
+        ))}
+      </div>
       {confidenceFor ? <ConfidenceDialog onClose={closeConfidence} row={confidenceFor} /> : null}
       {insightsFor ? <InsightsDialog onClose={closeInsights} row={insightsFor} /> : null}
     </div>

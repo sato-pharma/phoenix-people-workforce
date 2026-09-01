@@ -6,13 +6,19 @@ import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { isIReports360Configured } from "@/lib/crm/config";
 import { IReports360ApiError } from "@/lib/crm/client";
 import { canAccessPlanVerification, getPlanVerificationScope } from "@/lib/crm/plan-verification-access";
-import { verifyPlan } from "@/lib/crm/plan-verification-service";
+import { isPlanVerificationAction } from "@/lib/crm/plan-verification";
+import { setPlanVerification } from "@/lib/crm/plan-verification-service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// A district manager verifies one rep's plan. The ONLY route in Phoenix that writes into the
-// customer's CRM.
+// A district manager verifies one rep's plan — or takes that verification back. The ONLY route in
+// Phoenix that writes into the customer's CRM.
+//
+// The path still reads `/verify` after unverify was added on 2026-09-01, and that is deliberate:
+// renaming it would break every in-flight client for a cosmetic gain, and the direction is a
+// parameter of the same decision rather than a second operation. Both directions pass the same
+// three gates and the same pure rule; neither is a shortcut past the other.
 //
 // GATED THREE TIMES, in widening order of cost:
 //   1. the role list (plan-verification-access.ts) — is this seat allowed here at all;
@@ -20,7 +26,7 @@ export const dynamic = "force-dynamic";
 //      not `read`: the CEO account holds read and is deliberately observational on this, so the
 //      board opens for it and this route does not;
 //   3. the viewer's ORG SCOPE against the plan's own rep, resolved server-side and checked inside
-//      verifyPlan against a fresh read of the plan.
+//      setPlanVerification against a fresh read of the plan.
 //
 // The third is the one that matters and the one a role check cannot do. A district manager passing
 // this gate is still only entitled to HIS reps' plans, and the scope object is resolved here from
@@ -48,14 +54,24 @@ export async function POST(request: Request) {
       );
     }
 
-    const body = (await request.json().catch(() => ({}))) as { crmPlanId?: unknown };
+    const body = (await request.json().catch(() => ({}))) as { action?: unknown; crmPlanId?: unknown };
     const crmPlanId = Number(body?.crmPlanId);
     if (!Number.isInteger(crmPlanId) || crmPlanId <= 0) {
       return NextResponse.json({ error: "Give the plan id to verify." }, { status: 400 });
     }
 
+    // ABSENT means verify — the shape every caller sent before unverify existed, and the safe
+    // default if the field is ever lost in transit. Anything PRESENT but unrecognised is refused
+    // rather than falling back, because a typo'd action silently becoming "verify" would write a
+    // signature into the customer's CRM that nobody asked for.
+    const action = body?.action === undefined ? "verify" : body.action;
+    if (!isPlanVerificationAction(action)) {
+      return NextResponse.json({ error: 'The action must be "verify" or "unverify".' }, { status: 400 });
+    }
+
     const scope = await getPlanVerificationScope(access);
-    const outcome = await verifyPlan({
+    const outcome = await setPlanVerification({
+      action,
       actorHrId: access.hrId ?? null,
       actorLoginId: access.loginId ?? access.hrId ?? null,
       actorName: access.loginId ?? access.hrId ?? null,
@@ -68,6 +84,7 @@ export async function POST(request: Request) {
     }
     return NextResponse.json(
       {
+        action: outcome.action,
         repNotified: outcome.repNotified,
         repNotifyReason: outcome.repNotifyReason,
         status: outcome.status,
