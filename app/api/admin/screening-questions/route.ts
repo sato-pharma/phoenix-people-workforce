@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 
-import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import {
+  assertScreeningQuestionsAccess,
   deleteScreeningQuestion,
   listScreeningQuestions,
   saveScreeningQuestionSet,
@@ -34,7 +34,7 @@ function failure(error: unknown, code: string) {
 export async function GET(request: Request) {
   try {
     const access = await resolveAccessContext(request);
-    await assertPermission(access, "admin", "update");
+    await assertScreeningQuestionsAccess(access);
 
     const questions = await listScreeningQuestions();
     return NextResponse.json({ questions });
@@ -76,7 +76,7 @@ export async function POST(request: Request) {
     if (csrf) return csrf;
 
     const access = await resolveAccessContext(request);
-    await assertPermission(access, "admin", "update");
+    await assertScreeningQuestionsAccess(access);
 
     const body = (await request.json()) as { questions?: DraftBody[] };
     if (!Array.isArray(body.questions)) {
@@ -99,7 +99,7 @@ export async function DELETE(request: Request) {
     if (csrf) return csrf;
 
     const access = await resolveAccessContext(request);
-    await assertPermission(access, "admin", "update");
+    await assertScreeningQuestionsAccess(access);
 
     const id = new URL(request.url).searchParams.get("id")?.trim();
     if (!id) {

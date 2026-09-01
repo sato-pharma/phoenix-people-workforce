@@ -184,6 +184,22 @@ export const HR_FUNCTIONS: readonly HrFunction[] = [
       employee_profile: READ_ONLY,
       attendance: READ_ONLY,
       overview: READ_ONLY,
+      // Both added 2026-09-01 at the owner's instruction, when he asked for the HR Business
+      // Partner's sidebar to carry Contract Renewal and the Company Calendar. READ only, and they
+      // live in THIS function rather than in people_records because workforce_insight is held by
+      // HR Advisory alone — the same reason people_records carries its own copy of `organogram`.
+      //
+      // contracts: she advises on renewals ("workforce insight") and cannot change one; every
+      // contract WRITE stays with people_records, which is HR Operations.
+      //
+      // hr_calendar: read is the Company Calendar and the Field Workforce Compliance report, the
+      // latter of which was already listed in her sidebar and rendered for nobody. `update` is
+      // still REFUSED and must stay refused — it saves an HR decision on a compliance
+      // recommendation, the PATCH accepts payroll recommendations as well as leave ones, and "may
+      // not approve salary changes" is a named boundary in her job description. See the identical
+      // note on people_records below, where the same refusal was reasoned out on 2026-08-28.
+      contracts: READ_ONLY,
+      hr_calendar: READ_ONLY,
     },
   },
   {

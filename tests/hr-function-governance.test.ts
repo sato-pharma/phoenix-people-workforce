@@ -123,6 +123,28 @@ const FILES_NAMING_AN_HR_SEAT: readonly string[] = [
   "src/lib/employees/access-provisioning.ts",
   "src/lib/excuses/service.ts",
   "src/lib/hiring-documents/service.ts",
+  // Names HR Advisory in resolvePayslipCenterAudience, added 2026-09-01. Reviewed verdict: it
+  // GRANTS reach — this is the string that lets her open the Payslips Center at all — and it is
+  // listed for exactly that reason. The owner asked for it in those words and bounded it in the
+  // same breath: "you will make her able to see the district managers, the Medicare reps, and
+  // herself only in the payslips." Deliberately NOT a widening of getPayrollScope, which /payroll
+  // and the batch screens also consult; this opens one page's rows for two job titles.
+  //
+  // What it does NOT hand her is the thing her job description withholds: canExportPayslipDocument
+  // is unchanged (Super Admin + Finance Manager), so she reads figures on screen and cannot carry
+  // a rendered payslip document out of the building. tests/hr-advisory-module-access.test.ts pins
+  // the audience in both directions, including every title it must refuse.
+  "src/lib/payroll/payslip-center.ts",
+  // Names HR Advisory in managerCvEngagementRoles, added 2026-09-01. Reviewed verdict: it GRANTS
+  // reach, by the owner's own amendment — the list was his, verbatim, and read "NOT SFE, NOT HR"
+  // until he was asked directly and said to add the HR Business Partner. Chasing the managers who
+  // have not answered on a candidate is recruiting, which is her function.
+  //
+  // The amendment is HER seat alone: HR Operations is still refused, and that split is asserted in
+  // tests/recruitment-manager-cv-engagement.test.ts rather than left to this comment. The report
+  // is read-only and scoped to hiring activity — it holds no salary, no personnel record and no
+  // payroll figure, so it crosses none of her named boundaries.
+  "src/lib/recruitment/manager-cv-engagement.ts",
   // The job workbook. It names both seats because it IS the two job descriptions, one per seat —
   // but it grants nothing: every field is prose and an href, there is no permission, no gate and
   // no branch on the seat name anywhere in it. tests/hr-job-workbook.test.ts asserts the opposite

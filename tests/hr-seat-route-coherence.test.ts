@@ -170,17 +170,23 @@ const GATE_SHAPE_NOT_MACHINE_READABLE: Record<string, string> = {
     "hrBundleForRole(access.role) — the same lookup that decides the seat's grants, so it admits " +
     "exactly the two seats by construction rather than by a second list agreeing with the first",
   "/hr/probation": "canReadAllProbation(access) — true for both seats",
-  // Added 2026-09-01 with the owner's HR sidebar grouping. Verified by CALLING each gate for both
-  // seats, not by reading it: canReadAllProbation true/true, weekly_plans:read true/true.
+  // All three added 2026-09-01 with the owner's module opening, and all three verified by CALLING
+  // the predicate for each seat rather than by reading it.
   "/hr/probation/dashboard":
-    "canReadAllProbation(access) — true for both seats, the same predicate and the same verdict as " +
-    "/hr/probation above; the two rows sit together under Performance & Probation",
+    "canReadAllProbation(access) — the same predicate as /hr/probation above, true for BOTH seats. " +
+    "The page is the read-only outcomes view of the tracker beside it and has no write path",
   "/hr/admin/weekly-plans/calendar":
-    'hoisted const canReadPlans = await canAccess(access, "weekly_plans", "read") — true for BOTH ' +
-    "seats, but the row carries roles: [HR Operations] so only she is offered it. Advisory has held " +
-    "weekly_plans:read all along through workforce_insight; Operations gained it on 2026-09-01 " +
-    "through time_attendance. The page is read-only — approving a plan is the sales ladder's, and " +
-    "neither seat holds any weekly_plans write action",
+    'an OR chain — canAccess(weekly_plans, read) || role is CEO || role is Super Admin — which is ' +
+    "why it cannot be parsed. TRUE for BOTH seats after the two 2026-09-01 changes were merged: " +
+    "Advisory has held weekly_plans:read all along through workforce_insight, and Operations gained " +
+    "it that day through time_attendance at the owner's request. The row therefore carries no roles " +
+    "gate. Read-only either way — approving a plan belongs to the sales ladder and neither seat " +
+    "holds any weekly_plans write action",
+  "/hr/recruitment/manager-engagement":
+    "canViewManagerCvEngagement(access) — a ROLE SET, not a resource, so the row carries roles: " +
+    '["HR Advisory"] beside its recruitment permission and the two must be read together. TRUE for ' +
+    "Advisory by the owner's own amendment that day, FALSE for Operations. The report is read-only " +
+    "and holds no salary, personnel record or payroll figure",
   "/hr/recruitment/contact-review": "canReviewCandidateContacts(access) — true for Advisory, the only seat offered it",
   "/hr/recruitment/intake-health": "canViewInboundIntakeHealth(access) — true for Advisory, the only seat offered it",
   "/hr/recruitment/whatsapp-replies":

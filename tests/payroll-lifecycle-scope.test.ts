@@ -129,10 +129,32 @@ export function runPayrollLifecycleScopeTests() {
     /function assertPayslipCenterAccess\(access: AccessContext\)/,
     "payslip center must define a function-level access guard",
   );
+  // Was `getPayrollScope(access) !== "COMPANY"` — the guard when the page had two answers, company
+  // or nothing. The owner opened it to the HR Business Partner on 2026-09-01 with a NAMED audience
+  // ("the district managers, the Medicare reps, and herself only"), so the guard now resolves an
+  // audience and the readers filter by it. What must still be true is that company-scope payroll
+  // access is what produces the COMPANY audience — nothing else may.
   assert.match(
     payslipCenterSource,
-    /getPayrollScope\(access\) !== "COMPANY"/,
-    "payslip center guard must require company-scope payroll access",
+    /getPayrollScope\(access\) === "COMPANY"\) return \{ kind: "company" \}/,
+    "company-wide payslip sight must still come from getPayrollScope and nothing else",
+  );
+  assert.match(
+    payslipCenterSource,
+    /export function resolvePayslipCenterAudience\(/,
+    "the payslip audience must be resolved in one exported place the page and the readers share",
+  );
+  assert.match(
+    payslipCenterSource,
+    /const audience = assertPayslipCenterAccess\(access\)/,
+    "both readers must TAKE the audience from the guard, not just call it for its throw",
+  );
+  // The boundary is the JS predicate, applied after the query. A `.or()` string is easy to get
+  // subtly wrong and this repo has shipped a PostgREST filter that returned everything silently.
+  assert.match(
+    payslipCenterSource,
+    /isPayslipRowVisibleToAudience\(audience, \{ hrId: record\.hr_id, jobTitle: record\.job_title \}\)/,
+    "search results must be re-filtered in JavaScript, not trusted to the SQL narrowing alone",
   );
   assert.match(
     payslipCenterSource,
