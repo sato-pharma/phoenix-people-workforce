@@ -78,6 +78,39 @@ its only symptom.
 Claude Code session is live. Anything holding even one file is reported NEEDS REVIEW and never
 touched.
 
+## Why closing the session does not release the worktree
+
+On 2026-09-01, retiring `_wt-hr-ops-sidebar` cost several hours entirely at this step. The owner
+closed the owning session twice and the folder stayed locked. Killing its `claude.exe` released
+nothing. `git worktree remove` ran its gates, unlinked the `node_modules` junction correctly, then
+failed `Permission denied` on the root — deregistering the worktree and leaving the husk described
+above, now empty.
+
+**Every diagnostic available without Sysinternals answers "unattended" while the folder is firmly
+held.** A `Win32_Process` sweep for the folder path returns nothing, because a process does not carry
+its working directory in its command line. A `ParentProcessId` sweep returns nothing once the
+spawning session is dead. The Restart Manager API reports **no holder**, because RM tracks file
+handles and a working-directory reference is not one. Windows exposes a process's CWD nowhere else.
+
+`git fsmonitor--daemon` is the prime suspect and was not positively proven. It is spawned by any
+`git` command run against a worktree — including the read-only `git -C <worktree> status` typed to
+*check* whether the folder is safe to remove — and it outlives the session that spawned it. Three
+were running; the oldest had started at 10:07:09, three seconds after the owning session, and was
+still alive nine hours later. Its command line is the bare
+`git fsmonitor--daemon run --detach --ipc-threads=8` and never names the tree it serves, so it cannot
+be attributed to a folder by inspection.
+
+**What actually worked, and the part worth copying:** stop every `git fsmonitor--daemon`, then retry
+`rmdir /s /q` over several minutes. Stopping them is free — they hold no state and git respawns one
+on demand, so a fresh daemon appearing seconds later is normal and is not the one that was blocking
+you. The delete did **not** succeed on the attempt straight after the kills; three attempts across
+four minutes still failed, and it cleared about five minutes later. Treat one failed `rmdir` as
+inconclusive rather than as evidence the holder is still there.
+
+A background retry loop is the obvious automation and is worth arming, but the one used here died on
+launch with exit code 4 and never ran an iteration — so confirm such a job is actually looping before
+reporting that it covers the cleanup.
+
 ## Orphaned memory files
 
 Only `MEMORY.md` loads automatically, so a memory file with no index line is **invisible, not merely
