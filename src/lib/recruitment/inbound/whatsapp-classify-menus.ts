@@ -574,6 +574,29 @@ export function salaryPromptText(): string {
   ].join("\n");
 }
 
+/**
+ * The figure inside a salary answer, when the answer IS just a figure — otherwise nothing.
+ *
+ * `ats_candidates.expected_salary` is numeric and every other writer fills it with a real figure,
+ * so it may only ever receive a number. This is deliberately strict. "12000" and "12,000" are one
+ * number written two ways and both parse; "25 k to 30 k" is a RANGE, "negotiable" is not a figure
+ * at all, and pulling the first number out of either would print a precise answer nobody gave.
+ * Those keep their own words in `declared_expected_salary`, which is the column a recruiter reads.
+ *
+ * Before 2026-09-02 the verbatim answer went straight at the numeric column and the cast failed —
+ * 31 of 42 answered salaries in production — taking the other five answers in the same update down
+ * with it. The prompt itself invites the shape that broke it — it says, in so many words, "You
+ * can write a number, a range, or negotiable".
+ */
+export function parseDeclaredSalaryFigure(raw: string | null | undefined): number | null {
+  const cleaned = String(raw ?? "")
+    .trim()
+    .replace(/,/g, "");
+  if (!/^[0-9]+(\.[0-9]+)?$/.test(cleaned)) return null;
+  const value = Number(cleaned);
+  return Number.isFinite(value) ? value : null;
+}
+
 /** Sent when the typed salary is longer than a figure should be — someone pasted a sentence. Names
  *  the limit, quotes nothing back, and reads naturally (the shared nudge would say "a expected
  *  salary"). */

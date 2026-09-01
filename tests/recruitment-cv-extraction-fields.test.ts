@@ -32,6 +32,8 @@ function candidate(overrides: Partial<Candidate> = {}): Candidate {
     cvReferenceName: null,
     dateOfBirth: null,
     declaredBackground: null,
+    declaredExpectedSalary: null,
+    declaredExperience: null,
     degree: null,
     email: null,
     expectedSalary: null,

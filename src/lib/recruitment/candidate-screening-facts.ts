@@ -72,6 +72,14 @@ export type ScreeningFactsCandidateRow = {
   currentEmployer?: string | null;
   currentJobTitle?: string | null;
   cvUnconfirmed?: CandidateUnconfirmedCvFacts | null;
+  /** What they answered when the bot asked what they studied. Their words, not the CV's. */
+  declaredBackground?: string | null;
+  /** The experience BAND they tapped ("1 - 3 years"). A band, never a number — see `years`. */
+  declaredExperience?: string | null;
+  /** The salary they typed, VERBATIM. "Negotiable" and "25 k to 30 k" are answers, not noise. */
+  declaredExpectedSalary?: string | null;
+  /** The parsed figure, for the rows that predate the verbatim column or were typed into the ATS. */
+  expectedSalary?: number | null;
   governorate?: string | null;
   hasMedicalRepExperience?: boolean | null;
   /** The area the applicant tapped or typed on WhatsApp. There is no other source for this. */
@@ -84,6 +92,31 @@ export type ScreeningFactsCandidateRow = {
 };
 
 export type CandidateScreeningFacts = {
+  /**
+   * What the applicant said they studied, when the bot asked — their own answer, never the CV's.
+   *
+   * Always settled for the same reason `area` is: a person tapped or typed it, and the CV's
+   * `faculty` answers a different question in a different vocabulary rather than competing here.
+   * The admin's confirmed verdict (background-review.ts) outranks BOTH and is not this field.
+   */
+  background: ScreeningFact<string> | null;
+  /**
+   * The experience BAND they chose, as they saw it — "1 - 3 years", "Fresh graduate".
+   *
+   * Deliberately NOT merged into `years`. That one is a number the CV reader derives by counting
+   * work-history dates; this one is a bracket a person picked about themselves. Showing a band as
+   * though it were a measured number, or letting either overwrite the other, would lose the very
+   * distinction that makes both worth reading.
+   */
+  declaredExperience: ScreeningFact<string> | null;
+  /**
+   * The monthly salary they asked for, in the words they used.
+   *
+   * The prompt invites "a number, a range, or negotiable", so most answers are not numbers, and the
+   * verbatim text is the answer — not a lossy figure parsed out of it. Falls back to the numeric
+   * column for rows that were typed into the ATS by hand or that predate the verbatim one.
+   */
+  expectedSalary: ScreeningFact<string> | null;
   /**
    * The area the applicant asked to work in, in their own words.
    *
@@ -211,10 +244,31 @@ export function candidateScreeningFacts(candidate: ScreeningFactsCandidateRow): 
   const confirmedPharma = typeof candidate.hasMedicalRepExperience === "boolean" ? candidate.hasMedicalRepExperience : null;
   const unconfirmedPharma = typeof cv.hasMedicalRepExperience === "boolean" ? cv.hasMedicalRepExperience : null;
 
+  // The applicant's own three answers. Each is settled when present, for the same reason the area
+  // is: a person tapped or typed it about themselves, and no other source answers the same
+  // question — a CV states a faculty, not the discipline the bot asked about; it can be read for a
+  // number of years, never for the bracket somebody picked; and it names no salary at all.
+  const declaredBackground = text(candidate.declaredBackground);
+  const declaredExperience = text(candidate.declaredExperience);
+  // Their words first. The figure is the fallback, and it is formatted rather than printed raw so
+  // "12000" does not read as a year or an id.
+  const salaryWords = text(candidate.declaredExpectedSalary);
+  const salaryFigure =
+    typeof candidate.expectedSalary === "number" && Number.isFinite(candidate.expectedSalary)
+      ? candidate.expectedSalary.toLocaleString("en-US")
+      : null;
+
   return {
     // Always settled when present: a person tapped or typed it, and there is nothing to hedge
     // against because no other source offers an area at all.
     area: areaName ? { confirmed: true, value: areaName } : null,
+    background: declaredBackground ? { confirmed: true, value: declaredBackground } : null,
+    declaredExperience: declaredExperience ? { confirmed: true, value: declaredExperience } : null,
+    expectedSalary: salaryWords
+      ? { confirmed: true, value: salaryWords }
+      : salaryFigure
+        ? { confirmed: true, value: salaryFigure }
+        : null,
     // Both sides go through the same guard. A junk value typed into the column is still junk on
     // the card: the confirmed/hedged split says how SURE we are of a fact, not whether it is one.
     employer: pick(cleanEmployerName(candidate.currentEmployer), cleanEmployerName(cv.currentEmployer)),

@@ -56,6 +56,7 @@ import {
   jobTitleOtherTooLongText,
   OTHER_ROW_VALUE,
   parseClassifyRowId,
+  parseDeclaredSalaryFigure,
   REGION_OTHER_MAX,
   regionMenu,
   regionOtherPromptText,
@@ -884,7 +885,21 @@ async function writeClassification(candidateId: string, session: SessionRow): Pr
   // or Arabic numerals are all truthful answers a recruiter reads, and a numeric column would drop them.
   const experienceLabel = sessionExperienceLabel(session);
   if (experienceLabel) payload.declared_experience = experienceLabel;
-  if (session.expected_salary) payload.expected_salary = session.expected_salary;
+  // …and until 2026-09-02 the verbatim answer was aimed at `expected_salary`, which is NUMERIC. The
+  // comment above was right about the intent and wrong about the destination, so every answer that
+  // was not a bare number failed the cast — 31 of the 42 answered in production. The damage was
+  // never confined to the salary: all six answers ride in this ONE update, so a rejected cast threw
+  // away that applicant's experience band, region, background and area as well, and the screener
+  // then saw a blank card for somebody who had answered every question.
+  //
+  // Verbatim words go to the text column, which is what a recruiter reads. The numeric column is
+  // filled only when the answer really is a figure, so everything that already reads it — the
+  // workspace's salary cell, the merge borrow list — keeps working unchanged.
+  if (session.expected_salary) {
+    payload.declared_expected_salary = session.expected_salary;
+    const figure = parseDeclaredSalaryFigure(session.expected_salary);
+    if (figure !== null) payload.expected_salary = figure;
+  }
 
   const { error } = await supabase.from("ats_candidates").update(payload).eq("id", candidateId);
   if (error) throw error;

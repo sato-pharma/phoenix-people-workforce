@@ -28,6 +28,7 @@ import {
   jobTitleOtherTooLongText,
   JOB_TITLE_OTHER_MAX,
   menuViolations,
+  parseDeclaredSalaryFigure,
   offeredRoleMenuFamilies,
   OTHER_ROW_VALUE,
   parseClassifyRowId,
@@ -89,6 +90,49 @@ function interactivePayload(interactive: Record<string, unknown>) {
 }
 
 export function runWhatsAppSelfClassificationTests() {
+  // --- THE SALARY COLUMN REGRESSION. `ats_candidates.expected_salary` is NUMERIC and the WhatsApp
+  // --- flow writes what the applicant typed. Until 2026-09-02 it aimed the verbatim text straight
+  // --- at that column, so every answer that was not a bare number failed the cast — 31 of the 42
+  // --- answered in production — and because all six answers ride in ONE update, the rejected cast
+  // --- threw away that applicant's experience band, region, background and area with it.
+  // ---
+  // --- These are real production answers. Every one of them must resolve to null here, because a
+  // --- null is what keeps the verbatim column the only place the answer is kept and stops the
+  // --- numeric column from ever seeing a string again.
+  for (const notAFigure of [
+    "Negotiable",
+    "negotiable",
+    "15k",
+    "30 K",
+    "25 k to 30 k",
+    "15000-20000",
+    "20000:27000",
+    "28 to 35",
+    "30,000 EGP",
+    "10,000EGP",
+    "28000-35000 L.E",
+    "13,000 start up مع العمولات",
+    "13000:17000 negotiable",
+    "",
+    "   ",
+  ]) {
+    assert.equal(
+      parseDeclaredSalaryFigure(notAFigure),
+      null,
+      `"${notAFigure}" is not a bare figure and must never reach the numeric column`,
+    );
+  }
+  assert.equal(parseDeclaredSalaryFigure(null), null);
+  assert.equal(parseDeclaredSalaryFigure(undefined), null);
+
+  // --- A bare figure still fills the numeric column, so the workspace's salary cell and the merge
+  // --- borrow list keep working exactly as they did. Commas are the one tolerated flourish: they
+  // --- are the same number written another way, and Postgres would have rejected "25,000" too.
+  assert.equal(parseDeclaredSalaryFigure("12000"), 12000);
+  assert.equal(parseDeclaredSalaryFigure(" 12000 "), 12000);
+  assert.equal(parseDeclaredSalaryFigure("25,000"), 25000);
+  assert.equal(parseDeclaredSalaryFigure("12500.5"), 12500.5);
+
   // ── The menus must satisfy Meta's limits, or the message is a 400 and the flow dies silently ──
 
   assert.deepEqual(menuViolations(jobTitleMenu()), [], "the role menu must satisfy every Cloud API limit");
