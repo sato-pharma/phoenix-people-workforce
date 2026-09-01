@@ -336,3 +336,83 @@ commit is checked out — it only restores that commit's already-empty version.
 
 **Do not reintroduce a passphrase.** A shared one was removed 2026-07-31 (it sat in a committed file,
 so it authenticated nobody); approval belongs in the conversation, not in version control.
+
+## Section 3 was trimmed to its floor — 2026-09-01
+
+**What was done.** §3 went from **5,520 → 5,369 bytes, −151 B (2.7%)**, and a further **−69 B** came
+out of §2 where a §3 fact was stated a second time. `AGENTS.md` total **69,303 → 69,083, −220 B**.
+Invariants held: **241 bullets, 12 🔒, 15 🔴, 31 memory slugs — an identical slug set before and
+after**, and **all six Supabase project refs still appear**, including both dead ones. Proven by
+arming the guard first: removing `a-missing-table-answers-pgrst205-not-42p01` made
+`runMemoryIndexReachabilityTests` go RED; all three memory-index suites were green after restoring
+it.
+
+### Two duplicates, both resolved toward the fuller copy
+
+- **The `project_id` sentence** (−92). §3's project-ref table ended with *"**The `project_id`
+  argument is the only thing separating staging from production on every call.**"* — **verbatim** in
+  §8, where it is framed better: *"**The server name guarantees nothing** — the `project_id` argument
+  is the only thing separating staging from production on every call."* §8 is the Supabase section
+  and already points at *"all four in the §3 table"*, so the table now ends with *"Resolve with
+  `list_projects` before acting (§8)"* and the rule itself lives once, in the section about acting on
+  a database.
+- **The staging application bullet in §2** (−69). It carried the staging URL and the staging Supabase
+  ref, then said *"See §3."* — pointing at the §3 bullet that has all of that **plus** the service
+  name, the fact that its source tracks git branch `main` rather than the branch named `staging`, and
+  the verdict that it is safe as a real verification target. The §2 bullet keeps the corrective claim
+  that makes it worth a line at all — **there is a staging application *again*** — and defers the
+  detail.
+
+The staging URL still appears once in the file, and `cifwmndunmlxjhyjugxa` still appears once, in the
+project-ref table where it is identifiable next to the other three.
+
+### Four provenance dates
+
+Each is recorded in `docs/agents-incident-history.md`, checked before cutting:
+
+| Was | Now | B |
+| --- | --- | --- |
+| `served by Railway since 2026-08-01, no longer Cloud Run` | `served by Railway, no longer Cloud Run` | −17 |
+| `It tracks main directly (repointed 2026-08-13)` | `It tracks main directly` | −23 |
+| `Billing closed 2026-08-01` | `Billing is closed` | −8 |
+| `The head-of-line block is FIXED 2026-08-27` | `…is FIXED` | −11 |
+
+In every case the durable half is what a session acts on: *no longer Cloud Run*, *it tracks `main`
+but has silently drifted before*, *`BILLING_DISABLED`*, *fixed on all three drains*. §2.2 already
+requires a hook to be *"durable (never a count, a status or a date)"*.
+
+### What was deliberately left alone
+
+- **The project-ref table** (630 B including its two notes). It is the densest reference in the file
+  and the one thing standing between a session and running a migration against production because a
+  ref looked familiar. Four rows, two dead refs, and the note that **neither region nor org is a
+  guard** — three of the four projects are `eu-central-1`.
+- **The `cron-job.org` bullet** (792 B) and the **outbox drain** bullet (755 B), the two longest in
+  the section. Both are made of diagnosis traps rather than description: the 30 s platform cap that
+  the server survives, the mid-sweep snapshot that reads exactly like a truncated one, `attempted: 0`
+  not distinguishing idle from broken, and the deliberate never-email alarm. Every clause changes
+  what a session concludes from the same observation.
+- **The 13-day outbox silence** and **five stranded green PRs**. Both are measurements, which §2.2
+  normally treats as evidence — but these two are the entire reason the rule is believed, and each is
+  the number a session weighs a decision against.
+
+### The campaign is now complete
+
+| Section | Before | After | Yield |
+| --- | --- | --- | --- |
+| 2.1 Session-level traps | 19,789 | 19,060 | −729 (3.7%) |
+| 4 + 4.1 Standing owner rules | 14,264 | 13,995 | −269 (1.9%) |
+| 2.3 Production and approval hooks | 5,723 | 5,526 | −197 (3.4%) |
+| 5 Session/worktree safety | 5,838 | 5,696 | −142 (2.4%) |
+| 3 Stable Environment Facts | 5,520 | 5,369 | −151 (2.7%) |
+
+**Every section over 5KB has now been passed over, for 1,687 bytes across five passes.** The finding
+repeated in all five and is the one worth keeping: **the largest single cut was always a duplicate,
+never wording**, and wording alone never returned more than about 1% of a section. `AGENTS.md` is not
+verbose; it is occasionally redundant, and redundancy is findable mechanically — grep a distinctive
+clause and count the hits.
+
+**Do not open another editing pass.** What remains is the rules themselves, and the arithmetic has not
+changed: PR #2880 added 884 bytes in one commit, more than half of what five passes recovered. The
+only lever with a better rate is the displacement rule enforced when a hook is written — cue in
+`AGENTS.md`, account in `docs/`.
