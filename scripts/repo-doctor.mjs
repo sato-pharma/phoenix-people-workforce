@@ -105,6 +105,7 @@ import {
 } from "./memory-index-budget.mjs";
 import { classifyMemoryReachability, memoryReachabilityLines } from "./memory-index-reachability.mjs";
 import { countUnpushedCommits } from "./repo-doctor-unpushed.mjs";
+import { listArchiveRefs } from "./repo-doctor-archive-refs.mjs";
 
 const args = process.argv.slice(2);
 const deep = args.includes("--deep");
@@ -844,22 +845,14 @@ let autoloadedIndexBytes = null;
   console.log("");
   console.log("BRANCH ARCHIVES (local archive refs with no copy on origin)");
 
-  const archiveRefs = (
-    git([
-      "for-each-ref",
-      "--format=%(objectname) %(refname)",
-      "refs/deleted-branches/*",
-      "refs/heads/rescue/*",
-    ]) ?? ""
-  )
-    .split("\n")
-    .filter(Boolean)
-    .map((line) => {
-      const gap = line.indexOf(" ");
-      return { sha: line.slice(0, gap), ref: line.slice(gap + 1) };
-    });
+  // Patterns and parsing live in `repo-doctor-archive-refs.mjs` so a test can drive the REAL
+  // globs against a throwaway repo; this file runs its whole report at import time and cannot be
+  // imported from. `null` means git itself failed and must NOT read as "no archives".
+  const archiveRefs = listArchiveRefs();
 
-  if (archiveRefs.length === 0) {
+  if (archiveRefs === null) {
+    console.log("  -> COULD NOT READ local archive refs (git failed). Do NOT read this as clean.");
+  } else if (archiveRefs.length === 0) {
     console.log("  -> no local archive refs to check.");
   } else {
     // `?? null`, never `?? ""` — the trap this file already documents four times over. git()
