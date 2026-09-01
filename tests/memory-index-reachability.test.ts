@@ -188,52 +188,75 @@ export function runMemoryIndexReachabilityTests() {
   assert.match(brokenOnly, /1 broken pointer\(s\)/);
   assert.doesNotMatch(brokenOnly, /Every memory file is reachable/);
 
-  // ── 7. the convention this whole matcher rests on is real, in the live file ───────────────────
-  // Everything above is fixtures. This is the one assertion against the actual AGENTS.md: if a
-  // future rewrite stops naming memories as backticked slugs — switching to links, say — the
-  // matcher goes blind and every relocated hook silently reads as an orphan again.
+  // ── 7. the convention this whole matcher rests on is real, in the live files ────
+  // Everything above is fixtures. This is the assertion against the actual AGENTS.md: if a future
+  // rewrite stops naming memories as backticked slugs — switching to links, say — the matcher goes
+  // blind and every relocated hook silently reads as an orphan again.
   //
-  // FLOOR LOWERED 50 -> 15 on 2026-09-01, and the reason matters more than the number.
+  // THIS USED TO BE A COUNT, `slugs.size >= 50`, AND THE COUNT WAS THE WRONG INSTRUMENT. It went red
+  // on 2026-09-01 when the slug references were deliberately moved into docs/agents-memory-map.md,
+  // taking 8,916 bytes off a file `CLAUDE.md` re-sends on every request (75,406 — 66,490). Unique
+  // slugs fell 156 — 26 and main went red, but nothing was actually orphaned: repo-doctor measured
+  // 969 memory files, 952 index pointers, 18 reachable through AGENTS.md and ZERO orphans, because
+  // every relocated slug named a file `MEMORY.md` already links. The floor reported a defect that
+  // did not exist, and it failed for the exact change it should have been indifferent to.
   //
-  // The old floor was set against 137 slugs counted on 2026-08-29, "well below that so ordinary
-  // retirement never trips it". What tripped it was not retirement: #2862 compressed AGENTS.md and
-  // #2864 moved the duplicate slug references into docs/agents-memory-map.md, taking 8,108 bytes
-  // off EVERY request. Each PR was green on its own head and the pair turned `main` RED on merge —
-  // the count only collapses when both are present, which no per-PR run could see. Every open PR
-  // then inherited that red the moment it merged main, which is how this was found.
+  // (Three different byte figures were quoted for that relocation while it was being fixed — 6,921,
+  // 7,783 and 8,108 — and a stale slug count of 137 from 2026-08-29. The numbers above are the ones
+  // the repository actually yields; re-measure rather than copying any of the others forward.)
   //
-  // NOTHING BECAME UNREACHABLE: repo-doctor read 0 orphans before and after. The floor was
-  // measuring the old DUPLICATION, not reachability, and it now guards what it was always for —
-  // the CONVENTION existing at all. Measured on 2026-09-01: 26 backticked slugs remain in
-  // AGENTS.md and 149 are in the memory map, against a floor of 15.
+  // It was also measuring noise. Of the 26 matches left in AGENTS.md only 18 are memory slugs at
+  // all; the other 8 are `x-phoenix-role`, `europe-west4-drams3a`, `eu-central-1`, `overflow-x-auto`
+  // and friends — header names, regions and a CSS class that happen to be lowercase and hyphenated.
+  // A threshold over that mixture cannot say anything precise about memory reachability.
   //
-  // Do NOT raise it back by re-adding duplicate slugs — that is the footprint this repo just paid
-  // to remove, and it would demand slugs move BACK into the per-request cost the relocation was
-  // undertaken to shrink. The real per-memory guarantee is repo-doctor's live reachability scan,
-  // not a count; re-derive this number from its "reachable from AGENTS.md rather than the index"
-  // figure before ever changing it again.
+  // So the check is now the invariant itself, by NAME rather than by count, and it is strictly
+  // stronger than the floor it replaces. The map marks every memory whose ONLY pointer is AGENTS.md
+  // as "(inline — load-bearing)". Each of those MUST still be backticked in AGENTS.md: remove one
+  // without giving it an index line and that memory becomes unrecallable, which is the exact
+  // invisibility this whole file exists to prevent. A count could be satisfied by any 50 slugs; this
+  // cannot be satisfied by anything except the right ones.
+  //
+  // Do NOT restore a floor by re-adding duplicate slugs to AGENTS.md: that duplication is the
+  // footprint this repo just paid to remove, and the per-memory guarantee now lives in the
+  // by-name check below and in repo-doctor's live reachability scan — never in a count.
+  //
+  // NOT checked in the other direction, deliberately: "every AGENTS.md slug appears in the map"
+  // would fail on those same 8 non-memory strings, and widening the pattern to exclude them would
+  // put a second, drifting copy of the convention in this file.
+  const slugsIn = (text: string) =>
+    new Set(
+      [...text.matchAll(new RegExp(TICK + "([a-z0-9]+(?:-[a-z0-9]+){2,})" + TICK, "g"))].map((m) => m[1]),
+    );
+
   const agents = readFileSync(join(process.cwd(), "AGENTS.md"), "utf8");
-  const slugs = new Set(
-    [...agents.matchAll(new RegExp(TICK + "([a-z0-9]+(?:-[a-z0-9]+){2,})" + TICK, "g"))].map((m) => m[1]),
-  );
+  const slugs = slugsIn(agents);
   assert.ok(
-    slugs.size >= 15,
-    `AGENTS.md names only ${slugs.size} backticked slugs; the reachability matcher assumes that `
-      + "convention, so a collapse here means relocated memories are being reported as orphans",
+    slugs.size > 0,
+    "AGENTS.md names no backticked slugs at all; the reachability matcher assumes that convention, "
+      + "so a collapse here means relocated memories are being reported as orphans",
   );
 
-  // The bulk of the slugs now live in the memory map, and nothing else asserts they survived the
-  // move. Without this, deleting that file would leave section 7 perfectly green while ~149 hooks
-  // lost the only record of which memory backs them.
   const memoryMap = readFileSync(join(process.cwd(), "docs/agents-memory-map.md"), "utf8");
-  const mapped = new Set(
-    [...memoryMap.matchAll(new RegExp(TICK + "([a-z0-9]+(?:-[a-z0-9]+){2,})" + TICK, "g"))].map((m) => m[1]),
-  );
+  const loadBearing: string[] = [];
+  for (const line of memoryMap.split(/\r?\n/)) {
+    if (!/inline\s*[—-]\s*load-bearing/.test(line)) continue;
+    for (const slug of slugsIn(line)) loadBearing.push(slug);
+  }
+  // The marker is what makes the assertion below mean anything. If a rewrite drops the convention,
+  // `loadBearing` empties and the loop passes vacuously — green while saying nothing.
   assert.ok(
-    mapped.size >= 100,
-    `docs/agents-memory-map.md names only ${mapped.size} backticked slugs; that file is where the `
-      + "2026-09-01 relocation put them, so a collapse there loses the hook -> memory mapping "
-      + "entirely (AGENTS.md 2.2)",
+    loadBearing.length >= 10,
+    `docs/agents-memory-map.md marks only ${loadBearing.length} rows "(inline — load-bearing)"; that `
+      + "marker is the only record of which memories AGENTS.md is the ONLY pointer for, so losing it "
+      + "makes the check below vacuous rather than false",
+  );
+  assert.deepEqual(
+    loadBearing.filter((slug) => !slugs.has(slug)),
+    [],
+    "every memory the map marks load-bearing must still be named in AGENTS.md — each one listed here "
+      + "has had its last pointer removed and can no longer be recalled by anything (AGENTS.md 2.2, "
+      + "both halves or neither)",
   );
   assert.ok(
     slugs.has("tailwind-merge-strips-custom-named-font-sizes"),

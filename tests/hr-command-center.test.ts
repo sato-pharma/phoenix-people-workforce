@@ -25,6 +25,7 @@
  */
 
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import { getNavigationSections } from "../src/config/system-navigation.ts";
 import { HR_ROLE_BUNDLES, type HrBundleName } from "../src/lib/auth/hr-functions.ts";
@@ -80,12 +81,33 @@ function offeredHrefs(seat: HrBundleName): Set<string> {
 /**
  * Every source present and empty. The point is to exercise each builder's full path — a builder
  * that returns early on a missing source would otherwise emit none of its hrefs and the loop below
- * would pass by reading nothing. `deductions` needs the cast because its buckets are keyed by a
+ * would pass by reading nothing. `clearance` and `retention` were missing from this object until
+ * 2026-09-01, which is exactly that failure in miniature: the comment said "every source" while
+ * six tiles — three clearance figures on HR Operations' board and three retention ones on HR
+ * Advisory's — were never built and so never had their hrefs checked. Measured: the loop below
+ * read 31 tiles before those two keys were added and 37 after. (A seventh, "No Clearance Opened",
+ * is conditional on a non-empty `awaiting` and so is still unreached by an empty fixture.) Adding
+ * a source to SOURCES_BY_FUNCTION means adding it here too, or its tiles ship unchecked. `deductions` needs the cast because its buckets are keyed by a
  * category union this test has no reason to enumerate; `Object.values({})` is `[]` either way.
  */
 function emptySources(): HrCommandSources {
   return {
     attendanceExceptions: [],
+    clearance: {
+      awaiting: [],
+      checklists: [],
+      schemaReady: true,
+      stations: [],
+      stats: {
+        amountOutstanding: 0,
+        blockedStations: 0,
+        cancelled: 0,
+        open: 0,
+        overdue: 0,
+        ready: 0,
+        released: 0,
+      },
+    },
     contracts: {
       rows: [],
       summary: {
@@ -137,6 +159,23 @@ function emptySources(): HrCommandSources {
         totalApplications: 0,
         totalRequisitions: 0,
       },
+    },
+    retention: {
+      conversations: [],
+      rollup: [],
+      schemaReady: true,
+      stats: {
+        exitCount: 0,
+        exitCoveragePercent: null,
+        highRisk: 0,
+        openFollowUps: 0,
+        overdueFollowUps: 0,
+        regrettableExits: 0,
+        resignationsInWindow: 0,
+        stayCount: 0,
+        wouldRejoin: 0,
+      },
+      themes: [],
     },
     resignations: {
       employees: [],
@@ -381,4 +420,44 @@ export async function runHrCommandCenterTests() {
     `deductionsCategories holds only ${deductionsCategories.length} entries — the loop above is ` +
       "not checking a real vocabulary",
   );
+
+  // ── No tile prints a code where a name belongs ────────────────────────
+  {
+    // "Payroll Month" rendered `Number(monthKey.slice(5))`, so HR Operations' board carried a tile
+    // reading **9** in the same 30px black type as a queue depth — nine what? It is September,
+    // written as a code, on the one page in this product that is somebody's home screen. The
+    // owner's standing rule is human-readable names, never raw codes or ids.
+    //
+    // BOTH halves are asserted, because either alone passes while the screen stays wrong: the
+    // DATA must carry the name, and the COMPONENT must draw it. A `valueLabel` added to the tile
+    // and never consumed renders exactly the 9 it was added to remove.
+    const months = new Set([
+      "January", "February", "March", "April", "May", "June",
+      "July", "August", "September", "October", "November", "December",
+    ]);
+
+    const payroll = buildHrCommandGroups("HR Operations", emptySources())
+      .flatMap((group) => group.tiles)
+      .find((tile) => tile.key === "payroll-month");
+    if (!payroll) throw new Error("HR Operations lost her Payroll Month tile entirely");
+
+    assert.ok(
+      payroll.valueLabel !== undefined && months.has(payroll.valueLabel),
+      `the Payroll Month tile draws "${String(payroll.valueLabel)}" — it must carry the month's ` +
+        "NAME, not its number, which is what `value` already holds",
+    );
+    assert.equal(
+      Number.isFinite(payroll.value),
+      true,
+      "`value` stays the month number, so anything reading tiles numerically still works",
+    );
+
+    const component = readFileSync("src/components/hr/hr-command-center.tsx", "utf8");
+    assert.match(
+      component,
+      /\{tile\.valueLabel \?\? tile\.value\.toLocaleString\("en-US"\)\}/,
+      "MetricTile must PREFER valueLabel over the raw figure — a label the data carries and the " +
+        "component ignores renders the exact code this pin exists to remove",
+    );
+  }
 }

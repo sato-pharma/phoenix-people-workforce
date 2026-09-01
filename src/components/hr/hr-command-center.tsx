@@ -146,8 +146,12 @@ function MetricTile({ tile }: { tile: HrCommandTile }) {
       <div className="text-[9px] font-black uppercase leading-tight tracking-[0.14em] text-slate-500">
         {tile.label}
       </div>
-      <p className={`mt-4 text-3xl font-black leading-none tabular-nums ${toneClass}`}>
-        {tile.value.toLocaleString("en-US")}
+      {/* `valueLabel` wins when the fact has no unit — see HrCommandTile.valueLabel. `break-words`
+          because a label is prose and prose is the thing that can outgrow its box: the owner's
+          golden rule is that this page never scrolls sideways, and wrapping is the permitted
+          answer. `tabular-nums` is inert on letters, so one class list serves both cases. */}
+      <p className={`mt-4 break-words text-3xl font-black leading-none tabular-nums ${toneClass}`}>
+        {tile.valueLabel ?? tile.value.toLocaleString("en-US")}
       </p>
       <p className="mt-2 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">
         {tile.sub}

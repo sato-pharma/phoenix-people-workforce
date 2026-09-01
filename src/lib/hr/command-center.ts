@@ -82,6 +82,20 @@ export type HrCommandTile = {
   sub: string;
   tone: HrCommandTone;
   value: number;
+  /**
+   * Rendered in the figure's place when the fact is NOT a count.
+   *
+   * Exactly one tile needs this and it needs it badly: "Payroll Month" printed
+   * `Number(monthKey.slice(5))`, so HR Operations' board carried a tile reading **9** in the same
+   * 30px black type as a queue depth. Nine what? It is September — a name written as a code, on a
+   * page whose every other figure is a countable thing, and the owner's standing rule is that a
+   * screen shows human-readable names and never raw codes.
+   *
+   * `value` is still populated, so anything that sorts or sums tiles keeps working; this only
+   * changes what is DRAWN. Reach for it when a tile's fact has no unit — never to dress a real
+   * count up as prose.
+   */
+  valueLabel?: string;
 };
 
 /**
@@ -289,6 +303,14 @@ function currentCairoMonthKey(): string {
   return `${year}-${String(month).padStart(2, "0")}`;
 }
 
+/** "September" for the running Cairo month. See `HrCommandTile.valueLabel` for why. */
+function currentCairoMonthLabel(): string {
+  const { year, month } = currentCairoDateParts();
+  return new Intl.DateTimeFormat("en-GB", { month: "long", timeZone: "UTC" }).format(
+    new Date(`${year}-${String(month).padStart(2, "0")}-01T00:00:00Z`),
+  );
+}
+
 /** Whole days between an ISO timestamp and now, floored at 0. Null input means "no age". */
 function daysSince(iso: string | null | undefined): number {
   if (!iso) return 0;
@@ -493,7 +515,12 @@ const TILES_BY_FUNCTION: Record<
     return [
       tile("deductions-pending", "Awaiting Decision", pendingCandidates, "this month", "/hr/admin/payroll-management", pendingCandidates > 0 ? "amber" : "emerald"),
       tile("deductions-ready", "Ready To Publish", willPublishCandidates, "this month", "/hr/admin/payroll-management"),
-      tile("payroll-month", "Payroll Month", Number(currentCairoMonthKey().slice(5)), "running period", "/hr/admin/payroll-management"),
+      // The month is the one fact on this page with no unit, so it is the one tile that draws a
+      // NAME. `value` still holds the month number for anything that reads tiles numerically.
+      {
+        ...tile("payroll-month", "Payroll Month", Number(currentCairoMonthKey().slice(5)), "running period", "/hr/admin/payroll-management"),
+        valueLabel: currentCairoMonthLabel(),
+      },
     ];
   },
 
@@ -1033,7 +1060,7 @@ export async function getHrCommandCenterData(
     groups: buildHrCommandGroups(seat, loaded),
     personal: await personalPromise,
     seat,
-    tasks: buildHrTodayTasks(loaded),
+    tasks: buildHrTodayTasks(loaded, seat),
     unavailableSources: failures.map((key) => SOURCE_LABELS[key]).sort(),
   };
 }

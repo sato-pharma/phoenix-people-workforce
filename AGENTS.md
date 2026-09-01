@@ -13,12 +13,13 @@ hook here and the account in `docs/` — never the account here.** §2.1 and §4
 of essays once already, at a measured cost of roughly 13,000 tokens of context on every request; the
 2026-09-01 consolidation moved that back into `docs/` where it belongs.
 
-**Memory slugs live in [docs/agents-memory-map.md](docs/agents-memory-map.md), not here — except 18.**
-`scripts/memory-index-reachability.mjs` scans `AGENTS.md` only, never `docs/`, and matches the
-**backticked** form, so a slug removed from here orphans that memory **unless `MEMORY.md` also links
-it**. Only 18 memories depend on this file; those stay inline and are marked in the map. The other
-133 references moved out on 2026-09-01 (6,921 bytes off every request). **Re-run the classifier
-before removing any slug** — which are load-bearing changes as the index does.
+**Memory slugs live in [docs/agents-memory-map.md](docs/agents-memory-map.md), not here — except the
+ones that map marks `(inline — load-bearing)`.** `scripts/memory-index-reachability.mjs` scans
+`AGENTS.md` only, never `docs/`, and matches the **backticked** form, so a slug removed from here
+orphans that memory **unless `MEMORY.md` also links it**. Those marked slugs are the ones that depend
+on this file; the rest moved out on 2026-09-01 (6,921 bytes off every request). **The map is the
+authority — re-run the classifier before removing any slug**, since which are load-bearing changes as
+the index does.
 
 ## 0. How this repo is actually run (calibrate to this)
 
@@ -153,6 +154,8 @@ Which memory file backs which hook is in
 - **RLS on with no `authenticated` grant is the NORM here — 222 of 308 tables — not a defect class to sweep.**
 - **ONE `auth.users` row with `banned_until = 'infinity'` 500s the ENTIRE GoTrue admin API** — page-shaped, so a small `per_page` probe passes. Retire with the app's finite `876000h`.
 - **`au.f_monthly_achievement` SERVES A PRECOMPUTED ROLLUP, and its fingerprint covers the CONFIG surface — NOT the sales data.** So repairing an import or rollup row changes NOTHING on Sales vs Target or its five sibling surfaces: no error, no staleness marker, the old number just keeps coming. Run `au.f_refresh_monthly_attribution(period)` after ANY sales-row repair, and diff stored against live first so the refresh is a check, not a hope. `attribution-rollup-fingerprint-ignores-the-sales-data`
+- **The ATS data model carries four traps that each read as normal.** The offer chain was live in the registry with a HOLE past `approved_at`; the `ats_candidate_*` children have NO FK and one is a VIEW; a CV RE-READ never wrote what it read (`applied_fields` is NOT the writer); and `medical_rep` reads 12 fields where `universal` reads 38. **NEVER raw-SQL `national_id`/`email`/`phone`** — the `_norm` dedupe index is app-maintained. `offer-chain-was-live-in-the-registry-with-a-hole-past-approval` · `ats-candidate-children-one-has-no-fk-and-one-is-a-view` · `cv-extraction-reads-governorate-but-never-applies-it` · `the-medical-rep-cv-schema-reads-12-fields-universal-reads-38`
+- **A CV import OVERWROTE a candidate's whole identity — detect it with a per-candidate SENDER COUNT, where healthy is 1.** The allowlist holds an INBOX, not a sender, so never resolve a CV by sender; and the CV file lives in `ats_files`, NOT `cv_external_url`, which is empty for EVERY candidate and reads `NO FILE`. `a-cv-import-overwrote-a-candidates-whole-identity` · `the-email-import-allowlist-holds-an-inbox-not-a-sender` · `cv-file-is-in-ats-files-not-cv-external-url`
 
 **Probing, attributing and reporting production**
 
@@ -268,6 +271,7 @@ incidents, and the diagnosis traps that nearly sent each the wrong way — is in
 - **`expense_claims` is the ONE live RLS read path in production.** Put a precondition in every production `WHERE` when another session shares the queue, and remember **"Log out everywhere" is THREE writes.**
 - 🔴 **Production has NO PITR — 7 daily physical backups are the whole recovery story**, and healthy WAL archiving is not PITR. Granularity is one day and the restore unit is the whole database: say so plainly before any bulk or destructive production change, and **never restore a daily backup in place** — it rolls back everything since roughly 07:30 Cairo that day.
 - 🔴 **Payroll NEVER reads `social_insurance_status` — the `social_insurance_wage` column ALONE decides the statutory filing, and NEITHER statutory figure reduces take-home pay.** The status is display-only, so register and filing disagree **both ways, silently** — **audit by querying both columns, never by status.** Both are reported as `governmentalDeductions` yet are **absent from the deductions that feed payable**: the company absorbs them, so setting a wage costs the employee NOTHING. Never warn the owner a wage will cost someone money. `payroll-reads-the-insurance-wage-never-the-status` · `social-insurance-and-tax-never-reduce-take-home-pay`
+- 🔴 **A HELD payroll row is DROPPED at publish, silently.** `publishToPayslips` filters `!onHold`: no `salary_record` is written and **nothing records the out-of-system payment**. **HELD = OWED PART 2 ONLY** — paying full net double-pays part 1, so validate part 2 against PUBLISHED rows. `payroll_eligible=false` is NORMAL for executives. Read `hold_reason` and never re-raise. `a-held-payroll-row-is-dropped-at-publish-and-leaves-no-trace`
 
 **Which environment the code thinks it is in**
 
@@ -372,6 +376,7 @@ numbers, production measurements, the owner's own words at length — is in
 - 🔴 **The mailbox-monitor app-password entry is `___`, never "Phoenix".** The monitor UI must never print the word Phoenix anywhere in that instruction. `mailbox-monitor-app-password-entry-is-three-underscores-never-phoenix`
 - 🔒 **Turbify CANNOT issue app passwords centrally — the owner is STAYING, so do not re-pitch a migration.** There is no API and never was. Employee mailboxes are **unmonitorable at scale**, and it is SETTLED — costed at ~$420/month for 60 seats on 2026-08-28, answered *"NO LEAVE ME AS I AM NOW."* `turbify-cannot-issue-app-passwords-centrally-owner-stays`
 - 🔴 **A password reset does NOT revoke a Turbify mailbox — the app passwords survive it.** It locks the WEB mailbox only; every phone and Outlook client keeps sending and receiving company mail, and the control panel shows nothing wrong. **Both steps are required** — reset AND delete the app passwords, or delete/suspend the mailbox. Never tell the owner (or write in a UI) that a reset closes a leaver's mail access. Tracked in `public.mailbox_offboarding_tasks`, where a row is an **attestation**, never an observation. `a-password-reset-does-not-revoke-a-turbify-mailbox`
+- **Four sales-attribution facts that silently change a number.** EZ `1011654` splits EVENLY across Cairo+Giza CNS with the roster FROZEN per month; the closing reads the DISTRIBUTOR-PRODUCT rollup, so `fact_rollup` alone is INVISIBLE; a case-duplicate `line_area_map` row DOUBLED a whole line; and in the owner's sheets "Stores" means `Office` while "UPA" is a channel. `ez-is-credited-evenly-across-cairo-giza-cns-reps` · `closing-reads-distributor-product-rollup-not-fact-rollup` · `a-case-duplicate-line-map-row-doubled-a-whole-line` · `owner-sheet-vocabulary-stores-is-office-upa-is-a-channel`
 
 ### 4.1 Marketing customer, venue and licence validation
 
