@@ -53,8 +53,9 @@ export function closingFileName(parts: {
   /**
    * "xlsx" (the default) or "xlsm". The premium workbook is the owner's macro-enabled engine and
    * can be served either way: everything a reader uses — the pivots, the slicers, the Rep Card
-   * dropdown — works without macros, and only the four print buttons are VBA. A .xlsm attachment is
-   * frequently stripped by mail systems, so the extension has to follow what was actually built.
+   * dropdown — works without macros. The VBA is 36 buttons across 11 drawings, and the .xlsx build
+   * removes them rather than ship shortcuts that cannot fire. A .xlsm attachment is frequently
+   * stripped by mail systems, so the extension has to follow what was actually built.
    */
   extension?: "xlsm" | "xlsx";
   kind?: "details" | "premium";

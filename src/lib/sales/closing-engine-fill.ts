@@ -227,9 +227,11 @@ function stampRows(spec: SheetSpec, sheetName: string, firstRow: number, records
 export type FillOptions = {
   /**
    * Emit a macro-free `.xlsx`. Everything that makes the engine an engine — the tables, all three
-   * pivots, both slicers, the Rep Card — works without macros; only the two buttons are VBA, and
-   * Excel refuses to run those in any file that arrived from a browser or an inbox anyway. So the
-   * file people are sent should not be macro-enabled: it gains them nothing and costs deliverability.
+   * pivots, both slicers, the Rep Card — works without macros; the VBA is 36 buttons across 11
+   * drawings (not two — the count was wrong here while they were shipping broken), and Excel refuses
+   * to run those in any file that arrived from a browser or an inbox anyway. So the file people are
+   * sent should not be macro-enabled: it gains them nothing and costs deliverability. The buttons go
+   * with it — see `dropMacroButtons`.
    */
   macroFree?: boolean;
 };
@@ -637,5 +639,48 @@ async function stripMacros(zip: JSZip): Promise<void> {
     const workbook = await workbookFile.async("string");
     // workbookPr/@codeName ties the workbook to the VBA project that is no longer here.
     zip.file("xl/workbook.xml", workbook.replace(/\s+codeName="[^"]*"/g, ""));
+  }
+
+  await dropMacroButtons(zip);
+}
+
+/**
+ * One whole drawing anchor. Anchors never nest, so the first closing tag is this one's — and the
+ * backreference keeps `oneCellAnchor` from being closed by a `twoCellAnchor`'s tag.
+ */
+const DRAWING_ANCHOR = /<xdr:(twoCellAnchor|oneCellAnchor|absoluteAnchor)\b[^>]*>[\s\S]*?<\/xdr:\1>/g;
+
+/** A shape wired to a VBA routine. `macro=""` is the ordinary empty form and is not one. */
+const WIRED_TO_A_MACRO = /<xdr:sp\b[^>]*\smacro="[^"]+"/;
+
+/**
+ * Take the buttons out with the VBA they call.
+ *
+ * THIS IS THE REPAIR PROMPT, the second time. Removing `vbaProject.bin` left 36 shapes across 11
+ * drawings still carrying `macro="PhxRefresh"`, `macro="PhxExportPdf"`, `macro="PhxRegionButton"`
+ * and the rest — the name of a routine in a project that is no longer in the package. Excel answers
+ * a macro reference in a macro-free part with "We found a problem with some content in ...", and on
+ * repair drops the drawing: the reader loses the emblem and the whole button bar anyway, having
+ * first been told his file is damaged. It is what Excel itself does on Save As .xlsx, which is why
+ * a workbook that made this trip through Excel never shows the defect.
+ *
+ * Nothing that works is lost. The buttons were shortcuts to things Excel does natively — Data ▸
+ * Refresh All (and the pivot cache is `refreshOnLoad` regardless), the pivot's own ± expand and
+ * collapse, a slicer's clear-filter ×, Ctrl+P ▸ PDF — and in the macro-free build they had been
+ * inert since the day it shipped. Only the `.xlsm` is a working button bar, and this never runs
+ * for it.
+ *
+ * Removal is by whole anchor, not by blanking the attribute: a button that still looks like a
+ * button and does nothing is the worse failure, and it is the one a reader reports. The emblem
+ * picture rides in its own anchor with an `r:embed`, carries no macro, and stays — which is the
+ * reason this cuts per anchor rather than per drawing.
+ */
+async function dropMacroButtons(zip: JSZip): Promise<void> {
+  for (const file of zip.file(/^xl\/drawings\/drawing\d+\.xml$/)) {
+    const drawing = await file.async("string");
+    const stripped = drawing.replace(DRAWING_ANCHOR, (anchor) =>
+      WIRED_TO_A_MACRO.test(anchor) ? "" : anchor,
+    );
+    if (stripped !== drawing) zip.file(file.name, stripped);
   }
 }

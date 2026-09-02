@@ -266,6 +266,40 @@ export async function runClosingEngineExportTests() {
     "stripping the macros must not strip the pivots — they are what the .xlsx is for",
   );
 
+  // ── No button may outlive the VBA it calls ──────────────────────────────────────────────────
+  // Removing vbaProject.bin was not the whole strip: it left 36 shapes across 11 drawings still
+  // naming a routine — macro="PhxExportPdf", macro="PhxRegionButton" and the rest — in a package
+  // that no longer holds one. Excel answers a macro reference in a macro-free part with "We found
+  // a problem with some content in ...", and repairs it by dropping the drawing, so the reader
+  // loses the emblem and the button bar anyway after being told his file is damaged. It is
+  // schema-VALID, which is why checkWorkbook below passes the broken build too.
+  const drawingsOf = async (book: Buffer): Promise<Record<string, string>> => {
+    const opened = await JSZip.loadAsync(book);
+    const out: Record<string, string> = {};
+    for (const file of opened.file(/^xl\/drawings\/drawing\d+\.xml$/)) out[file.name] = await file.async("string");
+    return out;
+  };
+  const wiredButtons = (drawings: Record<string, string>) =>
+    Object.values(drawings).reduce((n, xml) => n + (xml.match(/<xdr:sp\b[^>]*\smacro="[^"]+"/g) ?? []).length, 0);
+
+  const macroDrawings = await drawingsOf(macroBook);
+  const plainDrawings = await drawingsOf(plainBook);
+  assert.ok(wiredButtons(macroDrawings) > 0, "the .xlsm is the build that KEEPS the button bar — it has the VBA");
+  assert.equal(wiredButtons(plainDrawings), 0, "a macro-free .xlsx may not name a VBA routine: that IS the repair prompt");
+
+  // The cut is per anchor, not per drawing, and these are what it must leave standing. The emblem
+  // rides in its own anchor with an r:embed; the two slicers ride inside an mc:AlternateContent.
+  // Cutting a drawing wholesale would take all three, and every sheet would lose its logo.
+  assert.equal(Object.keys(plainDrawings).length, 11, "no drawing part may be removed, only anchors inside one");
+  for (const [name, xml] of Object.entries(plainDrawings)) {
+    assert.match(xml, /r:embed="/, `${name}: the emblem picture must survive the cut`);
+    assert.equal(
+      (xml.match(/<mc:AlternateContent\b/g) ?? []).length,
+      (macroDrawings[name].match(/<mc:AlternateContent\b/g) ?? []).length,
+      `${name}: the slicers ride in mc:AlternateContent and must survive the cut`,
+    );
+  }
+
   const cacheDefinition = await zip.file("xl/pivotCache/pivotCacheDefinition1.xml")!.async("string");
   assert.match(cacheDefinition, /<worksheetSource[^>]*name="SalesData"/, "the cache reads the TABLE, not a fixed range");
   assert.ok(!/June/.test(cacheDefinition), "no month name may be baked into the cache — it is filled every month");

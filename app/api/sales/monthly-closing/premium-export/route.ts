@@ -203,9 +203,11 @@ export async function POST(request: Request) {
         "Cache-Control": "no-store",
         "Content-Disposition": `attachment; filename="${fileName}"`,
         // .xlsx by default. Everything a reader touches — the pivots, the slicers, the Rep Card
-        // dropdown — works without macros; only the four print buttons are VBA, and Excel does both
-        // of their jobs natively. A macro-enabled attachment is frequently stripped by mail systems,
-        // and Mark-of-the-Web makes Excel refuse the macros outright for anyone who downloaded it.
+        // dropdown — works without macros. The VBA is 36 buttons across 11 drawings, every one a
+        // shortcut to something Excel does natively, so the .xlsx build removes them: a shape still
+        // naming a routine the package no longer holds is what made Excel offer to repair the file.
+        // A macro-enabled attachment is frequently stripped by mail systems, and Mark-of-the-Web
+        // makes Excel refuse the macros outright for anyone who downloaded it.
         "Content-Type": macros
           ? "application/vnd.ms-excel.sheet.macroEnabled.12"
           : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
