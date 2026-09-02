@@ -41,6 +41,10 @@ function todayIso() {
   return currentCairoDateOnlyIso();
 }
 
+// monthLabel and dayLabel below all render DATE-ONLY values (a month off a synthetic `Date.UTC`, and a
+// plan day's `activity_date`), which `new Date` parses as UTC midnight. UTC here is CORRECT and must
+// stay: it is what stops the calendar day being shifted by a zone offset. None of these is an instant —
+// do not "fix" them to Cairo.
 function monthLabel(year: number, month: number) {
   return new Intl.DateTimeFormat("en", { month: "long", year: "numeric", timeZone: "UTC" }).format(
     new Date(Date.UTC(year, month - 1, 1)),
@@ -300,6 +304,8 @@ export function PlanningCalendar({
 
   const weekRangeLabel = useMemo(() => {
     if (weekDays.length === 0) return "";
+    // DATE-ONLY (the week's day keys, "YYYY-MM-DD"), parsed as UTC midnight — same reason as
+    // monthLabel/dayLabel above: UTC is what stops the calendar day being shifted by a zone offset.
     const fmt = (value: string) =>
       new Intl.DateTimeFormat("en", { day: "numeric", month: "short", timeZone: "UTC" }).format(
         new Date(`${value}T00:00:00Z`),

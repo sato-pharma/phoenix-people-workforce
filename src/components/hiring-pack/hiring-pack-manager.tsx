@@ -516,7 +516,11 @@ function factsPayloadFromForm(state: FormState) {
   };
 }
 
-/** A stored date, shown the way the owner reads dates. */
+/** A stored date, shown the way the owner reads dates.
+ *
+ * DATE-ONLY (hire / birth / contract dates, all `date` columns), pinned to UTC midnight. UTC
+ * here is CORRECT and must stay: it is what stops the calendar day being shifted by a zone
+ * offset. formatStamp below is the true INSTANT and correctly renders in Cairo. */
 function formatDate(iso: string | null): string {
   if (!iso) return "Not recorded";
   const parsed = new Date(`${iso}T00:00:00Z`);

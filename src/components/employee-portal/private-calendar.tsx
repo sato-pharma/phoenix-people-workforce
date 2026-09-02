@@ -59,6 +59,11 @@ function formatSyncedAt(date: Date) {
   }).format(date);
 }
 
+// monthLabel, dayLabel and reportDateLabel below all render DATE-ONLY values (a month off a synthetic
+// `Date.UTC`, and calendar-item `date` columns), which `new Date` parses as UTC midnight. UTC here is
+// CORRECT and must stay: it is what stops the calendar day being shifted by a zone offset. None of
+// these is an instant — do not "fix" them to Cairo.
+// (formatSyncedAt above IS an instant, which is why it alone renders in Africa/Cairo.)
 function monthLabel(year: number, month: number) {
   return new Intl.DateTimeFormat("en", { month: "long", year: "numeric", timeZone: "UTC" }).format(
     new Date(Date.UTC(year, month - 1, 1)),

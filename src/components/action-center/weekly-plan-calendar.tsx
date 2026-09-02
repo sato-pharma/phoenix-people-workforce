@@ -20,6 +20,9 @@ const PLAN_ACTIVITY_COLORS: Record<string, string> = {
 };
 const PLAN_COACHING_COLOR = "bg-fuchsia-50 text-fuchsia-800 border-fuchsia-200";
 
+// DATE-ONLY (a plan day's `activity_date`, a `date` column), which `new Date` parses as UTC midnight.
+// UTC here is CORRECT and must stay: it is what stops the calendar day being shifted by a zone offset.
+// Not an instant — do not "fix" this one to Cairo.
 function planDayParts(iso: string) {
   const [y, m, d] = iso.split("-").map(Number);
   const dt = new Date(Date.UTC(y, (m || 1) - 1, d || 1));

@@ -7,10 +7,17 @@ import { cn } from "@/lib/utils";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import type { CrmIntegrityData, CrmIntegrityRow } from "@/lib/crm-integrity/types";
 
-// Vendor CRM timestamps (visit_date / check_date) are zone-less Cairo wall-clock stored as +00,
-// so their clock reading is ALREADY Cairo-local. Render as-is with timeZone "UTC" — this is a
-// client component, so without it the browser's own zone (Cairo) would double-add the offset and
-// show check-in times 2–3h late.
+// Both formatters below render with timeZone "UTC", for two DIFFERENT reasons — neither is a
+// missed Cairo conversion, and "fixing" either one shifts a real number.
+//
+// formatDate takes `visit_date`, a plain `date` column: UTC midnight is what stops the calendar
+// day being shifted by a zone offset.
+//
+// formatTime takes `check_date`, a `timestamptz` holding a VENDOR timestamp — iReports360 sends
+// zone-less Africa/Cairo wall-clock which is stored verbatim (see the VENDOR TIMESTAMP INVARIANT
+// in src/lib/crm/sync.ts), so its clock reading is ALREADY Cairo-local. This is a client
+// component, so rendering it in Africa/Cairo would double-add the offset and show check-in times
+// 2–3h late.
 function formatDate(value: string) {
   return new Date(value).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" });
 }

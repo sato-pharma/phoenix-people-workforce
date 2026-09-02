@@ -102,6 +102,9 @@ function StatusPill({ status }: { status: string }) {
   );
 }
 
+// DATE-ONLY (stored `date` columns, pinned to UTC midnight — the name is about the reader, not the
+// zone), which `new Date` parses as UTC midnight. UTC here is CORRECT and must stay: it is what stops
+// the calendar day being shifted by a zone offset. Not an instant — do not "fix" this one to Cairo.
 function cairoDate(iso: string) {
   const parsed = new Date(`${iso}T00:00:00Z`);
   if (Number.isNaN(parsed.getTime())) return iso;

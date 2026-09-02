@@ -488,6 +488,9 @@ function money(value: number) {
   return new Intl.NumberFormat("en", { maximumFractionDigits: 2, minimumFractionDigits: 0 }).format(value);
 }
 
+// DATE-ONLY (a "YYYY-MM" period key, rendered off a synthetic `Date.UTC`), which `new Date` parses as
+// UTC midnight. UTC here is CORRECT and must stay: it is what stops the calendar day being shifted by a
+// zone offset. Not an instant — do not "fix" this one to Cairo.
 function monthLabel(monthKey: string) {
   const [year, month] = monthKey.split("-").map(Number);
   if (!year || !month) return monthKey;

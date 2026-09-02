@@ -115,6 +115,9 @@ const zoneOptions: { label: string; value: CoachingPerformanceZone }[] = [
   { label: "Excellence Zone", value: "excellence_zone" },
 ];
 
+// DATE-ONLY (month NAMES off a synthetic `Date.UTC`, not a stored value), which `new Date` parses as
+// UTC midnight. UTC here is CORRECT and must stay: it is what stops the calendar day being shifted by a
+// zone offset. Not an instant — do not "fix" this one to Cairo.
 const monthOptions = Array.from({ length: 12 }, (_, index) => ({
   label: new Intl.DateTimeFormat("en-US", { month: "long", timeZone: "UTC" }).format(new Date(Date.UTC(2026, index, 1))),
   value: String(index + 1),

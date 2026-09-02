@@ -23,6 +23,9 @@ const MONTH_LABELS = [
   "July", "August", "September", "October", "November", "December",
 ];
 
+// DATE-ONLY (a calendar day, a `date` column), which `new Date` parses as UTC midnight. UTC here is
+// CORRECT and must stay: it is what stops the calendar day being shifted by a zone offset. Not an
+// instant — do not "fix" this one to Cairo.
 function weekday(dateIso: string) {
   return new Intl.DateTimeFormat("en-US", { timeZone: "UTC", weekday: "short" }).format(new Date(`${dateIso}T00:00:00Z`));
 }

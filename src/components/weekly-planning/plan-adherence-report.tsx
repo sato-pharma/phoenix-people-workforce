@@ -47,6 +47,9 @@ const VERDICT_TONE: Record<PlanAdherenceVerdict, string> = {
  */
 const MISS_ORDER: readonly PlanAdherenceVerdict[] = ["partner_alone", "no_trace"];
 
+// DATE-ONLY (a plan day's `activity_date`, a `date` column), which `new Date` parses as UTC midnight.
+// UTC here is CORRECT and must stay: it is what stops the calendar day being shifted by a zone offset.
+// Not an instant — do not "fix" this one to Cairo.
 function dayLabel(dateIso: string | null): string {
   if (!dateIso) return "No date";
   const date = new Date(`${dateIso}T00:00:00Z`);

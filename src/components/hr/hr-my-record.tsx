@@ -40,7 +40,12 @@ import {
 
 import type { HrPersonalRecord } from "@/lib/hr/command-center";
 
-/** Cairo-formatted day. The owner reports every time in Africa/Cairo, never raw UTC. */
+/** A stored calendar day, e.g. "12 Mar 2023".
+ *
+ * DATE-ONLY (hire / contract / probation dates, all `date` columns), pinned to UTC midnight,
+ * so `timeZone: "UTC"` here is CORRECT and must stay — it is what stops the calendar day being
+ * shifted by a zone offset. The owner's "always Africa/Cairo" rule governs INSTANTS; a date
+ * column has no time-of-day to place in a zone. Do not "fix" this one to Cairo. */
 function cairoDate(iso: string): string {
   const parsed = new Date(`${iso}T00:00:00Z`);
   if (Number.isNaN(parsed.getTime())) return iso;

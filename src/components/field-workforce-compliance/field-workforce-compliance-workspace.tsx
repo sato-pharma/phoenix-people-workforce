@@ -178,6 +178,9 @@ function formatRawValue(value: unknown) {
   return String(value);
 }
 
+// DATE-ONLY (an attendance/visit day, a `date` column — displayDateTime below takes a real instant),
+// which `new Date` parses as UTC midnight. UTC here is CORRECT and must stay: it is what stops the
+// calendar day being shifted by a zone offset. Not an instant — do not "fix" this one to Cairo.
 function displayDate(value: string | null) {
   if (!value) return "-";
   const date = new Date(`${value}T00:00:00Z`);
@@ -209,6 +212,9 @@ function formatSyncAge(ageHours: number) {
   return `${days} day${days === 1 ? "" : "s"} ago`;
 }
 
+// DATE-ONLY (a calendar day, a `date` column), which `new Date` parses as UTC midnight. UTC here is
+// CORRECT and must stay: it is what stops the calendar day being shifted by a zone offset. Not an
+// instant — do not "fix" this one to Cairo.
 function weekday(value: string) {
   return new Intl.DateTimeFormat("en-US", {
     timeZone: "UTC",

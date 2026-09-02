@@ -103,6 +103,9 @@ function computeDatePreset(preset: DatePreset): { from: string; to: string } {
   }
 }
 
+// DATE-ONLY (a report window bound, e.g. "2026-08-23"), which `new Date` parses as UTC midnight. UTC
+// here is CORRECT and must stay: it is what stops the calendar day being shifted by a zone offset. Not
+// an instant — do not "fix" this one to Cairo.
 function formatDate(value: string) {
   return new Intl.DateTimeFormat("en", {
     day: "2-digit",

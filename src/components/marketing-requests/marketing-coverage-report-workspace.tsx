@@ -74,6 +74,9 @@ function money(value: number) {
 function percent(ratio: number) {
   return `${Math.round((Number.isFinite(ratio) ? ratio : 0) * 100)}%`;
 }
+// DATE-ONLY (a "YYYY-MM" period key off a synthetic `Date.UTC`), which `new Date` parses as UTC
+// midnight. UTC here is CORRECT and must stay: it is what stops the calendar day being shifted by a
+// zone offset. Not an instant — do not "fix" this one to Cairo.
 function formatPeriod(period: string | null): string {
   if (!period || !/^\d{4}-\d{2}$/.test(period)) return "not yet available";
   const [year, month] = period.split("-").map(Number);

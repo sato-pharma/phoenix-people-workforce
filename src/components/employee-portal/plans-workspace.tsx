@@ -564,6 +564,10 @@ function dateRange(startDate: string, endDate: string) {
   return result;
 }
 
+// formatDate, formatDayNumber, formatMonthYear and formatDayName below all render DATE-ONLY values (a
+// plan row's `activity_date`, a `date` column), which `new Date` parses as UTC midnight. UTC here is
+// CORRECT and must stay: it is what stops the calendar day being shifted by a zone offset. None of
+// these is an instant — do not "fix" them to Cairo.
 function formatDate(value: string) {
   return new Intl.DateTimeFormat("en", {
     day: "2-digit",

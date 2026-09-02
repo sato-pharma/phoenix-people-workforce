@@ -37,6 +37,10 @@ const TABS: ReadonlyArray<{ id: TabId; label: string }> = [
   { id: "team", label: "Team Visits" },
 ];
 
+// DATE-ONLY (`ireports360_visits.visit_date` and the window bounds — a `date` column, unlike the vendor
+// timestamptz handled by formatVendorLocal below), which `new Date` parses as UTC midnight. UTC here is
+// CORRECT and must stay: it is what stops the calendar day being shifted by a zone offset. Not an
+// instant — do not "fix" this one to Cairo.
 function formatDateOnly(value: string | null): string {
   if (!value) return "—";
   const date = new Date(value);

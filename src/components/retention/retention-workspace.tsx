@@ -59,6 +59,9 @@ const RISK_CLASS: Record<RetentionRisk, string> = {
   high: "border-rose-300 bg-rose-50 text-rose-800",
 };
 
+// DATE-ONLY (hire / exit dates, sliced to 10 chars first), which `new Date` parses as UTC midnight. UTC
+// here is CORRECT and must stay: it is what stops the calendar day being shifted by a zone offset. Not
+// an instant — do not "fix" this one to Cairo.
 function formatDate(value: string | null): string {
   if (!value) return "Not set";
   const parsed = Date.parse(`${value.slice(0, 10)}T00:00:00Z`);

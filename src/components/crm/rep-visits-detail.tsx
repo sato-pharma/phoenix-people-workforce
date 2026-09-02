@@ -50,7 +50,11 @@ function sessionText(row: RepVisitRow): string {
   return REP_VISIT_SESSION_LABELS.get(row.session) ?? "—";
 }
 
-/** "Sat 02 Aug" — the weekday matters, because the KPI only counts Sat–Wed. */
+/** "Sat 02 Aug" — the weekday matters, because the KPI only counts Sat–Wed.
+ *
+ * DATE-ONLY (`ireports360_visits.visit_date`, a `date` column), pinned to UTC midnight. UTC
+ * here is CORRECT and must stay: shifting it to Cairo would move a late visit onto the next
+ * weekday and silently change which days the KPI counts. */
 function dayText(dateIso: string): string {
   if (!dateIso) return "—";
   const parsed = new Date(`${dateIso}T00:00:00Z`);
