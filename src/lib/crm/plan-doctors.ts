@@ -23,6 +23,17 @@
  * a verifying manager can be shown. Those rows carry `contact: null` and the table says so in the
  * columns the contact list would have filled, rather than dropping them or leaving five cells blank.
  *
+ * ## What the rep ACTUALLY did rides on the same row
+ *
+ * Added 2026-09-03. A manager verifying last week's plan could read every doctor on it and had no
+ * way, on this screen, to see which of them the rep reached — the answer lived on a different board
+ * behind a different filter. Each row now carries a {@link PlanRowVerdict} and each day a
+ * {@link PlanDayActual}, both from crm/plan-actuals.ts, which holds the rules and the reasons.
+ *
+ * OPTIONAL, AND SILENT WHEN ABSENT. Pass no actuals and every verdict is `unknown`, which the table
+ * renders as no mark at all — exactly how this board read before. A visits mirror that was briefly
+ * unreachable must never be able to mark a whole week "not seen".
+ *
  * ## Undated rows sort LAST, not first
  *
  * The mirror reads them nulls-first, which is right for a flat list ordered by date. Grouped by
@@ -32,6 +43,13 @@
  */
 
 import { formatPlanDay } from "@/lib/crm/plan-week";
+import {
+  planDayActual,
+  planRowVerdict,
+  type PlanActuals,
+  type PlanDayActual,
+  type PlanRowVerdict,
+} from "@/lib/crm/plan-actuals";
 import type { PlanEntryRow } from "@/lib/crm/plan-board";
 import type { RepsListContact, RepsListForRep } from "@/lib/crm/reps-list";
 
@@ -51,6 +69,14 @@ export type PlanDoctorRow = {
   entry: PlanEntryRow;
   /** Stable React key. The same doctor can appear on two days, so the date is part of it. */
   key: string;
+  /**
+   * What the rep actually did about this planned call.
+   *
+   * `unknown` when no actuals were supplied, when the row names no contact, or when the CRM left it
+   * undated — and the table shows NOTHING for it, which is the only honest rendering of "cannot
+   * say". See crm/plan-actuals.ts.
+   */
+  verdict: PlanRowVerdict;
 };
 
 export type PlanDoctorDay = {
@@ -59,6 +85,8 @@ export type PlanDoctorDay = {
   /** "Sat 30 Aug", or "No day recorded". Never a raw ISO string — the owner's standing rule. */
   label: string;
   rows: PlanDoctorRow[];
+  /** How the day went. Null when there are no actuals to judge it by, or the day has no date. */
+  actual: PlanDayActual | null;
 };
 
 /**
@@ -104,6 +132,8 @@ function compareWithinDay(left: PlanDoctorRow, right: PlanDoctorRow): number {
 export function buildPlanDoctorDays(
   entries: readonly PlanEntryRow[],
   byContactId: ReadonlyMap<number, PlanDoctorContact>,
+  /** What actually happened in this plan's window. Omit — or pass null — for no marks at all. */
+  actuals: PlanActuals | null = null,
 ): PlanDoctorDay[] {
   const days = new Map<string, PlanDoctorDay>();
 
@@ -112,7 +142,7 @@ export function buildPlanDoctorDays(
     const key = date ?? "";
     let day = days.get(key);
     if (!day) {
-      day = { date, label: date ? formatPlanDay(date) : "No day recorded", rows: [] };
+      day = { actual: null, date, label: date ? formatPlanDay(date) : "No day recorded", rows: [] };
       days.set(key, day);
     }
     day.rows.push({
@@ -120,10 +150,17 @@ export function buildPlanDoctorDays(
       contact: (entry.contactCrmId == null ? null : byContactId.get(entry.contactCrmId)) ?? null,
       entry,
       key: `${entry.contactCrmId ?? "x"}:${date ?? "x"}:${entry.ampm ?? "x"}:${index}`,
+      verdict: planRowVerdict(actuals, { contactCrmId: entry.contactCrmId ?? null, date }),
     });
   }
 
-  for (const day of days.values()) day.rows.sort(compareWithinDay);
+  for (const day of days.values()) {
+    day.rows.sort(compareWithinDay);
+    // Summed from the rows' OWN verdicts rather than re-derived from the actuals, so the day total and
+    // the marks beside it can never disagree — a heading that says "8 of 11 seen" over nine green
+    // chips is the kind of contradiction that costs a feature its credibility outright.
+    day.actual = planDayActual(actuals, day.date, day.rows);
+  }
 
   // Undated last; see the header. Everything else in calendar order, which for an ISO date is the
   // same as string order — no Date is constructed, so no timezone can shift a day here.

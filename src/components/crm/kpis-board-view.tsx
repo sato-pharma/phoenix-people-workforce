@@ -607,13 +607,13 @@ function CallRateTable({ context, rows }: { context: ViewContext; rows: KpiRepRo
             <td className={NUM}>
               {rate(row.amRate)}
               <span className="mt-0.5 block text-phx-3xs font-semibold leading-4 text-slate-500">
-                {row.amVerified} verified
+                {row.amVerified} verified · {rate(row.amReportedRate)} reported
               </span>
             </td>
             <td className={NUM}>
               {rate(row.pmRate)}
               <span className="mt-0.5 block text-phx-3xs font-semibold leading-4 text-slate-500">
-                {row.pmVerified} verified
+                {row.pmVerified} verified · {rate(row.pmReportedRate)} reported
               </span>
             </td>
             <MeasureCell
@@ -854,6 +854,14 @@ function RepCard({ rank, row }: { rank?: number; row: KpiRepRow }) {
           </div>
         ))}
       </dl>
+      {row.hasCallRate ? (
+        <p className="mt-1.5 text-phx-3xs leading-4 text-slate-500">
+          <span className="font-black uppercase tracking-[0.1em] text-slate-400">Reported</span>{" "}
+          <span className="tabular-nums">
+            {rate(row.amReportedRate)} AM · {rate(row.pmReportedRate)} PM
+          </span>
+        </p>
+      ) : null}
       {flags.length > 0 ? (
         <div className="mt-2 flex flex-wrap gap-1">
           {flags.map((flag) => (

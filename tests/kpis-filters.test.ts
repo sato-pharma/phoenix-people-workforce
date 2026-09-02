@@ -60,6 +60,12 @@ function row(overrides: Partial<KpiRepRow> = {}): KpiRepRow {
     pmVerified: 200,
     amRate: 2,
     pmRate: 10,
+    // Reported ABOVE verified, and deliberately not equal to it: a fixture where the two match
+    // would let a bug that returned the verified figure for both halves pass unnoticed here.
+    amReported: 60,
+    pmReported: 240,
+    amReportedRate: 3,
+    pmReportedRate: 12,
     totalCalls: 240,
     campaignCalls: 0,
     campaignShare: 0,

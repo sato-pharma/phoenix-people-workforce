@@ -45,7 +45,11 @@
 // reps and nobody else's. The nav config hiding a link is UX only.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { getDoctorCoverageScope, type DoctorCoverageScope } from "@/lib/crm/doctor-coverage-scope";
+import {
+  getDoctorCoverageScope,
+  isAgentInScope,
+  type DoctorCoverageScope,
+} from "@/lib/crm/doctor-coverage-scope";
 import {
   applyKpiFilters,
   buildKpiFacets,
@@ -131,6 +135,17 @@ export type KpiRepRow = {
   /** verified AM calls / working days. Null when the period has no working days. */
   amRate: number | null;
   pmRate: number | null;
+  /**
+   * What the rep REPORTED, verified or not — the same two numbers Reps Plans prints as "Reported".
+   *
+   * Carried beside the verified pair rather than instead of it, because the GAP between them is the
+   * thing this board exists to show: a rep at 10 reported and 4 verified is a different conversation
+   * from one at 4 and 4, and until now a manager had to open a second screen to tell them apart.
+   */
+  amReported: number;
+  pmReported: number;
+  amReportedRate: number | null;
+  pmReportedRate: number | null;
   /** Every call the rep logged, including the unverifiable campaign ones. */
   totalCalls: number;
   campaignCalls: number;
@@ -239,6 +254,10 @@ export type KpisBoard = {
     pmVerified: number;
     amRate: number | null;
     pmRate: number | null;
+    amReported: number;
+    pmReported: number;
+    amReportedRate: number | null;
+    pmReportedRate: number | null;
     campaignCalls: number;
     totalCalls: number;
     plannedDoctors: number;
@@ -324,20 +343,11 @@ export function buildKpiPodium(rows: readonly KpiRepRow[]): KpiPodium {
  * table (`aaa` -> `aa`), so a renamed seat would drop out of its own manager's scope. That is what
  * tests/hrid-normalizer-ratchet.test.ts exists to stop, and it caught this file. */
 
-/**
- * Whether this rep is inside the viewer's reach.
- *
- * FAILS CLOSED on a missing hr id. A row whose identity did not resolve cannot be PROVEN to belong
- * to this manager's team, and the cost of the two mistakes is not symmetric: hiding a rep from his
- * own manager is a visible gap he will report, while showing him somebody else's rep is a silent
- * confidentiality breach nobody notices. Company scope short-circuits and keeps everything.
- */
-function isInScope(scope: DoctorCoverageScope, agentHrId: string | null): boolean {
-  if (scope.kind === "company") return true;
-  if (scope.kind === "none") return false;
-  if (agentHrId == null) return false;
-  return scope.agentHrIds.some((allowed) => canonicalHrIdKey(allowed) === agentHrId);
-}
+/* The scope check moved to crm/doctor-coverage-roles.ts as `isAgentInScope` on 2026-09-03, when
+ * Reps Plans acquired viewer scoping and needed exactly the same one. It was private here, so that
+ * board would otherwise have had to write its own "is this rep on your team" comparison — and a
+ * second implementation of that is precisely the drift that got Doctor Coverage retired. The
+ * fails-closed reasoning and the hr-id canonicalisation notes moved with it. */
 
 const pct = (numerator: number, denominator: number): number =>
   denominator > 0 ? Math.round((numerator / denominator) * 100) : 0;
@@ -402,6 +412,10 @@ export function joinKpiRows(input: {
     pmVerified: 0,
     amRate: null,
     pmRate: null,
+    amReported: 0,
+    pmReported: 0,
+    amReportedRate: null,
+    pmReportedRate: null,
     totalCalls: 0,
     campaignCalls: 0,
     campaignShare: 0,
@@ -454,6 +468,10 @@ export function joinKpiRows(input: {
     row.pmVerified = rate.pm.verified;
     row.amRate = rate.am.verifiedRate;
     row.pmRate = rate.pm.verifiedRate;
+    row.amReported = rate.am.total;
+    row.pmReported = rate.pm.total;
+    row.amReportedRate = rate.am.totalRate;
+    row.pmReportedRate = rate.pm.totalRate;
     row.totalCalls = rate.am.total + rate.pm.total + rate.unspecified;
     row.campaignCalls = rate.am.campaign + rate.pm.campaign;
     row.campaignShare = rate.campaignShare;
@@ -505,7 +523,7 @@ export function joinKpiRows(input: {
 
   // Scope is applied AFTER the join, never before: a rep whose hr id appears on only one of the two
   // sources would otherwise be judged on the source that happens to be missing it.
-  const scoped = rows.filter((row) => isInScope(scope, row.agentHrId));
+  const scoped = rows.filter((row) => isAgentInScope(scope, row.agentHrId));
   scoped.sort((left, right) => left.repName.localeCompare(right.repName));
   return scoped;
 }
@@ -573,6 +591,10 @@ export async function getKpisBoard(input: {
       pmVerified: 0,
       amRate: null,
       pmRate: null,
+      amReported: 0,
+      pmReported: 0,
+      amReportedRate: null,
+      pmReportedRate: null,
       campaignCalls: 0,
       totalCalls: 0,
       plannedDoctors: 0,
@@ -652,6 +674,8 @@ export async function getKpisBoard(input: {
       accumulator.reps += 1;
       accumulator.amVerified += row.amVerified;
       accumulator.pmVerified += row.pmVerified;
+      accumulator.amReported += row.amReported;
+      accumulator.pmReported += row.pmReported;
       accumulator.campaignCalls += row.campaignCalls;
       accumulator.totalCalls += row.totalCalls;
       accumulator.plannedDoctors += row.plannedDoctors;
@@ -667,6 +691,8 @@ export async function getKpisBoard(input: {
       reps: 0,
       amVerified: 0,
       pmVerified: 0,
+      amReported: 0,
+      pmReported: 0,
       campaignCalls: 0,
       totalCalls: 0,
       plannedDoctors: 0,
@@ -711,6 +737,10 @@ export async function getKpisBoard(input: {
       pmVerified: totals.pmVerified,
       amRate: denominator > 0 ? totals.amVerified / denominator : null,
       pmRate: denominator > 0 ? totals.pmVerified / denominator : null,
+      amReported: totals.amReported,
+      pmReported: totals.pmReported,
+      amReportedRate: denominator > 0 ? totals.amReported / denominator : null,
+      pmReportedRate: denominator > 0 ? totals.pmReported / denominator : null,
       campaignCalls: totals.campaignCalls,
       totalCalls: totals.totalCalls,
       plannedDoctors: totals.plannedDoctors,

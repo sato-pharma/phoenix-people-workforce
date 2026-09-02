@@ -24,6 +24,7 @@ import {
   FileSpreadsheet,
   FileUp,
   Fingerprint,
+  Footprints,
   Gauge,
   HeartPulse,
   Hourglass,
@@ -1417,6 +1418,16 @@ const employeePortalNavigationSectionSeeds = [
       // grants nothing: getDoctorCoverageScope inside getKpisBoard decides whose reps each viewer
       // sees, and it is asked on every load.
       { href: "/employee-portals/kpis", icon: TrendingUp, label: "KPIs", permissions: [{ resource: "crm_visits", action: "read" }], roles: ["Medical Rep", "District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager"] },
+      // Reps Plans — the portal twin of /admin/reps-plans, added 2026-09-03 when the board was
+      // widened past Super Admin. THE TWIN IS THE POINT: these two seats are portal-mode, and
+      // app/(admin)/layout.tsx redirects them out of the admin shell before that page's own gate
+      // could run, so widening the admin role list alone would have been inert.
+      //
+      // REPS_PLANS_PORTAL_ROLES verbatim (src/lib/crm/reps-plans-access.ts), which with
+      // crm_visits:read is the enforcing gate. Narrower than KPIs directly above on purpose: this
+      // board is a performance judgement on named individuals, so it goes to the two seats that
+      // supervise one — an NSM resolves to a whole line, which is a league table nobody asked for.
+      { href: "/employee-portals/reps-plans", icon: Footprints, label: "Reps Plans", permissions: [{ resource: "crm_visits", action: "read" }], roles: ["Regional Manager", "District Manager"] },
     ],
     label: "Sales Operations",
   },
@@ -3524,11 +3535,14 @@ export const crmPageItems: readonly AdminToolsPageItem[] = [
     roles: ["Super Admin", "CEO", "Regional Manager", "District Manager"],
   },
   {
-    // SUPER ADMIN ONLY — it names every rep and prints how much of their reported work nothing can
-    // prove, so it stays on one account. ("Rep Doctor Lists", which carried the same reasoning and
-    // stood in this group, was retired 2026-08-28 — see the note above.) The enforcing gate is
-    // canAccessRepsPlans (src/lib/crm/reps-plans-access.ts) plus crm_visits:read, both asked by the
-    // page; this list is UX only.
+    // SUPER ADMIN ONLY IN THIS SHELL. The board was widened on 2026-09-03 to the Regional and
+    // District Managers who supervise the reps it scores, but both are portal seats and reach it at
+    // /employee-portals/reps-plans instead — app/(admin)/layout.tsx redirects a portal-mode viewer
+    // out of here before this page's own gate could run, so listing them on this entry would show a
+    // row that redirects. ("Rep Doctor Lists", which carried the same reasoning and stood in this
+    // group, was retired 2026-08-28 — see the note above.) The enforcing gate is canAccessRepsPlans
+    // (src/lib/crm/reps-plans-access.ts) plus crm_visits:read, both asked by the page, and
+    // getDoctorCoverageScope decides whose reps come back; this list is UX only.
     //
     // Sits in the CRM group rather than under "Weekly / Monthly Plans" (/admin/weekly-plans,
     // Phoenix's own planning module) because it scores the CRM's recorded visits, not Phoenix's plans.

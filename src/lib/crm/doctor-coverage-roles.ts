@@ -11,8 +11,52 @@
  * none of them scoped the data at all. Anything that needs to know the answer imports it from here.
  */
 
+import { canonicalHrIdKey } from "@/lib/hr-id";
+
 /** How wide a role's reach is. `company` sees every rep; the rest resolve against the org tree. */
 export type DoctorCoverageScopeBasis = "company" | "line" | "team" | "self";
+
+/**
+ * A resolved viewer scope. RESOLVED by doctor-coverage-scope.ts, which is server-only; declared
+ * HERE, with {@link isAgentInScope}, because applying a scope is pure and the boards that apply one
+ * must not drag the Supabase admin client along with it.
+ *
+ * That is the same rule this file's header states for the role list, and it is not theoretical:
+ * crm/reps-plans.ts is imported by a "use client" component, so a VALUE import of the resolver from
+ * there would put the admin client in a browser bundle. The type alone is erased at compile time;
+ * this function is not.
+ */
+export type DoctorCoverageScope =
+  | { kind: "company"; basis: "company"; label: string }
+  /** Explicit allow-list of `agent_hr_id`s. Never empty — an empty resolution returns `none`. */
+  | { kind: "agents"; basis: Exclude<DoctorCoverageScopeBasis, "company">; agentHrIds: string[]; label: string }
+  | { kind: "none"; reason: string };
+
+/**
+ * Whether one rep is inside a viewer's reach. THE scope check — every board that resolves a
+ * `DoctorCoverageScope` applies it through this function rather than writing the comparison itself.
+ *
+ * FAILS CLOSED on a missing hr id. A row whose identity did not resolve cannot be PROVEN to belong
+ * to this manager's team, and the two mistakes do not cost the same: hiding a rep from his own
+ * manager is a visible gap he reports within the day, while showing him somebody else's rep is a
+ * silent confidentiality breach nobody notices at all.
+ *
+ * BOTH sides go through `canonicalHrIdKey`, which is idempotent — so it is safe on a caller whose
+ * rows are already canonical and correct on one whose rows are raw. Production hr ids are MIXED
+ * CASE and a case-sensitive comparison under-returns silently rather than erroring: one `.eq` once
+ * hid 28% of reps' own orders, and a row matching nobody reads here as "this rep is not on your
+ * team", which is the most convincing possible way to be wrong. Writing `.trim().toLowerCase()`
+ * inline would be this comparison MINUS the legacy alias table (`aaa` -> `aa`), so a renamed seat
+ * would drop out of its own manager's scope — tests/hrid-normalizer-ratchet.test.ts exists to catch
+ * exactly that, and it has caught it before.
+ */
+export function isAgentInScope(scope: DoctorCoverageScope, agentHrId: string | null | undefined): boolean {
+  if (scope.kind === "company") return true;
+  if (scope.kind === "none") return false;
+  const key = canonicalHrIdKey(agentHrId ?? null);
+  if (!key) return false;
+  return scope.agentHrIds.some((allowed) => canonicalHrIdKey(allowed) === key);
+}
 
 /** Whole-company reach: staff/executive seats with no territory of their own. */
 const COMPANY_ROLES = ["Super Admin", "CEO", "SFE Manager", "Marketing Manager"] as const;

@@ -291,6 +291,8 @@ import {
   runKpiTabTests,
   runKpisBoardJoinTests,
 } from "./kpis-board.test.ts";
+import { runCrmMedicalRepTests } from "./crm-medical-rep.test.ts";
+import { runCrmPlanActualsTests } from "./crm-plan-actuals.test.ts";
 import {
   runKpiAttainmentAndIdentityTests,
   runKpiBandTests,
@@ -1769,6 +1771,8 @@ await runTest("crm call rate (Sat-Wed denominator, AM 2 / PM 10 targets, campaig
 await runTest("KPIs call rate holidays (a national holiday takes the week from five days to four)", runKpiCallRateHolidayTests);
 await runTest("KPIs board join (keyed on the CRM agent id, and scope fails closed on an unresolved hr id)", runKpisBoardJoinTests);
 await runTest("KPIs tabs and month picker (an unrecognised tab widens to summary)", runKpiTabTests);
+await runTest("crm medical rep rule (seat outranks a stale job title; scope fails closed and is case-blind)", runCrmMedicalRepTests);
+await runTest("crm plan vs actual (a moved day is not a miss, today is not a failure, a failed read claims nothing)", runCrmPlanActualsTests);
 await runTest("KPIs filters narrow only (no parameter combination can add a row the scope gate dropped)", runKpiFilterNarrowingTests);
 await runTest("KPIs bands (a rep with no plan is never filed as Behind)", runKpiBandTests);
 await runTest("KPIs sorting (nulls park LAST in both directions, so worst-first surfaces a real miss)", runKpiSortTests);

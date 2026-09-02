@@ -147,6 +147,20 @@ export function RepsPlansBoardView({ basePath, board }: { basePath: string; boar
         }
       >
         <div className="space-y-4 p-5">
+          {/* WHOSE REPS, first — before the rule, before the numbers.
+              Rendered only for a NARROWED viewer: the owner sees the company and needs no caption
+              saying so, and a banner on every load is a banner nobody reads. For a district manager
+              it is load-bearing, because a board showing eleven names where he has heard it shows a
+              hundred is indistinguishable from an outage, and every figure below — the tiles, the
+              company rate, "reps on both" — is then his team's rather than the company's. */}
+          {board.scopeLabel ? (
+            <p className="border-l-[3px] border-l-sky-500 bg-sky-50 px-4 py-2.5 text-xs font-semibold text-slate-700">
+              Showing <span className="font-black text-slate-900">{board.scopeLabel}</span>. Every number on this page
+              — the rates, the targets met and the counts below — is measured over{" "}
+              {board.reps.length === 1 ? "that one rep" : "those reps only"}, never the company.
+            </p>
+          ) : null}
+
           {/* THE RULE, in one line, above the numbers it governs. The two rates are the owner's own
               standard and the page is unreadable without it. */}
           <p className="border-l-[3px] border-l-orange-500 bg-orange-50 px-4 py-2.5 text-xs font-semibold text-slate-700">

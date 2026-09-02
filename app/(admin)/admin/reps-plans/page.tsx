@@ -5,9 +5,17 @@
 // check-ins prove. The rules live in src/lib/crm/call-rate.ts (pure) and the shaping in
 // src/lib/crm/reps-plans.ts; this page only wires the fetch to the board.
 //
-// SUPER ADMIN ONLY for now. The role list is NOT maintained here — it lives in
-// src/lib/crm/reps-plans-access.ts, so the page and the nav entry cannot drift apart on who may
-// open it.
+// SUPER ADMIN ONLY, and that is a fact about THIS SHELL rather than about the board. The role
+// list is NOT maintained here — it lives in src/lib/crm/reps-plans-access.ts, so the page and the
+// nav entry cannot drift apart on who may open it. The Regional and District Managers added there
+// on 2026-09-03 are portal seats: app/(admin)/layout.tsx redirects them out of this shell before
+// this page's gate could run, so they reach the identical board through the twin at
+// /employee-portals/reps-plans.
+//
+// The scope is resolved and passed even so. Super Admin resolves to company-wide, so it changes
+// nothing here — which is exactly why it must be passed rather than omitted: an omitted scope is
+// company-wide too, and the two are indistinguishable until the day a narrower seat reaches this
+// file.
 //
 // Month and rep ride in the URL, so every change re-runs the gate server-side (same posture as Rep
 // Doctor Lists next door).
@@ -17,6 +25,7 @@ import { RepsPlansBoardView } from "@/components/crm/reps-plans-board";
 import { canAccess } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { loadCallRateReport, loadJobTitlesByHrId, loadRepNamesByHrId } from "@/lib/crm/call-rate-service";
+import { getDoctorCoverageScope } from "@/lib/crm/doctor-coverage-scope";
 import { loadOrgPlacementTree } from "@/lib/crm/org-placement-data";
 import { cairoTodayIso } from "@/lib/crm/dates";
 import { buildRepsPlansBoard, repsPlansRange, repsPlansWeeks, resolveRepsPlansMonth } from "@/lib/crm/reps-plans";
@@ -102,6 +111,12 @@ export default async function RepsPlansPage({ searchParams }: PageProps) {
     );
   }
 
+  // WHOSE reps. The same resolver the KPIs board asks, so a manager's reach cannot differ between
+  // the two screens, and NOT wrapped in a catch: a scope that failed to resolve must never fall
+  // through to company-wide. getDoctorCoverageScope answers `company` for this shell's one role
+  // without touching the directory at all, so there is nothing here to fail.
+  const scope = await getDoctorCoverageScope(access);
+
   const board = buildRepsPlansBoard(report, {
     geography: { line: params?.line ?? null, region: params?.region ?? null },
     isCurrentMonth: range.isCurrentMonth,
@@ -110,6 +125,7 @@ export default async function RepsPlansPage({ searchParams }: PageProps) {
     range,
     repKey: params?.rep ?? null,
     repNameByHrId,
+    scope,
     tree,
     weekOptions,
   });

@@ -20,6 +20,11 @@ import {
 import { TableSearchInput } from "@/components/ui/sortable-table";
 import { polishAddress, polishAddressText } from "@/lib/crm/address-polish";
 import type { DoctorListRow } from "@/lib/crm/contact-lists";
+import {
+  PLAN_VERDICT_LABEL,
+  PLAN_VERDICT_MEANING,
+  type PlanRowVerdict,
+} from "@/lib/crm/plan-actuals";
 import type { PlanDoctorDay, PlanDoctorRow } from "@/lib/crm/plan-doctors";
 import { classifyCrmContactSpeciality, type CrmContactKind } from "@/lib/crm/contact-taxonomy";
 import {
@@ -1399,6 +1404,39 @@ export function RepsListContacts({
  * ---------------------------------------------------------------------------------------------- */
 
 /** The day's own heading — the brick heading's shape, so the two tabs read as one board. */
+/**
+ * WHAT THE REP ACTUALLY DID about one planned call.
+ *
+ * Renders NOTHING for `upcoming` and `unknown`, which is the whole discipline of this mark. A grey
+ * "unknown" badge on a row nothing can be said about reads as a data fault and sends somebody
+ * looking for one; a red mark on a day that has not happened yet is simply a lie. Silence is the
+ * honest rendering of both, and it is also what this board showed before the mark existed.
+ *
+ * "Seen another day" is deliberately not a failure colour. Reps reshuffle a week's route constantly
+ * and the work was still done — calling that a miss is the fastest way to make managers stop
+ * believing the red ones.
+ */
+const VERDICT_CLASS: Record<PlanRowVerdict, string> = {
+  missed: "border-rose-300 bg-rose-50 text-rose-700",
+  moved: "border-amber-300 bg-amber-50 text-amber-700",
+  unknown: "",
+  upcoming: "",
+  visited: "border-emerald-300 bg-emerald-50 text-emerald-700",
+};
+
+function VerdictChip({ verdict }: { verdict: PlanRowVerdict }) {
+  const label = PLAN_VERDICT_LABEL[verdict];
+  if (!label) return null;
+  return (
+    <span
+      className={`mt-0.5 inline-block border px-1.5 py-0.5 text-phx-3xs font-black uppercase tracking-[0.1em] ${VERDICT_CLASS[verdict]}`}
+      title={PLAN_VERDICT_MEANING[verdict] ?? undefined}
+    >
+      {label}
+    </span>
+  );
+}
+
 function PlanDayHeading({ day }: { day: PlanDoctorDay }) {
   const dated = day.date != null;
   const doctors = new Set(day.rows.map((row) => row.entry.contactCrmId ?? row.entry.contactName)).size;
@@ -1417,11 +1455,34 @@ function PlanDayHeading({ day }: { day: PlanDoctorDay }) {
         )}
       </div>
       {/* Calls and doctors are counted apart: a doctor planned AM and PM is one doctor and two
-          calls, and a single number here would have to be wrong about one of them. */}
-      <span className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">
-        {`${day.rows.length} ${day.rows.length === 1 ? "call" : "calls"} · ${doctors} ${
-          doctors === 1 ? "doctor" : "doctors"
-        }`}
+          calls, and a single number here would have to be wrong about one of them.
+
+          HOW THE DAY WENT sits beside them, and only once the day has ended. `day.actual` is null
+          when the visits could not be read at all — an unreachable mirror must not be able to
+          summarise a week as unworked — and `upcoming` covers today and every day still ahead,
+          where there is nothing yet to report.
+
+          The CAMPAIGN count is printed whenever there is one, because a campaign call names no
+          doctor and can therefore satisfy no planned row: without it, a rep who spent the whole day
+          on a campaign reads as a rep who did nothing. */}
+      <span className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">
+        <span>
+          {`${day.rows.length} ${day.rows.length === 1 ? "call" : "calls"} · ${doctors} ${
+            doctors === 1 ? "doctor" : "doctors"
+          }`}
+        </span>
+        {day.actual && !day.actual.upcoming ? (
+          <span className={day.actual.missed > 0 ? "text-rose-600" : "text-emerald-700"}>
+            {`${day.actual.visited + day.actual.moved} of ${day.actual.planned} kept`}
+            {day.actual.moved > 0 ? ` · ${day.actual.moved} another day` : ""}
+            {day.actual.missed > 0 ? ` · ${day.actual.missed} not seen` : ""}
+          </span>
+        ) : null}
+        {day.actual && day.actual.campaignCalls > 0 ? (
+          <span className="text-sky-700">
+            {`${day.actual.campaignCalls} campaign ${day.actual.campaignCalls === 1 ? "call" : "calls"}`}
+          </span>
+        ) : null}
       </span>
     </div>
   );
@@ -1492,8 +1553,11 @@ function PlanDayTable({
                 </>
               }
               status={
-                <span className="text-phx-2xs font-black uppercase tracking-[0.1em] text-amber-700">
-                  Not on his list
+                <span className="flex flex-col items-end gap-1">
+                  <span className="text-phx-2xs font-black uppercase tracking-[0.1em] text-amber-700">
+                    Not on his list
+                  </span>
+                  <VerdictChip verdict={row.verdict} />
                 </span>
               }
               title={row.entry.contactName}
@@ -1524,8 +1588,11 @@ function PlanDayTable({
               </>
             }
             status={
-              <span className="text-phx-2xs font-black uppercase tracking-[0.1em] text-slate-400">
-                {LIST_LABEL[contact.listType]}
+              <span className="flex flex-col items-end gap-1">
+                <span className="text-phx-2xs font-black uppercase tracking-[0.1em] text-slate-400">
+                  {LIST_LABEL[contact.listType]}
+                </span>
+                <VerdictChip verdict={row.verdict} />
               </span>
             }
             title={contact.name}
@@ -1594,6 +1661,7 @@ function PlanDayTable({
                       ) : (
                         <OffListContactCell row={row} />
                       )}
+                      <VerdictChip verdict={row.verdict} />
                     </td>
                     <td className="break-words px-3 py-2 text-slate-600">{speciality(row)}</td>
                     <td
