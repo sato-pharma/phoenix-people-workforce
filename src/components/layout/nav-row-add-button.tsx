@@ -23,9 +23,16 @@
 //   · Serve the LOWER row too, via `target`. Pinning into one row releases the other, so pressing
 //     the lower "+" on a page already sitting up top MOVES it down rather than duplicating it.
 //
-// It offers only pages already present in the viewer's GATED sections, so like everything else in
-// this file's neighbourhood it can rearrange navigation but never introduce an href, and never
-// grants access to anything. The route handler's assertPermission remains the only boundary.
+// 2026-09-02 — it now offers EVERY page, not just the rail. The owner opened it and found "some
+// pages are compacted and not appearing… I want all pages to appear. Any page I have, appear in the
+// add and I can add it." Most admin modules are collapsed into a single hub button, so a list built
+// from the sidebar showed the hub and hid the dozen pages behind it. `getHubCardSections` folds
+// those cards back in — the same function Cmd+K uses, so the two sets cannot drift.
+//
+// It offers only pages the viewer's GATED sections and GATED hub cards already contain, so like
+// everything else in this file's neighbourhood it can rearrange navigation but never introduce an
+// href, and never grants access to anything. The route handler's assertPermission remains the only
+// boundary.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { Check, Plus, Search } from "lucide-react";

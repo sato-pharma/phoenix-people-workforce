@@ -14,8 +14,10 @@ import {
   MAX_LAYOUT_HREFS,
   PERSONAL_LAYOUT_VERSION,
   pinHrefToRow,
+  placeHrefInRow,
   placementOf,
   resolveRowSet,
+  rowPositionOf,
   resolveStripConflicts,
   rowsWithout,
   stripRowConflicts,
@@ -1054,6 +1056,134 @@ export function runNavigationPersonalLayoutTests() {
     assert.deepEqual(off.upperRow, [], "with nothing in it");
   }
 
+  // ── REORDERING — placeHrefInRow and rowPositionOf ────────────────────────────────────────────
+  // The write behind dragging a tab, the right-click move items, and the arrow-key reorder.
+  {
+    const before = layout({ upperRow: ["/admin/sales", "/admin/targets", "/admin/employees"] });
+    const moved = placeHrefInRow(before, null, "/admin/employees", "upperRow", 0);
+    assert.deepEqual(
+      moved.upperRow,
+      ["/admin/employees", "/admin/sales", "/admin/targets"],
+      "a page dragged to the front lands at the front",
+    );
+    assert.ok(isPersonalNavigationLayout(moved), "and the result is a document the PUT route accepts");
+  }
+
+  // The index means "where it ends up", not "where it was aimed before the old copy shifted things".
+  // Dragging the FIRST tab to index 2 of the same row must leave it third, not second — this is the
+  // off-by-one that makes a same-row drag land one slot early.
+  {
+    const before = layout({ upperRow: ["/admin/sales", "/admin/targets", "/admin/employees"] });
+    const moved = placeHrefInRow(before, null, "/admin/sales", "upperRow", 2);
+    assert.deepEqual(
+      moved.upperRow,
+      ["/admin/targets", "/admin/employees", "/admin/sales"],
+      "removal happens before insertion, so a same-row drag lands where the pointer is",
+    );
+  }
+
+  // Dragging ACROSS the two rows: it leaves the row it came from in the same write.
+  {
+    const before = layout({ upperRow: ["/admin/sales", "/admin/targets"], lowerRow: ["/admin/employees"] });
+    const moved = placeHrefInRow(before, null, "/admin/targets", "lowerRow", 0);
+    assert.deepEqual(moved.upperRow, ["/admin/sales"], "the source row releases it");
+    assert.deepEqual(moved.lowerRow, ["/admin/targets", "/admin/employees"], "the target row takes it at the index");
+  }
+
+  // An out-of-range index appends rather than throwing or dropping the page — a drag past the last
+  // tab is a real gesture, not an error.
+  {
+    const before = layout({ upperRow: ["/admin/sales"] });
+    assert.deepEqual(
+      placeHrefInRow(before, null, "/admin/targets", "upperRow", 99).upperRow,
+      ["/admin/sales", "/admin/targets"],
+      "an index past the end appends",
+    );
+    assert.deepEqual(
+      placeHrefInRow(before, null, "/admin/targets", "upperRow", -5).upperRow,
+      ["/admin/targets", "/admin/sales"],
+      "a negative index clamps to the front",
+    );
+  }
+
+  // THE SCOPING RULE, and the reason this is not pinHrefToRow with an index. Reordering inside a
+  // module that has its OWN rows must edit that override and leave the defaults — and every other
+  // module's override — alone. Getting this wrong reshuffles modules the owner is not looking at.
+  {
+    const before = layout({
+      upperRow: ["/admin/sales", "/admin/targets"],
+      moduleRows: {
+        people: { upperRow: ["/admin/employees", "/admin/organogram"], lowerRow: [] },
+        sales: { upperRow: ["/admin/targets", "/admin/sales"], lowerRow: [] },
+      },
+    });
+    const moved = placeHrefInRow(before, "people", "/admin/organogram", "upperRow", 0);
+    assert.deepEqual(
+      moved.moduleRows?.people?.upperRow,
+      ["/admin/organogram", "/admin/employees"],
+      "the module being looked at is the one that reorders",
+    );
+    assert.deepEqual(
+      moved.upperRow,
+      ["/admin/sales", "/admin/targets"],
+      "the DEFAULT rows are untouched — they are not what was on screen",
+    );
+    assert.deepEqual(
+      moved.moduleRows?.sales?.upperRow,
+      ["/admin/targets", "/admin/sales"],
+      "and another module's override is untouched — a drag is never company-wide",
+    );
+  }
+
+  // The mirror of the rule: inside a module with NO override, the defaults ARE what renders, so the
+  // defaults are what must change. Writing an override here would silently freeze this module away
+  // from the defaults as a side effect of a drag.
+  {
+    const before = layout({ upperRow: ["/admin/sales", "/admin/targets"] });
+    const moved = placeHrefInRow(before, "people", "/admin/targets", "upperRow", 0);
+    assert.deepEqual(moved.upperRow, ["/admin/targets", "/admin/sales"], "the defaults reorder");
+    assert.deepEqual(
+      moved.moduleRows ?? {},
+      {},
+      "and no override is invented — a drag must not create module scoping nobody asked for",
+    );
+  }
+
+  // Trap 1 again, from the new door: the strip resolves BEFORE the rows, so a page left in both
+  // renders in the strip and the row comes back empty. Placing must release the strip, exactly as
+  // pinning does — and the proof is that the page actually renders in the row afterwards.
+  {
+    const moved = placeHrefInRow(
+      layout({ strip: ["/admin/organogram"], upperRow: ["/admin/sales"] }),
+      null,
+      "/admin/organogram",
+      "upperRow",
+      0,
+    );
+    assert.deepEqual(moved.strip, [], "the strip releases the page");
+    assert.deepEqual(
+      applyPersonalLayout(gated, moved).upperRow.map((i) => i.href),
+      ["/admin/organogram", "/admin/sales"],
+      "so the row it was dragged into actually renders it",
+    );
+  }
+
+  // rowPositionOf answers "can this move left" once, for both the drag handler and the menu.
+  {
+    const doc = layout({ upperRow: ["/admin/sales", "/admin/targets"], lowerRow: ["/admin/employees"] });
+    assert.deepEqual(rowPositionOf(doc, null, "/admin/targets"), { row: "upperRow", index: 1 });
+    assert.deepEqual(rowPositionOf(doc, null, "/admin/employees"), { row: "lowerRow", index: 0 });
+    assert.equal(rowPositionOf(doc, null, "/admin/organogram"), null, "a page on neither row is null");
+    // It must read the SAME resolved set placeHrefInRow writes, or the menu offers moves that do
+    // nothing. Inside a module with an override, that is the override.
+    const scoped = layout({
+      upperRow: ["/admin/sales"],
+      moduleRows: { people: { upperRow: ["/admin/employees"], lowerRow: [] } },
+    });
+    assert.deepEqual(rowPositionOf(scoped, "people", "/admin/employees"), { row: "upperRow", index: 0 });
+    assert.equal(rowPositionOf(scoped, "people", "/admin/sales"), null, "the override REPLACES the defaults");
+  }
+
   // ── The "+" must be wired to those functions, and offer only gated pages ─────────────────────
   // Source-pinned for the same reason as the editor checks above: both components are JSX, which
   // the runner's type stripping cannot import.
@@ -1075,7 +1205,19 @@ export function runNavigationPersonalLayoutTests() {
     const rows = readFileSync("src/components/layout/horizontal-nav-rows.tsx", "utf8");
     assert.ok(
       /const addableFor = \(row: readonly NavigationSectionItem\[\]\)/.test(rows),
-      "the picker must be built from the GATED sections, so it can no more introduce an href than applyPersonalLayout can",
+      "the picker must be built from the GATED sets, so it can no more introduce an href than applyPersonalLayout can",
+    );
+    // 2026-09-02. The picker offers the whole catalogue — rail sections AND hub cards — and the
+    // same hub items are handed to applyPersonalLayout as its zone-only pool. Both lines, because
+    // either one alone is a defect: offering without resolving saves and shows nothing, and
+    // resolving without offering leaves the pages unreachable, which is the state he reported.
+    assert.ok(
+      rows.includes("mergeCatalogueSections(gated, hubSections)"),
+      "the + must offer the hub cards too — 'I want all pages to appear' (owner, 2026-09-02) — and MERGED by label, or the panel grows a second heading per module",
+    );
+    assert.ok(
+      rows.includes("applyPersonalLayout(gated, layout, activeModuleId, hubItems)"),
+      "and the same hub items must reach applyPersonalLayout, or adding one saves a 200 and moves nothing on screen",
     );
     // REPOINTED when the row reached the employee portal. The property these two pin is unchanged
     // — the "+" and the layout behind it must reach exactly the surfaces that carry rows, and the
@@ -1115,6 +1257,110 @@ export function runNavigationPersonalLayoutTests() {
     assert.ok(
       /<ApprovalNavBadge compact=\{false\} navBadge=\{item\.navBadge\} \/>/.test(rows),
       "a tab pinned into a row must not be the one place a pending count is invisible",
+    );
+  }
+
+  // ── THE ZONE-ONLY POOL — hub cards are placeable, and never widen the rail ───────────────────
+  // 2026-09-02, the owner on the "+": "some pages are compacted and not appearing. I want all pages
+  // to appear… Any page I have, appear in the add and I can add it."
+  //
+  // Most admin modules are collapsed to ONE hub button, with their real pages living as cards on
+  // that hub page rather than as rows in the rail. So the picker has to offer a set WIDER than the
+  // sidebar — and the moment it does, the second half becomes load-bearing: a page the "+" offers
+  // but `applyPersonalLayout` cannot resolve saves a 200 and changes nothing on screen, which is
+  // the exact failure this whole feature was born out of.
+  //
+  // The pool is deliberately asymmetric. It feeds the three ZONES and is invisible to the leftovers
+  // pass, so a hub card appears in a row because the viewer put it there and never turns up in the
+  // sidebar on its own. Both halves are pinned here, and the second is the one that would rot.
+  {
+    const hubCards: readonly NavigationSectionItem[] = [
+      item("/admin/employees/contracts", "Contract Renewal"),
+      item("/admin/employees/retention", "Retention Register"),
+    ];
+
+    // Half one: a page outside every gated section resolves when the layout names it.
+    const placed = applyPersonalLayout(
+      gated,
+      layout({ upperRow: ["/admin/employees/contracts"], lowerRow: ["/admin/sales"] }),
+      null,
+      hubCards,
+    );
+    assert.deepEqual(
+      placed.upperRow.map((i) => i.href),
+      ["/admin/employees/contracts"],
+      "a hub card the viewer added to a row must actually render there — otherwise the + saves and the screen does not move",
+    );
+    assert.deepEqual(
+      placed.lowerRow.map((i) => i.href),
+      ["/admin/sales"],
+      "the rail's own pages keep resolving alongside it",
+    );
+
+    // Half two, and the one that would rot: it must NOT reach the sidebar. The leftovers pass walks
+    // the gated sections alone, which is what keeps the collapsed rail collapsed.
+    const sidebarHrefs = placed.sections.flatMap((section) => section.items.map((i) => i.href));
+    assert.ok(
+      !sidebarHrefs.includes("/admin/employees/contracts"),
+      "a placed hub card must not ALSO appear in the sidebar",
+    );
+    assert.ok(
+      !sidebarHrefs.includes("/admin/employees/retention"),
+      "and an UNPLACED hub card must not appear in the sidebar either — the pool widens the picker, never the rail",
+    );
+
+    // An unplaced pool item renders nowhere at all. Stated separately from the sidebar check
+    // because "not in the rail" and "not on screen" are different claims.
+    const unplaced = [
+      ...placed.strip,
+      ...placed.upperRow,
+      ...placed.lowerRow,
+      ...placed.sections.flatMap((section) => section.items),
+    ].map((i) => i.href);
+    assert.ok(
+      !unplaced.includes("/admin/employees/retention"),
+      "a pool page the layout never names is invisible — the pool is a resolution source, not a second rail",
+    );
+
+    // The strip takes them too, on the same terms.
+    const stripped = applyPersonalLayout(
+      gated,
+      layout({ strip: ["/admin/employees/retention"] }),
+      null,
+      hubCards,
+    );
+    assert.deepEqual(
+      stripped.strip.map((i) => i.href),
+      ["/admin/employees/retention"],
+      "the strip resolves a hub card as readily as either row",
+    );
+
+    // The rail's copy wins a collision. A page holding BOTH a rail row and a hub card must resolve
+    // to the rail's item, which is the one carrying that section's label and badge.
+    const collided = applyPersonalLayout(
+      gated,
+      layout({ upperRow: ["/admin/sales"] }),
+      null,
+      [item("/admin/sales", "Sales (hub card copy)")],
+    );
+    assert.equal(
+      collided.upperRow[0]?.label,
+      "Sales",
+      "the gated rail item outranks a same-href pool entry — the pool is added second on purpose",
+    );
+
+    // And the security invariant is unchanged: the pool is gated input, so it can widen what a
+    // layout RESOLVES but a layout still cannot name a page that is in neither source.
+    const forged = applyPersonalLayout(
+      gated,
+      layout({ upperRow: ["/admin/payroll-secrets"] }),
+      null,
+      hubCards,
+    );
+    assert.deepEqual(
+      forged.upperRow,
+      [],
+      "a layout naming a page in neither the gated sections nor the pool still resolves to nothing",
     );
   }
 
