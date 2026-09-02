@@ -45,6 +45,7 @@ const LAYOUT = "app/layout.tsx";
 const HARNESS = "scripts/measure-sidebar-labels.ts";
 const ADMIN_RAIL = "src/components/layout/sidebar.tsx";
 const PORTAL_RAIL = "src/components/employee-portal/employee-portal-layout.tsx";
+const BOTTOM_BAR = "src/components/employee-portal/employee-portal-bottom-nav.tsx";
 
 /** Tailwind's named weights. `font-bold` is 700 — the one that was modelled as 600 for three months. */
 const WEIGHTS: Record<string, number> = {
@@ -148,6 +149,17 @@ export function runSidebarLabelFontSyncTests() {
           .filter((l) => l.includes("isMobile ?") && l.includes("text-phx-"))
           .map((l) => l.slice(l.lastIndexOf(":"))),
       modelled: metrics.match(/PORTAL_LABEL_FONT_CSS\s*=\s*`font-size:(\d+)px;font-weight:(\d+)/),
+    },
+    {
+      shell: "bottom bar",
+      file: BOTTOM_BAR,
+      // The mobile bar carries its type on the <Link>, not on the label span — the span inherits —
+      // so match the row that actually declares it. A third surface with a third type scale: 10px
+      // at weight 900, the smallest and heaviest of the three, which is exactly why it could not
+      // borrow either rail's measurement.
+      find: (src: string) =>
+        src.split("\n").filter((l) => l.includes("text-phx-") && l.includes("font-black")),
+      modelled: metrics.match(/BOTTOM_BAR_LABEL_FONT_CSS\s*=\s*`font-size:(\d+)px;font-weight:(\d+)/),
     },
   ];
 

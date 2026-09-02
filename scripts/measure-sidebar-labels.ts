@@ -18,7 +18,17 @@
 import { writeFileSync } from "node:fs";
 import { chromium } from "playwright";
 
-import { labelFontCss, SIDEBAR_LABEL_SNAPSHOT_PATH, type SidebarShell } from "@/config/sidebar-metrics";
+import {
+  BOTTOM_BAR_LABEL_FONT_CSS,
+  labelFontCss,
+  SIDEBAR_LABEL_SNAPSHOT_PATH,
+  type SidebarShell,
+} from "@/config/sidebar-metrics";
+import {
+  HOME_ENTRY,
+  PORTAL_NAV_REGISTRY,
+  PROFILE_ENTRY,
+} from "@/components/employee-portal/employee-portal-nav-registry";
 import {
   adminNavigationSections,
   employeePortalNavigationSections,
@@ -78,6 +88,43 @@ for (const { labels, shell } of shells) {
   const widest = Object.entries(snapshot[shell]).sort((a, b) => b[1] - a[1])[0];
   console.log(`${shell}: ${labels.length} labels at ${resolved}`);
   console.log(`${shell}: widest "${widest[0]}" at ${widest[1]}px`);
+}
+
+// ── the mobile bottom bar ────────────────────────────────────────────────────
+//
+// A third surface, measured differently on purpose. Its labels come from the portal nav REGISTRY,
+// not from employeePortalNavigationSections, and what is stored is the width of each label's
+// longest WORD rather than the label itself: the span wraps, so that word is the narrowest a tab
+// can ever be laid out and therefore the floor the fit test has to add up. Storing the whole label
+// would re-import the nowrap assumption the wrap fix removed.
+await page.setContent(`<style>
+  body{margin:0}
+  #probe{position:absolute;white-space:nowrap;width:auto;${BOTTOM_BAR_LABEL_FONT_CSS}}
+</style><span id="probe"></span>`);
+
+const barLabels = [...new Set([HOME_ENTRY, PROFILE_ENTRY, ...PORTAL_NAV_REGISTRY].map((e) => e.label))].sort();
+snapshot["bottom-bar"] = await page.evaluate((list: string[]) => {
+  const probe = document.getElementById("probe") as HTMLElement;
+  const out: Record<string, number> = {};
+  for (const label of list) {
+    out[label] = Math.max(
+      ...label.split(" ").filter(Boolean).map((word) => {
+        probe.textContent = word;
+        return Math.ceil(probe.getBoundingClientRect().width);
+      }),
+    );
+  }
+  return out;
+}, barLabels);
+
+{
+  const resolved = await page.evaluate(() => {
+    const cs = getComputedStyle(document.getElementById("probe")!);
+    return `${cs.fontSize} / ${cs.fontWeight} / ${cs.fontFamily}`;
+  });
+  const widest = Object.entries(snapshot["bottom-bar"]).sort((a, b) => b[1] - a[1])[0];
+  console.log(`bottom-bar: ${barLabels.length} labels at ${resolved}`);
+  console.log(`bottom-bar: widest word "${widest[0]}" at ${widest[1]}px`);
 }
 
 await browser.close();
