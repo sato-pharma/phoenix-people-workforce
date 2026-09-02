@@ -84,7 +84,33 @@ export function EmployeePortalBottomNav({
                 href={item.href}
               >
                 <Icon className="h-[19px] w-[19px] shrink-0" />
-                <span className="whitespace-nowrap px-1 leading-tight">{item.label}</span>
+                {/*
+                  The label WRAPS rather than running on one line, and the box it wraps inside is a
+                  fixed two lines tall.
+
+                  Both halves matter. Six tabs is the maximum (Home + MAX_BOTTOM_NAV_CUSTOM +
+                  Profile) and each <li> is `flex-1` with Tailwind's default `min-width: auto`, so a
+                  tab can never be laid out narrower than its own content — which means the bar's
+                  real constraint is the SUM of the six tabs' floors against the viewport, not any
+                  per-tab allowance. On `whitespace-nowrap` that floor was the whole label, and the
+                  worst case (Direct Order | Double Visit | ROI Tracker | Deductions) summed to
+                  367px: it cleared a 375px phone by 8px and overflowed a 360px one, which is the
+                  most common Android width there is. Wrapping drops each floor to the longest WORD,
+                  so those four fall out of the worst case entirely and the bar fits from 320px.
+
+                  Wrapping is the owner's prescribed answer here — the golden rule is never a
+                  horizontal scroll, fit by wrapping and never by shrinking type, and the ellipsis
+                  ban means `truncate` was never available either.
+
+                  The fixed `h-[25px]` is what keeps the row honest once labels wrap: without it a
+                  tab whose label takes two lines is taller than its neighbours, and `justify-center`
+                  then centres each tab's icon at a different height. Two lines are reserved for
+                  every tab whether or not it uses them, and the text is centred inside that box, so
+                  a one-line label sits within a pixel of where it always has.
+                */}
+                <span className="flex h-[25px] items-center justify-center px-0.5 text-center leading-tight">
+                  {item.label}
+                </span>
               </Link>
             </li>
           );
