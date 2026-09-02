@@ -9,6 +9,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { computeCallRate, type CallRateReport, type VisitForCallRate } from "@/lib/crm/call-rate";
+import { loadCallRateHolidays } from "@/lib/crm/call-rate-holidays";
 import { collapseDuplicateVisitSubmissions, queryCheckins, queryVisits } from "@/lib/crm/reads";
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 
@@ -27,15 +28,25 @@ export type CallRateInput = {
   campaignLimit?: number;
 };
 
-/** The split call rate for a period, per rep. */
-export async function loadCallRateReport(input: CallRateInput): Promise<CallRateReport> {
-  const [rawVisits, checkins] = await Promise.all([
+/**
+ * The split call rate for a period, per rep, with national holidays already out of the denominator.
+ *
+ * `holidaysComplete` rides along rather than living on the pure {@link CallRateReport}, because it
+ * describes the READ and not the arithmetic. A caller that prints a rate must surface it — false
+ * means a public holiday may still be sitting in the denominator, which makes every rep look worse
+ * than he is. See crm/call-rate-holidays.ts.
+ */
+export async function loadCallRateReport(
+  input: CallRateInput,
+): Promise<CallRateReport & { holidaysComplete: boolean }> {
+  const [rawVisits, checkins, holidays] = await Promise.all([
     queryVisits<VisitForCallRate & { crm_visit_id: number | null; double_crm_id: number | null }>({
       dateFrom: input.dateFrom,
       dateTo: input.dateTo,
       columns: VISIT_COLUMNS,
     }),
     queryCheckins<CheckinRow>({ dateFrom: input.dateFrom, dateTo: input.dateTo, columns: CHECKIN_COLUMNS }),
+    loadCallRateHolidays(input.dateFrom, input.dateTo),
   ]);
 
   // The same collapse every other CRM consumer applies, so this cannot disagree with the visit
@@ -46,11 +57,13 @@ export async function loadCallRateReport(input: CallRateInput): Promise<CallRate
   const scopedCheckins =
     input.agentCrmId == null ? checkins : checkins.filter((checkin) => checkin.agent_crm_id === input.agentCrmId);
 
-  return computeCallRate(visits, scopedCheckins, {
+  const report = computeCallRate(visits, scopedCheckins, {
     dateFrom: input.dateFrom,
     dateTo: input.dateTo,
     campaignLimit: input.campaignLimit,
+    holidays: holidays.dates,
   });
+  return { ...report, holidaysComplete: holidays.complete };
 }
 
 /**
