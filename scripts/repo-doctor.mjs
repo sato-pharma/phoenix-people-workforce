@@ -262,6 +262,66 @@ function unpushedCount(dir) {
   return countUnpushedCommits(dir);
 }
 
+/**
+ * The three conditions --strip-idle deletes under, as ONE function.
+ *
+ * It exists because the read-only offer and the mutating pass disagreed. The offer summed
+ * `cacheEntries` over EVERY live worktree and advertised the total; the pass then applied the
+ * gates below and stripped only what qualified. On 2026-09-02 that printed "Run with
+ * --strip-idle to drop 159,776 path entries", followed on the same machine minutes later by
+ * "Stripped 0 worktree(s), 0 path entries reclaimed", because one worktree was being edited and
+ * the other held uncommitted work. Neither number was wrong on its own; the offer was answering
+ * a question nobody asked (how much cache exists) in the words of the one they did (how much
+ * can I get back).
+ *
+ * The gates are unchanged, and are still re-run at strip time by the call site, where being
+ * wrong deletes something. This only makes the advertised figure come from the same test as the
+ * deletion, so a gate added in one place cannot silently miss the other.
+ *
+ * Returns `{ ok: true, reason: null, idleMin }`, or `{ ok: false, reason, idleMin }` where
+ * `reason` is the text printed after SKIP. Not knowing always reads as NOT eligible: a git
+ * command that fails is a worktree this refuses, never one it strips. `idleMin` is null when
+ * the verdict was reached before idleness was measured, so a caller must not print it blind.
+ */
+function stripIdleVerdict(dir, thresholdMin) {
+  const status = git(["-C", dir, "status", "--porcelain"]);
+  if (status === null) return { ok: false, reason: "cannot read git status", idleMin: null };
+  const dirtyCount = status === "" ? 0 : status.split("\n").filter(Boolean).length;
+  if (dirtyCount > 0) {
+    return {
+      ok: false,
+      reason: `${dirtyCount} uncommitted file(s) — exists only on this disk`,
+      idleMin: null,
+    };
+  }
+
+  const unpushed = unpushedCount(dir);
+  if (unpushed === null) {
+    return { ok: false, reason: "cannot determine what is pushed", idleMin: null };
+  }
+  if (unpushed > 0) {
+    return {
+      ok: false,
+      reason: `${unpushed} commit(s) found nowhere upstream — not backed up`,
+      idleMin: null,
+    };
+  }
+
+  const idle = idleMinutes(dir);
+  if (idle === null) {
+    return { ok: false, reason: "cannot read its files to judge idleness", idleMin: null };
+  }
+  if (idle < thresholdMin) {
+    return {
+      ok: false,
+      reason: `touched ${idle} min ago — a session may be mid-edit`,
+      idleMin: idle,
+    };
+  }
+
+  return { ok: true, reason: null, idleMin: idle };
+}
+
 // ── Collect every worktree-shaped folder, wherever this repo puts them ──────────────
 const candidates = [];
 function addFrom(dir, filter = () => true) {
@@ -443,13 +503,50 @@ if (!fix && !stripIdle) {
   } else {
     console.log("No husks to clear.");
   }
-  const reclaimable = live.reduce((a, r) => a + cacheEntries(r.dir), 0);
+  // Only worktrees that would actually pass the strip gates are counted here. Summing every
+  // live worktree's cache instead advertises a saving the command then refuses to deliver:
+  // measured on 2026-09-02 as 159,776 path entries offered and 0 reclaimed, one worktree being
+  // edited and the other holding uncommitted work. `idleThresholdMin` is its default 120 on
+  // this path, since --strip-idle is not set; that is the same threshold the flag itself uses
+  // unless you pass --strip-idle=N, so a different N can still move the figure.
+  //
+  // The held-back worktrees are named rather than quietly dropped. A bare "nothing to reclaim"
+  // reads as "there is no cache", when the truth is that there is a great deal of it and it is
+  // being protected — a distinction that decides whether the next move is to free space
+  // somewhere else or simply to wait.
+  let reclaimable = 0;
+  let eligible = 0;
+  let heldEntries = 0;
+  const heldBack = [];
+  for (const r of live) {
+    const cached = cacheEntries(r.dir);
+    if (cached === 0) continue; // already stripped, or never installed
+    const verdict = stripIdleVerdict(r.dir, idleThresholdMin);
+    if (verdict.ok) {
+      eligible++;
+      reclaimable += cached;
+    } else {
+      heldEntries += cached;
+      heldBack.push(`${rel(r.dir)} — ${verdict.reason}`);
+    }
+  }
   if (reclaimable > 0) {
     console.log(
       `Run with --strip-idle to drop ${num(reclaimable)} path entries of node_modules/.next from ` +
-        "worktrees that are clean, fully pushed, and idle " +
+        `${eligible} worktree(s) that are clean, fully pushed, and idle ` +
         "(node scripts/new-session.mjs --repair <task> restores them).",
     );
+  } else if (heldEntries > 0) {
+    console.log(
+      "Nothing for --strip-idle to reclaim right now: every worktree holding a cache is one it " +
+        "would refuse.",
+    );
+  }
+  if (heldBack.length) {
+    console.log(
+      `  ${heldBack.length} worktree(s) held back, ${num(heldEntries)} path entries kept:`,
+    );
+    for (const line of heldBack) console.log(`    ${line}`);
   }
 }
 
@@ -1153,34 +1250,17 @@ if (stripIdle) {
     }
     // Every check is re-run here rather than reused from the inventory above: that data is
     // seconds to minutes old, and this is the moment where being wrong deletes something.
-    const dirty = (git(["-C", r.dir, "status", "--porcelain"]) ?? null);
-    if (dirty === null) {
-      console.log(`  SKIP  ${label.padEnd(52)} cannot read git status`);
+    //
+    // The gates themselves live in stripIdleVerdict, shared with the read-only offer, so the
+    // number that was advertised and the number that is deleted cannot drift apart the way they
+    // did before that function existed. Re-running them is the point; sharing them is what
+    // stops a fourth gate being added to one caller and not the other.
+    const verdict = stripIdleVerdict(r.dir, idleThresholdMin);
+    if (!verdict.ok) {
+      console.log(`  SKIP  ${label.padEnd(52)} ${verdict.reason}`);
       continue;
     }
-    const dirtyCount = dirty === "" ? 0 : dirty.split("\n").length;
-    if (dirtyCount > 0) {
-      console.log(`  SKIP  ${label.padEnd(52)} ${dirtyCount} uncommitted file(s) — exists only on this disk`);
-      continue;
-    }
-    const unpushed = unpushedCount(r.dir);
-    if (unpushed === null) {
-      console.log(`  SKIP  ${label.padEnd(52)} cannot determine what is pushed`);
-      continue;
-    }
-    if (unpushed > 0) {
-      console.log(`  SKIP  ${label.padEnd(52)} ${unpushed} commit(s) found nowhere upstream — not backed up`);
-      continue;
-    }
-    const idle = idleMinutes(r.dir);
-    if (idle === null) {
-      console.log(`  SKIP  ${label.padEnd(52)} cannot read its files to judge idleness`);
-      continue;
-    }
-    if (idle < idleThresholdMin) {
-      console.log(`  SKIP  ${label.padEnd(52)} touched ${idle} min ago — a session may be mid-edit`);
-      continue;
-    }
+    const idle = verdict.idleMin;
     try {
       for (const name of ["node_modules", ".next"]) {
         const p = path.join(r.dir, name);
