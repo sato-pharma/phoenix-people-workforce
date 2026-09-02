@@ -3,6 +3,7 @@ import { spawnSync } from "node:child_process";
 import process from "node:process";
 
 import { variables as syncedVariables } from "./sync-railway-production-secrets.mjs";
+import { checkSecretShape } from "./secret-shape-rules.mjs";
 
 const args = process.argv.slice(2);
 const dryRun = args.includes("--dry-run");
@@ -135,6 +136,12 @@ for (const name of requiredVariables) {
   if (name === "NEXT_PUBLIC_SUPABASE_ANON_KEY" || name === "SUPABASE_SERVICE_ROLE_KEY") {
     if (trimmed.length < 20) failures.push(`${name} looks too short`);
   }
+
+  // Value-shape rules (scripts/secret-shape-rules.mjs). Deliberately fed the RAW value rather
+  // than `trimmed`: surrounding whitespace, a stray newline and a leading BOM are themselves
+  // corruption worth failing on, and trimming first would hide all three. See that module's
+  // header for the 2026-09-02 incident these exist to catch.
+  failures.push(...checkSecretShape(name, value));
 }
 
 // Added 2026-08-08, after CLOUDFLARE_API_TOKEN and NOTIFICATION_WEBHOOK_SECRET were found on
