@@ -103,7 +103,14 @@ export function Topbar({
           MEASURED 2026-09-02 at 375px: the "Organogram" nav link rendered at [42,93,110,111], inside
           the open notifications panel's [12,64,363,620], legible on top of it. The fix cannot go on the
           panels — no z-index escapes a sealed context — so it goes here, on the box that does compete.
-          Nav-row dropdowns are unaffected: they open BELOW this band, so they never overlap it. */}
+          Nav-row dropdowns are unaffected: they open BELOW this band, so they never overlap it.
+
+          It cannot leak outward either, which is what makes 40 safe to pick. AppShell's wrapper is
+          `sticky top-0 z-30`, and sticky WITH a z-index is itself a stacking context — so this 40
+          ranks only against the chrome's own children and the whole topbar still presents as 30 to
+          everything outside. The two surfaces that must keep covering it both still do: the mobile
+          drawer (`fixed inset-0 z-50`, rendered just above and higher inside this same context) and
+          the sidebar (`z-40`, OUTSIDE it, so it beats the chrome's 30 whatever this says). */}
       <header className={`relative z-40 px-3 py-3 backdrop-blur-xl sm:px-6 ${
         isAdminMode
           ? "border-b border-[#1a1a1a] bg-[#000000]"
