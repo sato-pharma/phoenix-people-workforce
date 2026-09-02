@@ -39,6 +39,15 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { getDoctorCoverageScope, type DoctorCoverageScope } from "@/lib/crm/doctor-coverage-scope";
+import {
+  applyKpiFilters,
+  buildKpiFacets,
+  EMPTY_KPI_FILTERS,
+  keepMedicalRepsOnly,
+  type KpiFacets,
+  type KpiFilterState,
+} from "@/lib/crm/kpis-filters";
+import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import { loadCallRateReport } from "@/lib/crm/call-rate-service";
 import { getRepDoctorLists, monthLabelOf, type RepDoctorListRepRow } from "@/lib/crm/rep-doctor-lists";
@@ -94,6 +103,17 @@ export type KpiRepRow = {
   agentHrId: string | null;
   repName: string;
 
+  // ── Who this rep is, for the advanced filters ─────────────────────────────
+  // Stamped from the employee directory, never from the CRM: the mirror carries a name and an id
+  // and no organisational identity at all. Null throughout when the hr id did not resolve — which
+  // is a real population, gets its own "Not recorded" facet bucket, and must never be quietly
+  // filed under somebody's line.
+  lineName: string | null;
+  regionName: string | null;
+  areaName: string | null;
+  managerName: string | null;
+  jobTitle: string | null;
+
   // ── Call rate (the selected period) ───────────────────────────────────────
   /** Sat–Wed days in the period, national holidays already removed. */
   workingDays: number;
@@ -111,6 +131,14 @@ export type KpiRepRow = {
   campaignOnlyDays: number;
   /** False when the rep logged nothing at all in the period — distinct from a real zero rate. */
   hasCallRate: boolean;
+  /**
+   * Verified AM+PM calls as a percentage of what the two targets asked for over the same days.
+   *
+   * NOT a fourth KPI. `attainmentPct` is already a field on CallRateSlice in call-rate.ts; this is
+   * the same arithmetic over both slices at once, so the board can band and sort the call rate the
+   * way it bands coverage and frequency. Null when the window has no working days to divide by.
+   */
+  callRateAttainmentPct: number | null;
 
   // ── Coverage and frequency (the whole month) ──────────────────────────────
   plannedDoctors: number;
@@ -124,6 +152,23 @@ export type KpiRepRow = {
   frequencyPct: number;
   /** False when the rep has no planned doctors — he is NOT a 0% performer and must not rank as one. */
   hasMeasurablePlan: boolean;
+
+  // ── Plan shape, already computed by rep-doctor-lists and previously discarded ──────────────
+  /** Plan ENTRIES, i.e. planned calls — higher than plannedDoctors when a doctor is planned twice. */
+  plannedCalls: number;
+  /** Planned calls falling on days that have already happened — the fair mid-month denominator. */
+  plannedCallsToDate: number;
+  /** Collapsed type-0 calls to doctors that are ON the plan. */
+  actualCalls: number;
+  /** Doctors visited this month who are NOT on this rep's plan. */
+  offPlanDoctors: number;
+  /** Distinct HCP accounts (pharmacies, hospitals, contracts) on the plan. */
+  plannedAccounts: number;
+  gradeA: number;
+  gradeB: number;
+  gradeC: number;
+  /** Doctors whose PLAN asks for fewer calls than the grade norm — plan quality, never a KPI. */
+  underPlannedVsGrade: number;
 };
 
 export type KpisBoard = {
@@ -146,7 +191,22 @@ export type KpisBoard = {
   scopeLabel: string;
   /** Set when the viewer may see nothing; the page renders this instead of an empty table. */
   scopeReason: string | null;
+  /** The rows AFTER the advanced filters. Every total and podium below is computed from these. */
   reps: KpiRepRow[];
+  /**
+   * How many reps the viewer's SCOPE contains, before any filter narrowed it.
+   *
+   * Printed beside the filtered count so "12 of 73" is always on screen. A filtered board that says
+   * only "12 reps" is indistinguishable from a district that has twelve people, and a manager who
+   * forgot a filter was on would read a partial board as the whole truth.
+   */
+  scopedReps: number;
+  /** Facet options and counts, built from the SCOPED rows so a choice never returns an empty board. */
+  facets: KpiFacets;
+  /** The filter state actually applied, echoed back so the UI can render and clear it. */
+  filters: KpiFilterState;
+  /** Best three reps on each of the three measures. Never a blended rank — see kpis-filters.ts. */
+  podium: KpiPodium;
   totals: {
     reps: number;
     workingDays: number;
@@ -163,10 +223,69 @@ export type KpisBoard = {
     underDoctors: number;
     overDoctors: number;
     frequencyPct: number;
+    /** Team verified calls against the team's own AM+PM target. Null with no working days. */
+    callRateAttainmentPct: number | null;
   };
   amTarget: number;
   pmTarget: number;
 };
+
+/** One place on a podium. `value` is already the percentage the caption prints. */
+export type KpiPodiumEntry = { repName: string; value: number; caption: string };
+
+/**
+ * The three leaderboards, one per measure.
+ *
+ * THREE, not one. A single "best rep" list would need a blended score, and kpis-board's whole
+ * premise is that it adds no fourth measure — the three disagree on purpose (production has run
+ * 68% coverage against 39% frequency in the same month), and a blend would hide exactly the gap
+ * the board exists to show. So the best coverage, the best frequency and the best call rate are
+ * three separate answers, and often three different people.
+ */
+export type KpiPodium = {
+  coverage: KpiPodiumEntry[];
+  frequency: KpiPodiumEntry[];
+  callRate: KpiPodiumEntry[];
+};
+
+/**
+ * Top three on each measure, from rows that can honestly BE ranked on it.
+ *
+ * A rep with no measurable plan is excluded from coverage and frequency, and a rep who logged
+ * nothing is excluded from call rate — not because they did badly, but because they have no value
+ * on that axis at all. Ranking them would put "0%" on a podium, which is both wrong and cruel.
+ */
+export function buildKpiPodium(rows: readonly KpiRepRow[]): KpiPodium {
+  const top = (
+    eligible: (row: KpiRepRow) => boolean,
+    score: (row: KpiRepRow) => number,
+    caption: (row: KpiRepRow) => string,
+  ): KpiPodiumEntry[] =>
+    rows
+      .filter(eligible)
+      .slice()
+      .sort((left, right) => score(right) - score(left) || left.repName.localeCompare(right.repName))
+      .slice(0, 3)
+      .map((row) => ({ repName: row.repName || "Unnamed rep", value: score(row), caption: caption(row) }));
+
+  return {
+    coverage: top(
+      (row) => row.hasMeasurablePlan,
+      (row) => row.coveragePct,
+      (row) => `${row.visitedDoctors} of ${row.plannedDoctors} doctors reached`,
+    ),
+    frequency: top(
+      (row) => row.hasMeasurablePlan,
+      (row) => row.frequencyPct,
+      (row) => `${row.onPlanDoctors} doctors exactly on plan`,
+    ),
+    callRate: top(
+      (row) => row.hasCallRate && row.callRateAttainmentPct != null,
+      (row) => row.callRateAttainmentPct ?? 0,
+      (row) => `${row.amVerified + row.pmVerified} verified calls in ${row.workingDays} days`,
+    ),
+  };
+}
 
 /* Canonical hr id for comparison — `canonicalHrIdKey` from @/lib/hr-id, never a local copy.
  *
@@ -216,8 +335,29 @@ export function joinKpiRows(input: {
   docLists: readonly RepDoctorListRepRow[];
   scope: DoctorCoverageScope;
   workingDays: number;
+  /**
+   * The employee directory, for the organisational identity the CRM does not carry. Optional so the
+   * join stays testable without one; a rep whose hr id is absent keeps null identity and lands in
+   * the "Not recorded" facet bucket rather than being silently attached to somebody's line.
+   */
+  directory?: readonly KpiDirectoryEntry[];
+  /** AM/PM targets, for the call-rate attainment the bands and sorts read. */
+  amTarget?: number;
+  pmTarget?: number;
 }): KpiRepRow[] {
   const { callRates, docLists, scope, workingDays } = input;
+  const amTarget = input.amTarget ?? AM_CALL_RATE_TARGET;
+  const pmTarget = input.pmTarget ?? PM_CALL_RATE_TARGET;
+
+  // Keyed on the CANONICAL hr id on both sides. Production hr ids are mixed case and carry legacy
+  // aliases, and `canonicalHrIdKey` is the one comparison that handles both — a plain
+  // `.trim().toLowerCase()` here would drop a renamed seat, which reads on screen as a rep with no
+  // line rather than as a bug.
+  const identityByHrId = new Map<string, KpiDirectoryEntry>();
+  for (const entry of input.directory ?? []) {
+    const key = canonicalHrIdKey(entry.hrId);
+    if (key) identityByHrId.set(key, entry);
+  }
 
   const byCrmId = new Map<number, KpiRepRow>();
   const rows: KpiRepRow[] = [];
@@ -226,6 +366,11 @@ export function joinKpiRows(input: {
     agentCrmId,
     agentHrId,
     repName,
+    lineName: null,
+    regionName: null,
+    areaName: null,
+    managerName: null,
+    jobTitle: null,
     workingDays,
     amVerified: 0,
     pmVerified: 0,
@@ -236,6 +381,7 @@ export function joinKpiRows(input: {
     campaignShare: 0,
     campaignOnlyDays: 0,
     hasCallRate: false,
+    callRateAttainmentPct: null,
     plannedDoctors: 0,
     visitedDoctors: 0,
     missedDoctors: 0,
@@ -246,6 +392,15 @@ export function joinKpiRows(input: {
     notDueDoctors: 0,
     frequencyPct: 0,
     hasMeasurablePlan: false,
+    plannedCalls: 0,
+    plannedCallsToDate: 0,
+    actualCalls: 0,
+    offPlanDoctors: 0,
+    plannedAccounts: 0,
+    gradeA: 0,
+    gradeB: 0,
+    gradeC: 0,
+    underPlannedVsGrade: 0,
   });
 
   const claim = (agentCrmId: number | null, agentHrId: string | null, repName: string): KpiRepRow => {
@@ -291,6 +446,33 @@ export function joinKpiRows(input: {
     row.notDueDoctors = list.notDueDoctors;
     row.frequencyPct = list.frequencyPct;
     row.hasMeasurablePlan = list.hasMeasurablePlan;
+    row.plannedCalls = list.plannedCalls;
+    row.plannedCallsToDate = list.plannedCallsToDate;
+    row.actualCalls = list.actualCalls;
+    row.offPlanDoctors = list.offPlanDoctors;
+    row.plannedAccounts = list.plannedAccounts;
+    row.gradeA = list.gradeA;
+    row.gradeB = list.gradeB;
+    row.gradeC = list.gradeC;
+    row.underPlannedVsGrade = list.underPlannedVsGrade;
+  }
+
+  // Identity and attainment are stamped LAST, over whichever source claimed the row — a rep present
+  // on only one side still gets a line and an area, which is the whole point of filtering by them.
+  for (const row of rows) {
+    const identity = row.agentHrId ? identityByHrId.get(row.agentHrId) : undefined;
+    if (identity) {
+      row.lineName = identity.lineName;
+      row.regionName = identity.regionName;
+      row.areaName = identity.areaName;
+      row.managerName = identity.managerName;
+      row.jobTitle = identity.jobTitle;
+      // The directory's display name is the nickname-aware one and is what the owner's
+      // human-readable-names rule asks for; the CRM's agent name is the vendor's spelling. Prefer
+      // the directory when it has something, but never blank out a name the CRM did supply.
+      if (identity.displayName?.trim()) row.repName = identity.displayName.trim();
+    }
+    row.callRateAttainmentPct = callRateAttainment(row, amTarget, pmTarget);
   }
 
   // Scope is applied AFTER the join, never before: a rep whose hr id appears on only one of the two
@@ -300,16 +482,44 @@ export function joinKpiRows(input: {
   return scoped;
 }
 
+/** The employee-directory fields the board stamps onto a rep, and nothing else. */
+export type KpiDirectoryEntry = {
+  hrId: string;
+  displayName: string | null;
+  lineName: string | null;
+  regionName: string | null;
+  areaName: string | null;
+  managerName: string | null;
+  jobTitle: string | null;
+};
+
+/**
+ * Verified calls against what the AM and PM targets asked for over the same days.
+ *
+ * Both slices are put over ONE denominator rather than averaging two percentages. Averaging would
+ * weight the AM target (2 calls) equally with the PM target (10), so a rep who hit AM and did
+ * nothing all afternoon would read 50% — half of a day's work — when he in fact delivered 2 of the
+ * 12 calls the targets asked for, which is 17%.
+ */
+function callRateAttainment(row: KpiRepRow, amTarget: number, pmTarget: number): number | null {
+  const expected = row.workingDays * (amTarget + pmTarget);
+  if (!row.hasCallRate || expected <= 0) return null;
+  return Math.round(((row.amVerified + row.pmVerified) / expected) * 100);
+}
+
 /** Builds the whole board for one viewer. */
 export async function getKpisBoard(input: {
   access: AccessContext;
   month: string;
   period?: string | null;
   todayIso: string;
+  /** The advanced filters from the URL. They can only ever NARROW what the scope gate allowed. */
+  filters?: KpiFilterState;
 }): Promise<KpisBoard> {
   const range = repsPlansRange(input.month, input.todayIso, input.period);
   const scope = await getDoctorCoverageScope(input.access);
   const monthLabel = monthLabelOf(input.month);
+  const filters = input.filters ?? EMPTY_KPI_FILTERS;
 
   const empty: KpisBoard = {
     month: input.month,
@@ -323,6 +533,10 @@ export async function getKpisBoard(input: {
     scopeLabel: "",
     scopeReason: null,
     reps: [],
+    scopedReps: 0,
+    facets: buildKpiFacets([]),
+    filters,
+    podium: buildKpiPodium([]),
     totals: {
       reps: 0,
       workingDays: 0,
@@ -339,6 +553,7 @@ export async function getKpisBoard(input: {
       underDoctors: 0,
       overDoctors: 0,
       frequencyPct: 0,
+      callRateAttainmentPct: null,
     },
     amTarget: AM_CALL_RATE_TARGET,
     pmTarget: PM_CALL_RATE_TARGET,
@@ -348,17 +563,48 @@ export async function getKpisBoard(input: {
     return { ...empty, scopeLabel: "No reach", scopeReason: scope.reason };
   }
 
-  const [callRate, docList] = await Promise.all([
+  // The directory is fetched INCLUDING inactive people. A rep who left mid-month still has rows in
+  // both CRM sources for the days he worked, and dropping his identity here would print those days
+  // against a blank line and area — the reads door already decides who is excluded, and this call
+  // is only ever putting a name to an id.
+  const [callRate, docList, employees] = await Promise.all([
     loadCallRateReport({ dateFrom: range.dateFrom, dateTo: range.dateTo }),
     getRepDoctorLists({ month: input.month }),
+    getEmployeeDirectoryRows({ includeInactive: true }),
   ]);
 
-  const reps = joinKpiRows({
+  const allInScope = joinKpiRows({
     callRates: callRate.reps,
     docLists: docList.reps,
     scope,
     workingDays: callRate.workingDays,
+    amTarget: AM_CALL_RATE_TARGET,
+    pmTarget: PM_CALL_RATE_TARGET,
+    directory: employees.map((employee) => ({
+      hrId: employee.hrId,
+      displayName: employee.displayName || employee.fullName || null,
+      lineName: employee.lineName?.trim() || null,
+      regionName: employee.regionName?.trim() || null,
+      areaName: employee.areaName?.trim() || null,
+      managerName: employee.managerName?.trim() || null,
+      jobTitle: employee.jobTitle?.trim() || null,
+    })),
   });
+
+  // MEDICAL REPS ONLY — owner, 2026-09-03. This runs BEFORE the facets and the totals, so the
+  // whole page describes one population: 63 of the 70 rows in scope that September, with 6 district
+  // sales managers and 1 product manager dropped. A manager carries no doctor plan of his own, so
+  // he scores "No plan" on two of the three measures and pulls the team averages toward a number
+  // that describes nobody. See keepMedicalRepsOnly in kpis-filters.ts for why an unrecorded title
+  // is kept rather than dropped.
+  const scopedReps = keepMedicalRepsOnly(allInScope);
+
+  // Facets are built from the SCOPED rows and the filters applied after, in that order. Building
+  // them from the filtered rows instead would make every facet collapse to whatever is already
+  // selected — pick "Pedia" and Line would then offer only Pedia, with no way back except editing
+  // the URL by hand.
+  const facets = buildKpiFacets(scopedReps);
+  const reps = applyKpiFilters(scopedReps, filters);
 
   // Totals are summed from the SCOPED rows, never taken from either source's own `totals`. Those
   // cover the whole company, and a District Manager reading a company total beside his own six reps
@@ -410,6 +656,13 @@ export async function getKpisBoard(input: {
     isCurrentMonth: docList.isCurrentMonth,
     scopeLabel: scope.kind === "company" ? scope.label : scope.label,
     reps,
+    scopedReps: scopedReps.length,
+    facets,
+    filters,
+    // The podium ranks the FILTERED rows on purpose: filter to Pedia and the leaderboard answers
+    // "best in Pedia", which is the question the filter just asked. A podium that ignored the
+    // filter would show three names the visible table does not even contain.
+    podium: buildKpiPodium(reps),
     totals: {
       reps: totals.reps,
       workingDays: callRate.workingDays,
@@ -426,6 +679,14 @@ export async function getKpisBoard(input: {
       underDoctors: totals.underDoctors,
       overDoctors: totals.overDoctors,
       frequencyPct: pct(totals.onPlanDoctors, frequencyBase),
+      // Same single-denominator rule as the per-rep figure — see `callRateAttainment`.
+      callRateAttainmentPct:
+        denominator > 0
+          ? Math.round(
+              ((totals.amVerified + totals.pmVerified) / (denominator * (AM_CALL_RATE_TARGET + PM_CALL_RATE_TARGET))) *
+                100,
+            )
+          : null,
     },
   };
 }

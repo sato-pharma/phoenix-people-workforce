@@ -291,6 +291,16 @@ import {
   runKpiTabTests,
   runKpisBoardJoinTests,
 } from "./kpis-board.test.ts";
+import {
+  runKpiAttainmentAndIdentityTests,
+  runKpiBandTests,
+  runKpiFacetTests,
+  runKpiFilterNarrowingTests,
+  runKpiMedicalRepOnlyTests,
+  runKpiPodiumTests,
+  runKpiSortTests,
+  runKpiUrlTests,
+} from "./kpis-filters.test.ts";
 import { runCrmRepsPlansTests } from "./crm-reps-plans.test.ts";
 import { runCrmRepVisitsTests } from "./crm-rep-visits.test.ts";
 import { runCrmRegionBrickSuggestTests } from "./crm-region-brick-suggest.test.ts";
@@ -1754,6 +1764,14 @@ await runTest("crm call rate (Sat-Wed denominator, AM 2 / PM 10 targets, campaig
 await runTest("KPIs call rate holidays (a national holiday takes the week from five days to four)", runKpiCallRateHolidayTests);
 await runTest("KPIs board join (keyed on the CRM agent id, and scope fails closed on an unresolved hr id)", runKpisBoardJoinTests);
 await runTest("KPIs tabs and month picker (an unrecognised tab widens to summary)", runKpiTabTests);
+await runTest("KPIs filters narrow only (no parameter combination can add a row the scope gate dropped)", runKpiFilterNarrowingTests);
+await runTest("KPIs bands (a rep with no plan is never filed as Behind)", runKpiBandTests);
+await runTest("KPIs sorting (nulls park LAST in both directions, so worst-first surfaces a real miss)", runKpiSortTests);
+await runTest("KPIs URL state (a tab, month or period change carries every filter through)", runKpiUrlTests);
+await runTest("KPIs facets (built from the viewer own rows, with a real bucket for an unresolved area)", runKpiFacetTests);
+await runTest("KPIs podium (three measures, three leaderboards, and nobody ranked at a 0 they do not have)", runKpiPodiumTests);
+await runTest("KPIs attainment and identity (one denominator, and a mixed-case hr id still resolves)", runKpiAttainmentAndIdentityTests);
+await runTest("KPIs medical reps only (managers off the board, an unrecorded title still on it)", runKpiMedicalRepOnlyTests);
 await runTest("crm reps plans board (live-month cap, company rate over days x reps, rep filter leaves totals alone)", runCrmRepsPlansTests);
 await runTest("crm rep visits drill-down (territory states, proof buckets, reconciles with the board rate)", runCrmRepVisitsTests);
 await runTest(
