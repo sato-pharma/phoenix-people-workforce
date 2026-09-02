@@ -64,6 +64,15 @@ export type PortalNavEntry = {
  * mobile bottom nav and the profile quick-navigation grid. Hrefs/flags mirror
  * buildEmployeePortalSections in employee-portal-layout.tsx (the sidebar); the
  * employee-portal bottom-nav guard test keeps the two in sync.
+ *
+ * BOTH labels must be unique across this list. The bar renders `label`; the customizer that picks
+ * what goes in the bar renders `fullLabel` — so a repeat in either one lets a person choose two
+ * entries that look different and end up with two tabs they cannot tell apart. Asserted in
+ * tests/employee-portal-bottom-nav.test.ts.
+ *
+ * `label` is also width-bound: at most six tabs (Home + four pinned + Profile) share a 375px bar,
+ * which is ~49px of text each at 10px/900. Measure a new short form with the probe in
+ * scripts/measure-sidebar-labels.ts; do not guess one.
  */
 export const PORTAL_NAV_REGISTRY: PortalNavEntry[] = [
   // My Workspace
@@ -71,8 +80,8 @@ export const PORTAL_NAV_REGISTRY: PortalNavEntry[] = [
   { label: "Coaching", fullLabel: "Coaching Reports", href: "/employee-portals/coaching", icon: ClipboardCheck, flags: ["showMyCoachingTab", "showTeamCoachingTab"], permission: { resource: "coaching", action: "read" } },
   { label: "Plans", fullLabel: "Weekly / Monthly Plan", href: "/employee-portals/plans", icon: CalendarDays, flags: ["showPlansTab"] },
   { label: "Planning", fullLabel: "Planning Calendar", href: "/employee-portals/plans/calendar", icon: CalendarClock, flags: ["showPlanningCalendarTab"], permission: { resource: "weekly_plans", action: "read" } },
-  { label: "Vacation", fullLabel: "Leave Approvals", href: "/employee-portals/approvals/vacation", icon: CalendarDays, flags: ["showVacationApprovalsTab"] },
-  { label: "Excuses", fullLabel: "Excuse Approvals", href: "/employee-portals/approvals/excuse", icon: CalendarClock, flags: ["showExcuseApprovalsTab"] },
+  { label: "Vac Appr", fullLabel: "Leave Approvals", href: "/employee-portals/approvals/vacation", icon: CalendarDays, flags: ["showVacationApprovalsTab"] },
+  { label: "Exc Appr", fullLabel: "Excuse Approvals", href: "/employee-portals/approvals/excuse", icon: CalendarClock, flags: ["showExcuseApprovalsTab"] },
   { label: "Plan Appr", fullLabel: "Plan Approvals", href: "/employee-portals/approvals/plan", icon: CalendarRange, flags: ["showPlanApprovalsTab"] },
   { label: "Approvals", fullLabel: "Other Approvals", href: "/employee-portals/approvals-hub", icon: Inbox, flags: ["showActionsTab"] },
   { label: "Payslips", fullLabel: "Payslips", href: "/employee-portals/payslips", icon: FileText, permission: { resource: "payslips", action: "read" } },
@@ -110,13 +119,13 @@ export const PORTAL_NAV_REGISTRY: PortalNavEntry[] = [
   { label: "Direct Order", fullLabel: "Direct Orders", href: "/employee-portals/direct-orders", icon: ReceiptText, flags: ["showDirectOrdersTab"] },
   { label: "Visits", fullLabel: "My Visits", href: "/employee-portals/visits", icon: MapPinned, flags: ["showMyVisitsTab"], permission: { resource: "crm_visits", action: "read" } },
   { label: "Calendar", fullLabel: "Team Calendar", href: "/employee-portals/team-calendar", icon: CalendarRange, flags: ["showTeamCalendarTab"] },
-  { label: "Coaching", fullLabel: "Coaching Analytics", href: "/employee-portals/coaching-analytics", icon: ChartColumnBig, flags: ["showCoachingAnalyticsTab"], permission: { resource: "coaching", action: "read" } },
+  { label: "Scores", fullLabel: "Coaching Analytics", href: "/employee-portals/coaching-analytics", icon: ChartColumnBig, flags: ["showCoachingAnalyticsTab"], permission: { resource: "coaching", action: "read" } },
   { label: "Double Visit", fullLabel: "Double-Visit Analytics", href: "/employee-portals/double-visit-analytics", icon: Activity, flags: ["showDoubleVisitAnalyticsTab"], permission: { resource: "double_visit_analytics", action: "read" } },
   { label: "DV Planner", fullLabel: "DV Planner", href: "/employee-portals/dv-planner", icon: CalendarCheck2, flags: ["showDoubleVisitReportTab"], permission: { resource: "double_visit_analytics", action: "read" } },
   { label: "DV Report", fullLabel: "Double Visit Report", href: "/employee-portals/double-visit-report", icon: FileSpreadsheet, flags: ["showDoubleVisitReportTab"], permission: { resource: "double_visit_analytics", action: "read" } },
   // Training Manager
   { label: "Overview", fullLabel: "TM Overview", href: "/employee-portals/training-manager", icon: Home, flags: ["showTrainingManagerDashboardTab"] },
-  { label: "Coaching", fullLabel: "Coaching Dashboard", href: "/employee-portals/training-manager/coaching", icon: ChartColumnBig, flags: ["showTrainingManagerDashboardTab"], permission: { resource: "coaching", action: "read" } },
+  { label: "TM coach", fullLabel: "Coaching Dashboard", href: "/employee-portals/training-manager/coaching", icon: ChartColumnBig, flags: ["showTrainingManagerDashboardTab"], permission: { resource: "coaching", action: "read" } },
   { label: "New report", fullLabel: "Create Coaching Report", href: "/employee-portals/training-manager/create-coaching-report", icon: FilePlus2, flags: ["showTrainingManagerCreateCoachingTab"], permission: { resource: "coaching", action: "create" } },
   { label: "Field", fullLabel: "Field Coaching", href: "/employee-portals/training-manager/field-coaching", icon: ClipboardCheck, flags: ["showTrainingManagerFieldCoachingTab"], permission: { resource: "coaching", action: "read" } },
   // Marketing Requests
@@ -143,8 +152,8 @@ export const PORTAL_NAV_REGISTRY: PortalNavEntry[] = [
   { label: "Probation", fullLabel: "Probation Tracker", href: "/employee-portals/probation", icon: ClipboardCheck, flags: ["showProbationTab"], permission: { resource: "probation", action: "read" } },
   { label: "Org", fullLabel: "Organogram", href: "/employee-portals/organogram", icon: Building2, flags: ["showOrganogramTab"], permission: { resource: "organogram", action: "read" } },
   // Expenses
-  { label: "Expenses", fullLabel: "My Outstation Expenses", href: "/employee-portals/expenses", icon: ReceiptText, flags: ["showMedicalRepExpensesTab"], permission: { resource: "expenses", action: "read" } },
-  { label: "Expenses", fullLabel: "Expense Dashboard", href: "/employee-portals/expense-dashboard", icon: CircleDollarSign, flags: ["showExpenseDashboardTab"], permission: { resource: "expenses", action: "read" } },
+  { label: "My exp", fullLabel: "My Outstation Expenses", href: "/employee-portals/expenses", icon: ReceiptText, flags: ["showMedicalRepExpensesTab"], permission: { resource: "expenses", action: "read" } },
+  { label: "Exp dash", fullLabel: "Expense Dashboard", href: "/employee-portals/expense-dashboard", icon: CircleDollarSign, flags: ["showExpenseDashboardTab"], permission: { resource: "expenses", action: "read" } },
   { label: "My claims", fullLabel: "Expense Submissions", href: "/employee-portals/expense-submissions", icon: ReceiptText, flags: ["showExpenseDashboardTab"], permission: { resource: "expenses", action: "read" } },
   { label: "Submit exp", fullLabel: "Submit Expense", href: "/employee-portals/submit-expense", icon: Send, flags: ["showExpenseActionTab"], permission: { resource: "outstation", action: "create" } },
   // Support
