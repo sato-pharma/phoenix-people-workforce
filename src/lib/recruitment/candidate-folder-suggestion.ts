@@ -37,6 +37,7 @@ import {
 import { candidateRegionCodes, type CandidateRegionCode } from "@/lib/recruitment/candidate-region";
 import { isUnreviewedCandidateStatus } from "@/lib/recruitment/candidate-status";
 import { resolveBackgroundStanding } from "@/lib/recruitment/background-review";
+import { screeningBandForFamily } from "@/lib/recruitment/screening-order";
 import {
   candidateRoleFamily,
   candidateRoleFamilyLabels,
@@ -91,6 +92,35 @@ function declaredRoleFamily(title: string | null | undefined): CandidateRoleFami
   );
   if (tapped) return tapped;
   return candidateRoleFamily(cleaned);
+}
+
+/**
+ * Does the degree-eligibility verdict have any bearing on the job this person actually asked for?
+ *
+ * The paramedical shelf answers ONE question — *eligible for the FIELD FORCE?* — and the owner drew
+ * its edge explicitly on 2026-09-02: *"para medical is not accepted in medical rep or district
+ * manager but normally accepted in office coordinator."* So a degree outside the five disciplines is
+ * a reason to hold a rep or a district manager, and no reason whatsoever to hold an office
+ * coordinator. Before this, the gate below read the verdict alone and held everybody — which put a
+ * legitimate office hire on the one shelf the folder module calls *"the only shelf nobody is hired
+ * out of"*.
+ *
+ * The line is drawn with `screeningBandForFamily` rather than a second list of role names, so the
+ * two cannot drift apart: everything that module already calls `unrelated` — office coordinator, HR,
+ * finance, and the `other` catch-all — is a head-office seat where a pharma or science degree is not
+ * part of the job. Field force, pharma-adjacent and sales keep the hold exactly as it was, so
+ * NOTHING changes for the two roles the owner named.
+ *
+ * A role nobody could read stays HELD, and deliberately: `screeningBandForFamily(null)` is
+ * `unknown`, which is not `unrelated`. Releasing that case would turn "we cannot tell what they
+ * applied for" into "file them anywhere", the exact widening this function exists to prevent.
+ *
+ * Do NOT answer this question by adding para-medical to the eligible disciplines in
+ * candidate-background.ts. That list is the FIELD-FORCE rule, and widening it would open the medical
+ * rep and district manager shelves to the very people the owner just excluded from them.
+ */
+export function degreeEligibilityAppliesToDeclaredRole(title: string | null | undefined): boolean {
+  return screeningBandForFamily(declaredRoleFamily(title)) !== "unrelated";
 }
 
 function isKnownRegionCode(code: string): code is CandidateRegionCode {
@@ -219,7 +249,7 @@ export function collectSuggestedFilings(candidates: readonly Candidate[]): {
     if (!cleanFolderKey(candidate.preferencesDeclaredAt)) continue;
     if (isFiledCandidate(candidate)) continue;
 
-    // THE DEGREE COMES FIRST, ahead of what they asked to do.
+    // THE DEGREE COMES FIRST — for the jobs the degree is about.
     //
     // The owner, 2026-08-31: "anyone non eligible, you will make the admin be able to check first
     // their CV and confirm." Answering the WhatsApp questions is not that check. Without this gate
@@ -239,8 +269,16 @@ export function collectSuggestedFilings(candidates: readonly Candidate[]): {
     // The STANDING, not the parser's verdict: an admin who has already answered outranks it in both
     // directions, so a graduate an admin confirmed eligible files here even if the parser dislikes
     // the faculty string, and one an admin confirmed paramedical is held even if it likes it.
+    // SCOPED TO THE ROLE since 2026-09-02 — see degreeEligibilityAppliesToDeclaredRole. The verdict
+    // is about the field force, so it holds a rep and a district manager and lets an office
+    // coordinator through. Both halves are load-bearing: drop the first and a Commerce graduate
+    // reaches the Medical Rep shelf, drop the second and a legitimate office hire is parked on a
+    // shelf nobody is hired out of.
     const standing = resolveBackgroundStanding(candidate);
-    if (standing.outcome === "paramedical") {
+    if (
+      standing.outcome === "paramedical" &&
+      degreeEligibilityAppliesToDeclaredRole(candidate.appliedForJobTitle)
+    ) {
       skipped.push({
         candidateId: candidate.id,
         fullName: candidate.fullName,
