@@ -67,6 +67,7 @@ function row(overrides: Partial<KpiRepRow> = {}): KpiRepRow {
     hasCallRate: true,
     callRateAttainmentPct: 100,
     plannedDoctors: 100,
+    coverageDueDoctors: 100,
     visitedDoctors: 95,
     missedDoctors: 5,
     coveragePct: 95,
