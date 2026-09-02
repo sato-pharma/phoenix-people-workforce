@@ -63,6 +63,7 @@ import {
   Store,
   Tags,
   Target,
+  TrendingUp,
   TriangleAlert,
   Trash2,
   Trophy,
@@ -1406,6 +1407,16 @@ const employeePortalNavigationSectionSeeds = [
       // src/lib/crm/doctor-list-access.ts) does not admit the role at all. These three roles must
       // stay in step with the portal-side half of DOCTOR_LIST_ACCESS_ROLES.
       { href: "/employee-portals/reps-list", icon: BookUser, label: "Reps List", permissions: [{ resource: "crm_visits", action: "read" }], roles: ["District Manager", "Regional Manager", "National Sales Manager"] },
+      // KPIs — THE 2026-08-28 REBUILD. Doctor Coverage stood here until the owner retired it that
+      // day with "rebuild from the beginning"; this is the entry that comes back in its place, and
+      // the drift check retired with it comes back too (tests/doctor-coverage-scope.test.ts).
+      //
+      // The role list is DOCTOR_COVERAGE_PORTAL_ROLES verbatim and must stay that way — the same
+      // seven portal-mode roles the retired board offered. Super Admin, CEO and SFE Manager are
+      // absent because they are admin-mode and land on /admin/kpis instead. Widening this list here
+      // grants nothing: getDoctorCoverageScope inside getKpisBoard decides whose reps each viewer
+      // sees, and it is asked on every load.
+      { href: "/employee-portals/kpis", icon: TrendingUp, label: "KPIs", permissions: [{ resource: "crm_visits", action: "read" }], roles: ["Medical Rep", "District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager"] },
     ],
     label: "Sales Operations",
   },
@@ -3471,6 +3482,26 @@ export const crmPageItems: readonly AdminToolsPageItem[] = [
     description:
       "Filter to a line, region and area, then open a rep to see his whole CRM contact list grouped by the brick each contact sits in — the assignment itself, not the activity against it.",
     roles: ["Super Admin", "CEO", "National Sales Manager", "SFE Manager", "Regional Manager", "District Manager"],
+  },
+  {
+    // KPIs — the owner's three field measures on one board, ordered 2026-09-02. It REPLACES the
+    // Doctor Coverage card that stood in this group until 2026-08-28 ("rebuild from the beginning"),
+    // and it adds no fourth measure: call rate, coverage and frequency were each already computed,
+    // by three modules that had no single door.
+    //
+    // ADMIN-MODE ROLES ONLY, exactly as the retired card was. Every other role with a seat — Medical
+    // Rep, DM, RM, NSM, PM, GPM, Marketing Manager — reaches the identical board through the portal
+    // twin at /employee-portals/kpis, because app/(admin)/layout.tsx redirects them out of this
+    // shell before this page's own gate could run.
+    //
+    // The enforcing gate is canSeeDoctorCoverage plus crm_visits:read, both asked by the page, and
+    // getDoctorCoverageScope decides whose reps the viewer sees. This list is UX only.
+    href: "/admin/kpis",
+    icon: TrendingUp,
+    label: "KPIs",
+    description:
+      "Call rate, coverage and frequency per rep for any month or week — the visits each rep made over his own working days, how much of his monthly plan he has reached, and whether he hit the visit count he planned per doctor.",
+    roles: ["Super Admin", "SFE Manager", "CEO"],
   },
   {
     // TAB TWO of the District Manager page — the plans a manager verifies.

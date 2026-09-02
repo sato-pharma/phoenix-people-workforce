@@ -50,6 +50,7 @@ import {
   MapPinned,
   Waypoints,
   BookUser,
+  TrendingUp,
 } from "lucide-react";
 import { EmployeePortalBottomNav } from "@/components/employee-portal/employee-portal-bottom-nav";
 import { SessionSecurityGuard } from "@/components/auth/session-security-guard";
@@ -209,6 +210,7 @@ function buildEmployeePortalSections({
   showTeamPerformanceTab = false,
   showMedRepsPerformanceTab = false,
   showRepsListTab = false,
+  showKpisTab = false,
   showMedicalRepExpensesTab = false,
   showDsmsPerformanceTab = false,
   showTeamCalendarTab = false,
@@ -359,6 +361,11 @@ function buildEmployeePortalSections({
         // the team's activity rows, this is the team's assignment — each rep's own CRM contact list,
         // grouped by brick. The admin twin is /admin/reps-list.
         ...(showRepsListTab ? [{ href: "/employee-portals/reps-list", label: "Reps List", icon: BookUser }] : []),
+        // KPIs sits directly under Reps List because it answers the next question about the same
+        // people: that board is who is on the list, this one is how well the list is being worked.
+        // Its role reach is WIDER — a Medical Rep sees his own three KPIs here, and correctly sees
+        // no Reps List above, because that board is about the reps who report to you.
+        ...(showKpisTab ? [{ href: "/employee-portals/kpis", label: "KPIs", icon: TrendingUp }] : []),
         ...(showDoubleVisitAnalyticsTab ? [{ href: "/employee-portals/double-visit-analytics", label: "Double-Visit Analytics", icon: Activity }] : []),
         ...(showDoubleVisitReportTab ? [{ href: "/employee-portals/dv-planner", label: "DV Planner", icon: CalendarCheck2 }] : []),
         ...(showDoubleVisitReportTab ? [{ href: "/employee-portals/double-visit-report", label: "Double Visit Report", icon: FileSpreadsheet }] : []),

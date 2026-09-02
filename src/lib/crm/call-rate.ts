@@ -14,6 +14,12 @@
 // not the days the rep happened to work. The owner was explicit: twenty visits
 // done across Sunday and Monday is 20/5, never 20/2.
 //
+// NATIONAL HOLIDAYS COME OUT of that count (owner, 2026-09-02): "if we have a
+// national vacation in this week, then the week will be four." The rep's OWN
+// approved leave does not — he ruled on both the same day, and the distinction
+// is what keeps the denominator identical for every rep in a month. See
+// countCallRateWorkingDays.
+//
 // WHY THE SPLIT EXISTS. A visit reaches the CRM by one of two routes:
 //
 //   • a REGULAR visit, against a registered customer — carries a contact id, a
@@ -91,29 +97,103 @@ export function weekdayOfIsoDate(dateIso: string): number | null {
   return Number.isFinite(day) ? day : null;
 }
 
-/** True when this calendar day counts toward the call-rate denominator. */
-export function isCallRateWorkingDay(dateIso: string): boolean {
+/**
+ * A set of `YYYY-MM-DD` days that do NOT count toward the denominator even though
+ * they are Sat–Wed. See {@link countCallRateWorkingDays}.
+ */
+export type CallRateHolidays = ReadonlySet<string>;
+
+/**
+ * True when this calendar day counts toward the call-rate denominator.
+ *
+ * `holidays` is optional so every existing caller keeps the pure weekday rule.
+ */
+export function isCallRateWorkingDay(dateIso: string, holidays?: CallRateHolidays): boolean {
   const weekday = weekdayOfIsoDate(dateIso);
-  return weekday === null ? false : CALL_RATE_WEEKDAYS.has(weekday);
+  if (weekday === null || !CALL_RATE_WEEKDAYS.has(weekday)) return false;
+  return !holidays?.has(dateIso);
 }
 
 /**
- * How many Sat–Wed days fall in `[dateFrom, dateTo]`, both inclusive.
+ * How many Sat–Wed days fall in `[dateFrom, dateTo]`, both inclusive, MINUS any
+ * of them that are national holidays.
+ *
+ * THE HOLIDAY RULE (owner, 2026-09-02), stated to me as: "if we have a national
+ * vacation in this week, then the week will be four." A rep's ordinary week is
+ * five countable days (Sat–Wed); a public holiday inside it removes one, so the
+ * week he is measured against is four. Without this, a national holiday silently
+ * inflates the denominator and every rep's call rate reads LOW for that month —
+ * an accusation manufactured by the calendar rather than by the rep.
+ *
+ * WHAT IS *NOT* SUBTRACTED, also the owner's ruling on the same day: the rep's
+ * own approved leave. The denominator stays a CALENDAR count of the days the
+ * company was open, not a count of the days this rep was available — which keeps
+ * the 2026-08-27 rule intact ("twenty visits done across Sunday and Monday is
+ * 20/5, never 20/2"). Two reps in the same month therefore always share a
+ * denominator, and a rep cannot improve his rate by taking leave.
+ *
+ * `holidays` is OPTIONAL and omitting it reproduces the pre-2026-09-02 behaviour
+ * exactly, so this is additive for every existing caller. The set must hold plain
+ * `YYYY-MM-DD` strings; loading it is crm/call-rate-holidays.ts's job, and that
+ * reader carries the warning about an unreachable holiday calendar.
  *
  * Returns 0 for a reversed or malformed range rather than throwing — a caller
  * dividing by this must check it, and every rate below is null when it is 0.
  */
-export function countCallRateWorkingDays(dateFrom: string, dateTo: string): number {
+export function countCallRateWorkingDays(
+  dateFrom: string,
+  dateTo: string,
+  holidays?: CallRateHolidays,
+): number {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dateFrom) || !/^\d{4}-\d{2}-\d{2}$/.test(dateTo)) return 0;
   if (dateFrom > dateTo) return 0;
   let count = 0;
   const cursor = new Date(`${dateFrom}T00:00:00Z`);
   const end = new Date(`${dateTo}T00:00:00Z`);
   while (cursor.getTime() <= end.getTime()) {
-    if (CALL_RATE_WEEKDAYS.has(cursor.getUTCDay())) count += 1;
+    // toISOString is safe here and only here: the cursor is built from a UTC
+    // midnight and only ever advanced by whole UTC days, so it can never drift
+    // into the previous day the way a Cairo wall-clock date would.
+    if (CALL_RATE_WEEKDAYS.has(cursor.getUTCDay()) && !holidays?.has(cursor.toISOString().slice(0, 10))) {
+      count += 1;
+    }
     cursor.setUTCDate(cursor.getUTCDate() + 1);
   }
   return count;
+}
+
+/**
+ * Expands holiday RANGES into the individual days they cover.
+ *
+ * A national vacation is commonly several days (Eid runs three or four), and the
+ * calendar returns it as ONE entry with a start and an end. Subtracting such an
+ * entry as a single day would leave two or three holidays still sitting in the
+ * denominator — the same silent inflation this whole rule exists to remove.
+ *
+ * `endDate` is nullable on the source type and a null means a one-day holiday.
+ * An end BEFORE the start is treated as one day rather than trusted, because the
+ * alternative is an unbounded loop on bad vendor data.
+ *
+ * Pure, and deliberately in this module rather than beside the reader, so the
+ * expansion can be tested without a database or a live Google calendar.
+ */
+export function expandHolidayDates(
+  ranges: readonly { startDate: string; endDate?: string | null }[],
+): Set<string> {
+  const dates = new Set<string>();
+  for (const range of ranges) {
+    const start = range.startDate;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(start)) continue;
+    const rawEnd = range.endDate ?? start;
+    const end = /^\d{4}-\d{2}-\d{2}$/.test(rawEnd) && rawEnd >= start ? rawEnd : start;
+    const cursor = new Date(`${start}T00:00:00Z`);
+    const last = new Date(`${end}T00:00:00Z`);
+    while (cursor.getTime() <= last.getTime()) {
+      dates.add(cursor.toISOString().slice(0, 10));
+      cursor.setUTCDate(cursor.getUTCDate() + 1);
+    }
+  }
+  return dates;
 }
 
 /** Which of the three proof buckets a single call belongs to. */
@@ -188,6 +268,9 @@ export type CallRateReport = {
   dateFrom: string;
   dateTo: string;
   workingDays: number;
+  /** Sat–Wed days removed from the denominator because they are national holidays. Reported so a
+   * board can say "23 working days, 2 holidays" rather than presenting an unexplained 21. */
+  holidayDays: number;
   campaignLimit: number;
   reps: RepCallRate[];
 };
@@ -262,11 +345,15 @@ export function classifyCallProof<C extends CheckinForMatch>(
 export function computeCallRate<C extends CheckinForMatch>(
   visits: readonly VisitForCallRate[],
   checkins: readonly C[],
-  options: { dateFrom: string; dateTo: string; campaignLimit?: number },
+  options: { dateFrom: string; dateTo: string; campaignLimit?: number; holidays?: CallRateHolidays },
 ): CallRateReport {
   const { dateFrom, dateTo } = options;
   const campaignLimit = options.campaignLimit ?? DAILY_CAMPAIGN_LIMIT;
-  const workingDays = countCallRateWorkingDays(dateFrom, dateTo);
+  const workingDays = countCallRateWorkingDays(dateFrom, dateTo, options.holidays);
+  // Deliberately the DIFFERENCE between the two counts, not `options.holidays.size`. The caller's
+  // set covers whole months, so it holds Thursdays, Fridays and days outside the period — none of
+  // which were ever in the denominator. Only the ones actually removed are reportable.
+  const holidayDays = countCallRateWorkingDays(dateFrom, dateTo) - workingDays;
   const checkinIndex = indexCheckinsByAgentContactDay(checkins);
 
   type Accumulator = {
@@ -349,5 +436,5 @@ export function computeCallRate<C extends CheckinForMatch>(
   }
 
   reps.sort((a, b) => b.campaignShare - a.campaignShare || a.agentName.localeCompare(b.agentName));
-  return { dateFrom, dateTo, workingDays, campaignLimit, reps };
+  return { dateFrom, dateTo, workingDays, holidayDays, campaignLimit, reps };
 }

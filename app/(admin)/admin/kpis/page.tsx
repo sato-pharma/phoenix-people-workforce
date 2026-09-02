@@ -1,0 +1,80 @@
+// KPIs — the owner's three field measures on one board, in four tabs.
+//
+// THIS IS THE REBUILD ordered on 2026-08-28, when Doctor Coverage and Rep Doctor Lists were retired
+// with the instruction to "rebuild from the beginning". Their fault was two boards answering one
+// question with disagreeing measures; this page assembles the measures that were already right and
+// adds no fourth one. The retired routes stay as redirect stubs.
+//
+// The owner's specification, 2026-09-02: "a new tab in the sidebar of everyone who is applicable...
+// called KPIs. In this page you will show four tabs. The first tab is the summary. The second tab is
+// called call rate. The third tab is called coverage. The fourth tab is called frequency."
+//
+// WHO SEES WHAT is not decided here. src/lib/crm/doctor-coverage-roles.ts is the single role list
+// and src/lib/crm/doctor-coverage-scope.ts resolves the reach — company for Super Admin/CEO/SFE,
+// one line for NSM/PM/GPM, own team for Regional and District Managers, own panel for a Medical Rep.
+// The board applies that scope to every row before returning it; the nav hiding a link is UX only.
+//
+// The whole selection rides in the URL, so every change re-runs the gate server-side.
+import { redirect } from "next/navigation";
+
+import { KpisBoardView } from "@/components/crm/kpis-board-view";
+import { canAccess } from "@/lib/auth/permissions";
+import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { cairoTodayIso } from "@/lib/crm/dates";
+import { canSeeDoctorCoverage } from "@/lib/crm/doctor-coverage-roles";
+import { getKpisBoard, kpiMonthOptions, kpiPeriodOptions } from "@/lib/crm/kpis-board";
+import { resolveKpiTab } from "@/lib/crm/kpis-tabs";
+import { resolveRepsPlansMonth } from "@/lib/crm/reps-plans";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+const BASE_PATH = "/admin/kpis";
+
+type PageProps = {
+  searchParams?: Promise<{ month?: string; period?: string; tab?: string }>;
+};
+
+export default async function AdminKpisPage({ searchParams }: PageProps) {
+  const access = await resolveAccessContextFromPage();
+  // Two gates, both server-side: the explicit role list, then the permission matrix that is the real
+  // security boundary. No access redirects rather than explaining — inside the admin shell an
+  // unreachable page should behave as if it does not exist for that role.
+  if (!canSeeDoctorCoverage(access.role)) redirect("/admin");
+  if (!(await canAccess(access, "crm_visits", "read"))) redirect("/admin");
+
+  const params = await searchParams;
+  const today = cairoTodayIso();
+  const month = resolveRepsPlansMonth(params?.month, today);
+  const tab = resolveKpiTab(params?.tab);
+
+  // Data fetch and JSX stay separated (react-hooks/error-boundaries: JSX must not be constructed
+  // inside try/catch). A data failure renders a plain explanation, never a crash page — and never a
+  // zero, which on this board would read as "every rep did nothing".
+  let board: Awaited<ReturnType<typeof getKpisBoard>> | null = null;
+  let loadError: string | null = null;
+  try {
+    board = await getKpisBoard({ access, month, period: params?.period, todayIso: today });
+  } catch (error) {
+    loadError = error instanceof Error ? error.message : "KPI data is unavailable.";
+  }
+
+  if (!board) {
+    return (
+      <div className="border border-rose-200 bg-rose-50 px-5 py-4">
+        <p className="text-sm font-bold text-rose-800">KPIs could not load.</p>
+        <p className="mt-1 text-xs text-rose-700">{loadError}</p>
+      </div>
+    );
+  }
+
+  return (
+    <KpisBoardView
+      basePath={BASE_PATH}
+      board={board}
+      monthOptions={kpiMonthOptions(today)}
+      periodOptions={kpiPeriodOptions(month, today)}
+      tab={tab}
+    />
+  );
+}
