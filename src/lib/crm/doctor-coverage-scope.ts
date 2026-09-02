@@ -38,7 +38,11 @@
 
 import { getEmployeeDirectoryRows, isActiveLifecycleStatus } from "@/lib/employees/employee-directory";
 import { isWithinManagerHierarchy, sameWorkforceLine } from "@/lib/workforce/hierarchy-resolver";
-import { doctorCoverageScopeBasisForRole, type DoctorCoverageScopeBasis } from "@/lib/crm/doctor-coverage-roles";
+import {
+  doctorCoverageScopeBasisForRole,
+  type DoctorCoverageScope,
+  type DoctorCoverageScopeBasis,
+} from "@/lib/crm/doctor-coverage-roles";
 import { getDoctorCoverageConfig, type DoctorCoverageLineOverrides } from "@/lib/crm/doctor-coverage-config";
 import { normalizeHrIdForAccess } from "@/lib/hr-id";
 import type { AccessContext } from "@/lib/auth/permissions";

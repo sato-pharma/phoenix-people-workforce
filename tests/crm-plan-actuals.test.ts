@@ -111,6 +111,9 @@ export function runCrmPlanActualsTests() {
 
   // ── THE WHOLE PIPE, THROUGH buildPlanDoctorDays ───────────────────────────────────────────────
   const entry = (over: Partial<PlanEntryRow>): PlanEntryRow => ({
+    // The plan payload carries no address; the Reps List tab joins one in. Null is the shape a plan
+    // row genuinely arrives with, so the fixture says so rather than inventing one.
+    address: null,
     ampm: "AM",
     contactCrmId: null,
     contactName: "Doctor",
