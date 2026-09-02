@@ -218,6 +218,7 @@ import { runRecruitmentEmailIntakeTests } from "./recruitment-email-intake.test.
 import { runRecruitmentWhatsAppIntakeTests } from "./recruitment-whatsapp-intake.test.ts";
 import { runWhatsAppSelfClassificationTests } from "./whatsapp-self-classification.test.ts";
 import { runWhatsAppClassifyReaskTests } from "./whatsapp-classify-reask.test.ts";
+import { runWhatsAppFinishedSweepTests } from "./whatsapp-finished-sweep.test.ts";
 import { runWhatsAppOwnerMirrorTests } from "./whatsapp-owner-mirror.test.ts";
 import { runWhatsAppCoexistenceHistoryTests } from "./recruitment-whatsapp-coexistence-history.test.ts";
 import { runWhatsAppReplyAnswersTheQuestionTests } from "./whatsapp-reply-answers-the-question.test.ts";
@@ -1628,6 +1629,7 @@ await runTest(
 await runTest("recruitment whatsapp intake", runRecruitmentWhatsAppIntakeTests);
 await runTest("whatsapp self-classification menus and replies", runWhatsAppSelfClassificationTests);
 await runTest("whatsapp classification re-asks a stalled conversation", runWhatsAppClassifyReaskTests);
+await runTest("whatsapp classification sweeps conversations that finished but stayed open", runWhatsAppFinishedSweepTests);
 await runTest("whatsapp text-only applicant recovery", runWhatsAppTextOnlyApplicantTests);
 await runTest("whatsapp reply answers what they asked", runWhatsAppReplyAnswersTheQuestionTests);
 await runTest("whatsapp outbound message log", runWhatsAppOutboundLogTests);
