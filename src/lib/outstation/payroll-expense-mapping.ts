@@ -50,11 +50,48 @@ export function outstationStatusLabel(value: unknown) {
   return "Pending";
 }
 
-function outstationExpenseTotal(input: {
-  claimedTotalAmount: number;
+function roundMoney(value: number) {
+  return Math.round(value * 100) / 100;
+}
+
+/**
+ * The ONE payable total for an outstation trip — shared by `mapOutstationRequestToPayrollExpenseRecord`
+ * (what gets PUSHED to payroll) and `mapOutstationRequestRowToPayrollApproval` (what the admin table
+ * and employee portal DISPLAY). Before 2026-09-03 they used two different formulas and disagreed on
+ * live rows 52 and 99 — the push mapper preferred the client-posted `claimed_total_amount` the moment
+ * a client posted anything greater than zero, silently underpaying both (request 52: paid 364 against
+ * an 800 the row's own allowance column and the employee's own portal card both said; request 99: paid
+ * 341.90 against 541.90). Nothing bounded the reverse case either.
+ *
+ * Owner ruling, 2026-09-03: the server's own priced total is authoritative. A client-posted claim is
+ * recorded and shown separately (see `outstationClaimedTotal`) but must never become the payable
+ * figure.
+ *
+ * Recomputes travel + meeting + allowance + other first — that self-heals a row whose stored
+ * `expected_total_amount` has gone stale relative to its own report_* override columns (see the
+ * "stale ticket columns" case in tests/outstation-manual-expense-ticket-plus-allowance.test.ts) — and
+ * falls back to the stored `expected_total_amount` only when there is nothing to sum. Never falls
+ * back to the claim.
+ */
+export function outstationPayableTotal(input: {
+  allowanceAmount: number;
   expectedTotalAmount: number;
-}) {
-  return input.claimedTotalAmount > 0 ? input.claimedTotalAmount : input.expectedTotalAmount;
+  isMeetingTrip: boolean;
+  meetingAmount: number;
+  otherAmount: number;
+  travelCost: number;
+}): { meetingAmount: number; total: number } {
+  const expected =
+    Number.isFinite(input.expectedTotalAmount) && input.expectedTotalAmount > 0
+      ? roundMoney(input.expectedTotalAmount)
+      : 0;
+  // A meeting-type trip with no explicit meeting figure files its whole cost as "meeting" —
+  // fall back to the server's own total, never the claim.
+  const meetingAmount = input.meetingAmount || (input.isMeetingTrip ? expected : 0);
+  const componentTotal = roundMoney(
+    input.travelCost + meetingAmount + input.allowanceAmount + input.otherAmount,
+  );
+  return { meetingAmount, total: componentTotal > 0 ? componentTotal : expected };
 }
 
 /** Reads one of the doctor/pharmacy/institution totals out of a stored workload snapshot.
@@ -82,9 +119,16 @@ export function mapOutstationRequestToPayrollExpenseRecord(
 } {
   const tripStartDate = request.tripStartDate ? request.tripStartDate.slice(0, 10) : "";
   const tripEndDate = request.tripEndDate ? request.tripEndDate.slice(0, 10) : tripStartDate;
-  const total = outstationExpenseTotal({
-    claimedTotalAmount: request.claimedTotalAmount,
+  // Prefer the override (survives an extra-ticket append, which updates report_travel_cost
+  // without touching fuel_amount/ticket_amount) over the raw fuel+ticket sum.
+  const travelCost = request.reportTravelCost ?? request.fuelAmount + request.ticketAmount;
+  const { meetingAmount, total } = outstationPayableTotal({
+    allowanceAmount: request.allowanceAmount,
     expectedTotalAmount: request.expectedTotalAmount,
+    isMeetingTrip: request.expenseType === "meeting",
+    meetingAmount: request.reportMeetingAmount || request.meetingAmount || 0,
+    otherAmount: request.reportOtherAmount || request.otherAmount || 0,
+    travelCost,
   });
 
   return {
@@ -107,7 +151,7 @@ export function mapOutstationRequestToPayrollExpenseRecord(
     institutionVisits: snapshotKindCount(request.workloadEvidenceSnapshot, "institutionVisits"),
     km: request.distanceFromResidenceKm ?? 0,
     location: request.toLabel ?? request.toCity ?? request.toArea ?? "",
-    meetingAmount: request.meetingAmount ?? (request.expenseType === "meeting" ? total : 0),
+    meetingAmount,
     open: "",
     other: request.otherAmount ?? 0,
     pharmacyVisits: snapshotKindCount(request.workloadEvidenceSnapshot, "pharmacyVisits"),
@@ -121,7 +165,7 @@ export function mapOutstationRequestToPayrollExpenseRecord(
     toDate: tripEndDate,
     total,
     transportationType: request.transportationType,
-    travelCost: request.fuelAmount + request.ticketAmount,
+    travelCost,
     tripId: outstationPayrollTripId(request.id),
     tripType: request.expenseType,
   };
@@ -142,9 +186,7 @@ export function mapOutstationRequestRowToPayrollApproval(
     [row.residence_area, row.residence_city].map(toText).filter(Boolean).join(", ");
   const payout = nextPayrollPeriod(tripStartDate);
   const allowance = toNumber(row.allowance_amount);
-  const claimedTotal = toNumber(row.claimed_total_amount);
   const expectedTotal = toNumber(row.expected_total_amount);
-  const fallbackTotal = claimedTotal > 0 ? claimedTotal : expectedTotal;
 
   // Use report_* override columns when set; fall back to original columns.
   const travelCost =
@@ -167,10 +209,14 @@ export function mapOutstationRequestRowToPayrollApproval(
   const hrNotes = toText(row.report_hr_notes) || toText(row.eligibility_reason);
   const tripType = toText(row.report_trip_type) || toText(row.expense_type) || "traveling";
 
-  // For meeting-type requests with no explicit amount, fall back to the claimed/expected total.
-  const meetingAmount = rawMeetingAmount || (tripType.toLowerCase() === "meeting" ? fallbackTotal : 0);
-  const componentTotal = travelCost + meetingAmount + allowance + other;
-  const total = componentTotal > 0 ? componentTotal : fallbackTotal;
+  const { meetingAmount, total } = outstationPayableTotal({
+    allowanceAmount: allowance,
+    expectedTotalAmount: expectedTotal,
+    isMeetingTrip: tripType.toLowerCase() === "meeting",
+    meetingAmount: rawMeetingAmount,
+    otherAmount: other,
+    travelCost,
+  });
 
   return {
     allowance,

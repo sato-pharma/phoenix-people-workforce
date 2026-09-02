@@ -91,7 +91,9 @@ export function runOutstationPayrollExpenseMappingTests() {
   assert.equal(mappedWithExtras.amWorkload, 3, "am_workload must map through");
   assert.equal(mappedWithExtras.pmWorkload, 4, "pm_workload must map through");
 
-  // A meeting-type request with no explicit meeting_amount falls back to the trip total.
+  // A meeting-type request with no explicit meeting_amount falls back to the server's own
+  // expected total — NEVER the claim, even when the claim is higher (owner ruling 2026-09-03,
+  // requests 52 and 99: a client-posted figure must never silently become the payable amount).
   const mappedMeeting = mapOutstationRequestRowToPayrollApproval({
     claimed_total_amount: 900,
     created_at: "2026-05-20T10:00:00.000Z",
@@ -103,6 +105,7 @@ export function runOutstationPayrollExpenseMappingTests() {
     status: "approved",
     trip_start_date: "2026-05-20T00:00:00.000Z",
   });
-  assert.equal(mappedMeeting.meetingAmount, 900, "meeting-type request defaults meeting_amount to the trip total");
+  assert.equal(mappedMeeting.meetingAmount, 800, "meeting-type request defaults meeting_amount to the EXPECTED total, not the claim");
+  assert.equal(mappedMeeting.total, 800, "the claim (900) must never become the payable total");
   assert.equal(mappedMeeting.other, 0);
 }
