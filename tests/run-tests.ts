@@ -173,6 +173,7 @@ import { runWhatsAppScreeningQuestionsMenuTests } from "./whatsapp-screening-que
 import { runWhatsAppScreeningQuestionsSessionTests } from "./whatsapp-screening-questions-session.test.ts";
 import { runWhatsAppScreeningQuestionsAdminTests } from "./whatsapp-screening-questions-admin.test.ts";
 import { runWhatsAppScreeningQuestionRoleScopeTests } from "./whatsapp-screening-question-role-scope.test.ts";
+import { runWhatsAppStaleSessionRepromptTests } from "./whatsapp-stale-session-reprompt.test.ts";
 import { runWhatsAppQuestionPromptsTests } from "./whatsapp-question-prompts.test.ts";
 import { runRecruitmentPipelineMetricsTests } from "./recruitment-pipeline-metrics.test.ts";
 import { runRecruitmentHiringManagerPushTests } from "./recruitment-hiring-manager-push.test.ts";
@@ -1479,6 +1480,10 @@ await runTest(
 await runTest(
   "WhatsApp screening question role scope (a question scoped to the Office Coordinator never reaches a medical rep; an unscoped one still reaches everyone, and a scoped one never reaches an applicant whose role we do not know)",
   runWhatsAppScreeningQuestionRoleScopeTests,
+);
+await runTest(
+  "WhatsApp stale-session re-prompt (a new CV re-asks a conversation that has gone quiet for six hours, instead of being swallowed by the one-open-session guard; every live step has a question to repeat, and the repeat is the same question)",
+  runWhatsAppStaleSessionRepromptTests,
 );
 await runTest(
   "WhatsApp built-in question wording (defaults are read from the menu builders so they cannot drift; rewording never touches the answer options; a reworded menu still passes the send-time check; the built-in wording is never written into the extra-question table, which would ask all six a second time)",

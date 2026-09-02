@@ -277,7 +277,9 @@ export async function POST(request: Request) {
           phoneNumberId: message.deliveredToPhoneNumberId,
           waId: message.from,
         });
-        if (classifyOutcome === "asked") classifyPromptsSent += 1;
+        // A re-ask is a prompt too — a stale conversation this CV reopened. Counting only "asked"
+        // is part of what made the swallowed case invisible.
+        if (classifyOutcome === "asked" || classifyOutcome === "reasked") classifyPromptsSent += 1;
       }
 
       outcomes.push({ outcome: enqueued ? "enqueued" : "duplicate", wamid: message.wamid });

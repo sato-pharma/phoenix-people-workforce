@@ -79,6 +79,7 @@ import { sendClassifyMenu, sendWhatsAppText } from "@/lib/recruitment/inbound/wh
 // SESSION_COLUMNS is a `const`, and a `const` read from a module still mid-initialization throws.
 import {
   listActiveScreeningQuestions,
+  resendExtraQuestion,
   startExtraQuestionLoop,
 } from "@/lib/recruitment/inbound/whatsapp-screening-questions-session";
 
@@ -317,7 +318,132 @@ export type StartClassificationOutcome =
   | "skipped_historical"
   | "already_open"
   | "send_failed"
+  | "reasked"
   | "asked";
+
+// ── Re-asking a conversation that went quiet ─────────────────────────────────────────────────────
+
+/**
+ * How long a conversation must have gone quiet before a NEW CV re-asks the question it is sitting
+ * on, instead of being swallowed by the one-open-session guard.
+ *
+ * The number matters in one direction only. Too SHORT and an applicant who is mid-flow — reading the
+ * menu, sending a second CV a few minutes later because the first one looked wrong — is asked the
+ * same question twice and cannot tell which answer counts. Too LONG is merely the bug we already
+ * had. Six hours is longer than any real answering gap seen on this line and far short of the 27.5
+ * hours that produced the silence this exists to fix.
+ */
+export const STALE_SESSION_REPROMPT_MS = 6 * 60 * 60 * 1000;
+
+/**
+ * True when the conversation has been quiet long enough that a new CV should re-ask.
+ *
+ * `updated_at` is LAST ACTIVITY of any kind — every prompt sent and every answer given writes it —
+ * which is the right clock here: it measures how long the applicant has been sitting in front of an
+ * unanswered question, not how long the row has existed.
+ *
+ * A missing or unparseable timestamp counts as stale. The alternative is to stay silent on a row we
+ * cannot date, and staying silent is the exact failure this function exists to end.
+ */
+export function isSessionStale(updatedAt: string | null | undefined, now: number = Date.now()): boolean {
+  if (!updatedAt) return true;
+  const at = Date.parse(updatedAt);
+  if (Number.isNaN(at)) return true;
+  return now - at >= STALE_SESSION_REPROMPT_MS;
+}
+
+/** The open-session read: the row, plus the two fields only the re-ask path needs. */
+const OPEN_SESSION_COLUMNS = `${SESSION_COLUMNS},extra_current_question_key,updated_at`;
+
+type OpenSessionRow = SessionRow & {
+  extra_current_question_key: string | null;
+  updated_at: string | null;
+};
+
+/**
+ * What re-asking a given step involves. Deliberately DATA rather than a send: the area menu needs a
+ * database read and the salary prompt an override read, so returning a plan keeps the step-to-prompt
+ * mapping pure — and therefore exhaustively testable with no database, which is the only way to
+ * prove that no step was forgotten. A forgotten step is silence, which is the bug being fixed.
+ */
+export type RepromptPlan =
+  | { kind: "menu"; menu: ClassifyMenu }
+  | { kind: "text"; text: string }
+  | { kind: "area"; regionCode: CandidateRegionCode }
+  | { kind: "salary" }
+  | { kind: "extra"; questionKey: string };
+
+/**
+ * The prompt a session sitting on `step` should hear again.
+ *
+ * Null only where there is genuinely nothing to repeat: a finished conversation, or a row whose step
+ * has lost the partner field it needs — an `area` with no region, an `extra` with no current
+ * question. Those are unreachable in a healthy row and are handled rather than assumed away.
+ */
+export function planReprompt(session: {
+  step: string;
+  region_code: string | null;
+  extra_current_question_key?: string | null;
+}): RepromptPlan | null {
+  switch (session.step) {
+    case "job_title":
+      return { kind: "menu", menu: jobTitleMenu() };
+    case "job_title_other":
+      return { kind: "text", text: jobTitleOtherPromptText() };
+    case "background":
+      return { kind: "menu", menu: backgroundMenu() };
+    case "background_other":
+      return { kind: "text", text: backgroundOtherPromptText() };
+    case "region":
+      return { kind: "menu", menu: regionMenu() };
+    case "region_other":
+      return { kind: "text", text: regionOtherPromptText() };
+    case "area":
+      return isOfferedRegion(session.region_code ?? "")
+        ? { kind: "area", regionCode: session.region_code as CandidateRegionCode }
+        : null;
+    case "area_other":
+      return { kind: "text", text: areaOtherPromptText() };
+    case "experience":
+      return { kind: "menu", menu: experienceMenu() };
+    case "salary":
+      return { kind: "salary" };
+    // Written by the extra-question loop, which owns its own vocabulary — this is why the switch is
+    // on `string` and not on ClassifySessionStep, whose union deliberately stops at the fixed six.
+    case "extra":
+      return session.extra_current_question_key
+        ? { kind: "extra", questionKey: session.extra_current_question_key }
+        : null;
+    default:
+      return null;
+  }
+}
+
+/**
+ * Re-sends the prompt a stale conversation is parked on.
+ *
+ * Goes back out through `sendStep` and `sendPromptText`, so a re-ask inherits the owner's wording
+ * override and the window_closed handling from the first time it was asked and cannot drift from
+ * them. Neither writes a different step, so the conversation stays exactly where it was; both write
+ * `updated_at`, which is what stops the next CV re-asking again immediately.
+ */
+async function resendCurrentPrompt(
+  session: OpenSessionRow,
+  fallbackPhoneNumberId: string | null,
+): Promise<boolean> {
+  const plan = planReprompt(session);
+  if (!plan) return false;
+  const withPhone = { ...session, phone_number_id: session.phone_number_id ?? fallbackPhoneNumberId };
+
+  if (plan.kind === "menu") return sendStep(withPhone, plan.menu);
+  if (plan.kind === "text") return sendPromptText(withPhone, plan.text);
+  if (plan.kind === "salary") return sendPromptText(withPhone, await salaryPromptWithOverride());
+  if (plan.kind === "extra") return resendExtraQuestion(withPhone, plan.questionKey, session.job_title_family);
+
+  const areas = await areaNamesForRegion(plan.regionCode);
+  if (areas.length === 0) return false;
+  return sendStep(withPhone, areaMenu(plan.regionCode, areas), candidateRegionLabels[plan.regionCode]);
+}
 
 /**
  * Opens the conversation and asks question 1. Returns why it did nothing when it did nothing.
@@ -350,13 +476,35 @@ export async function startClassification(input: StartClassificationInput): Prom
     // One open conversation per sender. A second CV mid-flow must not start a parallel conversation:
     // the applicant's next tap would be ambiguous between the two, and the partial unique index
     // would reject the insert anyway.
+    //
+    // "Open" used to have no expiry, and that was a silent trap. A sender who never answered the
+    // first menu held the row open indefinitely, so every later CV they sent hit this guard and got
+    // NOTHING back — no menu, no acknowledgement, and no log, because the caller counts only
+    // "asked". Measured on production 2026-09-02: an applicant sent a second CV 27.5 hours after
+    // opening a conversation she never answered and heard nothing, with 68 open sessions sitting in
+    // the same state behind her. The arriving CV REOPENS Meta's 24-hour window, so the moment we
+    // were refusing to speak was precisely the moment we were free to.
     const { data: existing } = await supabase
       .from(SESSIONS_TABLE)
-      .select("id")
+      .select(OPEN_SESSION_COLUMNS)
       .eq("wa_id", input.waId)
       .is("completed_at", null)
       .maybeSingle();
-    if (existing) return "already_open";
+    if (existing) {
+      const open = existing as unknown as OpenSessionRow;
+      // Still warm: they have a live question in front of them, and asking it twice is worse than
+      // saying nothing. Only a conversation that has actually gone quiet is re-asked.
+      if (!isSessionStale(open.updated_at)) return "already_open";
+      if (await resendCurrentPrompt(open, input.phoneNumberId)) return "reasked";
+      // Stale, and we could not repeat the question: a deactivated extra question, a region whose
+      // areas are gone, or a send that failed. Rare, and it leaves the applicant exactly as silent
+      // as the old bug did — so it is the one case here that must be visible.
+      logWarning("WhatsApp classification could not re-ask a stale conversation", {
+        context: { sessionId: open.id, step: open.step },
+        labels: { event: "whatsapp_classify_reprompt_failed" },
+      });
+      return "send_failed";
+    }
 
     const { data: inserted, error } = await supabase
       .from(SESSIONS_TABLE)
