@@ -3882,15 +3882,28 @@ function ReviewCard({
                     </Button>
                   </>
                 ) : null}
+                {/* Acknowledgement is recorded automatically the moment a plan reaches
+                    final_approved (weekly-planning/service.ts autoAcknowledgeFinalApprovedPlan),
+                    so this card is normally a RECORD of what was acknowledged, not a queue of
+                    work — a live Acknowledge button on every row would read as "these are all
+                    waiting for you". The button stays for the one row that genuinely still needs
+                    it: a plan the automatic step could not acknowledge, still at final_approved. */}
                 {type === "hr" ? (
-                  <Button
-                    disabled={isPending}
-                    onClick={() => onDecision(p.id, "hr_acknowledge")}
-                    variant="secondary"
-                  >
-                    <CircleAlert className="mr-2 h-4 w-4" />
-                    Acknowledge
-                  </Button>
+                  p.status === "hr_acknowledged" ? (
+                    <span className="inline-flex items-center gap-2 px-1 text-sm font-black text-emerald-700">
+                      <BadgeCheck className="h-4 w-4" />
+                      Acknowledged
+                    </span>
+                  ) : (
+                    <Button
+                      disabled={isPending}
+                      onClick={() => onDecision(p.id, "hr_acknowledge")}
+                      variant="secondary"
+                    >
+                      <CircleAlert className="mr-2 h-4 w-4" />
+                      Acknowledge
+                    </Button>
+                  )
                 ) : null}
               </div>
             </div>

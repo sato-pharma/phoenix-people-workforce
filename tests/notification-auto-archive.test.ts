@@ -67,6 +67,19 @@ export function runNotificationAutoArchiveTests() {
   }
 
   {
+    // plan_ceo_approved took the same shape once HR's acknowledgement became automatic
+    // (autoAcknowledgeFinalApprovedPlan, 2026-09-02): the normal copy is a pure FYI tagged
+    // audience: "hr_awareness" and must survive in the bell, while an UNTAGGED copy means the
+    // automatic acknowledgement failed and the plan really is still awaiting HR's manual click.
+    const candidates = classifyActionableApprovalCandidates([
+      { id: "n12", module: "weekly_plans", event_type: "plan_ceo_approved", metadata: { planId: "PLAN-4" } },
+      { id: "n13", module: "weekly_plans", event_type: "plan_ceo_approved", metadata: { audience: "hr_awareness", planId: "PLAN-5" } },
+    ]);
+    assert.equal(candidates.plan.length, 1, "only the action-needed plan_ceo_approved copy is a candidate");
+    assert.equal(candidates.plan[0].id, "n12", "the auto-acknowledged FYI copy must never be auto-archived as a stale approval");
+  }
+
+  {
     // Defensive: missing id, missing requestId/planId, and an unrecognized module must never
     // crash or silently produce a bogus candidate.
     const candidates = classifyActionableApprovalCandidates([
