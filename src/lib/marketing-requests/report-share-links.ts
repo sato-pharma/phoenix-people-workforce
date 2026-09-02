@@ -18,6 +18,7 @@ import {
   type RequestFileLinks,
 } from "@/lib/marketing-requests/request-report-columns";
 import { loadMarketingRequestFullReport } from "@/lib/marketing-requests/request-report-service";
+import { hrIdForStorage } from "@/lib/hr-id";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Live Marketing Request report links (owner request, 2026-08-05).
@@ -171,7 +172,7 @@ export async function revokeMarketingReportShareLink(access: AccessContext, link
   const owns = String((row as { created_by_hr_id: string }).created_by_hr_id).toUpperCase() === (access.hrId ?? "").toUpperCase();
   if (!isAdmin && !owns) throw forbiddenError("You can only revoke a link you created.");
 
-  await supabase.from(TABLE).update({ revoked_at: new Date().toISOString(), revoked_by_hr_id: access.hrId }).eq("id", linkId);
+  await supabase.from(TABLE).update({ revoked_at: new Date().toISOString(), revoked_by_hr_id: hrIdForStorage(access.hrId) }).eq("id", linkId);
 
   await writeRequiredAuditLog({
     actorLoginId: access.loginId ?? access.hrId,

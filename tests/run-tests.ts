@@ -324,7 +324,7 @@ import { runRepsWeeklyPlansTests } from "./reps-weekly-plans.test.ts";
 import { runLocationIqGeocodeConfidenceTests } from "./locationiq-geocode-confidence.test.ts";
 import { runPrivateCalendarTests } from "./private-calendar.test.ts";
 import { runWeeklyPlanApproverUiParityTests } from "./weekly-plan-approver-ui-parity.test.ts";
-import { runWeeklyPlanActorHrIdCasingTests } from "./weekly-plan-actor-hrid-casing.test.ts";
+import { runHrIdStorageCasingTests } from "./hr-id-storage-casing.test.ts";
 import { runWeeklyPlanMovePeriodTests } from "./weekly-plan-move-period.test.ts";
 import { runWeeklyPlanAutoHrAcknowledgeTests } from "./weekly-plan-auto-hr-acknowledge.test.ts";
 import { runWeeklyPlanErrorBannerToneTests } from "./weekly-plan-error-banner-tone.test.ts";
@@ -1825,7 +1825,7 @@ await runTest("LocationIQ geocode confidence (reverse/forward scoring + Location
 await runTest("private calendar", runPrivateCalendarTests);
 await runTest("weekly plan approver UI parity (no buttons the server rejects; comments gated on participation)", runWeeklyPlanApproverUiParityTests);
 await runTest("weekly plan move to another period (HR re-dates a plan the employee filed on the wrong week)", runWeeklyPlanMovePeriodTests);
-await runTest("weekly plan actor hr id is stored in canonical casing, never the lowercase comparison key", runWeeklyPlanActorHrIdCasingTests);
+await runTest("hr ids are stored in canonical casing everywhere, never the lowercase comparison key", runHrIdStorageCasingTests);
 await runTest("weekly plan automatic HR acknowledgement on final approval (both routes, best-effort, manual fallback intact)", runWeeklyPlanAutoHrAcknowledgeTests);
 await runTest("weekly plan error banner tone (a rejection must not look like a confirmation)", runWeeklyPlanErrorBannerToneTests);
 await runTest("termination truth (company exits are not announced as resignations; complete actually terminates)", runTerminationTruthTests);

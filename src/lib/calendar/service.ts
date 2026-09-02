@@ -4,6 +4,7 @@ import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { getCompanyHolidaysForMonth } from "@/lib/vacation/company-holidays";
 import { getConfirmedNationalHolidays } from "@/lib/vacation/national-holidays";
+import { hrIdForStorage } from "@/lib/hr-id";
 import {
   buildMonthGrid,
   canManageCompanyCalendar,
@@ -380,7 +381,7 @@ export async function createCompanyCalendarEvent(access: AccessContext, input: C
       location: normalized.location,
       audience_scope: scope.audienceScope,
       line_name: scope.lineName,
-      created_by_hr_id: access.hrId,
+      created_by_hr_id: hrIdForStorage(access.hrId),
       created_by_name: null,
       created_by_role: access.role,
     })

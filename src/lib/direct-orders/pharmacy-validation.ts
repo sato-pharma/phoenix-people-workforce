@@ -8,7 +8,7 @@ import {
   type DirectOrderEvidenceCheck,
 } from "@/lib/direct-orders/evidence-check";
 import { assertDirectOrderWorkflowTransition } from "@/lib/direct-orders/workflow";
-import { canonicalHrIdKey } from "@/lib/hr-id";
+import { canonicalHrIdKey, hrIdForStorage } from "@/lib/hr-id";
 import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import {
@@ -390,7 +390,7 @@ export async function requestDirectOrderPharmacyValidation(
     .insert({
       pharmacy_id: pharmacyId,
       request_id: input.requestId ?? null,
-      requested_by_hr_id: access.hrId,
+      requested_by_hr_id: hrIdForStorage(access.hrId),
       suggestions_shown: suggestions.length > 0 ? suggestions : null,
       suggestions_refused: suggestions.length > 0,
       claimed_pharmacy_name: claimedName,
@@ -948,7 +948,7 @@ export async function decideDirectOrderPharmacyValidation(
       .from("direct_order_pharmacy_validations")
       .update({
         status: "rejected",
-        decided_by_hr_id: access.hrId,
+        decided_by_hr_id: hrIdForStorage(access.hrId),
         decided_at: now,
         decision_notes: notes,
         updated_at: now,
@@ -1091,7 +1091,7 @@ export async function decideDirectOrderPharmacyValidation(
       .from("direct_order_pharmacy_validations")
       .update({
         status: "matched_existing",
-        decided_by_hr_id: access.hrId,
+        decided_by_hr_id: hrIdForStorage(access.hrId),
         decided_at: now,
         decision_notes: notes,
         matched_distributor_code: distributorCode,
@@ -1110,7 +1110,7 @@ export async function decideDirectOrderPharmacyValidation(
       .from("direct_order_pharmacy_validations")
       .update({
         status: "approved_new",
-        decided_by_hr_id: access.hrId,
+        decided_by_hr_id: hrIdForStorage(access.hrId),
         decided_at: now,
         decision_notes: notes,
         updated_at: now,

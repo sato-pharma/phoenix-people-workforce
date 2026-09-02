@@ -28,6 +28,7 @@ import {
 } from "@/lib/recruitment/offer-rules";
 import { getRequisition } from "@/lib/recruitment/requisitions";
 import type { Application, ApplicationStage, RecruitmentActionKey } from "@/lib/recruitment/types";
+import { hrIdForStorage } from "@/lib/hr-id";
 
 export type Offer = {
   id: string;
@@ -230,7 +231,7 @@ export async function submitOfferForApproval(
 
   const saved = await writeOffer(applicationId, {
     submitted_for_approval_at: new Date().toISOString(),
-    submitted_by_hr_id: access.hrId ?? null,
+    submitted_by_hr_id: hrIdForStorage(access.hrId),
     approval_rejected_at: null,
     approval_rejection_reason: null,
   });
@@ -270,7 +271,7 @@ export async function decideOfferApproval(
   const saved = input.approved
     ? await writeOffer(applicationId, {
         approved_at: now,
-        approved_by_hr_id: access.hrId ?? null,
+        approved_by_hr_id: hrIdForStorage(access.hrId),
         approval_rejected_at: null,
         approval_rejection_reason: null,
       })
@@ -342,7 +343,7 @@ export async function markOfferSent(
 
   const saved = await writeOffer(applicationId, {
     sent_at: new Date().toISOString(),
-    sent_by_hr_id: access.hrId ?? null,
+    sent_by_hr_id: hrIdForStorage(access.hrId),
   });
 
   const stage = await moveStage(applicationId, currentStage, "offer_sent", "app_offer_sent", access, {

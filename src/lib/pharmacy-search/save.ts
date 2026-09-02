@@ -16,6 +16,7 @@ import { normalizeArabicPharmacyName } from "@/lib/pharmacy-master/pharmacy-matc
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 import type { PharmacyProfile } from "./types";
+import { hrIdForStorage } from "@/lib/hr-id";
 
 export class NotSaveableError extends Error {
   constructor(reason: string) {
@@ -66,7 +67,7 @@ export async function saveDiscoveredPharmacy(options: {
         notes: notes?.trim() || null,
         pharmacy_name: profile.name,
         region_code: profile.territory.regionCode,
-        saved_by_hr_id: access.hrId ?? null,
+        saved_by_hr_id: hrIdForStorage(access.hrId),
         snap_distance_km: profile.territoryDerivedFromKm,
         updated_at: new Date().toISOString(),
       },
