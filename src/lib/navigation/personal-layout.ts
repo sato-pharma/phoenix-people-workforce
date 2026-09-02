@@ -442,11 +442,17 @@ export function resolveStripConflicts(placement: ZonePlacement): {
  * the per-module row overrides applies. It is resolved from the GATED sections, never from the
  * rearranged ones: a page moved into a row has left its section, so asking the rearranged tree
  * which module you are in would answer differently once you arranged anything.
+ *
+ * `zoneOnlyItems` is an extra pool of already-gated pages that may be placed in the strip or either
+ * row but must never be appended to the sidebar — the hub cards. Without it the "+" could save a
+ * hub page into a row and the row would come back empty, because the href resolved against nothing:
+ * a 200 that changes nothing on screen, which is the exact failure this feature was born out of.
  */
 export function applyPersonalLayout<TItem extends LayoutItemLike>(
   gatedSections: readonly LayoutSectionLike<TItem>[],
   layout: PersonalNavigationLayout | null,
   activeModuleId?: string | null,
+  zoneOnlyItems: readonly TItem[] = [],
 ): AppliedNavigationOf<TItem> {
   if (!layout) {
     return { strip: [], upperRow: [], lowerRow: [], sections: gatedSections };
@@ -464,6 +470,18 @@ export function applyPersonalLayout<TItem extends LayoutItemLike>(
         sectionOfHref.set(item.href, section.id);
       }
     }
+  }
+
+  // Pages that exist but are not in the rail — every hub's own cards (see hub-card-sections.ts).
+  // They are resolvable into the three ZONES so the "+" can offer the whole catalogue, and they are
+  // deliberately kept OUT of `sectionOfHref` and out of the leftovers pass below, which walks
+  // `gatedSections` alone. That asymmetry is the whole point: a hub card appears in a row only
+  // because the viewer put it there, and never turns up in the sidebar on its own.
+  //
+  // Added second, so a page holding both a rail row and a hub card resolves to the rail's item —
+  // the one carrying that section's own label and badge.
+  for (const item of zoneOnlyItems) {
+    if (!byHref.has(item.href)) byHref.set(item.href, item);
   }
 
   const hidden = new Set(layout.hidden);
@@ -652,6 +670,85 @@ export function unpinHrefFromRows(
     lowerRow: without(base.lowerRow),
     moduleRows,
   };
+}
+
+/**
+ * Move a page to an exact POSITION in one of the two rows — the write behind dragging a tab, the
+ * right-click "move" items, and the arrow-key reorder.
+ *
+ * ── Why this is not `pinHrefToRow` with an index ────────────────────────────────────────────
+ * `pinHrefToRow` deliberately writes the href into the default rows AND every module override,
+ * because the owner's word for pinning was "embedded like the organogram" — fixed in every module.
+ * Ordering is the opposite: it is a property of the row set you are LOOKING AT. Reordering Sales'
+ * own tabs must not silently reshuffle Marketing's, and a module with no override of its own is
+ * showing the defaults, so reordering there must write the defaults.
+ *
+ * So this resolves the SAME row set that `resolveRowSet` rendered, edits that one, and writes it
+ * back where it came from. `moduleId` is therefore not optional-for-convenience: passing null when
+ * the viewer is standing inside a module with an override would reorder the defaults, which are not
+ * what is on screen — a save that returns 200 and moves nothing, the exact shape of the 2026-08-28
+ * evening described under THE ONE-ZONE RULE above.
+ *
+ * `index` is a position in the TARGET row AFTER the href has been removed from both rows of the
+ * set, which is what makes a same-row drag land where the pointer is rather than one slot early. It
+ * is clamped, so an out-of-range index appends rather than throwing or dropping the page.
+ *
+ * The strip is released for the same reason `pinHrefToRow` releases it: the strip resolves first and
+ * `take` marks the href placed, so a page in both renders in the strip and the row comes back empty.
+ */
+export function placeHrefInRow(
+  layout: PersonalNavigationLayout | null,
+  moduleId: string | null | undefined,
+  href: string,
+  target: keyof PersonalLayoutRowSet,
+  index: number,
+): PersonalNavigationLayout {
+  const base = layout ?? emptyLayout();
+  const hasOverride = Boolean(moduleId && base.moduleRows?.[moduleId]);
+  const visible = resolveRowSet(base, moduleId);
+
+  // Out of BOTH rows first. A page cannot sit in both, and removing before inserting is what lets
+  // `index` mean "where it ends up" rather than "where it was aimed at before the old copy shifted
+  // everything along".
+  const upper = visible.upperRow.filter((entry) => entry !== href);
+  const lower = visible.lowerRow.filter((entry) => entry !== href);
+  const into = target === "upperRow" ? upper : lower;
+  const at = Math.max(0, Math.min(Math.trunc(index), into.length));
+  into.splice(at, 0, href);
+  const placed: PersonalLayoutRowSet = { upperRow: upper, lowerRow: lower };
+
+  // Write back exactly where the visible set came from — the module's own override if it had one,
+  // otherwise the defaults. Never both: creating an override here would freeze this module's rows
+  // away from the defaults as a side effect of a drag nobody asked to be module-scoped.
+  const moduleRows: Record<string, PersonalLayoutRowSet> = { ...(base.moduleRows ?? {}) };
+  if (hasOverride && moduleId) moduleRows[moduleId] = placed;
+
+  return {
+    ...base,
+    version: PERSONAL_LAYOUT_VERSION,
+    strip: base.strip.filter((entry) => entry !== href),
+    upperRow: hasOverride ? (base.upperRow ?? []) : placed.upperRow,
+    lowerRow: hasOverride ? (base.lowerRow ?? []) : placed.lowerRow,
+    moduleRows,
+    hidden: base.hidden.filter((entry) => entry !== href),
+  };
+}
+
+/**
+ * Where `href` currently sits in the row set visible inside `moduleId`, or null if it is on neither
+ * row. Shared by the drag handler and the context menu so "can this move left" is answered once.
+ */
+export function rowPositionOf(
+  layout: PersonalNavigationLayout | null,
+  moduleId: string | null | undefined,
+  href: string,
+): { row: keyof PersonalLayoutRowSet; index: number } | null {
+  const visible = resolveRowSet(layout, moduleId);
+  const upper = visible.upperRow.indexOf(href);
+  if (upper !== -1) return { row: "upperRow", index: upper };
+  const lower = visible.lowerRow.indexOf(href);
+  if (lower !== -1) return { row: "lowerRow", index: lower };
+  return null;
 }
 
 /**

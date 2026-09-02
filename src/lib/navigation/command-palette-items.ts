@@ -1,8 +1,9 @@
 import type { LucideIcon } from "lucide-react";
 
-import { getNavigationSections, hubPageItemGroups } from "@/config/system-navigation";
+import { getNavigationSections } from "@/config/system-navigation";
 import type { NavigationMode, PhoenixRole } from "@/lib/auth/permissions";
-import { getSections, navigationItemVisible, type PermissionLookup } from "@/lib/navigation/active-path";
+import { getSections, type PermissionLookup } from "@/lib/navigation/active-path";
+import { getHubCardSections } from "@/lib/navigation/hub-card-sections";
 
 export type CommandPaletteItem = { href: string; icon: LucideIcon; label: string; section: string };
 
@@ -24,29 +25,50 @@ export type CommandPaletteItem = { href: string; icon: LucideIcon; label: string
  * `href-label` and both halves agree on both, tripped "two children with the same key" on every
  * admin page load. `getSections` already runs `dedupeSectionsByHref` over the rail for this exact
  * reason; the hub fold-in had no equivalent. Keeps each href's first (highest-tier) occurrence.
+ *
+ * ── 2026-09-02, second pass ──────────────────────────────────────────────────
+ * The fold itself now lives in `getHubCardSections`, because the nav row's "+" hit this identical
+ * wall the same day — the owner opened it and found "some pages are compacted and not appearing.
+ * I want all pages to appear." Two sessions wrote the same shared-`seen` dedupe within hours of
+ * each other, which is exactly the duplicate-list defect this repo keeps paying for, so there is
+ * now ONE fold with two callers.
+ *
+ * `getHubCardSections` applies the same rule stated above: one `seen` set seeded with every sidebar
+ * href, then across the hub groups in order, keeping each href's first occurrence. So the behaviour
+ * the tests below pin is unchanged — the dedupe MOVED, it did not weaken. The belt-and-braces
+ * filter at the end is kept regardless, because "one row per href" is the property that matters
+ * here and it should hold whatever feeds it.
+ *
+ * The rule worth remembering: a page findable by Cmd+K is a page addable to a nav row.
  */
 export function buildCommandPaletteItems(
   navigationMode: NavigationMode,
   permissionLookup: PermissionLookup,
   currentRole?: PhoenixRole,
 ): CommandPaletteItem[] {
-  const sidebarItems = getSections(
+  const gatedSections = getSections(
     getNavigationSections(navigationMode),
     navigationMode,
     permissionLookup,
     currentRole,
-  ).flatMap((section) =>
+  );
+  const sidebarItems = gatedSections.flatMap((section) =>
     section.items.map((item) => ({ href: item.href, icon: item.icon, label: item.label, section: section.label })),
   );
 
-  const hubItems: CommandPaletteItem[] =
-    navigationMode === "admin"
-      ? hubPageItemGroups.flatMap((group) =>
-          group.items
-            .filter((item) => navigationItemVisible(item, permissionLookup, currentRole))
-            .map((item) => ({ href: item.href, icon: item.icon, label: item.label, section: group.label })),
-        )
-      : [];
+  const hubItems: CommandPaletteItem[] = getHubCardSections(
+    navigationMode,
+    permissionLookup,
+    currentRole,
+    gatedSections,
+  ).flatMap((section) =>
+    section.items.map((item) => ({
+      href: item.href,
+      icon: item.icon,
+      label: item.label,
+      section: section.label,
+    })),
+  );
 
   const seenHrefs = new Set<string>();
   return [...sidebarItems, ...hubItems].filter((item) => {
