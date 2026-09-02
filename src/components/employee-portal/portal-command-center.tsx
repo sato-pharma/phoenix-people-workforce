@@ -1002,7 +1002,15 @@ function MedicalRepCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot })
         <div className="bg-slate-900 px-4 py-2.5 sm:px-5 sm:py-3">
           <h2 className="text-phx-2xs font-bold uppercase tracking-widest text-slate-300">My Tools</h2>
         </div>
-        <div className="grid grid-cols-2 gap-px bg-slate-200">
+        {/* One column until `sm`, matching the "My Workspace" grid below that holds the same tile.
+            Two columns cannot hold a PremiumNavTile on a phone. The tile's min-content floor is 172px
+            (3px rail + 24px padding + 32px icon + two 12px gaps + 16px arrow + its widest label word,
+            "Dashboard", at 73px), while grid-cols-2 yields a 146px column at 320px and 166px at 360px.
+            Grid items are min-width:auto, so the tile refused to shrink and bled past its column —
+            clipped by this card's overflow-hidden, which is why `main` still measured 375/375 and the
+            usual scrollWidth check read clean. Fixed by MERGING columns, per the golden rule: the type
+            is untouched. Floors measured in the running app, not derived. */}
+        <div className="grid grid-cols-1 gap-px bg-slate-200 sm:grid-cols-2">
           <PremiumNavTile href="/employee-portals/coaching" icon={ClipboardCheck} label="My Coaching" description="View and track coaching reports" />
           <PremiumNavTile href="/employee-portals/expenses" icon={ReceiptText} label="My Expenses" description="Outstation expense tracker" badge={mrPendingExpenseCount ?? 0} />
           <PremiumNavTile href="/employee-portals/incentive" icon={Trophy} label="My Incentive" description="Track commission and bonus" />
