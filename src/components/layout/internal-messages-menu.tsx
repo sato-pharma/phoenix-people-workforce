@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CheckCircle2, Loader2, Mail, RefreshCw, Search, Send, XCircle } from "lucide-react";
 
 import { systemUiText } from "@/config/system-settings";
+import { placeAnchoredPanel, type PanelPlacement } from "@/lib/navigation/panel-position";
 import { cn } from "@/lib/utils";
 import { useDismissOnOutsideInteraction } from "@/hooks/use-dismiss-on-outside-interaction";
 
@@ -73,6 +74,19 @@ function emailStatusText(status: InternalEmailStatus, error: string | null) {
   return "Internal only";
 }
 
+/**
+ * Widest the two-column inbox wants to be; narrowed to fit whenever the viewport cannot hold it.
+ *
+ * The panel is placed with `left-0` + a measured `marginLeft`, never `right-0`. Right-anchoring a
+ * panel on a trigger that sits near the right of a narrow toolbar opens it off the LEFT edge —
+ * measured at -36 on 2026-09-02 — clipped rather than scrollable. The `w-[min(760px,100vw-2rem)]`
+ * cap this replaced could not save it: the overflow comes from where the anchor sits, not the width.
+ * Same failure, same fix, as the notifications bell beside it.
+ */
+const MESSAGES_PANEL_WIDTH = 760;
+/** Breathing room kept at each edge — the `2rem` this panel always intended, split evenly. */
+const MESSAGES_PANEL_GUTTER = 16;
+
 export function InternalMessagesMenu({ isAdminMode }: { isAdminMode: boolean }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
@@ -86,6 +100,10 @@ export function InternalMessagesMenu({ isAdminMode }: { isAdminMode: boolean }) 
   const [recipientQuery, setRecipientQuery] = useState("");
   const [recipients, setRecipients] = useState<InternalRecipientView[]>([]);
   const [recipientLoading, setRecipientLoading] = useState(false);
+  const [placement, setPlacement] = useState<PanelPlacement>({
+    offsetLeft: 0,
+    width: MESSAGES_PANEL_WIDTH,
+  });
   const inboxMessages = useMemo(() => messages.filter((message) => message.direction === "inbox"), [messages]);
   const sentMessages = useMemo(() => messages.filter((message) => message.direction === "sent"), [messages]);
 
@@ -184,7 +202,22 @@ export function InternalMessagesMenu({ isAdminMode }: { isAdminMode: boolean }) 
         className={`relative hidden h-9 w-9 items-center justify-center rounded sm:inline-flex ${
           isAdminMode ? "text-[#D4DDE8] hover:bg-[#1a1a1a] hover:text-[#F8B56B]" : "text-phx-ink-soft hover:bg-phx-paper hover:text-phx-ink"
         }`}
-        onClick={() => setOpen((current) => !current)}
+        onClick={(event) => {
+          // Measured here, off the button's own rect, rather than in an effect — `setState` inside
+          // `useEffect` is a lint error in this repo.
+          const rect = event.currentTarget.getBoundingClientRect();
+          setPlacement(
+            placeAnchoredPanel({
+              align: "right",
+              anchorLeft: rect.left,
+              anchorRight: rect.right,
+              gutter: MESSAGES_PANEL_GUTTER,
+              preferredWidth: MESSAGES_PANEL_WIDTH,
+              viewportWidth: document.documentElement.clientWidth,
+            }),
+          );
+          setOpen((current) => !current);
+        }}
         type="button"
       >
         <Mail className="h-[18px] w-[18px]" />
@@ -198,9 +231,10 @@ export function InternalMessagesMenu({ isAdminMode }: { isAdminMode: boolean }) 
       {open ? (
         <div
           className={cn(
-            "absolute right-0 top-full z-30 mt-1.5 grid w-[min(760px,calc(100vw-2rem))] overflow-hidden rounded border shadow-lg xl:grid-cols-[0.95fr_1.05fr]",
+            "absolute left-0 top-full z-30 mt-1.5 grid overflow-hidden rounded border shadow-lg xl:grid-cols-[0.95fr_1.05fr]",
             isAdminMode ? "border-[#333333] bg-[#050505]" : "border-phx-line bg-white",
           )}
+          style={{ marginLeft: placement.offsetLeft, width: placement.width }}
         >
           <section className={cn("border-r", isAdminMode ? "border-[#333333]" : "border-phx-line")}>
             <div className={cn("flex items-start justify-between gap-3 border-b px-4 py-3", isAdminMode ? "border-[#333333]" : "border-phx-line")}>

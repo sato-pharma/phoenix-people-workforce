@@ -66,3 +66,51 @@ export function clampPanelToViewport({
   const left = Math.max(gutter, Math.min(anchorLeft, rightmost));
   return { offsetLeft: Math.round(left - anchorLeft), width };
 }
+
+/**
+ * The same clamp for a panel that prefers to hang from its anchor's RIGHT edge — a trigger sitting
+ * near the right of a toolbar, where left-alignment would push the panel off-screen on desktop.
+ *
+ * MEASURED ON PRODUCTION, 2026-09-02, revision 99c9909f2: the notifications bell's panel is
+ * right-anchored and opened at `left: -50 → right: 301` in a **375px** viewport — 50px off the LEFT
+ * edge, clipped rather than scrollable. It is the mirror image of the "+" panel's failure the same
+ * morning, and it confirms the note above: BOTH edges are in play, and narrowing does not save you.
+ * That panel's width was ALREADY capped at `100vw - 1.5rem` (351px, so it fit) and it still hung off
+ * the screen, because the overflow came from where the anchor sat, not from how wide the panel was.
+ *
+ * `main` measured 375/375 throughout, as ever.
+ *
+ * Returns the offset from the anchor's LEFT edge, so the caller positions with `left-0` +
+ * `marginLeft` exactly as the left-aligned case does — one mechanism, not two.
+ */
+export function placeAnchoredPanel({
+  align,
+  anchorLeft,
+  anchorRight,
+  gutter = NAV_PANEL_GUTTER,
+  preferredWidth = NAV_PANEL_WIDTH,
+  viewportWidth,
+}: {
+  align: "left" | "right";
+  anchorLeft: number;
+  anchorRight: number;
+  gutter?: number;
+  preferredWidth?: number;
+  viewportWidth: number;
+}): PanelPlacement {
+  const width = Math.min(preferredWidth, Math.max(0, viewportWidth - gutter * 2));
+  // Where the panel WANTS to sit before any clamping. Right-alignment means its right edge meets the
+  // anchor's right edge, which is a left edge of `anchorRight - width`.
+  const preferredLeft = align === "right" ? anchorRight - width : anchorLeft;
+  const placed = clampPanelToViewport({
+    anchorLeft: preferredLeft,
+    gutter,
+    preferredWidth: width,
+    viewportWidth,
+  });
+  // Re-express the result against the anchor's own left edge, which is what the caller offsets from.
+  return {
+    offsetLeft: Math.round(preferredLeft + placed.offsetLeft - anchorLeft),
+    width: placed.width,
+  };
+}
