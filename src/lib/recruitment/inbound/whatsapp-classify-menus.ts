@@ -644,6 +644,90 @@ export function classifyThankYouText(input: {
   return lines.join("\n");
 }
 
+// ── Re-asking a conversation that stalled ────────────────────────────────────────────────────────
+// A CV arriving while a conversation is still open used to be met with total silence: the sender
+// already had a row, so nothing was sent and nothing recorded that nothing was sent. Measured on
+// production 2026-09-02 that had parked 68 conversations, 22 of them on question one with not a
+// single answer, and three of those senders had sent a SECOND CV into the silence. Sending another
+// CV is exactly the signal that somebody is trying again, so it re-asks the question they are
+// parked on rather than starting a parallel conversation (which the partial unique index would
+// reject anyway).
+
+/**
+ * How long a conversation must have been quiet before a fresh CV re-asks its question.
+ *
+ * Guards the ordinary case rather than the stalled one: an applicant who taps an answer and sends a
+ * second document moments later is mid-conversation, not stuck, and must not be asked the same
+ * thing twice. A genuinely parked conversation is silent for hours, so an hour separates them
+ * cleanly with room to spare.
+ */
+export const CLASSIFY_REASK_QUIET_MS = 60 * 60 * 1000;
+
+/**
+ * True when a parked conversation has been quiet long enough that a new CV should re-ask.
+ *
+ * An unreadable or absent timestamp answers TRUE deliberately. Silence is the failure this exists
+ * to end; a duplicate question is the smaller harm of the two.
+ */
+export function shouldReaskParkedSession(input: { updatedAt: string | null; nowMs: number }): boolean {
+  if (!input.updatedAt) return true;
+  const last = Date.parse(input.updatedAt);
+  if (!Number.isFinite(last)) return true;
+  return input.nowMs - last >= CLASSIFY_REASK_QUIET_MS;
+}
+
+/** What to re-send. `salary` carries no body: it is the one prompt whose wording is resolved async. */
+export type ClassifyReaskPrompt =
+  | { kind: "menu"; menu: ClassifyMenu; regionLabel: string | null }
+  | { kind: "text"; body: string }
+  | { kind: "salary" };
+
+/**
+ * The question a parked conversation is waiting on, ready to send again.
+ *
+ * Null means there is nothing sensible to re-ask, and the caller stays quiet: `done` (finished),
+ * `extra` (the admin-defined loop, which holds its position in its own column and has no re-ask
+ * helper of its own), an `area` step whose region is missing or has no areas left, and any step
+ * this file does not know. Null is a decision, never a fallback — every step in
+ * `classifySessionSteps` except `done` is covered.
+ */
+export function reaskPromptForStep(input: {
+  step: string;
+  regionCode: string | null;
+  areaNames: readonly string[];
+}): ClassifyReaskPrompt | null {
+  switch (input.step) {
+    case "job_title":
+      return { kind: "menu", menu: jobTitleMenu(), regionLabel: null };
+    case "job_title_other":
+      return { kind: "text", body: jobTitleOtherPromptText() };
+    case "background":
+      return { kind: "menu", menu: backgroundMenu(), regionLabel: null };
+    case "background_other":
+      return { kind: "text", body: backgroundOtherPromptText() };
+    case "region":
+      return { kind: "menu", menu: regionMenu(), regionLabel: null };
+    case "region_other":
+      return { kind: "text", body: regionOtherPromptText() };
+    case "area": {
+      // The one step whose menu is built from live data. With no region on the row, or a region
+      // whose areas have since gone, there is no menu to build — and an empty one is a 400 from
+      // Meta, not a truncation, so it must not be attempted.
+      const code = input.regionCode;
+      if (!code || !isOfferedRegion(code) || input.areaNames.length === 0) return null;
+      return { kind: "menu", menu: areaMenu(code, input.areaNames), regionLabel: candidateRegionLabels[code] };
+    }
+    case "area_other":
+      return { kind: "text", body: areaOtherPromptText() };
+    case "experience":
+      return { kind: "menu", menu: experienceMenu(), regionLabel: null };
+    case "salary":
+      return { kind: "salary" };
+    default:
+      return null;
+  }
+}
+
 // ── Validation ───────────────────────────────────────────────────────────────────────────────────
 // Runs on any menu before it is sent. Meta rejects the whole message on a violation, so catching it
 // here turns a silent dead end into a loud, testable failure.
