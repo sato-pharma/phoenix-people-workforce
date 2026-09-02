@@ -328,6 +328,10 @@ export function KpisBoardView({
   }
 
   const { totals } = board;
+  // Lowercased for "Whole month" ONLY, which is a common noun sitting mid-sentence. A week's label is
+  // "Week 1 · 1–7 Sep" — a proper name carrying a month abbreviation — so lowercasing it printed
+  // "week 1 · 1–7 sep", which reads as a typo now that a real date sits beside it in the footnote.
+  const periodPhrase = board.range.isWholeMonth ? board.range.periodLabel.toLowerCase() : board.range.periodLabel;
 
   return (
     <>
@@ -432,10 +436,21 @@ export function KpisBoardView({
         </div>
 
         <div className="border-t border-slate-100 px-5 py-3">
+          {/* The call-rate window's own end is PRINTED, never implied. Both halves of this board stop at
+            * today in a running month — repsPlansRange caps it with `dateTo = running ? todayIso : windowEnd`
+            * and coverage caps its own `asOf` at the same day — so the earlier wording ("scored for
+            * September 2026 to 2026-09-02. Call rate is scored over whole month.") read as though the rate
+            * had spanned September's ~21 working days when it had in fact divided by 2. The two dates are
+            * equal for a whole month and differ only for a week, which is exactly what the reader needs to
+            * see. A `notStarted` window is the one case where dateTo sits BEFORE dateFrom, deliberately, so
+            * printing it would say "week 3 · 15–21 sep to 2026-09-14" — say it has not started instead. */}
           <p className={CAPTION}>
-            Coverage and frequency are scored for {board.monthLabel} to {board.asOf}. Call rate is scored over{" "}
-            {board.range.periodLabel.toLowerCase()}. Exact is the only frequency pass — visiting a doctor more often
-            than the plan asked for is a deviation, not a win.
+            Coverage and frequency are scored for {board.monthLabel} to {board.asOf}.{" "}
+            {board.range.notStarted
+              ? `Call rate is not scored — ${periodPhrase} has not started.`
+              : `Call rate is scored over ${periodPhrase} to ${board.range.dateTo}.`}{" "}
+            Exact is the only frequency pass — visiting a doctor more often than the plan asked for is a deviation,
+            not a win.
           </p>
         </div>
       </div>
