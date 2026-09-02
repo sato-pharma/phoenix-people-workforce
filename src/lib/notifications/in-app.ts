@@ -83,6 +83,9 @@ const ACTIONABLE_APPROVAL_NOTIFICATIONS: Record<string, { domain: "excuse" | "pl
   // "Pending your approval" vs. "Available after the first management approval" / "Review /
   // reject only until management approves") — filtered on below, no new tagging needed.
   "vacation:request_submitted": { domain: "vacation", idField: "requestId" },
+  // The action-needed copy only — notifyHr tags HR's copy audience: "hr_awareness" whenever the
+  // automatic HR acknowledgement already ran, and leaves it untagged (genuinely actionable) only
+  // when that failed and the plan is still sitting at final_approved awaiting a manual click.
   "weekly_plans:plan_ceo_approved": { domain: "plan", idField: "planId" },
   "weekly_plans:plan_manager_approved": { domain: "plan", idField: "planId" },
   // The manager copy only — notifyHrOnSubmit tags its own "awareness" copy of this same
@@ -134,9 +137,13 @@ export function classifyActionableApprovalCandidates(rows: InAppNotificationEven
     if (!rule) continue;
     const id = String(row.id ?? "");
     const metadata = row.metadata && typeof row.metadata === "object" && !Array.isArray(row.metadata) ? (row.metadata as Record<string, unknown>) : {};
-    // plan_submitted fans out to the manager (action-needed) AND HR (pure awareness) under the
-    // SAME eventType — the audience tag is the only way to tell them apart at read time.
-    if (key === "weekly_plans:plan_submitted" && metadata.audience === "hr_awareness") continue;
+    // Two weekly-plan eventTypes fan out an action-needed copy AND a pure-awareness copy to HR
+    // under the SAME eventType — the audience tag is the only way to tell them apart at read
+    // time. plan_submitted: manager decides, HR is only told. plan_ceo_approved: HR's
+    // acknowledgement is now automatic (autoAcknowledgeFinalApprovedPlan in
+    // weekly-planning/service.ts), so their copy is tagged awareness UNLESS the automatic
+    // acknowledgement failed and the plan really is still waiting on HR's manual click.
+    if (metadata.audience === "hr_awareness") continue;
     // vacation:request_submitted fans out to every step's recipient at once — only the copy
     // whose own metadata.status says "Pending your approval" is genuinely actionable right now.
     if (key === "vacation:request_submitted" && metadata.status !== VACATION_REQUEST_SUBMITTED_ACTIONABLE_STATUS) continue;
