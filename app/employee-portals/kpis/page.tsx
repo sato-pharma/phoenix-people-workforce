@@ -15,6 +15,7 @@ import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { cairoTodayIso } from "@/lib/crm/dates";
 import { canSeeDoctorCoverage } from "@/lib/crm/doctor-coverage-roles";
 import { getKpisBoard, kpiMonthOptions, kpiPeriodOptions } from "@/lib/crm/kpis-board";
+import { parseKpiFilters } from "@/lib/crm/kpis-filters";
 import { resolveKpiTab } from "@/lib/crm/kpis-tabs";
 import { resolveRepsPlansMonth } from "@/lib/crm/reps-plans";
 
@@ -23,9 +24,17 @@ export const dynamic = "force-dynamic";
 
 const BASE_PATH = "/employee-portals/kpis";
 
+// The whole board rides in the URL — month, period, tab and every advanced filter — so the
+// parameter bag is left open rather than enumerated. parseKpiFilters drops anything it does not
+// recognise, so an unknown key can only ever be ignored, never widen what the gates above allow.
 type PageProps = {
-  searchParams?: Promise<{ month?: string; period?: string; tab?: string }>;
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
 };
+
+/** First value only: a repeated `?tab=a&tab=b` must resolve to one tab, not to an array. */
+function one(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
+}
 
 export default async function PortalKpisPage({ searchParams }: PageProps) {
   const access = await resolveAccessContextFromPage();
@@ -34,13 +43,14 @@ export default async function PortalKpisPage({ searchParams }: PageProps) {
 
   const params = await searchParams;
   const today = cairoTodayIso();
-  const month = resolveRepsPlansMonth(params?.month, today);
-  const tab = resolveKpiTab(params?.tab);
+  const month = resolveRepsPlansMonth(one(params?.month), today);
+  const tab = resolveKpiTab(one(params?.tab));
+  const filters = parseKpiFilters(params ?? {});
 
   let board: Awaited<ReturnType<typeof getKpisBoard>> | null = null;
   let loadError: string | null = null;
   try {
-    board = await getKpisBoard({ access, month, period: params?.period, todayIso: today });
+    board = await getKpisBoard({ access, month, period: one(params?.period), todayIso: today, filters });
   } catch (error) {
     loadError = error instanceof Error ? error.message : "KPI data is unavailable.";
   }
