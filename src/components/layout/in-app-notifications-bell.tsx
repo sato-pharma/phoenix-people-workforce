@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 import { placeAnchoredPanel, type PanelPlacement } from "@/lib/navigation/panel-position";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { useDismissOnOutsideInteraction } from "@/hooks/use-dismiss-on-outside-interaction";
+import { useRepositionOnViewportChange } from "@/hooks/use-reposition-on-viewport-change";
 
 
 type InAppNotificationView = {
@@ -63,6 +64,7 @@ function isActionRequired(notification: InAppNotificationView) {
 
 export function InAppNotificationsBell({ isAdminMode }: { isAdminMode: boolean }) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
   const [notifications, setNotifications] = useState<InAppNotificationView[]>([]);
   const [loading, setLoading] = useState(true);
@@ -75,6 +77,23 @@ export function InAppNotificationsBell({ isAdminMode }: { isAdminMode: boolean }
     offsetLeft: 0,
     width: NOTIFICATION_PANEL_WIDTH,
   });
+
+  // The same measurement the click handler runs, reusable so a viewport change can repeat it: a
+  // rotation while the panel is open would otherwise leave it wearing the old viewport's placement.
+  const repositionPanel = useCallback(() => {
+    const anchor = buttonRef.current?.getBoundingClientRect();
+    if (!anchor) return;
+    setPlacement(
+      placeAnchoredPanel({
+        align: "right",
+        anchorLeft: anchor.left,
+        anchorRight: anchor.right,
+        gutter: NOTIFICATION_PANEL_GUTTER,
+        preferredWidth: NOTIFICATION_PANEL_WIDTH,
+        viewportWidth: document.documentElement.clientWidth,
+      }),
+    );
+  }, []);
 
   const loadNotifications = useCallback(async (signal?: { aborted: boolean }) => {
     try {
@@ -111,6 +130,7 @@ export function InAppNotificationsBell({ isAdminMode }: { isAdminMode: boolean }
   }, [loadNotifications]);
 
   useDismissOnOutsideInteraction(containerRef, open, setOpen);
+  useRepositionOnViewportChange(open, repositionPanel);
 
   const hasNotifications = notifications.length > 0;
   const moduleOptions = Array.from(new Set(notifications.map((notification) => notification.module || notification.category).filter(Boolean))).sort();
@@ -172,20 +192,11 @@ export function InAppNotificationsBell({ isAdminMode }: { isAdminMode: boolean }
             ? "text-[#D4DDE8] hover:bg-[#1a1a1a] hover:text-[#F8B56B]"
             : "text-phx-ink-soft hover:bg-phx-paper hover:text-phx-ink",
         )}
-        onClick={(event) => {
-          const anchor = event.currentTarget.getBoundingClientRect();
-          setPlacement(
-            placeAnchoredPanel({
-              align: "right",
-              anchorLeft: anchor.left,
-              anchorRight: anchor.right,
-              gutter: NOTIFICATION_PANEL_GUTTER,
-              preferredWidth: NOTIFICATION_PANEL_WIDTH,
-              viewportWidth: document.documentElement.clientWidth,
-            }),
-          );
+        onClick={() => {
+          repositionPanel();
           setOpen((current) => !current);
         }}
+        ref={buttonRef}
         type="button"
       >
         <Bell className="h-[18px] w-[18px]" />

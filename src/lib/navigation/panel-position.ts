@@ -114,3 +114,36 @@ export function placeAnchoredPanel({
     width: placed.width,
   };
 }
+
+/** The slice of `window` the subscription below needs — kept narrow so a test can stand in for it. */
+export type ViewportChangeTarget = {
+  addEventListener: (type: string, listener: () => void) => void;
+  removeEventListener: (type: string, listener: () => void) => void;
+};
+
+/** The events that can change the viewport under an already-open panel. */
+export const VIEWPORT_CHANGE_EVENTS = Object.freeze(["resize", "orientationchange"] as const);
+
+/**
+ * Re-runs `reposition` whenever the viewport changes size, and returns the matching unsubscribe.
+ *
+ * THE GAP THIS CLOSES: every caller above measures its anchor in the CLICK handler, because
+ * `setState` inside `useEffect` is a lint error in this repo and the anchor's rect is only
+ * meaningful at the moment of opening. Correct at open — and stale from then on. Rotate a phone from
+ * landscape to portrait with the notifications bell open and the panel keeps the 380px width and the
+ * offset it was handed for an 812px viewport: it lands at `left: -17` in a 375px one, 17px off the
+ * left edge, clipped rather than scrollable. That is the same golden-rule failure the clamp exists to
+ * prevent, arriving through the one door the clamp does not watch.
+ *
+ * Deliberately framework-free and in this module rather than beside the hook, so the wiring can be
+ * proven without a DOM or a React renderer — see `tests/nav-panel-position.test.ts`.
+ */
+export function subscribeToViewportChange(target: ViewportChangeTarget, reposition: () => void) {
+  // One shared listener reference, or `removeEventListener` would detach nothing on cleanup.
+  const onViewportChange = () => reposition();
+
+  for (const event of VIEWPORT_CHANGE_EVENTS) target.addEventListener(event, onViewportChange);
+  return () => {
+    for (const event of VIEWPORT_CHANGE_EVENTS) target.removeEventListener(event, onViewportChange);
+  };
+}

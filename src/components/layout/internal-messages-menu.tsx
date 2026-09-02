@@ -7,6 +7,7 @@ import { systemUiText } from "@/config/system-settings";
 import { placeAnchoredPanel, type PanelPlacement } from "@/lib/navigation/panel-position";
 import { cn } from "@/lib/utils";
 import { useDismissOnOutsideInteraction } from "@/hooks/use-dismiss-on-outside-interaction";
+import { useRepositionOnViewportChange } from "@/hooks/use-reposition-on-viewport-change";
 
 type InternalEmailStatus = "failed" | "not_requested" | "pending" | "sent" | "skipped";
 
@@ -89,6 +90,7 @@ const MESSAGES_PANEL_GUTTER = 16;
 
 export function InternalMessagesMenu({ isAdminMode }: { isAdminMode: boolean }) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<InternalMessageView[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -104,6 +106,22 @@ export function InternalMessagesMenu({ isAdminMode }: { isAdminMode: boolean }) 
     offsetLeft: 0,
     width: MESSAGES_PANEL_WIDTH,
   });
+
+  // Reusable so a viewport change can repeat it — see use-reposition-on-viewport-change.ts.
+  const repositionPanel = useCallback(() => {
+    const rect = buttonRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    setPlacement(
+      placeAnchoredPanel({
+        align: "right",
+        anchorLeft: rect.left,
+        anchorRight: rect.right,
+        gutter: MESSAGES_PANEL_GUTTER,
+        preferredWidth: MESSAGES_PANEL_WIDTH,
+        viewportWidth: document.documentElement.clientWidth,
+      }),
+    );
+  }, []);
   const inboxMessages = useMemo(() => messages.filter((message) => message.direction === "inbox"), [messages]);
   const sentMessages = useMemo(() => messages.filter((message) => message.direction === "sent"), [messages]);
 
@@ -131,6 +149,7 @@ export function InternalMessagesMenu({ isAdminMode }: { isAdminMode: boolean }) 
   }, [loadMessages, open]);
 
   useDismissOnOutsideInteraction(containerRef, open, setOpen);
+  useRepositionOnViewportChange(open, repositionPanel);
 
   useEffect(() => {
     if (!open || recipientQuery.trim().length < 2) {
@@ -202,22 +221,11 @@ export function InternalMessagesMenu({ isAdminMode }: { isAdminMode: boolean }) 
         className={`relative hidden h-9 w-9 items-center justify-center rounded sm:inline-flex ${
           isAdminMode ? "text-[#D4DDE8] hover:bg-[#1a1a1a] hover:text-[#F8B56B]" : "text-phx-ink-soft hover:bg-phx-paper hover:text-phx-ink"
         }`}
-        onClick={(event) => {
-          // Measured here, off the button's own rect, rather than in an effect — `setState` inside
-          // `useEffect` is a lint error in this repo.
-          const rect = event.currentTarget.getBoundingClientRect();
-          setPlacement(
-            placeAnchoredPanel({
-              align: "right",
-              anchorLeft: rect.left,
-              anchorRight: rect.right,
-              gutter: MESSAGES_PANEL_GUTTER,
-              preferredWidth: MESSAGES_PANEL_WIDTH,
-              viewportWidth: document.documentElement.clientWidth,
-            }),
-          );
+        onClick={() => {
+          repositionPanel();
           setOpen((current) => !current);
         }}
+        ref={buttonRef}
         type="button"
       >
         <Mail className="h-[18px] w-[18px]" />
