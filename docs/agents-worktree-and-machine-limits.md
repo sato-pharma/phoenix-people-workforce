@@ -193,8 +193,10 @@ same file.
 **It deletes only `node_modules` and `.next`, and the junction is safe.** §5 has worktrees
 junction their `node_modules` into the primary checkout, so `fs.rmSync(…, {recursive: true})`
 looks alarming. Verified 2026-09-01 on a real Windows junction: `lstat` reports it as a symlink,
-Node unlinks the link, and **the target survives**. Restore a stripped worktree with `pnpm install`
-there, or `node scripts/new-session.mjs --repair <task>`.
+Node unlinks the link, and **the target survives**. Restore a stripped worktree with
+`node scripts/new-session.mjs --repair <task>` — **never `pnpm install` there**, which is what 5
+forbids: it would install a real tree over the junction point and duplicate ~1.9M path entries,
+the exact cost this flag exists to reclaim.
 
 **A run that strips nothing is a healthy run, not a broken one.** 2026-09-01, all three worktrees
 were skipped — two touched within 13 minutes, one holding 3 uncommitted files. Do not reach for

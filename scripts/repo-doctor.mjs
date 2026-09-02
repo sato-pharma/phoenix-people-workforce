@@ -447,7 +447,8 @@ if (!fix && !stripIdle) {
   if (reclaimable > 0) {
     console.log(
       `Run with --strip-idle to drop ${num(reclaimable)} path entries of node_modules/.next from ` +
-        "worktrees that are clean, fully pushed, and idle (pnpm install restores them).",
+        "worktrees that are clean, fully pushed, and idle " +
+        "(node scripts/new-session.mjs --repair <task> restores them).",
     );
   }
 }
@@ -978,7 +979,7 @@ let autoloadedIndexBytes = null;
 // NARROWED 2026-09-01 (owner-approved): this census now gates --fix ONLY. --strip-idle gets a
 // lock instead, immediately below — see that block for the measurements and the reasoning.
 // --fix deletes DIRECTORIES and keeps the blunt instrument; --strip-idle deletes only caches
-// that `pnpm install` restores, and already proves per worktree what this count only guesses at.
+// that `new-session.mjs --repair` restores, and already proves per worktree what this count guesses.
 if (fix && !force) {
   // Concurrent destructive cleanup is this repo's documented incident pattern
   // (AGENTS.md section 5). Count Claude Code engines only — Claude Desktop ships as
@@ -1223,6 +1224,7 @@ if (stripIdle) {
       (unverified > 0
         ? ` ${unverified} could NOT be verified clean afterwards — check those by hand, they are flagged !! above.`
         : "") +
-      " Run `pnpm install` in any of them before working there again.",
+      " Restore any of them with `node scripts/new-session.mjs --repair <task>` before working" +
+      " there again — NEVER `pnpm install` inside a worktree (AGENTS.md 5).",
   );
 }
