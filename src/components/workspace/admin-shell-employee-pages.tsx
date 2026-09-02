@@ -313,6 +313,9 @@ export async function WorkspaceDashboardPage() {
   const { year, month } = currentCairoDateParts();
   const monthStart = `${year}-${String(month).padStart(2, "0")}-01`;
   const today = currentCairoDateOnlyIso();
+  // DATE-ONLY: `monthStart` is the Cairo month's first day as "YYYY-MM-01", parsed as UTC
+  // midnight. UTC here is CORRECT and must stay — it is what stops the label slipping back to
+  // the previous month. Not an instant; do not "fix" this one to Cairo.
   const monthLabel = new Intl.DateTimeFormat("en-GB", { month: "long", year: "numeric", timeZone: "UTC" }).format(
     new Date(`${monthStart}T00:00:00Z`),
   );

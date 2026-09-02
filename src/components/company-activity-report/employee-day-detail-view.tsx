@@ -18,6 +18,9 @@ function minutesToClock(minutes: number | null): string {
   return `${displayHour}:${String(mins).padStart(2, "0")} ${period}`;
 }
 
+// DATE-ONLY (the activity day, a `date` column), which `new Date` parses as UTC midnight. UTC here is
+// CORRECT and must stay: it is what stops the calendar day being shifted by a zone offset. Not an
+// instant — do not "fix" this one to Cairo.
 function formatFullDate(dateIso: string, weekday: string) {
   const formatted = new Intl.DateTimeFormat("en", {
     day: "2-digit",

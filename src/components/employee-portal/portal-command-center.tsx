@@ -685,6 +685,9 @@ function MedicalRepCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot })
   const surplus = ach && pct !== null && pct >= 100 ? ach.salesValue - ach.targetValue : null;
 
   const cairoNow = currentCairoDateParts();
+  // The Cairo month is already resolved above; the label is then rendered off a synthetic
+  // `Date.UTC`, so `timeZone: "UTC"` here is CORRECT and must stay — it is what stops the month
+  // slipping back one. Not an instant; do not "fix" this one to Cairo.
   const thisMonth = new Date(Date.UTC(cairoNow.year, cairoNow.month - 1, 1)).toLocaleString("en-US", {
     month: "long",
     year: "numeric",

@@ -36,6 +36,9 @@ function pageCountOf(total: number) {
   return Math.max(1, Math.ceil(total / PAGE_SIZE));
 }
 
+// DATE-ONLY (`activity_date`, `hire_date`, `probation_end_date` — all `date` columns), which `new Date`
+// parses as UTC midnight. UTC here is CORRECT and must stay: it is what stops the calendar day being
+// shifted by a zone offset. Not an instant — do not "fix" this one to Cairo.
 function formatDate(value: string | null) {
   if (!value) return "—";
   return new Date(value).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" });

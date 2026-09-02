@@ -130,6 +130,9 @@ function formatDays(days: number) {
   return `${Number(days.toFixed(2))}`;
 }
 
+// DATE-ONLY (leave start/end days and window bounds, all `date` columns), which `new Date` parses as
+// UTC midnight. UTC here is CORRECT and must stay: it is what stops the calendar day being shifted by a
+// zone offset. Not an instant — do not "fix" this one to Cairo.
 function formatDate(value: string | null | undefined) {
   if (!value) return "—";
   return new Intl.DateTimeFormat("en", {

@@ -65,6 +65,9 @@ function fmt(n: number) {
   return new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 }).format(n);
 }
 
+// DATE-ONLY (hire / last-DV / span dates, all `date` columns, sliced to 10 chars first), which `new
+// Date` parses as UTC midnight. UTC here is CORRECT and must stay: it is what stops the calendar day
+// being shifted by a zone offset. Not an instant — do not "fix" this one to Cairo.
 function fmtDate(v: string | null | undefined) {
   if (!v) return "—";
   const d = new Date(`${v.slice(0, 10)}T00:00:00Z`);

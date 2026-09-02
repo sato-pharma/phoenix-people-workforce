@@ -55,6 +55,10 @@ function todayIso() {
   return currentCairoDateOnlyIso();
 }
 
+// DATE-ONLY (a month label off a synthetic `Date.UTC`; the selected-day heading further down is the
+// same case), which `new Date` parses as UTC midnight. UTC here is CORRECT and must stay: it is what
+// stops the calendar day being shifted by a zone offset. Not an instant — do not "fix" this one to
+// Cairo.
 function monthLabel(year: number, month: number) {
   return new Intl.DateTimeFormat("en", { month: "long", year: "numeric", timeZone: "UTC" }).format(
     new Date(Date.UTC(year, month - 1, 1)),

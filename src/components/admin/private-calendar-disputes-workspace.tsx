@@ -20,6 +20,9 @@ export type AdminPrivateCalendarDispute = {
   status: "pending_review" | "accepted" | "rejected";
 };
 
+// DATE-ONLY (a calendar-item date, a `date` column), which `new Date` parses as UTC midnight. UTC here
+// is CORRECT and must stay: it is what stops the calendar day being shifted by a zone offset. Not an
+// instant — do not "fix" this one to Cairo.
 function formatDate(iso: string) {
   const date = new Date(`${iso}T00:00:00Z`);
   if (Number.isNaN(date.getTime())) return iso;

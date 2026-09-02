@@ -47,6 +47,9 @@ const SIMPLE_REASON_REQUIRED: Record<SimpleAction, boolean> = {
   request_details: false,
 };
 
+// DATE-ONLY (a plan day's `activity_date`, a `date` column), which `new Date` parses as UTC midnight.
+// UTC here is CORRECT and must stay: it is what stops the calendar day being shifted by a zone offset.
+// Not an instant — do not "fix" this one to Cairo.
 function dayLabel(iso: string): string {
   const [y, m, d] = iso.split("-").map(Number);
   if (!y) return iso;

@@ -68,6 +68,9 @@ const DISPOSITION_LABEL: Record<MailboxDisposition, string> = {
   retained: "Left running deliberately",
 };
 
+// DATE-ONLY (offboarding task dates, sliced to 10 chars first), which `new Date` parses as UTC
+// midnight. UTC here is CORRECT and must stay: it is what stops the calendar day being shifted by a
+// zone offset. Not an instant — do not "fix" this one to Cairo.
 function formatDate(value: string | null) {
   if (!value) return "—";
   const parsed = new Date(`${value.slice(0, 10)}T00:00:00Z`);

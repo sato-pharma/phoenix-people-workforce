@@ -101,6 +101,10 @@ function prettyDate(value: string | null) {
   return formatDateOnly(value, "en-GB", { day: "2-digit", month: "short", year: "numeric" }, "Not available");
 }
 
+// periodLabel and periodMonthLabel below all render DATE-ONLY values (a "YYYY-MM" payroll period key
+// off a synthetic `Date.UTC`), which `new Date` parses as UTC midnight. UTC here is CORRECT and must
+// stay: it is what stops the calendar day being shifted by a zone offset. None of these is an instant —
+// do not "fix" them to Cairo.
 function periodLabel(value: string) {
   const [yearText, monthText] = value.split("-");
   const year = Number(yearText);

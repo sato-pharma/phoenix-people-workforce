@@ -85,6 +85,10 @@ const RESOLUTION_OPTIONS: Array<{ label: string; value: CrmCustomerResolutionAct
   { label: "Map to Brick ID…", value: "mapped" },
 ];
 
+// DATE-ONLY (`firstSeen`/`lastSeen`, both min/max of `ireports360_visits.visit_date` — a `date` column,
+// not the vendor's timestamptz), which `new Date` parses as UTC midnight. UTC here is CORRECT and must
+// stay: it is what stops the calendar day being shifted by a zone offset. Not an instant — do not "fix"
+// this one to Cairo.
 function formatDate(value: string) {
   return new Date(value).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" });
 }

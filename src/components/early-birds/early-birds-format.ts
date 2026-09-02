@@ -9,7 +9,11 @@ export function formatStartClock(minutes: number | null | undefined): string {
   return `${String(hours).padStart(2, "0")}:${String(mins).padStart(2, "0")}`;
 }
 
-/** "12 Mar 2023" — a hire date is a fact about a person, so it reads like one. */
+/** "12 Mar 2023" — a hire date is a fact about a person, so it reads like one.
+ *
+ * DATE-ONLY (`employees.hire_date`, a `date` column), pinned to UTC midnight. UTC here is
+ * CORRECT and must stay: it is what stops the calendar day being shifted by a zone offset.
+ * Same for formatDayShort below. Neither is an instant — do not "fix" them to Cairo. */
 export function formatHireDate(dateIso: string | null | undefined): string {
   if (!dateIso) return "—";
   const parsed = new Date(`${String(dateIso).slice(0, 10)}T00:00:00Z`);
