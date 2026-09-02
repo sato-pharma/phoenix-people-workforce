@@ -139,8 +139,28 @@ function testARefusedWorktreeIsNamedNotSwallowed() {
   );
 }
 
+function testTheRestoreAdviceOnlyPrintsWhenSomethingWasStripped() {
+  const code = doctorCode();
+
+  const at = code.indexOf("Restore any of them");
+  assert.notEqual(at, -1, "the restore advice is gone - this test is pinning nothing");
+
+  // "Restore any of them" is advice about worktrees THIS RUN emptied. Printed unconditionally it
+  // trailed "Stripped 0 worktree(s), 0 path entries reclaimed", where "them" referred to nothing
+  // and the sentence implied something had been removed and needed putting back. That is the
+  // same failure as the offer this file already pins, one size down: output that stays true of
+  // the code and false of the run it is describing.
+  const before = code.slice(Math.max(0, at - 240), at);
+  assert.ok(
+    /stripped > 0\s*\n?\s*\?/.test(before),
+    "the restore advice must sit behind a `stripped > 0` guard; after a run that stripped " +
+      "nothing it tells the reader to put back something that was never taken",
+  );
+}
+
 export function runRepoDoctorStripIdleOfferTests() {
   testTheGatesLiveInExactlyOnePlace();
   testTheOfferCannotSumEveryWorktreeAgain();
   testARefusedWorktreeIsNamedNotSwallowed();
+  testTheRestoreAdviceOnlyPrintsWhenSomethingWasStripped();
 }

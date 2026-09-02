@@ -1306,7 +1306,14 @@ if (stripIdle) {
       (unverified > 0
         ? ` ${unverified} could NOT be verified clean afterwards — check those by hand, they are flagged !! above.`
         : "") +
-      " Restore any of them with `node scripts/new-session.mjs --repair <task>` before working" +
-      " there again — NEVER `pnpm install` inside a worktree (AGENTS.md 5).",
+      // The restore advice is about worktrees THIS RUN emptied, so it only belongs after a run
+      // that emptied one. Trailing it after "Stripped 0 worktree(s)" pointed the word "them" at
+      // nothing, and read as though something had been taken away and now needed putting back -
+      // the opposite of what a zero means. The NEVER-pnpm warning travels with it deliberately:
+      // it is a caveat about running --repair, not a standalone rule that needs saying here.
+      (stripped > 0
+        ? " Restore any of them with `node scripts/new-session.mjs --repair <task>` before working" +
+          " there again — NEVER `pnpm install` inside a worktree (AGENTS.md 5)."
+        : ""),
   );
 }
