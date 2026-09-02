@@ -1135,7 +1135,7 @@ import { runMemoryIndexReachabilityTests } from "./memory-index-reachability.tes
 import { runSessionStartMemoryIndexGuardTests } from "./session-start-memory-index-guard.test.ts";
 import { runAutoloadFootprintBudgetTests } from "./autoload-footprint-budget.test.ts";
 import { runRepoDoctorUnpushedCommitsTests } from "./repo-doctor-unpushed-commits.test.ts";
-import { runRepoDoctorArchiveRefsTests } from "./repo-doctor-archive-refs.test.ts";
+import { runRepoDoctorArchiveRefsTests, runStrandedArchiveCases } from "./repo-doctor-archive-refs.test.ts";
 
 import { runCvRereadAppliesWhatItReadsTests } from "./cv-reread-applies-what-it-reads.test.ts";
 import { runCandidateNameFromCvTests } from "./candidate-name-from-cv.test.ts";
@@ -3515,6 +3515,11 @@ await runTest(
   + "namespace AGENTS.md 2.1 names — was scanned by nothing at all; a repo it cannot read must "
   + "report unknown rather than none)",
   runRepoDoctorArchiveRefsTests,
+);
+
+await runTest(
+  "Repo doctor calls an archive backed up only when ORIGIN provably holds the commit (an archived tip is normally an ordinary ANCESTOR of main, not a ref tip; and a remote-tracking ref origin no longer advertises is a stale CACHE, never proof)",
+  runStrandedArchiveCases,
 );
 
 await runTest(

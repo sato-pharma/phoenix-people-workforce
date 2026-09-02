@@ -36,7 +36,12 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { ARCHIVE_REF_PATTERNS, archivePushTarget, listArchiveRefs } from "../scripts/repo-doctor-archive-refs.mjs";
+import {
+  ARCHIVE_REF_PATTERNS,
+  archivePushTarget,
+  listArchiveRefs,
+  strandedArchives,
+} from "../scripts/repo-doctor-archive-refs.mjs";
 
 function git(at: string, args: string[]): string {
   return execFileSync("git", args, { cwd: at, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
@@ -178,5 +183,137 @@ export function runRepoDoctorArchiveRefsTests(): void {
     }
   } finally {
     rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+// ── Whether a tip "exists on origin" — the SECOND half of this check, wrong until 2026-09-02 ──
+//
+// The test was `!advertised.has(sha)`: is this SHA the TIP of some ref origin advertises? But an
+// archived tip is normally an ORDINARY ANCESTOR of main — merged, pushed, entirely safe — and a ref
+// tip it is not. Measured on the primary checkout: 5 refs reported laptop-only, 4 of them direct
+// ancestors of origin/main. Worse, the count MOVES on its own as merged branches are deleted from
+// origin, so a section meant to be acted on teaches people to ignore it.
+//
+// The fix must not overshoot into the other direction. A remote-tracking ref is a CACHE of what
+// origin said at the last fetch; a rewound or deleted branch would otherwise read as proof, and a
+// false CLEAN loses the commit. So an anchor counts only when origin advertises that exact SHA now.
+// The stale-anchor case below is the one that pins this, and it is the reason this cannot be
+// simplified to "is it an ancestor of origin/main".
+
+/** A repo with a real bare origin, so ancestry and advertisement are both real. */
+function makeRepoWithOrigin(): { dir: string; bare: string; shas: Record<string, string> } {
+  const bare = mkdtempSync(join(tmpdir(), "phx-archive-origin-"));
+  execFileSync("git", ["init", "--bare", "--quiet", bare], { stdio: ["ignore", "pipe", "pipe"] });
+
+  const dir = mkdtempSync(join(tmpdir(), "phx-archive-work-"));
+  git(dir, ["init", "--quiet", "--initial-branch=main"]);
+  git(dir, ["config", "user.email", "test@example.com"]);
+  git(dir, ["config", "user.name", "Test"]);
+
+  writeFileSync(join(dir, "a.txt"), "one\n");
+  git(dir, ["add", "a.txt"]);
+  git(dir, ["commit", "--quiet", "-m", "one"]);
+  const ancestor = git(dir, ["rev-parse", "HEAD"]);
+
+  writeFileSync(join(dir, "b.txt"), "two\n");
+  git(dir, ["add", "b.txt"]);
+  git(dir, ["commit", "--quiet", "-m", "two"]);
+  const tip = git(dir, ["rev-parse", "HEAD"]);
+
+  git(dir, ["remote", "add", "origin", bare]);
+  git(dir, ["push", "--quiet", "origin", "main"]);
+  git(dir, ["update-ref", "refs/remotes/origin/main", tip]);
+
+  // Never pushed: this is what genuinely-stranded work looks like.
+  writeFileSync(join(dir, "c.txt"), "three\n");
+  git(dir, ["add", "c.txt"]);
+  git(dir, ["commit", "--quiet", "-m", "three"]);
+  const orphan = git(dir, ["rev-parse", "HEAD"]);
+  git(dir, ["reset", "--quiet", "--hard", tip]);
+
+  // A SEPARATE never-pushed line, whose TIP is held by a stale remote-tracking ref. Deliberately
+  // not the same commit as `orphan`: if the two shared a SHA, the stale-anchor case below could be
+  // satisfied by the ordinary stranded assertion and would prove nothing of its own.
+  writeFileSync(join(dir, "d.txt"), "four\n");
+  git(dir, ["add", "d.txt"]);
+  git(dir, ["commit", "--quiet", "-m", "four"]);
+  const staleChild = git(dir, ["rev-parse", "HEAD"]);
+  writeFileSync(join(dir, "e.txt"), "five\n");
+  git(dir, ["add", "e.txt"]);
+  git(dir, ["commit", "--quiet", "-m", "five"]);
+  const staleTip = git(dir, ["rev-parse", "HEAD"]);
+  git(dir, ["reset", "--quiet", "--hard", tip]);
+
+  // Origin advertised this once and does not any more — a cache, not proof.
+  git(dir, ["update-ref", "refs/remotes/origin/gone", staleTip]);
+
+  git(dir, ["update-ref", "refs/deleted-branches/at-tip", tip]);
+  git(dir, ["update-ref", "refs/deleted-branches/codex/an-ancestor", ancestor]);
+  git(dir, ["update-ref", "refs/deleted-branches/codex/never-pushed", orphan]);
+
+  return { dir, bare, shas: { ancestor, tip, orphan, staleChild, staleTip } };
+}
+
+function advertisedShas(dir: string): Set<string> {
+  return new Set(
+    git(dir, ["ls-remote", "origin"])
+      .split("\n")
+      .map((line) => line.split("\t")[0])
+      .filter(Boolean),
+  );
+}
+
+export function runStrandedArchiveCases(): void {
+  const { dir, bare, shas } = makeRepoWithOrigin();
+  try {
+    const refs = listArchiveRefs(dir);
+    assert.ok(refs !== null, "the fixture repo must be readable");
+
+    const advertised = advertisedShas(dir);
+    const stranded = strandedArchives(refs, advertised, dir).map((r) => r.ref).sort();
+
+    assert.deepEqual(
+      stranded,
+      ["refs/deleted-branches/codex/never-pushed"],
+      "only the commit origin has never seen is stranded — an archived tip is normally an ORDINARY "
+        + "ANCESTOR of main, and calling those laptop-only is what made this section unreadable",
+    );
+
+    // The old rule, pinned: it called the ancestor stranded, which is what changed.
+    const oldRule = refs.filter((r) => !advertised.has(r.sha)).map((r) => r.ref).sort();
+    assert.deepEqual(
+      oldRule,
+      ["refs/deleted-branches/codex/an-ancestor", "refs/deleted-branches/codex/never-pushed"],
+      "the pre-fix SHA-equality rule must still call the ancestor stranded — if it stops, this pin "
+        + "is stale and the test no longer proves what the fix changed",
+    );
+    assert.ok(
+      oldRule.length > stranded.length,
+      "the fixed rule must report strictly FEWER than the old one, or this test proves nothing",
+    );
+
+    // ── The direction that must never invert: a STALE anchor is not proof ──────────────────────
+    git(dir, ["update-ref", "refs/deleted-branches/codex/child-of-stale", shas.staleChild]);
+    const afterStale = listArchiveRefs(dir);
+    assert.ok(afterStale !== null, "the fixture repo must still be readable");
+    const strandedWithStale = strandedArchives(afterStale, advertisedShas(dir), dir).map((r) => r.ref);
+
+    assert.ok(
+      strandedWithStale.includes("refs/deleted-branches/codex/child-of-stale"),
+      "a commit reachable ONLY from a remote-tracking ref that origin no longer advertises must "
+        + "still read as stranded — refs/remotes/* is a CACHE of the last fetch, and trusting it "
+        + "blindly turns a rewound or deleted branch into proof. A false alarm costs a push; a "
+        + "false clean costs the commit",
+    );
+
+    // ── Not knowing must never read as clean ──────────────────────────────────────────────────
+    assert.deepEqual(
+      strandedArchives(refs, new Set(), dir).map((r) => r.ref).sort(),
+      refs.map((r) => r.ref).sort(),
+      "if origin advertises nothing we can verify, EVERY archive must read as stranded, never none",
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+    rmSync(bare, { recursive: true, force: true });
   }
 }

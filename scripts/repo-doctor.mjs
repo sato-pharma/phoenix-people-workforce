@@ -105,7 +105,7 @@ import {
 } from "./memory-index-budget.mjs";
 import { classifyMemoryReachability, memoryReachabilityLines } from "./memory-index-reachability.mjs";
 import { countUnpushedCommits } from "./repo-doctor-unpushed.mjs";
-import { archivePushTarget, listArchiveRefs } from "./repo-doctor-archive-refs.mjs";
+import { archivePushTarget, listArchiveRefs, strandedArchives } from "./repo-doctor-archive-refs.mjs";
 
 const args = process.argv.slice(2);
 const deep = args.includes("--deep");
@@ -875,7 +875,9 @@ let autoloadedIndexBytes = null;
           .map((line) => line.split("\t")[0])
           .filter(Boolean),
       );
-      const stranded = archiveRefs.filter((entry) => !onOrigin.has(entry.sha));
+      // Not `!onOrigin.has(sha)`: an archived tip is normally an ordinary ANCESTOR of main, not
+      // a ref tip. See strandedArchives for why a remote-tracking ref alone cannot prove it.
+      const stranded = strandedArchives(archiveRefs, onOrigin);
       console.log(
         `  ${num(archiveRefs.length)} local archive ref(s), ${num(stranded.length)} with no copy on origin`,
       );
