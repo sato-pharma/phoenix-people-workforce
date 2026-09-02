@@ -293,6 +293,22 @@ function isSensitiveMetadataKey(key: string): boolean {
   return sensitiveMetadataKeyPattern.test(key);
 }
 
+// Delivery plumbing, not information. These keys exist so the sender can de-duplicate a send; they
+// mean nothing to the person reading the bell, and they are long — measured on production
+// 2026-09-02, `idempotencyKey` was the ONLY detail label being ellipsised, on 5 of 5 occurrences,
+// one of them hiding 2556px of text inside a 161px box. So it broke two owner rules at once: show
+// human-readable names rather than raw codes, and never truncate with an ellipsis.
+//
+// Filtered by KEY here rather than by shape at the component, because the value is a composite like
+// `ireports360-sync:ireports360-visits-sync:1b28cfea-…` — `isUuidLike` below only catches a BARE
+// uuid, which is exactly why these slipped through the guard that was meant to stop them.
+const internalPlumbingKeyPattern = /^(idempotency|dedupe|dedup|correlation|trace|request)[_-]?(key|id)$/i;
+
+/** True for keys that are send-plumbing — real values, but meaningless to a human reader. */
+function isInternalPlumbingKey(key: string): boolean {
+  return internalPlumbingKeyPattern.test(key.trim());
+}
+
 function detailValue(value: unknown) {
   if (value === null || typeof value === "undefined") return "";
   if (value instanceof Date) return value.toISOString();
@@ -564,6 +580,9 @@ function notificationDetails(metadata: Record<string, unknown>, category = ""): 
     if (used.has(key) || ["href", "message", "metrics", "title", "details"].includes(key)) continue;
     // Never surface sensitive raw metadata (tokens, passwords, emails, etc.).
     if (isSensitiveMetadataKey(key)) continue;
+    // …nor send-plumbing. This loop is a catch-all over EVERY remaining metadata key, so anything a
+    // producer happens to stash in metadata lands in front of the reader unless it is named here.
+    if (isInternalPlumbingKey(key)) continue;
     const text = detailValue(value);
     if (!text || isUuidLike(text)) continue; // skip empty + raw UUID identifiers
     details.push({

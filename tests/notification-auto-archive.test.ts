@@ -93,7 +93,11 @@ export function runNotificationAutoArchiveTests() {
   const bellSource = readFileSync("src/components/layout/in-app-notifications-bell.tsx", "utf8");
   assert.match(bellSource, /clearAll: true/, "bell must send clearAll:true to the API");
   assert.match(bellSource, /Clear all notifications/, "bell must have a Clear all button");
-  assert.match(bellSource, /nav-badge-alarm absolute right-1\.5 top-1\.5/, "the bell icon's own unread dot pumps too, consistent with the sidebar badges");
+  // The bell's unread marker shares the sidebar's alarm class so both surfaces pulse identically.
+  // It became a COUNT on 2026-09-02 (was a bare 2px dot), matching InternalMessagesMenu beside it —
+  // the position moved with it, so this pins the class and the number, not the old coordinates.
+  assert.match(bellSource, /nav-badge-alarm absolute right-1 top-1/, "the bell's unread badge carries the shared alarm class, consistent with the sidebar badges");
+  assert.match(bellSource, /unreadCount > 99 \? "99\+" : unreadCount/, "the bell shows HOW MANY are unread, capped, rather than an unquantified dot");
 
   const weeklyPlanningSource = readFileSync("src/lib/weekly-planning/service.ts", "utf8");
   assert.match(

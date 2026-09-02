@@ -5,6 +5,7 @@ import {
   clampPanelToViewport,
   NAV_PANEL_GUTTER,
   NAV_PANEL_WIDTH,
+  placeAnchoredPanel,
 } from "../src/lib/navigation/panel-position.ts";
 
 /**
@@ -88,6 +89,71 @@ export function runNavPanelPositionTests() {
         Number.isFinite(placed.offsetLeft),
         `offset must be a real number (viewport ${viewportWidth})`,
       );
+    }
+  }
+
+  // ── Right-aligned panels: the notifications bell, measured on production ─────────────────────
+  // 2026-09-02, revision 99c9909f2: the bell sat at x=265..301 in a 375px viewport and its panel
+  // opened at `left: -50 → right: 301` — 50px off the LEFT edge, clipped. The exact mirror of the
+  // "+" panel's failure, which is the whole reason both edges are covered here.
+  //
+  // Note what it proves about narrowing: the panel's width was ALREADY capped at 100vw-24 = 351 and
+  // it still hung off the screen. Width was never the problem; the anchor's position was.
+  {
+    const gutter12 = 12;
+    const placed = placeAnchoredPanel({
+      align: "right",
+      anchorLeft: 265,
+      anchorRight: 301,
+      gutter: gutter12,
+      preferredWidth: 380,
+      viewportWidth: 375,
+    });
+    const left = 265 + placed.offsetLeft;
+    const right = left + placed.width;
+    assert.ok(left >= gutter12, `the bell panel must not hang off the LEFT: landed at ${left}`);
+    assert.ok(right <= 375 - gutter12, `nor off the right: right edge ${right}`);
+    // Anti-vacuity: unclamped, right-alignment genuinely put it at -50.
+    assert.equal(301 - Math.min(380, 375 - gutter12 * 2), -50, "the fixture must reproduce the measured -50");
+  }
+
+  // Right-alignment must still be HONOURED when there is room — otherwise this "fix" silently
+  // relocates every desktop dropdown to the left of its trigger, which is its own regression.
+  {
+    const placed = placeAnchoredPanel({
+      align: "right",
+      anchorLeft: 1360,
+      anchorRight: 1396,
+      gutter: 12,
+      preferredWidth: 380,
+      viewportWidth: 1440,
+    });
+    const left = 1360 + placed.offsetLeft;
+    assert.equal(left + placed.width, 1396, "with room to spare the panel's right edge meets the anchor's");
+    assert.equal(placed.width, 380, "and it keeps its full width");
+  }
+
+  // Both alignments, swept — neither may ever escape either edge.
+  {
+    for (const viewportWidth of [320, 375, 414, 768, 1024, 1440]) {
+      for (const anchorLeft of [0, 12, 40, 184, 265, 300, Math.max(0, viewportWidth - 36)]) {
+        for (const align of ["left", "right"] as const) {
+          const placed = placeAnchoredPanel({
+            align,
+            anchorLeft,
+            anchorRight: anchorLeft + 36,
+            gutter: 12,
+            preferredWidth: 380,
+            viewportWidth,
+          });
+          const left = anchorLeft + placed.offsetLeft;
+          const right = left + placed.width;
+          assert.ok(
+            left >= 12 - 0.5 && right <= viewportWidth - 12 + 0.5,
+            `${align}-aligned panel escaped: anchor ${anchorLeft} in ${viewportWidth} placed ${left}→${right}`,
+          );
+        }
+      }
     }
   }
 

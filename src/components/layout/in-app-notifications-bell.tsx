@@ -6,6 +6,7 @@ import Link from "next/link";
 
 import { systemUiText } from "@/config/system-settings";
 import { cn } from "@/lib/utils";
+import { placeAnchoredPanel, type PanelPlacement } from "@/lib/navigation/panel-position";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { useDismissOnOutsideInteraction } from "@/hooks/use-dismiss-on-outside-interaction";
 
@@ -35,6 +36,10 @@ type NotificationsResponse = {
 
 const pendingStatuses = new Set(["pending", "scheduled", "awaiting", "action_required"]);
 
+/** Panel width, and the breathing room kept either side of it on a phone. */
+const NOTIFICATION_PANEL_WIDTH = 380;
+const NOTIFICATION_PANEL_GUTTER = 12;
+
 function formatNotificationTime(value: string | null) {
   if (!value) return "Now";
   const date = new Date(value);
@@ -63,6 +68,13 @@ export function InAppNotificationsBell({ isAdminMode }: { isAdminMode: boolean }
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [moduleFilter, setModuleFilter] = useState("all");
+  // Measured from the bell's own rect when it is pressed. The panel prefers to hang from the bell's
+  // RIGHT edge, which is correct on desktop and ran 50px off the LEFT of a 375px screen — see
+  // panel-position.ts. Not an effect: setState inside useEffect is a lint error in this repo.
+  const [placement, setPlacement] = useState<PanelPlacement>({
+    offsetLeft: 0,
+    width: NOTIFICATION_PANEL_WIDTH,
+  });
 
   const loadNotifications = useCallback(async (signal?: { aborted: boolean }) => {
     try {
@@ -143,6 +155,9 @@ export function InAppNotificationsBell({ isAdminMode }: { isAdminMode: boolean }
     muted: isAdminMode ? "text-phx-ink-faint" : "text-phx-ink-soft",
     body: isAdminMode ? "text-phx-line-strong" : "text-phx-ink-2",
     rowHover: isAdminMode ? "hover:bg-[#111111]" : "hover:bg-phx-paper",
+    // Carded rows, matching InternalMessagesMenu's own `rounded border px-3 py-2.5` treatment. The
+    // bell used borderless hover strips, which is why the two menus never read as one system.
+    card: isAdminMode ? "border-[#1f2937] bg-[#0B0B0B]" : "border-phx-line bg-[#FCFDFE]",
     chip: isAdminMode ? "bg-[#111111] text-phx-line-strong" : "bg-phx-paper text-phx-ink-2",
     skeleton: isAdminMode ? "bg-[#1a1a1a]" : "bg-[#EEF2F7]",
   };
@@ -157,26 +172,51 @@ export function InAppNotificationsBell({ isAdminMode }: { isAdminMode: boolean }
             ? "text-[#D4DDE8] hover:bg-[#1a1a1a] hover:text-[#F8B56B]"
             : "text-phx-ink-soft hover:bg-phx-paper hover:text-phx-ink",
         )}
-        onClick={() => setOpen((current) => !current)}
+        onClick={(event) => {
+          const anchor = event.currentTarget.getBoundingClientRect();
+          setPlacement(
+            placeAnchoredPanel({
+              align: "right",
+              anchorLeft: anchor.left,
+              anchorRight: anchor.right,
+              gutter: NOTIFICATION_PANEL_GUTTER,
+              preferredWidth: NOTIFICATION_PANEL_WIDTH,
+              viewportWidth: document.documentElement.clientWidth,
+            }),
+          );
+          setOpen((current) => !current);
+        }}
         type="button"
       >
         <Bell className="h-[18px] w-[18px]" />
         {unreadCount > 0 ? (
+          // A COUNT, not a bare dot — matching InternalMessagesMenu, which sits immediately to the
+          // right of this button and has always shown its number. The two were the same control
+          // wearing different clothes; the bell was the one hiding how much was waiting.
+          // Deliberately a plain string, not cn(): tailwind-merge silently drops `text-phx-*` sizes
+          // when it sees another `text-` class beside them, and nothing here needs merging.
           <span
             aria-label={`${unreadCount} unread notification${unreadCount === 1 ? "" : "s"}`}
-            className="nav-badge-alarm absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-phx-accent ring-2 ring-white"
+            className="nav-badge-alarm absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded bg-phx-accent px-1 text-phx-3xs font-black text-white"
             role="status"
-          />
+          >
+            {unreadCount > 99 ? "99+" : unreadCount}
+          </span>
         ) : null}
       </button>
 
       {open ? (
         <div
+          // `left-0` + a measured marginLeft, not `right-0`: the placement is computed against the
+          // viewport (see panel-position.ts), and it is the same mechanism the nav row's "+" uses.
+          // `rounded` rather than `rounded-xl` — the house radius, and what the messages menu beside
+          // it already uses.
           className={cn(
-            "absolute right-0 top-full z-30 mt-1.5 w-[min(380px,calc(100vw-1.5rem))] overflow-hidden rounded-xl border shadow-lg",
+            "absolute left-0 top-full z-30 mt-1.5 overflow-hidden rounded border shadow-lg",
             panelText.border,
             panelText.bg,
           )}
+          style={{ marginLeft: placement.offsetLeft, width: placement.width }}
         >
           <div className={cn("border-b px-4 py-3", panelText.border)}>
             <div className="flex items-start justify-between gap-3">
@@ -259,7 +299,8 @@ export function InAppNotificationsBell({ isAdminMode }: { isAdminMode: boolean }
             ) : null}
           </div>
 
-          <div className="max-h-[360px] overflow-auto p-2">
+          {/* space-y-2 because the rows are cards now and would otherwise touch. */}
+          <div className="max-h-[420px] space-y-2 overflow-auto p-2">
             {loading && !hasNotifications ? (
               <div className="space-y-2 p-1.5" aria-hidden="true">
                 {[0, 1, 2].map((index) => (
@@ -296,14 +337,26 @@ export function InAppNotificationsBell({ isAdminMode }: { isAdminMode: boolean }
               visibleNotifications.map((notification) => {
                 const actionRequired = isActionRequired(notification);
                 const content = (
-                  <div className={cn("rounded-lg px-3 py-2.5 transition", panelText.rowHover, notification.isRead ? "opacity-70" : "")}>
+                  // Read rows are marked by a muted border and the dot losing its accent — NOT by
+                  // opacity, which dimmed the text itself and made an already-read notification
+                  // harder to actually read. Nothing here hides content.
+                  <div
+                    className={cn(
+                      "rounded border px-3 py-2.5 transition",
+                      panelText.card,
+                      panelText.rowHover,
+                      notification.isRead ? "" : "border-l-2 border-l-phx-accent",
+                    )}
+                  >
                     <div className="flex items-start gap-2.5">
                       <span className={cn("mt-1.5 h-2 w-2 shrink-0 rounded-full", notification.isRead ? "bg-slate-300" : "bg-phx-accent")} />
                       <div className="min-w-0 flex-1">
                         <div className="flex items-start justify-between gap-2">
                           {notification.primaryText ? (
                             <div className="min-w-0">
-                              <p className={cn("truncate text-sm font-black", panelText.title)}>
+                              {/* Wraps, never truncates — the owner's standing no-ellipsis rule.
+                                  Vertical space is free here; the panel already scrolls. */}
+                              <p className={cn("break-words text-sm font-black", panelText.title)}>
                                 {notification.primaryText}
                               </p>
                               <p className={cn("mt-0.5 text-xs font-bold leading-5", panelText.body)}>
@@ -323,7 +376,7 @@ export function InAppNotificationsBell({ isAdminMode }: { isAdminMode: boolean }
                             {notification.details.slice(0, 6).map((detail) => (
                               <div
                                 className={cn(
-                                  "flex items-center justify-between gap-3 rounded px-2 py-1 text-phx-xs",
+                                  "flex items-start justify-between gap-3 rounded px-2 py-1 text-phx-xs",
                                   panelText.chip,
                                 )}
                                 key={`${notification.id}-${detail.label}`}
@@ -331,7 +384,7 @@ export function InAppNotificationsBell({ isAdminMode }: { isAdminMode: boolean }
                                 <span className="shrink-0 font-black uppercase tracking-[0.10em] text-phx-accent">
                                   {detail.label}
                                 </span>
-                                <span className="min-w-0 truncate font-semibold">{detail.value}</span>
+                                <span className="min-w-0 break-words text-right font-semibold">{detail.value}</span>
                               </div>
                             ))}
                           </div>

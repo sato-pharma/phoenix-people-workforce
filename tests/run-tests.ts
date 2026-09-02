@@ -25,6 +25,7 @@ import { runNavigationRuling11AnalyticsTests } from "./navigation-ruling-11-anal
 import { runHrUrlNamespaceTests } from "./hr-url-namespace.test.ts";
 import { runNotificationLinksResolveTests } from "./notification-links-resolve.test.ts";
 import { runNavPanelPositionTests } from "./nav-panel-position.test.ts";
+import { runNotificationBellPolishTests } from "./notification-bell-polish.test.ts";
 import { runNavigationHubCardCatalogTests } from "./navigation-hub-card-catalog.test.ts";
 import { runNavigationPersonalLayoutTests } from "./navigation-personal-layout.test.ts";
 import { runFinanceManagerSixModuleAccessTests } from "./finance-manager-six-module-access.test.ts";
@@ -1274,6 +1275,10 @@ await runTest(
 await runTest(
   "nav row + panel placement (stays inside the viewport at every width, both edges)",
   runNavPanelPositionTests,
+);
+await runTest(
+  "notifications bell polish (no send-plumbing in the card, no ellipsis, clamped panel, counted badge, alarm motion on)",
+  runNotificationBellPolishTests,
 );
 await runTest(
   "finance manager six-module access (sales scope + grant as one change, full closing workbook, organogram two-gate + head office, resignations read-only, line-scoped calendar, payslip document export)",

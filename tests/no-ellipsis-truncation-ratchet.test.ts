@@ -62,8 +62,14 @@ import path from "node:path";
  * screen to begin with. Deleting a dead file is the cheapest way this count falls,
  * and it is the only way it has fallen so far; the ~273 that remain are on live
  * screens and each needs its own fix.
+ *
+ * 273 -> 271 on 2026-09-02, and these two are the FIRST to fall the expensive way:
+ * both were on a live screen, in the notifications bell, and were fixed rather than
+ * deleted. They were also the panel's only ellipsised text — one of them hid 2556px
+ * of a metadata value inside a 161px box, which is how the rendered `idempotencyKey`
+ * managed to sit in front of the owner unnoticed. `truncate` -> `break-words`.
  */
-const BASELINE = 273;
+const BASELINE = 271;
 
 const ROOTS = ["app", "src"];
 
