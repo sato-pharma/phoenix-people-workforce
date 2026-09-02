@@ -1211,6 +1211,8 @@ import { runPortalToolsGridFitsAPhoneTests } from "./portal-tools-grid-fits-a-ph
 
 import { runRecruitmentFolderCvPopupTests } from "./recruitment-folder-cv-popup.test.ts";
 
+import { runRepoDoctorWorktreeRestoreAdviceTests } from "./repo-doctor-worktree-restore-advice.test.ts";
+
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -3741,6 +3743,8 @@ await runTest("stars of the fortnight card wraps on a phone (no whitespace-nowra
 await runTest("portal tile grids are single-column on a phone (a PremiumNavTile floor is 172px; two columns give 146px at 320px)", runPortalToolsGridFitsAPhoneTests);
 
 await runTest("recruitment folder row opens the CV in place (modal + download, never the ?candidate= redirect)", runRecruitmentFolderCvPopupTests);
+
+await runTest("repo-doctor never advises pnpm install in a worktree (restore is new-session --repair)", runRepoDoctorWorktreeRestoreAdviceTests);
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
