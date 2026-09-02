@@ -54,6 +54,25 @@ const childTables = [
   "ats_candidate_status_events",
 ] as const;
 
+/**
+ * Rows that point at a candidate through a column of their OWN naming, which `reassign` cannot
+ * move — it keys every child on `candidate_id`.
+ *
+ * The WhatsApp classification session is the only one today, and it is deliberately not in
+ * `childTables` above: it is not a child record. It outlives the merge, it holds the applicant's
+ * own answers, and `applied_candidate_id` is the note saying which record those answers were
+ * written onto. Left pointing at the deleted duplicate it says they went somewhere that no longer
+ * exists, so anything resolving a conversation back to a candidate finds nothing — which reads as
+ * "this applicant never applied", not as a broken link. Two sessions were found in exactly that
+ * state in production on 2026-09-02, both stranded by a merge run minutes earlier.
+ *
+ * Keep this list BELOW childTables: recruitment-candidate-merge.test.ts slices childTables to the
+ * first `] as const` in the file, so a second one above it silently empties what that test reads.
+ */
+const linkedByOwnColumn = [
+  { column: "applied_candidate_id", table: "ats_whatsapp_classification_sessions" },
+] as const;
+
 type ApplicationScopeRow = {
   candidate_id: unknown;
   converted_employee_hr_id?: unknown;
@@ -109,6 +128,30 @@ async function reassign(table: string, fromCandidateId: string, toCandidateId: s
     .from(table)
     .update({ candidate_id: toCandidateId })
     .eq("candidate_id", fromCandidateId)
+    .select("id");
+  if (error) throw error;
+  return (data ?? []).length;
+}
+
+/**
+ * Repoints one table's own candidate column at the survivor. Returns how many rows moved.
+ *
+ * Separate from `reassign` rather than a parameter on it: that one moves CHILD rows, whose whole
+ * existence belongs to the candidate, and this one repairs a reference held by a record that
+ * stands on its own. Same UPDATE, different meaning — and a merge that confused the two would
+ * either miss this link or try to write `candidate_id` onto a table that has no such column.
+ */
+async function relink(
+  table: string,
+  column: string,
+  fromCandidateId: string,
+  toCandidateId: string,
+): Promise<number> {
+  const supabase = recruitmentDb();
+  const { data, error } = await supabase
+    .from(table)
+    .update({ [column]: toCandidateId })
+    .eq(column, fromCandidateId)
     .select("id");
   if (error) throw error;
   return (data ?? []).length;
@@ -172,6 +215,12 @@ export async function mergeCandidates(
     const moved = await reassign(table, duplicateId, survivorId);
     if (table === "ats_applications") movedApplications = moved;
     if (table === "ats_files") movedFiles = moved;
+  }
+
+  // Before the delete, for the same reason the child rows move first: once the duplicate is gone,
+  // a row still pointing at it cannot be found from either end.
+  for (const link of linkedByOwnColumn) {
+    await relink(link.table, link.column, duplicateId, survivorId);
   }
 
   const supabase = recruitmentDb();

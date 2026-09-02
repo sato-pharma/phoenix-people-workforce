@@ -184,6 +184,34 @@ export function runRecruitmentCandidateMergeTests() {
     false,
     "ats_candidate_source_context is a VIEW over ats_cv_intake_events — updating it would throw, and it follows that table on its own",
   );
+
+  // ── The link a merge used to strand ──────────────────────────────────────────────────────────
+  // The WhatsApp session points at the candidate through a column of its own naming, so it can
+  // only travel on the second list: reassign writes `candidate_id`, which that table has not got.
+  assert.equal(
+    childTables.includes("ats_whatsapp_classification_sessions"),
+    false,
+    "the classification session links through applied_candidate_id, so reassign would try to write a candidate_id column that table does not have",
+  );
+  const linkedStart = service.indexOf("const linkedByOwnColumn");
+  const linked = service.slice(linkedStart, service.indexOf("] as const", linkedStart));
+  assert.ok(
+    linked.includes("ats_whatsapp_classification_sessions") && linked.includes("applied_candidate_id"),
+    "a merge that leaves applied_candidate_id on the deleted duplicate strands the applicant's own answers, and the session then reads as though they never applied at all",
+  );
+  // Existence first, and not as a formality: `indexOf` answers -1 for a loop that is not there, and
+  // -1 is less than every real position — so the ordering assertion below passes on a merge that
+  // repoints nothing at all. That is the exact bug being fixed here, and the first draft of this
+  // test was green against it.
+  const relinkLoopAt = service.indexOf("of linkedByOwnColumn");
+  assert.ok(
+    relinkLoopAt > 0 && service.includes("await relink("),
+    "the merge never walks linkedByOwnColumn — declaring the list without acting on it leaves the session pointing at the row that was just deleted, which is the whole defect",
+  );
+  assert.ok(
+    relinkLoopAt < service.indexOf("deleteError"),
+    "the session must be repointed BEFORE the duplicate is deleted — afterwards nothing can find it from either end",
+  );
   assert.ok(
     service.indexOf(".delete().eq(\"id\", duplicateId)") < service.indexOf("borrowedPayload(borrowed)"),
     "the duplicate must be deleted BEFORE its email/national ID are written onto the survivor — both carry a partial UNIQUE index, so borrowing one while the duplicate still holds it is a 23505 every time. (phone_norm's unique index was dropped 2026-08-30 when phone stopped being an identity key, so phone alone would no longer conflict — the ordering is still required for the other two.)",
