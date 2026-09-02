@@ -1,6 +1,7 @@
 import { parseRoleStrict, type PhoenixRole } from "@/lib/auth/permissions";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import { resolveJobFunctionRole } from "@/lib/employees/job-function";
+import { canSeeDoctorCoverage } from "@/lib/crm/doctor-coverage-roles";
 import { canViewMarketingCoverageReport } from "@/lib/marketing-requests/coverage-report-access";
 import { isDirectOrderRequesterRole } from "@/lib/direct-orders/types";
 
@@ -23,6 +24,8 @@ export type EmployeePortalNavVisibility = {
   showTeamPerformanceTab?: boolean;
   showMedRepsPerformanceTab?: boolean;
   showRepsListTab?: boolean;
+  /** KPIs — Summary, Call Rate, Coverage and Frequency. Every portal-mode role with a reach. */
+  showKpisTab?: boolean;
   showMedicalRepExpensesTab?: boolean;
   showDsmsPerformanceTab?: boolean;
   // Team Calendar — NSM-only live field-visit month grid for their whole line, scoped
@@ -349,6 +352,14 @@ export function resolveEmployeePortalNavVisibility(
     resolvedRole === "District Manager" ||
     resolvedRole === "Regional Manager" ||
     resolvedRole === "National Sales Manager";
+  // KPIs — imported rather than spelled out, unlike Reps List above. doctor-coverage-roles.ts is the
+  // SINGLE list of who reaches this board and was deliberately built free of any server-only import
+  // for exactly this caller, so there is no second copy to drift. It is also the module the page
+  // gate and the data scope both read, which is what stops a visible row the page then refuses.
+  //
+  // Marketing Manager is in the list and is portal-mode, so she gets the row; Super Admin, CEO and
+  // SFE Manager are admin-mode and land on /admin/kpis instead — this resolver never runs for them.
+  const showKpisTab = canSeeDoctorCoverage(resolvedRole);
   // Talent Acquisition is HR staff processing outstation expenses, not a field claimant —
   // she has no outstation expenses of her own, so both expense tabs stay hidden for her.
   const showExpenseActionTab = !isMedicalRep && !isPortalHrOfficeStaff;
@@ -429,6 +440,7 @@ export function resolveEmployeePortalNavVisibility(
     showMarketingCoverageReportTab,
     showMedRepsPerformanceTab,
     showRepsListTab,
+    showKpisTab,
     showMedicalRepExpensesTab: isMedicalRep,
     showMyPerformanceTab: isA3Account ? false : baseShowMyPerformanceTab,
     showMyCoachingTab: isMedicalRep,
@@ -437,9 +449,20 @@ export function resolveEmployeePortalNavVisibility(
     // District Manager added 2026-08-22 alongside isLineScopedOrganogramRole in
     // src/lib/reports/organogram.ts, which is the enforcing gate; this flag only surfaces the
     // link. Spelled `resolvedRole === "District Manager"` deliberately, NOT isDistrictManager:
-    // the latter also matches the Head-Office "Manager" rung, which holds no organogram grant at
-    // all in defaultPermissionMatrix and would get a link that bounces off assertPermission.
+    // the latter also matches the Head-Office "Manager" rung, and that rung as a whole still gets
+    // no organogram link — only the ONE pinned account below does.
+    //
+    // isA3Account added 2026-09-02 (owner: "show the full organogram to sama mosaad account"). The
+    // rung DOES now hold organogram:read in defaultPermissionMatrix, but the enforcing gates
+    // (canAccessCompanyOrganogram / canAccessHeadOffice in src/lib/reports/organogram.ts) are
+    // pinned to HR_ID A-3, so surfacing the link for the whole rung would hand her two colleagues
+    // a row that redirects — the dead link tests/sfe-manager-nav-dead-links.test.ts exists for.
+    // This flag is her ONLY door: system-navigation.ts's portal Organogram entry deliberately does
+    // NOT list "Manager", because that file cannot express an HR_ID, so adding the role there
+    // would fail tests/organogram-nav-link-exists-for-every-role-that-can-open-it.test.ts as a
+    // dead link for the other two. The cost is that the command palette cannot offer it to her.
     showOrganogramTab:
+      isA3Account ||
       showMedRepsPerformanceTab ||
       resolvedRole === "District Manager" ||
       isRegionalManager ||
