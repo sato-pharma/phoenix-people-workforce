@@ -54,10 +54,10 @@ import {
   applyKpiFilters,
   buildKpiFacets,
   EMPTY_KPI_FILTERS,
-  keepMedicalRepsOnly,
   type KpiFacets,
   type KpiFilterState,
 } from "@/lib/crm/kpis-filters";
+import { keepMedicalRepsOnly } from "@/lib/crm/medical-rep";
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import { loadCallRateReport } from "@/lib/crm/call-rate-service";
@@ -655,8 +655,9 @@ export async function getKpisBoard(input: {
   // whole page describes one population: 63 of the 70 rows in scope that September, with 6 district
   // sales managers and 1 product manager dropped. A manager carries no doctor plan of his own, so
   // he scores "No plan" on two of the three measures and pulls the team averages toward a number
-  // that describes nobody. See keepMedicalRepsOnly in kpis-filters.ts for why an unrecorded title
-  // is kept rather than dropped.
+  // that describes nobody. ONE rule decides this for every CRM board — crm/medical-rep.ts, which
+  // Reps Plans reaches through its seat-aware arm and this board through the title arm, because the
+  // seat model never enters here.
   const scopedReps = keepMedicalRepsOnly(allInScope);
 
   // Facets are built from the SCOPED rows and the filters applied after, in that order. Building

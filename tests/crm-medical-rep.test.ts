@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 
-import { isMedicalRep, isMedicalRepJobTitle } from "../src/lib/crm/medical-rep.ts";
+import { isMedicalRep, isMedicalRepJobTitle, keepMedicalRepsOnly } from "../src/lib/crm/medical-rep.ts";
 import { isAgentInScope, type DoctorCoverageScope } from "../src/lib/crm/doctor-coverage-roles.ts";
 
 /**
@@ -9,6 +9,11 @@ import { isAgentInScope, type DoctorCoverageScope } from "../src/lib/crm/doctor-
  * Both rules are pure, both decide whether a person is SHOWN, and both fail silently when wrong —
  * a dropped rep produces no error, just a slightly shorter board. That is what these assertions are
  * for.
+ *
+ * THIS IS THE ONLY PLACE THE MEDICAL-REP RULE IS ASSERTED. Two implementations of it shipped an
+ * hour apart on 2026-09-03 and were consolidated the same day; the KPIs suite now asserts only
+ * where its board applies the rule, not what the rule says. If you are adding an expectation about
+ * who counts as a rep, it belongs here — a second copy elsewhere is how the first pair drifted.
  */
 export function runCrmMedicalRepTests() {
   // ── THE TITLE ARM ─────────────────────────────────────────────────────────────────────────────
@@ -35,6 +40,34 @@ export function runCrmMedicalRepTests() {
     false,
     "a manager word makes the title a manager's, whatever else it says",
   );
+  assert.equal(isMedicalRepJobTitle("Medical Rep Manager"), false, "and the short form of the same trap");
+
+  // ── EVERY TITLE PRODUCTION ACTUALLY HOLDS ─────────────────────────────────────────────────────
+  // The complete inventory of job titles held by a CRM agent that logged a visit since 1 August
+  // 2026, measured 2026-09-03: 126 agents, 11 distinct titles. Pinned as a table because the rule
+  // is two regexes and a reader cannot tell from them alone which real titles land where — and
+  // because the consolidation that produced this file had to prove it changed nobody's verdict.
+  const LIVE_TITLES: ReadonlyArray<readonly [string, number, boolean]> = [
+    ["Medical Representative", 91, true],
+    ["District Sales Manager", 21, false],
+    ["National Sales Manager", 4, false],
+    ["Admin Assistant", 2, false],
+    ["Product Manager", 2, false],
+    ["Buffet", 1, false],
+    ["Group Product Manager", 1, false],
+    ["Marketing Manager", 1, false],
+    ["Regional Sales Manager", 1, false],
+    ["Sfe Manager", 1, false],
+    ["Training Manager", 1, false],
+  ];
+  assert.equal(
+    LIVE_TITLES.reduce((total, [, agents]) => total + agents, 0),
+    126,
+    "the inventory must stay the whole measured population, or it stops being evidence of anything",
+  );
+  for (const [title, agents, expected] of LIVE_TITLES) {
+    assert.equal(isMedicalRepJobTitle(title), expected, `${title} (${agents} agents on the boards)`);
+  }
 
   // ── THE TWO ARMS, IN ORDER ────────────────────────────────────────────────────────────────────
   // The SEAT answers when there is one; the job title answers only when the organogram is silent.
@@ -59,6 +92,42 @@ export function runCrmMedicalRepTests() {
     false,
     "and no seat plus no title is no evidence, which is not a rep",
   );
+
+  // ── THE THIRD ARM, AND WHY IT IS NOT THE GENEROUS ONE ─────────────────────────────────────────
+  // The KPIs implementation this rule absorbed answered the line above TRUE, to protect "a CRM
+  // agent with no matching employee record" from vanishing off his manager's board. Measured on
+  // production 2026-09-03, across every agent that logged a visit since 1 August: 126 agents had an
+  // hr id, an employee record AND a job title; ZERO had an hr id without one of those. So a row
+  // carrying an hr id can never reach this arm, and the only rows that can are the 45 with no hr id
+  // at all — 43 CRM territory placeholders holding one visit each, and 2 real reps whose CRM
+  // account is not mapped yet, both already hidden upstream by the departed-agent exclusion.
+  //
+  // Such a row also cannot be on a manager's board to be dropped from: isAgentInScope fails closed
+  // without a key, so only `company` scope ever sees it. The channel for an unidentifiable agent is
+  // the unmapped-agent alert (crm/admin.ts, `agent_hr_id IS NULL`), which reports it instead of
+  // leaving somebody to notice a board is one row short.
+  assert.equal(
+    isMedicalRep({ placement: null, jobTitle: "   " }),
+    false,
+    "a blank title is not a quietly-kept rep — an unidentifiable agent belongs in the unmapped alert",
+  );
+
+  // ── THE BOARD-LEVEL HELPER ────────────────────────────────────────────────────────────────────
+  // Structural in its row type on purpose: the KPIs board has no seat model, so it passes rows this
+  // module never imports. `placement: null` for every one of them is the whole difference between
+  // the two boards, and it is stated by the helper rather than left to a caller to remember.
+  assert.deepEqual(
+    keepMedicalRepsOnly([
+      { jobTitle: "Medical Representative", name: "rep" },
+      { jobTitle: "Medical Rep", name: "short spelling" },
+      { jobTitle: "District Sales Manager", name: "district manager" },
+      { jobTitle: "Product Manager", name: "product manager" },
+      { jobTitle: null, name: "unidentifiable" },
+    ]).map((entry) => entry.name),
+    ["rep", "short spelling"],
+    "the same two arms, applied to a whole board",
+  );
+  assert.deepEqual(keepMedicalRepsOnly([]), [], "an empty board is empty, not an error");
 
   // ── THE SCOPE CHECK ───────────────────────────────────────────────────────────────────────────
   const team: DoctorCoverageScope = {
