@@ -82,6 +82,7 @@ classifier — the load-bearing set changes as the index does.
 - **A merged fix on a path nobody has exercised is untested, not proven.** — `payroll-mutations-were-unaudited-until-2026-08-21`
 - **cn() SILENTLY DROPPED every text-phx-* size, and only getComputedStyle in a real…** — `tailwind-merge-strips-custom-named-font-sizes` **(inline — load-bearing)**
 - **Arabic + English in ONE value needs direction PER LINE; dir="auto" on the block is…** — `bilingual-bodies-need-direction-per-line-not-per-block` **(inline — load-bearing)**
+- **A UI timeZone: "UTC" has THREE causes and only ONE is a bug — a blanket Cairo fix…** — `ireports360-timestamps-cairo-local-mislabeled-utc`
 - **@/lib/utils resolves to the ROOT lib/utils.ts, NOT src/lib/utils.ts** — `at-slash-lib-shadows-src-lib-via-tsconfig-paths` **(inline — load-bearing)**
 - **Sweep memories by CLAIM, never by filename or topic** — `staleness-sweeps-scoped-by-topic-miss-the-dangerous-ones`
 - **A parallel session can collide with NO git trace at all** — `feedback-parallel-session-pr-collision`
