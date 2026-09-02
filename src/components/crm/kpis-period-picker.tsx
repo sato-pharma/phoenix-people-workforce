@@ -3,7 +3,8 @@
 import { useRouter } from "next/navigation";
 import { useTransition } from "react";
 
-import { KPI_TABS, type KpiTab } from "@/lib/crm/kpis-tabs";
+import { buildKpisQuery, type KpiFilterState } from "@/lib/crm/kpis-filters";
+import { type KpiTab } from "@/lib/crm/kpis-tabs";
 
 /**
  * The KPIs board's month and period pickers.
@@ -32,6 +33,7 @@ export type KpiPickerOption = { label: string; value: string };
 
 export function KpisPeriodPicker({
   basePath,
+  filters,
   month,
   monthOptions,
   period,
@@ -39,6 +41,8 @@ export function KpisPeriodPicker({
   tab,
 }: {
   basePath: string;
+  /** Carried through every change — see the note on losing them below. */
+  filters: KpiFilterState;
   month: string;
   monthOptions: readonly KpiPickerOption[];
   period: string;
@@ -49,18 +53,18 @@ export function KpisPeriodPicker({
   const [pending, startTransition] = useTransition();
 
   const apply = (next: { month?: string; period?: string }) => {
-    const query = new URLSearchParams();
     const nextMonth = next.month ?? month;
-    query.set("month", nextMonth);
     // Changing the MONTH drops the period back to the whole month. A week key means "week 3 of the
     // month I am looking at", so carrying `w3` across a month change silently re-points it at a
     // different seven days — and week 5 does not exist in every month at all.
     const nextPeriod = next.month != null ? "month" : (next.period ?? period);
-    if (nextPeriod && nextPeriod !== "month") query.set("period", nextPeriod);
-    // The tab is preserved: a manager comparing weeks on the Coverage tab means "this week's
-    // coverage", not "take me back to Summary".
-    if (tab !== "summary" && (KPI_TABS as readonly string[]).includes(tab)) query.set("tab", tab);
-    startTransition(() => router.push(`${basePath}?${query.toString()}`));
+    // The tab AND every advanced filter are preserved. A manager comparing weeks on the Coverage
+    // tab means "this week's coverage for the reps I filtered to", not "take me back to an
+    // unfiltered Summary" — and a picker that silently widened the board while the chips still
+    // said a filter was on would be the worst of the two possible bugs.
+    startTransition(() =>
+      router.push(`${basePath}?${buildKpisQuery({ month: nextMonth, period: nextPeriod, tab, filters })}`),
+    );
   };
 
   return (

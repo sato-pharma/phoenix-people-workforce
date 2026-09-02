@@ -178,6 +178,7 @@ function docList(agentCrmId: number, agentHrId: string | null, repName: string):
     plannedCalls: 100,
     plannedCallsToDate: 100,
     plannedDoctors: 100,
+    coverageDueDoctors: 100,
     plannedUnclassified: 0,
     repKey: String(agentCrmId),
     repName,
