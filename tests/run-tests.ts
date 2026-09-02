@@ -1216,6 +1216,7 @@ import { runRepoDoctorWorktreeRestoreAdviceTests } from "./repo-doctor-worktree-
 import { runCommentStripRatchetTests } from "./comment-strip-ratchet.test.ts";
 
 import { runRepoDoctorStripIdleOfferTests } from "./repo-doctor-strip-idle-offer.test.ts";
+import { runCrmClientTimeoutsTests } from "./crm-client-timeouts.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -3760,6 +3761,7 @@ await runTest("repo-doctor never advises pnpm install in a worktree (restore is 
 await runTest("no source-pinning test strips comments with a regex that eats the code it pins", runCommentStripRatchetTests);
 
 await runTest("repo-doctor offers only what --strip-idle will actually reclaim", runRepoDoctorStripIdleOfferTests);
+await runTest("the CRM client's timeout bounds the response BODY, and an empty body is not a shape change", runCrmClientTimeoutsTests);
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
 console.log(`\n${testDurationsMs.length} test files passed in ${totalMs.toFixed(0)}ms. Slowest:`);

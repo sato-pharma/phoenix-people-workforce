@@ -91,6 +91,35 @@ function messageFromPayload(payload: unknown, fallback: string): string {
   return fallback;
 }
 
+/**
+ * Maps a failed request onto our error type.
+ *
+ * `aborted` is read from the SIGNAL rather than from the error's name, and that is the load-bearing
+ * detail: an abort that lands mid-BODY does not surface as an AbortError in undici — it arrives as
+ * `TypeError: terminated`. Keying off the name alone would report our own timeout as a random
+ * network blip, which is the wrong thing to wake up to.
+ */
+function requestFailure(error: unknown, aborted: boolean, timeoutMs: number): IReports360ApiError {
+  if (aborted || (error instanceof Error && error.name === "AbortError")) {
+    return new IReports360ApiError(`iReports360 request timed out after ${timeoutMs}ms.`, 504);
+  }
+  return new IReports360ApiError(
+    `iReports360 request failed: ${error instanceof Error ? error.message : "network error"}.`,
+    502,
+  );
+}
+
+/**
+ * THE ABORT TIMER MUST COVER THE BODY, NOT JUST THE HEADERS.
+ *
+ * It used to be cleared in a `finally` wrapped around the `fetch()` await alone — and that await
+ * resolves the moment response HEADERS arrive, so `response.text()` on the next line ran with no
+ * deadline at all. On 2026-09-02 the vendor accepted a 10-day /visits request, answered 200, then
+ * stalled the body: with IREPORTS360_TIMEOUT_MS=120000 the call still ran 301 seconds — past the
+ * calling route's own maxDuration of 300 — and then surfaced as "no `data` array" rather than as
+ * the timeout it was. One timer around BOTH awaits is the fix; a mid-body abort is caught below
+ * and reported honestly.
+ */
 async function fetchJson(
   url: string,
   init: RequestInit,
@@ -99,37 +128,76 @@ async function fetchJson(
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
-  let response: Response;
   try {
-    response = await fetch(url, { ...init, cache: "no-store", signal: controller.signal });
-  } catch (error) {
-    if (error instanceof Error && error.name === "AbortError") {
-      throw new IReports360ApiError("iReports360 request timed out.", 504);
+    let response: Response;
+    try {
+      response = await fetch(url, { ...init, cache: "no-store", signal: controller.signal });
+    } catch (error) {
+      throw requestFailure(error, controller.signal.aborted, timeoutMs);
     }
-    throw new IReports360ApiError(
-      `iReports360 request failed: ${error instanceof Error ? error.message : "network error"}.`,
-      502,
-    );
+
+    // Deliberately INSIDE the timer's scope — this is the await that hung for 301 seconds.
+    let body: string;
+    try {
+      body = await response.text();
+    } catch (error) {
+      throw requestFailure(error, controller.signal.aborted, timeoutMs);
+    }
+
+    let payload: unknown = null;
+    try {
+      payload = body ? JSON.parse(body) : null;
+    } catch {
+      payload = null;
+    }
+
+    if (!response.ok) {
+      throw new IReports360ApiError(
+        messageFromPayload(payload, `iReports360 responded with HTTP ${response.status}.`),
+        normalizeHttpStatus(response.status),
+      );
+    }
+
+    return payload;
   } finally {
     clearTimeout(timer);
   }
+}
 
-  const body = await response.text();
-  let payload: unknown = null;
-  try {
-    payload = body ? JSON.parse(body) : null;
-  } catch {
-    payload = null;
-  }
-
-  if (!response.ok) {
+/**
+ * Unwraps the vendor's `{ success, data }` envelope, or throws. Shared by all four read endpoints.
+ *
+ * A missing/non-array `data` is a BROKEN response, not an empty one, and the two must never look
+ * alike: coercing it to [] made the sync record a green "success, 0 rows fetched" run, ping the
+ * dead-man's switch as healthy, and send a ✅ notification — so a renamed field, an auth-scope
+ * change, or a nested-shape change could stop the integration for days with no signal anywhere.
+ * `data: []` is still perfectly valid and returns [] (a genuinely quiet day).
+ *
+ * An EMPTY or NON-JSON body is reported as its own case, and that separation is the point.
+ * `fetchJson` yields `null` for both, which is exactly what a connection cut mid-response or an
+ * HTML error page from the host looks like — nothing to do with the response SHAPE. Folding the
+ * two together is what made the 2026-09-02 vendor stall read as "the response shape changed",
+ * sending a reader hunting an API change that had never happened.
+ */
+function expectDataArray<T>(payload: unknown, endpoint: string): T[] {
+  if (payload === null || payload === undefined) {
     throw new IReports360ApiError(
-      messageFromPayload(payload, `iReports360 responded with HTTP ${response.status}.`),
-      normalizeHttpStatus(response.status),
+      `iReports360 ${endpoint} response body was empty or was not JSON — the connection was cut ` +
+        `mid-response, or the host returned a non-JSON error page.`,
+      502,
     );
   }
-
-  return payload;
+  const data = (payload as { data?: unknown }).data;
+  if (!Array.isArray(data)) {
+    throw new IReports360ApiError(
+      messageFromPayload(
+        payload,
+        `iReports360 ${endpoint} response contained no \`data\` array — the response shape changed or the request was rejected.`,
+      ),
+      502,
+    );
+  }
+  return data as T[];
 }
 
 /** Authenticates and returns a JWT token (valid ~30 days per the API docs). */
@@ -180,21 +248,7 @@ export async function iReports360GetVisits(
   if (payload?.success === false) {
     throw new IReports360ApiError(messageFromPayload(payload, "iReports360 visits request failed."), 502);
   }
-  // A missing/non-array `data` is a BROKEN response, not an empty one, and the two must never look
-  // alike: coercing it to [] made the sync record a green "success, 0 rows fetched" run, ping the
-  // dead-man's switch as healthy, and send a ✅ notification — so a renamed field, an auth-scope
-  // change, or a nested-shape change could stop the integration for days with no signal anywhere.
-  // `data: []` is still perfectly valid and returns [] (a genuinely quiet day).
-  if (!payload || !Array.isArray(payload.data)) {
-    throw new IReports360ApiError(
-      messageFromPayload(
-        payload,
-        "iReports360 visits response contained no `data` array — the response shape changed or the request was rejected.",
-      ),
-      502,
-    );
-  }
-  return payload.data;
+  return expectDataArray<IReports360Visit>(payload, "visits");
 }
 
 /** Returns GPS check-in records within an inclusive date range (YYYY-MM-DD). */
@@ -216,20 +270,10 @@ export async function iReports360GetCheckins(
   if (payload?.success === false) {
     throw new IReports360ApiError(messageFromPayload(payload, "iReports360 checkins request failed."), 502);
   }
-  // See iReports360GetVisits: a broken response must not be indistinguishable from an empty one.
-  // This one matters even more, because the sync's check-in fetch is wrapped in `.catch(() => [])`,
-  // so a permanently-broken /checkins endpoint would otherwise degrade every visit's GPS time tier
-  // to save-time silently and forever.
-  if (!payload || !Array.isArray(payload.data)) {
-    throw new IReports360ApiError(
-      messageFromPayload(
-        payload,
-        "iReports360 checkins response contained no `data` array — the response shape changed or the request was rejected.",
-      ),
-      502,
-    );
-  }
-  return payload.data;
+  // The shared guard matters more here than anywhere else: the sync's check-in fetch is wrapped in
+  // `.catch(() => [])`, so a permanently-broken /checkins endpoint would otherwise degrade every
+  // visit's GPS time tier to save-time silently and forever.
+  return expectDataArray<IReports360Checkin>(payload, "checkins");
 }
 
 /**
@@ -290,19 +334,9 @@ export async function iReports360GetWeeklyPlans(
   if (payload?.success === false) {
     throw new IReports360ApiError(messageFromPayload(payload, "iReports360 weekly-plans request failed."), 502);
   }
-  // Same rule as visits/checkins: a missing or non-array `data` is a BROKEN response, never an
-  // empty one. Coercing it to [] here would let a vendor shape change wipe every rep's doctor
+  // Coercing a broken response to [] here would let a vendor shape change wipe every rep's doctor
   // list on the next sync and report the run as a success.
-  if (!payload || !Array.isArray(payload.data)) {
-    throw new IReports360ApiError(
-      messageFromPayload(
-        payload,
-        "iReports360 weekly-plans response contained no `data` array — the response shape changed or the request was rejected.",
-      ),
-      502,
-    );
-  }
-  return payload.data;
+  return expectDataArray<IReports360PlanEntry>(payload, "weekly-plans");
 }
 
 /**
@@ -364,19 +398,9 @@ export async function iReports360GetMonthlyPlans(
   if (payload?.success === false) {
     throw new IReports360ApiError(messageFromPayload(payload, "iReports360 monthly-plans request failed."), 502);
   }
-  // Same rule as visits/checkins/weekly-plans: a missing or non-array `data` is a BROKEN response,
-  // never an empty one. Coercing it to [] would let a vendor shape change empty a month of plans
+  // Coercing a broken response to [] would let a vendor shape change empty a whole month of plans
   // and report the run as a success.
-  if (!payload || !Array.isArray(payload.data)) {
-    throw new IReports360ApiError(
-      messageFromPayload(
-        payload,
-        "iReports360 monthly-plans response contained no `data` array — the response shape changed or the request was rejected.",
-      ),
-      502,
-    );
-  }
-  return payload.data;
+  return expectDataArray<IReports360MonthlyPlanEntry>(payload, "monthly-plans");
 }
 
 /**
