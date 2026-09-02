@@ -46,6 +46,7 @@ type PageProps = {
     plan?: string;
     region?: string;
     rep?: string;
+    status?: string;
     tab?: string;
     week?: string;
   }>;
@@ -88,7 +89,7 @@ export default async function PortalRepsListPage({ searchParams }: PageProps) {
       // whole reason there are two access modules.
       const scope = await getPlanVerificationScope(access);
       plansBoard = await getRepsWeeklyPlansBoard({
-        params: { ...cascade, plan: params?.plan, week: params?.week },
+        params: { ...cascade, plan: params?.plan, status: params?.status, week: params?.week },
         scope,
       });
     } catch (error) {

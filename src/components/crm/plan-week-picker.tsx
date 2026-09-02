@@ -40,11 +40,20 @@ function weekSuffix(offset: number): string {
 export function PlanWeekPicker({
   basePath,
   selection,
+  status,
   week,
   weeks,
 }: {
   basePath: string;
   selection: CoverageFilterSelection;
+  /**
+   * The status filter in force, carried through the change.
+   *
+   * A manager who has narrowed to "awaiting verification" and then steps a week forward means the
+   * same question about a different week. Dropping it here would silently widen the board back to
+   * every rep — and it would look like the filter had been applied, because the week did change.
+   */
+  status?: string;
   week: PlanWeek;
   weeks: PlanWeek[];
 }) {
@@ -60,6 +69,7 @@ export function PlanWeekPicker({
     if (selection.region) next.set("region", selection.region);
     if (selection.area) next.set("area", selection.area);
     if (selection.rep) next.set("rep", selection.rep);
+    if (status && status !== "all") next.set("status", status);
     if (value) next.set("week", value);
     setPending(true);
     router.push(`${basePath}?${next.toString()}`);

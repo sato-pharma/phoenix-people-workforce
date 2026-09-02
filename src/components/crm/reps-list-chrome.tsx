@@ -11,6 +11,8 @@
  * is that these are one screen.
  */
 
+import Link from "next/link";
+
 export function Section({
   action,
   children,
@@ -36,12 +38,31 @@ export function Section({
   );
 }
 
+/**
+ * A KPI tile, and — when given an `href` — the control that filters the board down to what it counts.
+ *
+ * ONE COMPONENT FOR BOTH, rather than a `FilterTile` beside it. These sit in the same four-across
+ * row, and a second component would match on the day it was written and stop matching on the next
+ * change to either: the row would then read as three stats and one button, which is exactly the
+ * "one-off look" the owner's standing rule forbids. A tile with no `href` is a plain `div` and is
+ * byte-identical to what it always rendered.
+ *
+ * The active tile keeps its tone on the NUMBER and takes the orange accent on the BORDER. Tinting
+ * the number instead would collide with what the tone means here — amber is "waiting on you", rose
+ * is "nobody filed" — so the selected state has to be carried by something the tones do not use.
+ */
 export function Tile({
+  active,
+  href,
   label,
   sub,
   tone,
   value,
 }: {
+  /** Whether this tile is the filter currently applied. Ignored without an `href`. */
+  active?: boolean;
+  /** Makes the tile a link. Omit it and the tile is exactly the static one it has always been. */
+  href?: string;
   label: string;
   sub?: string;
   tone?: "amber" | "emerald" | "rose" | "sky";
@@ -57,12 +78,28 @@ export function Tile({
           : tone === "sky"
             ? "text-sky-700"
             : "text-slate-900";
-  return (
-    <div className="border border-slate-200 px-3 py-2.5">
+  const body = (
+    <>
       <p className="text-phx-3xs font-black uppercase tracking-[0.14em] text-slate-400">{label}</p>
       <p className={`text-lg font-black ${valueClass}`}>{value}</p>
       {sub ? <p className="text-phx-2xs text-slate-400">{sub}</p> : null}
-    </div>
+    </>
+  );
+
+  if (!href) return <div className="border border-slate-200 px-3 py-2.5">{body}</div>;
+
+  return (
+    <Link
+      aria-current={active ? "true" : undefined}
+      className={
+        active
+          ? "block border border-orange-500 bg-orange-50 px-3 py-2.5"
+          : "block border border-slate-200 px-3 py-2.5 transition-colors hover:border-orange-400 hover:bg-orange-50"
+      }
+      href={href}
+    >
+      {body}
+    </Link>
   );
 }
 

@@ -164,6 +164,16 @@ export type RepsCascade = {
    */
   repNameByAgentId: Map<number, string>;
   reps: RepsListRep[];
+  /**
+   * The same list WITHOUT the rep level applied — every rep in the chosen line, region and area.
+   *
+   * `reps` is narrowed to one person the moment `?rep=` is set, which is right for the grid and
+   * wrong for any control that COUNTS. The Reps Weekly Plans status picker drops the rep when it
+   * navigates, so counting `reps` had it offering "Verified (0)" on a page whose Verified slice
+   * actually holds 61 people — every number on the control describing somewhere the control does
+   * not go. Count with this; browse with `reps`.
+   */
+  repsIgnoringRep: RepsListRep[];
   scopeLabel: string;
   scopeReason: string | null;
   selected: RepsListRep | null;
@@ -183,6 +193,7 @@ export async function buildRepsCascade(input: {
       // leak one viewer's names into the next request served by the same process.
       repNameByAgentId: new Map<number, string>(),
       reps: [],
+      repsIgnoringRep: [],
       scopeLabel,
       scopeReason: input.scope.reason,
       selected: null,
@@ -228,7 +239,9 @@ export async function buildRepsCascade(input: {
   // The cascade's reps are the org tree's seated reps — the authority on who exists and who a
   // viewer may see. A rep with no CRM list is kept and reported as holding none, because "this rep
   // has no list in the CRM" is a finding the owner wants to see, not a row to hide.
-  const reps: RepsListRep[] = repsMatching(tree, selection)
+  // Matched WITHOUT the rep level, then narrowed below. One pass over the tree yields both lists:
+  // the one the grid browses and the one the status picker counts.
+  const repsIgnoringRep: RepsListRep[] = repsMatching(tree, { ...selection, rep: undefined })
     .map((rep) => {
       const summary = summaryByHrId.get(lower(rep.hrId));
       return {
@@ -243,6 +256,10 @@ export async function buildRepsCascade(input: {
       };
     })
     .sort((left, right) => left.name.localeCompare(right.name));
+
+  const reps: RepsListRep[] = selection.rep
+    ? repsIgnoringRep.filter((rep) => rep.repKey === selection.rep)
+    : repsIgnoringRep;
 
   // Only an explicitly selected rep opens a list. The board's first screen is the cascade, exactly
   // as specified — a rep is chosen, then that rep's contacts appear.
@@ -288,7 +305,7 @@ export async function buildRepsCascade(input: {
     return at && (!latest || at > latest) ? at : latest;
   }, null);
 
-  return { options, repNameByAgentId, reps, scopeLabel, scopeReason: null, selected, selection, syncedAt };
+  return { options, repNameByAgentId, reps, repsIgnoringRep, scopeLabel, scopeReason: null, selected, selection, syncedAt };
 }
 
 /** Assembles tab one — the cascade plus the selected rep's contact list, grouped by brick. */

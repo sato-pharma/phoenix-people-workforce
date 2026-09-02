@@ -3018,7 +3018,20 @@ await runTest(
   + "horizontal scroll the owner's golden rule forbids; and planStatusClass is asserted to live in "
   + "the module with NO directive, because a server component importing it through a use-client "
   + "file receives a client reference rather than a function — which already happened to "
-  + "planPeriodText one file over)",
+  + "planPeriodText one file over. The status filter keeps the same separation: a rep who filed "
+  + "nothing can never land in 'awaiting you', or the manager is sent to verify a plan that does "
+  + "not exist; the tiles count the WEEK and not the filtered list, since they ARE the filter and "
+  + "counting the filter would zero the very tile that widens it again; an unrecognised ?status= "
+  + "widens to everybody rather than emptying the board, which would read as 'nobody filed a plan "
+  + "this week'; and the cascade, the week picker and Back-to-all-reps each rebuild the URL from "
+  + "their own parameters, so any one of them forgetting status silently widens the board while "
+  + "appearing to have worked. Two more the browser found and the typechecker could not: the status "
+  + "picker's import graph is walked and asserted to reach no node: builtin, because it is a client "
+  + "module and importing one VALUE from the server board module pulled node:crypto into the bundle "
+  + "and 500'd the tab on a tree that typechecked clean; and the counts are taken over the reps "
+  + "matching the line, region and area but NOT the rep, because the cascade narrows to one person "
+  + "the moment ?rep= is set and the picker — which drops the rep when it navigates — was offering "
+  + "'Verified (0)' on a week holding 61 verified reps)",
   runRepsWeeklyPlansTests,
 );
 

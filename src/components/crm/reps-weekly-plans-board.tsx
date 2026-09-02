@@ -1,11 +1,13 @@
 import Link from "next/link";
 
+import { PlanStatusPicker } from "@/components/crm/plan-status-picker";
 import { PlanWeekPicker } from "@/components/crm/plan-week-picker";
 import { VerifyButton } from "@/components/crm/plan-verify-button";
 import { cairoStamp, Section, Tile } from "@/components/crm/reps-list-chrome";
 import { RepsListFilters } from "@/components/crm/reps-list-filters";
 import { PlanDoctorsTable } from "@/components/crm/reps-list-tables";
 import type { PlanSummary } from "@/lib/crm/plan-board";
+import type { PlanStatusFilter } from "@/lib/crm/plan-status-filter";
 import {
   PLAN_STATUS_AREA_MANAGER_VERIFIED,
   PLAN_STATUS_NEW,
@@ -35,7 +37,13 @@ import type { RepsWeeklyPlanRep, RepsWeeklyPlansBoard } from "@/lib/crm/reps-wee
 // the whole board, exactly as tab one does, so the doctors always land at the top of the page — the
 // reason the period board needs a scroll-into-view effect does not exist on this one.
 
-/** The current filters as a query string, with `rep` replaced (or dropped when null). */
+/**
+ * The current filters as a query string, with `rep` replaced (or dropped when null).
+ *
+ * The status filter is carried. "Back to all reps" is the link that needs it most: a manager who
+ * narrowed to the three plans waiting on him, opened one and signed it expects to come back to the
+ * other two, not to all seventy.
+ */
 function hrefWithRep(basePath: string, board: RepsWeeklyPlansBoard, repKey: string | null): string {
   const query = new URLSearchParams();
   query.set("tab", "plans");
@@ -43,7 +51,27 @@ function hrefWithRep(basePath: string, board: RepsWeeklyPlansBoard, repKey: stri
   if (board.selection.line) query.set("line", board.selection.line);
   if (board.selection.region) query.set("region", board.selection.region);
   if (board.selection.area) query.set("area", board.selection.area);
+  if (board.statusFilter !== "all") query.set("status", board.statusFilter);
   if (repKey) query.set("rep", repKey);
+  return `${basePath}?${query.toString()}`;
+}
+
+/**
+ * The same URL narrowed to one status — what the tiles link to.
+ *
+ * The rep is dropped, exactly as the select does it: narrowing the grid is a browsing action, and a
+ * rep left selected keeps his plan on screen and the grid hidden, so the tile would appear to do
+ * nothing at all. `all` drops the parameter rather than writing `status=all`, so the plain board and
+ * the cleared board are the same URL.
+ */
+function hrefWithStatus(basePath: string, board: RepsWeeklyPlansBoard, status: PlanStatusFilter): string {
+  const query = new URLSearchParams();
+  query.set("tab", "plans");
+  query.set("week", board.week.key);
+  if (board.selection.line) query.set("line", board.selection.line);
+  if (board.selection.region) query.set("region", board.selection.region);
+  if (board.selection.area) query.set("area", board.selection.area);
+  if (status !== "all") query.set("status", status);
   return `${basePath}?${query.toString()}`;
 }
 
@@ -52,6 +80,50 @@ function hrefWithPlan(basePath: string, board: RepsWeeklyPlansBoard, planId: num
   const base = hrefWithRep(basePath, board, board.selection.rep ?? null);
   return `${base}&plan=${planId}`;
 }
+
+/**
+ * What the rep grid says about itself once a status is chosen, and what it says when that leaves it
+ * empty.
+ *
+ * An empty grid has TWO causes and they need different sentences. "No reps match these filters"
+ * belongs to the cascade — no seated rep works that line and area. An empty STATUS slice is the
+ * opposite kind of news: it usually means there is nothing left to do, and printing the cascade's
+ * sentence over it would send a manager hunting for a filter to clear when the honest answer is
+ * that he is finished for the week.
+ */
+const STATUS_COPY: Record<
+  PlanStatusFilter,
+  { description: string; emptyDetail: string; emptyTitle: string; heading: string }
+> = {
+  all: {
+    description:
+      "Pick a rep to open the plan he filed for this week. Narrow with the filters above first if the list is long.",
+    emptyDetail:
+      "Clear a level of the cascade to widen it. An empty result here means no seated rep works that combination — not that nobody filed a plan.",
+    emptyTitle: "No reps match these filters.",
+    heading: "Medical reps",
+  },
+  awaiting: {
+    description: "The reps whose plans are filed and waiting on your signature. Pick one to read it and verify it.",
+    emptyDetail:
+      "Every rep in your reach who filed a plan this week has been verified. Reps who filed nothing are counted separately — check the No plan filed tile before calling the week done.",
+    emptyTitle: "Nothing is waiting on you this week.",
+    heading: "Awaiting your verification",
+  },
+  missing: {
+    description: "The reps with no plan in the CRM for this week at all. There is nothing here to verify.",
+    emptyDetail: "Every rep in your reach has a plan in the CRM for this week.",
+    emptyTitle: "Everyone filed a plan this week.",
+    heading: "No plan filed",
+  },
+  verified: {
+    description: "The reps whose plans are already signed off in the CRM.",
+    emptyDetail:
+      "No plan has been signed off for this week yet. That is normal for a week that has not started — plans are usually verified in the days before it.",
+    emptyTitle: "No plan has been verified this week.",
+    heading: "Verified plans",
+  },
+};
 
 /**
  * What a rep's week says in one line.
@@ -194,7 +266,8 @@ export function RepsWeeklyPlansBoardView({
   /** Whether this viewer holds `crm_plans:approve`. UX only — the route re-checks it server-side. */
   canVerify: boolean;
 }) {
-  const { options, reps, scopeLabel, scopeReason, selected, selectedPlan, selection, syncedAt, week, weeks } = board;
+  const { counts, options, reps, scopeLabel, scopeReason, selected, selectedPlan, selection, statusFilter, syncedAt, week, weeks } =
+    board;
 
   // A viewer who reaches nobody is told so in words. An empty picker would read as "no rep filed a
   // plan this week", which is a completely different statement and the one a manager would act on.
@@ -222,8 +295,10 @@ export function RepsWeeklyPlansBoardView({
     syncedAt ? `last refreshed ${cairoStamp(syncedAt)} Cairo` : "never refreshed",
   ].join(" · ");
 
-  const filed = reps.filter((rep) => rep.plansFiled > 0);
-  const awaiting = filed.filter((rep) => (rep.planStatus ?? PLAN_STATUS_NEW) === PLAN_STATUS_NEW);
+  // The tile counts come from the board, NOT from `reps` — `reps` is the filtered list, so counting
+  // it here would zero every tile the manager is not currently looking at, including the one he has
+  // to click to get back. `countRepPlanStatuses` is the single arithmetic behind both.
+  const copy = STATUS_COPY[statusFilter];
 
   return (
     <div className="border border-slate-200">
@@ -231,12 +306,27 @@ export function RepsWeeklyPlansBoardView({
         <RepsListFilters
           basePath={basePath}
           options={options}
-          preserve={{ tab: "plans", week: week.key }}
+          preserve={{
+            status: statusFilter === "all" ? undefined : statusFilter,
+            tab: "plans",
+            week: week.key,
+          }}
           selection={selection}
         />
         <div className="grid gap-3 border-t border-slate-100 px-5 py-4 sm:grid-cols-2 lg:grid-cols-4">
-          <PlanWeekPicker basePath={basePath} selection={selection} week={week} weeks={weeks} />
-          <p className="self-end text-phx-2xs text-slate-500 sm:col-span-1 lg:col-span-3">
+          <PlanWeekPicker basePath={basePath} selection={selection} status={statusFilter} week={week} weeks={weeks} />
+          {/* The status filter takes the second cell of a grid that already had four, so the row
+              still fits at every width and the help text simply spans two instead of three. Adding
+              a fifth column here is what would break the fits-the-screen rule — a native select is
+              the one control that cannot be shrunk to make room. */}
+          <PlanStatusPicker
+            basePath={basePath}
+            counts={counts}
+            selection={selection}
+            status={statusFilter}
+            week={week.key}
+          />
+          <p className="self-end text-phx-2xs text-slate-500 sm:col-span-2 lg:col-span-2">
             {/* The field week runs Saturday to Friday, which is not the week a calendar control
                 would assume. Saying it removes the doubt rather than leaving a manager to work out
                 why "this week" starts on a Saturday. */}
@@ -287,50 +377,68 @@ export function RepsWeeklyPlansBoardView({
           )}
         </Section>
       ) : (
-        <Section
-          description="Pick a rep to open the plan he filed for this week. Narrow with the filters above first if the list is long."
-          title={`Medical reps — ${reps.length}`}
-        >
+        <Section description={copy.description} title={`${copy.heading} — ${reps.length}`}>
+          {/* THE TILES RENDER EVEN WHEN THE GRID IS EMPTY, which is the whole reason they are drawn
+              outside the branch below. They are the filter as well as the count, so hiding them on
+              an empty slice would take away the only way back out of it — the manager would be
+              looking at "nothing is waiting on you" with no control on screen to widen it. */}
+          <div className="grid grid-cols-2 gap-2 p-5 pb-0 sm:grid-cols-4">
+            {/* The week in four numbers, which is the question a manager opens this tab with: who is
+                waiting on me, and who has not filed at all. They are counted apart for the same
+                reason the rep card prints them apart — and each one now narrows the grid to itself,
+                the owner's 2026-09-02 ask to "filter by verified plan and non-verified plan". */}
+            <Tile
+              active={statusFilter === "all"}
+              href={hrefWithStatus(basePath, board, "all")}
+              label="Reps"
+              sub={statusFilter === "all" ? "in your reach" : "in your reach · show all"}
+              value={String(counts.all)}
+            />
+            <Tile
+              active={statusFilter === "awaiting"}
+              href={hrefWithStatus(basePath, board, "awaiting")}
+              label="Awaiting you"
+              sub={counts.awaiting > 0 ? "plans not yet verified" : "nothing to verify"}
+              tone={counts.awaiting > 0 ? "amber" : "emerald"}
+              value={String(counts.awaiting)}
+            />
+            <Tile
+              active={statusFilter === "verified"}
+              href={hrefWithStatus(basePath, board, "verified")}
+              label="Verified"
+              sub="signed off in the CRM"
+              tone="emerald"
+              value={String(counts.verified)}
+            />
+            <Tile
+              active={statusFilter === "missing"}
+              href={hrefWithStatus(basePath, board, "missing")}
+              label="No plan filed"
+              sub={counts.missing > 0 ? "nothing in the CRM this week" : "everyone filed"}
+              tone={counts.missing > 0 ? "rose" : "emerald"}
+              value={String(counts.missing)}
+            />
+          </div>
           {reps.length === 0 ? (
+            // WHICH emptiness this is decides the sentence. No reps at all means the CASCADE matched
+            // nobody — a line and area no seated rep works — and the fix is to widen it. Reps that
+            // exist but none in this slice is the opposite news, and usually means there is nothing
+            // left to do; printing the cascade's sentence over it would send a manager hunting for a
+            // filter to clear when the honest answer is that he is finished for the week.
             <div className="px-5 py-6">
-              <p className="text-sm font-semibold text-slate-700">No reps match these filters.</p>
+              <p className="text-sm font-semibold text-slate-700">
+                {(counts.all === 0 ? STATUS_COPY.all : copy).emptyTitle}
+              </p>
               <p className="mt-1 text-phx-xs text-slate-500">
-                Clear a level of the cascade to widen it. An empty result here means no seated rep works that
-                combination — not that nobody filed a plan.
+                {(counts.all === 0 ? STATUS_COPY.all : copy).emptyDetail}
               </p>
             </div>
           ) : (
-            <>
-              <div className="grid grid-cols-2 gap-2 p-5 pb-0 sm:grid-cols-4">
-                {/* The week in three numbers, which is the question a manager opens this tab with:
-                    who is waiting on me, and who has not filed at all. They are counted apart for
-                    the same reason the rep card prints them apart. */}
-                <Tile label="Reps" sub="in your reach" value={String(reps.length)} />
-                <Tile
-                  label="Awaiting you"
-                  sub={awaiting.length > 0 ? "plans not yet verified" : "nothing to verify"}
-                  tone={awaiting.length > 0 ? "amber" : "emerald"}
-                  value={String(awaiting.length)}
-                />
-                <Tile
-                  label="Verified"
-                  sub="signed off in the CRM"
-                  tone="emerald"
-                  value={String(filed.length - awaiting.length)}
-                />
-                <Tile
-                  label="No plan filed"
-                  sub={reps.length - filed.length > 0 ? "nothing in the CRM this week" : "everyone filed"}
-                  tone={reps.length - filed.length > 0 ? "rose" : "emerald"}
-                  value={String(reps.length - filed.length)}
-                />
-              </div>
-              <div className="grid gap-2 p-5 sm:grid-cols-2 lg:grid-cols-3">
-                {reps.map((rep) => (
-                  <RepCard href={hrefWithRep(basePath, board, rep.repKey)} key={rep.repKey} rep={rep} />
-                ))}
-              </div>
-            </>
+            <div className="grid gap-2 p-5 sm:grid-cols-2 lg:grid-cols-3">
+              {reps.map((rep) => (
+                <RepCard href={hrefWithRep(basePath, board, rep.repKey)} key={rep.repKey} rep={rep} />
+              ))}
+            </div>
           )}
         </Section>
       )}
