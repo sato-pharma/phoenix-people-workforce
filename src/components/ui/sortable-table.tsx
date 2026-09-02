@@ -31,6 +31,62 @@ type SortableThProps = {
   className?: string;
 };
 
+/**
+ * The sort CONTROL on its own, without the `<th>` around it.
+ *
+ * Extracted from {@link SortableTh} on 2026-09-03, when Reps Plans was rebuilt to fit the screen
+ * (owner's golden rule: never a horizontal scroll, mobile AND desktop friendly). Fitting means
+ * MERGING columns rather than shrinking type, and a merged column carries two measures — a proved
+ * rate with the reported one beneath it — so its single header cell needs TWO sort controls. One
+ * `<th>` cannot be two `<th>`s, and losing the second measure's sort was the alternative.
+ *
+ * `SortableTh` is this button in a `<th>`, so the two can never drift on the chevron, the hover
+ * affordance or the accessible name. Reach for the `<th>` version unless a cell holds more than one
+ * sortable measure — and when it does, set `aria-sort` on the surrounding `<th>` yourself, from
+ * whichever key is active.
+ */
+export function SortButton({
+  align = "left",
+  className,
+  label,
+  onSort,
+  sort,
+  sortKey,
+}: {
+  align?: "left" | "right";
+  className?: string;
+  label: string;
+  onSort: (key: string) => void;
+  sort?: SortState | null;
+  sortKey: string;
+}) {
+  const active = sort?.key === sortKey;
+  return (
+    <button
+      type="button"
+      onClick={() => onSort(sortKey)}
+      aria-label={`Sort by ${label}`}
+      className={cn(
+        "group inline-flex select-none items-center gap-1 transition hover:opacity-90",
+        align === "right" && "flex-row-reverse",
+        active && "text-phx-accent",
+        className,
+      )}
+    >
+      <span>{label}</span>
+      {active ? (
+        sort?.dir === "asc" ? (
+          <ChevronUp className="h-3 w-3 shrink-0" />
+        ) : (
+          <ChevronDown className="h-3 w-3 shrink-0" />
+        )
+      ) : (
+        <ChevronsUpDown className="h-3 w-3 shrink-0 opacity-0 transition group-hover:opacity-40" />
+      )}
+    </button>
+  );
+}
+
 export function SortableTh({
   label,
   sortKey,
@@ -51,34 +107,13 @@ export function SortableTh({
   }
 
   const active = sort?.key === sortKey;
-  const activeColor = variant === "light" ? "text-phx-accent" : "text-phx-accent";
 
   return (
     <th
       className={cn(base, alignClass, className)}
       aria-sort={active ? (sort?.dir === "asc" ? "ascending" : "descending") : "none"}
     >
-      <button
-        type="button"
-        onClick={() => onSort(sortKey)}
-        aria-label={`Sort by ${label}`}
-        className={cn(
-          "group inline-flex select-none items-center gap-1 transition hover:opacity-90",
-          align === "right" && "flex-row-reverse",
-          active && activeColor,
-        )}
-      >
-        <span>{label}</span>
-        {active ? (
-          sort?.dir === "asc" ? (
-            <ChevronUp className="h-3 w-3 shrink-0" />
-          ) : (
-            <ChevronDown className="h-3 w-3 shrink-0" />
-          )
-        ) : (
-          <ChevronsUpDown className="h-3 w-3 shrink-0 opacity-0 transition group-hover:opacity-40" />
-        )}
-      </button>
+      <SortButton align={align} label={label} onSort={onSort} sort={sort} sortKey={sortKey} />
     </th>
   );
 }

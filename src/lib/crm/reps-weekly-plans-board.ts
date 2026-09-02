@@ -35,6 +35,7 @@ import {
   type PlanEntryRow,
   type PlanSummary,
 } from "@/lib/crm/plan-board";
+import { loadPlanActuals } from "@/lib/crm/plan-actuals-data";
 import { buildPlanDoctorDays, indexContactList, type PlanDoctorDay } from "@/lib/crm/plan-doctors";
 import {
   countRepPlanStatuses,
@@ -256,14 +257,40 @@ export async function getRepsWeeklyPlansBoard(input: {
   // `getRepsListForAgent` NEVER THROWS OUT OF HERE. It is annotation on a plan the manager came to
   // sign; a contact mirror that was briefly unreachable must not be able to hide the plan itself.
   // The table then renders every row as "not on his list", which is what an empty index means.
-  const [entries, contactList] = selectedPlan
+  //
+  // THE ACTUALS ARE THE THIRD READ, and the reason this tab now answers its own question. A manager
+  // verifying last week's plan could read every doctor on it and had nothing here to say which of
+  // them the rep reached; the answer lived on a different board behind a different filter.
+  //
+  // It rides in the same Promise.all for the same reason as the contact list — independent, keyed
+  // differently, and serialising it would add its whole latency for nothing — and it NEVER throws
+  // out of here either. `loadPlanActuals` answers null on a failed read AND on a departed agent,
+  // and null renders as NO MARKS. A visits mirror that was briefly unreachable must not be able to
+  // accuse a rep of a week he may well have worked, and the two states are indistinguishable to
+  // anyone who is only ever shown red.
+  //
+  // WINDOWED ON THE PLAN'S OWN DAYS. `firstDate`/`lastDate` are derived from the plan's rows, so a
+  // doctor seen the day after the plan ends cannot be credited to it — "seen another day" means
+  // another day OF THIS PLAN.
+  const [entries, contactList, actuals] = selectedPlan
     ? await Promise.all([
         getPlanEntries(selectedPlan.crmPlanId, selectedPlan.agentCrmId),
         getRepsListForAgent(selectedPlan.agentCrmId, cascade.repNameByAgentId).catch(() => null),
+        selectedPlan.agentCrmId != null && selectedPlan.firstDate && selectedPlan.lastDate
+          ? loadPlanActuals({
+              agentCrmId: selectedPlan.agentCrmId,
+              dateFrom: selectedPlan.firstDate,
+              dateTo: selectedPlan.lastDate,
+              // The board's OWN today, which a test can pin — never a second clock read. Two reads of
+              // the wall clock in one assembly can straddle midnight, and the day a plan is judged
+              // against would then differ from the week the board says it is showing.
+              today: todayIso,
+            })
+          : null,
       ])
-    : [[] as PlanEntryRow[], null];
+    : [[] as PlanEntryRow[], null, null];
 
-  const days = buildPlanDoctorDays(entries, indexContactList(contactList));
+  const days = buildPlanDoctorDays(entries, indexContactList(contactList), actuals);
 
   return { ...base, counts, days, entries, plans, reps, selected, selectedPlan };
 }

@@ -28,6 +28,10 @@ import {
   type CallRateSlice,
   type RepCallRate,
 } from "@/lib/crm/call-rate";
+// From the ROLES module, never the resolver: this file is reached by a "use client" component, and
+// doctor-coverage-scope.ts carries the Supabase admin client. See that module's header.
+import { isAgentInScope, type DoctorCoverageScope } from "@/lib/crm/doctor-coverage-roles";
+import { isMedicalRep } from "@/lib/crm/medical-rep";
 import {
   orgHrKey,
   placementMatches,
@@ -640,6 +644,17 @@ export type RepsPlansBoard = {
   unplacedShown: number;
   /** False when the organogram could not be read — the two pickers are then hidden, not empty. */
   geographyAvailable: boolean;
+  /**
+   * WHOSE reps these are, in the viewer's own words — "District Manager · own team", or the reason
+   * a seat resolved to nobody. Null for a company-wide viewer, who is looking at everyone and needs
+   * no caption saying so.
+   *
+   * This is the caption for a NARROWED board, and it exists because the alternative reads as a
+   * fault: a district manager who sees eleven names where the owner sees a hundred has no way to
+   * tell a scope from an outage. Every number on the screen is then his team's, not the company's,
+   * and the screen has to say so.
+   */
+  scopeLabel: string | null;
 };
 
 /**
@@ -668,12 +683,22 @@ export type RepsPlansBoard = {
  *
  * This holds whether or not a filter is on. It is a rule about whose KPI it is.
  *
- * ── Nobody is ever dropped ──────────────────────────────────────────────────
- * Owner's decision the same day. Someone the organogram has no seat for stays
- * listed and MARKED rather than filtered away: those rows are mostly the
+ * ── Who is listed — SUPERSEDED IN PART, 2026-09-03 ──────────────────────────
+ * The owner's decision of 2026-08-28 was that nobody is ever dropped: a manager
+ * was listed and merely unscored. On 2026-09-03 he narrowed it to "only show
+ * medical reps in this page", so a manager is now filtered out rather than shown
+ * unscored, and `managersShown` is 0 in normal operation. The unscored-manager
+ * machinery is deliberately LEFT IN PLACE: it still runs on the degraded path
+ * where there is no evidence to judge anyone by, and removing it would mean
+ * rebuilding it the next time the answer changes.
+ *
+ * What survives that narrowing unchanged is the rest of the rule: someone the
+ * organogram has no seat for but whom the DIRECTORY calls a medical rep stays
+ * listed and MARKED rather than filtered away. Those rows are mostly the
  * ZERO-PROVED ones, so hiding them would hide precisely what this page exists to
- * expose. `managersShown` and `unplacedShown` say how many are listed but
- * uncounted, so the gap is stated rather than implied.
+ * expose — and there are 26 such people carrying 1,412 August visits.
+ * `unplacedShown` says how many are listed but uncounted, so the gap is stated
+ * rather than implied.
  */
 export function buildRepsPlansBoard(
   report: CallRateReport,
@@ -700,6 +725,16 @@ export function buildRepsPlansBoard(
     /** hr id (LOWER-cased) -> HR job title, read ONLY for someone the organogram has no seat for.
      *  Same optionality, and for the same reason. */
     jobTitleByHrId?: ReadonlyMap<string, string>;
+    /**
+     * WHICH reps this viewer may see — the same `DoctorCoverageScope` the KPIs board applies, from
+     * the same resolver, so a District Manager's reach cannot differ between the two screens.
+     *
+     * Omitted means COMPANY-WIDE, which is what this board did while it was Super Admin only. That
+     * default is safe only because the page's own role gate runs first; it is not a security
+     * boundary in itself. A page that widens the role list MUST pass a scope — see
+     * crm/reps-plans-access.ts, which says so where the list is edited.
+     */
+    scope?: DoctorCoverageScope | null;
   },
 ): RepsPlansBoard {
   const tree = options.tree ?? null;
@@ -714,10 +749,60 @@ export function buildRepsPlansBoard(
   // into a KPI outage, so the board falls back to exactly how it read before this feature existed:
   // everyone scored, no geography column, no pickers.
   const orgAvailable = tree != null;
-  const allRows = report.reps.map((rep) => {
+  const everyAgentRow = report.reps.map((rep) => {
     const row = toRepsPlansRow(rep, placementOf(rep.agentHrId), options.repNameByHrId, options.jobTitleByHrId);
     return orgAvailable ? row : { ...row, scored: true };
   });
+
+  // ── MEDICAL REPS ONLY ─────────────────────────────────────────────────────
+  // The owner's instruction of 2026-09-03. The CRM has an account for anyone who ever used it, so
+  // this board was listing 14 District Managers, an RSM and 3 NSMs beside the field force they
+  // manage. The rule and the production measurements behind it are in crm/medical-rep.ts; the short
+  // version is that a SEAT answers when there is one, and the HR job title answers only when the
+  // organogram is silent — because 26 unseated people titled "Medical Representative" logged 1,412
+  // visits in August, and a seat-only filter would have deleted every one of them.
+  //
+  // Filtered HERE, before the geography match below, so the rep PICKER narrows with the rows. A
+  // picker wider than the board is how a dropped manager's name stays selectable.
+  //
+  // Gated on the ORGANOGRAM being readable, exactly as the scored fallback above is — and gated on
+  // it ALONE, deliberately.
+  //
+  // The tempting version of this guard is `orgAvailable || jobTitleByHrId != null`, so a title map
+  // could still answer with the chart down. That is worse than not filtering: the title map is
+  // whatever the directory read happened to return, so with the tree down every person missing from
+  // it fails the test and is dropped — a partial map empties most of the board. Partial evidence
+  // here is more dangerous than none, because none is visibly nothing and partial looks like an
+  // answer.
+  //
+  // So a Supabase blip on the organogram falls back to precisely how this board read before the
+  // owner asked for the filter: everyone listed. That is a visible, explainable degradation, and
+  // never "nobody did any work".
+  const canJudgeMedicalReps = orgAvailable;
+  const medicalRepRows = canJudgeMedicalReps
+    ? everyAgentRow.filter((row) =>
+        isMedicalRep({
+          // A non-null seat tier means the organogram HAS a seat for this person — possibly a
+          // manager's. Only a genuinely unseated person may be judged on his job title.
+          placement: row.seatTier ? { hasRepSeat: row.scored } : null,
+          jobTitle: row.jobTitle,
+        }),
+      )
+    : everyAgentRow;
+
+  // ── VIEWER SCOPE ──────────────────────────────────────────────────────────
+  // The security boundary for this board's data, and the reason District Manager could be added to
+  // crm/reps-plans-access.ts at all. Until 2026-09-03 the board took no viewer argument: every seat
+  // that could open it received every rep in the company. That was survivable only because the role
+  // list held one entry.
+  //
+  // Applied in the SAME pass as the medical-rep filter and BEFORE the geography match, so `allRows`
+  // is the viewer's whole world from here down — rows, tiles, totals AND the rep picker built from
+  // it below. Scoping the rows but not the picker is the failure the owner's own rule names: a
+  // picker is never wider than its viewer, and a cached filter tree once offered a Medical Rep the
+  // names of all ~73 reps.
+  const scope = options.scope ?? null;
+  const allRows = scope ? medicalRepRows.filter((row) => isAgentInScope(scope, row.agentHrId)) : medicalRepRows;
 
   // ── The Line -> Region cascade ────────────────────────────────────────────
   // Deliberately the reverse of the shared coverage bar's Region -> Line. The owner asked for line
@@ -817,5 +902,7 @@ export function buildRepsPlansBoard(
     managersShown,
     unplacedShown,
     geographyAvailable: lineOptions.length > 0,
+    scopeLabel:
+      scope == null || scope.kind === "company" ? null : scope.kind === "agents" ? scope.label : scope.reason,
   };
 }

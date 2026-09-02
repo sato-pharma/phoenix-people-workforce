@@ -5,13 +5,12 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import {
-  PortalDesktopTable,
   PortalRecordCard,
   PortalRecordFields,
   PortalResponsiveDataList,
 } from "@/components/employee-portal/portal-primitives";
 import { ExportXlsxButton } from "@/components/ui/export-xlsx-button";
-import { SortableTh, TableSearchInput } from "@/components/ui/sortable-table";
+import { SortableTh, SortButton, TableSearchInput, type SortState } from "@/components/ui/sortable-table";
 import { useSortableTable } from "@/components/ui/use-sortable-table";
 import { splitCrmRepName } from "@/lib/crm/rep-name";
 import type { RepsPlansRepRow } from "@/lib/crm/reps-plans";
@@ -27,8 +26,26 @@ import type { RepsPlansRepRow } from "@/lib/crm/reps-plans";
 // Month and rep ride in the URL, so every change re-runs the server-side access gate rather than
 // filtering a payload already in the browser.
 //
-// Desktop table / mobile cards via PortalResponsiveDataList — AGENTS.md §4. Nothing here wraps or
-// ellipsises: rows are `whitespace-nowrap` and the table scrolls inside its own container.
+// Desktop table / mobile cards via PortalResponsiveDataList — AGENTS.md §4.
+//
+// THE DESKTOP TABLE FITS THE SCREEN. It was 13 columns over a 1700px floor inside an
+// `overflow-x-auto` container until 2026-09-03, which is the owner's golden rule stated backwards:
+// never a horizontal scroll, mobile AND desktop friendly, and `overflow-x-auto` over a min-width IS
+// the bug rather than the fix. It is now `w-full table-fixed` with a `<colgroup>` and EIGHT columns,
+// fitted the one permitted way — by MERGING columns, never by shrinking type and never by an
+// ellipsis:
+//
+//   Rep            name, with the territory and role beneath it   (was 2 columns)
+//   AM / PM        the proved rate with the reported one beneath  (was 2 x 2 columns)
+//   AM% / PM%      attainment against the rep's own target
+//   Unproven
+//   Campaign       calls with the share beneath                   (was 2 columns)
+//   Days           over the campaign limit, and with no proof     (was 2 columns)
+//
+// Nothing was dropped and nothing is sorted less finely: a merged cell carries two SortButtons
+// (src/components/ui/sortable-table.tsx), which is why that control was split out of SortableTh.
+// The rep name WRAPS — `whitespace-nowrap` moved off the row and onto the numeric cells only, so a
+// long CRM handle grows the row's height instead of the page's width.
 
 const THEAD = "px-3 py-2.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-white";
 const SELECT_CLASS =
@@ -71,6 +88,20 @@ function pct(value: number | null): string {
  *  meta line carries the period's reported total, which does not. */
 function count(value: number): string {
   return value.toLocaleString();
+}
+
+/**
+ * `aria-sort` for a header cell carrying MORE THAN ONE sort control.
+ *
+ * SortableTh sets its own from its single key; a merged column cannot, because the attribute belongs
+ * to the cell and the cell now holds two buttons. Whichever of the keys is active is the one the
+ * table is actually sorted by, so that is the one a screen reader is told about — and when neither
+ * is, the answer is "none" rather than nothing, which is what a table with no sort applied to this
+ * column means.
+ */
+function ariaSortOf(sort: SortState | null, ...keys: string[]): "ascending" | "descending" | "none" {
+  if (!sort || !keys.includes(sort.key)) return "none";
+  return sort.dir === "asc" ? "ascending" : "descending";
 }
 
 export function RepsPlansControls({
@@ -621,203 +652,284 @@ export function RepsPlansRepTable({
           );
         }}
         renderTable={() => (
-          <PortalDesktopTable className="text-xs" minWidth="1700px">
-            <thead>
-              {/* Two header rows: the session groups above, the measures below. AM and PM are
-                  different KPIs against different targets, and a single flat row of twelve headings
-                  invites reading a PM figure against the AM target. */}
-              <tr className="bg-slate-900 text-left">
-                <th className={THEAD} rowSpan={2} scope="col">
-                  Rep
-                </th>
-                {geographyAvailable ? (
+          // NOT PortalDesktopTable. That primitive is an `overflow-x-auto` wrapper around a
+          // min-width floor, which is precisely the shape the owner's golden rule forbids — a board
+          // bound by it renders its own `w-full table-fixed` with a `<colgroup>` instead. The
+          // `hidden md:block` is the half of the primitive that is still wanted: below md this list
+          // renders the cards above, not a squeezed table.
+          <div className="hidden md:block">
+            <table className="w-full table-fixed border-collapse text-left text-xs">
+              {/* The eight widths add to exactly 100, so the table can never want more room than it
+                  has. Rep takes a quarter because it is the only column holding prose — a CRM handle
+                  is a login name with a territory bolted on, and it is the one thing here allowed to
+                  wrap onto a second line. */}
+              <colgroup>
+                <col style={{ width: "24%" }} />
+                <col style={{ width: "12%" }} />
+                <col style={{ width: "10%" }} />
+                <col style={{ width: "12%" }} />
+                <col style={{ width: "10%" }} />
+                <col style={{ width: "11%" }} />
+                <col style={{ width: "10%" }} />
+                <col style={{ width: "11%" }} />
+              </colgroup>
+              <thead>
+                {/* Two header rows: the session groups above, the measures below. AM and PM are
+                    different KPIs against different targets, and a single flat row of headings
+                    invites reading a PM figure against the AM target. */}
+                <tr className="bg-slate-900 text-left">
                   <th className={THEAD} rowSpan={2} scope="col">
-                    Line · Region
+                    Rep
                   </th>
-                ) : null}
-                <th className={`${THEAD} border-l border-slate-700 text-center`} colSpan={3} scope="colgroup">
-                  AM — target 2 / day
-                </th>
-                <th className={`${THEAD} border-l border-slate-700 text-center`} colSpan={3} scope="colgroup">
-                  PM — target 10 / day
-                </th>
-                <th className={`${THEAD} border-l border-slate-700 text-center`} colSpan={5} scope="colgroup">
-                  Proof
-                </th>
-              </tr>
-              <tr className="bg-slate-900 text-left">
-                <SortableTh
-                  align="right"
-                  className={`${THEAD} border-l border-slate-700 text-right text-emerald-300`}
-                  label="Proved"
-                  onSort={table.toggleSort}
-                  sort={table.sort}
-                  sortKey="amVerifiedRate"
-                />
-                <SortableTh
-                  align="right"
-                  className={`${THEAD} text-right text-slate-400`}
-                  label="Reported"
-                  onSort={table.toggleSort}
-                  sort={table.sort}
-                  sortKey="amReportedRate"
-                />
-                <SortableTh
-                  align="right"
-                  className={`${THEAD} text-right`}
-                  label="% Target"
-                  onSort={table.toggleSort}
-                  sort={table.sort}
-                  sortKey="amAttainmentPct"
-                />
-                <SortableTh
-                  align="right"
-                  className={`${THEAD} border-l border-slate-700 text-right text-emerald-300`}
-                  label="Proved"
-                  onSort={table.toggleSort}
-                  sort={table.sort}
-                  sortKey="pmVerifiedRate"
-                />
-                <SortableTh
-                  align="right"
-                  className={`${THEAD} text-right text-slate-400`}
-                  label="Reported"
-                  onSort={table.toggleSort}
-                  sort={table.sort}
-                  sortKey="pmReportedRate"
-                />
-                <SortableTh
-                  align="right"
-                  className={`${THEAD} text-right`}
-                  label="% Target"
-                  onSort={table.toggleSort}
-                  sort={table.sort}
-                  sortKey="pmAttainmentPct"
-                />
-                <SortableTh
-                  align="right"
-                  className={`${THEAD} border-l border-slate-700 text-right text-rose-300`}
-                  label="Unproven"
-                  onSort={table.toggleSort}
-                  sort={table.sort}
-                  sortKey="unprovenPct"
-                />
-                <SortableTh
-                  align="right"
-                  className={`${THEAD} text-right text-sky-300`}
-                  label="Campaign"
-                  onSort={table.toggleSort}
-                  sort={table.sort}
-                  sortKey="campaignCalls"
-                />
-                <SortableTh
-                  align="right"
-                  className={`${THEAD} text-right text-sky-300`}
-                  label="Campaign %"
-                  onSort={table.toggleSort}
-                  sort={table.sort}
-                  sortKey="campaignSharePct"
-                />
-                <SortableTh
-                  align="right"
-                  className={`${THEAD} text-right text-rose-300`}
-                  label={`Days Over ${campaignLimit}`}
-                  onSort={table.toggleSort}
-                  sort={table.sort}
-                  sortKey="flaggedDays"
-                />
-                <SortableTh
-                  align="right"
-                  className={`${THEAD} text-right text-amber-300`}
-                  label="Days No Proof"
-                  onSort={table.toggleSort}
-                  sort={table.sort}
-                  sortKey="campaignOnlyDays"
-                />
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {table.rows.map((row) => (
-                <tr className="whitespace-nowrap bg-white hover:bg-slate-50" key={row.repKey}>
-                  {/* The name is the way IN. Every figure on this row is an aggregate, and the one
-                      question a manager asks of an aggregate is "made of what" — so the rep opens
-                      his own visits rather than the row being a dead end. */}
-                  <td className="px-3 py-2 font-semibold text-slate-900">
-                    <Link className="hover:text-orange-600 hover:underline" href={visitsHref(row)}>
-                      {row.repName}
-                    </Link>
-                  </td>
-                  {/* Line · Region from the ORGANOGRAM, every tier — a DM, an RSM and an NSM each
-                      resolve here exactly as a rep does. Someone with no seat is kept on the board
-                      rather than filtered away (he is usually one of the zero-proved ones) and named
-                      by his HR job title instead: `au_v_org_tree` is the SALES seat model, so a
-                      Product Manager is off it BY DESIGN and "not in organogram" would be an
-                      accusation dressed as a fact. Amber is kept for the one case that really is a
-                      gap — nobody, anywhere, can say what this person is.
+                  <th className={`${THEAD} border-l border-slate-700 text-center`} colSpan={2} scope="colgroup">
+                    AM — target 2 / day
+                  </th>
+                  <th className={`${THEAD} border-l border-slate-700 text-center`} colSpan={2} scope="colgroup">
+                    PM — target 10 / day
+                  </th>
+                  <th className={`${THEAD} border-l border-slate-700 text-center`} colSpan={3} scope="colgroup">
+                    Proof
+                  </th>
+                </tr>
+                <tr className="bg-slate-900 text-left">
+                  {/* PROVED over REPORTED, in one cell and in that order — the proved rate is the
+                      headline and the reported one is what it is being compared against. Both stay
+                      independently sortable: a column that merged two measures into one sort key
+                      would have quietly deleted a way of reading the board. */}
+                  <th
+                    aria-sort={ariaSortOf(table.sort, "amVerifiedRate", "amReportedRate")}
+                    className={`${THEAD} border-l border-slate-700 text-right`}
+                    scope="col"
+                  >
+                    <span className="flex flex-col items-end gap-0.5">
+                      <SortButton
+                        align="right"
+                        className="text-emerald-300"
+                        label="Proved"
+                        onSort={table.toggleSort}
+                        sort={table.sort}
+                        sortKey="amVerifiedRate"
+                      />
+                      <SortButton
+                        align="right"
+                        className="text-phx-3xs font-bold normal-case tracking-normal text-slate-400"
+                        label="reported"
+                        onSort={table.toggleSort}
+                        sort={table.sort}
+                        sortKey="amReportedRate"
+                      />
+                    </span>
+                  </th>
+                  <SortableTh
+                    align="right"
+                    className={`${THEAD} text-right`}
+                    label="% Target"
+                    onSort={table.toggleSort}
+                    sort={table.sort}
+                    sortKey="amAttainmentPct"
+                  />
+                  <th
+                    aria-sort={ariaSortOf(table.sort, "pmVerifiedRate", "pmReportedRate")}
+                    className={`${THEAD} border-l border-slate-700 text-right`}
+                    scope="col"
+                  >
+                    <span className="flex flex-col items-end gap-0.5">
+                      <SortButton
+                        align="right"
+                        className="text-emerald-300"
+                        label="Proved"
+                        onSort={table.toggleSort}
+                        sort={table.sort}
+                        sortKey="pmVerifiedRate"
+                      />
+                      <SortButton
+                        align="right"
+                        className="text-phx-3xs font-bold normal-case tracking-normal text-slate-400"
+                        label="reported"
+                        onSort={table.toggleSort}
+                        sort={table.sort}
+                        sortKey="pmReportedRate"
+                      />
+                    </span>
+                  </th>
+                  <SortableTh
+                    align="right"
+                    className={`${THEAD} text-right`}
+                    label="% Target"
+                    onSort={table.toggleSort}
+                    sort={table.sort}
+                    sortKey="pmAttainmentPct"
+                  />
+                  <SortableTh
+                    align="right"
+                    className={`${THEAD} border-l border-slate-700 text-right text-rose-300`}
+                    label="Unproven"
+                    onSort={table.toggleSort}
+                    sort={table.sort}
+                    sortKey="unprovenPct"
+                  />
+                  <th
+                    aria-sort={ariaSortOf(table.sort, "campaignCalls", "campaignSharePct")}
+                    className={`${THEAD} text-right`}
+                    scope="col"
+                  >
+                    <span className="flex flex-col items-end gap-0.5">
+                      <SortButton
+                        align="right"
+                        className="text-sky-300"
+                        label="Campaign"
+                        onSort={table.toggleSort}
+                        sort={table.sort}
+                        sortKey="campaignCalls"
+                      />
+                      <SortButton
+                        align="right"
+                        className="text-phx-3xs font-bold normal-case tracking-normal text-sky-200"
+                        label="share"
+                        onSort={table.toggleSort}
+                        sort={table.sort}
+                        sortKey="campaignSharePct"
+                      />
+                    </span>
+                  </th>
+                  {/* The two DAY counts read together — a day over the campaign limit and a day with
+                      no proof at all are the same question asked twice, and neither is meaningful
+                      without the other. */}
+                  <th
+                    aria-sort={ariaSortOf(table.sort, "flaggedDays", "campaignOnlyDays")}
+                    className={`${THEAD} text-right`}
+                    scope="col"
+                  >
+                    <span className="flex flex-col items-end gap-0.5">
+                      <SortButton
+                        align="right"
+                        className="text-rose-300"
+                        label={`Over ${campaignLimit}`}
+                        onSort={table.toggleSort}
+                        sort={table.sort}
+                        sortKey="flaggedDays"
+                      />
+                      <SortButton
+                        align="right"
+                        className="text-phx-3xs font-bold normal-case tracking-normal text-amber-300"
+                        label="no proof"
+                        onSort={table.toggleSort}
+                        sort={table.sort}
+                        sortKey="campaignOnlyDays"
+                      />
+                    </span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {table.rows.map((row) => (
+                  <tr className="bg-white align-top hover:bg-slate-50" key={row.repKey}>
+                    {/* The name is the way IN. Every figure on this row is an aggregate, and the one
+                        question a manager asks of an aggregate is "made of what" — so the rep opens
+                        his own visits rather than the row being a dead end.
 
-                      The tier rides in the same cell rather than a column of its own. It is only
-                      ever shown for a NON-rep, so it costs nothing on the 69 rows where "Medical
-                      Rep" would just repeat what the page is already about — and it is what
-                      explains the blank percentages two cells to the right. */}
-                  {geographyAvailable ? (
-                    <td className="px-3 py-2">
-                      {row.territories.length === 0 ? (
-                        <span
-                          className={
-                            row.jobTitle
-                              ? "border border-slate-300 bg-slate-50 px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.1em] text-slate-600"
-                              : "border border-amber-300 bg-amber-50 px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.1em] text-amber-700"
-                          }
-                        >
-                          {row.jobTitle ?? NOT_PLACED}
-                        </span>
-                      ) : (
-                        <span className="flex items-center gap-2">
-                          <span className="font-semibold text-slate-500">{territoryText(row)}</span>
-                          {row.scored ? null : (
-                            <span className="border border-slate-300 bg-slate-50 px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.1em] text-slate-600">
-                              {roleText(row)}
+                        Line · Region from the ORGANOGRAM rides in this same cell, every tier — a DM,
+                        an RSM and an NSM each resolve here exactly as a rep does. Someone with no
+                        seat is kept on the board rather than filtered away and named by his HR job
+                        title instead: `au_v_org_tree` is the SALES seat model, so a Product Manager
+                        is off it BY DESIGN and "not in organogram" would be an accusation dressed as
+                        a fact. Amber is kept for the one case that really is a gap — nobody,
+                        anywhere, can say what this person is.
+
+                        The tier is shown only for a NON-rep, so it costs nothing on the rows where
+                        "Medical Rep" would just repeat what the page is about — and it is what
+                        explains the blank percentages further along the row. */}
+                    <td className="px-3 py-2 font-semibold text-slate-900">
+                      <Link className="hover:text-orange-600 hover:underline" href={visitsHref(row)}>
+                        {row.repName}
+                      </Link>
+                      {geographyAvailable ? (
+                        <span className="mt-1 flex flex-wrap items-center gap-1.5">
+                          {row.territories.length === 0 ? (
+                            <span
+                              className={
+                                row.jobTitle
+                                  ? "border border-slate-300 bg-slate-50 px-1.5 py-0.5 text-phx-3xs font-black uppercase tracking-[0.08em] text-slate-600"
+                                  : "border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-phx-3xs font-black uppercase tracking-[0.08em] text-amber-700"
+                              }
+                            >
+                              {row.jobTitle ?? NOT_PLACED}
                             </span>
+                          ) : (
+                            <>
+                              <span className="text-phx-3xs font-semibold text-slate-500">{territoryText(row)}</span>
+                              {row.scored ? null : (
+                                <span className="border border-slate-300 bg-slate-50 px-1.5 py-0.5 text-phx-3xs font-black uppercase tracking-[0.08em] text-slate-600">
+                                  {roleText(row)}
+                                </span>
+                              )}
+                            </>
                           )}
                         </span>
-                      )}
+                      ) : null}
                     </td>
-                  ) : null}
-                  {/* A manager keeps his real rates — his account appears, exactly as asked — but
-                      is coloured and scored against nothing. */}
-                  <td className={`border-l border-slate-100 px-3 py-2 text-right font-black ${targetText(row, row.am.attainmentPct)}`}>
-                    {rate(row.am.verifiedRate)}
-                  </td>
-                  <td className="px-3 py-2 text-right font-semibold text-slate-400">{rate(row.am.reportedRate)}</td>
-                  <td className={`px-3 py-2 text-right font-bold ${targetText(row, row.am.attainmentPct)}`}>
-                    {targetPct(row, row.am.attainmentPct)}
-                  </td>
-                  <td className={`border-l border-slate-100 px-3 py-2 text-right font-black ${targetText(row, row.pm.attainmentPct)}`}>
-                    {rate(row.pm.verifiedRate)}
-                  </td>
-                  <td className="px-3 py-2 text-right font-semibold text-slate-400">{rate(row.pm.reportedRate)}</td>
-                  <td className={`px-3 py-2 text-right font-bold ${targetText(row, row.pm.attainmentPct)}`}>
-                    {targetPct(row, row.pm.attainmentPct)}
-                  </td>
-                  <td className={`border-l border-slate-100 px-3 py-2 text-right font-bold ${unprovenText(row.unprovenPct)}`}>
-                    {pct(row.unprovenPct)}
-                  </td>
-                  <td className={`px-3 py-2 text-right font-bold ${row.campaignCalls > 0 ? "text-sky-700" : "text-slate-400"}`}>
-                    {count(row.campaignCalls)}
-                  </td>
-                  <td className={`px-3 py-2 text-right font-semibold ${row.campaignSharePct >= 50 ? "text-sky-700" : "text-slate-400"}`}>
-                    {row.campaignSharePct}%
-                  </td>
-                  <td className={`px-3 py-2 text-right font-bold ${row.flaggedDays > 0 ? "text-rose-700" : "text-slate-400"}`}>
-                    {count(row.flaggedDays)}
-                  </td>
-                  <td className={`px-3 py-2 text-right font-bold ${row.campaignOnlyDays > 0 ? "text-amber-700" : "text-slate-400"}`}>
-                    {count(row.campaignOnlyDays)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </PortalDesktopTable>
+                    {/* A manager keeps his real rates — his account appears, exactly as asked — but
+                        is coloured and scored against nothing. */}
+                    <td className="whitespace-nowrap border-l border-slate-100 px-2 py-2 text-right">
+                      <span className={`block font-black tabular-nums ${targetText(row, row.am.attainmentPct)}`}>
+                        {rate(row.am.verifiedRate)}
+                      </span>
+                      <span className="block text-phx-3xs font-semibold tabular-nums text-slate-400">
+                        {rate(row.am.reportedRate)} rep.
+                      </span>
+                    </td>
+                    <td
+                      className={`whitespace-nowrap px-2 py-2 text-right font-bold tabular-nums ${targetText(row, row.am.attainmentPct)}`}
+                    >
+                      {targetPct(row, row.am.attainmentPct)}
+                    </td>
+                    <td className="whitespace-nowrap border-l border-slate-100 px-2 py-2 text-right">
+                      <span className={`block font-black tabular-nums ${targetText(row, row.pm.attainmentPct)}`}>
+                        {rate(row.pm.verifiedRate)}
+                      </span>
+                      <span className="block text-phx-3xs font-semibold tabular-nums text-slate-400">
+                        {rate(row.pm.reportedRate)} rep.
+                      </span>
+                    </td>
+                    <td
+                      className={`whitespace-nowrap px-2 py-2 text-right font-bold tabular-nums ${targetText(row, row.pm.attainmentPct)}`}
+                    >
+                      {targetPct(row, row.pm.attainmentPct)}
+                    </td>
+                    <td
+                      className={`whitespace-nowrap border-l border-slate-100 px-2 py-2 text-right font-bold tabular-nums ${unprovenText(row.unprovenPct)}`}
+                    >
+                      {pct(row.unprovenPct)}
+                    </td>
+                    <td className="whitespace-nowrap px-2 py-2 text-right">
+                      <span
+                        className={`block font-bold tabular-nums ${row.campaignCalls > 0 ? "text-sky-700" : "text-slate-400"}`}
+                      >
+                        {count(row.campaignCalls)}
+                      </span>
+                      <span
+                        className={`block text-phx-3xs font-semibold tabular-nums ${row.campaignSharePct >= 50 ? "text-sky-700" : "text-slate-400"}`}
+                      >
+                        {row.campaignSharePct}%
+                      </span>
+                    </td>
+                    <td className="whitespace-nowrap px-2 py-2 text-right">
+                      <span
+                        className={`block font-bold tabular-nums ${row.flaggedDays > 0 ? "text-rose-700" : "text-slate-400"}`}
+                      >
+                        {count(row.flaggedDays)}
+                      </span>
+                      <span
+                        className={`block text-phx-3xs font-semibold tabular-nums ${row.campaignOnlyDays > 0 ? "text-amber-700" : "text-slate-400"}`}
+                      >
+                        {count(row.campaignOnlyDays)} np
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       />
     </div>
