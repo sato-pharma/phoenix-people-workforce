@@ -1074,6 +1074,7 @@ import { runDirectOrdersSheetEditableColumnsTests } from "./direct-orders-sheet-
 import { runSosSelfHealOwnerVerifiedGuardTests } from "./sos-self-heal-owner-verified-guard.test.ts";
 import { runSosMiningOwnerRulingGuardTests } from "./sos-mining-owner-ruling-guard.test.ts";
 import { runOutstationManualExpenseTicketPlusAllowanceTests } from "./outstation-manual-expense-ticket-plus-allowance.test.ts";
+import { runOutstationAdminManualExpenseAmountVisibilityTests } from "./outstation-admin-manual-expense-amount-visibility.test.ts";
 import { runClosingDirectAreaIdentityTests } from "./closing-direct-area-identity.test.ts";
 import { runMonthlyClosingExportAreaMergeStaticTests } from "./monthly-closing-export-area-merge-static.test.ts";
 import { runSalesStoreOverrideTests } from "./sales-store-override.test.ts";
@@ -1234,6 +1235,7 @@ import { runCommentStripRatchetTests } from "./comment-strip-ratchet.test.ts";
 
 import { runRepoDoctorStripIdleOfferTests } from "./repo-doctor-strip-idle-offer.test.ts";
 import { runCrmClientTimeoutsTests } from "./crm-client-timeouts.test.ts";
+import { runOutstationPayrollPayableTotalAgreementTests } from "./outstation-payroll-payable-total-agreement.test.ts";
 import { runOutstationManagerExpenseEditValidationTests } from "./outstation-manager-expense-edit-validation.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -1781,7 +1783,7 @@ await runTest("KPIs URL state (a tab, month or period change carries every filte
 await runTest("KPIs facets (built from the viewer own rows, with a real bucket for an unresolved area)", runKpiFacetTests);
 await runTest("KPIs podium (three measures, three leaderboards, and nobody ranked at a 0 they do not have)", runKpiPodiumTests);
 await runTest("KPIs attainment and identity (one denominator, and a mixed-case hr id still resolves)", runKpiAttainmentAndIdentityTests);
-await runTest("KPIs medical reps only (managers off the board, an unrecorded title still on it)", runKpiMedicalRepOnlyTests);
+await runTest("KPIs medical reps only (managers off the board, above the filter layer so no URL undoes it)", runKpiMedicalRepOnlyTests);
 await runTest("KPIs early-window guard (a percentage two days into a month is a position, not a verdict)", runKpiTooEarlyToScoreTests);
 await runTest("crm reps plans board (live-month cap, company rate over days x reps, rep filter leaves totals alone)", runCrmRepsPlansTests);
 await runTest("crm rep visits drill-down (territory states, proof buckets, reconciles with the board rate)", runCrmRepVisitsTests);
@@ -3219,6 +3221,10 @@ await runTest(
   runOutstationManualExpenseTicketPlusAllowanceTests,
 );
 await runTest(
+  "manual admin outstation expense amount visibility (Meeting/Other amount are never hidden by expense type, so an amount typed under one type can never be submitted, invisibly, under another — production request 77)",
+  runOutstationAdminManualExpenseAmountVisibilityTests,
+);
+await runTest(
   "an area carrying July direct keeps its own code/name (screen + XLSX) and stays in seat scope; only areaCode=DIRECT is the company row",
   runClosingDirectAreaIdentityTests,
 );
@@ -3797,6 +3803,7 @@ await runTest("no source-pinning test strips comments with a regex that eats the
 
 await runTest("repo-doctor offers only what --strip-idle will actually reclaim", runRepoDoctorStripIdleOfferTests);
 await runTest("the CRM client's timeout bounds the response BODY, and an empty body is not a shape change", runCrmClientTimeoutsTests);
+await runTest("the payroll push mapper and the payroll display mapper agree on one outstation total, even when the claim differs from the expected total", runOutstationPayrollPayableTotalAgreementTests);
 await runTest(
   "outstation manager-expense edit validation (PATCH refuses an unknown expense/transportation type, never spreads the raw body)",
   runOutstationManagerExpenseEditValidationTests,

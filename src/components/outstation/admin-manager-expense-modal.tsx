@@ -820,8 +820,30 @@ export function AdminManagerExpenseModal({
             </div>
           ) : null}
 
-          {/* Meeting / Other amount — conditional on expense type */}
-          {expenseType === "meeting" ? (
+          {/*
+            Meeting and Other are ALWAYS both shown, never gated on the expense type.
+
+            They are additive line items on top of travel + allowance — reportExpectedTotal
+            (src/lib/outstation/service.ts) adds travelCost + meetingAmount + allowance +
+            otherAmount unconditionally — and the expense type only labels the trip. Production
+            agrees: six rep-submitted requests are typed "traveling" while carrying a real
+            meeting or parking cost (#45 "BRM for delta 1 team7" meeting 627.20, #114 parking
+            20.00), and the rep's own mobile-outstation-wizard already shows both boxes at all
+            times. Gating them by type here therefore did two things at once:
+
+              - it made a "traveling" trip unable to record either cost, which is the shape the
+                reps use most; and
+              - because handleSubmit sends BOTH amounts regardless of what is on screen, an
+                amount typed under one type stayed in state, stayed submitted and stayed PAID
+                after the admin switched type. That is production request 77 (B-122,
+                2026-08-16): expense_type "other", other_amount 0.00, meeting_amount 550.00,
+                saved while the visible "Other amount" box read empty.
+
+            Do NOT reintroduce the conditional, and do NOT "fix" the submit payload by zeroing
+            the amount that does not match the type — that would silently drop real money from
+            every traveling trip that also had a meeting or a parking cost.
+          */}
+          <div className="grid gap-4 sm:grid-cols-2">
             <div>
               <FieldLabel>Meeting amount (EGP)</FieldLabel>
               <InputField
@@ -833,7 +855,6 @@ export function AdminManagerExpenseModal({
                 value={meetingAmount}
               />
             </div>
-          ) : expenseType === "other" ? (
             <div>
               <FieldLabel>Other amount (EGP)</FieldLabel>
               <InputField
@@ -845,7 +866,11 @@ export function AdminManagerExpenseModal({
                 value={otherAmount}
               />
             </div>
-          ) : null}
+            <p className="sm:col-span-2 text-xs text-phx-ink-soft">
+              Both are paid on top of the travel cost and the allowance, whatever the expense
+              type is. Leave a box empty if that cost was not incurred.
+            </p>
+          </div>
 
           {/* AM / PM workload */}
           <div className="grid gap-4 sm:grid-cols-2">
@@ -890,7 +915,11 @@ export function AdminManagerExpenseModal({
             </p>
           </div>
 
-          {/* Calculation preview — fuel + allowance breakdown */}
+          {/* Calculation preview — every component of the expected total.
+              The total is reportExpectedTotal() = travel + meeting + allowance + other, so each of
+              those four gets its own tile. Meeting and other were carried on the preview payload
+              but never rendered, which put money in the total with no line anywhere on screen
+              accounting for it (a 250 meeting invoice read as part of "fuel + allowance"). */}
           {calcPreview ? (
             <div className={`${panelClassName} p-4`}>
               <div className="mb-3 flex items-center justify-between gap-2">
@@ -920,10 +949,30 @@ export function AdminManagerExpenseModal({
                     {formatEgp(calcPreview.allowanceAmount)}
                   </p>
                 </div>
+                {calcPreview.meetingAmount > 0 ? (
+                  <div className="rounded-md bg-phx-paper px-3 py-2.5">
+                    <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-soft">
+                      Meeting
+                    </p>
+                    <p className="mt-0.5 text-sm font-black text-phx-ink">
+                      {formatEgp(calcPreview.meetingAmount)}
+                    </p>
+                  </div>
+                ) : null}
+                {calcPreview.otherAmount > 0 ? (
+                  <div className="rounded-md bg-phx-paper px-3 py-2.5">
+                    <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-soft">
+                      Other
+                    </p>
+                    <p className="mt-0.5 text-sm font-black text-phx-ink">
+                      {formatEgp(calcPreview.otherAmount)}
+                    </p>
+                  </div>
+                ) : null}
               </div>
-              <div className="mt-3 flex items-center justify-between rounded-md bg-phx-accent-soft px-3 py-2.5">
+              <div className="mt-3 flex items-center justify-between gap-2 rounded-md bg-phx-accent-soft px-3 py-2.5">
                 <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-accent-hover">
-                  {isTicketBased ? "Ticket + allowance" : "Fuel + allowance"} = total
+                  Total
                 </p>
                 <p className="text-sm font-black text-phx-accent-hover">
                   {formatEgp(calcPreview.expectedTotalAmount)}
