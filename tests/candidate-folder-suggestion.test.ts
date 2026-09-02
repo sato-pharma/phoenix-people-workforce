@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 
 import {
   collectSuggestedFilings,
+  degreeEligibilityAppliesToDeclaredRole,
   suggestFolderFromDeclaredAnswers,
 } from "../src/lib/recruitment/candidate-folder-suggestion.ts";
 import { partitionCandidatesByFolder } from "../src/lib/recruitment/candidate-folder.ts";
@@ -274,4 +275,72 @@ export async function runCandidateFolderSuggestionTests() {
   // ── 9 · Nothing is suggested for a candidate that is not there ────────────
   assert.equal(suggestFolderFromDeclaredAnswers(null).suggestion, null);
   assert.equal(collectSuggestedFilings([]).filings.length, 0);
+
+  // ── 10 · The degree gate is about the FIELD FORCE, not about employment ───
+  //
+  // The owner, 2026-09-02: "para medical is not accepted in medical rep or district manager but
+  // normally accepted in office coordinator."
+  //
+  // Before this the gate read the verdict alone, so a para-medical graduate who asked for the office
+  // seat was held with everyone else — parked on the shelf candidate-folder.ts itself calls "the
+  // only shelf nobody is hired out of". The four rows below are the rule in full: the two roles he
+  // named still hold, the one he opened files, and a role nobody could read still holds.
+  assert.equal(
+    degreeEligibilityAppliesToDeclaredRole("Medical Representative"),
+    true,
+    "a medical rep is exactly who the five-discipline rule is for",
+  );
+  assert.equal(
+    degreeEligibilityAppliesToDeclaredRole("District Manager"),
+    true,
+    "and a district manager is the other role the owner named",
+  );
+  assert.equal(
+    degreeEligibilityAppliesToDeclaredRole("Office Coordinator"),
+    false,
+    "an office coordinator is a head-office seat — a pharma or science degree is not part of that job",
+  );
+  assert.equal(
+    degreeEligibilityAppliesToDeclaredRole(null),
+    true,
+    "a role NOBODY could read must stay held: unknown is not the same as unrelated, and releasing it would file people anywhere",
+  );
+
+  const degreeGate = collectSuggestedFilings([
+    declared("para-rep", {
+      title: "Medical Representative",
+      area: "Alex West",
+      backgroundConfirmedOutcome: "paramedical",
+    }),
+    declared("para-dm", {
+      title: "District Manager",
+      regionCode: "D1",
+      backgroundConfirmedOutcome: "paramedical",
+    }),
+    declared("para-office", { title: "Office Coordinator", backgroundConfirmedOutcome: "paramedical" }),
+    declared("para-noroll", { title: null, backgroundConfirmedOutcome: "paramedical" }),
+  ]);
+
+  assert.deepEqual(
+    degreeGate.filings.map((filing) => filing.candidateId),
+    ["para-office"],
+    "the office coordinator is the ONLY one of the four the degree verdict may release",
+  );
+  assert.equal(
+    degreeGate.filings[0]?.suggestion.kind,
+    "other",
+    "and they file onto the Other positions shelf under their own job title, where a recruiter sees them",
+  );
+  assert.deepEqual(
+    degreeGate.skipped.map((skip) => skip.candidateId).sort(),
+    ["para-dm", "para-noroll", "para-rep"],
+    "the two field-force roles the owner named, and the unreadable one, all stay held exactly as before",
+  );
+  for (const held of degreeGate.skipped) {
+    assert.match(
+      held.reason,
+      /outside the five disciplines/,
+      "a held candidate must still say the DEGREE is why, or the reason reads as a missing answer",
+    );
+  }
 }
