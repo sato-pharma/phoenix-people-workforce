@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 
-import { phoenixRoles, buildPermissionLookup, permissionMatrix, type NavigationMode } from "../src/lib/auth/permissions.ts";
+import {
+  phoenixRoles,
+  buildPermissionLookup,
+  permissionMatrix,
+  type NavigationMode,
+  type PhoenixRole,
+} from "../src/lib/auth/permissions.ts";
 import { buildCommandPaletteItems } from "../src/lib/navigation/command-palette-items.ts";
 
 /**
@@ -34,6 +40,23 @@ export function runCommandPaletteItemsTests() {
         [],
         `${role} / ${mode}: command palette offers the same href twice — ${duplicates.join(", ")}`,
       );
+
+      // ...and no two rows READ the same either. A viewer picks a row by its two lines of text, so
+      // two rows agreeing on both while pointing somewhere different is a coin flip — the same
+      // defect as a duplicate href, one layer up, and invisible to the sweep above.
+      const byText = new Map<string, string[]>();
+      for (const item of items) {
+        const text = `${item.label} | ${item.section}`;
+        byText.set(text, [...(byText.get(text) ?? []), item.href]);
+      }
+      const ambiguous = [...byText.entries()]
+        .filter(([, hrefs]) => hrefs.length > 1)
+        .map(([text, hrefs]) => `${text} -> ${hrefs.join(" , ")}`);
+      assert.deepEqual(
+        ambiguous,
+        [],
+        `${role} / ${mode}: two palette rows read identically but go somewhere different — ${ambiguous.join("; ")}`,
+      );
     }
   }
 
@@ -56,4 +79,27 @@ export function runCommandPaletteItemsTests() {
       `${href} must appear exactly once in the Super Admin palette`,
     );
   }
+
+  // THE MARKETING TWIN. /admin/marketing-requests and /workspace/marketing-requests render the
+  // same component, so the palette collapses them to one row rather than naming a difference that
+  // does not exist. Measured: Super Admin and SFE Manager are the only two offered both.
+  const marketing = (role: PhoenixRole) =>
+    buildCommandPaletteItems("admin", buildPermissionLookup(permissionMatrix, role), role).filter((item) =>
+      ["/admin/marketing-requests", "/workspace/marketing-requests"].includes(item.href),
+    );
+  for (const role of ["Super Admin", "SFE Manager"] as const) {
+    assert.deepEqual(
+      marketing(role).map((item) => item.href),
+      ["/workspace/marketing-requests"],
+      `${role} must be offered the marketing workspace once, not once per shell`,
+    );
+  }
+  // ...and the alias must never take the LAST row for a destination. The District Manager is not
+  // on the sidebar row, so the hub card is his only way in: collapsing him to nothing would hide
+  // the workspace from the role that files the most requests.
+  assert.deepEqual(
+    marketing("District Manager").map((item) => item.href),
+    ["/admin/marketing-requests"],
+    "the District Manager must keep his own route to the marketing workspace",
+  );
 }

@@ -3247,7 +3247,12 @@ export const outstationExpensesPageItems: readonly AdminToolsPageItem[] = [
   {
     href: "/admin/outstation/expenses/dashboard",
     icon: ChartColumnBig,
-    label: "Outstation Expenses",
+    // Named for the page, not the module. This card sits INSIDE the Outstation Expenses hub and
+    // used to be labelled "Outstation Expenses" too, so the hub door and the dashboard read as
+    // one destination in Cmd+K and as the same words twice on the hub page. The page's own
+    // header is "Outstation Expenses Dashboard"; the siblings here drop the module prefix
+    // ("Expense Approvals", "Expense Command Center", "Expense Requests"), so this follows them.
+    label: "Expenses Dashboard",
     description: "Outstation expenses dashboard and reporting.",
     permissions: [{ resource: "expenses" }],
     roles: systemAdministratorNavigationRoles,
@@ -3281,7 +3286,10 @@ export const fieldCoachingPageItems: readonly AdminToolsPageItem[] = [
   {
     href: "/coaching",
     icon: ClipboardCheck,
-    label: "Field Coaching",
+    // Named for the page, not the module — same reason as Expenses Dashboard above. The hub door
+    // (/admin/field-coaching) is the one that keeps the module name "Field Coaching"; this is the
+    // evaluations list inside it, and it reads beside "Coaching Analytics" in the same hub.
+    label: "Coaching Evaluations",
     description: "Submit and review field coaching evaluations.",
     permissions: [{ resource: "coaching" }],
   },
