@@ -1780,7 +1780,7 @@ await runTest("KPIs URL state (a tab, month or period change carries every filte
 await runTest("KPIs facets (built from the viewer own rows, with a real bucket for an unresolved area)", runKpiFacetTests);
 await runTest("KPIs podium (three measures, three leaderboards, and nobody ranked at a 0 they do not have)", runKpiPodiumTests);
 await runTest("KPIs attainment and identity (one denominator, and a mixed-case hr id still resolves)", runKpiAttainmentAndIdentityTests);
-await runTest("KPIs medical reps only (managers off the board, an unrecorded title still on it)", runKpiMedicalRepOnlyTests);
+await runTest("KPIs medical reps only (managers off the board, above the filter layer so no URL undoes it)", runKpiMedicalRepOnlyTests);
 await runTest("KPIs early-window guard (a percentage two days into a month is a position, not a verdict)", runKpiTooEarlyToScoreTests);
 await runTest("crm reps plans board (live-month cap, company rate over days x reps, rep filter leaves totals alone)", runCrmRepsPlansTests);
 await runTest("crm rep visits drill-down (territory states, proof buckets, reconciles with the board rate)", runCrmRepVisitsTests);

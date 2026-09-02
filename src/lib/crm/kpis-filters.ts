@@ -673,59 +673,11 @@ export function buildKpiFacets(rows: readonly KpiFilterableRow[]): KpiFacets {
   };
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// WHO THE BOARD IS ABOUT — medical reps, and nobody else.
-//
-// Owner instruction, 2026-09-03: "only show medical reps in this page". Applied
-// at the SOURCE rather than as a preselected filter chip, so every number on the
-// page means the same thing: the denominator behind "Showing X of Y", the four
-// gauge tiles, the three podiums and each tab's headline all count medical reps
-// only. A default chip would have left the totals describing one population and
-// the table another, which is the version of this that goes unnoticed.
-//
-// Measured on production the day it was applied, September 2026, Super Admin
-// scope — the whole board was 70 rows:
-//
-//     Medical Representative    63   ← kept
-//     District Sales Manager     6   ← dropped
-//     Product Manager            1   ← dropped
-//
-// A manager and a rep are not comparable on these three measures. A DSM carries
-// no doctor plan of his own, so he lands at "No plan" on coverage and frequency
-// and drags the team averages toward a number that describes nobody; the single
-// Product Manager is on the board only because he holds a CRM agent id at all.
-//
-// WHY AN UNRECORDED TITLE IS KEPT. Every one of the 70 rows above carried a
-// title, so this branch changes nothing today — it exists for the row that
-// arrives tomorrow. A CRM agent with no matching employee record has a null
-// title, and dropping it would remove a working rep from his own manager's board
-// with no error and no marker, which reads as "he covered nothing" rather than
-// as a bug. Being visibly too generous is recoverable; being invisibly too
-// strict is what costs a day. Such a row stays, and the Job title facet offers
-// "Not recorded" so it can be found.
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Is this job title a field medical rep?
- *
- * Substring rather than equality because the title is free text on the employee
- * record and both "Medical Rep" and "Medical Representative" are live in this
- * database — the two spellings that auto-provision the rep role. The `manager`
- * exclusion keeps a hypothetical "Medical Rep Manager" out; an acting district
- * manager is unaffected, because the owner's standing rule is that she keeps the
- * Medical Representative title and only her reps move.
- */
-export function isMedicalRepTitle(jobTitle: string | null | undefined): boolean {
-  const title = (jobTitle ?? "").trim().toLowerCase();
-  if (!title) return true; // Unrecorded — see the block above. Deliberately kept.
-  if (title.includes("manager")) return false;
-  return title.includes("medical rep");
-}
-
-/** Narrow a scoped row set to the medical reps, before facets or totals are built. */
-export function keepMedicalRepsOnly<T extends KpiFilterableRow>(rows: readonly T[]): T[] {
-  return rows.filter((row) => isMedicalRepTitle(row.jobTitle));
-}
+// MEDICAL REPS ONLY lives in crm/medical-rep.ts — `keepMedicalRepsOnly`, called by
+// crm/kpis-board.ts at the source. It used to live here as a second implementation of a rule the
+// Reps Plans board already owned; the two agreed on every live row and disagreed on one branch.
+// Do not reintroduce a copy: this file's no-imports rule is about SERVER modules, and medical-rep.ts
+// imports nothing at all, so there is no bundle reason to have a local one.
 
 // ─────────────────────────────────────────────────────────────────────────────
 // WHEN A PERCENTAGE IS A POSITION AND NOT YET A SCORE.

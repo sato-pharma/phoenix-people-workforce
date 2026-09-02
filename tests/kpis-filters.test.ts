@@ -13,14 +13,13 @@ import {
   kpiFlagsOf,
   nextKpiSort,
   parseKpiFilters,
-  isMedicalRepTitle,
   isTooEarlyToScore,
   KPI_VERDICT_THRESHOLD,
-  keepMedicalRepsOnly,
   sortKpiRows,
   UNASSIGNED_FACET_KEY,
   type KpiFilterState,
 } from "../src/lib/crm/kpis-filters.ts";
+import { keepMedicalRepsOnly } from "../src/lib/crm/medical-rep.ts";
 import type { RepCallRate } from "../src/lib/crm/call-rate.ts";
 
 /**
@@ -500,6 +499,12 @@ export function runKpiMedicalRepOnlyTests() {
   // Owner, 2026-09-03: "only show medical reps in this page". The composition measured on
   // production that day, September 2026 at Super Admin scope, was 63 medical representatives,
   // 6 district sales managers and 1 product manager — so this drops exactly the 7.
+  //
+  // WHO COUNTS AS A REP is asserted in tests/crm-medical-rep.test.ts, against the one rule in
+  // crm/medical-rep.ts that both CRM boards now call. This file deliberately does not re-assert it:
+  // a second copy of those expectations is what let two implementations drift apart in the first
+  // place, and a pinning test that pins the wrong copy is worse than no test. What is asserted here
+  // is the part that belongs to THIS board — WHERE the narrowing happens.
   const rows = [
     row({ agentCrmId: 1, repName: "Rep", jobTitle: "Medical Representative" }),
     row({ agentCrmId: 2, repName: "Short spelling", jobTitle: "Medical Rep" }),
@@ -510,37 +515,20 @@ export function runKpiMedicalRepOnlyTests() {
 
   assert.deepEqual(
     keepMedicalRepsOnly(rows).map((entry) => entry.repName),
-    ["Rep", "Short spelling", "No title"],
+    ["Rep", "Short spelling"],
     "managers are dropped; both live spellings of the rep title are kept",
   );
 
-  // BOTH spellings are live in this database and both auto-provision the rep role. Matching on
-  // equality against one of them would silently empty half the board.
-  assert.equal(isMedicalRepTitle("Medical Representative"), true);
-  assert.equal(isMedicalRepTitle("medical rep"), true, "case and spacing must not decide who is a rep");
-  assert.equal(isMedicalRepTitle("  Medical Rep  "), true);
-
-  assert.equal(isMedicalRepTitle("District Sales Manager"), false);
-  assert.equal(isMedicalRepTitle("Product Manager"), false);
-  assert.equal(
-    isMedicalRepTitle("Medical Rep Manager"),
-    false,
-    "a title containing both words is a manager — the substring match must not promote him onto the board",
-  );
-
-  // THE DELIBERATELY GENEROUS BRANCH, and the one most likely to be 'tidied' by a later session.
-  // A CRM agent with no matching employee record has no title. Dropping him would remove a working
-  // rep from his own manager's board with no error and no marker, which reads as 'he covered
-  // nothing' rather than as a bug. Being visibly too generous is recoverable; being invisibly too
-  // strict is not.
-  assert.equal(isMedicalRepTitle(null), true, "an unrecorded title is KEPT — see the block in kpis-filters.ts");
-  assert.equal(isMedicalRepTitle(""), true);
-  assert.equal(isMedicalRepTitle("   "), true);
+  // A KpiRepRow must keep satisfying the helper's structural parameter. The helper takes
+  // `{ jobTitle: string | null }` rather than KpiFilterableRow so that one rule can serve a board
+  // whose row type it does not import — and a widened KpiRepRow that stopped matching would fail
+  // HERE, at the call site, rather than silently somewhere downstream.
+  const kept: KpiRepRow[] = keepMedicalRepsOnly(rows);
+  assert.equal(kept.length, 2);
 
   // The restriction runs before the facets, so it can never be undone from the URL. A district
   // manager left on the board would score 'No plan' on two of three measures and drag the team
   // averages toward a number describing nobody.
-  const kept = keepMedicalRepsOnly(rows);
   assert.equal(
     applyKpiFilters(kept, filters({ titles: ["District Sales Manager"] })).length,
     0,

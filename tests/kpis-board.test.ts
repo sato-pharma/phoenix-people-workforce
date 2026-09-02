@@ -263,11 +263,13 @@ export function runKpisBoardJoinTests() {
     "the two must be able to DIFFER — equal halves here would hide a bug returning verified for both",
   );
 
-  // MEDICAL REPS ONLY is asserted by tests/kpis-filters.test.ts (runKpiMedicalRepOnlyTests), not
-  // here. This board carried its own roster predicate for a few hours on 2026-09-03; PR #2945
-  // landed `keepMedicalRepsOnly` in crm/kpis-filters.ts on the same day and that is the one this
-  // board now uses. Two implementations of one rule is the drift Doctor Coverage was retired for,
-  // so the duplicate was removed rather than left as a second opinion.
+  // MEDICAL REPS ONLY is asserted by tests/crm-medical-rep.test.ts, against the single rule in
+  // crm/medical-rep.ts that this board and Reps Plans both call; tests/kpis-filters.test.ts adds
+  // only the board-specific part, that the narrowing sits above the filter layer. Three
+  // implementations of that rule existed within one day on 2026-09-03 — this board's own roster
+  // predicate, `keepMedicalRepsOnly` from PR #2945, and the seat-aware one Reps Plans used. Two
+  // implementations of one rule is the drift Doctor Coverage was retired for, so they were
+  // collapsed into one rather than left as competing second opinions.
 
   // ── Scope: hr ids are MIXED CASE in production ───────────────────────────────────────────────
   // A case-sensitive comparison does not error, it silently returns nobody — and an empty board
