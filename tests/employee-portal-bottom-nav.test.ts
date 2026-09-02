@@ -2,6 +2,11 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import { isEmployeePortalOwnedRoute } from "../src/lib/employee-portal/routes.ts";
+import {
+  HOME_ENTRY,
+  PORTAL_NAV_REGISTRY,
+  PROFILE_ENTRY,
+} from "../src/components/employee-portal/employee-portal-nav-registry.ts";
 
 /**
  * Guard against drift between the portal nav registry (which feeds the mobile
@@ -118,4 +123,36 @@ export function runEmployeePortalBottomNavTests() {
     /useBottomNavPreference/,
     "bottom nav must honor the user's pinned-shortcut preference",
   );
+  // ── Two tabs must never read the same ────────────────────────────────────────
+  //
+  // The bar renders `label` (the short one) while the customizer that picks the tabs renders
+  // `fullLabel`. So a person pinned two entries that looked different where they chose them and
+  // got two tabs reading identically: measured before this guard, four labels covered eight
+  // hrefs — "Coaching" x3, plus "Vacation", "Excuses" and "Expenses" twice each. Nothing caught
+  // it, because the React key is `${label}-${href}` and the hrefs do differ.
+  //
+  // Uniqueness is asserted over the WHOLE registry rather than over some co-visible subset: the
+  // flags are independent booleans resolved per viewer, several entries carry no flag at all and
+  // are therefore always offered, and any combination of four can be pinned. There is no subset
+  // worth reasoning about.
+  //
+  // New labels are constrained by width as well: the bar is six tabs at most (Home + four pinned
+  // + Profile) and at 375px that is ~49px of text per tab at 10px/900. Re-measure with the probe
+  // in scripts/measure-sidebar-labels.ts rather than guessing a short form.
+  const allEntries = [HOME_ENTRY, PROFILE_ENTRY, ...PORTAL_NAV_REGISTRY];
+  assert.ok(allEntries.length >= 50, `the sweep must see the whole registry, saw ${allEntries.length}`);
+
+  for (const field of ["label", "fullLabel"] as const) {
+    const byText = new Map<string, string[]>();
+    for (const entry of allEntries) {
+      byText.set(entry[field], [...(byText.get(entry[field]) ?? []), entry.href]);
+    }
+    for (const [text, hrefs] of byText) {
+      assert.equal(
+        hrefs.length,
+        1,
+        `${field} "${text}" is used by ${hrefs.length} portal nav entries -> ${hrefs.join(" , ")}`,
+      );
+    }
+  }
 }
