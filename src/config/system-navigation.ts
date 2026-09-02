@@ -730,7 +730,14 @@ const adminNavigationSectionSeeds = [
       // card's own gate covers its old audience — Marketing Manager and Training Manager keep the
       // dashboard and analytics cards, Super Admin keeps all four, and the Marketing Manager stays
       // excluded from the Probation Cases card exactly as his old row excluded him.
-      { href: "/admin/probation-tools", icon: Hourglass, label: "Probation", permissions: [{ resource: "probation" }], excludedRoles: ["CEO"] },
+      // Labelled for the page, not the module. The CEO section above carries a row labelled
+      // "Probation" too (/admin/ceo-probation), and the two are mutually exclusive by CEO/not-CEO —
+      // except that navigationItemVisible waives the `roles` half of that for the system
+      // administrator, so his rail alone carried two rows reading "Probation" opening two different
+      // hubs. The hrefs differ, so dedupeSectionsByHref cannot collapse them, and must not: this is
+      // the hub that also holds Settings, his is the executive entry point. Renaming here rather
+      // than there leaves the CEO's own sidebar untouched.
+      { href: "/admin/probation-tools", icon: Hourglass, label: "Probation Tools", permissions: [{ resource: "probation" }], excludedRoles: ["CEO"] },
       // Restored on 2026-08-08. Moved into the CRM hub on 2026-08-02 because it is judged on CRM
       // visit activity; it stays a card there for the SFE Manager, who is excluded here.
       { href: "/admin/field-workforce-compliance", icon: ClipboardCheck, label: "Workforce Compliance", permissions: [{ resource: "hr_calendar" }], excludedRoles: ["SFE Manager"] },

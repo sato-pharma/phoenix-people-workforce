@@ -30,6 +30,7 @@ import { runNavigationPersonalLayoutTests } from "./navigation-personal-layout.t
 import { runFinanceManagerSixModuleAccessTests } from "./finance-manager-six-module-access.test.ts";
 import { runSidebarLabelFontSyncTests } from "./sidebar-label-font-sync.test.ts";
 import { runSidebarLabelWidthTests } from "./sidebar-label-width.test.ts";
+import { runSidebarRowsReadUniquelyTests } from "./sidebar-rows-read-uniquely.test.ts";
 import { runAutomatedPayrollPageWidthTests } from "./automated-payroll-page-width.test.ts";
 import {
   runWorkspaceSingleHeroTests,
@@ -1263,6 +1264,10 @@ await runTest(
 await runTest("automated payroll pages render full width", runAutomatedPayrollPageWidthTests);
 await runTest("sidebar width guard measures the font the app actually renders", runSidebarLabelFontSyncTests);
 await runTest("sidebar labels never clip (no ellipsis, no wrap)", runSidebarLabelWidthTests);
+await runTest(
+  "sidebar rows read uniquely (no repeated href, section id or label in any role's rail)",
+  runSidebarRowsReadUniquelyTests,
+);
 await runTest("workspace pages render exactly one hero", runWorkspaceSingleHeroTests);
 await runTest(
   "workspace pages render exactly one personal tab strip (the two HR seats carry it under the "
