@@ -35,19 +35,69 @@
 // lesson generalises: the set of namespaces is itself the thing that goes stale. Add the namespace
 // here, never a second scan somewhere else.
 
+// THE RULE IS NOW INVERTED (2026-09-02), because the allowlist was wrong a THIRD time. Scanning
+// only `refs/deleted-branches`, `refs/heads/rescue` and `refs/backups` left 84 refs unexamined
+// across FIVE more namespaces — `refs/tags/archive` (52), `refs/remotes/backups` (15),
+// `refs/archive/v1` (9), `refs/rescue`, `refs/safety`, and `refs/tags/{rescue,backup,abandoned}`.
+// Six of those commits existed on this laptop only, and two were accounted for by no merged PR:
+// `tags/archive/wt-pr1843` (its PR closed unmerged) and `tags/archive/wt-pr1864-ci`.
+//
+// A list of places to LOOK goes stale every time someone invents a convention, and it goes stale
+// SILENTLY, in the direction that reads as clean — three times now, each caught by hand. A list of
+// places to SKIP goes stale in the direction that reads as noisy. So the default is inverted:
+// every ref is an archive unless named below as something git or a tool owns. A namespace nobody
+// has classified gets AUDITED. Being wrong now costs a push, which is this file's design goal.
+//
+// Do NOT answer a noisy report by adding a namespace to the skip list without reading what is in
+// it. That is the old bug wearing the new rule's clothes.
+
 import { execFileSync } from "node:child_process";
 
 /**
- * Ref globs covering every local archive namespace.
+ * Ref prefixes that are NOT archives. Everything else under `refs/` is.
  *
- * `**` is load-bearing: `*` stops at a slash, and `codex/<task>` is this repo's dominant branch
- * name. Do not "simplify" these back to a single star — see the header for what that cost.
+ * This is a SKIP list rather than a LOOK list on purpose — see the header. A missing entry here
+ * produces a false ALARM; a missing entry in the old look-list produced a false CLEAN, three times
+ * over. Every entry names something git or a tool owns, never something a person chose to keep.
+ *
+ * An entry ending in `/` matches a namespace; one that does not must match the ref EXACTLY, so
+ * `refs/stash` cannot silently swallow a future `refs/stashed-experiments/`.
  */
-export const ARCHIVE_REF_PATTERNS = Object.freeze([
-  "refs/deleted-branches/**",
-  "refs/heads/rescue/**",
-  "refs/backups/**",
+export const NON_ARCHIVE_REF_PREFIXES = Object.freeze([
+  "refs/heads/", // live branches — the UNPUSHED COMMITS section already measures these
+  "refs/remotes/", // a cache of a ref that lives somewhere else; never a local original
+  "refs/stash", // transient by design, and pushable nowhere
+  "refs/notes/", // metadata about commits, not work
+  "refs/bisect/", // git's own transient refs, below here
+  "refs/rewritten/",
+  "refs/worktree/",
+  "refs/prefetch/",
+  "refs/replace/",
+  "refs/copilot/", // per-turn tool scratch, regenerated constantly
+  "refs/codex/",
+  "refs/sessions/",
 ]);
+
+/**
+ * Branch namespaces that ARE archives despite living under `refs/heads/`.
+ *
+ * `rescue/<name>` is this repo's convention for a tip pulled out of a worktree before retiring it
+ * — a keepsake wearing a branch's clothes, which is why it outranks the `refs/heads/` skip above.
+ */
+export const ARCHIVE_BRANCH_PREFIXES = Object.freeze(["refs/heads/rescue/"]);
+
+/**
+ * Whether a ref is an archive: something a person kept, whose loss would be a loss.
+ *
+ * @param {string} ref full local ref name
+ * @returns {boolean}
+ */
+export function isArchiveRef(ref) {
+  if (ARCHIVE_BRANCH_PREFIXES.some((prefix) => ref.startsWith(prefix))) return true;
+  return !NON_ARCHIVE_REF_PREFIXES.some((entry) =>
+    entry.endsWith("/") ? ref.startsWith(entry) : ref === entry,
+  );
+}
 
 /**
  * Where a given archive ref should be pushed so the tip survives off this laptop.
@@ -61,7 +111,14 @@ export const ARCHIVE_REF_PATTERNS = Object.freeze([
  */
 export function archivePushTarget(ref) {
   if (ref.startsWith("refs/backups/")) return ref;
-  return `refs/backups/${ref.replace("refs/deleted-branches/", "").replace("refs/heads/", "")}`;
+  // Only the two namespaces whose name is pure bookkeeping are stripped. A namespace that says
+  // something — `tags/archive/wt-pr1843`, `rescue/<task>`, `safety/pre-session-close` — KEEPS it,
+  // because a backup ref is read months later by someone asking what this commit was.
+  const leaf = ref
+    .replace(/^refs\//, "")
+    .replace(/^deleted-branches\//, "")
+    .replace(/^heads\//, "");
+  return `refs/backups/${leaf}`;
 }
 
 /**
@@ -136,7 +193,7 @@ function reachableFromVerifiedOrigin(sha, advertised, dir) {
 export function listArchiveRefs(dir = process.cwd()) {
   let out;
   try {
-    out = execFileSync("git", ["for-each-ref", "--format=%(objectname) %(refname)", ...ARCHIVE_REF_PATTERNS], {
+    out = execFileSync("git", ["for-each-ref", "--format=%(objectname) %(*objectname) %(refname)"], {
       cwd: dir,
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],
@@ -149,7 +206,11 @@ export function listArchiveRefs(dir = process.cwd()) {
     .split("\n")
     .filter(Boolean)
     .map((line) => {
-      const gap = line.indexOf(" ");
-      return { sha: line.slice(0, gap), ref: line.slice(gap + 1) };
-    });
+      // Three space-separated fields, and a ref name cannot contain a space. `*objectname` is
+      // empty for everything but an ANNOTATED tag, whose own object is NOT a commit — hand that
+      // object to `--contains` and git rejects it, so the tag reads as stranded however safe.
+      const [objectName, dereferenced, ref] = line.split(" ");
+      return { sha: dereferenced || objectName, ref };
+    })
+    .filter((entry) => isArchiveRef(entry.ref));
 }
