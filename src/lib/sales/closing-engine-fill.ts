@@ -80,6 +80,13 @@ const DATA_SHEET = "Data";
 const SHARED_STRINGS_PART = "xl/sharedStrings.xml";
 const REP_CARD = "Rep Card";
 
+/**
+ * What Excel writes in a data field's `baseItem` to mean "none". It occupies the same attribute as
+ * a real shared-item index, so it has to be excluded by value or it reads as a demand for a pool of
+ * a million items.
+ */
+const NO_BASE_ITEM = 1_048_832;
+
 function xmlEscape(value: string): string {
   return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
@@ -250,6 +257,7 @@ export async function fillClosingEngine(fill: ClosingEngineFill, options: FillOp
 
   await fillRepCard(zip, fill);
   await updateReferences(zip, fill);
+  await restorePivotCacheSharedItems(zip);
   await dropDeadSharedStrings(zip);
   if (options.macroFree) await stripMacros(zip);
 
@@ -600,6 +608,102 @@ async function dropDeadSharedStrings(zip: JSZip): Promise<void> {
   if (relsFile) {
     const rels = await relsFile.async("string");
     zip.file("xl/_rels/workbook.xml.rels", rels.replace(/<Relationship\b[^>]*sharedStrings\.xml[^>]*\/>/g, ""));
+  }
+}
+
+/**
+ * Give the pivot cache back the shared items its own pivot tables still point at.
+ *
+ * THIS is the repair prompt the owner hit — "We found a problem with some content", every premium
+ * export, `.xlsm` and `.xlsx` alike. Excel's recovery log names the cause exactly:
+ *
+ *     Removed Part: /xl/pivotTables/pivotTable1.xml part. (PivotTable view)   ...and 2 and 3
+ *
+ * The template build empties every `<sharedItems>` in the cache, because they hold the values of
+ * the real July CNS workbook it was cut from and shipping one line's areas and reps inside another
+ * line's export is a leak. It sets `refreshOnLoad="1"` and trusts the refresh to repopulate them.
+ * It does not: `xl/pivotTables/*.xml` are left exactly as Excel wrote them, still enumerating that
+ * month's values — `<item x="0"/>` … `<item x="49"/>` — and **Excel validates the pivot against
+ * the cache BEFORE it honours `refreshOnLoad`**. Every index points into an empty pool, so all
+ * three views are removed and the file is declared damaged. A cache and its pivots are one unit;
+ * emptying either half alone is what breaks it.
+ *
+ * Deleting the enumerations instead does not work — measured, three ways: strip `<items>`, strip
+ * `<rowItems>`/`<colItems>` too, strip the `<formats>` as well, and Excel still refuses the file.
+ * So the pool is refilled rather than the references removed.
+ *
+ * The values written are PLACEHOLDERS, never the real ones (which this code does not have and must
+ * not leak). `refreshOnLoad="1"` replaces them from `SalesData` the moment the workbook opens. If
+ * a reader somehow blocks that refresh they see "Region 1", "Area 2" — visibly unfinished, which
+ * is the safe way to be wrong. Plausible-and-wrong is the outcome worth avoiding; the template
+ * build's own header makes the same argument for shipping the template empty.
+ *
+ * Idempotent by construction: only a self-closing `<sharedItems/>` — the emptied form — is
+ * rewritten, so a template that already carries a populated pool is left untouched.
+ */
+async function restorePivotCacheSharedItems(zip: JSZip): Promise<void> {
+  const cacheFiles = zip.file(/^xl\/pivotCache\/pivotCacheDefinition\d+\.xml$/);
+  if (!cacheFiles.length) return;
+
+  // Highest item index each cache field is referenced by, +1 — i.e. how deep the pool must be.
+  const depth = new Map<number, number>();
+  const need = (field: number, count: number): void => {
+    if (!Number.isInteger(field) || field < 0 || count <= 0) return;
+    depth.set(field, Math.max(depth.get(field) ?? 0, count));
+  };
+
+  for (const file of zip.file(/^xl\/pivotTables\/pivotTable\d+\.xml$/)) {
+    const xml = await file.async("string");
+
+    // A `<pivotField>` sits at the ordinal of the cache field it renders, so its position in the
+    // list IS the field index. Both spellings have to be matched: a field with no items of its
+    // own is self-closing, and a greedy pair pattern alone would swallow every one that is.
+    const block = /<pivotFields\b[^>]*>([\s\S]*?)<\/pivotFields>/.exec(xml)?.[1] ?? "";
+    const fields = block.match(/<pivotField\b[^>]*?\/>|<pivotField\b[^>]*?>[\s\S]*?<\/pivotField>/g) ?? [];
+    fields.forEach((field, index) => {
+      for (const item of field.matchAll(/<item\b[^>]*\bx="(\d+)"/g)) need(index, Number(item[1]) + 1);
+    });
+
+    // `baseItem` is the item a "% difference from" data field measures against — a shared-item
+    // index like any other. Excel writes 1048832 for "no base item", which is a sentinel and not
+    // an index: read literally it would demand a pool of a million entries.
+    for (const df of xml.matchAll(/<dataField\b[^>]*?\/>/g)) {
+      const baseField = Number(/\bbaseField="(-?\d+)"/.exec(df[0])?.[1] ?? -1);
+      const baseItem = Number(/\bbaseItem="(\d+)"/.exec(df[0])?.[1] ?? -1);
+      if (baseItem >= 0 && baseItem < NO_BASE_ITEM) need(baseField, baseItem + 1);
+    }
+  }
+
+  for (const cacheFile of cacheFiles) {
+    const xml = await cacheFile.async("string");
+    const names = [...xml.matchAll(/<cacheField\b[^>]*?\bname="([^"]*)"/g)].map((m) => m[1]);
+
+    // A slicer indexes the same pool: `Slicer_Region` lists `<i x="0"/>`…`<i x="6"/>` against the
+    // cache field named by its `sourceName`. Left short, the slicer part is removed too.
+    for (const file of zip.file(/^xl\/slicerCaches\/[^/]+\.xml$/)) {
+      const slicer = await file.async("string");
+      const source = /\bsourceName="([^"]*)"/.exec(slicer)?.[1];
+      const field = source === undefined ? -1 : names.indexOf(source);
+      if (field < 0) continue;
+      for (const item of slicer.matchAll(/<i\b[^>]*\bx="(\d+)"/g)) need(field, Number(item[1]) + 1);
+    }
+
+    // The emptied fields appear in cache-field order, so counting them off as they are replaced is
+    // what maps each one back to its index.
+    let index = -1;
+    const filled = xml.replace(/<sharedItems\s*\/>/g, () => {
+      index += 1;
+      const count = depth.get(index);
+      if (!count) return "<sharedItems/>";
+      const label = names[index] ?? `Field ${index + 1}`;
+      const items = Array.from(
+        { length: count },
+        (_, n) => `<s v="${xmlEscape(`${label} ${n + 1}`).replace(/"/g, "&quot;")}"/>`,
+      ).join("");
+      return `<sharedItems count="${count}">${items}</sharedItems>`;
+    });
+
+    if (filled !== xml) zip.file(cacheFile.name, filled);
   }
 }
 

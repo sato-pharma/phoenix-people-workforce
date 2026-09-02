@@ -304,6 +304,64 @@ export async function runClosingEngineExportTests() {
   assert.match(cacheDefinition, /<worksheetSource[^>]*name="SalesData"/, "the cache reads the TABLE, not a fixed range");
   assert.ok(!/June/.test(cacheDefinition), "no month name may be baked into the cache — it is filled every month");
 
+  // ── Every shared-item index the workbook holds must land inside the cache's pool ─────────────
+  //
+  // This is the repair prompt the owner hit on 2026-09-02: "We found a problem with some content",
+  // on every premium export. The template build empties each `<sharedItems>` (they hold the July
+  // CNS values it was cut from) and trusts `refreshOnLoad="1"` to refill them. Excel validates the
+  // pivots against the cache FIRST, finds `<item x="49"/>` pointing into an empty pool, removes all
+  // three PivotTable parts and calls the file damaged. Measured against Excel itself: the owner's
+  // own export is refused every time, the same export with the pool refilled opens clean with all
+  // three pivots. The demand is recomputed here from the produced workbook rather than imported
+  // from the fill code, so this fails if either half of the pair drifts.
+  const partsOf = (xml: string, tag: string): string[] =>
+    xml.match(new RegExp(`<${tag}\\b[^>]*?\\/>|<${tag}\\b[^>]*?>[\\s\\S]*?<\\/${tag}>`, "g")) ?? [];
+
+  const cacheFields = partsOf(cacheDefinition, "cacheField");
+  assert.equal(cacheFields.length, 16, "the cache still declares all sixteen fields");
+
+  const fieldNames = cacheFields.map((field) => /\bname="([^"]*)"/.exec(field)?.[1] ?? "");
+  const poolOf = (field: string): number =>
+    ((/<sharedItems\b[^>]*?\/>|<sharedItems\b[^>]*?>[\s\S]*?<\/sharedItems>/.exec(field)?.[0] ?? "").match(
+      /<(?:s|n|d|b|e|m)\b[^>]*\/>/g,
+    ) ?? []).length;
+
+  const demand = new Map<number, { count: number; from: string }>();
+  const claim = (field: number, count: number, from: string) => {
+    if (field < 0 || count <= (demand.get(field)?.count ?? 0)) return;
+    demand.set(field, { count, from });
+  };
+
+  let enumeratedItems = 0;
+  for (const name of parts.filter((p) => /^xl\/pivotTables\/pivotTable\d+\.xml$/.test(p))) {
+    const xml = await zip.file(name)!.async("string");
+    const block = /<pivotFields\b[^>]*>([\s\S]*?)<\/pivotFields>/.exec(xml)?.[1] ?? "";
+    partsOf(block, "pivotField").forEach((field, index) => {
+      for (const item of field.matchAll(/<item\b[^>]*\bx="(\d+)"/g)) {
+        enumeratedItems += 1;
+        claim(index, Number(item[1]) + 1, `${name} pivotField ${index}`);
+      }
+    });
+  }
+  for (const name of parts.filter((p) => /^xl\/slicerCaches\/[^/]+\.xml$/.test(p))) {
+    const xml = await zip.file(name)!.async("string");
+    const field = fieldNames.indexOf(/\bsourceName="([^"]*)"/.exec(xml)?.[1] ?? "");
+    for (const item of xml.matchAll(/<i\b[^>]*\bx="(\d+)"/g)) claim(field, Number(item[1]) + 1, name);
+  }
+
+  // If this ever reads 0 the check below has gone vacuous — it would pass on a workbook whose
+  // pivots had simply been gutted, which is the other way to stop Excel complaining and the one
+  // that loses the owner's three views.
+  assert.ok(enumeratedItems > 0, "the pivots must still enumerate their items — deleting them is not the fix");
+  assert.ok(demand.size > 0, "at least one cache field must be indexed, or this proves nothing");
+
+  for (const [field, { count, from }] of demand) {
+    assert.ok(
+      poolOf(cacheFields[field]!) >= count,
+      `cache field ${field} (${fieldNames[field]}) holds ${poolOf(cacheFields[field]!)} shared items but ${from} indexes ${count} — Excel removes every PivotTable part over this and reports the file as damaged`,
+    );
+  }
+
   // The two tables must end where the data ends, or the pivots read blank rows as a category.
   const salesRows = fill.data.salesData.length;
   const tableRef = (xml: string) => /ref="([A-Z]+\d+:[A-Z]+\d+)"/.exec(xml)![1];

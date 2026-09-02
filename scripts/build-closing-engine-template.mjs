@@ -421,7 +421,18 @@ async function main() {
   let cacheDef = await zip.file(cacheDefPath).async("string");
   cacheDef = cacheDef.replace(/\srefreshOnLoad="[^"]*"/, "").replace(/<pivotCacheDefinition /, '<pivotCacheDefinition refreshOnLoad="1" ');
   cacheDef = cacheDef.replace(/\srecordCount="\d+"/, ' recordCount="0"');
-  // Cached shared items are July's values. Strip them; a refresh repopulates from SalesData.
+  // Cached shared items are July's values. Strip them so no other line's areas and reps ship
+  // inside this template.
+  //
+  // THE STRIP IS ONLY HALF A CHANGE, and the other half is NOT here. `refreshOnLoad="1"` does not
+  // rescue it: `xl/pivotTables/*.xml` still enumerate July's items (`<item x="0"/>` … `<item x="49"/>`)
+  // and Excel validates the pivots against the cache BEFORE it honours the refresh — so it removes
+  // all three views and declares the workbook damaged. Every premium export prompted "We found a
+  // problem with some content" on open until 2026-09-02. `restorePivotCacheSharedItems` in
+  // src/lib/sales/closing-engine-fill.ts refills the pool with placeholders at fill time, which is
+  // what makes the output openable; it lives there so it also repairs templates built before this
+  // was understood. Drop the strip below and that function goes with it — one without the other is
+  // the bug, in either direction.
   //
   // The PAIRED form is collapsed first, and its opening tag must be proven NOT self-closing. Done
   // the other way round — normalise `<sharedItems .../>` first, then collapse pairs — the pair
