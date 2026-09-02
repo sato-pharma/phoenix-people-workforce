@@ -371,6 +371,12 @@ export function runWhatsAppSelfClassificationTests() {
   // eight roles an applicant should see. Keeping it would have pinned the behaviour the change
   // exists to replace, so it is inverted deliberately: the menu is a QUESTION PUT TO A PERSON, and
   // the family list is an internal vocabulary that is allowed to be larger.
+  //
+  // Office Coordinator was added 2026-09-02 for the Sheraton opening, taking the list to nine. It is
+  // ON the menu — unlike sales and pharmacist below — because the extra screening questions are now
+  // scoped BY family: a role nobody can tap is a role no scoped question can ever reach, and a title
+  // typed under "Other" is spelled a different way by every applicant, which is what puts the same
+  // seat on several CV shelves. Adding a row here is what makes both work.
 
   const roleMenu = jobTitleMenu();
   assert.deepEqual(
@@ -383,9 +389,10 @@ export function runWhatsAppSelfClassificationTests() {
       "national_sales_manager",
       "human_resources",
       "finance",
+      "office_coordinator",
       "other",
     ].map((family) => classifyRowId("job_title", family)),
-    "the role menu must offer exactly the owner's eight roles, in his order (stated 2026-08-28)",
+    "the role menu must offer exactly the owner's nine roles, in his order (eight stated 2026-08-28, Office Coordinator added 2026-09-02)",
   );
   for (const family of offeredRoleMenuFamilies) {
     assert.ok(

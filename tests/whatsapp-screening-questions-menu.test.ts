@@ -18,6 +18,7 @@ import {
 
 function question(overrides: Partial<ScreeningQuestionContent> = {}): ScreeningQuestionContent {
   return {
+    appliesToRoleFamilies: null,
     bodyText: "Do you already have a valid driving license?",
     kind: "tappable",
     options: [

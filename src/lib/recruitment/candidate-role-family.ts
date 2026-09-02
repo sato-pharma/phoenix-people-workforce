@@ -27,6 +27,7 @@ export const candidateRoleFamilies = [
   "pharmacist",
   "human_resources",
   "finance",
+  "office_coordinator",
   "other",
 ] as const;
 
@@ -39,6 +40,7 @@ export const candidateRoleFamilyLabels: Record<CandidateRoleFamily, string> = {
   human_resources: "Human Resources",
   medical_rep: "Medical Representative",
   national_sales_manager: "National Sales Manager",
+  office_coordinator: "Office Coordinator",
   other: "Other",
   pharmacist: "Pharmacist",
   product_manager: "Product Manager",
@@ -140,6 +142,22 @@ export function candidateRoleFamily(raw: string | null | undefined): CandidateRo
   if (/\u0645\u062d\u0627\u0633\u0628/.test(t)) return "finance"; // محاسب — accountant
 
   if (/\bpharmacist\b|\bpharmacy\b/.test(t)) return "pharmacist";
+
+  // The office/admin seat, added 2026-09-02 for the Sheraton Office Coordinator opening. It runs
+  // AFTER human_resources and finance deliberately: "HR & Admin Officer" is the one title in
+  // production this branch would otherwise claim, and it is an HR job — the hr rule above takes it
+  // first, which is why adding this family moves NOBODY out of the family they already had.
+  // Measured against production 2026-09-02: of 632 candidates the patterns below match exactly one
+  // title, and that title is the HR one already spoken for.
+  //
+  // "Secretary" and "receptionist" are here because they are the same front-office seat under this
+  // industry’s own older names, and an applicant writing either is applying for this job.
+  // Deliberately NOT a bare admin word on its own: it sweeps in warehouse, IT and system admins, so
+  // every pattern below anchors on a second word naming the SEAT rather than the department.
+  if (/\boffice\s+(coordinator|administrator|admin|manager)\b/.test(t)) return "office_coordinator";
+  if (/\b(administrative|admin)\s+(coordinator|assistant|officer|specialist)\b/.test(t)) return "office_coordinator";
+  if (/\bexecutive\s+(assistant|secretary)\b/.test(t)) return "office_coordinator";
+  if (/\breceptionist\b|\bsecretary\b/.test(t)) return "office_coordinator";
 
   // Sales runs LAST, and that placement is the whole design of this family. Every branch above
   // names a specific job; "sales" is a word most of them also carry ("District Sales Manager",

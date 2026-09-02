@@ -565,11 +565,25 @@ export async function runWhatsAppQuestionPromptsTests() {
     "switching every answer off is refused at save time, not merely ignored at send time",
   );
   assert.equal(configCheck([], []).length, 0, "no change is not a violation");
-  // Job title has exactly ten answers in total against Meta's ten-row list, so switching on both of
-  // the unoffered ones lands precisely on the ceiling — allowed, and worth pinning, because one more
-  // family added to the code later would put this question over the limit rather than near it.
-  assert.equal(jobAllowed.length, WHATSAPP_LIST_MAX_ROWS);
-  assert.deepEqual(configCheck([], jobAllowed), [], "exactly at the ceiling is saveable");
+  // Job title's answer POOL went one PAST Meta's ten-row list on 2026-09-02, when office_coordinator
+  // was added for the Sheraton opening — the eleventh family the code understands. The comment that
+  // stood here predicted exactly this ("one more family added to the code later would put this
+  // question over the limit"), so what is pinned changes rather than the ceiling: a pool is allowed
+  // to be larger than a list, because a pool is not a message. Nothing an applicant receives is near
+  // the limit — jobTitleMenu() sends nine rows, with `sales` and `pharmacist` still off it.
+  //
+  // What must hold is that the save-time check is now the thing standing between an admin and a 400:
+  // switching on all eleven is refused, and any ten still save.
+  assert.equal(jobAllowed.length, WHATSAPP_LIST_MAX_ROWS + 1, "eleven answers exist; one list holds ten");
+  assert.ok(
+    configCheck([], jobAllowed).some((problem) => problem.includes(String(WHATSAPP_LIST_MAX_ROWS))),
+    "switching on all eleven answers must be refused at save time — the message would 400",
+  );
+  assert.deepEqual(
+    configCheck([], jobAllowed.slice(0, WHATSAPP_LIST_MAX_ROWS)),
+    [],
+    "any ten of them sits exactly on the ceiling, and is saveable",
+  );
   const overCeiling = answerConfigViolations({
     allowedValues: [...jobAllowed, "one_too_many"],
     defaultOfferedValues: [...jobAllowed, "one_too_many"],
@@ -783,6 +797,12 @@ export async function runWhatsAppQuestionPromptsTests() {
             "national_sales_manager",
             "finance",
             "sales",
+            // Added to this saved order on 2026-09-02 with the office_coordinator family. It is
+            // offered by default, so leaving it out would not have dropped it from the wire — it
+            // would have been APPENDED after "other", which is a different assertion than the one
+            // this fixture is making. The fixture is an admin's saved order, so it names every
+            // answer that order covers.
+            "office_coordinator",
             "other",
           ],
         },
@@ -817,6 +837,7 @@ export async function runWhatsAppQuestionPromptsTests() {
         "phx:job_title:national_sales_manager",
         "phx:job_title:finance",
         "phx:job_title:sales",
+        "phx:job_title:office_coordinator",
         "phx:job_title:other",
       ],
       "the wire must carry the hidden answer gone, the added answer present, and the saved order — each row still identified by its CODE",

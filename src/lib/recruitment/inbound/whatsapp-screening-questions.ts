@@ -9,6 +9,7 @@
 // admin UI can call `screeningQuestionViolations` for live feedback without a network round trip,
 // and so the step-transition logic (`decideNextExtraStep`) is unit-testable without a database.
 
+import { candidateRoleFamilies } from "@/lib/recruitment/candidate-role-family";
 import type { ClassifyMenu } from "@/lib/recruitment/inbound/whatsapp-classify-menus";
 import {
   cleanTypedAnswer,
@@ -33,6 +34,12 @@ export type ScreeningQuestionContent = {
   kind: ScreeningQuestionKind;
   /** Non-null (1-10 elements) iff kind is "tappable". Null for "free_text". */
   options: ScreeningQuestionOption[] | null;
+  /**
+   * Which role families are asked this question. NULL means EVERYONE — the behaviour every question
+   * had before scoping existed, and the meaning a question saved without thinking about scope keeps.
+   * A non-empty array narrows it to those families.
+   */
+  appliesToRoleFamilies: string[] | null;
 };
 
 /** A persisted question, as read from the database. */
@@ -89,6 +96,43 @@ export function isValidQuestionKey(key: string): boolean {
   return QUESTION_KEY_FORMAT.test(key);
 }
 
+// -- Who gets asked ------------------------------------------------------------------------------
+
+/**
+ * Whether this applicant is asked this question.
+ *
+ * TWO NULLS, TWO DIFFERENT MEANINGS, and conflating them is the whole trap here. A question with no
+ * scope is asked to everyone. An APPLICANT with no known role — an old session, or one that somehow
+ * reached the loop without a tapped role — is asked only the unscoped questions, never a scoped one.
+ * The safe direction is not symmetrical: asking a general question to an unknown applicant costs
+ * nothing, while asking a Sheraton-commute question to somebody whose job we cannot name is exactly
+ * the failure scoping was added to prevent.
+ */
+export function questionAppliesToRole(
+  question: Pick<ScreeningQuestionContent, "appliesToRoleFamilies">,
+  roleFamily: string | null | undefined,
+): boolean {
+  const scope = question.appliesToRoleFamilies;
+  if (!scope || scope.length === 0) return true;
+  if (!roleFamily) return false;
+  return scope.includes(roleFamily);
+}
+
+/**
+ * The questions this applicant is asked, in the live list order.
+ *
+ * Applied inside `listActiveScreeningQuestions` rather than left to each caller. There are three
+ * call sites — the hand-off from the salary question, a tapped reply and a typed reply — and a
+ * filter one of them forgets is a question leaking to every applicant with nothing to see in the
+ * diff. Making it part of the read means the narrow list is the only list a caller can obtain.
+ */
+export function questionsForRole<T extends Pick<ScreeningQuestionContent, "appliesToRoleFamilies">>(
+  questions: readonly T[],
+  roleFamily: string | null | undefined,
+): T[] {
+  return questions.filter((question) => questionAppliesToRole(question, roleFamily));
+}
+
 /** Builds the interactive-list menu for a tappable question. Callers must not call this for a
  *  free_text question — there is nothing to tap, so it is sent as plain text instead
  *  (see whatsapp-screening-questions-session.ts). */
@@ -124,6 +168,22 @@ export function screeningQuestionViolations(question: ScreeningQuestionContent):
     problems.push(`${label}: question key must be lowercase letters, digits and underscores, starting with a letter`);
   }
   if (!question.bodyText.trim()) problems.push(`${label}: the question text is empty`);
+
+  // The vocabulary check the database deliberately does NOT make — see the migration note. An
+  // unknown family here is not a harmless typo: it matches no applicant, so the question is asked to
+  // NOBODY while the screen still shows it as active, which reads as the bot being broken rather
+  // than as a mis-typed scope.
+  const scope = question.appliesToRoleFamilies;
+  if (scope) {
+    if (scope.length === 0) {
+      problems.push(`${label}: leave the roles empty to ask everyone, rather than selecting none`);
+    }
+    for (const family of scope) {
+      if (!(candidateRoleFamilies as readonly string[]).includes(family)) {
+        problems.push(`${label}: "${family}" is not a role we recognise`);
+      }
+    }
+  }
   if (question.bodyText.length > WHATSAPP_BODY_MAX) {
     problems.push(`${label}: the question text is ${question.bodyText.length} characters, over the ${WHATSAPP_BODY_MAX} limit`);
   }

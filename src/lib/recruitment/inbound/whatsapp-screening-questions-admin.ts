@@ -58,6 +58,9 @@ export type ScreeningQuestionDraft = {
   kind: ScreeningQuestionKind;
   options: ScreeningQuestionOption[] | null;
   isActive: boolean;
+  /** Null (or absent, from a client that predates scoping) means ask everyone — see the column
+   *  comment on the migration. A non-empty array narrows the question to those role families. */
+  appliesToRoleFamilies?: string[] | null;
 };
 
 type QuestionDbRow = {
@@ -68,10 +71,12 @@ type QuestionDbRow = {
   options: ScreeningQuestionOption[] | null;
   sort_order: number;
   is_active: boolean;
+  applies_to_role_families: string[] | null;
 };
 
 function mapQuestionRow(row: QuestionDbRow): ScreeningQuestion {
   return {
+    appliesToRoleFamilies: row.applies_to_role_families,
     bodyText: row.body_text,
     id: row.id,
     isActive: row.is_active,
@@ -104,7 +109,7 @@ export async function listScreeningQuestions(): Promise<ScreeningQuestionAdminRo
   const supabase = recruitmentDb();
   const { data, error } = await supabase
     .from(QUESTIONS_TABLE)
-    .select("id,question_key,body_text,kind,options,sort_order,is_active")
+    .select("id,question_key,body_text,kind,options,sort_order,is_active,applies_to_role_families")
     .order("sort_order", { ascending: true });
   if (error) throw error;
 
@@ -171,15 +176,23 @@ export async function saveScreeningQuestionSet(input: {
 
   // Resolve every row's key BEFORE validating, so validation checks exactly what will be written —
   // a new row's freshly generated key included, never a placeholder.
+  // An EMPTY scope array is normalised to null here, once, before anything reads it. Both meanings
+  // arrive from real clients — absent from one that predates scoping, empty from this screen when the
+  // admin ticks nothing — and both mean "ask everyone". Doing it here rather than at each use is what
+  // keeps the validator and the payload below reading the same value; the database refuses a stored
+  // empty array outright, because an empty scope reads as "ask nobody" and would silently retire a
+  // question that still shows as active.
   const resolved = input.questions.map((draft) => {
+    const appliesToRoleFamilies =
+      draft.appliesToRoleFamilies && draft.appliesToRoleFamilies.length > 0 ? draft.appliesToRoleFamilies : null;
     if (draft.id) {
       const questionKey = existingKeyById.get(draft.id);
       if (!questionKey) throw new Error("One of these questions no longer exists — reload and try again.");
-      return { ...draft, questionKey };
+      return { ...draft, appliesToRoleFamilies, questionKey };
     }
     const questionKey = disambiguateQuestionKey(slugifyQuestionKey(draft.bodyText), takenKeys);
     takenKeys.add(questionKey);
-    return { ...draft, questionKey };
+    return { ...draft, appliesToRoleFamilies, questionKey };
   });
 
   // screeningQuestionViolations checks question-key format for every row, new or existing — no
@@ -190,6 +203,7 @@ export async function saveScreeningQuestionSet(input: {
   const nowIso = new Date().toISOString();
   for (const [index, question] of resolved.entries()) {
     const payload = {
+      applies_to_role_families: question.appliesToRoleFamilies,
       body_text: question.bodyText,
       is_active: question.isActive,
       kind: question.kind,

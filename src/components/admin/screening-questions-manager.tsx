@@ -14,6 +14,7 @@ import {
   WHATSAPP_ROW_DESCRIPTION_MAX,
   WHATSAPP_ROW_TITLE_MAX,
 } from "@/lib/recruitment/inbound/whatsapp-classify-menus";
+import { candidateRoleFamilies, candidateRoleFamilyLabels } from "@/lib/recruitment/candidate-role-family";
 import { screeningQuestionViolations, type ScreeningQuestionKind } from "@/lib/recruitment/inbound/whatsapp-screening-questions";
 import type { ScreeningQuestionAdminRow } from "@/lib/recruitment/inbound/whatsapp-screening-questions-admin";
 
@@ -38,6 +39,9 @@ type EditableQuestion = {
   options: EditableOption[];
   isActive: boolean;
   hasAnswers: boolean;
+  /** Empty means EVERYONE, which is what the server stores as null. Kept as an array rather than a
+   *  nullable one so the checkbox handlers never have to reason about two empty states. */
+  appliesToRoleFamilies: string[];
 };
 
 function newOption(): EditableOption {
@@ -46,6 +50,7 @@ function newOption(): EditableOption {
 
 function fromServerRow(row: ScreeningQuestionAdminRow): EditableQuestion {
   return {
+    appliesToRoleFamilies: row.appliesToRoleFamilies ?? [],
     bodyText: row.bodyText,
     clientKey: row.id,
     hasAnswers: row.hasAnswers,
@@ -79,6 +84,10 @@ function withDerivedValues(options: readonly EditableOption[]) {
 
 function rowIssues(question: EditableQuestion): string[] {
   return screeningQuestionViolations({
+    // Empty is the "ask everyone" state on this screen, and null is how the server spells it — so it
+    // is normalised HERE too, not only on save. Passing [] through would trip the validator own
+    // "selected none" complaint against a question the admin has deliberately left open to all.
+    appliesToRoleFamilies: question.appliesToRoleFamilies.length > 0 ? question.appliesToRoleFamilies : null,
     bodyText: question.bodyText,
     kind: question.kind,
     // A brand-new row has no question_key yet — the server generates and validates the real one at
@@ -109,6 +118,7 @@ export function ScreeningQuestionsManager({ embedded, initialError, initialQuest
     setRows((prev) => [
       ...prev,
       {
+        appliesToRoleFamilies: [],
         bodyText: "",
         clientKey: `new-${newRowCounter.current}`,
         hasAnswers: false,
@@ -187,6 +197,7 @@ export function ScreeningQuestionsManager({ embedded, initialError, initialQuest
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           questions: rows.map((row) => ({
+            appliesToRoleFamilies: row.appliesToRoleFamilies,
             bodyText: row.bodyText.trim(),
             id: row.id,
             isActive: row.isActive,
@@ -382,6 +393,42 @@ export function ScreeningQuestionsManager({ embedded, initialError, initialQuest
                     />
                     Free text
                   </label>
+                </div>
+
+                {/* WHO IS ASKED. Nothing ticked means everyone, which is what every question meant
+                    before scoping existed — so an admin who ignores this control entirely gets the
+                    old behaviour rather than a question nobody is asked. Deliberately NOT disabled
+                    when the question is locked: locking exists to protect answers already collected
+                    under a key, and narrowing who gets asked NEXT orphans nothing. "Stop asking reps
+                    this" is exactly the edit somebody needs to make on a live question. */}
+                <div className="mt-3">
+                  <span className="text-phx-xs font-bold uppercase tracking-wider text-slate-400">Who is asked</span>
+                  <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1.5">
+                    {candidateRoleFamilies.map((family) => {
+                      const checked = row.appliesToRoleFamilies.includes(family);
+                      return (
+                        <label className="flex items-center gap-1.5 text-sm text-slate-700" key={family}>
+                          <input
+                            checked={checked}
+                            onChange={() =>
+                              updateRow(row.clientKey, {
+                                appliesToRoleFamilies: checked
+                                  ? row.appliesToRoleFamilies.filter((value) => value !== family)
+                                  : [...row.appliesToRoleFamilies, family],
+                              })
+                            }
+                            type="checkbox"
+                          />
+                          {candidateRoleFamilyLabels[family]}
+                        </label>
+                      );
+                    })}
+                  </div>
+                  <p className="mt-1 text-phx-2xs text-slate-400">
+                    {row.appliesToRoleFamilies.length === 0
+                      ? "Nothing ticked — every applicant is asked this question."
+                      : `Only these ${row.appliesToRoleFamilies.length === 1 ? "applicants are" : "applicants are"} asked it. Everyone else skips it.`}
+                  </p>
                 </div>
 
                 {row.kind === "tappable" ? (

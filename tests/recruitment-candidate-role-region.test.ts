@@ -147,7 +147,29 @@ export function runCandidateRoleRegionTests() {
   // --- No title is not the same claim as "none of these".
   assert.equal(candidateRoleFamilyOrNull(null), null, "a missing title is unjudged, not Other");
   assert.equal(candidateRoleFamilyOrNull("   "), null);
-  assert.equal(candidateRoleFamilyOrNull("Receptionist & Call Center"), "other");
+  // "Call Center Agent" is the example here because it genuinely matches no family. It used to be
+  // "Receptionist & Call Center" — that title moved to office_coordinator on 2026-09-02 and now
+  // proves the opposite point, so it is pinned separately below rather than deleted.
+  assert.equal(candidateRoleFamilyOrNull("Call Center Agent"), "other");
+
+  // --- The office seat, added 2026-09-02 for the Sheraton Office Coordinator opening.
+  // A receptionist and a secretary are the same front-office job under this industry's older
+  // names, so an applicant writing either is applying for this one and belongs on its shelf.
+  for (const title of [
+    "Office Coordinator",
+    "Front Office Coordinator",
+    "Administrative Assistant",
+    "Executive Secretary",
+    "Receptionist & Call Center",
+  ]) {
+    assert.equal(candidateRoleFamily(title), "office_coordinator", `"${title}" is the office seat`);
+  }
+  // The two titles this family must NOT claim. A bare admin word sweeps in warehouse and IT seats,
+  // which is why every pattern anchors on a second word naming the SEAT; and "HR & Admin Officer"
+  // is an HR job that the human_resources rule takes FIRST, which is what makes adding this family
+  // move nobody out of the family they already had.
+  assert.equal(candidateRoleFamily("IT System Administrator"), "other", "a system admin is not an office coordinator");
+  assert.equal(candidateRoleFamily("HR & Admin Officer"), "human_resources", "HR wins the tie, and must keep winning it");
   assert.equal(normalizeJobTitle("  District   MANGER | x "), "district manager x");
 
   // --- Region: the owner's decision is the COMPANY grouping, not plain geography.

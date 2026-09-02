@@ -730,7 +730,11 @@ export async function handleClassifyText(input: {
       .update({ expected_salary: typedSalary, updated_at: nowIso })
       .eq("id", session.id);
     const finishedFixedSix = { ...session, expected_salary: typedSalary };
-    const activeExtraQuestions = await listActiveScreeningQuestions();
+    // Scoped to the role this applicant tapped. A Medical Rep is asked only the questions written
+    // for everyone; the Office Coordinator questions never reach them, which is the whole point of
+    // the scope column — the Sheraton commute question would otherwise read to a field applicant as
+    // though the rep job were Cairo-based, at the very end of the flow.
+    const activeExtraQuestions = await listActiveScreeningQuestions(finishedFixedSix.job_title_family);
     if (activeExtraQuestions.length > 0) {
       await startExtraQuestionLoop(finishedFixedSix, input.phoneNumberId, activeExtraQuestions);
     } else {
