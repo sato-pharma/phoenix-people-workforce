@@ -1607,15 +1607,30 @@ async function notifyCeo(plan: PlanHeaderRow) {
   }
 }
 
+// Called AFTER autoAcknowledgeFinalApprovedPlan, so `plan` is normally already hr_acknowledged
+// and HR has nothing left to do — the copy says so instead of asking for a click that no longer
+// exists. It still falls back to the original action-needed wording for the one case that can
+// still reach HR's queue: the automatic acknowledgement failed and the plan is still
+// final_approved, which is exactly when HR must be told to press the manual button.
+//
+// The awareness copy carries audience: "hr_awareness" so the in-app bell does not auto-archive it
+// the moment the plan leaves HR's awaiting bucket — same split notifyHrOnSubmit uses (see
+// classifyActionableApprovalCandidates in notifications/in-app.ts).
 async function notifyHr(plan: PlanHeaderRow) {
+  const autoAcknowledged = plan.status === "hr_acknowledged";
   try {
     await notifyRecipients({
       actionUrl: `/admin/approvals/plan/${plan.id}`,
+      ...(autoAcknowledged ? { additionalMetadata: { audience: "hr_awareness" } } : {}),
       eventType: "plan_ceo_approved",
-      message: `CEO approved ${plan.employee_name}'s ${plan.plan_kind} plan for ${plan.period_key}. Please review and acknowledge.`,
+      message: autoAcknowledged
+        ? `CEO approved ${plan.employee_name}'s ${plan.plan_kind} plan for ${plan.period_key}. It was acknowledged automatically — no action needed.`
+        : `CEO approved ${plan.employee_name}'s ${plan.plan_kind} plan for ${plan.period_key}. Please review and acknowledge.`,
       plan,
       recipients: await hrAcknowledgementRecipients(),
-      title: `${plan.employee_name}'s approved ${plan.plan_kind} plan needs HR acknowledgement`,
+      title: autoAcknowledged
+        ? `${plan.employee_name}'s ${plan.plan_kind} plan was approved and acknowledged`
+        : `${plan.employee_name}'s approved ${plan.plan_kind} plan needs HR acknowledgement`,
     });
   } catch (error) {
     logError("Weekly plan failed to notify HR", {
@@ -2985,10 +3000,14 @@ export async function decideEmployeePlan(access: AccessContext, planId: string, 
       oldValues: { status: beforeCeoApprove.status },
       summary: `${updated.plan_kind} plan decision: ceo_approve (auto-cascaded from manager approval${isDistrictManagerPlan ? ' for District Manager bypass' : ''})`,
     });
+    // Both routes into final_approved acknowledge on HR's behalf before notifying them, so the
+    // HR message below can tell the truth about which state the plan is actually in.
+    updated = await autoAcknowledgeFinalApprovedPlan(access, updated);
     await notifyHr(updated);
   } else if (input.action === "manager_approve") {
     await notifyCeo(updated);
   } else if (input.action === "ceo_approve") {
+    updated = await autoAcknowledgeFinalApprovedPlan(access, updated);
     await notifyHr(updated);
   }
   if (input.action === "manager_approve") {
@@ -3222,6 +3241,61 @@ export async function moveWeeklyPlanToPeriod(
   });
 
   return mapPlan(await loadPlanRow(plan.id));
+}
+
+// The HR acknowledgement is recorded automatically the instant a plan reaches final_approved
+// (owner instruction 2026-09-02: "in weekly plans make HR acknowledgment automatic after the
+// final approval"). The step itself is NOT removed — it runs the same phx_weekly_plan_acknowledge
+// RPC, writes the same employee_plan_hr_acknowledgements row and the same hr_acknowledge decision
+// row, so the D6 drift detector ("hr_acknowledged plans with no acknowledgement row") and every
+// other hr_acknowledged reader keep working unchanged. What changed is who presses it.
+//
+// hr_id is plain text on that table with NO foreign key to employees, so this sentinel actor
+// needs no employee row invented for it. It is also the ON CONFLICT key (plan_id, hr_id), so a
+// plan that is revised and re-approved re-acknowledges in place instead of duplicating, and a
+// later manual acknowledgement by a real HR person lands as its own separate row beside it.
+const AUTO_HR_ACK_HR_ID = "SYSTEM-AUTO-HR-ACK";
+const AUTO_HR_ACK_ROLE_LABEL = "Automatic HR acknowledgement";
+const AUTO_HR_ACK_COMMENT = "Acknowledged automatically on final approval.";
+
+/**
+ * Acknowledge, on HR's behalf, a plan that has just reached final_approved.
+ *
+ * Best-effort by design: the approval itself already committed inside rpcDecidePlan, so a failure
+ * here must never fail the approver's request or roll their decision back. The plan then simply
+ * stays final_approved and HR's manual Acknowledge button — deliberately left in place — still
+ * works exactly as it did before. Returns the row as it stands afterwards.
+ */
+async function autoAcknowledgeFinalApprovedPlan(access: AccessContext, plan: PlanHeaderRow): Promise<PlanHeaderRow> {
+  if (plan.status !== "final_approved") return plan;
+  try {
+    await rpcAcknowledgePlan({
+      comment: AUTO_HR_ACK_COMMENT,
+      expectedRevision: plan.revision,
+      hrId: AUTO_HR_ACK_HR_ID,
+      loginId: null,
+      planId: plan.id,
+      roleLabel: AUTO_HR_ACK_ROLE_LABEL,
+    });
+  } catch (error) {
+    logError("Weekly plan automatic HR acknowledgement failed — plan left at final_approved for manual acknowledgement", {
+      labels: { event: "weekly_plan_auto_hr_ack_failed", planId: plan.id },
+      error,
+    });
+    return plan;
+  }
+
+  const acknowledged = await loadPlanRow(plan.id);
+  await writeAuditLog({
+    actorLoginId: access.loginId,
+    entityId: plan.id,
+    entityType: "weekly_plan",
+    newValues: { status: acknowledged.status },
+    oldValues: { status: plan.status },
+    summary: `${acknowledged.plan_kind} plan acknowledged by HR automatically on final approval`,
+  });
+  await notifyEmployeeAcknowledged(acknowledged);
+  return acknowledged;
 }
 
 export async function acknowledgeEmployeePlan(access: AccessContext, planId: string, comment?: string | null) {

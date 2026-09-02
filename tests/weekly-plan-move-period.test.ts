@@ -103,9 +103,22 @@ export function runWeeklyPlanMovePeriodTests() {
   const service = readFileSync("src/lib/weekly-planning/service.ts", "utf8");
   const fnStart = service.indexOf("export async function moveWeeklyPlanToPeriod");
   assert.ok(fnStart >= 0, "moveWeeklyPlanToPeriod must exist - this test slices it by marker");
-  const fnEnd = service.indexOf("\nexport async function ", fnStart + 1);
-  assert.ok(fnEnd > fnStart, "moveWeeklyPlanToPeriod must be followed by another export - this test slices it");
+  // End the slice at THIS function's own closing brace, not at the next export. Ending it at the
+  // next export silently included everything in between, so adding one non-exported helper after
+  // this function (autoAcknowledgeFinalApprovedPlan, 2026-09-02) widened the window over a
+  // neighbour's body and the forbidden-string loop below failed on code moveWeeklyPlanToPeriod
+  // does not contain. Nothing inside the function is indented to column 0, so "\n}\n" is its end.
+  const fnEnd = service.indexOf("\n}\n", fnStart);
+  assert.ok(fnEnd > fnStart, "moveWeeklyPlanToPeriod must be a closed function - this test slices it by its own closing brace");
   const fn = service.slice(fnStart, fnEnd);
+
+  // The forbidden-string loop below is a NEGATIVE check: it passes vacuously on a window that is
+  // empty or truncated. Anchor on the function's first and last real statements so a slice that
+  // silently collapses fails loudly here instead of certifying nothing.
+  assert.ok(
+    fn.includes("export async function moveWeeklyPlanToPeriod(") && fn.includes("return mapPlan(await loadPlanRow(plan.id));"),
+    "the slice must span the whole function, first statement to last - a truncated window would make every check below pass on nothing",
+  );
 
   assert.ok(
     fn.includes('await assertPermission(access, "weekly_plans", "approve");'),
