@@ -8,6 +8,34 @@ import { getHubCardSections } from "@/lib/navigation/hub-card-sections";
 export type CommandPaletteItem = { href: string; icon: LucideIcon; label: string; section: string };
 
 /**
+ * Addresses that are the SAME SCREEN, collapsed to one palette row.
+ *
+ * `/admin/marketing-requests` and `/workspace/marketing-requests` both render
+ * `MarketingRequestDraftWorkspace`, under the same heading, with the same blurb. Only the shell
+ * and the gate differ: the admin one is behind `assertMarketingAdminPageAccess` (it bounces the
+ * Finance Manager), the workspace one is behind `workspaceMarketingRoles` (it admits him). Super
+ * Admin and the SFE Manager are the only two who are offered both — measured, all 17 roles — and
+ * for them the palette showed one screen twice under one name.
+ *
+ * A rename was the obvious fix and is the wrong one: there is no difference to name. The
+ * company-wide register is a THIRD route, `/admin/marketing-requests/all`, already called "All
+ * Marketing Requests", so nothing here is the register.
+ *
+ * SCOPE: the palette only. The hub CARD stays on the hub page — it is a District Manager's only
+ * link to the workspace (he is not on the sidebar row), and this map never removes the last row
+ * for a destination: it dedupes on the canonical key while each row keeps its OWN href. Grants
+ * nothing, gates nothing — both addresses enforce their own access exactly as before.
+ */
+const SAME_SCREEN_ALIASES: Readonly<Record<string, string>> = {
+  "/admin/marketing-requests": "/workspace/marketing-requests",
+};
+
+/** The href two aliased addresses share, so a dedupe can treat them as one destination. */
+function destinationKey(href: string): string {
+  return SAME_SCREEN_ALIASES[href] ?? href;
+}
+
+/**
  * Every destination Cmd/Ctrl+K offers this viewer, in rail-first order, **one row per href**.
  *
  * Two lists feed it. The sidebar is the obvious one. The second exists because the rail collapses
@@ -70,10 +98,11 @@ export function buildCommandPaletteItems(
     })),
   );
 
-  const seenHrefs = new Set<string>();
+  const seen = new Set<string>();
   return [...sidebarItems, ...hubItems].filter((item) => {
-    if (seenHrefs.has(item.href)) return false;
-    seenHrefs.add(item.href);
+    const key = destinationKey(item.href);
+    if (seen.has(key)) return false;
+    seen.add(key);
     return true;
   });
 }
