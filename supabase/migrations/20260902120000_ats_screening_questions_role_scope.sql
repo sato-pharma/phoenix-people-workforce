@@ -26,6 +26,18 @@
 -- (screeningQuestionViolations) — the same split the options array already uses, where the 1-10
 -- length is a constraint and the per-row title limits are not.
 --
+-- SINCE APPLIED — 2026-09-02, ~12:02 Cairo, about ten minutes after this shipped. The "zero rows
+-- and never used" line above is a DATED MEASUREMENT and is left exactly as written, because an
+-- applied migration is a record of what was true when it ran. It is no longer a description of the
+-- table. Production now holds SIX active rows, every one of them scoped ['office_coordinator']:
+-- oc_ms_office_outlook, oc_english_level, oc_booking_experience, oc_start_date, oc_age_band,
+-- oc_sheraton_commute — the Sheraton Office Coordinator questions this change was written for.
+--
+-- Noted because the paragraph above is the most authoritative-looking description of this table in
+-- the repo, and read as present tense it says the feature is dormant. It is live, populated, and
+-- deciding which applicants are asked what. Anyone reasoning about an empty table from it will be
+-- wrong. The scopes are all valid members of candidateRoleFamilies, so nothing is silently skipped.
+--
 -- Reversible: drop the column. Nothing reads it that does not tolerate its absence being "everyone".
 
 begin;
