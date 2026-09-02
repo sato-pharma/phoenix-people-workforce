@@ -277,7 +277,9 @@ export async function POST(request: Request) {
           phoneNumberId: message.deliveredToPhoneNumberId,
           waId: message.from,
         });
-        if (classifyOutcome === "asked") classifyPromptsSent += 1;
+        // A re-ask is a Graph API call like any other, so it spends the same budget. Counting only
+        // the first ask would let a payload of CVs from one stalled sender slip past the cap.
+        if (classifyOutcome === "asked" || classifyOutcome === "reasked") classifyPromptsSent += 1;
       }
 
       outcomes.push({ outcome: enqueued ? "enqueued" : "duplicate", wamid: message.wamid });

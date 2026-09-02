@@ -57,11 +57,13 @@ import {
   OTHER_ROW_VALUE,
   parseClassifyRowId,
   parseDeclaredSalaryFigure,
+  reaskPromptForStep,
   REGION_OTHER_MAX,
   regionMenu,
   regionOtherPromptText,
   salaryPromptText,
   salaryTooLongText,
+  shouldReaskParkedSession,
   typedAnswerTooLongText,
   type CandidateBackgroundCode,
   type ClassifyMenu,
@@ -317,10 +319,13 @@ export type StartClassificationOutcome =
   | "skipped_historical"
   | "already_open"
   | "send_failed"
+  | "reasked"
   | "asked";
 
 /**
- * Opens the conversation and asks question 1. Returns why it did nothing when it did nothing.
+ * Opens the conversation and asks question 1 — or, when one is already open and has gone quiet,
+ * re-asks the question it is parked on (see reaskOpenSession). Returns why it did nothing when it
+ * did nothing.
  *
  * THE IMPORT-SENDER GUARD IS NOT OPTIONAL, and it is the ONLY guard needed here. When the owner
  * forwards a CV from the HR handset, Meta reports the SENDER as the handset's own number — so
@@ -349,14 +354,15 @@ export async function startClassification(input: StartClassificationInput): Prom
 
     // One open conversation per sender. A second CV mid-flow must not start a parallel conversation:
     // the applicant's next tap would be ambiguous between the two, and the partial unique index
-    // would reject the insert anyway.
+    // would reject the insert anyway. It gets the question it is parked on again instead of the
+    // silence this used to answer with — see reaskOpenSession.
     const { data: existing } = await supabase
       .from(SESSIONS_TABLE)
-      .select("id")
+      .select(`${SESSION_COLUMNS},updated_at`)
       .eq("wa_id", input.waId)
       .is("completed_at", null)
       .maybeSingle();
-    if (existing) return "already_open";
+    if (existing) return reaskOpenSession(existing as OpenSessionRow, input);
 
     const { data: inserted, error } = await supabase
       .from(SESSIONS_TABLE)
@@ -379,6 +385,58 @@ export async function startClassification(input: StartClassificationInput): Prom
     });
     return "send_failed";
   }
+}
+
+/**
+ * The session row plus the one column `SESSION_COLUMNS` leaves out. `updated_at` is not part of the
+ * conversation's state — nothing in the flow reads it — but it is how long the applicant has been
+ * quiet, which is the only thing separating a stalled conversation from a live one.
+ */
+type OpenSessionRow = SessionRow & { updated_at: string | null };
+
+/**
+ * A CV arrived while this sender's conversation is still open. Ask again.
+ *
+ * THE SILENCE THIS REPLACES WAS PERMANENT, and that is the whole point of it. A conversation parks
+ * when the applicant is asked something and never taps an answer. Nothing then moves it: the only
+ * thing that ever closed a stalled row was Meta rejecting a send as `window_closed`, and no send
+ * was attempted on this path — so the row stayed open, and every future CV from that number was met
+ * with nothing, for good. Production on 2026-09-02: 68 open conversations, all quiet more than six
+ * hours, 22 of them still on question one having answered nothing, and three senders who had
+ * already re-sent a CV into it and heard nothing back.
+ *
+ * Re-asking also restores the self-heal, because it is a send: if the applicant really has gone,
+ * `sendStep`/`sendPromptText` close the row on `window_closed` and the next CV starts fresh. In
+ * practice the window is open here — the CV that triggered this opened it seconds ago — so the
+ * question lands.
+ *
+ * The CV is captured and queued regardless, by the caller, before any of this runs. Nothing here
+ * can lose one.
+ */
+async function reaskOpenSession(
+  session: OpenSessionRow,
+  input: StartClassificationInput,
+): Promise<StartClassificationOutcome> {
+  if (!shouldReaskParkedSession({ nowMs: Date.now(), updatedAt: session.updated_at })) return "already_open";
+
+  const areaNames =
+    session.step === "area" && session.region_code ? await areaNamesForRegion(session.region_code) : [];
+  const prompt = reaskPromptForStep({ areaNames, regionCode: session.region_code, step: session.step });
+  if (!prompt) return "already_open";
+
+  const supabase = recruitmentDb();
+  // Write-only metadata — nothing reads it — but it is the trace of which CV last put a question in
+  // front of this person, and after a re-ask that is the one that just arrived.
+  await supabase.from(SESSIONS_TABLE).update({ cv_wamid: input.cvWamid }).eq("id", session.id);
+
+  // A row written before the phone number was recorded still has to be answerable, so the delivery's
+  // own number stands in — the same fallback every other send in this file uses.
+  const target = { ...session, phone_number_id: session.phone_number_id ?? input.phoneNumberId };
+  const sent =
+    prompt.kind === "menu"
+      ? await sendStep(target, prompt.menu, prompt.regionLabel)
+      : await sendPromptText(target, prompt.kind === "salary" ? await salaryPromptWithOverride() : prompt.body);
+  return sent ? "reasked" : "send_failed";
 }
 
 // ── Handling a tap ───────────────────────────────────────────────────────────────────────────────
