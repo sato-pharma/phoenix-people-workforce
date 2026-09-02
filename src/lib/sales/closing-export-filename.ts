@@ -51,11 +51,12 @@ export function regionScopeLabel(regionNames: Iterable<string | null | undefined
  */
 export function closingFileName(parts: {
   /**
-   * "xlsx" (the default) or "xlsm". The premium workbook is the owner's macro-enabled engine and
-   * can be served either way: everything a reader uses — the pivots, the slicers, the Rep Card
-   * dropdown — works without macros. The VBA is 36 buttons across 11 drawings, and the .xlsx build
-   * removes them rather than ship shortcuts that cannot fire. A .xlsm attachment is frequently
-   * stripped by mail systems, so the extension has to follow what was actually built.
+   * "xlsm" (the default for the premium workbook) or "xlsx". The premium workbook is the owner's
+   * macro-enabled engine and can be served either way. The .xlsm keeps his button bar live — 36
+   * buttons across 11 drawings, Export PDF among them, and Export PDF has no macro-free equivalent
+   * inside a workbook. The .xlsx removes the buttons rather than ship shortcuts that cannot fire,
+   * since a .xlsx holds no code and a button in one can never be made to work. Either way the
+   * extension has to follow what was actually built.
    */
   extension?: "xlsm" | "xlsx";
   kind?: "details" | "premium";

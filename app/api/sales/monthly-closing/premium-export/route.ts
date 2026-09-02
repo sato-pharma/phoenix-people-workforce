@@ -61,7 +61,7 @@ export async function POST(request: Request) {
     const body = (await request.json().catch(() => ({}))) as {
       areaCodes?: string[];
       line?: string | null;
-      /** True asks for the .xlsm with the button bar. Default is .xlsx — see below. */
+      /** False asks for the button-less plain .xlsx. Default is the .xlsm — see below. */
       macros?: boolean;
       period?: string | null;
       productCodes?: string[];
@@ -186,7 +186,13 @@ export async function POST(request: Request) {
     // leaves every other part of the zip byte-identical. Rebuilding the sheets server-side is what
     // shipped on 2026-08-30 and had to be undone: ExcelJS cannot write a pivot table, a slicer or
     // VBA, and that limitation is a reason to stop rebuilding, not a reason to ship without them.
-    const macros = body.macros === true;
+    // .xlsm with the button bar is the DEFAULT, by the owner's explicit instruction on 2026-09-02:
+    // "I want the buttons ... the export as PDF must be in this sheet ... I don't want to lose a
+    // single feature." A .xlsx cannot carry code at all, so a button in one is necessarily dead —
+    // there is no macro-free way to put Export PDF inside the workbook. Passing `macros: false`
+    // still builds the plain .xlsx, and that build removes the buttons rather than ship shortcuts
+    // that answer a click with "Cannot run the macro 'PhxExportPdf'".
+    const macros = body.macros !== false;
     const buffer = await fillClosingEngine(
       buildClosingEngineFill({ details: details?.rows ?? null, filterNote, matrix, priorMatrix, review }),
       { macroFree: !macros },
@@ -202,19 +208,25 @@ export async function POST(request: Request) {
       headers: {
         "Cache-Control": "no-store",
         "Content-Disposition": `attachment; filename="${fileName}"`,
-        // .xlsx by default. Everything a reader touches — the pivots, the slicers, the Rep Card
-        // dropdown — works without macros. The VBA is 36 buttons across 11 drawings, every one a
-        // shortcut to something Excel does natively (Refresh → the cache is refreshOnLoad anyway,
-        // Export PDF → File ▸ Export, Expand/Collapse → the pivot's own ± controls, Reset filters
-        // and the region buttons → the two Region slicers). The .xlsx build removes them, because
-        // a button that names a routine the package no longer holds answers a click with "Cannot
-        // run the macro 'PhxExportPdf'" — dead, and it cannot be made live in a macro-free file.
-        // A macro-enabled attachment is frequently stripped by mail systems, and Mark-of-the-Web
-        // makes Excel refuse the macros outright for anyone who downloaded it, so shipping .xlsm
-        // to dodge this would hand most readers the same dead buttons plus a security warning.
+        // .xlsm by default, so the button bar the owner built is live: Export PDF, Refresh,
+        // Expand/Collapse all, Reset filters and the region buttons — 36 shapes across 11 drawings,
+        // all six routines present in vbaProject.bin.
         //
-        // Removing them is NOT what stopped Excel offering to repair the file — that was the pivot
-        // cache, see restorePivotCacheSharedItems. Two separate defects, found in that order.
+        // A reader who never touches a button loses nothing in the .xlsx either — the pivots, the
+        // slicers and the Rep Card dropdown are all native. But Export PDF has NO macro-free
+        // equivalent inside the workbook, and .xlsx is a format with no code in it, so a button
+        // there cannot be made to work. That is why the buttons are the reason for the extension
+        // and not the other way round.
+        //
+        // The cost is real and is the owner's call, made knowingly: mail systems strip .xlsm
+        // attachments, and Mark-of-the-Web makes Excel show "SECURITY RISK ... blocked macros" for
+        // anyone who downloads one. A Trusted Location on the reader's machine is what removes that
+        // bar for good — signing the project alone does NOT, because the MOTW block is applied
+        // before publisher trust is consulted.
+        //
+        // Neither the buttons nor the extension is what made Excel offer to repair the file — that
+        // was the pivot cache, see restorePivotCacheSharedItems. Separate defects, found in that
+        // order.
         "Content-Type": macros
           ? "application/vnd.ms-excel.sheet.macroEnabled.12"
           : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
