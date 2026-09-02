@@ -290,7 +290,11 @@ export async function runClosingEngineExportTests() {
   // The cut is per anchor, not per drawing, and these are what it must leave standing. The emblem
   // rides in its own anchor with an r:embed; the two slicers ride inside an mc:AlternateContent.
   // Cutting a drawing wholesale would take all three, and every sheet would lose its logo.
-  assert.equal(Object.keys(plainDrawings).length, 11, "no drawing part may be removed, only anchors inside one");
+  assert.equal(
+    Object.keys(plainDrawings).length,
+    Object.keys(macroDrawings).length,
+    "no drawing part may be removed, only anchors inside one",
+  );
   for (const [name, xml] of Object.entries(plainDrawings)) {
     assert.match(xml, /r:embed="/, `${name}: the emblem picture must survive the cut`);
     assert.equal(
@@ -586,6 +590,94 @@ export async function runClosingEngineExportTests() {
   const bookedRep = review.areas.find((area) => area.areaCode === booked.areaCode)?.repName;
   if (bookedRep) {
     assert.equal(rebookedRow.C, bookedRep, "and it is the rep the closing paid, not the one whose street the shop is on");
+  }
+
+  // ── What prints is what is on the sheet ─────────────────────────────────────────────────────
+  // A print area is a defined name, and content outside it is dropped from the PDF in silence: no
+  // warning, no marker, the page simply ends early. It was clamped to the last row of DATA, while
+  // `fillPresentationSheet` re-lands the owner's footnotes `trailerGap` rows BELOW that. So every
+  // note he wrote was on screen and on none of the five exports that carry one -- the Rep Card was
+  // the only sheet that printed its own, and only because it had a trailer-aware branch nothing
+  // else shared. Rendered through Excel, the five sheets went from MISSING to PRESENT on the fix.
+  //
+  // Pinned against the sheet's own `<dimension>` rather than a row number, because both sides are
+  // computed from the month: a bigger fixture moves them together, where a hardcoded row would pin
+  // this month instead of the rule.
+  const workbookXml = await zip.file("xl/workbook.xml")!.async("string");
+  const definedNames = [...workbookXml.matchAll(/<definedName name="([^"]+)"[^>]*>([^<]*)<\/definedName>/g)]
+    .map((match) => ({ name: match[1]!, ref: match[2]! }));
+  const rangeFor = (name: string, sheetName: string): string | undefined =>
+    definedNames.find((entry) => entry.name === name && entry.ref.replace(/'/g, "").startsWith(`${sheetName}!`))?.ref;
+  const lastRowOf = (ref: string): number => Number(/\$(\d+)$/.exec(ref)?.[1] ?? 0);
+
+  let footnoteSheets = 0;
+  for (const [sheetName, spec] of Object.entries(CLOSING_ENGINE_TEMPLATE_MANIFEST.sheets)) {
+    if (spec.kind !== "data" || !(spec.trailerRows ?? []).length) continue;
+    const sheetXml = await zip.file(spec.file)!.async("string");
+    const lastRow = Number(/<dimension ref="[A-Z]+\d+:[A-Z]+(\d+)"/.exec(sheetXml)?.[1] ?? 0);
+    assert.ok(lastRow > 0, `${sheetName}: the sheet declares a dimension`);
+
+    // The last row has to BE a footnote, or every assertion below passes on an empty sheet.
+    const lastRowXml = new RegExp(`<row[^>]*\\br="${lastRow}"[\\s\\S]*?</row>`).exec(sheetXml)?.[0] ?? "";
+    assert.match(lastRowXml, /<t[^>]*>[^<]{20,}/, `${sheetName}: the last row carries one of the owner's footnotes`);
+
+    const printArea = rangeFor("_xlnm.Print_Area", sheetName);
+    assert.ok(printArea, `${sheetName}: has a print area at all`);
+    assert.equal(lastRowOf(printArea!), lastRow, `${sheetName}: the print area reaches the footnotes`);
+
+    // `PhxPrintArea` is the range the export-to-PDF button prints, so it has to agree or the button
+    // and Ctrl+P disagree about the same sheet.
+    const macroArea = rangeFor("PhxPrintArea", sheetName);
+    if (macroArea) assert.equal(lastRowOf(macroArea), lastRow, `${sheetName}: the export button prints them too`);
+
+    // ...and the filter must NOT reach them. A footnote inside the AutoFilter range becomes a
+    // filterable row, and disappears the moment anyone filters the sheet.
+    const filter = rangeFor("_xlnm._FilterDatabase", sheetName);
+    if (filter) assert.ok(lastRowOf(filter) < lastRow, `${sheetName}: the AutoFilter stops above the footnotes`);
+    footnoteSheets += 1;
+  }
+  assert.ok(footnoteSheets >= 4, `four or more sheets carry footnotes, not ${footnoteSheets} -- this is not an empty loop`);
+
+  // ── A pivot label reads as a word ───────────────────────────────────────────────────────────
+  // The template's pivots carry a `<formats>` list pinned to CACHE-POOL INDICES -- `<x v="0"/>` is
+  // "whatever the first region happens to be", so a list saved against CNS's seven regions lands on
+  // whatever this month's regions are, in the wrong order. Every one of them was `labelOnly="1"`
+  // pointing at the same alignment-only `<dxf>`: `horizontal="left" indent="1"`. On a MERGED and
+  // WRAPPED label cell an indent eats most of the usable width, and Excel then wraps the caption one
+  // glyph per line -- "Cairo" printed as a column of letters, cut off after four. They are dropped
+  // rather than re-pinned: the look they carry is an indent this workbook does not want anywhere.
+  const stylesXml = await zip.file("xl/styles.xml")!.async("string");
+  const dxfBodies = [...(/<dxfs\b[^>]*>[\s\S]*?<\/dxfs>/.exec(stylesXml)?.[0] ?? "").matchAll(/<dxf>([\s\S]*?)<\/dxf>/g)]
+    .map((match) => match[1]!);
+  const alignmentOnly = (id: number): boolean =>
+    dxfBodies[id] !== undefined && dxfBodies[id]!.replace(/<alignment\b[^>]*\/>/g, "").trim() === "";
+  assert.ok(dxfBodies.some((_body, id) => alignmentOnly(id)), "the style itself survives -- this check has something to catch");
+
+  for (const file of zip.file(/^xl\/pivotTables\/pivotTable\d+\.xml$/)) {
+    const pivotXml = await file.async("string");
+    const formats = /<formats\b[^>]*>[\s\S]*?<\/formats>/.exec(pivotXml)?.[0] ?? "";
+    for (const one of formats.matchAll(/<format\b[^>]*>[\s\S]*?<\/format>|<format\b[^>]*\/>/g)) {
+      const dxfId = Number(/dxfId="(\d+)"/.exec(one[0])?.[1] ?? -1);
+      assert.ok(
+        !(/\blabelOnly="1"/.test(one[0]) && alignmentOnly(dxfId)),
+        `${file.name}: a stale label format survived and will stack a region name one letter per line`,
+      );
+    }
+  }
+
+  // ── The Region slicer has a button per region ───────────────────────────────────────────────
+  // `columnCount` is saved with the template, so it was CNS's seven for every line. An eighth region
+  // wrapped onto a second row inside a frame sized for one, which cut the frame's own bottom edge
+  // through it. It is the region count or it is wrong -- there is no default that is right twice.
+  const slicerFiles = zip.file(/^xl\/slicers\/slicer\d+\.xml$/);
+  assert.equal(slicerFiles.length, 2, "both matrices keep their Region slicer");
+  for (const file of slicerFiles) {
+    const slicerXml = await file.async("string");
+    assert.match(
+      slicerXml,
+      new RegExp(`columnCount="${july.regions.length}"`),
+      `${file.name}: one column per region, so no caption wraps out of the frame`,
+    );
   }
 
   // ── The file the owner receives is named for a month, a line and a scope ─────────────────────

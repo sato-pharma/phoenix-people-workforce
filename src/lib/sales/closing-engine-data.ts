@@ -261,7 +261,20 @@ function buildSalesData(input: ClosingEngineDataInput, areas: AreaAggregate[]): 
   const columns = input.matrix.columns;
   const rows: EngineValue[][] = [];
 
-  for (const area of areas) {
+  // In the MATRIX's order — region by region, area by area — not the rank order `buildAreas`
+  // returns. Nothing reads these rows by position, but the pivot cache pools each column's values
+  // in the order it first meets them and the pivots' axes then follow that pool, so rank order put
+  // the Closing Matrix's regions in order of how well they did: an order that changes every month
+  // and agrees with no other sheet in the file. An area the matrix does not carry sorts last.
+  const matrixOrder = new Map<string, number>();
+  for (const region of input.matrix.regions) {
+    for (const area of region.areas) matrixOrder.set(area.areaCode.trim().toUpperCase(), matrixOrder.size);
+  }
+  const positionOf = (code: string): number =>
+    matrixOrder.get(code.trim().toUpperCase()) ?? Number.MAX_SAFE_INTEGER;
+  const ordered = [...areas].sort((a, b) => positionOf(a.areaCode) - positionOf(b.areaCode));
+
+  for (const area of ordered) {
     area.cells.forEach((cell, index) => {
       const column = columns[index];
       if (!column) return;
@@ -320,6 +333,13 @@ type CustomerRow = {
   salesValue: number;
 };
 
+/**
+ * What the closing itself calls an area: the human name, the region above it, and the person on
+ * the seat. Keyed by area CODE, because that is the only thing a distributor row and the closing
+ * matrix reliably share.
+ */
+type AreaBookEntry = { areaName: string; regionName: string; repName: string };
+
 type DetailGroup = {
   areaName: string;
   channel: string;
@@ -346,7 +366,7 @@ type DetailGroup = {
  * month, not the delivery schedule. The line count rides along in its own column so nothing about
  * the folding is hidden.
  */
-function buildDetailGroups(rows: ClosingDetailRow[], repByArea: Map<string, string>): DetailGroup[] {
+function buildDetailGroups(rows: ClosingDetailRow[], areaBook: Map<string, AreaBookEntry>): DetailGroup[] {
   const groups = new Map<string, DetailGroup>();
 
   for (const row of rows) {
@@ -359,11 +379,16 @@ function buildDetailGroups(rows: ClosingDetailRow[], repByArea: Map<string, stri
     // REP, crediting the sale to whoever owns the shop's location rather than to whoever the
     // closing actually paid for it.
     const areaCode = closingAreaOf(row);
+    // The area as the CLOSING names it, never as the distributor's sheet spelt it. A direct-order
+    // row arrives carrying the raw code -- "UE2", "D16" -- and printing that is the one thing the
+    // house rule forbids: human names, never raw codes. Every other sheet in this workbook already
+    // reads the name off the matrix, so this reads it off the same place and the columns agree.
+    const seat = areaBook.get(areaCode.trim().toUpperCase());
     const key = `${areaCode}\u0000${row.clientCode}\u0000${row.productCode}\u0000${channel}`;
     let group = groups.get(key);
     if (!group) {
       group = {
-        areaName: row.sheetAreaName || row.areaName,
+        areaName: seat?.areaName || row.sheetAreaName || row.areaName,
         bonusQty: 0,
         channel,
         clientAddress: row.clientAddress,
@@ -382,8 +407,8 @@ function buildDetailGroups(rows: ClosingDetailRow[], repByArea: Map<string, stri
         // the Matrix carries UE-1 and UE-2, so reading the geographic pair here would file a row
         // under a region no other sheet in the same file has heard of. Equal to the geographic
         // pair on every line and area the organogram does not re-own, which is most of them.
-        regionName: row.operationalRegionName || row.regionName,
-        repName: repByArea.get(areaCode) ?? NO_REP,
+        regionName: seat?.regionName || row.operationalRegionName || row.regionName,
+        repName: seat?.repName ?? NO_REP,
         salesValue: 0,
       };
       groups.set(key, group);
@@ -470,9 +495,14 @@ export function buildClosingEngineFill(input: ClosingEngineDataInput): ClosingEn
   const areas = buildAreas(input);
   const salesData = buildSalesData(input, areas);
   const areaBook = buildAreaBook(areas);
-  // Keyed uppercase because `closingAreaOf` normalises, and a lookup that misses returns "no rep"
-  // rather than an error -- a silently blank column instead of a loud failure.
-  const repByArea = new Map(areas.map((area) => [area.areaCode.trim().toUpperCase(), area.repName]));
+  // Keyed uppercase because `closingAreaOf` normalises, and a lookup that misses falls back to
+  // whatever the distributor's own sheet said -- a slightly worse label instead of a loud failure.
+  const areaBookByCode = new Map<string, AreaBookEntry>(
+    areas.map((area) => [
+      area.areaCode.trim().toUpperCase(),
+      { areaName: area.areaName, regionName: area.regionName, repName: area.repName },
+    ]),
+  );
 
   const headlineSales = matrix.grandTotal.rowTotal.salesValue;
   const targeted = areas.filter((area) => area.targetValue != null && area.targetValue > 0);
@@ -557,15 +587,34 @@ export function buildClosingEngineFill(input: ClosingEngineDataInput): ClosingEn
   const first = topTen[0];
 
   // ── Family Performance ──────────────────────────────────────────────────────────────────────
-  const familyRows: EngineValue[][] = review.families.map((family) => [
-    family.family,
-    family.productCount,
-    family.salesValue,
-    orNoTarget(family.targetValue),
-    orNoTarget(family.achievement),
-    arrowFor(family.achievement),
-    headlineSales ? family.salesValue / headlineSales : null,
-  ]);
+  // Achievement is sales that HAD a target over that target -- the same arithmetic `buildAreas`
+  // does for every other page in this workbook. `review.families` divides ALL of a family's sales
+  // by its target instead, and the two disagree by exactly the sales made in areas nobody set a
+  // target for: on August's Anti Infective this page printed 15.3% beside an Overview reading 14%,
+  // with no way for a reader to tell which one the file meant. The screen keeps its own definition
+  // -- nothing there is being moved silently -- but a workbook has to agree with itself.
+  const targetedSalesByFamily = new Map<string, number>();
+  matrix.columns.forEach((column, index) => {
+    const family = column.family?.trim() || column.productName;
+    const targeted = areas.reduce((sum, area) => {
+      const cell = area.cells[index];
+      return sum + (cell && cell.targetValue != null ? cell.salesValue : 0);
+    }, 0);
+    targetedSalesByFamily.set(family, (targetedSalesByFamily.get(family) ?? 0) + targeted);
+  });
+
+  const familyRows: EngineValue[][] = review.families.map((family) => {
+    const achievement = achievementOf(targetedSalesByFamily.get(family.family) ?? 0, family.targetValue);
+    return [
+      family.family,
+      family.productCount,
+      family.salesValue,
+      orNoTarget(family.targetValue),
+      orNoTarget(achievement),
+      arrowFor(achievement),
+      headlineSales ? family.salesValue / headlineSales : null,
+    ];
+  });
 
   // ── Family by Month ─────────────────────────────────────────────────────────────────────────
   // The by-month series is per PRODUCT CODE; a family is the sum of its products, and a sum of
@@ -642,7 +691,7 @@ export function buildClosingEngineFill(input: ClosingEngineDataInput): ClosingEn
 
   // ── Top Customers, Details ──────────────────────────────────────────────────────────────────
   const detailRows = (input.details ?? []).filter((row) => countsInClosingHeadline(row));
-  const groups = buildDetailGroups(detailRows, repByArea);
+  const groups = buildDetailGroups(detailRows, areaBookByCode);
   const customers = buildCustomers(groups);
 
   let running = 0;
@@ -779,7 +828,11 @@ export function buildClosingEngineFill(input: ClosingEngineDataInput): ClosingEn
         rows: familyMonthRows,
       },
       "Family Performance": {
-        cells: { A1: title("Family Performance", "by value, because units cannot be added across products") },
+        // Short on purpose: A1 is merged A1:H1 with the emblem sitting in the last two columns,
+        // and the old 111-character subtitle ran under the logo and then clipped mid-word. The
+        // reason it says nothing about units is that rows 12 and 13 of this very sheet say it in
+        // full, in the owner's own wording.
+        cells: { A1: title("Family Performance", "by value, never units") },
         rows: familyRows,
       },
       Overview: {

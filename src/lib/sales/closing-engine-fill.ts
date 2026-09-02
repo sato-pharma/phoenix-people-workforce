@@ -249,15 +249,29 @@ export async function fillClosingEngine(fill: ClosingEngineFill, options: FillOp
   await fillDataSheet(zip, fill.data);
 
   for (const [sheetName, spec] of Object.entries(MANIFEST.sheets)) {
-    if (spec.kind !== "data" || sheetName === DATA_SHEET) continue;
+    if (sheetName === DATA_SHEET) continue;
     const content = fill.sheets[sheetName];
     if (!content) continue;
-    await fillPresentationSheet(zip, sheetName, spec, content);
+    // A pivot sheet has no rows to write -- Excel materialises the grid itself on load -- but it
+    // still has a TITLE, and the loop used to skip those sheets whole. Three pages therefore
+    // shipped with a blank A1 for as long as this route has existed: Closing Matrix, Units Matrix
+    // and Area x Product opened with a logo, a rule and no heading, while every sibling named its
+    // month and line. The data layer has always supplied the text.
+    // The Rep Card is deliberately not here: it is a formula sheet with a product block of its
+    // own and `fillRepCard` below owns every cell on it, header cells included.
+    if (spec.kind === "data") await fillPresentationSheet(zip, sheetName, spec, content);
+    else if (spec.kind === "pivot") await fillHeaderCells(zip, spec, content);
   }
 
   await fillRepCard(zip, fill);
   await updateReferences(zip, fill);
-  await restorePivotCacheSharedItems(zip);
+  await fitRegionControls(zip, fill);
+  await sizeMatrixColumns(zip, fill);
+  await sizePivotAchievementFormats(zip, fill);
+  await orderPivotItems(zip, fill);
+  await dropStaleLabelFormats(zip);
+  await clearTitleEmblem(zip, fill);
+  await restorePivotCacheSharedItems(zip, fill);
   await dropDeadSharedStrings(zip);
   if (options.macroFree) await stripMacros(zip);
 
@@ -337,6 +351,24 @@ async function fillPresentationSheet(zip: JSZip, sheetName: string, spec: SheetS
   sheetXml = resizeConditionalFormatting(sheetXml, firstDataRow, lastRow);
 
   zip.file(spec.file, setDimension(sheetXml, moved.size ? lastRow + gap + moved.size - 1 : lastRow));
+}
+
+/**
+ * Write the header cells of a sheet this module does not otherwise own.
+ *
+ * The pivot and formula sheets build their own bodies -- a pivot from its cache on load, the Rep
+ * Card from its INDEX/MATCH -- so nothing here may touch a row count, a dimension, a merge or a
+ * conditional format. It writes the absolute cells it was given, into rows that already exist, and
+ * leaves the rest of the part exactly as the owner built it.
+ */
+async function fillHeaderCells(zip: JSZip, spec: SheetSpec, content: EngineSheetFill): Promise<void> {
+  const cells = content.cells;
+  if (!cells || Object.keys(cells).length === 0) return;
+  const file = zip.file(spec.file);
+  if (!file) throw new Error(`closing engine template is missing ${spec.file}`);
+  const { head, rows, tail } = splitSheet(await file.async("string"));
+  const written = rows.map((row) => applyCells(row.xml, row.r, cells));
+  zip.file(spec.file, `${head}${written.join("")}${tail}`);
 }
 
 /**
@@ -529,7 +561,11 @@ async function updateReferences(zip: JSZip, fill: ClosingEngineFill): Promise<vo
   if (!workbookFile) return;
   let workbook = await workbookFile.async("string");
 
+  // Two different last rows, because two different questions are being asked. The filter range wants
+  // the last row of DATA -- a footnote inside it becomes a filterable row and disappears the moment
+  // anyone filters. The print range wants the last row of CONTENT, footnotes included.
   const lastRowFor: Record<string, number> = {};
+  const lastPrintRowFor: Record<string, number> = {};
   for (const [sheetName, spec] of Object.entries(MANIFEST.sheets)) {
     if (spec.kind === "formula") continue;
     const first = spec.firstDataRow ?? (spec.headerRows ?? 0) + 1;
@@ -537,7 +573,14 @@ async function updateReferences(zip: JSZip, fill: ClosingEngineFill): Promise<vo
       sheetName === DATA_SHEET
         ? Math.max(salesRows, areaBookRows, Math.max(pickListRows - 1, 0))
         : fill.sheets[sheetName]?.rows?.length ?? 0;
-    lastRowFor[sheetName] = written > 0 ? first + written - 1 : first;
+    const lastData = written > 0 ? first + written - 1 : first;
+    lastRowFor[sheetName] = lastData;
+    // `fillPresentationSheet` re-lands the trailer rows at `lastData + trailerGap + index`, and
+    // `setDimension` is told about them. This has to use the same arithmetic or the two disagree.
+    const trailer = spec.trailerRows ?? [];
+    lastPrintRowFor[sheetName] = trailer.length
+      ? lastData + (spec.trailerGap ?? 2) + trailer.length - 1
+      : lastData;
   }
 
   const repSpec = MANIFEST.sheets[REP_CARD];
@@ -548,20 +591,32 @@ async function updateReferences(zip: JSZip, fill: ClosingEngineFill): Promise<vo
     const firstTrailer = trailer.length ? Math.min(...trailer) : stampRow + 1;
     const shift = products ? stampRow + products - firstTrailer : 0;
     lastRowFor[REP_CARD] = (trailer.length ? Math.max(...trailer) : stampRow) + shift;
+    lastPrintRowFor[REP_CARD] = lastRowFor[REP_CARD]!;
   }
 
-  const clamp = (_match: string, open: string, ref: string, close: string): string => {
-    const parsed = /^('?)([^'!]+)\1!(\$[A-Z]+\$\d+):(\$[A-Z]+)\$(\d+)$/.exec(ref);
-    if (!parsed) return `${open}${ref}${close}`;
-    const [, quote, sheetName, first, lastColRef] = parsed;
-    const last = lastRowFor[sheetName!];
-    if (!last) return `${open}${ref}${close}`;
-    return `${open}${quote}${sheetName}${quote}!${first}:${lastColRef}$${last}${close}`;
-  };
+  const clampTo =
+    (rows: Record<string, number>) =>
+    (_match: string, open: string, ref: string, close: string): string => {
+      const parsed = /^('?)([^'!]+)\1!(\$[A-Z]+\$\d+):(\$[A-Z]+)\$(\d+)$/.exec(ref);
+      if (!parsed) return `${open}${ref}${close}`;
+      const [, quote, sheetName, first, lastColRef] = parsed;
+      const last = rows[sheetName!];
+      if (!last) return `${open}${ref}${close}`;
+      return `${open}${quote}${sheetName}${quote}!${first}:${lastColRef}$${last}${close}`;
+    };
 
-  workbook = workbook.replace(/(<definedName name="_xlnm\._FilterDatabase"[^>]*>)([^<]*)(<\/definedName>)/g, clamp);
-  workbook = workbook.replace(/(<definedName name="_xlnm\.Print_Area"[^>]*>)([^<]*)(<\/definedName>)/g, clamp);
-  workbook = workbook.replace(/(<definedName name="PhxPrintArea"[^>]*>)([^<]*)(<\/definedName>)/g, clamp);
+  workbook = workbook.replace(
+    /(<definedName name="_xlnm\._FilterDatabase"[^>]*>)([^<]*)(<\/definedName>)/g,
+    clampTo(lastRowFor),
+  );
+  workbook = workbook.replace(
+    /(<definedName name="_xlnm\.Print_Area"[^>]*>)([^<]*)(<\/definedName>)/g,
+    clampTo(lastPrintRowFor),
+  );
+  workbook = workbook.replace(
+    /(<definedName name="PhxPrintArea"[^>]*>)([^<]*)(<\/definedName>)/g,
+    clampTo(lastPrintRowFor),
+  );
   workbook = workbook.replace(
     /(<definedName name="PickList">)([^<]*)(<\/definedName>)/,
     (_m, open: string, _ref: string, close: string) =>
@@ -612,6 +667,630 @@ async function dropDeadSharedStrings(zip: JSZip): Promise<void> {
 }
 
 /**
+ * Excel's own geometry, in the two units the file format mixes.
+ *
+ * A column width is a count of "0" characters in the workbook's standard font; a drawing anchor is
+ * an offset in EMU inside a named column. Anything that has to move a shape — a slicer wide enough
+ * for its buttons, a row of region buttons rebuilt for a line whose regions are not the ones the
+ * template was cut from — has to convert between the two.
+ */
+const EMU_PER_PIXEL = 9525;
+const DEFAULT_COLUMN_WIDTH = 9.140625;
+
+/** EMU width of one column, 0-based, read off the sheet's own `<cols>` runs. */
+function columnWidthReader(sheetXml: string): (index: number) => number {
+  const runs: Array<{ emu: number; max: number; min: number }> = [];
+  const block = /<cols>[\s\S]*?<\/cols>/.exec(sheetXml)?.[0] ?? "";
+  for (const match of block.matchAll(/<col\b[^>]*?\/>/g)) {
+    const min = Number(/\bmin="(\d+)"/.exec(match[0])?.[1] ?? 0);
+    const max = Number(/\bmax="(\d+)"/.exec(match[0])?.[1] ?? 0);
+    if (!min || !max) continue;
+    const width = /\bhidden="1"/.test(match[0])
+      ? 0
+      : Number(/\bwidth="([\d.]+)"/.exec(match[0])?.[1] ?? DEFAULT_COLUMN_WIDTH);
+    runs.push({ emu: width > 0 ? (Math.round(width * 7) + 5) * EMU_PER_PIXEL : 0, max, min });
+  }
+  const fallback = (Math.round(DEFAULT_COLUMN_WIDTH * 7) + 5) * EMU_PER_PIXEL;
+  return (index) => {
+    const column = index + 1;
+    const run = runs.find((candidate) => column >= candidate.min && column <= candidate.max);
+    return run ? run.emu : fallback;
+  };
+}
+
+/** Which column an absolute x lands in, and how far into it — the shape an anchor wants. */
+function locateColumn(widthOf: (index: number) => number, x: number): { col: number; colOff: number } {
+  let left = 0;
+  for (let col = 0; col < 16_384; col += 1) {
+    const width = widthOf(col);
+    if (width > 0 && x < left + width) return { col, colOff: Math.max(0, Math.round(x - left)) };
+    left += width;
+  }
+  return { col: 16_383, colOff: 0 };
+}
+
+/** The absolute x an `<xdr:from>` or `<xdr:to>` block resolves to. */
+function anchorX(widthOf: (index: number) => number, anchor: string): number {
+  const col = Number(/<xdr:col>(\d+)<\/xdr:col>/.exec(anchor)?.[1] ?? 0);
+  const off = Number(/<xdr:colOff>(-?\d+)<\/xdr:colOff>/.exec(anchor)?.[1] ?? 0);
+  let left = 0;
+  for (let index = 0; index < col; index += 1) left += widthOf(index);
+  return left + off;
+}
+
+function writeAnchorX(anchor: string, at: { col: number; colOff: number }): string {
+  return anchor
+    .replace(/<xdr:col>\d+<\/xdr:col>/, `<xdr:col>${at.col}</xdr:col>`)
+    .replace(/<xdr:colOff>-?\d+<\/xdr:colOff>/, `<xdr:colOff>${at.colOff}</xdr:colOff>`);
+}
+
+/** Move a whole two-cell anchor to a new x and width, keeping both row edges untouched. */
+function moveAnchor(widthOf: (index: number) => number, block: string, x: number, width: number): string {
+  const from = /<xdr:from>[\s\S]*?<\/xdr:from>/.exec(block)?.[0];
+  const to = /<xdr:to>[\s\S]*?<\/xdr:to>/.exec(block)?.[0];
+  if (!from || !to) return block;
+  let out = block
+    .replace(from, writeAnchorX(from, locateColumn(widthOf, x)))
+    .replace(to, writeAnchorX(to, locateColumn(widthOf, x + width)));
+  // `<a:off>`/`<a:ext>` is Excel's cached position. It is not what places a two-cell anchor, but a
+  // stale one shows for an instant before the first redraw and prints wrong from a file nobody has
+  // opened interactively, so it is kept in step.
+  out = out.replace(/<a:off x="-?\d+" y="(-?\d+)"\/>/g, (_m, y: string) => `<a:off x="${Math.round(x)}" y="${y}"/>`);
+  out = out.replace(
+    /<a:ext cx="\d+" cy="(\d+)"\/>/g,
+    (_m, cy: string) => `<a:ext cx="${Math.round(width)}" cy="${cy}"/>`,
+  );
+  return out;
+}
+
+/** Distinct values of one SalesData column, in the order the table first shows them. */
+function distinctColumn(rows: EngineValue[][], index: number): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const row of rows) {
+    const value = row[index];
+    if (value == null) continue;
+    const text = String(value).trim();
+    if (!text || seen.has(text)) continue;
+    seen.add(text);
+    out.push(text);
+  }
+  return out;
+}
+
+/** The Area x Product sheet, the one page whose Region buttons are shapes rather than a slicer. */
+const AREA_PRODUCT_SHEET = "Area x Product";
+/** The two pivot sheets carrying a Region slicer. */
+const SLICER_SHEETS = ["Closing Matrix", "Units Matrix"];
+/** How many region columns the template's slicers were laid out for. */
+const SLICER_TEMPLATE_COLUMNS = 7;
+/** Gap between two buttons on the command row — the template's own spacing, 76200 EMU. */
+const BUTTON_GAP = 76_200;
+/** Fitted to the template's seven buttons: intercept, and EMU per unit of caption width. */
+const BUTTON_BASE = 340_000;
+const BUTTON_PER_UNIT = 74_500;
+
+/**
+ * Fit the Region controls to the line being exported.
+ *
+ * The template was cut from a CNS workbook, so every Region control in it is captioned and sized
+ * for CNS's seven regions — and the region list is the one thing about this file that is not the
+ * same from one line to the next. Anti Infective has more: it splits Upper Egypt into 1 and 2.
+ *
+ * Two separate things broke on that line, and neither of them looked broken.
+ *
+ *  - **The BUTTONS** on Area x Product are shapes whose CAPTION is the entire contract with the
+ *    macro: `PhxRegionButton` reads the shape's own `TextFrame2.TextRange.Text` and asks the pivot
+ *    for a PivotItem of exactly that name. A button reading "Upper Egypt" on a line whose regions
+ *    are "Upper Egypt 1" and "Upper Egypt 2" therefore matches nothing and answers a click with
+ *    "not on this tab" — and the two regions it was meant to open have no button at all. Seven
+ *    hard-coded captions from another line is not a cosmetic defect; it is a dead control.
+ *  - **The SLICERS** on the two matrices carry `columnCount="7"` in a frame one button-row high.
+ *    An eighth region is not dropped — it is laid out on a second row the frame is too short to
+ *    show. Invisible and unreachable, and the page reads as a line that has seven regions.
+ *
+ * Both are rebuilt from the regions actually present in the Data sheet being written beside them.
+ */
+async function fitRegionControls(zip: JSZip, fill: ClosingEngineFill): Promise<void> {
+  const regions = distinctColumn(fill.data.salesData, 0);
+  if (!regions.length) return;
+  await rebuildRegionButtons(zip, regions);
+  await widenRegionSlicers(zip, regions);
+}
+
+/** A shape name has to be a plain identifier, and unique inside its drawing. */
+function shapeName(region: string, taken: Set<string>): string {
+  const base = `Rgn_${region.replace(/[^0-9A-Za-z]+/g, "")}`;
+  let name = base === "Rgn_" ? "Rgn_Region" : base;
+  let suffix = 2;
+  while (taken.has(name)) {
+    name = `${base}${suffix}`;
+    suffix += 1;
+  }
+  taken.add(name);
+  return name;
+}
+
+/** Characters that are visibly narrower than a lower-case "o" in the button font. */
+const NARROW_GLYPHS = " ().,-!ilj|:;";
+/** Characters that are visibly wider. */
+const WIDE_GLYPHS = "mwMW";
+
+/** Rough advance width of a caption, in units where a lower-case "o" is 1. */
+function captionUnits(caption: string): number {
+  let units = 0;
+  for (const ch of caption) {
+    if (NARROW_GLYPHS.includes(ch) || ch === "'") units += 0.45;
+    else if (WIDE_GLYPHS.includes(ch)) units += 1.5;
+    else if (ch >= "A" && ch <= "Z") units += 1.15;
+    else units += 1;
+  }
+  return units;
+}
+
+/**
+ * How wide a button has to be to hold its caption.
+ *
+ * A caption the template already carries keeps the width the owner gave it — those seven are
+ * measured, not modelled, and most regions on most lines are among them. Anything new is estimated
+ * from a least-squares fit over those same seven (largest residual 5%), then given 6% on top: the
+ * shapes are `wrap="none"`, so a button a little wide is a gap and a button a little narrow lets
+ * its own caption hang over the rounded edge.
+ */
+function buttonWidth(caption: string, measured: Map<string, number>): number {
+  const known = measured.get(caption);
+  if (known) return known;
+  return Math.round((BUTTON_BASE + BUTTON_PER_UNIT * captionUnits(caption)) * 1.06);
+}
+
+/** The row an `<xdr:from>` or `<xdr:to>` block sits on. */
+function anchorRow(anchor: string): number {
+  return Number(/<xdr:row>(\d+)<\/xdr:row>/.exec(anchor)?.[1] ?? -1);
+}
+
+const ANCHOR_FROM = /<xdr:from>[\s\S]*?<\/xdr:from>/;
+const ANCHOR_TO = /<xdr:to>[\s\S]*?<\/xdr:to>/;
+const TWO_CELL_ANCHOR = /<xdr:twoCellAnchor\b[\s\S]*?<\/xdr:twoCellAnchor>/g;
+/** The `<a:extLst>` that carries a shape's creationId, and nothing else. */
+const CREATION_ID = /<a:extLst><a:ext uri="\{FF2B5EF4-FFF2-40B4-BE49-F238E27FC236\}">[\s\S]*?<\/a:extLst>/;
+
+/** The drawing part a sheet points at, with the sheet XML that gives its column geometry. */
+async function sheetDrawing(
+  zip: JSZip,
+  sheetName: string,
+): Promise<{ name: string; sheetXml: string; xml: string } | null> {
+  const spec = MANIFEST.sheets[sheetName];
+  if (!spec) return null;
+  const sheetFile = zip.file(spec.file);
+  const relsFile = zip.file(spec.file.replace(/worksheets\/([^/]+)$/, "worksheets/_rels/$1.rels"));
+  if (!sheetFile || !relsFile) return null;
+  const target = /Target="\.\.\/(drawings\/drawing\d+\.xml)"/.exec(await relsFile.async("string"))?.[1];
+  if (!target) return null;
+  const drawingFile = zip.file(`xl/${target}`);
+  if (!drawingFile) return null;
+  return { name: `xl/${target}`, sheetXml: await sheetFile.async("string"), xml: await drawingFile.async("string") };
+}
+
+/**
+ * Replace the template's seven region buttons with one per region this month actually has.
+ *
+ * The first of them is used as the stamp, so every clone inherits the owner's own fill, shadow,
+ * font, corner radius and `macro=` wiring — nothing about the look is restated here, which is what
+ * keeps a restyle of the template from having to be repeated in this file.
+ */
+async function rebuildRegionButtons(zip: JSZip, regions: string[]): Promise<void> {
+  const drawing = await sheetDrawing(zip, AREA_PRODUCT_SHEET);
+  if (!drawing) return;
+
+  const anchors = drawing.xml.match(TWO_CELL_ANCHOR) ?? [];
+  const isRegion = (block: string) => /macro="PhxRegionButton"/.test(block);
+  const buttons = anchors.filter(isRegion);
+  const stamp = buttons[0];
+  if (!stamp) return;
+
+  const widthOf = columnWidthReader(drawing.sheetXml);
+  const edge = (block: string, part: RegExp) => anchorX(widthOf, part.exec(block)?.[0] ?? "");
+  const measured = new Map<string, number>();
+  for (const block of buttons) {
+    const caption = /<a:t>([\s\S]*?)<\/a:t>/.exec(block)?.[1];
+    if (caption) measured.set(caption, edge(block, ANCHOR_TO) - edge(block, ANCHOR_FROM));
+  }
+  const startX = Math.min(...buttons.map((block) => edge(block, ANCHOR_FROM)));
+  const endX = Math.max(...buttons.map((block) => edge(block, ANCHOR_TO)));
+  // The band the buttons live on. Judged by row rather than by name, so that a command added to the
+  // bar later is carried along without this function having to be told it exists — and so that the
+  // emblem, which sits on row 0 well to the right of these buttons, is left exactly where it is.
+  const band = anchorRow(ANCHOR_FROM.exec(stamp)?.[0] ?? "");
+
+  // Ids stay unique across the whole drawing, so start above every id already in it.
+  let nextId = Math.max(0, ...[...drawing.xml.matchAll(/<xdr:cNvPr id="(\d+)"/g)].map((m) => Number(m[1]))) + 1;
+  const taken = new Set<string>();
+
+  let x = startX;
+  const rebuilt = regions.map((region) => {
+    const width = buttonWidth(region, measured);
+    // The creationId is Excel's own identity for a shape, and several shapes claiming one identity
+    // is a conflict it has to resolve on load — so a clone carries none and Excel assigns its own.
+    const block = stamp
+      .replace(CREATION_ID, "")
+      .replace(
+        /<xdr:cNvPr id="\d+" name="[^"]*"/,
+        `<xdr:cNvPr id="${nextId}" name="${xmlEscape(shapeName(region, taken))}"`,
+      )
+      .replace(/<a:t>[\s\S]*?<\/a:t>/, `<a:t>${xmlEscape(xmlSafe(region))}</a:t>`);
+    nextId += 1;
+    const placed = moveAnchor(widthOf, block, x, width);
+    x += width + BUTTON_GAP;
+    return placed;
+  });
+
+  const shift = x - BUTTON_GAP - endX;
+  let out = drawing.xml;
+  for (const block of anchors) {
+    if (isRegion(block)) {
+      out = out.replace(block, block === stamp ? rebuilt.join("") : "");
+      continue;
+    }
+    const from = ANCHOR_FROM.exec(block)?.[0];
+    const to = ANCHOR_TO.exec(block)?.[0];
+    if (!from || !to || anchorRow(from) !== band) continue;
+    const left = anchorX(widthOf, from);
+    if (left < startX) continue;
+    out = out.replace(block, moveAnchor(widthOf, block, left + shift, anchorX(widthOf, to) - left));
+  }
+  zip.file(drawing.name, out);
+}
+
+/**
+ * Give the two Region slicers a column per region, and a frame wide enough to show them.
+ *
+ * One button keeps the width the owner gave it and the frame grows to hold however many there are.
+ * Widening rather than squeezing is the point: "Upper Egypt 2" does not fit in a seventh of the CNS
+ * frame, and a slicer button that clips its own region name is this same defect in a different
+ * costume.
+ */
+async function widenRegionSlicers(zip: JSZip, regions: string[]): Promise<void> {
+  for (const file of zip.file(/^xl\/slicers\/slicer\d+\.xml$/)) {
+    const xml = await file.async("string");
+    zip.file(file.name, xml.replace(/\bcolumnCount="\d+"/g, `columnCount="${regions.length}"`));
+  }
+
+  // A slicer button shows its caption or it shows an ellipsis, and an ellipsis is not something
+  // this workbook is allowed to print. So a column is never narrower than the longest region name
+  // the month has — and never narrower than the width the owner gave it either, because a short
+  // month should not shrink the control.
+  const needed = Math.max(...regions.map((region) => BUTTON_BASE + BUTTON_PER_UNIT * captionUnits(region)));
+
+  for (const sheetName of SLICER_SHEETS) {
+    const drawing = await sheetDrawing(zip, sheetName);
+    if (!drawing) continue;
+    const block = (drawing.xml.match(TWO_CELL_ANCHOR) ?? []).find((candidate) =>
+      /graphicData uri="[^"]*\/slicer"/.test(candidate),
+    );
+    if (!block) continue;
+    const from = ANCHOR_FROM.exec(block)?.[0];
+    const to = ANCHOR_TO.exec(block)?.[0];
+    if (!from || !to) continue;
+    const widthOf = columnWidthReader(drawing.sheetXml);
+    const left = anchorX(widthOf, from);
+    const perColumn = Math.max((anchorX(widthOf, to) - left) / SLICER_TEMPLATE_COLUMNS, needed);
+    zip.file(drawing.name, drawing.xml.replace(block, moveAnchor(widthOf, block, left, perColumn * regions.length)));
+  }
+}
+
+/** The pivot table definition a sheet hosts, or "" when it hosts none. */
+async function pivotPartFor(zip: JSZip, spec: SheetSpec): Promise<{ name: string; xml: string } | null> {
+  const rels = zip.file(spec.file.replace(/worksheets\/([^/]+)$/, "worksheets/_rels/$1.rels"));
+  if (!rels) return null;
+  const target = /Target="\.\.\/(pivotTables\/pivotTable\d+\.xml)"/.exec(await rels.async("string"))?.[1];
+  const file = target ? zip.file(`xl/${target}`) : null;
+  return file ? { name: `xl/${target}`, xml: await file.async("string") } : null;
+}
+
+/** 1-based column number to its A1 letters — 1 is A, 27 is AA, 50 is AX. */
+function columnLetters(column: number): string {
+  let out = "";
+  for (let n = column; n > 0; n = Math.floor((n - 1) / 26)) {
+    out = String.fromCharCode(65 + ((n - 1) % 26)) + out;
+  }
+  return out;
+}
+
+/**
+ * Widen the two matrices' grand-total columns to fit their own headings.
+ *
+ * Both matrices repeat three columns per product — Sales Value, Target Value, Ach — and the
+ * template sizes every one of them at 12.71 characters, which is right. What it also sizes at
+ * 12.71 is the block after them: the grand total, whose headings are those same names with the
+ * word "Total" in front. "Total Sales Value" does not fit in the width "Sales Value" fits in, so
+ * the two most-read columns on the page shipped saying "Total Sales Val" and "Total Target V".
+ *
+ * The block exists only where the pivot asks for it — the Units Matrix sets `colGrandTotals="0"`
+ * and has none — so the width lands on whatever sits past the last product group, and on nothing
+ * at all when there is nothing there.
+ */
+async function sizeMatrixColumns(zip: JSZip, fill: ClosingEngineFill): Promise<void> {
+  const products = distinctColumn(fill.data.salesData, 5).length;
+  if (!products) return;
+
+  for (const sheetName of SLICER_SHEETS) {
+    const spec = MANIFEST.sheets[sheetName];
+    const file = spec ? zip.file(spec.file) : null;
+    if (!spec || !file) continue;
+    const xml = await file.async("string");
+    const cols = /<cols>[\s\S]*?<\/cols>/.exec(xml)?.[0];
+    // The run the template gives the value columns is the one carrying their style and width, so it
+    // is re-cut rather than replaced: same attributes, new bounds.
+    const run = cols ? /<col\b[^>]*\bmin="3"[^>]*\/>/.exec(cols)?.[0] : null;
+    if (!cols || !run) continue;
+
+    // Two row-field columns, then three value columns per product. Anything past that is the grand
+    // total, which the pivot writes only when it is asked for.
+    const lastProductColumn = 2 + products * 3;
+    const totals = /\bcolGrandTotals="0"/.test((await pivotPartFor(zip, spec))?.xml ?? "") ? 0 : 3;
+    const runMax = Number(/\bmax="(\d+)"/.exec(run)?.[1] ?? 0);
+    const values = run.replace(/\bmax="\d+"/, `max="${lastProductColumn}"`);
+    const grand = totals
+      ? run
+          .replace(/\bmin="3"/, `min="${lastProductColumn + 1}"`)
+          .replace(/\bmax="\d+"/, `max="${lastProductColumn + totals}"`)
+          .replace(/\bwidth="[\d.]+"/, `width="17.7109375"`)
+      : "";
+    // The template's run reaches well past the widest month it was cut for, and a shorter month
+    // must not lose the columns beyond its own totals: they are still inside the run being
+    // re-cut, so a two-piece rewrite silently drops them back to the default width with no style,
+    // leaving a bare band beside the grand total on every sheet narrower than the template. Re-cut
+    // in three pieces, the tail keeping exactly what the template gave it.
+    const tail = runMax > lastProductColumn + totals
+      ? run.replace(/\bmin="3"/, `min="${lastProductColumn + totals + 1}"`)
+      : "";
+    zip.file(spec.file, xml.replace(cols, cols.replace(run, `${values}${grand}${tail}`)));
+  }
+}
+
+/**
+ * Re-cut the achievement colouring on the three pivot sheets to the month that is actually in the
+ * file. The template's band is frozen to July CNS — `E10:E17 H10:H17 … AX10:AX17` — and neither
+ * half of that survives a different line.
+ *
+ * The COLUMNS over-reach, and that is not harmless. `AND(E10>=0,E10<0.5)` is TRUE of an EMPTY
+ * cell, because a blank coerces to zero — so on any line carrying fewer products than CNS's
+ * fifteen, every achievement column past the last real one is painted amber down the whole band:
+ * a solid block of "under half of target" sitting over nothing at all. Anti Infective has twelve,
+ * so it shipped with four such columns.
+ *
+ * The ROWS under-reach. Eight of them cover the pivot only while it is collapsed to region level,
+ * which is how the template was saved. Both matrices carry a region slicer and Area x Product
+ * carries an "Expand all" button, so one click puts every area row below the eighth outside the
+ * rule and the colour simply stops. The band is sized for the fully expanded pivot instead.
+ *
+ * Extending the rows is only safe once the blank guard is in — the two defects have to be fixed
+ * together or the second one multiplies the first down the whole sheet.
+ *
+ * Everything here is read off the pivot itself rather than assumed: where its data starts, how
+ * many data fields repeat per column group, and whether it asks for a grand total. A rule set
+ * whose first range does not start on the pivot's own first data row is left alone, so this can
+ * never quietly rewrite some other sheet's formatting.
+ */
+async function sizePivotAchievementFormats(zip: JSZip, fill: ClosingEngineFill): Promise<void> {
+  const regions = distinctColumn(fill.data.salesData, 0).length;
+  const areas = distinctColumn(fill.data.salesData, 1).length;
+  const products = distinctColumn(fill.data.salesData, 5).length;
+  if (!areas || !products) return;
+
+  for (const sheetName of [...SLICER_SHEETS, AREA_PRODUCT_SHEET]) {
+    const spec = MANIFEST.sheets[sheetName];
+    const file = spec ? zip.file(spec.file) : null;
+    if (!spec || !file) continue;
+    const pivot = (await pivotPartFor(zip, spec))?.xml ?? "";
+    const location = /<location\b[^>]*\/>/.exec(pivot)?.[0];
+    if (!location) continue;
+
+    const topRow = Number(/ref="[A-Z]+(\d+):/.exec(location)?.[1] ?? 0);
+    const firstDataRow = Number(/\bfirstDataRow="(\d+)"/.exec(location)?.[1] ?? 0);
+    const firstDataCol = Number(/\bfirstDataCol="(\d+)"/.exec(location)?.[1] ?? 0);
+    const dataFields = Number(/<dataFields\b[^>]*\bcount="(\d+)"/.exec(pivot)?.[1] ?? 0);
+    if (!topRow || !dataFields) continue;
+
+    // A pivot with a real column field repeats its data fields once per product; one with only the
+    // values placeholder (`<field x="-2"/>`) has a single group. The grand total is one more.
+    const grouped = /<colFields\b[^>]*>[\s\S]*?<field x="(?!-2)\d+"\/>/.test(pivot);
+    const groups = (grouped ? products : 1) + (grouped && !/\bcolGrandTotals="0"/.test(pivot) ? 1 : 0);
+
+    const startRow = topRow + firstDataRow;
+    const startCol = firstDataCol + 1;
+    const columns = Array.from({ length: groups }, (_, g) => startCol + g * dataFields + (dataFields - 1));
+
+    // Every row the pivot can show once it is fully opened: one per area-and-product line where
+    // the product is a row field, one per area, one per region subtotal, and the grand total.
+    const rowSpan = (grouped ? 0 : fill.data.salesData.length) + areas + regions + 2;
+    const lastRow = startRow + rowSpan - 1;
+    const sqref = columns.map((column) => {
+      const letters = columnLetters(column);
+      return `${letters}${startRow}:${letters}${lastRow}`;
+    }).join(" ");
+    const anchor = `${columnLetters(columns[0] ?? startCol)}${startRow}`;
+
+    const xml = await file.async("string");
+    const rebuilt = xml.replace(
+      /<conditionalFormatting\b[^>]*\bsqref="([^"]*)"[^>]*>([\s\S]*?)<\/conditionalFormatting>/g,
+      (block, ranges: string, rules: string) => {
+        if (!new RegExp(`^[A-Z]+${startRow}:`).test(ranges)) return block;
+        const rewritten = rules
+          .replace(/<formula>[^<]*&gt;=1<\/formula>/, `<formula>AND(${anchor}&lt;&gt;"",${anchor}&gt;=1)</formula>`)
+          .replace(
+            /<formula>AND\([^<]*&lt;0\.5\)<\/formula>/,
+            `<formula>AND(${anchor}&lt;&gt;"",${anchor}&gt;=0,${anchor}&lt;0.5)</formula>`,
+          );
+        return block.replace(`sqref="${ranges}"`, `sqref="${sqref}"`).replace(rules, rewritten);
+      },
+    );
+    if (rebuilt !== xml) zip.file(spec.file, rebuilt);
+  }
+}
+
+/** Row fields that open collapsed, by sheet. Anything not listed here opens expanded. */
+const PIVOT_COLLAPSED: Record<string, number[]> = { [AREA_PRODUCT_SHEET]: [0, 1] };
+
+/**
+ * Put the pivots' regions, areas and products in the order every other sheet in the file uses,
+ * and give all three the same opening state.
+ *
+ * A pivot field stores its own item order — `<item x="12"/><item x="7"/>…` — and Excel honours it
+ * across a refresh, because a hand-sorted axis is a thing a user meant. The template's order is
+ * July CNS's, and an index there points at whatever the pool now holds, so on another line it is
+ * simply a shuffle: Area x Product opened with Zithrolide, Cefodox, Cefodox, Ceftrix, Levoxin,
+ * Amoclan, Ceftrix — families scattered — while the Rep Card beside it listed the same twelve
+ * products family by family. Written in ascending order the pivot follows the pool, and the pool
+ * is the Data table, and the Data table is the matrix: one order across the whole workbook.
+ *
+ * The same list carries `sd`, the expand state. Seven of the template's items say `sd="0"` and an
+ * eighth region has no entry at all, so a line with more regions than CNS opened with exactly one
+ * of them expanded and the rest shut — which is what "Delta (2)" alone showing its areas was.
+ *
+ * Trimming both lists to the month's real counts is also what stops the shared-item pools being
+ * padded: `restorePivotCacheSharedItems` sizes them from the highest index referenced here, so a
+ * fifty-item list against twenty real areas is what invented "Area 21". It must therefore run
+ * AFTER this.
+ */
+async function orderPivotItems(zip: JSZip, fill: ClosingEngineFill): Promise<void> {
+  for (const sheetName of [...SLICER_SHEETS, AREA_PRODUCT_SHEET]) {
+    const spec = MANIFEST.sheets[sheetName];
+    const part = spec ? await pivotPartFor(zip, spec) : null;
+    if (!part) continue;
+    const block = /<pivotFields\b[^>]*>[\s\S]*?<\/pivotFields>/.exec(part.xml)?.[0];
+    if (!block) continue;
+
+    const collapsed = new Set(PIVOT_COLLAPSED[sheetName] ?? []);
+    let ordinal = -1;
+    // A `<pivotField>` sits at the ordinal of the cache field it renders, and the cache reads the
+    // Data table, so that ordinal is also the SalesData column this field's values come from.
+    const rebuilt = block.replace(
+      /<pivotField\b[^>]*?\/>|<pivotField\b[^>]*?>[\s\S]*?<\/pivotField>/g,
+      (field) => {
+        ordinal += 1;
+        const items = /<items\b[^>]*>[\s\S]*?<\/items>/.exec(field)?.[0];
+        const count = items ? distinctColumn(fill.data.salesData, ordinal).length : 0;
+        if (!items || !count) return field;
+        const shut = collapsed.has(ordinal) ? ' sd="0"' : "";
+        const list = Array.from({ length: count }, (_, index) => `<item${shut} x="${index}"/>`).join("");
+        return field.replace(items, `<items count="${count + 1}">${list}<item t="default"${shut}/></items>`);
+      },
+    );
+    if (rebuilt !== block) zip.file(part.name, part.xml.replace(block, rebuilt));
+  }
+
+  // The region slicer indexes the same pool and is selected item by item, so it needs the same
+  // treatment: left at the template's seven, a line with more regions cannot select the extras,
+  // and a line with fewer keeps buttons for regions that do not exist. `showItemsWithNoData` means
+  // a slicer never forgets an item, so a phantom there survives every refresh.
+  const cacheFile = zip.file(/^xl\/pivotCache\/pivotCacheDefinition\d+\.xml$/)[0];
+  const names = cacheFile
+    ? [...(await cacheFile.async("string")).matchAll(/<cacheField\b[^>]*?\bname="([^"]*)"/g)].map((m) => m[1])
+    : [];
+  for (const file of zip.file(/^xl\/slicerCaches\/[^/]+\.xml$/)) {
+    const xml = await file.async("string");
+    const source = /\bsourceName="([^"]*)"/.exec(xml)?.[1];
+    const field = source === undefined ? -1 : names.indexOf(source);
+    const items = /<items\b[^>]*>[\s\S]*?<\/items>/.exec(xml)?.[0];
+    const count = field < 0 ? 0 : distinctColumn(fill.data.salesData, field).length;
+    if (!items || !count) continue;
+    const list = Array.from({ length: count }, (_, index) => `<i x="${index}" s="1"/>`).join("");
+    zip.file(file.name, xml.replace(items, `<items count="${count}">${list}</items>`));
+  }
+}
+
+/**
+ * Drop the label formats the template saved against CNS's seven regions.
+ *
+ * `<formats>` inside a pivot definition is a list of look-overrides pinned to positions in the
+ * cache pool — `<x v="0"/>` means "whatever the first region happens to be". Every one this
+ * template carries is `labelOnly="1"` and points at the same
+ * `<dxf><alignment horizontal="left" indent="1"/></dxf>`, so between them they do exactly one
+ * thing: indent the row labels by one.
+ *
+ * On a merged label cell that indent is not cosmetic. Expanding a region makes Excel merge its
+ * name down its area rows, and a merged cell that is both wrapped and indented keeps almost none
+ * of its width: "Cairo" came out as C-a-i-r stacked one letter to a line and cut off after four,
+ * because Cairo has four areas. The one region that read as a word was "Others" — the eighth, and
+ * the template has no eighth index to pin a format to.
+ *
+ * They are dropped rather than re-pinned to this month's regions: re-pinning would spread the
+ * defect evenly instead of removing it, and the pivot style already carries the look. Only
+ * alignment-only formats go. One carrying a font, fill, border or number format is a real
+ * instruction about what a value looks like, and is left exactly where it is.
+ */
+async function dropStaleLabelFormats(zip: JSZip): Promise<void> {
+  const styles = zip.file("xl/styles.xml");
+  if (!styles) return;
+  const block = /<dxfs\b[^>]*>[\s\S]*?<\/dxfs>/.exec(await styles.async("string"))?.[0] ?? "";
+  const dxfs = [...block.matchAll(/<dxf>([\s\S]*?)<\/dxf>/g)].map((match) => match[1]);
+  const alignmentOnly = (id: number): boolean => {
+    const body = dxfs[id];
+    return body !== undefined && body.replace(/<alignment\b[^>]*\/>/g, "").trim() === "";
+  };
+
+  for (const file of zip.file(/^xl\/pivotTables\/pivotTable\d+\.xml$/)) {
+    const xml = await file.async("string");
+    const formats = /<formats\b[^>]*>[\s\S]*?<\/formats>/.exec(xml)?.[0];
+    if (!formats) continue;
+    const each = [...formats.matchAll(/<format\b[^>]*>[\s\S]*?<\/format>|<format\b[^>]*\/>/g)]
+      .map((match) => match[0]);
+    const kept = each.filter(
+      (one) => !(/\blabelOnly="1"/.test(one) && alignmentOnly(Number(/dxfId="(\d+)"/.exec(one)?.[1] ?? -1))),
+    );
+    if (kept.length === each.length) continue;
+    zip.file(file.name, xml.replace(formats, kept.length ? `<formats count="${kept.length}">${kept.join("")}</formats>` : ""));
+  }
+}
+
+/** Advance-width units of the title font, in EMU. Fitted to the sheets whose titles do fit. */
+const TITLE_EMU_PER_UNIT = 91_500;
+/** Clear air demanded between the end of the title and the emblem. */
+const TITLE_GAP = 150_000;
+const ANY_ANCHOR = /<xdr:(twoCellAnchor|oneCellAnchor)\b[\s\S]*?<\/xdr:\1>/g;
+
+/**
+ * Move the emblem clear of the title.
+ *
+ * Every sheet's title is one long string in A1 that overflows to the right, and the emblem sits
+ * where the template put it — which is where it cleared "CNS". "Anti Infective" is eleven
+ * characters longer, and the same title on the same sheet then runs under the logo: the Closing
+ * Matrix shipped reading "sales value against t" with the rest behind the wordmark, and Area x
+ * Product lost "at a time". Nothing about the sheet is wrong; the line name simply grew.
+ *
+ * So the emblem is placed against the measured title rather than left at a fixed column. It only
+ * ever moves right, and only when the title actually reaches it — a sheet with room to spare keeps
+ * the layout the owner arranged.
+ */
+async function clearTitleEmblem(zip: JSZip, fill: ClosingEngineFill): Promise<void> {
+  for (const [sheetName, content] of Object.entries(fill.sheets)) {
+    const title = String(content.cells?.A1 ?? "");
+    const found = title ? await sheetDrawing(zip, sheetName) : null;
+    if (!found) continue;
+
+    // The logo is a picture on every sheet that carries one; it is named "Emblem" on ten of them
+    // and "Picture 1" on the two cloned from Family Performance, so the picture is what to match.
+    const emblem = (found.xml.match(ANY_ANCHOR) ?? []).find((block) => block.includes("<xdr:pic"));
+    const from = emblem ? ANCHOR_FROM.exec(emblem)?.[0] : null;
+    if (!emblem || !from) continue;
+
+    const widthOf = columnWidthReader(found.sheetXml);
+    const left = anchorX(widthOf, from);
+    const needed = Math.round(captionUnits(title) * TITLE_EMU_PER_UNIT) + TITLE_GAP;
+    if (left >= needed) continue;
+
+    const to = ANCHOR_TO.exec(emblem)?.[0];
+    // A one-cell anchor carries its own size and only the corner moves; a two-cell one is defined
+    // by both corners, so it has to travel as a whole or the logo stretches.
+    const moved = to
+      ? moveAnchor(widthOf, emblem, needed, anchorX(widthOf, to) - left)
+      : emblem.replace(from, writeAnchorX(from, locateColumn(widthOf, needed)));
+    zip.file(found.name, found.xml.replace(emblem, moved));
+  }
+}
+
+/**
  * Give the pivot cache back the shared items its own pivot tables still point at.
  *
  * THIS is the repair prompt the owner hit — "We found a problem with some content", every premium
@@ -632,16 +1311,26 @@ async function dropDeadSharedStrings(zip: JSZip): Promise<void> {
  * `<rowItems>`/`<colItems>` too, strip the `<formats>` as well, and Excel still refuses the file.
  * So the pool is refilled rather than the references removed.
  *
- * The values written are PLACEHOLDERS, never the real ones (which this code does not have and must
- * not leak). `refreshOnLoad="1"` replaces them from `SalesData` the moment the workbook opens. If
- * a reader somehow blocks that refresh they see "Region 1", "Area 2" — visibly unfinished, which
- * is the safe way to be wrong. Plausible-and-wrong is the outcome worth avoiding; the template
- * build's own header makes the same argument for shipping the template empty.
+ * The values written are THIS month's own, taken from the `SalesData` rows being written into the
+ * same file — never the template's, which belong to another line and must not leak.
+ *
+ * An earlier version invented labels instead ("Region 1" … "Region 7"), on the argument that
+ * `refreshOnLoad="1"` would replace them before anyone saw one. It replaces them in the GRID, but
+ * not in the Region slicer: that cache is `crossFilter="showItemsWithNoData"`, so it keeps every
+ * item it has ever been given, and one invented label survived the refresh as a greyed button —
+ * which then pushed a real region out of the one visible row. A pool seeded with real values
+ * cannot leave an orphan, because it holds nothing the refresh does not also find.
+ *
+ * A field with MORE real values than its pool is deep enough for is truncated rather than grown:
+ * the pivot's own `<items>` enumerate a fixed count, and a pool longer than that count is the
+ * other half of the mismatch this function exists to avoid. The refresh adds the rest. A short
+ * pool is still padded with labels, so a blocked refresh shows something visibly unfinished rather
+ * than something plausible and wrong.
  *
  * Idempotent by construction: only a self-closing `<sharedItems/>` — the emptied form — is
  * rewritten, so a template that already carries a populated pool is left untouched.
  */
-async function restorePivotCacheSharedItems(zip: JSZip): Promise<void> {
+async function restorePivotCacheSharedItems(zip: JSZip, fill: ClosingEngineFill): Promise<void> {
   const cacheFiles = zip.file(/^xl\/pivotCache\/pivotCacheDefinition\d+\.xml$/);
   if (!cacheFiles.length) return;
 
@@ -689,16 +1378,19 @@ async function restorePivotCacheSharedItems(zip: JSZip): Promise<void> {
     }
 
     // The emptied fields appear in cache-field order, so counting them off as they are replaced is
-    // what maps each one back to its index.
+    // what maps each one back to its index. That ordinal is also the SalesData COLUMN: the cache
+    // reads the table, so cache field n and table column n are the same thing, and the fields past
+    // the table's last column are calculated ones that carry no pool at all.
     let index = -1;
     const filled = xml.replace(/<sharedItems\s*\/>/g, () => {
       index += 1;
       const count = depth.get(index);
       if (!count) return "<sharedItems/>";
       const label = names[index] ?? `Field ${index + 1}`;
+      const real = distinctColumn(fill.data.salesData, index).slice(0, count);
       const items = Array.from(
         { length: count },
-        (_, n) => `<s v="${xmlEscape(`${label} ${n + 1}`).replace(/"/g, "&quot;")}"/>`,
+        (_, n) => `<s v="${xmlEscape(real[n] ?? `${label} ${n + 1}`).replace(/"/g, "&quot;")}"/>`,
       ).join("");
       return `<sharedItems count="${count}">${items}</sharedItems>`;
     });
