@@ -601,6 +601,7 @@ import { runCvDatabaseRecruitingBoundaryTests } from "./cv-database-recruiting-b
 import { runTitlePermissionGovernanceTests } from "./title-permission-governance.test.ts";
 import { runOrganogramHardeningTests } from "./organogram-hardening.test.ts";
 import { runVacancyReportOrganogramConsistencyTests } from "./vacancy-report-organogram-consistency.test.ts";
+import { runA3FullOrganogramTests } from "./a3-account-sees-the-full-organogram.test.ts";
 import { runOrganogramGodmodeTests } from "./organogram-godmode.test.ts";
 import { runOrganogramHeadOfficeBranchTests } from "./organogram-head-office-branch.test.ts";
 import { runOrganogramHeadOfficeMarketingAndOpenSeatsTests } from "./organogram-head-office-marketing-and-open-seats.test.ts";
@@ -2170,6 +2171,7 @@ await runTest(
 await runTest("organogram hardening", runOrganogramHardeningTests);
 await runTest("vacancy report / organogram consistency", runVacancyReportOrganogramConsistencyTests);
 await runTest("organogram godmode", runOrganogramGodmodeTests);
+await runTest("A-3 account sees the full organogram", runA3FullOrganogramTests);
 await runTest("organogram head office branch (the AU seat model has no Head Office seats — the department was on nobody's chart)", runOrganogramHeadOfficeBranchTests);
 await runTest(
   "organogram Head Office marketing chain + open seats (product managers sit on a sales line, so line_id alone left the whole marketing arm off every chart; an open Head Office seat could not be drawn at all)",

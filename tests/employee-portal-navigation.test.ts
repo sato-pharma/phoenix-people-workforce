@@ -206,10 +206,16 @@ export function runEmployeePortalNavigationTests() {
   // legacy Head-Office "Manager" rung holds NO organogram grant, so a link there would bounce off
   // assertPermission — isDistrictManager would have handed it one.
   assert.equal(districtManager.showOrganogramTab, true, "DSM should see the Organogram (line-scoped, same grain as RM)");
+  // Updated 2026-09-02: the rung DOES now hold organogram:read, granted for ONE account on it
+  // (A-3, Samaa Mosaad — owner instruction). The assertion is unchanged because the reason moved
+  // rather than disappeared: the enforcing gates are pinned to the HR_ID, so a Manager identified
+  // by role alone still reaches nothing and must still be offered nothing. The A-3 half is pinned
+  // in tests/a3-account-sees-the-full-organogram.test.ts.
   assert.equal(
     resolveEmployeePortalNavVisibility("Manager").showOrganogramTab,
     false,
-    "The legacy Head-Office 'Manager' rung has no organogram grant and must not get the tab",
+    "The Head-Office 'Manager' rung is not company-scoped for the organogram and must not get the " +
+      "tab from its ROLE — only the pinned A-3 account does, via viewerHrId",
   );
 
   // Regional Manager sits above the DSMs but previously saw NONE of the oversight tabs its own
