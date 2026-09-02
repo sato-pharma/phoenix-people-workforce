@@ -106,7 +106,27 @@ overrides:
   # `dependencies` entry. Moderate severity, so CI's `--audit-level=high` gate would never have
   # caught it — only Dependabot did.
   postcss: ^8.5.23
-  qs: 6.15.2
+  # Bumped 2026-09-02 for GHSA-x5fp-wj9c-mxmx (array-limit bypass via bracket-key comma parsing,
+  # `>=6.14.2 <=6.15.3`) and GHSA-4mjr-xmp4-gh2g (DoS via attacker-controlled isBuffer,
+  # `>=2.2.5 <6.16.0`) — both medium, both patched at 6.16.0.
+  #
+  # THE PIN ITSELF WAS THE BLOCKER, which is new: every other note in this file describes a floor
+  # that ALLOWED the fix while the lockfile resolved below it. This one forbade the fix outright.
+  # The previous value was an EXACT `6.15.2`, added by 7045c1b81 (2026-05-25) as its own advisory
+  # fix back when 6.15.2 was the patched version. body-parser@2.3.0 declares `^6.15.2`, so the
+  # graph would have picked up 6.16.0 unaided the day it published — the exact pin is the only
+  # reason it did not. Written as a FLOOR now, like everything else here, so the next qs patch
+  # lands without a hand edit and cannot silently freeze the graph again.
+  #
+  # DEV-ONLY, verified rather than assumed: `pnpm why qs --prod` returns nothing. One chain
+  # reaches it — shadcn > @modelcontextprotocol/sdk > express > body-parser — and shadcn is a
+  # scaffolding CLI in devDependencies. No file under src/ or app/ imports qs or express, and the
+  # Dockerfile's runner stage copies only the import-traced .next/standalone (never the builder's
+  # node_modules), so qs cannot enter the production image at all.
+  #
+  # CI could not have caught this: `pnpm audit --audit-level=high --prod` filters out BOTH medium
+  # severity and the dev graph, so main stayed green the whole time. Dependabot alone saw it.
+  qs: ^6.16.0
   sharp: ^0.35.3
   tar: ^7.5.21
   tmp: ^0.2.6
