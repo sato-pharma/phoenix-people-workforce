@@ -57,6 +57,7 @@ import {
   type SharedWith,
 } from "@/lib/crm/location-confidence";
 import { buildPhoenixInsights, type PhoenixInsight } from "@/lib/crm/phoenix-insights";
+import type { RepsListActivity } from "@/lib/crm/reps-list-activity";
 import { isCrmSchemaMissingError } from "@/lib/crm/schema";
 import {
   CRM_CHECKINS_TABLE,
@@ -133,6 +134,16 @@ export type ContactSeenAt = {
  * could not read check-ins is still a correct contact list.
  */
 export type RepsListContact = DoctorListRow & {
+  /**
+   * What happened to this contact in the month the board is scoring — visited, behind plan, never
+   * touched. ATTACHED BY THE BOARD, not by this module: the contact list is the CRM's own and knows
+   * nothing about plans or visits, and that separation is what lets a complete list still render on
+   * a day the plan mirror cannot be read.
+   *
+   * `undefined` means nobody asked for it. `null` means it was asked for and could not be
+   * established — which is NOT "nothing happened". See `activityForContact`.
+   */
+  activity?: RepsListActivity | null;
   /** Which neighbourhood in its group this contact stands in, numbered from 0. Null when it stands alone. */
   cluster?: number | null;
   /** How well every check-in on this contact agrees with the pin being shown. Null when none exist. */

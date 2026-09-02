@@ -439,8 +439,25 @@ export function readCampaignNote(comment: string | null | undefined): CampaignNo
 
     if (!sawSomething) {
       const words = tokens.length;
+      // ONE UNREADABLE THING IS ONE FRAGMENT.
+      //
+      // Two paths record an unread segment and they overlap: the flush above hands on the run of
+      // words nothing claimed, and this branch hands on the whole segment when nothing at all was
+      // recognised. For a short segment the rules could not read — "م. طنطا العام", "ص ثروت",
+      // "أ.د محمد الحويزي" — those are the same text, and both fired, so the fragment was listed
+      // twice.
+      //
+      // That was invisible until 2026-09-02 because nothing consumed `unread`: the reading is
+      // flattened into three columns and the leftovers were dropped. Wiring the cheap-model assist
+      // is what gives it a consumer, and a duplicate there is not cosmetic — applyAssist folds one
+      // answer back per fragment, so the same doctor would be filed as two separate people on the
+      // row, and the model would be billed twice for reading him.
+      //
+      // Compared against the flush's own last entry rather than deduplicated wholesale: a leftover
+      // that differs from the segment (leading noise stripped, say) is a genuinely different
+      // reading of it and both are worth sending.
       if (words >= REMARK_MIN_WORDS) remarks.push(segment);
-      else reading.unread.push(segment);
+      else if (reading.unread.at(-1) !== segment) reading.unread.push(segment);
     }
   }
 
@@ -470,4 +487,60 @@ export function campaignHeadline(reading: CampaignNoteReading): string | null {
   const account = reading.accounts[0];
   if (account) return account.name;
   return null;
+}
+
+/**
+ * What the cheap model read of one fragment the rules could not.
+ *
+ * The TYPE and the FOLD live here, with the reading they describe, while the model call and the
+ * anti-fabrication gate that admits an answer live in campaign-note-assist{,-model}.ts. That is not
+ * tidiness: rep-visits.ts needs the fold, and rep-visits.ts is imported by rep-visits-detail.tsx,
+ * which is "use client". campaign-note-assist.ts reaches @/lib/ai/openai-client through
+ * campaign-account.ts, so importing the fold from there put the OpenAI SDK in the browser bundle
+ * for the Reps Plans drill-down — measured 2026-09-02 as one more client entry file reaching
+ * src/lib/ai/, on top of the 40 that already do. openai-client.ts has no `server-only` guard, so
+ * nothing failed; it simply shipped.
+ *
+ * THIS FILE IMPORTS ONLY contact-taxonomy, and must keep it that way.
+ */
+export type CampaignAssistReading =
+  | { kind: "person"; name: string; speciality: string | null }
+  | { kind: "place"; name: string; placeKind: CampaignAccountKind }
+  | { kind: "remark" };
+
+/**
+ * Fold what the model read back into the rules' reading, in place of the fragments it explains.
+ *
+ * Order is preserved: a doctor the model recognised on line 3 stays third, because a campaign note
+ * is a chronological list of a morning's calls and re-ordering it would misreport the day.
+ */
+export function applyAssist(
+  reading: CampaignNoteReading,
+  assisted: ReadonlyMap<string, CampaignAssistReading>,
+): CampaignNoteReading {
+  if (reading.unread.length === 0) return reading;
+
+  const people = [...reading.people];
+  const accounts = [...reading.accounts];
+  const remarks = reading.remark ? [reading.remark] : [];
+  const unread: string[] = [];
+
+  for (const fragment of reading.unread) {
+    const answer = assisted.get(fragment.trim());
+    if (!answer) {
+      unread.push(fragment);
+      continue;
+    }
+    if (answer.kind === "person") {
+      // Through the rules' own alias table, so a speciality the model spotted is canonicalised in
+      // exactly one place — the model never gets to name a speciality the taxonomy does not hold.
+      people.push({ name: answer.name, speciality: resolveSpeciality(answer.speciality) });
+    } else if (answer.kind === "place") {
+      accounts.push({ kind: answer.placeKind, name: answer.name });
+    } else {
+      remarks.push(fragment);
+    }
+  }
+
+  return { accounts, people, remark: remarks.length > 0 ? remarks.join(" · ") : null, unread };
 }

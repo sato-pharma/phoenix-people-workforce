@@ -341,6 +341,17 @@ export type CrmVisitFilter = {
   dateFrom?: string;
   /** Inclusive `visit_date` upper bound (YYYY-MM-DD). */
   dateTo?: string;
+  /**
+   * Restrict to these CRM agent ids (`agent_crm_id IN`). Empty array → no rows. The check-in door
+   * has carried this filter since it was written; this is the visits twin of it.
+   *
+   * The hr-id filters below are the usual door. Use this one when the visits are being joined to
+   * another CRM mirror keyed on `agent_crm_id` — the PLAN mirror is, so narrowing one half of that
+   * join by hr id and the other by CRM id can pair up two different people. Same identity on both
+   * sides, no mapping step, and no exposure to the mixed-case hr ids that make a naive match
+   * under-return elsewhere in this system.
+   */
+  agentCrmIds?: readonly number[];
   /** Restrict to these resolved agent hr ids (`agent_hr_id IN`). Empty array → no rows. Matched
    * CASE-INSENSITIVELY — the door sprays every casing/alias variant (`expandHrIdFilterValues`), so
    * pass ids in any casing and do NOT pre-expand. */
@@ -391,6 +402,7 @@ function applyVisitFilter(
   // is the effective (static ∪ live) list; it defaults to the static safety-net for any caller that
   // has not resolved the live set.
   if (excludedInList) result = result.not("agent_crm_id", "in", excludedInList);
+  if (filter.agentCrmIds && filter.agentCrmIds.length > 0) result = result.in("agent_crm_id", [...filter.agentCrmIds]);
   if (filter.dateFrom) result = result.gte("visit_date", filter.dateFrom);
   if (filter.dateTo) result = result.lte("visit_date", filter.dateTo);
   if (filter.agentHrIds && filter.agentHrIds.length > 0) result = result.in("agent_hr_id", expandHrIdFilterValues(filter.agentHrIds));
@@ -633,6 +645,7 @@ export async function queryVisits<T = CrmVisitRow>(
     collapseDoubleVisits?: boolean;
   },
 ): Promise<T[]> {
+  if (options.agentCrmIds && options.agentCrmIds.length === 0) return [];
   if (options.agentHrIds && options.agentHrIds.length === 0) return [];
   if (options.doubleHrIds && options.doubleHrIds.length === 0) return [];
   if (options.contactCrmIds && options.contactCrmIds.length === 0) return [];
@@ -672,6 +685,7 @@ export async function queryVisits<T = CrmVisitRow>(
 export async function queryVisitsLimited<T = CrmVisitRow>(
   options: CrmVisitFilter & { columns?: string; orderBy?: string; ascending?: boolean; limit: number; collapseDoubleVisits?: boolean },
 ): Promise<T[]> {
+  if (options.agentCrmIds && options.agentCrmIds.length === 0) return [];
   if (options.agentHrIds && options.agentHrIds.length === 0) return [];
   if (options.doubleHrIds && options.doubleHrIds.length === 0) return [];
   if (options.contactCrmIds && options.contactCrmIds.length === 0) return [];

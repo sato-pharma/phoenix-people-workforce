@@ -2,8 +2,11 @@ import { RepsPlansControls, RepsPlansRepTable } from "@/components/crm/reps-plan
 import { attainmentTone, riskTone, shareTone, type RepsPlansBoard } from "@/lib/crm/reps-plans";
 
 // Server half of Reps Plans. The Section/Tile vocabulary is copied verbatim from
-// rep-doctor-lists-board.tsx, its neighbour in the same shell — flat borders, slate-900 header bar,
+// brick-coverage-board.tsx, its neighbour in the same shell — flat borders, slate-900 header bar,
 // KPI tiles, orange accent. Never a one-off look (owner's standing rule).
+//
+// It was copied from rep-doctor-lists-board.tsx, which was deleted on 2026-09-02 as unreachable
+// code. The vocabulary is unchanged: brick-coverage-board.tsx is the same lineage and is live.
 
 function Section({
   action,

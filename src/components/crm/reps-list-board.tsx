@@ -1,7 +1,7 @@
 import Link from "next/link";
 
 import { RepsListContacts } from "@/components/crm/reps-list-tables";
-import { RepsListFilters } from "@/components/crm/reps-list-filters";
+import { RepsListFilters, RepsListMonthPicker } from "@/components/crm/reps-list-filters";
 import { cairoStamp, Section, Tile } from "@/components/crm/reps-list-chrome";
 import type { RepsListBoard, RepsListRep } from "@/lib/crm/reps-list-board";
 
@@ -22,6 +22,10 @@ function hrefWithRep(basePath: string, board: RepsListBoard, repKey: string | nu
   if (board.selection.region) query.set("region", board.selection.region);
   if (board.selection.area) query.set("area", board.selection.area);
   if (repKey) query.set("rep", repKey);
+  // Carried across every rep card and across Back to all reps. A manager comparing two reps over
+  // August is doing one piece of work, and dropping the month between them would silently re-score
+  // the second over a different window while the page said nothing about it.
+  query.set("month", board.activityMonth);
   const search = query.toString();
   return search ? `${basePath}?${search}` : basePath;
 }
@@ -79,6 +83,9 @@ function shareOf(count: number, contacts: number): string {
 
 export function RepsListBoardView({ basePath, board }: { basePath: string; board: RepsListBoard }) {
   const { list, options, reps, scopeLabel, scopeReason, selected, selection, syncedAt } = board;
+  // Everything that is NOT a cascade level and must survive a cascade pick. Without it, choosing a
+  // line while reading August would bounce the window silently back to the current month.
+  const preserve = { month: board.activityMonth };
 
   // A viewer who reaches nobody is told so in words. An empty picker would read as "the CRM holds
   // no lists", which is a completely different statement and the one a manager would act on.
@@ -109,7 +116,7 @@ export function RepsListBoardView({ basePath, board }: { basePath: string; board
   return (
     <div className="border border-slate-200">
       <Section description={description} title="Reps List">
-        <RepsListFilters basePath={basePath} options={options} selection={selection} />
+        <RepsListFilters basePath={basePath} options={options} preserve={preserve} selection={selection} />
       </Section>
 
       {selected ? (
@@ -141,7 +148,33 @@ export function RepsListBoardView({ basePath, board }: { basePath: string; board
             </div>
           ) : (
             <>
-              <div className="grid grid-cols-2 gap-2 p-5 pb-0 sm:grid-cols-3 lg:grid-cols-6">
+              {/* THE WINDOW, PRINTED ABOVE THE NUMBERS IT SCORES. On the 2nd of a month almost every
+                  contact is legitimately unvisited, so the span is stated rather than implied — a board
+                  showing only "Not visited 84" would read as a collapse in coverage instead of as a
+                  month that has barely started. The picker is separate from the cascade above because
+                  it answers a different question: those four say whose list, this says over what window.
+
+                  The contact list itself is NOT scoped by it and never becomes so. Changing the month
+                  re-scores the annotation beside each name and can never add or remove a contact. */}
+              <div className="flex flex-wrap items-end gap-3 px-5 pt-5">
+                <RepsListMonthPicker
+                  basePath={basePath}
+                  month={board.activityMonth}
+                  options={board.monthOptions}
+                  preserve={{
+                    area: selection.area,
+                    line: selection.line,
+                    region: selection.region,
+                    rep: selection.rep,
+                  }}
+                />
+                <p className="pb-2 text-phx-2xs font-semibold text-slate-500">
+                  {board.activityAvailable
+                    ? `Visits and plan counted from ${board.activityMonth}-01 to ${board.activityAsOf} Cairo.`
+                    : "The plan and visits for this month could not be read, so no activity is shown beside the contacts. The list below is complete and unaffected by that."}
+                </p>
+              </div>
+              <div className="grid grid-cols-2 gap-2 px-5 pt-3 sm:grid-cols-3 lg:grid-cols-6">
                 {/* The list names are the CRM's own and the owner's own — PM list, AM list,
                     Pharmacist. The sub-line carries each one's share rather than a description,
                     because naming what a list "is" invents a meaning the CRM never stated.
@@ -175,8 +208,33 @@ export function RepsListBoardView({ basePath, board }: { basePath: string; board
                   tone={list.unmappedContactCount > 0 ? "amber" : "emerald"}
                   value={String(list.unmappedContactCount)}
                 />
+                {/* THE REASON THIS COLUMN EXISTS, AS A NUMBER. It counts ROWS and is deliberately never
+                    labelled "contacts": a pharmacy is not a contact (owner, 2026-09-01) and this figure
+                    spans both tabs, so that word would restate the very total he separated.
+
+                    `untouched` PLUS `missed`, and nothing else — see UNVISITED_STATUSES. A doctor planned
+                    for next Tuesday has not been neglected, and counting him here would put a manager on
+                    the phone about nothing.
+
+                    It wraps onto a second row rather than squeezing the six above it. The golden rule
+                    forbids buying width from a neighbour, and a lone tile under the others reads as the
+                    summary line it is. */}
+                {board.activityAvailable ? (
+                  <Tile
+                    label="Not visited"
+                    sub={`no visit in ${board.activityMonthLabel}`}
+                    tone={board.activityUnvisited > 0 ? "amber" : "emerald"}
+                    value={String(board.activityUnvisited)}
+                  />
+                ) : null}
               </div>
-              <RepsListContacts groups={list.groups} repName={selected.name} syncedAt={syncedAt} />
+              <RepsListContacts
+                activityAvailable={board.activityAvailable}
+                activityMonthLabel={board.activityMonthLabel}
+                groups={list.groups}
+                repName={selected.name}
+                syncedAt={syncedAt}
+              />
             </>
           )}
         </Section>

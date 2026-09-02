@@ -18,9 +18,11 @@ import type {
 import type { CoverageFilterVacancy } from "@/lib/crm/coverage-filters";
 
 // Client half of the Brick Coverage board: the three sortable tables. Styling copies the Doctor
-// Coverage / CEO table vocabulary verbatim (doctor-coverage-tables.tsx, ceo-dv-table.tsx) — flat
-// borders, slate-900 header rows, emerald/amber/rose tones, the same inline coverage bar. Never a
-// one-off look.
+// Coverage / CEO table vocabulary verbatim (ceo-dv-table.tsx) — flat borders, slate-900 header
+// rows, emerald/amber/rose tones, the same inline coverage bar. Never a one-off look.
+//
+// The other source was doctor-coverage-tables.tsx, deleted on 2026-09-02 as unreachable code after
+// the owner retired its board on 2026-08-28. This file holds that vocabulary now.
 //
 // Every export below feeds the ORIGINAL `rows` prop, never the hook's filtered `table.rows` — the
 // sortable-table hook's own contract, so a search box left filled cannot silently truncate a file.
@@ -96,7 +98,8 @@ export function BrickCoverageRepTable({
   // Project to scalars before exporting. `ExportRow` is Record<string, string | number | null |
   // undefined>, and BrickCoverageRepRow carries `hasGpsFeed: boolean`, which is not assignable —
   // so the whole row type is rejected. Spreading the row would only re-introduce it; naming the
-  // columns explicitly is also what doctor-coverage-tables.tsx does, and it keeps the sheet's
+  // columns explicitly is also what doctor-coverage-tables.tsx did before it was deleted, and it
+  // keeps the sheet's
   // columns and this list from drifting apart. `hasGpsFeed` is deliberately absent rather than
   // coerced: every row in this table has a feed by construction (a rep without one is held out in
   // `unmeasured`), so a column that is always TRUE would only invite the reader to doubt it.

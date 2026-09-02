@@ -49,6 +49,7 @@ type PageProps = {
   searchParams?: Promise<{
     area?: string;
     line?: string;
+    month?: string;
     plan?: string;
     region?: string;
     rep?: string;
@@ -130,7 +131,7 @@ export default async function RepsListPage({ searchParams }: PageProps) {
     // The scope comes from the live AccessContext, never from the query string — a role read off a
     // URL would let any viewer name himself Super Admin and take the company branch.
     const scope = await getDoctorListScope(access);
-    board = await getRepsListBoard({ params: cascade, scope });
+    board = await getRepsListBoard({ params: { ...cascade, month: params?.month }, scope });
   } catch (error) {
     loadError = error instanceof Error ? error.message : "Reps List data is unavailable.";
   }

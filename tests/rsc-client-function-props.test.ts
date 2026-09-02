@@ -9,7 +9,8 @@ import { fileURLToPath } from "node:url";
 // desktop-table / mobile-cards and moved DoctorCoverageBoard onto the shared
 // <PortalResponsiveDataList> primitive. That primitive lives in
 // src/components/employee-portal/portal-primitives.tsx, which starts with "use client".
-// doctor-coverage-board.tsx does NOT — it is a server component. So its
+// doctor-coverage-board.tsx did NOT — it was a server component (the file was deleted
+// on 2026-09-02, five days after the owner retired its route). So its
 // getKey / renderCard / renderTable props had to cross the RSC boundary, and React
 // refuses to serialise a function:
 //
@@ -45,7 +46,7 @@ const SCAN_ROOTS = ["src", "app"];
 const SKIP_DIRS = new Set(["node_modules", ".next", ".git", "__snapshots__"]);
 
 type SourceFile = {
-  /** Repo-relative, forward-slashed, e.g. "src/components/crm/doctor-coverage-board.tsx". */
+  /** Repo-relative, forward-slashed, e.g. "src/components/crm/kpis-board-view.tsx". */
   path: string;
   text: string;
 };
@@ -509,10 +510,10 @@ export function runRscClientFunctionPropTests() {
   );
   // The anchor was src/components/crm/doctor-coverage-board.tsx — the file whose RSC violation took
   // /admin/doctor-coverage down on 2026-08-21 — until the owner retired that board on 2026-08-28
-  // and its pages became redirect stubs. The board file still exists but nothing server-rendered
-  // imports it, so it can no longer prove the graph walker works. Moved to its surviving twin,
-  // exactly as the old message instructed: brick-coverage-board.tsx is a server component built
-  // from the same tables and still reached by /admin/brick-coverage.
+  // and its pages became redirect stubs. Nothing server-rendered imported it after that, so it
+  // could no longer prove the graph walker works, and the file itself was deleted on 2026-09-02.
+  // Moved to its surviving twin, exactly as the old message instructed: brick-coverage-board.tsx
+  // is a server component built from the same tables and still reached by /admin/brick-coverage.
   assert.ok(
     serverRendered.has("src/components/crm/brick-coverage-board.tsx"),
     'the server graph must still reach src/components/crm/brick-coverage-board.tsx — this test only means something while a real CRM board is reachable. If that board is deliberately made a client component, move this anchor to another server component rather than deleting it.',
@@ -574,7 +575,8 @@ export function runRscClientFunctionPropTests() {
       "A server component is passing a function to a client component. React cannot serialise it,",
       'so the page 500s at render time with "Functions cannot be passed directly to Client Components".',
       'Fix it by adding "use client" to the server file, or by inlining what the client primitive does',
-      "(see src/components/crm/doctor-coverage-board.tsx for the second option).",
+      "(see src/components/crm/kpis-board-view.tsx for the second option — it inlines exactly what",
+      "the primitive emits, and its header comment explains why that was the right trade there).",
       "",
       ...violations,
     ].join("\n"),

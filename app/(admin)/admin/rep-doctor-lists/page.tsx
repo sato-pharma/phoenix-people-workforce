@@ -13,9 +13,19 @@
 //
 // The owner's instruction was to retire both modules and rebuild from the beginning. Every
 // navigation entry is withdrawn (src/config/system-navigation.ts) and the CEO Command Center embed
-// is gone; this stub closes the last door — a bookmark or a browser-history hit. The library code
-// under src/lib/crm/ is deliberately left in place for the rebuild to draw on, and is deleted with
-// the replacement.
+// is gone; this stub closes the last door — a bookmark or a browser-history hit.
+//
+// THE COMPONENTS ARE NOW DELETED TOO (2026-09-02, at the owner's instruction). The rebuild landed —
+// the KPIs board (/admin/kpis) and Reps List (/admin/reps-list) — so the shells this route used to
+// render had been unreachable for five days and were carrying the retired vocabulary forward as a
+// style reference. Gone with them: rep-doctor-lists-board.tsx, rep-doctor-lists-tables.tsx,
+// rep-doctor-trend-panel.tsx, rep-doctor-kpi-tone.ts, and src/lib/crm/rep-doctor-lists-trend.ts.
+//
+// src/lib/crm/rep-doctor-lists.ts SURVIVES and is load-bearing: the KPIs board and the Reps List
+// activity chip both read it. It is the library the retirement note meant when it said the rebuild
+// would draw on it — do not follow the deletions above into it.
+//
+// THIS STUB STAYS. It is not dead code: it is the redirect that catches a bookmark.
 //
 // DO NOT restore this page, and do not repair the scoring in place. The rebuild is the fix.
 import { redirect } from "next/navigation";

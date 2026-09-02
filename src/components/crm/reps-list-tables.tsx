@@ -8,6 +8,15 @@ import {
   PortalResponsiveDataList,
 } from "@/components/employee-portal/portal-primitives";
 import { ExportXlsxButton } from "@/components/ui/export-xlsx-button";
+import {
+  ACTIVITY_CLASS,
+  ACTIVITY_FILTER_ORDER,
+  ACTIVITY_LABEL,
+  ACTIVITY_MEANING,
+  UNVISITED_STATUSES,
+  activityCountLabel,
+  type RepsListActivity,
+} from "@/lib/crm/reps-list-activity";
 import { TableSearchInput } from "@/components/ui/sortable-table";
 import { polishAddress, polishAddressText } from "@/lib/crm/address-polish";
 import type { DoctorListRow } from "@/lib/crm/contact-lists";
@@ -739,6 +748,54 @@ function NearbyLine({ row }: { row: RepsListContact }) {
   );
 }
 
+/**
+ * What happened to this contact in the month being scored.
+ *
+ * NOTHING IS RENDERED WHEN THE ACTIVITY IS ABSENT, and that is the important case. `undefined` is a
+ * caller that never asked; `null` is a read that failed. Neither may print "No activity", because
+ * that is a statement about the REP, and making it on the strength of a failed query would accuse
+ * every doctor on the list at once. The board says the column is unavailable, once, above.
+ */
+function ActivityChip({ activity }: { activity: RepsListActivity | null | undefined }) {
+  if (!activity) return null;
+  const count = activityCountLabel(activity);
+  return (
+    <span
+      className={`mt-0.5 inline-flex flex-wrap items-center gap-1 px-1.5 py-0.5 text-phx-3xs font-black uppercase tracking-[0.08em] ring-1 ring-inset ${ACTIVITY_CLASS[activity.status]}`}
+      title={ACTIVITY_MEANING[activity.status]}
+    >
+      {ACTIVITY_LABEL[activity.status]}
+      {/* The count is what makes the word actionable — "Behind plan" alone does not say by how
+          much. Normal weight against the chip's black label so the two read as one phrase rather
+          than as two competing signals. */}
+      {count ? <span className="font-semibold opacity-80">{count}</span> : null}
+    </span>
+  );
+}
+
+/**
+ * The combined "nobody has been here" choice — `untouched` plus `missed`.
+ *
+ * It is the reason this filter exists: a manager wants the call list, not a taxonomy lesson. The two
+ * statuses stay separately selectable below because they are different problems (see
+ * reps-list-activity.ts), but neither alone is the question anybody actually asks first.
+ */
+const UNVISITED_CHOICE = "unvisited";
+
+/**
+ * A row with NO activity never matches a filter, including the "all" case's siblings.
+ *
+ * Deliberate: filtering by a status the board could not read must return nothing rather than
+ * everything. Returning everything would let a failed read present the whole list as, say, "Missed".
+ */
+function matchesActivity(row: RepsListContact, choice: string): boolean {
+  if (!choice) return true;
+  const status = row.activity?.status;
+  if (!status) return false;
+  if (choice === UNVISITED_CHOICE) return UNVISITED_STATUSES.has(status);
+  return status === choice;
+}
+
 /** Name, then grade and phone beneath it — one cell, so neither needs a column of its own. */
 function ContactCell({ onOpenInsights, row }: { onOpenInsights: () => void; row: RepsListContact }) {
   const phone = phoneOf(row);
@@ -753,6 +810,13 @@ function ContactCell({ onOpenInsights, row }: { onOpenInsights: () => void; row:
           is a bidi hazard bought for nothing. It sits ABOVE the grade and phone because it is the
           only line on the row that says something may be wrong. */}
       <InsightsChip onOpen={onOpenInsights} row={row} />
+      {/* MERGED INTO THIS CELL FOR THE REASON TradeLine IS, below: the table is `table-fixed` across
+          six columns totalling 100%, and the owner's golden rule forbids a horizontal scroll on any
+          screen, so a seventh column could only be bought by squeezing the other six. He has already
+          settled that collision — fit by MERGING columns, never by shrinking type. It sits directly
+          under the name, above grade and phone, because on this board it is the line a manager is
+          scanning for. */}
+      <ActivityChip activity={row.activity} />
       <span className="mt-0.5 block text-phx-2xs font-semibold">
         <span className={gradeClass(row.grade)}>{row.grade ?? "No grade"}</span>
         <span className="text-slate-400">{phone ? ` · ${phone}` : " · no phone"}</span>
@@ -824,6 +888,12 @@ function GroupTable({
               friendly". A trade record a rep can only see on a laptop is one they cannot check
               while standing in the pharmacy, which is the whole occasion for this board. */}
           <TradeLine row={row} />
+          {/* On a card there is room for it on its own line — the phone gets the same signal as the
+              laptop, which is the standing rule for this board (a rep switching between the two must
+              not have to learn two languages). */}
+          <div className="mt-1">
+            <ActivityChip activity={row.activity} />
+          </div>
           <PortalRecordFields
             fields={[
               { label: "Specialty", value: row.speciality ?? "Unspecified" },
@@ -939,10 +1009,18 @@ function GroupTable({
 }
 
 export function RepsListContacts({
+  activityAvailable,
+  activityMonthLabel,
   groups,
   repName,
   syncedAt,
 }: {
+  /** False when the month's plan and visits could not be read. The chip, the filter and the export
+   * columns all disappear together — a half-present column is worse than an absent one. */
+  activityAvailable: boolean;
+  /** "August 2026". Names the window in the filter label and in the export header, so a saved file
+   * can never be read against the wrong month. */
+  activityMonthLabel: string;
   groups: RepsListGroup[];
   repName: string;
   syncedAt: string | null;
@@ -955,6 +1033,10 @@ export function RepsListContacts({
   const [grade, setGrade] = useState("");
   const [listType, setListType] = useState("");
   const [speciality, setSpeciality] = useState("");
+  // The sixth filter, added with the activity column. It survives a tab change, unlike List: a
+  // pharmacy is visited or not visited exactly as a doctor is, so the choice stays meaningful on
+  // both sides of the split and clearing it would be the surprise.
+  const [activity, setActivity] = useState("");
   const [query, setQuery] = useState("");
 
   // ONE dialog for the whole board, opened with whichever row was clicked. A dialog per row would be
@@ -1005,11 +1087,12 @@ export function RepsListContacts({
             (!listType || row.listType === listType) &&
             (!grade || gradeOf(row) === grade) &&
             (!speciality || specialityOf(row) === speciality) &&
+            matchesActivity(row, activity) &&
             matches(row, needle),
         ),
       }))
       .filter((entry) => entry.rows.length > 0);
-  }, [brick, grade, groups, listType, query, speciality, tab]);
+  }, [activity, brick, grade, groups, listType, query, speciality, tab]);
 
   // The export carries the brick and the area on every row, because the grouping IS the finding
   // here — a flat contact export would throw away the one thing this board adds. Unmapped rows
@@ -1027,6 +1110,11 @@ export function RepsListContacts({
       // the columns a manager would actually sort on — "show me every doubtful pin" is the whole
       // point of scoring them. The score is a NUMBER so it sorts; the word beside it says what the
       // number means without needing the popup.
+      // The activity columns go out with the rows and are EMPTY STRINGS when the read failed, never
+      // a word — a spreadsheet cell reading "No activity" on a row nobody scored is the same false
+      // accusation the screen refuses to print. The count columns are numbers so they sort.
+      activity: row.activity ? ACTIVITY_LABEL[row.activity.status] : "",
+      activity_meaning: row.activity ? ACTIVITY_MEANING[row.activity.status] : "",
       confidence: row.confidence ? row.confidence.score : "",
       confidence_verdict: row.confidence ? BAND_WORD[row.confidence.band] : "No visit yet",
       confidence_visits: row.confidence ? row.confidence.total : "",
@@ -1034,6 +1122,10 @@ export function RepsListContacts({
       contact_ar: row.nameAr ?? "",
       grade: row.grade ?? "",
       last_seen: row.seenAt?.at ? cairoDay(row.seenAt.at) : "",
+      // The plan's own ask, TO DATE — the denominator the screen shows. Exporting the whole month's
+      // ask instead would make every mid-month row look behind.
+      last_visit: row.activity?.lastVisitDate ?? "",
+      planned_to_date: row.activity ? row.activity.plannedCallsToDate : "",
       list: LIST_LABEL[row.listType],
       locality: row.region ?? "",
       map: row.seenAt ? `${row.seenAt.lat}, ${row.seenAt.lon}` : "",
@@ -1041,6 +1133,7 @@ export function RepsListContacts({
       phone: phoneOf(row) ?? "",
       shared_with: (row.sharedWith ?? []).map((entry_) => entry_.repName).join(", "),
       speciality: row.speciality ?? "",
+      visits: row.activity ? row.activity.visits : "",
     })),
   );
 
@@ -1135,6 +1228,30 @@ export function RepsListContacts({
               </select>
             </label>
           ) : null}
+          {/* Hidden entirely when the activity could not be read, rather than offered and inert.
+              An empty result from a filter reads as "this rep has none of those", which is a claim
+              about the rep; a missing control reads as what it is. */}
+          {activityAvailable ? (
+            <label className="block w-full sm:w-56">
+              <span className={LABEL_CLASS}>{`Activity · ${activityMonthLabel}`}</span>
+              <select
+                className={`mt-1 ${SELECT_CLASS}`}
+                onChange={(event) => setActivity(event.target.value)}
+                value={activity}
+              >
+                <option value="">All activity</option>
+                {/* The combined choice leads, because "who has nobody been to" is the question this
+                    column was added to answer. The individual statuses follow it in
+                    ACTIVITY_FILTER_ORDER — action first, then the rest. */}
+                <option value={UNVISITED_CHOICE}>Not visited at all</option>
+                {ACTIVITY_FILTER_ORDER.map((status) => (
+                  <option key={status} value={status}>
+                    {ACTIVITY_LABEL[status]}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
           <label className="block w-full sm:w-40">
             <span className={LABEL_CLASS}>Grade</span>
             <select className={`mt-1 ${SELECT_CLASS}`} onChange={(event) => setGrade(event.target.value)} value={grade}>
@@ -1188,6 +1305,18 @@ export function RepsListContacts({
             { key: "phone", label: "Phone" },
             { key: "address", label: "Address" },
             { key: "last_seen", label: "Last seen" },
+            // Dropped from the file when the read failed, exactly as they are dropped from the
+            // screen. An export must match the screen (owner's standing rule), and that includes
+            // matching it when a column is not there.
+            ...(activityAvailable
+              ? [
+                  { key: "activity", label: `Activity · ${activityMonthLabel}` },
+                  { key: "activity_meaning", label: "What that means" },
+                  { key: "visits", label: "Visits", numeric: true },
+                  { key: "planned_to_date", label: "Planned to date", numeric: true },
+                  { key: "last_visit", label: "Last visit" },
+                ]
+              : []),
             { key: "map", label: "Map (lat, lon)" },
             { key: "confidence", label: "Location confidence %" },
             { key: "confidence_verdict", label: "Confidence verdict" },
@@ -1197,7 +1326,11 @@ export function RepsListContacts({
           ]}
           rows={exportRows}
           sheetName="Reps List"
-          subtitle={syncedAt ? `${repName} · grouped by brick, as held by the CRM` : repName}
+          subtitle={
+            activityAvailable
+              ? `${repName} · grouped by brick, as held by the CRM · activity for ${activityMonthLabel}`
+              : `${repName} · grouped by brick, as held by the CRM`
+          }
           title="Reps List"
         />
       </div>

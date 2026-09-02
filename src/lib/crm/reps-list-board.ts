@@ -40,6 +40,16 @@ import { loadCoverageFilterTree } from "@/lib/crm/coverage-filters-data";
 import { getDoctorListRepSummaries, type DoctorListRepSummary } from "@/lib/crm/contact-lists";
 import type { CrmManagerScope } from "@/lib/crm/manager-scope";
 import { getRepsListForAgent, type RepsListForRep } from "@/lib/crm/reps-list";
+// Month vocabulary is BORROWED, never restated. `monthLabelOf` and `resolveRepDoctorListMonth`
+// come from the module that produces the activity itself, and `kpiMonthOptions` from the board that
+// already offers the same twelve-month picker. Writing a local copy of any of the three is how two
+// screens start disagreeing about which month "August" is — see the DATE DISCIPLINE note in
+// rep-doctor-lists.ts on why all of it is string arithmetic and never Date parsing.
+import { kpiMonthOptions, type KpiPeriodOption } from "@/lib/crm/kpis-board";
+import { monthBounds, monthLabelOf, resolveRepDoctorListMonth } from "@/lib/crm/rep-doctor-lists";
+import { activityForContact, countUnvisited, type RepsListActivity } from "@/lib/crm/reps-list-activity";
+import { loadRepsListActivity } from "@/lib/crm/reps-list-activity-data";
+import { cairoTodayIso } from "@/lib/crm/dates";
 
 /** One rep offered by the cascade, with whatever CRM list they hold. */
 export type RepsListRep = {
@@ -65,6 +75,24 @@ export type RepsListRep = {
 };
 
 export type RepsListBoard = {
+  /**
+   * FALSE means the activity could not be read — NOT that nothing happened.
+   *
+   * The board renders the difference, and it is the whole difference between a column that is
+   * missing and one that accuses every doctor on the list of being ignored. A plan mirror that has
+   * not shipped, a rep with no CRM account, and a departed agent all land here.
+   */
+  activityAvailable: boolean;
+  /** The month the activity describes — the contact list itself is not time-scoped. */
+  activityMonth: string;
+  activityMonthLabel: string;
+  /** The last day the activity covers: today for the live month, else the month's last day. Printed,
+   * so a two-day-old month can never be read as a full one. */
+  activityAsOf: string;
+  /** Contacts on this list that went unvisited in the month — `untouched` plus `missed`. */
+  activityUnvisited: number;
+  /** The twelve months the picker offers, newest first. */
+  monthOptions: readonly KpiPeriodOption[];
   /** The rep whose list is on screen, or null when the selection resolves to nobody. */
   list: RepsListForRep | null;
   options: CoverageFilterOptions;
@@ -308,19 +336,79 @@ export async function buildRepsCascade(input: {
   return { options, repNameByAgentId, reps, repsIgnoringRep, scopeLabel, scopeReason: null, selected, selection, syncedAt };
 }
 
+/**
+ * Attach each contact's month activity to the rows, leaving the grouping untouched.
+ *
+ * Done HERE and not in `getRepsListForAgent` on purpose. That function mirrors the CRM's own
+ * contact list and knows nothing about plans or visits, which is exactly what makes it the honest
+ * answer to "what was this rep given". The activity is an ANNOTATION over that list, and keeping the
+ * two apart is what lets the board still render a complete, correct contact list on a day the plan
+ * mirror cannot be read at all.
+ */
+function withActivity(
+  list: RepsListForRep,
+  index: ReadonlyMap<number, RepsListActivity> | null,
+): RepsListForRep {
+  return {
+    ...list,
+    groups: list.groups.map((group) => ({
+      ...group,
+      // A contact carried on BOTH the AM and PM lists appears as two rows and both get the same
+      // activity, because the activity is a property of the contact and not of the list he sits on.
+      // Two rows reading "2 of 3" are one doctor visited twice, not four visits.
+      rows: group.rows.map((row) => ({ ...row, activity: activityForContact(index, row.contactCrmId) })),
+    })),
+  };
+}
+
 /** Assembles tab one — the cascade plus the selected rep's contact list, grouped by brick. */
 export async function getRepsListBoard(input: {
   scope: CrmManagerScope;
-  params: { area?: string; line?: string; region?: string; rep?: string };
+  params: { area?: string; line?: string; month?: string; region?: string; rep?: string };
 }): Promise<RepsListBoard> {
   const cascade = await buildRepsCascade(input);
-  const list =
+  const today = cairoTodayIso();
+  // An unparseable or hand-typed month falls back to the Cairo month we are in, never throws — this
+  // rides in the URL, so a stale bookmark is a user-reachable input.
+  const activityMonth = resolveRepDoctorListMonth(input.params.month);
+  const monthEnd = monthBounds(activityMonth).to;
+  // The same clamp the builder applies internally, restated for the CAPTION so the screen can say
+  // how much of the month it is actually reporting on. On the 2nd of a month that matters enormously:
+  // every doctor is legitimately unvisited, and a board that did not print the span would read as a
+  // catastrophic collapse in coverage rather than as a month that has barely started.
+  const activityAsOf = today < monthEnd ? today : monthEnd;
+
+  const rawList =
     cascade.selected?.agentCrmId != null
       ? await getRepsListForAgent(cascade.selected.agentCrmId, cascade.repNameByAgentId)
       : null;
 
+  // THE ACTIVITY MUST NEVER TAKE THE CONTACT LIST DOWN WITH IT. The list is this board's whole
+  // purpose and it comes from a different mirror; the plan mirror is newer than several
+  // environments' schemas and `scanPlanEntries` already degrades to empty rather than throwing. A
+  // failure here therefore drops the annotation and says so, and the board below still renders every
+  // contact — the behaviour this board had before the column existed.
+  let activityIndex: Map<number, RepsListActivity> | null = null;
+  if (rawList && cascade.selected?.agentCrmId != null) {
+    try {
+      activityIndex = await loadRepsListActivity({ agentCrmId: cascade.selected.agentCrmId, month: activityMonth });
+    } catch {
+      activityIndex = null;
+    }
+  }
+
+  const list = rawList ? withActivity(rawList, activityIndex) : null;
+  const activityUnvisited =
+    list && activityIndex ? countUnvisited(list.groups.flatMap((group) => group.rows.map((row) => row.activity ?? null))) : 0;
+
   return {
+    activityAsOf,
+    activityAvailable: activityIndex != null,
+    activityMonth,
+    activityMonthLabel: monthLabelOf(activityMonth),
+    activityUnvisited,
     list,
+    monthOptions: kpiMonthOptions(today),
     options: cascade.options,
     reps: cascade.reps,
     scopeLabel: cascade.scopeLabel,

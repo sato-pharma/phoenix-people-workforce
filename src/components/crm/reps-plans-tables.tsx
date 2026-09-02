@@ -16,10 +16,13 @@ import { useSortableTable } from "@/components/ui/use-sortable-table";
 import { splitCrmRepName } from "@/lib/crm/rep-name";
 import type { RepsPlansRepRow } from "@/lib/crm/reps-plans";
 
-// Client half of Reps Plans. Styling copies the Rep Doctor Lists tables verbatim
-// (rep-doctor-lists-tables.tsx), its neighbour in the same shell — flat borders, slate-900 header
-// rows, orange focus — because the two boards answer the same question about the same reps and one
-// must not read as a one-off (owner's standing rule).
+// Client half of Reps Plans. Styling copies the CRM coverage tables verbatim
+// (brick-coverage-tables.tsx), its neighbour in the same shell — flat borders, slate-900 header
+// rows, orange focus — because these boards answer the same kind of question about the same reps
+// and one must not read as a one-off (owner's standing rule).
+//
+// The original was rep-doctor-lists-tables.tsx, deleted on 2026-09-02 as unreachable code. Same
+// lineage, same look; brick-coverage-tables.tsx is the live copy of it.
 //
 // Month and rep ride in the URL, so every change re-runs the server-side access gate rather than
 // filtering a payload already in the browser.

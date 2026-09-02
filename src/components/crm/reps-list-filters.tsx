@@ -123,3 +123,64 @@ export function RepsListFilters({
     </div>
   );
 }
+
+/**
+ * The month the ACTIVITY column is scored over — tab one only.
+ *
+ * A SEPARATE CONTROL FROM THE CASCADE ABOVE, and separate on purpose. The four cascade levels
+ * answer "whose list"; this answers "over what window". They compose freely — every combination is
+ * meaningful — so folding the month into LEVELS would wrongly make it clear the levels below it.
+ *
+ * IT LIVES IN THIS FILE FOR THE SELECT CLASSES. The long note on SELECT_CLASS above applies here
+ * unchanged: it must not be shrunk to fit a phone, because `globals.css` floors every control at
+ * 16px below 768px to stop iOS Safari zooming the page. A month label is short, so unlike the rep
+ * picker this one has room to spare — but a future "fix" that shrinks it would be wrong for exactly
+ * the reason written up there.
+ *
+ * The contact list itself is NOT time-scoped and never becomes so: changing the month re-scores the
+ * annotation and never adds or removes a contact. That is why this picker cannot empty the board.
+ */
+export function RepsListMonthPicker({
+  basePath,
+  month,
+  options,
+  preserve,
+}: {
+  basePath: string;
+  month: string;
+  options: readonly { label: string; value: string }[];
+  /** The cascade and the open tab, so choosing a month does not send the reader back to all reps. */
+  preserve?: Record<string, string | undefined>;
+}) {
+  const router = useRouter();
+  const [pending, setPending] = useState(false);
+
+  const apply = (value: string) => {
+    const next = new URLSearchParams();
+    for (const [name, carried] of Object.entries(preserve ?? {})) {
+      if (carried) next.set(name, carried);
+    }
+    if (value) next.set("month", value);
+    setPending(true);
+    const query = next.toString();
+    router.push(query ? `${basePath}?${query}` : basePath);
+  };
+
+  return (
+    <label className="block w-full sm:w-56">
+      <span className={LABEL_CLASS}>Activity month</span>
+      <select
+        className={`mt-1 ${SELECT_CLASS}`}
+        disabled={pending || options.length === 0}
+        onChange={(event) => apply(event.target.value)}
+        value={month}
+      >
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}

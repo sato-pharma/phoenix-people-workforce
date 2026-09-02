@@ -43,6 +43,7 @@ type PageProps = {
   searchParams?: Promise<{
     area?: string;
     line?: string;
+    month?: string;
     plan?: string;
     region?: string;
     rep?: string;
@@ -127,7 +128,7 @@ export default async function PortalRepsListPage({ searchParams }: PageProps) {
   let board: Awaited<ReturnType<typeof getRepsListBoard>> | null = null;
   try {
     const scope = await getDoctorListScope(access);
-    board = await getRepsListBoard({ params: cascade, scope });
+    board = await getRepsListBoard({ params: { ...cascade, month: params?.month }, scope });
   } catch (error) {
     logPortalFailure({ hrId: access.hrId, module: "reps-list", role: access.role, route: ROUTE }, error);
     board = null;

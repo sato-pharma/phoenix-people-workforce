@@ -1,13 +1,14 @@
 import assert from "node:assert/strict";
 
 import {
+  applyAssist,
   campaignHeadline,
   campaignSpecialitiesAreKnownToTaxonomy,
   readCampaignNote,
   resolveSpeciality,
   CAMPAIGN_SPECIALITY_CANONICALS,
 } from "../src/lib/crm/campaign-note.ts";
-import { acceptAssistedValue, acceptAssistRow, applyAssist } from "../src/lib/crm/campaign-note-assist.ts";
+import { acceptAssistedValue, acceptAssistRow } from "../src/lib/crm/campaign-note-assist.ts";
 import { KNOWN_SP_SPECIALITIES } from "../src/lib/crm/contact-taxonomy.ts";
 
 /**
@@ -220,6 +221,26 @@ export function runCrmCampaignNoteTests() {
     const gyna = readCampaignNote("Manal hamza gyna");
     assert.equal(gyna.people[0].name, "Manal hamza", "the speciality is not part of her name");
     assert.equal(gyna.people[0].speciality?.written, "gyna");
+  }
+
+  // ── One unreadable thing is ONE fragment ──
+  {
+    // Two paths inside readCampaignNote record an unread segment and they overlap: the flush of
+    // words nothing claimed, and the fallback for a segment where nothing at all was recognised.
+    // For a short unreadable segment both fired on the same text, so it was listed twice.
+    //
+    // Harmless while nothing consumed `unread` — the reading is flattened into three columns and
+    // the leftovers were dropped. Wiring the cheap-model assist on 2026-09-02 gave it a consumer,
+    // and there a duplicate is not cosmetic: applyAssist folds one answer back per fragment, so the
+    // same doctor would be filed as two separate people on one row, and the model billed twice for
+    // reading him once.
+    for (const note of ["م. طنطا العام", "ص ثروت", "أ.د محمد الحويزي", "GB ahmed"]) {
+      assert.deepEqual(
+        readCampaignNote(note).unread,
+        [note],
+        `"${note}" is one thing the rules could not read — it must be listed once, not once per path that noticed it`,
+      );
+    }
   }
 
   // ── This file must never become a second speciality vocabulary ──
