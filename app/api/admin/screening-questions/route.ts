@@ -49,6 +49,7 @@ type DraftBody = {
   kind?: string;
   options?: { value?: string; title?: string; description?: string | null }[] | null;
   isActive?: boolean;
+  appliesToRoleFamilies?: string[] | null;
 };
 
 function parseDraft(raw: DraftBody): ScreeningQuestionDraft {
@@ -61,7 +62,18 @@ function parseDraft(raw: DraftBody): ScreeningQuestionDraft {
           value: String(option.value ?? "").trim(),
         }))
       : null;
+  // An ABSENT field and an EMPTY array both mean "ask everyone" here. Absent is what a client that
+  // predates scoping sends, empty is what this screen sends once the admin clears every checkbox,
+  // and both must land on null rather than on a stored [] — which the database refuses outright,
+  // because an empty scope reads as "ask nobody" and would silently retire the question.
+  // Membership itself is NOT checked here: screeningQuestionViolations owns that vocabulary, so the
+  // admin gets one message naming the bad role rather than a generic 400 from this parser.
+  const appliesToRoleFamilies = Array.isArray(raw.appliesToRoleFamilies)
+    ? raw.appliesToRoleFamilies.map((family) => String(family ?? "").trim()).filter((family) => family.length > 0)
+    : [];
+
   return {
+    appliesToRoleFamilies: appliesToRoleFamilies.length > 0 ? appliesToRoleFamilies : null,
     bodyText: String(raw.bodyText ?? "").trim(),
     id: raw.id ? String(raw.id) : null,
     isActive: raw.isActive !== false,

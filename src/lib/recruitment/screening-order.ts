@@ -72,6 +72,12 @@ const bandByFamily: Record<CandidateRoleFamily, ScreeningBand> = {
   // Field force, not `sales`: an NSM runs the field organisation. Before this family existed all 7
   // of them fell through to the `sales` catch-all and sorted BELOW every medical rep.
   national_sales_manager: "field_force",
+  // The office/admin seat at head office (added 2026-09-02 with the Sheraton Office Coordinator
+  // opening). `unrelated` sits beside human_resources and finance for the same reason: it is a real
+  // Phoenix job, but nothing on that CV speaks to a field-force or pharma read, so a screener gets
+  // through the reps first. It is NOT `unknown` — a title WAS read, and knowing it is an office job
+  // is itself the useful fact.
+  office_coordinator: "unrelated",
   other: "unrelated",
   pharmacist: "pharma_adjacent",
   product_manager: "pharma_adjacent",

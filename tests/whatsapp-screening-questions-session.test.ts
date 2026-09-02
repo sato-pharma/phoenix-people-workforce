@@ -17,6 +17,7 @@ import {
 
 function q(overrides: Partial<ScreeningQuestion> = {}): ScreeningQuestion {
   return {
+    appliesToRoleFamilies: null,
     bodyText: "Do you already have a valid driving license?",
     id: "q-1",
     isActive: true,

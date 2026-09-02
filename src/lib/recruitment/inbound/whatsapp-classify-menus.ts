@@ -223,6 +223,17 @@ const ROLE_MENU_ORDER: CandidateRoleFamily[] = [
   "national_sales_manager",
   "human_resources",
   "finance",
+  // Added 2026-09-02 for the Sheraton Office Coordinator opening. It sits with the other head-office
+  // seats and above "Other" — which stays last, because it is the answer meaning "none of these" and
+  // offering it early invites it. The list is now 9 rows against Metas 10-row cap, so ONE row is
+  // left: the next role added has to displace something rather than append, and a tenth would send
+  // the whole message to a 400 rather than merely look crowded.
+  //
+  // This row is what makes the position tappable instead of typed, which matters twice over: the
+  // applicant lands in a real family (so the extra questions can be scoped to them), and the job
+  // title is spelled by the system rather than by somebody phone keyboard — the folder shelf already
+  // carries five spellings of Kafr El-Sheikh from free-typed keys, and this is how that is avoided.
+  "office_coordinator",
   "other",
 ];
 

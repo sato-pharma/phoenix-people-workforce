@@ -25,6 +25,7 @@ import {
   decideNextExtraStep,
   extraAnswerTooLongText,
   parseExtraQuestionRowId,
+  questionsForRole,
   type ExtraAnswerOutcome,
   type ScreeningQuestion,
   type ScreeningQuestionKind,
@@ -62,10 +63,12 @@ type QuestionRow = {
   options: ScreeningQuestionOption[] | null;
   sort_order: number;
   is_active: boolean;
+  applies_to_role_families: string[] | null;
 };
 
 function mapQuestionRow(row: QuestionRow): ScreeningQuestion {
   return {
+    appliesToRoleFamilies: row.applies_to_role_families,
     bodyText: row.body_text,
     id: row.id,
     isActive: row.is_active,
@@ -82,7 +85,7 @@ async function loadAllQuestions(): Promise<ScreeningQuestion[]> {
   const supabase = recruitmentDb();
   const { data, error } = await supabase
     .from(QUESTIONS_TABLE)
-    .select("id,question_key,body_text,kind,options,sort_order,is_active")
+    .select("id,question_key,body_text,kind,options,sort_order,is_active,applies_to_role_families")
     .order("sort_order", { ascending: true });
   if (error) throw error;
 
@@ -91,11 +94,21 @@ async function loadAllQuestions(): Promise<ScreeningQuestion[]> {
   return all;
 }
 
-/** Active questions only, in sort order — what the loop actually asks. Empty means the loop is
- *  never entered and a session behaves exactly as it did before this feature existed. */
-export async function listActiveScreeningQuestions(): Promise<ScreeningQuestion[]> {
+/**
+ * Active questions THIS APPLICANT is asked, in sort order — what the loop actually asks. Empty means
+ * the loop is never entered and the session behaves exactly as it did before this feature existed,
+ * which is now the normal outcome for most applicants rather than a rare one.
+ *
+ * The role is a REQUIRED argument, deliberately, even though most rows will not be scoped. An
+ * optional one would default to "unscoped" at any call site that forgot it, and the failure mode of
+ * a forgotten filter is silent: the question simply reaches everybody, which is precisely the state
+ * this parameter exists to end. Making it required moves that mistake from runtime to the compiler.
+ */
+export async function listActiveScreeningQuestions(
+  roleFamily: string | null,
+): Promise<ScreeningQuestion[]> {
   const all = await loadAllQuestions();
-  return all.filter((question) => question.isActive);
+  return questionsForRole(all.filter((question) => question.isActive), roleFamily);
 }
 
 /**
@@ -258,7 +271,9 @@ export async function handleExtraQuestionReply(input: {
     const currentQuestion = await getQuestionByKey(parsed.questionKey);
     if (!currentQuestion) return "unknown_value";
 
-    const activeQuestions = await listActiveScreeningQuestions();
+    // Scoped to what this applicant tapped as their role, not to the whole active list. A question
+    // added for another seat between two of their replies must not appear mid-conversation.
+    const activeQuestions = await listActiveScreeningQuestions(session.job_title_family);
     const decision = decideNextExtraStep({
       activeQuestions,
       answer: { kind: "tapped", value: parsed.value },
@@ -309,7 +324,7 @@ export async function handleExtraQuestionText(input: {
     const currentQuestion = await getQuestionByKey(session.extra_current_question_key);
     if (!currentQuestion || currentQuestion.kind !== "free_text") return "not_awaiting_text";
 
-    const activeQuestions = await listActiveScreeningQuestions();
+    const activeQuestions = await listActiveScreeningQuestions(session.job_title_family);
     const decision = decideNextExtraStep({
       activeQuestions,
       answer: { kind: "typed", text: input.text },
