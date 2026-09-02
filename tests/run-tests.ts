@@ -1213,6 +1213,7 @@ import { runPortalToolsGridFitsAPhoneTests } from "./portal-tools-grid-fits-a-ph
 import { runRecruitmentFolderCvPopupTests } from "./recruitment-folder-cv-popup.test.ts";
 
 import { runRepoDoctorWorktreeRestoreAdviceTests } from "./repo-doctor-worktree-restore-advice.test.ts";
+import { runCommentStripRatchetTests } from "./comment-strip-ratchet.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -3750,6 +3751,7 @@ await runTest("portal tile grids are single-column on a phone (a PremiumNavTile 
 await runTest("recruitment folder row opens the CV in place (modal + download, never the ?candidate= redirect)", runRecruitmentFolderCvPopupTests);
 
 await runTest("repo-doctor never advises pnpm install in a worktree (restore is new-session --repair)", runRepoDoctorWorktreeRestoreAdviceTests);
+await runTest("no source-pinning test strips comments with a regex that eats the code it pins", runCommentStripRatchetTests);
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
