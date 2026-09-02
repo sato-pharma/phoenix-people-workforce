@@ -105,7 +105,7 @@ import {
 } from "./memory-index-budget.mjs";
 import { classifyMemoryReachability, memoryReachabilityLines } from "./memory-index-reachability.mjs";
 import { countUnpushedCommits } from "./repo-doctor-unpushed.mjs";
-import { listArchiveRefs } from "./repo-doctor-archive-refs.mjs";
+import { archivePushTarget, listArchiveRefs } from "./repo-doctor-archive-refs.mjs";
 
 const args = process.argv.slice(2);
 const deep = args.includes("--deep");
@@ -886,8 +886,7 @@ let autoloadedIndexBytes = null;
         const ARCHIVE_LIST_LIMIT = 20;
         const shown = deep ? stranded : stranded.slice(0, ARCHIVE_LIST_LIMIT);
         for (const entry of shown) {
-          const leaf = entry.ref.replace("refs/deleted-branches/", "").replace("refs/heads/", "");
-          console.log(`    git push origin ${entry.sha}:refs/backups/${leaf}`);
+          console.log(`    git push origin ${entry.sha}:${archivePushTarget(entry.ref)}`);
         }
         if (stranded.length > shown.length) {
           console.log(

@@ -3502,10 +3502,11 @@ await runTest(
 );
 
 await runTest(
-  "Repo doctor audits EVERY archive ref, including `codex/<task>` names (a for-each-ref glob "
-  + "does not cross a slash, so the old single star saw 137 of 306 archives and pronounced them "
-  + "all backed up while 23 existed nowhere but this laptop; a repo it cannot read must report "
-  + "unknown rather than none)",
+  "Repo doctor audits EVERY archive ref — every NAMESPACE and every NAME shape (a for-each-ref "
+  + "glob does not cross a slash, so the old single star saw 137 of 306 archives and pronounced "
+  + "them all backed up while 23 existed nowhere but this laptop; and refs/backups/** — the one "
+  + "namespace AGENTS.md 2.1 names — was scanned by nothing at all; a repo it cannot read must "
+  + "report unknown rather than none)",
   runRepoDoctorArchiveRefsTests,
 );
 

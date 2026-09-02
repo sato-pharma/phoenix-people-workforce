@@ -36,13 +36,20 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { ARCHIVE_REF_PATTERNS, listArchiveRefs } from "../scripts/repo-doctor-archive-refs.mjs";
+import { ARCHIVE_REF_PATTERNS, archivePushTarget, listArchiveRefs } from "../scripts/repo-doctor-archive-refs.mjs";
 
 function git(at: string, args: string[]): string {
   return execFileSync("git", args, { cwd: at, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
 }
 
-/** The query exactly as it was before this fix, kept so each case can show what changed. */
+/** The query as it was BEFORE the 2026-09-02 fix: recursive, but blind to `refs/backups/**`. */
+function beforeBackupsPrefixRefs(at: string): string[] {
+  return git(at, ["for-each-ref", "--format=%(refname)", "refs/deleted-branches/**", "refs/heads/rescue/**"])
+    .split("\n")
+    .filter(Boolean);
+}
+
+/** The query exactly as it was before the nested-name fix, kept so each case can show what changed. */
 function singleStarRefs(at: string): string[] {
   return git(at, [
     "for-each-ref",
@@ -69,6 +76,8 @@ function makeRepo(): string {
   git(dir, ["update-ref", "refs/deleted-branches/codex/nested-task", tip]);
   git(dir, ["update-ref", "refs/deleted-branches/claude/deeply/nested-task", tip]);
   git(dir, ["update-ref", "refs/heads/rescue/codex/rescued-task", tip]);
+  git(dir, ["update-ref", "refs/backups/flat-backup", tip]);
+  git(dir, ["update-ref", "refs/backups/codex/nested-backup", tip]);
   return dir;
 }
 
@@ -83,6 +92,8 @@ export function runRepoDoctorArchiveRefsTests(): void {
     assert.deepEqual(
       names,
       [
+        "refs/backups/codex/nested-backup",
+        "refs/backups/flat-backup",
         "refs/deleted-branches/claude/deeply/nested-task",
         "refs/deleted-branches/codex/nested-task",
         "refs/deleted-branches/flat-name",
@@ -103,6 +114,46 @@ export function runRepoDoctorArchiveRefsTests(): void {
     assert.ok(
       old.length < names.length,
       "the fixed patterns must find strictly MORE than the old ones, or this test proves nothing",
+    );
+
+    // ── The refs/backups/** namespace specifically: what the 2026-09-02 fix added ──────────────
+    const beforeBackups = beforeBackupsPrefixRefs(dir).sort();
+    assert.deepEqual(
+      beforeBackups,
+      [
+        "refs/deleted-branches/claude/deeply/nested-task",
+        "refs/deleted-branches/codex/nested-task",
+        "refs/deleted-branches/flat-name",
+        "refs/heads/rescue/codex/rescued-task",
+      ],
+      "the pre-2026-09-02 patterns must still miss every refs/backups ref — if they stop missing "
+        + "them, this pin is stale and no longer proves what the fix changed",
+    );
+    assert.equal(
+      names.filter((n) => n.startsWith("refs/backups/")).length,
+      2,
+      "refs/backups/** is THE namespace AGENTS.md 2.1 names as the only copy that survives losing "
+        + "this laptop — auditing every OTHER namespace but that one is how 21 real archive refs "
+        + "went unexamined while the report printed a clean bill of health",
+    );
+
+    // ── The recovery line must name a ref someone would actually look for ──────────────────────
+    assert.equal(
+      archivePushTarget("refs/backups/codex/nested-backup"),
+      "refs/backups/codex/nested-backup",
+      "a ref already under refs/backups pushes to ITSELF — the naive form yields "
+        + "refs/backups/refs/backups/<name>, filing the tip where nobody will look, and it is "
+        + "printed at exactly the moment someone is trying to rescue work",
+    );
+    assert.equal(
+      archivePushTarget("refs/deleted-branches/codex/nested-task"),
+      "refs/backups/codex/nested-task",
+      "a deleted-branch archive keeps the target it already had — this fix must not move it",
+    );
+    assert.equal(
+      archivePushTarget("refs/heads/rescue/codex/rescued-task"),
+      "refs/backups/rescue/codex/rescued-task",
+      "a rescue branch keeps the target it already had — this fix must not move it",
     );
 
     // ── The patterns themselves are recursive ──────────────────────────────────────────────────
