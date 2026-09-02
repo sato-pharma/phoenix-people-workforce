@@ -14,7 +14,7 @@ import { logError, logWarning } from "@/lib/observability/log";
 import { formatCoveringMessage } from "@/lib/recruitment/candidate-source-context";
 import { clearWhatsAppMessages, sweepOldWhatsAppMessages } from "@/lib/recruitment/inbound/whatsapp-message-buffer";
 import { downloadWhatsAppMedia, WhatsAppMediaTooLargeError } from "@/lib/recruitment/inbound/whatsapp-media";
-import { applyPendingClassification } from "@/lib/recruitment/inbound/whatsapp-classify-session";
+import { applyPendingClassification, sweepFinishedClassifications } from "@/lib/recruitment/inbound/whatsapp-classify-session";
 import { applyPendingExtraAnswers } from "@/lib/recruitment/inbound/whatsapp-screening-questions-session";
 import {
   candidateDisplayName,
@@ -247,6 +247,11 @@ export async function drainInboundIntake(maxItems: number = maxItemsPerRun()): P
   // Retention sweep of the WhatsApp text buffer runs here (once per tick) rather than on the
   // webhook hot path — best-effort, never blocks the drain.
   await sweepOldWhatsAppMessages().catch(() => {});
+
+  // Conversations that answered every question but never reached finishSession. Nothing else in the
+  // system closes one, and an open row swallowed every later CV from that number until the re-ask
+  // landed. Same contract as the sweep above: once per tick, best-effort, never blocks the drain.
+  await sweepFinishedClassifications().catch(() => {});
 
   for (let i = 0; i < maxItems; i += 1) {
     const [row] = await claimNextInbound(1);

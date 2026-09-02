@@ -1021,3 +1021,94 @@ export async function applyPendingClassification(input: { waId: string; candidat
     return false;
   }
 }
+
+// ── Sweeping conversations that answered everything and were never closed ────────────────────────
+// A conversation is closed by `finishSession`, and only by it. Anything that answers the last fixed
+// question but does not reach that call leaves a row that is open for ever: fully answered, going
+// nowhere, and — until the re-ask landed — silently swallowing every future CV from that number.
+//
+// Production on 2026-09-02 held 39 of them. 31 had their answers written onto the candidate by a
+// backfill that set `applied_at` and nothing else; 8 answered everything and never reached a
+// candidate at all, with a candidate sitting there the whole time. Nothing in the system was ever
+// going to close either group, because nothing was looking.
+//
+// So something looks. Once per intake tick, beside the message-buffer retention sweep.
+
+/** How long a fully-answered conversation must sit before the sweep treats it as abandoned. */
+export const FINISHED_SWEEP_QUIET_MS = 30 * 60 * 1000;
+
+/** Bounded so a backlog cannot turn one tick into an unbounded run. It catches up over ticks. */
+const FINISHED_SWEEP_MAX_PER_TICK = 25;
+
+/**
+ * Whether a swept row may be closed.
+ *
+ * NEVER CLOSE A ROW WHOSE ANSWERS DID NOT LAND. Closing is irreversible in practice — the session
+ * table is the only place a typed salary or a tapped background exists until `writeClassification`
+ * copies it onto the candidate — so a row we could not apply stays open and is retried next tick,
+ * by which time the durable worker has usually created the candidate it was waiting for.
+ */
+export function shouldCloseSweptSession(input: { appliedAt: string | null; appliedNow: boolean }): boolean {
+  return Boolean(input.appliedAt) || input.appliedNow;
+}
+
+/**
+ * Applies and closes conversations that finished but were never marked finished.
+ *
+ * DELIBERATELY SILENT TO THE APPLICANT. `finishSession` sends a thank-you and mirrors the result to
+ * the owner's Telegram; this does neither. It runs over rows that are hours or days old, whose
+ * 24-hour window is long shut, so a thank-you would fail as `window_closed` anyway — and a mirror
+ * would fire the whole backlog at the owner's phone in one tick. Repairing the record is the job
+ * here; talking to people is not.
+ *
+ * Scoped to `step = 'salary'`, which is the last fixed question and the only step `finishSession` is
+ * reached from. That also excludes `extra` by construction: a conversation in the admin-defined loop
+ * is legitimately open, holds its position in its own column, and is finished by that loop.
+ *
+ * Best-effort and never throws, like everything else in this file.
+ */
+export async function sweepFinishedClassifications(): Promise<{ applied: number; closed: number }> {
+  const nothing = { applied: 0, closed: 0 };
+  if (!isWhatsAppClassifyEnabled()) return nothing;
+  try {
+    const supabase = recruitmentDb();
+    // The quiet window is what separates an abandoned row from a conversation that answered seconds
+    // ago and whose finishSession is still in flight. Stealing that one would send the applicant no
+    // thank-you and race the write.
+    const quietBefore = new Date(Date.now() - FINISHED_SWEEP_QUIET_MS).toISOString();
+    const { data, error } = await supabase
+      .from(SESSIONS_TABLE)
+      .select(`${SESSION_COLUMNS},applied_at`)
+      .is("completed_at", null)
+      .eq("step", "salary")
+      .not("expected_salary", "is", null)
+      .lt("updated_at", quietBefore)
+      .order("updated_at", { ascending: true })
+      .limit(FINISHED_SWEEP_MAX_PER_TICK);
+    if (error) throw error;
+
+    let applied = 0;
+    let closed = 0;
+    for (const row of (data ?? []) as Array<SessionRow & { applied_at: string | null }>) {
+      const appliedNow = row.applied_at ? false : await applyClassificationToCandidate(row);
+      if (appliedNow) applied += 1;
+      if (!shouldCloseSweptSession({ appliedAt: row.applied_at, appliedNow })) continue;
+      await closeSession(row.id, "swept_finished");
+      closed += 1;
+    }
+
+    if (applied > 0 || closed > 0) {
+      logWarning("WhatsApp classification swept conversations that finished but stayed open", {
+        context: { applied, closed, examined: (data ?? []).length },
+        labels: { event: "whatsapp_classify_finished_sweep" },
+      });
+    }
+    return { applied, closed };
+  } catch (error) {
+    logError("WhatsApp classification finished-sweep failed", {
+      error,
+      labels: { event: "whatsapp_classify_finished_sweep_failed" },
+    });
+    return nothing;
+  }
+}
