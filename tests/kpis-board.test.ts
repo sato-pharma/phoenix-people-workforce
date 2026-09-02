@@ -178,6 +178,7 @@ function docList(agentCrmId: number, agentHrId: string | null, repName: string):
     plannedCalls: 100,
     plannedCallsToDate: 100,
     plannedDoctors: 100,
+    coverageDueDoctors: 100,
     plannedUnclassified: 0,
     repKey: String(agentCrmId),
     repName,
@@ -262,28 +263,11 @@ export function runKpisBoardJoinTests() {
     "the two must be able to DIFFER — equal halves here would hide a bug returning verified for both",
   );
 
-  // ── MEDICAL REPS ONLY ────────────────────────────────────────────────────────────────────────
-  // Owner, 2026-09-03. The predicate is optional so the pure join stays testable without a roster,
-  // and it runs in the SAME pass as the scope filter because both read the hr id, which the join is
-  // where it is finally settled.
-  const repsOnly = joinKpiRows({
-    callRates: [callRate(11, "a-12", "Rep One"), callRate(22, "b-34", "District Manager Two")],
-    docLists: [],
-    scope: { basis: "company", kind: "company", label: "Whole company" },
-    workingDays: 5,
-    isMedicalRep: (hrId) => hrId === "a-12",
-  });
-  assert.deepEqual(repsOnly.map((row) => row.repName), ["Rep One"], "a manager is dropped from the board");
-  assert.equal(
-    joinKpiRows({
-      callRates: [callRate(11, "a-12", "Rep One"), callRate(22, "b-34", "District Manager Two")],
-      docLists: [],
-      scope: { basis: "company", kind: "company", label: "Whole company" },
-      workingDays: 5,
-    }).length,
-    2,
-    "and omitting the predicate keeps everyone — the pure join does not invent a roster",
-  );
+  // MEDICAL REPS ONLY is asserted by tests/kpis-filters.test.ts (runKpiMedicalRepOnlyTests), not
+  // here. This board carried its own roster predicate for a few hours on 2026-09-03; PR #2945
+  // landed `keepMedicalRepsOnly` in crm/kpis-filters.ts on the same day and that is the one this
+  // board now uses. Two implementations of one rule is the drift Doctor Coverage was retired for,
+  // so the duplicate was removed rather than left as a second opinion.
 
   // ── Scope: hr ids are MIXED CASE in production ───────────────────────────────────────────────
   // A case-sensitive comparison does not error, it silently returns nobody — and an empty board

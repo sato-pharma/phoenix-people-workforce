@@ -8,6 +8,7 @@
 import type { AccessContext } from "@/lib/auth/permissions";
 import { recruitmentDb, textOrNull } from "@/lib/recruitment/db";
 import { deriveChannelCode, isValidChannelCode, normalizeChannelCode } from "@/lib/recruitment/outreach/channel-code";
+import { hrIdForStorage } from "@/lib/hr-id";
 
 export const JOB_POST_CHANNEL_KINDS = [
   "facebook_group",
@@ -129,7 +130,7 @@ export async function createJobPostChannels(
     takenNames.add(key);
     rows.push({
       code,
-      created_by_hr_id: access.hrId ?? null,
+      created_by_hr_id: hrIdForStorage(access.hrId),
       kind: input.kind ?? "other",
       name,
       notes: textOrNull(input.notes),

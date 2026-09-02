@@ -11,6 +11,7 @@ import {
 } from "@/lib/recruitment/db";
 import { getRecruitmentFileStorage } from "@/lib/recruitment/file-storage";
 import type { RecruitmentFile, TeamCandidateFile } from "@/lib/recruitment/types";
+import { hrIdForStorage } from "@/lib/hr-id";
 
 export async function listCandidateFiles(candidateId: string): Promise<RecruitmentFile[]> {
   const supabase = recruitmentDb();
@@ -129,7 +130,7 @@ export async function uploadCandidateFile(
       size_bytes: input.sizeBytes ?? null,
       drive_file_id: stored.driveFileId,
       external_url: stored.externalUrl,
-      uploaded_by_hr_id: access.hrId ?? access.loginId ?? null,
+      uploaded_by_hr_id: hrIdForStorage(access.hrId) ?? access.loginId ?? null,
     })
     .select("*")
     .single();

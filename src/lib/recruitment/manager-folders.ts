@@ -11,7 +11,7 @@
 // and then call these functions.
 
 import type { AccessContext } from "@/lib/auth/permissions";
-import { canonicalHrIdKey } from "@/lib/hr-id";
+import { canonicalHrIdKey, hrIdForStorage } from "@/lib/hr-id";
 import {
   candidateFolderRefusal,
   cleanFolderKey,
@@ -139,7 +139,7 @@ export async function fileCandidateForManager(
       {
         candidate_id: candidateId,
         filed_at: filedAt,
-        filed_by_hr_id: access.hrId ?? null,
+        filed_by_hr_id: hrIdForStorage(access.hrId),
         folder_key: cleanKey,
         kind,
         manager_hr_id: managerHrId,

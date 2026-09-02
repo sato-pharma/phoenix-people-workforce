@@ -1538,7 +1538,7 @@ export function runDirectOrdersApprovalDetailNamesTests() {
     const regBody = serviceSource.slice(regIdx, serviceSource.indexOf("export async function updateDirectOrderPharmacyDetails(", regIdx));
     assert.match(regBody, /verification_status: "verified"/, "a pre-registered pharmacy must not need a second confirmation");
     assert.match(regBody, /entry_source: "catalogue"/);
-    assert.match(regBody, /verified_by_hr_id: access\.hrId/, "who confirmed it must be recorded");
+    assert.match(regBody, /verified_by_hr_id: hrIdForStorage\(access\.hrId\)/, "who confirmed it must be recorded, in the casing employees.hr_id stores");
     assert.match(regBody, /writeRequiredAuditLog\(/, "pre-registration must be audited");
 
     // …and the ORDER FORM must still flag everything it creates. If these two ever converge, a

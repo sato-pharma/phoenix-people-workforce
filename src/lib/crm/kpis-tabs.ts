@@ -33,7 +33,7 @@ export const KPI_TAB_LABEL: Record<KpiTab, string> = {
  * gap as a bug in the board.
  */
 export const KPI_TAB_HINT: Record<KpiTab, string> = {
-  summary: "All three KPIs, one row per rep.",
+  summary: "All three KPIs, one row per medical rep. Managers are not on this board.",
   "call-rate": "Calls per working day. Saturday to Wednesday, minus national holidays.",
   coverage: "How much of the planned doctor list has been reached at all this month.",
   frequency: "Whether each doctor was seen the number of times the plan asked for. Exact is the only pass.",

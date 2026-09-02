@@ -293,6 +293,17 @@ import {
 } from "./kpis-board.test.ts";
 import { runCrmMedicalRepTests } from "./crm-medical-rep.test.ts";
 import { runCrmPlanActualsTests } from "./crm-plan-actuals.test.ts";
+import {
+  runKpiAttainmentAndIdentityTests,
+  runKpiBandTests,
+  runKpiFacetTests,
+  runKpiFilterNarrowingTests,
+  runKpiMedicalRepOnlyTests,
+  runKpiTooEarlyToScoreTests,
+  runKpiPodiumTests,
+  runKpiSortTests,
+  runKpiUrlTests,
+} from "./kpis-filters.test.ts";
 import { runCrmRepsPlansTests } from "./crm-reps-plans.test.ts";
 import { runCrmRepVisitsTests } from "./crm-rep-visits.test.ts";
 import { runCrmRegionBrickSuggestTests } from "./crm-region-brick-suggest.test.ts";
@@ -317,7 +328,10 @@ import { runCrmCoverageFilterTests } from "./crm-coverage-filters.test.ts";
 import { runCrmCheckinCoordGuardTests } from "./crm-checkin-coord-guard.test.ts";
 import { runCrmAmpmNormalizationTests } from "./crm-ampm-normalization.test.ts";
 import { runCrmVisitTypeLabelTests } from "./crm-visit-type-labels.test.ts";
-import { runCrmRepDoctorListsTests } from "./crm-rep-doctor-lists.test.ts";
+import {
+  runCoverageDueDenominatorTests,
+  runCrmRepDoctorListsTests,
+} from "./crm-rep-doctor-lists.test.ts";
 import { runCrmContactListsTests } from "./crm-contact-lists.test.ts";
 import { runRepsListTests } from "./reps-list.test.ts";
 import { runRepsListActivityTests } from "./reps-list-activity.test.ts";
@@ -326,6 +340,7 @@ import { runRepsWeeklyPlansTests } from "./reps-weekly-plans.test.ts";
 import { runLocationIqGeocodeConfidenceTests } from "./locationiq-geocode-confidence.test.ts";
 import { runPrivateCalendarTests } from "./private-calendar.test.ts";
 import { runWeeklyPlanApproverUiParityTests } from "./weekly-plan-approver-ui-parity.test.ts";
+import { runHrIdStorageCasingTests } from "./hr-id-storage-casing.test.ts";
 import { runWeeklyPlanMovePeriodTests } from "./weekly-plan-move-period.test.ts";
 import { runWeeklyPlanAutoHrAcknowledgeTests } from "./weekly-plan-auto-hr-acknowledge.test.ts";
 import { runWeeklyPlanErrorBannerToneTests } from "./weekly-plan-error-banner-tone.test.ts";
@@ -1758,6 +1773,15 @@ await runTest("KPIs board join (keyed on the CRM agent id, and scope fails close
 await runTest("KPIs tabs and month picker (an unrecognised tab widens to summary)", runKpiTabTests);
 await runTest("crm medical rep rule (seat outranks a stale job title; scope fails closed and is case-blind)", runCrmMedicalRepTests);
 await runTest("crm plan vs actual (a moved day is not a miss, today is not a failure, a failed read claims nothing)", runCrmPlanActualsTests);
+await runTest("KPIs filters narrow only (no parameter combination can add a row the scope gate dropped)", runKpiFilterNarrowingTests);
+await runTest("KPIs bands (a rep with no plan is never filed as Behind)", runKpiBandTests);
+await runTest("KPIs sorting (nulls park LAST in both directions, so worst-first surfaces a real miss)", runKpiSortTests);
+await runTest("KPIs URL state (a tab, month or period change carries every filter through)", runKpiUrlTests);
+await runTest("KPIs facets (built from the viewer own rows, with a real bucket for an unresolved area)", runKpiFacetTests);
+await runTest("KPIs podium (three measures, three leaderboards, and nobody ranked at a 0 they do not have)", runKpiPodiumTests);
+await runTest("KPIs attainment and identity (one denominator, and a mixed-case hr id still resolves)", runKpiAttainmentAndIdentityTests);
+await runTest("KPIs medical reps only (managers off the board, an unrecorded title still on it)", runKpiMedicalRepOnlyTests);
+await runTest("KPIs early-window guard (a percentage two days into a month is a position, not a verdict)", runKpiTooEarlyToScoreTests);
 await runTest("crm reps plans board (live-month cap, company rate over days x reps, rep filter leaves totals alone)", runCrmRepsPlansTests);
 await runTest("crm rep visits drill-down (territory states, proof buckets, reconciles with the board rate)", runCrmRepVisitsTests);
 await runTest(
@@ -1824,10 +1848,17 @@ await runTest(
   + "offers for verification that was never fetched reads as \"no plan filed\")",
   runCrmRepDoctorListsTests,
 );
+await runTest(
+  "coverage is scored against the DUE list (a doctor planned for the 28th is not a miss on the 15th, "
+  + "a doctor visited EARLY stays in the denominator so the ratio cannot pass 100%, and a complete "
+  + "month divides by the whole list exactly as before — no closed month moves)",
+  runCoverageDueDenominatorTests,
+);
 await runTest("LocationIQ geocode confidence (reverse/forward scoring + LocationIQ-first/Google-fallback wiring)", runLocationIqGeocodeConfidenceTests);
 await runTest("private calendar", runPrivateCalendarTests);
 await runTest("weekly plan approver UI parity (no buttons the server rejects; comments gated on participation)", runWeeklyPlanApproverUiParityTests);
 await runTest("weekly plan move to another period (HR re-dates a plan the employee filed on the wrong week)", runWeeklyPlanMovePeriodTests);
+await runTest("hr ids are stored in canonical casing everywhere, never the lowercase comparison key", runHrIdStorageCasingTests);
 await runTest("weekly plan automatic HR acknowledgement on final approval (both routes, best-effort, manual fallback intact)", runWeeklyPlanAutoHrAcknowledgeTests);
 await runTest("weekly plan error banner tone (a rejection must not look like a confirmation)", runWeeklyPlanErrorBannerToneTests);
 await runTest("termination truth (company exits are not announced as resignations; complete actually terminates)", runTerminationTruthTests);
