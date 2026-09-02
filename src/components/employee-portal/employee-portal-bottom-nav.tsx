@@ -102,13 +102,17 @@ export function EmployeePortalBottomNav({
                   horizontal scroll, fit by wrapping and never by shrinking type, and the ellipsis
                   ban means `truncate` was never available either.
 
-                  The fixed `h-[25px]` is what keeps the row honest once labels wrap: without it a
+                  The fixed `h-[26px]` is what keeps the row honest once labels wrap: without it a
                   tab whose label takes two lines is taller than its neighbours, and `justify-center`
                   then centres each tab's icon at a different height. Two lines are reserved for
                   every tab whether or not it uses them, and the text is centred inside that box, so
                   a one-line label sits within a pixel of where it always has.
+
+                  26px, not the 25px two line-boxes suggest: the line box is 12.5px but a wrapped
+                  label measures scrollHeight 26 against clientHeight 25 in Chromium, so 25 clipped
+                  the second line by a pixel. Measured in the running app, not derived.
                 */}
-                <span className="flex h-[25px] items-center justify-center px-0.5 text-center leading-tight">
+                <span className="flex h-[26px] items-center justify-center px-0.5 text-center leading-tight">
                   {item.label}
                 </span>
               </Link>

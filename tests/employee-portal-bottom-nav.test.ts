@@ -192,8 +192,10 @@ export function runEmployeePortalBottomNavTests() {
       "hide an overflow from the width sweep instead of failing it",
   );
   assert.ok(
-    labelSpan.includes("h-[25px]"),
-    "the bottom-bar label box must stay a fixed two lines tall — without it a tab whose label wraps " +
+    labelSpan.includes("h-[26px]"),
+    "the bottom-bar label box must stay a fixed two lines tall (26px — a wrapped label measures " +
+      "scrollHeight 26 against a 25px box, so two 12.5px line boxes are a pixel short) — without it " +
+      "a tab whose label wraps " +
       "is taller than its neighbours and `justify-center` puts every icon at a different height",
   );
 
