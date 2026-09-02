@@ -131,6 +131,52 @@ export function portalNavClientWidthFor(asideWidth: number): number {
 /** Chromium, 2026-08-23, on the pre-widening 312px rail. The derivation must still reproduce it. */
 export const PORTAL_GEOMETRY_CHECKPOINT = { asideWidth: 312, navClientWidth: 210 } as const;
 
+// ── Employee-portal MOBILE bottom bar (…/employee-portal-bottom-nav.tsx) ─────
+
+/**
+ * The third label surface, and the only one with no rail to be measured against: on a phone this
+ * bar IS the navigation. It is modelled apart from `SidebarShell` on purpose — widening that union
+ * would let a missing branch in `labelBudgetPx` silently charge a bottom-bar label an ADMIN
+ * allowance, which is the exact substitution #2353 made between the two rails.
+ *
+ * Its constraint is also a different SHAPE. Each <li> is `flex-1` with Tailwind's default
+ * `min-width: auto`, so no tab is ever laid out narrower than its own content: a narrow tab donates
+ * its unused share to a wide one, and what the viewport must hold is the SUM of the six floors, not
+ * six equal budgets. Modelling it as a per-tab allowance is wrong and reads far too pessimistic —
+ * 375 / 6 less chrome suggests ~49px a label, while the bar in fact carried a 68px "Direct Order"
+ * without clipping anything.
+ *
+ * Since the label wraps, a tab's floor is its longest WORD rather than the whole label, which is
+ * what the "bottom-bar" half of the snapshot stores.
+ */
+
+/** HOME_ENTRY + MAX_BOTTOM_NAV_CUSTOM + PROFILE_ENTRY. Pinned against the registry by the test. */
+export const BOTTOM_BAR_TABS = 6;
+
+/** The <ul>'s `px-1`. */
+const BOTTOM_BAR_LIST_PADDING = 4 * 2;
+
+/** Per tab: the <Link>'s `mx-0.5` (2 a side) plus the label span's `px-0.5` (2 a side). */
+const BOTTOM_BAR_TAB_CHROME = 2 * 2 + 2 * 2;
+
+/**
+ * The narrowest viewport the bar must survive whole.
+ *
+ * 360px, not the house's usual 375px reference, because 360 is the CSS width of the mainstream
+ * Android phone (Galaxy S8 through S24) and the bar demonstrably broke there: on `whitespace-nowrap`
+ * the worst-case six tabs floored at 367px, so they fit a 375px iPhone by 8px and scrolled a 360px
+ * Android sideways. Measuring against 375 is what let that ship.
+ */
+export const BOTTOM_BAR_REFERENCE_WIDTH = 360;
+
+/**
+ * Total width the six tabs' TEXT may sum to. Compare it against the sum of the six widest floors,
+ * never against a single label.
+ */
+export function bottomBarWordBudgetPx(viewportWidth: number = BOTTOM_BAR_REFERENCE_WIDTH): number {
+  return viewportWidth - BOTTOM_BAR_LIST_PADDING - BOTTOM_BAR_TABS * BOTTOM_BAR_TAB_CHROME;
+}
+
 /**
  * Pixels a label actually gets, in the shell it is rendered in.
  *
@@ -202,6 +248,13 @@ export const LABEL_FONT_CSS = `font-size:13px;font-weight:700;letter-spacing:-0.
  * snapshot stores a measurement per shell rather than one number per label.
  */
 export const PORTAL_LABEL_FONT_CSS = `font-size:12px;font-weight:700;${LABEL_FONT_FAMILY}`;
+
+/**
+ * Mobile bottom-bar label span: `text-phx-2xs font-black` — 10px at weight 900, the smallest and
+ * heaviest type of the three surfaces. Pinned to the component by
+ * tests/sidebar-label-font-sync.test.ts alongside the two rails.
+ */
+export const BOTTOM_BAR_LABEL_FONT_CSS = `font-size:10px;font-weight:900;${LABEL_FONT_FAMILY}`;
 
 export function labelFontCss(shell: SidebarShell): string {
   return shell === "portal" ? PORTAL_LABEL_FONT_CSS : LABEL_FONT_CSS;
