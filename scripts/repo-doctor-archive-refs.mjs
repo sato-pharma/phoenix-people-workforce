@@ -24,6 +24,10 @@
 // So the patterns are recursive and they live here, exported, where a test can drive them against a
 // throwaway repo holding both a flat and a nested archive ref.
 //
+// THE CHECK HAS TWO HALVES, and each has been wrong once. WHICH REFS are archives (the globs below)
+// and WHAT COUNTS AS BEING ON ORIGIN (strandedArchives). Both failed the same way — quietly, in the
+// direction that reads as safe.
+//
 // THE SAME BUG, A SECOND TIME (2026-09-02). The patterns still omitted `refs/backups/**` — the one
 // namespace this file's own header names as the convention that matters. This checkout held 21 local
 // `refs/backups/*` refs that the section never examined, and it printed "none. Every archived tip
@@ -58,6 +62,65 @@ export const ARCHIVE_REF_PATTERNS = Object.freeze([
 export function archivePushTarget(ref) {
   if (ref.startsWith("refs/backups/")) return ref;
   return `refs/backups/${ref.replace("refs/deleted-branches/", "").replace("refs/heads/", "")}`;
+}
+
+/**
+ * The archive refs whose COMMIT exists on this disk only.
+ *
+ * WHY THIS IS NOT `!advertised.has(sha)`. That was the original test, and it asks the wrong
+ * question: "is this SHA the TIP of some ref on origin right now?" An archived tip is normally an
+ * ORDINARY ANCESTOR of `main` — merged, pushed, entirely safe — and tips it is not. Measured on
+ * this checkout 2026-09-02: 5 refs reported as laptop-only, and 4 were direct ancestors of
+ * `origin/main`. The count also MOVES on its own as merged branches are deleted from origin,
+ * which is how a section people are meant to act on trains them to ignore it.
+ *
+ * WHY ANCESTRY ALONE IS NOT ENOUGH EITHER, and this is the part that must not be simplified away.
+ * A remote-tracking ref is a CACHE. `refs/remotes/origin/x` says what origin advertised at the
+ * last fetch, not what it holds now. Trusting one blindly means a rewound or deleted branch reads
+ * as proof — a FALSE CLEAN, the one direction this whole file exists to prevent. So an anchor is
+ * only usable when origin advertises that exact SHA in the ls-remote the caller just took. Then
+ * the reasoning is airtight: origin has the anchor, the anchor has this commit in its history, so
+ * origin has this commit.
+ *
+ * Failure of any git call falls through to STRANDED. A false alarm costs a push; a false clean
+ * costs the commit.
+ *
+ * @param {{ sha: string, ref: string }[]} archiveRefs from listArchiveRefs
+ * @param {Set<string>} advertised every SHA origin advertises right now (from `git ls-remote`)
+ * @param {string} [dir] working directory to run git in
+ * @returns {{ sha: string, ref: string }[]} the subset that exists nowhere but this disk
+ */
+export function strandedArchives(archiveRefs, advertised, dir = process.cwd()) {
+  return archiveRefs.filter((entry) => {
+    if (advertised.has(entry.sha)) return false;
+    return !reachableFromVerifiedOrigin(entry.sha, advertised, dir);
+  });
+}
+
+/**
+ * Whether `sha` is contained by a remote-tracking ref that origin STILL advertises at that SHA.
+ *
+ * One `for-each-ref --contains` per candidate rather than a merge-base per (candidate, anchor):
+ * git walks the graph once and names every containing ref, and the intersection with `advertised`
+ * is what turns a cached ref into a verified one.
+ */
+function reachableFromVerifiedOrigin(sha, advertised, dir) {
+  let out;
+  try {
+    out = execFileSync(
+      "git",
+      ["for-each-ref", "--format=%(objectname)", "--contains", sha, "refs/remotes/origin/"],
+      { cwd: dir, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
+    );
+  } catch {
+    return false;
+  }
+
+  return out
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .some((tip) => advertised.has(tip));
 }
 
 /**
