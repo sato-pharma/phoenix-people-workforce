@@ -1,5 +1,6 @@
 import {
   type AccessContext,
+  hrIdsMatch,
   normalizeHrId,
   normalizeHrIdForAccess,
   normalizeLineName,
@@ -45,8 +46,44 @@ function uniqueCount(values: Array<string | null>) {
   return new Set(values.filter(Boolean)).size;
 }
 
+/**
+ * Accounts pinned to the FULL company organogram by HR_ID rather than by role.
+ *
+ * Every other condition in the two gates below names a ROLE, and their comments explain at length
+ * why an `access.scope === "company"` shortcut is forbidden: it would admit every current AND
+ * future company-scope role in a single edit, silently. This list is the opposite shape and is
+ * safe for the same reason — it admits exactly the people written in it and can never widen on
+ * its own.
+ *
+ * A-3 — Samaa Mosaad Khalil, QPPV, Head Office. Owner instruction 2026-09-02: "show the full
+ * organogram to sama mosaad account". Her app role is the legacy Head-Office `Manager` rung,
+ * which two other people also hold (A-14 Regulatory Affairs, AB R&D Manager). The owner was asked
+ * directly whether they should get it too and chose her account alone, so naming the ROLE here —
+ * the shape used for the Finance Manager and both HR seats — is precisely what must NOT happen.
+ *
+ * This is not a new pattern for this account: resolveEmployeePortalNavVisibility already carries
+ * an `isA3Account` carve-out (src/lib/employee-portal/navigation.ts) turning her Report It and
+ * Planning Calendar tabs on and her expense/incentive tabs off, for the same reason — she is one
+ * person whose portal does not match her rung.
+ *
+ * Compared with hrIdsMatch, never `===`: HR_IDs are stored mixed-case in production (`A-3`,
+ * not `a-3`), so a plain comparison matches nobody with no error — which would present as the
+ * owner's change never having shipped.
+ */
+const FULL_ORGANOGRAM_PINNED_HR_IDS = ["A-3"] as const;
+
+export function isFullOrganogramPinnedAccount(access: Pick<AccessContext, "hrId" | "loginId">) {
+  return FULL_ORGANOGRAM_PINNED_HR_IDS.some(
+    (pinned) => hrIdsMatch(access.hrId, pinned) || hrIdsMatch(access.loginId, pinned),
+  );
+}
+
 export function canAccessHeadOffice(access: AccessContext) {
   return (
+    // A-3 is Head Office staff herself (QPPV). Without this she would hold the company chart and
+    // have her own department filtered out of it — the same trap documented for the Finance
+    // Manager below, where the one part of the tree the viewer sits in is the part that vanishes.
+    isFullOrganogramPinnedAccount(access) ||
     access.role === "Super Admin" ||
     access.role === "CEO" ||
     // Finance Manager added 2026-08-10 (owner). He IS head-office staff (line "Office", line_id 4),
@@ -122,6 +159,10 @@ function stripHeadOfficeRows(report: VacancyReportData): VacancyReportData {
 
 export function canAccessCompanyOrganogram(access: AccessContext) {
   return (
+    // The account pin — see isFullOrganogramPinnedAccount above. This is gate TWO: with the matrix
+    // grant alone she lands in the portal page's redirect, which is the trap each of the three
+    // roles named below hit in turn.
+    isFullOrganogramPinnedAccount(access) ||
     access.scope === "system" ||
     access.role === "Super Admin" ||
     access.role === "CEO" ||
