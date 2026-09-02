@@ -151,6 +151,9 @@ async function generate(provider: AiProvider, kind: AiKind, unknowns: AiUnknown[
   });
 
   const startedAt = Date.now();
+  // Captured so the failure row can say WHY. This is the exact path that answered 401 for days on
+  // 2026-09-02 while nothing anywhere recorded that it had.
+  let upstreamStatus: number | undefined;
   try {
     for (let attempt = 0; ; attempt += 1) {
       const res = await fetch(`${provider.baseUrl}/chat/completions`, {
@@ -174,6 +177,7 @@ async function generate(provider: AiProvider, kind: AiKind, unknowns: AiUnknown[
         });
         return json.choices?.[0]?.message?.content ?? "{}";
       }
+      upstreamStatus = res.status;
       const respBody = await res.text().catch(() => "");
       if (res.status === 429 && !isQuotaExhausted(respBody)) {
         if (attempt < MAX_RATE_LIMIT_RETRIES) {
@@ -192,6 +196,7 @@ async function generate(provider: AiProvider, kind: AiKind, unknowns: AiUnknown[
   } catch (error) {
     recordAiCall({
       component: "sales_normalizer_ai_suggest",
+      errorCode: upstreamStatus === undefined ? "no_http_status" : String(upstreamStatus),
       latencyMs: Date.now() - startedAt,
       model: provider.model,
       purpose: `ai_suggest_${kind}`,

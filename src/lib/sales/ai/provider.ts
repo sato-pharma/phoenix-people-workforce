@@ -46,6 +46,10 @@ export async function aiChatJson(
 ): Promise<string> {
   const purpose = opts?.purpose ?? "sales_ai_chat";
   const startedAt = Date.now();
+  // Captured so the failure row can say WHY, not just that something failed. A row reading
+  // "HTTP 401" is the difference between "the key is wrong" and "the model is busy" — the two
+  // that looked identical during the 2026-09-02 outage.
+  let upstreamStatus: number | undefined;
   try {
     const res = await fetch(`${provider.baseUrl}/chat/completions`, {
       body: JSON.stringify({
@@ -63,6 +67,7 @@ export async function aiChatJson(
       signal: AbortSignal.timeout(opts?.timeoutMs ?? 45_000),
     });
     if (!res.ok) {
+      upstreamStatus = res.status;
       const body = await res.text().catch(() => "");
       throw new Error(`AI request failed (HTTP ${res.status}): ${body.slice(0, 200)}`);
     }
@@ -83,6 +88,7 @@ export async function aiChatJson(
   } catch (error) {
     recordAiCall({
       component: "sales_ai_provider",
+      errorCode: upstreamStatus === undefined ? "no_http_status" : String(upstreamStatus),
       latencyMs: Date.now() - startedAt,
       model: provider.model,
       purpose,
