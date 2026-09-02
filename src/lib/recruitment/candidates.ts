@@ -19,7 +19,7 @@ import { describeCandidateSource, type SourceContextRow } from "@/lib/recruitmen
 import type { CandidateUnconfirmedCvFacts } from "@/lib/recruitment/candidate-screening-facts";
 import { chunkIds } from "@/lib/recruitment/db-batch";
 import { listSendsForManager, managerSendStamp, type ManagerSend } from "@/lib/recruitment/manager-sends";
-import { hrIdLookupKeys, hrIdsMatch } from "@/lib/hr-id";
+import { hrIdForStorage, hrIdLookupKeys, hrIdsMatch } from "@/lib/hr-id";
 import {
   listHiringManagerOptions,
   pushCandidatesToManager,
@@ -714,7 +714,7 @@ export async function fileCandidateToFolder(
     .from("ats_candidates")
     .update({
       folder_filed_at: filedAt,
-      folder_filed_by_hr_id: access.hrId ?? null,
+      folder_filed_by_hr_id: hrIdForStorage(access.hrId),
       // `kind` is already narrowed to CandidateFolderKind by the guard above — no cast needed.
       folder_kind: kind,
       folder_key: folderKey,
@@ -771,7 +771,7 @@ export async function confirmCandidateBackground(
     .from("ats_candidates")
     .update({
       background_confirmed_at: confirmedAt,
-      background_confirmed_by_hr_id: access.hrId ?? null,
+      background_confirmed_by_hr_id: hrIdForStorage(access.hrId),
       background_confirmed_outcome: outcome,
       updated_at: confirmedAt,
     })

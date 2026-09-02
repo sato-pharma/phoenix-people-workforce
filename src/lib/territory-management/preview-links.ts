@@ -6,6 +6,7 @@ import { assertPermission } from "@/lib/auth/permissions";
 import { forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { loadTerritoryFilters, loadTerritoryMap } from "@/lib/territory-management/service";
+import { hrIdForStorage } from "@/lib/hr-id";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Territory Management preview links (owner request, 2026-08-14).
@@ -162,7 +163,7 @@ export async function revokeTerritoryPreviewLink(access: AccessContext, linkId: 
 
   await supabase
     .from("territory_preview_links")
-    .update({ revoked_at: new Date().toISOString(), revoked_by_hr_id: access.hrId })
+    .update({ revoked_at: new Date().toISOString(), revoked_by_hr_id: hrIdForStorage(access.hrId) })
     .eq("id", linkId);
 
   await writeRequiredAuditLog({

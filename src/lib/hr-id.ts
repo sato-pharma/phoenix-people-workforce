@@ -13,6 +13,16 @@ export function canonicalHrIdForDisplay(value: string | null | undefined) {
   return canonicalHrIdKey(value)?.toUpperCase() ?? null;
 }
 
+// The form an HR id is STORED in. AccessContext.hrId holds canonicalHrIdKey — the lowercase
+// COMPARISON key — which is correct for matching and wrong for persisting: writing it is what left
+// ~37,000 lowercase actor ids across 52 columns (audited 2026-09-02). The damage is silent, because
+// the app's own lookups mostly canonicalise; only a naive .eq feels it, and then it returns nothing
+// at all rather than something wrong. Every actor/owner id written to the database goes through
+// here. Falls back to the raw value so a non-canonical id is still recorded rather than dropped.
+export function hrIdForStorage(value: string | null | undefined) {
+  return canonicalHrIdForDisplay(value) ?? value ?? null;
+}
+
 export function normalizeHrIdForAccess(value: string | null | undefined) {
   const normalized = canonicalHrIdKey(value);
   return normalized ? normalized.replace(/[^a-z0-9]/g, "") : null;

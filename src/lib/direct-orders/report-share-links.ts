@@ -3,7 +3,7 @@ import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import type { AccessContext } from "@/lib/auth/permissions";
 import { assertPermission, systemAccessContext } from "@/lib/auth/permissions";
-import { hrIdLookupKeys } from "@/lib/hr-id";
+import { hrIdForStorage, hrIdLookupKeys } from "@/lib/hr-id";
 import { forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import {
@@ -171,7 +171,7 @@ export async function revokeDirectOrderReportShareLink(access: AccessContext, li
 
   await supabase
     .from("direct_order_report_share_links")
-    .update({ revoked_at: new Date().toISOString(), revoked_by_hr_id: access.hrId })
+    .update({ revoked_at: new Date().toISOString(), revoked_by_hr_id: hrIdForStorage(access.hrId) })
     .eq("id", linkId);
 
   await writeRequiredAuditLog({

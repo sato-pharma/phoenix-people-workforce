@@ -13,6 +13,7 @@ import { outstationPayrollTripId } from "@/lib/outstation/payroll-expense-mappin
 import { isPayrollExpensesSchemaMissing } from "@/lib/outstation/expenses";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { deleteVacationRequestAsAdmin } from "@/lib/vacation/service";
+import { hrIdForStorage } from "@/lib/hr-id";
 
 export const SYSTEM_CLEANUP_MAX_BULK = 25;
 const SYSTEM_CLEANUP_PAGE_SIZE = 1000;
@@ -674,7 +675,7 @@ async function insertCleanupEvent(input: {
     .from("admin_cleanup_events")
     .insert({
       action: "delete",
-      actor_hr_id: input.access.hrId,
+      actor_hr_id: hrIdForStorage(input.access.hrId),
       actor_login_id: input.access.loginId ?? resolveEmployeeIdentityId(input.access) ?? "system",
       actor_role: input.access.role,
       block_reason: input.loaded.blockReason,

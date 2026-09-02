@@ -10,7 +10,7 @@ import {
   type EmployeeDirectoryData,
   type EmployeeDirectoryRow,
 } from "@/lib/employees/employee-directory";
-import { canonicalHrIdKey, hrIdLookupKeys } from "@/lib/hr-id";
+import { canonicalHrIdKey, hrIdForStorage, hrIdLookupKeys } from "@/lib/hr-id";
 import { ApiError, validationError } from "@/lib/http/api-errors";
 import { createSystemNotificationForRecipients, type SystemNotificationChannel } from "@/lib/notifications/system";
 import { logError } from "@/lib/observability/log";
@@ -1206,7 +1206,7 @@ export async function createDirectOrderPharmacy(
       region_code: input.regionCode ?? null,
       doctor_name: doctorName,
       pharmacy_address: pharmacyAddress,
-      created_by_hr_id: access.hrId,
+      created_by_hr_id: hrIdForStorage(access.hrId),
       contested_code_claims: contestedCodeClaims,
       venue_type: venueType,
     },
@@ -1616,7 +1616,7 @@ async function markDirectOrderPharmacyVerified(
     .from("direct_order_pharmacies")
     .update({
       verification_status: "verified",
-      verified_by_hr_id: access.hrId ?? null,
+      verified_by_hr_id: hrIdForStorage(access.hrId),
       verified_at: new Date().toISOString(),
     })
     .eq("id", input.pharmacyId);
@@ -1847,7 +1847,7 @@ export async function releaseHeldDirectOrdersForPharmacy(
       .update({
         hold_release_ground: "admin_released",
         hold_release_reason: reason,
-        hold_release_decided_by_hr_id: access.hrId,
+        hold_release_decided_by_hr_id: hrIdForStorage(access.hrId),
         hold_release_decided_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       })
@@ -1921,7 +1921,7 @@ export async function keepDirectOrderHeld(
     .update({
       hold_release_ground: "kept_held",
       hold_release_reason: reason,
-      hold_release_decided_by_hr_id: access.hrId,
+      hold_release_decided_by_hr_id: hrIdForStorage(access.hrId),
       hold_release_decided_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     })
@@ -2839,7 +2839,7 @@ export async function ensureDirectOrderPharmacyFromDirectory(
     p_area_code: row.area_code ? String(row.area_code) : null,
     p_region_code: row.region_code ? String(row.region_code) : null,
     p_address: row.address ? String(row.address) : null,
-    p_hr_id: access.hrId,
+    p_hr_id: hrIdForStorage(access.hrId),
   });
 
   if (rpcError) throw rpcError;
@@ -2923,10 +2923,10 @@ export async function registerDirectOrderPharmacy(
       region_code: input.regionCode ?? null,
       doctor_name: doctorName,
       pharmacy_address: pharmacyAddress,
-      created_by_hr_id: access.hrId,
+      created_by_hr_id: hrIdForStorage(access.hrId),
       verification_status: "verified",
       entry_source: "catalogue",
-      verified_by_hr_id: access.hrId ?? null,
+      verified_by_hr_id: hrIdForStorage(access.hrId),
       verified_at: now,
       venue_type: venueType,
     })
@@ -3689,7 +3689,7 @@ export async function submitDirectOrder(
   const { data: inserted, error: insertError } = await supabase
     .from("direct_order_requests")
     .insert({
-      requester_hr_id: access.hrId,
+      requester_hr_id: hrIdForStorage(access.hrId),
       requester_role: access.role,
       status: submitAsHeld ? "held" : "pending_approval",
       held_at: submitAsHeld ? new Date().toISOString() : null,
@@ -4162,7 +4162,7 @@ export async function decideDirectOrder(
     p_expected_status: "pending_approval",
     p_next_status: evaluation.nextStatus,
     p_step_next_status: stepNextStatus,
-    p_decided_by_hr_id: access.hrId,
+    p_decided_by_hr_id: hrIdForStorage(access.hrId),
     p_decision_comment: comment,
     p_now: now.toISOString(),
     p_sales_month: salesMonth,
@@ -4479,7 +4479,7 @@ export async function reverseDirectOrder(
   const { data: inserted, error: insertError } = await supabase
     .from("direct_order_requests")
     .insert({
-      requester_hr_id: access.hrId,
+      requester_hr_id: hrIdForStorage(access.hrId),
       requester_role: access.role,
       status: "pending_approval",
       line: original.line,
@@ -4800,7 +4800,12 @@ export async function getDirectOrderWorkspaceData(access: AccessContext): Promis
   const { data: myStepRows } = await supabase
     .from("direct_order_approval_steps")
     .select("request_id")
-    .eq("decided_by_hr_id", access.hrId ?? "");
+    // Both casings on purpose. decided_by_hr_id holds whatever access.hrId was at decision time:
+    // the LOWERCASE comparison key for most rows, but the canonical uppercase form for others (10 of
+    // 223 rows in production on 2026-09-02, all one approver's). A bare .eq on the session key
+    // therefore returned NOTHING for that person rather than something wrong, and an empty decision
+    // history reads as "you have never approved anything" instead of as a bug.
+    .in("decided_by_hr_id", hrIdLookupKeys(access.hrId));
   const historyIds = Array.from(new Set(((myStepRows ?? []) as Array<{ request_id: string }>).map((r) => r.request_id)));
   const { data: historyRows } = historyIds.length
     ? await supabase.from("direct_order_requests").select("*").in("id", historyIds).order("decided_at", { ascending: false })
