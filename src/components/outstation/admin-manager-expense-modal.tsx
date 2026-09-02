@@ -890,7 +890,11 @@ export function AdminManagerExpenseModal({
             </p>
           </div>
 
-          {/* Calculation preview — fuel + allowance breakdown */}
+          {/* Calculation preview — every component of the expected total.
+              The total is reportExpectedTotal() = travel + meeting + allowance + other, so each of
+              those four gets its own tile. Meeting and other were carried on the preview payload
+              but never rendered, which put money in the total with no line anywhere on screen
+              accounting for it (a 250 meeting invoice read as part of "fuel + allowance"). */}
           {calcPreview ? (
             <div className={`${panelClassName} p-4`}>
               <div className="mb-3 flex items-center justify-between gap-2">
@@ -920,10 +924,30 @@ export function AdminManagerExpenseModal({
                     {formatEgp(calcPreview.allowanceAmount)}
                   </p>
                 </div>
+                {calcPreview.meetingAmount > 0 ? (
+                  <div className="rounded-md bg-phx-paper px-3 py-2.5">
+                    <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-soft">
+                      Meeting
+                    </p>
+                    <p className="mt-0.5 text-sm font-black text-phx-ink">
+                      {formatEgp(calcPreview.meetingAmount)}
+                    </p>
+                  </div>
+                ) : null}
+                {calcPreview.otherAmount > 0 ? (
+                  <div className="rounded-md bg-phx-paper px-3 py-2.5">
+                    <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-soft">
+                      Other
+                    </p>
+                    <p className="mt-0.5 text-sm font-black text-phx-ink">
+                      {formatEgp(calcPreview.otherAmount)}
+                    </p>
+                  </div>
+                ) : null}
               </div>
-              <div className="mt-3 flex items-center justify-between rounded-md bg-phx-accent-soft px-3 py-2.5">
+              <div className="mt-3 flex items-center justify-between gap-2 rounded-md bg-phx-accent-soft px-3 py-2.5">
                 <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-accent-hover">
-                  {isTicketBased ? "Ticket + allowance" : "Fuel + allowance"} = total
+                  Total
                 </p>
                 <p className="text-sm font-black text-phx-accent-hover">
                   {formatEgp(calcPreview.expectedTotalAmount)}

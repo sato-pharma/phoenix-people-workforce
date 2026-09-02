@@ -1741,6 +1741,15 @@ export function MobileOutstationWizard({
               value={calculation.eligibilityStatus.replace(/_/g, " ")}
             />
             <FieldValue label="Allowance" value={egp(calculation.allowanceAmount)} />
+            {/* Meeting and other are inside Amount (reportExpectedTotal sums travel + meeting +
+                allowance + other), so a review card that lists fuel and allowance beside the
+                Amount has to list these two as well or the figures below it do not add up. */}
+            {calculation.reportMeetingAmount > 0 ? (
+              <FieldValue label="Meeting" value={egp(calculation.reportMeetingAmount)} />
+            ) : null}
+            {calculation.reportOtherAmount > 0 ? (
+              <FieldValue label="Other" value={egp(calculation.reportOtherAmount)} />
+            ) : null}
           </div>
         ) : null}
       </Card>
