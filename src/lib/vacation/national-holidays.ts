@@ -197,14 +197,21 @@ function withCompanyHolidays(
   return company.length > 0 ? mergeHolidayRows([...googleHolidays, ...company]) : googleHolidays;
 }
 
+/**
+ * Both helpers hand the RESPONSE back to their caller, which then reads `.text()` / `.json()` on
+ * it — so a manual `AbortController` + `clearTimeout(timer)` in a `finally` protected nothing that
+ * mattered: the deadline died here, at the return, and the caller's body read ran unbounded. That
+ * is the same defect that let a CRM sync burn 301 seconds on 2026-09-02 (see fetchJson in
+ * src/lib/crm/client.ts). `AbortSignal.timeout` is the right shape for a helper like this: the
+ * deadline travels WITH the response and stays armed across the caller's body read. No caller here
+ * keys on the error's name, so the DOMException rename (AbortError -> TimeoutError) changes nothing.
+ */
 async function fetchGoogleHolidayCalendar(input: {
   apiKey: string;
   calendarId: string;
   timeMax: string;
   timeMin: string;
 }) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), holidayFetchTimeoutMs);
   const url = new URL(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(input.calendarId)}/events`);
   url.searchParams.set("key", input.apiKey);
   url.searchParams.set("singleEvents", "true");
@@ -212,30 +219,20 @@ async function fetchGoogleHolidayCalendar(input: {
   url.searchParams.set("timeMin", input.timeMin);
   url.searchParams.set("timeMax", input.timeMax);
 
-  try {
-    return await fetch(url, {
-      cache: "no-store",
-      headers: { Accept: "application/json" },
-      signal: controller.signal,
-    });
-  } finally {
-    clearTimeout(timeout);
-  }
+  return await fetch(url, {
+    cache: "no-store",
+    headers: { Accept: "application/json" },
+    signal: AbortSignal.timeout(holidayFetchTimeoutMs),
+  });
 }
 
 async function fetchGoogleHolidayCalendarIcs(calendarId: string) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), holidayFetchTimeoutMs);
   const url = new URL(`https://calendar.google.com/calendar/ical/${encodeURIComponent(calendarId)}/public/basic.ics`);
-  try {
-    return await fetch(url, {
-      cache: "no-store",
-      headers: { Accept: "text/calendar,text/plain,*/*" },
-      signal: controller.signal,
-    });
-  } finally {
-    clearTimeout(timeout);
-  }
+  return await fetch(url, {
+    cache: "no-store",
+    headers: { Accept: "text/calendar,text/plain,*/*" },
+    signal: AbortSignal.timeout(holidayFetchTimeoutMs),
+  });
 }
 
 function unfoldIcsLines(value: string) {
