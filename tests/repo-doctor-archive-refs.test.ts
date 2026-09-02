@@ -37,7 +37,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import {
-  ARCHIVE_REF_PATTERNS,
+  NON_ARCHIVE_REF_PREFIXES,
+  isArchiveRef,
   archivePushTarget,
   listArchiveRefs,
   strandedArchives,
@@ -83,6 +84,12 @@ function makeRepo(): string {
   git(dir, ["update-ref", "refs/heads/rescue/codex/rescued-task", tip]);
   git(dir, ["update-ref", "refs/backups/flat-backup", tip]);
   git(dir, ["update-ref", "refs/backups/codex/nested-backup", tip]);
+
+  // The inversion's own fixture: things the rule must judge WITHOUT having been told about them.
+  git(dir, ["update-ref", "refs/some-new-convention/kept", tip]); // nobody has classified this
+  git(dir, ["tag", "-a", "archive/annotated", "-m", "kept", tip]); // an ANNOTATED tag, not a commit
+  git(dir, ["update-ref", "refs/heads/codex/live-work", tip]); // a live branch, measured elsewhere
+  git(dir, ["update-ref", "refs/remotes/origin/main", tip]); // a cache of someone else's ref
   return dir;
 }
 
@@ -103,6 +110,8 @@ export function runRepoDoctorArchiveRefsTests(): void {
         "refs/deleted-branches/codex/nested-task",
         "refs/deleted-branches/flat-name",
         "refs/heads/rescue/codex/rescued-task",
+        "refs/some-new-convention/kept",
+        "refs/tags/archive/annotated",
       ],
       "every archive ref must be audited — a `codex/<task>` name is the DOMINANT convention in this "
         + "repo, and skipping it certifies backups that were never checked (AGENTS.md 2.1)",
@@ -161,13 +170,69 @@ export function runRepoDoctorArchiveRefsTests(): void {
       "a rescue branch keeps the target it already had — this fix must not move it",
     );
 
-    // ── The patterns themselves are recursive ──────────────────────────────────────────────────
-    for (const pattern of ARCHIVE_REF_PATTERNS) {
+    assert.equal(
+      archivePushTarget("refs/tags/archive/wt-pr1843"),
+      "refs/backups/tags/archive/wt-pr1843",
+      "a namespace that SAYS something keeps it — the backup ref is read months later by someone "
+        + "asking what this commit was, and refs/backups/wt-pr1843 alone does not answer that",
+    );
+
+    // ── THE INVERSION: a namespace nobody has classified must be AUDITED, never ignored ───────
+    assert.ok(
+      names.includes("refs/some-new-convention/kept"),
+      "a ref in a namespace this file has never heard of must be audited. The allowlist was wrong "
+        + "THREE times — refs/backups, then refs/tags/archive, then refs/deleted-stashes — each "
+        + "time silently, and each time in the direction that reads as a clean bill of health",
+    );
+    assert.ok(
+      isArchiveRef("refs/invented/tomorrow/by-someone-else"),
+      "the rule must answer for a convention that does not exist yet, with no edit to this file — "
+        + "that is the whole point of inverting it. A skip list goes stale toward NOISE; a look "
+        + "list goes stale toward LOSS",
+    );
+
+    // ── The skip list, and the one branch namespace that outranks it ──────────────────────────
+    assert.equal(
+      isArchiveRef("refs/heads/codex/live-work"),
+      false,
+      "a LIVE branch is not an archive — the UNPUSHED COMMITS section already measures those, and "
+        + "listing every working branch here would bury the archives it exists to surface",
+    );
+    assert.ok(
+      isArchiveRef("refs/heads/rescue/codex/rescued-task"),
+      "rescue/<name> is a keepsake wearing a branch's clothes, so it must outrank the refs/heads/ "
+        + "skip — it was an archive before this inversion and must not become invisible now",
+    );
+    assert.equal(
+      isArchiveRef("refs/remotes/origin/main"),
+      false,
+      "a remote-tracking ref is a CACHE of a ref that lives somewhere else — auditing it reports "
+        + "origin's own branches back as YOUR un-backed-up work, which is noise that trains "
+        + "people to stop reading the section",
+    );
+    assert.ok(
+      isArchiveRef("refs/stashed-experiments/x"),
+      "an EXACT-match skip entry must not swallow a namespace that merely starts with it — "
+        + "refs/stash is one ref, and refs/stashed-* would be somebody's kept work",
+    );
+    for (const entry of NON_ARCHIVE_REF_PREFIXES) {
       assert.ok(
-        pattern.endsWith("/**"),
-        `${pattern} must end in "/**" — a single star stops at a slash, which is the whole bug`,
+        entry.startsWith("refs/"),
+        `${entry} must be a full ref prefix — a bare name would match nothing and quietly widen `
+          + "the audit rather than narrow it",
       );
     }
+
+    // ── An ANNOTATED tag must resolve to its commit ───────────────────────────────────────────
+    const annotated = found.find((r) => r.ref === "refs/tags/archive/annotated");
+    assert.ok(annotated, "an annotated tag in an archive namespace must be listed at all");
+    assert.equal(
+      annotated?.sha,
+      git(dir, ["rev-parse", "refs/tags/archive/annotated^{commit}"]),
+      "an annotated tag must resolve to its COMMIT. Its own object is a tag, and for-each-ref "
+        + "--contains rejects a non-commit — so the archive would read as stranded however safe "
+        + "it is, and this repo keeps 52 refs under refs/tags/archive",
+    );
 
     // ── Not knowing must never read as clean ───────────────────────────────────────────────────
     const notARepo = mkdtempSync(join(tmpdir(), "phx-archive-refs-empty-"));
