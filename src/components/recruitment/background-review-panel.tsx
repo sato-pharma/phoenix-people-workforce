@@ -156,10 +156,18 @@ function ReviewGroup({
       <ul className="divide-y divide-phx-line">
         {rows.slice(0, shown).map(({ candidate, standing }) => (
           <li className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2" key={candidate.id}>
+            {/* The NAME wraps. Measured at 375px on 2026-09-02: pinned at `whitespace-nowrap` a real
+                candidate's five-part name laid out 335px wide inside a 325px box and painted over
+                what sits beside it. A name has no length bound, so this is the one label here bound
+                to find a phone too narrow for it — the fits-the-screen rule says wrap, and the
+                ellipsis ban is untouched because nothing is cut.
+
+                The title says PROFILE, not CV: this button routes to the profile panel, and the row
+                in the folder list beside it is the one that now opens the CV itself. */}
             <button
-              className="whitespace-nowrap text-sm font-bold text-phx-ink underline-offset-2 hover:underline"
+              className="text-left text-sm font-bold text-phx-ink underline-offset-2 hover:underline"
               onClick={() => onOpenCandidate(candidate.id)}
-              title={`Open ${candidateDisplayName(candidate.fullName)}'s CV`}
+              title={`Open ${candidateDisplayName(candidate.fullName)}'s profile`}
               type="button"
             >
               {candidateDisplayName(candidate.fullName)}

@@ -1,4 +1,4 @@
-// Recruitment / ATS — the three JSON fetch helpers the module's client components share.
+// Recruitment / ATS — the four JSON fetch helpers the module's client components share.
 //
 // Lifted out of recruitment-workspace.tsx unchanged, so the candidate-folders view can use them
 // without a second copy. Duplicating them is not a theoretical risk here: `patchJson` exists at all
@@ -11,6 +11,11 @@ async function readJson(res: Response, fallback: string): Promise<Record<string,
   const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
   if (!res.ok) throw new Error(typeof data.message === "string" ? data.message : fallback);
   return data;
+}
+
+export async function getJson(url: string): Promise<Record<string, unknown>> {
+  const res = await fetch(url);
+  return readJson(res, "Request failed.");
 }
 
 export async function postJson(url: string, body: unknown): Promise<Record<string, unknown>> {

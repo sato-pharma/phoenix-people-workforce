@@ -19,11 +19,12 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { FolderInput, FolderOpen, Undo2 } from "lucide-react";
+import { FolderInput, FolderOpen, IdCard, Undo2 } from "lucide-react";
 
 import { BackgroundReviewPanel } from "@/components/recruitment/background-review-panel";
 import { Button } from "@/components/ui/button";
-import { deleteRequest, postJson } from "@/components/recruitment/recruitment-fetch";
+import { CvPreviewModal } from "@/components/recruitment/cv-preview-modal";
+import { deleteRequest, getJson, postJson } from "@/components/recruitment/recruitment-fetch";
 import { candidateDisplayName } from "@/lib/recruitment/candidate-display";
 import { candidateStatusLabel } from "@/lib/recruitment/candidate-status";
 import {
@@ -62,10 +63,14 @@ export function CandidateFoldersTab({
 }: {
   candidates: Candidate[];
   /**
-   * Open one filed CV. Handed in rather than implemented here on purpose: the profile panel, its
-   * fetch, its scroll-restore and its CV viewer all live in the pool tab, and a second copy of that
-   * on this screen would be a second thing to keep in step. This routes into the SAME opener the
-   * inbound-CV notification uses.
+   * Open one filed candidate's full PROFILE — which means leaving this screen, because the panel
+   * renders in the pool tab. Reached from the row's Profile button and from the background-review
+   * panel, no longer from the name: reading the CV is the common case and it now happens in place
+   * (see FiledCvName), so the redirect is reserved for the times the reader wants the record.
+   *
+   * Handed in rather than implemented here on purpose: the profile panel, its fetch and its
+   * scroll-restore all live in the pool tab, and a second copy on this screen would be a second
+   * thing to keep in step. This routes into the SAME opener the inbound-CV notification uses.
    */
   onOpenCandidate: (candidateId: string) => void;
 }) {
@@ -122,7 +127,13 @@ export function CandidateFoldersTab({
         <section className="rounded-lg border border-phx-line bg-white" key={shelf.kind}>
           <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 border-b border-phx-line px-3 py-2">
             <span className="whitespace-nowrap text-sm font-black text-phx-ink">{shelf.label}</span>
-            <span className="whitespace-nowrap text-xs font-medium text-slate-400">{shelf.description}</span>
+            {/* The DESCRIPTION wraps, unlike the label and the count beside it. Measured at 375px on
+                2026-09-02: held at `whitespace-nowrap` this sentence laid out 441px wide inside a
+                325px box and the tail was simply painted off the side of the phone, unreadable and
+                unreachable — the page does not scroll sideways, so nothing gets you to it. The
+                fits-the-screen golden rule supersedes the no-wrap habit exactly here: wrapping is
+                the permitted answer, and the ellipsis ban is untouched because nothing is cut. */}
+            <span className="text-xs font-medium text-slate-400">{shelf.description}</span>
             <span className="ml-auto whitespace-nowrap text-xs font-bold tabular-nums text-phx-accent-press">
               {shelf.candidateCount} {shelf.candidateCount === 1 ? "CV" : "CVs"}
             </span>
@@ -160,41 +171,32 @@ export function CandidateFoldersTab({
                       className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 transition hover:bg-slate-50"
                       key={candidate.id}
                     >
-                      {/* The row IS the CV — pressing it opens the profile, exactly as pressing a row
-                          in the pool does. A folder you can only look at is an archive; a folder you
-                          can read out of is the filing cabinet the owner actually asked for.
-
-                          One button spanning name, status and stamp rather than a link on the name
-                          alone: the target is then the whole left of the row, which is what a finger
-                          on a tablet and a tired reader at 4am both need. */}
-                      <button
-                        className="flex flex-1 flex-wrap items-center gap-x-3 gap-y-1 text-left"
-                        onClick={() => onOpenCandidate(candidate.id)}
-                        title={`Open ${candidateDisplayName(candidate.fullName)}'s CV`}
-                        type="button"
-                      >
-                        <span className="whitespace-nowrap text-sm font-bold text-phx-ink underline-offset-4 hover:underline">
-                          {candidateDisplayName(candidate.fullName)}
-                        </span>
-                        <span className="whitespace-nowrap text-xs font-medium text-slate-500">
-                          {candidateStatusLabel(candidate.status)}
-                        </span>
-                        {candidate.folder ? (
-                          <span className="whitespace-nowrap text-phx-xs font-medium text-slate-400">
-                            filed {cairoDateTime(candidate.folder.filedAt)}
-                            {candidate.folder.filedByHrId ? ` by ${candidate.folder.filedByHrId}` : ""}
-                          </span>
-                        ) : null}
-                      </button>
-                      <Button
-                        className="ml-auto"
-                        disabled={busyId === candidate.id}
-                        onClick={() => returnToPool(candidate)}
-                        variant="secondary"
-                      >
-                        <Undo2 aria-hidden className="mr-1.5 h-3.5 w-3.5" />
-                        Return to pool
-                      </Button>
+                      {/* The row IS the CV — and since 2026-09-02 it opens the CV itself, in place.
+                          A folder you can only look at is an archive; a folder you can read out of
+                          is the filing cabinet the owner actually asked for. */}
+                      <FiledCvName candidate={candidate} />
+                      {/* Everything the profile panel can do that a CV cannot — the full file list
+                          for the 105 candidates carrying more than one CV, the status control, the
+                          history — still lives one press away, and this is the only route to it from
+                          the shelf. Pressing the name used to land here; that is what changed. */}
+                      <span className="ml-auto flex flex-wrap items-center gap-2">
+                        <Button
+                          onClick={() => onOpenCandidate(candidate.id)}
+                          title={`Open ${candidateDisplayName(candidate.fullName)}'s full profile`}
+                          variant="secondary"
+                        >
+                          <IdCard aria-hidden className="mr-1.5 h-3.5 w-3.5" />
+                          Profile
+                        </Button>
+                        <Button
+                          disabled={busyId === candidate.id}
+                          onClick={() => returnToPool(candidate)}
+                          variant="secondary"
+                        >
+                          <Undo2 aria-hidden className="mr-1.5 h-3.5 w-3.5" />
+                          Return to pool
+                        </Button>
+                      </span>
                     </li>
                   ))}
                 </ul>
@@ -210,6 +212,110 @@ export function CandidateFoldersTab({
 /** "kind/key" — unique across shelves, because two shelves can legitimately hold the same key. */
 function folderId(kind: CandidateFolderKind, key: string): string {
   return `${kind}/${key}`;
+}
+
+/** The shape `GET /api/recruitment/candidates/:id/files` returns, narrowed to what a preview needs. */
+type CandidateFileSummary = { id: string; fileName: string; kind: string; mimeType: string | null };
+
+/**
+ * The filed candidate's name, as the control that opens their CV — in a popup, over this screen.
+ *
+ * WHAT THIS REPLACED, AND WHY. The same button used to promise "Open X's CV" and instead leave the
+ * folders screen entirely: it set `?candidate=<id>`, switched to the pool tab, and rendered the
+ * profile panel underneath a table of every candidate in the system. Reading one filed CV therefore
+ * cost three interactions (name → wait for the profile fetch → press the file name), and it spent
+ * the reader's place in the filing cabinet to do it — the shelf they had opened was gone, and
+ * getting back to it meant finding the folder again. The owner asked for the CV itself, as a popup,
+ * with a download button, and no redirect. This is that.
+ *
+ * WHY THERE IS ALMOST NOTHING HERE. The hard parts are already solved and deliberately not copied:
+ * CvPreviewModal owns the document (PDF rasterised by pdfjs, .docx by docx-preview, images), the
+ * zoom, the base64 transport that a download-manager extension cannot hijack, and the Download
+ * control in its header. This component's whole job is to answer WHICH file, so the two paths into a
+ * CV cannot drift apart.
+ *
+ * NEWEST CV WINS. `listCandidateFiles` orders by `created_at` descending, so `find` takes the most
+ * recent — the right default, and the only one that is stable when a re-send adds a second copy.
+ * It matters more than it looks: 105 of 632 candidates carry more than one CV and one carries 11.
+ * The full set is not lost, it is behind Profile, which is why that button now exists on the row.
+ *
+ * THE THREE ANSWERS BESIDE THE NAME are all real states, not decoration. "No CV file on record" is
+ * the honest reading of a candidate whose CV never reached storage — the module's standing rule is
+ * that a missing source says so rather than showing a blank. `external_url` is empty for every row
+ * in production, so a filed CV that reports no file is a genuine gap worth seeing, not a glitch.
+ */
+function FiledCvName({ candidate }: { candidate: Candidate }) {
+  const [open, setOpen] = useState(false);
+  const [file, setFile] = useState<CandidateFileSummary | null>(null);
+  const [state, setState] = useState<"idle" | "loading" | "none" | "error">("idle");
+
+  const label = candidateDisplayName(candidate.fullName);
+
+  // Fetched once and kept: re-opening the same CV must not re-ask, and the file list of a filed
+  // candidate does not change while a folder sits open.
+  const openCv = async () => {
+    if (state === "loading") return;
+    if (file) {
+      setOpen(true);
+      return;
+    }
+    setState("loading");
+    try {
+      const data = await getJson(`/api/recruitment/candidates/${candidate.id}/files`);
+      const files = Array.isArray(data.files) ? (data.files as CandidateFileSummary[]) : [];
+      const cv = files.find((entry) => entry.kind === "cv") ?? null;
+      if (!cv) {
+        setState("none");
+        return;
+      }
+      setFile(cv);
+      setState("idle");
+      setOpen(true);
+    } catch {
+      setState("error");
+    }
+  };
+
+  return (
+    <>
+      {/* One button spanning name, status and stamp rather than a link on the name alone: the target
+          is then the whole left of the row, which is what a finger on a tablet and a tired reader at
+          4am both need. `min-w-0` so a long name wraps inside the row instead of pushing it wider
+          than the screen — the fits-the-screen rule, which forbids the sideways scrollbar that a
+          `whitespace-nowrap` name on a 375px phone would otherwise produce. */}
+      <button
+        className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1 text-left disabled:opacity-60"
+        disabled={state === "loading"}
+        onClick={() => void openCv()}
+        title={`Open ${label}'s CV`}
+        type="button"
+      >
+        <span className="text-sm font-bold text-phx-ink underline-offset-4 hover:underline">{label}</span>
+        <span className="whitespace-nowrap text-xs font-medium text-slate-500">
+          {candidateStatusLabel(candidate.status)}
+        </span>
+        {candidate.folder ? (
+          <span className="whitespace-nowrap text-phx-xs font-medium text-slate-400">
+            filed {cairoDateTime(candidate.folder.filedAt)}
+            {candidate.folder.filedByHrId ? ` by ${candidate.folder.filedByHrId}` : ""}
+          </span>
+        ) : null}
+        {state === "loading" ? <span className="text-xs font-medium text-slate-400">Opening…</span> : null}
+        {state === "none" ? <span className="text-xs font-medium text-slate-400">No CV file on record</span> : null}
+        {state === "error" ? (
+          <span className="text-xs font-medium text-rose-500">Couldn&rsquo;t open the CV</span>
+        ) : null}
+      </button>
+      {open && file ? (
+        <CvPreviewModal
+          downloadUrl={`/api/recruitment/files/${file.id}/download`}
+          fileName={file.fileName}
+          mimeType={file.mimeType}
+          onClose={() => setOpen(false)}
+        />
+      ) : null}
+    </>
+  );
 }
 
 /**
@@ -270,7 +376,8 @@ function DeclaredFilingsPanel({ candidates }: { candidates: Candidate[] }) {
     <section className="rounded-lg border border-phx-accent bg-orange-50/60">
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-phx-accent/40 px-3 py-2">
         <span className="whitespace-nowrap text-sm font-black text-phx-ink">They told us where they belong</span>
-        <span className="whitespace-nowrap text-xs font-medium text-slate-500">
+        {/* Wraps — see the shelf header above for the 375px measurement this comes from. */}
+        <span className="text-xs font-medium text-slate-500">
           Answered the WhatsApp questions themselves — nothing here was read off a CV.
         </span>
         {filings.length > 0 ? (
@@ -315,9 +422,9 @@ function DeclaredFilingsPanel({ candidates }: { candidates: Candidate[] }) {
               <span className="whitespace-nowrap text-xs font-bold tabular-nums text-phx-accent-press">
                 {group.names.length} {group.names.length === 1 ? "CV" : "CVs"}
               </span>
-              <span className="whitespace-nowrap text-xs font-medium text-slate-500">
-                {group.names.join(" · ")}
-              </span>
+              {/* Wraps: this is a joined list of names with no length bound at all, so it is the
+                  one span here guaranteed to outgrow a phone. Same rule as the shelf header. */}
+              <span className="min-w-0 text-xs font-medium text-slate-500">{group.names.join(" · ")}</span>
             </li>
           ))}
         </ul>
