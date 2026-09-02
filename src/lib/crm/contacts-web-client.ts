@@ -130,33 +130,46 @@ async function request(
 ): Promise<{ body: string; response: Response }> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), session.timeoutMs);
-  let response: Response;
+  // The body read is INSIDE this try on purpose. It used to sit after the `finally`, which meant
+  // the deadline expired the moment response HEADERS arrived and the HTML grid could then stream
+  // (or not stream) forever. Same defect, same vendor, as the /visits stall of 2026-09-02 — see
+  // fetchJson in ./client.ts. `aborted` is read off the signal because a mid-body abort arrives
+  // as `TypeError: terminated`, not as an AbortError.
+  const asCrmWebError = (error: unknown): CrmWebError =>
+    controller.signal.aborted || (error instanceof Error && error.name === "AbortError")
+      ? new CrmWebError("The CRM web app timed out.", 504)
+      : new CrmWebError(
+          `The CRM web app could not be reached: ${error instanceof Error ? error.message : "network error"}.`,
+          502,
+        );
   try {
-    response = await fetch(`${session.baseUrl}${path}`, {
-      ...init,
-      cache: "no-store",
-      headers: {
-        // The grid is rendered server-side for a browser; a bare fetch is served the same HTML, but
-        // the UA is sent so the vendor's logs show a recognisable, attributable caller.
-        "User-Agent": "PhoenixWorkforce/1.0 (+contact-list-sync)",
-        ...(session.cookie ? { Cookie: session.cookie } : {}),
-        ...(init.headers ?? {}),
-      },
-      redirect: "manual",
-      signal: controller.signal,
-    });
-  } catch (error) {
-    if (error instanceof Error && error.name === "AbortError") {
-      throw new CrmWebError("The CRM web app timed out.", 504);
+    let response: Response;
+    try {
+      response = await fetch(`${session.baseUrl}${path}`, {
+        ...init,
+        cache: "no-store",
+        headers: {
+          // The grid is rendered server-side for a browser; a bare fetch is served the same HTML, but
+          // the UA is sent so the vendor's logs show a recognisable, attributable caller.
+          "User-Agent": "PhoenixWorkforce/1.0 (+contact-list-sync)",
+          ...(session.cookie ? { Cookie: session.cookie } : {}),
+          ...(init.headers ?? {}),
+        },
+        redirect: "manual",
+        signal: controller.signal,
+      });
+    } catch (error) {
+      throw asCrmWebError(error);
     }
-    throw new CrmWebError(
-      `The CRM web app could not be reached: ${error instanceof Error ? error.message : "network error"}.`,
-      502,
-    );
+
+    try {
+      return { body: await response.text(), response };
+    } catch (error) {
+      throw asCrmWebError(error);
+    }
   } finally {
     clearTimeout(timer);
   }
-  return { body: await response.text(), response };
 }
 
 function collectCookies(response: Response, existing: string): string {

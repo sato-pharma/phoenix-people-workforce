@@ -449,6 +449,11 @@ export async function sendTelegramNotification(input: TelegramSendInput): Promis
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), telegramTimeoutMs());
   let response: Response;
+  let payload: {
+    description?: string;
+    ok?: boolean;
+    result?: { message_id?: number | string };
+  } | null;
   try {
     response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
       body: JSON.stringify({
@@ -461,20 +466,24 @@ export async function sendTelegramNotification(input: TelegramSendInput): Promis
       method: "POST",
       signal: controller.signal,
     });
+    // Read the body INSIDE the timer's scope. It used to sit after the `finally`, so the deadline
+    // ended once headers arrived and a stalled body could hang this send with no bound at all —
+    // and this is the outbox drain's delivery path, where one hung send is a head-of-line block.
+    // The sibling telegramApi() below already had it right; only this call site did not.
+    payload = (await response.json().catch(() => null)) as {
+      description?: string;
+      ok?: boolean;
+      result?: { message_id?: number | string };
+    } | null;
+    if (controller.signal.aborted) throw new Error("Telegram request timed out.");
   } catch (error) {
-    if (error instanceof Error && error.name === "AbortError") {
+    if (controller.signal.aborted || (error instanceof Error && error.name === "AbortError")) {
       throw new Error("Telegram request timed out.");
     }
     throw error;
   } finally {
     clearTimeout(timeout);
   }
-
-  const payload = await response.json().catch(() => null) as {
-    description?: string;
-    ok?: boolean;
-    result?: { message_id?: number | string };
-  } | null;
 
   if (!response.ok || payload?.ok === false) {
     // Redact any bot token the API might echo back, matching every other Telegram call path.
