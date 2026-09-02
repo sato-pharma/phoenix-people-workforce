@@ -51,13 +51,20 @@ const GAP = "   ";
 const SEP = `${GAP}${DOT}${GAP}`;
 
 /**
- * The arrow turns at half of target, not at target.
+ * The arrow turns at target. Owner's decision, 2026-09-03: "fix the arrow to only show above target".
  *
- * This is the engine's own threshold — `IF(G17>=0.5,"▲","▼")` in the Rep Card — so the static sheets
- * and the live card have to agree on it. An arrow that flipped at 1.0 would put a down arrow beside
- * almost every row in a month that ran behind, which tells a reader nothing.
+ * It used to turn at half, which is what the owner's own engine carried — `IF(G17>=0.5,"▲","▼")` in
+ * the Rep Card. The effect was that a row at 60% of target was decorated with the same up arrow as a
+ * row at 140%, and the Watch List — a page that by definition holds nothing but shortfalls — printed
+ * an up arrow beside every line on it. An arrow that is true of almost every row says nothing.
+ *
+ * Yes, a month that runs behind now shows a lot of down arrows. That is the month, not the mark.
+ *
+ * The Rep Card's arrow is a FORMULA inside the engine rather than a value this module writes, so
+ * `fillRepCard` rewrites the threshold in the workbook from this same constant. Change it here and
+ * the static sheets and the live card move together; they cannot drift apart again.
  */
-const ARROW_AT = 0.5;
+export const ACHIEVEMENT_ARROW_AT = 1;
 
 const MONTHS = [
   "January", "February", "March", "April", "May", "June",
@@ -88,16 +95,16 @@ function agree(value: number, singular: string, plural: string): string {
 
 function arrowFor(achievement: number | null): string {
   if (achievement == null) return "";
-  return achievement >= ARROW_AT ? UP : DOWN;
+  return achievement >= ACHIEVEMENT_ARROW_AT ? UP : DOWN;
 }
 
 /**
  * The arrow beside a growth column turns at zero, not at half.
  *
- * Growth and achievement are different questions and their arrows disagree on purpose: half of
- * target is a real halfway mark, while half of last month's sales is a collapse. The Family by
- * Month sheet's own colour rules are written to the same threshold — green at or above zero, amber
- * below — so the arrow and the fill behind it can never point opposite ways.
+ * Growth and achievement are different questions, and each arrow turns where its own answer turns:
+ * achievement at the target that was set, growth at flat. The Family by Month sheet's own colour
+ * rules are written to the same threshold — green at or above zero, amber below — so the arrow and
+ * the fill behind it can never point opposite ways.
  */
 function growthArrow(growth: number | null): string {
   if (growth == null) return "";
@@ -757,7 +764,7 @@ export function buildClosingEngineFill(input: ClosingEngineDataInput): ClosingEn
 
   const overviewNotes = [
     `One line per workbook — this is ${line} only. Head Office is not part of any line and is excluded throughout.`,
-    `${UP} means at or above half of target and ${DOWN} below it; a green cell made target, an amber cell is under half.`,
+    `${UP} means the target was met and ${DOWN} that it was not; a green cell made target, an amber cell is under half of it.`,
     untargeted === 0
       ? "Every area on this line carries a target, so every area is ranked and scored."
       : `${count(untargeted, "area")} ${agree(untargeted, "carries", "carry")} no target: ${agree(untargeted, "it is", "they are")} listed and counted in the totals, but never ranked and never scored as zero.`,

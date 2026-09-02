@@ -42,6 +42,7 @@ import { checkWorkbook } from "../scripts/check-workbook-integrity.mjs";
 
 const DASH = String.fromCharCode(0x2014);
 const UP = String.fromCharCode(0x25b2);
+const DOWN = String.fromCharCode(0x25bc);
 
 const PRODUCTS = [
   { family: "Tebofortin", productCode: "TB001", productName: "Tebofortin 40mg" },
@@ -409,7 +410,37 @@ export async function runClosingEngineExportTests() {
   assert.equal(cairo2!.F, "44000", "its sales still count, and still total in money");
 
   const cairo1 = ranked.find((row) => row.C === "Cairo 1");
-  assert.equal(cairo1!.I, UP, "an area at 96% of target is above the halfway arrow");
+  // ── The arrow turns at TARGET ───────────────────────────────────────────────────────────────
+  // Owner's decision, 2026-09-03: "fix the arrow to only show above target". It used to turn at
+  // half, so 97% and 140% carried the same mark and the Watch List -- a page that holds nothing but
+  // shortfalls -- printed an up arrow on every row of it. Cairo 1 sits at 97.5%: close, and short.
+  assert.equal(cairo1!.I, DOWN, "97% of target is short of target, and the arrow says so");
+
+  // Swept as a rule over every ranked row rather than asserted on one, because the bug was never a
+  // single wrong cell -- it was one threshold, applied everywhere.
+  for (const row of ranked) {
+    const achievement = Number(row.H);
+    if (!Number.isFinite(achievement)) continue;
+    assert.equal(
+      row.I,
+      achievement >= 1 ? UP : DOWN,
+      `${row.C}: at ${(achievement * 100).toFixed(1)}% the arrow must follow whether the target was MET`,
+    );
+  }
+
+  // The live Rep Card's arrow is a FORMULA inside the owner's engine, not a value this code writes,
+  // so it carries its own copy of the threshold and drifted the moment the constant moved. It is
+  // rewritten at fill time from that same constant; this is what proves card and pages agree.
+  const repCardXml = await zip.file(CLOSING_ENGINE_TEMPLATE_MANIFEST.sheets["Rep Card"]!.file)!.async("string");
+  const arrowFormulas = [...repCardXml.matchAll(/<f[^>]*>(IF\(ISNUMBER\([^<]*)<\/f>/g)].map((match) => match[1]!);
+  assert.ok(arrowFormulas.length > 0, "the Rep Card still carries its arrow formula");
+  for (const formula of arrowFormulas) {
+    assert.doesNotMatch(formula, /&gt;=0\.5/, "no arrow on the card still turns at half of target");
+  }
+  assert.ok(
+    arrowFormulas.some((formula) => /&gt;=1,/.test(formula)),
+    "the card's arrow turns at target, the same place every static sheet's does",
+  );
 
   // ── A month that was never uploaded is blank, not zero ───────────────────────────────────────
   // A zero here reads as a collapse in sales. The distinction is the whole reason the prior month

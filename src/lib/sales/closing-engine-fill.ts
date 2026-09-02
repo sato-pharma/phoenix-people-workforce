@@ -4,6 +4,7 @@ import {
   CLOSING_ENGINE_TEMPLATE_MANIFEST,
   closingEngineTemplateBytes,
 } from "./closing-engine-template-generated";
+import { ACHIEVEMENT_ARROW_AT } from "./closing-engine-data";
 
 /**
  * Pours one month of a closing into the owner's own `.xlsm` engine.
@@ -515,6 +516,16 @@ async function fillRepCard(zip: JSZip, fill: ClosingEngineFill): Promise<void> {
   // underneath it — which is exactly where they would reach if the block stayed at July's fifteen
   // rows while the total moved up to row 20.
   sheetXml = resizeConditionalFormatting(sheetXml, stampRow, lastProductRow);
+
+  // The Rep Card's arrow is a FORMULA the owner's engine carries -- `IF(ISNUMBER(G17),IF(G17>=0.5,
+  // "up","down"),"")` -- so it does not go through `arrowFor` like every static sheet does, and the
+  // two thresholds sat apart the moment one of them moved. Rewritten from the same constant, matched
+  // on the shape of the formula rather than on the glyphs inside it, so the card follows the pages.
+  sheetXml = sheetXml.replace(
+    /(IF\(ISNUMBER\((\$?[A-Z]{1,3}\$?\d+)\),IF\(\2&gt;=)[\d.]+/g,
+    (_match, head: string) => `${head}${ACHIEVEMENT_ARROW_AT}`,
+  );
+
   zip.file(spec.file, setDimension(sheetXml, lastRow));
 }
 
