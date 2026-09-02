@@ -1184,9 +1184,22 @@ function runVocabularyTests() {
   const repsList = readFileSync("src/lib/crm/reps-list-activity.ts", "utf8");
 
   for (const { status, word } of AXIS) {
+    // The KPIs board READS the word out of ACTIVITY_LABEL rather than spelling it again, so the two
+    // surfaces cannot drift apart at all — the drift this test was written to detect is now
+    // impossible rather than merely caught. What is pinned here is that binding.
+    //
+    // This replaced a `>${word}</th>` match on 2026-09-03. That match was pinning MARKUP SHAPE, not
+    // vocabulary: the KPIs column heads became sortable, the word moved into a <Link> inside the
+    // <th>, and the check went red while the board still displayed all three words correctly. A
+    // source pin that fails when the file is merely restructured trains the next session to edit
+    // the test, which is the one habit this file cannot afford.
     assert.ok(
-      kpis.includes(`>${word}</th>`),
-      `the KPIs board must head its ${status} column "${word}" — the owner's own word, given verbatim`,
+      kpis.includes(`label={ACTIVITY_LABEL.${status}}`),
+      `the KPIs board must head its ${status} column from ACTIVITY_LABEL.${status} — not with its own copy of "${word}"`,
+    );
+    assert.ok(
+      !kpis.includes(`label="${word}"`),
+      `the KPIs board must not hardcode "${word}" as a column head — that is how the two boards drifted apart before`,
     );
     assert.ok(
       repsList.includes(`  ${status}: "${word}",`),

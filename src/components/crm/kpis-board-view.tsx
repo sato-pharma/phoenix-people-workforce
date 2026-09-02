@@ -37,6 +37,7 @@ import {
   type KpiFilterState,
   type KpiSortField,
 } from "@/lib/crm/kpis-filters";
+import { ACTIVITY_LABEL } from "@/lib/crm/reps-list-activity";
 import type { KpiRepRow, KpisBoard } from "@/lib/crm/kpis-board";
 
 /**
@@ -697,26 +698,32 @@ function FrequencyTable({ context, rows }: { context: ViewContext; rows: KpiRepR
       <thead className="border-y border-slate-200 bg-slate-50">
         <tr>
           <RepNameTh context={context} />
-          {/* The owner's three words. `Exact` is the only pass — see kpis-board.ts. */}
+          {/* THE OWNER'S THREE WORDS, read from ACTIVITY_LABEL rather than repeated here.
+              "change vocab to below exact above", given verbatim on 2026-09-02. The Reps List chip
+              and these column heads render the SAME computed status, and until now each file spelled
+              the words itself — two boards internally consistent and free to drift apart, which is
+              precisely what tests/crm-rep-doctor-lists.test.ts was written to catch. Reading one map
+              makes the drift impossible instead of merely detected. `Exact` is the only pass: both
+              Below and Above are deviations, so do not "improve" these into On plan / Over plan. */}
           <KpiSortableTh
             active={filters.sort === "exact"}
             direction={filters.direction}
             href={sortHref(context, "exact")}
-            label="Exact"
+            label={ACTIVITY_LABEL.on_plan}
             sub="The only pass"
           />
           <KpiSortableTh
             active={filters.sort === "below"}
             direction={filters.direction}
             href={sortHref(context, "below")}
-            label="Below"
+            label={ACTIVITY_LABEL.under}
             sub="Short of plan"
           />
           <KpiSortableTh
             active={filters.sort === "above"}
             direction={filters.direction}
             href={sortHref(context, "above")}
-            label="Above"
+            label={ACTIVITY_LABEL.over}
             sub="Also a deviation"
           />
           <KpiSortableTh
