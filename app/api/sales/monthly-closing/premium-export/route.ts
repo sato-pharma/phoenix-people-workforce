@@ -204,10 +204,17 @@ export async function POST(request: Request) {
         "Content-Disposition": `attachment; filename="${fileName}"`,
         // .xlsx by default. Everything a reader touches — the pivots, the slicers, the Rep Card
         // dropdown — works without macros. The VBA is 36 buttons across 11 drawings, every one a
-        // shortcut to something Excel does natively, so the .xlsx build removes them: a shape still
-        // naming a routine the package no longer holds is what made Excel offer to repair the file.
+        // shortcut to something Excel does natively (Refresh → the cache is refreshOnLoad anyway,
+        // Export PDF → File ▸ Export, Expand/Collapse → the pivot's own ± controls, Reset filters
+        // and the region buttons → the two Region slicers). The .xlsx build removes them, because
+        // a button that names a routine the package no longer holds answers a click with "Cannot
+        // run the macro 'PhxExportPdf'" — dead, and it cannot be made live in a macro-free file.
         // A macro-enabled attachment is frequently stripped by mail systems, and Mark-of-the-Web
-        // makes Excel refuse the macros outright for anyone who downloaded it.
+        // makes Excel refuse the macros outright for anyone who downloaded it, so shipping .xlsm
+        // to dodge this would hand most readers the same dead buttons plus a security warning.
+        //
+        // Removing them is NOT what stopped Excel offering to repair the file — that was the pivot
+        // cache, see restorePivotCacheSharedItems. Two separate defects, found in that order.
         "Content-Type": macros
           ? "application/vnd.ms-excel.sheet.macroEnabled.12"
           : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
