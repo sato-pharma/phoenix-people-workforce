@@ -81,9 +81,11 @@ export function runWhatsAppClassifyReaskTests() {
   assert.equal(reaskPromptForStep({ areaNames: areas, regionCode: null, step: "area" }), null);
   assert.equal(reaskPromptForStep({ areaNames: areas, regionCode: "not-a-region", step: "area" }), null);
 
-  // The admin-defined loop holds its position in its own column (`extra_current_question_key`) and
-  // exposes no re-ask helper, so it is deliberately out of scope rather than accidentally missed.
-  assert.equal(reaskPromptForStep({ areaNames: [], regionCode: null, step: "extra" }), null);
+  // The admin-defined loop holds its position in its own column (`extra_current_question_key`), so
+  // this file cannot build the question — it returns the marker and the session layer resolves it.
+  // Covered since 2026-09-02: it was originally out of scope because nothing was parked there, which
+  // was only true because those questions had gone live hours earlier.
+  assert.deepEqual(reaskPromptForStep({ areaNames: [], regionCode: null, step: "extra" }), { kind: "extra" });
   assert.equal(reaskPromptForStep({ areaNames: [], regionCode: null, step: "whatever" }), null);
 
   // ── Quiet time separates a stalled conversation from a live one ────────────────────────────────

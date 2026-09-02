@@ -145,12 +145,24 @@ export function runWhatsAppScreeningQuestionRoleScopeTests() {
       false,
       `${path} passes a literal null to listActiveScreeningQuestions, which un-scopes every question again while reading as a trivial change`,
     );
-    // Anchored on `await` so this matches CALL sites only — the function's own definition lives in
-    // the first of these two files and would otherwise be read as a call that forgot the role.
+    // Anchored on `await` so this matches CALL sites only — the function definition lives in the
+    // first of these two files and would otherwise be read as a call that forgot the role. The
+    // parameter name is accepted too: `resendExtraQuestion` forwards the role it was handed under
+    // its own local name, so pinning the literal alone would fail a correct call.
     for (const call of source.match(/await listActiveScreeningQuestions\([^)]*\)/g) ?? []) {
       assert.ok(
-        /job_title_family/.test(call),
+        /job_title_family|roleFamily/.test(call),
         `${path} calls listActiveScreeningQuestions without the applicant's tapped role: ${call}`,
+      );
+    }
+    // The hole that widening opens. `resendExtraQuestion` takes the role as a parameter, so the
+    // check above is satisfied inside it whatever its callers pass — this pins the callers. A
+    // re-ask that dropped the role would offer a parked applicant every other role's questions.
+    // Anchored on return/await so the definition itself is not read as a call.
+    for (const call of source.match(/(?:return|await) resendExtraQuestion\([^;]*?\)/g) ?? []) {
+      assert.ok(
+        /job_title_family/.test(call),
+        `${path} re-asks an extra question without the applicant's tapped role, which re-opens every other role's questions to them: ${call}`,
       );
     }
   }
