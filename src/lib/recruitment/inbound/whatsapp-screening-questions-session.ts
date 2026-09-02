@@ -199,6 +199,26 @@ export async function startExtraQuestionLoop(
   await sendQuestion(withPhone, first);
 }
 
+/**
+ * Re-asks the extra question a parked conversation is waiting on, when a new CV reopens it.
+ *
+ * The one re-ask the classify side cannot perform itself: the question is a database row, scoped to
+ * the role the applicant tapped, and this module owns both. Looked up live rather than trusted from
+ * the stored key alone — in the hours since it was asked the owner may have deactivated it or scoped
+ * it away from this role, and re-sending a question that is no longer in the set would be worse than
+ * saying nothing. False when it has gone, so the caller can tell that apart from a send failure.
+ */
+export async function resendExtraQuestion(
+  session: Pick<SessionRow, "id" | "wa_id" | "phone_number_id">,
+  questionKey: string,
+  roleFamily: string | null,
+): Promise<boolean> {
+  const questions = await listActiveScreeningQuestions(roleFamily);
+  const question = questions.find((candidate) => candidate.questionKey === questionKey);
+  if (!question) return false;
+  return sendQuestion(session, question);
+}
+
 // ── Shared: writing one answer, then advancing or finishing ────────────────────────────────────
 
 async function applyExtraDecision(input: {

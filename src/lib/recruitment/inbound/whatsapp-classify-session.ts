@@ -81,6 +81,7 @@ import { sendClassifyMenu, sendWhatsAppText } from "@/lib/recruitment/inbound/wh
 // SESSION_COLUMNS is a `const`, and a `const` read from a module still mid-initialization throws.
 import {
   listActiveScreeningQuestions,
+  resendExtraQuestion,
   startExtraQuestionLoop,
 } from "@/lib/recruitment/inbound/whatsapp-screening-questions-session";
 
@@ -358,7 +359,7 @@ export async function startClassification(input: StartClassificationInput): Prom
     // silence this used to answer with — see reaskOpenSession.
     const { data: existing } = await supabase
       .from(SESSIONS_TABLE)
-      .select(`${SESSION_COLUMNS},updated_at`)
+      .select(`${SESSION_COLUMNS},updated_at,extra_current_question_key`)
       .eq("wa_id", input.waId)
       .is("completed_at", null)
       .maybeSingle();
@@ -392,7 +393,11 @@ export async function startClassification(input: StartClassificationInput): Prom
  * conversation's state — nothing in the flow reads it — but it is how long the applicant has been
  * quiet, which is the only thing separating a stalled conversation from a live one.
  */
-type OpenSessionRow = SessionRow & { updated_at: string | null };
+type OpenSessionRow = SessionRow & {
+  updated_at: string | null;
+  /** Which admin-defined question the `extra` step is waiting on. Null on every other step. */
+  extra_current_question_key: string | null;
+};
 
 /**
  * A CV arrived while this sender's conversation is still open. Ask again.
@@ -432,6 +437,21 @@ async function reaskOpenSession(
   // A row written before the phone number was recorded still has to be answerable, so the delivery's
   // own number stands in — the same fallback every other send in this file uses.
   const target = { ...session, phone_number_id: session.phone_number_id ?? input.phoneNumberId };
+
+  // The extra question is the one prompt this file cannot build: it lives in the database and is
+  // scoped to the role the applicant tapped, so the loop that owns it re-sends it. A row on `extra`
+  // with no current key is unreachable in a healthy session — treated as nothing to re-ask, never
+  // as a reason to guess at a question.
+  if (prompt.kind === "extra") {
+    if (!session.extra_current_question_key) return "already_open";
+    const reasked = await resendExtraQuestion(
+      target,
+      session.extra_current_question_key,
+      session.job_title_family,
+    );
+    return reasked ? "reasked" : "send_failed";
+  }
+
   const sent =
     prompt.kind === "menu"
       ? await sendStep(target, prompt.menu, prompt.regionLabel)

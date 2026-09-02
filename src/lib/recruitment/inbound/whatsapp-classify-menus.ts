@@ -680,16 +680,25 @@ export function shouldReaskParkedSession(input: { updatedAt: string | null; nowM
 export type ClassifyReaskPrompt =
   | { kind: "menu"; menu: ClassifyMenu; regionLabel: string | null }
   | { kind: "text"; body: string }
-  | { kind: "salary" };
+  | { kind: "salary" }
+  // Like `salary`, a marker rather than a body — and for a stronger reason. The extra question lives
+  // in the database and is scoped to the role the applicant tapped, so only the session layer can
+  // resolve it. This file must not reach for it.
+  | { kind: "extra" };
 
 /**
  * The question a parked conversation is waiting on, ready to send again.
  *
- * Null means there is nothing sensible to re-ask, and the caller stays quiet: `done` (finished),
- * `extra` (the admin-defined loop, which holds its position in its own column and has no re-ask
- * helper of its own), an `area` step whose region is missing or has no areas left, and any step
- * this file does not know. Null is a decision, never a fallback — every step in
- * `classifySessionSteps` except `done` is covered.
+ * Null means there is nothing sensible to re-ask, and the caller stays quiet: `done` (finished), an
+ * `area` step whose region is missing or has no areas left, and any step this file does not know.
+ * Null is a decision, never a fallback — every step in `classifySessionSteps` except `done` is
+ * covered, and so is `extra`, which is absent from that union only because the admin-defined loop
+ * owns its own vocabulary.
+ *
+ * `extra` WAS deliberately excluded when this was written, on the grounds that no session was parked
+ * there. That was true, and it was true because the admin-defined questions had gone live only hours
+ * earlier — so the first applicant to reach them and go quiet would have met exactly the permanent
+ * silence the rest of this function exists to end. "Nobody is standing there yet" dates badly.
  */
 export function reaskPromptForStep(input: {
   step: string;
@@ -723,6 +732,10 @@ export function reaskPromptForStep(input: {
       return { kind: "menu", menu: experienceMenu(), regionLabel: null };
     case "salary":
       return { kind: "salary" };
+    // Written by the admin-defined question loop, which is why this switch is on `string` and not on
+    // ClassifySessionStep — that union deliberately stops at the fixed six.
+    case "extra":
+      return { kind: "extra" };
     default:
       return null;
   }
