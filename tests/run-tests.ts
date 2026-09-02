@@ -282,6 +282,11 @@ import { runDvPlannerWeeklyDigestTests } from "./dv-planner-weekly-digest.test.t
 import { runDvPlannerDateCheckTests } from "./dv-planner-date-check.test.ts";
 import { runVisitsReportSyncTests } from "./visits-report-sync.test.ts";
 import { runCrmCallRateTests } from "./crm-call-rate.test.ts";
+import {
+  runKpiCallRateHolidayTests,
+  runKpiTabTests,
+  runKpisBoardJoinTests,
+} from "./kpis-board.test.ts";
 import { runCrmRepsPlansTests } from "./crm-reps-plans.test.ts";
 import { runCrmRepVisitsTests } from "./crm-rep-visits.test.ts";
 import { runCrmRegionBrickSuggestTests } from "./crm-region-brick-suggest.test.ts";
@@ -1720,6 +1725,9 @@ await runTest("dv planner weekly digest", runDvPlannerWeeklyDigestTests);
 await runTest("dv planner date check (confirmed/not-recorded/future/outside-range + visitor names)", runDvPlannerDateCheckTests);
 await runTest("visits report sync (dedup + null-guard + delete-reconciliation + attendance/crm_save_date)", runVisitsReportSyncTests);
 await runTest("crm call rate (Sat-Wed denominator, AM 2 / PM 10 targets, campaign never lifts the verified rate)", runCrmCallRateTests);
+await runTest("KPIs call rate holidays (a national holiday takes the week from five days to four)", runKpiCallRateHolidayTests);
+await runTest("KPIs board join (keyed on the CRM agent id, and scope fails closed on an unresolved hr id)", runKpisBoardJoinTests);
+await runTest("KPIs tabs and month picker (an unrecognised tab widens to summary)", runKpiTabTests);
 await runTest("crm reps plans board (live-month cap, company rate over days x reps, rep filter leaves totals alone)", runCrmRepsPlansTests);
 await runTest("crm rep visits drill-down (territory states, proof buckets, reconciles with the board rate)", runCrmRepVisitsTests);
 await runTest(
