@@ -1215,6 +1215,7 @@ import { runRecruitmentFolderCvPopupTests } from "./recruitment-folder-cv-popup.
 import { runRepoDoctorWorktreeRestoreAdviceTests } from "./repo-doctor-worktree-restore-advice.test.ts";
 import { runCommentStripRatchetTests } from "./comment-strip-ratchet.test.ts";
 
+import { runRepoDoctorStripIdleOfferTests } from "./repo-doctor-strip-idle-offer.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -3758,6 +3759,7 @@ await runTest("recruitment folder row opens the CV in place (modal + download, n
 await runTest("repo-doctor never advises pnpm install in a worktree (restore is new-session --repair)", runRepoDoctorWorktreeRestoreAdviceTests);
 await runTest("no source-pinning test strips comments with a regex that eats the code it pins", runCommentStripRatchetTests);
 
+await runTest("repo-doctor offers only what --strip-idle will actually reclaim", runRepoDoctorStripIdleOfferTests);
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
 console.log(`\n${testDurationsMs.length} test files passed in ${totalMs.toFixed(0)}ms. Slowest:`);
