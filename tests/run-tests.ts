@@ -1771,7 +1771,8 @@ await runTest(
   + "agents leave both sides, an unknown specialty is named not folded, the drill-down cap can "
   + "never look like a complete list, a doctor REMOVED from a list in the CRM is removed here too "
   + "while an empty or truncated vendor answer never prunes, and the scheduled window can never "
-  + "reach a closed month)",
+  + "reach a closed month BEHIND it while always reaching next week AHEAD of it — a plan the board "
+  + "offers for verification that was never fetched reads as \"no plan filed\")",
   runCrmRepDoctorListsTests,
 );
 await runTest(

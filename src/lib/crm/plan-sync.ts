@@ -20,6 +20,7 @@
  */
 
 import { CRM_PLAN_ENTRIES_TABLE } from "@/lib/crm/tables";
+import { addDaysIso } from "@/lib/crm/dates";
 import { getIReports360Config } from "@/lib/crm/config";
 import {
   iReports360GetMonthlyPlans,
@@ -126,14 +127,52 @@ export function decidePlanPrune(input: {
 }
 
 /**
- * The window a scheduled sync pulls: the current Cairo month, start to end.
+ * How far PAST the month's last day a scheduled sync reaches, in days.
  *
- * Pure and injectable, because the whole point is what it refuses to touch. The owner's ruling of
- * 2026-08-27 is that a doctor removed from a rep's list takes effect for the CURRENT month onward
- * and never rewrites a month that has already closed — so a coverage figure he read in July still
- * reads the same in December. That ruling is enforced by the WINDOW rather than by a condition
- * inside the prune: a closed month is simply never fetched, so it can never be pruned, and no
- * future edit to the prune logic can quietly reach back into one.
+ * THIRTEEN IS DERIVED, NOT PICKED. A field week runs Saturday to Friday, and the Plan Verification
+ * board's whole promise — its own on-screen words — is that a plan is verified BEFORE the week it
+ * covers. So from any day D the sync has to reach the end of the week AFTER D's own week. That end
+ * is `saturdayOf(D) + 13`, which is at most `D + 13`, with equality exactly when D is a Saturday.
+ * Taking D as the month's last day gives `monthEnd + 13`. Twelve would be short by one day for a
+ * month ending on a Saturday — the case a hand-picked "about two weeks" gets wrong.
+ *
+ * It does NOT reach the third week ahead, and that is a limit worth knowing rather than a bug: the
+ * week picker offers about four weeks forward, and covering all of them would need `monthEnd + 34`,
+ * i.e. a 65-day window against the {@link MAX_PLAN_SYNC_DAYS} ceiling of 62. Widening that far is a
+ * decision about vendor call size, not a constant to nudge.
+ */
+export const PLAN_SYNC_FORWARD_MARGIN_DAYS = 13;
+
+/**
+ * The window a scheduled sync pulls: the current Cairo month, plus {@link
+ * PLAN_SYNC_FORWARD_MARGIN_DAYS} past its end.
+ *
+ * THE ASYMMETRY IS THE WHOLE DESIGN — it reaches FORWARD and never backward, and the two ends are
+ * load-bearing for opposite reasons. Do not "tidy" this into a symmetric margin.
+ *
+ * The START is a guard. The owner's ruling of 2026-08-27 is that a doctor removed from a rep's list
+ * takes effect for the CURRENT month onward and never rewrites a month that has already closed — so
+ * a coverage figure he read in July still reads the same in December. That ruling is enforced by
+ * the WINDOW rather than by a condition inside the prune: a closed month is simply never fetched,
+ * so it can never be pruned, and no future edit to the prune logic can quietly reach back into one.
+ * Moving the start one day earlier hands the prune a closed month. Never do it.
+ *
+ * The END is coverage, and until 2026-09-02 it stopped dead on the month's last day. That was a
+ * real hole, measured in production the day it was found: the mirror held 2,536 September plan
+ * entries and NOT ONE of them existed before 1 September. So on 31 August a district manager who
+ * opened the board, picked "next week" — which the picker puts at the top, because that is when a
+ * plan is supposed to be verified — and looked at all 70 reps, saw "no plan filed" for every one of
+ * them. Nothing was wrong with the reps; Phoenix had never asked the CRM for those dates. Worse, a
+ * week straddling the boundary (11% of them, see plan-board.ts) showed only its first half, so the
+ * doctor, call and day counts on the board were all quietly short.
+ *
+ * The read side was already widened for exactly this shape — `PLAN_STRADDLE_MARGIN_DAYS` in
+ * plan-board.ts — so the board was reaching for rows the fetch had never gone to get. This closes
+ * that gap on the fetch side, which is the only side that can.
+ *
+ * Reaching into next month is safe in the way reaching into last month is not: an OPEN month has no
+ * settled figure to rewrite, and the prune is confined to the window fetched, so the worst it can
+ * do there is drop a planned call the CRM itself no longer lists.
  *
  * The month end rather than today, because a weekly plan is written ahead — a rep's remaining weeks
  * are already in the CRM, and syncing only up to today would keep re-adding rows that were removed
@@ -144,7 +183,8 @@ export function resolvePlanSyncWindow(cairoToday: string): { startDate: string; 
   const [year, month] = monthKey.split("-").map((part) => Number(part));
   // Day 0 of the next month is the last day of this one, and Date.UTC normalises December.
   const lastDay = new Date(Date.UTC(year!, month!, 0)).getUTCDate();
-  return { endDate: `${monthKey}-${String(lastDay).padStart(2, "0")}`, startDate: `${monthKey}-01` };
+  const monthEnd = `${monthKey}-${String(lastDay).padStart(2, "0")}`;
+  return { endDate: addDaysIso(monthEnd, PLAN_SYNC_FORWARD_MARGIN_DAYS), startDate: `${monthKey}-01` };
 }
 
 /** Inclusive day count between two ISO dates. */

@@ -4,26 +4,38 @@ import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { writeAuditLog } from "@/lib/admin/audit";
+import { cairoTodayIso } from "@/lib/crm/dates";
 import { isIReports360Configured } from "@/lib/crm/config";
 import { monthBounds, resolveRepDoctorListMonth } from "@/lib/crm/rep-doctor-lists";
 import { assertRepDoctorListsAccess } from "@/lib/crm/rep-doctor-lists-access";
 import { announceNewPlansToManagers } from "@/lib/crm/plan-notifications";
-import { PlanSyncRangeError, syncIReports360WeeklyPlans } from "@/lib/crm/plan-sync";
+import { PlanSyncRangeError, resolvePlanSyncWindow, syncIReports360WeeklyPlans } from "@/lib/crm/plan-sync";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// Pulls one month of the CRM's weekly plan into Phoenix's mirror — the rep doctor lists.
+// Pulls the CRM's weekly plan into Phoenix's mirror — the rep doctor lists.
 //
 // No longer the only trigger. Since 2026-08-27 the live poller refreshes the CURRENT month hourly
 // in-process (src/lib/crm/live-poller.ts), which is what the owner asked for: a doctor added to or
 // removed from a rep's list in the CRM shows up here without anyone pressing anything. This route
-// stays for the two things a schedule cannot do — refreshing a month on demand, and reaching a
-// month the scheduled window deliberately never touches. Every run is audited because it reaches an
-// external system and rewrites a mirror; the audit row now also carries what was REMOVED.
+// stays for the two things a schedule cannot do — refreshing on demand, and reaching a month the
+// scheduled window deliberately never touches. Every run is audited because it reaches an external
+// system and rewrites a mirror; the audit row now also carries what was REMOVED.
+//
+// "One month" is no longer quite the unit, and the difference matters: for the CURRENT month this
+// route delegates to `resolvePlanSyncWindow`, which reaches past the month's end so next week's
+// plans are fetched before the week starts. A HISTORICAL month is still strictly its own bounds.
 //
 // Gated twice: the Super-Admin-only role list (rep-doctor-lists-access.ts, the owner's
 // "admin account only for now") and the crm_visits:update permission, which is the real boundary.
+
+/** The scheduled sync's own window, in this route's `{ from, to }` shape — so the manual refresh and
+ * the hourly poller can never drift apart on what "the current month" means. */
+function monthBoundsOfScheduledWindow(): { from: string; to: string } {
+  const window = resolvePlanSyncWindow(cairoTodayIso());
+  return { from: window.startDate, to: window.endDate };
+}
 
 export async function POST(request: Request) {
   try {
@@ -45,7 +57,19 @@ export async function POST(request: Request) {
     // An unparseable month resolves to the current one rather than 400-ing: the only caller is the
     // board's own Refresh button, which always sends the month it is displaying.
     const month = resolveRepDoctorListMonth(typeof body?.month === "string" ? body.month : undefined);
-    const { from, to } = monthBounds(month);
+    const isCurrentMonth = month === resolveRepDoctorListMonth(undefined);
+
+    // THE CURRENT MONTH IS FETCHED THROUGH THE SCHEDULED WINDOW, NOT THROUGH `monthBounds`, and the
+    // two are no longer the same thing: since 2026-09-02 the scheduled window reaches
+    // PLAN_SYNC_FORWARD_MARGIN_DAYS past the month's end so that next week's plans exist before the
+    // week does. Pressing Refresh must not fetch LESS than the schedule already fetches — a manager
+    // who presses it to see next week's plan and gets the bare month back would read the empty
+    // result as "he has not filed one", which is the exact confusion this margin was added to end.
+    //
+    // A HISTORICAL month keeps the strict `monthBounds`, and that asymmetry is the point: a wide
+    // window over a closed month hands the prune rows it must never be allowed to delete (the
+    // owner's 2026-08-27 ruling — see resolvePlanSyncWindow).
+    const { from, to } = isCurrentMonth ? monthBoundsOfScheduledWindow() : monthBounds(month);
 
     const result = await syncIReports360WeeklyPlans({ endDate: to, startDate: from });
 
@@ -58,7 +82,6 @@ export async function POST(request: Request) {
     // Restricted to the CURRENT Cairo month on purpose: this route is also how a HISTORICAL month is
     // pulled, and announcing there would email a manager about a plan for January. The 25-plan
     // ceiling inside `announceNewPlansToManagers` would stop a big backfill but not a small one.
-    const isCurrentMonth = month === resolveRepDoctorListMonth(undefined);
     const announcement = isCurrentMonth
       ? await announceNewPlansToManagers(result.newPlans).catch(() => null)
       : null;
