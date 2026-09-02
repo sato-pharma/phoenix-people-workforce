@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import { DEFAULT_DOCTOR_COVERAGE_NORMS } from "../src/lib/crm/doctor-coverage-config.ts";
 import {
@@ -22,6 +23,7 @@ import {
   MAX_PLAN_SYNC_DAYS,
   PLAN_PRUNE_MAX_SHARE,
   PLAN_PRUNE_MIN_MIRROR_ROWS,
+  PLAN_SYNC_FORWARD_MARGIN_DAYS,
   PlanSyncRangeError,
   resolvePlanSyncWindow,
   rowFromPlanEntry,
@@ -479,6 +481,7 @@ export function runCrmRepDoctorListsTests() {
   runPlanSyncTests();
   runPlanPruneTests();
   runPlanSyncWindowTests();
+  runPlanSyncManualRefreshTests();
   runAccessTests();
 }
 
@@ -799,52 +802,145 @@ function runPlanPruneTests() {
   );
 }
 
-// ── The window is what protects a closed month ─────────────────────────────────────────────────
+// ── The window: a guard at one end, coverage at the other ─────────────────────────────────────
 //
-// The owner's ruling (2026-08-27): a doctor removed from a list takes effect for the current month
-// onward and never rewrites a month that has already closed, so a coverage figure he read in July
-// still reads the same in December. That is enforced HERE, by never fetching a closed month, rather
-// than by a condition inside the prune — a guard the prune cannot be refactored past.
+// THE TWO ENDS ARE NOT THE SAME KIND OF THING, and this block exists to keep them from being
+// "tidied" into a symmetric margin.
+//
+// The START is the owner's ruling (2026-08-27): a doctor removed from a list takes effect for the
+// current month onward and never rewrites a month that has already closed, so a coverage figure he
+// read in July still reads the same in December. That is enforced HERE, by never fetching a closed
+// month, rather than by a condition inside the prune — a guard the prune cannot be refactored past.
+//
+// The END used to stop on the month's last day, and that was a hole. Measured in production on
+// 2026-09-02: 2,536 September plan entries in the mirror, NOT ONE of them present before
+// 1 September. So on 31 August the board showed "no plan filed" for all 70 reps for next week —
+// reps who had filed, against a Phoenix that had never asked for those dates.
+
+/** The Friday that ends the field week AFTER `dayIso`'s own — computed the long way round, from
+ * weekday arithmetic rather than from the constant under test, so this cannot agree with a wrong
+ * `PLAN_SYNC_FORWARD_MARGIN_DAYS` by construction. */
+function endOfNextFieldWeek(dayIso: string): string {
+  const day = new Date(`${dayIso}T00:00:00Z`);
+  // Field weeks run Saturday to Friday. getUTCDay: 0 = Sunday … 6 = Saturday.
+  const sinceSaturday = (day.getUTCDay() + 1) % 7;
+  const end = new Date(day.getTime() + (13 - sinceSaturday) * 86_400_000);
+  return end.toISOString().slice(0, 10);
+}
+
 function runPlanSyncWindowTests() {
+  assert.equal(PLAN_SYNC_FORWARD_MARGIN_DAYS, 13, "the forward margin is 13 days — see the derivation on the constant");
+
   assert.deepEqual(
     resolvePlanSyncWindow("2026-08-27"),
-    { endDate: "2026-08-31", startDate: "2026-08-01" },
-    "the current Cairo month, first day to last",
+    { endDate: "2026-09-13", startDate: "2026-08-01" },
+    "the current Cairo month, plus 13 days past its end so next week is fetched before it starts",
   );
   assert.deepEqual(
     resolvePlanSyncWindow("2026-08-01"),
-    { endDate: "2026-08-31", startDate: "2026-08-01" },
-    "the first of the month covers the whole month ahead, not just today",
+    { endDate: "2026-09-13", startDate: "2026-08-01" },
+    "the window depends on the MONTH, not on how far into it today is",
   );
   assert.deepEqual(
     resolvePlanSyncWindow("2026-12-15"),
-    { endDate: "2026-12-31", startDate: "2026-12-01" },
-    "December must not roll the year — month 12 + 1 is where a hand-rolled month walk breaks",
+    { endDate: "2027-01-13", startDate: "2026-12-01" },
+    "December must roll the YEAR at both ends — 12 + 1 is where a hand-rolled month walk breaks, and the forward margin now crosses it too",
   );
   assert.deepEqual(
     resolvePlanSyncWindow("2024-02-10"),
-    { endDate: "2024-02-29", startDate: "2024-02-01" },
-    "a leap February ends on the 29th",
+    { endDate: "2024-03-13", startDate: "2024-02-01" },
+    "a leap February ends on the 29th, and the margin runs on from there",
   );
   assert.deepEqual(
     resolvePlanSyncWindow("2026-02-10"),
-    { endDate: "2026-02-28", startDate: "2026-02-01" },
+    { endDate: "2026-03-13", startDate: "2026-02-01" },
     "and a common February on the 28th",
   );
   assert.deepEqual(
     resolvePlanSyncWindow("2026-04-30"),
-    { endDate: "2026-04-30", startDate: "2026-04-01" },
+    { endDate: "2026-05-13", startDate: "2026-04-01" },
     "a 30-day month ends on the 30th",
   );
-  for (const day of ["2026-08-27", "2026-12-15", "2024-02-10"]) {
+
+  // THE REGRESSION THIS BLOCK EXISTS FOR. October 2026 ends on a SATURDAY (31 Oct), which is the
+  // worst case: a manager standing on the last day of the month is standing on day one of a field
+  // week, so next week's Friday is a full 13 days away. Twelve would be short by exactly one day
+  // here, and nowhere else — which is why the margin is checked against every day of this month
+  // rather than against one hand-picked date.
+  for (let dayOfMonth = 1; dayOfMonth <= 31; dayOfMonth += 1) {
+    const day = `2026-10-${String(dayOfMonth).padStart(2, "0")}`;
     const window = resolvePlanSyncWindow(day);
-    assert.equal(window.startDate.slice(0, 7), day.slice(0, 7), `${day}: the window never reaches an earlier month`);
-    assert.equal(window.endDate.slice(0, 7), day.slice(0, 7), `${day}: nor a later one`);
-    assert.doesNotThrow(
-      () => assertPlanSyncRange(window.startDate, window.endDate),
-      `${day}: the scheduled window must always be inside the range the syncer accepts`,
+    const nextWeekEnd = endOfNextFieldWeek(day);
+    assert.ok(
+      window.endDate >= nextWeekEnd,
+      `${day}: the sync must reach ${nextWeekEnd} — the end of next week — but stops at ${window.endDate}. A plan the board offers for verification that was never fetched reads as "no plan filed".`,
     );
   }
+
+  for (const day of ["2026-08-27", "2026-12-15", "2024-02-10", "2026-10-31"]) {
+    const window = resolvePlanSyncWindow(day);
+    assert.equal(
+      window.startDate,
+      `${day.slice(0, 7)}-01`,
+      `${day}: the window still starts on the 1st — it must NEVER reach an earlier month, or the prune is handed a closed one`,
+    );
+    assert.ok(
+      window.endDate > window.startDate.slice(0, 7),
+      `${day}: sanity — the end is after the month it starts in`,
+    );
+    assert.doesNotThrow(
+      () => assertPlanSyncRange(window.startDate, window.endDate),
+      `${day}: the scheduled window must always be inside the range the syncer accepts — a 31-day month plus the margin is ${daysBetweenIso(window.startDate, window.endDate)} days against a ceiling of ${MAX_PLAN_SYNC_DAYS}`,
+    );
+  }
+}
+
+// ── The MANUAL refresh must not fetch less than the schedule ──────────────────────────────────
+//
+// Two triggers fill the same mirror: the hourly in-process poller and this route's Refresh button.
+// They used to agree because both meant "the calendar month". They stopped agreeing the moment the
+// scheduled window grew a forward margin, and the failure is silent in the worst way — a manager
+// presses Refresh precisely BECAUSE next week looks empty, gets the bare month back, and reads the
+// still-empty result as proof the rep filed nothing.
+//
+// Pinned to the source because there is no way to observe it without a vendor: the route's only
+// output is a mirror write. Sliced between NAMED anchors, never byte offsets, so an edit above or
+// below moves nothing.
+function runPlanSyncManualRefreshTests() {
+  const route = readFileSync("app/api/crm/rep-doctor-lists/sync/route.ts", "utf8");
+
+  assert.ok(
+    route.includes("resolvePlanSyncWindow"),
+    "the manual refresh must reach the SAME window resolver the poller uses — a second definition of "
+      + '"the current month" in this file is the drift this test exists to catch',
+  );
+
+  const start = route.indexOf("const month = resolveRepDoctorListMonth(");
+  const end = route.indexOf("const result = await syncIReports360WeeklyPlans(");
+  assert.ok(start > 0 && end > start, "the route still resolves a month and then syncs it");
+  const choice = route.slice(start, end);
+
+  assert.ok(
+    /isCurrentMonth\s*\?\s*monthBoundsOfScheduledWindow\(\)\s*:\s*monthBounds\(month\)/.test(choice),
+    "the CURRENT month must take the scheduled window and a HISTORICAL month the strict month bounds — "
+      + `got: ${choice.replace(/\s+/g, " ").slice(-160)}`,
+  );
+
+  // The asymmetry is a data-safety rule, not a style choice: a wide window over a CLOSED month hands
+  // the prune rows the owner ruled must never be rewritten (2026-08-27).
+  assert.ok(
+    route.includes("monthBounds(month)"),
+    "a historical month must still be fetched by its own strict bounds — widening it would let the "
+      + "prune reach into a closed month",
+  );
+
+  const helperStart = route.indexOf("function monthBoundsOfScheduledWindow(");
+  const helperEnd = route.indexOf("export async function POST(");
+  assert.ok(helperStart > 0 && helperEnd > helperStart, "the shared-window helper sits above the handler");
+  assert.ok(
+    route.slice(helperStart, helperEnd).includes("resolvePlanSyncWindow(cairoTodayIso())"),
+    "and it must ask the resolver for TODAY's window rather than rebuilding one from the requested month",
+  );
 }
 
 // ── Access: Super Admin only, on the owner's instruction ───────────────────────────────────────
