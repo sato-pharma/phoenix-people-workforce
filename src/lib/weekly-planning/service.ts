@@ -83,7 +83,7 @@ import { resolveViewerAllowedLines } from "@/lib/auth/scope-visibility";
 import { pickDeliverableEmail } from "@/lib/email/email-safety";
 import { getEmployeeDirectory, type EmployeeDirectoryData, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { resolveJobFunctionRole } from "@/lib/employees/job-function";
-import { hrIdLookupKeys } from "@/lib/hr-id";
+import { canonicalHrIdForDisplay, hrIdLookupKeys } from "@/lib/hr-id";
 import type { PlanAdherenceScore } from "@/lib/weekly-planning/plan-adherence";
 import { loadPlanAdherenceForPlans } from "@/lib/weekly-planning/plan-adherence-data";
 import { getConfirmedNationalHolidays } from "@/lib/vacation/national-holidays";
@@ -461,6 +461,15 @@ function assertItemDateInPeriod(activityDate: string, periodStartDate: string, p
 
 function normalizeHrId(value: string | null | undefined) {
   return normalizeHrIdForAccess(value) ?? "";
+}
+
+// AccessContext.hrId is the lowercase COMPARISON key (canonicalHrIdKey) — correct for matching,
+// wrong for storage. Persisting it is what left 541 lowercase actor ids across the plan tables,
+// repaired by hand on 2026-09-02; the app's own lookups canonicalise, so the damage is silent and
+// only a naive .eq feels it. Every actor id written to the database goes through here, and
+// tests/weekly-plan-actor-hrid-casing.test.ts fails if a new RPC call site skips it.
+function actorHrIdForStorage(value: string | null | undefined) {
+  return canonicalHrIdForDisplay(value) ?? value ?? null;
 }
 
 function hrIdsMatch(left: string | null | undefined, right: string | null | undefined) {
@@ -1104,7 +1113,7 @@ async function rpcReplacePlanItems(input: {
   submit: boolean;
 }) {
   const { error } = await getSupabaseAdmin().rpc("phx_weekly_plan_replace_items", {
-    p_actor_hr_id: input.access.hrId,
+    p_actor_hr_id: actorHrIdForStorage(input.access.hrId),
     p_actor_login_id: input.access.loginId ?? null,
     p_actor_role: input.access.role,
     p_expected_revision: input.expectedRevision,
@@ -1125,7 +1134,7 @@ async function rpcDecidePlan(input: {
 }) {
   const { error } = await getSupabaseAdmin().rpc("phx_weekly_plan_decide", {
     p_action: input.action,
-    p_actor_hr_id: input.access.hrId,
+    p_actor_hr_id: actorHrIdForStorage(input.access.hrId),
     p_actor_login_id: input.access.loginId ?? null,
     p_actor_role: input.access.role,
     p_comment: input.comment ?? null,
@@ -1149,7 +1158,7 @@ async function rpcAcknowledgePlan(input: {
   const { error } = await getSupabaseAdmin().rpc("phx_weekly_plan_acknowledge", {
     p_comment: input.comment ?? null,
     p_expected_revision: input.expectedRevision,
-    p_hr_id: input.hrId,
+    p_hr_id: actorHrIdForStorage(input.hrId),
     p_login_id: input.loginId,
     p_plan_id: input.planId,
     p_role_label: input.roleLabel,
@@ -1164,7 +1173,7 @@ async function rpcCancelPlan(input: {
   planId: string;
 }) {
   const { error } = await getSupabaseAdmin().rpc("phx_weekly_plan_cancel", {
-    p_actor_hr_id: input.access.hrId,
+    p_actor_hr_id: actorHrIdForStorage(input.access.hrId),
     p_actor_login_id: input.access.loginId ?? null,
     p_actor_role: input.access.role,
     p_comment: input.comment ?? null,
@@ -1184,7 +1193,7 @@ async function rpcRequestEditPlan(input: {
   planId: string;
 }) {
   const { error } = await getSupabaseAdmin().rpc("phx_weekly_plan_request_edit", {
-    p_actor_hr_id: input.access.hrId,
+    p_actor_hr_id: actorHrIdForStorage(input.access.hrId),
     p_actor_login_id: input.access.loginId ?? null,
     p_actor_role: input.access.role,
     p_expected_revision: input.expectedRevision,
@@ -1201,7 +1210,7 @@ async function rpcDecideEditRequest(input: {
   planId: string;
 }) {
   const { error } = await getSupabaseAdmin().rpc("phx_weekly_plan_decide_edit_request", {
-    p_actor_hr_id: input.access.hrId,
+    p_actor_hr_id: actorHrIdForStorage(input.access.hrId),
     p_actor_login_id: input.access.loginId ?? null,
     p_actor_role: input.access.role,
     p_comment: input.comment ?? null,
@@ -3388,7 +3397,7 @@ export async function requestVisitDetails(access: AccessContext, planId: string)
     throw new Error("This plan has no Single Visit (Field) days. Visit details can only be requested for plans with Field activities.");
   }
   const { error } = await getSupabaseAdmin().rpc("phx_weekly_plan_request_details", {
-    p_actor_hr_id: access.hrId,
+    p_actor_hr_id: actorHrIdForStorage(access.hrId),
     p_actor_login_id: access.loginId ?? null,
     p_actor_role: access.role,
     p_expected_revision: plan.revision,
@@ -3417,7 +3426,7 @@ export async function submitVisitDetails(access: AccessContext, planId: string, 
     throw new Error("At least one visit detail entry is required.");
   }
   const { error } = await getSupabaseAdmin().rpc("phx_weekly_plan_submit_details", {
-    p_actor_hr_id: access.hrId,
+    p_actor_hr_id: actorHrIdForStorage(access.hrId),
     p_actor_login_id: access.loginId ?? null,
     p_actor_role: access.role,
     p_expected_revision: plan.revision,
