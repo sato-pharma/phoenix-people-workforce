@@ -1,13 +1,12 @@
 import { strict as assert } from "node:assert";
 
 import { getNavigationSections } from "../src/config/system-navigation.ts";
-import { getSections, type PermissionLookup } from "../src/lib/navigation/active-path.ts";
+import { getSections } from "../src/lib/navigation/active-path.ts";
 import {
+  buildPermissionLookup,
   canAccess,
   createAccessContext,
-  permissionActions,
   permissionMatrix,
-  permissionResources,
 } from "../src/lib/auth/permissions.ts";
 import { resolveEmployeePortalNavVisibility } from "../src/lib/employee-portal/navigation.ts";
 import {
@@ -131,16 +130,14 @@ export async function runA3FullOrganogramTests() {
   // ── 4. system-navigation.ts must stay silent about this rung ─────────────────────────────────
   // Her sidebar row comes from showOrganogramTab alone. That file gates by ROLE and cannot express
   // an HR_ID, so listing "Manager" there would offer A-14 and AB a link the page bounces.
-  const lookup: PermissionLookup = {};
-  for (const resource of permissionResources) {
-    for (const action of permissionActions) {
-      lookup[`${resource}:${action}`] = permissionMatrix.Manager?.[resource]?.includes(action) ?? false;
-    }
-  }
+  // buildPermissionLookup, never a hand-rolled double loop: tests/permission-lookup-totality
+  // ratchets the number of files that copy it, and a copy that drifts fails OPEN — every
+  // unlisted key reads as false, so a link would silently vanish and the assertion would pass
+  // for the wrong reason.
   const offered = getSections(
     getNavigationSections("employee-portal"),
     "employee-portal",
-    lookup,
+    buildPermissionLookup(permissionMatrix, "Manager"),
     "Manager",
   ).some((section) => section.items.some((item) => item.href === "/employee-portals/organogram"));
   assert.equal(
