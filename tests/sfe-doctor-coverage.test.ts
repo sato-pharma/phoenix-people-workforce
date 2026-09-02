@@ -477,17 +477,16 @@ export function runSfeDoctorCoverageTests() {
     "the campaign read covers the SELECTED month only — the graded read starts six months earlier because coverage needs a lapse window, and campaign has no such window",
   );
 
-  const tablesSource = readFileSync("src/components/crm/doctor-coverage-tables.tsx", "utf8");
-  assert.match(
-    tablesSource,
-    /row\.hasPanel \?/,
-    "the table must branch on hasPanel — a rep with no graded panel gets a marker, never a 0% meter that reads as a real score",
-  );
-  assert.match(tablesSource, /campaignCalls/, "campaign needs its own column, sortable, beside coverage and never inside it");
-
-  const boardSource = readFileSync("src/components/crm/doctor-coverage-board.tsx", "utf8");
-  assert.match(boardSource, /label="Campaign calls"/, "the summary strip must carry campaign as its own tile");
-  assert.match(boardSource, /repsAllCampaign/, "the tile must name how many reps are campaign-only — that count is the thing the board used to hide");
+  // Four component pins stood here, on doctor-coverage-tables.tsx and doctor-coverage-board.tsx:
+  // the table branched on hasPanel rather than printing a 0% meter, campaign had its own sortable
+  // column, the summary strip carried campaign as its own tile, and that tile named how many reps
+  // were campaign-only. Both files were deleted on 2026-09-02 — the board was retired on
+  // 2026-08-28 and nothing had imported them since.
+  //
+  // The presentation rules survive the files and bind the rebuild. A rep with no graded panel gets
+  // a marker, never a 0% meter that reads as a real score. Campaign sits BESIDE coverage, never
+  // folded inside it, and the count of campaign-only reps is printed rather than left implicit —
+  // that count is the thing the old board hid.
 
   // ── Source contracts for the assigned-list denominator ───────────────────────────────────────
   assert.match(
@@ -510,11 +509,38 @@ export function runSfeDoctorCoverageTests() {
     /agent_crm_id/,
     "the plan read must be scoped on the CRM id: agent_hr_id is null on up to 27.9% of a month's plan rows, so filtering on it silently drops a quarter of the lists",
   );
-  assert.match(
-    boardSource,
-    /label="Assigned panel"/,
-    "the panel tile must say ASSIGNED — 'Active panel' described the old inferred number and is what made a panel of 2 look like a real one",
+  // Three more board pins stood here and went with the same file. Their rules, for the rebuild:
+  // the panel tile says ASSIGNED, never 'Active panel' — that older wording described the inferred
+  // number and is what made a panel of 2 look like a real one; off-list work is reported beside
+  // coverage, never folded into it and never hidden; and a month with no lists at all says so
+  // rather than printing every rep at 0%.
+
+  // ── The call-list cap ────────────────────────────────────────────────────────────────────────
+  // This moved here on 2026-09-02 from crm-doctor-coverage-pagination.test.ts, which was deleted
+  // with the board it was written for. That suite existed because on 2026-08-21 both routes
+  // answered HTTP 200 with 18.8 MB — 16.5 MB of it markup, because PortalResponsiveDataList
+  // renders every item TWICE, once as a mobile card and once as a desktop row, and the doctor
+  // drill-down handed it ~7,000 doctors. The drill-down and its windowing are gone with the
+  // component. This cap is the half that lives in the service and therefore survives.
+  //
+  // Note what it does and does not currently protect. `callList` reaches only one caller,
+  // src/lib/ceo/command-center.ts, and only when `includeDoctorCoverage` is true — which no caller
+  // sets today, so the field is always null and the cap bounds nothing that is served. It is kept
+  // because the rebuild will turn that flag on, and an uncapped list doubled by a card+row render
+  // is precisely how the 16.5 MB happened the first time.
+  const capSource = serviceSource.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  const cap = /DOCTOR_COVERAGE_CALL_LIST_SIZE = (\d+);/.exec(capSource);
+  assert.ok(
+    cap,
+    "DOCTOR_COVERAGE_CALL_LIST_SIZE is gone from sfe-doctor-coverage.ts — the call list is rendered twice by the shared primitive and would grow without bound",
   );
-  assert.match(boardSource, /offListDoctors/, "off-list work must be reported beside coverage, never folded into it and never hidden");
-  assert.match(boardSource, /planMonthMissing/, "a month with no lists at all must say so rather than print every rep at 0%");
+  assert.ok(
+    Number(cap[1]) > 0 && Number(cap[1]) <= 200,
+    `The call list cap is ${cap[1]}, large enough to matter once doubled by the card+table render.`,
+  );
+  assert.match(
+    capSource,
+    /callListTotal:/,
+    "callListTotal is gone. The cap must always report the true count — a capped list that hides how much it dropped is a silent drop, which this repo forbids outright: count and flag, never quietly truncate",
+  );
 }

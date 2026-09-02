@@ -9,9 +9,10 @@ import {
   summarizeCampaignMatches,
   type KnownContactRow,
 } from "../src/lib/crm/campaign-contact-match.ts";
-import { readCampaignNote } from "../src/lib/crm/campaign-note.ts";
+import { readCampaignNote, type CampaignAssistReading } from "../src/lib/crm/campaign-note.ts";
 import {
   buildRepVisits,
+  collectCampaignFragments,
   isProspectRow,
   type CrmRegionTerritoryIndex,
   type VisitForRepDrilldown,
@@ -227,6 +228,78 @@ export function runCrmCampaignContactMatchTests() {
     );
     assert.equal(built.rows[0]!.knownContact, null, "a real contact is never second-guessed by a reading of its comment");
     assert.equal(built.summary.campaignAlreadyKnown, 0, "and a regular visit can never be a mis-coded campaign call");
+  }
+
+  // ── The cheap-model assist reaches the row, and reaches it BEFORE the match ─────
+  {
+    // Both halves of this feature shipped on 2026-08-28 and nothing called either of them, so the
+    // 15.2% of campaign notes the rules cannot read stayed unread on the drill-down for five days
+    // while the module sat there tested, documented and reachable by no route. These assertions are
+    // the wire. They are deliberately in THIS file rather than beside the assist's own unit tests,
+    // because what was missing was never the assist — it was the join between it and the row.
+    const HOSPITAL = "م. طنطا العام"; // "Tanta General" — an abbreviation no rule can expand.
+
+    // ONE call per drill-down, not one per row: the same abbreviation across a rep's month is one
+    // fragment. The model is billed per fragment, and a rep writes the same shorthand all month.
+    assert.deepEqual(
+      collectCampaignFragments([campaignVisit(HOSPITAL), campaignVisit(HOSPITAL, { crm_visit_id: 52 })]),
+      [HOSPITAL],
+      "a fragment repeated across a rep's month is sent once",
+    );
+    assert.deepEqual(
+      collectCampaignFragments([visit()]),
+      [],
+      "a regular visit has a contact record and must never be sent to the model — the assist reads the residue of the rules, not the corpus",
+    );
+    assert.deepEqual(
+      collectCampaignFragments([campaignVisit("د. عبدالكريم صبح Pedia")]),
+      [],
+      "and neither is a note the rules already read — sending it would be paying for an answer we have",
+    );
+
+    // No map — the rules' answer, unchanged. This is what every caller got before the wire, and
+    // what every caller still gets when the key is missing or the call fails.
+    const unassisted = buildRepVisits([campaignVisit(HOSPITAL)], [], { territoryIndex: UNMAPPED });
+    assert.equal(
+      unassisted.rows[0]!.customerName,
+      null,
+      "without the assist the abbreviation stays unread — correct, just less complete",
+    );
+
+    // With a map, what the model read lands in the column the screen actually prints.
+    const place = new Map<string, CampaignAssistReading>([
+      [HOSPITAL, { kind: "place", name: HOSPITAL, placeKind: "hospital" }],
+    ]);
+    const assisted = buildRepVisits([campaignVisit(HOSPITAL)], [], { assisted: place, territoryIndex: UNMAPPED });
+    assert.equal(
+      assisted.rows[0]!.customerName,
+      HOSPITAL,
+      "the place the model read must reach customerName — a reading nobody can see is the state this wire was written to end",
+    );
+
+    // ORDER. knownContact looks the named doctor up in the rep's own registered list, so a name
+    // only the model could read has to be in note.people BEFORE that lookup runs. In the other
+    // order the row would print the doctor's name and still call him a prospect the rep has never
+    // registered — a worse reading than the one it replaced, because it looks researched.
+    const DOCTOR = "محمد الحويزي";
+    const person = new Map<string, CampaignAssistReading>([
+      [DOCTOR, { kind: "person", name: DOCTOR, speciality: null }],
+    ]);
+    const matched = buildRepVisits([campaignVisit(DOCTOR)], [], {
+      assisted: person,
+      contactDirectory: directory([{ contactCrmId: "777", contactName: DOCTOR }]),
+      territoryIndex: UNMAPPED,
+    });
+    assert.equal(
+      matched.rows[0]!.knownContact?.contactCrmId,
+      "777",
+      "a doctor only the model could read must still be matched against the rep's registered list — assist first, then match",
+    );
+    assert.equal(
+      matched.summary.campaignAlreadyKnown,
+      1,
+      "and the summary must count him, or the screen's headline disagrees with its own rows",
+    );
   }
 
   // ── Unnamed is not the same as prospecting ──────────────────────────────────────

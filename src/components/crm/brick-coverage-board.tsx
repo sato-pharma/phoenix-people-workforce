@@ -15,7 +15,9 @@ import {
 
 // Server half of the Brick Coverage board — the admin page and any future portal twin share it
 // verbatim; only `monthBasePath` differs. Section shells, KPI tiles and the slate-900 header bar
-// are copied from doctor-coverage-board.tsx so the two CRM coverage boards read as one module.
+// are copied from doctor-coverage-board.tsx so the CRM coverage boards read as one module. That
+// file was deleted on 2026-09-02 as unreachable code — the owner retired its route on 2026-08-28 —
+// so this file is now the reference copy of that vocabulary rather than a copy of one.
 
 function Section({
   action,

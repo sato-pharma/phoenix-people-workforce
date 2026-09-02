@@ -43,7 +43,13 @@ import {
   type CampaignContactMatch,
   type KnownContactIndex,
 } from "@/lib/crm/campaign-contact-match";
-import { campaignHeadline, readCampaignNote, type CampaignNoteReading } from "@/lib/crm/campaign-note";
+import {
+  applyAssist,
+  campaignHeadline,
+  readCampaignNote,
+  type CampaignAssistReading,
+  type CampaignNoteReading,
+} from "@/lib/crm/campaign-note";
 import { classifyVisit, type VisitBucket } from "@/lib/crm/visit-types";
 import type { CheckinForMatch } from "@/lib/crm/checkin-match";
 import { indexCheckinsByAgentContactDay } from "@/lib/crm/checkin-match";
@@ -189,12 +195,50 @@ export function resolveVisitTerritory(
  * the row: a rep's month contains those days, and hiding them would make the drill-down disagree
  * with his calendar even while it agrees with his rate. The summary counts them separately.
  */
+/**
+ * The rules' reading of a campaign row's note, or null when this row is not one.
+ *
+ * ONE predicate, deliberately, used by both readers below. `collectCampaignFragments` decides which
+ * notes are sent to the model and `toRepVisitRow` decides which notes get the answers folded back
+ * in. If those two ever disagreed the assist would resolve fragments nobody looks up — no error, no
+ * log, a paid call whose answer is silently discarded and a screen that never changes.
+ */
+function campaignReading(visit: VisitForRepDrilldown, bucket: VisitBucket): CampaignNoteReading | null {
+  return bucket === "campaign" && !text(visit.contact_name) ? readCampaignNote(visit.comment) : null;
+}
+
+/**
+ * What the rules could not read across a rep's period — the input to the cheap-model assist.
+ *
+ * PURE, so the IO shell can ask this question before it awaits anything, and so a test can pin
+ * exactly which fragments would be sent without an API key anywhere near it.
+ *
+ * De-duplicated here as well as in the assist: one rep's month repeats the same abbreviation many
+ * times over — the same hospital, the same pharmacy, written the same way — and the model is billed
+ * per fragment, not per row.
+ */
+export function collectCampaignFragments(visits: readonly VisitForRepDrilldown[]): string[] {
+  const seen = new Set<string>();
+  for (const visit of visits) {
+    const { bucket } = classifyVisit(visit.visit_type, visit.comment, visit.visit_type_description);
+    const reading = campaignReading(visit, bucket);
+    if (!reading) continue;
+    for (const fragment of reading.unread) {
+      const trimmed = fragment.trim();
+      if (trimmed) seen.add(trimmed);
+    }
+  }
+  return [...seen];
+}
+
 export function toRepVisitRow<C extends CheckinForMatch>(
   visit: VisitForRepDrilldown,
   checkinIndex: Map<string, C[]>,
   territoryIndex: CrmRegionTerritoryIndex,
   partnerNameByHrId?: ReadonlyMap<string, string>,
   contactDirectory?: KnownContactIndex,
+  /** What the cheap model read, keyed by fragment. Omitted → the rules' answer, unchanged. */
+  assisted?: ReadonlyMap<string, CampaignAssistReading>,
 ): RepVisitRow {
   const { label, bucket } = classifyVisit(visit.visit_type, visit.comment, visit.visit_type_description);
   const partnerHrId = text(visit.double_hr_id);
@@ -204,10 +248,21 @@ export function toRepVisitRow<C extends CheckinForMatch>(
   // its address is in its name. Another doctor has his specialty in his name, which is GB."*
   //
   // So the note is pulled apart HERE, once, into the same three fields a regular visit already fills
-  // — and the row then sorts, searches and exports like any other. Rules only at this layer: the
-  // cheap-model assist in campaign-note-assist.ts is async and this function is pure and synchronous,
-  // so the page applies it on top for the fragments the rules could not read.
-  const note = bucket === "campaign" && !text(visit.contact_name) ? readCampaignNote(visit.comment) : null;
+  // — and the row then sorts, searches and exports like any other.
+  //
+  // The rules run at this layer and the cheap-model assist is folded in on top of them. The model
+  // call itself cannot happen here — it is async and this function is pure and synchronous — so
+  // rep-visits-data.ts awaits it once for the whole period and hands the answers down as
+  // `assisted`, exactly as it already hands down the contact directory and the territory index.
+  // Nothing about this function's purity changes, and with no map it behaves as it always did.
+  //
+  // ASSIST FIRST, THEN MATCH. `knownContact` below looks the named doctor up in the rep's own
+  // registered list, so a name only the model could read has to be in `note.people` BEFORE that
+  // lookup runs. In the other order the assist would fill the screen's text and the row would still
+  // say "Prospect · not on his list" about a doctor the rep has registered — a worse reading than
+  // the one it replaced, because it looks researched.
+  const rules = campaignReading(visit, bucket);
+  const note = rules && assisted ? applyAssist(rules, assisted) : rules;
   return {
     visitCrmId: visit.crm_visit_id,
     dateIso: (visit.visit_date ?? "").slice(0, 10),
@@ -354,6 +409,14 @@ export function buildRepVisits<C extends CheckinForMatch>(
     partnerNameByHrId?: ReadonlyMap<string, string>;
     /** The rep's registered doctors. Omitted → no campaign row claims to know anyone. */
     contactDirectory?: KnownContactIndex;
+    /**
+     * What the cheap model read of the fragments the rules could not, keyed by fragment.
+     *
+     * Omitted → the rules' answer, unchanged, which is what every caller got before 2026-09-02 and
+     * what every caller still gets when the assist is unavailable. The drill-down is correct
+     * without this; it is only less complete.
+     */
+    assisted?: ReadonlyMap<string, CampaignAssistReading>;
   },
 ): { rows: RepVisitRow[]; summary: RepVisitsSummary } {
   const checkinIndex = indexCheckinsByAgentContactDay(checkins);
@@ -365,6 +428,7 @@ export function buildRepVisits<C extends CheckinForMatch>(
         options.territoryIndex,
         options.partnerNameByHrId,
         options.contactDirectory,
+        options.assisted,
       ),
     ),
   );

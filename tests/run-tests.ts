@@ -318,9 +318,9 @@ import { runCrmVisitTypeLabelTests } from "./crm-visit-type-labels.test.ts";
 import { runCrmRepDoctorListsTests } from "./crm-rep-doctor-lists.test.ts";
 import { runCrmContactListsTests } from "./crm-contact-lists.test.ts";
 import { runRepsListTests } from "./reps-list.test.ts";
+import { runRepsListActivityTests } from "./reps-list-activity.test.ts";
 import { runCrmPlanVerificationTests } from "./crm-plan-verification.test.ts";
 import { runRepsWeeklyPlansTests } from "./reps-weekly-plans.test.ts";
-import { runCrmRepDoctorTrendTests } from "./crm-rep-doctor-trend.test.ts";
 import { runLocationIqGeocodeConfidenceTests } from "./locationiq-geocode-confidence.test.ts";
 import { runPrivateCalendarTests } from "./private-calendar.test.ts";
 import { runWeeklyPlanApproverUiParityTests } from "./weekly-plan-approver-ui-parity.test.ts";
@@ -844,7 +844,6 @@ import { runEmployeePortalMobileTableCardTests } from "./employee-portal-mobile-
 import { runCrmMobileTableCardTests } from "./crm-mobile-table-cards.test.ts";
 import { runHrShellMobileTableTests } from "./hr-shell-mobile-tables.test.ts";
 import { runOutstationMobileTableCardTests } from "./outstation-mobile-table-cards.test.ts";
-import { runDoctorCoveragePaginationTests } from "./crm-doctor-coverage-pagination.test.ts";
 import { runPharmacySearchTests } from "./pharmacy-search.test.ts";
 import { runRscClientFunctionPropTests } from "./rsc-client-function-props.test.ts";
 import { runDirectOrdersInvoiceScanTests } from "./direct-orders-invoice-scan.test.ts";
@@ -1821,12 +1820,6 @@ await runTest(
   + "offers for verification that was never fetched reads as \"no plan filed\")",
   runCrmRepDoctorListsTests,
 );
-await runTest(
-  "crm rep coverage & frequency trend (a rep with no plan in a month reads BLANK, never 0% — and "
-  + "the like-for-like cohort holds flat across a departure that moves the company line 25 points, "
-  + "so a change in WHO is measured can never be reported as a change in performance)",
-  runCrmRepDoctorTrendTests,
-);
 await runTest("LocationIQ geocode confidence (reverse/forward scoring + LocationIQ-first/Google-fallback wiring)", runLocationIqGeocodeConfidenceTests);
 await runTest("private calendar", runPrivateCalendarTests);
 await runTest("weekly plan approver UI parity (no buttons the server rejects; comments gated on participation)", runWeeklyPlanApproverUiParityTests);
@@ -2569,7 +2562,6 @@ await runTest("employee portal mobile table cards (every converted table is desk
 await runTest("CRM mobile table cards (whole-directory scan: every CRM table desktop-gated, every table file has a card path, no bare overflow-x-auto, both coverage boards moved together)", runCrmMobileTableCardTests);
 await runTest("Outstation mobile table cards (whole-directory scan: every outstation table desktop-gated, every table file has a card path, no fixed-pixel floor in an ungated scroll box, HR decision controls shared by both halves)", runOutstationMobileTableCardTests);
 await runTest("HR shell mobile tables (closure scan from the HR sidebar: every wide table desktop-gated with a mobile half beside it, stacking primitives pinned, exemptions justified)", runHrShellMobileTableTests);
-await runTest("Doctor Coverage drill-down is windowed (both halves draw the same page, page clamps, controls exist, xlsx export still spans every row, call list cap intact)", runDoctorCoveragePaginationTests);
 await runTest("RSC boundary (no server component hands a function prop to a client component — the crash that 500d Doctor Coverage; follows the real import graph so client-parent files are not flagged)", runRscClientFunctionPropTests);
 await runTest("direct orders invoice scan (a dim page gains real contrast, a failed prepare returns the original, EXIF rotation is applied, no binarisation, the reader is sent the PREPARED image)", runDirectOrdersInvoiceScanTests);
 await runTest("direct orders Arabic search (every fold survives, the strip class never swallows a letter, an unnamed customer is ranked down not hidden, both birth paths are searched)", runDirectOrdersArabicSearchTests);
@@ -3040,6 +3032,11 @@ await runTest(
   + "code; and the portal sidebar's hand-copied role list is asserted against the enforcing gate, "
   + "because a row a role cannot open is invisible until someone in that role clicks it)",
   runRepsListTests,
+);
+
+await runTest(
+  "reps list activity (the status printed beside every contact on a rep's own list — the join that turns \"32 missed\" back into 32 NAMES. Its output is an accusation about a named person, so every failure mode is pinned: the plan is narrowed by agent_crm_id and NEVER by the hr id, which the mirror leaves null on up to 27.9% of a month and whose every dropped row would read as an ignored doctor; a read that FAILED answers null and hides the column rather than printing \"No activity\" beside all 84 names; indexing two reps at once THROWS instead of letting a shared doctor carry the other rep's visits; a mid-month rep is scored against the calls DUE, not the month's whole ask; `not_due` is kept out of the unvisited count; and on-plan is the only green, because over-visiting is a deviation and not a win)",
+  runRepsListActivityTests,
 );
 
 await runTest(

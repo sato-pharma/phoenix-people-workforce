@@ -8,9 +8,11 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { buildKnownContactIndex, type KnownContactIndex } from "@/lib/crm/campaign-contact-match";
+import { assistCampaignFragments } from "@/lib/crm/campaign-note-assist-model";
 import { collapseDuplicateVisitSubmissions, queryCheckins, queryVisits } from "@/lib/crm/reads";
 import {
   buildRepVisits,
+  collectCampaignFragments,
   type CrmRegionTerritoryIndex,
   type RepVisitRow,
   type RepVisitsSummary,
@@ -290,7 +292,26 @@ export async function loadRepVisits(
   const scopedCheckins =
     input.agentCrmId != null ? checkins.filter((checkin) => checkin.agent_crm_id === input.agentCrmId) : checkins;
 
+  // THE CHEAP-MODEL ASSIST, ON THE RESIDUE ONLY.
+  //
+  // The owner, 2026-08-28: "you can use a cheap or free AI assist that already exists in our code
+  // base to separate and analyse and extract the data." The rules in campaign-note.ts settle most
+  // of the corpus for free — measured over all 17,474 distinct campaign notes on production they
+  // name a person in 57.8% and a place in 24.3%, and recognise a further 12.8% as the rep's own
+  // remark. This reads the 15.2% left over: an abbreviation a human resolves instantly and a rule
+  // cannot, "م. طنطا العام" for Tanta General, "ص ثروت" for Tharwat Pharmacy.
+  //
+  // ONE call per drill-down, never per row, and only for fragments the rules already failed on —
+  // that is what keeps it cheap. It cannot throw: a missing key, a timeout or a malformed answer
+  // all return an empty map and the page renders the rules' reading exactly as it did before.
+  //
+  // This is the wire that was missing. Both halves shipped on 2026-08-28 and nothing ever called
+  // them, so the residue stayed unread on the screen for five days while reading as a finished
+  // feature — the module was tested, documented and reachable by no route at all.
+  const assisted = await assistCampaignFragments(collectCampaignFragments(visits));
+
   return buildRepVisits(visits, scopedCheckins, {
+    assisted,
     contactDirectory,
     partnerNameByHrId: input.partnerNameByHrId,
     territoryIndex,

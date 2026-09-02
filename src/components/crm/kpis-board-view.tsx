@@ -28,8 +28,9 @@ import type { KpiRepRow, KpisBoard } from "@/lib/crm/kpis-board";
  * boundary. React cannot serialise a function, so the page 500s at render time with "Functions
  * cannot be passed directly to Client Components" — on every load, for everyone, not as an edge
  * case. That is not hypothetical: it is exactly what took /admin/doctor-coverage and its portal
- * twin down for about an hour on 2026-08-21, and doctor-coverage-board.tsx carries the same inline
- * for the same reason.
+ * twin down for about an hour on 2026-08-21. That board carried the same inline for the same
+ * reason until it was deleted on 2026-09-02, five days after the owner retired its route; this
+ * file is now where the pattern is written down.
  *
  * Adding "use client" here would also silence it, but it is the wrong trade: this board is a
  * read-only report with no interactivity of its own, so it would ship ~400 lines of markup logic

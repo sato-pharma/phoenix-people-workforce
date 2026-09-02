@@ -230,18 +230,14 @@ export function runDoctorCoverageRepNameTests() {
     "and the private copy must stay deleted",
   );
 
-  const tablesSource = readFileSync("src/components/crm/doctor-coverage-tables.tsx", "utf8");
-  const nowrapCells = tablesSource.match(/whitespace-nowrap[^>]*>\{(?:row|rep)\.repName\}/g) ?? [];
-  assert.equal(
-    nowrapCells.length,
-    3,
-    "all three desktop cells rendering a rep name must hold it on one line — the label grew from 41 to 70 characters, and wrapping is forbidden here exactly as an ellipsis is",
-  );
-  assert.doesNotMatch(
-    tablesSource,
-    /truncate[^"]*>\{(?:row|rep)\.repName\}/,
-    "and it must never be truncated — the owner's rule is that text is never elided",
-  );
+  // A pin stood here on doctor-coverage-tables.tsx: all three desktop cells rendering a rep name
+  // had to hold it on one line, and none of them could truncate it. The file was deleted on
+  // 2026-09-02 — its board had been retired since 2026-08-28 and nothing imported it.
+  //
+  // The rule outlives the file and is not softened by its removal: the handle grew from 41 to 70
+  // characters, and the owner's standing rule is that text is never elided. Where a name will not
+  // fit, the answer is the SHORTER STRING built by splitCrmRepName below — never an ellipsis, and
+  // never a nowrap that pushes a phone into sideways scroll.
 
   // ── Splitting the handle, for a card that must not wrap ──────────────────────────────────────
   // Reps Plans shows one card per rep on a phone. Its title WRAPS below md and has to keep doing

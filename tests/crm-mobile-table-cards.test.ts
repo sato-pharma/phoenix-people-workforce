@@ -91,9 +91,13 @@ export function runCrmMobileTableCardTests() {
   const files = crmFiles();
   const tableFiles = files.filter(rendersDesktopTable);
 
-  // The conversion covered eight files: seven render a real <table>, and doctor-coverage-board
-  // renders the call list as a div grid — a table in all but tag name, seven fixed columns held
-  // apart by min-w-*, which is why it is checked by name just below rather than by <table>.
+  // The conversion covered eight files. Seven rendered a real <table>; the eighth was
+  // doctor-coverage-board.tsx, which drew its call list as a div grid — a table in all but tag
+  // name, seven fixed columns held apart by min-w-* — and so was checked by name rather than by
+  // <table>. That file was deleted on 2026-09-02: its route had been a redirect stub since the
+  // owner retired the board on 2026-08-28, and nothing imported it. The by-name block that
+  // guarded it is gone with it; the <table> scan below is untouched and still covers the rest.
+  //
   // If this count drops, a board lost its desktop view; if it climbs without the assertions
   // below passing, a new board shipped ungated.
   assert.ok(
@@ -102,41 +106,21 @@ export function runCrmMobileTableCardTests() {
       "A board that lost its <table> lost the desktop view, which is the opposite of the rule.",
   );
 
-  // The call list is not a <table>, so nothing above reaches it. It is still seven columns of
-  // fixed-width spans on one nowrap flex row, which on a 375px screen is the same defect with a
-  // different tag — it gets the same split.
+  // A by-name block stood here for doctor-coverage-board.tsx's call list, which was not a <table>
+  // and so was invisible to the scan above: seven columns of fixed-width spans on one nowrap flex
+  // row, the same defect with a different tag. It required a below-md card list built from real
+  // <PortalRecordCard>s and a desktop half gated with hidden md:block.
   //
-  // This one is checked by OUTCOME rather than by naming <PortalResponsiveDataList>, because
-  // that primitive is not available here. doctor-coverage-board.tsx has no "use client" — it
-  // renders on the server — and portal-primitives.tsx does, so handing the primitive getKey /
-  // renderCard / renderTable serialises three functions across the RSC boundary. React refuses,
-  // and both /admin/doctor-coverage and /employee-portals/doctor-coverage 500 on every load.
-  // That is not hypothetical: pinning the primitive by name here is what pushed the board onto
-  // it in #2264, and production returned "Admin workspace unavailable" for about an hour on
-  // 2026-08-21 (digests 1878765947 / 3180310587 / 923360379 — one per function prop).
-  // The board now inlines exactly what the primitive emits, so the rule is unchanged; only the
-  // spelling is. rsc-client-function-props.test.ts guards the boundary itself.
-  const board = files.find((candidate) => candidate.name === "doctor-coverage-board.tsx");
-  assert.ok(board, "src/components/crm/doctor-coverage-board.tsx is missing.");
-  assert.match(
-    board.source,
-    /\bmd:hidden\b/,
-    "src/components/crm/doctor-coverage-board.tsx must keep a card list gated to below md for " +
-      "its call list. It is a div grid rather than a <table>, so the <table> scan above cannot " +
-      "see it — a regression there would otherwise ship silently.",
-  );
-  assert.match(
-    board.source,
-    /\bPortalRecordCard\b/,
-    "src/components/crm/doctor-coverage-board.tsx must build its mobile call list out of real " +
-      "<PortalRecordCard>s, not a narrowed copy of the desktop row.",
-  );
-  assert.match(
-    board.source,
-    /hidden[^"]*\bmd:block\b/,
-    "src/components/crm/doctor-coverage-board.tsx must keep its wide call-list row list hidden " +
-      "below md. Cards on a phone are only half the rule — the desktop half has to be gated too.",
-  );
+  // Two rules from it outlive the file. First, a div grid of fixed-width columns is a table for the
+  // purpose of the owner's fits-the-screen rule, and the <table> scan below cannot see one — a new
+  // board that draws its rows that way needs its own assertion here, by name, as that one was.
+  // Second, the reason it was checked by outcome rather than by naming <PortalResponsiveDataList>:
+  // that board was a server component and portal-primitives.tsx is a client one, so handing the
+  // primitive getKey / renderCard / renderTable serialises three functions across the RSC boundary.
+  // React refuses. Pinning the primitive by name here is what pushed the board onto it in #2264,
+  // and production returned "Admin workspace unavailable" for about an hour on 2026-08-21 (digests
+  // 1878765947 / 3180310587 / 923360379 — one per function prop). rsc-client-function-props.test.ts
+  // guards that boundary itself, across the whole tree, and is where the lesson now lives.
 
   for (const file of files) {
     // ── HEADLINE: not one ungated raw table survives ─────────────────────────
@@ -210,11 +194,21 @@ export function runCrmMobileTableCardTests() {
     }
   }
 
-  // ── The two coverage boards moved together, and must stay that way ────────
+  // ── The coverage boards moved together, and must stay that way ────────────
   // The owner's condition when approving this: the CRM coverage boards are built to read as
   // one module, so they move together or not at all. Converting one and leaving the other
   // is the specific outcome he ruled out.
-  for (const name of ["doctor-coverage-tables.tsx", "rep-doctor-lists-tables.tsx"]) {
+  //
+  // Two of the three original members are gone. rep-doctor-lists-tables.tsx and
+  // doctor-coverage-tables.tsx were both deleted on 2026-09-02: their routes had been redirect
+  // stubs since the owner retired those boards on 2026-08-28, and nothing imported either
+  // component. A board that cannot be opened cannot be checked for a sideways-scrolling table,
+  // and asserting on a file that is not there only ever fails.
+  //
+  // brick-coverage-tables.tsx is the surviving member and keeps the rule on its own. The list
+  // stays a list rather than collapsing into a single readFileSync, because the rebuilds of both
+  // retired boards belong in it the day they ship.
+  for (const name of ["brick-coverage-tables.tsx"]) {
     const file = files.find((candidate) => candidate.name === name);
     assert.ok(file, `src/components/crm/${name} is missing — the coverage boards move together.`);
     assert.match(

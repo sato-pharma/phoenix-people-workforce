@@ -15,6 +15,13 @@ export const dynamic = "force-dynamic";
 // Doctor Coverage visit norms (visits per month, per contact kind and grade).
 // Gated at crm_visits:update, which only Super Admin and SFE Manager hold — the CEO account is
 // deliberately excluded, since it is observational on policy by design.
+//
+// NO UI CALLS THIS TODAY. Its only caller was doctor-coverage-norms-editor.tsx, deleted on
+// 2026-09-02 with the rest of the retired board's components. The route is left in place
+// deliberately: it is registered in src/lib/security/access-registry.ts, it reads and writes the
+// live norms that src/lib/crm/doctor-coverage-config.ts still owns, and the rebuild needs exactly
+// this endpoint. It is reachable and authorised — treat it as live, not as scaffolding — but be
+// aware that a change here currently has no screen to verify against.
 
 export async function GET(request: Request) {
   try {

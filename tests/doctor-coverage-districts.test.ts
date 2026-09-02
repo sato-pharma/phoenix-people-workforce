@@ -536,25 +536,24 @@ export function runDoctorCoverageDistrictTests() {
     "membership must never be decided by comparing a job title string — free text, and misspelt enough to hide 9 of 27 real District Managers",
   );
 
-  const tablesSource = readFileSync("src/components/crm/doctor-coverage-tables.tsx", "utf8");
-  assert.match(tablesSource, /DoctorCoverageDistrictTable/, "the districts need their own table");
-  assert.match(
-    tablesSource,
-    /r\.hasPanel \? r\.coveragePct : null/,
-    "a row with no panel must sort as MISSING, not as 0 — the hook sinks a missing value in both directions, and a plain 0 puts every rep with no list back at the top of a worst-first table",
-  );
-
-  // A source pin stood here requiring both doctor-coverage pages to hand the service the viewer's
-  // identity, since the page is the only place holding an AccessContext and a missing argument
-  // cannot be caught downstream. The owner retired that board on 2026-08-28 and both pages are now
-  // redirect stubs, so there is nothing left to pin — the behavioural assertions above still cover
-  // the walk itself, and the rebuild re-pins its own pages when it ships.
-
-  const boardSource = readFileSync("src/components/crm/doctor-coverage-board.tsx", "utf8");
-  assert.match(boardSource, /title="Coverage by district"/, "the board must carry a district section");
-  assert.match(
-    boardSource,
-    /board\.managers\.length > 0 \?/,
-    "and must hide it when there is no org tree, rather than showing an empty section that reads as 'nobody manages anyone'",
-  );
+  // Three further source pins stood here and are gone with the files they read.
+  //
+  // The first required both doctor-coverage pages to hand the service the viewer's identity, since
+  // the page is the only place holding an AccessContext and a missing argument cannot be caught
+  // downstream. The owner retired that board on 2026-08-28 and both pages became redirect stubs.
+  //
+  // The other two read doctor-coverage-tables.tsx and doctor-coverage-board.tsx — that the district
+  // table existed, that it sorted a panel-less rep as MISSING rather than as 0, and that the board
+  // hid the district section when there was no org tree. Those components were deleted on
+  // 2026-09-02: nothing had imported them since the retirement, so they were shells no route could
+  // render. An assertion against a file that is not there does not guard a rule, it only fails.
+  //
+  // The rules themselves are not withdrawn, and the rebuild must honour them. They are recorded
+  // here rather than in a commit message because this is where the next person will look: a rep
+  // with no panel sorts as MISSING in both directions (a plain 0 puts every rep with no list at the
+  // top of a worst-first table), and a district section with no org tree behind it is hidden rather
+  // than drawn empty, which would read as 'nobody manages anyone'.
+  //
+  // Everything above this line is behavioural — it exercises buildDoctorCoverageBoard directly and
+  // is unaffected by any of it.
 }

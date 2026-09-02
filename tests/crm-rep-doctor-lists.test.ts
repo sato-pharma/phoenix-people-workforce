@@ -483,6 +483,7 @@ export function runCrmRepDoctorListsTests() {
   runPlanSyncWindowTests();
   runPlanSyncManualRefreshTests();
   runAccessTests();
+  runVocabularyTests();
 }
 
 // ── Campaign calls: proof of work that can never become proof of a visit ───────────────────────
@@ -1148,4 +1149,69 @@ function runAccessTests() {
     "missed",
     "the doctor who was not-due on the 15th becomes a real miss once August closes — the basis moves, the verdict follows",
   );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// THE OWNER'S THREE WORDS.
+//
+// on_plan, under and over are ONE axis — how a rep's visit count compares with the plan — and the
+// owner gave the vocabulary for it verbatim on 2026-09-02: "change vocab to below exact above".
+//
+// The pull back towards "On plan / Under plan / Over plan" is strong, because each of those phrases
+// reads sensibly on its own. What they cost is the axis: three separate phrases make the reader work
+// out that they are one measurement, and they quietly imply that over-visiting is a pass and
+// under-visiting a failure — the exact reading the owner's rule refuses, since BOTH are deviations.
+//
+// Pinned across files rather than within one, because the failure this guards is not a wrong word on
+// one board. It is two boards printing different words for the same computed status, which is what
+// this codebase looked like until today and which no test could see, because each board was
+// internally consistent.
+//
+// There were three boards for one afternoon. rep-doctor-lists-{board,tables}.tsx were brought onto
+// the same words and then deleted the same day: their route had been a redirect stub since the
+// owner retired it on 2026-08-28, so the words were being kept consistent on a page nobody could
+// open. The two files below are the whole live surface of this axis.
+function runVocabularyTests() {
+  const AXIS = [
+    { status: "on_plan", word: "Exact" },
+    { status: "under", word: "Below" },
+    { status: "over", word: "Above" },
+  ];
+
+  // The KPIs board (/admin/kpis and its portal twin) and the Reps List chip. Both reachable, both
+  // reading the same computed status out of rep-doctor-lists.ts.
+  const kpis = readFileSync("src/components/crm/kpis-board-view.tsx", "utf8");
+  const repsList = readFileSync("src/lib/crm/reps-list-activity.ts", "utf8");
+
+  for (const { status, word } of AXIS) {
+    assert.ok(
+      kpis.includes(`>${word}</th>`),
+      `the KPIs board must head its ${status} column "${word}" — the owner's own word, given verbatim`,
+    );
+    assert.ok(
+      repsList.includes(`  ${status}: "${word}",`),
+      `ACTIVITY_LABEL must map ${status} to "${word}" — the Reps List chip and the KPIs board read the same status and must say the same word`,
+    );
+  }
+
+  // The retired phrasing, asserted on the MAP ENTRY rather than on the bare phrase: the doc comment
+  // above ACTIVITY_LABEL quotes the old wording deliberately, to say what not to go back to, and a
+  // naive "the file must not contain 'On plan'" would pin that prose instead of the code.
+  for (const stale of ['on_plan: "On plan"', 'under: "Under plan"', 'over: "Over plan"']) {
+    assert.ok(!repsList.includes(stale), `the retired frequency wording ${stale} must be gone from the map`);
+  }
+
+  // The three words are the axis, and ONLY the axis. missed, not_due, off_plan and untouched are not
+  // points on the same scale, and folding them in would say a doctor nobody reached is merely
+  // "below". Exact is the only pass — over-visiting is a deviation on the owner's rule — so emerald
+  // must never spread to a second status.
+  assert.ok(repsList.includes('missed: "Missed"'), "missed keeps its own word — it is not a point on the plan axis");
+  assert.ok(repsList.includes('untouched: "No activity"'), "untouched keeps its own word");
+  const emerald = repsList.split("\n").filter((line) => line.includes("emerald") && line.includes(":"));
+  assert.equal(
+    emerald.length,
+    1,
+    `exactly one status may be green, and it must be the exact match — got: ${emerald.join(" | ")}`,
+  );
+  assert.ok(emerald[0].trim().startsWith("on_plan:"), `emerald belongs to on_plan alone — got: ${emerald[0]}`);
 }
