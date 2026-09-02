@@ -147,10 +147,24 @@ export function runWhatsAppScreeningQuestionRoleScopeTests() {
     );
     // Anchored on `await` so this matches CALL sites only — the function's own definition lives in
     // the first of these two files and would otherwise be read as a call that forgot the role.
+    //
+    // `roleFamily` is accepted alongside `job_title_family` for exactly one reason: resendExtraQuestion
+    // (added 2026-09-02 with the stale-conversation re-prompt) FORWARDS the role rather than reading
+    // the session itself, so at that one call site the field name is a hop away. That hop is closed
+    // immediately below — its own caller must name the field — so a forwarded role is still a real
+    // tapped role, and not a way to launder a null past this check.
     for (const call of source.match(/await listActiveScreeningQuestions\([^)]*\)/g) ?? []) {
       assert.ok(
-        /job_title_family/.test(call),
+        /job_title_family|roleFamily/.test(call),
         `${path} calls listActiveScreeningQuestions without the applicant's tapped role: ${call}`,
+      );
+    }
+    // The hop itself. Anchored on return/await so the function's own definition — whose parameter
+    // list names `roleFamily` and nothing else — is not read as a call that forgot the role.
+    for (const call of source.match(/(?:return|await) resendExtraQuestion\([^;]*?\)/g) ?? []) {
+      assert.ok(
+        /job_title_family/.test(call),
+        `${path} re-asks an extra question without the applicant's tapped role, which re-opens the entire question list to them: ${call}`,
       );
     }
   }
