@@ -118,10 +118,16 @@ export const PORTAL_NAV_REGISTRY: PortalNavEntry[] = [
   // KPIs carries the same role list and the same permission as Reps List — one gate, two doors.
   // "KPIs" is already short enough for the bottom nav, so label and fullLabel are the same word.
   { label: "KPIs", fullLabel: "KPIs", href: "/employee-portals/kpis", icon: TrendingUp, flags: ["showKpisTab"], permission: { resource: "crm_visits", action: "read" } },
-  // "Plans", not "Reps Plans": the bottom nav shows `label` alone. Footprints rather than the admin
-  // shell's Gauge because Gauge is already Sales vs Target here, and two identical icons in a nav
-  // that shows the icon larger than the word is the one place a duplicate actually misleads.
-  { label: "Plans", fullLabel: "Reps Plans", href: "/employee-portals/reps-plans", icon: Footprints, flags: ["showRepsPlansTab"], permission: { resource: "crm_visits", action: "read" } },
+  // The label is the FULL "Reps Plans", not a shortened "Plans", and not "Reps": both are already
+  // taken — "Plans" by the rep's own Weekly / Monthly Plan two entries above, "Reps" by Reps List —
+  // and a District Manager holds every one of those flags at once, so shortening puts two identical
+  // words side by side in his bottom bar. Keeping the full name also holds the two rails to ONE
+  // vocabulary: the bar says exactly what the sidebar says. The bar wraps, so the second word costs
+  // nothing — a tab's floor is its longest WORD, and both of these were already measured.
+  //
+  // Footprints rather than the admin shell's Gauge because Gauge is already Sales vs Target here,
+  // and in a bar that draws the icon larger than the word a duplicate icon misleads first.
+  { label: "Reps Plans", fullLabel: "Reps Plans", href: "/employee-portals/reps-plans", icon: Footprints, flags: ["showRepsPlansTab"], permission: { resource: "crm_visits", action: "read" } },
   { label: "Territory", fullLabel: "Territory Management", href: "/employee-portals/territory-management", icon: Waypoints, flags: ["showTerritoryManagementTab"], permission: { resource: "sales", action: "read" } },
   { label: "Targets", fullLabel: "Targets", href: "/employee-portals/targets", icon: Target, flags: ["showTargetsTab"], permission: { resource: "sales", action: "read" } },
   { label: "ROI Tracker", fullLabel: "Marketing ROI Tracker", href: "/employee-portals/roi-tracker", icon: Target, flags: ["showMarketingRoiTrackingTab"] },
