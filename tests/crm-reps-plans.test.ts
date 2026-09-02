@@ -10,6 +10,7 @@ import {
   type RepCallRate,
   type VisitForCallRate,
 } from "../src/lib/crm/call-rate.ts";
+import { type DoctorCoverageScope } from "../src/lib/crm/doctor-coverage-roles.ts";
 import { buildOrgPlacementTree, type OrgTreeNode } from "../src/lib/crm/org-placement.ts";
 import {
   attainmentTone,
@@ -374,17 +375,26 @@ export function runCrmRepsPlansTests() {
   // Emad has no hr id at all, so nothing can name him and he is the one honest use of the marker.
   const jobTitles = new Map([["ai-0009", "Product Manager"]]);
 
-  // No geography picked: everyone is LISTED. Only the medical reps are counted.
+  // No geography picked: every MEDICAL REP is listed. Owner, 2026-09-03, "only show medical reps in
+  // this page" — narrowing his own 2026-08-28 rule under which a manager was listed and merely
+  // unscored. What survives that narrowing is tested further down: an UNSEATED person the directory
+  // calls a medical rep is still kept.
   const wide = buildRepsPlansBoard(geoReport, {
     isCurrentMonth: false,
     jobTitleByHrId: jobTitles,
     month: "2026-08",
     tree,
   });
-  assert.equal(wide.reps.length, 8, "no geography filter lists every person");
+  assert.deepEqual(
+    wide.reps.map((r) => r.repName).sort(),
+    ["Alia", "Basem", "Karim", "Nesma"],
+    "the board lists the four medical reps and nobody else — the DM, the NSM and the two off the sales chart are gone",
+  );
   assert.equal(wide.totals.reps, 4, "the tiles are the four MEDICAL REPS — the target is theirs");
-  assert.equal(wide.managersShown, 2, "and the board says how many managers are listed but unscored");
-  assert.equal(wide.unplacedShown, 2, "and how many hold no seat at all");
+  // Every tile figure asserted below is UNCHANGED by that filter, and that is the whole point: the
+  // people it drops were never in a tile. If one of them moves, the filter has removed a REP.
+  assert.equal(wide.managersShown, 0, "a manager is no longer listed at all, so none is listed-but-unscored");
+  assert.equal(wide.unplacedShown, 0, "and neither of the two with no seat is a medical rep by title");
   assert.equal(wide.geographyLabel, null);
   assert.equal(wide.geographyAvailable, true);
   assert.deepEqual(
@@ -393,54 +403,78 @@ export function runCrmRepsPlansTests() {
     "lines are offered by NAME, never by code (owner's standing rule)",
   );
 
-  // OWNER'S RULE, 2026-08-28, in his words: "the KPI is two AM, ten PM, for medical reps. Don't
-  // restrict the managers on AM and PM. Make their account appear, but not restrict them."
-  const nabil = wide.reps.find((r) => r.repName === "Nabil");
-  assert.ok(nabil, "the District Manager is on the board");
-  assert.equal(nabil.seatTierLabel, "District Manager", "shown as what he is");
-  assert.deepEqual(
-    nabil.territories.map((t) => `${t.lineName} · ${t.regionName}`),
-    ["CNS · Delta (1)"],
-    "with his own territory — NOT the 'no seat' marker that put 22 real managers outside the org chart",
-  );
-  assert.equal(nabil.scored, false, "and measured against no target");
-  assert.equal(nabil.am.verifiedRate, 0.5, "his real activity is still on the row — that is his account appearing");
-  // The proof he is outside the tiles rather than merely low in the list: 40 campaign calls, none of
-  // which reach the company figure. Dalia and Emad carry 160 more, equally excluded.
-  assert.equal(wide.totals.campaignCalls, 0, "a manager's activity never moves a number he is not measured by");
-  assert.equal(wide.totals.am.verifiedRate, 1, "40 verified AM / (10 days x 4 reps) = 1.00 — managers not in the divisor");
-  assert.equal(wide.totals.repsOnTarget, 1, "only Alia clears both targets");
+  // OWNER'S RULE, 2026-09-03: "only show medical reps in this page". Nabil holds a DM seat, so he is
+  // off the board entirely — where until 2026-09-03 he was listed and merely unscored.
   assert.equal(
-    wide.reps.find((r) => r.repName === "Dalia")?.territories.length,
-    0,
-    "someone the organogram has no seat for carries no territory",
+    wide.reps.some((r) => r.repName === "Nabil"),
+    false,
+    "the District Manager is not listed at all",
   );
-  assert.equal(wide.reps.find((r) => r.repName === "Dalia")?.scored, false, "and is not scored on a target either");
+  assert.equal(wide.reps.some((r) => r.repName === "Sherif"), false, "and neither is the NSM");
+  // NESMA IS THE ONE THAT MATTERS. She holds an ACTING_DM seat AND the rep seat under it, and the
+  // owner has ruled that acting authority is an app role and she STAYS a medical rep. A filter
+  // written as "drop anyone whose tier is not REP" reads her ACTING_DM row first and deletes a
+  // working rep — so the rule is `scored`, which is "holds a rep seat", not "the first tier seen".
+  assert.ok(
+    wide.reps.some((r) => r.repName === "Nesma"),
+    "the acting DM who also holds the rep seat is KEPT — she is a medical rep and the owner has said so",
+  );
+  // The tiles are untouched by any of it: these are the same figures the board produced when the
+  // managers were still listed, because they were never in a tile. 40 campaign calls of Nabil's and
+  // 160 of Dalia's and Emad's reached no company figure then either.
+  assert.equal(wide.totals.campaignCalls, 0, "a manager's activity never moved a number he is not measured by");
+  assert.equal(wide.totals.am.verifiedRate, 1, "40 verified AM / (10 days x 4 reps) = 1.00 — unchanged by the filter");
+  assert.equal(wide.totals.repsOnTarget, 1, "only Alia clears both targets");
 
-  // ── HEAD OFFICE IS NOT A FAULT ────────────────────────────────────────────────────────────────
-  // `au_v_org_tree` is the SALES seat model. Production's three Product Managers hold no seat in it
-  // and never will, so the first build's amber "Not in organogram" said of a Product Manager exactly
-  // what the owner had already objected to being said of his District Managers. The directory
-  // answers when the chart is silent — a LABEL only: he is still scored against nothing, because a
-  // free-text job title has no business deciding a KPI denominator.
-  const dalia = wide.reps.find((r) => r.repName === "Dalia");
-  assert.equal(dalia?.jobTitle, "Product Manager", "someone off the sales chart is named by his real HR job title");
-  assert.equal(dalia?.seatTierLabel, null, "the organogram still says nothing about him — the title is the fallback");
-  assert.equal(dalia?.scored, false, "and a job title never buys him a target");
-  const emad = wide.reps.find((r) => r.repName === "Emad");
-  assert.equal(emad?.jobTitle, null, "with no hr id there is nothing to look up, and the marker is then the truth");
-  // The seat OUTRANKS the directory for anyone on the chart: a stale HR title must never contradict
-  // the org chart the owner maintains himself.
+  // ── HEAD OFFICE IS NOT A FAULT, AND IS NOT A MEDICAL REP ─────────────────────────────────────
+  // `au_v_org_tree` is the SALES seat model, so production's three Product Managers hold no seat in
+  // it and never will. Before 2026-09-03 they were listed and named by their real HR job title
+  // rather than accused of being "not in organogram". They are still not accused of anything — they
+  // are simply not medical reps, so they are not on a medical-rep board.
+  assert.equal(
+    wide.reps.some((r) => r.repName === "Dalia"),
+    false,
+    "an unseated PRODUCT MANAGER is not a medical rep and is not listed",
+  );
+  assert.equal(
+    wide.reps.some((r) => r.repName === "Emad"),
+    false,
+    "and neither is someone with no hr id, because nothing can be looked up to say he is one",
+  );
+
+  // ── THE SECOND ARM, AND THE REASON IT EXISTS ─────────────────────────────────────────────────
+  // Measured on production before this filter shipped: 26 people whose HR job title is "Medical
+  // Representative" hold NO organogram seat, and they logged 1,412 visits in August — about 9% of
+  // every rep visit that month. A seat-only filter deletes all of them with no error and no marker.
+  // So an unseated person the DIRECTORY calls a medical rep is kept, listed and marked, exactly as
+  // he was before.
+  const unseatedRep = buildRepsPlansBoard(geoReport, {
+    isCurrentMonth: false,
+    jobTitleByHrId: new Map([["ai-0009", "Medical Representative"]]),
+    month: "2026-08",
+    tree,
+  });
+  const keptByTitle = unseatedRep.reps.find((r) => r.repName === "Dalia");
+  assert.ok(keptByTitle, "an UNSEATED medical rep is kept on the strength of his job title");
+  assert.equal(keptByTitle.jobTitle, "Medical Representative", "and is named by it, the organogram being silent");
+  assert.equal(keptByTitle.seatTierLabel, null, "the chart still says nothing about him");
+  assert.equal(keptByTitle.scored, false, "and a job title still never buys him a target — it decides only that he is SHOWN");
+  assert.equal(unseatedRep.unplacedShown, 1, "and he is counted as listed-but-uncounted, so the gap is stated");
+
+  // THE SEAT OUTRANKS THE DIRECTORY, and this is the direction that matters. Give the District
+  // Manager a medical rep's job title — a stale HR row, which is exactly what free text goes stale
+  // as — and he must STILL be off the board. If the title could readmit him, the filter would be
+  // decided by the least reliable field in the system.
   const seatedTitles = buildRepsPlansBoard(geoReport, {
     isCurrentMonth: false,
-    jobTitleByHrId: new Map([["ai-0010", "Senior Medical Rep"]]),
+    jobTitleByHrId: new Map([["ai-0010", "Medical Representative"]]),
     month: "2026-08",
     tree,
   });
   assert.equal(
-    seatedTitles.reps.find((r) => r.repName === "Nabil")?.jobTitle,
-    null,
-    "a seated manager is his SEAT, never a job title that disagrees with the chart",
+    seatedTitles.reps.some((r) => r.repName === "Nabil"),
+    false,
+    "a seated manager is his SEAT — a job title that disagrees with the chart cannot put him back",
   );
 
   // THE TILES RECOMPUTE. This is the half that separates line/region from the rep filter above.
@@ -456,15 +490,16 @@ export function runCrmRepsPlansTests() {
   // 20 + 10 verified AM over (10 working days x 2 reps) = 1.50, where the unfiltered board reads 1.00.
   assert.equal(cns.totals.am.verifiedRate, 1.5, "the AM tile is rescoped to the line");
 
-  // The managers are REACHED by the filter exactly as a rep is — the DM by his own cell, the NSM by
-  // what sits beneath him — and the unplaced survive it, listed and marked.
+  // A line filter now yields that line's medical reps and nothing else. The DM and the NSM are
+  // still REACHED by the geography match — the DM by his own cell, the NSM by what sits beneath him
+  // — but the medical-rep filter runs first, so neither ever reaches it.
   assert.deepEqual(
     cns.reps.map((r) => r.repName).sort(),
-    ["Alia", "Basem", "Dalia", "Emad", "Nabil", "Sherif"],
-    "a line filter keeps its managers and the seatless people on the board",
+    ["Alia", "Basem"],
+    "a line filter yields that line's medical reps only",
   );
-  assert.equal(cns.managersShown, 2, "both managers are listed outside the tiles");
-  assert.equal(cns.unplacedShown, 2, "as are both people with no seat");
+  assert.equal(cns.managersShown, 0, "no manager is listed to be counted outside the tiles");
+  assert.equal(cns.unplacedShown, 0, "and neither seatless person is a medical rep");
   assert.equal(
     cns.reps.some((r) => r.repName === "Karim"),
     false,
@@ -481,8 +516,8 @@ export function runCrmRepsPlansTests() {
   });
   assert.deepEqual(
     ai.reps.map((r) => r.repName).sort(),
-    ["Dalia", "Emad", "Karim", "Nesma"],
-    "the CNS DM and the CNS NSM are both out of an Anti Infective board, while the acting DM belongs to it",
+    ["Karim", "Nesma"],
+    "the CNS DM and the CNS NSM are both out of an Anti Infective board, while the acting DM — a medical rep — belongs to it",
   );
   assert.equal(ai.managersShown, 0);
 
@@ -515,8 +550,8 @@ export function runCrmRepsPlansTests() {
   assert.equal(cnsDelta.totals.am.verifiedRate, 2, "20 verified / (10 x 1) = 2.00");
   assert.deepEqual(
     cnsDelta.reps.map((r) => r.repName).sort(),
-    ["Alia", "Dalia", "Emad", "Nabil", "Sherif"],
-    "his DM and his NSM belong to CNS/Delta as much as he does",
+    ["Alia"],
+    "his DM and his NSM belong to CNS/Delta as much as he does, but neither is a medical rep",
   );
 
   // A stale or hand-edited URL is PRUNED, never rejected — it keeps as much as still makes sense
@@ -543,10 +578,78 @@ export function runCrmRepsPlansTests() {
   );
 
   // The rep picker follows what is on screen, so it can never offer a rep the board is not showing.
+  // This is the assertion that holds the medical-rep filter and the viewer scope to the right SIDE
+  // of the picker: both narrow `allRows`, which is what `repOptions` is derived from. Filtering the
+  // rows but not the picker is the owner's own named failure — a picker is never wider than its
+  // viewer — and it is how a dropped manager's name stays selectable after his row is gone.
   assert.deepEqual(
     cnsDelta.repOptions.map((o) => o.repName),
-    ["Alia", "Dalia", "Emad", "Nabil", "Sherif"],
-    "the rep picker lists exactly the visible people",
+    ["Alia"],
+    "the rep picker lists exactly the visible people, and the filtered-out manager is not selectable",
+  );
+
+  // ── VIEWER SCOPE ──────────────────────────────────────────────────────────────────────────────
+  // Until 2026-09-03 this board took no viewer argument at all: every seat that could open it got
+  // every rep in the company, which was survivable only because the role list held exactly one
+  // entry. Scope is now the security boundary for its data, and it is the SAME
+  // `DoctorCoverageScope` the KPIs board applies, resolved by the same module — a second
+  // implementation of "is this rep on your team" is precisely the drift that got Doctor Coverage
+  // retired.
+  const scopedToAlia: DoctorCoverageScope = {
+    kind: "agents",
+    basis: "team",
+    agentHrIds: ["AI-0001"],
+    label: "District Manager · own team",
+  };
+  const scoped = buildRepsPlansBoard(geoReport, {
+    isCurrentMonth: false,
+    jobTitleByHrId: jobTitles,
+    month: "2026-08",
+    scope: scopedToAlia,
+    tree,
+  });
+  assert.deepEqual(scoped.reps.map((r) => r.repName), ["Alia"], "a team-scoped viewer sees his own rep and no other");
+  assert.deepEqual(
+    scoped.repOptions.map((o) => o.repName),
+    ["Alia"],
+    "AND the picker narrows with him — a picker is never wider than its viewer",
+  );
+  assert.equal(scoped.totals.reps, 1, "the tiles are his team's, not the company's");
+  assert.equal(scoped.totals.am.verifiedRate, 2, "20 verified AM / (10 days x 1 rep) = 2.00, not the company's 1.00");
+
+  // MIXED CASE IS THE LIVE SHAPE. Production hr ids are mixed case and the CRM mirror carries
+  // whatever case it was given, so a case-sensitive comparison under-returns SILENTLY — and a row
+  // matching nobody reads as "this rep is not on your team", the most convincing way to be wrong.
+  const lowerCased: DoctorCoverageScope = { ...scopedToAlia, agentHrIds: ["ai-0001"] };
+  assert.deepEqual(
+    buildRepsPlansBoard(geoReport, {
+      isCurrentMonth: false,
+      month: "2026-08",
+      scope: lowerCased,
+      tree,
+    }).reps.map((r) => r.repName),
+    ["Alia"],
+    "the scope matches whatever case the id arrives in, on BOTH sides",
+  );
+
+  // A viewer with no resolvable team gets an empty board, never a company-wide one. Every failure
+  // path in the resolver returns `none`, and `none` must fail CLOSED here.
+  const noReach = buildRepsPlansBoard(geoReport, {
+    isCurrentMonth: false,
+    month: "2026-08",
+    scope: { kind: "none", reason: "No active reports are attached to your seat." },
+    tree,
+  });
+  assert.equal(noReach.reps.length, 0, "an unresolvable scope shows nobody — it never falls open to everyone");
+  assert.equal(noReach.repOptions.length, 0, "and offers nobody in the picker either");
+
+  // Company scope is the Super Admin's, and is what an omitted scope falls back to — safe only
+  // because the page's own role gate runs first.
+  const companyScope: DoctorCoverageScope = { kind: "company", basis: "company", label: "Super Admin · all lines" };
+  assert.equal(
+    buildRepsPlansBoard(geoReport, { isCurrentMonth: false, month: "2026-08", scope: companyScope, tree }).reps.length,
+    4,
+    "a company-scoped viewer sees every medical rep",
   );
 
   // No organogram at all — the read failed, not "these people have no seat". The pickers are HIDDEN

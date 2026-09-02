@@ -228,6 +228,63 @@ export function runKpisBoardJoinTests() {
     "and the row says which half is missing rather than printing a zero rate",
   );
 
+  // ── THE REPORTED RATE RIDES BESIDE THE VERIFIED ONE ──────────────────────────────────────────
+  // Both boards read one `CallRateSlice`. Reps Plans has always printed `verifiedRate` and
+  // `totalRate` side by side; this board took `verifiedRate` alone and dropped the other, so the
+  // same rep in the same month had two different "call rates" depending on which screen a manager
+  // opened — and this one gave no way to see the gap the other exists to show. Two boards answering
+  // one question with disagreeing measures is the fault Doctor Coverage was retired for.
+  //
+  // The fixture's default slice has `total === verified`, which would let a bug returning the
+  // verified figure for BOTH halves pass unnoticed. So this one carries real unproven work: 6
+  // unverified AM calls and 5 campaign PM calls on top of the proved ones.
+  const base = callRate(11, "a-12", "Rep One");
+  const withUnproven = {
+    ...base,
+    am: { ...base.am, unverified: 6, total: 10, totalRate: 2 },
+    pm: { ...base.pm, campaign: 5, total: 25, totalRate: 5 },
+  };
+  const pair = joinKpiRows({
+    callRates: [withUnproven],
+    docLists: [],
+    scope: { basis: "company", kind: "company", label: "Whole company" },
+    workingDays: 5,
+  });
+  assert.equal(pair[0].amRate, 0.8, "the headline is STILL the verified rate — 4 proved AM / 5 days");
+  assert.equal(pair[0].pmRate, 4, "and so is the PM headline — 20 proved / 5 days");
+  assert.equal(pair[0].amReported, 10, "the reported COUNT is every AM call he logged, proved or not");
+  assert.equal(pair[0].pmReported, 25, "campaign calls included — they are reported work nobody can check");
+  assert.equal(pair[0].amReportedRate, 2, "and the reported RATE divides by the SAME working days");
+  assert.equal(pair[0].pmReportedRate, 5, "so the two halves of the pair are comparable");
+  assert.notEqual(
+    pair[0].amRate,
+    pair[0].amReportedRate,
+    "the two must be able to DIFFER — equal halves here would hide a bug returning verified for both",
+  );
+
+  // ── MEDICAL REPS ONLY ────────────────────────────────────────────────────────────────────────
+  // Owner, 2026-09-03. The predicate is optional so the pure join stays testable without a roster,
+  // and it runs in the SAME pass as the scope filter because both read the hr id, which the join is
+  // where it is finally settled.
+  const repsOnly = joinKpiRows({
+    callRates: [callRate(11, "a-12", "Rep One"), callRate(22, "b-34", "District Manager Two")],
+    docLists: [],
+    scope: { basis: "company", kind: "company", label: "Whole company" },
+    workingDays: 5,
+    isMedicalRep: (hrId) => hrId === "a-12",
+  });
+  assert.deepEqual(repsOnly.map((row) => row.repName), ["Rep One"], "a manager is dropped from the board");
+  assert.equal(
+    joinKpiRows({
+      callRates: [callRate(11, "a-12", "Rep One"), callRate(22, "b-34", "District Manager Two")],
+      docLists: [],
+      scope: { basis: "company", kind: "company", label: "Whole company" },
+      workingDays: 5,
+    }).length,
+    2,
+    "and omitting the predicate keeps everyone — the pure join does not invent a roster",
+  );
+
   // ── Scope: hr ids are MIXED CASE in production ───────────────────────────────────────────────
   // A case-sensitive comparison does not error, it silently returns nobody — and an empty board
   // reads as "your reps did nothing", not as a bug.

@@ -38,7 +38,8 @@
 // reps and nobody else's. The nav config hiding a link is UX only.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { getDoctorCoverageScope, type DoctorCoverageScope } from "@/lib/crm/doctor-coverage-scope";
+import { getDoctorCoverageScope, isAgentInScope, type DoctorCoverageScope } from "@/lib/crm/doctor-coverage-scope";
+import { loadMedicalRepRoster } from "@/lib/crm/medical-rep-data";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import { loadCallRateReport } from "@/lib/crm/call-rate-service";
 import { getRepDoctorLists, monthLabelOf, type RepDoctorListRepRow } from "@/lib/crm/rep-doctor-lists";
@@ -102,6 +103,23 @@ export type KpiRepRow = {
   /** verified AM calls / working days. Null when the period has no working days. */
   amRate: number | null;
   pmRate: number | null;
+  /**
+   * EVERY call the rep logged, and its rate - what his number looks like if nobody checks. Carried
+   * BESIDE the verified rate, never instead of it.
+   *
+   * Both boards read one `CallRateSlice`. Reps Plans prints `verifiedRate` and `totalRate` side by
+   * side; this board took `verifiedRate` alone and dropped the other, so the same rep in the same
+   * month had two different call rates depending on which screen you opened - and the manager on
+   * this one had no way to see the gap the other board exists to show. That is the fault Doctor
+   * Coverage was retired for: two boards answering one question with disagreeing measures.
+   *
+   * Nothing about the headline moved. `amRate` is still verified and still THE KPI; this is a
+   * second number arriving beside it so the two screens can be read against each other.
+   */
+  amReported: number;
+  pmReported: number;
+  amReportedRate: number | null;
+  pmReportedRate: number | null;
   /** Every call the rep logged, including the unverifiable campaign ones. */
   totalCalls: number;
   campaignCalls: number;
@@ -154,6 +172,10 @@ export type KpisBoard = {
     pmVerified: number;
     amRate: number | null;
     pmRate: number | null;
+    amReported: number;
+    pmReported: number;
+    amReportedRate: number | null;
+    pmReportedRate: number | null;
     campaignCalls: number;
     totalCalls: number;
     plannedDoctors: number;
@@ -168,31 +190,11 @@ export type KpisBoard = {
   pmTarget: number;
 };
 
-/* Canonical hr id for comparison — `canonicalHrIdKey` from @/lib/hr-id, never a local copy.
- *
- * Production hr ids are MIXED CASE, and a case-sensitive comparison silently under-returns rather
- * than erroring: one `.eq` once hid 28% of reps' own orders, and on `au.occupancy_history` the loss
- * was total. A row that matches nobody reads here as "this rep is not on your team", which is the
- * most convincing possible way to be wrong.
- *
- * Writing `.trim().toLowerCase()` inline here would have been that comparison MINUS the legacy alias
- * table (`aaa` -> `aa`), so a renamed seat would drop out of its own manager's scope. That is what
- * tests/hrid-normalizer-ratchet.test.ts exists to stop, and it caught this file. */
-
-/**
- * Whether this rep is inside the viewer's reach.
- *
- * FAILS CLOSED on a missing hr id. A row whose identity did not resolve cannot be PROVEN to belong
- * to this manager's team, and the cost of the two mistakes is not symmetric: hiding a rep from his
- * own manager is a visible gap he will report, while showing him somebody else's rep is a silent
- * confidentiality breach nobody notices. Company scope short-circuits and keeps everything.
- */
-function isInScope(scope: DoctorCoverageScope, agentHrId: string | null): boolean {
-  if (scope.kind === "company") return true;
-  if (scope.kind === "none") return false;
-  if (agentHrId == null) return false;
-  return scope.agentHrIds.some((allowed) => canonicalHrIdKey(allowed) === agentHrId);
-}
+/* The scope check moved to crm/doctor-coverage-scope.ts as `isAgentInScope` on 2026-09-03, when
+ * Reps Plans acquired viewer scoping and needed the same one. It was private here, so that board
+ * would have had to write its own comparison — and a second implementation of "is this rep on your
+ * team" is precisely the drift that got Doctor Coverage retired. The hr-id canonicalisation notes
+ * that used to sit here moved with it. */
 
 const pct = (numerator: number, denominator: number): number =>
   denominator > 0 ? Math.round((numerator / denominator) * 100) : 0;
@@ -216,8 +218,15 @@ export function joinKpiRows(input: {
   docLists: readonly RepDoctorListRepRow[];
   scope: DoctorCoverageScope;
   workingDays: number;
+  /**
+   * Whether an hr id belongs to a medical rep - see crm/medical-rep.ts for the rule and the
+   * production numbers behind it. Optional so the pure join stays testable without a roster; a
+   * caller that omits it gets every CRM agent, which is what this board did before 2026-09-03.
+   */
+  isMedicalRep?: (hrId: string | null) => boolean;
 }): KpiRepRow[] {
   const { callRates, docLists, scope, workingDays } = input;
+  const isMedicalRep = input.isMedicalRep ?? (() => true);
 
   const byCrmId = new Map<number, KpiRepRow>();
   const rows: KpiRepRow[] = [];
@@ -231,6 +240,10 @@ export function joinKpiRows(input: {
     pmVerified: 0,
     amRate: null,
     pmRate: null,
+    amReported: 0,
+    pmReported: 0,
+    amReportedRate: null,
+    pmReportedRate: null,
     totalCalls: 0,
     campaignCalls: 0,
     campaignShare: 0,
@@ -272,6 +285,13 @@ export function joinKpiRows(input: {
     row.pmVerified = rate.pm.verified;
     row.amRate = rate.am.verifiedRate;
     row.pmRate = rate.pm.verifiedRate;
+    // `total` is verified + unverified + campaign, and `totalRate` is it over the same working
+    // days - the exact two fields Reps Plans renders as "Reported". One slice, one arithmetic, so
+    // the two boards cannot drift apart again.
+    row.amReported = rate.am.total;
+    row.pmReported = rate.pm.total;
+    row.amReportedRate = rate.am.totalRate;
+    row.pmReportedRate = rate.pm.totalRate;
     row.totalCalls = rate.am.total + rate.pm.total + rate.unspecified;
     row.campaignCalls = rate.am.campaign + rate.pm.campaign;
     row.campaignShare = rate.campaignShare;
@@ -294,8 +314,14 @@ export function joinKpiRows(input: {
   }
 
   // Scope is applied AFTER the join, never before: a rep whose hr id appears on only one of the two
-  // sources would otherwise be judged on the source that happens to be missing it.
-  const scoped = rows.filter((row) => isInScope(scope, row.agentHrId));
+  // sources would otherwise be judged on the source that happens to be missing it. The medical-rep
+  // filter rides in the same pass, for the same reason - it reads the hr id, and the join is where
+  // a row's hr id is finally settled.
+  //
+  // Both totals below are summed from THIS list, so dropping the managers corrects the team average
+  // as well as the rows. That is the point: a District Manager's handful of visits was being
+  // averaged into a rate that is supposed to describe reps.
+  const scoped = rows.filter((row) => isAgentInScope(scope, row.agentHrId) && isMedicalRep(row.agentHrId));
   scoped.sort((left, right) => left.repName.localeCompare(right.repName));
   return scoped;
 }
@@ -330,6 +356,10 @@ export async function getKpisBoard(input: {
       pmVerified: 0,
       amRate: null,
       pmRate: null,
+      amReported: 0,
+      pmReported: 0,
+      amReportedRate: null,
+      pmReportedRate: null,
       campaignCalls: 0,
       totalCalls: 0,
       plannedDoctors: 0,
@@ -348,9 +378,10 @@ export async function getKpisBoard(input: {
     return { ...empty, scopeLabel: "No reach", scopeReason: scope.reason };
   }
 
-  const [callRate, docList] = await Promise.all([
+  const [callRate, docList, roster] = await Promise.all([
     loadCallRateReport({ dateFrom: range.dateFrom, dateTo: range.dateTo }),
     getRepDoctorLists({ month: input.month }),
+    loadMedicalRepRoster(),
   ]);
 
   const reps = joinKpiRows({
@@ -358,6 +389,7 @@ export async function getKpisBoard(input: {
     docLists: docList.reps,
     scope,
     workingDays: callRate.workingDays,
+    isMedicalRep: (hrId) => roster.isMedicalRep(hrId),
   });
 
   // Totals are summed from the SCOPED rows, never taken from either source's own `totals`. Those
@@ -368,6 +400,8 @@ export async function getKpisBoard(input: {
       accumulator.reps += 1;
       accumulator.amVerified += row.amVerified;
       accumulator.pmVerified += row.pmVerified;
+      accumulator.amReported += row.amReported;
+      accumulator.pmReported += row.pmReported;
       accumulator.campaignCalls += row.campaignCalls;
       accumulator.totalCalls += row.totalCalls;
       accumulator.plannedDoctors += row.plannedDoctors;
@@ -382,6 +416,8 @@ export async function getKpisBoard(input: {
       reps: 0,
       amVerified: 0,
       pmVerified: 0,
+      amReported: 0,
+      pmReported: 0,
       campaignCalls: 0,
       totalCalls: 0,
       plannedDoctors: 0,
@@ -417,6 +453,13 @@ export async function getKpisBoard(input: {
       pmVerified: totals.pmVerified,
       amRate: denominator > 0 ? totals.amVerified / denominator : null,
       pmRate: denominator > 0 ? totals.pmVerified / denominator : null,
+      // The SAME denominator as the verified team rate above - the average rep's reported rate, not
+      // a sum. Dividing the pair by different things would make the two halves incomparable, which
+      // is the whole reason for printing them together.
+      amReported: totals.amReported,
+      pmReported: totals.pmReported,
+      amReportedRate: denominator > 0 ? totals.amReported / denominator : null,
+      pmReportedRate: denominator > 0 ? totals.pmReported / denominator : null,
       campaignCalls: totals.campaignCalls,
       totalCalls: totals.totalCalls,
       plannedDoctors: totals.plannedDoctors,

@@ -16,6 +16,7 @@ import {
   FileSpreadsheet,
   FileText,
   Fingerprint,
+  Footprints,
   Gauge,
   Gift,
   Headphones,
@@ -117,6 +118,10 @@ export const PORTAL_NAV_REGISTRY: PortalNavEntry[] = [
   // KPIs carries the same role list and the same permission as Reps List — one gate, two doors.
   // "KPIs" is already short enough for the bottom nav, so label and fullLabel are the same word.
   { label: "KPIs", fullLabel: "KPIs", href: "/employee-portals/kpis", icon: TrendingUp, flags: ["showKpisTab"], permission: { resource: "crm_visits", action: "read" } },
+  // "Plans", not "Reps Plans": the bottom nav shows `label` alone. Footprints rather than the admin
+  // shell's Gauge because Gauge is already Sales vs Target here, and two identical icons in a nav
+  // that shows the icon larger than the word is the one place a duplicate actually misleads.
+  { label: "Plans", fullLabel: "Reps Plans", href: "/employee-portals/reps-plans", icon: Footprints, flags: ["showRepsPlansTab"], permission: { resource: "crm_visits", action: "read" } },
   { label: "Territory", fullLabel: "Territory Management", href: "/employee-portals/territory-management", icon: Waypoints, flags: ["showTerritoryManagementTab"], permission: { resource: "sales", action: "read" } },
   { label: "Targets", fullLabel: "Targets", href: "/employee-portals/targets", icon: Target, flags: ["showTargetsTab"], permission: { resource: "sales", action: "read" } },
   { label: "ROI Tracker", fullLabel: "Marketing ROI Tracker", href: "/employee-portals/roi-tracker", icon: Target, flags: ["showMarketingRoiTrackingTab"] },

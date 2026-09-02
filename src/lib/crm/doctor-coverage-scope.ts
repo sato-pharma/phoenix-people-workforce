@@ -43,11 +43,13 @@ import { getDoctorCoverageConfig, type DoctorCoverageLineOverrides } from "@/lib
 import { normalizeHrIdForAccess } from "@/lib/hr-id";
 import type { AccessContext } from "@/lib/auth/permissions";
 
-export type DoctorCoverageScope =
-  | { kind: "company"; basis: "company"; label: string }
-  /** Explicit allow-list of `agent_hr_id`s. Never empty — an empty resolution returns `none`. */
-  | { kind: "agents"; basis: Exclude<DoctorCoverageScopeBasis, "company">; agentHrIds: string[]; label: string }
-  | { kind: "none"; reason: string };
+/**
+ * The scope SHAPE and the pure `isAgentInScope` check live in doctor-coverage-roles.ts, which is
+ * kept free of server-only imports; this module RESOLVES a scope and is server-only itself.
+ * Re-exported here so the many callers that already import the type from the resolver keep working,
+ * and so "where is the scope type" has one obvious answer.
+ */
+export { isAgentInScope, type DoctorCoverageScope } from "@/lib/crm/doctor-coverage-roles";
 
 /** Directory fields this module actually reads — keeps the pure core testable without a DB. */
 export type DoctorCoverageScopeEmployee = {

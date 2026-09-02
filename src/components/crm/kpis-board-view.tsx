@@ -21,6 +21,21 @@ import type { KpiRepRow, KpisBoard } from "@/lib/crm/kpis-board";
  * Where a column will not fit it is MERGED into its neighbour, never shrunk, and long values wrap.
  * No value is ever truncated with an ellipsis.
  *
+ * ## Verified is the headline; reported rides beside it, never instead of it
+ *
+ * Every AM/PM figure printed big is the VERIFIED rate — proved calls over working days. That is
+ * the KPI and it has not moved. The smaller number beside it is the REPORTED rate: every call the
+ * rep logged, over the same working days, which is what his number looks like if nobody checks.
+ *
+ * The pair is here because the two boards used to disagree. Reps Plans has always printed both
+ * from one `CallRateSlice`; this board took the verified half and dropped the other, so one rep in
+ * one month had two different call rates depending on which screen a manager opened, and this
+ * screen gave no way to see the gap the other exists to show. Two boards answering one question
+ * with disagreeing measures is the exact fault Doctor Coverage was retired for.
+ *
+ * Both halves divide by the SAME working days, here and in the totals tile. A pair divided by
+ * different denominators would be incomparable, which would defeat printing them together.
+ *
  * ## Mobile gets cards, desktop gets the table — inlined, NOT through the primitive
  *
  * This file has no "use client": it renders on the server. PortalResponsiveDataList does have one,
@@ -175,11 +190,15 @@ function CallRateTable({ board, rows }: { board: KpisBoard; rows: KpiRepRow[] })
             <td className={NUM}>{row.workingDays}</td>
             <td className={NUM}>
               {rate(row.amRate)}
-              <span className="block text-phx-2xs font-semibold text-slate-500">{row.amVerified} verified</span>
+              <span className="block text-phx-2xs font-semibold text-slate-500">
+                {row.amVerified} verified · {rate(row.amReportedRate)} reported
+              </span>
             </td>
             <td className={NUM}>
               {rate(row.pmRate)}
-              <span className="block text-phx-2xs font-semibold text-slate-500">{row.pmVerified} verified</span>
+              <span className="block text-phx-2xs font-semibold text-slate-500">
+                {row.pmVerified} verified · {rate(row.pmReportedRate)} reported
+              </span>
             </td>
             <td className={NUM}>
               {Math.round(row.campaignShare * 100)}%
@@ -282,6 +301,11 @@ function RepCard({ row }: { row: KpiRepRow }) {
           <dt className={CAPTION}>Call rate</dt>
           <dd className="text-sm font-black tabular-nums text-slate-900">
             {rate(row.amRate)} / {rate(row.pmRate)}
+          </dd>
+          {/* A second <dd> under the same <dt> — valid HTML, and it keeps the reported pair on the
+              phone without a fourth card column there is no room for. */}
+          <dd className={`${CAPTION} tabular-nums`}>
+            {rate(row.amReportedRate)} / {rate(row.pmReportedRate)} reported
           </dd>
         </div>
         <div>
@@ -393,7 +417,9 @@ export function KpisBoardView({
             value={String(totals.reps)}
           />
           <Tile
-            caption={`Team average · targets ${board.amTarget} / ${board.pmTarget}`}
+            caption={`Verified team average · reported ${rate(totals.amReportedRate)} / ${rate(
+              totals.pmReportedRate,
+            )} · targets ${board.amTarget} / ${board.pmTarget}`}
             label="Call rate AM / PM"
             value={`${rate(totals.amRate)} / ${rate(totals.pmRate)}`}
           />

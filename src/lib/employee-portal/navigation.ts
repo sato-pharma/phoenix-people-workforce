@@ -2,6 +2,7 @@ import { parseRoleStrict, type PhoenixRole } from "@/lib/auth/permissions";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import { resolveJobFunctionRole } from "@/lib/employees/job-function";
 import { canSeeDoctorCoverage } from "@/lib/crm/doctor-coverage-roles";
+import { REPS_PLANS_PORTAL_ROLES } from "@/lib/crm/reps-plans-access";
 import { canViewMarketingCoverageReport } from "@/lib/marketing-requests/coverage-report-access";
 import { isDirectOrderRequesterRole } from "@/lib/direct-orders/types";
 
@@ -24,6 +25,8 @@ export type EmployeePortalNavVisibility = {
   showTeamPerformanceTab?: boolean;
   showMedRepsPerformanceTab?: boolean;
   showRepsListTab?: boolean;
+  /** Reps Plans — the split call rate for the reps who report to you. Manager seats only. */
+  showRepsPlansTab?: boolean;
   /** KPIs — Summary, Call Rate, Coverage and Frequency. Every portal-mode role with a reach. */
   showKpisTab?: boolean;
   showMedicalRepExpensesTab?: boolean;
@@ -352,6 +355,15 @@ export function resolveEmployeePortalNavVisibility(
     resolvedRole === "District Manager" ||
     resolvedRole === "Regional Manager" ||
     resolvedRole === "National Sales Manager";
+  // Reps Plans — IMPORTED rather than spelled out, unlike Reps List above.
+  // src/lib/crm/reps-plans-access.ts is the enforcing gate and was deliberately built free of any
+  // server-only import for exactly this caller, so there is no second copy to drift out of step.
+  //
+  // Deliberately NOT isDistrictManager, for the same reason the note above gives: that predicate
+  // also admits the bare "Manager" title, which the access module does not, and a visible row the
+  // page then refuses is the bug the sidebar tests exist to catch. Membership is asked of the list
+  // itself, so the two answers are one answer.
+  const showRepsPlansTab = REPS_PLANS_PORTAL_ROLES.includes(resolvedRole);
   // KPIs — imported rather than spelled out, unlike Reps List above. doctor-coverage-roles.ts is the
   // SINGLE list of who reaches this board and was deliberately built free of any server-only import
   // for exactly this caller, so there is no second copy to drift. It is also the module the page
@@ -440,6 +452,7 @@ export function resolveEmployeePortalNavVisibility(
     showMarketingCoverageReportTab,
     showMedRepsPerformanceTab,
     showRepsListTab,
+    showRepsPlansTab,
     showKpisTab,
     showMedicalRepExpensesTab: isMedicalRep,
     showMyPerformanceTab: isA3Account ? false : baseShowMyPerformanceTab,
