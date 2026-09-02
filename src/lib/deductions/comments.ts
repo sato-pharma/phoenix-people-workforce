@@ -10,6 +10,7 @@ import type { AccessContext } from "@/lib/auth/permissions";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { compactDeductionsHrId } from "./candidate-key.ts";
 import type { DeductionsComment } from "./types.ts";
+import { hrIdForStorage } from "@/lib/hr-id";
 
 type CommentRow = {
   id: string;
@@ -93,7 +94,7 @@ export async function addDeductionsComment(input: {
   if (!body) throw new Error("Comment is required.");
   if (body.length > 2000) throw new Error("Comment cannot exceed 2000 characters.");
   const payload = {
-    author_hr_id: input.access.hrId,
+    author_hr_id: hrIdForStorage(input.access.hrId),
     author_login_id: input.access.loginId ?? input.access.hrId ?? "employee",
     author_role: input.access.role,
     body,
