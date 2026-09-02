@@ -93,8 +93,18 @@ export function Topbar({
       {/* Not sticky itself. AppShell — the only place this renders — wraps it together with both
           navigation rows in one sticky container, so the whole chrome freezes as a unit. Restoring
           a `sticky top-0` here would put a second sticky at the same offset inside the first, which
-          buys nothing and adds a stacking context the row dropdowns then have to escape. */}
-      <header className={`px-3 py-3 backdrop-blur-xl sm:px-6 ${
+          buys nothing and adds a stacking context the row dropdowns then have to escape.
+
+          `relative z-40` is load-bearing, and NOT decoration. `backdrop-blur-xl` below already makes
+          this header a stacking context, so every panel anchored inside it — notifications, messages,
+          the command palette — is SEALED IN: their `z-30` ranks them against each other and against
+          nothing else. The header then competed with the nav rows as one atomic box at "z-index 0, DOM
+          order", and it is the EARLIER sibling, so the nav rows painted straight over the open panels.
+          MEASURED 2026-09-02 at 375px: the "Organogram" nav link rendered at [42,93,110,111], inside
+          the open notifications panel's [12,64,363,620], legible on top of it. The fix cannot go on the
+          panels — no z-index escapes a sealed context — so it goes here, on the box that does compete.
+          Nav-row dropdowns are unaffected: they open BELOW this band, so they never overlap it. */}
+      <header className={`relative z-40 px-3 py-3 backdrop-blur-xl sm:px-6 ${
         isAdminMode
           ? "border-b border-[#1a1a1a] bg-[#000000]"
           : "border-b border-phx-line/80 bg-white/82"
