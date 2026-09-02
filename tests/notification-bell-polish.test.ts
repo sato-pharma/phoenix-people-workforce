@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import { mapInAppNotificationRows } from "../src/lib/communication/metrics.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 /**
  * The notifications bell — what it shows, and that it stays on the screen.
@@ -16,9 +17,15 @@ import { mapInAppNotificationRows } from "../src/lib/communication/metrics.ts";
  * Every "this className is gone" pin below has to read CODE. Documenting a removed pattern quotes
  * it verbatim — that is the point of the comment — and an un-stripped scan then fails on the very
  * note explaining the fix. Caught by this suite on itself.
+ *
+ * Via the shared reader rather than a local regex. `src/components/layout/topbar.tsx:53` quotes
+ * the route pattern `/workspace/*` inside a `//` comment; the one-liner this used to carry read
+ * that `*` as a comment opener, paired it with the close of a later JSX comment, and deleted 1,653
+ * characters of real code in between — including part of the header the z-index pin below reads.
+ * Full account: tests/support/comment-strip.ts.
  */
 function codeOnly(source: string): string {
-  return source.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/^\s*\/\/.*$/gm, " ");
+  return stripComments(source);
 }
 
 export function runNotificationBellPolishTests() {

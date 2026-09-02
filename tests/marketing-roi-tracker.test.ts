@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
+import { stripComments } from "./support/comment-strip.ts";
+
 // The ROI Tracker exists to END the "four surfaces, three engines, different answers" problem.
 // Its whole value is that it COMPOSES the authoritative path rather than computing its own.
 // These guards make that structural, not just intentional: if someone later adds an attribution
@@ -27,17 +29,16 @@ const source = (path: string) => readFileSync(path, "utf8");
 /**
  * Strips line and block comments so a header that NAMES the engines this module deliberately
  * avoids (which is exactly the documentation we want) cannot trip the "must not call" guards
- * below. Same approach as tests/migrations-secdef-revoke-guard.test.ts.
+ * below.
+ *
+ * Via the shared reader rather than a local regex. One of the files read here is
+ * `src/config/system-navigation.ts`, which quotes route patterns like `/admin/*`; the one-liner
+ * this used to carry read that `*` as a comment opener and deleted 114,555 of the file's 217,431
+ * characters. The navigation guard below was matching against under half the file. Full account:
+ * tests/support/comment-strip.ts.
  */
 function code(path: string): string {
-  return source(path)
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .split("\n")
-    .map((line) => {
-      const idx = line.indexOf("//");
-      return idx >= 0 ? line.slice(0, idx) : line;
-    })
-    .join("\n");
+  return stripComments(source(path));
 }
 
 /** The service must delegate to the authoritative report, never re-derive attribution. */
