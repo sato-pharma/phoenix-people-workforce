@@ -1203,6 +1203,8 @@ import { runWeeklyFieldForceTests } from "./weekly-field-force.test.ts";
 
 import { runEarlyBirdsFortnightCardWrapsTests } from "./early-birds-fortnight-card-wraps.test.ts";
 
+import { runRecruitmentFolderCvPopupTests } from "./recruitment-folder-cv-popup.test.ts";
+
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -3721,6 +3723,8 @@ await runTest(
 await runTest("weekly field force (line+area -> rep, units never summed across products, exact vs allocated)", runWeeklyFieldForceTests);
 
 await runTest("stars of the fortnight card wraps on a phone (no whitespace-nowrap, no truncate, no overflow-x-auto)", runEarlyBirdsFortnightCardWrapsTests);
+
+await runTest("recruitment folder row opens the CV in place (modal + download, never the ?candidate= redirect)", runRecruitmentFolderCvPopupTests);
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
