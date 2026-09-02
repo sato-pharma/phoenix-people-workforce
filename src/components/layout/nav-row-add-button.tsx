@@ -45,7 +45,7 @@
 
 import { Check, Plus, Search } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 
 import type { NavigationSection, NavigationSectionItem } from "@/config/system-navigation";
 import {
@@ -59,6 +59,7 @@ import {
   type PersonalLayoutRowSet,
   type PersonalNavigationLayout,
 } from "@/lib/navigation/personal-layout";
+import { useRepositionOnViewportChange } from "@/hooks/use-reposition-on-viewport-change";
 import { cn } from "@/lib/utils";
 
 /** Past this many entries the panel is long enough that scanning it beats reading it. */
@@ -89,6 +90,21 @@ export function NavRowAddButton({
     offsetLeft: 0,
     width: NAV_PANEL_WIDTH,
   });
+  const buttonRef = useRef<HTMLButtonElement>(null);
+
+  // Reusable so a viewport change can repeat it — see use-reposition-on-viewport-change.ts.
+  const repositionPanel = useCallback(() => {
+    const anchor = buttonRef.current?.getBoundingClientRect();
+    if (!anchor) return;
+    setPlacement(
+      clampPanelToViewport({
+        anchorLeft: anchor.left,
+        viewportWidth: document.documentElement.clientWidth,
+      }),
+    );
+  }, []);
+
+  useRepositionOnViewportChange(open, repositionPanel);
 
   const commit = useCallback(
     async (href: string, mode: "add" | "remove") => {
@@ -178,20 +194,13 @@ export function NavRowAddButton({
             ? "text-[#7C8DA3] transition-[background-color,color,box-shadow] hover:bg-[#151311] hover:text-[#F8B56B] hover:shadow-[inset_0_0_0_1px_#241f19,inset_0_1px_0_rgba(255,255,255,0.045)]"
             : "text-phx-ink-soft hover:bg-phx-paper hover:text-phx-accent",
         )}
-        onClick={(event) => {
-          // Measured here, in the event handler, because `setState` inside `useEffect` is a lint
-          // error in this repo — and because the rect is only meaningful at the moment of opening.
-          const anchor = event.currentTarget.getBoundingClientRect();
-          setPlacement(
-            clampPanelToViewport({
-              anchorLeft: anchor.left,
-              viewportWidth: document.documentElement.clientWidth,
-            }),
-          );
+        onClick={() => {
+          repositionPanel();
           setOpen((was) => !was);
           setQuery("");
           setError(null);
         }}
+        ref={buttonRef}
         type="button"
       >
         <Plus aria-hidden="true" className="h-3.5 w-3.5" />
