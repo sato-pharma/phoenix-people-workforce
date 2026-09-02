@@ -1074,6 +1074,7 @@ import { runDirectOrdersSheetEditableColumnsTests } from "./direct-orders-sheet-
 import { runSosSelfHealOwnerVerifiedGuardTests } from "./sos-self-heal-owner-verified-guard.test.ts";
 import { runSosMiningOwnerRulingGuardTests } from "./sos-mining-owner-ruling-guard.test.ts";
 import { runOutstationManualExpenseTicketPlusAllowanceTests } from "./outstation-manual-expense-ticket-plus-allowance.test.ts";
+import { runOutstationAdminManualExpenseAmountVisibilityTests } from "./outstation-admin-manual-expense-amount-visibility.test.ts";
 import { runClosingDirectAreaIdentityTests } from "./closing-direct-area-identity.test.ts";
 import { runMonthlyClosingExportAreaMergeStaticTests } from "./monthly-closing-export-area-merge-static.test.ts";
 import { runSalesStoreOverrideTests } from "./sales-store-override.test.ts";
@@ -3216,6 +3217,10 @@ await runTest(
 await runTest(
   "manual admin outstation expense adds the ticket price to the allowance instead of replacing it (travelCostAmount reaches the create route)",
   runOutstationManualExpenseTicketPlusAllowanceTests,
+);
+await runTest(
+  "manual admin outstation expense amount visibility (Meeting/Other amount are never hidden by expense type, so an amount typed under one type can never be submitted, invisibly, under another — production request 77)",
+  runOutstationAdminManualExpenseAmountVisibilityTests,
 );
 await runTest(
   "an area carrying July direct keeps its own code/name (screen + XLSX) and stays in seat scope; only areaCode=DIRECT is the company row",
