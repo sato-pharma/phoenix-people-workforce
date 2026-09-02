@@ -36,6 +36,7 @@ import {
   type KpiBand,
   type KpiFilterState,
   type KpiSortField,
+  isTooEarlyToScore,
 } from "@/lib/crm/kpis-filters";
 import { ACTIVITY_LABEL } from "@/lib/crm/reps-list-activity";
 import type { KpiRepRow, KpisBoard } from "@/lib/crm/kpis-board";
@@ -141,13 +142,43 @@ function sortHref(context: ViewContext, field: KpiSortField): string {
  * misreading of this board: production has run 68% coverage against 39% frequency in the same
  * month, and a manager who does not know the two measure different things reads that gap as a bug.
  */
-function teamVerdict(board: KpisBoard): { headline: string; tone: KpiBand } {
+
+function teamVerdict(board: KpisBoard): { headline: string; tone: KpiBand; standing?: string } {
   const { totals } = board;
   if (board.range.notStarted) {
     return { headline: "This period has not started. Nothing here is a score yet.", tone: "noplan" };
   }
   if (totals.reps === 0) {
     return { headline: "No reps match what you are looking at.", tone: "noplan" };
+  }
+
+  // TOO EARLY TO SCORE — the check that has to come before every verdict below.
+  //
+  // Coverage is doctors reached over doctors planned. Two working days into a month that has
+  // twenty-two, most of the numerator has not happened yet, and the honest reading of a low
+  // percentage is "it is the 3rd", not "the team is behind". Measured on production 2026-09-03:
+  // the board read 39% and said "Most of the planned list has not been reached at all yet" — while
+  // the SAME query over the first two working days of August read 40.1%, against a closed-August
+  // 71.4%. The team was performing exactly as it had the month before. The number was right and
+  // the sentence under it was an accusation the data could not support.
+  //
+  // This is why the board reports the position rather than suppressing the figures: the tiles and
+  // the tables still show every number. What is withheld is the JUDGEMENT, which is the only part
+  // that was ever wrong.
+  const { workingDays, workingDaysInWindow } = board;
+  const earlyInWindow = isTooEarlyToScore(workingDays, workingDaysInWindow);
+  if (earlyInWindow) {
+    const left = workingDaysInWindow - workingDays;
+    return {
+      headline:
+        `${workingDays} of ${workingDaysInWindow} working days are in — ${left} still to come. ` +
+        "Coverage and frequency climb as the month is worked, so treat these as a position, not a score.",
+      tone: "noplan",
+      // NOT "Not measurable" — every figure on this board is measured and shown. What the month is
+      // too young to support is a VERDICT, and saying otherwise is the same overstatement in the
+      // pill that the headline above exists to remove.
+      standing: "Early days",
+    };
   }
 
   const coverage = kpiBandOf(totals.coveragePct);
@@ -215,7 +246,7 @@ function KpiHero({ board }: { board: KpisBoard }) {
         <div className="min-w-0">
           <div className={`border px-3 py-2 ${tone.chip}`}>
             <p className="text-phx-3xs font-black uppercase tracking-[0.14em]">Team standing</p>
-            <p className="mt-0.5 text-sm font-black">{KPI_BAND_LABEL[verdict.tone]}</p>
+            <p className="mt-0.5 text-sm font-black">{verdict.standing ?? KPI_BAND_LABEL[verdict.tone]}</p>
           </div>
         </div>
       </div>
@@ -880,6 +911,9 @@ export function KpisBoardView({
   // "week 1 · 1–7 sep", which reads as a typo now that a real date sits beside it in the footnote.
   const periodPhrase = board.range.isWholeMonth ? board.range.periodLabel.toLowerCase() : board.range.periodLabel;
   const filtered = hasActiveKpiFilters(filters);
+  // The window is still running, so coverage and frequency are a position rather than a finished
+  // score. A tile is read on its own, away from the hero, so the caveat has to travel with it.
+  const partial = board.workingDays > 0 && board.workingDays < board.workingDaysInWindow;
 
   return (
     <div className="space-y-4">
@@ -948,9 +982,11 @@ export function KpisBoardView({
           <div className="grid gap-3 border-t border-slate-100 px-4 py-4 sm:grid-cols-2 sm:px-5 lg:grid-cols-4">
             <KpiTile
               caption={
+                // "2 working days" alone reads as a footnote; "2 of 22" is the fact that makes the
+                // two percentages below it legible. Same numbers, and the holiday note is kept.
                 board.holidayDays > 0
-                  ? `${board.workingDays} working days · ${board.holidayDays} national holiday(s) removed`
-                  : `${board.workingDays} working days · Sat–Wed`
+                  ? `${board.workingDays} of ${board.workingDaysInWindow} working days · ${board.holidayDays} national holiday(s) removed`
+                  : `${board.workingDays} of ${board.workingDaysInWindow} working days · Sat–Wed`
               }
               label={filtered ? "Medical reps shown" : "Medical reps in reach"}
               value={filtered ? `${totals.reps} of ${board.scopedReps}` : String(totals.reps)}
@@ -964,14 +1000,14 @@ export function KpisBoardView({
             />
             <KpiTile
               band={kpiBandOf(totals.coveragePct)}
-              caption={`${totals.visitedDoctors} of ${totals.plannedDoctors} planned doctors`}
+              caption={`${totals.visitedDoctors} of ${totals.plannedDoctors} planned doctors${partial ? " · month to date" : ""}`}
               label="Coverage"
               progress={totals.coveragePct}
               value={`${totals.coveragePct}%`}
             />
             <KpiTile
               band={kpiBandOf(totals.frequencyPct)}
-              caption={`${totals.onPlanDoctors} exact · ${totals.underDoctors} below · ${totals.overDoctors} above`}
+              caption={`${totals.onPlanDoctors} exact · ${totals.underDoctors} below · ${totals.overDoctors} above${partial ? " · so far" : ""}`}
               label="Frequency"
               progress={totals.frequencyPct}
               value={`${totals.frequencyPct}%`}

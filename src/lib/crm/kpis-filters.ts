@@ -718,3 +718,49 @@ export function isMedicalRepTitle(jobTitle: string | null | undefined): boolean 
 export function keepMedicalRepsOnly<T extends KpiFilterableRow>(rows: readonly T[]): T[] {
   return rows.filter((row) => isMedicalRepTitle(row.jobTitle));
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// WHEN A PERCENTAGE IS A POSITION AND NOT YET A SCORE.
+//
+// Coverage is doctors reached over doctors planned; frequency is doctors seen
+// the right number of times over doctors due. Both climb through a month as the
+// list is worked, so both are structurally low at the start of one — and a low
+// number under a confident sentence reads as a verdict on the team.
+//
+// Measured on production 2026-09-03, two working days into September:
+//
+//     Sep 1–2, first two working days     40.2% coverage
+//     Aug 1–2, first two working days     40.1% coverage
+//     August, whole closed month          71.4% coverage
+//
+// The team was performing within a tenth of a point of the previous month at the
+// same point in it. The board nonetheless headlined "Most of the planned list
+// has not been reached at all yet", because 39% is below the Behind threshold.
+// The arithmetic was right; the sentence was an accusation the data could not
+// support, and it would have been read by every manager on the board.
+//
+// The figures are never suppressed — the tiles and tables show every number.
+// What this gates is the JUDGEMENT, which is the only part that was wrong.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * The share of a window that must be worked before its percentages are judged.
+ *
+ * A THIRD rather than a fixed number of days, because windows differ: a third of
+ * a 22-day month is seven days and a third of a five-day week is under two, and
+ * each is roughly the point past which a shortfall stops being explicable by the
+ * calendar alone.
+ */
+export const KPI_VERDICT_THRESHOLD = 1 / 3;
+
+/**
+ * Has too little of the window been worked for its percentages to mean anything?
+ *
+ * Both arguments are working-day counts: how many have been worked, and how many
+ * the window contains. Zero worked is NOT "too early" — that is a window with no
+ * data at all, which the board already answers separately and must not relabel.
+ */
+export function isTooEarlyToScore(workingDays: number, workingDaysInWindow: number): boolean {
+  if (workingDaysInWindow <= 0 || workingDays <= 0) return false;
+  return workingDays / workingDaysInWindow < KPI_VERDICT_THRESHOLD;
+}

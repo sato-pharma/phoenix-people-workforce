@@ -50,6 +50,8 @@ import {
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import { loadCallRateReport } from "@/lib/crm/call-rate-service";
+import { countCallRateWorkingDays } from "@/lib/crm/call-rate";
+import { loadCallRateHolidays } from "@/lib/crm/call-rate-holidays";
 import { getRepDoctorLists, monthLabelOf, type RepDoctorListRepRow } from "@/lib/crm/rep-doctor-lists";
 import { repsPlansRange, repsPlansWeeks, type RepsPlansRange } from "@/lib/crm/reps-plans";
 import { AM_CALL_RATE_TARGET, PM_CALL_RATE_TARGET, type RepCallRate } from "@/lib/crm/call-rate";
@@ -178,6 +180,18 @@ export type KpisBoard = {
   range: RepsPlansRange;
   /** Sat–Wed days in the window after holidays came out. */
   workingDays: number;
+  /**
+   * HOW MUCH OF THE WINDOW HAS ACTUALLY BEEN WORKED, and the reason it is on the board at all.
+   *
+   * Coverage divides doctors reached by doctors planned. On the last day of a month that is a
+   * verdict; on the second it is arithmetic with most of its numerator still in the future, and it
+   * reads as an accusation either way. Measured on production 2026-09-03, two working days into
+   * September: the team read 39% coverage, and the same query over the first two working days of
+   * AUGUST read 40.1% against a closed-month 71.4%. The reps were performing identically to the
+   * month before; only the elapsed time differed. Without this number the board could not tell
+   * those two situations apart, and neither could the person reading it.
+   */
+  workingDaysInWindow: number;
   /** How many Sat–Wed days were removed as national holidays. */
   holidayDays: number;
   /**
@@ -526,6 +540,7 @@ export async function getKpisBoard(input: {
     monthLabel,
     range,
     workingDays: 0,
+    workingDaysInWindow: 0,
     holidayDays: 0,
     holidaysComplete: true,
     asOf: range.dateTo,
@@ -567,11 +582,19 @@ export async function getKpisBoard(input: {
   // both CRM sources for the days he worked, and dropping his identity here would print those days
   // against a blank line and area — the reads door already decides who is excluded, and this call
   // is only ever putting a name to an id.
-  const [callRate, docList, employees] = await Promise.all([
+  const [callRate, docList, employees, windowHolidays] = await Promise.all([
     loadCallRateReport({ dateFrom: range.dateFrom, dateTo: range.dateTo }),
     getRepDoctorLists({ month: input.month }),
     getEmployeeDirectoryRows({ includeInactive: true }),
+    // The window's OWN end, not today. callRate.workingDays counts the days worked so far; this
+    // counts the days the window contains. The pair is what separates "the team is behind" from
+    // "it is the 3rd of the month" — see workingDaysInWindow on KpisBoard.
+    loadCallRateHolidays(range.dateFrom, range.windowEnd),
   ]);
+
+  const workingDaysInWindow = range.notStarted
+    ? 0
+    : countCallRateWorkingDays(range.dateFrom, range.windowEnd, windowHolidays.dates);
 
   const allInScope = joinKpiRows({
     callRates: callRate.reps,
@@ -650,6 +673,7 @@ export async function getKpisBoard(input: {
   return {
     ...empty,
     workingDays: callRate.workingDays,
+    workingDaysInWindow,
     holidayDays: callRate.holidayDays,
     holidaysComplete: callRate.holidaysComplete,
     asOf: docList.asOf,

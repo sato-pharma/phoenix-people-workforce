@@ -14,6 +14,8 @@ import {
   nextKpiSort,
   parseKpiFilters,
   isMedicalRepTitle,
+  isTooEarlyToScore,
+  KPI_VERDICT_THRESHOLD,
   keepMedicalRepsOnly,
   sortKpiRows,
   UNASSIGNED_FACET_KEY,
@@ -536,5 +538,41 @@ export function runKpiMedicalRepOnlyTests() {
     applyKpiFilters(kept, filters({ titles: ["District Sales Manager"] })).length,
     0,
     "no query string can bring a dropped manager back — the narrowing happens above the filter layer",
+  );
+}
+
+// ── 9. A percentage early in a window is a position, not a score ──────────────────────────────
+
+export function runKpiTooEarlyToScoreTests() {
+  // THE REAL NUMBERS THIS EXISTS FOR. Measured on production 2026-09-03, two working days into a
+  // September that holds twenty-two:
+  //
+  //     Sep 1-2, first two working days   40.2% coverage
+  //     Aug 1-2, first two working days   40.1% coverage
+  //     August, whole closed month        71.4% coverage
+  //
+  // The team was within a tenth of a point of the previous month at the same point in it, and the
+  // board still headlined "Most of the planned list has not been reached at all yet". The maths was
+  // right; the sentence was an accusation the data could not support.
+  assert.equal(isTooEarlyToScore(2, 22), true, "two working days into a 22-day month cannot be a verdict");
+  assert.equal(isTooEarlyToScore(7, 22), true, "a third of the way in is still short of the threshold");
+  assert.equal(isTooEarlyToScore(8, 22), false, "past a third, a shortfall is no longer explained by the calendar");
+  assert.equal(isTooEarlyToScore(22, 22), false, "a closed month is always judged");
+
+  // ZERO WORKED IS NOT 'TOO EARLY'. A window with no working days at all is a different state — the
+  // board answers it separately, and relabelling it here would hide an empty period behind a
+  // reassuring sentence about the month being young.
+  assert.equal(isTooEarlyToScore(0, 22), false, "no days worked is an empty window, not an early one");
+  assert.equal(isTooEarlyToScore(0, 0), false);
+  assert.equal(isTooEarlyToScore(3, 0), false, "a window of no length can never be scored either way");
+
+  // A WEEK is the case a day-count threshold would get wrong: 1 of 5 days is the same position as
+  // 4 of 22, and both must read the same way.
+  assert.equal(isTooEarlyToScore(1, 5), true, "one day into a five-day week is the same position as four into a month");
+  assert.equal(isTooEarlyToScore(2, 5), false, "two of five is past a third — judged");
+
+  assert.ok(
+    KPI_VERDICT_THRESHOLD > 0 && KPI_VERDICT_THRESHOLD < 1,
+    "the threshold is a SHARE of the window, never a day count — a fixed day count reads a week and a month identically wrong",
   );
 }
