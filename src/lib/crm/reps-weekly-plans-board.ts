@@ -36,6 +36,13 @@ import {
   type PlanSummary,
 } from "@/lib/crm/plan-board";
 import { buildPlanDoctorDays, indexContactList, type PlanDoctorDay } from "@/lib/crm/plan-doctors";
+import {
+  countRepPlanStatuses,
+  repMatchesPlanStatusFilter,
+  resolvePlanStatusFilter,
+  type PlanStatusCounts,
+  type PlanStatusFilter,
+} from "@/lib/crm/plan-status-filter";
 import { PLAN_STATUS_NEW } from "@/lib/crm/plan-verification";
 import { cairoTodayIso, listPlanWeeks, resolvePlanWeek, weekEndFor, type PlanWeek } from "@/lib/crm/plan-week";
 import { getRepsListForAgent } from "@/lib/crm/reps-list";
@@ -58,6 +65,14 @@ export type RepsWeeklyPlanRep = RepsListRep & {
 
 export type RepsWeeklyPlansBoard = {
   /**
+   * The week's four totals, counted over the viewer's WHOLE reach and BEFORE the status filter.
+   *
+   * The tiles read these rather than counting `reps`, which is filtered. A tile that recounted the
+   * filtered list would show 0 for every group the manager is not currently looking at — including
+   * the one he needs to click to get back — so the filter would be a door that locks behind him.
+   */
+  counts: PlanStatusCounts;
+  /**
    * The plan on screen, GROUPED BY DAY and joined to the rep's contact list — what the table
    * renders. The owner, 2026-09-01: "differentiate day by day, group day by day", and make the
    * table "exactly as in the contact list". Empty when no plan is selected.
@@ -71,6 +86,7 @@ export type RepsWeeklyPlansBoard = {
   options: CoverageFilterOptions;
   /** Every plan the selected rep filed for this week, newest-status-first. */
   plans: PlanSummary[];
+  /** The reps the grid offers, AFTER the status filter. */
   reps: RepsWeeklyPlanRep[];
   scopeLabel: string;
   scopeReason: string | null;
@@ -78,6 +94,8 @@ export type RepsWeeklyPlansBoard = {
   /** The plan whose doctors are listed, when one is in scope. */
   selectedPlan: PlanSummary | null;
   selection: CoverageFilterSelection;
+  /** Which slice of the week the grid is showing. `"all"` when the manager has not narrowed it. */
+  statusFilter: PlanStatusFilter;
   syncedAt: string | null;
   /** The chosen week. */
   week: PlanWeek;
@@ -91,6 +109,7 @@ export type RepsWeeklyPlansParams = {
   plan?: string;
   region?: string;
   rep?: string;
+  status?: string;
   week?: string;
 };
 
@@ -115,6 +134,7 @@ export function foldRepPlanStatus(plans: readonly { status: number | null }[]): 
     Number.POSITIVE_INFINITY,
   );
 }
+
 export async function getRepsWeeklyPlansBoard(input: {
   params: RepsWeeklyPlansParams;
   scope: CrmManagerScope;
@@ -145,13 +165,14 @@ export async function getRepsWeeklyPlansBoard(input: {
     scopeReason: cascade.scopeReason,
     selectedPlan: null,
     selection: cascade.selection,
+    statusFilter: resolvePlanStatusFilter(input.params.status),
     syncedAt: cascade.syncedAt,
     week,
     weeks,
   };
 
   if (input.scope.kind === "none") {
-    return { ...base, reps: [], selected: null };
+    return { ...base, counts: countRepPlanStatuses([]), reps: [], selected: null };
   }
 
   // ONE read for the whole week across the viewer's reach, then matched in memory on the NUMERIC
@@ -167,16 +188,34 @@ export async function getRepsWeeklyPlansBoard(input: {
     else plansByAgent.set(plan.agentCrmId, [plan]);
   }
 
-  const reps: RepsWeeklyPlanRep[] = cascade.reps.map((rep) => {
+  const withPlanStatus = (rep: RepsListRep): RepsWeeklyPlanRep => {
     const filed = rep.agentCrmId == null ? [] : (plansByAgent.get(rep.agentCrmId) ?? []);
     return {
       ...rep,
       planStatus: foldRepPlanStatus(filed),
       plansFiled: filed.length,
     };
-  });
+  };
 
-  const selected = cascade.selected ? (reps.find((rep) => rep.repKey === cascade.selected?.repKey) ?? null) : null;
+  const allReps: RepsWeeklyPlanRep[] = cascade.reps.map(withPlanStatus);
+
+  // COUNTED OVER `repsIgnoringRep`, NOT OVER `allReps`, and the difference only shows once a rep is
+  // open: the cascade narrows `reps` to that one person, so counting it made the status picker read
+  // "All reps (1) · Awaiting verification (1) · Verified (0) · No plan filed (0)" on a board whose
+  // real week is 70 · 3 · 61 · 6. Every option then described the rep the manager was already
+  // looking at, while the place it navigates to — the picker drops the rep — held the other numbers.
+  // Counted here, the control says what it will show.
+  const counts = countRepPlanStatuses(cascade.repsIgnoringRep.map(withPlanStatus));
+  const reps = allReps.filter((rep) => repMatchesPlanStatusFilter(rep, base.statusFilter));
+
+  // THE SELECTED REP IS LOOKED UP IN THE UNFILTERED LIST, on purpose. The status filter narrows what
+  // the grid offers to browse; it must not be able to hide a rep the manager has already opened.
+  // Searching `reps` instead would make a shared link carrying both `?rep=` and a `?status=` he does
+  // not match render "filed no weekly plan" for a rep who filed one — the board accusing him of
+  // something the URL did, with nothing on screen to say so.
+  const selected = cascade.selected
+    ? (allReps.find((rep) => rep.repKey === cascade.selected?.repKey) ?? null)
+    : null;
 
   const plans =
     selected?.agentCrmId == null
@@ -226,5 +265,5 @@ export async function getRepsWeeklyPlansBoard(input: {
 
   const days = buildPlanDoctorDays(entries, indexContactList(contactList));
 
-  return { ...base, days, entries, plans, reps, selected, selectedPlan };
+  return { ...base, counts, days, entries, plans, reps, selected, selectedPlan };
 }

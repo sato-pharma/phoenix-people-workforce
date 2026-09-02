@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 
 import {
   FIELD_WEEK_LENGTH,
@@ -14,6 +14,17 @@ import {
 } from "../src/lib/crm/plan-week.ts";
 import { buildPlanDoctorDays } from "../src/lib/crm/plan-doctors.ts";
 import type { PlanEntryRow } from "../src/lib/crm/plan-board.ts";
+import {
+  PLAN_STATUS_AREA_MANAGER_VERIFIED,
+  PLAN_STATUS_NEW,
+  PLAN_STATUS_SUPERVISOR_VERIFIED,
+} from "../src/lib/crm/plan-verification.ts";
+import {
+  countRepPlanStatuses,
+  PLAN_STATUS_FILTERS,
+  repMatchesPlanStatusFilter,
+  resolvePlanStatusFilter,
+} from "../src/lib/crm/plan-status-filter.ts";
 import { foldRepPlanStatus } from "../src/lib/crm/reps-weekly-plans-board.ts";
 
 /**
@@ -578,6 +589,303 @@ export async function runRepsWeeklyPlansTests() {
     assert.ok(
       service.includes("const changedAt = new Date().toISOString();") && service.includes("changedAt,"),
       "and the service stamps that minute ONCE, so the mirror row and the notification agree about when the change happened",
+    );
+  }
+
+  await runPlanStatusFilterTests();
+}
+
+/**
+ * The status filter — the owner, 2026-09-02: make "the admin, or any role who has the authority"
+ * able to "filter by verified plan and non-verified plan".
+ *
+ * FOUR THINGS ARE PINNED HERE, and every one of them fails silently rather than loudly.
+ *
+ * 1. "NOT FILED" NEVER BECOMES "AWAITING". `foldRepPlanStatus` returns null for a rep who filed
+ *    nothing, and `planStatus ?? PLAN_STATUS_NEW` turns that null into New — so a predicate that
+ *    asks about the status before asking whether anything was filed puts every rep who filed
+ *    nothing into the manager's "waiting on you" list. He would then open a rep to verify a plan
+ *    that does not exist. It is one reordered line away at all times, and nothing on screen says so.
+ *
+ * 2. THE TILES COUNT THE WEEK, NOT THE FILTER. They double as the filter, so counting the filtered
+ *    list would zero every tile except the active one — including the tile the manager has to press
+ *    to widen again. The filter would be a door that locks behind him, and it would look like data.
+ *
+ * 3. AN UNKNOWN `?status=` WIDENS, NEVER NARROWS. A stale or misspelt value resolving to an empty
+ *    board reads as "no rep in your reach filed a plan this week" — a statement about the reps
+ *    rather than about the URL, and the kind a manager acts on.
+ *
+ * 4. THE FILTER SURVIVES EVERY OTHER CONTROL. The cascade, the week picker and "Back to all reps"
+ *    each rebuild the URL from their own parameters, so any one of them that forgets `status`
+ *    silently widens the board back to all seventy reps — while appearing to have worked, because
+ *    the thing the manager actually pressed did change.
+ */
+async function runPlanStatusFilterTests() {
+  // ---------------------------------------------------------------------------------------------
+  // 12a. The resolver widens on anything it does not recognise
+  // ---------------------------------------------------------------------------------------------
+  {
+    for (const value of PLAN_STATUS_FILTERS) {
+      assert.equal(resolvePlanStatusFilter(value), value, `${value} is a real filter and must survive the resolver`);
+    }
+    assert.equal(resolvePlanStatusFilter(undefined), "all", "no parameter means every rep");
+    assert.equal(resolvePlanStatusFilter(""), "all", "an empty parameter means every rep");
+    assert.equal(resolvePlanStatusFilter("  VERIFIED  "), "verified", "trimmed and lower-cased, like every other filter");
+    assert.equal(
+      resolvePlanStatusFilter("pending"),
+      "all",
+      "an unrecognised value must WIDEN to every rep, never narrow to none — an empty board reads as 'nobody filed a plan this week', which is a statement about the reps rather than about the URL",
+    );
+  }
+
+  // ---------------------------------------------------------------------------------------------
+  // 12b. A rep who filed NOTHING is never counted as awaiting the manager
+  // ---------------------------------------------------------------------------------------------
+  {
+    const missing = { planStatus: null, plansFiled: 0 };
+    const pending = { planStatus: PLAN_STATUS_NEW, plansFiled: 1 };
+    const verified = { planStatus: PLAN_STATUS_SUPERVISOR_VERIFIED, plansFiled: 1 };
+    const areaVerified = { planStatus: PLAN_STATUS_AREA_MANAGER_VERIFIED, plansFiled: 1 };
+
+    assert.ok(
+      repMatchesPlanStatusFilter(missing, "missing"),
+      "a rep who filed nothing belongs to 'no plan filed'",
+    );
+    assert.ok(
+      !repMatchesPlanStatusFilter(missing, "awaiting"),
+      "and NEVER to 'awaiting you'. `planStatus ?? PLAN_STATUS_NEW` reads a rep who filed nothing as pending, so asking the status before asking whether anything was filed would put every one of them on the manager's to-verify list — and send him to open a plan that does not exist",
+    );
+    assert.ok(
+      !repMatchesPlanStatusFilter(missing, "verified"),
+      "nor to 'verified' — nobody signed a plan that was never filed",
+    );
+
+    assert.ok(repMatchesPlanStatusFilter(pending, "awaiting"), "a filed, unsigned plan is the manager's move");
+    assert.ok(!repMatchesPlanStatusFilter(pending, "missing"), "and it is emphatically not a missing plan");
+    assert.ok(repMatchesPlanStatusFilter(verified, "verified"), "a supervisor-verified plan is verified");
+    assert.ok(
+      repMatchesPlanStatusFilter(areaVerified, "verified"),
+      "so is an AREA MANAGER's signature — Phoenix cannot take it back, but the plan is signed off in the CRM and belongs with the verified ones",
+    );
+
+    for (const rep of [missing, pending, verified, areaVerified]) {
+      assert.ok(repMatchesPlanStatusFilter(rep, "all"), "'all' is the only filter that spans every group");
+    }
+  }
+
+  // ---------------------------------------------------------------------------------------------
+  // 12c. The four counts PARTITION the week — no rep counted twice, none dropped
+  // ---------------------------------------------------------------------------------------------
+  {
+    const reps = [
+      { planStatus: null, plansFiled: 0 },
+      { planStatus: null, plansFiled: 0 },
+      { planStatus: PLAN_STATUS_NEW, plansFiled: 1 },
+      { planStatus: PLAN_STATUS_SUPERVISOR_VERIFIED, plansFiled: 1 },
+      { planStatus: PLAN_STATUS_AREA_MANAGER_VERIFIED, plansFiled: 1 },
+      // A rep with two plans, one still pending: the lowest status wins, so he is awaiting.
+      { planStatus: PLAN_STATUS_NEW, plansFiled: 2 },
+    ];
+    const counts = countRepPlanStatuses(reps);
+
+    assert.deepEqual(
+      counts,
+      { all: 6, awaiting: 2, missing: 2, verified: 2 },
+      "the four tiles over a known week",
+    );
+    assert.equal(
+      counts.awaiting + counts.verified + counts.missing,
+      counts.all,
+      "the three groups must PARTITION the reach: a rep in none of them vanishes from a board that still claims to show everybody, and a rep in two is counted twice in the same row of tiles",
+    );
+    for (const filter of PLAN_STATUS_FILTERS) {
+      assert.equal(
+        reps.filter((rep) => repMatchesPlanStatusFilter(rep, filter)).length,
+        counts[filter],
+        `the ${filter} tile must equal what the ${filter} filter actually shows — a tile reading 3 that filters to 2 is a board arguing with itself, and neither number looks wrong on its own`,
+      );
+    }
+    assert.deepEqual(
+      countRepPlanStatuses([]),
+      { all: 0, awaiting: 0, missing: 0, verified: 0 },
+      "a viewer who reaches nobody gets zeroes, not a crash",
+    );
+  }
+
+  // ---------------------------------------------------------------------------------------------
+  // 12d. The board filters the GRID but never the LOOKUP, and the tiles read the unfiltered counts
+  // ---------------------------------------------------------------------------------------------
+  {
+    const lib = readFileSync("src/lib/crm/reps-weekly-plans-board.ts", "utf8");
+    assert.ok(
+      /const counts = countRepPlanStatuses\(cascade\.repsIgnoringRep\.map\(withPlanStatus\)\);/.test(lib),
+      "the counts are taken over the list the status filter has NOT been applied to — counting the filtered one zeroes every tile the manager is not looking at, including the one he must press to widen again",
+    );
+    assert.ok(
+      /repsIgnoringRep/.test(lib) && !/const counts = countRepPlanStatuses\(allReps\)/.test(lib),
+      "and over the list the REP filter has not been applied to either: `cascade.reps` is narrowed to one person the moment ?rep= is set, which had the picker offering 'Verified (0)' on a week holding 61 verified reps — the picker drops the rep when it navigates, so its counts must describe where it goes",
+    );
+
+    const cascadeSource = readFileSync("src/lib/crm/reps-list-board.ts", "utf8");
+    assert.ok(
+      cascadeSource.includes("repsMatching(tree, { ...selection, rep: undefined })") &&
+        cascadeSource.includes("const reps: RepsListRep[] = selection.rep") &&
+        cascadeSource.includes("? repsIgnoringRep.filter((rep) => rep.repKey === selection.rep)"),
+      "the cascade builds the wide list first and narrows to `reps` from it, so the two can never describe different weeks — `repsMatching` applies the rep level itself (coverage-filters.ts), which is what made the narrow list the only one available",
+    );
+    assert.ok(
+      /const reps = allReps\.filter\(\(rep\) => repMatchesPlanStatusFilter\(rep, base\.statusFilter\)\);/.test(lib),
+      "and the grid is the filtered list",
+    );
+    assert.ok(
+      /const selected = cascade\.selected\s*\?\s*\(allReps\.find/.test(lib),
+      "the SELECTED rep is looked up in the unfiltered list: searching the filtered one would make a link carrying both ?rep= and a ?status= he does not match render 'filed no weekly plan' for a rep who filed one — the board accusing him of something the URL did",
+    );
+
+    const view = readFileSync("src/components/crm/reps-weekly-plans-board.tsx", "utf8");
+    assert.ok(
+      !/reps\.filter\(\(rep\) => rep\.plansFiled > 0\)/.test(view),
+      "the view no longer counts the tiles for itself — that arithmetic moved into countRepPlanStatuses so the tiles and the filter cannot disagree",
+    );
+    for (const key of ["counts.all", "counts.awaiting", "counts.verified", "counts.missing"]) {
+      assert.ok(view.includes(`String(${key})`), `the tiles read ${key} from the board`);
+    }
+    assert.ok(
+      view.indexOf("<div className=\"grid grid-cols-2 gap-2 p-5 pb-0 sm:grid-cols-4\">") <
+        view.indexOf("{reps.length === 0 ? ("),
+      "the tiles are rendered OUTSIDE the empty branch: they are the filter as well as the count, so hiding them on an empty slice removes the only control that widens it again",
+    );
+  }
+
+  // ---------------------------------------------------------------------------------------------
+  // 12e. Every other control carries the filter through
+  // ---------------------------------------------------------------------------------------------
+  {
+    const view = readFileSync("src/components/crm/reps-weekly-plans-board.tsx", "utf8");
+    assert.ok(
+      /if \(board\.statusFilter !== "all"\) query\.set\("status", board\.statusFilter\);/.test(view),
+      "'Back to all reps' keeps the filter: a manager who narrowed to the three plans waiting on him, opened one and signed it expects to come back to the other two, not to all seventy",
+    );
+    assert.ok(
+      /status: statusFilter === "all" \? undefined : statusFilter/.test(view),
+      "and so does the shared cascade, through its preserve map",
+    );
+
+    const week = readFileSync("src/components/crm/plan-week-picker.tsx", "utf8");
+    assert.ok(
+      /if \(status && status !== "all"\) next\.set\("status", status\);/.test(week),
+      "stepping to another week keeps the filter — dropping it would silently widen the board back to every rep while looking like it worked, because the week did change",
+    );
+
+    const picker = readFileSync("src/components/crm/plan-status-picker.tsx", "utf8");
+    assert.ok(
+      picker.includes('next.set("tab", "plans")') && picker.includes('next.set("week", week)'),
+      "the status picker carries the tab and the week, or every pick bounces the manager back to the contact list on the current week",
+    );
+    assert.ok(
+      !/next\.set\("rep"|next\.set\("plan"/.test(picker),
+      "and deliberately DROPS the rep: with one still selected his plan fills the screen and the grid stays hidden, so the filter appears to do nothing on the one interaction whose whole purpose is visible",
+    );
+    assert.ok(
+      /if \(value && value !== "all"\) next\.set\("status", value\)/.test(picker),
+      "'all' clears the parameter rather than writing status=all, so the plain board and the cleared board are one URL",
+    );
+
+    // Both shells, not just the admin one. District Manager and Regional Manager — the two seats
+    // this tab was built for — are PORTAL seats, so a filter threaded through the admin page alone
+    // would be invisible to exactly the people the owner named.
+    for (const page of ["app/(admin)/admin/reps-list/page.tsx", "app/employee-portals/reps-list/page.tsx"]) {
+      const source = readFileSync(page, "utf8");
+      assert.ok(
+        source.includes("status: params?.status"),
+        `${page} must pass the status through, or the filter is inert in that shell — and the portal is where the district and regional managers actually work`,
+      );
+    }
+  }
+
+  // ---------------------------------------------------------------------------------------------
+  // 12f. The status picker is a CLIENT module, so nothing it loads may reach the server
+  // ---------------------------------------------------------------------------------------------
+  {
+    // This is the bug the section exists to catch, and the reason `plan-status-filter.ts` is its own
+    // file. The picker first imported PLAN_STATUS_FILTERS — a VALUE, so not erased the way a type
+    // import is — from `reps-weekly-plans-board.ts`, which reaches plan-board → contact-lists →
+    // manager-scope → employee-directory → employee-photo → node:crypto. Webpack refused the bundle
+    // outright, the tab 500'd, and a cold `tsc --noEmit` had passed clean moments earlier: which
+    // bundle a module lands in is not a type question, so nothing short of loading the page in a
+    // browser could see it. Walking the graph here is the cheaper detector, and it fails with the
+    // chain rather than with a symptom.
+    const clientEntry = "src/components/crm/plan-status-picker.tsx";
+
+    const resolveSpecifier = (specifier: string, fromFile: string): string | null => {
+      if (specifier.startsWith("@/")) {
+        // `@/*` maps to `./*` FIRST and `./src/*` second (tsconfig.json), which is why
+        // `@/lib/utils` is the root file and not the one under src/.
+        const tail = specifier.slice(2);
+        for (const root of ["", "src/"]) {
+          for (const suffix of [".ts", ".tsx", "/index.ts", ""]) {
+            const candidate = `${root}${tail}${suffix}`;
+            if (existsSync(candidate)) return candidate;
+          }
+        }
+        return null;
+      }
+      if (!specifier.startsWith(".")) return null; // a package: not ours to walk
+      const parts = `${fromFile.split("/").slice(0, -1).join("/")}/${specifier}`.split("/");
+      const stack: string[] = [];
+      for (const part of parts) {
+        if (part === "." || part === "") continue;
+        if (part === "..") stack.pop();
+        else stack.push(part);
+      }
+      const base = stack.join("/");
+      for (const suffix of ["", ".ts", ".tsx", "/index.ts"]) {
+        if (existsSync(`${base}${suffix}`)) return `${base}${suffix}`;
+      }
+      return null;
+    };
+
+    const trail = new Map<string, string[]>([[clientEntry, [clientEntry]]]);
+    const queue = [clientEntry];
+    const walked: string[] = [];
+
+    while (queue.length > 0) {
+      const file = queue.shift() as string;
+      walked.push(file);
+      const source = readFileSync(file, "utf8");
+      // Value imports only. `import type { X } from "m"` is erased by the compiler and never
+      // reaches a bundle; `import { a, type B }` does load the module, so it is followed.
+      const pattern = /(?:^|\n)\s*(?:import|export)\s+(type\s+)?(?:[^;'"]*?\sfrom\s+)?["']([^"']+)["']/g;
+      for (const match of source.matchAll(pattern)) {
+        const [, typeOnly, specifier] = match;
+        if (typeOnly) continue;
+        assert.ok(
+          !specifier.startsWith("node:") && specifier !== "fs" && specifier !== "crypto",
+          `${clientEntry} is a "use client" module and must never load a node builtin. It reaches ${specifier} through:\n  ${(trail.get(file) ?? [file]).join("\n  → ")}\nThe fix is not to make the import conditional — move the value into a module both halves can hold, as plan-status-filter.ts was.`,
+        );
+        const resolved = resolveSpecifier(specifier, file);
+        if (!resolved || trail.has(resolved)) continue;
+        trail.set(resolved, [...(trail.get(file) ?? [file]), resolved]);
+        queue.push(resolved);
+      }
+    }
+
+    // The walk itself has to be shown to do something: a resolver that silently matched nothing
+    // would make every assertion above pass on an empty graph, which is the failure mode this whole
+    // suite exists to distrust.
+    assert.ok(
+      walked.includes("src/lib/crm/plan-status-filter.ts"),
+      `the walk must actually reach the filter module through the picker's imports — it visited ${walked.length} file(s): ${walked.join(", ")}`,
+    );
+    assert.ok(
+      !walked.includes("src/lib/crm/reps-weekly-plans-board.ts"),
+      "the client picker must not load the board module at all: it is the server half, and its dependency chain is what broke the browser bundle",
+    );
+
+    const filter = readFileSync("src/lib/crm/plan-status-filter.ts", "utf8");
+    assert.ok(
+      !/^\s*"use (client|server)"/m.test(filter),
+      "plan-status-filter.ts carries NO directive on purpose: the server board and the client picker both hold it, and either directive would hand one of them a module it cannot use",
     );
   }
 }
