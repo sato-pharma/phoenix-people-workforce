@@ -117,6 +117,7 @@ export async function sendPushNotification(input: PushSendInput): Promise<PushSe
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), onesignalTimeoutMs());
   let response: Response;
+  let payload: { errors?: unknown; id?: string } | null;
   try {
     response = await fetch("https://onesignal.com/api/v1/notifications", {
       body: JSON.stringify({
@@ -134,16 +135,20 @@ export async function sendPushNotification(input: PushSendInput): Promise<PushSe
       method: "POST",
       signal: controller.signal,
     });
+    // Read the body INSIDE the timer's scope. It used to sit after the `finally`, so the deadline
+    // died the moment headers arrived and a stalled body could hang this send indefinitely — and
+    // the `.catch(() => null)` made that worse, not better: a timed-out send fell through as a
+    // 200 with a null payload and was reported as a SUCCESS carrying no provider id.
+    payload = (await response.json().catch(() => null)) as { errors?: unknown; id?: string } | null;
+    if (controller.signal.aborted) throw new Error("OneSignal request timed out.");
   } catch (error) {
-    if (error instanceof Error && error.name === "AbortError") {
+    if (controller.signal.aborted || (error instanceof Error && error.name === "AbortError")) {
       throw new Error("OneSignal request timed out.");
     }
     throw error;
   } finally {
     clearTimeout(timeout);
   }
-
-  const payload = await response.json().catch(() => null) as { errors?: unknown; id?: string } | null;
 
   if (isNotSubscribedPayload(payload)) {
     return { reason: "No active push subscription for recipient.", skipped: true };

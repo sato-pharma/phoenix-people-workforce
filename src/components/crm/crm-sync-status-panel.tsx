@@ -6,11 +6,18 @@ import { AlertTriangle, CheckCircle2, Loader2, RefreshCcw } from "lucide-react";
 
 import type { VisitsSyncRun } from "@/lib/visits-report/types";
 
+/** A real INSTANT (started_at / completed_at), so it renders in Cairo like every other clock time
+ * in this app. It rendered in UTC until 2026-09-02, which is how a sync that failed at 21:03 Cairo
+ * was reported as failing at 18:03 — three hours adrift, on the one panel someone reads precisely
+ * because something has just gone wrong. */
 function formatDateTime(value: string | null) {
   if (!value) return "—";
-  return new Date(value).toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "UTC" });
+  return new Date(value).toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "Africa/Cairo" });
 }
 
+/** DATE-ONLY (the sync window's `date_from`/`date_to`, e.g. "2026-08-23"), which `new Date` parses
+ * as UTC midnight. UTC here is CORRECT and must stay: it is what stops the calendar day being
+ * shifted by a zone offset. Do not "fix" this one to Cairo to match formatDateTime above. */
 function formatDate(value: string) {
   return new Date(value).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" });
 }

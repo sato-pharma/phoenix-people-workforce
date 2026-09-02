@@ -17,16 +17,16 @@ function graphApiVersion(): string {
   return process.env.WHATSAPP_GRAPH_API_VERSION?.trim() || "v23.0";
 }
 
-// fetch with a hard timeout via AbortController. On timeout the abort rejects the fetch, which the
-// callers already treat as a Graph failure (502 for the exchange, a logged warning for the subscribe).
+// fetch with a hard timeout. On timeout the abort rejects, which the callers already treat as a
+// Graph failure (502 for the exchange, a logged warning for the subscribe).
+//
+// `AbortSignal.timeout` rather than a hand-rolled AbortController: this helper RETURNS the response
+// and both callers then read `.json()` off it, so clearing a manual timer in a `finally` here would
+// have cancelled the deadline before the body those callers actually wait on had arrived — the same
+// defect that let a CRM sync burn 301 seconds on 2026-09-02 (see fetchJson in src/lib/crm/client.ts).
+// This signal stays armed across the caller's body read.
 async function fetchWithTimeout(input: URL | string, init: RequestInit = {}): Promise<Response> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), GRAPH_TIMEOUT_MS);
-  try {
-    return await fetch(input, { ...init, signal: controller.signal });
-  } finally {
-    clearTimeout(timer);
-  }
+  return await fetch(input, { ...init, signal: AbortSignal.timeout(GRAPH_TIMEOUT_MS) });
 }
 
 /**
