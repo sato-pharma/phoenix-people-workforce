@@ -100,7 +100,7 @@ still alive nine hours later. Its command line is the bare
 `git fsmonitor--daemon run --detach --ipc-threads=8` and never names the tree it serves, so it cannot
 be attributed to a folder by inspection.
 
-**What actually worked, and the part worth copying:** stop every `git fsmonitor--daemon`, then retry
+**What was believed to work at the time — corrected below, see the 2026-09-02 supersession:** stop every `git fsmonitor--daemon`, then retry
 `rmdir /s /q` over several minutes. Stopping them is free — they hold no state and git respawns one
 on demand, so a fresh daemon appearing seconds later is normal and is not the one that was blocking
 you. The delete did **not** succeed on the attempt straight after the kills; three attempts across
@@ -110,6 +110,36 @@ inconclusive rather than as evidence the holder is still there.
 A background retry loop is the obvious automation and is worth arming, but the one used here died on
 launch with exit code 4 and never ran an iteration — so confirm such a job is actually looping before
 reporting that it covers the cleanup.
+
+**Superseded 2026-09-02 — the kills were never the mechanism. Quiet time is.** A second occurrence,
+while retiring five merged worktrees, isolated the variable the first incident could not. The shape was
+identical: `new-session.mjs --remove` ran its gates, unlinked the junction, then failed *Permission
+denied* on the root, deregistered the worktree anyway, and left an empty husk — `Get-ChildItem -Force`
+reported **0** children and **0** recursive entries.
+
+What the second run adds is the control the first one lacked:
+
+- A background loop that stopped **every** `git.exe` on the machine every 30 seconds and retried
+  `rmdir /s /q` ran for roughly ten minutes and **never cleared it**.
+- With `(Get-Process -Name git).Count` reading **0** — no git process running at all — both
+  `[System.IO.Directory]::Delete($p, $true)` and `cmd /c rmdir /s /q` still failed *"being used by
+  another process."* So the holder was demonstrably **not** a `git fsmonitor--daemon`.
+- Stopping the loop, leaving the folder completely untouched for **300 seconds**, then trying once
+  cleared it on the **first** attempt.
+
+So the operative variable is elapsed quiet time, not force, and the first incident's five-minute wait
+was doing the work its kills were credited with. The `Win32_Process` sweep result is unchanged and
+still worth knowing: filtering every process's command line for the folder path returned exactly one
+hit, the sweep command itself. Sysinternals `handle.exe` was not installed, so the handle table was
+never inspected in either incident.
+
+**The dangerous half of the old advice.** "Stop them all" reads as harmless because a daemon is a
+cache that respawns — but the command that implements it, `Get-Process git | Stop-Process`, is
+**machine-wide**, and on a loop it keeps being machine-wide. A parallel session was live in the
+primary checkout throughout this cleanup (its HEAD moved three times while the work ran), so that
+loop could have killed a legitimate `git` command out from under it at any point in those ten
+minutes. It cleared no husk and risked another session's work. Retry quietly; never arm a repeating
+kill.
 
 ## Orphaned memory files
 
