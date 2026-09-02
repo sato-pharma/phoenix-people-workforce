@@ -209,22 +209,35 @@ export function runDoctorCoverageScopeTests() {
     "day 1 clamps to one elapsed day rather than dividing the bar to zero",
   );
 
-  // ── RETIRED 2026-08-28: the portal sidebar entry is gone, and that is now what is pinned ──────
-  // This block used to hold the sidebar's role list identical to DOCTOR_COVERAGE_PORTAL_ROLES.
-  // Both were maintained by hand before 2026-08-08 and disagreed with the page gates, which is how
-  // "everyone sees everyone" survived: nothing forced the two to match. The owner retired the board
-  // itself on 2026-08-28, so the entry no longer exists and the assertion is inverted — it proves
-  // the retirement is still in force. When the replacement ships it gets its own entry, and the
-  // drift check comes back with it.
+  // ── THE DRIFT CHECK, BACK WITH THE REPLACEMENT (2026-09-02) ──────────────────────────────────
+  // This block held the sidebar's role list identical to DOCTOR_COVERAGE_PORTAL_ROLES. Both were
+  // maintained by hand before 2026-08-08 and disagreed with the page gates, which is how "everyone
+  // sees everyone" survived: nothing forced the two to match. The owner retired the board on
+  // 2026-08-28, so for four days the assertion was inverted and pinned the retirement instead —
+  // with the note that "when the replacement ships it gets its own entry, and the drift check comes
+  // back with it". KPIs is that replacement, so both halves are asserted here now.
+  const portalItems = employeePortalNavigationSections.flatMap((section) => section.items);
+
+  // Half one: the retirement is still in force. The rebuild replaces Doctor Coverage, it does not
+  // reinstate it — a session restoring the old entry alongside the new one would put two boards
+  // back in front of the owner answering one question with different measures, which is the exact
+  // fault he retired it for.
   assert.equal(
-    employeePortalNavigationSections
-      .flatMap((section) => section.items)
-      .find((item) => item.href === "/employee-portals/doctor-coverage"),
+    portalItems.find((item) => item.href === "/employee-portals/doctor-coverage"),
     undefined,
-    "the portal sidebar must NOT offer Doctor Coverage — the owner retired the board on 2026-08-28",
+    "the portal sidebar must NOT offer Doctor Coverage — the owner retired that board on 2026-08-28 and KPIs replaces it",
   );
-  // The role list itself is untouched, and the scope library stays in place for the rebuild to draw
-  // on. Every role in it must still resolve to a real scope: one that resolves to nothing is the
+
+  // Half two: the replacement's entry exists and its role list has not drifted from the module.
+  const kpisItem = portalItems.find((item) => item.href === "/employee-portals/kpis");
+  assert.ok(kpisItem, "the portal sidebar must offer KPIs — it is the 2026-08-28 rebuild's own entry");
+  assert.deepEqual(
+    [...(kpisItem.roles ?? [])].sort(),
+    [...DOCTOR_COVERAGE_PORTAL_ROLES].sort(),
+    "the KPIs sidebar entry must name exactly DOCTOR_COVERAGE_PORTAL_ROLES — a hand-maintained second copy of that list is what let the two disagree before 2026-08-08",
+  );
+
+  // And every role in it must still resolve to a real scope: one that resolves to nothing is the
   // silent-empty-board failure this whole module exists to prevent.
   for (const role of DOCTOR_COVERAGE_PORTAL_ROLES) {
     assert.ok(

@@ -77,7 +77,10 @@ function rep(
 }
 
 function report(workingDays: number, reps: RepCallRate[]): CallRateReport {
-  return { dateFrom: "2026-08-01", dateTo: "2026-08-31", workingDays, campaignLimit: 3, reps };
+  // `holidayDays` is 0 here on purpose: these fixtures pin the live-month CAP on working days,
+  // which is a different subtraction from the national-holiday one added on 2026-09-02. A
+  // non-zero value would make it look as though the cap and the holiday rule were the same thing.
+  return { dateFrom: "2026-08-01", dateTo: "2026-08-31", workingDays, holidayDays: 0, campaignLimit: 3, reps };
 }
 
 export function runCrmRepsPlansTests() {
