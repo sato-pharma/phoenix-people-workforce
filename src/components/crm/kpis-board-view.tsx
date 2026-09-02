@@ -514,7 +514,9 @@ function SummaryTable({ context, rows }: { context: ViewContext; rows: KpiRepRow
             <MeasureCell
               band={coverageBandOf(row)}
               caption={
-                row.hasMeasurablePlan ? `${row.visitedDoctors} of ${row.plannedDoctors} doctors` : "Nothing planned"
+                row.hasMeasurablePlan
+                  ? `${row.visitedDoctors} of ${row.coverageDueDoctors} due so far`
+                  : "Nothing planned"
               }
               fill={coverageFill(row)}
               value={planPct(row, row.coveragePct)}
@@ -656,7 +658,7 @@ function CoverageTable({ context, rows }: { context: ViewContext; rows: KpiRepRo
             direction={filters.direction}
             href={sortHref(context, "planned")}
             label="Planned"
-            sub="Doctors"
+            sub="Whole month"
           />
           <KpiSortableTh
             active={filters.sort === "visited"}
@@ -670,7 +672,7 @@ function CoverageTable({ context, rows }: { context: ViewContext; rows: KpiRepRo
             direction={filters.direction}
             href={sortHref(context, "missed")}
             label="Not reached"
-            sub="Zero visits"
+            sub="Of those due"
           />
           {/* Not sortable: off-plan doctors are a note about where the day went, not a measure the
               board ranks anybody on. A sort control on it would imply otherwise. */}
@@ -685,7 +687,7 @@ function CoverageTable({ context, rows }: { context: ViewContext; rows: KpiRepRo
             direction={filters.direction}
             href={sortHref(context, "coverage")}
             label="Coverage"
-            sub="Covered ÷ planned"
+            sub="Covered ÷ due"
           />
         </tr>
       </thead>
@@ -695,13 +697,13 @@ function CoverageTable({ context, rows }: { context: ViewContext; rows: KpiRepRo
             <RepCell rank={context.showRank ? index + 1 : undefined} row={row} />
             <td className={NUM}>{row.plannedDoctors}</td>
             <td className={NUM}>{row.visitedDoctors}</td>
-            <td className={NUM}>{row.missedDoctors}</td>
+            <td className={NUM}>{row.coverageDueDoctors - row.visitedDoctors}</td>
             <td className={NUM}>{row.offPlanDoctors}</td>
             <MeasureCell
               band={coverageBandOf(row)}
               caption={
                 row.hasMeasurablePlan
-                  ? `${row.plannedAccounts} account(s) also on the plan`
+                  ? `${row.visitedDoctors} of ${row.coverageDueDoctors} due so far`
                   : "No planned doctors to be a percentage of"
               }
               fill={coverageFill(row)}
@@ -809,7 +811,9 @@ function RepCard({ rank, row }: { rank?: number; row: KpiRepRow }) {
   const measures: Array<{ band: KpiBand; caption: string; fill: number | null; label: string; value: string }> = [
     {
       band: coverageBandOf(row),
-      caption: row.hasMeasurablePlan ? `${row.visitedDoctors}/${row.plannedDoctors} reached` : "Nothing planned",
+      caption: row.hasMeasurablePlan
+        ? `${row.visitedDoctors}/${row.coverageDueDoctors} due so far`
+        : "Nothing planned",
       fill: coverageFill(row),
       label: "Coverage",
       value: planPct(row, row.coveragePct),
@@ -1000,7 +1004,11 @@ export function KpisBoardView({
             />
             <KpiTile
               band={kpiBandOf(totals.coveragePct)}
-              caption={`${totals.visitedDoctors} of ${totals.plannedDoctors} planned doctors${partial ? " · month to date" : ""}`}
+              caption={
+                partial
+                  ? `${totals.visitedDoctors} of ${totals.coverageDueDoctors} due so far · ${totals.plannedDoctors} planned all month`
+                  : `${totals.visitedDoctors} of ${totals.plannedDoctors} planned doctors`
+              }
               label="Coverage"
               progress={totals.coveragePct}
               value={`${totals.coveragePct}%`}

@@ -127,9 +127,23 @@ export type RepDoctorListRepRow = {
   actualCalls: number;
   agentCrmId: number;
   agentHrId: string | null;
-  /** KPI 1 — percentage of planned doctors reached AT ALL this month. 0 when nothing was planned.
-   * Shipped as `adherencePct` in #2259; the maths is unchanged, only the name. */
+  /** KPI 1 — percentage of planned doctors reached AT ALL, on the plan SO FAR. 0 when nothing was
+   * planned. Shipped as `adherencePct` in #2259. The numerator is unchanged; the denominator is
+   * `coverageDueDoctors`, not `plannedDoctors` — see that field for why. */
   coveragePct: number;
+  /** The coverage denominator: planned doctors who were due by today, plus any visited early. It is
+   * identical to `plannedDoctors` for any COMPLETE month, so no closed month's number moves.
+   *
+   * Mid-month the two are far apart, and the gap is the whole reason this field exists. Measured on
+   * production for August 2026: the month finished with 9,812 planned rep-to-doctor pairs, but on
+   * 3 August only 3,092 of them were due — 68.5% were scheduled for days that had not happened yet.
+   * Dividing by all 9,812 on the 3rd caps coverage at 31.5% by arithmetic alone, so a rep who had
+   * seen every doctor asked of him so far still reads as a failure, and the figure recovers over
+   * the month purely because the denominator stops growing. That is the same unfairness
+   * `plannedCallsToDate` was added to remove from frequency, and it is removed here the same way.
+   *
+   * A doctor visited BEFORE the plan asked for stays in, or coverage could exceed 100%. */
+  coverageDueDoctors: number;
   /** KPI 2 — percentage of planned doctors whose call count matched the plan exactly, to date.
    * 0 when nothing was planned. Deliberately NOT met-or-exceeded: over-visiting is a deviation. */
   frequencyPct: number;
@@ -243,6 +257,7 @@ export type RepDoctorListsBoard = {
   totals: {
     actualCalls: number;
     campaignCalls: number;
+    coverageDueDoctors: number;
     coveragePct: number;
     frequencyPct: number;
     missedDoctors: number;
@@ -686,6 +701,7 @@ export function buildRepDoctorListsBoard(input: RepDoctorListsInput): RepDoctorL
       agentCrmId,
       agentHrId: hrIdByCrmId.get(agentCrmId) ?? null,
       campaignCalls: 0,
+      coverageDueDoctors: 0,
       coveragePct: 0,
       frequencyPct: 0,
       gradeA: 0,
@@ -746,6 +762,10 @@ export function buildRepDoctorListsBoard(input: RepDoctorListsInput): RepDoctorL
       // COVERAGE: one visit is enough, and that is the whole test.
       if (seen) rep.visitedDoctors += 1;
       else rep.missedDoctors += 1;
+      // ...but only against the part of the list that has come due. A doctor first planned for the
+      // 28th cannot have been seen on the 3rd, and counting him as a miss is arithmetic, not
+      // performance. `seen` keeps an early visit in the denominator so the ratio cannot pass 100%.
+      if (contact.plannedCallsToDate > 0 || seen) rep.coverageDueDoctors += 1;
       if (planBelowGradeNorm) rep.underPlannedVsGrade += 1;
       // FREQUENCY: `missed` needs no counter of its own — it is what is left once the other four
       // buckets are taken out of the due population, and `missedDoctors` above already names it.
@@ -829,7 +849,8 @@ export function buildRepDoctorListsBoard(input: RepDoctorListsInput): RepDoctorL
 
   for (const rep of repAccumulator.values()) {
     rep.hasMeasurablePlan = rep.plannedDoctors > 0;
-    rep.coveragePct = rep.plannedDoctors > 0 ? Math.round((rep.visitedDoctors / rep.plannedDoctors) * 100) : 0;
+    rep.coveragePct =
+      rep.coverageDueDoctors > 0 ? Math.round((rep.visitedDoctors / rep.coverageDueDoctors) * 100) : 0;
     // Doctors with nothing due yet are held out of the frequency denominator (see frequencyStatusOf).
     // Mid-month that is the difference between a fair score and one that punishes next week's plan.
     const dueDoctors = rep.plannedDoctors - rep.notDueDoctors;
@@ -885,6 +906,7 @@ export function buildRepDoctorListsBoard(input: RepDoctorListsInput): RepDoctorL
   const totals = {
     actualCalls: 0,
     campaignCalls: 0,
+    coverageDueDoctors: 0,
     coveragePct: 0,
     frequencyPct: 0,
     missedDoctors: 0,
@@ -905,6 +927,7 @@ export function buildRepDoctorListsBoard(input: RepDoctorListsInput): RepDoctorL
   for (const rep of reps) {
     totals.actualCalls += rep.actualCalls;
     totals.campaignCalls += rep.campaignCalls;
+    totals.coverageDueDoctors += rep.coverageDueDoctors;
     totals.missedDoctors += rep.missedDoctors;
     totals.notDueDoctors += rep.notDueDoctors;
     totals.offPlanDoctors += rep.offPlanDoctors;
@@ -924,7 +947,9 @@ export function buildRepDoctorListsBoard(input: RepDoctorListsInput): RepDoctorL
   // percentages would weigh a rep with 21 doctors the same as one with 234, and the observed spread
   // is exactly that wide (median 107, measured 2026-08-21).
   totals.coveragePct =
-    totals.plannedDoctors > 0 ? Math.round((totals.visitedDoctors / totals.plannedDoctors) * 100) : 0;
+    totals.coverageDueDoctors > 0
+      ? Math.round((totals.visitedDoctors / totals.coverageDueDoctors) * 100)
+      : 0;
   const totalDueDoctors = totals.plannedDoctors - totals.notDueDoctors;
   totals.frequencyPct =
     totalDueDoctors > 0 ? Math.round((totals.onPlanDoctors / totalDueDoctors) * 100) : 0;

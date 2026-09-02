@@ -1088,9 +1088,14 @@ function runAccessTests() {
     "1 on-plan of 4 DUE doctors = 25%: the not-due doctor is held out of the denominator, and the off-plan doctor never enters it",
   );
   assert.equal(
+    rep700.coverageDueDoctors,
+    4,
+    "the doctor planned for the 28th is not a coverage miss on the 15th — he is not due, exactly as he is not due for frequency",
+  );
+  assert.equal(
     rep700.coveragePct,
-    60,
-    "3 of 5 doctors were reached at all — coverage and frequency MUST be able to disagree, or the second KPI is not measuring anything new",
+    75,
+    "3 reached of 4 DUE doctors = 75%. Dividing by all 5 gives 60% and marks the rep down for a call the plan schedules for a fortnight away; on production that error capped August coverage at 31.5% on the 3rd. Coverage and frequency still disagree loudly here (75 vs 25), which is what this fixture exists to prove",
   );
 
   const doctorFreq = (contactCrmId: number) => {
@@ -1227,4 +1232,64 @@ function runVocabularyTests() {
     `exactly one status may be green, and it must be the exact match — got: ${emerald.join(" | ")}`,
   );
   assert.ok(emerald[0].trim().startsWith("on_plan:"), `emerald belongs to on_plan alone — got: ${emerald[0]}`);
+}
+
+/**
+ * COVERAGE IS SCORED AGAINST THE PART OF THE LIST THAT HAS COME DUE.
+ *
+ * The rule frequency has always followed, applied to the other KPI. A doctor first planned for the
+ * 28th cannot have been visited on the 15th, so counting him in the denominator does not measure a
+ * rep at all — it measures how far through the month the calendar is.
+ *
+ * The size of the error, measured on production 2026-09-03: August 2026 finished with 9,812 planned
+ * rep-to-doctor pairs, of which 6,720 (68.5%) were still in the future on the morning of 3 August.
+ * Dividing by all of them capped that day's coverage at 31.5% no matter what the field force did.
+ * September was about to walk into the same wall from the other side — only 2,513 pairs were loaded
+ * on the 3rd, so the denominator was set to roughly quadruple over the following fortnight and the
+ * percentage to fall by two thirds while nobody's work changed.
+ *
+ * Two properties are pinned here, and the second is what makes the change safe to ship:
+ *   1. a not-yet-due doctor is out of the denominator, UNLESS he was visited early — otherwise a
+ *      rep who ran ahead of his own plan scores over 100%;
+ *   2. for a COMPLETE month the denominator is the whole list again, so no closed month moves.
+ */
+export function runCoverageDueDenominatorTests() {
+  const rows = (contactCrmId: number, planDate: string) => [
+    plan({ agent_crm_id: 800, agent_hr_id: null, contact_crm_id: contactCrmId, plan_date: planDate }),
+  ];
+  const planRows = [
+    ...rows(8001, "2026-08-03"), // due, and seen        -> in the denominator, in the numerator
+    ...rows(8002, "2026-08-04"), // due, never seen      -> in the denominator only
+    ...rows(8003, "2026-08-28"), // not due, never seen  -> OUT of the denominator entirely
+    ...rows(8004, "2026-08-27"), // not due, seen EARLY  -> back IN, or the ratio passes 100%
+  ];
+  const visitRows = [
+    visit({ agent_crm_id: 800, agent_hr_id: null, contact_crm_id: 8001, visit_date: "2026-08-03" }),
+    visit({ agent_crm_id: 800, agent_hr_id: null, contact_crm_id: 8004, visit_date: "2026-08-10" }),
+  ];
+
+  const midMonth = repOf(board({ asOf: "2026-08-15", month: MONTH, planRows, visitRows }), "800");
+  assert.equal(midMonth.plannedDoctors, 4, "the list itself is four doctors and the board still says so");
+  assert.equal(midMonth.visitedDoctors, 2, "8001 and 8004 were reached");
+  assert.equal(
+    midMonth.coverageDueDoctors,
+    3,
+    "8003 is planned for the 28th and was never seen, so on the 15th he is not a miss — he is not due. 8004 is equally not due but WAS seen, and dropping him would let a rep who ran ahead of his plan score above 100%",
+  );
+  assert.equal(
+    midMonth.coveragePct,
+    67,
+    "2 reached of the 3 doctors due so far = 67%. Dividing by all four gives 50% and marks the rep down for a call the plan schedules for a fortnight away",
+  );
+
+  // The same rows, scored after the month has closed. Every doctor is now due, the denominator is
+  // the whole list again, and the figure is the one it always was — which is why no published month
+  // and no historical comparison moves because of this rule.
+  const closed = repOf(board({ asOf: "2026-08-31", month: MONTH, planRows, visitRows }), "800");
+  assert.equal(
+    closed.coverageDueDoctors,
+    closed.plannedDoctors,
+    "for a complete month the due denominator IS the whole list — the mid-month rule must leave closed months untouched",
+  );
+  assert.equal(closed.coveragePct, 50, "2 of 4 for the finished month, exactly as before this rule existed");
 }

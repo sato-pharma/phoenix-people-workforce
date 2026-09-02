@@ -326,7 +326,10 @@ import { runCrmCoverageFilterTests } from "./crm-coverage-filters.test.ts";
 import { runCrmCheckinCoordGuardTests } from "./crm-checkin-coord-guard.test.ts";
 import { runCrmAmpmNormalizationTests } from "./crm-ampm-normalization.test.ts";
 import { runCrmVisitTypeLabelTests } from "./crm-visit-type-labels.test.ts";
-import { runCrmRepDoctorListsTests } from "./crm-rep-doctor-lists.test.ts";
+import {
+  runCoverageDueDenominatorTests,
+  runCrmRepDoctorListsTests,
+} from "./crm-rep-doctor-lists.test.ts";
 import { runCrmContactListsTests } from "./crm-contact-lists.test.ts";
 import { runRepsListTests } from "./reps-list.test.ts";
 import { runRepsListActivityTests } from "./reps-list-activity.test.ts";
@@ -1839,6 +1842,12 @@ await runTest(
   + "reach a closed month BEHIND it while always reaching next week AHEAD of it — a plan the board "
   + "offers for verification that was never fetched reads as \"no plan filed\")",
   runCrmRepDoctorListsTests,
+);
+await runTest(
+  "coverage is scored against the DUE list (a doctor planned for the 28th is not a miss on the 15th, "
+  + "a doctor visited EARLY stays in the denominator so the ratio cannot pass 100%, and a complete "
+  + "month divides by the whole list exactly as before — no closed month moves)",
+  runCoverageDueDenominatorTests,
 );
 await runTest("LocationIQ geocode confidence (reverse/forward scoring + LocationIQ-first/Google-fallback wiring)", runLocationIqGeocodeConfidenceTests);
 await runTest("private calendar", runPrivateCalendarTests);

@@ -17,9 +17,16 @@
 //              proof, because a campaign call names no doctor and cannot be
 //              checked by anybody — see crm/call-rate.ts.
 //
-//   COVERAGE   visitedDoctors / plannedDoctors, month to date. "I have a hundred
-//              contacts in my list; how much did I cover from them?" One visit is
-//              enough — grade and count are the other KPI's business.
+//   COVERAGE   visitedDoctors / coverageDueDoctors, month to date. "I have a
+//              hundred contacts in my list; how much did I cover from them?" One
+//              visit is enough — grade and count are the other KPI's business.
+//              The denominator is the part of the list that has COME DUE, the same
+//              basis frequency already used. A doctor first planned for the 28th
+//              is not a miss on the 3rd, and counting him as one capped August's
+//              coverage at 31.5% on 3 August by arithmetic alone (measured: 6,720
+//              of 9,812 planned pairs were still in the future that morning). For
+//              a complete month the two denominators are identical, so no closed
+//              month's number moves.
 //
 //   FREQUENCY  onPlanDoctors / (plannedDoctors - notDue). "If he tell three times
 //              and he visited three times, this is correct." Exact is the ONLY
@@ -143,7 +150,11 @@ export type KpiRepRow = {
   callRateAttainmentPct: number | null;
 
   // ── Coverage and frequency (the whole month) ──────────────────────────────
+  /** Every doctor on the rep's list for the month, due or not. The list SIZE, not a denominator. */
   plannedDoctors: number;
+  /** The coverage denominator: the doctors due by today, plus any seen early. Equals
+   * `plannedDoctors` once the month is complete. */
+  coverageDueDoctors: number;
   visitedDoctors: number;
   missedDoctors: number;
   coveragePct: number;
@@ -231,6 +242,7 @@ export type KpisBoard = {
     campaignCalls: number;
     totalCalls: number;
     plannedDoctors: number;
+    coverageDueDoctors: number;
     visitedDoctors: number;
     coveragePct: number;
     onPlanDoctors: number;
@@ -286,7 +298,7 @@ export function buildKpiPodium(rows: readonly KpiRepRow[]): KpiPodium {
     coverage: top(
       (row) => row.hasMeasurablePlan,
       (row) => row.coveragePct,
-      (row) => `${row.visitedDoctors} of ${row.plannedDoctors} doctors reached`,
+      (row) => `${row.visitedDoctors} of ${row.coverageDueDoctors} doctors reached`,
     ),
     frequency: top(
       (row) => row.hasMeasurablePlan,
@@ -397,6 +409,7 @@ export function joinKpiRows(input: {
     hasCallRate: false,
     callRateAttainmentPct: null,
     plannedDoctors: 0,
+    coverageDueDoctors: 0,
     visitedDoctors: 0,
     missedDoctors: 0,
     coveragePct: 0,
@@ -451,6 +464,7 @@ export function joinKpiRows(input: {
   for (const list of docLists) {
     const row = claim(list.agentCrmId, canonicalHrIdKey(list.agentHrId), list.repName);
     row.plannedDoctors = list.plannedDoctors;
+    row.coverageDueDoctors = list.coverageDueDoctors;
     row.visitedDoctors = list.visitedDoctors;
     row.missedDoctors = list.missedDoctors;
     row.coveragePct = list.coveragePct;
@@ -562,6 +576,7 @@ export async function getKpisBoard(input: {
       campaignCalls: 0,
       totalCalls: 0,
       plannedDoctors: 0,
+      coverageDueDoctors: 0,
       visitedDoctors: 0,
       coveragePct: 0,
       onPlanDoctors: 0,
@@ -640,6 +655,7 @@ export async function getKpisBoard(input: {
       accumulator.campaignCalls += row.campaignCalls;
       accumulator.totalCalls += row.totalCalls;
       accumulator.plannedDoctors += row.plannedDoctors;
+      accumulator.coverageDueDoctors += row.coverageDueDoctors;
       accumulator.visitedDoctors += row.visitedDoctors;
       accumulator.onPlanDoctors += row.onPlanDoctors;
       accumulator.underDoctors += row.underDoctors;
@@ -654,6 +670,7 @@ export async function getKpisBoard(input: {
       campaignCalls: 0,
       totalCalls: 0,
       plannedDoctors: 0,
+      coverageDueDoctors: 0,
       visitedDoctors: 0,
       onPlanDoctors: 0,
       underDoctors: 0,
@@ -697,8 +714,9 @@ export async function getKpisBoard(input: {
       campaignCalls: totals.campaignCalls,
       totalCalls: totals.totalCalls,
       plannedDoctors: totals.plannedDoctors,
+      coverageDueDoctors: totals.coverageDueDoctors,
       visitedDoctors: totals.visitedDoctors,
-      coveragePct: pct(totals.visitedDoctors, totals.plannedDoctors),
+      coveragePct: pct(totals.visitedDoctors, totals.coverageDueDoctors),
       onPlanDoctors: totals.onPlanDoctors,
       underDoctors: totals.underDoctors,
       overDoctors: totals.overDoctors,

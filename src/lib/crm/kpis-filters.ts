@@ -51,7 +51,12 @@ export type KpiFilterableRow = {
   callRateAttainmentPct: number | null;
 
   plannedDoctors: number;
+  /** The coverage denominator: doctors due by today, plus any seen early. Equals `plannedDoctors`
+   * once the month is complete. */
+  coverageDueDoctors: number;
   visitedDoctors: number;
+  /** Planned doctors with no visit this month, DUE OR NOT. Bigger than the coverage shortfall
+   * mid-month, and the board labels the two differently for exactly that reason. */
   missedDoctors: number;
   coveragePct: number;
   onPlanDoctors: number;
@@ -270,7 +275,10 @@ function sortKey(row: KpiFilterableRow, field: KpiSortField): number | string | 
     case "visited":
       return row.visitedDoctors;
     case "missed":
-      return row.missedDoctors;
+      // The shortfall against the DUE list, not against the whole month — the same denominator the
+      // percentage beside it uses. Sorting on `missedDoctors` here would rank a rep by how much of
+      // next fortnight's plan he has not reached yet, which is nobody's performance.
+      return row.coverageDueDoctors - row.visitedDoctors;
     case "exact":
       return row.onPlanDoctors;
     case "below":
