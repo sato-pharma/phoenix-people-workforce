@@ -24,6 +24,7 @@ import { runPermissionLookupTotalityTests } from "./permission-lookup-totality.t
 import { runNavigationRuling11AnalyticsTests } from "./navigation-ruling-11-analytics.test.ts";
 import { runHrUrlNamespaceTests } from "./hr-url-namespace.test.ts";
 import { runNotificationLinksResolveTests } from "./notification-links-resolve.test.ts";
+import { runNavPanelPositionTests } from "./nav-panel-position.test.ts";
 import { runNavigationHubCardCatalogTests } from "./navigation-hub-card-catalog.test.ts";
 import { runNavigationPersonalLayoutTests } from "./navigation-personal-layout.test.ts";
 import { runFinanceManagerSixModuleAccessTests } from "./finance-manager-six-module-access.test.ts";
@@ -1250,6 +1251,10 @@ await runTest(
 await runTest(
   "hub-card catalogue (every page is addable to a nav row, one fold shared with Cmd+K, gate intact)",
   runNavigationHubCardCatalogTests,
+);
+await runTest(
+  "nav row + panel placement (stays inside the viewport at every width, both edges)",
+  runNavPanelPositionTests,
 );
 await runTest(
   "finance manager six-module access (sales scope + grant as one change, full closing workbook, organogram two-gate + head office, resignations read-only, line-scoped calendar, payslip document export)",
