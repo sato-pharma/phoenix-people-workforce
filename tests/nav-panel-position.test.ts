@@ -6,6 +6,8 @@ import {
   NAV_PANEL_GUTTER,
   NAV_PANEL_WIDTH,
   placeAnchoredPanel,
+  subscribeToViewportChange,
+  VIEWPORT_CHANGE_EVENTS,
 } from "../src/lib/navigation/panel-position.ts";
 
 /**
@@ -181,5 +183,140 @@ export function runNavPanelPositionTests() {
       !/useEffect\(/.test(source),
       "placement must stay in the event handler — setState inside useEffect is a lint error in this repo",
     );
+  }
+
+  // ── A rotation must RE-place the panel, not leave it wearing the old viewport's offset ────────
+  // The gap the clamp above did not cover. Every caller measures its anchor in the click handler,
+  // so the placement is correct at the moment of opening and frozen from then on. Rotate a phone
+  // from landscape to portrait with the notifications bell open and the panel keeps a width and an
+  // offset computed for an 812px viewport, in a 375px one.
+  {
+    // The bell's real constants, and a right-aligned topbar control: 12px in from the right edge at
+    // any width, 36px square (`h-9 w-9`).
+    const width = 380;
+    const gutter = 12;
+    const landscapeViewport = 812;
+    const portraitViewport = 375;
+    const anchorIn = (viewportWidth: number) => ({
+      left: viewportWidth - gutter - 36,
+      right: viewportWidth - gutter,
+    });
+    const place = (viewportWidth: number) => {
+      const anchor = anchorIn(viewportWidth);
+      return placeAnchoredPanel({
+        align: "right",
+        anchorLeft: anchor.left,
+        anchorRight: anchor.right,
+        gutter,
+        preferredWidth: width,
+        viewportWidth,
+      });
+    };
+
+    // Opened in landscape, where it is correct.
+    const opened = place(landscapeViewport);
+    const landscapeLeft = anchorIn(landscapeViewport).left + opened.offsetLeft;
+    assert.ok(
+      landscapeLeft >= gutter && landscapeLeft + opened.width <= landscapeViewport - gutter,
+      `sanity: the panel must open on screen in landscape, got left ${landscapeLeft}`,
+    );
+
+    // Now rotate. The anchor moves with the topbar; a frozen placement does not.
+    const portraitAnchor = anchorIn(portraitViewport);
+    const staleLeft = portraitAnchor.left + opened.offsetLeft;
+    assert.ok(
+      staleLeft < 0,
+      `the fixture must genuinely break, or it proves nothing: the stale placement put the left edge at ${staleLeft} in a ${portraitViewport}px viewport`,
+    );
+    assert.ok(
+      opened.width > portraitViewport - gutter * 2,
+      "and the stale WIDTH must genuinely overflow too — the panel is re-placed for both reasons",
+    );
+
+    // What the resize listener now does: measure again against the new viewport.
+    const replaced = place(portraitViewport);
+    const left = portraitAnchor.left + replaced.offsetLeft;
+    const right = left + replaced.width;
+    assert.ok(
+      left >= gutter && right <= portraitViewport - gutter,
+      `after re-placing, the panel must sit inside the rotated viewport: ${left} → ${right} in ${portraitViewport}px`,
+    );
+  }
+
+  // ── The subscription that triggers that re-placement ─────────────────────────────────────────
+  {
+    const calls: string[] = [];
+    const listeners = new Map<string, () => void>();
+    let repositioned = 0;
+    const target = {
+      addEventListener: (type: string, listener: () => void) => {
+        calls.push(`+${type}`);
+        listeners.set(type, listener);
+      },
+      removeEventListener: (type: string, listener: () => void) => {
+        calls.push(`-${type}`);
+        // Only drop it if it is the SAME reference — the bug this guards is a cleanup that detaches
+        // a freshly-created closure and silently leaves the real listener attached for ever.
+        if (listeners.get(type) === listener) listeners.delete(type);
+      },
+    };
+
+    const unsubscribe = subscribeToViewportChange(target, () => {
+      repositioned += 1;
+    });
+    assert.deepEqual(
+      calls,
+      VIEWPORT_CHANGE_EVENTS.map((event) => `+${event}`),
+      "both viewport events must be watched: a desktop drag fires resize, a phone rotation fires orientationchange",
+    );
+
+    for (const listener of listeners.values()) listener();
+    assert.equal(
+      repositioned,
+      VIEWPORT_CHANGE_EVENTS.length,
+      "every watched event must re-run the placement",
+    );
+
+    unsubscribe();
+    assert.deepEqual(
+      calls.slice(VIEWPORT_CHANGE_EVENTS.length),
+      VIEWPORT_CHANGE_EVENTS.map((event) => `-${event}`),
+      "cleanup must detach everything it attached",
+    );
+    assert.equal(
+      listeners.size,
+      0,
+      "cleanup must pass the same listener reference, or a closed panel keeps re-placing for ever",
+    );
+  }
+
+  // ── Every panel must actually SUBSCRIBE, not just be capable of re-placing ────────────────────
+  // The section above proves the arithmetic re-places correctly when it is re-run. This is the half
+  // that proves it IS re-run: without the hook wired in, a rotation never calls it and the panel
+  // keeps the stale offset. Source-pinned because these are JSX modules the runner cannot import.
+  {
+    const panels = [
+      "src/components/layout/in-app-notifications-bell.tsx",
+      "src/components/layout/internal-messages-menu.tsx",
+      "src/components/layout/nav-row-add-button.tsx",
+    ];
+
+    for (const path of panels) {
+      const source = readFileSync(path, "utf8");
+      assert.ok(
+        /useRepositionOnViewportChange\(\s*open\s*,/.test(source),
+        `${path} must re-place its panel on a viewport change — a rotation with the panel open otherwise leaves it off-screen`,
+      );
+      // The measurement has to be reachable from outside the click handler, or the hook has nothing
+      // to call. `event.currentTarget` is what makes it unreachable, so it must be gone.
+      assert.ok(
+        !/const\s+(anchor|rect)\s*=\s*event\.currentTarget\.getBoundingClientRect\(\)/.test(source),
+        `${path} must measure via a ref, not event.currentTarget — a resize has no event to read`,
+      );
+      assert.ok(
+        /buttonRef/.test(source),
+        `${path} must hold a ref to its anchor so the placement can be recomputed later`,
+      );
+    }
   }
 }
