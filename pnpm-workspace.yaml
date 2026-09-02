@@ -63,7 +63,25 @@ overrides:
   # the host-confusion exposure this advisory describes. A floor that protects the local
   # toolchain and cannot affect the production bundle is worth more than the lockfile churn of
   # dropping it.
-  fast-uri: ^3.1.5
+  #
+  # RE-BUMPED 2026-09-02 to ^3.1.6 for FOUR more advisories, all high, all published within three
+  # minutes of each other on 2026-09-02: GHSA-5jgf-p345-68v8 (host confusion via skipped IDN
+  # canonicalization on scheme-relative references, `>=3.1.3 <3.1.6`), GHSA-f65p-4m7j-42xc (SSRF
+  # via malformed IPv6 normalization, `>=3.0.0 <3.1.6`), GHSA-fph4-wmhf-6fwf (SSRF via repeated
+  # hostname percent-decoding, `>=3.1.2 <3.1.6`), GHSA-jqff-g426-hqxp (host confusion via
+  # percent-encoded scheme normalization, `>=3.0.0 <3.1.6`). All four patch at 3.1.6.
+  #
+  # THIS IS THE ALLOW-BUT-RESOLVE-BELOW TRAP AGAIN — on the very package whose note above already
+  # describes it, and the fourth occurrence recorded in this file. `^3.1.5` ALLOWED 3.1.6 from the
+  # day it published (2026-08-23); the lockfile had simply resolved 3.1.5 and nothing forced a
+  # re-resolve. The floor moves to ^3.1.6 so the resolution sits ABOVE the advisory rather than
+  # merely being permitted to. If this shape recurs a fifth time the answer is a scheduled
+  # `pnpm update`, not another hand-edited floor.
+  #
+  # Still DEV-ONLY — `pnpm why fast-uri --prod` returns nothing. Worth being precise about why CI
+  # stayed green on four HIGH advisories: it is the `--prod` filter in
+  # `pnpm audit --audit-level=high --prod` that hides these, not the severity filter.
+  fast-uri: ^3.1.6
   # Added 2026-08-03 for GHSA-mwp4-54f8-5fhr: Address4 decodes leading-zero octets as decimal
   # while resolvers decode them as octal, so a host like 0177.0.0.1 can pass a check and then
   # resolve somewhere else — SSRF and trust-boundary bypass. Patched at 10.3.1. Reached via
@@ -132,6 +150,25 @@ overrides:
   tmp: ^0.2.6
   uuid: 11.1.1
   ws: 8.21.0
+  # Added 2026-09-02 for GHSA-6gmq-8vp8-gcm6 (medium): XML fragment injection via an invalid
+  # EntityReference.nodeName during requireWellFormed serialization. Advisory covers
+  # `>=0.7.0 <=0.8.14` and patches at 0.8.15; the graph had resolved 0.8.13.
+  #
+  # THIS ONE IS PRODUCTION, unlike every dev-only floor above. `pnpm why @xmldom/xmldom --prod`
+  # resolves through mammoth@1.12.0, a direct `dependencies` entry, and mammoth runs on UNTRUSTED
+  # INPUT: src/lib/recruitment/cv-extraction.ts calls mammoth.extractRawText() on .docx files
+  # uploaded by candidates through recruitment intake.
+  #
+  # Exposure is nonetheless believed LOW rather than nil, and keeping that distinction straight
+  # matters more than the bump does: the advisory is in the SERIALIZATION path (XMLSerializer with
+  # requireWellFormed) and extractRawText only ever reads. That is a reason to treat this as
+  # routine hygiene rather than an incident — NOT a reason to defer it, since the vulnerable code
+  # ships either way and the patch is a drop-in inside mammoth's own declared `^0.8.6`.
+  #
+  # CI would not have caught it: `pnpm audit --audit-level=high --prod` DOES cover the production
+  # graph but filters MEDIUM out, so main stays green. Dependabot alone flagged it — the same
+  # blind spot already recorded in the qs and postcss notes above.
+  "@xmldom/xmldom": ^0.8.15
 
 # Unlike npm, pnpm blocks dependency lifecycle scripts unless approved here
 # (pnpm 11 hard-fails the install on undecided ones: ERR_PNPM_IGNORED_BUILDS).
