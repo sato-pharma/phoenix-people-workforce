@@ -68,6 +68,25 @@ file holding the full account, under
   the broken tool was the actual mistake. When you catch a tool lying, that discredits the tool and
   returns the question to open, not to answered-in-your-favour. **No memory file holds this trap, and
   this account is the record.**
+- **`pg_dump` piped through stdout on Windows writes CRLF, and the archive looks perfect.** On
+  2026-09-03, retiring ten dated pre-image schemas from production, all ten dumped with
+  `pg_dump ... | gzip -9 > file.sql.gz`: exit 0 every time, zero bytes of stderr, byte counts in
+  proportion to the tables. The verification pass is the only reason it was caught — parsing the
+  archives for `COPY` blocks found **0 of 28**, while all 28 `CREATE TABLE` statements were present,
+  which is not a shape any real dump has. Every line ended `\r\n`: `pg_dump`'s stdout is opened in
+  **text mode** on Windows, so the C runtime translates each `\n` on the way out. `-f <file>` does not
+  go through that path — the same schema dumped **0 CR / 144 LF**. **This is not cosmetic.** In `COPY`
+  text format a literal carriage return inside a value is escaped as `\r`, so a raw CR can only ever be
+  a line terminator; on a Linux `psql -f` restore every row therefore carries a trailing CR in its
+  **last column**, and the terminator line `\.` arrives as `\.\r`, which does not end the block. The
+  archive is silently unrestorable in exactly the place nobody looks. **The generalisable half: an exit
+  code and a plausible file size certify that a backup command RAN, never that the backup is good.**
+  The only proof is reading the archive back and counting what is in it against the live source — and
+  doing that *before* the destructive step, because the drop is what makes the difference permanent.
+  Re-dumped with `-f`, the ten verified **28/28 tables and 47,333/47,333 rows**, clean LF. This is the
+  second Windows text-mode fault in this group and it points the opposite way from the one above:
+  there the tool misreported line endings it was reading, here the tool silently introduced them on
+  write. **No memory file holds this trap, and this account is the record.**
 - **A role probe cannot trust the HTTP status code**, and **a POST to ANY `/api/**` path returns 403
   even when the route does not exist** — probe a deploy with GET and read 404/405/403.
   `a-role-probe-cannot-trust-the-http-status-code` ·
