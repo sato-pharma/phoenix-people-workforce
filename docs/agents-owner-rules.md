@@ -299,6 +299,23 @@ the rule. So **`overflow-x-auto` over a `min-width` floor IS the bug, not the fi
 - **Measure, never guess.** `table-fixed` percentages clip silently — a 9% column cut "Pharmacist" by
   4px with no visual warning. Check `el.scrollWidth > el.clientWidth` across `main` at desktop **and**
   at 375px.
+- **That check has two blind spots, and both certify a broken page.** It sees only what *scrolls*, so
+  anything **clipped** is invisible to it. A nav panel hung 97px off a 375px screen with `main`
+  reading 375/375 throughout (2026-09-01, PR #2902). The second is the same mechanism without the
+  popover: an `overflow-hidden` container whose children are `whitespace-nowrap`. Measured
+  2026-09-02 on `/employee-portals` as a Medical Rep, the Stars of the Fortnight band held its title
+  and its "View board" link on one unbreakable row — the link's right edge at **399px against a
+  363px `main`**, the bar reading `…AUGUST 1-15, 2026VIEW BOA`, a winner's name cut mid-word — while
+  `document` and `main` both measured a clean 375/375, because clipped content contributes nothing
+  to `scrollWidth` (PR #2912). **So walk the children's rects against `main`'s right edge, not just
+  the scroll widths** — and discount anything `aria-hidden="true"` or `alt=""`. The identity card's
+  `/brand/identity-watermark.png` reaches 413px on purpose; a decorative bleed inside an
+  `overflow-hidden` box is the intended design, not a violation.
+- **Prefer to fix it where the text is, not where the box is.** Removing `whitespace-nowrap` was the
+  whole fix above; the header additionally takes `flex-wrap` plus `basis-full sm:basis-auto` on the
+  title so a phone gives it the full row and desktop is untouched. `tests/early-birds-fortnight-card-wraps.test.ts`
+  pins it by shape and bans `truncate` / `text-ellipsis` / `overflow-x-auto` in that file, so the
+  next overflow there cannot be "fixed" with one of them.
 - **A native `<select>` is the one control this rule cannot fix.** It never wraps its selected
   option, and you may NOT shrink it on a phone: `app/globals.css` RULE 3 floors every form control at
   `max(16px, 1em)` below 768px, because iOS Safari zooms the page in on a smaller one and leaves it
