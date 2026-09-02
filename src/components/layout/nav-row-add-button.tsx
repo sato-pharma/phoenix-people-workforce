@@ -29,6 +29,14 @@
 // from the sidebar showed the hub and hid the dozen pages behind it. `getHubCardSections` folds
 // those cards back in — the same function Cmd+K uses, so the two sets cannot drift.
 //
+// 2026-09-02, same day, on production: offering 180 pages made the panel's PLACEMENT a problem. At
+// 375px it opened at left 184 → right 472 in a 375px viewport, ~97px off-screen and clipped rather
+// than scrollable. The page-level check passed throughout (doc 375/375), because an ancestor clipped
+// the overflow instead of scrolling — so the fits-the-screen golden rule needs the PANEL measured,
+// not just `main`. Placement is now computed from the button's rect against the live viewport:
+// `clampPanelToViewport` in lib/navigation/panel-position.ts, which is where the arithmetic can be
+// tested.
+//
 // It offers only pages the viewer's GATED sections and GATED hub cards already contain, so like
 // everything else in this file's neighbourhood it can rearrange navigation but never introduce an
 // href, and never grants access to anything. The route handler's assertPermission remains the only
@@ -40,6 +48,11 @@ import { useRouter } from "next/navigation";
 import { useCallback, useMemo, useState } from "react";
 
 import type { NavigationSection, NavigationSectionItem } from "@/config/system-navigation";
+import {
+  clampPanelToViewport,
+  NAV_PANEL_WIDTH,
+  type PanelPlacement,
+} from "@/lib/navigation/panel-position";
 import {
   pinHrefToRow,
   unpinHrefFromRows,
@@ -70,6 +83,12 @@ export function NavRowAddButton({
   const [pending, setPending] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  // Measured when the "+" is pressed, from the button's own rect — see panel-position.ts for why
+  // this cannot be a className. Kept in state rather than a ref because it is rendered.
+  const [placement, setPlacement] = useState<PanelPlacement>({
+    offsetLeft: 0,
+    width: NAV_PANEL_WIDTH,
+  });
 
   const commit = useCallback(
     async (href: string, mode: "add" | "remove") => {
@@ -159,7 +178,16 @@ export function NavRowAddButton({
             ? "text-[#7C8DA3] transition-[background-color,color,box-shadow] hover:bg-[#151311] hover:text-[#F8B56B] hover:shadow-[inset_0_0_0_1px_#241f19,inset_0_1px_0_rgba(255,255,255,0.045)]"
             : "text-phx-ink-soft hover:bg-phx-paper hover:text-phx-accent",
         )}
-        onClick={() => {
+        onClick={(event) => {
+          // Measured here, in the event handler, because `setState` inside `useEffect` is a lint
+          // error in this repo — and because the rect is only meaningful at the moment of opening.
+          const anchor = event.currentTarget.getBoundingClientRect();
+          setPlacement(
+            clampPanelToViewport({
+              anchorLeft: anchor.left,
+              viewportWidth: document.documentElement.clientWidth,
+            }),
+          );
           setOpen((was) => !was);
           setQuery("");
           setError(null);
@@ -185,14 +213,16 @@ export function NavRowAddButton({
             className={cn(
               // Scrolls in BOTH directions on purpose: a long page name must neither wrap nor be
               // cut off with an ellipsis (the owner's standing rule), so the panel scrolls sideways
-              // rather than truncating the label.
-              "absolute left-0 top-full z-50 mt-1 max-h-[70vh] w-72 overflow-auto rounded-xl border p-1.5 shadow-xl",
+              // rather than truncating the label. That is INSIDE the panel; the panel itself must
+              // never hang off the screen, which is what the measured placement below prevents.
+              "absolute left-0 top-full z-50 mt-1 max-h-[70vh] overflow-auto rounded-xl border p-1.5 shadow-xl",
               panelSurface,
             )}
             onKeyDown={(event) => {
               if (event.key === "Escape") setOpen(false);
             }}
             role="dialog"
+            style={{ marginLeft: placement.offsetLeft, width: placement.width }}
           >
             {error ? (
               <p className="px-2 py-1.5 text-[12px] font-semibold text-[#E5484D]">{error}</p>
