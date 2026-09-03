@@ -1,4 +1,5 @@
 import { systemLegalEntity } from "@/config/system-settings";
+import { flowFieldLayer, type DocumentFieldRow } from "@/lib/hiring-pack/field-layout";
 import {
   ARABIC_FONT_STACK,
   escapeHtml,
@@ -235,7 +236,17 @@ function renderCopy(
   </article>`;
 }
 
-export function renderWorkerFormHtml(data: HiringPackData, copies: number): string {
+/**
+ * @param _templateVersionId Unused today — this form has only ever had one version — kept so the
+ *   call this receives through the shared renderer map matches every other document's.
+ * @param fields The operator's own field layer for this form.
+ */
+export function renderWorkerFormHtml(
+  data: HiringPackData,
+  copies: number,
+  _templateVersionId?: string | null,
+  fields: readonly DocumentFieldRow[] = [],
+): string {
   const template = WORKER_FORM_TEMPLATE_V1;
   const values = buildWorkerFormValues(data);
   const total = Math.max(1, copies);
@@ -410,6 +421,7 @@ ${printBanner([
   ...gapWarning,
 ])}
 ${body}
+${flowFieldLayer(fields, values)}
 </body>
 </html>`;
 }

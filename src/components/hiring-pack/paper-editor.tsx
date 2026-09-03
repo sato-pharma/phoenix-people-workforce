@@ -23,14 +23,40 @@
 // report, that he edited and saved and the print still showed the value from before, cannot be true
 // of this screen without being visible on it immediately.
 // ─────────────────────────────────────────────────────────────────────────────────────────────
+//
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// LAYOUT MODE — 2026-09-03, the second half of the same request: "i want to be able to add anyfield
+// wherever i want and edit text and drage drop fields and full control." Everything above this
+// point edits a VALUE; layout mode edits WHERE a value sits, or adds one that never existed.
+//
+// It reuses the exact iframe this component already renders rather than opening a second surface,
+// for the same reason free typing does: a layout edited somewhere else is a layout somebody has to
+// trust matches what actually prints, and that trust is the thing this whole component exists to
+// remove. Dragging a field moves the SAME element the page already renders, in the SAME points the
+// server already measures in — a drop just writes back the number the pointer already arrived at.
+//
+// TWO SURFACES, ONE GESTURE. `field-layout.ts` explains why a page document places at an absolute
+// point and a flow document anchors to a moving piece of prose; this component does not re-decide
+// that; it reads `documentSurface(documentKey)` once and drags in whichever coordinate the field's
+// own rendered position is already expressed in — `left`/`top` on a page field are already the page
+// point, and on an added flow field they are already the offset from its anchor. The SAME pointer
+// math (read the inline style the renderer wrote, add the pointer's own delta, write it back) works
+// for both; only what a fresh ADD records as the anchor differs between them.
+// ─────────────────────────────────────────────────────────────────────────────────────────────
 
-import { AlertTriangle, Check, Loader2, Lock, PencilLine, Printer, RotateCw, X } from "lucide-react";
+import { AlertTriangle, Check, Eye, EyeOff, Loader2, Lock, Move, PencilLine, Plus, Printer, RotateCw, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
+  documentSurface,
+  type DocumentFieldRow,
+  type DocumentFieldSource,
+} from "@/lib/hiring-pack/field-layout";
+import {
   buildPaperEditPatch,
+  PAPER_FIELD_BINDINGS,
   paperFieldBinding,
   paperFieldCurrentValue,
   paperStoreEndpoint,
@@ -43,7 +69,9 @@ import {
   PAGE_HEIGHT_PX,
   PAGE_WIDTH_PX,
 } from "@/lib/hiring-pack/paper-zoom";
+import { currentTemplateVersion } from "@/lib/hiring-pack/template-registry";
 import type { HiringPackData, HiringPackDocument } from "@/lib/hiring-pack/types";
+import { cn } from "@/lib/utils";
 
 /**
  * Turn "type anywhere" on or off inside the framed document.
@@ -65,6 +93,105 @@ function applyFreeEdit(doc: Document, on: boolean): void {
   doc.body.removeAttribute("contenteditable");
 }
 
+/** Turn layout mode, and its "add a field" sub-mode, on or off inside the framed document. */
+function applyLayoutClasses(doc: Document, layoutOn: boolean, addOn: boolean): void {
+  if (!doc.body) return;
+  doc.body.classList.toggle("hp-layout-edit", layoutOn);
+  doc.body.classList.toggle("hp-adding-field", layoutOn && addOn);
+}
+
+/** 1pt is 4/3px in every browser at 96dpi. The iframe's own layout is never touched by the outer
+ *  zoom transform — that scales the ELEMENT from outside, not the page rendered inside it — so this
+ *  ratio is the whole conversion between a pointer delta and a point delta. No zoom factor belongs
+ *  anywhere in it. */
+const PT_PER_PX = 0.75;
+
+/**
+ * The CSS path from `root` down to `el`, as a chain of `tag:nth-of-type(n)` steps.
+ *
+ * Positional rather than by id or class, because the typeset documents carry neither on their prose
+ * — a clause is a `<p>`, a cell is a `<td>`, nothing more. Position is exactly as stable as it needs
+ * to be: a template VERSION's markup never changes (see `field-layout.ts`), so the same path
+ * resolves to the same node in every copy of this render and in every future render of this same
+ * version — the only lifetime a stored anchor has to survive.
+ */
+function cssPathWithin(root: Element, el: Element): string | null {
+  if (el === root) return null;
+  const steps: string[] = [];
+  let node: Element | null = el;
+  while (node && node !== root) {
+    const parent: Element | null = node.parentElement;
+    if (!parent) return null;
+    const siblings = Array.from(parent.children).filter((child) => child.tagName === node!.tagName);
+    steps.unshift(`${node.tagName.toLowerCase()}:nth-of-type(${siblings.indexOf(node) + 1})`);
+    node = parent;
+  }
+  return node === root ? steps.join(" > ") : null;
+}
+
+/** Which kind of placement a page-surface element renders as, read off its own class list. */
+function placementKindOf(element: HTMLElement): "text" | "digits" | "tick" {
+  if (element.classList.contains("tick")) return "tick";
+  if (element.classList.contains("grid")) return "digits";
+  return "text";
+}
+
+/**
+ * A field's current geometry, read straight off the inline style the renderer already wrote.
+ *
+ * Not `getBoundingClientRect`: every placed value's `left`/`top`/`width`/`height` is already the
+ * exact point value the server measured or computed, written as inline CSS by `renderPlacement` and
+ * by `renderFlowField`. Reading it back is exact and needs no ancestor-rect subtraction and no zoom
+ * correction — measuring the box on screen instead would reintroduce both. A `tick` carries no
+ * inline font size and a `digits` grid carries no inline alignment, because the renderer never reads
+ * either back for those kinds (`movedPlacement` in `field-layout.ts` copies neither), so both fall
+ * back to a value that is merely valid for the table's own constraints, never one that changes
+ * anything printed.
+ */
+function geometryFromElement(element: HTMLElement): {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  align: "right" | "center" | "left";
+  size: number;
+} {
+  const kind = placementKindOf(element);
+  const styledAlign = element.style.textAlign;
+  const align: "right" | "center" | "left" =
+    styledAlign === "right" || styledAlign === "center" || styledAlign === "left"
+      ? styledAlign
+      : kind === "tick"
+        ? "center"
+        : "left";
+  const size = Number.parseFloat(element.style.fontSize) || (kind === "tick" ? 13 : 9);
+  return {
+    x: Number.parseFloat(element.style.left) || 0,
+    y: Number.parseFloat(element.style.top) || 0,
+    w: Number.parseFloat(element.style.width) || 100,
+    h: Number.parseFloat(element.style.height) || 13,
+    align,
+    size,
+  };
+}
+
+/** Which logical page (1-based, within ONE copy) an element sits on, whatever copy it is drawn in.
+ *  Layout applies to every copy identically, so the copy an operator happened to click is never
+ *  part of the answer — only its position among the document's own distinct pages is. */
+function resolvePageFor(doc: Document, element: Element, copiesCount: number): number {
+  const sheets = Array.from(doc.querySelectorAll(".sheet"));
+  const sheetEl = element.closest(".sheet");
+  const sheetIndex = sheetEl ? sheets.indexOf(sheetEl) : 0;
+  const pagesPerCopy = Math.max(1, Math.round(sheets.length / Math.max(1, copiesCount)));
+  return (Math.max(0, sheetIndex) % pagesPerCopy) + 1;
+}
+
+/** What a chip in the field list reads, for a stored row. */
+function fieldLabel(row: DocumentFieldRow): string {
+  if (row.defaultKey) return row.hidden ? `${row.defaultKey} — hidden` : `${row.defaultKey} — moved`;
+  if (row.source.kind === "literal") return row.source.text ? `“${row.source.text}”` : "(blank fixed text)";
+  return row.source.key || "(no key set)";
+}
 
 /**
  * What the page looks like while it is being worked on, and never on paper.
@@ -78,6 +205,13 @@ const EDITOR_CSS = `
   /* The document's own print banner. This panel has its own controls, and two Print buttons on one
      screen is how somebody prints from the wrong one. */
   .print-banner { display: none !important; }
+
+  /* An added flow field is inert to the pointer by design (field-layout.ts's flowFieldLayer) so it
+     never steals a click from the prose it sits on top of, on the printed page or the ordinary
+     preview. Inside the editor that is exactly backwards — it is the one thing on a flow document
+     that can be selected, edited or dragged — so this reopens it, at a specificity nothing else in
+     this stylesheet or the document's own can out-rank. */
+  .hp-added { pointer-events: auto !important; }
 
   [data-hp-live] {
     outline: 1px dashed rgba(37, 99, 235, 0.45);
@@ -111,6 +245,18 @@ const EDITOR_CSS = `
     cursor: text;
   }
   body.hp-free-edit { caret-color: #b45309; }
+
+  /* Layout mode replaces value-editing with position-editing: every dashed box becomes something to
+     pick up rather than type into, and "add a field" turns the whole page into a drop target. */
+  body.hp-layout-edit [data-hp-live] { cursor: move; }
+  body.hp-layout-edit [data-hp-locked] { cursor: default; }
+  body.hp-layout-edit.hp-adding-field,
+  body.hp-layout-edit.hp-adding-field * { cursor: crosshair !important; }
+  [data-hp-dragging] {
+    z-index: 30;
+    box-shadow: 0 0 0 2px #2563eb, 0 4px 10px rgba(37, 99, 235, 0.35);
+    background-color: rgba(37, 99, 235, 0.14) !important;
+  }
 }
 `;
 
@@ -131,6 +277,109 @@ type Selection = {
   binding: PaperFieldBinding;
   value: string;
 };
+
+/**
+ * One field layer row, in flight.
+ *
+ * The same shape whether it names an EXISTING row (`id` set) or one not yet saved (`id` undefined) —
+ * a drag, a resize, a hide and a brand-new field are all "here is the row I want the table to hold
+ * now," and the API's own POST treats them identically (see `document-fields/route.ts`).
+ */
+type PendingWrite = {
+  id?: string;
+  defaultKey: string | null;
+  hidden: boolean;
+  page: number | null;
+  anchor: { selector: string; dx: number; dy: number } | null;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  align: "right" | "center" | "left";
+  size: number;
+  source: DocumentFieldSource;
+};
+
+/**
+ * Read a dragged or clicked element back into a write payload.
+ *
+ * Returns null only for a flow field this component itself could never have produced — an added
+ * flow field with no matching row and no anchor, which would mean the layout had not finished
+ * loading when the drag started. The caller already guards against starting such a drag; this is
+ * the belt to that braces.
+ */
+function buildSelectionFromElement(
+  doc: Document,
+  element: HTMLElement,
+  copiesCount: number,
+  surface: "page" | "flow",
+  existing: DocumentFieldRow | null,
+): PendingWrite | null {
+  const geometry = geometryFromElement(element);
+
+  if (surface === "flow") {
+    if (!existing || !existing.anchor) return null;
+    return {
+      id: existing.id,
+      defaultKey: null,
+      hidden: false,
+      page: null,
+      // The element's own left/top ARE its dx/dy — see renderFlowField. The anchor it hangs off
+      // does not change on a drag; only the offset from it does.
+      anchor: { selector: existing.anchor.selector, dx: geometry.x, dy: geometry.y },
+      x: 0,
+      y: 0,
+      w: geometry.w,
+      h: geometry.h,
+      align: geometry.align,
+      size: geometry.size,
+      source: existing.source,
+    };
+  }
+
+  const page = resolvePageFor(doc, element, copiesCount);
+  if (existing) {
+    return {
+      id: existing.id,
+      defaultKey: existing.defaultKey,
+      hidden: existing.hidden,
+      page,
+      anchor: null,
+      source: existing.source,
+      ...geometry,
+    };
+  }
+
+  // A compiled default, dragged for the first time: this starts an OVERRIDE, keyed by the value it
+  // already prints. That source is written but never READ for a page-surface override — see
+  // field-layout.ts's movedPlacement, which keeps the compiled placement's own key — so pointing it
+  // at its own key is the honest description even though rendering never consults it.
+  const key = element.getAttribute("data-hp-key");
+  return {
+    defaultKey: key,
+    hidden: false,
+    page,
+    anchor: null,
+    source: key ? { kind: "value", key } : { kind: "literal", text: "" },
+    ...geometry,
+  };
+}
+
+/**
+ * Read one document's field layer. Split out of the component so both readers share it: the effect
+ * that loads when the panel opens, and the reload every mutation runs afterwards. It only fetches
+ * and never touches state, which is what lets the effect keep each setState inside a callback.
+ */
+async function fetchDocumentFields(url: string): Promise<DocumentFieldRow[]> {
+  const response = await fetch(url);
+  const body = (await response.json().catch(() => null)) as
+    | { fields?: DocumentFieldRow[]; message?: string }
+    | null;
+  if (!response.ok) {
+    throw new Error(body?.message ?? `Could not load the layout (${response.status}).`);
+  }
+  return body?.fields ?? [];
+}
 
 export function HiringPackPaperEditor({
   hrId,
@@ -177,6 +426,26 @@ export function HiringPackPaperEditor({
   /** Bumped after every save, to reload the document from the server rather than patch it here. */
   const [reloadToken, setReloadToken] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  /** The template version this open document is actually printing — the one the field layer is
+   *  scoped against. `versionId` is only ever set when a specific archived version is being viewed;
+   *  otherwise this is the same version the print route itself falls back to. */
+  const effectiveVersionId = useMemo(
+    () => versionId ?? currentTemplateVersion(documentKey).id,
+    [documentKey, versionId],
+  );
+  const surface = useMemo(() => documentSurface(documentKey), [documentKey]);
+
+  const [layoutMode, setLayoutMode] = useState(false);
+  const [addMode, setAddMode] = useState(false);
+  const [fields, setFields] = useState<DocumentFieldRow[]>([]);
+  const [fieldsLoading, setFieldsLoading] = useState(false);
+  const [fieldsError, setFieldsError] = useState<string | null>(null);
+  const [layoutBusy, setLayoutBusy] = useState(false);
+  const [layoutSelection, setLayoutSelection] = useState<PendingWrite | null>(null);
+  const layoutModeRef = useRef(false);
+  const addModeRef = useRef(false);
+  const fieldsRef = useRef<DocumentFieldRow[]>([]);
 
   const previewUrl = useMemo(() => {
     const version = versionId ? `&version=${encodeURIComponent(versionId)}` : "";
@@ -263,24 +532,321 @@ export function HiringPackPaperEditor({
 
   const commitRef = useRef(commit);
 
+  /** Where the field layer lives for this document at this version — one document, one version, one
+   *  shared layout for every employee, matching `loadDocumentFieldLayout`'s own scope. */
+  const fieldsUrl = `/api/hiring-pack/document-fields?document=${documentKey}&templateVersionId=${encodeURIComponent(effectiveVersionId)}`;
+
+  /** The reload every mutation runs. Called from an event handler, so it may set state at once. */
+  const loadFields = useCallback(async () => {
+    setFieldsLoading(true);
+    setFieldsError(null);
+    try {
+      const rows = await fetchDocumentFields(fieldsUrl);
+      setFields(rows);
+      fieldsRef.current = rows;
+    } catch (cause) {
+      setFieldsError(cause instanceof Error ? cause.message : "Could not load the layout.");
+    } finally {
+      setFieldsLoading(false);
+    }
+  }, [fieldsUrl]);
+
   /**
-   * Keep the three latest-value refs current, after every render.
+   * Load the layer whenever the panel is open for a document and version.
+   *
+   * Every setState here sits inside the fetch's own callback rather than in the effect body. That is
+   * the line `react-hooks/set-state-in-effect` draws: subscribing to an external system and setting
+   * state when it answers is what an effect is for; setting state on the way in is the cascading
+   * render it exists to stop. The spinner is therefore raised by the click, in `toggleLayoutMode`.
+   *
+   * `live` closes a real race the previous shape had. Changing document or version while the panel
+   * is open starts a second read without cancelling the first, so a slow reply for the OLD url could
+   * land last and paint the previous document's rows over this one — and nothing on screen says
+   * which document answered, so they would read as this document's own layout.
+   */
+  useEffect(() => {
+    if (!layoutMode) return;
+    let live = true;
+    void fetchDocumentFields(fieldsUrl).then(
+      (rows) => {
+        if (!live) return;
+        setFields(rows);
+        fieldsRef.current = rows;
+        setFieldsError(null);
+        setFieldsLoading(false);
+      },
+      (cause: unknown) => {
+        if (!live) return;
+        setFieldsError(cause instanceof Error ? cause.message : "Could not load the layout.");
+        setFieldsLoading(false);
+      },
+    );
+    return () => {
+      live = false;
+    };
+  }, [fieldsUrl, layoutMode]);
+
+  /**
+   * Save one field-layer row — a move, a resize, a hide, or a brand-new field — then reload both the
+   * layout and the printed page from the server, the same discipline `commit` above already follows
+   * for a typed value: nothing here is ever patched onto the screen optimistically.
+   */
+  const commitLayoutField = useCallback(
+    async (write: PendingWrite) => {
+      setLayoutBusy(true);
+      setFieldsError(null);
+      try {
+        const response = await fetch("/api/hiring-pack/document-fields", {
+          body: JSON.stringify({
+            document: documentKey,
+            templateVersionId: effectiveVersionId,
+            ...write,
+          }),
+          headers: { "Content-Type": "application/json" },
+          method: "POST",
+        });
+        const body = (await response.json().catch(() => null)) as { message?: string } | null;
+        if (!response.ok) {
+          throw new Error(body?.message ?? `Could not save the field (${response.status}).`);
+        }
+        setLayoutSelection(null);
+        setNotice("Layout saved.");
+        await loadFields();
+        setReloadToken((token) => token + 1);
+      } catch (cause) {
+        setFieldsError(cause instanceof Error ? cause.message : "Could not save the field.");
+      } finally {
+        setLayoutBusy(false);
+      }
+    },
+    [documentKey, effectiveVersionId, loadFields],
+  );
+
+  /** Delete one field-layer row. An added field goes; an override goes back to its compiled default. */
+  const deleteLayoutField = useCallback(
+    async (id: string) => {
+      setLayoutBusy(true);
+      setFieldsError(null);
+      try {
+        const response = await fetch(`/api/hiring-pack/document-fields?id=${encodeURIComponent(id)}`, {
+          method: "DELETE",
+        });
+        const body = (await response.json().catch(() => null)) as { message?: string } | null;
+        if (!response.ok) {
+          throw new Error(body?.message ?? `Could not delete the field (${response.status}).`);
+        }
+        setLayoutSelection(null);
+        setNotice("Field removed.");
+        await loadFields();
+        setReloadToken((token) => token + 1);
+      } catch (cause) {
+        setFieldsError(cause instanceof Error ? cause.message : "Could not delete the field.");
+      } finally {
+        setLayoutBusy(false);
+      }
+    },
+    [loadFields],
+  );
+
+  /** Delete every row for this document and version, back to exactly what the source measures. */
+  const resetLayout = useCallback(async () => {
+    const sure = window.confirm(
+      `Reset ${documentLabel} to its default layout? Every moved, hidden or added field on this document is removed.`,
+    );
+    if (!sure) return;
+    setLayoutBusy(true);
+    setFieldsError(null);
+    try {
+      const response = await fetch("/api/hiring-pack/document-fields", {
+        body: JSON.stringify({ document: documentKey, intent: "reset", templateVersionId: effectiveVersionId }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+      const body = (await response.json().catch(() => null)) as { message?: string; removed?: number } | null;
+      if (!response.ok) {
+        throw new Error(body?.message ?? `Could not reset the layout (${response.status}).`);
+      }
+      setLayoutSelection(null);
+      setNotice(
+        body?.removed
+          ? `Layout reset — ${body.removed} change${body.removed === 1 ? "" : "s"} removed.`
+          : "Already at the default layout.",
+      );
+      await loadFields();
+      setReloadToken((token) => token + 1);
+    } catch (cause) {
+      setFieldsError(cause instanceof Error ? cause.message : "Could not reset the layout.");
+    } finally {
+      setLayoutBusy(false);
+    }
+  }, [documentKey, documentLabel, effectiveVersionId, loadFields]);
+
+  const commitLayoutFieldRef = useRef(commitLayoutField);
+
+  /**
+   * Keep the latest-value refs current, after every render.
    *
    * They exist because the listeners attached to the framed document outlive the render that created
-   * them, so a listener closing over `pack` or `commit` directly would act on whatever they were
-   * when the page loaded. Written HERE rather than during render deliberately: assigning to a ref
-   * while rendering is a lint error in this repository, and it is one because a render can be thrown
-   * away — a discarded render that had already moved a ref leaves the ref describing a state that
-   * never existed. An effect only runs for a render that was kept.
+   * them, so a listener closing over one of these directly would act on whatever it was when the page
+   * loaded. Written HERE rather than during render deliberately: assigning to a ref while rendering is
+   * a lint error in this repository, and it is one because a render can be thrown away — a discarded
+   * render that had already moved a ref leaves the ref describing a state that never existed. An
+   * effect only runs for a render that was kept.
    *
-   * No dependency array on purpose: every one of these changes identity on a render that matters,
-   * and listing them would only re-state that.
+   * No dependency array on purpose: every one of these changes identity on a render that matters, and
+   * listing them would only re-state that.
    */
   useEffect(() => {
     packRef.current = pack;
     savingRef.current = saving;
     commitRef.current = commit;
+    commitLayoutFieldRef.current = commitLayoutField;
   });
+
+  /**
+   * Pick up a pointer on a field and follow it until release.
+   *
+   * A click with no real movement selects the field instead of writing a no-op move — the same
+   * pointer gesture opens the numeric editor below, which is how a field gets moved by a precise
+   * number rather than a hand. A real drag writes on release, the same "commit on the way out"
+   * discipline the typed-value fields already use on blur.
+   */
+  const beginDrag = useCallback(
+    (doc: Document, element: HTMLElement, existing: DocumentFieldRow | null, event: PointerEvent) => {
+      const startClientX = event.clientX;
+      const startClientY = event.clientY;
+      const originLeft = Number.parseFloat(element.style.left) || 0;
+      const originTop = Number.parseFloat(element.style.top) || 0;
+      let moved = false;
+
+      for (const other of doc.querySelectorAll("[data-hp-selected]")) other.removeAttribute("data-hp-selected");
+      element.setAttribute("data-hp-selected", "true");
+      element.setAttribute("data-hp-dragging", "true");
+
+      const onMove = (moveEvent: PointerEvent) => {
+        const dxPt = (moveEvent.clientX - startClientX) * PT_PER_PX;
+        const dyPt = (moveEvent.clientY - startClientY) * PT_PER_PX;
+        if (Math.abs(dxPt) > 1 || Math.abs(dyPt) > 1) moved = true;
+        element.style.left = `${Math.max(0, originLeft + dxPt).toFixed(2)}pt`;
+        element.style.top = `${Math.max(0, originTop + dyPt).toFixed(2)}pt`;
+      };
+
+      const onUp = () => {
+        doc.removeEventListener("pointermove", onMove);
+        doc.removeEventListener("pointerup", onUp);
+        element.removeAttribute("data-hp-dragging");
+
+        const write = buildSelectionFromElement(doc, element, copies, surface, existing);
+        if (!write) return;
+        if (!moved) {
+          setLayoutSelection(write);
+          return;
+        }
+        void commitLayoutFieldRef.current(write);
+      };
+
+      doc.addEventListener("pointermove", onMove);
+      doc.addEventListener("pointerup", onUp, { once: true });
+    },
+    [copies, surface],
+  );
+
+  /**
+   * The one delegated listener that turns layout mode on for a loaded page.
+   *
+   * Delegated on the document rather than per-field, and in the CAPTURE phase, so it runs — and can
+   * cancel — before any of the per-element click/focus wiring `enhance` below attaches for ordinary
+   * value editing. That is deliberate: the two modes read the same pointer gesture two different
+   * ways, and running both on one click is how a drag would also open the old grid editor or focus a
+   * contenteditable span underneath it.
+   */
+  const onLayoutPointerDown = useCallback(
+    (event: PointerEvent) => {
+      if (!layoutModeRef.current) return;
+      const doc = event.currentTarget as Document | null;
+      const target = event.target as HTMLElement | null;
+      if (!doc || !target) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+
+      if (addModeRef.current) {
+        if (surface === "page") {
+          const sheetEl = target.closest(".sheet") as HTMLElement | null;
+          if (!sheetEl) {
+            setFieldsError("Click inside the page to add a field there.");
+            return;
+          }
+          const rect = sheetEl.getBoundingClientRect();
+          const xPt = (event.clientX - rect.left) * PT_PER_PX;
+          const yPt = (event.clientY - rect.top) * PT_PER_PX;
+          setLayoutSelection({
+            align: "right",
+            anchor: null,
+            defaultKey: null,
+            h: 14,
+            hidden: false,
+            page: resolvePageFor(doc, sheetEl, copies),
+            size: 9,
+            source: { kind: "literal", text: "" },
+            w: 140,
+            x: Math.max(0, xPt - 60),
+            y: Math.max(0, yPt - 7),
+          });
+        } else {
+          const copyRoot = target.closest(".copy") ?? doc.body;
+          if (target === copyRoot) {
+            setFieldsError("Click on some text or a cell to anchor the new field there.");
+            addModeRef.current = false;
+            setAddMode(false);
+            return;
+          }
+          const selector = cssPathWithin(copyRoot, target);
+          if (!selector) {
+            setFieldsError("Could not place a field there — try a different spot.");
+            addModeRef.current = false;
+            setAddMode(false);
+            return;
+          }
+          const anchorRect = target.getBoundingClientRect();
+          setLayoutSelection({
+            align: "right",
+            anchor: {
+              dx: Math.max(0, (event.clientX - anchorRect.left) * PT_PER_PX),
+              dy: Math.max(0, (event.clientY - anchorRect.top) * PT_PER_PX),
+              selector,
+            },
+            defaultKey: null,
+            h: 14,
+            hidden: false,
+            page: null,
+            size: 9,
+            source: { kind: "literal", text: "" },
+            w: 140,
+            x: 0,
+            y: 0,
+          });
+        }
+        addModeRef.current = false;
+        setAddMode(false);
+        return;
+      }
+
+      const fieldTargetSelector = surface === "page" ? "[data-hp-key]" : ".hp-added";
+      const element = target.closest<HTMLElement>(fieldTargetSelector);
+      if (!element) return; // clicked the artwork or empty page — nothing to select or drag
+
+      const fieldId = element.getAttribute("data-hp-field");
+      const existing = fieldId ? (fieldsRef.current.find((row) => row.id === fieldId) ?? null) : null;
+      if (surface === "flow" && !existing) {
+        setFieldsError("The layout is still loading — try again in a moment.");
+        return;
+      }
+
+      beginDrag(doc, element, existing, event);
+    },
+    [beginDrag, copies, surface],
+  );
 
   /**
    * Make the loaded document editable where it can be.
@@ -300,6 +866,24 @@ export function HiringPackPaperEditor({
       style.id = "hp-editor-css";
       style.textContent = EDITOR_CSS;
       doc.head.appendChild(style);
+    }
+
+    // Attached once per document load, not per element — layout mode has to intercept a gesture
+    // before it reaches any of the per-field listeners wired below, on a page that has not been
+    // touched yet as much as one that has.
+    if (!doc.body.dataset.hpLayoutWired) {
+      doc.body.dataset.hpLayoutWired = "1";
+      doc.addEventListener("pointerdown", onLayoutPointerDown, true);
+      doc.addEventListener(
+        "click",
+        (event) => {
+          if (layoutModeRef.current) {
+            event.preventDefault();
+            event.stopPropagation();
+          }
+        },
+        true,
+      );
     }
 
     const nodes = doc.querySelectorAll<HTMLElement>("[data-hp-key]");
@@ -367,24 +951,71 @@ export function HiringPackPaperEditor({
       });
     }
 
-    // Free typing is a property of the loaded page, so it is re-applied here on every load rather
-    // than from an effect. That is not a workaround: mutating an external system belongs in the
-    // handler that learns about it — the load handler here, and the toggle's own onClick below —
+    // Free typing and layout mode are properties of the loaded page, so both are re-applied here on
+    // every load rather than from an effect. That is not a workaround: mutating an external system
+    // belongs in the handler that learns about it — the load handler here, and the toggles below —
     // and an effect that reached into the frame for the same purpose was writing through a ref,
-    // which the compiler rejects and which would re-run on renders that have nothing to do with
-    // the document.
+    // which the compiler rejects and which would re-run on renders that have nothing to do with the
+    // document.
     applyFreeEdit(doc, freeEditRef.current);
+    applyLayoutClasses(doc, layoutModeRef.current, addModeRef.current);
 
     setLoadedKey(frameKey);
-  }, [frameKey]);
+  }, [frameKey, onLayoutPointerDown]);
 
   /** Turn free typing on or off, on the page and in the frame, in one action. */
   const toggleFreeEdit = useCallback(() => {
     const next = !freeEditRef.current;
     freeEditRef.current = next;
     setFreeEdit(next);
+    // Free typing and layout mode both claim the pointer inside the frame; running both at once is
+    // how a drag becomes a text selection. Turning one on turns the other off.
+    if (next && layoutModeRef.current) {
+      layoutModeRef.current = false;
+      setLayoutMode(false);
+      addModeRef.current = false;
+      setAddMode(false);
+      setLayoutSelection(null);
+    }
     const doc = frameRef.current?.contentDocument;
-    if (doc) applyFreeEdit(doc, next);
+    if (doc) {
+      applyFreeEdit(doc, next);
+      applyLayoutClasses(doc, layoutModeRef.current, addModeRef.current);
+    }
+  }, []);
+
+  /** Turn layout mode on or off, on the page and in the frame, in one action. */
+  const toggleLayoutMode = useCallback(() => {
+    const next = !layoutModeRef.current;
+    layoutModeRef.current = next;
+    setLayoutMode(next);
+    // The effect above does the reading; the spinner belongs to the click that asked for it, since
+    // an effect may not raise it synchronously.
+    if (next) setFieldsLoading(true);
+    if (next && freeEditRef.current) {
+      freeEditRef.current = false;
+      setFreeEdit(false);
+      const doc = frameRef.current?.contentDocument;
+      if (doc) applyFreeEdit(doc, false);
+    }
+    if (!next) {
+      addModeRef.current = false;
+      setAddMode(false);
+      setLayoutSelection(null);
+    }
+    const doc = frameRef.current?.contentDocument;
+    if (doc) applyLayoutClasses(doc, next, addModeRef.current);
+  }, []);
+
+  /** Arm or disarm "click the page to add a field here." One placement per arming — see
+   *  `onLayoutPointerDown`, which disarms it the moment a field is dropped. */
+  const toggleAddMode = useCallback(() => {
+    const next = !addModeRef.current;
+    addModeRef.current = next;
+    setAddMode(next);
+    setLayoutSelection(null);
+    const doc = frameRef.current?.contentDocument;
+    if (doc) applyLayoutClasses(doc, layoutModeRef.current, next);
   }, []);
 
   /**
@@ -483,6 +1114,16 @@ export function HiringPackPaperEditor({
           </Button>
           <Button
             className="gap-2"
+            onClick={toggleLayoutMode}
+            size="sm"
+            type="button"
+            variant={layoutMode ? "default" : "outline"}
+          >
+            <Move className="h-4 w-4" />
+            {layoutMode ? "Editing layout" : "Edit layout"}
+          </Button>
+          <Button
+            className="gap-2"
             onClick={() => setReloadToken((token) => token + 1)}
             size="sm"
             type="button"
@@ -523,6 +1164,124 @@ export function HiringPackPaperEditor({
               until this page reloads, and they do not become the template. Anything you type over a
               dashed-outline value is still saved normally.
             </span>
+          </div>
+        ) : null}
+
+        {layoutMode ? (
+          <div className="space-y-3 rounded-2xl border border-phx-accent-line bg-phx-accent/5 p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-phx-xs leading-relaxed text-phx-ink-soft">
+                Drag any dashed box to move it — it saves the moment you let go. Click one without
+                dragging to fine-tune its size, text or position below. Add a field, then click
+                anywhere on the page to drop a new one there.
+              </p>
+              <div className="flex items-center gap-2">
+                <Button
+                  className="gap-2"
+                  onClick={toggleAddMode}
+                  size="sm"
+                  type="button"
+                  variant={addMode ? "default" : "outline"}
+                >
+                  <Plus className="h-4 w-4" />
+                  {addMode ? "Click the page…" : "Add field"}
+                </Button>
+                <Button
+                  className="gap-2"
+                  disabled={layoutBusy}
+                  onClick={() => void resetLayout()}
+                  size="sm"
+                  type="button"
+                  variant="outline"
+                >
+                  <RotateCw className="h-4 w-4" />
+                  Reset to default
+                </Button>
+              </div>
+            </div>
+
+            {fieldsError ? (
+              <div className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-phx-xs text-red-800">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>{fieldsError}</span>
+              </div>
+            ) : null}
+
+            {layoutSelection ? (
+              <LayoutFieldEditor
+                busy={layoutBusy}
+                key={JSON.stringify([
+                  layoutSelection.id,
+                  layoutSelection.page,
+                  layoutSelection.anchor?.selector,
+                  layoutSelection.x,
+                  layoutSelection.y,
+                  layoutSelection.anchor?.dx,
+                  layoutSelection.anchor?.dy,
+                ])}
+                onCancel={() => setLayoutSelection(null)}
+                onDelete={
+                  layoutSelection.id
+                    ? () => {
+                        const sure = window.confirm(
+                          layoutSelection.defaultKey
+                            ? "Remove this override? It returns to its default position."
+                            : "Delete this field?",
+                        );
+                        if (sure) void deleteLayoutField(layoutSelection.id!);
+                      }
+                    : undefined
+                }
+                onSave={(write) => void commitLayoutField(write)}
+                onToggleHidden={
+                  layoutSelection.id && layoutSelection.defaultKey
+                    ? () => void commitLayoutField({ ...layoutSelection, hidden: !layoutSelection.hidden })
+                    : undefined
+                }
+                selection={layoutSelection}
+              />
+            ) : null}
+
+            <div className="flex flex-wrap gap-1.5">
+              {fieldsLoading ? (
+                <span className="text-phx-2xs text-phx-ink-faint">Loading the layout…</span>
+              ) : fields.length === 0 ? (
+                <span className="text-phx-2xs text-phx-ink-faint">
+                  Nothing moved, hidden or added yet — this document prints its default layout.
+                </span>
+              ) : (
+                fields.map((row) => (
+                  <button
+                    className={cn(
+                      "rounded-full border px-2.5 py-1 text-phx-2xs font-semibold",
+                      row.hidden
+                        ? "border-slate-300 bg-slate-100 text-slate-400 line-through"
+                        : "border-phx-accent-line bg-white text-phx-ink-soft hover:bg-phx-accent/10",
+                    )}
+                    key={row.id}
+                    onClick={() =>
+                      setLayoutSelection({
+                        align: row.align,
+                        anchor: row.anchor,
+                        defaultKey: row.defaultKey,
+                        h: row.h,
+                        hidden: row.hidden,
+                        id: row.id,
+                        page: row.page,
+                        size: row.size,
+                        source: row.source,
+                        w: row.w,
+                        x: row.x,
+                        y: row.y,
+                      })
+                    }
+                    type="button"
+                  >
+                    {fieldLabel(row)}
+                  </button>
+                ))
+              )}
+            </div>
           </div>
         ) : null}
 
@@ -679,6 +1438,201 @@ function SelectionEditor({
           Also prints on {selection.binding.alsoOn}.
         </p>
       ) : null}
+    </div>
+  );
+}
+
+/** One numeric input in the layout editor's geometry grid, labelled above it. */
+function NumberField({
+  label,
+  onChange,
+  value,
+}: {
+  label: string;
+  onChange: (value: number) => void;
+  value: number;
+}) {
+  return (
+    <div>
+      <label className="mb-1.5 block text-phx-2xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">
+        {label}
+      </label>
+      <Input
+        className="h-9 rounded-lg border-phx-line bg-white text-sm"
+        onChange={(event) => {
+          const parsed = Number.parseFloat(event.target.value);
+          onChange(Number.isFinite(parsed) ? parsed : 0);
+        }}
+        type="number"
+        value={Number.isFinite(value) ? value : 0}
+      />
+    </div>
+  );
+}
+
+/**
+ * The editor for one field-layer row: its source, its position and its size, plus hide/delete for a
+ * row that already exists.
+ *
+ * A drag already writes position on its own — this is for everything a drag cannot express: which
+ * value or fixed text a field prints, exact numbers rather than a hand, and the two actions (hide,
+ * delete) that are not a position at all.
+ */
+function LayoutFieldEditor({
+  busy,
+  onCancel,
+  onDelete,
+  onSave,
+  onToggleHidden,
+  selection,
+}: {
+  busy: boolean;
+  onCancel: () => void;
+  onDelete?: () => void;
+  onSave: (write: PendingWrite) => void;
+  onToggleHidden?: () => void;
+  selection: PendingWrite;
+}) {
+  const [draft, setDraft] = useState(selection);
+  const setSource = (source: DocumentFieldSource) => setDraft((prev) => ({ ...prev, source }));
+
+  return (
+    <div className="space-y-3 rounded-xl border border-phx-accent-line bg-white px-3 py-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-phx-2xs font-black uppercase tracking-[0.14em] text-phx-ink-faint">
+          {draft.id ? (draft.defaultKey ? "Moved field" : "Added field") : "New field"}
+        </span>
+        {draft.defaultKey ? (
+          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-phx-2xs font-semibold text-phx-ink-soft">
+            replaces {draft.defaultKey}
+          </span>
+        ) : null}
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        <Button
+          onClick={() =>
+            setSource({ kind: "literal", text: draft.source.kind === "literal" ? draft.source.text : "" })
+          }
+          size="sm"
+          type="button"
+          variant={draft.source.kind === "literal" ? "default" : "outline"}
+        >
+          Fixed text
+        </Button>
+        <Button
+          onClick={() => setSource({ kind: "value", key: draft.source.kind === "value" ? draft.source.key : "" })}
+          size="sm"
+          type="button"
+          variant={draft.source.kind === "value" ? "default" : "outline"}
+        >
+          From the record
+        </Button>
+      </div>
+
+      {draft.source.kind === "literal" ? (
+        <Input
+          className="h-9 rounded-lg border-phx-line bg-white text-sm"
+          onChange={(event) => setSource({ kind: "literal", text: event.target.value })}
+          placeholder="The exact text to print"
+          value={draft.source.text}
+        />
+      ) : (
+        <>
+          <Input
+            className="h-9 rounded-lg border-phx-line bg-white text-sm"
+            list="hp-layout-value-keys"
+            onChange={(event) => setSource({ kind: "value", key: event.target.value })}
+            placeholder="e.g. insuredName — the same key another document already prints"
+            value={draft.source.key}
+          />
+          <datalist id="hp-layout-value-keys">
+            {Object.entries(PAPER_FIELD_BINDINGS).map(([key, binding]) => (
+              <option key={key} label={binding.labelEn} value={key} />
+            ))}
+          </datalist>
+        </>
+      )}
+
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <NumberField
+          label={draft.anchor ? "Offset right (pt)" : "X (pt)"}
+          onChange={(value) =>
+            setDraft((prev) => (prev.anchor ? { ...prev, anchor: { ...prev.anchor, dx: value } } : { ...prev, x: value }))
+          }
+          value={draft.anchor ? draft.anchor.dx : draft.x}
+        />
+        <NumberField
+          label={draft.anchor ? "Offset down (pt)" : "Y (pt)"}
+          onChange={(value) =>
+            setDraft((prev) => (prev.anchor ? { ...prev, anchor: { ...prev.anchor, dy: value } } : { ...prev, y: value }))
+          }
+          value={draft.anchor ? draft.anchor.dy : draft.y}
+        />
+        <NumberField label="Width (pt)" onChange={(value) => setDraft((prev) => ({ ...prev, w: value }))} value={draft.w} />
+        <NumberField label="Height (pt)" onChange={(value) => setDraft((prev) => ({ ...prev, h: value }))} value={draft.h} />
+        <NumberField
+          label="Text size (pt)"
+          onChange={(value) => setDraft((prev) => ({ ...prev, size: value }))}
+          value={draft.size}
+        />
+        <div>
+          <label className="mb-1.5 block text-phx-2xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">
+            Align
+          </label>
+          <select
+            className="h-9 w-full rounded-lg border border-phx-line bg-white px-2 text-sm"
+            onChange={(event) =>
+              setDraft((prev) => ({ ...prev, align: event.target.value as "right" | "center" | "left" }))
+            }
+            value={draft.align}
+          >
+            <option value="right">Right</option>
+            <option value="center">Center</option>
+            <option value="left">Left</option>
+          </select>
+        </div>
+      </div>
+
+      {draft.anchor ? (
+        // WRAPS, never truncates. A CSS path is long and has no redundant half — cutting it with an
+        // ellipsis would hide exactly the part that says WHICH clause this field hangs on, and the
+        // owner's rule bans that outright. `break-all` because the path is one unbroken token: a
+        // normal word wrap has nowhere to break it and would push the panel sideways instead, which
+        // is the horizontal scroll the fits-the-screen rule bans.
+        <p className="break-all text-phx-2xs text-phx-ink-faint">
+          Anchored to: <code>{draft.anchor.selector}</code>
+        </p>
+      ) : null}
+
+      <div className="flex flex-wrap items-center gap-2">
+        <Button className="gap-2" disabled={busy} onClick={() => onSave(draft)} size="sm" type="button">
+          {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+          Save
+        </Button>
+        <Button disabled={busy} onClick={onCancel} size="sm" type="button" variant="ghost">
+          Cancel
+        </Button>
+        {onToggleHidden ? (
+          <Button className="gap-2" disabled={busy} onClick={onToggleHidden} size="sm" type="button" variant="outline">
+            {draft.hidden ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
+            {draft.hidden ? "Show" : "Hide"}
+          </Button>
+        ) : null}
+        {onDelete ? (
+          <Button
+            className="gap-2 text-red-600 hover:text-red-700"
+            disabled={busy}
+            onClick={onDelete}
+            size="sm"
+            type="button"
+            variant="ghost"
+          >
+            <Trash2 className="h-4 w-4" />
+            Delete
+          </Button>
+        ) : null}
+      </div>
     </div>
   );
 }

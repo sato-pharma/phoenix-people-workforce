@@ -406,13 +406,16 @@ export const accessRegistry = [
   sessionApi({ methods: ["POST", "DELETE"], pattern: "/api/hiring-documents/files/**", permission: { resource: "employee_documents", action: "update" }, csrfRequired: true }),
   // The HR forms pack — the printable contract, Form 1, Form 6 and the two Ministry of Labour exit
   // templates — is the same workflow as the tracker above seen from the other end, so it is gated
-  // on the same resource. Reading or printing needs `read`; saving either profile and recording a
-  // signature need `update`, which is why this is two entries and not one blanket: a blanket would
-  // say `read` and quietly understate what a PUT can do. The `**` covers the offboarding profile
-  // route deliberately — a separate resource for the exit half would let the two drift, so that
-  // somebody could print a Form 6 for an employee whose own checklist they cannot open.
+  // on the same resource. Reading or printing needs `read`; saving either profile, recording a
+  // signature, and the field-layer editor (moving, adding or deleting a printed field, including its
+  // DELETE verb) need `update`, which is why this is two entries and not one blanket: a blanket
+  // would say `read` and quietly understate what a PUT or DELETE can do. The `**` covers the
+  // offboarding profile route and the field-layer route deliberately — a separate resource for
+  // either would let them drift from the documents they describe, so that somebody could print a
+  // Form 6 for an employee whose own checklist they cannot open, or move a field on a form they
+  // cannot fill in.
   sessionApi({ methods: readOnly, pattern: "/api/hiring-pack/**", permission: { resource: "employee_documents", action: "read" } }),
-  sessionApi({ methods: ["PUT", "POST"], pattern: "/api/hiring-pack/**", permission: { resource: "employee_documents", action: "update" }, csrfRequired: true }),
+  sessionApi({ methods: ["PUT", "POST", "DELETE"], pattern: "/api/hiring-pack/**", permission: { resource: "employee_documents", action: "update" }, csrfRequired: true }),
   // ── Job Offers ─────────────────────────────────────────────────────────────────────────────
   // Registered route by route rather than under one `/api/offers/**` blanket, for the reason the
   // hiring pack above gives and one more: this module's three verbs are not variations of each

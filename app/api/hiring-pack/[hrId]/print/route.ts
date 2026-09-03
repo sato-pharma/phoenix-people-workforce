@@ -3,6 +3,8 @@ import { NextResponse } from "next/server";
 import { systemContractDefaults } from "@/config/system-settings";
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import type { DocumentFieldRow } from "@/lib/hiring-pack/field-layout";
+import { loadDocumentFieldLayout } from "@/lib/hiring-pack/field-layout-store";
 import {
   renderClearanceCompanyHtml,
   renderClearanceEmployeeHtml,
@@ -26,7 +28,11 @@ import {
   isHiringPackSchemaMissing,
   recordHiringPackPrinted,
 } from "@/lib/hiring-pack/service";
-import { findTemplateVersion, templateVersionsFor } from "@/lib/hiring-pack/template-registry";
+import {
+  currentTemplateVersion,
+  findTemplateVersion,
+  templateVersionsFor,
+} from "@/lib/hiring-pack/template-registry";
 import { HIRING_PACK_DOCUMENTS } from "@/lib/hiring-pack/types";
 import type { HiringPackData, HiringPackDocument } from "@/lib/hiring-pack/types";
 
@@ -56,7 +62,12 @@ const DOCUMENTS = new Set<HiringPackDocument>(HIRING_PACK_DOCUMENTS);
 const RENDERERS: Record<
   HiringPackDocument,
   {
-    render: (data: HiringPackData, copies: number, templateId?: string | null) => string;
+    render: (
+      data: HiringPackData,
+      copies: number,
+      templateId?: string | null,
+      fields?: readonly DocumentFieldRow[],
+    ) => string;
     copies: number;
   }
 > = {
@@ -159,7 +170,24 @@ export async function GET(request: Request, { params }: { params: Promise<{ hrId
     const data = await getHiringPack(hrId);
     const renderer = RENDERERS[requested];
     const copies = resolveCopies(url.searchParams.get("copies"), renderer.copies);
-    const html = renderer.render(data, copies, requestedVersion);
+
+    // The operator's own field layer, read against the version being printed.
+    //
+    // KEYED TO THE VERSION, NOT THE DOCUMENT. A layout is a set of coordinates measured against one
+    // piece of artwork, so carrying it forward onto a replaced template would put every field a few
+    // millimetres off on a form nobody re-measured — which prints, and looks nearly right, and is
+    // exactly the failure this is placed to avoid. Reprinting an archived version therefore gets the
+    // layer that version was signed with, and today's version gets today's.
+    //
+    // A missing table answers with an empty layer rather than an error: until the migration is
+    // approved and applied that is every environment's state, and a hiring pack that refuses to
+    // print because an editor's table is absent would be a worse regression than the feature is a
+    // gain.
+    const fields = await loadDocumentFieldLayout(
+      requested,
+      requestedVersion ?? currentTemplateVersion(requested).id,
+    );
+    const html = renderer.render(data, copies, requestedVersion, fields);
 
     // ─────────────────────────────────────────────────────────────────────────────────────────
     // `preview=1` RETURNS THE SAME DOCUMENT AND RECORDS NOTHING.

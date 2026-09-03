@@ -1,4 +1,5 @@
 import { systemLegalEntity } from "@/config/system-settings";
+import { layeredPages, type DocumentFieldRow } from "@/lib/hiring-pack/field-layout";
 import {
   LABOUR_PAGE_HEIGHT_PT,
   LABOUR_PAGE_WIDTH_PT,
@@ -138,12 +139,23 @@ ${FIT_TO_BOX_SCRIPT}
 }
 
 /** طلب استقالة — the resignation request under مادة 167 of Labour Law 14/2025. One page. */
-export function renderResignationHtml(data: HiringPackData, copies: number): string {
+/**
+ * @param fields The operator's own field layer — what has been moved, hidden or added on this request.
+ *   Empty is the norm and means "print the compiled coordinates", which is what this did before the
+ *   layer existed and what it still does wherever the layer's table is absent.
+ */
+export function renderResignationHtml(
+  data: HiringPackData,
+  copies: number,
+  _templateVersionId?: string | null,
+  fields: readonly DocumentFieldRow[] = [],
+): string {
   const values = buildExitValues(data);
+  const pages = layeredPages([{ svg: RESIGNATION_SVG, placements: RESIGNATION_PLACEMENTS }], values, fields);
 
   const sheets: string[] = [];
   for (let copy = 0; copy < Math.max(1, copies); copy += 1) {
-    sheets.push(renderSheet(RESIGNATION_SVG, RESIGNATION_PLACEMENTS, values));
+    for (const page of pages) sheets.push(renderSheet(page.svg, page.placements, page.values));
   }
 
   const employeeName = data.employee.nameAr ?? data.employee.fullName;
@@ -160,14 +172,31 @@ export function renderResignationHtml(data: HiringPackData, copies: number): str
 }
 
 /** نموذج إنهاء علاقة العمل بالتوافق بين الطرفين — the mutual-termination agreement. Three pages. */
-export function renderMutualTerminationHtml(data: HiringPackData, copies: number): string {
+/**
+ * @param fields The operator's own field layer — what has been moved, hidden or added on this agreement.
+ *   Empty is the norm and means "print the compiled coordinates", which is what this did before the
+ *   layer existed and what it still does wherever the layer's table is absent.
+ */
+export function renderMutualTerminationHtml(
+  data: HiringPackData,
+  copies: number,
+  _templateVersionId?: string | null,
+  fields: readonly DocumentFieldRow[] = [],
+): string {
   const values = buildExitValues(data);
+  const pages = layeredPages(
+    [
+      { svg: MUTUAL_PAGE_1_SVG, placements: MUTUAL_PAGE_1_PLACEMENTS },
+      { svg: MUTUAL_PAGE_2_SVG, placements: MUTUAL_PAGE_2_PLACEMENTS },
+      { svg: MUTUAL_PAGE_3_SVG, placements: MUTUAL_PAGE_3_PLACEMENTS },
+    ],
+    values,
+    fields,
+  );
 
   const sheets: string[] = [];
   for (let copy = 0; copy < Math.max(1, copies); copy += 1) {
-    sheets.push(renderSheet(MUTUAL_PAGE_1_SVG, MUTUAL_PAGE_1_PLACEMENTS, values));
-    sheets.push(renderSheet(MUTUAL_PAGE_2_SVG, MUTUAL_PAGE_2_PLACEMENTS, values));
-    sheets.push(renderSheet(MUTUAL_PAGE_3_SVG, MUTUAL_PAGE_3_PLACEMENTS, values));
+    for (const page of pages) sheets.push(renderSheet(page.svg, page.placements, page.values));
   }
 
   const employeeName = data.employee.nameAr ?? data.employee.fullName;

@@ -1,4 +1,5 @@
 import { systemLegalEntity } from "@/config/system-settings";
+import { flowFieldLayer, type DocumentFieldRow } from "@/lib/hiring-pack/field-layout";
 import { spellEgyptianAmount } from "@/lib/hiring-pack/arabic-amount";
 import {
   CONTRACT_BLANK_RULE,
@@ -714,6 +715,7 @@ export function renderContractHtml(
   data: HiringPackData,
   copies: number,
   requestedTemplateId?: string | null,
+  fields: readonly DocumentFieldRow[] = [],
 ): string {
   // Which text this person's contract is. A signed contract reprints the version that was SIGNED;
   // an explicit request (from the Archive screen) wins over both, because looking at an archived
@@ -1108,6 +1110,7 @@ ${printBanner([
   ...gapWarning,
 ])}
 ${body}
+${flowFieldLayer(fields, values)}
 </body>
 </html>`;
 }
