@@ -72,7 +72,6 @@ export async function POST(request: Request) {
     const result = await submitOutstationRequest(
       access,
       {
-      amWorkload: typeof body.amWorkload === "number" ? body.amWorkload : 0,
       capturedAccuracyMeters: Number(body.capturedAccuracyMeters),
       capturedAt: typeof body.capturedAt === "string" ? body.capturedAt : undefined,
       capturedLatitude: Number(body.capturedLatitude),
@@ -96,7 +95,15 @@ export async function POST(request: Request) {
       // through POST /api/outstation/sync-offline, which sets the flag server-side.
       offlineCaptured: false,
       otherAmount: typeof body.otherAmount === "number" ? body.otherAmount : 0,
-      pmWorkload: typeof body.pmWorkload === "number" ? body.pmWorkload : 0,
+      // The AM/PM visit counts are NOT taken from the request body, on either submit path.
+      // They land in report_am_workload / report_pm_workload, which payroll-expense-mapping.ts
+      // prefers over the resolved am_workload / pm_workload — and because both columns are
+      // NOT NULL DEFAULT 0 that preference is effectively unconditional, so whatever the caller
+      // sends is what an approver reads. The server resolves the real figures itself from the
+      // published Double Visit Analytics snapshot (resolveOutstationWorkloadPayload), which is
+      // why the wizard's editable inputs were removed; leaving the route open meant an employee
+      // could still set his own visit counts by posting them directly. Omitted here, both
+      // resolve to 0 — exactly what the wizard has been sending since those inputs went.
       returnTicketAmount: Number(body.returnTicketAmount ?? 0),
       carEvidenceMetadata: parseCarEvidenceMetadata(body),
       transportationType: outstationTypes.transportationType,
