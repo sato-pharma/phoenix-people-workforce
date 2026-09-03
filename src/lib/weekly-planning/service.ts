@@ -1212,8 +1212,21 @@ async function rpcDecideEditRequest(input: {
   if (error) rethrowWeeklyPlanRpcError(error);
 }
 
+// Work emails for a set of recipients, keyed by the canonical HR id.
+//
+// `hrIdLookupKeys` rather than the canonical key alone. `normalizeHrId` lower-cases ("A-7" ->
+// "a-7") while `employees.hr_id` is stored UPPER-case in 185 of 186 rows, so the previous
+// `.in("hr_id", [canonical])` matched ZERO employees on every call — measured against production
+// on 2026-09-03: the lowercase form returned 0 rows where the stored form returned 3. It failed
+// silently and in exactly one direction: the To address is resolved downstream by
+// createSystemNotification from recipientHrId, so mail still went out, but the cc list is built
+// HERE and could therefore never be anything but empty. Every weekly-plan email ever sent carried
+// an empty cc because of this line, which is why fixing the addressing alone would not have
+// produced a single copied recipient.
 async function loadRecipientEmailMap(recipients: Array<{ hrId: string | null }>) {
-  const hrIds = Array.from(new Set(recipients.map((recipient) => normalizeHrId(recipient.hrId)).filter(Boolean)));
+  const hrIds = Array.from(new Set(
+    recipients.flatMap((recipient) => hrIdLookupKeys(recipient.hrId)),
+  ));
   const output = new Map<string, string>();
   if (hrIds.length === 0) return output;
   const { data, error } = await getSupabaseAdmin()
@@ -1586,6 +1599,280 @@ async function notifyPlanSubmitted(plan: PlanHeaderRow) {
   await Promise.allSettled([notifyManager(plan, hrRecipients), notifyHrOnSubmit(plan, hrRecipients)]);
 }
 
+// ===========================================================================
+// Weekly -> monthly reconciliation
+//
+// The owner's precedence rule (2026-09-03): a submitted weekly plan WINS, the covering monthly
+// plan is rewritten to match, and the change is flagged. It exists because the two cadences could
+// previously assert different things about the same day with nothing reconciling them - measured
+// in production at 9 disagreeing days out of 26 shared ones, including a monthly plan claiming
+// Office on three days the weekly plan called Vacation.
+//
+// The sync is deliberately NOT symmetric-and-simultaneous. A month spans ~4.3 weeks, each with its
+// own independent approval state, so two mutual writers would ping-pong and an approved month
+// would have to un-approve itself whenever one of its weeks was returned. Instead there is one
+// source of truth per day, and it changes hands once: the monthly SEEDS the week
+// (loadMonthlySourcedItems), and the week overrides the month the moment it is submitted.
+// ===========================================================================
+
+// What a day claims, reduced to a comparable string. Time is part of the print because a day can
+// carry an AM and a PM row that must not collapse into one another.
+export function planDayFingerprint(rows: Array<{
+  activity_title: string;
+  activity_type: string;
+  area: string | null;
+  end_time: string | null;
+  location_text: string | null;
+  start_time: string | null;
+}>) {
+  return rows
+    .map((row) => [
+      String(row.start_time ?? "").slice(0, 5),
+      String(row.end_time ?? "").slice(0, 5),
+      cleanText(row.activity_type),
+      cleanText(row.activity_title),
+      cleanText(row.area),
+      cleanText(row.location_text),
+    ].join("~"))
+    .sort()
+    .join("||");
+}
+
+type MonthlyReconcileOutcome = {
+  changedDates: string[];
+  monthlyPlanId: string;
+  rewritten: boolean;
+};
+
+/**
+ * Bring the covering monthly plan into line with a just-submitted weekly plan.
+ *
+ * Rewrites the monthly plan's rows for the days the week covers - but ONLY while that monthly plan
+ * is still editable. `phx_weekly_plan_replace_items` refuses any status outside
+ * draft/manager_returned/ceo_returned, and that refusal is correct rather than an obstacle: an
+ * approved monthly plan is a document somebody signed, and silently rewriting its rows underneath
+ * that approval would destroy the audit trail the approval exists to create. When the month is
+ * already approved the divergence is reported instead, and the weekly plan still governs - it is
+ * the newer and more specific statement about the same days.
+ *
+ * Best-effort throughout: the weekly submission has already committed by the time this runs, so
+ * nothing here may throw back into the caller's path.
+ */
+async function reconcileMonthlyFromWeekly(
+  access: AccessContext,
+  weeklyPlan: PlanHeaderRow,
+): Promise<MonthlyReconcileOutcome[]> {
+  if (weeklyPlan.plan_kind !== "weekly") return [];
+  try {
+    const keys = hrIdLookupKeys(weeklyPlan.employee_hr_id);
+    if (keys.length === 0) return [];
+    const supabase = getSupabaseAdmin();
+    const { data: monthlyRows, error: monthlyError } = await supabase
+      .from("employee_plan_headers")
+      .select(planSelect)
+      .eq("plan_kind", "monthly")
+      .in("employee_hr_id", keys)
+      .lte("period_start_date", weeklyPlan.period_end_date)
+      .gte("period_end_date", weeklyPlan.period_start_date)
+      .order("period_start_date", { ascending: true })
+      .limit(20);
+    if (monthlyError) throw monthlyError;
+
+    // A cancelled or rejected month never became the plan of record, so it has nothing to
+    // reconcile. Everything else does, a draft included: a draft month the employee is still
+    // filling should absorb the week rather than sit there contradicting it.
+    const live = ((monthlyRows ?? []) as PlanHeaderRow[]).filter(
+      (row) => !["cancelled", "manager_rejected", "ceo_rejected"].includes(row.status),
+    );
+
+    // EVERY overlapping month, not the first row the query happened to return. A Saturday-anchored
+    // Field Force week crosses a month boundary several times a year, and when it does BOTH months
+    // legitimately own part of it - reconciling only one leaves the other holding exactly the
+    // contradiction this feature exists to end, and it would be the arbitrary half.
+    const outcomes: MonthlyReconcileOutcome[] = [];
+    for (const monthly of live) {
+      const outcome = await reconcileOneMonth(access, weeklyPlan, monthly);
+      if (outcome) outcomes.push(outcome);
+    }
+    return outcomes;
+  } catch (error) {
+    logError("Weekly plan failed to reconcile the covering monthly plan", {
+      labels: { event: "weekly_plan_monthly_reconcile_failed", planId: weeklyPlan.id },
+      error,
+    });
+    return [];
+  }
+}
+
+/** One weekly plan against one covering monthly plan. Throws; the caller above owns the logging. */
+async function reconcileOneMonth(
+  access: AccessContext,
+  weeklyPlan: PlanHeaderRow,
+  monthly: PlanHeaderRow,
+): Promise<MonthlyReconcileOutcome | null> {
+  // The overlap, not the whole week. A Saturday-anchored Field Force week straddles a month
+  // boundary several times a year, and replacing the whole week's date span inside one month
+  // would delete the neighbouring month's days from a plan that legitimately owns them.
+  //
+  // It is also what makes the write legal at all: phx_weekly_plan_replace_items refuses any item
+  // whose activityDate falls outside the header's own period ("item activityDate % is outside plan
+  // period % to %", read from the live function 2026-09-03), so an unclipped week crossing the
+  // boundary would not merely be wrong - it would be rejected outright.
+  const from = weeklyPlan.period_start_date > monthly.period_start_date
+    ? weeklyPlan.period_start_date
+    : monthly.period_start_date;
+  const to = weeklyPlan.period_end_date < monthly.period_end_date
+    ? weeklyPlan.period_end_date
+    : monthly.period_end_date;
+  if (from > to) return null;
+
+  const inWindow = (date: string) => date >= from && date <= to;
+  const weeklyItems = (weeklyPlan.employee_plan_items ?? []).filter((row) => inWindow(row.activity_date));
+  const monthlyItems = monthly.employee_plan_items ?? [];
+  const monthlyInWindow = monthlyItems.filter((row) => inWindow(row.activity_date));
+
+  // Compare day by day so the flag can name the dates that actually moved.
+  const byDate = (rows: PlanItemRow[]) => {
+    const map = new Map<string, PlanItemRow[]>();
+    for (const row of rows) {
+      const bucket = map.get(row.activity_date);
+      if (bucket) bucket.push(row);
+      else map.set(row.activity_date, [row]);
+    }
+    return map;
+  };
+  const weeklyByDate = byDate(weeklyItems);
+  const monthlyByDate = byDate(monthlyInWindow);
+  const changedDates: string[] = [];
+  for (const date of new Set([...weeklyByDate.keys(), ...monthlyByDate.keys()])) {
+    if (planDayFingerprint(weeklyByDate.get(date) ?? []) !== planDayFingerprint(monthlyByDate.get(date) ?? [])) {
+      changedDates.push(date);
+    }
+  }
+  if (changedDates.length === 0) return null;
+  changedDates.sort();
+
+  if (canEditEmployeePlanStatus(monthly.status)) {
+    const merged: EmployeePlanItemInput[] = [
+      ...monthlyItems.filter((row) => !inWindow(row.activity_date)),
+      ...weeklyItems,
+    ]
+      .sort((left, right) => (
+        left.activity_date < right.activity_date
+          ? -1
+          : left.activity_date > right.activity_date
+            ? 1
+            : left.sort_order - right.sort_order
+      ))
+      .map((row, index) => ({
+        activityDate: row.activity_date,
+        activityTitle: row.activity_title,
+        activityType: row.activity_type,
+        area: row.area,
+        attendees: row.attendees,
+        doubleVisitMedicalRepHrId: row.double_visit_medical_rep_hr_id,
+        doubleVisitMedicalRepName: row.double_visit_medical_rep_name,
+        endTime: row.end_time,
+        locationText: row.location_text,
+        notes: row.notes ?? "",
+        objective: row.objective,
+        sortOrder: index,
+        startTime: row.start_time,
+      }));
+    // The RPC rejects an empty payload outright, and an empty merge would mean erasing a month
+    // to write nothing in its place. Report the divergence rather than destroy the plan.
+    if (merged.length > 0) {
+      try {
+        await rpcReplacePlanItems({
+          access,
+          expectedRevision: monthly.revision,
+          items: merged,
+          planId: monthly.id,
+          submit: false,
+        });
+        await writeAuditLog({
+          actorLoginId: access.loginId,
+          entityId: monthly.id,
+          entityType: "weekly_plan",
+          newValues: { changedDates, sourceWeeklyPlanId: weeklyPlan.id },
+          summary: `monthly plan ${monthly.period_key} re-synced from submitted weekly plan ${weeklyPlan.period_key}`,
+        });
+        return { changedDates, monthlyPlanId: monthly.id, rewritten: true };
+      } catch (error) {
+        // The RPC bumps `revision` on every replace and checks the expected one first, so somebody
+        // editing this month in another tab raises weekly_plan_revision_conflict. Fall through to
+        // the flag rather than throw: the divergence is the half the employee actually needs told,
+        // and letting this escape would drop it for every OTHER overlapping month too, from one
+        // lost race.
+        logError("Monthly plan could not be rewritten from the weekly plan", {
+          labels: {
+            event: "weekly_plan_monthly_rewrite_failed",
+            monthlyPlanId: monthly.id,
+            planId: weeklyPlan.id,
+          },
+          error,
+        });
+      }
+    }
+  }
+  return { changedDates, monthlyPlanId: monthly.id, rewritten: false };
+}
+
+/**
+ * Tell the submitter, copying their manager, that the month moved - or that it could not.
+ *
+ * Both halves of the owner's rule are visible here: when the month was rewritten this is a receipt,
+ * and when it could not be it is the flag that stops the two plans disagreeing in silence. Dates
+ * are listed in full, never summarised to a count, because "3 days changed" sends the reader
+ * hunting for which three.
+ */
+async function notifyMonthlyResynced(weeklyPlan: PlanHeaderRow, outcome: MonthlyReconcileOutcome) {
+  try {
+    const monthly = await loadPlanRow(outcome.monthlyPlanId);
+    const dateList = outcome.changedDates.join(", ");
+    const message = outcome.rewritten
+      ? `The monthly plan for ${monthly.period_key} was updated to match the weekly plan just submitted for ${weeklyPlan.period_key}. Days changed: ${dateList}.`
+      : `The weekly plan submitted for ${weeklyPlan.period_key} disagrees with the already-approved monthly plan for ${monthly.period_key} on: ${dateList}. The weekly plan governs those days; the monthly plan could not be rewritten because it is already approved.`;
+    await notifyRecipients({
+      actionUrl: `/employee-portals/plans?plan=${monthly.id}`,
+      additionalMetadata: {
+        changedDates: outcome.changedDates,
+        rewritten: outcome.rewritten,
+        sourceWeeklyPlanId: weeklyPlan.id,
+      },
+      emailCcRecipients: monthly.manager_hr_id ? [{ hrId: monthly.manager_hr_id }] : [],
+      eventType: outcome.rewritten ? "plan_monthly_resynced" : "plan_monthly_conflict",
+      message,
+      plan: monthly,
+      recipients: [
+        { hrId: monthly.employee_hr_id },
+        ...(monthly.manager_hr_id ? [{ hrId: monthly.manager_hr_id }] : []),
+      ],
+      title: outcome.rewritten
+        ? `Monthly plan ${monthly.period_key} updated from your weekly plan`
+        : `Monthly plan ${monthly.period_key} disagrees with your submitted weekly plan`,
+    });
+  } catch (error) {
+    logError("Weekly plan failed to notify of the monthly re-sync", {
+      labels: { event: "weekly_plan_notify_monthly_resync_failed", planId: weeklyPlan.id },
+      error,
+    });
+  }
+}
+
+/**
+ * Everything that must happen once a plan is submitted: route it for approval, and - for a weekly
+ * plan - settle the covering month against it. All three submit paths call this one function, so
+ * the reconciliation cannot be wired into two of them and silently skipped by the third.
+ */
+async function afterPlanSubmitted(access: AccessContext, plan: PlanHeaderRow) {
+  await notifyPlanSubmitted(plan);
+  for (const outcome of await reconcileMonthlyFromWeekly(access, plan)) {
+    await notifyMonthlyResynced(plan, outcome);
+  }
+}
+
+
 // Best-effort — a failure to notify must never mask a decision that already
 // committed via rpcDecidePlan (see decideEmployeePlan).
 async function notifyCeo(plan: PlanHeaderRow) {
@@ -1640,10 +1927,21 @@ async function notifyHr(plan: PlanHeaderRow) {
   }
 }
 
-async function notifyEmployeeReturnedOrRejected(plan: PlanHeaderRow, action: EmployeePlanAction, comment: string | null) {
+// Returning a plan IS a conversation - the owner named it in the same breath as the comment
+// threads on 2026-09-03 ("if someone sent anything in a conversation, or returned the plan"). So it
+// is addressed the same way: To the submitter, CC whoever returned it. Before this the decider was
+// nowhere on the mail, which left the employee holding a returned plan and a comment from a person
+// they could not simply reply to.
+async function notifyEmployeeReturnedOrRejected(
+  plan: PlanHeaderRow,
+  action: EmployeePlanAction,
+  comment: string | null,
+  actorHrId: string | null,
+) {
   try {
     await notifyRecipients({
       actionUrl: `/employee-portals/plans?plan=${plan.id}`,
+      emailCcRecipients: actorHrId && !hrIdsMatch(actorHrId, plan.employee_hr_id) ? [{ hrId: actorHrId }] : [],
       eventType: action,
       message: `${plan.plan_kind} plan ${action.includes("reject") ? "was rejected" : "was returned for edit"}.${comment ? ` Comment: ${comment}` : ""}`,
       plan,
@@ -1749,14 +2047,24 @@ export async function listPlanComments(
   }
 }
 
-// Fans a new comment out to every OTHER participant already engaged with this
-// plan: the submitter, the assigned manager, whoever has recorded a decision on
-// it (captures CEO/HR once they've actually acted), and everyone who has
-// already posted in the thread. Deliberately does NOT notify every CEO/HR
-// account by default — only those who have engaged — to avoid spamming
-// unrelated executives on every reply. Role-aware deep links reuse
-// planReviewActionUrl so each recipient lands in their own shell. Best-effort:
-// a notification failure never blocks the comment itself.
+// Fans a new comment out to everyone already engaged with this plan: the submitter, the assigned
+// manager, whoever has recorded a decision on it (which captures CEO/HR once they have actually
+// acted), and everyone who has already posted in the thread. Deliberately does NOT notify every
+// CEO/HR account by default - only those who have engaged - to avoid spamming unrelated executives
+// on every reply.
+//
+// ONE email per comment, addressed the way the owner asked for on 2026-09-03: To the plan's
+// SUBMITTER, CC the person who wrote it plus every other participant. It used to call
+// notifyRecipients once per participant with a single-element recipients array, which made each
+// recipient their own "primary" and left the CC list empty every time - all five plan-comment
+// emails ever sent in production went to one person with no cc, and the author was cut out
+// entirely. Sending one addressed email instead of N private ones is also what makes the thread
+// legible in a mailbox: everyone can see who else is on it.
+//
+// The author is deliberately absent from `recipients` but present in the cc: pinging someone
+// in-app about their own comment is noise, while the emailed copy is precisely the "CC the sender"
+// the owner asked for. Role-aware deep links reuse planReviewActionUrl so each recipient lands in
+// their own shell. Best-effort: a notification failure never blocks the comment itself.
 async function notifyPlanComment(plan: PlanHeaderRow, comment: EmployeePlanComment) {
   try {
     const participantKeys = new Set<string>();
@@ -1772,23 +2080,41 @@ async function notifyPlanComment(plan: PlanHeaderRow, comment: EmployeePlanComme
     for (const row of (priorAuthors ?? []) as Array<{ author_hr_id: string }>) {
       if (row.author_hr_id) participantKeys.add(normalizeHrId(row.author_hr_id));
     }
-    participantKeys.delete(normalizeHrId(comment.authorHrId));
-    if (participantKeys.size === 0) return;
+    participantKeys.delete("");
 
-    const truncatedBody = comment.body.length > 140 ? `${comment.body.slice(0, 140)}…` : comment.body;
-    await Promise.all(Array.from(participantKeys).map(async (hrId) => {
-      const actionUrl = hrIdsMatch(hrId, plan.employee_hr_id)
-        ? `/employee-portals/plans?plan=${plan.id}`
-        : await planReviewActionUrl(hrId, plan.id);
-      await notifyRecipients({
-        actionUrl,
-        eventType: "plan_comment",
-        message: `${comment.authorName ?? comment.authorHrId} commented on the ${plan.plan_kind} plan: "${truncatedBody}"`,
-        plan,
-        recipients: [{ hrId }],
-        title: `New comment on ${plan.plan_kind} plan`,
-      });
-    }));
+    const submitterKey = normalizeHrId(plan.employee_hr_id);
+    const authorKey = normalizeHrId(comment.authorHrId);
+
+    // In-app / Telegram / push audience: the submitter first (they are the email's To, and
+    // notifyRecipients attaches the email to whichever recipient matches the primary), then every
+    // other participant except the author.
+    const notifyKeys = [
+      ...(submitterKey ? [submitterKey] : []),
+      ...Array.from(participantKeys).filter((key) => key !== submitterKey && key !== authorKey),
+    ];
+    // Everyone copied on the email: the author (the owner's "CC the sender") and every other
+    // participant. The submitter is excluded because they are the To, not a cc.
+    const ccKeys = new Set(participantKeys);
+    if (authorKey) ccKeys.add(authorKey);
+    ccKeys.delete(submitterKey);
+
+    if (notifyKeys.length === 0 && ccKeys.size === 0) return;
+
+    const actionUrl = submitterKey
+      ? `/employee-portals/plans?plan=${plan.id}`
+      : await planReviewActionUrl(notifyKeys[0] ?? "", plan.id);
+    await notifyRecipients({
+      actionUrl,
+      emailCcRecipients: Array.from(ccKeys).map((hrId) => ({ hrId })),
+      eventType: "plan_comment",
+      // The full comment, never trimmed to a preview: the owner's standing rule is that text is
+      // never truncated with an ellipsis, and a half-sentence is exactly what forces the reader
+      // back into the app to find out what was actually said.
+      message: `${comment.authorName ?? comment.authorHrId} commented on the ${plan.plan_kind} plan: "${comment.body}"`,
+      plan,
+      recipients: notifyKeys.map((hrId) => ({ hrId })),
+      title: `New comment on ${plan.plan_kind} plan`,
+    });
   } catch (error) {
     logError("Weekly plan failed to notify participants of a new comment", {
       labels: { event: "weekly_plan_notify_comment_participants_failed", planId: plan.id },
@@ -2210,7 +2536,7 @@ export async function getPlansAwaitingAction(access: AccessContext): Promise<App
 // can leave draft. See plan-v1.ts for the workweek model.
 // ===========================================================================
 
-export type PlanPrefillSource = "vacation" | "excuse" | "national_vacation" | "weekly";
+export type PlanPrefillSource = "vacation" | "excuse" | "national_vacation" | "weekly" | "monthly";
 
 export type PlanPrefillItem = {
   activityDate: string;
@@ -2366,6 +2692,18 @@ async function loadApprovedExcuses(
   }
 }
 
+// A plan only counts as a source for the other cadence once it has left draft. A draft is a
+// private scratchpad (the same reading DUPLICATE_PERIOD_IGNORED_STATUSES takes), and a cancelled
+// or rejected plan never became the plan of record — sourcing from either would seed a week from
+// something its own author had already abandoned.
+const PLAN_SOURCE_STATUSES = [
+  "submitted",
+  "manager_approved",
+  "ceo_approved",
+  "final_approved",
+  "hr_acknowledged",
+] as const satisfies readonly EmployeePlanStatus[];
+
 // Submitted/approved weekly plans overlapping [start, end] (monthly sourcing).
 async function loadWeeklySourcedItems(
   employeeHrId: string,
@@ -2380,7 +2718,7 @@ async function loadWeeklySourcedItems(
       .from("employee_plan_headers")
       .select("id,status,plan_kind")
       .eq("plan_kind", "weekly")
-      .in("status", ["submitted", "manager_approved", "ceo_approved", "final_approved", "hr_acknowledged"])
+      .in("status", PLAN_SOURCE_STATUSES)
       .lte("period_start_date", end)
       .gte("period_end_date", start)
       .in("employee_hr_id", keys)
@@ -2413,6 +2751,71 @@ async function loadWeeklySourcedItems(
       // days inside the monthly plan, re-synced on every open. The employee edits
       // the weekly plan to change it — it can never silently go missing here.
       locked: true,
+    }));
+    return { items, ready: true };
+  } catch (error) {
+    if (isSchemaMissing(error)) return { items: [], ready: false };
+    throw error;
+  }
+}
+
+// The covering monthly plan's items for [start, end] (weekly sourcing) — the other half of the
+// sync, and the half that was missing.
+//
+// It matters that this direction exists at all. People write the month FIRST and refine it into
+// weeks afterwards: both monthly plans ever submitted in production were created before any weekly
+// plan for their month existed (A-7 on 2026-06-29 for July, A-10 on 2026-07-05). At that moment
+// loadWeeklySourcedItems above had nothing to read, so the monthly plan was written blind, the
+// weeks were written blind after it, and the two drifted — 9 of 26 shared days disagreed, four of
+// them claiming Office on a day the week called Vacation.
+//
+// Unlike the weekly rows sourced INTO a monthly plan, these are NOT locked. The week is where a
+// month gets refined, so the seed is a starting point the employee may edit freely; the weekly
+// plan is authoritative once submitted, and reconcileMonthlyFromWeekly then carries the refinement
+// back. Locking here would make the month un-refinable, which is the opposite of the intent.
+async function loadMonthlySourcedItems(
+  employeeHrId: string,
+  start: string,
+  end: string,
+): Promise<{ items: PlanPrefillItem[]; ready: boolean }> {
+  try {
+    const keys = hrIdLookupKeys(employeeHrId);
+    if (keys.length === 0) return { items: [], ready: true };
+    const supabase = getSupabaseAdmin();
+    const { data: headers, error: headersError } = await supabase
+      .from("employee_plan_headers")
+      .select("id,status,plan_kind")
+      .eq("plan_kind", "monthly")
+      .in("status", PLAN_SOURCE_STATUSES)
+      .lte("period_start_date", end)
+      .gte("period_end_date", start)
+      .in("employee_hr_id", keys)
+      .limit(20);
+    if (headersError) throw headersError;
+    const planIds = ((headers ?? []) as Array<{ id: string }>).map((row) => row.id);
+    if (planIds.length === 0) return { items: [], ready: true };
+    const { data: itemRows, error: itemsError } = await supabase
+      .from("employee_plan_items")
+      .select("activity_date,activity_type,activity_title,area,location_text,objective,notes,start_time,end_time")
+      .in("plan_id", planIds)
+      .gte("activity_date", start)
+      .lte("activity_date", end)
+      .order("activity_date", { ascending: true })
+      .order("sort_order", { ascending: true })
+      .limit(2000);
+    if (itemsError) throw itemsError;
+    const items = ((itemRows ?? []) as PlanItemRow[]).map((row) => ({
+      activityDate: row.activity_date,
+      slot: planSlotFromTimes(row.start_time, row.end_time),
+      activityType: row.activity_type,
+      activityTitle: row.activity_title,
+      area: row.area,
+      locationText: row.location_text,
+      objective: row.objective,
+      notes: row.notes ?? "",
+      source: "monthly" as const,
+      sourceLabel: "From monthly plan",
+      locked: false,
     }));
     return { items, ready: true };
   } catch (error) {
@@ -2520,6 +2923,14 @@ export async function getPlanPrefill(
     const weekly = await loadWeeklySourcedItems(employee.hrId, start, end);
     ready = ready && weekly.ready;
     items.push(...weekly.items);
+  } else {
+    const monthly = await loadMonthlySourcedItems(employee.hrId, start, end);
+    ready = ready && monthly.ready;
+    // Never seed a day an approved vacation/excuse already speaks for: those rows are locked and
+    // authoritative, and a monthly "Office" landing beside a locked "Vacation" on the same day is
+    // the very contradiction this sync exists to end.
+    const spokenFor = new Set(items.map((item) => `${item.activityDate}|${item.slot}`));
+    items.push(...monthly.items.filter((item) => !spokenFor.has(`${item.activityDate}|${item.slot}`)));
   }
 
   const nationalHolidayDates = await loadNationalHolidayDates(start, end);
@@ -2773,7 +3184,7 @@ export async function createEmployeePlan(access: AccessContext, input: {
     submit: Boolean(input.submit),
   });
   if (input.submit) {
-    await notifyPlanSubmitted(await loadPlanRow(plan.id));
+    await afterPlanSubmitted(access, await loadPlanRow(plan.id));
   }
   await writeAuditLog({
     actorLoginId: access.loginId,
@@ -2863,7 +3274,7 @@ export async function updateEmployeePlan(access: AccessContext, planId: string, 
       submit: Boolean(input.submit),
     });
     if (input.submit) {
-      await notifyPlanSubmitted(await loadPlanRow(revisionRow.id));
+      await afterPlanSubmitted(access, await loadPlanRow(revisionRow.id));
     }
     return mapPlan(await loadPlanRow(revisionRow.id));
   }
@@ -2903,7 +3314,7 @@ export async function updateEmployeePlan(access: AccessContext, planId: string, 
     submit: Boolean(input.submit),
   });
   if (input.submit) {
-    await notifyPlanSubmitted(await loadPlanRow(existing.id));
+    await afterPlanSubmitted(access, await loadPlanRow(existing.id));
   }
   await writeAuditLog({
     actorLoginId: access.loginId,
@@ -3014,7 +3425,7 @@ export async function decideEmployeePlan(access: AccessContext, planId: string, 
     await notifyEmployeeManagerApproved(updated);
   }
   if (input.action.includes("return") || input.action.includes("reject")) {
-    await notifyEmployeeReturnedOrRejected(updated, input.action, input.comment ?? null);
+    await notifyEmployeeReturnedOrRejected(updated, input.action, input.comment ?? null, access.hrId ?? null);
   }
   return mapPlan(updated);
 }
@@ -3517,10 +3928,14 @@ async function notifyEmployeeEditRequestDecision(
   plan: PlanHeaderRow,
   decision: "approve" | "reject",
   comment: string | null,
+  actorHrId: string | null,
 ): Promise<void> {
   try {
     await notifyRecipients({
       actionUrl: `/employee-portals/plans?plan=${plan.id}`,
+      // Same addressing rule as every other conversation: the decider is copied so the employee can
+      // reply to the person who actually decided.
+      emailCcRecipients: actorHrId && !hrIdsMatch(actorHrId, plan.employee_hr_id) ? [{ hrId: actorHrId }] : [],
       // Approval is good news with nothing left to act on; rejection needs the employee's
       // attention, so only that branch keeps email.
       emailMode: decision === "approve" ? "none" : "primary_to_cc",
@@ -3596,6 +4011,6 @@ export async function decideEditRequest(
     summary: `${plan.plan_kind} plan decision: ${action}`,
   });
   const updated = await loadPlanRow(planId);
-  await notifyEmployeeEditRequestDecision(updated, input.decision, input.comment ?? null);
+  await notifyEmployeeEditRequestDecision(updated, input.decision, input.comment ?? null, access.hrId ?? null);
   return mapPlan(updated);
 }

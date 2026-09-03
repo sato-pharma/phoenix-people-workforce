@@ -16,6 +16,8 @@
 import { canonicalHrIdKey, hrIdLookupKeys } from "@/lib/hr-id";
 import { recruitmentDb } from "@/lib/recruitment/db";
 import { CANDIDATE_COMMENT_MAX_LENGTH, type CandidateComment } from "@/lib/recruitment/types";
+import { notifyConversationMessage } from "@/lib/conversations/notify";
+import { logError } from "@/lib/observability/log";
 
 export { CANDIDATE_COMMENT_MAX_LENGTH } from "@/lib/recruitment/types";
 
@@ -119,7 +121,79 @@ export async function addCandidateComment(input: {
     .select("*")
     .single();
   if (error) throw error;
-  return mapComment(data as Record<string, unknown>);
+  const comment = mapComment(data as Record<string, unknown>);
+  await notifyCandidateComment({
+    authorHrId: input.authorHrId,
+    authorName: input.authorName,
+    body,
+    candidateId: input.candidateId,
+  });
+  return comment;
+}
+
+/**
+ * Email the candidate's thread out, To the hiring manager who owns it and CC the sender.
+ *
+ * Until 2026-09-03 this table was written and NOBODY was told - eight comments in production, not
+ * one notification, so a manager's opinion of an applicant sat unread unless somebody happened to
+ * reopen the card. `manager_notified_hr_id` is the owner of the thread because it names the manager
+ * the CV was actually pushed to; it is emphatically NOT the candidate (see the standing note that
+ * every `manager_notified_*` column describes the manager, never the applicant's own answer), so
+ * no applicant is ever mailed from here.
+ *
+ * Best-effort: the comment row is already committed, and a delivery problem must not fail the write
+ * that succeeded.
+ */
+async function notifyCandidateComment(input: {
+  authorHrId: string | null;
+  authorName: string | null;
+  body: string;
+  candidateId: string;
+}): Promise<void> {
+  try {
+    const { data: candidateRow } = await recruitmentDb()
+      .from("ats_candidates")
+      .select("id,full_name,manager_notified_hr_id")
+      .eq("id", input.candidateId)
+      .maybeSingle();
+    const candidate = candidateRow as { full_name?: string | null; manager_notified_hr_id?: string | null } | null;
+    const ownerHrId = candidate?.manager_notified_hr_id ?? null;
+
+    // Everyone who has already spoken in this thread, so a running conversation keeps its audience
+    // instead of only ever reaching the manager.
+    const { data: priorRows } = await recruitmentDb()
+      .from("ats_candidate_comments")
+      .select("author_hr_id")
+      .eq("candidate_id", input.candidateId);
+    const participantHrIds = ((priorRows ?? []) as Array<{ author_hr_id?: string | null }>)
+      .map((row) => row.author_hr_id ?? null);
+
+    // With no manager on the record there is no thread owner to address, and mailing the author
+    // their own comment back is noise rather than a notification.
+    if (!ownerHrId && participantHrIds.filter(Boolean).length <= 1) return;
+
+    await notifyConversationMessage({
+      // The bare list, matching hiring-manager-notify.ts. The page reads no search params, so a
+      // `?candidate=` deep link would promise a jump it cannot make.
+      actionUrl: "/employee-portals/recruitment-candidates",
+      authorHrId: input.authorHrId,
+      authorName: input.authorName,
+      body: input.body,
+      eventType: "candidate_comment",
+      metadata: { candidateId: input.candidateId },
+      module: "recruitment",
+      participantHrIds,
+      recordId: input.candidateId,
+      submitterHrId: ownerHrId,
+      subjectLabel: String(candidate?.full_name ?? "").trim() || input.candidateId,
+      threadLabel: "candidate",
+    });
+  } catch (error) {
+    logError("Candidate comment failed to notify the thread", {
+      labels: { event: "candidate_comment_notify_failed", candidateId: input.candidateId },
+      error,
+    });
+  }
 }
 
 /**

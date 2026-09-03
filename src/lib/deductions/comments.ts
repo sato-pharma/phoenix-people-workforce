@@ -10,7 +10,9 @@ import type { AccessContext } from "@/lib/auth/permissions";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { compactDeductionsHrId } from "./candidate-key.ts";
 import type { DeductionsComment } from "./types.ts";
-import { hrIdForStorage } from "@/lib/hr-id";
+import { hrIdForStorage, hrIdLookupKeys } from "@/lib/hr-id";
+import { notifyHrConversationMessage } from "@/lib/conversations/notify";
+import { logError } from "@/lib/observability/log";
 
 type CommentRow = {
   id: string;
@@ -115,5 +117,73 @@ export async function addDeductionsComment(input: {
     summary: "Employee comment added to published deduction (unified module).",
   });
 
+  await notifyDeductionsComment({
+    authorHrId: input.access.hrId ?? null,
+    body,
+    candidateId: input.candidateId,
+  });
+
   return mapCommentRow(data as CommentRow);
+}
+
+/**
+ * Send an employee's comment on their own published deduction to HR.
+ *
+ * "HR gets the deductions comment" - the owner's answer on 2026-09-03, asked before any recipient
+ * was wired because this thread could not answer the question itself. It is the one conversation in
+ * the system with only ONE side: assertEmployeeCanCommentOnCandidate means the employee is the only
+ * person who can ever write here, so the row names no counterparty. Until now nothing was sent at
+ * all - somebody disputing a deduction wrote into a table nobody was watching.
+ *
+ * Best-effort: the comment row is already committed and a delivery failure must not undo it.
+ */
+async function notifyDeductionsComment(input: {
+  authorHrId: string | null;
+  body: string;
+  candidateId: string;
+}): Promise<void> {
+  try {
+    // The employee's NAME, never their HR id: the owner's standing rule is that a human-readable
+    // name is shown everywhere, in the UI and in a message alike.
+    let authorName: string | null = null;
+    if (input.authorHrId) {
+      const { data } = await getSupabaseAdmin()
+        .from("employees")
+        .select("full_name")
+        .in("hr_id", hrIdLookupKeys(input.authorHrId))
+        .maybeSingle();
+      authorName = String((data as { full_name?: string | null } | null)?.full_name ?? "").trim() || null;
+    }
+
+    await notifyHrConversationMessage({
+      // The admin screen, not the portal one - the portal page shows the VIEWER's own deductions,
+      // which is the wrong record entirely for an HR reader.
+      //
+      // Note that HR cannot open this page TODAY. app/(admin)/admin/deductions/page.tsx gates on
+      // `VIEW_ROLES = new Set(["Super Admin", "CEO"])` and redirects everyone else to
+      // /employee-portals, and the owner deliberately revoked the Finance Manager from that very
+      // set on 2026-08-11 ("hidden is not revoked"). So this stays the CORRECT destination - it is
+      // where the record lives, and it starts working the moment a seat is added - rather than a
+      // link somewhere HR can already reach but that shows the wrong thing.
+      //
+      // The EMAIL is unaffected and carries the comment in full, so HR reads the substance without
+      // clicking anything. Widening that page is an access decision for the owner, not a wiring
+      // detail, so it is flagged rather than taken.
+      actionUrl: "/admin/deductions",
+      authorHrId: input.authorHrId,
+      authorName,
+      body: input.body,
+      eventType: "deductions_comment",
+      metadata: { candidateId: input.candidateId },
+      module: "deductions",
+      recordId: input.candidateId,
+      subjectLabel: authorName ?? "an employee",
+      threadLabel: "published deduction for",
+    });
+  } catch (error) {
+    logError("Deductions comment failed to notify HR", {
+      labels: { event: "deductions_comment_notify_failed", candidateId: input.candidateId },
+      error,
+    });
+  }
 }
