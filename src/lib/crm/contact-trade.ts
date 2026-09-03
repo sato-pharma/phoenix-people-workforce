@@ -12,8 +12,16 @@
  * Phoenix has no foreign key from a direct-order pharmacy to a CRM contact. `direct_order_pharmacies`
  * is a venue a rep typed into an order form; `ireports360_contacts` is a list the CRM handed that rep.
  * Nothing joins them. Marketing is only slightly better: `marketing_customer_contacts.crm_code`
- * carries a real CRM contact id, but it is populated on 8 of the 19 contact rows behind the Phoenix
- * requests and resolves for 6.
+ * carries a real CRM contact id, but it is populated on only 8 of the 19 contact rows behind the
+ * Phoenix requests.
+ *
+ * An earlier version of this note said those codes "resolve for 6", counting a code as real only
+ * when it appeared in `ireports360_contacts`. That test was wrong, and the correction is worth
+ * keeping because the wrong reading is the intuitive one: `ireports360_contacts` is keyed
+ * `(agent_crm_id, contact_crm_id, list_type)`, so it is one agent's contact LIST and not a contact
+ * registry — 47% of the contacts reps have actually visited are missing from it, and every code
+ * measured against production 2026-09-03 turned out to be a real CRM contact with live visits. See
+ * `parseCrmContactCode` in src/lib/crm/contact-code.ts for the full measurement.
  *
  * So the join has to be inferred from the NAME, and a bare name match is unusable here. Measured
  * against production 2026-09-01: the direct-order venue `المدينة` name-matches ELEVEN CRM pharmacies
@@ -56,6 +64,7 @@
  * The matching core is pure and fixture-tested; the Supabase reads sit below it.
  */
 
+import { parseCrmContactCode } from "@/lib/crm/contact-code";
 import { isCrmSchemaMissingError } from "@/lib/crm/schema";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -285,8 +294,8 @@ export async function loadTradeCounterparties(): Promise<TradeCounterparty[]> {
   // whichever contacts of this customer name a CRM row, the customer's requests attach to them.
   const crmIdsByCustomer = new Map<string, number[]>();
   for (const row of (crmLinks.data ?? []) as { crm_code: string | null; customer_id: string | null }[]) {
-    const parsed = Number.parseInt((row.crm_code ?? "").trim(), 10);
-    if (!row.customer_id || !Number.isFinite(parsed)) continue;
+    const parsed = parseCrmContactCode(row.crm_code);
+    if (!row.customer_id || parsed === null) continue;
     const bucket = crmIdsByCustomer.get(row.customer_id);
     if (bucket) bucket.push(parsed);
     else crmIdsByCustomer.set(row.customer_id, [parsed]);

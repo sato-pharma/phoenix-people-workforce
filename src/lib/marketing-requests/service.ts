@@ -20,6 +20,7 @@ import type { EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { resolveJobFunctionRole } from "@/lib/employees/job-function";
 import { resolveGovernorate } from "@/lib/geo/egypt-locations";
 import { conflictError, forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
+import { parseCrmContactCode } from "@/lib/crm/contact-code";
 // The one definition of "this link was inferred, not field-validated". Imported rather than
 // re-implemented so the validation report and the Customer Pharmacy Mapping page can never drift
 // into disagreeing about which links the backfill wrote.
@@ -7314,16 +7315,20 @@ export async function getMarketingRequestDraftWorkspace(access: AccessContext): 
   }
 
   // Every active contact of every customer, so the form can offer the one a campaign concerns.
-  // `crm_code` is stored as text holding a CRM id; parsed the same way contact-trade.ts parses it
-  // so a contact reads as CRM-linked on both screens or on neither.
+  // `crm_code` is stored as text holding a CRM id, parsed by the shared strict parser that
+  // src/lib/crm/contact-trade.ts also uses, so a contact reads as CRM-linked on both screens or on
+  // neither. That parser's header carries the measurement that matters here: a code counts as
+  // linked when it PARSES, never when it appears in `ireports360_contacts` — that table is one
+  // agent's contact list, not a registry, and 40 of these 133 contacts are absent from it while
+  // carrying real CRM visits. Do not "tighten" this label against it.
   const contactsByCustomer: Record<string, MarketingRequestContactOption[]> = {};
   for (const row of (contactsResult.data ?? []) as MarketingCustomerContactDbRow[]) {
     if (!row.customer_id) continue;
-    const parsedCrmId = Number.parseInt((row.crm_code ?? "").trim(), 10);
+    const parsedCrmId = parseCrmContactCode(row.crm_code);
     const list = contactsByCustomer[row.customer_id] ?? [];
     list.push({
       contactName: cleanText(row.contact_name) ?? "Unnamed contact",
-      crmContactId: Number.isFinite(parsedCrmId) ? parsedCrmId : null,
+      crmContactId: parsedCrmId,
       id: row.id,
       mobileNumber: cleanText(row.mobile_number) ?? null,
     });
