@@ -570,6 +570,7 @@ import { runOutstationCarEvidenceValidationTests } from "./outstation-car-eviden
 import { runOutstationExpenseExportTests } from "./outstation-expense-export.test.ts";
 import { runOutstationLocalDraftTests } from "./outstation-local-draft.test.ts";
 import { runOutstationPayrollExpenseMappingTests } from "./outstation-payroll-expense-mapping.test.ts";
+import { runOutstationWorkflowResyncPreservesHrDecisionTests } from "./outstation-workflow-resync-preserves-hr-decision.test.ts";
 import { runOutstationImportIsAdditiveTests } from "./outstation-import-is-additive.test.ts";
 import { runSalaryRecordsUniqueBatchHrTests } from "./salary-records-unique-batch-hr.test.ts";
 import { runOutstationPolicyClassificationTests } from "./outstation-policy-classification.test.ts";
@@ -1237,6 +1238,7 @@ import { runRepoDoctorStripIdleOfferTests } from "./repo-doctor-strip-idle-offer
 import { runCrmClientTimeoutsTests } from "./crm-client-timeouts.test.ts";
 import { runOutstationPayrollPayableTotalAgreementTests } from "./outstation-payroll-payable-total-agreement.test.ts";
 import { runOutstationOfflineSyncBodyParityTests } from "./outstation-offline-sync-body-parity.test.ts";
+import { runOutstationManagerExpenseEditValidationTests } from "./outstation-manager-expense-edit-validation.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -2139,6 +2141,10 @@ await runTest("outstation car evidence validation", runOutstationCarEvidenceVali
 await runTest("outstation expense export", runOutstationExpenseExportTests);
 await runTest("outstation local draft", runOutstationLocalDraftTests);
 await runTest("outstation payroll expense mapping", runOutstationPayrollExpenseMappingTests);
+await runTest(
+  "outstation workflow resync preserves the HR decision",
+  runOutstationWorkflowResyncPreservesHrDecisionTests,
+);
 await runTest("outstation import is additive and hr_id-scoped", runOutstationImportIsAdditiveTests);
 await runTest("salary_records unique per employee per batch", runSalaryRecordsUniqueBatchHrTests);
 await runTest("outstation policy classification", runOutstationPolicyClassificationTests);
@@ -3808,6 +3814,10 @@ await runTest(
   "neither outstation submit path lets an employee set his own claim's travel cost, AM/PM "
     + "workload, HR column or trip type, and the offline body stays a subset of the online one",
   runOutstationOfflineSyncBodyParityTests,
+);
+await runTest(
+  "outstation manager-expense edit validation (PATCH refuses an unknown expense/transportation type, never spreads the raw body)",
+  runOutstationManagerExpenseEditValidationTests,
 );
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
