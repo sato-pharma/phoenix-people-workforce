@@ -16,6 +16,7 @@ import {
 import {
   decodeCustomerSubjectId,
   encodeCustomerSubjectId,
+  resolveMergeTarget,
 } from "../src/lib/customer-360/subject.ts";
 
 const UUID_A = "11111111-2222-3333-4444-555555555555";
@@ -224,4 +225,47 @@ export function runCustomer360Tests() {
     "an ordinary name is never treated as a code",
   );
   assert.equal(isCodeShapedName("صيدلية النور", null), false, "an Arabic name is a name, not a code");
+
+  // ── A retired record still has to lead somewhere ──────────────────────────────────────────────
+  // The picker drops merged-away rows so that one pharmacy is one card, and that is right. On its
+  // own it also turns every link to a retired record into "Customer not found" — and this system
+  // keeps producing such links, because a VALIDATED Source of Sales batch stores the Phoenix code a
+  // pharmacy had at the moment its order was injected and is never rewritten. DOP-000034 is in the
+  // August 2026 batch permanently and correctly.
+  const SURVIVOR = "b1e74979-099a-4da4-a9c6-a289d5b27afb";
+  const RETIRED = "ae06fed0-b13a-4b8d-af5f-2a0b63272893";
+  const liveMerges = new Map<string, string>([[RETIRED, SURVIVOR]]);
+
+  assert.equal(
+    resolveMergeTarget(RETIRED, liveMerges),
+    SURVIVOR,
+    "a link built from a retired Phoenix code must land on the pharmacy that record became",
+  );
+  assert.equal(
+    resolveMergeTarget(SURVIVOR, liveMerges),
+    SURVIVOR,
+    "resolving a survivor must be idempotent, or the canonical URL would redirect to itself forever",
+  );
+  assert.equal(
+    resolveMergeTarget(UUID_A, liveMerges),
+    UUID_A,
+    "an id that was never merged resolves to itself",
+  );
+
+  // Duplicates are found one at a time, so C merged into B and later B merged into A is an ordinary
+  // sequence rather than a corruption. Stopping after one hop would strand the visitor on a record
+  // that is itself retired.
+  assert.equal(
+    resolveMergeTarget("c", new Map([["c", "b"], ["b", "a"]])),
+    "a",
+    "a chain of merges must resolve all the way to the row that finally survived",
+  );
+
+  // The database forbids a row pointing at ITSELF, but nothing forbids a longer cycle. A page that
+  // hangs is worse than one showing the wrong pharmacy, so bad data must terminate the walk.
+  assert.equal(
+    resolveMergeTarget("a", new Map([["a", "b"], ["b", "a"]])),
+    "b",
+    "a cycle must terminate rather than loop forever",
+  );
 }

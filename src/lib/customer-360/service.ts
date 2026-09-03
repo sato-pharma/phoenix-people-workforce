@@ -42,6 +42,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 import {
   encodeCustomerSubjectId,
+  resolveMergeTarget,
   type CustomerRegister,
   type CustomerSubjectId,
   type CustomerSubjectRef,
@@ -418,7 +419,7 @@ export async function getCustomer360Profile(
   const supabase = getSupabaseAdmin();
   const names = await loadNameMaps();
 
-  const table = ref.register === "marketing" ? "marketing_pharmacies" : "direct_order_pharmacies";
+  const table = subjectRegisterTable(ref.register);
   const { data: headRows } = await supabase.from(table).select("*").eq("id", ref.recordId).limit(1);
   const head = (headRows ?? [])[0] as Record<string, unknown> | undefined;
   if (!head) return null;
@@ -532,4 +533,39 @@ export async function getCustomer360Profile(
     validationStatus: text(head.validation_status) ?? text(head.verification_status),
     venueType: text(head.venue_type),
   };
+}
+
+/** Which register table a subject lives in. One place, so the two readers cannot drift apart. */
+function subjectRegisterTable(register: CustomerRegister): string {
+  return register === "marketing" ? "marketing_pharmacies" : "direct_order_pharmacies";
+}
+
+/**
+ * The subject that survived, given the one a visitor arrived with.
+ *
+ * `listCustomerSubjects` drops merged-away rows so the picker offers one card per pharmacy, and
+ * that is right. On its own, though, it turns every link to a retired record into "Customer not
+ * found" — including links this system itself will keep producing, because a validated Source of
+ * Sales batch stores the Phoenix code the pharmacy had when its order was injected and is never
+ * rewritten. Resolving here means a retired code lands on the pharmacy it became.
+ *
+ * Only merged rows are read — 8 of them in production on 2026-09-03 — so this is one small query,
+ * and the chain itself is walked in memory by `resolveMergeTarget`. An unmerged id costs the query
+ * and resolves to itself, so the caller never needs to know which case it is in.
+ */
+export async function resolveCustomerSubjectRef(ref: CustomerSubjectRef): Promise<CustomerSubjectRef> {
+  const supabase = getSupabaseAdmin();
+  const { data } = await supabase
+    .from(subjectRegisterTable(ref.register))
+    .select("id, merged_into_pharmacy_id")
+    .not("merged_into_pharmacy_id", "is", null);
+
+  const mergedInto = new Map<string, string>();
+  for (const row of (data ?? []) as Record<string, unknown>[]) {
+    const from = text(row.id);
+    const into = text(row.merged_into_pharmacy_id);
+    if (from && into) mergedInto.set(from, into);
+  }
+
+  return { recordId: resolveMergeTarget(ref.recordId, mergedInto), register: ref.register };
 }
