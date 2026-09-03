@@ -1,4 +1,5 @@
 import { systemLegalEntity } from "@/config/system-settings";
+import { flowFieldLayer, type DocumentFieldRow } from "@/lib/hiring-pack/field-layout";
 import {
   CLEARANCE_BLANK_RULE,
   CLEARANCE_BLANK_RULE_WIDE,
@@ -235,6 +236,7 @@ function renderClearance(
   copies: number,
   requestedTemplateId: string | null | undefined,
   fallback: ClearanceTemplate,
+  fields: readonly DocumentFieldRow[],
 ): string {
   const requested = clearanceTemplateById(requestedTemplateId);
   const template = requested && requested.variant === fallback.variant ? requested : fallback;
@@ -374,6 +376,7 @@ ${printBanner([
     : "The settlement amount prints blank by design, in figures and in words. It is a release of claims: the figure has to be the one finance actually paid.",
 ])}
 ${body}
+${flowFieldLayer(fields, values)}
 </body>
 </html>`;
 }
@@ -383,8 +386,9 @@ export function renderClearanceEmployeeHtml(
   data: HiringPackData,
   copies: number,
   templateId?: string | null,
+  fields: readonly DocumentFieldRow[] = [],
 ): string {
-  return renderClearance(data, copies, templateId, CLEARANCE_EMPLOYEE_V1);
+  return renderClearance(data, copies, templateId, CLEARANCE_EMPLOYEE_V1, fields);
 }
 
 /** إخلاء طرف شركة — he releases the company, and the company files it. */
@@ -392,6 +396,7 @@ export function renderClearanceCompanyHtml(
   data: HiringPackData,
   copies: number,
   templateId?: string | null,
+  fields: readonly DocumentFieldRow[] = [],
 ): string {
-  return renderClearance(data, copies, templateId, CLEARANCE_COMPANY_V1);
+  return renderClearance(data, copies, templateId, CLEARANCE_COMPANY_V1, fields);
 }

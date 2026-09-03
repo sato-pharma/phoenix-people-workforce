@@ -19,6 +19,8 @@ export type Placement =
   | {
       kind: "text";
       key: string;
+      /** The field-layer row this came from, ADDED rows only. Undefined for a compiled default. */
+      fieldId?: string;
       x: number;
       y: number;
       w: number;
@@ -27,9 +29,19 @@ export type Placement =
       size?: number;
     }
   /** One character per cell, across a printed box grid, left to right. */
-  | { kind: "digits"; key: string; x: number; y: number; pitch: number; cells: number; h: number; size?: number }
+  | {
+      kind: "digits";
+      key: string;
+      fieldId?: string;
+      x: number;
+      y: number;
+      pitch: number;
+      cells: number;
+      h: number;
+      size?: number;
+    }
   /** A checkmark inside a single box. */
-  | { kind: "tick"; key: string; x: number; y: number; w: number; h: number };
+  | { kind: "tick"; key: string; fieldId?: string; x: number; y: number; w: number; h: number };
 
 /** A page of official artwork and the values that go on it. */
 export type FormPage = {
@@ -50,14 +62,20 @@ export type FormPage = {
  * effect anywhere, on paper or on screen — so this costs the printed document nothing. The
  * attribute is the ONLY link between a mark on the paper and the column behind it;
  * `paper-fields.ts` holds the other half and decides which keys may be written at all.
+ *
+ * `fieldId`, when present, is the field-layer row's own id, carried as `data-hp-field`. Two ADDED
+ * fields on one page can share a `data-hp-key` — nothing stops an operator adding the same value
+ * twice at different spots — so the key alone cannot address one box in an editor. A compiled
+ * default has no row and so no `fieldId`; `data-hp-key` keeps addressing those exactly as before.
  */
 export function renderPlacement(placement: Placement, values: Record<string, string>): string {
   const raw = values[placement.key] ?? "";
   if (!raw) return "";
   const key = ` data-hp-key="${escapeHtml(placement.key)}"`;
+  const field = placement.fieldId ? ` data-hp-field="${escapeHtml(placement.fieldId)}"` : "";
 
   if (placement.kind === "tick") {
-    return `<span class="f tick"${key} style="left:${placement.x}pt;top:${placement.y}pt;width:${placement.w}pt;height:${placement.h}pt;line-height:${placement.h}pt">${escapeHtml(raw)}</span>`;
+    return `<span class="f tick"${key}${field} style="left:${placement.x}pt;top:${placement.y}pt;width:${placement.w}pt;height:${placement.h}pt;line-height:${placement.h}pt">${escapeHtml(raw)}</span>`;
   }
 
   if (placement.kind === "digits") {
@@ -72,14 +90,14 @@ export function renderPlacement(placement: Placement, values: Record<string, str
       .join("");
     const width = placement.pitch * placement.cells;
     const size = placement.size ?? 10;
-    return `<span class="f grid"${key} style="left:${placement.x}pt;top:${placement.y}pt;width:${width.toFixed(2)}pt;height:${placement.h}pt;font-size:${size}pt">${cells}</span>`;
+    return `<span class="f grid"${key}${field} style="left:${placement.x}pt;top:${placement.y}pt;width:${width.toFixed(2)}pt;height:${placement.h}pt;font-size:${size}pt">${cells}</span>`;
   }
 
   const size = placement.size ?? 9;
   // The text sits in an inner element so `FIT_TO_BOX_SCRIPT` can compress it horizontally when it
   // is wider than the rule it was measured for. Without the wrapper there is nothing to scale: the
   // outer box is what defines the limit, so scaling it would move the limit too.
-  return `<span class="f txt"${key} style="left:${placement.x}pt;top:${placement.y}pt;width:${placement.w}pt;height:${placement.h}pt;line-height:${placement.h}pt;text-align:${placement.align};font-size:${size}pt"><span class="ff">${escapeHtml(raw)}</span></span>`;
+  return `<span class="f txt"${key}${field} style="left:${placement.x}pt;top:${placement.y}pt;width:${placement.w}pt;height:${placement.h}pt;line-height:${placement.h}pt;text-align:${placement.align};font-size:${size}pt"><span class="ff">${escapeHtml(raw)}</span></span>`;
 }
 
 /** One printed side: the artwork, the values on it, and anything the document adds of its own. */

@@ -1,4 +1,5 @@
 import { systemLegalEntity } from "@/config/system-settings";
+import { layeredPages, type DocumentFieldRow } from "@/lib/hiring-pack/field-layout";
 import {
   FORM6_PAGE_1_PLACEMENTS,
   FORM6_PAGE_1_SVG,
@@ -83,13 +84,30 @@ export function buildForm6Values(data: HiringPackData): Record<string, string> {
   };
 }
 
-export function renderForm6Html(data: HiringPackData, copies: number): string {
+/**
+ * @param fields The operator's own field layer — what has been moved, hidden or added on this form.
+ *   Empty is the norm and means "print the compiled coordinates", which is what this did before the
+ *   layer existed and what it still does wherever the layer's table is absent.
+ */
+export function renderForm6Html(
+  data: HiringPackData,
+  copies: number,
+  _templateVersionId?: string | null,
+  fields: readonly DocumentFieldRow[] = [],
+): string {
   const values = buildForm6Values(data);
+  const pages = layeredPages(
+    [
+      { svg: FORM6_PAGE_1_SVG, placements: FORM6_PAGE_1_PLACEMENTS },
+      { svg: FORM6_PAGE_2_SVG, placements: FORM6_PAGE_2_PLACEMENTS },
+    ],
+    values,
+    fields,
+  );
 
   const sheets: string[] = [];
   for (let copy = 0; copy < Math.max(1, copies); copy += 1) {
-    sheets.push(renderSheet(FORM6_PAGE_1_SVG, FORM6_PAGE_1_PLACEMENTS, values));
-    sheets.push(renderSheet(FORM6_PAGE_2_SVG, FORM6_PAGE_2_PLACEMENTS, values));
+    for (const page of pages) sheets.push(renderSheet(page.svg, page.placements, page.values));
   }
 
   const employeeName = data.employee.nameAr ?? data.employee.fullName;

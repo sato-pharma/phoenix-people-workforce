@@ -1,4 +1,5 @@
 import { systemLegalEntity } from "@/config/system-settings";
+import { flowFieldLayer, type DocumentFieldRow } from "@/lib/hiring-pack/field-layout";
 import {
   CUSTODY_BLANK_RULE,
   CUSTODY_BLANK_RULE_WIDE,
@@ -311,6 +312,7 @@ function renderCustody(
   copies: number,
   requestedTemplateId: string | null | undefined,
   fallback: CustodyTemplate,
+  fields: readonly DocumentFieldRow[],
 ): string {
   const requested = custodyTemplateById(requestedTemplateId);
   const template = requested && requested.variant === fallback.variant ? requested : fallback;
@@ -462,6 +464,7 @@ ${printBanner([
   "The device details, values and handover date print blank by design. Complete them with the device in hand.",
 ])}
 ${body}
+${flowFieldLayer(fields, values)}
 </body>
 </html>`;
 }
@@ -471,8 +474,9 @@ export function renderCustodyLaptopHtml(
   data: HiringPackData,
   copies: number,
   templateId?: string | null,
+  fields: readonly DocumentFieldRow[] = [],
 ): string {
-  return renderCustody(data, copies, templateId, CUSTODY_LAPTOP_V1);
+  return renderCustody(data, copies, templateId, CUSTODY_LAPTOP_V1, fields);
 }
 
 /** The phone-or-tablet receipt — نموذج رقم 2. */
@@ -480,6 +484,7 @@ export function renderCustodyMobileHtml(
   data: HiringPackData,
   copies: number,
   templateId?: string | null,
+  fields: readonly DocumentFieldRow[] = [],
 ): string {
-  return renderCustody(data, copies, templateId, CUSTODY_MOBILE_V1);
+  return renderCustody(data, copies, templateId, CUSTODY_MOBILE_V1, fields);
 }
