@@ -25,9 +25,11 @@ import {
   suggestFolderFromDeclaredAnswers,
   type CandidateFolderSuggestion,
 } from "@/lib/recruitment/candidate-folder-suggestion";
+import { inferCandidatePlacement } from "@/lib/recruitment/candidate-folder-inference";
 import {
   driveFileNameFor,
   driveFolderPathFor,
+  driveInferredFolderPath,
   UNCLASSIFIED_FOLDER_NAME,
   type AreaRegionMap,
 } from "@/lib/recruitment/drive-cv-folders";
@@ -92,10 +94,13 @@ type MirrorCandidateRow = {
   preferences_declared_at: string | null;
   folder_kind: string | null;
   folder_key: string | null;
+  governorate: string | null;
+  address: string | null;
+  sent_for_region: string | null;
 };
 
 const CANDIDATE_FIELDS =
-  "id, full_name, phone, whatsapp, status, applied_for_job_title, preferred_area_name, preferred_region_code, preferences_declared_at, folder_kind, folder_key";
+  "id, full_name, phone, whatsapp, status, applied_for_job_title, preferred_area_name, preferred_region_code, preferences_declared_at, folder_kind, folder_key, governorate, address, sent_for_region";
 
 /**
  * The folder path for one candidate, and the name their file should carry.
@@ -129,13 +134,27 @@ export function placementFor(
           status: row.status ?? "",
         }).suggestion;
 
+  const fileName = driveFileNameFor({
+    candidateName: row.full_name,
+    mimeType,
+    phone: row.whatsapp || row.phone,
+  });
+
+  // A STATED answer always wins, and reaches the confirmed tree.
+  if (suggestion) return { fileName, path: driveFolderPathFor(suggestion, areaRegions) };
+
+  // Otherwise fall to inference, which files under its own caveated shelf and never mixes with the
+  // above. `driveInferredFolderPath` answers a real folder even for a null placement, so there is
+  // no third branch and no CV without a folder.
   return {
-    fileName: driveFileNameFor({
-      candidateName: row.full_name,
-      mimeType,
-      phone: row.whatsapp || row.phone,
-    }),
-    path: driveFolderPathFor(suggestion, areaRegions),
+    fileName,
+    path: driveInferredFolderPath(
+      inferCandidatePlacement({
+        address: row.address,
+        governorate: row.governorate,
+        sentForRegion: row.sent_for_region,
+      }),
+    ),
   };
 }
 

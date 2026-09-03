@@ -22,6 +22,7 @@
 // PURE — no database, no network, no React. The area→region grouping is handed in as a map rather
 // than read from `au.canonical_areas`, so the whole tree is unit-testable without either.
 
+import type { InferredPlacement } from "@/lib/recruitment/candidate-folder-inference";
 import {
   candidateFolderKindLabels,
   candidateFolderLabel,
@@ -43,6 +44,27 @@ import { recruitmentRegionForArea } from "@/lib/recruitment/candidate-region";
  * that state, and a design that waited for answers would have filed none of them anywhere.
  */
 export const UNCLASSIFIED_FOLDER_NAME = "Not yet classified";
+
+/**
+ * The shelf for CVs placed by INFERENCE rather than by the applicant's own answers.
+ *
+ * Deliberately a sibling of the four real shelves and never nested inside one. The name has to do
+ * the work of a caveat, because a folder is read on a phone with no tooltip and no legend: anyone
+ * opening it must understand at a glance that nobody confirmed this. It stops at region for the
+ * reasons `candidate-folder-inference.ts` sets out, so nothing inside it is ever two levels deep
+ * except the one country case below.
+ */
+export const INFERRED_FOLDER_NAME = "From the CV (not confirmed)";
+
+/**
+ * Inferred, and the CV names nowhere at all. Still a folder rather than the flat holding pile — the
+ * owner's instruction on 2026-09-04 was that no CV sits without one, and "the CV does not say" is a
+ * genuine, checkable fact about the record rather than a bucket for leftovers.
+ */
+export const NO_LOCATION_FOLDER_NAME = "Location not on the CV";
+
+/** Inferred and outside Egypt — the country sits under this so the region list stays Egyptian. */
+export const OUTSIDE_EGYPT_FOLDER_NAME = "Outside Egypt";
 
 /**
  * Characters Drive tolerates but a human browsing folders does not, plus the separator this module
@@ -120,6 +142,30 @@ export function driveFolderPathFor(
   // "Paramedical / Paramedical" would be noise. Every other shelf keeps its one level.
   const segments: string[] = suggestion.kind === "paramedical" ? [shelf] : [shelf, label];
   return segments.map(sanitizeDriveSegment).filter(Boolean);
+}
+
+/**
+ * The path for a candidate placed by INFERENCE, under its own clearly-caveated shelf.
+ *
+ * `null` for the placement is not a failure — it means the record names nowhere, which is a fact
+ * worth a folder of its own rather than a reason to fall back to the flat pile. Everything here is
+ * one level under the shelf except a foreign country, which keeps the Egyptian region list clean by
+ * sitting under "Outside Egypt".
+ */
+export function driveInferredFolderPath(placement: InferredPlacement | null | undefined): string[] {
+  if (!placement) {
+    return [INFERRED_FOLDER_NAME, NO_LOCATION_FOLDER_NAME].map(sanitizeDriveSegment);
+  }
+  const segments =
+    placement.basis === "outside-egypt"
+      ? [INFERRED_FOLDER_NAME, OUTSIDE_EGYPT_FOLDER_NAME, placement.label]
+      : [INFERRED_FOLDER_NAME, placement.label];
+  return segments.map(sanitizeDriveSegment).filter(Boolean);
+}
+
+/** True when a path sits on the inferred shelf — used to tell a guess from a stated answer. */
+export function isInferredPath(path: readonly string[]): boolean {
+  return path[0] === INFERRED_FOLDER_NAME;
 }
 
 /** True when this path is the holding folder rather than a real filing decision. */
