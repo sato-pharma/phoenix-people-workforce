@@ -46,7 +46,6 @@ import {
   AdminTableShell,
 } from "@/components/admin/admin-design-system";
 import { HiringPackPaperEditor } from "@/components/hiring-pack/paper-editor";
-import { HiringPackReadinessBoard } from "@/components/hiring-pack/readiness-board";
 import {
   INSURANCE_WAGE_CEILING,
   INSURANCE_WAGE_DIVISOR,
@@ -71,7 +70,6 @@ import type {
   HiringPackProfileInput,
   OffboardingProfileInput,
 } from "@/lib/hiring-pack/types";
-import type { HiringPackReadiness } from "@/lib/hiring-pack/readiness";
 import { cn } from "@/lib/utils";
 
 const inputClassName =
@@ -638,14 +636,6 @@ type Props = {
   initialPack: HiringPackData | null;
   /** Every sales line, for the "Department" picker on the facts editor. */
   lines: { id: number; name: string }[];
-  /**
-   * The whole payroll's printability, for the board above the picker.
-   *
-   * OPTIONAL, and null when the bulk read failed. The board is a view over data the fill screen does
-   * not need — losing it must not take the screen with it, because typing one person's contract is
-   * the thing HR came here to do.
-   */
-  readiness?: HiringPackReadiness | null;
 };
 
 export function HiringPackManager({
@@ -654,7 +644,6 @@ export function HiringPackManager({
   initialError,
   initialPack,
   lines,
-  readiness = null,
 }: Props) {
   const [pack, setPack] = useState<HiringPackData | null>(initialPack);
   const [selectedHrId, setSelectedHrId] = useState(initialPack?.employee.hrId ?? "");
@@ -1018,14 +1007,6 @@ export function HiringPackManager({
             ) : null}
           </div>
         </AdminTableShell>
-
-        {readiness ? (
-          <HiringPackReadinessBoard
-            onSelect={(hrId) => void selectEmployee(hrId)}
-            readiness={readiness}
-            selectedHrId={selectedHrId}
-          />
-        ) : null}
 
         {pack && employee ? (
           <>
