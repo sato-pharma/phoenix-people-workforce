@@ -443,8 +443,15 @@ function testContractPrintsFourCopiesOnA4() {
     html.includes(spellEgyptianAmount(12750.5)),
     "the salary must also be spelled out — the words are what control in Egyptian practice",
   );
-  // A field label and its value must never be split across a line break.
-  assert.ok(html.includes('class="field"'), "party field lines must be kept unbreakable");
+  // A field label and its value must never be split across a line break. Two mechanisms, one
+  // property: the prose and banded layouts bind the pair with a nowrap span in flowing text, while
+  // the document layout puts label and value in SEPARATE CELLS of a ruled grid, which a line break
+  // cannot part at all. Pinning one layout's span on every version is what made this go red when
+  // version 3 was re-typeset — the binding had got stronger, not gone missing.
+  assert.ok(
+    html.includes('class="field"') || html.includes('class="doc-ident__label"'),
+    "party field lines must be kept unbreakable",
+  );
 }
 
 function testTafqitAgreement() {

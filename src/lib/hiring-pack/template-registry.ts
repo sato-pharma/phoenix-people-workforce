@@ -107,7 +107,7 @@ export const DOCUMENT_TEMPLATE_VERSIONS: readonly DocumentTemplateVersion[] = [
     effectiveFrom: "2026-09-01",
     supersededOn: null,
     supersededBy: null,
-    note: "Supplied by the owner as a Word document on 2026-09-01. Thirteen titled articles — the same banded layout as version 2, consolidated: term, probation and appointment prerequisites in مادة (3), and pay, the periodic raise and incentives in مادة (4). References a strict subset of version 2's blanks: it no longer states an insurance-wage figure, an underperformance threshold or a training-bond duration.",
+    note: "Supplied by the owner as a Word document on 2026-09-01. Thirteen titled articles, consolidated from version 2: term, probation and appointment prerequisites in مادة (3), and pay, the periodic raise and incentives in مادة (4). References a strict subset of version 2's blanks: it no longer states an insurance-wage figure, an underperformance threshold or a training-bond duration. TYPESETTING CORRECTED 2026-09-03 against the owner's own file, which he re-sent because the text had been reproduced faithfully and the document had not: the layout moved from version 2's banded panels to `document` — a white page, the letterhead repeated on every page, headings as blue text over a hair rule, and no highlighting on typed values. The Arabic did not change, and no contract had been signed against this version.",
   },
   {
     id: "form1-v1",
