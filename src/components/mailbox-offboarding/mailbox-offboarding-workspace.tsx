@@ -10,9 +10,24 @@
  *
  * DESKTOP GETS THE TABLE, MOBILE NEVER DOES — the owner's standing rule.
  *
- * NOTHING TRUNCATES AND NOTHING WRAPS in the table. Email addresses are the longest thing here and
- * the most important to read in full, so they sit `whitespace-nowrap` inside a horizontally
- * scrolling container rather than behind an ellipsis.
+ * IT FITS THE SCREEN (AGENTS.md §4). `table-fixed` with a `<colgroup>`, never a `min-width` under
+ * an `overflow-x-auto` — that pairing IS the bug the golden rule names, and it was here: at a 1280px
+ * viewport this table measured 1840px inside a 909px wrapper. The page-level check
+ * `documentElement.scrollWidth > clientWidth` read FALSE the whole time, because the scrolling
+ * wrapper absorbed the overflow — measure the TABLE against its WRAPPER, and the ink inside each
+ * cell against that cell, or the screen certifies itself while content hangs off the side.
+ *
+ * NINE COLUMNS BECAME FOUR BY MERGING, never by shrinking type. Job title, mailbox and last day
+ * fold into the person cell (the order the mobile card already used); the three steps share one
+ * self-labelling column; the two corrections sit under the state chips. Long values WRAP — the
+ * "nothing wraps" rule this file used to carry is superseded by the golden rule, and the ellipsis
+ * ban is untouched: nothing truncates.
+ *
+ * THE WIDTH TO DESIGN AGAINST IS 669px, NOT 1280. The 292px sidebar is `hidden lg:flex`, so the
+ * content box NARROWS as the viewport crosses 1024px — 991px at 1023, 669px at 1024. That is the
+ * tightest this table ever gets, and the column percentages are sized so step 3's `<select>` still
+ * clears its 192px natural width there (it renders 217px; a shrunk `<select>` is the one thing the
+ * golden rule says cannot be fixed by narrowing). Re-measure at 1024, not only at 1280.
  *
  * NO `window.prompt` OR `window.confirm`. Reasons are captured inline, against the row they are
  * about.
@@ -41,6 +56,7 @@ import {
   TriangleAlert,
 } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
+import type { ReactNode } from "react";
 
 import { PremiumHero } from "@/components/ui/premium-hero";
 import type {
@@ -115,34 +131,34 @@ function MetricTile({
 function StatusChip({ task }: { task: MailboxOffboardingTask }) {
   if (task.status === "revoked") {
     return (
-      <span className="inline-flex items-center gap-1 whitespace-nowrap border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.1em] text-emerald-800">
+      <span className="inline-flex items-center gap-1 border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.1em] text-emerald-800">
         <ShieldCheck aria-hidden="true" className="h-3 w-3" /> Revoked
       </span>
     );
   }
   if (task.status === "not_applicable") {
     return (
-      <span className="inline-flex items-center gap-1 whitespace-nowrap border border-slate-300 bg-slate-100 px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.1em] text-slate-600">
+      <span className="inline-flex items-center gap-1 border border-slate-300 bg-slate-100 px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.1em] text-slate-600">
         <CircleSlash aria-hidden="true" className="h-3 w-3" /> Not applicable
       </span>
     );
   }
   if (task.isHalfRevoked) {
     return (
-      <span className="inline-flex items-center gap-1 whitespace-nowrap border border-rose-300 bg-rose-50 px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.1em] text-rose-800">
+      <span className="inline-flex items-center gap-1 border border-rose-300 bg-rose-50 px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.1em] text-rose-800">
         <Smartphone aria-hidden="true" className="h-3 w-3" /> Still reachable
       </span>
     );
   }
   if (task.status === "in_progress") {
     return (
-      <span className="inline-flex items-center gap-1 whitespace-nowrap border border-orange-300 bg-orange-50 px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.1em] text-orange-800">
+      <span className="inline-flex items-center gap-1 border border-orange-300 bg-orange-50 px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.1em] text-orange-800">
         <KeyRound aria-hidden="true" className="h-3 w-3" /> In progress
       </span>
     );
   }
   return (
-    <span className="inline-flex items-center gap-1 whitespace-nowrap border border-slate-300 bg-white px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.1em] text-slate-600">
+    <span className="inline-flex items-center gap-1 border border-slate-300 bg-white px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.1em] text-slate-600">
       <MailX aria-hidden="true" className="h-3 w-3" /> Not started
     </span>
   );
@@ -151,7 +167,7 @@ function StatusChip({ task }: { task: MailboxOffboardingTask }) {
 function OverdueFlag({ task }: { task: MailboxOffboardingTask }) {
   if (!task.isOverdue) return null;
   return (
-    <span className="inline-flex items-center gap-1 whitespace-nowrap border border-rose-300 bg-rose-50 px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.1em] text-rose-800">
+    <span className="inline-flex items-center gap-1 border border-rose-300 bg-rose-50 px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.1em] text-rose-800">
       <TriangleAlert aria-hidden="true" className="h-3 w-3" />
       {task.daysOverdue} days since last day
     </span>
@@ -436,6 +452,21 @@ function makeDraft(task: MailboxOffboardingTask, kind: DraftKind): Draft {
   };
 }
 
+/**
+ * One labelled line inside the merged steps column. The label lives here, not in a column heading,
+ * because the three steps share a single column now — which is what buys step 3's `<select>` the
+ * width it needs at 1024px. `flex-wrap` is the whole fitting strategy: label and control sit on one
+ * line while there is room, and the control drops to its own line when there is not.
+ */
+function StepRow({ children, label }: { children: ReactNode; label: string }) {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
+      <span className="text-[9px] font-black uppercase tracking-[0.12em] text-slate-500">{label}</span>
+      {children}
+    </div>
+  );
+}
+
 /** Steps 1 and 2: one click, recorded in place. Nothing to fill in, so nothing to open. */
 function StepCell({
   busy,
@@ -507,7 +538,7 @@ function DispositionCell({
 
   if (editing && draft) {
     return (
-      <div className="min-w-[210px] space-y-1">
+      <div className="w-full min-w-0 space-y-1">
         <select
           className="block w-full border border-slate-300 px-2 py-1 text-[12px] font-semibold text-slate-900"
           onChange={(event) => onChange({ disposition: event.target.value as MailboxDisposition })}
@@ -560,7 +591,7 @@ function DispositionCell({
   if (task.disposition) {
     return (
       <span
-        className="whitespace-nowrap text-[12px] font-semibold text-slate-700"
+        className="break-words text-[12px] font-semibold text-slate-700"
         title={task.dispositionByName ?? task.dispositionBy ?? undefined}
       >
         {DISPOSITION_LABEL[task.disposition]}
@@ -618,7 +649,7 @@ function ReasonCell({
 
   if (editing && draft) {
     return (
-      <div className="min-w-[210px] space-y-1 text-left">
+      <div className="w-full min-w-0 space-y-1 text-left">
         <textarea
           className="block w-full border border-slate-300 px-2 py-1 text-[12px] font-semibold text-slate-900"
           onChange={(event) => onChange({ reason: event.target.value })}
@@ -1072,7 +1103,7 @@ export function MailboxOffboardingWorkspace({
                 key={leaver.employeeHrId}
                 className="flex flex-wrap items-center justify-between gap-2 border border-slate-200 px-3 py-2"
               >
-                <span className="whitespace-nowrap text-[12px] font-bold text-slate-900">
+                <span className="min-w-0 break-words text-[12px] font-bold text-slate-900">
                   {leaver.employeeName} — {leaver.workEmail}
                 </span>
                 {canOpen ? (
@@ -1142,11 +1173,22 @@ export function MailboxOffboardingWorkspace({
           This used to be an expander whose panel rendered underneath the whole table, which meant
           scrolling down, acting, and scrolling back for each of ~50 people. The work here is one
           pass down a backlog, so the row is the unit of work and nothing may leave it. */}
-      <div className="mt-5 hidden overflow-x-auto md:block">
-        <table className="w-full min-w-[1240px] border-collapse">
+      <div className="mt-5 hidden md:block">
+        <table className="w-full table-fixed border-collapse">
+          {/* Four columns, fixed. Measured against the REAL shell chain, not the raw viewport:
+              669px of content at a 1024px window (the tightest, because the 292px sidebar arrives
+              at `lg`), 721px at 768px, 909px at 1280px. Table width equals wrapper width at all
+              three, with no cell ink crossing its own cell. Adding a fifth column is what breaks
+              this — merge into an existing one instead, as the four originals were merged. */}
+          <colgroup>
+            <col className="w-[6%]" />
+            <col className="w-[32%]" />
+            <col className="w-[36%]" />
+            <col className="w-[26%]" />
+          </colgroup>
           <thead>
             <tr className="border-b border-slate-300 bg-slate-50">
-              <th className="w-8 px-3 py-2 text-left" scope="col">
+              <th className="px-2 py-2 text-left" scope="col">
                 {selectableIds.length > 0 ? (
                   <input
                     aria-label={allSelected ? "Clear the selection" : "Select every row on screen"}
@@ -1162,17 +1204,15 @@ export function MailboxOffboardingWorkspace({
                   />
                 ) : null}
               </th>
-              {["Person", "Mailbox", "Last day", "1 · Password", "2 · App passwords", "3 · Mailbox", "State", ""].map(
-                (heading, index) => (
-                  <th
-                    className="whitespace-nowrap px-3 py-2 text-left text-[9px] font-black uppercase tracking-[0.14em] text-slate-500"
-                    key={`${heading}-${index}`}
-                    scope="col"
-                  >
-                    {heading}
-                  </th>
-                ),
-              )}
+              {["Person & mailbox", "Steps", "State"].map((heading) => (
+                <th
+                  className="px-3 py-2 text-left text-[9px] font-black uppercase tracking-[0.14em] text-slate-500"
+                  key={heading}
+                  scope="col"
+                >
+                  {heading}
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody>
@@ -1181,7 +1221,7 @@ export function MailboxOffboardingWorkspace({
               const locked = !canRecord || settled;
               return (
                 <tr className="border-b border-slate-200 align-top" key={task.id}>
-                  <td className="px-3 py-3">
+                  <td className="px-2 py-3">
                     {/* No checkbox on a settled row: there is nothing left to record on it. */}
                     {locked ? null : (
                       <input
@@ -1193,76 +1233,98 @@ export function MailboxOffboardingWorkspace({
                       />
                     )}
                   </td>
-                  <td className="whitespace-nowrap px-3 py-3 text-[12px] font-black text-slate-900">
-                    {task.employeeName}
-                    {task.jobTitle ? (
-                      <span className="ml-2 text-[10px] font-bold uppercase tracking-[0.1em] text-slate-400">
-                        {task.jobTitle}
-                      </span>
-                    ) : null}
-                  </td>
-                  <td className="whitespace-nowrap px-3 py-3 text-[12px] font-semibold text-slate-700">
-                    {task.workEmail}
-                  </td>
-                  <td className="whitespace-nowrap px-3 py-3 text-[12px] font-semibold tabular-nums text-slate-700">
-                    {formatDate(task.lastWorkingDate)}
-                  </td>
-                  <td className="whitespace-nowrap px-3 py-3">
-                    <StepCell
-                      busy={busy}
-                      doneAt={task.passwordResetAt}
-                      doneBy={task.passwordResetByName ?? task.passwordResetBy}
-                      label="Reset"
-                      locked={locked}
-                      onRecord={() => recordStep(task, "password_reset")}
-                    />
-                  </td>
-                  <td className="whitespace-nowrap px-3 py-3">
-                    <StepCell
-                      busy={busy}
-                      /* Rose only when the password is already reset and this is not: that is the
-                         half-revoked mailbox, the one that looks finished and is not. */
-                      danger={task.isHalfRevoked}
-                      doneAt={task.appPasswordsClearedAt}
-                      doneBy={task.appPasswordsClearedByName ?? task.appPasswordsClearedBy}
-                      label="Clear"
-                      locked={locked}
-                      onRecord={() => recordStep(task, "app_passwords_cleared")}
-                    />
-                  </td>
+
+                  {/* WHO. Four columns folded into one — name, job title, mailbox, last day — in
+                      the order the mobile card below already presents them. The mailbox is the
+                      longest value on this screen and still reads in full: it wraps, it is never
+                      cut. */}
                   <td className="px-3 py-3">
-                    <DispositionCell
-                      busy={busy}
-                      draft={draft}
-                      /* Its own lock, not the row's: a revoked row still accepts a disposition
-                         when both revocation steps are recorded, because that cannot change the
-                         status. Mirrors the guard in phx_mailbox_offboarding_record. */
-                      locked={!canRecord || !task.canRecordDisposition}
-                      onCancel={() => setDraft(null)}
-                      onChange={(patch) => setDraft((current) => (current ? { ...current, ...patch } : current))}
-                      onOpen={() => setDraft(makeDraft(task, "disposition"))}
-                      onSubmit={submitDraft}
-                      task={task}
-                    />
+                    <p className="break-words text-[12px] font-black leading-snug text-slate-900">
+                      {task.employeeName}
+                    </p>
+                    {task.jobTitle ? (
+                      <p className="mt-0.5 break-words text-[10px] font-bold uppercase tracking-[0.1em] text-slate-400">
+                        {task.jobTitle}
+                      </p>
+                    ) : null}
+                    <p className="mt-1 break-words text-[12px] font-semibold text-slate-700">
+                      {task.workEmail}
+                    </p>
+                    <p className="mt-1 text-[10px] font-bold uppercase tracking-[0.1em] text-slate-400">
+                      Last day{" "}
+                      <span className="tabular-nums text-slate-500">
+                        {formatDate(task.lastWorkingDate)}
+                      </span>
+                    </p>
                   </td>
-                  <td className="whitespace-nowrap px-3 py-3">
-                    <div className="flex flex-wrap items-center gap-1">
+
+                  {/* THE THREE STEPS, still recorded from inside the row — one column instead of
+                      three, each step named on its own line. */}
+                  <td className="px-3 py-3">
+                    <div className="space-y-1">
+                      <StepRow label="1 · Password">
+                        <StepCell
+                          busy={busy}
+                          doneAt={task.passwordResetAt}
+                          doneBy={task.passwordResetByName ?? task.passwordResetBy}
+                          label="Reset"
+                          locked={locked}
+                          onRecord={() => recordStep(task, "password_reset")}
+                        />
+                      </StepRow>
+                      <StepRow label="2 · App passwords">
+                        <StepCell
+                          busy={busy}
+                          /* Rose only when the password is already reset and this is not: that is
+                             the half-revoked mailbox, the one that looks finished and is not. */
+                          danger={task.isHalfRevoked}
+                          doneAt={task.appPasswordsClearedAt}
+                          doneBy={task.appPasswordsClearedByName ?? task.appPasswordsClearedBy}
+                          label="Clear"
+                          locked={locked}
+                          onRecord={() => recordStep(task, "app_passwords_cleared")}
+                        />
+                      </StepRow>
+                      <StepRow label="3 · Mailbox">
+                        <DispositionCell
+                          busy={busy}
+                          draft={draft}
+                          /* Its own lock, not the row's: a revoked row still accepts a disposition
+                             when both revocation steps are recorded, because that cannot change the
+                             status. Mirrors the guard in phx_mailbox_offboarding_record. */
+                          locked={!canRecord || !task.canRecordDisposition}
+                          onCancel={() => setDraft(null)}
+                          onChange={(patch) => setDraft((current) => (current ? { ...current, ...patch } : current))}
+                          onOpen={() => setDraft(makeDraft(task, "disposition"))}
+                          onSubmit={submitDraft}
+                          task={task}
+                        />
+                      </StepRow>
+                    </div>
+                  </td>
+
+                  {/* WHERE IT STANDS, and the two rare corrections under it. They had a column of
+                      their own; both are about the row as a whole, so they belong together. */}
+                  <td className="px-3 py-3">
+                    <div className="flex flex-wrap items-start gap-1">
                       <StatusChip task={task} />
                       <OverdueFlag task={task} />
                     </div>
-                  </td>
-                  <td className="px-3 py-3 text-right">
-                    <ReasonCell
-                      busy={busy}
-                      draft={draft}
-                      onCancel={() => setDraft(null)}
-                      onChange={(patch) => setDraft((current) => (current ? { ...current, ...patch } : current))}
-                      onOpen={(kind) => setDraft(makeDraft(task, kind))}
-                      onSubmit={submitDraft}
-                      readOnly={!canRecord}
-                      settled={settled}
-                      task={task}
-                    />
+                    {canRecord ? (
+                      <div className="mt-2">
+                        <ReasonCell
+                          busy={busy}
+                          draft={draft}
+                          onCancel={() => setDraft(null)}
+                          onChange={(patch) => setDraft((current) => (current ? { ...current, ...patch } : current))}
+                          onOpen={(kind) => setDraft(makeDraft(task, kind))}
+                          onSubmit={submitDraft}
+                          readOnly={!canRecord}
+                          settled={settled}
+                          task={task}
+                        />
+                      </div>
+                    ) : null}
                   </td>
                 </tr>
               );

@@ -31,6 +31,7 @@ import {
 import { uploadedEmployeePhotoUrl } from "@/lib/employees/employee-photo";
 import { employeeProfileImageForHrId } from "@/lib/employees/profile-images";
 import { formatHrIdForDisplay } from "@/lib/hr-id";
+import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { cookies, headers } from "next/headers";
 
@@ -111,7 +112,8 @@ export type ResolvedSessionState = {
  * not lock out intentionally-supported accounts:
  *   - no linked hr_id / employee row not found -> ALLOW (unlinked/system account)
  *   - unexpected query/DB error or thrown exception -> DENY (`employee_lookup_failed`)
- *   - row found -> classify status (terminal -> DENY, active/on_leave/unset -> ALLOW)
+ *   - row found -> classify status and DATE (departure in effect -> DENY, active/on_leave/unset
+ *     or a departure whose last working day is still ahead -> ALLOW)
  *
  * Read-only; never mutates employees or app_auth_users.
  */
@@ -125,7 +127,7 @@ async function resolveEmployeeLifecycleGate(
   try {
     const { data, error } = await supabase
       .from("employees")
-      .select("employment_status")
+      .select("employment_status, last_working_date")
       .eq("hr_id", linkedHrId)
       .maybeSingle();
 
@@ -134,9 +136,13 @@ async function resolveEmployeeLifecycleGate(
     // Employee row not found -> intentionally supported (unlinked/system account).
     if (!data) return { allowed: true };
 
+    const row = data as { employment_status?: string | null; last_working_date?: string | null };
     return evaluateEmployeeLifecycleGate({
       lookupFailed: false,
-      employmentStatus: (data as { employment_status?: string | null }).employment_status ?? null,
+      employmentStatus: row.employment_status ?? null,
+      // A departure dated in the FUTURE has not happened yet — see isEmploymentAccessRevoked.
+      lastWorkingDate: row.last_working_date ?? null,
+      todayCairo: currentCairoDateOnlyIso(),
     });
   } catch {
     // Thrown exception (network/driver) -> fail closed.

@@ -490,6 +490,7 @@ import { runMarketingMasterResolutionTests } from "./marketing-master-resolution
 import { runMarketingReferenceImporterTests } from "./marketing-reference-importer.test.ts";
 import { runMarketingRequestAccessTests } from "./marketing-request-access.test.ts";
 import { runMarketingRequestContactLinkTests } from "./marketing-request-contact-link.test.ts";
+import { runDirectOrderCampaignLinkTests } from "./direct-order-campaign-link.test.ts";
 import { runMarketingRequestServiceTests } from "./marketing-request-service.test.ts";
 import { runMarketingValidationDraftTests } from "./marketing-validation-draft.test.ts";
 import { runMarketingVenueTerritoryTests } from "./marketing-venue-territory.test.ts";
@@ -588,6 +589,7 @@ import { runOutstationDistanceFailureTests } from "./outstation-distance-failure
 import { runOutstationEmployeeLookupStatusTests } from "./outstation-employee-lookup-status.test.ts";
 import { runMedicalRepExpensesTests } from "./medical-rep-expenses.test.ts";
 import { runAuthSessionTests } from "./auth-session.test.ts";
+import { runDepartedAccessRevocationTests } from "./departed-access-revocation.test.ts";
 import { runAuthPageAccessTests } from "./auth-page-access.test.ts";
 import { runLoginPageServerRenderTests } from "./login-page-server-render.test.ts";
 import { runAuthAuditHardeningTests } from "./auth-audit-hardening.test.ts";
@@ -622,6 +624,7 @@ import { runHrFunctionGovernanceTests } from "./hr-function-governance.test.ts";
 import { runHrRetentionRegisterTests } from "./hr-retention-register.test.ts";
 import { runMailboxOffboardingTests } from "./mailbox-offboarding.test.ts";
 import { runMailboxBulkRecordingTests } from "./mailbox-bulk-recording.test.ts";
+import { runMailboxOffboardingTableFitsTheScreenTests } from "./mailbox-offboarding-table-fits-the-screen.test.ts";
 import { runHrAdvisoryModuleAccessTests } from "./hr-advisory-module-access.test.ts";
 import { runHrTodayTasksTests } from "./hr-today-tasks.test.ts";
 import { runHrCommandCenterTests } from "./hr-command-center.test.ts";
@@ -877,6 +880,7 @@ import { runExpenseClaimsRefreshTraceTests } from "./expense-claims-refresh-fail
 import { runOutstationDecisionFailureTraceTests } from "./outstation-decision-failures-leave-a-trace.test.ts";
 import { runOutstationAdminApproveOutcomeTests } from "./outstation-admin-approve-reports-its-outcome.test.ts";
 import { runPharmacySearchTests } from "./pharmacy-search.test.ts";
+import { runClientBundleServerLeakTests } from "./client-bundle-server-leak.test.ts";
 import { runRscClientFunctionPropTests } from "./rsc-client-function-props.test.ts";
 import { runDirectOrdersInvoiceScanTests } from "./direct-orders-invoice-scan.test.ts";
 import { runDirectOrdersArabicSearchTests } from "./direct-orders-arabic-search.test.ts";
@@ -934,6 +938,7 @@ import { runAutomatedPayrollStepDetailTests } from "./automated-payroll-step-det
 import { runAutomatedPayrollNewHireNetColumnsTests } from "./automated-payroll-new-hire-net-columns.test.ts";
 import { runAutomatedPayrollNewHireWorkingDaysTotalTests } from "./automated-payroll-new-hire-working-days-total.test.ts";
 import { runMigrationsCairoDateGuardTests } from "./migrations-cairo-date-guard.test.ts";
+import { runMigrationGrandfatherStalenessTests } from "./migration-grandfather-staleness.test.ts";
 import { runAutomatedPayrollRejectedExpensesTests } from "./automated-payroll-rejected-expenses.test.ts";
 import { runAutomatedPayrollExpenseResyncTests } from "./automated-payroll-expense-resync.test.ts";
 import { runAutomatedPayrollReadsDeductionsModuleTests } from "./automated-payroll-reads-deductions-module.test.ts";
@@ -2117,6 +2122,7 @@ await runTest("marketing approval inbox workspace layout (queues, disclosure, de
 await runTest("marketing premium notifications + review view", runMarketingPremiumNotificationTests);
 await runTest("marketing request access", runMarketingRequestAccessTests);
 await runTest("a marketing request names its own CRM contact (customer_contact_id is written)", runMarketingRequestContactLinkTests);
+await runTest("a direct order names the campaign it came from (marketing_request_id is written)", runDirectOrderCampaignLinkTests);
 await runTest("marketing validation service", runMarketingValidationServiceTests);
 await runTest(
   "marketing validation: capturing a customer already on record completes it instead of duplicating it",
@@ -2268,6 +2274,12 @@ await runTest(
   + "isMailboxStep; and the batch cap is enforced before any database client is opened)",
   runMailboxBulkRecordingTests,
 );
+await runTest(
+  "mailbox offboarding table fits the screen (nine nowrap columns under an overflow-x-auto wrapper "
+  + "measured 1840px inside a 909px content box, and the page-level overflow check read clean the "
+  + "whole time; four table-fixed columns, merged not shrunk, and long values wrap)",
+  runMailboxOffboardingTableFitsTheScreenTests,
+);
 await runTest("organogram hardening", runOrganogramHardeningTests);
 await runTest("vacancy report / organogram consistency", runVacancyReportOrganogramConsistencyTests);
 await runTest("organogram godmode", runOrganogramGodmodeTests);
@@ -2288,6 +2300,7 @@ await runTest(
 await runTest("probation stabilization", runProbationStabilizationTests);
   await runTest("google routes fastest", runGoogleRoutesShortestTests);
 await runTest("auth session", runAuthSessionTests);
+await runTest("departure revokes access on the last working day", runDepartedAccessRevocationTests);
 await runTest("auth page access guard (guest-fallback predicate)", runAuthPageAccessTests);
 await runTest("login page server-renders its form (no ssr:false, lazy webauthn)", runLoginPageServerRenderTests);
 await runTest("auth audit hardening", runAuthAuditHardeningTests);
@@ -2662,6 +2675,7 @@ await runTest("Expense claims refresh failures are legible (no raw Supabase reth
 await runTest("Outstation admin approve reports its outcome (the in-modal message is not gated on the already-cleared busy flag, and the action toast outranks the details modal it appears over)", runOutstationAdminApproveOutcomeTests);
 await runTest("HR shell mobile tables (closure scan from the HR sidebar: every wide table desktop-gated with a mobile half beside it, stacking primitives pinned, exemptions justified)", runHrShellMobileTableTests);
 await runTest("RSC boundary (no server component hands a function prop to a client component — the crash that 500d Doctor Coverage; follows the real import graph so client-parent files are not flagged)", runRscClientFunctionPropTests);
+await runTest("client bundle boundary (no \"use client\" module reaches node:crypto or the service-role client — the leak that made the Direct Orders new-request page 500 the whole dev server)", runClientBundleServerLeakTests);
 await runTest("direct orders invoice scan (a dim page gains real contrast, a failed prepare returns the original, EXIF rotation is applied, no binarisation, the reader is sent the PREPARED image)", runDirectOrdersInvoiceScanTests);
 await runTest("direct orders Arabic search (every fold survives, the strip class never swallows a letter, an unnamed customer is ranked down not hidden, both birth paths are searched)", runDirectOrdersArabicSearchTests);
 await runTest("CRM brick-centroids cache (shared Data Cache not a per-segment module var, 300s TTL unchanged, sos-reference tag, DB read byte-identical, catch OUTSIDE the cache so a transient error is never cached as [])", runCrmBrickCentroidsCacheTests);
@@ -2699,6 +2713,11 @@ await runTest("automated payroll step detail (breakdown foots to the row total; 
 await runTest("automated payroll new hire net columns (full month shown, the stale prorated column stays retired, and the two reconcile)", runAutomatedPayrollNewHireNetColumnsTests);
 await runTest("automated payroll new hire working-days total (live sum of the three paid figures, on card and in xlsx)", runAutomatedPayrollNewHireWorkingDaysTotalTests);
 await runTest("migrations Cairo date guard (no unzoned current_date in new SQL function bodies)", runMigrationsCairoDateGuardTests);
+await runTest(
+  "grandfathered duplicate timestamps must still name a real duplicate (a dead exemption re-opens the "
+  + "prefix and lies to every reader; three of four were already stale, and the fast check must fail on one)",
+  runMigrationGrandfatherStalenessTests,
+);
 await runTest("automated payroll rejected expenses (an HR rejection must not be reimbursed; pending still flows)", runAutomatedPayrollRejectedExpensesTests);
 await runTest("automated payroll expense resync (an approval changed after the step was confirmed must reach payroll)", runAutomatedPayrollExpenseResyncTests);
 await runTest("automated payroll reads the Deductions module (only what HR confirmed reaches the sheet; unknown statuses fail closed)", runAutomatedPayrollReadsDeductionsModuleTests);
