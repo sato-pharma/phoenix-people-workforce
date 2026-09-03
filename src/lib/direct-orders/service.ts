@@ -15,6 +15,7 @@ import { ApiError, validationError } from "@/lib/http/api-errors";
 import { createSystemNotificationForRecipients, type SystemNotificationChannel } from "@/lib/notifications/system";
 import { logError } from "@/lib/observability/log";
 import { canonicalizeRegionName, resolveSalesAccessScope } from "@/lib/sales/access-scope";
+import { customerGeographyKey, resolveCustomerGeography } from "@/lib/sales/customer-geography";
 import { listSourceOfSalesProducts, loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
 import { resolveRegionalManagerRegionCodes } from "@/lib/sales/portal-sos-dashboard";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -455,6 +456,7 @@ function mapRequestRow(row: Record<string, unknown>): DirectOrderRequest {
     line: String(row.line ?? ""),
     productCode: String(row.product_code ?? ""),
     productName: String(row.product_name ?? ""),
+    familyCode: String(row.family_code ?? ""),
     pharmacyPriceSnapshot: row.pharmacy_price_snapshot == null ? null : Number(row.pharmacy_price_snapshot),
     qty: Number(row.qty ?? 0),
     bonus: Number(row.bonus ?? 0),
@@ -936,28 +938,43 @@ function normalizeDistributorCodePairs(
 }
 
 /**
- * Look each (distributor, customer code) up in the customer map to recover its geography.
+ * Territory for this pharmacy's codes, from the SHARED customer-map resolver.
  *
- * Skipped entirely when there are no codes: `.in(col, [])` is not a harmless no-op in PostgREST,
- * and there is nothing to resolve anyway. A miss is normal and never an error — it simply means
- * the code is not one the distributor has reported sales against yet.
+ * The lookup itself now lives in src/lib/sales/customer-geography.ts, so marketing, Source of Sales
+ * and direct orders ask the customer map one question one way. This stays as a thin adapter because
+ * the row builder below speaks {brick, area, region} while the resolver speaks
+ * {brickId, areaCode, regionCode}; keeping the local vocabulary means the migration is the query
+ * and nothing else, and the three call sites are untouched.
+ *
+ * Keys stay exactly what callers already build — the raw `${distributor}::${customer}` of the map
+ * passed in — so nothing downstream has to know the shared key helper exists.
+ *
+ * What actually changed: pairs are matched EXACTLY. The two `.in()` filters this used to pass are
+ * independent, so they also matched pairs nobody asked about — 53 rows returned for 45 wanted,
+ * measured on production 2026-09-03. With no paging behind it, that over-match would silently
+ * truncate at PostgREST's 1000-row cap once it grew, and a real pharmacy would come back with a
+ * null area, which reads as "no territory" rather than as a query that got cut off.
+ *
+ * A miss is still normal and never an error — it simply means the code is not one the distributor
+ * has reported sales against yet.
  */
 async function resolveCustomerCodeGeography(
   byDistributor: Map<string, string>,
 ): Promise<Map<string, { brick: string | null; area: string | null; region: string | null }>> {
   const mapByKey = new Map<string, { brick: string | null; area: string | null; region: string | null }>();
   if (byDistributor.size === 0) return mapByKey;
-  const supabase = getSupabaseAdmin();
-  const { data } = await supabase
-    .from("source_of_sales_customer_map")
-    .select("distributor_code, customer_code, brick_id, area_code, region_code")
-    .in("distributor_code", Array.from(byDistributor.keys()))
-    .in("customer_code", Array.from(byDistributor.values()));
-  for (const row of (data ?? []) as Array<Record<string, unknown>>) {
-    mapByKey.set(`${row.distributor_code}::${row.customer_code}`, {
-      brick: row.brick_id ? String(row.brick_id) : null,
-      area: row.area_code ? String(row.area_code) : null,
-      region: row.region_code ? String(row.region_code) : null,
+
+  const entries = Array.from(byDistributor.entries());
+  const resolved = await resolveCustomerGeography(
+    entries.map(([distributorCode, customerCode]) => ({ customerCode, distributorCode })),
+  );
+  for (const [distributorCode, customerCode] of entries) {
+    const geography = resolved.get(customerGeographyKey(distributorCode, customerCode));
+    if (!geography) continue;
+    mapByKey.set(`${distributorCode}::${customerCode}`, {
+      area: geography.areaCode,
+      brick: geography.brickId,
+      region: geography.regionCode,
     });
   }
   return mapByKey;
@@ -4485,6 +4502,20 @@ export async function reverseDirectOrder(
       line: original.line,
       product_code: original.productCode,
       product_name: original.productName,
+      // The family this basket belongs to. Omitted here until 2026-09-03, and the column is
+      // nullable, so a reversal was written with NO family at all — the one thing that says which
+      // basket allow-list the row answers to (Lacto Advanced and Lacto Basic share `LA` precisely
+      // so they combine). It never self-heals: a reversal is a header-only insert with no
+      // direct_order_request_items row, so the trigger that back-fills a request's family from its
+      // first line never fires for one. Worse than blank — phx_direct_order_item_family_guard
+      // reads a null request family as "adopt the first line's", so the reversal would take
+      // whatever family a later line brought instead of refusing a mismatched one.
+      //
+      // `|| null` because mapRequestRow reads the null a historic request carries as "", and an
+      // empty string is not the same value to the guard: null means "adopt", "" is a REAL family
+      // that matches nothing, so `'' <> 'LA'` raises and no line could ever be added. Mirroring
+      // means an original with no family yields a reversal with no family.
+      family_code: original.familyCode || null,
       // A reversal mirrors its original exactly, so it must carry the same pricing basis.
       // These three used to be omitted, and `deal_type` defaults to 'bonus' in the column
       // definition — so reversing a DISCOUNT order silently produced a 'bonus' row whose
@@ -4500,6 +4531,12 @@ export async function reverseDirectOrder(
       sales_value: original.salesValue,
       pharmacy_id: original.pharmacyId,
       collection_date: original.collectionDate,
+      // Mirrored for exactly the reason the three pricing fields above are: a field the original
+      // carries and the reversal drops makes the pair disagree, silently. This one is the link back
+      // to the campaign that produced the order, so a reversal that loses it detaches the money
+      // from the request it reverses — the original would still count against the campaign's ROI
+      // while its reversal counted against nothing.
+      marketing_request_id: original.marketingRequestId,
       reversal_of_request_id: original.id,
       created_by_login_id: access.loginId ?? null,
       submitted_at: new Date().toISOString(),

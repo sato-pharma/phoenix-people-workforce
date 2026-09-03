@@ -83,6 +83,7 @@ import type {
   MarketingRequestCreateDraft,
   MarketingRequestDraftDetail,
   MarketingRequestDraftPharmacyInput,
+  MarketingRequestContactOption,
   MarketingRequestPharmacyOption,
   MarketingRequestDraftProductInput,
   MarketingRequestPharmacy,
@@ -402,6 +403,7 @@ type MarketingPharmacyDbRow = {
 type MarketingCustomerContactDbRow = {
   active?: boolean | null;
   contact_name?: string | null;
+  crm_code?: string | null;
   customer_id: string;
   id: string;
   mobile_number?: string | null;
@@ -619,6 +621,17 @@ export type MarketingRequestDraftWorkspace = {
    * permanently zero regardless of how the campaign actually performed.
    */
   pharmaciesByCustomer: Record<string, MarketingRequestPharmacyOption[]>;
+  /**
+   * Selectable contacts keyed by customer id.
+   *
+   * `marketing_requests.customer_contact_id` has existed since the table did and NOTHING has ever
+   * written it — all 29 Phoenix requests hold null — because the form had no way to offer one. The
+   * CRM link was therefore made at CUSTOMER level instead (src/lib/crm/contact-trade.ts), which
+   * fans a request out to every linked contact of its customer: two contacts at one clinic both
+   * take credit for a request that concerned one of them. Offering the contact here is what lets
+   * the requester say which, and the server already validates the choice belongs to the customer.
+   */
+  contactsByCustomer: Record<string, MarketingRequestContactOption[]>;
   inApproval: MarketingRequest[];
   products: MarketingProduct[];
   /**
@@ -6992,7 +7005,7 @@ export async function getMarketingAllRequestsWorkspace(
 const MARKETING_DRAFT_REFERENCE_REVALIDATE_SECONDS = 60;
 
 /**
- * The 7 reference/lookup tables getMarketingRequestDraftWorkspace needs — all filtered to active
+ * The 8 reference/lookup tables getMarketingRequestDraftWorkspace needs — all filtered to active
  * rows, all "small reference sets," none of them request-specific or per-viewer. Cached company-
  * wide for a minute at a time instead of re-fetched fresh on every requester's page load (60s
  * mirrors the revalidate window already used for vacation-report rows, src/lib/vacation/service.ts).
@@ -7000,7 +7013,7 @@ const MARKETING_DRAFT_REFERENCE_REVALIDATE_SECONDS = 60;
 const loadMarketingDraftReferenceDataCached = unstable_cache(
   async () => {
     const supabase = getSupabaseAdmin();
-    const [typesResult, productsResult, distributorsResult, customersResult, validatedLinksResult, pharmaciesResult, distributorCodesResult] = await Promise.all([
+    const [typesResult, productsResult, distributorsResult, customersResult, validatedLinksResult, pharmaciesResult, distributorCodesResult, contactsResult] = await Promise.all([
       supabase.from("marketing_request_types").select("*").or("active.is.null,active.eq.true").order("sort_order"),
       supabase.from("marketing_products").select("*").or("active.is.null,active.eq.true").order("product_name"),
       supabase.from("marketing_distributors").select("*").or("active.is.null,active.eq.true").order("display_name"),
@@ -7019,6 +7032,13 @@ const loadMarketingDraftReferenceDataCached = unstable_cache(
         .from("marketing_pharmacy_distributor_codes")
         .select("id, pharmacy_id, distributor_id, distributor_pharmacy_code, reference_status")
         .or("active.is.null,active.eq.true"),
+      // The customers' own contacts, for the request's contact picker. 170 rows in production, so
+      // this is a handful of extra rows on an already-cached read, not a second reference set.
+      supabase
+        .from("marketing_customer_contacts")
+        .select("id, customer_id, contact_name, crm_code, mobile_number")
+        .or("active.is.null,active.eq.true")
+        .order("contact_name"),
     ]);
     if (typesResult.error) throw typesResult.error;
     if (productsResult.error) throw productsResult.error;
@@ -7027,6 +7047,7 @@ const loadMarketingDraftReferenceDataCached = unstable_cache(
     if (validatedLinksResult.error) throw validatedLinksResult.error;
     if (pharmaciesResult.error) throw pharmaciesResult.error;
     if (distributorCodesResult.error) throw distributorCodesResult.error;
+    if (contactsResult.error) throw contactsResult.error;
     return {
       types: typesResult.data ?? [],
       products: productsResult.data ?? [],
@@ -7035,6 +7056,7 @@ const loadMarketingDraftReferenceDataCached = unstable_cache(
       validatedLinks: validatedLinksResult.data ?? [],
       pharmacies: pharmaciesResult.data ?? [],
       distributorCodes: distributorCodesResult.data ?? [],
+      contacts: contactsResult.data ?? [],
     };
   },
   ["marketing-draft-reference-data"],
@@ -7045,8 +7067,9 @@ export async function getMarketingRequestDraftWorkspace(access: AccessContext): 
   assertMarketingWorkspaceAccess(access);
 
   const supabase = getSupabaseAdmin();
-  // The first 7 queries below are reference/lookup tables (types, products, distributors,
-  // customers, validated customer-pharmacy links, pharmacies, distributor codes) that change
+  // The first 8 queries below are reference/lookup tables (types, products, distributors,
+  // customers, validated customer-pharmacy links, pharmacies, distributor codes, customer
+  // contacts) that change
   // rarely — every requester opening this workspace was re-fetching all of them fresh, alongside
   // the 5 genuinely live per-request queries. Reference data goes through the shared 60s cache
   // instead (matches the revalidate window already used for vacation-report rows); the 5 live
@@ -7075,6 +7098,7 @@ export async function getMarketingRequestDraftWorkspace(access: AccessContext): 
   const validatedLinksResult = { data: referenceData.validatedLinks, error: null as null };
   const pharmaciesResult = { data: referenceData.pharmacies, error: null as null };
   const distributorCodesResult = { data: referenceData.distributorCodes, error: null as null };
+  const contactsResult = { data: referenceData.contacts, error: null as null };
 
   if (draftsResult.error) throw draftsResult.error;
   if (approvedRequestsResult.error) throw approvedRequestsResult.error;
@@ -7289,6 +7313,23 @@ export async function getMarketingRequestDraftWorkspace(access: AccessContext): 
     });
     pharmaciesByCustomer[link.customer_id] = list;
   }
+
+  // Every active contact of every customer, so the form can offer the one a campaign concerns.
+  // `crm_code` is stored as text holding a CRM id; parsed the same way contact-trade.ts parses it
+  // so a contact reads as CRM-linked on both screens or on neither.
+  const contactsByCustomer: Record<string, MarketingRequestContactOption[]> = {};
+  for (const row of (contactsResult.data ?? []) as MarketingCustomerContactDbRow[]) {
+    if (!row.customer_id) continue;
+    const parsedCrmId = Number.parseInt((row.crm_code ?? "").trim(), 10);
+    const list = contactsByCustomer[row.customer_id] ?? [];
+    list.push({
+      contactName: cleanText(row.contact_name) ?? "Unnamed contact",
+      crmContactId: Number.isFinite(parsedCrmId) ? parsedCrmId : null,
+      id: row.id,
+      mobileNumber: cleanText(row.mobile_number) ?? null,
+    });
+    contactsByCustomer[row.customer_id] = list;
+  }
   const allCustomerRows = (customersResult.data ?? []) as MarketingCustomerDbRow[];
   const allCustomers = allCustomerRows.map(mapCustomer);
   // A customer DEACTIVATED after its request was approved falls out of the list above, which is
@@ -7336,6 +7377,7 @@ export async function getMarketingRequestDraftWorkspace(access: AccessContext): 
       requests: approvedRequests,
     }),
     canCreateDraft: productScope.canCreateDraft,
+    contactsByCustomer,
     customers,
     pharmaciesByCustomer,
     distributors: ((distributorsResult.data ?? []) as MarketingDistributorDbRow[]).map(mapDistributor),

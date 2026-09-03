@@ -11,6 +11,7 @@ import {
   selectContactSyncSlice,
   syncCrmContactLists,
 } from "@/lib/crm/contacts-sync";
+import { describeThrown } from "@/lib/error-monitor/describe-thrown";
 import { pingDeadMansSwitch } from "@/lib/observability/dead-mans-switch";
 import { logError } from "@/lib/observability/log";
 import { writeAuditLog } from "@/lib/admin/audit";
@@ -197,7 +198,7 @@ export async function GET(request: Request) {
     );
   } catch (error) {
     logError("CRM contact list sync failed", { error, labels: { event: "cron_failed", job: JOB_NAME } });
-    await pingDeadMansSwitch(JOB_SLUG, "fail", error instanceof Error ? `${error.name}: ${error.message}` : String(error));
+    await pingDeadMansSwitch(JOB_SLUG, "fail", describeThrown(error));
     return NextResponse.json(
       { error: clientSafeErrorMessage(error, "The CRM contact list sync failed.") },
       { status: 500 },
