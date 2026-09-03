@@ -496,8 +496,24 @@ export function buildClosingEngineFill(input: ClosingEngineDataInput): ClosingEn
     year: "numeric",
   }).format(new Date());
 
+  const headline = (sheet: string) => `${sheet}${GAP}${month.label}${GAP}${line}`;
   const title = (sheet: string, subtitle: string) =>
-    [`${sheet}${GAP}${month.label}${GAP}${line}`, subtitle, filterNote].filter(Boolean).join(SEP);
+    [headline(sheet), subtitle, filterNote].filter(Boolean).join(SEP);
+  /**
+   * The Rep Card's masthead is two lines, and it is the only sheet that gets one.
+   *
+   * Every other sheet runs the whole caption along A1, where it overflows to the right until it
+   * meets the emblem — and `clearTitleEmblem` slides the emblem out of its way. The card cannot be
+   * fixed that way: it is eight columns wide, 798px, and the emblem already sits at 689px with
+   * 16px of slack. There is nowhere for the logo to go, so on this one sheet the caption is what
+   * has to give. Eighty-odd characters on one line ended 25pt short of the wordmark — not a
+   * collision, but not a masthead either, and it is the sheet a rep is meant to be proud to share.
+   *
+   * So the sheet name, the month and the line stay on A1 and the descriptive half drops to A2,
+   * where the template already reserves a full empty row. Half the length, twice the air, and a
+   * longer line name can never reach the logo again.
+   */
+  const deck = (subtitle: string) => [subtitle, filterNote].filter(Boolean).join(SEP);
 
   const areas = buildAreas(input);
   const salesData = buildSalesData(input, areas);
@@ -864,7 +880,8 @@ export function buildClosingEngineFill(input: ClosingEngineDataInput): ClosingEn
       },
       "Rep Card": {
         cells: {
-          A1: title("Rep Card", "one person, one month, every product"),
+          A1: headline("Rep Card"),
+          A2: deck("one person, one month, every product"),
           B5: areaBook.length ? String(areaBook[0]![0] ?? "") : "",
           B14: `EGP, ${month.label}`,
           // The card's own prior-month sentence reads its month name from here, so the formula
