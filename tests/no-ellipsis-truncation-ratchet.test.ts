@@ -76,8 +76,18 @@ import path from "node:path";
  * person's name, so "Hana Abdelaziz Samir Abdelaziz Ghoniem" and a colleague sharing
  * her first two names were the same row to a reader. `truncate` -> `break-words`,
  * with `break-all` reserved for filenames, which have no spaces to break at.
+ *
+ * 254 -> 245 later the same day, in the same premium-polish pass, fixing every
+ * `text-ellipsis whitespace-nowrap` site in the marketing-request customer
+ * validation flow. Three were admin headers ("Customer Validation" and two
+ * siblings); one was the portal twin of the same page; three more were in the
+ * customer-validation workspace, including the row heading that carries a
+ * CUSTOMER'S OWN NAME — the exact shape this file's history keeps falling on. Every
+ * one fixed by wrapping, none deleted. `text-ellipsis whitespace-nowrap` (the raw
+ * properties, as opposed to Tailwind's `truncate` shorthand) is now at zero
+ * occurrences in app/ and src/.
  */
-const BASELINE = 254;
+const BASELINE = 245;
 
 const ROOTS = ["app", "src"];
 
