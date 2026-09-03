@@ -14,10 +14,8 @@ import {
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { cn } from "@/lib/utils";
 import { isSyntheticDirectArea } from "@/lib/sales/closing-direct-area";
-import {
-  filterMonthlyClosingMatrix,
-  type MonthlyClosingMatrix,
-} from "@/lib/sales/monthly-distributor-import";
+import type { MonthlyClosingMatrix } from "@/lib/sales/monthly-distributor-import";
+import { filterMonthlyClosingMatrix } from "@/lib/sales/monthly-closing-matrix-cells";
 
 // Employee-portal render of the SAME Closing Matrix + Details view an admin sees at
 // /sales/monthly-closing — but scoped to the viewer (District/Regional/National Sales Manager,

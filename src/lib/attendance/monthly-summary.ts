@@ -56,8 +56,10 @@ export type MonthlyAttendanceSummaryData = {
   };
 };
 
-export const attendanceMonthlyCycleNote =
-  "Attendance reporting cycle note: payroll attendance months run from day 25 to day 25.";
+// Moved to ./monthly-summary-note.ts (a dependency-free module) so the Monthly Attendance Summary
+// client component can import the note without pulling this file's server-only chain into its
+// bundle; re-exported here for existing server callers (e.g. monthly-summary-export.ts).
+export { attendanceMonthlyCycleNote } from "./monthly-summary-note";
 
 /** What one EXPECTED working day contributes to the rollup. */
 export type WorkingDayAttendanceOutcome = "absent" | "no_data" | "present";

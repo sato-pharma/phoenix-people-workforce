@@ -12,7 +12,8 @@ import {
   AdminTableShell,
 } from "@/components/admin/admin-design-system";
 import { Button } from "@/components/ui/button";
-import { attendanceMonthlyCycleNote, type MonthlyAttendanceSummaryData } from "@/lib/attendance/monthly-summary";
+import type { MonthlyAttendanceSummaryData } from "@/lib/attendance/monthly-summary";
+import { attendanceMonthlyCycleNote } from "@/lib/attendance/monthly-summary-note";
 
 type Props = {
   initialData: MonthlyAttendanceSummaryData | null;

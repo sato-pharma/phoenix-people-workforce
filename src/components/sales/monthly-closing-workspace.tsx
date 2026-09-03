@@ -19,10 +19,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { monthlyClosingFilterOptions } from "@/lib/sales/monthly-closing-filter-options";
-import {
-  filterMonthlyClosingMatrix,
-  type MonthlyClosingMatrix,
-} from "@/lib/sales/monthly-distributor-import";
+import type { MonthlyClosingMatrix } from "@/lib/sales/monthly-distributor-import";
+import { filterMonthlyClosingMatrix } from "@/lib/sales/monthly-closing-matrix-cells";
 import { ClosingPeriodSelect } from "@/components/sales/closing-period-select";
 import { closingPeriodGateMessage, closingPeriodOpensOn, isClosingPeriodComplete } from "@/lib/sales/closing-period-gate";
 import { describePeriodSelection, periodLabel } from "@/lib/sales/monthly-closing-period-merge";

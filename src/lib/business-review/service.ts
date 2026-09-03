@@ -44,28 +44,23 @@ import {
 } from "./canonical";
 import { resolveReviewWindow, type ReviewWindow, type WindowResolution } from "./period";
 import type { AreaSummary, DmSummary, ProductRow, ReviewCompany, ReviewDataset } from "./types";
+import {
+  DEFAULT_REVIEW_VIEW,
+  isReviewView,
+  REVIEW_LINES,
+  REVIEW_VIEWS,
+  type ReviewView,
+} from "./review-views";
 
 export type { ReviewLine, ReviewWindow };
 export { availableReviewPeriods, REVIEW_SOURCE_NOTICE, REVIEW_THRESHOLDS };
 export type BusinessReview = ReviewBundle;
 
-export const REVIEW_LINES: { id: ReviewLine; label: string }[] = [
-  { id: "pedia", label: "Pedia" },
-  { id: "cns", label: "CNS" },
-  { id: "anti", label: "Anti-Infective" },
-];
-
-/** What the top switcher offers: the cross-line company rollup first (and default),
- * then each individual line. */
-export type ReviewView = "company" | ReviewLine;
-export const REVIEW_VIEWS: { id: ReviewView; label: string }[] = [
-  { id: "company", label: "All Company" },
-  ...REVIEW_LINES,
-];
-export const DEFAULT_REVIEW_VIEW: ReviewView = "company";
-export function isReviewView(v: string | undefined): v is ReviewView {
-  return !!v && REVIEW_VIEWS.some((x) => x.id === v);
-}
+// The view switcher's option list lives in ./review-views.ts (a dependency-free module) for the
+// same reason official-lines.ts does: the Business Review dashboard is a CLIENT component that
+// needs REVIEW_VIEWS but not this file's server-only review builder. Re-exported here so every
+// existing server caller keeps importing from where it already does.
+export { DEFAULT_REVIEW_VIEW, isReviewView, REVIEW_LINES, REVIEW_VIEWS, type ReviewView };
 
 // ───────────────────────────────── cache plumbing ─────────────────────────────────
 
