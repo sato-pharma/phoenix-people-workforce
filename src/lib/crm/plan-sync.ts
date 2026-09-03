@@ -412,7 +412,32 @@ async function mirroredPlanEntryIds(input: {
  * occur. The prune is also confined to the window fetched and, when a single agent was synced, to
  * that agent: a pull that only knows the truth about one rep can only ever delete that rep's rows.
  *
- * A closed month is protected by never being fetched — see `resolvePlanSyncWindow`.
+ * A closed month is protected by never being fetched — see `resolvePlanSyncWindow`. The same
+ * protection has a cost: `agent_hr_id` is resolved once, at upsert time (`rowFromPlanEntry`), from
+ * whatever `loadCrmIdentityMaps()` knew THEN — and because a closed month's rows are never revisited,
+ * a row written before an identity resolved (a leaver's crm_username match not yet learned, an admin
+ * mapping not yet made) stays unmapped forever, even after `ireports360_visits` correctly re-stamps
+ * the same person's visit rows via `stampUnmappedVisitRows`. There is no plan-side equivalent of that
+ * re-stamp.
+ *
+ * 2026-09-03 audit (prompted by the crm_id 1367/1485 reused-slot fixes in reads.ts): 39,750 of
+ * 165,470 plan_entries rows (24%), across 61 agent_crm_ids, carry a null agent_hr_id. 36 of the 61
+ * already resolve cleanly via the SAME identity sources this module already trusts (the admin
+ * resolution table, employees.crm_id, or a unique crm_username match) — confirmed name-for-name
+ * against employees.crm_username and resignation date against last real visit date. 35 of those 36
+ * are resigned employees' old history; the one active exception (crm_id 1485 / CN-0007) only has
+ * rows that predate her hire — B-171's own pre-handover history on the same slot, not hers. The
+ * remaining 25 are either an already-decided "resigned, no owner" (13, matches the admin resolution
+ * table on purpose) or a dead id with no visit activity ever (12). Full row-by-row breakdown sent to
+ * the owner as an XLSX the same day — ask for a copy rather than trusting these counts to still be
+ * current.
+ *
+ * Net: nobody currently active has their live Coverage/Frequency numbers suppressed by this today —
+ * it is inert historical debt, not a repeat of the reused-CRM-slot bug class (CRM_RESIGNED_AGENT_CRM_IDS
+ * in reads.ts). Still a real gap worth closing: a retroactive re-stamp for plan_entries, mirroring
+ * stampUnmappedVisitRows, next time this module is substantially touched. Not fixed here — low
+ * urgency, and any future backfill should re-run the audit fresh rather than trust these numbers,
+ * since they will have moved on by then.
  */
 export async function syncIReports360WeeklyPlans(input: {
   startDate: string;
