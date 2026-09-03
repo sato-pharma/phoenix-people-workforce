@@ -303,17 +303,25 @@ export const accessRegistry = [
   // Unified Deductions module — the sole deductions pipeline as of the C6 cutover (2026-08-30); the
   // legacy deductions-governance routes it replaced were removed in the same change. Every route
   // self-gates with assertPermission + the Super-Admin-only assertDeductionsDecisionActor for
-  // mutations; the registry entry is the coarse baseline gate.
+  // mutations.
+  //
+  // Each entry now names the action its handler actually asserts. Until 2026-09-03 all eleven said
+  // `read`, described here as "the coarse baseline gate" — which is what licensed the drift: six of
+  // them were reading as though downloading every employee's amounts, approving a deduction and
+  // publishing a month were all read-gated. Nothing was mis-enforced, because this registry is a
+  // declarative inventory that no request path imports, but an auditor reading it was told the
+  // mutation routes were open to any reader. `assertRegistryMatchesHandlers` in
+  // tests/access-registry-coverage.test.ts now fails if a declared action and its handler disagree.
   sessionApi({ audit: { classification: "access-read", required: true }, methods: ["GET"], pattern: "/api/admin/deductions/candidates", permission: { resource: "deductions", action: "read" }, guard: "domain-helper" }),
-  sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/admin/deductions/export", permission: { resource: "deductions", action: "read" }, guard: "domain-helper" }),
-  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/deductions/decisions", permission: { resource: "deductions", action: "read" }, guard: "domain-helper", csrfRequired: true }),
+  sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/admin/deductions/export", permission: { resource: "deductions", action: "export" }, guard: "domain-helper" }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/deductions/decisions", permission: { resource: "deductions", action: "approve" }, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "access-read", required: true }, methods: ["GET"], pattern: "/api/admin/deductions/summary/employee", permission: { resource: "deductions", action: "read" }, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "access-read", required: true }, methods: ["GET"], pattern: "/api/admin/deductions/summary/company", permission: { resource: "deductions", action: "read" }, guard: "domain-helper" }),
-  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/deductions/collect", permission: { resource: "deductions", action: "read" }, guard: "domain-helper", csrfRequired: true }),
-  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/deductions/manual", permission: { resource: "deductions", action: "read" }, guard: "domain-helper", csrfRequired: true }),
-  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/deductions/settlement", permission: { resource: "deductions", action: "read" }, guard: "domain-helper", csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/deductions/collect", permission: { resource: "deductions", action: "create" }, guard: "domain-helper", csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/deductions/manual", permission: { resource: "deductions", action: "create" }, guard: "domain-helper", csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/deductions/settlement", permission: { resource: "deductions", action: "create" }, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "access-read", required: true }, methods: ["GET"], pattern: "/api/admin/deductions/publish", permission: { resource: "deductions", action: "read" }, guard: "domain-helper" }),
-  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/deductions/publish", permission: { resource: "deductions", action: "read" }, guard: "domain-helper", csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/deductions/publish", permission: { resource: "deductions", action: "approve" }, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/deductions/comments", permission: { resource: "employee_profile", action: "read" }, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "export", required: true }, methods: readOnly, pattern: "/api/admin/double-visit-analytics/export", permission: { resource: "double_visit_analytics", action: "export" }, guard: "domain-helper" }),
   sessionApi({ methods: readOnly, pattern: "/api/admin/double-visit-analytics/**", permission: { resource: "double_visit_analytics", action: "read" }, guard: "domain-helper" }),
@@ -436,7 +444,13 @@ export const accessRegistry = [
   sessionApi({ methods: ["PATCH"], pattern: "/api/offers/job-titles/:id", permission: { resource: "offers", action: "update" }, csrfRequired: true }),
   sessionApi({ methods: ["DELETE"], pattern: "/api/offers/job-titles/:id", permission: { resource: "offers", action: "delete" }, csrfRequired: true }),
   sessionApi({ methods: allMethods, pattern: "/api/imports/**", permission: { resource: "employees", action: "import" } }),
-  sessionApi({ audit: { classification: "export", required: true }, methods: readOnly, pattern: "/api/admin/users/bulk", permission: { resource: "user_admin", action: "export" } }),
+  // Declared `user_admin:export` until 2026-09-03, but the GET handler asserts `user_admin:read` —
+  // the registry claimed a STRICTER gate than the code has, which is the direction that reads as
+  // false comfort. Recorded here as what is enforced, not as what was hoped: whether a bulk user
+  // download ought to require `export` is a live question for the owner, and tightening the handler
+  // would change who can call it, so that is deliberately NOT done here. The file also exports a
+  // POST (asserting imports:import + user_admin:update) that this GET-only entry does not declare.
+  sessionApi({ audit: { classification: "export", required: true }, methods: readOnly, pattern: "/api/admin/users/bulk", permission: { resource: "user_admin", action: "read" } }),
   sessionApi({ methods: ["GET"], pattern: "/api/marketing/roi-refresh", permission: { resource: "overview", action: "read" }, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/marketing/roi-refresh", permission: { resource: "overview", action: "read" }, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "export", required: true }, methods: ["POST"], pattern: "/api/marketing-requests/roi-tracking/export", permission: { resource: "expenses", action: "read" }, guard: "domain-helper", csrfExemptReason: "Read-only ROI report export: serialises the role-scoped, filtered report into a styled XLSX; performs no state mutation." }),
@@ -630,16 +644,22 @@ export const accessRegistry = [
   sessionApi({ methods: allMethods, pattern: "/api/notifications/in-app", permission: { resource: "employee_profile", action: "read" }, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ methods: ["GET"], pattern: "/api/notifications/settings", permission: { resource: "employee_profile", action: "read" } }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["PATCH"], pattern: "/api/notifications/settings", permission: { resource: "employee_profile", action: "update" } }),
-  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/integrations/telegram/connect", permission: { resource: "employee_profile", action: "update" } }),
-  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/integrations/telegram/disconnect", permission: { resource: "employee_profile", action: "update" } }),
-  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/integrations/telegram/test", permission: { resource: "employee_profile", action: "update" } }),
+  // These five declared `employee_profile:update` until 2026-09-03; every handler asserts
+  // `employee_profile:read`. They are self-service routes that act only on the caller's own row, so
+  // read + own-identity is a defensible gate — but the registry said `update`, so an auditor reading
+  // it believed a profile-edit permission was required. Recorded as enforced.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/integrations/telegram/connect", permission: { resource: "employee_profile", action: "read" } }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/integrations/telegram/disconnect", permission: { resource: "employee_profile", action: "read" } }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/integrations/telegram/test", permission: { resource: "employee_profile", action: "read" } }),
   sessionApi({ methods: ["GET"], pattern: "/api/notifications/push/context", permission: { resource: "employee_profile", action: "read" } }),
   // No audit classification: this fires on every authenticated page load and every
   // browser subscription-change event, not a deliberate user action like Telegram
   // connect/disconnect — an audit-log row per ping would just be noise.
-  sessionApi({ methods: ["POST"], pattern: "/api/notifications/push/register", permission: { resource: "employee_profile", action: "update" } }),
-  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/notifications/push/test", permission: { resource: "employee_profile", action: "update" } }),
-  sessionApi({ methods: allMethods, pattern: "/api/notifications/process", permission: { resource: "admin", action: "read" } }),
+  sessionApi({ methods: ["POST"], pattern: "/api/notifications/push/register", permission: { resource: "employee_profile", action: "read" } }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/notifications/push/test", permission: { resource: "employee_profile", action: "read" } }),
+  // Declared `admin:read` until 2026-09-03; the handler asserts `admin:update`. Draining the
+  // outbox is a write, and reading it as a read-gated route understated who may trigger one.
+  sessionApi({ methods: allMethods, pattern: "/api/notifications/process", permission: { resource: "admin", action: "update" } }),
   sessionApi({ methods: allMethods, pattern: "/api/notifications/test", permission: { resource: "admin", action: "update" } }),
   sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/outstation/workload-evidence", permission: { resource: "outstation", action: "read" }, guard: "domain-helper" }),
   sessionApi({ methods: allMethods, pattern: "/api/outstation/**", permission: { resource: "outstation", action: "read" }, csrfRequired: true }),
@@ -816,7 +836,10 @@ export const accessRegistry = [
   // attestation that a named admin performed a step in a system Phoenix cannot observe, so the
   // audit row is required, not best-effort.
   sessionApi({ methods: readOnly, pattern: "/api/mailbox-offboarding", permission: { resource: "mailbox_offboarding", action: "read" } }),
-  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/mailbox-offboarding", permission: { resource: "mailbox_offboarding", action: "update" }, csrfRequired: true }),
+  // The POST branches: recording a NEW offboarding task asserts `create`, while completing or
+  // re-attesting an existing one asserts `update`. Declared as `update` alone until 2026-09-03, so
+  // the entry named only half of what the route enforces.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/mailbox-offboarding", permission: [{ resource: "mailbox_offboarding", action: "create" }, { resource: "mailbox_offboarding", action: "update" }], csrfRequired: true }),
   // Retention register (Phase 6). The GET returns stay and exit conversations, which hold what an
   // employee said in confidence about their manager and their pay — the permission is the whole
   // protection, since RLS is disabled-by-default here like every other table in this app.
@@ -986,8 +1009,9 @@ export const accessRegistry = [
   sessionApi({ methods: ["GET"], pattern: "/api/sales/weekly/mapping", permission: { resource: "weekly_sales", action: "update" } }),
   sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/sales/weekly/mapping/export", permission: { resource: "weekly_sales", action: "update" } }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/sales/weekly/mapping/import", permission: { resource: "weekly_sales", action: "update" }, csrfExemptReason: "Authenticated weekly distributor mapping upsert/import; server validates each mapping row before write." }),
-  sessionApi({ methods: ["GET", "POST"], pattern: "/api/sales/weekly/pos-region-mappings", permission: { resource: "weekly_sales", action: "update" } }),
-  sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/sales/weekly/pos-region-mappings/template", permission: { resource: "weekly_sales", action: "update" } }),
+  // Both declared `weekly_sales:update` until 2026-09-03; both handlers assert `weekly_sales:import`.
+  sessionApi({ methods: ["GET", "POST"], pattern: "/api/sales/weekly/pos-region-mappings", permission: { resource: "weekly_sales", action: "import" } }),
+  sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/sales/weekly/pos-region-mappings/template", permission: { resource: "weekly_sales", action: "import" } }),
   // Weekly Normalizer — the weekly twin of /api/sales/normalizer/**, and registered the same way:
   // one explicit entry each, never falling through to the /api/sales/** blanket, which carries no
   // audit requirement. The template route is the one that MUST be classified `export` — it hands
