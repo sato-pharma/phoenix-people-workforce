@@ -934,6 +934,7 @@ import { runAutomatedPayrollStepDetailTests } from "./automated-payroll-step-det
 import { runAutomatedPayrollNewHireNetColumnsTests } from "./automated-payroll-new-hire-net-columns.test.ts";
 import { runAutomatedPayrollNewHireWorkingDaysTotalTests } from "./automated-payroll-new-hire-working-days-total.test.ts";
 import { runMigrationsCairoDateGuardTests } from "./migrations-cairo-date-guard.test.ts";
+import { runMigrationGrandfatherStalenessTests } from "./migration-grandfather-staleness.test.ts";
 import { runAutomatedPayrollRejectedExpensesTests } from "./automated-payroll-rejected-expenses.test.ts";
 import { runAutomatedPayrollExpenseResyncTests } from "./automated-payroll-expense-resync.test.ts";
 import { runAutomatedPayrollReadsDeductionsModuleTests } from "./automated-payroll-reads-deductions-module.test.ts";
@@ -2699,6 +2700,11 @@ await runTest("automated payroll step detail (breakdown foots to the row total; 
 await runTest("automated payroll new hire net columns (full month shown, the stale prorated column stays retired, and the two reconcile)", runAutomatedPayrollNewHireNetColumnsTests);
 await runTest("automated payroll new hire working-days total (live sum of the three paid figures, on card and in xlsx)", runAutomatedPayrollNewHireWorkingDaysTotalTests);
 await runTest("migrations Cairo date guard (no unzoned current_date in new SQL function bodies)", runMigrationsCairoDateGuardTests);
+await runTest(
+  "grandfathered duplicate timestamps must still name a real duplicate (a dead exemption re-opens the "
+  + "prefix and lies to every reader; three of four were already stale, and the fast check must fail on one)",
+  runMigrationGrandfatherStalenessTests,
+);
 await runTest("automated payroll rejected expenses (an HR rejection must not be reimbursed; pending still flows)", runAutomatedPayrollRejectedExpensesTests);
 await runTest("automated payroll expense resync (an approval changed after the step was confirmed must reach payroll)", runAutomatedPayrollExpenseResyncTests);
 await runTest("automated payroll reads the Deductions module (only what HR confirmed reaches the sheet; unknown statuses fail closed)", runAutomatedPayrollReadsDeductionsModuleTests);
