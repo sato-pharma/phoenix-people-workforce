@@ -4,11 +4,11 @@ import { assertPermission } from "@/lib/auth/permissions";
 import {
   parseCarEvidenceImageDataUrl,
   parseCarEvidenceMetadata,
+  parseOutstationTypeFields,
 } from "@/app/api/outstation/request-body";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { syncOfflineOutstationRequest } from "@/lib/outstation/service";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
-import { parseOutstationTypeFields } from "@/lib/outstation/request-fields";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
@@ -33,9 +33,7 @@ export async function POST(request: Request) {
     await assertPermission(access, "outstation", "create");
 
     const body = (await request.json()) as Record<string, unknown>;
-    const outstationTypes = parseOutstationTypeFields(body, {
-      onMissing: "default",
-    });
+    const outstationTypes = parseOutstationTypeFields(body);
     if (!outstationTypes.ok) {
       return NextResponse.json(
         { error: outstationTypes.error, message: outstationTypes.message },

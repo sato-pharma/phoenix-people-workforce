@@ -3,9 +3,11 @@ import { NextResponse } from "next/server";
 import { assertPermission } from "@/lib/auth/permissions";
 import { calculateOutstationExpense } from "@/lib/outstation/service";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
-import { parseCarEvidenceMetadata } from "@/app/api/outstation/request-body";
+import {
+  parseCarEvidenceMetadata,
+  parseOutstationTypeFields,
+} from "@/app/api/outstation/request-body";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
-import { parseOutstationTypeFields } from "@/lib/outstation/request-fields";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
@@ -30,9 +32,7 @@ export async function POST(request: Request) {
     await assertPermission(access, "outstation", "create");
 
     const body = (await request.json()) as Record<string, unknown>;
-    const outstationTypes = parseOutstationTypeFields(body, {
-      onMissing: "default",
-    });
+    const outstationTypes = parseOutstationTypeFields(body);
     if (!outstationTypes.ok) {
       return NextResponse.json(
         { error: outstationTypes.error, message: outstationTypes.message },

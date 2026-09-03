@@ -3849,6 +3849,10 @@ async function writeOutstationRequestPayableAmount(input: {
 
   const record = mapOutstationRequestToPayrollExpenseRecord(input.request, {
     hrComment: input.hrComment.trim() || null,
+    // The ONE outstation caller that is genuinely deciding: this is HR's typed figure and reason
+    // arriving from the approvals queue, so it overwrites the stored decision rather than
+    // deferring to it. Every other caller here re-pushes figures and must preserve.
+    preserveExistingDecision: false,
     reportId: linked.reportId,
   });
 

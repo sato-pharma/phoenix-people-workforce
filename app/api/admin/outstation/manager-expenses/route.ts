@@ -2,8 +2,13 @@ import { NextResponse } from "next/server";
 
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { assertOutstationAdminAccess } from "@/lib/outstation/admin-access";
+import {
+  INVALID_EXPENSE_TYPE,
+  INVALID_TRANSPORTATION_TYPE,
+  isOutstationExpenseType,
+  isOutstationTransportationType,
+} from "@/lib/outstation/manager-expense-input";
 import { createManagerExpenseAsAdmin } from "@/lib/outstation/service";
-import { parseOutstationTypeFields } from "@/lib/outstation/request-fields";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import type { ManagerExpenseAdminInput } from "@/lib/outstation/types";
 import { isWorkflowRegistryTransitionError } from "@/lib/workflow-registry/service";
@@ -42,6 +47,8 @@ export async function POST(request: Request) {
       typeof body.tripStartDate === "string" ? body.tripStartDate.trim() : "";
     const tripEndDate =
       typeof body.tripEndDate === "string" ? body.tripEndDate.trim() : "";
+    const expenseType = body.expenseType;
+    const transportationType = body.transportationType;
 
     if (!employeeHrId) {
       return NextResponse.json(
@@ -80,12 +87,19 @@ export async function POST(request: Request) {
       );
     }
 
-    // onMissing: "reject" — this route has always required both to be stated, unlike the
-    // employee routes, which fall back to traveling / car.
-    const outstationTypes = parseOutstationTypeFields(body, { onMissing: "reject" });
-    if (!outstationTypes.ok) {
+    if (!isOutstationExpenseType(expenseType)) {
       return NextResponse.json(
-        { error: outstationTypes.error, message: outstationTypes.message },
+        { error: INVALID_EXPENSE_TYPE.error, message: INVALID_EXPENSE_TYPE.message },
+        { status: 400 },
+      );
+    }
+
+    if (!isOutstationTransportationType(transportationType)) {
+      return NextResponse.json(
+        {
+          error: INVALID_TRANSPORTATION_TYPE.error,
+          message: INVALID_TRANSPORTATION_TYPE.message,
+        },
         { status: 400 },
       );
     }
@@ -98,14 +112,14 @@ export async function POST(request: Request) {
       durationMinutes:
         body.durationMinutes != null ? Number(body.durationMinutes) : null,
       employeeHrId,
-      expenseType: outstationTypes.expenseType,
+      expenseType,
       meetingAmount: typeof body.meetingAmount === "number" ? body.meetingAmount : null,
       notes: typeof body.notes === "string" ? body.notes.trim() || null : null,
       otherAmount: typeof body.otherAmount === "number" ? body.otherAmount : null,
       pmWorkload: typeof body.pmWorkload === "number" ? body.pmWorkload : null,
       routePolyline:
         typeof body.routePolyline === "string" ? body.routePolyline : null,
-      transportationType: outstationTypes.transportationType,
+      transportationType,
       travelCostAmount: optionalNumber(body.travelCostAmount),
       tripEndDate,
       tripStartDate,
