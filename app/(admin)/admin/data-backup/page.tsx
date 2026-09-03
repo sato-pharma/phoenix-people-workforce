@@ -6,6 +6,14 @@ import { ALL_BACKUP_TABLES, MODULE_META } from "@/lib/admin/data-backup";
 import { DataBackupResetSection } from "@/components/admin/data-backup-reset-section";
 import { AsyncBackupDownload } from "@/components/admin/async-backup-download";
 
+import {
+  pageHeaderDescriptionClassName,
+  pageHeaderKickerClassName,
+  pageHeaderRailClassName,
+  pageHeaderRuleClassName,
+  pageHeaderTitleClassName,
+} from "@/components/admin/admin-design-tokens";
+
 export const dynamic = "force-dynamic";
 
 type Scope = "all" | "sales" | "weekly" | "marketing";
@@ -32,14 +40,18 @@ export default async function AdminDataBackupPage() {
   return (
     <div className="mx-auto w-full max-w-4xl space-y-8 p-6 sm:p-8">
       {/* Header */}
-      <div className="space-y-1">
-        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-700">System Administration</p>
-        <h1 className="text-2xl font-bold tracking-tight text-slate-950">Data Backup</h1>
-        <p className="max-w-2xl text-sm text-slate-600">
-          Export a complete snapshot of uploaded data and configuration for each module.
-          Download XLSX first — each table becomes its own color-coded sheet.
-          JSON is available for scripting and automation.
-        </p>
+      <div className="relative pb-4">
+        <span aria-hidden="true" className={`absolute inset-x-0 bottom-0 ${pageHeaderRuleClassName}`} />
+        <div className="relative min-w-0 space-y-1.5 pl-3.5">
+          <span aria-hidden="true" className={pageHeaderRailClassName} />
+          <p className={pageHeaderKickerClassName}>System Administration</p>
+          <h1 className={pageHeaderTitleClassName}>Data Backup</h1>
+          <p className={pageHeaderDescriptionClassName}>
+            Export a complete snapshot of uploaded data and configuration for each module.
+            Download XLSX first — each table becomes its own color-coded sheet.
+            JSON is available for scripting and automation.
+          </p>
+        </div>
       </div>
 
       {/* Quick download — full backup */}

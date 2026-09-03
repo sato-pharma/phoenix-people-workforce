@@ -83,11 +83,28 @@ import path from "node:path";
  * siblings); one was the portal twin of the same page; three more were in the
  * customer-validation workspace, including the row heading that carries a
  * CUSTOMER'S OWN NAME — the exact shape this file's history keeps falling on. Every
- * one fixed by wrapping, none deleted. `text-ellipsis whitespace-nowrap` (the raw
- * properties, as opposed to Tailwind's `truncate` shorthand) is now at zero
- * occurrences in app/ and src/.
+ * one fixed by wrapping, none deleted.
+ *
+ * 245 -> 240 in the same pass, clearing the LAST five raw-property sites, all in
+ * Area Consolidation. These were the awkward ones: written deliberately as
+ * `md:overflow-hidden md:text-ellipsis md:whitespace-nowrap`, wrapping on a phone
+ * and clipping only from md: up, and each carried a comment explaining that as the
+ * best answer available — because the house rule then had TWO halves, never truncate
+ * AND never wrap, which cannot both hold for a 97-character sentence in a 303px slot.
+ * AGENTS.md §4 has since retired the second half outright ("where they collide,
+ * WRAPPING wins"), so the compromise had nothing left defending it. One of the five
+ * clipped the employee names the owner reads before pressing the button that moves
+ * their rows. All five now wrap at every size, and their comments were corrected
+ * rather than left teaching the retired rule.
+ *
+ * `text-ellipsis` (the raw property, as opposed to Tailwind's `truncate` shorthand)
+ * is now at zero occurrences in app/ and src/, in every responsive prefix. An earlier
+ * revision of this note claimed that one commit too early: the unprefixed form was
+ * gone, the five `md:`-prefixed ones were not, and a plain grep for the unprefixed
+ * string is what made them invisible. The remaining 240 are all `truncate` or
+ * `line-clamp-*`.
  */
-const BASELINE = 245;
+const BASELINE = 240;
 
 const ROOTS = ["app", "src"];
 
