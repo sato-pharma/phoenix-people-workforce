@@ -297,7 +297,11 @@ function StepPanel({
                 </p>
               ) : null}
             </div>
-            {readOnly || done ? null : (
+            {/* NOT `done`, unlike steps 1 and 2. Recording those two is what makes a row
+                revoked, so gating this on `done` made step 3 unreachable in the order this card
+                numbers it — 57 of 60 closed mailboxes ended up with no record of what became of
+                them. `canRecordDisposition` mirrors the database guard exactly. */}
+            {readOnly || !task.canRecordDisposition ? null : (
               <button
                 className="shrink-0 whitespace-nowrap border border-slate-300 bg-white px-3 py-1 text-[10px] font-black uppercase tracking-[0.1em] text-slate-700 hover:bg-slate-100 disabled:opacity-50"
                 disabled={busy}
@@ -1230,7 +1234,10 @@ export function MailboxOffboardingWorkspace({
                     <DispositionCell
                       busy={busy}
                       draft={draft}
-                      locked={locked}
+                      /* Its own lock, not the row's: a revoked row still accepts a disposition
+                         when both revocation steps are recorded, because that cannot change the
+                         status. Mirrors the guard in phx_mailbox_offboarding_record. */
+                      locked={!canRecord || !task.canRecordDisposition}
                       onCancel={() => setDraft(null)}
                       onChange={(patch) => setDraft((current) => (current ? { ...current, ...patch } : current))}
                       onOpen={() => setDraft(makeDraft(task, "disposition"))}

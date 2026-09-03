@@ -86,6 +86,8 @@ export type MailboxOffboardingTask = {
   isHalfRevoked: boolean;
   /** Forwarding whose expiry has passed — set at an exit and never torn down. */
   isForwardingExpired: boolean;
+  /** Step 3 is still offerable — mirrors the guard in `phx_mailbox_offboarding_record`. */
+  canRecordDisposition: boolean;
 };
 
 export type MailboxOffboardingStats = {
