@@ -570,6 +570,7 @@ import { runOutstationCarEvidenceValidationTests } from "./outstation-car-eviden
 import { runOutstationExpenseExportTests } from "./outstation-expense-export.test.ts";
 import { runOutstationLocalDraftTests } from "./outstation-local-draft.test.ts";
 import { runOutstationPayrollExpenseMappingTests } from "./outstation-payroll-expense-mapping.test.ts";
+import { runOutstationWorkflowResyncPreservesHrDecisionTests } from "./outstation-workflow-resync-preserves-hr-decision.test.ts";
 import { runOutstationImportIsAdditiveTests } from "./outstation-import-is-additive.test.ts";
 import { runSalaryRecordsUniqueBatchHrTests } from "./salary-records-unique-batch-hr.test.ts";
 import { runOutstationPolicyClassificationTests } from "./outstation-policy-classification.test.ts";
@@ -2136,6 +2137,10 @@ await runTest("outstation car evidence validation", runOutstationCarEvidenceVali
 await runTest("outstation expense export", runOutstationExpenseExportTests);
 await runTest("outstation local draft", runOutstationLocalDraftTests);
 await runTest("outstation payroll expense mapping", runOutstationPayrollExpenseMappingTests);
+await runTest(
+  "outstation workflow resync preserves the HR decision",
+  runOutstationWorkflowResyncPreservesHrDecisionTests,
+);
 await runTest("outstation import is additive and hr_id-scoped", runOutstationImportIsAdditiveTests);
 await runTest("salary_records unique per employee per batch", runSalaryRecordsUniqueBatchHrTests);
 await runTest("outstation policy classification", runOutstationPolicyClassificationTests);

@@ -21,7 +21,12 @@ import { isDisposableExpenseReportRow, isDisposableExpenseRow } from "@/lib/fixt
 import { resolveOutstationCapturedLocation } from "@/lib/outstation/captured-location";
 import { mapOutstationRequestRowToPayrollApproval } from "@/lib/outstation/payroll-expense-mapping";
 import { normalizeExpenseType, normalizeTransportation } from "@/lib/outstation/expense-taxonomy";
-import { normalizeApprovedAmount, payableExpenseAmount } from "@/lib/outstation/payable";
+import { payableExpenseAmount } from "@/lib/outstation/payable";
+import {
+  resolveExpenseDecisionWrite,
+  type ExpenseDecisionWrite,
+  type StoredExpenseDecision,
+} from "@/lib/outstation/approval-state";
 import { assertOutstationExpenseWorkflowTransition } from "@/lib/outstation/workflow";
 import { createSystemNotification, logNotificationSendFailure } from "@/lib/notifications/system";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -970,11 +975,56 @@ export async function savePayrollExpenseApprovals(input: {
     hrId?: string | null;
     hrApproved?: boolean;
     hrComment?: string;
+    /**
+     * True = this save re-pushes a trip's own figures and must not touch the HR decision already
+     * on the row (the outstation workflow). Absent/false = this save IS the decision (the Expense
+     * Approvals screen). See resolveExpenseDecisionWrite.
+     */
+    preserveExistingDecision?: boolean;
     reportId?: string | null;
   }>;
   reportId?: string | null;
 }, accessContext: AccessContext) {
-  const hasManualPayrollApprovals = input.records.some((record) => Boolean(record.hrApproved));
+  const approvedBy = resolveEmployeeIdentityId(accessContext) ?? accessContext.loginId ?? "system";
+  const now = new Date().toISOString();
+  const supabase = getSupabaseAdmin();
+
+  // Read BEFORE the gate, not just before the write: what a record ends up writing to the
+  // decision columns depends on what is already stored, and so does whether this save is an
+  // approval decision at all. `before` doubles as the resync diff's left-hand side, so the two
+  // reads this used to need are one.
+  const existingRows = await readExistingExpenseRows(
+    supabase,
+    input.records.map((record) => String(record.tripId ?? "")).filter(Boolean),
+  );
+  const storedByTripId = new Map(
+    existingRows.map((row) => [String(row.trip_id ?? ""), toStoredExpenseDecision(row)] as const),
+  );
+  const before = existingRows.map(toExpenseDecisionSnapshot);
+
+  // Index-aligned with input.records, so the payload below cannot miss one.
+  const decisions: ExpenseDecisionWrite[] = input.records.map((record) =>
+    resolveExpenseDecisionWrite({
+      approvedBy,
+      claimedTotal: record.total,
+      incoming: {
+        approvedAmount: record.approvedAmount,
+        hrApproved: record.hrApproved,
+        hrComment: record.hrComment,
+        hrStatus: record.hr,
+        status: record.status,
+      },
+      now,
+      preserveExistingDecision: record.preserveExistingDecision,
+      stored: storedByTripId.get(String(record.tripId ?? "")) ?? null,
+    }),
+  );
+
+  // Gated on what this save actually DECIDES, not on what the records happen to carry. A
+  // carry-forward writes the stored decision back unchanged and exercises no approval authority,
+  // which is what lets an employee add a ticket to their own accepted trip without holding the
+  // HR Manager rights the approvals screen needs.
+  const hasManualPayrollApprovals = decisions.some((decision) => decision.decidesApproval);
   if (hasManualPayrollApprovals) {
     await assertManualPayrollExpenseApprovalAccess(accessContext);
     await assertOutstationExpenseWorkflowTransition({
@@ -985,10 +1035,7 @@ export async function savePayrollExpenseApprovals(input: {
     });
   }
 
-  const approvedBy = resolveEmployeeIdentityId(accessContext) ?? accessContext.loginId ?? "system";
-  const now = new Date().toISOString();
   const employeeByName = await employeeCodeBySpecialist();
-  const supabase = getSupabaseAdmin();
   const reportTotals = input.records.reduce(
     (summary, record) => {
       const date = record.date ? new Date(record.date) : null;
@@ -1052,7 +1099,7 @@ export async function savePayrollExpenseApprovals(input: {
     reportId = String(report.id);
   }
 
-  const payload = input.records.map((record) => {
+  const payload = input.records.map((record, index) => {
     const period = nextPayrollPeriod(record.date);
     const hrId =
       record.hrId?.trim() ||
@@ -1060,24 +1107,25 @@ export async function savePayrollExpenseApprovals(input: {
         .map((key) => employeeByName.get(key))
         .find(Boolean) ||
       null;
-    const approved = Boolean(record.hrApproved);
+    // Every decision column comes from the one resolver above, so a workflow re-push cannot write
+    // half a decision. `total` below still carries the employee's claim, so reducing a claim stays
+    // auditable instead of overwriting the evidence.
+    const decision = decisions[index];
 
     return {
       allowance: record.allowance,
       am_workload: record.amWorkload,
-      // HR's approved figure gets its own column; `total` below still carries the employee's
-      // claim, so reducing a claim stays auditable instead of overwriting the evidence.
-      approved_amount: normalizeApprovedAmount(record.approvedAmount, record.total),
-      approved_at: approved ? now : null,
-      approved_by: approved ? approvedBy : null,
+      approved_amount: decision.approvedAmount,
+      approved_at: decision.approvedAt,
+      approved_by: decision.approvedBy,
       description: record.description,
       hr_id: hrId,
       expense_date: record.date || null,
       from_location: record.from,
-      hr_approved: approved,
-      hr_comment: record.hrComment ?? "",
+      hr_approved: decision.hrApproved,
+      hr_comment: decision.hrComment,
       hr_notes: record.hrNotes,
-      hr_status: record.hr,
+      hr_status: decision.hrStatus,
       km: record.km,
       location: record.location,
       meeting_amount: record.meetingAmount,
@@ -1091,7 +1139,7 @@ export async function savePayrollExpenseApprovals(input: {
       source_file_name: input.fileName,
       source_row: record.row,
       specialist: record.specialist,
-      status: record.status,
+      status: decision.status,
       to_date: record.toDate || null,
       to_location: record.to,
       total: record.total,
@@ -1103,15 +1151,10 @@ export async function savePayrollExpenseApprovals(input: {
     };
   });
 
-  // What these trips paid BEFORE this save, so the resync below can be limited to the rows HR
-  // actually decided on. This screen submits a report's full record set on every save, so
+  // `before` was read at the top of this function, so the resync below is limited to the rows
+  // this save actually moved. This screen submits a report's full record set on every save, so
   // without the diff one save would clear a hand-typed wizard figure for every employee in the
   // report — including the ones nobody looked at.
-  const before = await readExpenseDecisionSnapshots(
-    supabase,
-    payload.map((row) => String(row.trip_id ?? "")).filter(Boolean),
-  );
-
   const { data, error } = await supabase
     .from("outstation_expenses")
     .upsert(payload, { onConflict: "trip_id" })
@@ -1155,24 +1198,58 @@ function toExpenseDecisionSnapshot(row: Record<string, unknown>): ExpenseDecisio
 }
 
 /**
- * Best-effort read of the current state of a set of trips. Returns an empty list on failure so a
- * resync degrades to "resync nothing we can prove changed" rather than failing the approval save
- * the user actually asked for.
+ * The decision columns a carry-forward needs on top of the resync diff's own set: the reason HR
+ * gave, the label they left, and who signed it off. Reading the diff columns without these is how
+ * an amount survives a re-push while the reason behind it silently reverts.
  */
-async function readExpenseDecisionSnapshots(
+const EXPENSE_CARRY_FORWARD_COLUMNS =
+  `${EXPENSE_DECISION_COLUMNS},approved_at,approved_by,hr_comment,hr_status`;
+
+function toStoredExpenseDecision(row: Record<string, unknown>): StoredExpenseDecision {
+  const approvedAmount = Number(row.approved_amount);
+  return {
+    approvedAmount:
+      row.approved_amount === null ||
+      row.approved_amount === undefined ||
+      !Number.isFinite(approvedAmount)
+        ? null
+        : approvedAmount,
+    approvedAt: row.approved_at == null ? null : String(row.approved_at),
+    approvedBy: row.approved_by == null ? null : String(row.approved_by),
+    hrApproved: row.hr_approved === true,
+    hrComment: String(row.hr_comment ?? ""),
+    hrStatus: String(row.hr_status ?? ""),
+    status: String(row.status ?? ""),
+  };
+}
+
+/**
+ * Best-effort read of the rows a save is about to write. Returns an empty list on a missing-schema
+ * error so the save the user actually asked for still lands (the resync then degrades to "resync
+ * nothing we can prove changed", and a carry-forward degrades to today's overwrite rather than
+ * failing outright).
+ */
+async function readExistingExpenseRows(
   supabase: SupabaseClient,
   tripIds: string[],
-): Promise<ExpenseDecisionSnapshot[]> {
+): Promise<Array<Record<string, unknown>>> {
   if (tripIds.length === 0) return [];
-  const { data, error } = await supabase
-    .from("outstation_expenses")
-    .select(EXPENSE_DECISION_COLUMNS)
-    .in("trip_id", tripIds);
-  if (error) {
-    if (isPayrollExpensesSchemaMissing(error)) return [];
-    throw error;
+  // Chunked because a PostgREST `.in()` carrying a few hundred ids comes back EMPTY with no
+  // error, and an empty read here reads as "no row exists yet" — which would turn a carry-forward
+  // back into the overwrite it exists to prevent, on the biggest saves only.
+  const rows: Array<Record<string, unknown>> = [];
+  for (let start = 0; start < tripIds.length; start += 50) {
+    const { data, error } = await supabase
+      .from("outstation_expenses")
+      .select(EXPENSE_CARRY_FORWARD_COLUMNS)
+      .in("trip_id", tripIds.slice(start, start + 50));
+    if (error) {
+      if (isPayrollExpensesSchemaMissing(error)) return [];
+      throw error;
+    }
+    rows.push(...((data ?? []) as Array<Record<string, unknown>>));
   }
-  return ((data ?? []) as Array<Record<string, unknown>>).map(toExpenseDecisionSnapshot);
+  return rows;
 }
 
 /**
