@@ -862,6 +862,7 @@ import { runEmployeePortalMobileTableCardTests } from "./employee-portal-mobile-
 import { runCrmMobileTableCardTests } from "./crm-mobile-table-cards.test.ts";
 import { runHrShellMobileTableTests } from "./hr-shell-mobile-tables.test.ts";
 import { runOutstationMobileTableCardTests } from "./outstation-mobile-table-cards.test.ts";
+import { runOutstationDecisionFailureTraceTests } from "./outstation-decision-failures-leave-a-trace.test.ts";
 import { runOutstationAdminApproveOutcomeTests } from "./outstation-admin-approve-reports-its-outcome.test.ts";
 import { runPharmacySearchTests } from "./pharmacy-search.test.ts";
 import { runRscClientFunctionPropTests } from "./rsc-client-function-props.test.ts";
@@ -2608,6 +2609,7 @@ await runTest("employee portal mobile input zoom (16px floor on every portal inp
 await runTest("employee portal mobile table cards (every converted table is desktop-gated with cards beside it, one shared SourceBreakdown, no <table> nested inside PortalDesktopTable)", runEmployeePortalMobileTableCardTests);
 await runTest("CRM mobile table cards (whole-directory scan: every CRM table desktop-gated, every table file has a card path, no bare overflow-x-auto, both coverage boards moved together)", runCrmMobileTableCardTests);
 await runTest("Outstation mobile table cards (whole-directory scan: every outstation table desktop-gated, every table file has a card path, no fixed-pixel floor in an ungated scroll box, HR decision controls shared by both halves)", runOutstationMobileTableCardTests);
+await runTest("Outstation decision failures leave a trace (every catch on /api/admin/outstation/[id] records the unsanitised cause before returning, awaited)", runOutstationDecisionFailureTraceTests);
 await runTest("Outstation admin approve reports its outcome (the in-modal message is not gated on the already-cleared busy flag, and the action toast outranks the details modal it appears over)", runOutstationAdminApproveOutcomeTests);
 await runTest("HR shell mobile tables (closure scan from the HR sidebar: every wide table desktop-gated with a mobile half beside it, stacking primitives pinned, exemptions justified)", runHrShellMobileTableTests);
 await runTest("RSC boundary (no server component hands a function prop to a client component — the crash that 500d Doctor Coverage; follows the real import graph so client-parent files are not flagged)", runRscClientFunctionPropTests);
