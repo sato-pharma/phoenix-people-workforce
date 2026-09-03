@@ -42,7 +42,7 @@ function tailwindZIndex(className: string): number | null {
   return plain ? Number(plain[1]) : null;
 }
 
-export async function testOutstationAdminApproveReportsItsOutcome() {
+export async function runOutstationAdminApproveOutcomeTests() {
   const source = readFileSync(ADMIN_SOURCE, "utf8");
 
   // ── 1. The outcome must not be gated on the flag the finally block already cleared ────────
