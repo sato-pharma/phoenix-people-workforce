@@ -96,7 +96,6 @@ type MirrorCandidateRow = {
   folder_key: string | null;
   governorate: string | null;
   address: string | null;
-  preferred_region_code: string | null;
   sent_for_region: string | null;
 };
 
