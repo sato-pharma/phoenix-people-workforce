@@ -176,20 +176,25 @@ const CONTRACT_SIGNATURE_COLUMNS_AR = [
 ] as const;
 
 /**
- * The running footer, from the source's footer part.
+ * The running footer, from the source's footer part — the per-page signature line, verbatim.
  *
- * The source ends it with a per-page signature line and "صفحة N من M". Both are dropped from the
- * typeset footer for the same reason version 2 dropped its page number: page numbering in print needs
- * `@page` margin boxes, which Chrome does not implement, and an 8pt greyed signature line repeated by
- * `<tfoot>` is not where a legal signature belongs. The per-page signing that مادة (13)(11) calls for
- * is a signing step, carried by the print instruction, not pre-printed furniture.
+ * WHAT THE SOURCE FOOTER HOLDS AND WHAT SURVIVES. Two things: this signature line, and "صفحة N من M".
+ * The signature line is reproduced because مادة (13)(11) has the parties initial every page, so it is
+ * operative furniture rather than decoration, and a `<tfoot>` genuinely repeats it on every printed
+ * page. THE PAGE NUMBER CANNOT BE REPRODUCED AT ALL: a printed page number needs `@page` margin
+ * boxes, which Chrome does not implement, and there is no other mechanism — a browser cannot know
+ * how many pages it is about to make. Do not add a hand-counted "من 3": the page count moves with the
+ * length of a name.
+ *
+ * The two rules are runs of fourteen U+0640 tatweel, matching the source. They are pen rules, not
+ * underscores — an underscore run renders as a different weight beside Arabic.
  */
-const CONTRACT_FOOTER_AR = "{{COMPANY_NAME}} — {{COMPANY_LEGAL_FORM}}   ·   عقد عمل محدد المدة";
+const CONTRACT_FOOTER_AR = "توقيع الطرف الأول: ــــــــــــــ   توقيع الطرف الثاني: ــــــــــــــ";
 
 export const CONTRACT_TEMPLATE_V3: ContractTemplate = {
   id: "contract-v3",
   version: 3,
-  layout: "banded",
+  layout: "document",
   titleAr: CONTRACT_TITLE_AR,
   subtitleAr: CONTRACT_SUBTITLE_AR,
   openingAr: null,
