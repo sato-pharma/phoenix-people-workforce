@@ -4,7 +4,9 @@ import path from "node:path";
 
 import {
   addressNamesArea,
+  areaGovernedByCv,
   areaGovernorate,
+  areaGovernorates,
   areaNamedByCv,
   areaTokens,
   governorateNamedBy,
@@ -22,9 +24,11 @@ import {
  * risk of a move is that a correction gets dropped on the way. Every refusal below is one this
  * matcher learned the hard way against the real CV pool, so each is pinned here as well.
  *
- * The fixture area list is production's own spelling, taken from the organogram: an area named for
- * a governorate is deliberately absent because the folder rule never offers one — what IS here is
- * the pair Qena 1 / Qena 2, which is the shape that must refuse to answer.
+ * The fixture area list is production's own spelling, taken from the organogram. Two shapes in it
+ * carry the weight: the pair Qena 1 / Qena 2, which must refuse to answer, and "Sohag", an area
+ * named exactly like the governorate it covers. Sohag is what separates the two questions this
+ * module answers — an address saying "Sohag" NAMES no area (section 2), while a CV whose only
+ * location is Sohag GOVERNORATE has exactly one area to go to (section 10).
  */
 
 const AREAS = ["Nasr City", "Heliopolis", "Kafr El-Sheikh 1", "Menoufia 1", "Qena 1", "Qena 2", "Sohag"];
@@ -124,6 +128,39 @@ export function runCvAddressPlaceTests(): void {
     assert.ok(neighbourhoodMatchStrength("Baltim", "Kafr El-Sheikh 1") > 0, "the brick rung answers on its own");
     assert.equal(neighbourhoodMatchStrength("Baltim", null), 0, "and refuses a seat with no area");
     assert.equal(normalizePlaceText("  Kafr  El-Sheikh 1 "), "kafr el sheikh 1", "one normaliser, punctuation to spaces");
+  }
+
+  // ── 10. The governorate, when it holds exactly one area ───────────────────
+  //
+  // The owner, 2026-09-03, asked the question and answered it: "put them in that area folder". The
+  // weakest of the three grades, and the one that has to refuse most often.
+  {
+    assert.deepEqual(areaGovernedByCv({ governorate: "Sohag" }, AREAS), { areaName: "Sohag", grade: "governorate" },
+      "one area in the governorate means the governorate IS the area, and a catch-all would hide a person nobody has to guess about");
+    assert.equal(areaNamedByCv({ governorate: "Sohag" }, AREAS), null,
+      "and the stronger grade still refuses the same input — the two questions stay separate");
+    assert.deepEqual(areaGovernedByCv({ address: "Baltim", governorate: "Kafr El Sheikh" }, AREAS),
+      { areaName: "Kafr El-Sheikh 1", grade: "governorate" },
+      "the company's spelling of an area need not match the CV's spelling of the governorate");
+
+    // THE REFUSALS. Cairo holds two areas in this fixture and six in production; Qena holds two.
+    assert.equal(areaGovernedByCv({ governorate: "Cairo" }, AREAS), null,
+      "a governorate covering several areas names none of them, which is what the catch-all is for");
+    assert.equal(areaGovernedByCv({ address: "Qena, Egypt", governorate: "Qena" }, AREAS), null,
+      "and a split governorate refuses however many times it is written down");
+    assert.equal(areaGovernedByCv({ address: "qwerty", governorate: null }, AREAS), null,
+      "text naming no governorate at all resolves to nothing, never to the only area on the list");
+
+    // MATCHED BY THE GOVERNORATE EACH AREA SITS IN, NEVER BY THE AREA'S NAME. Only one area name
+    // contains the word "Giza", so name-matching would answer "Giza - Giza Centers" outright —
+    // while Giza governorate really holds five areas and the CV distinguishes none of them.
+    const GIZA = ["Giza - Giza Centers", "Haram - Faisal", "Imbaba - Imbaba Centers"];
+    assert.equal(areaGovernedByCv({ governorate: "Giza" }, GIZA), null,
+      "the tier reads which governorate each area sits in, so three Giza areas refuse even though only one is called Giza");
+
+    assert.deepEqual(areaGovernorates("Nasr City"), ["Cairo"], "an area usually names one governorate");
+    assert.deepEqual(areaGovernorates("Qalubeya"), [],
+      "and an area whose spelling the shared vocabulary does not carry names none — the gap is visible here rather than silent in a folder");
   }
 
   // ── 9. The module stays pure, and the vocabulary stays single ──────────────

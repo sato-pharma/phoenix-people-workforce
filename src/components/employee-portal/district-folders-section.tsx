@@ -180,6 +180,17 @@ export function DistrictFoldersSection({
                       : `${openFolder.fromCvText.length} of these ${openFolder.candidates.length} did not say which area they want — the address written on their CV places them here.`}
                   </p>
                 ) : null}
+                {/* Said separately from the note above, and not merged with it, because the two are
+                    not the same claim. Those applicants wrote an address; most of these wrote no
+                    address at all and are here because their governorate holds exactly one area. A
+                    manager deciding who to ring first is entitled to know which he is looking at. */}
+                {openFolder.kind === "area" && openFolder.fromGovernorate.length > 0 ? (
+                  <p className="text-phx-xs text-slate-500">
+                    {openFolder.fromGovernorate.length === openFolder.candidates.length
+                      ? "These applicants gave only their governorate — this is the only area in it."
+                      : `${openFolder.fromGovernorate.length} of these ${openFolder.candidates.length} gave only their governorate — this is the only area in it.`}
+                  </p>
+                ) : null}
                 {openFolder.candidates.length === 0 ? (
                   <Card className="rounded-lg border border-gray-200 bg-white p-6 text-center shadow-[0_1px_3px_rgba(15,23,42,0.08)]">
                     <p className="text-sm font-semibold text-slate-700">
