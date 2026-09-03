@@ -51,6 +51,8 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { classifyBranchPr, listBranchPrs } from "../../scripts/branch-pr-state.mjs";
+
 const flags = new Set(process.argv.slice(2).filter((arg) => arg.startsWith("--")));
 const positional = process.argv.slice(2).filter((arg) => !arg.startsWith("--"));
 const PRE_REMOVAL = flags.has("--pre-removal");
@@ -283,22 +285,42 @@ if (INVOKED_DIRECTLY) {
 
   // ── 3. Report retirability — never act on it ───────────────────────────────────────────────
   // Squash-aware: merged branches are never ancestors of main here, so `git branch --merged` is
-  // always wrong. Ask GitHub whether a PR for this head actually merged. Deliberately NOT done in
-  // --pre-removal mode: a removal should not wait 30s on the network to learn something it does not
-  // need. Retirability is a tidiness question; the backup check is the safety one.
-  const mergedPr = gh(["pr", "list", "--head", branch, "--state", "merged", "--json", "number", "--jq", ".[0].number"]);
+  // always wrong. Ask GitHub whether the work on this head actually merged. Deliberately NOT done
+  // in --pre-removal mode: a removal should not wait 30s on the network to learn something it does
+  // not need. Retirability is a tidiness question; the backup check is the safety one.
+  //
+  // The question is asked by scripts/branch-pr-state.mjs, and it is deliberately ONE implementation
+  // shared with repo-doctor.mjs — both print `git branch -D`, and a rule that decides an
+  // irreversible command must not exist twice. This used to ask `--state merged` and take the first
+  // row, which answers "has this branch EVER had a merged PR" rather than "is the work on it NOW
+  // merged". Those diverge the moment a worktree outlives its own merge and opens a second PR from
+  // the same head, which is the normal shape here — and a reused branch that is momentarily clean
+  // and fully pushed to its OPEN pr got the unqualified `git branch -D` line, with nothing
+  // downstream to catch it: commits pushed to an open PR are backed up, so the unpushed check has
+  // no objection. See that file for the 2026-09-03 case.
+  const verdict = classifyBranchPr(
+    listBranchPrs(branch, { run: (args) => gh(args) }),
+    gitAt(cwd, ["rev-parse", "HEAD"]),
+  );
 
-  if (mergedPr) {
+  if (verdict.verdict === "retirable") {
     if (dirty === 0 && unpushed === 0) {
-      say(`Worktree is RETIRABLE: PR #${mergedPr} merged, tree clean, nothing unpushed.`);
+      say(`Worktree is RETIRABLE: PR #${verdict.pr} merged, tree clean, nothing unpushed.`);
       say(`  git worktree remove "${cwd}"`);
       say(`  git branch -D ${branch}    # -D, not -d: a squash merge is never an ancestor of main`);
       say(`  (Nothing was deleted for you — that stays your call.)`);
     } else {
-      say(`Worktree has a merged PR #${mergedPr} but is NOT clean yet: ${dirty} uncommitted file(s). Left as-is.`);
+      say(`Worktree has a merged PR #${verdict.pr} but is NOT clean yet: ${dirty} uncommitted file(s). Left as-is.`);
     }
-  } else if (dirty > 0) {
-    say(`Worktree exit — ${dirty} uncommitted file(s) on ${branch}. Pushing only covers commits; these are still local only.`);
+  } else {
+    // "held" and "unknown" both keep the branch, and both are SAID. A worktree that quietly stops
+    // being called retirable reads as one that was already retired.
+    if (verdict.verdict !== "none") {
+      say(`Worktree exit — ${branch} is NOT retirable: ${verdict.reason}.`);
+    }
+    if (dirty > 0) {
+      say(`Worktree exit — ${dirty} uncommitted file(s) on ${branch}. Pushing only covers commits; these are still local only.`);
+    }
   }
 
   finish();

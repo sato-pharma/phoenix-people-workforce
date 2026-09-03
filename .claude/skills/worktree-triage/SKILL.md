@@ -20,13 +20,23 @@ For every worktree except the primary checkout, collect:
 ```bash
 git -C "<worktree-path>" status --porcelain     # uncommitted/untracked work?
 git -C "<worktree-path>" branch --show-current  # its branch
-gh pr list --head "<branch>" --state merged --json number,title,mergedAt
-gh pr list --head "<branch>" --state open   --json number,title
+gh pr list --head "<branch>" --state all --json number,state,headRefOid,mergedAt
 ```
 
-**Squash-aware rule:** `gh pr list --head <branch> --state merged` is the ONLY
-valid merged test. Never use `git branch --merged` / ancestry — squash merges make
-it permanently false (this exact bug let 24 stale worktrees accumulate).
+**Squash-aware rule:** a PR's state is the ONLY valid merged test. Never use
+`git branch --merged` / ancestry — squash merges make it permanently false (this
+exact bug let 24 stale worktrees accumulate).
+
+**Newest-PR rule:** ask `--state all` and judge by the **newest** PR (highest
+number), never by the first merged row. A branch gets reused after its PR merges,
+so "has this branch ever had a merged PR" keeps answering yes for work that has not
+merged at all — on 2026-09-03 `claude/vigorous-gould-7cdf82` read as retirable off
+merged #2952 while #2965 was OPEN on the same head and a session was editing in the
+folder. Retire only when the newest PR is MERGED **and** `git -C "<path>" rev-parse
+HEAD` still equals that PR's `headRefOid`. Anything else keeps the worktree,
+including a gh call that failed — an unanswered question is not a clean answer.
+`scripts/branch-pr-state.mjs` is that rule in code, and `node scripts/repo-doctor.mjs`
+prints its verdict for every worktree at once.
 
 ## 1b. Orphan sweep — directories git CANNOT see (read-only)
 
