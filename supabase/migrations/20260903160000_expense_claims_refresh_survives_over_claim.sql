@@ -1,12 +1,20 @@
 -- The hourly expense_claims rebuild must FLAG an over-claim, not die on it.
 --
--- WHAT BROKE. `expense_claims_approved_total_range` forbids `approved_total > claimed_total` --
--- outstation approval exists to REDUCE a claim and never pays more than was asked for. Two legacy
--- rows violate that rule: OUTSTATION-52 carries 800.00 approved against 364.00 claimed, and
--- OUTSTATION-99 carries 541.90 against 341.90. They were written through `normalizeApprovedAmount`
--- (src/lib/outstation/payable.ts), the one of that module's three amount helpers that omitted the
--- cap its two siblings apply; that omission is fixed in the same change as this migration, so no
--- NEW row can land above its claim.
+-- WHAT BROKE, AND IT WAS NOT AN OVER-APPROVAL. `expense_claims_approved_total_range` forbids
+-- `approved_total > claimed_total`. Two legacy rows violated it: OUTSTATION-52 mirrored 800.00
+-- approved against 364.00 claimed, and OUTSTATION-99 541.90 against 341.90. But the mirror builds
+-- those two figures from two DIFFERENT tables -- `claimed_total` from
+-- `outstation_expense_requests.claimed_total_amount`, `approved_total` from `outstation_expenses`
+-- -- and the expense rows' own components summed to exactly 800.00 and 541.90. Both employees were
+-- approved for what the trip actually cost; it was the REQUEST HEADER that had gone stale at 364.00
+-- and 341.90. Those two headers were repaired by hand on 2026-09-03 (pre-image in the PR), which is
+-- why the 04:51 Cairo run went green on its own, before this migration was applied.
+--
+-- So what this has to survive is a DIVERGENCE BETWEEN THOSE TWO TABLES, not a bad approval.
+-- `normalizeApprovedAmount` (src/lib/outstation/payable.ts) also gains the cap its two sibling
+-- helpers already apply, in the same change -- but it compares against the expense row's OWN total,
+-- so it keeps one row internally consistent and cannot see a stale request header. It would not
+-- have prevented this failure. The guard that would have is the one below.
 --
 -- The rebuild deletes and re-inserts all four mirror tables inside ONE transaction, so those two
 -- rows rolled the whole statement back: from 2026-09-03 the job failed every hour and all 416
@@ -23,10 +31,10 @@
 -- countable instead of being silently clamped down to the claim.
 --
 -- IT DELIBERATELY DECIDES NOTHING ABOUT THE MONEY. Payroll reads the LEGACY row through
--- `payableExpenseAmount`, which returns the approved figure verbatim -- so those two trips are
--- still priced at 800.00 and 541.90 today. Whether that is right is the owner's call, not this
--- migration's; nothing here rewrites a legacy amount. This only stops one bad row freezing the
--- other 414.
+-- `payableExpenseAmount`, never this mirror, so a hold here moves nothing and a flagged claim is
+-- still paid exactly as it was. For the two rows above that is the right answer -- 800.00 and
+-- 541.90 are what their components add up to -- but the rule holds whatever the cause: this
+-- function REPORTS a legacy inconsistency, it never repairs one. That stays a human decision.
 --
 -- THE VIEW MOVES WITH THE FUNCTION, AND MUST KEEP MOVING WITH IT. `v_expense_claims_parity`
 -- compares the mirror against the legacy tables, and the route returns HTTP 500 and pings the
@@ -176,17 +184,21 @@ begin
     and coalesce(e.status, '') = 'Rejected'
     and (e.approved_at is not null or e.approved_by is not null);
 
-  -- The over-claim hold. Records what the mirror refused to carry, naming both amounts, so the row
-  -- is countable in `flagged` and readable on the claim instead of vanishing.
+  -- The over-claim hold. Names both amounts AND where each came from, because they live in
+  -- different tables and a stale request header -- not an over-approval -- is what produced both
+  -- known cases. A reason that misnames the cause sends the next reader after the wrong row.
   update public.expense_claims c
   set data_quality_hold = true,
       data_quality_reason = coalesce(c.data_quality_reason || ' | ', '')
         || 'Legacy approved amount '
         || to_char(coalesce(e.approved_amount, e.total)::numeric(12,2), 'FM999999990.00')
-        || ' exceeds the claimed total '
+        || ' is above the recorded claim total '
         || to_char(c.claimed_total, 'FM999999990.00')
-        || '. Outstation approval never pays more than was claimed, so no approved amount was '
-        || 'mirrored. Payroll still reads the legacy figure: this needs an owner decision.'
+        || ', so no approved amount was mirrored. Those two figures come from different tables - '
+        || 'the claim total from outstation_expense_requests, the approved amount from '
+        || 'outstation_expenses - so check whether the expense components still sum to the '
+        || 'recorded claim before treating this as an over-approval. Payroll reads the legacy row '
+        || 'and is unaffected.'
   from public.outstation_expenses e
   where e.id = c.legacy_expense_id
     and c.status = 'approved'
