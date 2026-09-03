@@ -47,6 +47,41 @@ function runGuard(at: string, command: string): string {
   });
 }
 
+/** Runs the guard in its SessionEnd mode: no --pre-removal, cwd inside the worktree itself. */
+function runGuardAtExit(at: string): string {
+  return execFileSync(process.execPath, [guardPath], {
+    cwd: at,
+    input: "",
+    encoding: "utf8",
+    stdio: ["pipe", "pipe", "pipe"],
+    timeout: 60000,
+  });
+}
+
+/**
+ * Makes `git status` fail inside `at` while every OTHER read the guard performs still succeeds.
+ *
+ * A linked worktree's index lives at <primary>/.git/worktrees/<name>/index. Garbage there fails
+ * `status` with "index file smaller than expected" (exit 128), but `rev-parse`, `rev-list` and
+ * `--git-common-dir` all read refs and objects, not the index, so they keep answering normally.
+ * That is exactly the shape the guard has to survive: ONE unreadable measurement inside an
+ * otherwise working repo, not a repo that is broken everywhere and obviously so.
+ */
+function breakStatus(at: string): void {
+  const gitDir = git(at, ["rev-parse", "--path-format=absolute", "--git-dir"]);
+  writeFileSync(join(gitDir, "index"), "NOT-AN-INDEX");
+  // Prove the premise instead of assuming it. If some future git rebuilt a corrupt index silently
+  // rather than failing, both tests below would pass vacuously — against the very bug they exist
+  // to catch, which is the one failure mode this file already documents at length.
+  let failed = false;
+  try {
+    execFileSync("git", ["status", "--porcelain"], { cwd: at, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  } catch {
+    failed = true;
+  }
+  assert.ok(failed, "premise broken: a corrupt index no longer makes `git status` fail, so these tests prove nothing");
+}
+
 function readLog(repo: string): string {
   const file = join(repo, ".claude", "worktree-exit.log");
   return existsSync(file) ? readFileSync(file, "utf8") : "";
@@ -155,6 +190,74 @@ export function runWorktreeExitGuardPreRemovalTests() {
       // Exactly one: the seed commit is on origin/main and must not be counted as at-risk. This is
       // the over-reporting trap check-unbacked-branches.ts documents, asserted here too.
       assert.ok(log.includes("1 unpushed commit(s)"), `the count must be exact, not "everything".\n${log}`);
+    } finally {
+      cleanup();
+    }
+  }
+
+  // ── A working tree git could NOT read is UNVERIFIED, never "clean" ──────────────────────────
+  // `git status` FAILING and `git status` reporting nothing are different answers. The guard
+  // collapsed them with `?? ""`, so an unreadable tree scored dirty === 0 and printed
+  // "clean, nothing unpushed. Safe to remove." — the reassuring sentence, produced by a check that
+  // never ran, at the one moment a deletion is about to happen. Not knowing must read LOUDER than
+  // clean, never quieter; scripts/repo-doctor.mjs documents this same trap in four places.
+  {
+    const { repo, foo, cleanup } = makeRepo();
+    try {
+      // Real uncommitted work is present the whole time. The guard cannot see it — that is the
+      // point: what it prints has to reflect that it could not look, not what it hopes is there.
+      writeFileSync(join(foo, "unsaved.txt"), "work that exists only here\n");
+      breakStatus(foo);
+
+      runGuard(repo, `git worktree remove "${foo}"`);
+
+      const log = readLog(repo);
+      assert.ok(
+        log.includes("UNVERIFIED, not clean"),
+        `an unreadable working tree must be reported as UNVERIFIED.\n${log}`,
+      );
+      assert.ok(
+        log.includes("could not measure uncommitted files"),
+        `the warning must name WHICH measurement failed, so it can be redone by hand.\n${log}`,
+      );
+      assert.ok(
+        !log.includes("clean, nothing unpushed"),
+        `a status read that FAILED must never be rendered as a clean tree — that line sits directly above "Safe to remove".\n${log}`,
+      );
+      assert.ok(
+        !log.includes("0 uncommitted file(s)"),
+        `an unknown count must not be printed as zero.\n${log}`,
+      );
+      assert.ok(existsSync(join(foo, "unsaved.txt")), "the guard must not touch files it could not even measure");
+    } finally {
+      cleanup();
+    }
+  }
+
+  // ── SessionEnd mode: an unreadable working tree must not pass in SILENCE either ─────────────
+  // The retirability report is the dangerous half — it prints `git worktree remove` and
+  // `git branch -D` underneath the word RETIRABLE. When a branch is not retirable the old code
+  // reached `if (dirty > 0)`, which `null > 0` fails, so it said nothing about the WORKING TREE at
+  // all. Measured against the pre-fix guard, the entire log for a worktree holding real uncommitted
+  // work it could not see was one line about the PR lookup. Silence on the tree is the same bug as
+  // calling it clean, only quieter.
+  {
+    const { repo, foo, cleanup } = makeRepo();
+    try {
+      writeFileSync(join(foo, "unsaved.txt"), "work that exists only here\n");
+      breakStatus(foo);
+
+      runGuardAtExit(foo);
+
+      const log = readLog(repo);
+      assert.ok(
+        log.includes("UNVERIFIED, not clean"),
+        `SessionEnd must speak up about a working tree it could not read, not exit quietly.\n${log}`,
+      );
+      assert.ok(
+        !log.includes("RETIRABLE"),
+        `RETIRABLE must never be printed off a status read that failed.\n${log}`,
+      );
     } finally {
       cleanup();
     }
