@@ -77,6 +77,86 @@ async function loadWorkEmails(hrIds: Array<string | null>): Promise<Map<string, 
 }
 
 /**
+ * The HR seats, resolved by APP ROLE.
+ *
+ * Never by job title. The owner's standing rule is that an HR seat is composed from a function
+ * catalogue and is never named after a job title, and this repository has a live demonstration of
+ * why: `hrAcknowledgementRecipients` in weekly-planning/service.ts matches
+ * `job_title ilike '%HR Manager%'` / `'%Admin HR%'`, and production returns ZERO employees for
+ * either (measured 2026-09-03). Titles drift; the role is what the app actually gates on.
+ *
+ * `HR Advisory` and `HR Operations` are the two HR seats, the same pair `hrAuthorityNavigationRoles`
+ * names in system-navigation.ts. That constant is not imported here on purpose - navigation is UX
+ * only, and a notification audience must not be able to change because somebody re-arranged a
+ * sidebar.
+ *
+ * Falls back to Super Admin when both seats are empty, so an unstaffed HR function loses the
+ * mailbox rather than the message.
+ */
+export const HR_SEAT_ROLES = ["HR Advisory", "HR Operations"] as const;
+
+async function resolveHrAudience(): Promise<string[]> {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("app_auth_users")
+    .select("hr_id,role,is_active")
+    .in("role", [...HR_SEAT_ROLES]);
+  if (error) throw error;
+  const rows = (data ?? []) as Array<{ hr_id?: string | null; is_active?: boolean | null }>;
+  const hrIds = rows
+    .filter((row) => row.is_active !== false)
+    .map((row) => row.hr_id)
+    .filter((hrId): hrId is string => Boolean(hrId));
+  if (hrIds.length > 0) return hrIds;
+
+  const { data: admins } = await supabase
+    .from("app_auth_users")
+    .select("hr_id,is_active")
+    .eq("role", "Super Admin");
+  const fallback = ((admins ?? []) as Array<{ hr_id?: string | null; is_active?: boolean | null }>)
+    .filter((row) => row.is_active !== false)
+    .map((row) => row.hr_id)
+    .filter((hrId): hrId is string => Boolean(hrId));
+  if (fallback.length > 0) {
+    logError("No active HR seat to receive a conversation - falling back to Super Admin", {
+      labels: { event: "conversation_hr_audience_empty" },
+    });
+  }
+  return fallback;
+}
+
+/**
+ * Deliver a comment whose audience is HR rather than an individual thread owner.
+ *
+ * Owner's answer, 2026-09-03, asked before any recipient was wired: "HR gets the deductions
+ * comment." So HR is the To and the employee who wrote it is the CC - the same shape as every
+ * other thread, with HR standing in as the side that owns the conversation.
+ */
+export async function notifyHrConversationMessage(
+  input: Omit<ConversationNotificationInput, "submitterHrId" | "participantHrIds">,
+): Promise<void> {
+  try {
+    const hrIds = await resolveHrAudience();
+    if (hrIds.length === 0) {
+      logError("No HR recipient at all for a conversation message", {
+        labels: { event: "conversation_hr_audience_unresolved", module: input.module, recordId: input.recordId },
+      });
+      return;
+    }
+    await notifyConversationMessage({
+      ...input,
+      participantHrIds: hrIds,
+      submitterHrId: hrIds[0],
+    });
+  } catch (error) {
+    logError("HR conversation message failed to notify", {
+      labels: { event: "conversation_hr_notify_failed", module: input.module, recordId: input.recordId },
+      error,
+    });
+  }
+}
+
+/**
  * The addressing decision, split out so it can be asserted directly in a test without a database.
  *
  * Ids come back in the form they were GIVEN, deduplicated by canonical key. Returning the canonical

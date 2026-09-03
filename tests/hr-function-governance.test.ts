@@ -107,6 +107,22 @@ const FILES_NAMING_AN_HR_SEAT: readonly string[] = [
   // notice is a CLAIM about who can read the register. If retention:read ever widens, this copy
   // starts asserting a boundary that no longer holds, so it has to be re-read rather than left.
   "src/components/retention/retention-workspace.tsx",
+  // Names both seats in HR_SEAT_ROLES, added 2026-09-03 when the owner answered "HR gets the
+  // deductions comment". Reviewed verdict: it is a NOTIFICATION AUDIENCE and grants nothing. The
+  // two strings are the argument to `.in("role", ...)` against app_auth_users, used only to decide
+  // who is mailed; no page opens, no query widens, no record is read on either seat's behalf.
+  //
+  // It is deliberately NOT a grant, and the distinction is live rather than theoretical: the
+  // deductions screen these emails point at gates on VIEW_ROLES = {"Super Admin", "CEO"} and
+  // redirects both seats away, exactly as it did the Finance Manager after 2026-08-11. HR reads
+  // the comment in the email body and cannot reach the record - which is the state the owner was
+  // told about, not an oversight to quietly close from here.
+  //
+  // Resolved by ROLE and never by job title, per the owner's rule that an HR seat is composed from
+  // a function catalogue. That is not stylistic: weekly-planning's hrAcknowledgementRecipients
+  // matches job_title ilike '%HR Manager%' / '%Admin HR%' and production returns ZERO employees for
+  // both, so its HR leg has only ever reached Super Admins.
+  "src/lib/conversations/notify.ts",
   "src/config/system-navigation.ts",
   "src/lib/admin/access-control.ts",
   "src/lib/auth/hr-functions.ts",

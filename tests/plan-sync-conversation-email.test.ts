@@ -1,7 +1,7 @@
 import { strict as assert } from "node:assert";
 import { readFileSync } from "node:fs";
 
-import { resolveConversationAudience } from "../src/lib/conversations/notify.ts";
+import { HR_SEAT_ROLES, resolveConversationAudience } from "../src/lib/conversations/notify.ts";
 import { enforceCandidateAssignedEmailBlock } from "../src/lib/notifications/recruitment-candidate-assigned-channel-guard.ts";
 import { enforceRecruitmentCvEmailBlock } from "../src/lib/notifications/recruitment-cv-channel-guard.ts";
 import { planDayFingerprint } from "../src/lib/weekly-planning/service.ts";
@@ -20,6 +20,8 @@ import { planDayFingerprint } from "../src/lib/weekly-planning/service.ts";
 
 const servicePath = new URL("../src/lib/weekly-planning/service.ts", import.meta.url);
 const service = readFileSync(servicePath, "utf8");
+const deductionsComments = readFileSync(new URL("../src/lib/deductions/comments.ts", import.meta.url), "utf8");
+const conversationNotify = readFileSync(new URL("../src/lib/conversations/notify.ts", import.meta.url), "utf8");
 
 export function runPlanSyncConversationEmailTests() {
   // -------------------------------------------------------------------------
@@ -208,6 +210,52 @@ export function runPlanSyncConversationEmailTests() {
     enforceCandidateAssignedEmailBlock(commentChannels, "recruitment", "candidate_comment").includes("email"),
     "the candidate-push email block must not reach a candidate comment — a conversation is not a push",
   );
+  // -------------------------------------------------------------------------
+  // Deductions: the one thread with a single side, so its audience was decided.
+  // -------------------------------------------------------------------------
+  //
+  // assertEmployeeCanCommentOnCandidate means only the employee can ever write here, so the row
+  // names no counterparty. The owner was asked and answered on 2026-09-03: "HR gets the deductions
+  // comment." Nothing was sent before that - a disputed deduction went into a table nobody watched.
+  assert.ok(
+    /await notifyDeductionsComment\(/.test(deductionsComments),
+    "an employee's comment on their own deduction must reach HR",
+  );
+  assert.ok(
+    /notifyHrConversationMessage\([\s\S]*?module: "deductions"/.test(deductionsComments),
+    "the deductions thread must use the shared HR conversation path, not its own recipient list",
+  );
+
+  // HR is resolved by APP ROLE, never by job title. The owner's rule is that an HR seat is composed
+  // from a function catalogue and never named after a job title - and production proves the cost:
+  // weekly-planning's hrAcknowledgementRecipients matches job_title ilike '%HR Manager%' /
+  // '%Admin HR%', and BOTH return zero employees, so its HR leg reaches Super Admins alone.
+  assert.deepEqual(
+    [...HR_SEAT_ROLES],
+    ["HR Advisory", "HR Operations"],
+    "the HR audience is the two HR seats, resolved by role",
+  );
+  assert.ok(
+    /\.from\("app_auth_users"\)[\s\S]{0,200}\.in\("role", \[\.\.\.HR_SEAT_ROLES\]\)/.test(conversationNotify),
+    "the HR audience must be read from the role column, never matched on a job title",
+  );
+  // The QUERY form, not the word: the prose above deliberately names the job_title filter it is
+  // warning against, and a pin that cannot tell a comment from a query would forbid explaining why.
+  assert.ok(
+    !/job_title\.ilike|\.select\([^)]*job_title/.test(conversationNotify),
+    "no conversation audience may be resolved by job title - titles drift, the role is the gate",
+  );
+  // An unstaffed HR function must lose the mailbox, not the message.
+  assert.ok(
+    /resolveHrAudience[\s\S]*?\.eq\("role", "Super Admin"\)/.test(conversationNotify),
+    "an empty HR audience must fall back to Super Admin rather than drop the comment",
+  );
+  // The employee is named, not numbered - the owner's standing rule, in chat and UI alike.
+  assert.ok(
+    /subjectLabel: authorName \?\? "an employee"/.test(deductionsComments),
+    "HR must be told which PERSON commented, never their HR id",
+  );
+
   // The guards themselves still do their job, so this pin cannot pass by having neutered them.
   assert.ok(
     !enforceRecruitmentCvEmailBlock(commentChannels, "recruitment", "recruitment_inbound_cv").includes("email"),
