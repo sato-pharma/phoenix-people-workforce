@@ -27,6 +27,7 @@ import {
   venueTypeIsAnswered,
   venueTypeLabel,
 } from "@/lib/venues/venue-type";
+import { resolveSubmittedCampaignId } from "@/lib/direct-orders/campaign-link";
 import { pingDirectOrderSheet } from "@/lib/direct-orders/sheet-webhook";
 import { summarizeDirectOrderBasket } from "@/lib/direct-orders/basket-label";
 import { canCancelHeldDirectOrder } from "@/lib/direct-orders/cancel-visibility";
@@ -3326,6 +3327,13 @@ export type SubmitDirectOrderInput = {
   /** Expected money-collection date (YYYY-MM-DD), required — entered by the requester. */
   collectionDate?: string | null;
   /**
+   * The marketing campaign this order came from, DECLARED by the requester (owner's rule: the rep
+   * picks it when raising the order). OPTIONAL and must stay so — most direct orders are not
+   * campaign-driven, and 93 of 93 in production carry none. Validated server-side against this
+   * order's own line by `resolveSubmittedCampaignId`; the picker is a convenience, not the boundary.
+   */
+  marketingRequestId?: string | null;
+  /**
    * EXTRA lines beyond the one described by the fields above, for a family basket.
    *
    * Additive on purpose. Every existing caller — the submit API route, the tests, anything holding
@@ -3703,6 +3711,13 @@ export async function submitDirectOrder(
         requesterRole: access.role,
       });
 
+  // The campaign this order came from, as declared by the requester. Re-validated here rather than
+  // trusted from the body: a hand-posted request must not be able to attach an order to a rejected
+  // campaign, to another line's campaign, or to an id that does not exist. It runs AFTER the basket
+  // because `product.line` is what the campaign has to match, and that is only known once the
+  // basket has resolved. Throws with a readable reason; null means "no campaign", the normal case.
+  const marketingRequestId = await resolveSubmittedCampaignId(access, input.marketingRequestId, product.line);
+
   const { data: inserted, error: insertError } = await supabase
     .from("direct_order_requests")
     .insert({
@@ -3724,6 +3739,7 @@ export async function submitDirectOrder(
       sales_value: salesValue,
       pharmacy_id: input.pharmacyId,
       collection_date: collectionDate,
+      marketing_request_id: marketingRequestId,
       created_by_login_id: access.loginId ?? null,
       submitted_at: new Date().toISOString(),
     })
