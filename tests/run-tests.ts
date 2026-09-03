@@ -3220,7 +3220,7 @@ await runTest(
   runOutstationManualExpenseTicketPlusAllowanceTests,
 );
 await runTest(
-  "manual admin outstation expense amount visibility (Meeting/Other amount are never hidden by expense type, so an amount typed under one type can never be submitted, invisibly, under another — production request 77)",
+  "outstation expense amount visibility, admin modal AND rep wizard (Meeting/Other amount are never hidden by expense type and never rendered twice, so an amount typed under one type can never be submitted invisibly under another — production request 77)",
   runOutstationAdminManualExpenseAmountVisibilityTests,
 );
 await runTest(
