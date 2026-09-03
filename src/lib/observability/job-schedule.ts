@@ -51,6 +51,7 @@ export const JOB_SCHEDULES: readonly JobScheduleDeclaration[] = [
   { slug: "phoenix-notify-daily", kind: "cron", schedule: "36 6 * * *", graceSeconds: 1 * HOUR },
   { slug: "phoenix-marketing-field-capture-nudge", kind: "cron", schedule: "50 6 * * *", graceSeconds: 1 * HOUR },
   { slug: "phoenix-marketing-invoice-overdue-nudge", kind: "cron", schedule: "5 7 * * *", graceSeconds: 1 * HOUR },
+  { slug: "phoenix-distributor-upload-overdue-nudge", kind: "cron", schedule: "20 7 * * *", graceSeconds: 1 * HOUR },
   { slug: "phoenix-mailbox-offboarding-sweep", kind: "cron", schedule: "15 8 * * *", graceSeconds: 1 * HOUR },
   { slug: "phoenix-process-notifications", kind: "cron", schedule: "*/5 * * * *", graceSeconds: 10 * MINUTE },
   { slug: "phoenix-background-jobs", kind: "cron", schedule: "0 3 * * 5", graceSeconds: 2 * HOUR },

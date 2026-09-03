@@ -185,6 +185,13 @@ const policyTable: Record<string, Partial<NotificationPolicy>> = {
   // directly; `manager_chain` was removed so a resignation never fans out up the org chart.
   // Explicit recipients still have to hold `resignations` permission to survive canAccess.
   "resignations.*": { channels: ["in_app", "email", "telegram", "push"], permissionResource: "resignations", priority: "high", recipientStrategy: ["permission_based"], telegramAllowed: true },
+  // House rule for lateness reminders since 2026-07-25: in-app, Telegram and push, never email.
+  // The call site in distributor-upload-nudge.ts passes these same three explicitly, and an
+  // explicit `channels` wins over this table (resolveBasePolicyChannels, first line) — so this row
+  // is the INDEPENDENT layer, the one that still holds if that argument is ever dropped. Without it
+  // the bare default applies, and that default carries email and omits Telegram: the exact inverse
+  // of the rule, arrived at silently.
+  "sales.distributor_upload_overdue": { channels: ["in_app", "telegram", "push"], priority: "high", recipientStrategy: ["role_based"], telegramAllowed: true },
   "system.announcement": { channels: ["in_app", "email", "push"], recipientStrategy: ["employee"] },
   // Live sender (telegram-operations.ts) passes explicit channels and doesn't consult this
   // entry today, but kept push-inclusive here too in case a future caller relies on policy

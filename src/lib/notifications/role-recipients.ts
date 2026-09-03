@@ -33,6 +33,7 @@ export const notificationRoleKeys = [
   "employee_import_alert",
   "payroll_workflow_alert",
   "marketing_invoice_overdue_alert",
+  "distributor_upload_overdue_alert",
 ] as const;
 
 export type NotificationRoleKey = (typeof notificationRoleKeys)[number];
@@ -177,6 +178,14 @@ export const DEFAULT_NOTIFICATION_ROLE_POLICIES: Record<NotificationRoleKey, Not
     description:
       "Who is told when an approved marketing request's invoice passes its deadline. The REQUESTER is always notified about their own request and is not configurable here — this list is the finance-side audience, defaulting to the Finance Manager, who holds the finance_execution rung on the marketing approval chain and is the person chasing the invoice.",
     roles: ["Finance Manager"],
+    enabled: true,
+  },
+  distributor_upload_overdue_alert: {
+    key: "distributor_upload_overdue_alert",
+    label: "Distributor upload overdue alert",
+    description:
+      "Who is told when a distributor's file for the month just closed is later than that same distributor's file was last month. Defaults to Super Admin and SFE Manager — the two roles holding sales:import, which is what /sales/upload requires, so every recipient can actually perform the upload the message is asking for rather than landing on a redirect.",
+    roles: ["Super Admin", "SFE Manager"],
     enabled: true,
   },
   marketing_sla_reminder: {
