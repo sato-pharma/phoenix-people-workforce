@@ -24,9 +24,15 @@
  * `prose` — v1: a run-in opening sentence, the parties as numbered paragraphs, articles as a
  * continuous flow. `banded` — v2: a navy title panel, the parties in a bordered table under blue
  * heading bands, and the articles in a two-column grid with the article number and title in the
- * narrow column. Both are A4 and both are right-to-left; the difference is furniture, not language.
+ * narrow column. `document` — v3: the owner's own Word typesetting, which is the opposite of banded
+ * on purpose — the letterhead repeats at the top of every page, headings are blue text over a hair
+ * rule rather than filled bands, and nothing is highlighted or shaded. All three are A4 and all
+ * three are right-to-left; the difference is furniture, not language.
+ *
+ * A LAYOUT IS NEVER RETIRED, only stopped being pointed at. `banded` stays because a contract was
+ * signed against version 2 and has to reprint as the document that was signed.
  */
-export type ContractLayout = "prose" | "banded";
+export type ContractLayout = "prose" | "banded" | "document";
 
 /**
  * Every token any version of the contract can carry.

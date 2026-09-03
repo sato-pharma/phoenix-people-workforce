@@ -37,12 +37,17 @@ import { resolveNationality } from "@/lib/hiring-pack/nationality";
 // carry an original signature.
 //
 // ─────────────────────────────────────────────────────────────────────────────────────────────
-// TWO LAYOUTS, ONE RENDERER. Since 2026-08-30 there is more than one version of the contract: the
-// current one (`banded` — a navy title panel, blue party bands, a zebra article grid) and the
-// archived one it replaced (`prose` — a run-in opening sentence and a continuous flow). Both are
-// rendered here, by the same code, on purpose. A renderer per version means the archived one is
-// never exercised until the day somebody reprints a contract signed against it, which is the worst
-// possible moment to discover it no longer works.
+// THREE LAYOUTS, ONE RENDERER. Since 2026-08-30 there is more than one version of the contract:
+// the current one (`document` — the owner's own Word typesetting, a white page with a repeating
+// letterhead and headings over hair rules) and the two it succeeded (`banded` — a navy title panel,
+// blue party bands and a zebra article grid; `prose` — a run-in opening sentence and a continuous
+// flow). All three are rendered here, by the same code, on purpose. A renderer per version means the
+// archived ones are never exercised until the day somebody reprints a contract signed against one,
+// which is the worst possible moment to discover it no longer works.
+//
+// `banded` IS NOT DEAD CODE — a contract in production was signed against version 2 and reprints
+// through it. Nothing that is signed uses `prose`, but it stays for the same reason: a version is
+// archived, never deleted.
 //
 // The prose path below is the behaviour that shipped with version 1, deliberately left alone. An
 // archived contract has to reproduce as the document that was signed, so "improving" how it renders
@@ -401,6 +406,231 @@ function renderBandedCopy(
   </article>`;
 }
 
+/**
+ * Split "label<sep>value" once, and unwrap the brackets the source uses to stand in for a box.
+ *
+ * The contract text writes a blank as "الجنسية: ( {{NATIONALITY}} )" because in a flowing paragraph
+ * the brackets ARE the box. The document layout draws a real one, so keeping them would draw the
+ * box twice. Returns null when the chunk carries no separator, which is the caller's signal to
+ * print it whole rather than guess at it.
+ */
+function splitLabelled(
+  chunk: string,
+  separator: string,
+): { label: string; value: string } | null {
+  const at = chunk.indexOf(separator);
+  if (at < 0) return null;
+  const label = chunk.slice(0, at).trim();
+  let value = chunk.slice(at + separator.length).trim();
+  if (value.startsWith("(") && value.endsWith(")")) value = value.slice(1, -1).trim();
+  return label.length > 0 ? { label, value } : null;
+}
+
+/**
+ * A value that is nothing but a pen rule — dots, an ellipsis, or tatweel.
+ *
+ * In a flowing line those characters are the blank. Inside a ruled cell the CELL is the blank, and
+ * printing both gives a box with a row of dots stranded at the top of it.
+ */
+const PEN_BLANK = /^[.…ـ\s]*$/u;
+
+/**
+ * The second party's identity block as the source draws it: a ruled grid, two label/value pairs to
+ * a row, and a row carrying a single pair spanned across the rest.
+ *
+ * The pairs come from the same double-space convention the banded layout splits on, so one string
+ * in the version file serves both layouts and neither needs its own copy of the identity fields.
+ */
+function documentIdentityGrid(
+  lines: readonly string[],
+  values: Partial<Record<ContractToken, string>>,
+): string {
+  const rows = lines
+    .map((text) => {
+      const chunks = text.split(/ {2,}/u);
+      const pairs = chunks.map((chunk) => splitLabelled(chunk, ":"));
+      if (pairs.some((pair) => pair === null) || pairs.length === 0) {
+        // Unreadable as pairs — print the line whole. A dropped identity field on a contract is
+        // far worse than one row that does not sit in the grid.
+        return `<tr><td class="doc-ident__value" colspan="4">${markedPartyLine(text, values)}</td></tr>`;
+      }
+      const cells = pairs
+        .map((pair) => {
+          const { label, value } = pair as { label: string; value: string };
+          const span = pairs.length === 1 ? ' colspan="3"' : "";
+          return (
+            `<th class="doc-ident__label">${escapeHtml(label)}</th>` +
+            `<td class="doc-ident__value"${span}>${fillMarkedHtml(value, values)}</td>`
+          );
+        })
+        .join("");
+      return `<tr>${cells}</tr>`;
+    })
+    .join("");
+  return `<table class="doc-ident">${rows}</table>`;
+}
+
+/**
+ * The signature block as the source draws it: one ruled row per party, one column per signing field.
+ *
+ * THE COLUMNS ARE READ OFF THE TEMPLATE, never hard-coded. Each signature field is written
+ * "التاريخ / ……" — label, separator, blank — so the column set is the labels in the order the
+ * parties state them, and the leading column carries the party itself. A version that signs with
+ * different fields therefore gets its own columns instead of being forced into these.
+ */
+function documentSignatureTable(
+  columns: ContractTemplate["signatureColumns"],
+  values: Partial<Record<ContractToken, string>>,
+): string {
+  const labels: string[] = [];
+  for (const column of columns) {
+    for (const field of column.fieldsAr) {
+      const pair = splitLabelled(field, " / ");
+      if (pair !== null && !labels.includes(pair.label)) labels.push(pair.label);
+    }
+  }
+
+  const head =
+    `<tr><th class="doc-sig__corner"></th>` +
+    labels.map((label) => `<th class="doc-sig__head">${escapeHtml(label)}</th>`).join("") +
+    `</tr>`;
+
+  const body = columns
+    .map((column) => {
+      const byLabel = new Map<string, string>();
+      for (const field of column.fieldsAr) {
+        const pair = splitLabelled(field, " / ");
+        if (pair !== null) byLabel.set(pair.label, pair.value);
+      }
+      const cells = labels
+        .map((label) => {
+          const field = byLabel.get(label);
+          const filled = field === undefined ? "" : fillContractTokens(field, values);
+          const html =
+            field === undefined || PEN_BLANK.test(filled) ? "" : fillMarkedHtml(field, values);
+          return `<td class="doc-sig__cell">${html}</td>`;
+        })
+        .join("");
+      return `<tr><th class="doc-sig__party">${escapeHtml(column.headingAr)}</th>${cells}</tr>`;
+    })
+    .join("");
+
+  return `<table class="doc-sig"><thead>${head}</thead><tbody>${body}</tbody></table>`;
+}
+
+/** One article of the document layout: the numbered label beside the clause, on a hair rule. */
+function documentArticleRow(number: string, titleAr: string | null, bodyHtml: string): string {
+  const title = titleAr ? `<span class="doc-art__title">${escapeHtml(titleAr)}</span>` : "";
+  return `<div class="doc-art">
+      <div class="doc-art__label"><span class="doc-art__no">${escapeHtml(number)}</span>${title}</div>
+      <div class="doc-art__body">${bodyHtml}</div>
+    </div>`;
+}
+
+/**
+ * Version 3's layout: the owner's own Word typesetting.
+ *
+ * WHAT MAKES THIS DIFFERENT FROM `banded`, AND WHY. The banded layout was read off an earlier Word
+ * file that used filled panels and a highlight on every blank. This one is read off the file the
+ * owner supplied on 2026-09-03, and it is the opposite: a white page, the mark on a light ground,
+ * headings as blue text over a hair rule, and nothing shaded or highlighted at all. That last point
+ * is not a preference — a contract that prints with a coloured background on every typed value
+ * looks like a draft, and it goes to a signing table.
+ *
+ * THE LETTERHEAD AND THE SIGNING RULE REPEAT ON EVERY PAGE, because they do in the source: Word
+ * carries them in its header and footer parts. `<thead>` and `<tfoot>` on the outer table are the
+ * only technique Chrome actually repeats across a page break — `@page` margin boxes are
+ * unimplemented — so both ride there. See the version file for the one thing that cannot follow:
+ * "صفحة N من M" has no mechanism in a browser at all.
+ */
+function renderDocumentCopy(
+  template: ContractTemplate,
+  values: Partial<Record<ContractToken, string>>,
+): string {
+  const heading = (text: string | null) =>
+    text ? `<h2 class="doc-head">${escapeHtml(text)}</h2>` : "";
+
+  const opening = template.openingAr
+    ? `<p class="doc-recital">${fillMarkedHtml(template.openingAr, values)}</p>`
+    : "";
+
+  // Rendered as consecutive zero-margin paragraphs, which is what the source's single justified
+  // recital paragraph looks like. Joining the strings instead would bake this layout's punctuation
+  // into text that belongs to the version file.
+  const recital = template.firstPartyLinesAr
+    .map((text) => `<p class="doc-recital">${fillMarkedHtml(text, values)}</p>`)
+    .join("");
+
+  const articles = template.articles
+    .map((article) =>
+      documentArticleRow(article.number, article.titleAr, fillMarkedHtml(article.body, values)),
+    )
+    .join("");
+
+  const closing = template.closingAr
+    ? `<p class="doc-closing">${fillMarkedHtml(template.closingAr, values)}</p>`
+    : "";
+
+  // The footer's halves are separated in the source by a long run of spaces — one signing rule at
+  // each margin. Splitting on that run and spreading the parts reproduces it without this layout
+  // needing to know what the parts say.
+  const foot = template.footerAr
+    ? `<tfoot><tr><td class="doc-foot"><div class="doc-foot__row">${fillContractTokens(
+        template.footerAr,
+        values,
+      )
+        .split(/ {2,}/u)
+        .map((part) => `<span>${escapeHtml(part)}</span>`)
+        .join("")}</div></td></tr></tfoot>`
+    : "";
+
+  return `<article class="copy copy--document">
+    <table class="doc-sheet">
+      <thead><tr><td class="doc-mastcell">
+        <header class="doc-mast">
+          <span class="doc-mast__side"></span>
+          <span class="doc-mast__title">
+            <strong>${escapeHtml(template.titleAr)}</strong>
+            <em>${escapeHtml(template.subtitleAr)}</em>
+          </span>
+          <span class="doc-mast__side doc-mast__mark">
+            <img src="/brand/sato-pharma-logo-on-light.png" alt="" width="401" height="158">
+          </span>
+        </header>
+      </td></tr></thead>
+      <tbody><tr><td class="doc-body">
+        ${opening}
+        ${heading(template.firstPartyHeadingAr)}
+        ${recital}
+        ${heading(template.secondPartyHeadingAr)}
+        ${documentIdentityGrid(template.secondPartyLinesAr, values)}
+        ${heading(template.preambleHeadingAr)}
+        <p class="doc-recital">${fillMarkedHtml(template.preambleAr, values)}</p>
+        <div class="doc-arts">${articles}</div>
+        ${closing}
+        ${documentSignatureTable(template.signatureColumns, values)}
+      </td></tr></tbody>
+      ${foot}
+    </table>
+  </article>`;
+}
+
+/**
+ * Which function draws which layout.
+ *
+ * A record rather than a chain of ternaries so adding a layout has one obvious place to land — but
+ * a missing key is checked at RUNTIME below and not left to the compiler, because this repo builds
+ * with `ignoreBuildErrors` and an incomplete Record compiles, builds and deploys perfectly happily.
+ */
+const CONTRACT_RENDERERS: Record<
+  ContractTemplate["layout"],
+  (template: ContractTemplate, values: Partial<Record<ContractToken, string>>) => string
+> = {
+  prose: renderProseCopy,
+  banded: renderBandedCopy,
+  document: renderDocumentCopy,
+};
+
 export function renderContractHtml(
   data: HiringPackData,
   copies: number,
@@ -423,7 +653,14 @@ export function renderContractHtml(
 
   const values = buildContractValues(data);
   const total = Math.max(1, copies);
-  const renderCopy = template.layout === "banded" ? renderBandedCopy : renderProseCopy;
+  const renderCopy = CONTRACT_RENDERERS[template.layout];
+  if (typeof renderCopy !== "function") {
+    // Refusing to print is the safe failure. The alternative — falling back to another layout —
+    // would hand somebody a legal instrument typeset as a different version of itself.
+    throw new Error(
+      `contract layout "${template.layout}" (${template.id}) has no renderer in CONTRACT_RENDERERS`,
+    );
+  }
 
   const body = Array.from({ length: total }, () => renderCopy(template, values)).join("\n");
   const employeeName = data.employee.nameAr ?? data.employee.fullName;
@@ -447,7 +684,10 @@ export function renderContractHtml(
             : `ARCHIVED TEXT (${template.id}) — a superseded version was asked for. A new hire must sign the current contract.`,
         ];
 
-  // Background graphics matter only where the design carries meaning. Version 1 is black on white.
+  // Background graphics matter only where the design carries meaning. Version 1 is black on white,
+  // and version 3 deliberately went back to that — its rules are borders and its mark is an image,
+  // both of which print whether or not the box is ticked, so it is told to leave the setting alone
+  // rather than given an instruction that changes nothing.
   const colourNotice =
     template.layout === "banded"
       ? [
@@ -645,10 +885,126 @@ export function renderContractHtml(
   .fill { padding: 0 0.6mm; background: #ffedbe; color: #8a5a00; font-weight: 700; }
   .fill--blank { letter-spacing: 0.4pt; }
 
+  /* ── version 3, the current document layout ───────────────────────────────────────────────── */
+  /* Read off the owner's Word file. Two blues and one hairline grey, and nothing else is coloured:
+     no panel, no band, no zebra, no highlight. Everything that separates one part of the contract
+     from another here is a rule, which is why this layout prints correctly whether or not the
+     browser's “Background graphics” box is ticked. */
+  .copy--document {
+    padding: 10.7mm 10.2mm 12.7mm;
+    color: #111;
+    font-size: 9pt;
+    line-height: 1.4;
+  }
+  .doc-sheet { width: 100%; border-collapse: collapse; }
+  .doc-mastcell, .doc-body { padding: 0; vertical-align: top; }
+
+  /* The letterhead. The mark sits on the left and the title is centred ON THE PAGE, not in what is
+     left over beside the mark — which is what the empty span on the other side is for. */
+  .doc-mast {
+    display: flex;
+    align-items: center;
+    gap: 4mm;
+    margin-bottom: 2.5mm;
+    padding-bottom: 1.5mm;
+    border-bottom: 0.6pt solid #b9cad9;
+  }
+  .doc-mast__side { flex: 0 0 30mm; }
+  .doc-mast__mark { display: flex; justify-content: flex-start; }
+  /* The blue-on-light variant — the same artwork, byte for byte, that the source document embeds.
+     The white-wordmark file used by the banded layout would vanish on this page. */
+  .doc-mast__mark img { width: 100%; max-width: 30mm; height: auto; }
+  .doc-mast__title { flex: 1 1 auto; text-align: center; }
+  .doc-mast__title strong { display: block; color: #0f6ea8; font-size: 13pt; font-weight: 700; }
+  .doc-mast__title em {
+    display: block;
+    margin-top: 1mm;
+    color: #5b6b7a;
+    font-size: 8pt;
+    font-style: normal;
+    font-weight: 600;
+  }
+
+  .doc-foot { padding: 2.5mm 0 0; border-top: 0.6pt solid #b9cad9; font-size: 8pt; }
+  /* One signing rule at each margin, as the source sets them. */
+  .doc-foot__row { display: flex; justify-content: space-between; color: #33414f; }
+
+  .doc-head {
+    margin: 3mm 0 1.2mm;
+    padding-bottom: 0.8mm;
+    border-bottom: 0.6pt solid #cfdce7;
+    color: #0f6ea8;
+    font-size: 10.5pt;
+    font-weight: 700;
+  }
+  .doc-body > .doc-head:first-child { margin-top: 0; }
+  /* Zero margins on purpose: the version file states the company recital as two strings and the
+     source states it as one justified paragraph, and with no gap between them these read as one. */
+  .doc-recital { margin: 0; text-align: justify; orphans: 3; widows: 3; }
+
+  .doc-ident { width: 100%; margin-top: 0.5mm; border-collapse: collapse; table-layout: fixed; }
+  .doc-ident th, .doc-ident td {
+    padding: 1.1mm 2mm;
+    border: 0.5pt solid #cfdce7;
+    font-size: 8.5pt;
+    text-align: right;
+    vertical-align: middle;
+  }
+  .doc-ident__label { width: 32mm; color: #33414f; font-weight: 700; }
+
+  .doc-arts { margin-top: 1mm; }
+  .doc-art {
+    display: flex;
+    align-items: flex-start;
+    gap: 3mm;
+    padding: 1.2mm 0;
+    border-top: 0.5pt solid #dce6ee;
+    /* A clause may break across pages — they are long — but never on its first or last line. */
+    orphans: 3;
+    widows: 3;
+  }
+  .doc-art:first-child { border-top: 0; }
+  .doc-art__label { flex: 0 0 34mm; text-align: right; }
+  .doc-art__no { display: block; color: #0f6ea8; font-size: 9pt; font-weight: 700; }
+  .doc-art__title {
+    display: block;
+    color: #0f6ea8;
+    font-size: 8pt;
+    font-weight: 700;
+    line-height: 1.25;
+  }
+  .doc-art__body { flex: 1 1 auto; text-align: justify; }
+
+  .doc-closing { margin: 3mm 0 2.5mm; text-align: justify; }
+
+  .doc-sig {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+    /* The parties must sign a sheet that carries clauses above it. */
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  .doc-sig th, .doc-sig td { padding: 1.2mm 2mm; border: 0.5pt solid #b9cad9; font-size: 8.5pt; }
+  .doc-sig__corner { width: 34mm; }
+  .doc-sig__head { color: #0f6ea8; font-weight: 700; text-align: center; }
+  .doc-sig__party { font-weight: 700; text-align: right; }
+  /* Room for a pen. The cell IS the blank, which is why a field holding nothing but dots prints
+     empty here rather than printing a rule inside a box. */
+  .doc-sig__cell { height: 12mm; text-align: center; vertical-align: top; }
+
+  /* A typed value on this layout is set in the text, one weight heavier so it can still be told
+     from the standing clause — no highlight, because the source has none and a contract that
+     arrives at a signing table with coloured boxes on it reads as a draft. The data-hp-key on
+     each is untouched: that, not the colour, is what the preview screen corrects through.
+     NO BACKTICKS IN THIS BLOCK — it is inside a template literal, and one ends the string. */
+  .copy--document .fill { padding: 0; background: none; color: inherit; font-weight: 700; }
+  .copy--document .fill--blank { color: #55677a; font-weight: 400; letter-spacing: 0.4pt; }
+
   @media print {
     html, body { background: #fff; }
     .copy { width: auto; min-height: 0; margin: 0; box-shadow: none; }
-    .copy--prose, .copy--banded { padding: 0; }
+    .copy--prose, .copy--banded, .copy--document { padding: 0; }
     * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   }
 </style>
