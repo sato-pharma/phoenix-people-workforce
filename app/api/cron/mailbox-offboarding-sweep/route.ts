@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { runDepartedAccessSweep } from "@/lib/auth/departed-access-sweep";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 import { runMailboxOffboardingSweep } from "@/lib/mailbox-offboarding/sweep";
 import { describeThrown } from "@/lib/error-monitor/describe-thrown";
@@ -35,11 +36,21 @@ export const maxDuration = 60;
  *
  * Deliberately runs on GET. A POST to any /api/** path returns 403 even when the route exists, so
  * a POST-only cron endpoint is indistinguishable from a missing one when it is probed.
+ *
+ * IT ALSO RUNS THE DEPARTED-ACCESS SWEEP, because this is the daily leaver job and that sweep wants
+ * exactly this cadence. Hanging it here rather than giving it its own schedule is deliberate: a new
+ * job means a new cron-job.org registration, and that REST API allows 100 requests a DAY with no
+ * Retry-After. Its result is reported separately in the response and it drives NO alarm of its own
+ * — see runDepartedAccessSweep for why a lagging flag is not an open door, and why its failure must
+ * not turn the mailbox switch red, which answers a different question.
  */
 export async function GET(request: Request) {
   const denied = assertCronAuthorized(request, "cron/mailbox-offboarding-sweep");
   if (denied) return denied;
   try {
+    // First, because it is the cheap one and it never throws — a leaver whose last working day has
+    // arrived should not keep a live login for the length of the mailbox sweep.
+    const access = await runDepartedAccessSweep();
     const result = await runMailboxOffboardingSweep();
     // Keyed on the error COUNT, not on whether this threw. The sweep catches its own failures and
     // carries on (sweep.ts) — including the worst case, where it could not read the register at all
@@ -51,7 +62,7 @@ export async function GET(request: Request) {
       result.errors > 0 ? "fail" : "success",
       result.errors > 0 ? `${result.errors} error(s) during the sweep` : undefined,
     );
-    return NextResponse.json({ success: true, ...result });
+    return NextResponse.json({ success: true, ...result, departedAccess: access });
   } catch (error) {
     await pingDeadMansSwitch(
       "phoenix-mailbox-offboarding-sweep",

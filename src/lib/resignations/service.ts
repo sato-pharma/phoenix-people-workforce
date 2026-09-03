@@ -9,6 +9,7 @@ import { assertResignationWorkflowTransition } from "@/lib/employee-lifecycle/wo
 import { createSystemNotification } from "@/lib/notifications/system";
 import { resolveNotificationPersonRecipients, resolveNotificationRoleRecipients } from "@/lib/notifications/role-recipients";
 import { disableTelegramForIdentity } from "@/lib/notifications/settings";
+import { isEmploymentAccessRevoked } from "@/lib/auth/session-lifecycle";
 import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
 import { openMailboxOffboardingTask } from "@/lib/mailbox-offboarding/service";
 import { logError } from "@/lib/observability/log";
@@ -1173,37 +1174,72 @@ async function vacateAuSeatsIfSupported(
   }
 }
 
-async function deactivateEmployeeAccessIfSupported(supabase: SupabaseClient, employeeHrId: string) {
-  const appAuthResult = await supabase
-    .from("app_auth_users")
-    .update({
-      is_active: false,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("hr_id", employeeHrId);
-
-  if (appAuthResult.error && !isMissingSchemaMessage(appAuthResult.error)) {
-    throw appAuthResult.error;
-  }
-
-  const accessProfileResult = await supabase
-    .from("user_access_profiles")
-    .update({
-      is_active: false,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("hr_id", employeeHrId);
-
-  if (accessProfileResult.error && !isMissingSchemaMessage(accessProfileResult.error)) {
-    throw accessProfileResult.error;
-  }
-
-  await disableTelegramForIdentity({
-    actorLoginId: "system",
-    hrId: employeeHrId,
-    reason: "Employee resigned, terminated, or deactivated.",
+/**
+ * Switches off the leaver's access — but only once their departure has actually TAKEN EFFECT.
+ *
+ * WHY THE DATE. This used to run unconditionally at the moment the exit was FILED, and HR files
+ * exits in advance, so it locked people out while they were still working. On 2026-08-30 A-16
+ * could not sign in with a 2026-08-31 last working day: nine failed logins, HR re-activating her
+ * account by hand at 09:55:18 Cairo, two password resets and a password setup inside four minutes,
+ * none of which could work. Dating this is what stops HR ever having to do that again.
+ *
+ * DEFERRING IS SAFE, and specifically it does not open a window. From the last working day onward
+ * the auth gate refuses both login and session on employment_status regardless of `is_active`
+ * (src/lib/auth/session-lifecycle.ts — the SAME rule this calls, so the two cannot drift), and the
+ * daily leaver sweep flips the flag once the day arrives. The flag can only ever lag the block.
+ *
+ * THE MAILBOX TASK IS NOT DATED and is opened either way: it is a work item for the offboarding
+ * desk, not an access revocation, and opening it the moment the exit is known is what lets the desk
+ * prepare. The daily sweep is what judges it overdue, and it already keys that on the last working
+ * day.
+ *
+ * Returns whether the access flips actually ran, so a caller can say which of the two happened.
+ */
+async function deactivateEmployeeAccessIfSupported(
+  supabase: SupabaseClient,
+  employeeHrId: string,
+  departure: { effectiveDate: string | null; employeeStatus: string | null },
+): Promise<{ revoked: boolean }> {
+  const revoked = isEmploymentAccessRevoked({
+    employmentStatus: departure.employeeStatus,
+    lastWorkingDate: departure.effectiveDate,
+    todayCairo: currentCairoDateOnlyIso(),
   });
+
+  if (revoked) {
+    const appAuthResult = await supabase
+      .from("app_auth_users")
+      .update({
+        is_active: false,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("hr_id", employeeHrId);
+
+    if (appAuthResult.error && !isMissingSchemaMessage(appAuthResult.error)) {
+      throw appAuthResult.error;
+    }
+
+    const accessProfileResult = await supabase
+      .from("user_access_profiles")
+      .update({
+        is_active: false,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("hr_id", employeeHrId);
+
+    if (accessProfileResult.error && !isMissingSchemaMessage(accessProfileResult.error)) {
+      throw accessProfileResult.error;
+    }
+
+    await disableTelegramForIdentity({
+      actorLoginId: "system",
+      hrId: employeeHrId,
+      reason: "Employee resigned, terminated, or deactivated.",
+    });
+  }
+
   await openMailboxRevocationTaskBestEffort(employeeHrId);
+  return { revoked };
 }
 
 /**
@@ -1365,7 +1401,10 @@ async function resignEmployeeWithFallback(
     reason: input.reason,
     submittedDate: input.submittedDate,
   });
-  await deactivateEmployeeAccessIfSupported(supabase, input.employee.hrId);
+  await deactivateEmployeeAccessIfSupported(supabase, input.employee.hrId, {
+    effectiveDate: input.effectiveDate,
+    employeeStatus: input.employeeStatus,
+  });
 
   return {
     employeeHrId: input.employee.hrId,
@@ -1575,14 +1614,27 @@ export async function resignEmployeeAndOpenVacancy(
   await ensureResignationVacancyOwnership(supabase, employee, result.vacancy_code ?? vacancyCode);
   await normalizeTerminalEmployeeLifecycleFlags(supabase, employeeHrId);
   // Telegram deactivation is an external API call and cannot run inside the RPC's SQL
-  // transaction, so it must happen here unconditionally — not only on the JS fallback
-  // path (resignEmployeeWithFallback -> deactivateEmployeeAccessIfSupported), or every
-  // RPC-path resignation would silently stop disabling the employee's Telegram access.
-  await disableTelegramForIdentity({
-    actorLoginId: "system",
-    hrId: employeeHrId,
-    reason: "Employee resigned, terminated, or deactivated.",
-  });
+  // transaction, so it must happen here — not only on the JS fallback path
+  // (resignEmployeeWithFallback -> deactivateEmployeeAccessIfSupported), or every RPC-path
+  // resignation would silently stop disabling the employee's Telegram access.
+  //
+  // Dated for the same reason the RPC's own is_active flips are (see the migration
+  // 20260903180000): someone serving out their notice is still working, and cutting their
+  // notifications days early is the same early-revocation bug in a different channel. The daily
+  // leaver sweep disables it when the day arrives.
+  if (
+    isEmploymentAccessRevoked({
+      employmentStatus: result.employee_status ?? employeeStatus,
+      lastWorkingDate: effectiveDate,
+      todayCairo: currentCairoDateOnlyIso(),
+    })
+  ) {
+    await disableTelegramForIdentity({
+      actorLoginId: "system",
+      hrId: employeeHrId,
+      reason: "Employee resigned, terminated, or deactivated.",
+    });
+  }
   // Same reasoning as the Telegram call directly above: this path runs the RPC and never reaches
   // deactivateEmployeeAccessIfSupported, so without this line every RPC-path resignation would
   // silently skip opening the mailbox revocation task.
@@ -2002,7 +2054,10 @@ export async function runResignationWorkflow(
       reason: cleanText(record.reason),
       submittedDate: record.submittedDate,
     });
-    await deactivateEmployeeAccessIfSupported(supabase, record.employeeHrId);
+    await deactivateEmployeeAccessIfSupported(supabase, record.employeeHrId, {
+      effectiveDate: record.effectiveDate,
+      employeeStatus: normalizeEmployeeExitStatus(storedExitStatus),
+    });
 
     // The lifecycle write above is what opens the vacancy: it fires the
     // phx_employee_terminal_vacancy_guard trigger, which adopts the seat's existing open vacancy
