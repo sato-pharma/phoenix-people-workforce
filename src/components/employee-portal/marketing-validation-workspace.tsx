@@ -2817,8 +2817,8 @@ export function MarketingValidationWorkspace() {
                   </div>
                   <div className="lg:col-span-3">
                     <Field label="What this does">
-                      <div className="flex h-10 items-center overflow-hidden rounded-sm border border-slate-200 bg-white px-3.5">
-                        <p className="overflow-hidden text-ellipsis whitespace-nowrap text-phx-sm font-semibold text-slate-600">
+                      <div className="flex min-h-10 items-center rounded-sm border border-slate-200 bg-white px-3.5 py-2">
+                        <p className="text-phx-sm font-semibold text-slate-600">
                           {onBehalfEmployee
                             ? `Customer is owned by ${onBehalfEmployee.name} and appears in their marketing request list.`
                             : "Pick an employee to search the location on a map instead of capturing GPS."}
@@ -2851,7 +2851,7 @@ export function MarketingValidationWorkspace() {
                       <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-sm bg-white text-orange-600 ring-1 ring-orange-100">
                         <UserCheck className="h-3.5 w-3.5" />
                       </div>
-                      <p className="overflow-hidden text-ellipsis whitespace-nowrap text-phx-md font-bold text-slate-800">
+                      <p className="min-w-0 text-phx-md font-bold text-slate-800">
                         Customer {customerIndex + 1}
                         {customer.name.trim() ? ` — ${customer.name.trim()}` : ""}
                       </p>
@@ -2878,7 +2878,7 @@ export function MarketingValidationWorkspace() {
                   {customer.existingCustomerId ? (
                     <div className="flex items-center gap-2 border-b border-amber-100 bg-amber-50 px-3 py-2 sm:px-4">
                       <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-amber-600" />
-                      <p className="overflow-hidden text-ellipsis whitespace-nowrap text-phx-sm font-bold text-amber-800">
+                      <p className="min-w-0 text-phx-sm font-bold text-amber-800">
                         Completing a customer already on record — name and type are locked
                       </p>
                     </div>
