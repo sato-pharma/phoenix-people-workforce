@@ -48,6 +48,13 @@ type EmployeeLookup =
   | { status: "not_found" }
   | { status: "error"; message: string };
 
+type EmployeeSearchMatch = {
+  hrId: string;
+  isActive: boolean;
+  jobTitle: string | null;
+  name: string;
+};
+
 type CalcPreviewRow = { amount: number; label: string; type: string };
 
 type CalcPreview = {
@@ -214,6 +221,9 @@ export function AdminManagerExpenseModal({
   );
   const lookupDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const [searchResults, setSearchResults] = useState<EmployeeSearchMatch[]>([]);
+  const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const hrIdForDistance = employeeHrId || request?.employeeHrId;
 
   // Car trips are paid from the fuel formula (km x 2 x rate); every other mode is
@@ -255,6 +265,29 @@ export function AdminManagerExpenseModal({
     } catch {
       setEmployeeLookup({ status: "error", message: "Could not reach the server." });
     }
+  }
+
+  async function searchEmployees(query: string) {
+    if (query.trim().length < 2) {
+      setSearchResults([]);
+      return;
+    }
+    try {
+      const url = new URL("/api/admin/outstation/employee-lookup", window.location.origin);
+      url.searchParams.set("q", query.trim());
+      const response = await fetch(url.toString());
+      const payload = (await response.json()) as { matches?: EmployeeSearchMatch[] };
+      setSearchResults(response.ok ? (payload.matches ?? []) : []);
+    } catch {
+      setSearchResults([]);
+    }
+  }
+
+  function selectCandidate(candidate: EmployeeSearchMatch) {
+    setEmployeeHrId(candidate.hrId);
+    setSearchResults([]);
+    if (lookupDebounceRef.current) clearTimeout(lookupDebounceRef.current);
+    void lookupEmployee(candidate.hrId);
   }
 
   async function calculateDistance(
@@ -563,16 +596,51 @@ export function AdminManagerExpenseModal({
                 onChange={(e) => {
                   const value = e.target.value.trim();
                   setEmployeeHrId(value);
+                  if (!value) setSearchResults([]);
                   if (lookupDebounceRef.current) clearTimeout(lookupDebounceRef.current);
                   lookupDebounceRef.current = setTimeout(
                     () => void lookupEmployee(value),
                     500,
                   );
+                  if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+                  searchDebounceRef.current = setTimeout(
+                    () => void searchEmployees(value),
+                    300,
+                  );
                 }}
-                placeholder="e.g. A-12"
+                placeholder="Search by name or HR ID, e.g. A-12"
                 required
                 value={employeeHrId}
               />
+              {searchResults.length > 0 ? (
+                <div className="mt-2 max-h-56 overflow-y-auto rounded-md border border-[#DDE6F1] bg-white shadow-md">
+                  {searchResults.map((match) => (
+                    <button
+                      className="flex w-full items-center justify-between gap-3 border-b border-phx-line px-3 py-2 text-left text-xs last:border-b-0 hover:bg-phx-paper"
+                      key={match.hrId}
+                      onClick={() => selectCandidate(match)}
+                      type="button"
+                    >
+                      <span className="font-black text-phx-ink">
+                        {match.name}
+                        {match.jobTitle ? (
+                          <span className="ml-1 font-semibold text-phx-ink-soft">
+                            {" — "}{match.jobTitle}
+                          </span>
+                        ) : null}
+                      </span>
+                      <span className="shrink-0 font-black uppercase tracking-[0.08em] text-phx-ink-soft">
+                        {match.hrId}
+                        {!match.isActive ? (
+                          <span className="ml-1.5 rounded-full bg-phx-accent-soft px-1.5 py-0.5 text-[10px] text-phx-accent-hover">
+                            inactive
+                          </span>
+                        ) : null}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              ) : null}
               {employeeLookup.status === "loading" ? (
                 <div className="mt-2 flex items-center gap-2 text-xs font-semibold text-phx-ink-soft">
                   <Loader2 className="h-3.5 w-3.5 animate-spin text-phx-accent" />
@@ -598,21 +666,21 @@ export function AdminManagerExpenseModal({
                     </span>
                   ) : null}
                 </div>
-              ) : employeeLookup.status === "not_found" ? (
+              ) : employeeLookup.status === "not_found" && searchResults.length === 0 ? (
                 <div className="mt-2 flex items-center gap-2 rounded-md bg-[#FEF2F2] px-3 py-2 text-xs font-black text-[#B91C1C]">
                   <AlertCircle className="h-3.5 w-3.5 shrink-0" />
                   No employee found with this HR ID.
                 </div>
-              ) : employeeLookup.status === "error" ? (
+              ) : employeeLookup.status === "error" && searchResults.length === 0 ? (
                 <div className="mt-2 flex items-center gap-2 rounded-md bg-[#FEF2F2] px-3 py-2 text-xs font-semibold text-[#B91C1C]">
                   <AlertCircle className="h-3.5 w-3.5 shrink-0" />
                   {employeeLookup.message}
                 </div>
-              ) : (
+              ) : searchResults.length === 0 ? (
                 <p className="mt-1 text-xs text-phx-ink-soft">
-                  Enter the HR ID of the employee — their name will appear automatically.
+                  Type a name or HR ID — matching employees will appear below.
                 </p>
-              )}
+              ) : null}
             </div>
           ) : null}
 

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { normalizeHrId } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { isTerminalEmploymentStatus } from "@/lib/auth/session-lifecycle";
 import { assertOutstationAdminAccess } from "@/lib/outstation/admin-access";
@@ -16,6 +17,39 @@ export async function GET(request: Request) {
     await assertOutstationAdminAccess(access, "read");
 
     const { searchParams } = new URL(request.url);
+    const query = searchParams.get("q")?.trim() ?? "";
+
+    if (query) {
+      if (query.length < 2) {
+        return NextResponse.json({ matches: [] });
+      }
+
+      const supabase = getSupabaseAdmin();
+      const normalized = normalizeHrId(query) || query;
+      const pattern = `%${query}%`;
+      const { data, error } = await supabase
+        .from("employees")
+        .select("hr_id, full_name, nickname, job_title, employment_status")
+        .or(`hr_id.ilike.${normalized},full_name.ilike.${pattern},nickname.ilike.${pattern}`)
+        .limit(8);
+
+      if (error) {
+        return NextResponse.json(
+          { error: "search_failed", message: "Employee search failed." },
+          { status: 500 },
+        );
+      }
+
+      return NextResponse.json({
+        matches: (data ?? []).map((row) => ({
+          hrId: row.hr_id,
+          isActive: !isTerminalEmploymentStatus(row.employment_status),
+          jobTitle: row.job_title ?? null,
+          name: resolveEmployeeDisplayName(row.full_name, row.nickname),
+        })),
+      });
+    }
+
     const hrId = searchParams.get("hrId")?.trim() ?? "";
 
     if (!hrId) {
