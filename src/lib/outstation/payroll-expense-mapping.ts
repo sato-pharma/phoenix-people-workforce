@@ -55,6 +55,27 @@ function roundMoney(value: number) {
 }
 
 /**
+ * The ONE rule for reading a `report_*` money override: `null`/absent means "no override was
+ * recorded" and the raw column stands; an explicit `0` is a real override and wins.
+ *
+ * Before 2026-09-03 the two mappers below spelled this differently — the DISPLAY mapper null-checked
+ * while the PUSH mapper used a `||` falsy-fallback — so a row with `report_other_amount = 0` over an
+ * `other_amount` of 50 DISPLAYED 0 and PAID 50. Same class as the total divergence (PR #2951) and the
+ * component divergence (PR #2957): two formulas for one figure. The push mapper could not null-check
+ * until `mapOutstationRequestRow` stopped collapsing NULL to 0 for these columns — it now maps them
+ * with `nullableNumber`, so `OutstationExpenseRequest.report{Meeting,Other}Amount` is `number | null`
+ * and "column was NULL" is finally distinguishable from "override is genuinely zero".
+ *
+ * Takes `unknown` so a mapped `OutstationExpenseRequest` field and a raw database row value resolve
+ * through the exact same code path.
+ */
+export function outstationReportOverride(override: unknown, raw: number): number {
+  if (override === null || override === undefined) return raw;
+  const parsed = Number(override);
+  return Number.isFinite(parsed) ? parsed : raw;
+}
+
+/**
  * The ONE payable total for an outstation trip — shared by `mapOutstationRequestToPayrollExpenseRecord`
  * (what gets PUSHED to payroll) and `mapOutstationRequestRowToPayrollApproval` (what the admin table
  * and employee portal DISPLAY). Before 2026-09-03 they used two different formulas and disagreed on
@@ -126,8 +147,8 @@ export function mapOutstationRequestToPayrollExpenseRecord(
     allowanceAmount: request.allowanceAmount,
     expectedTotalAmount: request.expectedTotalAmount,
     isMeetingTrip: request.expenseType === "meeting",
-    meetingAmount: request.reportMeetingAmount || request.meetingAmount || 0,
-    otherAmount: request.reportOtherAmount || request.otherAmount || 0,
+    meetingAmount: outstationReportOverride(request.reportMeetingAmount, request.meetingAmount),
+    otherAmount: outstationReportOverride(request.reportOtherAmount, request.otherAmount),
     travelCost,
   });
 
@@ -153,7 +174,7 @@ export function mapOutstationRequestToPayrollExpenseRecord(
     location: request.toLabel ?? request.toCity ?? request.toArea ?? "",
     meetingAmount,
     open: "",
-    other: request.otherAmount ?? 0,
+    other: outstationReportOverride(request.reportOtherAmount, request.otherAmount),
     pharmacyVisits: snapshotKindCount(request.workloadEvidenceSnapshot, "pharmacyVisits"),
     pmWorkload: request.pmWorkload ?? 0,
     reportId: options.reportId ?? undefined,
@@ -193,14 +214,11 @@ export function mapOutstationRequestRowToPayrollApproval(
     row.report_travel_cost != null
       ? toNumber(row.report_travel_cost)
       : toNumber(row.fuel_amount) + toNumber(row.ticket_amount);
-  const rawMeetingAmount =
-    row.report_meeting_amount != null
-      ? toNumber(row.report_meeting_amount)
-      : toNumber(row.meeting_amount);
-  const other =
-    row.report_other_amount != null
-      ? toNumber(row.report_other_amount)
-      : toNumber(row.other_amount);
+  const rawMeetingAmount = outstationReportOverride(
+    row.report_meeting_amount,
+    toNumber(row.meeting_amount),
+  );
+  const other = outstationReportOverride(row.report_other_amount, toNumber(row.other_amount));
   const amWorkload =
     row.report_am_workload != null ? toNumber(row.report_am_workload) : toNumber(row.am_workload);
   const pmWorkload =
