@@ -1619,7 +1619,7 @@ export async function resignEmployeeAndOpenVacancy(
   // resignation would silently stop disabling the employee's Telegram access.
   //
   // Dated for the same reason the RPC's own is_active flips are (see the migration
-  // 20260903180000): someone serving out their notice is still working, and cutting their
+  // 20260903181500): someone serving out their notice is still working, and cutting their
   // notifications days early is the same early-revocation bug in a different channel. The daily
   // leaver sweep disables it when the day arrives.
   if (

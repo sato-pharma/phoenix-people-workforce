@@ -5,7 +5,7 @@
  * the A-16 and PD-0006 cases. This file pins the three places that decision has to actually be
  * WIRED, because each one silently reverts to the old behaviour if it is dropped:
  *
- *   1. The resignation RPC (migration 20260903180000), which is what a normal exit runs.
+ *   1. The resignation RPC (migration 20260903181500), which is what a normal exit runs.
  *   2. src/lib/resignations/service.ts, the JS fallback and approvals-hub paths.
  *   3. The daily catch-up that performs the revocation once the day arrives.
  *
@@ -20,7 +20,7 @@ import { readFileSync } from "node:fs";
 export async function runDepartedAccessRevocationTests() {
   const migration = readFileSync(
     new URL(
-      "../supabase/migrations/20260903180000_departure_revokes_login_on_the_last_working_day.sql",
+      "../supabase/migrations/20260903181500_departure_revokes_login_on_the_last_working_day.sql",
       import.meta.url,
     ),
     "utf8",
