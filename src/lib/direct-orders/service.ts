@@ -2751,7 +2751,14 @@ export type DirectOrderRegistryPharmacy = DirectOrderPharmacy & {
 };
 
 /**
- * Every active pharmacy, with names rather than codes and with what is riding on each one.
+ * Every REACHABLE venue, with names rather than codes and with what is riding on each one.
+ *
+ * Reachable means active and not merged away — a user can open it, edit it, and place an order on
+ * it. That definition lives HERE and nowhere else: the board's summary chips (venue total, waiting
+ * for a System Admin, no distributor code, not linked to the CRM) are all derived from this list,
+ * so re-filtering them in the component would give the backlog two definitions that drift apart.
+ * A chip's whole job is to size the outstanding work, and a tombstone counted into it overstates
+ * that work with no way for the reader to tell.
  *
  * `canClearReview` is deliberately NARROWER than `canManage`. The SFE Manager may register and
  * edit pharmacies, but clearing one that is already holding an order is the System Admin rung the
@@ -2769,6 +2776,15 @@ export async function listDirectOrderPharmacyRegistry(access: AccessContext): Pr
     .from("direct_order_pharmacies")
     .select("*")
     .eq("active", true)
+    // Merged-away rows are finished business: the row IS the survivor now, and re-offering it here
+    // would put a tombstone in the board's counts and in its edit form. They are deactivated by the
+    // same write that merges them, so this changes NO row today (production 2026-09-03: 10 merged,
+    // 10 of them inactive) — it says the rule instead of borrowing it from a co-writer. The merge
+    // is the ONLY thing maintaining that pairing: there is no constraint tying the two columns, and
+    // AGENTS.md sends a stranded desk validation to hand SQL, which is exactly the writer that
+    // would set one without the other. The sibling read getDirectOrderCleanupPlan already filters
+    // on this column for the same reason.
+    .is("merged_into_pharmacy_id", null)
     .order("pharmacy_name", { ascending: true });
   if (error) throw error;
   const pharmacies = ((data ?? []) as Array<Record<string, unknown>>).map(mapPharmacyRow);
@@ -7594,7 +7610,10 @@ export async function confirmDirectOrderCleanup(
       if (!duplicateId || duplicateId === group.keeperId) continue;
       const { data: row } = await supabase
         .from("direct_order_requests")
-        .select("id, status")
+        // The whole row, not `id, status`. The notification below needs the requester and the
+        // pharmacy, and a narrowed select would hand it `undefined` for both rather than fail —
+        // the notice would still "send", addressed to nobody.
+        .select("*")
         .eq("id", duplicateId)
         .maybeSingle();
       const status = String((row as { status?: string } | null)?.status ?? "");
@@ -7637,6 +7656,36 @@ export async function confirmDirectOrderCleanup(
         summary:
           `Direct order cancelled as a confirmed duplicate of ${group.keeperId} — same pharmacy, product, ` +
           `quantity, deal terms and collection date. Reason: ${reason}`,
+      });
+
+      // The workflow registry has declared `notify requester + CC` for this action since it was
+      // added (2026-08-09), and nothing here ever sent it: the event row and the audit row are both
+      // admin-side, so an order was closed under its requester without a word reaching them. The
+      // gap is invisible from the registry screen, which shows the DECLARATION, not the behaviour.
+      //
+      // `cancel_held` — the sibling that also ends at `cancelled` and declares the same recipients —
+      // has always notified, so this is that notice, with its channel choice kept deliberately:
+      // in-app and Telegram reach requester + SFE + Super Admin, and email is dropped, because
+      // having one's own superseded duplicate tidied away is not news worth an inbox entry.
+      const duplicateRequest = mapRequestRow(row as Record<string, unknown>);
+      const resolveName = await nameLookup();
+      const requesterDisplayName =
+        resolveName(duplicateRequest.requesterHrId) ?? duplicateRequest.requesterHrId;
+      const duplicatePharmacy =
+        (await loadPharmaciesByIds([duplicateRequest.pharmacyId])).get(duplicateRequest.pharmacyId) ?? null;
+      const notifyContext = await buildNotifyContext(duplicateRequest, requesterDisplayName, duplicatePharmacy);
+      await notifyDirectOrder({
+        recipients: [duplicateRequest.requesterHrId, ...(await ccRecipients())],
+        channels: ["in_app", "telegram"],
+        title: "Direct order cancelled as a duplicate",
+        message:
+          `${buildDirectOrderNotificationLine(notifyContext)} ` +
+          `It was cancelled as a duplicate of the request that was kept, confirmed by ` +
+          `${resolveName(actorHrId) ?? actorHrId}. Reason: ${reason}`,
+        metrics: buildDirectOrderNotificationMetrics(notifyContext),
+        eventType: "cancelled",
+        requestId: duplicateId,
+        subjectHrId: duplicateRequest.requesterHrId,
       });
     }
   }

@@ -34,6 +34,14 @@ import { AnalyticsTrendChart } from "@/components/analytics/analytics-trend-char
 import { StackedChart } from "@/components/charts/stacked-chart";
 import { SOS_TABS } from "@/lib/analytics/module-nav-config";
 
+import {
+  pageHeaderDescriptionClassName,
+  pageHeaderKickerClassName,
+  pageHeaderRailClassName,
+  pageHeaderRuleClassName,
+  pageHeaderTitleClassName,
+} from "@/components/admin/admin-design-tokens";
+
 // Shared Source-of-Sales analytics dashboard. Rendered at two mount points via `mountRoot`:
 //   - admin  : /admin/analytics             (app/(admin)/admin/analytics/source-sales — admin shell)
 //   - portal : /employee-portals/sales-analytics  (portal shell; scoped field roles)
@@ -229,12 +237,13 @@ export function SourceSalesDashboard({
 }) {
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-5">
-      <div className="flex items-center gap-3 border-b border-border pb-5">
-        <div className="w-1 h-12 bg-phx-accent shrink-0" />
-        <div>
-          <p className="text-phx-2xs font-bold uppercase tracking-widest text-phx-accent mb-0.5">SoS</p>
-          <h1 className="text-2xl font-bold text-foreground leading-tight">Source of Sales Analytics</h1>
-          <p className="text-xs text-muted-foreground mt-0.5">
+      <div className="relative pb-4">
+        <span aria-hidden="true" className={`absolute inset-x-0 bottom-0 ${pageHeaderRuleClassName}`} />
+        <div className="relative min-w-0 space-y-1.5 pl-3.5">
+          <span aria-hidden="true" className={pageHeaderRailClassName} />
+          <p className={pageHeaderKickerClassName}>SoS</p>
+          <h1 className={pageHeaderTitleClassName}>Source of Sales Analytics</h1>
+          <p className={pageHeaderDescriptionClassName}>
             Distributor invoice aggregates — bricks, areas, regions, products, families, lines, distributors.
             Confidential products excluded unless you have CEO / Super Admin access.
           </p>

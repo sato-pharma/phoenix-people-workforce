@@ -28,6 +28,14 @@ import { demoAnalyticsDimensions, demoClosingByEmployee } from "@/lib/analytics/
 import { AnalyticsTrendChart } from "@/components/analytics/analytics-trend-chart";
 import { CLOSING_TABS } from "@/lib/analytics/module-nav-config";
 
+import {
+  pageHeaderDescriptionClassName,
+  pageHeaderKickerClassName,
+  pageHeaderRailClassName,
+  pageHeaderRuleClassName,
+  pageHeaderTitleClassName,
+} from "@/components/admin/admin-design-tokens";
+
 function fmt(n: number): string {
   return n.toLocaleString("en-EG", { maximumFractionDigits: 0 });
 }
@@ -203,12 +211,13 @@ export function MonthlyClosingDashboard({
 }) {
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-5">
-      <div className="flex items-center gap-3 border-b border-border pb-5">
-        <div className="w-1 h-12 bg-phx-accent shrink-0" />
-        <div>
-          <p className="text-phx-2xs font-bold uppercase tracking-widest text-phx-accent mb-0.5">Closing</p>
-          <h1 className="text-2xl font-bold text-foreground leading-tight">Monthly Closing Analytics</h1>
-          <p className="text-xs text-muted-foreground mt-0.5">
+      <div className="relative pb-4">
+        <span aria-hidden="true" className={`absolute inset-x-0 bottom-0 ${pageHeaderRuleClassName}`} />
+        <div className="relative min-w-0 space-y-1.5 pl-3.5">
+          <span aria-hidden="true" className={pageHeaderRailClassName} />
+          <p className={pageHeaderKickerClassName}>Closing</p>
+          <h1 className={pageHeaderTitleClassName}>Monthly Closing Analytics</h1>
+          <p className={pageHeaderDescriptionClassName}>
             Employee-attributed sales vs target — approved closing batches only. Filter by period, line, employee, territory, or batch.
           </p>
         </div>

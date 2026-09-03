@@ -153,13 +153,59 @@ export function applyPositionSpecificFields(
   return merged;
 }
 
-async function loadMatchKeys(): Promise<MatchableCandidate[]> {
+/** PostgREST serves at most this many rows for one request, so a whole-table read must page. */
+const CANDIDATE_PAGE_SIZE = 1000;
+
+/** A runaway guard, not a data cap: 100 pages is 100,000 candidates. */
+const CANDIDATE_PAGE_LIMIT = 100;
+
+/**
+ * Every row a whole-table candidate read matches, fetched a page at a time.
+ *
+ * WHY THIS EXISTS. An unbounded `.select()` is capped by PostgREST at 1000 rows and says nothing
+ * about it — no error, no truncation marker, just a short array that looks exactly like a small
+ * table. Three reads in this file were whole-table: the pool the recruitment screen renders, the
+ * search endpoint behind it, and the dedupe key index. The pool passed 700 rows on 2026-09-03 and
+ * takes roughly 90 CVs a day, so all three were days away from quietly serving a truncated answer.
+ *
+ * What that would have looked like is why the paging is worth its cost. The owner would have
+ * watched his newest CVs stop appearing on the pool with nothing on screen to explain it — the same
+ * complaint he had already raised once about CVs he could not find. And `loadMatchKeys` would have
+ * stopped seeing the older half of the pool, so every repeat applicant past the cap would have been
+ * filed as a brand new person instead of matching the record already sitting there.
+ *
+ * Stops on the first SHORT page rather than at a row count. A full page can still be the last one,
+ * so at an exact multiple of the page size this costs one extra empty request — the price of never
+ * guessing where the data ends. Past the guard it THROWS rather than returning what it has, because
+ * a silently truncated candidate pool is the precise failure this function exists to remove.
+ *
+ * The `any` on the builder matches `fetchAll` in src/lib/activity/service.ts, which pages the same
+ * way for the same reason: the Supabase filter builder's type changes shape with every chained
+ * call, so naming it here would pin one chain and refuse the others.
+ */
+async function selectEveryCandidateRow(
+  build: (table: any) => any, // eslint-disable-line @typescript-eslint/no-explicit-any
+): Promise<CandidateDbRow[]> {
   const supabase = recruitmentDb();
-  const { data, error } = await supabase
-    .from("ats_candidates")
-    .select("id,national_id_norm,email_norm,phone_norm");
-  if (error) throw error;
-  return ((data ?? []) as CandidateDbRow[]).map((row) => ({
+  const rows: CandidateDbRow[] = [];
+  for (let page = 0; page < CANDIDATE_PAGE_LIMIT; page += 1) {
+    const from = page * CANDIDATE_PAGE_SIZE;
+    const { data, error } = await build(supabase.from("ats_candidates")).range(from, from + CANDIDATE_PAGE_SIZE - 1);
+    if (error) throw error;
+    const batch = (data ?? []) as CandidateDbRow[];
+    rows.push(...batch);
+    if (batch.length < CANDIDATE_PAGE_SIZE) return rows;
+  }
+  throw new Error(
+    `Candidate paging stopped at ${CANDIDATE_PAGE_LIMIT * CANDIDATE_PAGE_SIZE} rows. Refusing to return a truncated pool.`,
+  );
+}
+
+async function loadMatchKeys(): Promise<MatchableCandidate[]> {
+  const rows = await selectEveryCandidateRow((table) =>
+    table.select("id,national_id_norm,email_norm,phone_norm"),
+  );
+  return rows.map((row) => ({
     id: String(row.id),
     nationalIdNorm: textOrNull(row.national_id_norm),
     emailNorm: textOrNull(row.email_norm),
@@ -441,13 +487,10 @@ async function loadNotACvCandidates(ids: string[]): Promise<Set<string>> {
 }
 
 export async function listCandidates(): Promise<Candidate[]> {
-  const supabase = recruitmentDb();
-  const { data, error } = await supabase
-    .from("ats_candidates")
-    .select("*")
-    .order("created_at", { ascending: false });
-  if (error) throw error;
-  const candidates = ((data ?? []) as CandidateDbRow[]).map(mapCandidate);
+  const rows = await selectEveryCandidateRow((table) =>
+    table.select("*").order("created_at", { ascending: false }),
+  );
+  const candidates = rows.map(mapCandidate);
   // Concurrently: the two enrichments touch different fields on the same objects and neither reads
   // the other's output, so serialising them would only add a second Atlantic round trip to a page
   // that already waits on one.
@@ -594,22 +637,24 @@ async function fetchById(id: string): Promise<Candidate> {
 export type CandidateSearchFilters = { q?: string | null; status?: string | null; source?: string | null };
 
 export async function searchCandidates(filters: CandidateSearchFilters = {}): Promise<Candidate[]> {
-  const supabase = recruitmentDb();
-  let query = supabase.from("ats_candidates").select("*").order("created_at", { ascending: false });
   const status = textOrNull(filters.status);
   const source = textOrNull(filters.source);
-  if (status) query = query.eq("status", status);
-  if (source) query = query.eq("source", source);
   const q = textOrNull(filters.q);
-  if (q) {
-    const like = `%${q.replace(/[%_,()]/g, "")}%`;
-    query = query.or(
-      `full_name.ilike.${like},email.ilike.${like},phone.ilike.${like},national_id.ilike.${like}`,
-    );
-  }
-  const { data, error } = await query;
-  if (error) throw error;
-  return ((data ?? []) as CandidateDbRow[]).map(mapCandidate);
+  // The predicate is rebuilt per page rather than built once and awaited: `.range()` returns a new
+  // builder each time, so a single `query` object cannot be paged without re-applying every filter.
+  const rows = await selectEveryCandidateRow((table) => {
+    let query = table.select("*").order("created_at", { ascending: false });
+    if (status) query = query.eq("status", status);
+    if (source) query = query.eq("source", source);
+    if (q) {
+      const like = `%${q.replace(/[%_,()]/g, "")}%`;
+      query = query.or(
+        `full_name.ilike.${like},email.ilike.${like},phone.ilike.${like},national_id.ilike.${like}`,
+      );
+    }
+    return query;
+  });
+  return rows.map(mapCandidate);
 }
 
 /**

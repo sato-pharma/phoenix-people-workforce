@@ -72,6 +72,7 @@ import {
   candidateDisplayName,
   mirrorWhatsAppEventToOwner,
 } from "@/lib/recruitment/inbound/whatsapp-conversation-mirror";
+import { mirrorCandidateCvsToDrive } from "@/lib/recruitment/drive-cv-mirror";
 import { sendClassifyMenu, sendWhatsAppText } from "@/lib/recruitment/inbound/whatsapp-interactive";
 // The admin-defined extra-question loop this conversation optionally continues into once the fixed
 // six finish. whatsapp-screening-questions-session.ts imports finishSession/findCandidateForSender/
@@ -891,6 +892,15 @@ export async function finishSession(session: SessionRow, fallbackPhoneNumberId: 
     roleLabel,
     waId: session.wa_id,
   });
+
+  // Their CV is already in Drive, sitting in the holding folder — it was filed the moment it
+  // arrived, before any of these answers existed. NOW it can move to the region and area they just
+  // named. This is the second half of the Drive design and the reason the upload never waits: a move
+  // is one request and costs nothing, while waiting would leave three CVs in five unfiled for good,
+  // because most applicants never finish the conversation.
+  //
+  // Last, and best-effort, so nothing above it can be lost to a Drive outage.
+  await mirrorCandidateCvsToDrive(mirroredCandidateId).catch(() => {});
 }
 
 /**

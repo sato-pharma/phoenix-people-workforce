@@ -8,6 +8,7 @@ import { runEmployee360VisitClassificationTests } from "./employee-360-visit-cla
 import { runEmployee360DoubleVisitCountTests } from "./employee-360-double-visit-count.test.ts";
 import { runErrorMonitorNewIssueDiffTests } from "./error-monitor-new-issue-diff.test.ts";
 import { runErrorMonitorDerivedStatusTests } from "./error-monitor-derived-status.test.ts";
+import { runClientErrorCrossOriginNoiseTests } from "./client-error-cross-origin-noise.test.ts";
 import { runErrorMonitorMessageDecodeTests } from "./error-monitor-message-decode.test.ts";
 import { runErrorMonitorAiRedactTests } from "./error-monitor-ai-redact.test.ts";
 import { runErrorMonitorUserAttemptsTests } from "./error-monitor-user-attempts.test.ts";
@@ -195,7 +196,9 @@ import { runRecruitmentManagerGroupingTests } from "./recruitment-manager-groupi
 import { runRecruitmentCandidateSeenTests } from "./recruitment-candidate-seen.test.ts";
 import { runRecruitmentScreeningPageTests } from "./recruitment-screening-page.test.ts";
 import { runCandidateFolderTests } from "./candidate-folders.test.ts";
+import { runCandidatePoolFiledSearchTests } from "./candidate-pool-filed-search.test.ts";
 import { runCandidateFolderSuggestionTests } from "./candidate-folder-suggestion.test.ts";
+import { runDriveCvFolderTests } from "./drive-cv-folders.test.ts";
 import { runHiringManagerTeamScopeTests } from "./hiring-manager-team-scope.test.ts";
 import { runManagerFolderShelfTests } from "./manager-folder-shelf.test.ts";
 import { runBackgroundReviewQueueTests } from "./background-review-queue.test.ts";
@@ -1270,6 +1273,7 @@ import { runOutstationOfflineSyncBodyParityTests } from "./outstation-offline-sy
 import { runOutstationManagerExpenseEditValidationTests } from "./outstation-manager-expense-edit-validation.test.ts";
 import { runDirectOrderPharmacyDeadDistributorColumnsTests } from "./direct-order-pharmacy-dead-distributor-columns.test.ts";
 import { runDirectOrderReversalFamilyCodeTests } from "./direct-orders-reversal-family-code.test.ts";
+import { runSidebarLayoutEditorModeTests } from "./sidebar-layout-editor-mode.test.ts";
 import { runNavRowWayBackTests } from "./nav-row-way-back.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
@@ -1300,6 +1304,10 @@ await runTest("crm portal scope (exact-match agentHrIds, fail-closed, no ?view= 
 await runTest("error monitor new-issue diff", runErrorMonitorNewIssueDiffTests);
 await runTest("error monitor derived status", runErrorMonitorDerivedStatusTests);
 await runTest("error monitor message decode", runErrorMonitorMessageDecodeTests);
+await runTest(
+  "client error noise (1,972 unattributable 'Script error.' rows read as a crash — cap them, keep real ones)",
+  runClientErrorCrossOriginNoiseTests,
+);
 await runTest("error monitor ai redact", runErrorMonitorAiRedactTests);
 await runTest("error monitor per-user attempts (30d default window + real-account partition)", runErrorMonitorUserAttemptsTests);
 await runTest("gcp-metrics service health reader (availability/latency/instances + {available:false} guard)", runGcpMetricsTests);
@@ -1617,8 +1625,16 @@ await runTest(
   runCandidateFolderTests,
 );
 await runTest(
+  "recruitment filed-CV search (a filed CV stays OFF the pool and stays FINDABLE — 150 of 734 were neither)",
+  runCandidatePoolFiledSearchTests,
+);
+await runTest(
   "recruitment declared filing (only a TAPPED answer files a CV — 64 of production's 82 job titles are extractor output)",
   runCandidateFolderSuggestionTests,
+);
+await runTest(
+  "recruitment Drive mirror (region then area, and Delta (3) files where recruitment says, not where sales does)",
+  runDriveCvFolderTests,
 );
 await runTest(
   "hiring-manager team scope (one National Sales Manager can NEVER read the other's candidates, and the picker is exactly the gate)",
@@ -3948,6 +3964,11 @@ await runTest(
     + "omitting it wrote a familyless reversal that no later trigger could repair, and null must not "
     + "become \"\")",
   runDirectOrderReversalFamilyCodeTests,
+);
+await runTest(
+  "the navigation-layout editor gates the catalogue for the mode it is rendered in (an HR seat "
+    + "arranging the admin catalogue saved a valid layout that resolved to nothing)",
+  runSidebarLayoutEditorModeTests,
 );
 await runTest(
   "an emptied nav row has a way back (Navigation Layout reachable from the topbar in admin chrome)",

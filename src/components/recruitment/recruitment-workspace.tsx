@@ -46,6 +46,10 @@ import { deleteRequest, patchJson, postJson } from "@/components/recruitment/rec
 import type { ApplicationWithContext } from "@/lib/recruitment/applications";
 import type { CandidateProfile } from "@/lib/recruitment/candidates";
 import { APPLIED_FOR_SOURCE_LABEL, APPLIED_FOR_SOURCE_SHORT, candidateRowAppliedFor } from "@/lib/recruitment/applied-for";
+import {
+  candidateMatchesPoolQuery,
+  normalizeCandidatePoolQuery,
+} from "@/lib/recruitment/candidate-pool-search";
 import { candidateDisplayName, isShortenedCandidateName } from "@/lib/recruitment/candidate-display";
 import {
   candidateFolderKeyLabels,
@@ -2702,7 +2706,7 @@ function CandidateActionsControl({
         // Truncated, with the whole sentence on hover: the column is a fixed 220px, and a manager
         // with a long name must not be what pushes the table back into horizontal scroll.
         <div className="space-y-0.5">
-          <p className="truncate text-phx-xs text-slate-500" title={`Sent to ${notified.name} on ${cairoDateTime(notified.sentAt)}`}>
+          <p className="break-words text-phx-xs text-slate-500" title={`Sent to ${notified.name} on ${cairoDateTime(notified.sentAt)}`}>
             Sent to {notified.name} on {cairoDateTime(notified.sentAt)}
           </p>
           {/* The seat, on its own line rather than appended to the one above — the cell is 220px
@@ -2710,7 +2714,7 @@ function CandidateActionsControl({
               is the SENT-TIME seat, not a live lookup: a manager who moves area next month did not
               retroactively move the CVs that were sent to their old one. */}
           {managerSeatLabel(notified) ? (
-            <p className="truncate text-phx-xs font-medium text-slate-400" title={managerSeatLabel(notified)}>
+            <p className="break-words text-phx-xs font-medium text-slate-400" title={managerSeatLabel(notified)}>
               {managerSeatLabel(notified)}
             </p>
           ) : null}
@@ -3370,29 +3374,12 @@ function CandidatesTab({
     (folder) => folder.storedKey,
   );
 
-  const q = query.trim().toLowerCase();
+  const q = normalizeCandidatePoolQuery(query);
   const filteredCandidates = poolCandidates
     .filter((c) => {
-      if (
-        q &&
-        // The DERIVED role is searched as well as the stored one. Searching "district manager" has
-        // to find the 198 rows whose only statement of it is the intake subject line, otherwise the
-        // column answers on screen and the search box still says there is nobody.
-        ![
-          c.fullName,
-          c.email,
-          c.phone,
-          candidateStatusLabel(c.status),
-          c.source,
-          c.nationalId,
-          c.appliedForJobTitle,
-          candidateRowAppliedFor(c).text,
-        ]
-          .filter(Boolean)
-          .some((value) => String(value).toLowerCase().includes(q))
-      ) {
-        return false;
-      }
+      // One predicate, shared with the filed-CV band below. Two copies of it here is how a person
+      // becomes findable on one half of the partition and invisible on the other.
+      if (!candidateMatchesPoolQuery(c, q)) return false;
       if (statusFilter && normalizeCandidateStatus(c.status) !== statusFilter) return false;
       if (sourceFilter && candidateSourceChannel(c.source, c.sourceContext).label !== sourceFilter) return false;
       if (duplicatesOnly && !c.possibleDuplicate) return false;
@@ -3457,6 +3444,42 @@ function CandidatesTab({
   // the definition of red to drift apart from each other and from the pill on the row.
   const cvTabCandidates = partitionCandidatesByRedFlag(filteredCandidates);
   const visibleCandidates = cvTabCandidates[cvTab];
+
+  // THE OTHER HALF OF THE PARTITION — searched only while somebody is actively looking for a person.
+  //
+  // Filing a CV to a folder takes it off this page on purpose, and that rule is untouched: with an
+  // empty search box the pool shows exactly what it showed before. What filing must NOT do is take
+  // the person out of the one box built to find people. On 2026-09-03 the pool held 734 CVs with
+  // 150 filed, the Folders tab had no search of its own, and typing a filed applicant's own name
+  // returned nothing anywhere in the application — a CV nobody can look up is indistinguishable
+  // from a CV that was lost, which is exactly what was reported.
+  //
+  // Deliberately NOT merged into the table above. These rows are not in the pool, and showing them
+  // as if they were would make the count in the tab strip wrong and re-open the complaint that
+  // filed CVs come back to the main page.
+  const filedCount = folderShelves.reduce((total, shelf) => total + shelf.candidateCount, 0);
+  // Says what is being withheld and by which mechanism, because the old wording named only one of
+  // the two. It read "488 of 734 shown ... the red tab holds them, it never removes them" while the
+  // red tab held 97 of the 246 missing and folders held the other 150 — so the sentence sent anyone
+  // looking for a filed CV to a tab that does not contain it. Both mechanisms are named now, and
+  // neither clause is written unless it is actually withholding something.
+  const poolShellDescription = [
+    `${visibleCandidates.length} of ${candidates.length} shown, newest first.`,
+    filedCount > 0 ? `${filedCount} are filed in folders and sit on the Folders tab, not here.` : "",
+    "Nobody is removed — the red tab holds the rest.",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  const filedMatches = q
+    ? folderShelves.flatMap((shelf) =>
+        shelf.folders.flatMap((folder) =>
+          folder.candidates
+            .filter((candidate) => candidateMatchesPoolQuery(candidate, q))
+            .map((candidate) => ({ candidate, folderLabel: folder.label, shelfLabel: shelf.label })),
+        ),
+      )
+    : [];
 
   // Grouped by the manager each CV was SENT to, and only ever over what is already on screen — so
   // narrowing to "this week" narrows the piles too, rather than showing groups that disagree with
@@ -3782,7 +3805,7 @@ function CandidatesTab({
 
       <AdminTableShell
         title="Candidate pool"
-        description={`${visibleCandidates.length} of ${candidates.length} shown, newest first. Every applicant stays here — the red tab holds them, it never removes them.`}
+        description={poolShellDescription}
       >
         <div className="space-y-3 p-3">
           {/* The two piles, before anything else on the toolbar — because which pile you are in
@@ -3827,6 +3850,45 @@ function CandidatesTab({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
+          {/* Filed CVs that answer the search, directly under the box that asked. Rendered only
+              while a search is running, so the page at rest is unchanged — and rendered as its own
+              band rather than as table rows, because these CVs are genuinely not in the pool and a
+              row that looks identical to a pool row would say they were.
+
+              Fits-the-screen rule: no fixed widths, no nowrap, no truncation. A long name and a
+              long folder label both WRAP. */}
+          {q && filedMatches.length > 0 ? (
+            <div className="rounded-md border border-amber-200 bg-amber-50 p-3">
+              <p className="text-xs font-semibold text-amber-900">
+                {filedMatches.length === 1
+                  ? "1 more CV matches, filed in a folder"
+                  : `${filedMatches.length} more CVs match, filed in folders`}
+              </p>
+              <p className="mt-0.5 text-xs text-amber-800">
+                Filed CVs are kept off the pool on purpose. They are listed here so a search never
+                comes back empty for somebody who is in the system.
+              </p>
+              <ul className="mt-2 space-y-1.5">
+                {filedMatches.map(({ candidate, folderLabel, shelfLabel }) => (
+                  <li
+                    className="flex flex-wrap items-center gap-x-2 gap-y-1 border-t border-amber-200 pt-1.5 first:border-t-0 first:pt-0"
+                    key={candidate.id}
+                  >
+                    <button
+                      className="text-left text-xs font-semibold text-amber-900 underline underline-offset-2 hover:text-amber-700"
+                      onClick={() => void openProfile(candidate.id)}
+                      type="button"
+                    >
+                      {candidateDisplayName(candidate.fullName)}
+                    </button>
+                    <span className="text-xs text-amber-800">
+                      {shelfLabel} · {folderLabel}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
           <div className="flex flex-wrap items-end gap-3">
             <label className={poolFilterLabelClass}>
               Received
@@ -4342,7 +4404,7 @@ function CandidatesTab({
                       <td className="px-3 py-2.5">
                         <div className="flex min-w-0 items-center gap-1.5">
                           <span
-                            className="min-w-0 truncate font-semibold text-phx-ink"
+                            className="min-w-0 break-words font-semibold text-phx-ink"
                             title={candidate.fullName}
                           >
                             {displayName}
@@ -4375,7 +4437,7 @@ function CandidatesTab({
                             nearly every row, so it carried no information, and it cost a third
                             line of height on all 555 of them (75px → 59px without it). The stored
                             envelope is still the name's hover text, which is where it belongs. */}
-                        <div className="mt-0.5 truncate text-phx-xs text-slate-500" title={contact || undefined}>
+                        <div className="mt-0.5 break-words text-phx-xs text-slate-500" title={contact || undefined}>
                           {contact || <span className="text-slate-300">No contact details</span>}
                         </div>
                       </td>
@@ -4398,7 +4460,7 @@ function CandidatesTab({
                       <td className="px-3 py-2.5">
                         {facts.roleTitle ? (
                           <span
-                            className={`block truncate ${facts.roleTitle.confirmed ? "text-slate-900" : "italic text-slate-500"}`}
+                            className={`block break-words ${facts.roleTitle.confirmed ? "text-slate-900" : "italic text-slate-500"}`}
                             title={
                               facts.roleTitle.confirmed
                                 ? `Their current job title, as recorded.\n${facts.roleTitle.value}`
@@ -4409,7 +4471,7 @@ function CandidatesTab({
                           </span>
                         ) : appliedFor.text ? (
                           <span
-                            className={`block truncate ${appliedFor.source === "stated" ? "text-slate-900" : "italic text-slate-500"}`}
+                            className={`block break-words ${appliedFor.source === "stated" ? "text-slate-900" : "italic text-slate-500"}`}
                             title={
                               appliedFor.source === "stated"
                                 ? [candidate.appliedForJobTitle, candidate.appliedForEvidence].filter(Boolean).join("\n")
@@ -4424,7 +4486,7 @@ function CandidatesTab({
                             reads "Medical Representative" is another line that says nothing, which
                             is the exact fault this rebuild exists to fix. */}
                         {roleFamily && !roleTitleAlreadySaysFamily ? (
-                          <div className="mt-0.5 truncate text-phx-xs font-semibold uppercase tracking-[0.06em] text-slate-400">
+                          <div className="mt-0.5 break-words text-phx-xs font-semibold uppercase tracking-[0.06em] text-slate-400">
                             {candidateRoleFamilyLabels[roleFamily]}
                           </div>
                         ) : null}
@@ -4439,7 +4501,8 @@ function CandidatesTab({
                             this is the cell whose emptiness raises the question: a certificate
                             yields no job title, so the reader is already staring at this blank
                             space asking why. It is also the widest column, where the 332px
-                            Candidate cell would have squeezed a name that already truncates. */}
+                            Candidate cell would have squeezed the name — which since 2026-09-03
+                            wraps rather than truncating, so it needs that width more, not less. */}
                         {isNotACv(candidate) ? (
                           <div className={facts.roleTitle || appliedFor.text ? "mt-0.5" : undefined}>
                             <StagePill tone="amber">
@@ -4458,7 +4521,7 @@ function CandidatesTab({
                       <td className="px-3 py-2.5">
                         {facts.region ? (
                           <span
-                            className={`block truncate font-semibold ${facts.region.confirmed ? "text-slate-800" : "italic font-normal text-slate-500"}`}
+                            className={`block break-words font-semibold ${facts.region.confirmed ? "text-slate-800" : "italic font-normal text-slate-500"}`}
                             title={
                               facts.region.value.declared
                                 ? `The applicant chose this themselves when they applied on WhatsApp.${
@@ -4477,14 +4540,15 @@ function CandidatesTab({
                             the only line on this row the applicant wrote himself. The governorate is
                             not lost — it moves into the tooltip.
 
-                            ONE element, not a branch into two, and that is the no-ellipsis ratchet
-                            rather than a style preference: this second line already truncates, and
-                            two sibling elements each carrying the class would count as two sites and
-                            raise a baseline that is only ever allowed to fall. Choosing the CONTENT
-                            of the existing line leaves the count where it was. */}
+                            ONE element, not a branch into two. That began as a no-ellipsis ratchet
+                            argument — two sibling elements each carrying the class would have counted
+                            as two sites — and since 2026-09-03 this line wraps instead of truncating,
+                            so the ratchet no longer decides it. The choice stands on its own: the two
+                            are alternative answers to one question, not facts to stack, and a second
+                            line would add height to every row to repeat what the tooltip says. */}
                         {facts.area || facts.governorate ? (
                           <div
-                            className={`mt-0.5 truncate text-phx-xs ${facts.area ? "text-slate-600" : "text-slate-500"}`}
+                            className={`mt-0.5 break-words text-phx-xs ${facts.area ? "text-slate-600" : "text-slate-500"}`}
                             title={
                               facts.area
                                 ? `Asked to work in ${facts.area.value}.${
@@ -4655,7 +4719,7 @@ function CandidatesTab({
               <ArrowLeft className="h-3.5 w-3.5" />
               Back to the pool
             </button>
-            <p className="truncate text-xs text-slate-500" title={profile.candidate.fullName}>
+            <p className="break-words text-xs text-slate-500" title={profile.candidate.fullName}>
               {candidateDisplayName(profile.candidate.fullName)}
             </p>
           </div>

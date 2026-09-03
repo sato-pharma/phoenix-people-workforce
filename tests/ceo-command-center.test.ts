@@ -448,18 +448,25 @@ export function runCeoCommandCenterTests() {
     );
   }
   // `getCeoGreeting()` returns "Good morning, Dr. Anwar" and pairs with CeoHiddenNote — a greeting
-  // and a note written for one named person. It belongs to the CEO variant and to no other.
+  // and a note written for one named person. It belonged to the CEO variant and to no other, and
+  // this pinned exactly that gate: first `personal={!isSfe}` (wrong the moment a third variant
+  // arrived), then `personal={variant === "ceo"}` by name.
   //
-  // This pinned `personal={!isSfe}` until 2026-08-30, which said the same thing while there were
-  // exactly two variants and became WRONG the moment a third arrived: the System Administrator
-  // Overview is not the SFE page, so `!isSfe` handed the Super Admin the Chief Executive's own
-  // greeting on his first render. Pin the rule, not the arithmetic that happened to express it —
-  // an allow-list of the one variant cannot silently admit the next one.
-  assert.match(
+  // THE WHOLE IDENTITY BAND WENT on 2026-09-03, at the owner's instruction to remove the heavy
+  // banner from every page (96e12a53b). `CeoHeroIdentity` — and the greeting inside it — is no
+  // longer rendered by `CeoCommandCenter` for ANY variant, so the leak this used to guard against
+  // (the Super Admin seeing "Dr. Anwar") is now structurally impossible: nobody gets the greeting.
+  // `CeoHeroIdentity` itself is left in the tree unmounted — flagged in that commit as its own
+  // retirement task, not done here.
+  //
+  // Pin the ABSENCE the way the presence used to be pinned: by name, not by inference from a
+  // missing import, so a future re-mount of the greeting has to walk past this comment.
+  assert.doesNotMatch(
     ceoComponentSource,
-    /personal=\{variant === "ceo"\}/,
-    "the CEO's personal greeting must be gated on the CEO variant by name — every other variant, "
-      + "including any added later, must be greeted by its own viewer's name and never as 'Dr. Anwar'",
+    /<CeoHeroIdentity/,
+    "the CEO's personal greeting must stay unmounted here — if it comes back, it must be gated on "
+      + "the CEO variant by name (personal={variant === 'ceo'}), never on !isSfe, or the Super "
+      + "Admin inherits 'Good morning, Dr. Anwar' again",
   );
   assert.match(
     ceoComponentSource,

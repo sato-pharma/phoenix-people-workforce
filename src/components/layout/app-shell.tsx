@@ -6,7 +6,6 @@ import { adminShellBackgroundClassName } from "@/components/admin/admin-design-t
 import {
   buildPermissionLookup,
   getPermissionMatrix,
-  resolveNavigationMode,
   usesHrNamespace,
   type AccessContext,
   type NavigationMode,
@@ -23,7 +22,6 @@ import { ModuleLockProvider } from "@/components/layout/module-lock-context";
 import { ModuleLockedNotice } from "@/components/layout/module-locked-notice";
 import { CommandPalette } from "@/components/layout/command-palette";
 import { DocumentTitleSync } from "@/components/layout/document-title-sync";
-import { HrMyPagesStrip } from "@/components/hr/hr-my-pages-strip";
 import { HorizontalNavProvider, LowerNavRow, UpperNavRow } from "@/components/layout/horizontal-nav-rows";
 import { RouteTransitionProvider } from "@/components/layout/route-transition-provider";
 import { Sidebar } from "@/components/layout/sidebar";
@@ -31,6 +29,7 @@ import { Topbar } from "@/components/layout/topbar";
 import { SessionSecurityGuard } from "@/components/auth/session-security-guard";
 import { OneSignalProvider } from "@/components/notifications/onesignal-provider";
 import { usesAdminChrome } from "@/lib/navigation/active-path";
+import { resolveShellNavigationMode } from "@/lib/navigation/shell-mode";
 import { PATH_HEADER, SHELL_HEADER, toHrNamespacePath } from "@/lib/navigation/shell-headers";
 
 export async function AppShell({
@@ -105,8 +104,16 @@ export async function AppShell({
   // mount their own shell. The header is written by middleware, which strips any inbound copy
   // first, so it cannot be forged. It selects CHROME only: every page behind it still asserts its
   // own permission server-side, so being wrong here shows the right page under the wrong nav.
-  const resolvedNavigationMode: NavigationMode =
-    requestHeaders.get(SHELL_HEADER) === "hr" ? "hr" : navigationMode ?? resolveNavigationMode(access);
+  //
+  // The rule itself lives in resolveShellNavigationMode so a PAGE that needs the mode it is being
+  // rendered under can ask the same question. A page that instead asks resolveNavigationMode alone
+  // gets "admin" for an HR seat — that function answers about the person and never returns "hr" —
+  // and then renders the admin catalogue under HR chrome, which looks like a working page.
+  const resolvedNavigationMode: NavigationMode = resolveShellNavigationMode(
+    access,
+    requestHeaders.get(SHELL_HEADER),
+    navigationMode,
+  );
 
   const permissionLookup = buildPermissionLookup(matrix, access.role);
 
@@ -183,16 +190,30 @@ export async function AppShell({
                       viewer={viewer}
                     />
                   )}
-                  {/* The two HR seats' own personal pages, directly under the identity banner and
-                      above the nav rows — owner instruction 2026-09-01, "make it fix it in every
-                      page she opens". It renders null for every other role, and null again for an
-                      HR seat with no personal pages, so no other account gains a strip. It has to
-                      be INSIDE this sticky container for the reason the comment above gives: two
-                      stickies at top-0 overlap rather than stack. */}
-                  <HrMyPagesStrip
-                    access={access}
-                    pathname={toHrNamespacePath(requestHeaders.get(PATH_HEADER) ?? "")}
-                  />
+                  {/* NO "MY PAGES" STRIP. Removed 2026-09-03 at the owner's instruction — he named
+                      the band by its own tab labels and said "remove this nav bar". It was
+                      `HrMyPagesStrip`, added 2026-09-01 at his own earlier instruction to put the
+                      two HR seats' personal pages (payslip, incentive, deductions, vacation,
+                      excuses, fingerprint, plans, probation, contact HR) in a strip under the
+                      identity banner on every page she opens. That identity banner is itself gone
+                      now (same day, same instruction, on HrCommandCenter and AdminPageHero), so the
+                      strip was the only piece of that pairing left standing.
+
+                      THIS WAS THE TWO HR SEATS' ONLY DOOR to those twelve pages. Every other admin-
+                      shell role reaches its own personal pages through `PersonalWorkspaceTabs`
+                      inside `WorkspaceFrame` (src/components/workspace/admin-shell-employee-pages.tsx)
+                      — deliberately zeroed for `usesHrNamespace` roles so the two lists could never
+                      stack (see tests/workspace-single-hero.test.ts). Removing this strip and not
+                      restoring that list leaves HR Advisory and HR Operations with no in-app link to
+                      their own payslip, leave balance, or excuses — those pages still work at their
+                      direct URL, they are just no longer offered anywhere. Flagged to the owner in
+                      chat when this was cut; if he wants a door back, it wants a smaller one, not a
+                      restore of the black strip.
+
+                      `HrMyPagesStrip` itself (src/components/hr/hr-my-pages-strip.tsx) is left in
+                      place, unrendered — tests/workspace-single-hero.test.ts reads its source for
+                      the `usesHrNamespace` guard directly, and `toHrNamespacePath`/`PATH_HEADER`
+                      below are still imported for the redirect a few lines up in this file. */}
                   <UpperNavRow />
                   <LowerNavRow />
                 </div>

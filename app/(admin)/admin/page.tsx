@@ -10,7 +10,6 @@ import { resolveLandingPathForRole } from "@/lib/auth/landing";
 import { canAccess, resolveNavigationMode, type AccessContext, type PhoenixRole } from "@/lib/auth/permissions";
 import { getSystemAdminOverviewData } from "@/lib/admin/system-overview";
 import { resolveAccessContextFromPage, resolveViewerIdentityFromPage } from "@/lib/auth/server";
-import { uploadedEmployeePhotoUrl } from "@/lib/employees/employee-photo";
 import { formatHrIdForDisplay } from "@/lib/hr-id";
 
 export const dynamic = "force-dynamic";
@@ -137,14 +136,18 @@ function AccessUnavailableCard() {
 }
 
 async function SystemAdminOverviewContent({ access }: { access: AccessContext }) {
-  const [viewer, result] = await Promise.all([
-    resolveViewerIdentityFromPage(access),
+  // Both in parallel: neither needs the other, and the identity is a Storage lookup for the
+  // uploaded photo on top of one row read — serialising them would put that latency in front of
+  // the page's own data for no reason. `resolveViewerIdentityFromPage` is `cache()`d per request,
+  // so the topbar's own call in the shell costs nothing extra.
+  const [result, viewer] = await Promise.all([
     getSystemAdminOverviewData(access)
       .then((data) => ({ data, error: null as string | null }))
       .catch((error) => {
         console.error("Failed to load System Administrator Overview:", error);
         return { data: null, error: error instanceof Error ? error.message : "Unknown error occurred" };
       }),
+    resolveViewerIdentityFromPage(access),
   ]);
 
   if (!result.data) {
@@ -166,19 +169,27 @@ async function SystemAdminOverviewContent({ access }: { access: AccessContext })
     );
   }
 
-  // The hero falls back to the initials medallion when no portrait resolves (CeoHeroIdentity's
-  // onError), so this renders correctly whether or not a photo has been uploaded for the seat.
-  const welcome = {
-    fullName: viewer.displayName,
-    hrId: access.hrId,
-    imageUrl: await uploadedEmployeePhotoUrl(formatHrIdForDisplay(access.hrId) ?? access.hrId),
-    initials: viewer.initials,
-    roleLabel: viewer.roleLabel,
-  };
-
+  // The identity is BACK, but as a 92px strip and not as the band that was removed. The full-bleed
+  // `AdminHeroFrame` + `CeoHeroIdentity` block went on 2026-09-03 — "remove from all pages this
+  // dump block" — and later the same day the owner asked for the identity back in the employee
+  // portal's idiom, thin, under 96px. It shipped on the HR overview first and he then named this
+  // page: "and /admin". The mount and the full history are in system-admin-overview.tsx.
   return (
     <div className="min-w-0 max-w-full overflow-x-hidden">
-      <SystemAdminOverview access={access} data={result.data} welcome={welcome} />
+      <SystemAdminOverview
+        access={access}
+        data={result.data}
+        identity={{
+          displayName: viewer.displayName,
+          // `access.hrId`, not the login id: the strip prints an HR ID and an account name is not
+          // one. Null when the account has no linked employee — a real case for an administrative
+          // account, and one the strip draws as nothing rather than as an empty slot.
+          employeeCode: formatHrIdForDisplay(access.hrId),
+          photoUrl: viewer.imageUrl ?? null,
+          // Already the JOB TITLE, not the permission key — the resolver maps it before returning.
+          roleLabel: viewer.roleLabel,
+        }}
+      />
       <Suspense fallback={<CeoPhaseBSkeleton variant="admin" />}>
         <CeoPhaseBWidgets
           access={access}

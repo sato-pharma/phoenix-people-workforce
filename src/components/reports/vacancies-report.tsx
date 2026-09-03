@@ -142,8 +142,8 @@ function BreakdownPanel({
             return (
               <div key={item.name}>
                 <div className="flex items-center justify-between gap-3 text-sm">
-                  <span className="truncate font-medium text-phx-ink">{item.name}</span>
-                  <span className="text-phx-ink-soft">{item.count}</span>
+                  <span className="min-w-0 break-words font-medium text-phx-ink">{item.name}</span>
+                  <span className="shrink-0 text-phx-ink-soft">{item.count}</span>
                 </div>
                 <div className="mt-2 h-2 rounded-full bg-phx-line shadow-inner">
                   <div

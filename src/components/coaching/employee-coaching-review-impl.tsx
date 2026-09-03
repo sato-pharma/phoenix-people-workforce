@@ -15,6 +15,13 @@ import {
   UserRound,
 } from "lucide-react";
 
+import {
+  pageHeaderDescriptionClassName,
+  pageHeaderKickerClassName,
+  pageHeaderRailClassName,
+  pageHeaderRuleClassName,
+  pageHeaderTitleClassName,
+} from "@/components/admin/admin-design-tokens";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { RadarChart } from "@/components/charts/radar-chart";
@@ -331,24 +338,33 @@ function ReviewHeroHeader({
   status: string;
 }) {
   return (
-    <Card className="overflow-hidden rounded border border-slate-200 bg-white shadow-[0_4px_24px_rgba(15,23,42,0.08)]">
-      <div className="relative overflow-hidden bg-[linear-gradient(135deg,#0B0B0B_0%,#111827_58%,#3B2413_100%)] px-4 py-5 text-white sm:px-7 sm:py-6">
-        <div className="pointer-events-none absolute -right-16 -top-20 h-56 w-56 rounded-full bg-orange-500/20 blur-3xl" />
-        <div className="relative grid gap-4 sm:gap-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
-          <div>
-            <p className="inline-flex rounded border border-orange-400/40 bg-orange-500/10 px-3 py-1 text-phx-2xs font-bold uppercase tracking-[0.18em] text-orange-200">
-              {reportNumber}
-            </p>
-            <h2 className="mt-3 text-2xl font-black tracking-[-0.03em] text-white sm:mt-4 sm:text-3xl">
-              Field Coaching Review
-            </h2>
-            <p className="mt-1.5 max-w-2xl text-sm leading-6 text-slate-300 sm:mt-2">
-              Review the structured assessment and feedback submitted by your coach.
-            </p>
-          </div>
-          <div className={cn("rounded border px-4 py-2.5 text-sm font-bold", zoneClassName(displayZone))}>
-            {zoneLabel(displayZone)}
-          </div>
+    // NO DARK BAND. Flattened 2026-09-03 at the owner's instruction — "remove from all pages this
+    // dump block" — in step with `PremiumHero`, `AdminPageHero`, `KpiHero`, `RgHero` and the
+    // command centres the same day. This was a three-stop black-to-brown gradient at px-4 py-5 /
+    // sm:px-7 sm:py-6, with a blurred orange glow and a 3xl white heading.
+    //
+    // EVERY VALUE IS KEPT — the report number, the title, the zone verdict and the four detail
+    // pills below. This is a report a medical rep opens to read their own coaching assessment, so
+    // the zone in particular is the point of the page and not decoration.
+    <Card className="overflow-hidden rounded border border-slate-200 bg-white shadow-[0_2px_8px_rgba(15,23,42,0.06)]">
+      {/* Rail and fading rule from the shared tokens (2026-09-03, second pass). The rule is
+          absolutely positioned on the block's bottom edge rather than added as a sibling, because
+          this header is the first row of a Card and a sibling div would sit inside the card's
+          padding instead of spanning it - the one place the standard shape does not fit. */}
+      <div className="relative grid gap-3 px-4 py-4 sm:px-6 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+        <span aria-hidden="true" className={`absolute inset-x-0 bottom-0 ${pageHeaderRuleClassName}`} />
+        <div className="relative min-w-0 space-y-1.5 pl-3.5">
+          <span aria-hidden="true" className={pageHeaderRailClassName} />
+          <p className="inline-flex rounded border border-orange-200 bg-orange-50 px-2 py-0.5 text-[11px] font-bold uppercase tracking-[0.18em] text-orange-700">
+            {reportNumber}
+          </p>
+          <h2 className={pageHeaderTitleClassName}>Field Coaching Review</h2>
+          <p className={pageHeaderDescriptionClassName}>
+            Review the structured assessment and feedback submitted by your coach.
+          </p>
+        </div>
+        <div className={cn("rounded border px-4 py-2.5 text-sm font-bold", zoneClassName(displayZone))}>
+          {zoneLabel(displayZone)}
         </div>
       </div>
 

@@ -166,18 +166,18 @@ export function OrganogramNodeDetailModal({ row, onClose }: Props) {
               {isVacancy ? <Building2 className="h-5 w-5" /> : initials(row.displayName)}
             </span>
             <div className="min-w-0">
-              <p className="truncate text-sm font-bold leading-tight">{heading}</p>
+              <p className="break-words text-sm font-bold leading-tight">{heading}</p>
               {subtitle ? (
-                <p className="mt-0.5 truncate text-phx-xs font-medium text-orange-200">{subtitle}</p>
+                <p className="mt-0.5 break-words text-phx-xs font-medium text-orange-200">{subtitle}</p>
               ) : null}
               {!isVacancy ? (
-                <p className="mt-0.5 truncate font-mono text-phx-2xs text-slate-300">{row.hrId}</p>
+                <p className="mt-0.5 break-words font-mono text-phx-2xs text-slate-300">{row.hrId}</p>
               ) : null}
             </div>
           </div>
           <button
             aria-label="Close"
-            className="rounded-md p-1 text-white/70 transition hover:bg-white/10 hover:text-white"
+            className="shrink-0 rounded-md p-1 text-white/70 transition hover:bg-white/10 hover:text-white"
             onClick={onClose}
             type="button"
           >
