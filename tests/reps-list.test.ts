@@ -517,17 +517,23 @@ export function runRepsListTests() {
       "the Reps List catalog entry must name exactly DOCTOR_LIST_PORTAL_ROLES — a hand-maintained second copy is how a row appears for a seat the page refuses",
     );
 
+    // THE STATEMENT, not a fixed byte window. Both assertions below read `flag`, and slicing a
+    // fixed 400 bytes is how this block false-failed the moment the flag got SHORTER: the window
+    // ran past the end of the statement and swallowed the Reps Plans comment beneath it, which says
+    // "Deliberately NOT isDistrictManager" — so the guard fired on the neighbouring comment that
+    // agrees with it. Ending at the statement's own semicolon cannot drift with what follows.
     const navSource = readFileSync("src/lib/employee-portal/navigation.ts", "utf8");
-    const flag = navSource.slice(navSource.indexOf("const showRepsListTab"));
-    assert.ok(flag.length > 0, "the portal Reps List visibility flag must exist");
+    const flagStart = navSource.indexOf("const showRepsListTab");
+    assert.ok(flagStart >= 0, "the portal Reps List visibility flag must exist");
+    const flag = navSource.slice(flagStart, navSource.indexOf(";", flagStart) + 1);
     // Pin the fix itself, not just its effect. A future session "simplifying" this back to a
     // spelled-out chain would restore the very drift the split removed, and nothing would fail.
     assert.ok(
-      flag.slice(0, 200).includes("DOCTOR_LIST_PORTAL_ROLES"),
+      flag.includes("DOCTOR_LIST_PORTAL_ROLES"),
       "the portal flag must ASK the shared list rather than spell the roles out again — that second copy is what this block used to exist to police",
     );
     assert.ok(
-      !flag.slice(0, 400).includes("isDistrictManager"),
+      !flag.includes("isDistrictManager"),
       'the flag must not reuse isDistrictManager: that predicate also admits the bare "Manager" title, which the access module does not, so a Manager would see a row the page refuses',
     );
   }
