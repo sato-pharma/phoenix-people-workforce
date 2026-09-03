@@ -69,6 +69,25 @@ export async function runDepartedAccessRevocationTests() {
     "the catch-up must be granted to service_role or the cron cannot call it",
   );
 
+  // A grant to service_role is NOT a lock-down, and reading it as one is the trap. A function
+  // created in `public` inherits PostgreSQL's default EXECUTE grant to PUBLIC, and anon and
+  // authenticated are MEMBERS of PUBLIC — so without this revoke the anonymous key could call a
+  // function that switches off employee logins. Revoking anon and authenticated alone is a no-op.
+  // CI's own check-migrations caught exactly this on this file; pinned here as well.
+  assert.match(
+    migration,
+    /revoke execute on function public\.phx_revoke_departed_employee_access\(\) from public, anon, authenticated;/,
+    "the catch-up must have EXECUTE revoked from PUBLIC, not merely granted to service_role",
+  );
+  // The revoke has to come FIRST: stripping PUBLIC from a default ACL also strips service_role,
+  // so the grant is what puts it back. In the other order the cron loses its own access.
+  assert.equal(
+    migration.indexOf("revoke execute on function public.phx_revoke_departed_employee_access()") <
+      migration.indexOf("grant execute on function public.phx_revoke_departed_employee_access()"),
+    true,
+    "the revoke must precede the grant, or revoking PUBLIC strips service_role again",
+  );
+
   // BOTH conditions are required. A departed status alone would revoke someone serving notice —
   // precisely the bug this whole change removes — and a past date alone would revoke an active
   // employee who happens to carry an old last_working_date.

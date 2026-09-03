@@ -125,6 +125,17 @@ begin
 end;
 $function$;
 
+-- Lock the function down explicitly rather than relying on the ACL it already carries.
+-- `create or replace` PRESERVES an existing ACL, and production's is already right
+-- (postgres, service_role — PUBLIC revoked), so on production these two statements change nothing.
+-- On a database where this function does NOT yet exist, `create or replace` acts as `create` and
+-- the function would be born with PostgreSQL's default EXECUTE grant to PUBLIC — callable with the
+-- anonymous key. anon and authenticated are MEMBERS of PUBLIC, so revoking only those two is a
+-- no-op; PUBLIC itself is what has to go. The revoke comes FIRST because stripping PUBLIC from a
+-- default ACL also strips service_role.
+revoke execute on function public.phx_resign_employee_and_open_vacancy(text, date, text, text, text, text, date, text, text) from public, anon, authenticated;
+grant execute on function public.phx_resign_employee_and_open_vacancy(text, date, text, text, text, text, date, text, text) to service_role;
+
 -- The catch-up that makes deferring safe to operate: once the last working day arrives, something
 -- has to actually flip the flag. This is that something. The daily leaver cron calls it
 -- (src/lib/auth/departed-access-sweep.ts), and it is idempotent, so a missed day self-heals on the
@@ -194,6 +205,10 @@ begin
 end;
 $function$;
 
+-- Same reasoning, and here it is not theoretical: this function is new, so it really would be
+-- born callable by anon and authenticated through their PUBLIC membership — a function that
+-- switches off employee logins. Revoke PUBLIC, then re-grant service_role, in that order.
+revoke execute on function public.phx_revoke_departed_employee_access() from public, anon, authenticated;
 grant execute on function public.phx_revoke_departed_employee_access() to service_role;
 
 -- Run it once now, so applying this migration leaves production correct immediately instead of
