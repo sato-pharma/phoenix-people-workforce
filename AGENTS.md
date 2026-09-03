@@ -255,6 +255,7 @@ and the diagnosis traps that nearly sent each the wrong way — is in
 **Railway deploys**
 
 - **A deploy applies NO migrations**, and **auto-deploy can silently SKIP a race.** A merge that never shipped looks identical to one that did until you read `/api/healthz`.
+- **Two merges inside a minute make production look ROLLED BACK when it is only QUEUED.** Railway stamps the GitHub deployment when a build goes **live**, not when it starts, so the **earlier** commit's deployment carries the **later** `created_at` and serves while the newer one is still `in_progress` — every reading matches the `source connect` rollback above. **Read the deployment STATES, never their timestamps:** one `in_progress` beside one `success` is a queue, not a revert. Settle it with `git merge-base --is-ancestor <your merge> <live revision>`, then re-read `revision` a minute later — do NOT re-merge or `railway redeploy`.
 - **`railway variables --stdin` stores a BOM**, which then travels inside the value.
 - **`railway ssh` JOINS argv and lands as ROOT.**
 - 🔴 **`railway service source connect` is NOT environment-scoped — `--environment staging` REPOINTED PRODUCTION.** The git source is **service-level**, shared by every environment, so **a branch cannot be staged on Railway without shipping it** — never use it to preview, and §7's staging smoke-test needs a **separate service**. Production silently ROLLS BACK whatever was merged since, and `healthz` reporting `status: ok` hides it — **read the `revision`.**
