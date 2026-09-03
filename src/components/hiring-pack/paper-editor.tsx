@@ -365,6 +365,22 @@ function buildSelectionFromElement(
   };
 }
 
+/**
+ * Read one document's field layer. Split out of the component so both readers share it: the effect
+ * that loads when the panel opens, and the reload every mutation runs afterwards. It only fetches
+ * and never touches state, which is what lets the effect keep each setState inside a callback.
+ */
+async function fetchDocumentFields(url: string): Promise<DocumentFieldRow[]> {
+  const response = await fetch(url);
+  const body = (await response.json().catch(() => null)) as
+    | { fields?: DocumentFieldRow[]; message?: string }
+    | null;
+  if (!response.ok) {
+    throw new Error(body?.message ?? `Could not load the layout (${response.status}).`);
+  }
+  return body?.fields ?? [];
+}
+
 export function HiringPackPaperEditor({
   hrId,
   documentKey,
@@ -520,18 +536,12 @@ export function HiringPackPaperEditor({
    *  shared layout for every employee, matching `loadDocumentFieldLayout`'s own scope. */
   const fieldsUrl = `/api/hiring-pack/document-fields?document=${documentKey}&templateVersionId=${encodeURIComponent(effectiveVersionId)}`;
 
+  /** The reload every mutation runs. Called from an event handler, so it may set state at once. */
   const loadFields = useCallback(async () => {
     setFieldsLoading(true);
     setFieldsError(null);
     try {
-      const response = await fetch(fieldsUrl);
-      const body = (await response.json().catch(() => null)) as
-        | { fields?: DocumentFieldRow[]; message?: string }
-        | null;
-      if (!response.ok) {
-        throw new Error(body?.message ?? `Could not load the layout (${response.status}).`);
-      }
-      const rows = body?.fields ?? [];
+      const rows = await fetchDocumentFields(fieldsUrl);
       setFields(rows);
       fieldsRef.current = rows;
     } catch (cause) {
@@ -541,9 +551,40 @@ export function HiringPackPaperEditor({
     }
   }, [fieldsUrl]);
 
+  /**
+   * Load the layer whenever the panel is open for a document and version.
+   *
+   * Every setState here sits inside the fetch's own callback rather than in the effect body. That is
+   * the line `react-hooks/set-state-in-effect` draws: subscribing to an external system and setting
+   * state when it answers is what an effect is for; setting state on the way in is the cascading
+   * render it exists to stop. The spinner is therefore raised by the click, in `toggleLayoutMode`.
+   *
+   * `live` closes a real race the previous shape had. Changing document or version while the panel
+   * is open starts a second read without cancelling the first, so a slow reply for the OLD url could
+   * land last and paint the previous document's rows over this one — and nothing on screen says
+   * which document answered, so they would read as this document's own layout.
+   */
   useEffect(() => {
-    if (layoutMode) void loadFields();
-  }, [layoutMode, loadFields]);
+    if (!layoutMode) return;
+    let live = true;
+    void fetchDocumentFields(fieldsUrl).then(
+      (rows) => {
+        if (!live) return;
+        setFields(rows);
+        fieldsRef.current = rows;
+        setFieldsError(null);
+        setFieldsLoading(false);
+      },
+      (cause: unknown) => {
+        if (!live) return;
+        setFieldsError(cause instanceof Error ? cause.message : "Could not load the layout.");
+        setFieldsLoading(false);
+      },
+    );
+    return () => {
+      live = false;
+    };
+  }, [fieldsUrl, layoutMode]);
 
   /**
    * Save one field-layer row — a move, a resize, a hide, or a brand-new field — then reload both the
@@ -948,6 +989,9 @@ export function HiringPackPaperEditor({
     const next = !layoutModeRef.current;
     layoutModeRef.current = next;
     setLayoutMode(next);
+    // The effect above does the reading; the spinner belongs to the click that asked for it, since
+    // an effect may not raise it synchronously.
+    if (next) setFieldsLoading(true);
     if (next && freeEditRef.current) {
       freeEditRef.current = false;
       setFreeEdit(false);

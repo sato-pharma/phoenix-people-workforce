@@ -156,7 +156,11 @@ export async function loadDocumentFieldLayout(
   }
 
   const rows: DocumentFieldRow[] = [];
-  for (const record of (data ?? []) as FieldRecord[]) {
+  // Through `unknown` deliberately: with no generated Database type in this repo the client cannot
+  // know this table, so it infers GenericStringError and rejects a direct cast. Every row is then
+  // validated by `documentFieldFromRecord`, which returns null for anything it cannot draw — the
+  // cast buys entry to the shape, it is not trusted as proof of it.
+  for (const record of (data ?? []) as unknown as FieldRecord[]) {
     const row = documentFieldFromRecord(record);
     if (row) rows.push(row);
   }
@@ -222,7 +226,7 @@ export async function saveDocumentField(
 
   const { data, error } = await query.select(COLUMNS).single();
   if (error) throw new Error(error.message);
-  const row = documentFieldFromRecord(data as FieldRecord);
+  const row = documentFieldFromRecord(data as unknown as FieldRecord);
   if (!row) throw new Error("The field was saved but came back in a shape this screen cannot draw.");
   return row;
 }
