@@ -1,0 +1,97 @@
+import Link from "next/link";
+import { ArrowLeft, Building2 } from "lucide-react";
+import { redirect } from "next/navigation";
+
+import { Customer360View } from "@/components/customer-360/customer-360-view";
+import { Card } from "@/components/ui/card";
+import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions";
+import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
+import { filterCustomerSubjectsForViewer } from "@/lib/customer-360/access";
+import { getCustomer360Profile, listCustomerSubjects } from "@/lib/customer-360/service";
+import { customerRegisterLabel, decodeCustomerSubjectId } from "@/lib/customer-360/subject";
+import { resolveSalesAccessScope } from "@/lib/sales/access-scope";
+
+export const dynamic = "force-dynamic";
+
+function NotFound({ message }: { message: string }) {
+  return (
+    <div className="mx-auto max-w-3xl p-6">
+      <Card className="rounded-[20px] border-slate-200/80 bg-white p-6 text-center shadow-[0_10px_30px_rgba(15,23,42,0.05)]">
+        <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-slate-400">
+          <Building2 className="h-5 w-5" />
+        </span>
+        <h1 className="mt-3 text-lg font-black text-slate-900">Customer not found</h1>
+        <p className="mt-1 break-words text-sm text-slate-500">{message}</p>
+        <Link
+          href="/customer-360"
+          className="mt-4 inline-flex items-center gap-1.5 text-sm font-bold text-orange-600 hover:underline"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Back to Customer 360
+        </Link>
+      </Card>
+    </div>
+  );
+}
+
+export default async function Customer360DetailPage({
+  params,
+}: {
+  params: Promise<{ subjectId: string }>;
+}) {
+  const { subjectId } = await params;
+  const access = await resolveAuthenticatedPageAccess();
+  if (resolveNavigationMode(access) === "employee-portal") {
+    redirect("/employee-portals/source-of-sales");
+  }
+  await assertPermission(access, "sales", "read");
+
+  const ref = decodeCustomerSubjectId(subjectId);
+  if (!ref) return <NotFound message="That customer link is not one this page recognises." />;
+
+  // Gate on the SAME scope the list is filtered by, so a typed URL cannot reach a customer the
+  // picker would never have offered.
+  const scope = await resolveSalesAccessScope(access);
+  const visibility = {
+    allowedAreaCodes: scope.allowedAreaCodes,
+    allowedLineNames: scope.allowedLineNames,
+    allowedRegionNames: scope.allowedRegionNames,
+    canViewAllSales: scope.canViewAllSales,
+  };
+  const subjects = await listCustomerSubjects();
+  const subject = subjects.find((entry) => entry.id === subjectId);
+  if (!subject) return <NotFound message="No customer record matches that link." />;
+  if (filterCustomerSubjectsForViewer([subject], visibility).length === 0) {
+    redirect("/customer-360");
+  }
+
+  const profile = await getCustomer360Profile(ref, access.role);
+  if (!profile) return <NotFound message="No customer record matches that link." />;
+
+  return (
+    <div className="mx-auto max-w-5xl space-y-4 p-4 sm:p-6">
+      <Link
+        href="/customer-360"
+        className="inline-flex items-center gap-1.5 text-[13px] font-bold text-orange-600 hover:underline"
+      >
+        <ArrowLeft className="h-4 w-4" />
+        Back to Customer 360
+      </Link>
+
+      <header className="rounded-[20px] border border-slate-200 bg-white p-5 shadow-sm">
+        <p className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-400">
+          {customerRegisterLabel(profile.register)}
+        </p>
+        <h1 className="mt-1 break-words text-2xl font-black tracking-tight text-slate-950">
+          {profile.displayName}
+        </h1>
+        <p className="mt-1 break-words text-[13px] font-semibold text-slate-500">
+          {[profile.areaName, profile.regionName, profile.lineName].filter(Boolean).join(" · ") ||
+            "No territory recorded"}
+        </p>
+      </header>
+
+      <Customer360View profile={profile} />
+    </div>
+  );
+}
