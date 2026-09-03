@@ -199,6 +199,7 @@ import { runDistrictManagerFolderTests } from "./district-manager-folders.test.t
 import { runRecruitmentDistrictReturnsTests } from "./recruitment-district-returns.test.ts";
 import { runCandidatePositionFolderTests } from "./candidate-position-folders.test.ts";
 import { runArabicPlaceMatchTests } from "./arabic-place-match.test.ts";
+import { runCvAddressPlaceTests } from "./cv-address-place.test.ts";
 import { runCandidatePositionSuggestionTests } from "./candidate-position-suggestion.test.ts";
 import { runRecruitmentStaleSendCheckTests } from "./recruitment-stale-send-check.test.ts";
 import { runRecruitmentTriageBacklogCheckTests } from "./recruitment-triage-backlog-check.test.ts";
@@ -1615,6 +1616,10 @@ await runTest(
 await runTest(
   "background review queue (an admin's answer outranks the parser in BOTH directions, and actually changes who sees the CV)",
   runBackgroundReviewQueueTests,
+);
+await runTest(
+  "cv address place (which area a CV own text names, and the four addresses that lied)",
+  runCvAddressPlaceTests,
 );
 await runTest(
   "arabic place match (an English address naming an Arabic place: Box is not Bacos, George is not Girga)",
