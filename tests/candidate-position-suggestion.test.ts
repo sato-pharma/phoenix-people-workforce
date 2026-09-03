@@ -279,8 +279,13 @@ export async function runCandidatePositionSuggestionTests(): Promise<void> {
     );
     assert.doesNotMatch(source, /getSupabaseAdmin|createClient|fetch\(|process\.env/,
       "the suggestion module must not read the database, the network, or the environment");
-    assert.match(source, /from "@\/lib\/geo\/egypt-locations"/,
-      "and must reuse the shared Egypt vocabulary rather than carry a second copy of it");
+    // The place rules moved to cv-address-place.ts on 2026-09-03 so the district folder rule could
+    // call them too, and this pin moved with them: the Egypt vocabulary is still imported and still
+    // not copied, one level further out. cv-address-place.test.ts holds the egypt-locations half.
+    assert.match(source, /from "@\/lib\/recruitment\/cv-address-place"/,
+      "and must reach Egypt's place names through the shared module rather than carry a second copy");
+    assert.doesNotMatch(source, /placeAliases|NEIGHBOURHOOD_PLACES/,
+      "the copy it used to hold must be gone, not merely shadowed");
   }
 
   // ── 11. The screen suggests, and never says who suggested ──────────────────

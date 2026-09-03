@@ -1,8 +1,10 @@
 import { redirect } from "next/navigation";
 
+import { AttendancePolicyCard } from "@/components/attendance/attendance-policy-card";
 import { EmployeePortalPageShell } from "@/components/employee-portal/enterprise-shell";
 import { FingerprintAnalytics, type FingerprintTarget } from "@/components/employee-portal/fingerprint-analytics";
 import { getEmployeeAttendanceData, loadAttendanceDirectReports } from "@/lib/attendance/employee-attendance";
+import { loadAttendancePolicyExplainer } from "@/lib/attendance/policy-explainer-loader";
 import { canAccess } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 
@@ -36,6 +38,11 @@ export default async function FingerprintAnalyticsPage() {
   } catch (error) {
     initialError = error instanceof Error ? error.message : "Attendance data failed to load.";
   }
+
+  // The policy the signed-in employee is actually judged by. Null — and the card is
+  // simply not rendered — for anyone not subject to fingerprint tracking, so nobody is
+  // shown a deduction rule that is never applied to them.
+  const policyExplainer = await loadAttendancePolicyExplainer(hrId);
 
   // Managers may also view their direct reports' reports. The first target is
   // always the signed-in user; reports are appended only when they exist.
@@ -84,6 +91,11 @@ export default async function FingerprintAnalyticsPage() {
         <p className="mb-4 rounded border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
           {initialError}
         </p>
+      )}
+      {policyExplainer && (
+        <div className="mb-5">
+          <AttendancePolicyCard explainer={policyExplainer} />
+        </div>
       )}
       <FingerprintAnalytics hrId={hrId} initialData={initialData} targets={targets} />
     </EmployeePortalPageShell>

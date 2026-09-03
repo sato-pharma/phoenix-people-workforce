@@ -138,6 +138,10 @@ export function runBackgroundReviewQueueTests(): void {
     ];
     const archived = (id: string, fields: Record<string, unknown>) => ({
       ...person(id, fields as Partial<BackgroundReviewCandidate>),
+      // These three measure the eligibility gate, not the address routing that sits below it, so
+      // they carry no address on purpose — with one they would file by area rather than by the
+      // governorate, and the question here is whether the CV reaches anybody at all.
+      address: null,
       governorate: "Qena",
       preferencesDeclaredAt: null,
       preferredAreaName: null,

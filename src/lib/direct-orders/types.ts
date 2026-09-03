@@ -403,6 +403,16 @@ export type DirectOrderRequest = {
   productCode: string;
   productName: string;
   /**
+   * The one family every line of this request belongs to — the direct-order basket allow-list, and
+   * the invariant `phx_direct_order_item_family_guard` enforces across the two tables.
+   *
+   * Empty string where the column is null, which is a HISTORIC request whose product the catalogue
+   * has since dropped, never a new one: every write path sets it. A null here is not inert — the
+   * guard reads it, and treats "no family yet" as licence for the request to ADOPT whatever family
+   * its first line brings, so a request missing it cannot refuse a mismatched line.
+   */
+  familyCode: string;
+  /**
    * The pharmacy price this BONUS request was valued at. NULL only on a discount deal (which
    * prices on the public price). A bonus deal with no pharmacy price is now refused at submit,
    * so a bonus row can no longer carry a null here.
