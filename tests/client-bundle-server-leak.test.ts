@@ -76,27 +76,17 @@ const SERVER_ONLY_SPECIFIERS = new Map<string, string>([
 ]);
 
 /**
- * Client entries that ALREADY leak a Node builtin, measured 2026-09-03. A ratchet, not a pardon.
- *
- * Every one of these is the same bug the Direct Orders form had, on a page nobody has tried to
- * open in local dev recently: /admin/business-review, /admin/sales/monthly-closing, the portal
- * closing view, the closing performance review, the closing period picker, and the monthly
- * attendance summary. Each will 500 the dev server the moment it is compiled — and, because the
- * refusal then answers EVERY later request, it reads as "dev is broken", not as a page fault.
- *
- * They are listed rather than fixed here because untangling the closing/business-review service
- * graph is its own piece of work, and this change had to stay a Direct Orders change. The list
+ * Client entries that ALREADY leak a Node builtin. A ratchet, not a pardon — empty since
+ * 2026-09-03, when the six entries measured that day (business-review, monthly-closing, the
+ * portal closing view, the closing performance review, the closing period picker, and the
+ * monthly attendance summary) were each split the same way the Direct Orders form was: the pure
+ * values a client component needs moved into a dependency-free module
+ * (monthly-closing-matrix-cells.ts, review-views.ts, closing-performance-review-regions.ts,
+ * monthly-summary-note.ts), re-exported from the original for existing server callers. The list
  * may only shrink: a new entry fails the test, and so does an entry that has been fixed but left
- * behind. Production is unaffected either way — `next build` tree-shakes the unused chain away.
+ * behind.
  */
-const KNOWN_LEAKS = new Set<string>([
-  "src/components/attendance/monthly-attendance-summary.tsx",
-  "src/components/business-review/dashboard.client.tsx",
-  "src/components/sales/closing-performance-review-workspace.tsx",
-  "src/components/sales/closing-period-select.tsx",
-  "src/components/sales/monthly-closing-workspace.tsx",
-  "src/components/sales/portal-monthly-closing-view.tsx",
-]);
+const KNOWN_LEAKS = new Set<string>([]);
 
 type SourceFile = { path: string; text: string };
 

@@ -1,8 +1,4 @@
 import {
-  addClosingSales,
-  emptyClosingCell,
-  roundedClosingCell,
-  sumClosingRowTotal,
   type MonthlyClosingAreaRow,
   type MonthlyClosingCell,
   type MonthlyClosingColumn,
@@ -11,6 +7,12 @@ import {
   type MonthlyClosingRegionGroup,
   type MonthlyClosingSubtotalRow,
 } from "@/lib/sales/monthly-distributor-import";
+import {
+  addClosingSales,
+  emptyClosingCell,
+  roundedClosingCell,
+  sumClosingRowTotal,
+} from "@/lib/sales/monthly-closing-matrix-cells";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Monthly Closing — several months read as one.
