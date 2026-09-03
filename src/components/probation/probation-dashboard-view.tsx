@@ -220,18 +220,38 @@ export function ProbationDashboardView({ data }: { data: ProbationDashboard }) {
           </PortalRecordCard>
         )}
         renderTable={() => (
-          <div className="hidden overflow-x-auto rounded-lg border border-slate-200 md:block">
-            <table className="w-full min-w-[900px] text-sm">
+          <div className="hidden rounded-lg border border-slate-200 md:block">
+            {/*
+              Fits-the-screen golden rule (AGENTS.md §4). Mobile has `renderCard` above, so the
+              mobile half was met; this desktop half was `overflow-x-auto` over `min-w-[900px]`,
+              wider than the content column at 768px or in a 1024px window, so Risk and Report — the
+              two columns the reviewer acts on — sat behind a sideways scroll on a laptop.
+
+              The columns were already merged sensibly (Line / Manager, SFE / HR), so no further
+              merge was needed: `table-fixed` + `<colgroup>` share the real width instead, and
+              every cell here already wraps.
+            */}
+            <table className="w-full table-fixed text-sm">
+              <colgroup>
+                <col className="w-[20%]" />
+                <col className="w-[16%]" />
+                <col className="w-[11%]" />
+                <col className="w-[11%]" />
+                <col className="w-[11%]" />
+                <col className="w-[11%]" />
+                <col className="w-[10%]" />
+                <col className="w-[10%]" />
+              </colgroup>
               <thead className="bg-slate-50 text-left text-phx-xs uppercase tracking-wide text-slate-500">
                 <tr>
-                  <th className="px-3 py-2">Employee</th>
-                  <th className="px-3 py-2">Line / Manager</th>
-                  <th className="px-3 py-2">Day</th>
-                  <th className="px-3 py-2">DV</th>
-                  <th className="px-3 py-2">SFE / HR</th>
-                  <th className="px-3 py-2">Score</th>
-                  <th className="px-3 py-2">Risk</th>
-                  <th className="px-3 py-2">Report</th>
+                  <th className="break-words px-3 py-2">Employee</th>
+                  <th className="break-words px-3 py-2">Line / Manager</th>
+                  <th className="break-words px-3 py-2">Day</th>
+                  <th className="break-words px-3 py-2">DV</th>
+                  <th className="break-words px-3 py-2">SFE / HR</th>
+                  <th className="break-words px-3 py-2">Score</th>
+                  <th className="break-words px-3 py-2">Risk</th>
+                  <th className="break-words px-3 py-2">Report</th>
                 </tr>
               </thead>
               <tbody>

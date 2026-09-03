@@ -657,15 +657,33 @@ export function RetentionWorkspace({
         </p>
       ) : null}
 
-      {/* DESKTOP — the table. */}
+      {/*
+        DESKTOP — the table. Mobile already gets cards below, so the rule's mobile half was met;
+        the desktop half was not. This was `overflow-x-auto` over a `min-w-[60rem]` floor with
+        `whitespace-nowrap` cells — 960px of table, which is more than the content column has at
+        768px (where the sidebar first appears) or in a 1024px window, so the Signal, Themes and
+        Follow-up columns sat behind a sideways scroll on exactly the widths a laptop uses.
+
+        Per the golden rule (AGENTS.md §4): `table-fixed` with a `<colgroup>`, no floor, and the
+        free-text cells wrap. The chips keep `whitespace-nowrap` deliberately — text inside a
+        control stays on one line and the ROW wraps around it, which is the house pattern.
+      */}
       {conversations.length > 0 ? (
-        <div className="mt-5 hidden overflow-x-auto border border-slate-200 bg-white md:block">
-          <table className="w-full min-w-[60rem] border-collapse text-left">
+        <div className="mt-5 hidden border border-slate-200 bg-white md:block">
+          <table className="w-full table-fixed border-collapse text-left">
+            <colgroup>
+              <col className="w-[24%]" />
+              <col className="w-[11%]" />
+              <col className="w-[12%]" />
+              <col className="w-[15%]" />
+              <col className="w-[22%]" />
+              <col className="w-[16%]" />
+            </colgroup>
             <thead>
               <tr className="border-b border-slate-200 bg-slate-50">
                 {["Employee", "Kind", "Held on", "Signal", "Themes", "Follow-up"].map((heading) => (
                   <th
-                    className="whitespace-nowrap px-4 py-3 text-[10px] font-black uppercase tracking-[0.12em] text-slate-500"
+                    className="break-words px-4 py-3 text-[10px] font-black uppercase tracking-[0.12em] text-slate-500"
                     key={heading}
                     scope="col"
                   >
@@ -677,22 +695,22 @@ export function RetentionWorkspace({
             <tbody>
               {conversations.map((conversation) => (
                 <tr className="border-b border-slate-100" key={conversation.id}>
-                  <td className="whitespace-nowrap px-4 py-3">
-                    <p className="text-[13px] font-black text-slate-900">
+                  <td className="break-words px-4 py-3">
+                    <p className="break-words text-[13px] font-black text-slate-900">
                       {conversation.employeeName}
                     </p>
-                    <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-slate-400">
+                    <p className="break-words text-[10px] font-bold uppercase tracking-[0.1em] text-slate-400">
                       {conversation.employeeHrId}
                       {conversation.jobTitle ? ` · ${conversation.jobTitle}` : ""}
                     </p>
                   </td>
-                  <td className="whitespace-nowrap px-4 py-3">
+                  <td className="px-4 py-3">
                     <KindChip kind={conversation.kind} />
                   </td>
-                  <td className="whitespace-nowrap px-4 py-3 text-[12px] font-semibold tabular-nums text-slate-700">
+                  <td className="break-words px-4 py-3 text-[12px] font-semibold tabular-nums text-slate-700">
                     {formatDate(conversation.conductedOn)}
                   </td>
-                  <td className="whitespace-nowrap px-4 py-3">
+                  <td className="px-4 py-3">
                     {conversation.retentionRisk ? (
                       <span
                         className={`inline-flex whitespace-nowrap border px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.1em] ${RISK_CLASS[conversation.retentionRisk]}`}
@@ -728,9 +746,9 @@ export function RetentionWorkspace({
                       ) : null}
                     </div>
                   </td>
-                  <td className="whitespace-nowrap px-4 py-3 text-[11px] font-semibold text-slate-700">
+                  <td className="break-words px-4 py-3 text-[11px] font-semibold text-slate-700">
                     {conversation.followUpAction ? (
-                      <span className="flex items-center gap-2">
+                      <span className="flex flex-wrap items-center gap-2">
                         <span
                           className={
                             conversation.followUpOverdue ? "font-black text-rose-700" : undefined

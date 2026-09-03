@@ -415,8 +415,8 @@ function SelectField({
 
   return (
     <label className={cn("block group", className)}>
-      <div className="mb-1.5 flex items-center px-0.5 whitespace-nowrap overflow-hidden">
-        <span className={cn("block text-phx-2xs font-black uppercase tracking-[0.15em] transition-colors truncate", toneStyles.label)}>
+      <div className="mb-1.5 flex items-center px-0.5">
+        <span className={cn("block text-phx-2xs font-black uppercase tracking-[0.15em] transition-colors break-words", toneStyles.label)}>
           {label}
         </span>
       </div>
@@ -424,6 +424,12 @@ function SelectField({
         <SearchableSelect
           className={cn(
             "h-11 w-full rounded-2xl border bg-white/95 px-3 text-xs font-semibold shadow-sm transition-all duration-200",
+            // SearchableSelect renders an <input> (searchable-select.tsx:295). An input is a
+            // single-line control that cannot wrap whatever we do to it, so dropping `truncate`
+            // here would not give the text room — it would only swap the ellipsis for a silent
+            // clip, which is strictly worse for the reader. This is the same exception the
+            // fits-the-screen rule already makes for a native <select>. Left deliberately, and it
+            // stays counted by tests/no-ellipsis-truncation-ratchet.test.ts rather than hidden.
             "appearance-none hover:shadow-md cursor-pointer whitespace-nowrap truncate pr-8",
             toneStyles.border,
             toneStyles.bg,
@@ -2183,7 +2189,7 @@ export function EmployeeManagement({
                               title={missingFields.join(", ")}
                             >
                               <AlertCircle className="h-3 w-3 shrink-0" />
-                              <span className="truncate">
+                              <span className="min-w-0 break-words">
                                 {missingEmployeeRecordSummary(employee)}
                               </span>
                             </span>

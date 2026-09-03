@@ -442,8 +442,19 @@ export function HrCalendar({ initialData, initialError }: Props) {
           title={`${selectedMonthLabel} ${selectedYear}`}
           description="Events are grouped by calendar day. Birthdays are shown only when a birth date exists."
         />
-        <div className="overflow-x-auto">
-          <div className="min-w-[980px] bg-white/80">
+        {/*
+          The month grid is DESKTOP ONLY, which is the owner's admin-shell rule (AGENTS.md §4):
+          desktop shows the full dashboard, mobile never does — mobile gets cards. It was
+          `overflow-x-auto` over `min-w-[980px]`, so on a 375px phone the viewer met a 980px
+          calendar and had to drag it sideways a screen and a half to reach Thursday.
+
+          Nothing is lost by hiding it there: `eventsByDay` is built from `filteredEvents` (see
+          the memo above), the very same set the Event Details card below renders as cards. The
+          phone gets that list; the desktop gets both. The grid is fluid now rather than 980px,
+          so it fills whatever width there is and the day chips wrap — no floor, no scroll.
+        */}
+        <div className="hidden md:block">
+          <div className="bg-white/80">
             <div className="grid grid-cols-7 border-b border-[#FED7AA] bg-phx-accent-soft/80 backdrop-blur">
               {weekdays.map((weekday) => (
                 <div
@@ -493,10 +504,10 @@ export function HrCalendar({ initialData, initialError }: Props) {
                               key={`${event.eventType}-${event.employee.hrId}-${event.date}`}
                               title={`${formatEmployeeDisplayName(event.employee.fullName)} - ${eventLabel(event)}`}
                             >
-                              <p className="truncate font-semibold">
+                              <p className="break-words font-semibold">
                                 {formatEmployeeDisplayName(event.employee.fullName)}
                               </p>
-                              <p className="truncate text-phx-xs font-medium opacity-80">
+                              <p className="break-words text-phx-xs font-medium opacity-80">
                                 {eventLabel(event)}
                               </p>
                             </div>
@@ -527,8 +538,9 @@ export function HrCalendar({ initialData, initialError }: Props) {
           description="Compact list for review and filtering."
           title={`Event Details (${filteredEvents.length})`}
         />
-        {/* 980px minimum — on a phone the event badge and everything after it was off-screen,
-            which on a birthdays-and-anniversaries list is the entire content. */}
+        {/* This list is what a phone gets in place of the month grid above — same events,
+            one card each. The desktop half is a fixed-column table; neither has a width floor
+            any more, so nothing here scrolls sideways at any viewport. */}
         <PortalResponsiveDataList
           empty={
             <PortalEmptyState
@@ -564,12 +576,30 @@ export function HrCalendar({ initialData, initialError }: Props) {
             </PortalRecordCard>
           )}
           renderTable={() => (
-            <div className="hidden overflow-x-auto bg-white/80 md:block">
-          <table className="w-full min-w-[980px] text-left text-sm">
+            <div className="hidden bg-white/80 md:block">
+              {/*
+                Fits-the-screen golden rule (AGENTS.md §4). Mobile gets `renderCard` already, so the
+                mobile half was met; this desktop half was `overflow-x-auto` over a
+                `min-w-[980px]` floor, which is more than the content column has at 768px or in a
+                1024px window — Line, Area and Manager sat behind a sideways scroll on a laptop.
+
+                Fixed by MERGING columns, as the rule prescribes, never by shrinking type: eight
+                columns become six. HR ID joins the employee cell that already carried the name and
+                email, and Line and Area — two short codes about the same seat — share one column.
+              */}
+          <table className="w-full table-fixed text-left text-sm">
+            <colgroup>
+              <col className="w-[12%]" />
+              <col className="w-[12%]" />
+              <col className="w-[24%]" />
+              <col className="w-[18%]" />
+              <col className="w-[16%]" />
+              <col className="w-[18%]" />
+            </colgroup>
             <thead>
               <tr className="border-b border-[#FED7AA] bg-phx-accent-soft/80 text-phx-2xs font-black uppercase tracking-[0.16em] text-phx-ink-soft">
-                {["Date", "Event", "Employee", "HR ID", "Job Title", "Line", "Area", "Manager"].map((column) => (
-                  <th className="px-3 py-3" key={column}>
+                {["Date", "Event", "Employee", "Job Title", "Line · Area", "Manager"].map((column) => (
+                  <th className="break-words px-3 py-3" key={column}>
                     {column}
                   </th>
                 ))}
@@ -581,7 +611,7 @@ export function HrCalendar({ initialData, initialError }: Props) {
                     className="transition-colors hover:bg-phx-accent-soft/55"
                     key={`${event.eventType}-${event.employee.hrId}-${event.date}-row`}
                   >
-                    <td className="whitespace-nowrap px-3 py-3 font-medium text-phx-ink">
+                    <td className="break-words px-3 py-3 font-medium text-phx-ink">
                       {formatDate(event.date)}
                     </td>
                     <td className="px-3 py-3">
@@ -589,29 +619,27 @@ export function HrCalendar({ initialData, initialError }: Props) {
                         {eventDayLabel(event.eventType)}
                       </Badge>
                     </td>
-                    <td className="px-3 py-3">
+                    <td className="break-words px-3 py-3">
                       <div>
-                        <p className="font-semibold text-phx-ink">
+                        <p className="break-words font-semibold text-phx-ink">
                           {formatEmployeeDisplayName(event.employee.fullName)}
                         </p>
-                        <p className="mt-0.5 text-xs text-phx-ink-soft">
+                        {/* `break-all`: an email address has no space to break at. */}
+                        <p className="mt-0.5 break-all text-xs text-phx-ink-soft">
                           {event.employee.workEmail ?? "No work email"}
+                        </p>
+                        <p className="mt-0.5 break-words font-mono text-xs text-phx-ink-soft">
+                          {event.employee.hrId}
                         </p>
                       </div>
                     </td>
-                    <td className="whitespace-nowrap px-3 py-3 font-mono text-xs text-phx-ink-soft">
-                      {event.employee.hrId}
-                    </td>
-                    <td className="px-3 py-3 text-phx-ink-soft">
+                    <td className="break-words px-3 py-3 text-phx-ink-soft">
                       {event.employee.jobTitle}
                     </td>
-                    <td className="px-3 py-3 text-phx-ink-soft">
-                      {event.employee.lineName}
+                    <td className="break-words px-3 py-3 text-phx-ink-soft">
+                      {event.employee.lineName} · {event.employee.areaName}
                     </td>
-                    <td className="px-3 py-3 text-phx-ink-soft">
-                      {event.employee.areaName}
-                    </td>
-                    <td className="px-3 py-3 text-phx-ink-soft">
+                    <td className="break-words px-3 py-3 text-phx-ink-soft">
                       {event.employee.managerName}
                     </td>
                   </tr>
