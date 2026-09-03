@@ -17,11 +17,19 @@ function bodyFields(source: string): Set<string> {
   );
 }
 
-/** Six fields no employee-submitted claim may carry, on EITHER submit path. Each reaches a
- * report_* override column that payroll-expense-mapping.ts prefers over the resolved value — see
- * the impact half below, which is what makes their absence from the routes load-bearing rather
- * than cosmetic. Both routes assert the same permission, the submitter's own outstation:create,
- * so a field one of them refuses is a field neither may take. */
+/** Six fields no employee-submitted claim may carry, on EITHER submit path. Four of them
+ * (travelCostAmount, hrStatus, hrNotes, tripType) reach a report_* column that
+ * payroll-expense-mapping.ts prefers over the resolved value — see the impact half below, which is
+ * what makes their absence from the routes load-bearing rather than cosmetic.
+ *
+ * amWorkload and pmWorkload stay on this list even though neither mapper reads
+ * report_am_workload/report_pm_workload any more (2026-09-03 — they are `NOT NULL DEFAULT 0`, so
+ * the preference could never fall through, and all 80 live rows carried 0 there while the resolved
+ * counts were real). They still WRITE those columns on the create paths, and the ban is part of
+ * what keeps them inert: an employee must not be able to seed a column a future reader might trust.
+ *
+ * Both routes assert the same permission, the submitter's own outstation:create, so a field one of
+ * them refuses is a field neither may take. */
 const SELF_SET_REPORT_FIELDS = [
   "travelCostAmount",
   "amWorkload",
@@ -104,7 +112,10 @@ export function runOutstationOfflineSyncBodyParityTests() {
     "the same claim, re-typed, is worth more — nothing else about the trip changed",
   );
 
-  // The AM/PM visit counts and the HR column an approver reads.
+  // The HR column an approver reads is still a lever. The AM/PM visit counts are NOT, any more:
+  // both mappers read the resolved am_workload/pm_workload, so a report_*_workload — even a wildly
+  // wrong one — changes nothing an approver sees. That is why the workload half of this block
+  // asserts the resolved 4/3 rather than the planted 99/98.
   const overriddenReport = mapOutstationRequestRowToPayrollApproval({
     ...honestRow(),
     report_am_workload: 99,
@@ -112,8 +123,16 @@ export function runOutstationOfflineSyncBodyParityTests() {
     report_hr_status: "Approved",
     report_pm_workload: 98,
   });
-  assert.equal(overriddenReport.amWorkload, 99, "report_am_workload beats the resolved AM count");
-  assert.equal(overriddenReport.pmWorkload, 98, "report_pm_workload beats the resolved PM count");
+  assert.equal(
+    overriddenReport.amWorkload,
+    4,
+    "a planted report_am_workload must NOT beat the resolved AM count",
+  );
+  assert.equal(
+    overriddenReport.pmWorkload,
+    3,
+    "a planted report_pm_workload must NOT beat the resolved PM count",
+  );
   assert.equal(overriddenReport.hr, "Approved", "report_hr_status is rendered as the row's HR column");
   assert.equal(overriddenReport.hrNotes, "Cleared.", "report_hr_notes is rendered as the row's HR note");
 

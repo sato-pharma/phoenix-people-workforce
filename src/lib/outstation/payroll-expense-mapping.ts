@@ -76,6 +76,50 @@ export function outstationReportOverride(override: unknown, raw: number): number
 }
 
 /**
+ * The ONE rule for reading an outstation trip's AM/PM workload — the resolved
+ * `am_workload`/`pm_workload` columns, never the `report_*_workload` pair.
+ *
+ * The workload columns look like the money columns above and are NOT the same shape.
+ * `report_am_workload`/`report_pm_workload` are `double precision NOT NULL DEFAULT 0` in
+ * production, so they can never be NULL: a `!= null` fallback to the resolved column can never
+ * fire, which makes "prefer the override" unconditional. And in practice no client sends a value
+ * into them — the mobile wizard's editable "AM Workload"/"PM Workload" inputs were removed
+ * precisely because a rep who left them blank (as the adjacent "resolved automatically" note tells
+ * them to) sent 0; the admin modal's fields are read-only and echo back the raw value; and #2958
+ * banned amWorkload/pmWorkload from both employee submit paths. Measured on production
+ * ozucdzovmcqvepbozvqf, 2026-09-03: all 80 rows carry
+ * `report_am_workload = report_pm_workload = 0` — 0 NULL, 0 positive — while 39 carry a real
+ * `am_workload` and 50 a real `pm_workload`.
+ *
+ * They are still WRITABLE, so do not read "always zero" as "dead column and safe to drop":
+ * `/api/outstation/calculate` and the admin manager-expense create path both still accept an
+ * `amWorkload`/`pmWorkload` and write it here (service.ts, via the calculation and via
+ * createManagerExpenseAsAdmin). What is guaranteed is not that nobody writes them — it is that
+ * NEITHER payroll mapper reads them, deliberately, which is what keeps a planted value inert.
+ *
+ * `am_workload`/`pm_workload` are the truth: every write path runs
+ * `resolveOutstationWorkloadPayload` and overwrites them from the published Double Visit Analytics
+ * snapshot, the retry capture path writes them, and the Super Admin manual-override path writes
+ * them (with an audit row). None of those three touch `report_*_workload`.
+ *
+ * Before 2026-09-03 the two mappers below disagreed here — same class as the total divergence
+ * (PR #2951), the component divergence (PR #2957) and the zeroed-override divergence (PR #2960).
+ * The DISPLAY mapper preferred the always-zero override, so the payroll approval table AND the
+ * employee portal showed "AM 0 · PM 0" for every outstation trip in production (39 rows with a
+ * real AM count, 50 with a real PM count), while the PUSH mapper sent payroll the real figures.
+ * The push mapper was the correct one, so this resolves toward it: routing both through
+ * `outstationReportOverride` instead would have replaced the real counts with 0 on the payroll
+ * record for all 80 rows, destroying the very evidence that justifies the claim.
+ *
+ * Takes `unknown` so a mapped `OutstationExpenseRequest` field and a raw database row value
+ * resolve through the exact same code path.
+ */
+export function outstationWorkloadCount(value: unknown): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+/**
  * The ONE payable total for an outstation trip — shared by `mapOutstationRequestToPayrollExpenseRecord`
  * (what gets PUSHED to payroll) and `mapOutstationRequestRowToPayrollApproval` (what the admin table
  * and employee portal DISPLAY). Before 2026-09-03 they used two different formulas and disagreed on
@@ -171,7 +215,7 @@ export function mapOutstationRequestToPayrollExpenseRecord(
 
   return {
     allowance: request.allowanceAmount,
-    amWorkload: request.amWorkload ?? 0,
+    amWorkload: outstationWorkloadCount(request.amWorkload),
     capturedLatitude: request.capturedLatitude,
     capturedLongitude: request.capturedLongitude,
     // Pass through only — this mapper stays sync, so it never resolves geography itself
@@ -193,7 +237,7 @@ export function mapOutstationRequestToPayrollExpenseRecord(
     open: "",
     other: outstationReportOverride(request.reportOtherAmount, request.otherAmount),
     pharmacyVisits: snapshotKindCount(request.workloadEvidenceSnapshot, "pharmacyVisits"),
-    pmWorkload: request.pmWorkload ?? 0,
+    pmWorkload: outstationWorkloadCount(request.pmWorkload),
     preserveExistingDecision: options.preserveExistingDecision ?? true,
     reportId: options.reportId ?? undefined,
     requestType: "Outstation",
@@ -237,10 +281,10 @@ export function mapOutstationRequestRowToPayrollApproval(
     toNumber(row.meeting_amount),
   );
   const other = outstationReportOverride(row.report_other_amount, toNumber(row.other_amount));
-  const amWorkload =
-    row.report_am_workload != null ? toNumber(row.report_am_workload) : toNumber(row.am_workload);
-  const pmWorkload =
-    row.report_pm_workload != null ? toNumber(row.report_pm_workload) : toNumber(row.pm_workload);
+  // Workload is NOT resolved like the money columns above — see outstationWorkloadCount for why
+  // report_am_workload/report_pm_workload are never read on either side.
+  const amWorkload = outstationWorkloadCount(row.am_workload);
+  const pmWorkload = outstationWorkloadCount(row.pm_workload);
   const hrStatus = toText(row.report_hr_status) || toText(row.employee_name);
   const hrNotes = toText(row.report_hr_notes) || toText(row.eligibility_reason);
   const tripType = toText(row.report_trip_type) || toText(row.expense_type) || "traveling";

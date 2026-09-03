@@ -434,6 +434,223 @@ export function runOutstationPayrollPayableTotalAgreementTests() {
     displayedAbsent.total,
     "the pushed and displayed totals must agree when no override was recorded either",
   );
+
+  // ---------------------------------------------------------------------------------------------
+  // WORKLOAD. The same two-formulas-for-one-figure class, on the AM/PM visit counts. These are NOT
+  // money — nothing in outstationPayableTotal reads them — but they land on the payroll expense
+  // record and are shown beside it, and they are the evidence that justifies the trip.
+  //
+  // The workload columns are not shaped like the money overrides: report_am_workload and
+  // report_pm_workload are `double precision NOT NULL DEFAULT 0`, so "no override recorded" is
+  // indistinguishable from "override of zero" and the DISPLAY mapper's `!= null` preference was
+  // unconditional. Measured live on production ozucdzovmcqvepbozvqf, 2026-09-03:
+  //   total_rows 80 | am_divergent 39 | pm_divergent 50
+  // with report_am_workload = report_pm_workload = 0 on all 80 rows (0 NULL, 0 positive). So the
+  // display mapper showed AM 0 / PM 0 on every outstation trip in the payroll approval table and
+  // the employee portal, while the push mapper sent payroll the real counts. Both now read the
+  // resolved am_workload/pm_workload through outstationWorkloadCount.
+
+  // Request 52 (Amr Mohamed Naguib Elsabey, B-122) — LIVE. AM 1 / PM 18 resolved, 0 / 0 reported.
+  const workload52 = baseRequest({
+    allowanceAmount: 800,
+    amWorkload: 1,
+    expectedTotalAmount: 800,
+    id: 52,
+    pmWorkload: 18,
+    reportAmWorkload: 0,
+    reportPmWorkload: 0,
+  });
+  const workloadRow52 = {
+    allowance_amount: 800,
+    am_workload: 1,
+    created_at: "2026-08-05T00:00:00.000Z",
+    employee_hr_id: "B-122",
+    employee_name: "Amr Mohamed Naguib Elsabey",
+    expected_total_amount: 800,
+    expense_type: "traveling",
+    id: 52,
+    pm_workload: 18,
+    report_am_workload: 0,
+    report_pm_workload: 0,
+    status: "accepted_by_system",
+    trip_start_date: "2026-08-05T00:00:00.000Z",
+  };
+
+  const pushedWorkload52 = mapOutstationRequestToPayrollExpenseRecord(workload52);
+  const displayedWorkload52 = mapOutstationRequestRowToPayrollApproval(workloadRow52);
+
+  assert.equal(
+    displayedWorkload52.amWorkload,
+    1,
+    "request 52 must DISPLAY its resolved AM workload of 1, not the always-zero report_am_workload",
+  );
+  assert.equal(
+    displayedWorkload52.pmWorkload,
+    18,
+    "request 52 must DISPLAY its resolved PM workload of 18, not the always-zero report_pm_workload",
+  );
+  assert.equal(
+    pushedWorkload52.amWorkload,
+    displayedWorkload52.amWorkload,
+    "the pushed and displayed AM workload must never diverge for the same row",
+  );
+  assert.equal(
+    pushedWorkload52.pmWorkload,
+    displayedWorkload52.pmWorkload,
+    "the pushed and displayed PM workload must never diverge for the same row",
+  );
+
+  // Request 54 (Nahed Tarek Hassan Omar Hattab, A-10) — LIVE, the largest divergence in the sweep:
+  // AM 14 / PM 17 resolved, both reported as 0. Proves the fix is not specific to a small count.
+  const workload54 = baseRequest({
+    allowanceAmount: 300,
+    amWorkload: 14,
+    employeeHrId: "A-10",
+    employeeName: "Nahed Tarek Hassan Omar Hattab",
+    expectedTotalAmount: 300,
+    id: 54,
+    pmWorkload: 17,
+    status: "submitted",
+  });
+  const workloadRow54 = {
+    allowance_amount: 300,
+    am_workload: 14,
+    created_at: "2026-07-25T00:00:00.000Z",
+    employee_hr_id: "A-10",
+    employee_name: "Nahed Tarek Hassan Omar Hattab",
+    expected_total_amount: 300,
+    expense_type: "traveling",
+    id: 54,
+    pm_workload: 17,
+    report_am_workload: 0,
+    report_pm_workload: 0,
+    status: "submitted",
+    trip_start_date: "2026-07-25T00:00:00.000Z",
+  };
+
+  const pushedWorkload54 = mapOutstationRequestToPayrollExpenseRecord(workload54);
+  const displayedWorkload54 = mapOutstationRequestRowToPayrollApproval(workloadRow54);
+
+  assert.equal(
+    displayedWorkload54.amWorkload,
+    14,
+    "request 54 must DISPLAY its resolved AM workload of 14, not 0",
+  );
+  assert.equal(
+    displayedWorkload54.pmWorkload,
+    17,
+    "request 54 must DISPLAY its resolved PM workload of 17, not 0",
+  );
+  assert.equal(
+    pushedWorkload54.amWorkload,
+    displayedWorkload54.amWorkload,
+    "the pushed and displayed AM workload must agree on request 54",
+  );
+  assert.equal(
+    pushedWorkload54.pmWorkload,
+    displayedWorkload54.pmWorkload,
+    "the pushed and displayed PM workload must agree on request 54",
+  );
+
+  // A report_*_workload that is POSITIVE must still lose. Nothing writes one today, but the column
+  // is writable and a stray value must not be able to flip either mapper — least of all only one of
+  // them, which is exactly how this divergence started.
+  const strayOverrideRequest = baseRequest({
+    allowanceAmount: 300,
+    amWorkload: 6,
+    expectedTotalAmount: 300,
+    id: 304,
+    pmWorkload: 9,
+    reportAmWorkload: 99,
+    reportPmWorkload: 99,
+  });
+  const strayOverrideRow = {
+    allowance_amount: 300,
+    am_workload: 6,
+    created_at: "2026-08-05T00:00:00.000Z",
+    employee_hr_id: "B-1",
+    employee_name: "Test Employee",
+    expected_total_amount: 300,
+    expense_type: "traveling",
+    id: 304,
+    pm_workload: 9,
+    report_am_workload: 99,
+    report_pm_workload: 99,
+    status: "accepted_by_system",
+    trip_start_date: "2026-08-05T00:00:00.000Z",
+  };
+
+  const pushedStray = mapOutstationRequestToPayrollExpenseRecord(strayOverrideRequest);
+  const displayedStray = mapOutstationRequestRowToPayrollApproval(strayOverrideRow);
+
+  assert.equal(
+    displayedStray.amWorkload,
+    6,
+    "a stray positive report_am_workload must not beat the resolved am_workload on the DISPLAYED record",
+  );
+  assert.equal(
+    displayedStray.pmWorkload,
+    9,
+    "a stray positive report_pm_workload must not beat the resolved pm_workload on the DISPLAYED record",
+  );
+  assert.equal(
+    pushedStray.amWorkload,
+    displayedStray.amWorkload,
+    "a stray positive workload override must not make the two mappers disagree on AM",
+  );
+  assert.equal(
+    pushedStray.pmWorkload,
+    displayedStray.pmWorkload,
+    "a stray positive workload override must not make the two mappers disagree on PM",
+  );
+
+  // A genuinely zero-workload trip must still read 0 on both sides — the fix must not turn every
+  // absent count into a fallback that invents activity.
+  const zeroWorkloadRequest = baseRequest({
+    allowanceAmount: 300,
+    amWorkload: 0,
+    expectedTotalAmount: 300,
+    id: 305,
+    pmWorkload: 0,
+  });
+  const zeroWorkloadRow = {
+    allowance_amount: 300,
+    am_workload: 0,
+    created_at: "2026-08-05T00:00:00.000Z",
+    employee_hr_id: "B-1",
+    employee_name: "Test Employee",
+    expected_total_amount: 300,
+    expense_type: "traveling",
+    id: 305,
+    pm_workload: 0,
+    report_am_workload: 0,
+    report_pm_workload: 0,
+    status: "accepted_by_system",
+    trip_start_date: "2026-08-05T00:00:00.000Z",
+  };
+
+  assert.equal(
+    mapOutstationRequestRowToPayrollApproval(zeroWorkloadRow).amWorkload,
+    0,
+    "a genuinely zero AM workload must stay 0 on the DISPLAYED record",
+  );
+  assert.equal(
+    mapOutstationRequestToPayrollExpenseRecord(zeroWorkloadRequest).pmWorkload,
+    0,
+    "a genuinely zero PM workload must stay 0 on the PUSHED record",
+  );
+
+  // The workload fix must not have moved any money: request 52 is still payable at 800.
+  assert.equal(
+    pushedWorkload52.total,
+    800,
+    "resolving workload must not change the payable total pushed for request 52",
+  );
+  assert.equal(
+    pushedWorkload52.total,
+    displayedWorkload52.total,
+    "resolving workload must leave the pushed and displayed totals in agreement",
+  );
 }
 
 function roundTo2(value: number) {

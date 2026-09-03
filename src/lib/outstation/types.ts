@@ -334,6 +334,15 @@ export type OutstationExpenseRequest = {
   notes: string | null;
   offlineCaptured: boolean;
   overnightDays: number;
+  /** DELIBERATELY IGNORED by both payroll mappers — do NOT read it to decide a displayed or
+   * pushed workload. Unlike the money overrides below, `report_am_workload`/`report_pm_workload`
+   * are `NOT NULL DEFAULT 0`, so they cannot express "no override was recorded", and every live
+   * row carries 0 while the resolved `amWorkload`/`pmWorkload` carry the real counts. Resolve a
+   * workload with `outstationWorkloadCount` off `amWorkload`/`pmWorkload` instead.
+   *
+   * Ignored is not unwritten: `/api/outstation/calculate` and the admin manager-expense create
+   * path still accept an `amWorkload`/`pmWorkload` and write these columns. Do not drop either
+   * column or its write on the strength of "it is always zero". */
   reportAmWorkload: number;
   reportHrNotes: string | null;
   reportHrStatus: string | null;
@@ -342,6 +351,7 @@ export type OutstationExpenseRequest = {
    * tell an override of 0 from an absent one. Same shape as `reportTravelCost` below. */
   reportMeetingAmount: number | null;
   reportOtherAmount: number | null;
+  /** DELIBERATELY IGNORED — see `reportAmWorkload` above. */
   reportPmWorkload: number;
   reportTravelCost: number | null;
   reportTripType: string | null;
