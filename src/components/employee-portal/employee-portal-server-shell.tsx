@@ -11,8 +11,6 @@ import { isForbiddenError } from "@/lib/auth/server";
 import { resolveEmployeePortalNavVisibility } from "@/lib/employee-portal/navigation";
 import { getEmployeePortalShellData } from "@/lib/employee-portal/service";
 import { resolveLockedModuleForPath } from "@/lib/navigation/module-catalog";
-import { layoutOwnerKey, type PersonalNavigationLayout } from "@/lib/navigation/personal-layout";
-import { loadEffectiveLayout } from "@/lib/navigation/personal-layout-store";
 import { PATH_HEADER } from "@/lib/navigation/shell-headers";
 import { logPortalFailure } from "@/lib/observability/portal-logging";
 
@@ -56,17 +54,13 @@ export async function EmployeePortalServerShell({
 
   let data = null;
   let hasDeviceMapping = false;
-  // The viewer's saved row arrangement, or the company default when they have saved nothing.
-  // Read INSIDE the existing Promise.all rather than after it: every query from here crosses the
-  // Atlantic to Frankfurt, and this runs on every portal page render. loadEffectiveLayout resolves
-  // both keys in ONE round trip and never rejects — a failed read degrades to "nothing arranged",
-  // which is the same thing every account sees today.
-  let navLayout: PersonalNavigationLayout | null = null;
+  // The saved nav-row arrangement used to be read here, in this same Promise.all. The portal has
+  // no horizontal rows any more (owner rule, 2026-09-03 — see EmployeePortalChrome), so the read
+  // went with them: it crossed the Atlantic to Frankfurt on every portal page render.
   try {
-    [data, hasDeviceMapping, navLayout] = await Promise.all([
+    [data, hasDeviceMapping] = await Promise.all([
       getEmployeePortalShellData(access),
       access.hrId ? employeeHasActiveDeviceMapping(access.hrId).catch(() => false) : Promise.resolve(false),
-      loadEffectiveLayout(layoutOwnerKey(access)).then((result) => result.layout),
     ]);
   } catch (error) {
     logPortalFailure(
@@ -117,7 +111,6 @@ export async function EmployeePortalServerShell({
       data={data}
       disableSessionGuard={disableSessionGuard}
       lockedModuleKeys={lockedModuleKeys}
-      personalLayout={navLayout}
       visibility={visibility}
     >
       {lockedModuleForPage ? (

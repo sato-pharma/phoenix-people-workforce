@@ -1150,7 +1150,7 @@ function PharmacyLicensePanel({
       {license ? (
         <div className="mt-2 rounded-sm border border-emerald-200 bg-emerald-50 px-3 py-2">
           <div className="flex items-center justify-between gap-2">
-            <span className="min-w-0 truncate text-phx-sm font-bold text-emerald-900" dir="auto">
+            <span className="min-w-0 break-all text-phx-sm font-bold leading-snug text-emerald-900" dir="auto">
               {license.fileName}
             </span>
             <button

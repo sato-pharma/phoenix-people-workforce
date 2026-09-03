@@ -198,7 +198,7 @@ function RoleBreakdown({ visits }: { visits: DoubleVisitReportRow[] }) {
       <div className="space-y-1">
         {roles.map((entry) => (
           <div className="flex items-center justify-between gap-3 text-xs" key={entry.role}>
-            <span className="min-w-0 truncate font-semibold text-slate-700">
+            <span className="min-w-0 break-words font-semibold leading-snug text-slate-700">
               {entry.role}
               {entry.visitorNames.length > 0 ? ` (${entry.visitorNames.join(", ")})` : ""}
             </span>
@@ -234,7 +234,7 @@ function VisitHistory({ visits }: { visits: DoubleVisitReportRow[] }) {
               {day.visits.map((visit, index) => (
                 <div className="flex items-center justify-between gap-3 text-phx-xs text-slate-500" key={`${day.date}-${index}`}>
                   <span className="text-slate-400">{visit.period}</span>
-                  <span className="min-w-0 flex-1 truncate text-right">
+                  <span className="min-w-0 flex-1 break-words text-right leading-snug">
                     {visit.doubleVisitorName ?? "Unknown"}
                     {visit.doubleVisitorRole ? ` · ${visit.doubleVisitorRole}` : ""}
                   </span>
@@ -318,8 +318,8 @@ function RosterRow({
         onClick={() => canExpand && setExpanded((value) => !value)}
       >
         <div className="min-w-0">
-          <p className="truncate text-sm font-bold text-slate-950">{entry.name}</p>
-          <p className="mt-0.5 truncate text-xs text-slate-500">
+          <p className="break-words text-sm font-bold leading-snug text-slate-950">{entry.name}</p>
+          <p className="mt-0.5 break-words text-xs leading-snug text-slate-500">
             {entry.hrId} · {[entry.areaName, entry.lineName].filter(Boolean).join(" · ") || "Scope member"} · Hired{" "}
             {formatDate(entry.hireDate)}
           </p>

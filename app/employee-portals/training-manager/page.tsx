@@ -4,12 +4,11 @@ import { redirect } from "next/navigation";
 import { CoachingQualityRadarCard } from "@/components/coaching/coaching-quality-radar-card";
 import { CoachingScoreTrendCard } from "@/components/coaching/coaching-score-trend-card";
 import { CoachingStarsOfMonthCard } from "@/components/coaching/coaching-stars-of-month-card";
-import { IdentityCard } from "@/components/employee-portal/identity-card";
 import { LineTopAchieversCard } from "@/components/employee-portal/line-top-achievers-card";
 import {
   GlanceStrip,
   PendingActions,
-  ProfileIntelBar,
+  PortalIdentityBand,
   QuickActions,
 } from "@/components/employee-portal/portal-command-center";
 import { DoubleVisitFocusSection } from "@/components/employee-portal/dashboards/double-visit-focus-section";
@@ -102,8 +101,10 @@ export default async function TrainingManagerOverviewPage() {
 
   return (
     <div className="mx-auto w-full space-y-4" dir="auto">
-      <IdentityCard data={shell} />
-      <ProfileIntelBar shell={shell} />
+      {/* planAdherence={null}: this is the Training Manager MODULE page, not a landing surface.
+          The plan score belongs on /employee-portals, which is StandardCommandCenter for this role
+          and already carries it. */}
+      <PortalIdentityBand shell={shell} planAdherence={null} />
 
       <GlanceStrip
         items={[

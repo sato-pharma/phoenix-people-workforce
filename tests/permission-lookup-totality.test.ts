@@ -520,32 +520,39 @@ export function runPermissionLookupTotalityTests() {
       "lookup to {} — check every one of them before landing it, and update tests/navigation-active-path.test.ts",
   );
 
-  // The employee portal is the one surface that renders navigation without a
-  // permission lookup, and this is why that is safe: it hands in ALREADY-GATED
-  // sections, and the `sections ??` short-circuit means getSections — and so
-  // permissionAllowed — is never reached. If that `??` goes, the portal starts
-  // gating a config it does not use against an empty lookup.
+  // The horizontal rows short-circuit on a caller-supplied `sections` list rather than calling
+  // getSections. That is what lets ANY caller render navigation without a permission lookup, by
+  // handing in an already-gated list. Admin and HR do not rely on it — they pass a real lookup —
+  // but it is the safe path, and losing it would make a sections-only caller gate against `{}`
+  // and permit every gated entry by default.
   const rowsSource = readFileSync(HORIZONTAL_ROWS_PATH, "utf8");
   assert.ok(
     /const\s+gated\s*=\s*\n?\s*sections\s*\?\?/.test(rowsSource),
-    `${HORIZONTAL_ROWS_PATH} no longer short-circuits on a caller-supplied \`sections\` list. That short-circuit is ` +
-      "the entire reason the employee portal can render navigation without a permission lookup; without it the " +
-      "portal gates against `permissionLookup = {}` and every permission-gated entry falls through the " +
-      "permit-by-default branch.",
+    `${HORIZONTAL_ROWS_PATH} no longer short-circuits on a caller-supplied \`sections\` list. Any caller ` +
+      "that passes sections instead of a permission lookup then gates against `permissionLookup = {}`, and " +
+      "every permission-gated entry falls through the permit-by-default branch.",
   );
 
+  // THE EMPLOYEE PORTAL NO LONGER RENDERS THESE ROWS AT ALL. Until 2026-09-03 it was the one
+  // surface that rendered navigation without a permission lookup, and this block pinned the
+  // reasoning that made that safe: it handed in already-gated sections, so the `sections ??`
+  // short-circuit above meant getSections — and permissionAllowed — was never reached.
+  //
+  // The owner then removed the rows from the portal outright ("never put anything above the
+  // identity banner … remove it totally"), so that path is now closed by construction rather than
+  // by an argument: there is no provider here to gate anything.
+  //
+  // The assertion is INVERTED rather than deleted, because the hazard it guarded is real and
+  // would come straight back with the rows. If a later session remounts the provider here, this
+  // fires and tells that session what the remount owes.
   const portalSource = readFileSync(PORTAL_LAYOUT_PATH, "utf8");
-  const portalMount = /<HorizontalNavProvider([\s\S]*?)>/.exec(portalSource);
-  assert.ok(portalMount, `${PORTAL_LAYOUT_PATH} no longer mounts HorizontalNavProvider`);
-  assert.ok(
-    /\bsections=/.test(portalMount[1]),
-    `${PORTAL_LAYOUT_PATH} mounts HorizontalNavProvider without \`sections\`, so it now falls through to getSections ` +
-      "with no permission lookup — every gated entry would be permitted by default",
-  );
-  assert.ok(
-    !/\bpermissionLookup=/.test(portalMount[1]),
-    `${PORTAL_LAYOUT_PATH} now passes a permissionLookup as well as \`sections\`. That is not unsafe, but the ` +
-      "reasoning pinned here no longer describes the code — re-read this block before deleting the assertion.",
+  assert.equal(
+    /<HorizontalNavProvider([\s\S]*?)>/.exec(portalSource),
+    null,
+    `${PORTAL_LAYOUT_PATH} mounts HorizontalNavProvider again. The portal has no arrangeable nav rows — ` +
+      "owner rule, 2026-09-03. If they are ever restored, that provider MUST be handed an already-gated " +
+      "`sections` list and NO permissionLookup: the portal builds no permission lookup, so without sections " +
+      "every gated entry falls through getSections' permit-by-default branch and is shown to everyone.",
   );
 
   const shellSource = readFileSync(APP_SHELL_PATH, "utf8");

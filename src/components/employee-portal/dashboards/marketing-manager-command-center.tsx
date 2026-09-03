@@ -14,13 +14,12 @@ import {
   TrendingUp,
 } from "lucide-react";
 
-import { IdentityCard } from "@/components/employee-portal/identity-card";
 import {
   GlanceStrip,
   PendingActions,
   PendingCountsUnavailable,
   PortalContextBar,
-  ProfileIntelBar,
+  PortalIdentityBand,
   QuickActions,
   egp,
 } from "@/components/employee-portal/portal-command-center";
@@ -72,8 +71,7 @@ export function MarketingManagerCommandCenter({ snapshot, access }: { snapshot: 
 
   return (
     <div className="mx-auto w-full space-y-3" dir="auto">
-      <IdentityCard data={shell} />
-      <ProfileIntelBar shell={shell} />
+      <PortalIdentityBand shell={shell} planAdherence={snapshot.planAdherence} />
       <PortalContextBar role="Marketing Manager" context="Marketing & Commercial" />
 
       <GlanceStrip

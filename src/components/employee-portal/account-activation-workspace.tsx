@@ -87,8 +87,8 @@ export function AccountActivationWorkspace({ initialUsers }: AccountActivationWo
             filtered.map((user) => (
               <div className="flex items-center justify-between gap-3 px-4 py-3 sm:px-6" key={user.loginId}>
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold text-slate-900">{user.name}</p>
-                  <p className="truncate text-xs text-slate-500">
+                  <p className="break-words text-sm font-semibold leading-snug text-slate-900">{user.name}</p>
+                  <p className="break-words text-xs leading-snug text-slate-500">
                     {user.loginId} · {user.role}
                   </p>
                 </div>

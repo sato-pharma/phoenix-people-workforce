@@ -15,18 +15,19 @@ import {
   Wallet,
 } from "lucide-react";
 
-import { IdentityCard } from "@/components/employee-portal/identity-card";
 import { PerformanceReconciliationNote } from "@/components/employee-portal/performance-reconciliation-note";
 import {
   ActionStrip,
   DashboardsGrid,
+  DepartedFromBoardNote,
   GlanceStrip,
   KeycardGrid,
   PendingActions,
   PortalContextBar,
-  ProfileIntelBar,
+  PortalIdentityBand,
   RankingPanel,
   SectionHead,
+  SectionMeta,
   egpCompact,
   type ActionStripItem,
   type DashboardLink,
@@ -71,7 +72,8 @@ function RegionKeycards({ rmRegional }: { rmRegional: PortalHomeSnapshot["rmRegi
       icon: Wallet,
       label: "Region Sales",
       value: egpCompact(sales),
-      sub: "achieved this period",
+      // Names the closing month rather than "this period" — see SectionMeta.
+      sub: rmRegional?.windowLabel ? `${rmRegional.windowLabel} closing` : "published closing sales",
       accent: "bg-slate-900",
       valueClass: "text-slate-900",
     },
@@ -98,11 +100,12 @@ function RegionKeycards({ rmRegional }: { rmRegional: PortalHomeSnapshot["rmRegi
       <SectionHead
         title="Region Performance"
         right={
-          rmRegional ? (
-            <span className="whitespace-nowrap text-phx-2xs font-bold uppercase tracking-widest text-slate-400">
-              {rmRegional.dsmCount} {rmRegional.dsmCount === 1 ? "district" : "districts"}
-            </span>
-          ) : undefined
+          <SectionMeta
+            items={[
+              rmRegional?.windowLabel,
+              rmRegional ? `${rmRegional.dsmCount} ${rmRegional.dsmCount === 1 ? "district" : "districts"}` : null,
+            ]}
+          />
         }
       />
       {rmRegional ? (
@@ -230,8 +233,7 @@ export function RmCommandCenter({ snapshot, access }: { snapshot: PortalHomeSnap
 
   return (
     <div className="mx-auto w-full space-y-3" dir="auto">
-      <IdentityCard data={shell} />
-      <ProfileIntelBar shell={shell} />
+      <PortalIdentityBand shell={shell} planAdherence={snapshot.planAdherence} />
       <PortalContextBar role="Regional Manager" context={shell.employee.territory || "—"} />
 
       {totalPending > 0 && (
@@ -252,15 +254,33 @@ export function RmCommandCenter({ snapshot, access }: { snapshot: PortalHomeSnap
       </div>
 
       <div className="grid gap-3 lg:grid-cols-2">
-        <RankingPanel title="My Districts" subtitle="by achievement %" icon={Network} rows={rmRegional?.dsms ?? []} />
+        <RankingPanel
+          title="My Districts"
+          subtitle="by achievement %"
+          icon={Network}
+          rows={rmRegional?.dsms ?? []}
+          windowLabel={rmRegional?.windowLabel ?? null}
+        />
         <RankingPanel
           title="Top Medical Reps"
           subtitle="by achievement %"
           icon={Trophy}
           rows={rmRegional?.topReps ?? []}
           showManager
+          windowLabel={rmRegional?.windowLabel ?? null}
         />
       </div>
+
+      {/* One note for BOTH boards: departedCount spans the districts and the reps together. */}
+      {rmRegional && rmRegional.departedCount > 0 ? (
+        <div className="border border-slate-200 bg-white">
+          <DepartedFromBoardNote
+            count={rmRegional.departedCount}
+            sales={rmRegional.departedSales}
+            totalLabel="Region Performance"
+          />
+        </div>
+      ) : null}
 
       <DistrictsAttention rmRegional={rmRegional} />
 

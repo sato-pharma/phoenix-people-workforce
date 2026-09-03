@@ -35,6 +35,7 @@ import { MarketingManagerCommandCenter } from "@/components/employee-portal/dash
 import { PlanAdherenceDashboardCard } from "@/components/weekly-planning/plan-adherence-report";
 import type { AccessContext } from "@/lib/auth/permissions";
 import type { PortalHomeSnapshot } from "@/lib/employee-portal/home-snapshot";
+import type { PortalPlanAdherence } from "@/lib/weekly-planning/plan-adherence-data";
 import type { EmployeePortalShellData } from "@/lib/employee-portal/service";
 import { currentCairoDateParts, PHOENIX_BUSINESS_TIME_ZONE } from "@/lib/i18n/format";
 
@@ -273,6 +274,47 @@ export function ProfileIntelBar({ shell }: { shell: EmployeePortalShellData }) {
   );
 }
 
+/**
+ * The identity band — the FIRST thing on every portal landing surface, and nothing sits above it.
+ *
+ * OWNER RULE: nothing renders above the identity card. It was first stated with an exception for
+ * the portal's own nav rows, and the rows themselves were then removed on the same day — so the
+ * rule now has no exception at all: below the fixed header, the identity card is the first thing
+ * on the page. See EmployeePortalChrome for why the rows went. The plan
+ * score used to be hoisted into PortalCommandCenter and rendered ABOVE the role dashboard, which
+ * put it above the identity card too — it pushed a person's own signature card down the page on
+ * the one screen that exists to greet them by name. The hoist was there for a good reason (the
+ * plan module's population does not follow the role switch, so five separate placements would have
+ * been five chances to miss one). That reason is preserved here as a COMPONENT rather than as a
+ * position: every landing surface renders this band, and anything that wants to travel with the
+ * identity goes INSIDE it, underneath.
+ *
+ * `planAdherence` is REQUIRED, not optional, and that is the mechanism. DSM, NSM, Product Manager,
+ * Group Product Manager and Training Manager all file plans, and an acting DSM keeps the job title
+ * "Medical Representative" — so a new landing surface has to state its answer at compile time
+ * instead of silently dropping the card for whoever lands there.
+ *
+ * A fragment, not a wrapper: the three pieces stay direct children of the caller's `space-y-*`
+ * container, so the rhythm of the page is unchanged from when they were written out by hand.
+ */
+export function PortalIdentityBand({
+  planAdherence,
+  shell,
+}: {
+  planAdherence: PortalPlanAdherence | null;
+  shell: EmployeePortalShellData;
+}) {
+  return (
+    <>
+      <IdentityCard data={shell} />
+      <ProfileIntelBar shell={shell} />
+      {planAdherence?.latest ? (
+        <PlanAdherenceDashboardCard adherence={planAdherence} planBaseHref="/employee-portals/approvals/plan" />
+      ) : null}
+    </>
+  );
+}
+
 /* ── PortalContextBar ────────────────────────────────────────────── */
 
 export function PortalContextBar({ role, context }: { role: string; context: string }) {
@@ -315,7 +357,10 @@ export function GlanceStrip({ items }: { items: GlanceStripItem[] }) {
           </div>
           <div className="min-w-0 flex-1">
             <p className={`whitespace-nowrap text-sm font-black leading-tight sm:text-base${item.urgent ? " text-orange-600" : " text-slate-900"}`}>{item.value}</p>
-            <p className="whitespace-nowrap text-xs text-slate-500">{item.label}</p>
+            {/* The VALUE keeps its nowrap — it is a short number and must not break across
+                lines. The label is prose and wraps: at sm each of the three cells leaves about
+                105px for it, and "pending requests" does not fit. */}
+            <p className="break-words text-xs leading-snug text-slate-500">{item.label}</p>
           </div>
           <ArrowRight className="h-4 w-4 shrink-0 text-slate-300 transition-colors group-hover:text-orange-400" />
         </Link>
@@ -356,14 +401,55 @@ export function SectionHead({ title, right }: { title: string; right?: React.Rea
     <div className="relative overflow-hidden bg-[#0b1f3a] shadow-[0_8px_32px_rgba(11,31,58,0.35)]">
       <div className="pointer-events-none absolute inset-0 opacity-[0.04] [background-image:linear-gradient(rgba(255,255,255,1)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,1)_1px,transparent_1px)] [background-size:32px_32px]" />
       <div className="pointer-events-none absolute inset-x-0 top-0 h-[2px] bg-gradient-to-r from-transparent via-[#f47b20] to-transparent" />
-      <div className="relative flex items-center justify-between px-4 py-2.5 sm:px-5 sm:py-3">
-        <div className="flex items-center gap-2.5">
-          <span className="h-4 w-[3px] bg-[#f47b20]" />
-          <h2 className="text-phx-2xs font-black uppercase tracking-[0.18em] text-slate-300">{title}</h2>
+      {/* flex-wrap, and the right slot wraps inside itself: it now carries the closing month
+          beside whatever it showed before, and at 375px title + stamp + count exceeds the bar.
+          This wrapper is overflow-hidden, so a nowrap chip would be CLIPPED rather than scrolled —
+          invisible to a scrollWidth check (AGENTS.md §4, the golden rule's second blind spot).
+          Wrapping is the permitted answer here; the ellipsis ban rules the other one out. */}
+      <div className="relative flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-4 py-2.5 sm:px-5 sm:py-3">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <span className="h-4 w-[3px] shrink-0 bg-[#f47b20]" />
+          <h2 className="min-w-0 break-words text-phx-2xs font-black uppercase tracking-[0.18em] text-slate-300">
+            {title}
+          </h2>
         </div>
         {right}
       </div>
     </div>
+  );
+}
+
+/* ── SectionMeta (the small-caps chips on the right of a SectionHead) ── */
+
+/**
+ * The chips on the right of a SectionHead — a closing month, a head count, a sort order.
+ *
+ * It exists because every performance header now has to name its WINDOW as well as whatever it
+ * showed before. The sales figures on these dashboards come from PUBLISHED monthly closings, and a
+ * closing only publishes once its month has ended, so in early September the newest numbers are
+ * July's — while the cards said "achieved this period", which reads as "right now" and never was.
+ * Owner, 2026-09-03: "you must show this achievement is in which window?"
+ *
+ * Null and blank items are dropped rather than rendered as an empty chip, so a caller can pass a
+ * not-yet-published month straight through. It wraps rather than truncating (ellipsis ban) and
+ * rather than nowrapping — SectionHead's frame is overflow-hidden, so nowrap clips in silence.
+ */
+export function SectionMeta({ items }: { items: readonly (string | null | undefined)[] }) {
+  const shown = items.filter((item): item is string => Boolean(item && item.trim()));
+  if (shown.length === 0) return null;
+  return (
+    <span className="flex min-w-0 flex-wrap items-center justify-end gap-x-2 gap-y-0.5 text-phx-2xs font-bold uppercase tracking-widest text-slate-400">
+      {shown.map((item, index) => (
+        <span key={item} className="flex items-center gap-2">
+          {index > 0 ? (
+            <span aria-hidden className="text-slate-600">
+              ·
+            </span>
+          ) : null}
+          {item}
+        </span>
+      ))}
+    </span>
   );
 }
 
@@ -388,7 +474,9 @@ export function KeycardGrid({ cards }: { cards: Keycard[] }) {
             <span className="flex h-7 w-7 shrink-0 items-center justify-center bg-slate-900 text-white">
               <card.icon className="h-3.5 w-3.5" />
             </span>
-            <p className="truncate text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-400">{card.label}</p>
+            <p className="min-w-0 break-words text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-400">
+              {card.label}
+            </p>
           </div>
           {/* Values are computed (egpCompact, percentages) and can run long — wrap instead of the
               fixed-width nowrap this used to have, which let the grid's minmax(0,1fr) columns
@@ -396,7 +484,9 @@ export function KeycardGrid({ cards }: { cards: Keycard[] }) {
           <p className={`mt-3 break-words text-xl font-black leading-tight tabular-nums sm:text-2xl ${card.valueClass}`}>
             {card.value}
           </p>
-          <p className="truncate text-phx-xs font-medium text-slate-500">{card.sub}</p>
+          {/* Owner rule: never truncate with an ellipsis. Subs now name the closing month
+              ("Jul 2026 closing"), which is longer than the fixed phrases they replaced. */}
+          <p className="break-words text-phx-xs font-medium leading-snug text-slate-500">{card.sub}</p>
         </div>
       ))}
     </div>
@@ -421,7 +511,9 @@ export function DashboardsGrid({ items }: { items: readonly DashboardLink[] }) {
             <span className="flex h-10 w-10 shrink-0 items-center justify-center bg-slate-900 text-white transition-colors group-hover:bg-orange-600">
               <d.icon className="h-[18px] w-[18px]" />
             </span>
-            <span className="whitespace-nowrap text-xs font-bold uppercase tracking-wide text-slate-700 transition-colors group-hover:text-orange-700">
+            {/* Wraps: the frame above is overflow-hidden, so a label wider than its cell
+                ("Med Rep Performance" at 375px) would be clipped rather than scrolled. */}
+            <span className="min-w-0 break-words text-xs font-bold uppercase leading-snug tracking-wide text-slate-700 transition-colors group-hover:text-orange-700">
               {d.label}
             </span>
           </Link>
@@ -466,20 +558,23 @@ export function RankingPanel({
   icon: Icon,
   rows,
   showManager,
+  windowLabel,
+  footer,
 }: {
   title: string;
   subtitle: string;
   icon: React.ElementType;
   rows: RankRow[];
   showManager?: boolean;
+  /** Which published closing month(s) these achievement percentages cover, e.g. "Jul 2026". */
+  windowLabel?: string | null;
+  /** Rendered inside the card beneath the last row — this is where DepartedFromBoardNote goes. */
+  footer?: React.ReactNode;
 }) {
   const ranked = rows.slice().sort((a, b) => b.achievementPercent - a.achievementPercent || b.totalSales - a.totalSales);
   return (
     <div className="overflow-hidden border border-slate-200 bg-white">
-      <SectionHead
-        title={title}
-        right={<span className="whitespace-nowrap text-phx-2xs font-bold uppercase tracking-widest text-slate-400">{subtitle}</span>}
-      />
+      <SectionHead title={title} right={<SectionMeta items={[windowLabel, subtitle]} />} />
       {ranked.length === 0 ? (
         <p className="bg-white px-5 py-6 text-sm text-slate-500">No sales data synced for the current period yet.</p>
       ) : (
@@ -500,12 +595,11 @@ export function RankingPanel({
                 <div className="flex min-w-0 flex-1 items-center gap-2">
                   <Icon className="hidden h-3.5 w-3.5 shrink-0 text-slate-300 sm:block" />
                   <div className="min-w-0">
-                    <p className="truncate text-sm font-semibold text-slate-800" title={row.name}>{row.name}</p>
+                    {/* Wraps, never truncates — owner rule. Egyptian full names run four parts
+                        and the old ellipsis cut most of them off on a phone. */}
+                    <p className="break-words text-sm font-semibold leading-snug text-slate-800">{row.name}</p>
                     {showManager && row.managerName ? (
-                      <p
-                        className="truncate text-phx-2xs font-medium uppercase tracking-wide text-slate-400"
-                        title={row.managerName}
-                      >
+                      <p className="break-words text-phx-2xs font-medium uppercase leading-snug tracking-wide text-slate-400">
                         {row.managerName}
                       </p>
                     ) : null}
@@ -530,7 +624,43 @@ export function RankingPanel({
           })}
         </div>
       )}
+      {footer}
     </div>
+  );
+}
+
+/* ── DepartedFromBoardNote (why the board is shorter than the total) ─── */
+
+/**
+ * Says, under a ranking board, that colleagues who left mid-window are counted in the money above
+ * but not listed below.
+ *
+ * The boards now list only people who are still employed. Before 2026-09-03 a district manager kept
+ * seeing resigned reps ranked among his team, months after they left, and the head count above
+ * included them — the owner's words were "how the fuck I'm still seeing employees who resigned in
+ * his main dashboard". But their SALES are real and stay inside the district/region/line totals on
+ * the card above, so dropping the names without saying so would leave a board that no longer adds
+ * up to the number over it. This note is that missing sentence.
+ *
+ * Renders nothing when nobody left, which is the ordinary case.
+ */
+export function DepartedFromBoardNote({
+  count,
+  sales,
+  totalLabel,
+}: {
+  count: number;
+  sales: number;
+  /** The heading of the card whose total still contains these sales, e.g. "District Performance". */
+  totalLabel: string;
+}) {
+  if (count <= 0) return null;
+  return (
+    <p className="border-t border-slate-100 bg-slate-50 px-3 py-2.5 text-phx-xs leading-relaxed text-slate-500 sm:px-4">
+      {count === 1 ? "One colleague who" : `${count} colleagues who`} left during this window{" "}
+      {count === 1 ? "is" : "are"} no longer listed here.
+      {sales > 0 ? ` Their ${egpCompact(sales)} of sales is still counted in ${totalLabel} above.` : ""}
+    </p>
   );
 }
 
@@ -540,15 +670,21 @@ export type ActionStripItem = { href: string; icon: React.ElementType; label: st
 
 export function ActionStrip({ items }: { items: readonly ActionStripItem[] }) {
   return (
-    <div className="grid grid-cols-4 gap-px overflow-hidden border border-slate-200 bg-slate-200">
+    // Two columns on a phone, four from sm. At 375px four cells are ~87px wide and every real
+    // label ("Review Team Plan", "Coaching Analytics") is wider than that — with the nowrap this
+    // used to carry, the text ran straight out of an overflow-hidden frame and was CLIPPED, not
+    // scrolled. That is invisible to a scrollWidth check: main measured 375/375 while the words
+    // sat off the edge (AGENTS.md §4). Merging columns is the owner's prescribed fix — fit by
+    // merging, never by shrinking type — and the labels wrap inside the wider cell.
+    <div className="grid grid-cols-2 gap-px overflow-hidden border border-slate-200 bg-slate-200 sm:grid-cols-4">
       {items.map((a) => (
         <Link
           key={a.href}
           href={a.href}
-          className="group flex flex-col items-center justify-center gap-1 bg-white px-2 py-3 transition-colors hover:bg-orange-50 sm:flex-row sm:gap-2"
+          className="group flex flex-col items-center justify-center gap-1 bg-white px-2 py-3 text-center transition-colors hover:bg-orange-50 sm:flex-row sm:gap-2"
         >
           <a.icon className="h-4 w-4 shrink-0 text-orange-600" />
-          <span className="whitespace-nowrap text-phx-xs font-bold uppercase tracking-wide text-slate-700 transition-colors group-hover:text-orange-700 sm:text-xs">
+          <span className="min-w-0 break-words text-phx-xs font-bold uppercase leading-snug tracking-wide text-slate-700 transition-colors group-hover:text-orange-700 sm:text-xs">
             {a.label}
           </span>
         </Link>
@@ -630,8 +766,7 @@ function PmGpmCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
 
   return (
     <div className="mx-auto w-full space-y-3" dir="auto">
-      <IdentityCard data={shell} />
-      <ProfileIntelBar shell={shell} />
+      <PortalIdentityBand shell={shell} planAdherence={snapshot.planAdherence} />
 
       {totalPending > 0 && (
         <PendingActions pendingVacationCount={pendingVacationCount} pendingExcuseCount={pendingExcuseCount} plansAwaitingApproval={plansCount} />
@@ -708,8 +843,7 @@ function MedicalRepCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot })
 
   return (
     <div className="mx-auto w-full space-y-3 sm:space-y-4" dir="auto">
-      <IdentityCard data={shell} />
-      <ProfileIntelBar shell={shell} />
+      <PortalIdentityBand shell={shell} planAdherence={snapshot.planAdherence} />
       <PortalContextBar role="Medical Representative" context="Field Performance" />
 
       <GlanceStrip
@@ -1061,8 +1195,7 @@ function StandardCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
 
   return (
     <div className="mx-auto w-full space-y-3 sm:space-y-5" dir="auto">
-      <IdentityCard data={shell} />
-      <ProfileIntelBar shell={shell} />
+      <PortalIdentityBand shell={shell} planAdherence={snapshot.planAdherence} />
       <PortalContextBar role={role} context={shell.employee.department || ""} />
 
       <GlanceStrip
@@ -1173,30 +1306,15 @@ function StandardCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
 }
 
 /**
- * The role-specific dashboard, with the plan score above it.
+ * The role-specific dashboard. Nothing wraps it and nothing precedes it.
  *
- * The card sits HERE rather than inside each command centre because the plan module's population
- * does not line up with the role switch below: DSM, NSM, Product Manager, Group Product Manager and
- * Training Manager all file plans, the last of those landing in StandardCommandCenter, and an
- * acting DSM keeps the job title "Medical Representative". Adding the card to five branches would
- * be five chances to miss one, and would still miss her. One placement, gated on whether the person
- * actually has a scored plan, covers everybody and nobody else.
+ * There used to be a `space-y-4` wrapper here holding the plan score above the role dashboard —
+ * and therefore above the identity card, which broke the owner's rule that nothing sits above a
+ * person's own identity banner. The card now travels inside PortalIdentityBand, which every branch
+ * below renders as its first element. Do not reintroduce a wrapper here: whatever is added would
+ * land above the identity card again.
  */
 export function PortalCommandCenter({ snapshot, access }: { snapshot: PortalHomeSnapshot; access?: AccessContext }) {
-  const roleCenter = <PortalRoleCommandCenter snapshot={snapshot} access={access} />;
-  if (!snapshot.planAdherence?.latest) return roleCenter;
-  return (
-    <div className="space-y-4">
-      <PlanAdherenceDashboardCard
-        adherence={snapshot.planAdherence}
-        planBaseHref="/employee-portals/approvals/plan"
-      />
-      {roleCenter}
-    </div>
-  );
-}
-
-function PortalRoleCommandCenter({ snapshot, access }: { snapshot: PortalHomeSnapshot; access?: AccessContext }) {
   switch (snapshot.role) {
     case "Product Manager":
     case "Group Product Manager":
