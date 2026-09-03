@@ -849,6 +849,13 @@ export function MobileOutstationWizard({
         setMessage(payload.message ?? payload.error ?? "Unable to calculate the request.");
         return;
       }
+      // A newer recalculation can start (and overwrite the ref) while this fetch is still in
+      // flight. Applying this response anyway would land a late, superseded price right after
+      // the effect below clears it for the newer inputs — the same staleness bug from the other
+      // direction. Only the most recently started calculation is allowed to win.
+      if (submittedCalculationKey && submittedCalculationKey !== lastCalculationKeyRef.current) {
+        return;
+      }
       setCalculation(payload);
     } catch {
       if (submittedCalculationKey === lastCalculationKeyRef.current) {
@@ -874,6 +881,18 @@ export function MobileOutstationWizard({
     canAutoCalculate,
     isOffline,
   ]);
+
+  // A change to any pricing input means the current `calculation` no longer matches the trip
+  // being priced. Clearing it right away — rather than waiting out the 350ms debounce above, or
+  // waiting for a recalculation that might fail — is what hides the submit action below (it only
+  // renders once `calculation` is set again), so a stale total can never sit on screen ready to
+  // be submitted. Skipped while offline: recalculation cannot run without a server round trip, and
+  // the offline path never trusts this value for money anyway (see submit()).
+  useEffect(() => {
+    if (isOffline) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setCalculation(null);
+  }, [calculationKey, isOffline]);
 
   async function captureLocation() {
     setMessage(null);
@@ -1200,6 +1219,15 @@ export function MobileOutstationWizard({
       return;
     }
 
+    // The review screen's total is only trustworthy for the exact inputs it was priced from.
+    // `lastCalculationKeyRef` is set the instant a calculation starts, so this also catches a
+    // submit attempted while one is still in flight, not only one made after a change nulled
+    // `calculation` or a recalculation failed outright.
+    if (!isOffline && (isCalculating || !calculation || lastCalculationKeyRef.current !== calculationKey)) {
+      setMessage("Phoenix is still pricing this request. Wait a moment for the total to update, then submit again.");
+      return;
+    }
+
     setIsSubmitting(true);
     setMessage(null);
     try {
@@ -1214,11 +1242,18 @@ export function MobileOutstationWizard({
               })),
             )
           : undefined;
+      // claimedTotalAmount is deliberately left at requestPayload's 0 here, for both the online
+      // and offline paths. The server always recalculates the whole trip itself and only trusts a
+      // posted claim when it is a real positive number (outstationClaimedTotal, in
+      // src/lib/outstation/service.ts) — so posting 0 makes the server's own fresh total the one
+      // that is ever paid, rather than this wizard's `calculation`, which the guard above narrows
+      // but can never fully guarantee is current (a response can still land between the check and
+      // the fetch below). That gap is exactly how request 99 (Dina Fadel, 2026-08-25) was paid 200
+      // EGP short of its own expected total.
       const response = await fetch(endpoint, {
         body: JSON.stringify({
           ...requestPayload,
           carEvidenceImageDataUrl: carEvidence?.imageDataUrl,
-          claimedTotalAmount: calculation?.expectedTotalAmount ?? 0,
           ticketAttachments,
         }),
         headers: { "Content-Type": "application/json" },
@@ -1542,8 +1577,36 @@ export function MobileOutstationWizard({
             </>
           ) : null}
 
-          <Field label="Meeting Amount">
+          {/*
+            Meeting and Other are ALWAYS both shown, never gated on the expense type.
+
+            They are additive line items on top of travel + allowance — reportExpectedTotal
+            (src/lib/outstation/service.ts) adds travelCost + meetingAmount + allowanceAmount +
+            otherAmount unconditionally — and the expense type only labels the trip. Production
+            agrees: live rep-submitted requests are typed "traveling" while carrying a real
+            meeting or parking cost (#45 "BRM for delta 1 team7" meeting 627.20, #114 parking
+            20.00), which is the shape reps use most, so gating either box by type would make
+            that trip unable to record its own cost.
+
+            A SECOND, expenseType-gated pair of these same two inputs used to sit below Notes.
+            It came first (1a9d4b482, 2026-06-11); this always-visible pair landed four days
+            later in ec2a5dded ("expense report fields, rescued from #129") without removing it,
+            so both were on screen at once, bound to the same meetingAmount / otherAmount state
+            — on a Meeting trip the rep saw "Meeting Amount" above "Meeting Amount (EGP)",
+            mirroring each other as he typed. The gated pair is the one that went, which also
+            settles this screen on the same rule as the admin modal: see
+            src/components/outstation/admin-manager-expense-modal.tsx and
+            tests/outstation-admin-manual-expense-amount-visibility.test.ts (production request
+            77, B-122: 550.00 typed under "meeting", saved under "other" with the visible box
+            reading empty, because handleSubmit sends both amounts whatever is on screen).
+
+            Do NOT reintroduce the conditional, and do NOT "fix" the submit payload by zeroing
+            the amount that does not match the type — that would silently drop real money from
+            every traveling trip that also had a meeting or a parking cost.
+          */}
+          <Field label="Meeting Amount (EGP)">
             <Input
+              min="0"
               onChange={(event) => setMeetingAmount(event.target.value)}
               placeholder="EGP"
               type="number"
@@ -1551,14 +1614,20 @@ export function MobileOutstationWizard({
             />
           </Field>
 
-          <Field label="Other">
+          <Field label="Other Amount (EGP)">
             <Input
+              min="0"
               onChange={(event) => setOtherAmount(event.target.value)}
               placeholder="EGP"
               type="number"
               value={otherAmount}
             />
           </Field>
+
+          <p className="text-xs font-semibold text-slate-500 sm:col-span-2 xl:col-span-4">
+            Both are paid on top of the travel cost and the allowance, whatever the expense type
+            is. Leave a box empty if that cost was not incurred.
+          </p>
 
           {/*
             The editable "AM Workload" / "PM Workload" inputs that used to sit here were removed.
@@ -1584,28 +1653,6 @@ export function MobileOutstationWizard({
               value={notes}
             />
           </Field>
-
-          {expenseType === "meeting" ? (
-            <Field label="Meeting Amount (EGP)">
-              <Input
-                min="0"
-                onChange={(event) => setMeetingAmount(event.target.value)}
-                placeholder="EGP"
-                type="number"
-                value={meetingAmount}
-              />
-            </Field>
-          ) : expenseType === "other" ? (
-            <Field label="Other Amount (EGP)">
-              <Input
-                min="0"
-                onChange={(event) => setOtherAmount(event.target.value)}
-                placeholder="EGP"
-                type="number"
-                value={otherAmount}
-              />
-            </Field>
-          ) : null}
 
           <div className="grid grid-cols-2 gap-3">
             <Field label="AM Visits">

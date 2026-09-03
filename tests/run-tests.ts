@@ -570,6 +570,7 @@ import { runOutstationCarEvidenceValidationTests } from "./outstation-car-eviden
 import { runOutstationExpenseExportTests } from "./outstation-expense-export.test.ts";
 import { runOutstationLocalDraftTests } from "./outstation-local-draft.test.ts";
 import { runOutstationPayrollExpenseMappingTests } from "./outstation-payroll-expense-mapping.test.ts";
+import { runOutstationWorkflowResyncPreservesHrDecisionTests } from "./outstation-workflow-resync-preserves-hr-decision.test.ts";
 import { runOutstationImportIsAdditiveTests } from "./outstation-import-is-additive.test.ts";
 import { runSalaryRecordsUniqueBatchHrTests } from "./salary-records-unique-batch-hr.test.ts";
 import { runOutstationPolicyClassificationTests } from "./outstation-policy-classification.test.ts";
@@ -861,6 +862,8 @@ import { runEmployeePortalMobileTableCardTests } from "./employee-portal-mobile-
 import { runCrmMobileTableCardTests } from "./crm-mobile-table-cards.test.ts";
 import { runHrShellMobileTableTests } from "./hr-shell-mobile-tables.test.ts";
 import { runOutstationMobileTableCardTests } from "./outstation-mobile-table-cards.test.ts";
+import { runOutstationDecisionFailureTraceTests } from "./outstation-decision-failures-leave-a-trace.test.ts";
+import { runOutstationAdminApproveOutcomeTests } from "./outstation-admin-approve-reports-its-outcome.test.ts";
 import { runPharmacySearchTests } from "./pharmacy-search.test.ts";
 import { runRscClientFunctionPropTests } from "./rsc-client-function-props.test.ts";
 import { runDirectOrdersInvoiceScanTests } from "./direct-orders-invoice-scan.test.ts";
@@ -1059,6 +1062,7 @@ import { runOutstationAllowanceDuplicateDayGuardTests } from "./outstation-allow
 import { runOutstationCairoNoAllowanceTests } from "./outstation-cairo-no-allowance.test.ts";
 import { runOutstationClaimedTotalTests } from "./outstation-claimed-total.test.ts";
 import { runOutstationClaimValidationTests } from "./outstation-claim-validation.test.ts";
+import { runOutstationRequestTypeValidationTests } from "./outstation-request-type-validation.test.ts";
 import { runOutstationEvidenceWaiverTests } from "./outstation-evidence-waiver.test.ts";
 import { runOutstationNsmNoHoldTests } from "./outstation-nsm-no-hold.test.ts";
 import { runOutstationExpenseNoteAssistTests } from "./outstation-expense-note-assist.test.ts";
@@ -1074,6 +1078,7 @@ import { runDirectOrdersSheetEditableColumnsTests } from "./direct-orders-sheet-
 import { runSosSelfHealOwnerVerifiedGuardTests } from "./sos-self-heal-owner-verified-guard.test.ts";
 import { runSosMiningOwnerRulingGuardTests } from "./sos-mining-owner-ruling-guard.test.ts";
 import { runOutstationManualExpenseTicketPlusAllowanceTests } from "./outstation-manual-expense-ticket-plus-allowance.test.ts";
+import { runOutstationAdminManualExpenseAmountVisibilityTests } from "./outstation-admin-manual-expense-amount-visibility.test.ts";
 import { runClosingDirectAreaIdentityTests } from "./closing-direct-area-identity.test.ts";
 import { runMonthlyClosingExportAreaMergeStaticTests } from "./monthly-closing-export-area-merge-static.test.ts";
 import { runSalesStoreOverrideTests } from "./sales-store-override.test.ts";
@@ -1234,6 +1239,10 @@ import { runCommentStripRatchetTests } from "./comment-strip-ratchet.test.ts";
 
 import { runRepoDoctorStripIdleOfferTests } from "./repo-doctor-strip-idle-offer.test.ts";
 import { runCrmClientTimeoutsTests } from "./crm-client-timeouts.test.ts";
+import { runOutstationMobileWizardStaleCalculationTests } from "./outstation-mobile-wizard-stale-calculation.test.ts";
+import { runOutstationPayrollPayableTotalAgreementTests } from "./outstation-payroll-payable-total-agreement.test.ts";
+import { runOutstationOfflineSyncBodyParityTests } from "./outstation-offline-sync-body-parity.test.ts";
+import { runOutstationManagerExpenseEditValidationTests } from "./outstation-manager-expense-edit-validation.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -1780,7 +1789,7 @@ await runTest("KPIs URL state (a tab, month or period change carries every filte
 await runTest("KPIs facets (built from the viewer own rows, with a real bucket for an unresolved area)", runKpiFacetTests);
 await runTest("KPIs podium (three measures, three leaderboards, and nobody ranked at a 0 they do not have)", runKpiPodiumTests);
 await runTest("KPIs attainment and identity (one denominator, and a mixed-case hr id still resolves)", runKpiAttainmentAndIdentityTests);
-await runTest("KPIs medical reps only (managers off the board, an unrecorded title still on it)", runKpiMedicalRepOnlyTests);
+await runTest("KPIs medical reps only (managers off the board, above the filter layer so no URL undoes it)", runKpiMedicalRepOnlyTests);
 await runTest("KPIs early-window guard (a percentage two days into a month is a position, not a verdict)", runKpiTooEarlyToScoreTests);
 await runTest("crm reps plans board (live-month cap, company rate over days x reps, rep filter leaves totals alone)", runCrmRepsPlansTests);
 await runTest("crm rep visits drill-down (territory states, proof buckets, reconciles with the board rate)", runCrmRepVisitsTests);
@@ -2136,6 +2145,10 @@ await runTest("outstation car evidence validation", runOutstationCarEvidenceVali
 await runTest("outstation expense export", runOutstationExpenseExportTests);
 await runTest("outstation local draft", runOutstationLocalDraftTests);
 await runTest("outstation payroll expense mapping", runOutstationPayrollExpenseMappingTests);
+await runTest(
+  "outstation workflow resync preserves the HR decision",
+  runOutstationWorkflowResyncPreservesHrDecisionTests,
+);
 await runTest("outstation import is additive and hr_id-scoped", runOutstationImportIsAdditiveTests);
 await runTest("salary_records unique per employee per batch", runSalaryRecordsUniqueBatchHrTests);
 await runTest("outstation policy classification", runOutstationPolicyClassificationTests);
@@ -2596,6 +2609,8 @@ await runTest("employee portal mobile input zoom (16px floor on every portal inp
 await runTest("employee portal mobile table cards (every converted table is desktop-gated with cards beside it, one shared SourceBreakdown, no <table> nested inside PortalDesktopTable)", runEmployeePortalMobileTableCardTests);
 await runTest("CRM mobile table cards (whole-directory scan: every CRM table desktop-gated, every table file has a card path, no bare overflow-x-auto, both coverage boards moved together)", runCrmMobileTableCardTests);
 await runTest("Outstation mobile table cards (whole-directory scan: every outstation table desktop-gated, every table file has a card path, no fixed-pixel floor in an ungated scroll box, HR decision controls shared by both halves)", runOutstationMobileTableCardTests);
+await runTest("Outstation decision failures leave a trace (every catch on /api/admin/outstation/[id] records the unsanitised cause before returning, awaited)", runOutstationDecisionFailureTraceTests);
+await runTest("Outstation admin approve reports its outcome (the in-modal message is not gated on the already-cleared busy flag, and the action toast outranks the details modal it appears over)", runOutstationAdminApproveOutcomeTests);
 await runTest("HR shell mobile tables (closure scan from the HR sidebar: every wide table desktop-gated with a mobile half beside it, stacking primitives pinned, exemptions justified)", runHrShellMobileTableTests);
 await runTest("RSC boundary (no server component hands a function prop to a client component — the crash that 500d Doctor Coverage; follows the real import graph so client-parent files are not flagged)", runRscClientFunctionPropTests);
 await runTest("direct orders invoice scan (a dim page gains real contrast, a failed prepare returns the original, EXIF rotation is applied, no binarisation, the reader is sent the PREPARED image)", runDirectOrdersInvoiceScanTests);
@@ -3166,6 +3181,11 @@ await runTest(
 );
 
 await runTest(
+  "an unknown outstation expense or transportation type is refused at the route, never cast through to a zero-cost trip",
+  runOutstationRequestTypeValidationTests,
+);
+
+await runTest(
   "an approval note is rewritten in the system's voice and can never invent a figure",
   runOutstationExpenseNoteAssistTests,
 );
@@ -3216,6 +3236,10 @@ await runTest(
 await runTest(
   "manual admin outstation expense adds the ticket price to the allowance instead of replacing it (travelCostAmount reaches the create route)",
   runOutstationManualExpenseTicketPlusAllowanceTests,
+);
+await runTest(
+  "outstation expense amount visibility, admin modal AND rep wizard (Meeting/Other amount are never hidden by expense type and never rendered twice, so an amount typed under one type can never be submitted invisibly under another — production request 77)",
+  runOutstationAdminManualExpenseAmountVisibilityTests,
 );
 await runTest(
   "an area carrying July direct keeps its own code/name (screen + XLSX) and stays in seat scope; only areaCode=DIRECT is the company row",
@@ -3796,6 +3820,17 @@ await runTest("no source-pinning test strips comments with a regex that eats the
 
 await runTest("repo-doctor offers only what --strip-idle will actually reclaim", runRepoDoctorStripIdleOfferTests);
 await runTest("the CRM client's timeout bounds the response BODY, and an empty body is not a shape change", runCrmClientTimeoutsTests);
+await runTest("the outstation wizard blocks submit on a stale calculation and never posts its own claimedTotalAmount", runOutstationMobileWizardStaleCalculationTests);
+await runTest("the payroll push mapper and the payroll display mapper agree on one outstation total, even when the claim differs from the expected total", runOutstationPayrollPayableTotalAgreementTests);
+await runTest(
+  "neither outstation submit path lets an employee set his own claim's travel cost, AM/PM "
+    + "workload, HR column or trip type, and the offline body stays a subset of the online one",
+  runOutstationOfflineSyncBodyParityTests,
+);
+await runTest(
+  "outstation manager-expense edit validation (PATCH refuses an unknown expense/transportation type, never spreads the raw body)",
+  runOutstationManagerExpenseEditValidationTests,
+);
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
 console.log(`\n${testDurationsMs.length} test files passed in ${totalMs.toFixed(0)}ms. Slowest:`);

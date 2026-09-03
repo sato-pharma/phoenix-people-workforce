@@ -78,6 +78,15 @@ function periodKey(month: number, year: number): string {
  * is not carried by the amount), its payout period moved, or it did not exist before. Deletions
  * count too: a rejected outstation request removes its expense row outright, and payroll must
  * stop paying it.
+ *
+ * The fifth case is the quiet one: the CLAIM moved while HR's own adjusted figure stayed put. An
+ * employee adding an extra ticket to a trip HR already cut from 800 to 500 leaves the payable
+ * amount at 500 and every other test above unmoved, so nothing here would fire — and HR would go
+ * on paying a figure they arrived at by judging a different claim. Keeping the reduction is the
+ * deliberate choice (reverting to the full claim is what the re-push used to do, and it is how
+ * money leaks); re-opening the step is how HR gets told to look again. Only meaningful while an
+ * adjustment is stored — with `approvedAmount` null the payable IS the claim, so a moved claim
+ * already registers as a moved amount above.
  */
 export function expenseDecisionsThatChanged(
   before: ExpenseDecisionSnapshot[],
@@ -111,7 +120,10 @@ export function expenseDecisionsThatChanged(
     const periodMoved =
       Number(next.payoutMonth) !== Number(previous.payoutMonth) ||
       Number(next.payoutYear) !== Number(previous.payoutYear);
-    if (amountMoved || stateMoved || periodMoved) {
+    const claimMovedUnderAdjustment =
+      next.approvedAmount !== null &&
+      Math.abs(Number(next.total ?? 0) - Number(previous.total ?? 0)) > AMOUNT_EPSILON;
+    if (amountMoved || stateMoved || periodMoved || claimMovedUnderAdjustment) {
       note(next);
       // The old period matters as much as the new one when a trip moves between payroll months:
       // the run it LEFT is now overstated and has to recompute too.

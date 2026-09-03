@@ -924,8 +924,30 @@ export function AdminManagerExpenseModal({
             </div>
           ) : null}
 
-          {/* Meeting / Other amount — conditional on expense type */}
-          {expenseType === "meeting" ? (
+          {/*
+            Meeting and Other are ALWAYS both shown, never gated on the expense type.
+
+            They are additive line items on top of travel + allowance — reportExpectedTotal
+            (src/lib/outstation/service.ts) adds travelCost + meetingAmount + allowance +
+            otherAmount unconditionally — and the expense type only labels the trip. Production
+            agrees: six rep-submitted requests are typed "traveling" while carrying a real
+            meeting or parking cost (#45 "BRM for delta 1 team7" meeting 627.20, #114 parking
+            20.00), and the rep's own mobile-outstation-wizard already shows both boxes at all
+            times. Gating them by type here therefore did two things at once:
+
+              - it made a "traveling" trip unable to record either cost, which is the shape the
+                reps use most; and
+              - because handleSubmit sends BOTH amounts regardless of what is on screen, an
+                amount typed under one type stayed in state, stayed submitted and stayed PAID
+                after the admin switched type. That is production request 77 (B-122,
+                2026-08-16): expense_type "other", other_amount 0.00, meeting_amount 550.00,
+                saved while the visible "Other amount" box read empty.
+
+            Do NOT reintroduce the conditional, and do NOT "fix" the submit payload by zeroing
+            the amount that does not match the type — that would silently drop real money from
+            every traveling trip that also had a meeting or a parking cost.
+          */}
+          <div className="grid gap-4 sm:grid-cols-2">
             <div>
               <FieldLabel>Meeting amount (EGP)</FieldLabel>
               <InputField
@@ -998,7 +1020,6 @@ export function AdminManagerExpenseModal({
                 )}
               </div>
             </div>
-          ) : expenseType === "other" ? (
             <div>
               <FieldLabel>Other amount (EGP)</FieldLabel>
               <InputField
@@ -1010,7 +1031,11 @@ export function AdminManagerExpenseModal({
                 value={otherAmount}
               />
             </div>
-          ) : null}
+            <p className="sm:col-span-2 text-xs text-phx-ink-soft">
+              Both are paid on top of the travel cost and the allowance, whatever the expense
+              type is. Leave a box empty if that cost was not incurred.
+            </p>
+          </div>
 
           {/* AM / PM workload */}
           <div className="grid gap-4 sm:grid-cols-2">

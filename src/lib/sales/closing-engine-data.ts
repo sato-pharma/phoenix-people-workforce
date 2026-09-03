@@ -51,13 +51,20 @@ const GAP = "   ";
 const SEP = `${GAP}${DOT}${GAP}`;
 
 /**
- * The arrow turns at half of target, not at target.
+ * The arrow turns at target. Owner's decision, 2026-09-03: "fix the arrow to only show above target".
  *
- * This is the engine's own threshold — `IF(G17>=0.5,"▲","▼")` in the Rep Card — so the static sheets
- * and the live card have to agree on it. An arrow that flipped at 1.0 would put a down arrow beside
- * almost every row in a month that ran behind, which tells a reader nothing.
+ * It used to turn at half, which is what the owner's own engine carried — `IF(G17>=0.5,"▲","▼")` in
+ * the Rep Card. The effect was that a row at 60% of target was decorated with the same up arrow as a
+ * row at 140%, and the Watch List — a page that by definition holds nothing but shortfalls — printed
+ * an up arrow beside every line on it. An arrow that is true of almost every row says nothing.
+ *
+ * Yes, a month that runs behind now shows a lot of down arrows. That is the month, not the mark.
+ *
+ * The Rep Card's arrow is a FORMULA inside the engine rather than a value this module writes, so
+ * `fillRepCard` rewrites the threshold in the workbook from this same constant. Change it here and
+ * the static sheets and the live card move together; they cannot drift apart again.
  */
-const ARROW_AT = 0.5;
+export const ACHIEVEMENT_ARROW_AT = 1;
 
 const MONTHS = [
   "January", "February", "March", "April", "May", "June",
@@ -88,16 +95,16 @@ function agree(value: number, singular: string, plural: string): string {
 
 function arrowFor(achievement: number | null): string {
   if (achievement == null) return "";
-  return achievement >= ARROW_AT ? UP : DOWN;
+  return achievement >= ACHIEVEMENT_ARROW_AT ? UP : DOWN;
 }
 
 /**
  * The arrow beside a growth column turns at zero, not at half.
  *
- * Growth and achievement are different questions and their arrows disagree on purpose: half of
- * target is a real halfway mark, while half of last month's sales is a collapse. The Family by
- * Month sheet's own colour rules are written to the same threshold — green at or above zero, amber
- * below — so the arrow and the fill behind it can never point opposite ways.
+ * Growth and achievement are different questions, and each arrow turns where its own answer turns:
+ * achievement at the target that was set, growth at flat. The Family by Month sheet's own colour
+ * rules are written to the same threshold — green at or above zero, amber below — so the arrow and
+ * the fill behind it can never point opposite ways.
  */
 function growthArrow(growth: number | null): string {
   if (growth == null) return "";
@@ -261,7 +268,20 @@ function buildSalesData(input: ClosingEngineDataInput, areas: AreaAggregate[]): 
   const columns = input.matrix.columns;
   const rows: EngineValue[][] = [];
 
-  for (const area of areas) {
+  // In the MATRIX's order — region by region, area by area — not the rank order `buildAreas`
+  // returns. Nothing reads these rows by position, but the pivot cache pools each column's values
+  // in the order it first meets them and the pivots' axes then follow that pool, so rank order put
+  // the Closing Matrix's regions in order of how well they did: an order that changes every month
+  // and agrees with no other sheet in the file. An area the matrix does not carry sorts last.
+  const matrixOrder = new Map<string, number>();
+  for (const region of input.matrix.regions) {
+    for (const area of region.areas) matrixOrder.set(area.areaCode.trim().toUpperCase(), matrixOrder.size);
+  }
+  const positionOf = (code: string): number =>
+    matrixOrder.get(code.trim().toUpperCase()) ?? Number.MAX_SAFE_INTEGER;
+  const ordered = [...areas].sort((a, b) => positionOf(a.areaCode) - positionOf(b.areaCode));
+
+  for (const area of ordered) {
     area.cells.forEach((cell, index) => {
       const column = columns[index];
       if (!column) return;
@@ -320,6 +340,13 @@ type CustomerRow = {
   salesValue: number;
 };
 
+/**
+ * What the closing itself calls an area: the human name, the region above it, and the person on
+ * the seat. Keyed by area CODE, because that is the only thing a distributor row and the closing
+ * matrix reliably share.
+ */
+type AreaBookEntry = { areaName: string; regionName: string; repName: string };
+
 type DetailGroup = {
   areaName: string;
   channel: string;
@@ -346,7 +373,7 @@ type DetailGroup = {
  * month, not the delivery schedule. The line count rides along in its own column so nothing about
  * the folding is hidden.
  */
-function buildDetailGroups(rows: ClosingDetailRow[], repByArea: Map<string, string>): DetailGroup[] {
+function buildDetailGroups(rows: ClosingDetailRow[], areaBook: Map<string, AreaBookEntry>): DetailGroup[] {
   const groups = new Map<string, DetailGroup>();
 
   for (const row of rows) {
@@ -359,11 +386,16 @@ function buildDetailGroups(rows: ClosingDetailRow[], repByArea: Map<string, stri
     // REP, crediting the sale to whoever owns the shop's location rather than to whoever the
     // closing actually paid for it.
     const areaCode = closingAreaOf(row);
+    // The area as the CLOSING names it, never as the distributor's sheet spelt it. A direct-order
+    // row arrives carrying the raw code -- "UE2", "D16" -- and printing that is the one thing the
+    // house rule forbids: human names, never raw codes. Every other sheet in this workbook already
+    // reads the name off the matrix, so this reads it off the same place and the columns agree.
+    const seat = areaBook.get(areaCode.trim().toUpperCase());
     const key = `${areaCode}\u0000${row.clientCode}\u0000${row.productCode}\u0000${channel}`;
     let group = groups.get(key);
     if (!group) {
       group = {
-        areaName: row.sheetAreaName || row.areaName,
+        areaName: seat?.areaName || row.sheetAreaName || row.areaName,
         bonusQty: 0,
         channel,
         clientAddress: row.clientAddress,
@@ -382,8 +414,8 @@ function buildDetailGroups(rows: ClosingDetailRow[], repByArea: Map<string, stri
         // the Matrix carries UE-1 and UE-2, so reading the geographic pair here would file a row
         // under a region no other sheet in the same file has heard of. Equal to the geographic
         // pair on every line and area the organogram does not re-own, which is most of them.
-        regionName: row.operationalRegionName || row.regionName,
-        repName: repByArea.get(areaCode) ?? NO_REP,
+        regionName: seat?.regionName || row.operationalRegionName || row.regionName,
+        repName: seat?.repName ?? NO_REP,
         salesValue: 0,
       };
       groups.set(key, group);
@@ -464,15 +496,36 @@ export function buildClosingEngineFill(input: ClosingEngineDataInput): ClosingEn
     year: "numeric",
   }).format(new Date());
 
+  const headline = (sheet: string) => `${sheet}${GAP}${month.label}${GAP}${line}`;
   const title = (sheet: string, subtitle: string) =>
-    [`${sheet}${GAP}${month.label}${GAP}${line}`, subtitle, filterNote].filter(Boolean).join(SEP);
+    [headline(sheet), subtitle, filterNote].filter(Boolean).join(SEP);
+  /**
+   * The Rep Card's masthead is two lines, and it is the only sheet that gets one.
+   *
+   * Every other sheet runs the whole caption along A1, where it overflows to the right until it
+   * meets the emblem — and `clearTitleEmblem` slides the emblem out of its way. The card cannot be
+   * fixed that way: it is eight columns wide, 798px, and the emblem already sits at 689px with
+   * 16px of slack. There is nowhere for the logo to go, so on this one sheet the caption is what
+   * has to give. Eighty-odd characters on one line ended 25pt short of the wordmark — not a
+   * collision, but not a masthead either, and it is the sheet a rep is meant to be proud to share.
+   *
+   * So the sheet name, the month and the line stay on A1 and the descriptive half drops to A2,
+   * where the template already reserves a full empty row. Half the length, twice the air, and a
+   * longer line name can never reach the logo again.
+   */
+  const deck = (subtitle: string) => [subtitle, filterNote].filter(Boolean).join(SEP);
 
   const areas = buildAreas(input);
   const salesData = buildSalesData(input, areas);
   const areaBook = buildAreaBook(areas);
-  // Keyed uppercase because `closingAreaOf` normalises, and a lookup that misses returns "no rep"
-  // rather than an error -- a silently blank column instead of a loud failure.
-  const repByArea = new Map(areas.map((area) => [area.areaCode.trim().toUpperCase(), area.repName]));
+  // Keyed uppercase because `closingAreaOf` normalises, and a lookup that misses falls back to
+  // whatever the distributor's own sheet said -- a slightly worse label instead of a loud failure.
+  const areaBookByCode = new Map<string, AreaBookEntry>(
+    areas.map((area) => [
+      area.areaCode.trim().toUpperCase(),
+      { areaName: area.areaName, regionName: area.regionName, repName: area.repName },
+    ]),
+  );
 
   const headlineSales = matrix.grandTotal.rowTotal.salesValue;
   const targeted = areas.filter((area) => area.targetValue != null && area.targetValue > 0);
@@ -557,15 +610,34 @@ export function buildClosingEngineFill(input: ClosingEngineDataInput): ClosingEn
   const first = topTen[0];
 
   // ── Family Performance ──────────────────────────────────────────────────────────────────────
-  const familyRows: EngineValue[][] = review.families.map((family) => [
-    family.family,
-    family.productCount,
-    family.salesValue,
-    orNoTarget(family.targetValue),
-    orNoTarget(family.achievement),
-    arrowFor(family.achievement),
-    headlineSales ? family.salesValue / headlineSales : null,
-  ]);
+  // Achievement is sales that HAD a target over that target -- the same arithmetic `buildAreas`
+  // does for every other page in this workbook. `review.families` divides ALL of a family's sales
+  // by its target instead, and the two disagree by exactly the sales made in areas nobody set a
+  // target for: on August's Anti Infective this page printed 15.3% beside an Overview reading 14%,
+  // with no way for a reader to tell which one the file meant. The screen keeps its own definition
+  // -- nothing there is being moved silently -- but a workbook has to agree with itself.
+  const targetedSalesByFamily = new Map<string, number>();
+  matrix.columns.forEach((column, index) => {
+    const family = column.family?.trim() || column.productName;
+    const targeted = areas.reduce((sum, area) => {
+      const cell = area.cells[index];
+      return sum + (cell && cell.targetValue != null ? cell.salesValue : 0);
+    }, 0);
+    targetedSalesByFamily.set(family, (targetedSalesByFamily.get(family) ?? 0) + targeted);
+  });
+
+  const familyRows: EngineValue[][] = review.families.map((family) => {
+    const achievement = achievementOf(targetedSalesByFamily.get(family.family) ?? 0, family.targetValue);
+    return [
+      family.family,
+      family.productCount,
+      family.salesValue,
+      orNoTarget(family.targetValue),
+      orNoTarget(achievement),
+      arrowFor(achievement),
+      headlineSales ? family.salesValue / headlineSales : null,
+    ];
+  });
 
   // ── Family by Month ─────────────────────────────────────────────────────────────────────────
   // The by-month series is per PRODUCT CODE; a family is the sum of its products, and a sum of
@@ -642,7 +714,7 @@ export function buildClosingEngineFill(input: ClosingEngineDataInput): ClosingEn
 
   // ── Top Customers, Details ──────────────────────────────────────────────────────────────────
   const detailRows = (input.details ?? []).filter((row) => countsInClosingHeadline(row));
-  const groups = buildDetailGroups(detailRows, repByArea);
+  const groups = buildDetailGroups(detailRows, areaBookByCode);
   const customers = buildCustomers(groups);
 
   let running = 0;
@@ -708,7 +780,7 @@ export function buildClosingEngineFill(input: ClosingEngineDataInput): ClosingEn
 
   const overviewNotes = [
     `One line per workbook — this is ${line} only. Head Office is not part of any line and is excluded throughout.`,
-    `${UP} means at or above half of target and ${DOWN} below it; a green cell made target, an amber cell is under half.`,
+    `${UP} means the target was met and ${DOWN} that it was not; a green cell made target, an amber cell is under half of it.`,
     untargeted === 0
       ? "Every area on this line carries a target, so every area is ranked and scored."
       : `${count(untargeted, "area")} ${agree(untargeted, "carries", "carry")} no target: ${agree(untargeted, "it is", "they are")} listed and counted in the totals, but never ranked and never scored as zero.`,
@@ -779,7 +851,11 @@ export function buildClosingEngineFill(input: ClosingEngineDataInput): ClosingEn
         rows: familyMonthRows,
       },
       "Family Performance": {
-        cells: { A1: title("Family Performance", "by value, because units cannot be added across products") },
+        // Short on purpose: A1 is merged A1:H1 with the emblem sitting in the last two columns,
+        // and the old 111-character subtitle ran under the logo and then clipped mid-word. The
+        // reason it says nothing about units is that rows 12 and 13 of this very sheet say it in
+        // full, in the owner's own wording.
+        cells: { A1: title("Family Performance", "by value, never units") },
         rows: familyRows,
       },
       Overview: {
@@ -804,7 +880,8 @@ export function buildClosingEngineFill(input: ClosingEngineDataInput): ClosingEn
       },
       "Rep Card": {
         cells: {
-          A1: title("Rep Card", "one person, one month, every product"),
+          A1: headline("Rep Card"),
+          A2: deck("one person, one month, every product"),
           B5: areaBook.length ? String(areaBook[0]![0] ?? "") : "",
           B14: `EGP, ${month.label}`,
           // The card's own prior-month sentence reads its month name from here, so the formula
