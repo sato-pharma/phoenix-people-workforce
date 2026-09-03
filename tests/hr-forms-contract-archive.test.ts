@@ -770,6 +770,74 @@ function testEveryVersionBindsAnIdentityFieldToItsValue(): void {
   }
 }
 
+/**
+ * An unknown value leaves an EMPTY BOX on version 3, and a dotted rule everywhere else.
+ *
+ * Two opposite rules, and which applies depends entirely on whether the blank has anything to draw
+ * itself with. In flowing text it has nothing, so it prints a run of dots — that is the paper form's
+ * own signal and `testAMissingValuePrintsADottedRuleAndNotAnEmptyGap` above pins it. Inside version
+ * 3's ruled identity grid the CELL is already the blank, so printing dots as well draws the same
+ * blank twice: a box with a row of dots stranded in it, which is not what the owner's document does
+ * and not what he asked for — "make the boxes empty like my file", 2026-09-03.
+ *
+ * THE MARKER MUST SURVIVE THE EMPTYING, which is the half worth a test of its own. Emitting nothing
+ * at all is the obvious way to get an empty box and it is wrong: the span carries `data-hp-key`, and
+ * that attribute is the only thing that lets the preview screen offer the missing value for
+ * correction on the page. An empty box with no marker is a box nobody can fill from the screen,
+ * which is precisely the opposite of what an empty box is asking someone to do.
+ */
+function testTheDocumentLayoutLeavesAnUnknownValueAsAnEmptyBox(): void {
+  const blank = packFixture({ qualification: null });
+
+  const cell =
+    /<th class="doc-ident__label">المؤهل<\/th><td class="doc-ident__value"[^>]*>(.*?)<\/td>/u.exec(
+      renderContractHtml(blank, 1, "contract-v3"),
+    );
+  assert.ok(cell, "version 3 must set المؤهل in a labelled cell of its identity grid");
+
+  assert.ok(
+    !cell[1].includes(CONTRACT_BLANK_RULE),
+    `the ruled cell IS the blank on version 3, so nothing may be printed inside it — the box came ` +
+      `back carrying a dotted rule as well: ${cell[1]}`,
+  );
+  assert.ok(
+    cell[1].includes('data-hp-key="QUALIFICATION"'),
+    `an empty box must keep its marker — without data-hp-key the preview screen cannot offer the ` +
+      `missing value for correction, so the box can never be filled from the screen: ${cell[1]}`,
+  );
+
+  // HALF A CELL. "تاريخ ومحل الميلاد" is one field written as two tokens either side of a dash, and
+  // a birth date on record with no place of birth beside it is the ordinary state of a new hire —
+  // the first real contract rendered through this had exactly that. Emptying only whole cells prints
+  // "02 / 02 / 2002 —", a separator trailing into nothing on a legal document.
+  const halfKnown =
+    /<th class="doc-ident__label">تاريخ ومحل الميلاد<\/th><td class="doc-ident__value"[^>]*>(.*?)<\/td>/u.exec(
+      renderContractHtml(packFixture({ birthPlace: null }), 1, "contract-v3"),
+    );
+  assert.ok(halfKnown, "version 3 must set تاريخ ومحل الميلاد in a labelled cell of its grid");
+  assert.ok(
+    !/—/u.test(halfKnown[1]),
+    `a separator may not outlive the value on the far side of it — the box printed a dangling ` +
+      `dash after the birth date: ${halfKnown[1].replace(/<[^>]+>/gu, "")}`,
+  );
+  assert.ok(
+    halfKnown[1].includes('data-hp-key="BIRTH_DATE"') &&
+      halfKnown[1].includes('data-hp-key="BIRTH_PLACE"'),
+    `half a cell must keep BOTH markers — the known half prints and the missing half stays ` +
+      `correctable from the screen: ${halfKnown[1]}`,
+  );
+
+  // The other direction, which emptying the wrong thing would break: the two layouts that set the
+  // same field in flowing text have no box to stand for the blank, so their dots must stay.
+  for (const id of ["contract-v1", "contract-v2"]) {
+    assert.ok(
+      renderContractHtml(blank, 1, id).includes(CONTRACT_BLANK_RULE),
+      `${id} sets the party details in flowing text, where a missing value must still print a ` +
+        `visible rule — a contract that closes up around a missing value reads as complete`,
+    );
+  }
+}
+
 export function runHrFormsContractArchiveTests(): void {
   testEveryDocumentHasExactlyOneCurrentVersion();
   testEveryVersionIdIsUniqueAcrossEveryDocument();
@@ -790,4 +858,5 @@ export function runHrFormsContractArchiveTests(): void {
   testEachVersionKeepsItsOwnWording();
   testEveryCopyRequestedIsPrinted();
   testEveryVersionBindsAnIdentityFieldToItsValue();
+  testTheDocumentLayoutLeavesAnUnknownValueAsAnEmptyBox();
 }
