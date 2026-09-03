@@ -42,7 +42,7 @@
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import { resolveBackgroundStanding } from "@/lib/recruitment/background-review";
 import { canFileCandidate } from "@/lib/recruitment/candidate-folder";
-import { areaGovernedByCv, areaNamedByCv } from "@/lib/recruitment/cv-address-place";
+import { areaGovernedByCv, areaNamedByCv, governorateNamedBy } from "@/lib/recruitment/cv-address-place";
 import {
   candidateRegionForGovernorate,
   candidateRegionLabels,
@@ -282,6 +282,49 @@ export function districtRoutingRegion(candidate: DistrictFolderCandidate): strin
 
   const fromGovernorate = candidateRegionForGovernorate(candidate.governorate);
   return fromGovernorate ? candidateRegionLabels[fromGovernorate] : null;
+}
+
+/**
+ * Every region this candidate could reasonably be routed to, best answer first.
+ *
+ * WHY THIS IS A LIST AND NOT ONE ANSWER. `districtRoutingRegion` returns the region they NAMED
+ * before it will look at their governorate, which is right — an answer somebody gave outranks one
+ * read off a CV. But `preferred_region_name` is free text, and when what was typed matches no
+ * district at all the old code stopped there and reported "no district for region", with the
+ * governorate sitting unread on the same row. Seven candidates were invisible to every district
+ * manager that way on 2026-09-03, and all seven had named Upper Egypt: "UE ( 1 )", "Upper (1)",
+ * "Uper Egypt 1", '"Upper Egypt 1 "' quotes included, and three who typed a governorate ("Qena",
+ * "Minya", "Minia Government ( Minia North )") into the region box. Upper Egypt has four boards.
+ *
+ * So the typed answer is still tried FIRST and still wins whenever it names a real district. The
+ * legs below it only ever run when it names none, which is precisely when the alternative is
+ * nobody. The last leg reads the governorate out of the address, because one of the seven had no
+ * `governorate` column at all and an address that said "El-Minia Governorate".
+ *
+ * ORDERED, DE-DUPLICATED BY REGION FAMILY, and never empty-padded: a caller takes the first entry
+ * that has a district, and falls back to the first entry overall so the unplaced report still names
+ * what the person actually said rather than something inferred underneath it.
+ */
+export function districtRoutingRegionOptions(candidate: DistrictFolderCandidate): string[] {
+  const options: string[] = [];
+  const push = (value: string | null | undefined): void => {
+    const name = text(value);
+    if (!name) return;
+    const family = regionFamilyKey(name);
+    if (options.some((existing) => regionFamilyKey(existing) === family)) return;
+    options.push(name);
+  };
+
+  push(districtRoutingRegion(candidate));
+
+  const fromGovernorate = candidateRegionForGovernorate(candidate.governorate);
+  push(fromGovernorate ? candidateRegionLabels[fromGovernorate] : null);
+
+  const addressGovernorate = governorateNamedBy(candidate.address);
+  const fromAddress = addressGovernorate ? candidateRegionForGovernorate(addressGovernorate) : null;
+  push(fromAddress ? candidateRegionLabels[fromAddress] : null);
+
+  return options;
 }
 
 function indexBySeatId(rows: readonly DistrictSeatRow[]): Map<string, DistrictSeatRow> {
@@ -590,7 +633,14 @@ export function placeCandidatesInDistrictFolders<T extends DistrictFolderCandida
     // So the region's catch-alls are resolved first and each tier below is an upgrade OVER them,
     // district by district: the manager who has a folder for that ground gets the CV in it, and
     // every other district in the region keeps it exactly where it already was.
-    const regionName = districtRoutingRegion(candidate);
+    // The region they named comes first and wins whenever it names a real district; the legs
+    // behind it run only when it names none, which is the difference between a manager and nobody.
+    const regionOptions = districtRoutingRegionOptions(candidate);
+    const routableRegion = regionOptions.find(
+      (name) => (catchAllsByRegion.get(regionFamilyKey(name)) ?? []).length > 0,
+    );
+    // No leg found a district: keep the FIRST, so the unplaced row still reports what they said.
+    const regionName = routableRegion ?? regionOptions[0] ?? null;
     const catchAlls = (regionName ? catchAllsByRegion.get(regionFamilyKey(regionName)) : undefined) ?? [];
 
     // The catch-alls the area folders did not already reach — keyed by SEAT, so a district is never

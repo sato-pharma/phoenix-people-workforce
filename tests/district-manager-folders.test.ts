@@ -7,6 +7,7 @@ import {
   boardsForManager,
   districtManagerBoards,
   districtRoutingRegion,
+  districtRoutingRegionOptions,
   placeCandidatesInDistrictFolders,
   REGION_FOLDER_LABEL,
   regionFamilyKey,
@@ -685,6 +686,84 @@ export function runDistrictManagerFolderTests(): void {
     assert.ok(
       loader.includes("placeCandidatesInDistrictFolders"),
       "isCandidateInViewerDistrict must answer with the same placement that fills the folders",
+    );
+  }
+
+  // ── 12. A typed region that names no district must not cost the CV its district ──────────────
+  //
+  // THE BUG THIS PINS. `preferred_region_name` is free text, and `districtRoutingRegion` returns it
+  // before it will look at anything else. When what was typed matched no district the old code
+  // stopped there and reported "no district for region" — with a perfectly good governorate sitting
+  // unread on the same row. Seven candidates were invisible to EVERY district manager that way,
+  // measured in production on 2026-09-03, and every one of them had named Upper Egypt: "UE ( 1 )",
+  // "Upper (1)", "Uper Egypt 1", '"Upper Egypt 1 "' with the quotes stored as data, and three who
+  // typed a governorate into the region box. Upper Egypt has four boards.
+  //
+  // The fix is a FALLBACK, never a reordering: what they typed still wins whenever it names a real
+  // district, which is the first assertion below and the one that must never be traded away.
+  {
+    const ROWS_UE: DistrictSeatRow[] = [
+      ...ROWS,
+      seat({ seat_id: "cns-ue", seat_tier: "DM", occupant_hr_id: "B-119", line_name: "CNS", region_name: "Upper Egypt", seat_display_label: "CNS Upper Egypt DM" }),
+      seat({ seat_id: "cns-ue-1", parent_seat_id: "cns-ue", seat_tier: "REP", area_name: "Sohag" }),
+    ];
+    const archived = (id: string, fields: Partial<DistrictFolderCandidate> = {}) =>
+      candidate(id, { preferencesDeclaredAt: null, preferredAreaName: null, ...fields });
+
+    // THE ORDER. A typed region that names a real district still outranks the governorate — an
+    // answer somebody gave beats one read off a CV, and that rule is older than this fallback.
+    assert.deepEqual(
+      districtRoutingRegionOptions(archived("keeps", { preferredRegionName: "Delta (1)", governorate: "Qena" })),
+      ["Delta (1)", "Upper Egypt"],
+      "what they typed comes first, and the governorate sits behind it as a fallback rather than replacing it",
+    );
+
+    // THE SEVEN. Each of these is a real production value, verbatim, quotes and spacing included.
+    for (const typed of ["UE ( 1 )", "Upper (1)", "Uper Egypt 1", '"Upper Egypt 1 "', "Qena", "Minya"]) {
+      const options = districtRoutingRegionOptions(archived("x", { preferredRegionName: typed, governorate: "Qena" }));
+      assert.equal(
+        options[options.length - 1],
+        "Upper Egypt",
+        `"${typed}" names no district, so the governorate behind it must still answer Upper Egypt`,
+      );
+    }
+
+    // THE ADDRESS, which is the last leg and the one that carried a real candidate who had no
+    // governorate column at all — his address said "El-Minia Governorate" and nothing else did.
+    assert.deepEqual(
+      districtRoutingRegionOptions(archived("addr", { preferredRegionName: '"Upper Egypt 1 "', governorate: null, address: "Egypt- El-Minia Governorate." })),
+      ['"Upper Egypt 1 "', "Upper Egypt"],
+      "with no governorate column, the governorate named in the address is what stands between him and nobody",
+    );
+
+    // AND THE PLACEMENT ITSELF, because the options list is only half the fix.
+    const { boards, unplaced } = placeCandidatesInDistrictFolders({
+      candidates: [archived("typed-nonsense", { faculty: "Faculty of Pharmacy", preferredRegionName: "UE ( 1 )", governorate: "Qena" })],
+      rows: ROWS_UE,
+    });
+    const reached = boards
+      .filter((board) => board.candidateCount > 0)
+      .map((board) => board.seatId)
+      .sort();
+    assert.deepEqual(
+      reached,
+      ["ai-ue1", "cns-ue"],
+      "a CV whose typed region names nothing still reaches every district that covers the governorate he gave",
+    );
+    assert.equal(unplaced.length, 0, "and it is not reported as unplaceable, which is what a manager never sees");
+
+    // THE REFUSAL. Nothing here invents a region. When no leg finds a district the CV is still
+    // reported unplaced, and the report still names what the PERSON said rather than something
+    // inferred underneath it — a recruiter answering that row needs their words, not ours.
+    const nowhere = placeCandidatesInDistrictFolders({
+      candidates: [archived("atlantis", { faculty: "Faculty of Pharmacy", preferredRegionName: "Atlantis", governorate: "Atlantis" })],
+      rows: ROWS_UE,
+    });
+    assert.equal(nowhere.unplaced.length, 1, "a region nobody recognises is still nobody's district");
+    assert.equal(
+      nowhere.unplaced[0].declaredArea,
+      "Atlantis",
+      "and the unplaced row quotes what they typed — the fallback must not rewrite the question a recruiter is being asked",
     );
   }
 }
