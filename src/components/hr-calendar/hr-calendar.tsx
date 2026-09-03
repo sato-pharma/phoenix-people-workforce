@@ -493,10 +493,10 @@ export function HrCalendar({ initialData, initialError }: Props) {
                               key={`${event.eventType}-${event.employee.hrId}-${event.date}`}
                               title={`${formatEmployeeDisplayName(event.employee.fullName)} - ${eventLabel(event)}`}
                             >
-                              <p className="truncate font-semibold">
+                              <p className="break-words font-semibold">
                                 {formatEmployeeDisplayName(event.employee.fullName)}
                               </p>
-                              <p className="truncate text-phx-xs font-medium opacity-80">
+                              <p className="break-words text-phx-xs font-medium opacity-80">
                                 {eventLabel(event)}
                               </p>
                             </div>

@@ -411,14 +411,14 @@ function EmployeeCard({ e, basePath }: { e: Employee360ListItem; basePath: strin
       </span>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
-          <span className="truncate text-sm font-bold text-slate-900">{e.displayName}</span>
+          <span className="min-w-0 break-words text-sm font-bold text-slate-900">{e.displayName}</span>
           {e.employmentStatus && e.employmentStatus !== "active" ? (
             <span className="shrink-0 rounded-full bg-phx-warn-bg px-1.5 py-0.5 text-phx-3xs font-black uppercase tracking-wide text-phx-warn">
               {e.employmentStatus.replace(/_/g, " ")}
             </span>
           ) : null}
         </div>
-        <div className="mt-0.5 truncate text-xs text-slate-500">{e.jobTitle || "—"}</div>
+        <div className="mt-0.5 break-words text-xs text-slate-500">{e.jobTitle || "—"}</div>
         <div className="mt-1.5 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-phx-xs text-slate-400">
           <span className="rounded border border-slate-200 px-1.5 py-0.5 font-mono font-semibold text-slate-500">
             {e.hrId.toUpperCase()}
@@ -428,7 +428,7 @@ function EmployeeCard({ e, basePath }: { e: Employee360ListItem; basePath: strin
           ))}
         </div>
         {e.managerName ? (
-          <div className="mt-1 truncate text-phx-xs text-slate-400">Reports to {e.managerName}</div>
+          <div className="mt-1 break-words text-phx-xs text-slate-400">Reports to {e.managerName}</div>
         ) : null}
       </div>
       <ArrowRight className="mt-1 h-4 w-4 shrink-0 text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-orange-500" />

@@ -825,11 +825,11 @@ export function HiringDocumentsManager({ canManage, initialData, initialError }:
                       <dl className="mt-3 grid grid-cols-2 gap-2">
                         <div className="rounded-lg border border-phx-line bg-phx-paper px-2.5 py-2">
                           <dt className="text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-faint">Line</dt>
-                          <dd className="mt-0.5 truncate text-xs font-bold text-phx-ink">{employee.lineName ?? "-"}</dd>
+                          <dd className="mt-0.5 break-words text-xs font-bold text-phx-ink">{employee.lineName ?? "-"}</dd>
                         </div>
                         <div className="rounded-lg border border-phx-line bg-phx-paper px-2.5 py-2">
                           <dt className="text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-faint">Hiring Date</dt>
-                          <dd className="mt-0.5 truncate text-xs font-bold text-phx-ink">{formatDate(employee.hireDate)}</dd>
+                          <dd className="mt-0.5 break-words text-xs font-bold text-phx-ink">{formatDate(employee.hireDate)}</dd>
                         </div>
                         <div className="col-span-2 rounded-lg border border-phx-line bg-phx-paper px-2.5 py-2">
                           <dt className="text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-faint">Manager</dt>

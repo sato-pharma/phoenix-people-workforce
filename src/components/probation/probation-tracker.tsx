@@ -803,7 +803,7 @@ export function ProbationTracker({
               <tbody className="divide-y divide-phx-line">
                 {feedbackReportRows.map((row) => (
                     <tr className="align-top transition-colors hover:bg-slate-50/65" key={`feedback:${row.hr_id}`}>
-                      <td className={cn(probationTableCellClassName, "max-w-[78px] truncate font-mono text-text-secondary")}>{row.hr_id}</td>
+                      <td className={cn(probationTableCellClassName, "max-w-[78px] break-words font-mono text-text-secondary")}>{row.hr_id}</td>
                       <td className={cn(probationTableCellClassName, "font-semibold text-text")}>{row.full_name}</td>
                       <td className={cn(probationTableCellClassName)}>{formatDate(row.hire_date)}</td>
                       <td className={cn(probationTableCellClassName)}>{row.probationDayStatus}</td>
@@ -939,10 +939,10 @@ export function ProbationTracker({
 
                   return (
                     <tr className="transition-colors hover:bg-slate-50/65" key={row.hr_id}>
-                      <td className={cn(probationTableCellClassName, "max-w-[78px] truncate font-mono text-text-secondary")}>{row.hr_id || "-"}</td>
-                      <td className={cn(probationTableCellClassName, "max-w-[78px] truncate font-mono text-text-secondary")}>{row.crm_id || "-"}</td>
-                      <td className={cn(probationTableCellClassName, "truncate font-semibold text-text")}>{row.full_name}</td>
-                      <td className={cn("max-w-[190px] truncate", probationTableCellClassName)}>{row.job_title}</td>
+                      <td className={cn(probationTableCellClassName, "max-w-[78px] break-words font-mono text-text-secondary")}>{row.hr_id || "-"}</td>
+                      <td className={cn(probationTableCellClassName, "max-w-[78px] break-words font-mono text-text-secondary")}>{row.crm_id || "-"}</td>
+                      <td className={cn(probationTableCellClassName, "break-words font-semibold text-text")}>{row.full_name}</td>
+                      <td className={cn("max-w-[190px] break-words", probationTableCellClassName)}>{row.job_title}</td>
                       <td className={cn(probationTableCellClassName)}>{row.line_name}</td>
                       <td className={cn(probationTableCellClassName)}>{row.area_name}</td>
                       <td className={cn(probationTableCellClassName)}>{formatDate(row.hire_date)}</td>
