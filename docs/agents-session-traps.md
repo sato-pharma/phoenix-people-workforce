@@ -322,15 +322,29 @@ file holding the full account, under
   taken from the filename, and a lookup keyed on the filename prefix answers *not applied* for **ten
   of the eleven** migrations that are in fact applied. That single wrong reading is the whole trap.
 
-  It follows that **re-stamping a colliding migration's timestamp is safe whether or not it has been
-  applied**: the ledger row is found by `name`, the rename changes only the digits in front of it,
-  and the filename prefix was never in the ledger to begin with. Applied-vs-unapplied is simply not
-  what makes the rename safe — which matters, because reasoning from it points the wrong way in
-  both directions. ⚠ `scripts/check-migrations.mjs` carries the mirror error in its
-  `GRANDFATHERED_DUPLICATE_TIMESTAMPS` comments, which say of two already-applied duplicates that
-  "renaming either would desync migration history". **Left as-is deliberately** — grandfathering is
-  harmless and the entries are load-bearing in a required check; this note exists so the next
-  session does not inherit the reasoning.
+  It follows that **re-stamping a colliding migration's timestamp is safe for a NORMALLY stamped
+  row, whether or not it has been applied**: the ledger row is found by `name`, and the rename
+  changes only the digits in front of it. Applied-vs-unapplied is simply not what makes the rename
+  safe — which matters, because reasoning from it points the wrong way in both directions. #1419
+  proved it in practice, re-stamping `20260728100000_restore_report_rpc_statement_timeouts.sql` to
+  `20260728100500_…`; that row still reads `name=restore_report_rpc_statement_timeouts,
+  version=20260728091832`, untouched, and production has been healthy since 2026-07-28.
+
+  ⚠ **Read the actual row first — not every one is stamped normally.** An earlier wording here said
+  the filename prefix "was never in the ledger to begin with". That holds for the normal case and
+  NOT for every case: measured 2026-09-03, that migration's own collision partner sits in the ledger
+  as `name=20260728100000_au_resign_vacate_all_open_seats` — the FULL filename stem, old timestamp
+  embedded — under `version=20260728092516`. For THAT row the prefix is in the ledger, and a
+  re-stamp would leave its name pointing at a filename that no longer exists. Query the row before
+  re-stamping; do not generalise from this bullet alone.
+
+  `scripts/check-migrations.mjs`'s `GRANDFATHERED_DUPLICATE_TIMESTAMPS` comments carried the same
+  mirror error — "renaming either would desync migration history" — and have since been corrected
+  in that file's own header. That pass also found **three of its four entries DEAD**: only
+  `20260814150000` still has two files, which the check's single warning confirms on every run. The
+  entries were left in place (removing one is a behaviour change to a required check), but the repo's
+  own doctrine is that a grandfather list "must not rot into cover for a name that no longer
+  collides" — `tests/hr-function-governance.test.ts` enforces exactly that for its own list.
 
   **And the applied-state can flip UNDER a PR**, which is how the correct action came to carry a
   wrong justification. PR #2990's message states the ledger "does NOT hold

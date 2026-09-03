@@ -137,7 +137,7 @@ it for the hook's wording. Which memory backs which hook:
 **Migrations**
 
 - **A migration FILE written is not a migration APPLIED**, and **a merged migration file does not mean the grants are live.**
-- **Migration timestamps COLLIDE across parallel branches**, and **the ledger version never matches the filename — ask the ledger by NAME, and a re-stamp cannot desync it.** 11 of the 12 newest files read *not applied* when looked up by prefix; 10 of those 11 ARE applied. **Applied-state also FLIPS mid-PR**, so re-read it before asserting one durably.
+- **Migration timestamps COLLIDE across parallel branches**, and **the ledger version never matches the filename — ask the ledger by NAME; a re-stamp cannot desync a NORMALLY stamped row, but READ the row — one embeds its old filename in `name`.** 11 of the 12 newest files read *not applied* when looked up by prefix; 10 of those 11 ARE applied. **Applied-state also FLIPS mid-PR**, so re-read it before asserting one durably.
 - **A PostgREST `.in()` carrying several hundred ids returns ZERO rows and NO error.** Chunk at ~50 and print the intermediate count.
 - **A `neq` against an ABSENT jsonb key matches ZERO rows**, and **an unbounded `.select()` stops at 1000** with no marker. Write the OR-form; `count(*)` before trusting any select, then page with an explicit `.order()`.
 - **`n_live_tup` is STALE in production — it reports LIVE tables as empty.** Sweep with a real `count(*)` via `query_to_xml`.
