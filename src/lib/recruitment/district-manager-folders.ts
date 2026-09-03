@@ -578,6 +578,28 @@ export function placeCandidatesInDistrictFolders<T extends DistrictFolderCandida
       continue;
     }
 
+    // ── THE CATCH-ALLS FIRST, BECAUSE THE TWO TIERS BELOW UPGRADE THEM RATHER THAN REPLACE ────
+    //
+    // Reading an area out of a CV must never COST that CV a board. Both tiers below narrow to the
+    // districts holding that particular area NAME, and area names are per line: Anti Infective
+    // splits Upper Egypt into Qena 1 and Qena 2 where CNS covers the same ground from Sohag. Filing
+    // a Qena CV into "Qena 1" and stopping there took it off the CNS manager's board altogether —
+    // a manager who could see that CV yesterday could not see it today, which is strictly worse
+    // than the catch-all it replaced, and invisible from the folder that gained it.
+    //
+    // So the region's catch-alls are resolved first and each tier below is an upgrade OVER them,
+    // district by district: the manager who has a folder for that ground gets the CV in it, and
+    // every other district in the region keeps it exactly where it already was.
+    const regionName = districtRoutingRegion(candidate);
+    const catchAlls = (regionName ? catchAllsByRegion.get(regionFamilyKey(regionName)) : undefined) ?? [];
+
+    // The catch-alls the area folders did not already reach — keyed by SEAT, so a district is never
+    // handed the same CV twice, once in an area folder and once in its own "No area named".
+    const upgrading = (areaTargets: readonly Target[]): Target[] => {
+      const reached = new Set(areaTargets.map((target) => target.board.seatId));
+      return catchAlls.filter((target) => !reached.has(target.board.seatId));
+    };
+
     // ── The area their own CV names, when they declared none ──────────────────────────────────
     //
     // The owner, 2026-09-03: *"do a fucking effort for the areas that you're putting in a folder
@@ -604,6 +626,7 @@ export function placeCandidatesInDistrictFolders<T extends DistrictFolderCandida
       const cvTargets = fromCv ? foldersByKey.get(areaFolderKey(fromCv.areaName)) : undefined;
       if (cvTargets && cvTargets.length > 0) {
         fileInto(cvTargets, candidate, "cv-text");
+        fileInto(upgrading(cvTargets), candidate);
         continue;
       }
     }
@@ -625,6 +648,7 @@ export function placeCandidatesInDistrictFolders<T extends DistrictFolderCandida
       const govTargets = governed ? foldersByKey.get(areaFolderKey(governed.areaName)) : undefined;
       if (govTargets && govTargets.length > 0) {
         fileInto(govTargets, candidate, "governorate");
+        fileInto(upgrading(govTargets), candidate);
         continue;
       }
     }
@@ -632,7 +656,6 @@ export function placeCandidatesInDistrictFolders<T extends DistrictFolderCandida
     // ── The region, when their CV names no area either ─────────────────────────────────────────
     // "Qena" is not an area here — the organogram splits it into Qena 1 and Qena 2 — but it is
     // unmistakably Upper Egypt, and a district's catch-all is a better answer than nobody at all.
-    const regionName = districtRoutingRegion(candidate);
     if (!regionName) {
       unplaced.push({
         candidateId: candidate.id,
@@ -647,8 +670,7 @@ export function placeCandidatesInDistrictFolders<T extends DistrictFolderCandida
       continue;
     }
 
-    const catchAlls = catchAllsByRegion.get(regionFamilyKey(regionName));
-    if (!catchAlls || catchAlls.length === 0) {
+    if (catchAlls.length === 0) {
       unplaced.push({
         candidateId: candidate.id,
         candidateName: candidate.fullName ?? null,

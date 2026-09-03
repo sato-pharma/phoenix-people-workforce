@@ -396,6 +396,41 @@ export function runDistrictManagerFolderTests(): void {
         "no catch-all still holds it — it was lifted out, not copied",
       );
 
+      // ── AND THE ASYMMETRIC HALF, where filing by area silently COSTS a manager a CV ───────────
+      //
+      // Nasr City above is on all three lines, so lifting the CV out of the catch-alls took nothing
+      // from anybody. Heliopolis is a rep seat on ANTI INFECTIVE ONLY — the other two Cairo
+      // districts cover that ground under area names of their own. Area names are per line, and
+      // that is the whole trap: reading this tier as a REPLACEMENT for the catch-all dropped the CV
+      // off both other boards. A manager who could see the person yesterday could not see him
+      // today, nothing on either screen said so, and the folder that gained him looked correct.
+      //
+      // So the anti-infective manager gets the better folder and the other two keep exactly what
+      // they had. This is the assertion that was missing when the address tier first shipped.
+      const lopsided = placeCandidatesInDistrictFolders({
+        candidates: [archived("helio", {
+          address: "7 Cleopatra st., Heliopolis, Cairo",
+          faculty: "Faculty of Pharmacy",
+          governorate: "Cairo",
+        })],
+        rows: ROWS_UE,
+      });
+      const helioLanded = lopsided.boards
+        .flatMap((board) => board.folders.map((folder) => ({ board, folder })))
+        .filter((entry) => entry.folder.candidates.some((row) => row.id === "helio"));
+      assert.deepEqual(
+        helioLanded.map((entry) => `${entry.board.seatId}/${entry.folder.areaName}`).sort(),
+        ["ai-cairo/Heliopolis", "cns-cairo/No area named", "pd-cairo/No area named"],
+        "an area only one line holds still reaches all three districts — the folder differs, the audience does not",
+      );
+      assert.deepEqual(
+        helioLanded
+          .filter((entry) => entry.folder.fromCvText.includes("helio"))
+          .map((entry) => entry.board.seatId),
+        ["ai-cairo"],
+        "and only the district that gained an area folder claims the CV was read off the address",
+      );
+
       // The control: strip the address, keep everything else. Cairo is a governorate covering twelve
       // areas, and that is a region answer, not an area one.
       const withoutAddress = placeCandidatesInDistrictFolders({
@@ -450,12 +485,31 @@ export function runDistrictManagerFolderTests(): void {
         .filter((entry) => entry.folder.candidates.some((row) => row.id === "sohag"));
       assert.deepEqual(
         landed.map((entry) => `${entry.board.seatId}/${entry.folder.areaName}`).sort(),
-        ["cns-ue/Sohag"],
-        "Sohag governorate holds one area, so the CV reaches that folder rather than a district catch-all",
+        ["ai-ue1/No area named", "cns-ue/Sohag"],
+        "Sohag governorate holds one area, so the manager who covers it gets the CV in that folder — and the district that has no folder for that ground keeps it in its catch-all",
       );
-      assert.ok(
-        landed.every((entry) => entry.folder.fromGovernorate.includes("sohag")),
-        "and the folder records it as a governorate placement",
+
+      // THE UPGRADE MUST NOT COST A BOARD, and this is the half that failed silently. Filing into
+      // an area folder narrows to the districts holding that NAME, and area names are per line:
+      // reading the tier as a REPLACEMENT for the catch-all took the CV off every other manager's
+      // board in the region. Nothing on the folder that gained it would have shown that, and the
+      // manager who lost it sees only a folder that never mentions the person.
+      assert.deepEqual(
+        [...new Set(landed.map((entry) => entry.board.seatId))].sort(),
+        ["ai-ue1", "cns-ue"],
+        "every district that saw this CV before still sees it — the area folder is an upgrade over the catch-all, never a swap",
+      );
+      assert.equal(
+        soleArea.placements,
+        2,
+        "…and exactly once per district — a district is never handed the same CV twice, in an area folder and in its own catch-all",
+      );
+      assert.deepEqual(
+        landed
+          .filter((entry) => entry.folder.fromGovernorate.includes("sohag"))
+          .map((entry) => `${entry.board.seatId}/${entry.folder.areaName}`),
+        ["cns-ue/Sohag"],
+        "only the folder that gained something records it as a governorate placement — the catch-all is where the CV already was, and says nothing new",
       );
       assert.ok(
         soleArea.boards.flatMap((board) => board.folders).every((folder) => folder.fromCvText.length === 0),
