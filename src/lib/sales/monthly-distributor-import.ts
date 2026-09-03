@@ -5,11 +5,10 @@ import { writeAuditLog } from "@/lib/admin/audit";
 import type { PhoenixRole } from "@/lib/auth/permissions";
 import { invalidateSalesDashboardCache } from "@/lib/dashboard/invalidation";
 import {
-  canViewHeadOfficeLine,
-  canViewRestrictedProducts,
+  isConfidentialRevealRole,
   isHeadOfficeLine,
   RESTRICTED_PRODUCT_CODES,
-} from "@/lib/sales/access-scope";
+} from "@/lib/sales/confidential-products";
 import { directRowsCarryOwnArea, isSyntheticDirectArea } from "@/lib/sales/closing-direct-area";
 import {
   allocateDirectToOperationalRegions,
@@ -22,6 +21,12 @@ import {
 import { applyClosingAreaMerges, markMergedAreaRowsStatic } from "@/lib/sales/closing-area-merges";
 import { SalesWorkflowError } from "@/lib/sales/contracts";
 import { JULY_2026_DIRECT_PERIOD, JULY_2026_DIRECT_ROWS } from "@/lib/sales/july-2026-direct-orders";
+import {
+  addClosingSales,
+  emptyClosingCell,
+  roundedClosingCell,
+  sumClosingRowTotal,
+} from "@/lib/sales/monthly-closing-matrix-cells";
 import { loadMonthlyTargets, resolveTargetLineCode } from "@/lib/sales/monthly-targets";
 import { isOfficeDistributorCode } from "@/lib/sales/office-distributor";
 import { finalizeSosBatchAndAuditSupersede } from "@/lib/sales/source-of-sales-batch-supersede";
@@ -2720,6 +2725,21 @@ async function loadHeadOfficeProductCodes(): Promise<Set<string> | null> {
 }
 
 /**
+ * Local aliases for access-scope.ts's `canViewHeadOfficeLine` / `canViewRestrictedProducts` — same
+ * locked decision (CEO / Super Admin only), both delegating to the single shared predicate in
+ * confidential-products.ts. Redeclared here rather than imported from access-scope.ts because this
+ * module is reached from several CLIENT components (Monthly Closing, the closing period picker, the
+ * portal closing view, the Performance Review) and access-scope.ts pulls the server-only
+ * employee-directory chain that ends at node:crypto, which webpack refuses in a browser bundle.
+ */
+function canViewHeadOfficeLine(role: PhoenixRole): boolean {
+  return isConfidentialRevealRole(role);
+}
+function canViewRestrictedProducts(role: PhoenixRole): boolean {
+  return isConfidentialRevealRole(role);
+}
+
+/**
  * Who is asking. REQUIRED — the two confidential locks (restricted products, Head Office line) are
  * derived from the role in here, so no caller can forget one of them.
  *
@@ -3420,60 +3440,11 @@ export function monthlyClosingRegionRank(regionCode: string) {
   return index === -1 ? MONTHLY_CLOSING_REGION_ORDER.length : index;
 }
 
-// Exported so the store-split matrix adjustment rolls up with the EXACT same arithmetic the
-// matrix was built with — a second, parallel implementation would be free to drift.
-export function emptyClosingCell(): MonthlyClosingCell {
-  return { achievement: null, salesUnits: 0, salesValue: 0, targetUnits: null, targetValue: null };
-}
-
-/**
- * Null-preserving addition for the target columns.
- *
- * A missing target is NOT zero. If a region's areas all lack targets, the subtotal must stay
- * null so the UI renders "—"; folding them in as 0 would both assert "the target is zero" and
- * make every achievement % a division by nothing. Only once at least one contributing cell
- * actually carries a target does the sum become a number.
- */
-function addTarget(left: number | null, right: number | null): number | null {
-  if (left === null && right === null) return null;
-  return (left ?? 0) + (right ?? 0);
-}
-
-/** Roll-up adds the sales figures AND the targets; achievement is re-derived from the sums. */
-export function addClosingSales(target: MonthlyClosingCell, source: MonthlyClosingCell) {
-  target.salesUnits += source.salesUnits;
-  target.salesValue += source.salesValue;
-  target.targetUnits = addTarget(target.targetUnits, source.targetUnits);
-  target.targetValue = addTarget(target.targetValue, source.targetValue);
-}
-
-/**
- * Achievement is ALWAYS recomputed from summed value ÷ summed target — never averaged from the
- * per-cell percentages (which would weight a tiny area the same as a whole region), and never
- * emitted against a null or zero target.
- */
-function closingAchievement(cell: MonthlyClosingCell): number | null {
-  if (cell.targetValue === null || cell.targetValue === 0) return null;
-  return cell.salesValue / cell.targetValue;
-}
-
-export function roundedClosingCell(cell: MonthlyClosingCell): MonthlyClosingCell {
-  const rounded: MonthlyClosingCell = {
-    achievement: null,
-    salesUnits: Number(cell.salesUnits.toFixed(6)),
-    salesValue: Number(cell.salesValue.toFixed(6)),
-    targetUnits: cell.targetUnits === null ? null : Number(cell.targetUnits.toFixed(6)),
-    targetValue: cell.targetValue === null ? null : Number(cell.targetValue.toFixed(6)),
-  };
-  rounded.achievement = closingAchievement(rounded);
-  return rounded;
-}
-
-export function sumClosingRowTotal(cells: MonthlyClosingCell[]): MonthlyClosingCell {
-  const total = emptyClosingCell();
-  cells.forEach((cell) => addClosingSales(total, cell));
-  return roundedClosingCell(total);
-}
+// Moved to ./monthly-closing-matrix-cells.ts (a dependency-free module, imported at the top of this
+// file) so the client components that only need this pure roll-up don't pull this file's
+// server-only chain into their bundle; re-exported here for existing server callers, and still used
+// below by buildMonthlyClosingMatrix and the rest of this file.
+export { addClosingSales, emptyClosingCell, roundedClosingCell, sumClosingRowTotal };
 
 /**
  * Pure matrix builder. Aggregates ONLY at the area layer; region subtotals and the
@@ -3976,113 +3947,10 @@ export function injectDirectIntoMatrix(
   return { ...matrix, companyTotal, directNational, grandTotal, regions };
 }
 
-/**
- * Pure client-side filter. Keeps the selected regions/areas/products (+ free-text area
- * search) and RE-DERIVES region subtotals and the national grand total from the surviving
- * AREA rows only — so the filtered totals stay exact and each area is still counted once.
- * Empty selections mean "all". This mirrors buildMonthlyClosingMatrix's roll-up.
- */
-export function filterMonthlyClosingMatrix(
-  matrix: MonthlyClosingMatrix,
-  filter: { areaCodes?: string[]; productCodes?: string[]; regionCodes?: string[]; search?: string },
-): MonthlyClosingMatrix {
-  const regionSet = new Set((filter.regionCodes ?? []).map((code) => normalizeCode(code)));
-  const areaSet = new Set((filter.areaCodes ?? []).map((code) => normalizeCode(code)));
-  const productSet = new Set((filter.productCodes ?? []).map((code) => normalizeCode(code)));
-  const search = normalizeKey(filter.search ?? "");
-
-  const keptColumnIndexes: number[] = [];
-  const columns: MonthlyClosingColumn[] = [];
-  matrix.columns.forEach((column, index) => {
-    if (productSet.size === 0 || productSet.has(normalizeCode(column.productCode))) {
-      keptColumnIndexes.push(index);
-      columns.push(column);
-    }
-  });
-
-  const projectCells = (cells: MonthlyClosingCell[]) => keptColumnIndexes.map((index) => cells[index]);
-
-  const regions: MonthlyClosingRegionGroup[] = [];
-  matrix.regions.forEach((region) => {
-    if (regionSet.size > 0 && !regionSet.has(normalizeCode(region.regionCode))) return;
-
-    const areas = region.areas
-      .filter((area) => {
-        if (areaSet.size > 0 && !areaSet.has(normalizeCode(area.areaCode))) return false;
-        if (search) {
-          const haystack = `${normalizeKey(area.areaCode)} ${normalizeKey(area.areaName)}`;
-          if (!haystack.includes(search)) return false;
-        }
-        return true;
-      })
-      .map((area) => {
-        const cells = projectCells(area.cells);
-        return { ...area, cells, rowTotal: sumClosingRowTotal(cells) };
-      });
-
-    if (areas.length === 0) return;
-
-    const subtotalCells = columns.map((_column, columnIndex) => {
-      const cell = emptyClosingCell();
-      areas.forEach((area) => addClosingSales(cell, area.cells[columnIndex]));
-      return roundedClosingCell(cell);
-    });
-
-    regions.push({
-      areas,
-      regionCode: region.regionCode,
-      regionName: region.regionName,
-      subtotal: {
-        cells: subtotalCells,
-        kind: "regionSubtotal",
-        regionCode: region.regionCode,
-        regionName: region.regionName,
-        rowTotal: sumClosingRowTotal(subtotalCells),
-      },
-    });
-  });
-
-  const grandCells = columns.map((_column, columnIndex) => {
-    const cell = emptyClosingCell();
-    regions.forEach((region) => region.areas.forEach((area) => addClosingSales(cell, area.cells[columnIndex])));
-    return roundedClosingCell(cell);
-  });
-
-  // Carry the Direct – National row through (project to the kept columns) and recompute the
-  // company total = filtered grand total + Direct National.
-  const directNational = matrix.directNational
-    ? (() => {
-      const cells = projectCells(matrix.directNational!.cells);
-      return { ...matrix.directNational!, cells, rowTotal: sumClosingRowTotal(cells) };
-    })()
-    : null;
-  let companyTotal: MonthlyClosingGrandTotalRow | null = null;
-  if (directNational) {
-    const companyCells = columns.map((_column, columnIndex) => {
-      const cell = emptyClosingCell();
-      addClosingSales(cell, grandCells[columnIndex]);
-      addClosingSales(cell, directNational.cells[columnIndex]);
-      return roundedClosingCell(cell);
-    });
-    companyTotal = { cells: companyCells, kind: "grandTotal", rowTotal: sumClosingRowTotal(companyCells) };
-  }
-
-  return {
-    availableLines: matrix.availableLines,
-    availablePeriods: matrix.availablePeriods,
-    columns,
-    companyTotal,
-    directNational,
-    grandTotal: {
-      cells: grandCells,
-      kind: "grandTotal",
-      rowTotal: sumClosingRowTotal(grandCells),
-    },
-    line: matrix.line,
-    period: matrix.period,
-    regions,
-  };
-}
+// Moved to ./monthly-closing-matrix-cells.ts alongside the cell arithmetic it is built from — the
+// portal/admin closing screens and the closing period picker call this directly and are CLIENT
+// components; re-exported here for existing server callers (the export routes, the tests).
+export { filterMonthlyClosingMatrix } from "./monthly-closing-matrix-cells";
 
 /** The slice of a detail row this rebuild needs — structural, so the details module never has to
  * be imported here (which would be a cycle). `qty` mirrors the RPC's `sum(total_qty)` units and

@@ -19,13 +19,15 @@ import { Button } from "@/components/ui/button";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { emptyMonthlyClosingFilterOptions } from "@/lib/sales/monthly-closing-filter-options";
 import { describePeriodSelection } from "@/lib/sales/monthly-closing-period-merge";
+import type {
+  ClosingPerformanceReview,
+  PerformanceMatrix,
+  PerformanceReviewSeriesRow,
+} from "@/lib/sales/closing-performance-review";
 import {
   performanceReviewRegionStyle,
   PERFORMANCE_REVIEW_FIRST_PERIOD,
-  type ClosingPerformanceReview,
-  type PerformanceMatrix,
-  type PerformanceReviewSeriesRow,
-} from "@/lib/sales/closing-performance-review";
+} from "@/lib/sales/closing-performance-review-regions";
 
 // The screen half of the Performance Review. Its sections are the workbook's tabs, in the same
 // order, from the same object — the owner's rule is that an export matches the screen, and the

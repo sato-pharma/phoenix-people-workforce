@@ -15,6 +15,8 @@
 // Values are unchanged, and access-scope.ts re-exports all three, so every existing server
 // caller keeps importing them from where it already does.
 
+import type { PhoenixRole } from "@/lib/auth/permissions";
+
 /** Confidential products excluded by default everywhere. Single source of truth. */
 export const RESTRICTED_PRODUCT_CODES = ["LA003", "LA004", "SS001"] as const;
 
@@ -29,4 +31,18 @@ const HEAD_OFFICE_LINE_KEYS = new Set(["head office", "headoffice", "office", "h
 /** True when a line name (employee line or SoS official line) is the confidential Head Office line. */
 export function isHeadOfficeLine(line: string | null | undefined): boolean {
   return HEAD_OFFICE_LINE_KEYS.has(normalizeLineKey(line));
+}
+
+/**
+ * Roles allowed to reveal the confidential Head Office line / restricted products (the locked
+ * decision — CEO / Super Admin only). The same check as access-scope.ts's
+ * `canViewHeadOfficeLine` / `canViewRestrictedProducts`, duplicated here on purpose (kept in
+ * lockstep by hand, the same shape as RESTRICTED_PRODUCT_NAME_FALLBACKS above): those two live in
+ * access-scope.ts, which pulls the server-only employee-directory/node:crypto chain, and cannot be
+ * imported by monthly-distributor-import.ts — it is reached from several CLIENT components (Monthly
+ * Closing, the closing period picker, the portal closing view, the Performance Review). If the
+ * locked decision ever changes, update both copies.
+ */
+export function isConfidentialRevealRole(role: PhoenixRole): boolean {
+  return role === "CEO" || role === "Super Admin";
 }
