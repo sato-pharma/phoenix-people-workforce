@@ -370,6 +370,21 @@ export type MarketingRequestPharmacyOption = {
   venueType: VenueType;
 };
 
+/**
+ * A selectable contact on a marketing customer.
+ *
+ * `crmContactId` is the CRM contact this person already resolves to, or null when the contact was
+ * never linked. It is surfaced in the picker on purpose: naming the contact on the REQUEST is what
+ * turns a customer-level guess into an exact link, and the requester is the only person who knows
+ * which of a customer's contacts a campaign actually concerns.
+ */
+export type MarketingRequestContactOption = {
+  contactName: string;
+  crmContactId: number | null;
+  id: string;
+  mobileNumber: string | null;
+};
+
 export type MarketingCustomerPharmacy = {
   active: boolean;
   createdAt: string;
