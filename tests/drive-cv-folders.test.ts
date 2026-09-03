@@ -4,8 +4,10 @@ import path from "node:path";
 
 import {
   candidateRegionForGovernorate,
+  foreignCountryForGovernorate,
   recruitmentAreaRegionOverrides,
 } from "../src/lib/recruitment/candidate-region.ts";
+import { egyptRegionFromFreeText } from "../src/lib/recruitment/candidate-region-freetext.ts";
 import { inferCandidatePlacement } from "../src/lib/recruitment/candidate-folder-inference.ts";
 import {
   driveFileNameFor,
@@ -329,6 +331,100 @@ export function runDriveCvFolderTests() {
   for (const empty of ["", "   ", null, undefined]) {
     assert.equal(candidateRegionForGovernorate(empty), null, "an empty governorate resolves to nothing");
   }
+
+  // ── The free-text reader, and the two traps that sit on it ────────────────────────────────────
+  //
+  // Second audit pass, production 2026-09-04: 53 candidates holding a CV had NO governorate and an
+  // address the map could not read. Every town below is one of them. They are read now.
+  for (const [text, want] of [
+    ["Damanhour, Damanhour 22511", "AB"],
+    ["Baltim, Kafr El-Sheikh, Egypt", "D1"],
+    ["Naga Hammadi, Egypt", "UE"],
+    ["10th of Ramadan", "D3"],
+    ["Zifta, Gharbiyah, Egypt", "D1"],
+    ["Itay El-Baroud, Egypt", "AB"],
+    ["Bani Swef city", "GZ"],
+  ] as const) {
+    assert.equal(egyptRegionFromFreeText(text), want, `a street address must place ${text}`);
+  }
+
+  // Arabic, and the two misspellings production produces that the map did not carry.
+  assert.equal(egyptRegionFromFreeText("الدقهلية"), "D2", "an Arabic governorate must resolve");
+  assert.equal(egyptRegionFromFreeText("Behaira"), "AB", "Behaira is Beheira");
+  assert.equal(egyptRegionFromFreeText("Kafr Elshikh"), "D1", "the Elshikh spelling");
+
+  // TRAP 1 — why this does not call `resolveGovernorate`. That helper matches with a bare
+  // `includes`, so the Dakahlia alias "aga" matches INSIDE "Sagamu" and a Nigerian CV resolves to
+  // Dakahlia — filed in a Delta folder, in Egypt, for ever. Whole-word matching is what stops it,
+  // and this assertion is the reason the matching may never be loosened back.
+  assert.equal(
+    egyptRegionFromFreeText("Sagamu, Ogun State, Nigeria"),
+    null,
+    "a foreign address must never resolve to an Egyptian region",
+  );
+  assert.equal(foreignCountryForGovernorate("Sagamu, Ogun State, Nigeria"), "Nigeria");
+
+  // TRAP 2 — "riyadh" is the Saudi capital AND a real town in Kafr El-Sheikh. An explicit Egyptian
+  // signal has to be asked for first, or an Egyptian CV files under Outside Egypt.
+  assert.equal(
+    egyptRegionFromFreeText("Riyadh, Kafr El-Sheikh"),
+    "D1",
+    "an Egyptian governorate in the text outranks a foreign city name sharing a town's name",
+  );
+
+  // The rest of the world reaches its own country rather than the no-location shelf.
+  for (const [text, country] of [
+    ["Karachi, Pakistan", "Pakistan"],
+    ["Delhi, India", "India"],
+    ["AMMAN - JORDAN", "Jordan"],
+    ["Tangerang, Banten, Indonesia", "Indonesia"],
+    ["Lalitpur, Nepal", "Nepal"],
+    ["Azmi Street, Tripoli", "Libya"],
+    ["Sampaloc Manila", "Philippines"],
+    ["NJ, USA", "United States"],
+    ["Riyadh, Saudi Arabia", "Saudi Arabia"],
+  ] as const) {
+    assert.equal(egyptRegionFromFreeText(text), null, `${text} is not in Egypt`);
+    assert.equal(foreignCountryForGovernorate(text), country, `${text} is ${country}`);
+  }
+
+  // Text that names a place nobody can act on stays null — never folded into "Others", which is a
+  // real selling region with real areas in it.
+  for (const nothing of ["Email :", "Egypt", "", "   "]) {
+    assert.equal(egyptRegionFromFreeText(nothing), null, `${JSON.stringify(nothing)} names no region`);
+  }
+
+  // ── What the applicant said themselves ────────────────────────────────────────────────────────
+  //
+  // `preferred_region_code` is the region the APPLICANT chose in WhatsApp. It is saved per answer,
+  // so an abandoned conversation leaves a real stated region with no `preferences_declared_at`.
+  assert.deepEqual(
+    driveInferredFolderPath(inferCandidatePlacement({ preferredRegionCode: "D3" })),
+    [INFERRED_FOLDER_NAME, "Delta (3)"],
+    "a stated region preference must reach its folder",
+  );
+  assert.equal(
+    inferCandidatePlacement({ preferredRegionCode: "CA", governorate: "Sohag" })?.basis,
+    "declared-preference",
+    "what the applicant said outranks what the extractor read",
+  );
+  assert.equal(
+    inferCandidatePlacement({ sentForRegion: "AB", preferredRegionCode: "CA", governorate: "Sohag" })?.basis,
+    "vacancy",
+    "being put forward for a vacancy outranks a stated preference",
+  );
+  assert.equal(
+    inferCandidatePlacement({ preferredRegionCode: "ZZ", governorate: "Sohag" })?.basis,
+    "governorate",
+    "an unrecognised preference code is ignored, not turned into a folder",
+  );
+
+  // Still region-only, on the address route too — an address names a street, never an area.
+  assert.equal(
+    driveInferredFolderPath(inferCandidatePlacement({ address: "Damanhour, Damanhour 22511" })).length,
+    2,
+    "an address-derived path stops at the region",
+  );
 
   // ── Both readers of the area→region grouping must use the PUBLIC view ─────────────────────────
   //

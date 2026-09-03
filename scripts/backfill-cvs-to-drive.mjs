@@ -309,6 +309,7 @@ function inferredPathFor(candidate) {
   const placement = inferCandidatePlacement({
     address: candidate.address,
     governorate: candidate.governorate,
+    preferredRegionCode: candidate.preferred_region_code,
     sentForRegion: candidate.sent_for_region,
   });
   if (!placement) return [INFERRED_FOLDER_NAME, NO_LOCATION_FOLDER_NAME].map(sanitize);

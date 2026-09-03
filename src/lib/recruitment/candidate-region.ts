@@ -51,6 +51,7 @@
 // hiring a District Manager into it while an applicant could not choose it at all. UE-1/UE-2 are
 // deliberately NOT here — they are sales subdivisions of Upper Egypt, and offering all three to a
 // job applicant asks them to know an internal split they cannot be expected to know.
+
 export const candidateRegionCodes = ["CA", "GZ", "AB", "D1", "D2", "D3", "UE", "OT"] as const;
 export type CandidateRegionCode = (typeof candidateRegionCodes)[number];
 
@@ -104,6 +105,7 @@ const governorateRegions: Record<string, CandidateRegionCode> = {
   "\u0627\u0644\u0625\u0633\u0643\u0646\u062f\u0631\u064a\u0629": "AB",
   beheira: "AB",
   behira: "AB",
+  behaira: "AB",
   buhayrah: "AB",
   buhayra: "AB",
   // One word, so the "al " article strip never fires on it - the joined spelling needs its own key.
@@ -116,6 +118,7 @@ const governorateRegions: Record<string, CandidateRegionCode> = {
   mahalla: "D1",
   "kafr el sheikh": "D1",
   "kafr elsheikh": "D1",
+  "kafr elshikh": "D1",
   "kafr al sheikh": "D1",
   kafrelsheikh: "D1",
   "kafr el shiekh": "D1",
@@ -247,6 +250,104 @@ const foreignPlaces: Record<string, string> = {
   gauteng: "South Africa",
   johannesburg: "South Africa",
   "south africa": "South Africa",
+  uitenhage: "South Africa",
+  pretoria: "South Africa",
+  durban: "South Africa",
+  // South Asia — the largest foreign group in the CV pool by a wide margin.
+  pakistan: "Pakistan",
+  karachi: "Pakistan",
+  lahore: "Pakistan",
+  islamabad: "Pakistan",
+  rawalpindi: "Pakistan",
+  india: "India",
+  delhi: "India",
+  mumbai: "India",
+  bengaluru: "India",
+  bangalore: "India",
+  chennai: "India",
+  hyderabad: "India",
+  kolkata: "India",
+  agra: "India",
+  faridabad: "India",
+  dehradun: "India",
+  durgapur: "India",
+  bhilwara: "India",
+  azamgarh: "India",
+  auraiya: "India",
+  rajasthan: "India",
+  karnataka: "India",
+  haryana: "India",
+  assam: "India",
+  "uttar pradesh": "India",
+  "west bengal": "India",
+  bangladesh: "Bangladesh",
+  dhaka: "Bangladesh",
+  nepal: "Nepal",
+  kathmandu: "Nepal",
+  lalitpur: "Nepal",
+  // South-East Asia
+  indonesia: "Indonesia",
+  jakarta: "Indonesia",
+  tangerang: "Indonesia",
+  banten: "Indonesia",
+  philippines: "Philippines",
+  manila: "Philippines",
+  sampaloc: "Philippines",
+  cavite: "Philippines",
+  malaysia: "Malaysia",
+  "kuala lumpur": "Malaysia",
+  // The Levant and the rest of the Arab world
+  jordan: "Jordan",
+  amman: "Jordan",
+  zarqa: "Jordan",
+  irbid: "Jordan",
+  lebanon: "Lebanon",
+  beirut: "Lebanon",
+  syria: "Syria",
+  damascus: "Syria",
+  aleppo: "Syria",
+  iraq: "Iraq",
+  baghdad: "Iraq",
+  erbil: "Iraq",
+  yemen: "Yemen",
+  sanaa: "Yemen",
+  sudan: "Sudan",
+  khartoum: "Sudan",
+  // North and West Africa. Tripoli is Libya's capital and no Egyptian town shares the name.
+  libya: "Libya",
+  tripoli: "Libya",
+  benghazi: "Libya",
+  misrata: "Libya",
+  algeria: "Algeria",
+  algiers: "Algeria",
+  constantine: "Algeria",
+  "grarem gouga": "Algeria",
+  morocco: "Morocco",
+  casablanca: "Morocco",
+  tunisia: "Tunisia",
+  tunis: "Tunisia",
+  nigeria: "Nigeria",
+  lagos: "Nigeria",
+  abuja: "Nigeria",
+  sagamu: "Nigeria",
+  ogun: "Nigeria",
+  ghana: "Ghana",
+  accra: "Ghana",
+  kenya: "Kenya",
+  nairobi: "Kenya",
+  // Europe and North America
+  "united kingdom": "United Kingdom",
+  london: "United Kingdom",
+  canada: "Canada",
+  toronto: "Canada",
+  turkey: "Turkiye",
+  istanbul: "Turkiye",
+  usa: "United States",
+  "united states": "United States",
+  "new jersey": "United States",
+  nj: "United States",
+  california: "United States",
+  texas: "United States",
 };
 
 /**
@@ -320,6 +421,18 @@ export function foreignCountryForGovernorate(raw: string | null | undefined): st
   }
   return null;
 }
+
+/**
+ * The free-text reader lives in `candidate-region-freetext.ts`, NOT here, and may not move back.
+ *
+ * This module is one of the three vocabularies `screening-link` is allowed to import, and
+ * `tests/recruitment-screening-page.test.ts` pins it to ZERO imports — otherwise screening-link's
+ * purity is only one level deep, and a server-only module reaching a client graph in this repo
+ * 500s every later request, `/api/healthz` included. Reading free text needs the town-level
+ * vocabulary in `@/lib/geo/egypt-locations`, and importing it here fails that check. Inlining a
+ * copy would be a fourth copy of Egypt, which is its own standing rule against. So the reader sits
+ * in a sibling module free to import both.
+ */
 
 // ── The AREA rows the apply flow shows under each region ───────────────────────────────────────────
 // Question 3's area LIST is read live from the SALES geography (`au.canonical_areas`, via
