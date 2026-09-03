@@ -430,6 +430,56 @@ export function runDistrictManagerFolderTests(): void {
         "a readable address does not carry a CV past the background gate — the admin queue is still where it waits");
     }
 
+    // ── The governorate, when the company splits it no further ─────────────────────────────────
+    //
+    // The owner, 2026-09-03, was asked whether a CV whose only location is the governorate should
+    // reach that governorate's area when there is exactly one, and answered: "put them in that area
+    // folder". Five governorates qualify in production today — Beni Suef, Fayoum, Kafr El-Sheikh,
+    // Port Said and Suez — and ten real CVs move out of "No area named" because of this block.
+    //
+    // THE CONTROL IS THE OTHER HALF AGAIN. Qena is split into Qena 1 and Qena 2, so the identical
+    // candidate shape must still reach only the catch-alls. Without it this test would pass just as
+    // happily if every governorate were being resolved to whichever area came first.
+    {
+      const soleArea = placeCandidatesInDistrictFolders({
+        candidates: [archived("sohag", { faculty: "Faculty of Pharmacy", governorate: "Sohag" })],
+        rows: ROWS_UE,
+      });
+      const landed = soleArea.boards
+        .flatMap((board) => board.folders.map((folder) => ({ board, folder })))
+        .filter((entry) => entry.folder.candidates.some((row) => row.id === "sohag"));
+      assert.deepEqual(
+        landed.map((entry) => `${entry.board.seatId}/${entry.folder.areaName}`).sort(),
+        ["cns-ue/Sohag"],
+        "Sohag governorate holds one area, so the CV reaches that folder rather than a district catch-all",
+      );
+      assert.ok(
+        landed.every((entry) => entry.folder.fromGovernorate.includes("sohag")),
+        "and the folder records it as a governorate placement",
+      );
+      assert.ok(
+        soleArea.boards.flatMap((board) => board.folders).every((folder) => folder.fromCvText.length === 0),
+        "never as an address read off the CV — this candidate wrote no address, and the screen must not claim otherwise",
+      );
+
+      const split = placeCandidatesInDistrictFolders({
+        candidates: [archived("qena", { faculty: "Faculty of Pharmacy", governorate: "Qena" })],
+        rows: ROWS_UE,
+      });
+      assert.deepEqual(
+        split.boards
+          .flatMap((board) => board.folders)
+          .filter((folder) => folder.candidates.some((row) => row.id === "qena"))
+          .map((folder) => folder.kind),
+        ["region", "region"],
+        "a governorate the company splits between two areas still names neither",
+      );
+      assert.ok(
+        split.boards.flatMap((board) => board.folders).every((folder) => folder.fromGovernorate.length === 0),
+        "and nothing is marked as a governorate placement",
+      );
+    }
+
     // Every district gets exactly one, empty or not — a manager has to be able to SEE that nothing
     // arrived without an area, rather than infer it from a folder that is not on screen.
     for (const board of boards) {
