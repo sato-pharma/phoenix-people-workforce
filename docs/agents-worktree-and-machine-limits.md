@@ -217,6 +217,19 @@ resets every shell's working directory back inside the folder on each command. T
 therefore: look up the holder, close that session, then delete. Waiting is worth doing only once the
 lookup says nobody is there.
 
+**And idle is not closed.** A retry 20 minutes later, on a husk whose session had gone idle —
+`isRunning: false` in the session list, no activity since — failed exactly as before, as did all
+three. The control ran in the same hour: a `_wt-*` sibling worktree created for a docs fix, with no
+session ever pinned to it, was removed with `git worktree remove` on the first attempt, exit 0, folder
+gone, no husk. Same command, same machine, opposite results.
+
+So `isRunning: false` reports only that the session is not processing a turn. The working-directory
+reference belongs to the process and survives idleness indefinitely; the session has to be closed in
+the app. Until then the husk is harmless — 0 files, 0 subdirectories, no git registration — and the
+only cost of leaving it is a line in a directory listing. Do not escalate: the two available forcings
+are `Get-Process git | Stop-Process`, which is machine-wide with four live worktree sessions running,
+and killing the holding `claude.exe`, which is killing the owner's own work.
+
 **The dangerous half of the old advice.** "Stop them all" reads as harmless because a daemon is a
 cache that respawns — but the command that implements it, `Get-Process git | Stop-Process`, is
 **machine-wide**, and on a loop it keeps being machine-wide. A parallel session was live in the
