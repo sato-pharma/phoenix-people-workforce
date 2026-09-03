@@ -82,13 +82,20 @@ export function outstationReportOverride(override: unknown, raw: number): number
  * The workload columns look like the money columns above and are NOT the same shape.
  * `report_am_workload`/`report_pm_workload` are `double precision NOT NULL DEFAULT 0` in
  * production, so they can never be NULL: a `!= null` fallback to the resolved column can never
- * fire, which makes "prefer the override" unconditional. And nothing writes a meaningful override
- * into them any more — the mobile wizard's editable "AM Workload"/"PM Workload" inputs were
- * removed precisely because a rep who left them blank (as the adjacent "resolved automatically"
- * note tells them to) sent 0, and the admin modal's fields are read-only and echo back the raw
- * value. Measured on production ozucdzovmcqvepbozvqf, 2026-09-03: all 80 rows carry
+ * fire, which makes "prefer the override" unconditional. And in practice no client sends a value
+ * into them — the mobile wizard's editable "AM Workload"/"PM Workload" inputs were removed
+ * precisely because a rep who left them blank (as the adjacent "resolved automatically" note tells
+ * them to) sent 0; the admin modal's fields are read-only and echo back the raw value; and #2958
+ * banned amWorkload/pmWorkload from both employee submit paths. Measured on production
+ * ozucdzovmcqvepbozvqf, 2026-09-03: all 80 rows carry
  * `report_am_workload = report_pm_workload = 0` — 0 NULL, 0 positive — while 39 carry a real
  * `am_workload` and 50 a real `pm_workload`.
+ *
+ * They are still WRITABLE, so do not read "always zero" as "dead column and safe to drop":
+ * `/api/outstation/calculate` and the admin manager-expense create path both still accept an
+ * `amWorkload`/`pmWorkload` and write it here (service.ts, via the calculation and via
+ * createManagerExpenseAsAdmin). What is guaranteed is not that nobody writes them — it is that
+ * NEITHER payroll mapper reads them, deliberately, which is what keeps a planted value inert.
  *
  * `am_workload`/`pm_workload` are the truth: every write path runs
  * `resolveOutstationWorkloadPayload` and overwrites them from the published Double Visit Analytics
