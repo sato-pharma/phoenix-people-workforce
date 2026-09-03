@@ -202,6 +202,86 @@ export function runOutstationPayrollPayableTotalAgreementTests() {
     300,
     "a claim far above the server's price must not inflate the displayed total",
   );
+
+  // ---------------------------------------------------------------------------------------------
+  // The COMPONENTS must add up to the total the same mapper just wrote.
+  //
+  // The push mapper used to sum the `report_other_amount` OVERRIDE into the total while writing the
+  // raw `other_amount` column into the record's own `other` field. Nothing errors: the row files a
+  // correct total beside an "Other" component that contradicts it, and `expense-metrics.ts` sums
+  // those component columns into the dashboard's "Other" card, so the category silently
+  // under-reports while the payout stays right. Latent on 2026-09-03 (all 80 live rows had the raw
+  // and override columns equal), which is exactly why it needs pinning — the manual-admin create
+  // and the extra-ticket append write the two columns independently.
+  const overriddenOther = baseRequest({
+    allowanceAmount: 200,
+    expectedTotalAmount: 420,
+    fuelAmount: 100,
+    id: 301,
+    otherAmount: 0,
+    reportOtherAmount: 120,
+    ticketAmount: 0,
+  });
+  const overriddenOtherRow = {
+    allowance_amount: 200,
+    created_at: "2026-08-05T00:00:00.000Z",
+    employee_hr_id: "B-1",
+    employee_name: "Test Employee",
+    expected_total_amount: 420,
+    expense_type: "traveling",
+    fuel_amount: 100,
+    id: 301,
+    other_amount: 0,
+    report_other_amount: 120,
+    status: "accepted_by_system",
+    ticket_amount: 0,
+    trip_start_date: "2026-08-05T00:00:00.000Z",
+  };
+
+  const pushedOverride = mapOutstationRequestToPayrollExpenseRecord(overriddenOther);
+  const displayedOverride = mapOutstationRequestRowToPayrollApproval(overriddenOtherRow);
+
+  assert.equal(
+    pushedOverride.other,
+    120,
+    "the pushed record must file the OVERRIDE other amount it summed, not the raw other_amount column",
+  );
+  assert.equal(
+    pushedOverride.other,
+    displayedOverride.other,
+    "the pushed and displayed `other` components must never diverge for the same row",
+  );
+  assert.equal(
+    roundTo2(
+      pushedOverride.travelCost + pushedOverride.meetingAmount + pushedOverride.allowance + pushedOverride.other,
+    ),
+    pushedOverride.total,
+    "a pushed payroll row's components must add up to its own total",
+  );
+  assert.equal(pushedOverride.total, 420, "the overridden other amount must still be paid");
+
+  // The fallback must survive the fix: with NO override recorded, the raw column is still what
+  // gets both summed and filed. "No override" is `null` — since PR #2960 `mapOutstationRequestRow`
+  // maps these columns with `nullableNumber` instead of collapsing NULL to 0, so a report column
+  // of exactly 0 is a real override that WINS (pinned separately below) and only null falls back.
+  const rawOtherOnly = baseRequest({
+    allowanceAmount: 200,
+    expectedTotalAmount: 375,
+    fuelAmount: 100,
+    id: 302,
+    otherAmount: 75,
+    reportOtherAmount: null,
+    ticketAmount: 0,
+  });
+  const pushedRawOnly = mapOutstationRequestToPayrollExpenseRecord(rawOtherOnly);
+  assert.equal(pushedRawOnly.other, 75, "with no override, the raw other_amount is still filed");
+  assert.equal(
+    roundTo2(
+      pushedRawOnly.travelCost + pushedRawOnly.meetingAmount + pushedRawOnly.allowance + pushedRawOnly.other,
+    ),
+    pushedRawOnly.total,
+    "the fallback path's components must add up to its own total too",
+  );
   // ---------------------------------------------------------------------------------------------
   // An override of EXACTLY ZERO. `report_other_amount = 0` over an `other_amount` of 50 means "HR
   // reviewed this and zeroed it" — the override wins, and both mappers must say so. Before
@@ -354,4 +434,8 @@ export function runOutstationPayrollPayableTotalAgreementTests() {
     displayedAbsent.total,
     "the pushed and displayed totals must agree when no override was recorded either",
   );
+}
+
+function roundTo2(value: number) {
+  return Math.round(value * 100) / 100;
 }
