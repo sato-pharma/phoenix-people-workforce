@@ -220,7 +220,6 @@ function partyLine(text: string): string {
 function fillMarkedHtml(
   template: string,
   values: Partial<Record<ContractToken, string>>,
-  blankRule: string = CONTRACT_BLANK_RULE,
 ): string {
   const pattern = /\{\{([A-Z_]+)\}\}/g;
   let out = "";
@@ -233,12 +232,17 @@ function fillMarkedHtml(
     const text = typeof raw === "string" ? raw.trim() : "";
     out +=
       text.length > 0
-        ? `<span class="fill" data-hp-key="${escapeHtml(token)}">${escapeHtml(text)}</span>`
-        : blankMarker(token, blankRule);
+        ? filledMarker(token, text)
+        : blankMarker(token, CONTRACT_BLANK_RULE);
     last = match.index + match[0].length;
     match = pattern.exec(template);
   }
   return out + line(template.slice(last));
+}
+
+/** The marker for a value that IS there. */
+function filledMarker(token: string, text: string): string {
+  return `<span class="fill" data-hp-key="${escapeHtml(token)}">${escapeHtml(text)}</span>`;
 }
 
 /**
@@ -461,22 +465,52 @@ const PEN_BLANK = /^[.…ـ\s]*$/u;
  * boxes empty like my file". This is the boxes only. A blank in a flowing line still prints its
  * dots, because there the dots ARE the box, and his document keeps them there too.
  *
- * When nothing in the cell is filled, the cell's furniture goes with it: "تاريخ ومحل الميلاد" is one
- * field written as two tokens either side of a dash, and a lone dash stranded in an empty box is not
- * what the source draws. A cell holding no tokens at all is literal text and always prints.
+ * THE CELL'S FURNITURE GOES WITH THE VALUE IT BELONGS TO, which is the half a blank fixture cannot
+ * show you. "تاريخ ومحل الميلاد" is ONE field written as two tokens either side of a dash, and the
+ * first real contract rendered through this printed "02 / 02 / 2002 —", a separator trailing into a
+ * place of birth nobody had recorded. Dropping the literal only when the WHOLE cell is empty would
+ * have left exactly that. So a run of literal text is printed only when every token touching it has
+ * a value — which also covers the both-empty case, and leaves a fully filled cell untouched.
+ *
+ * A cell holding no tokens at all is literal text and always prints.
  */
 function documentIdentityValue(
   value: string,
   values: Partial<Record<ContractToken, string>>,
 ): string {
-  const tokens = [...value.matchAll(/\{\{([A-Z_]+)\}\}/gu)].map((match) => match[1]);
-  if (tokens.length === 0) return fillMarkedHtml(value, values, "");
-  const anyFilled = tokens.some((token) => {
+  const tokens: string[] = [];
+  const literals: string[] = [];
+  let last = 0;
+  for (const match of value.matchAll(/\{\{([A-Z_]+)\}\}/gu)) {
+    literals.push(value.slice(last, match.index));
+    tokens.push(match[1]);
+    last = match.index + match[0].length;
+  }
+  literals.push(value.slice(last));
+
+  // No tokens at all: the cell is literal text and prints as written.
+  if (tokens.length === 0) return line(value);
+
+  const filled = tokens.map((token) => {
     const raw = values[token as ContractToken];
-    return typeof raw === "string" && raw.trim().length > 0;
+    return typeof raw === "string" ? raw.trim() : "";
   });
-  if (anyFilled) return fillMarkedHtml(value, values, "");
-  return tokens.map((token) => blankMarker(token, "")).join("");
+
+  // `literals[i]` sits before `tokens[i]`, and the last one after them all — so a run of text is
+  // kept only when every token touching it has a value.
+  const keepsLiteral = (index: number): boolean =>
+    (index === 0 || filled[index - 1].length > 0) &&
+    (index === tokens.length || filled[index].length > 0);
+
+  let out = "";
+  for (let index = 0; index < tokens.length; index += 1) {
+    if (keepsLiteral(index)) out += line(literals[index]);
+    out +=
+      filled[index].length > 0
+        ? filledMarker(tokens[index], filled[index])
+        : blankMarker(tokens[index], "");
+  }
+  return keepsLiteral(tokens.length) ? out + line(literals[tokens.length]) : out;
 }
 
 /**

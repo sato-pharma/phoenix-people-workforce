@@ -806,6 +806,27 @@ function testTheDocumentLayoutLeavesAnUnknownValueAsAnEmptyBox(): void {
       `missing value for correction, so the box can never be filled from the screen: ${cell[1]}`,
   );
 
+  // HALF A CELL. "تاريخ ومحل الميلاد" is one field written as two tokens either side of a dash, and
+  // a birth date on record with no place of birth beside it is the ordinary state of a new hire —
+  // the first real contract rendered through this had exactly that. Emptying only whole cells prints
+  // "02 / 02 / 2002 —", a separator trailing into nothing on a legal document.
+  const halfKnown =
+    /<th class="doc-ident__label">تاريخ ومحل الميلاد<\/th><td class="doc-ident__value"[^>]*>(.*?)<\/td>/u.exec(
+      renderContractHtml(packFixture({ birthPlace: null }), 1, "contract-v3"),
+    );
+  assert.ok(halfKnown, "version 3 must set تاريخ ومحل الميلاد in a labelled cell of its grid");
+  assert.ok(
+    !/—/u.test(halfKnown[1]),
+    `a separator may not outlive the value on the far side of it — the box printed a dangling ` +
+      `dash after the birth date: ${halfKnown[1].replace(/<[^>]+>/gu, "")}`,
+  );
+  assert.ok(
+    halfKnown[1].includes('data-hp-key="BIRTH_DATE"') &&
+      halfKnown[1].includes('data-hp-key="BIRTH_PLACE"'),
+    `half a cell must keep BOTH markers — the known half prints and the missing half stays ` +
+      `correctable from the screen: ${halfKnown[1]}`,
+  );
+
   // The other direction, which emptying the wrong thing would break: the two layouts that set the
   // same field in flowing text have no box to stand for the blank, so their dots must stay.
   for (const id of ["contract-v1", "contract-v2"]) {
