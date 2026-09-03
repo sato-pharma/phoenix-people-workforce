@@ -58,6 +58,8 @@ export function RouteMapPreview({
         kilometerReading: request.kilometerReading,
         medicalTripHrId: request.medicalTripHrId,
         medicalTripName: request.medicalTripName,
+        meetingInvoiceMetadata: null,
+        meetingInvoicePath: null,
         minimumRequiredDistanceKm: request.minimumRequiredDistanceKm,
         notes: request.notes,
         offlineCaptured: request.offlineCaptured,

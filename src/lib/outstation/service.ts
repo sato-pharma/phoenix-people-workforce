@@ -35,8 +35,10 @@ import {
   createOutstationEvidenceSignedUrls,
   uploadOutstationDepartureEvidenceImage,
   deleteOutstationCarEvidenceImage,
+  deleteOutstationMeetingInvoice,
   deleteOutstationTicketAttachments,
   uploadOutstationCarEvidenceImage,
+  uploadOutstationMeetingInvoice,
   uploadOutstationTicketAttachments,
   type OutstationTicketAttachmentUploadInput,
 } from "@/lib/outstation/car-evidence-storage";
@@ -2212,6 +2214,11 @@ function mapOutstationRequestRow(row: Record<string, unknown>): OutstationExpens
     kilometerReading: nullableNumber(row.kilometer_reading),
     medicalTripHrId: text(row.medical_trip_hr_id) || null,
     medicalTripName: text(row.medical_trip_name) || null,
+    meetingInvoiceMetadata: safeJsonParse<OutstationTicketAttachmentMetadata | null>(
+      row.meeting_invoice_metadata,
+      null,
+    ),
+    meetingInvoicePath: text(row.meeting_invoice_path) || null,
     minimumRequiredDistanceKm: numberValue(row.minimum_required_distance_km),
     notes: text(row.notes) || null,
     offlineCaptured: Boolean(row.offline_captured),
@@ -2283,14 +2290,16 @@ async function attachCarEvidenceSignedUrls(
 ): Promise<OutstationExpenseRequest[]> {
   return Promise.all(
     requests.map(async (request) => {
-      const [carEvidenceImageUrl, ticketAttachmentUrls] = await Promise.all([
+      const [carEvidenceImageUrl, ticketAttachmentUrls, meetingInvoiceUrl] = await Promise.all([
         createOutstationCarEvidenceSignedUrl(request.carEvidenceImagePath),
         createOutstationEvidenceSignedUrls(request.ticketAttachmentPaths ?? []),
+        createOutstationCarEvidenceSignedUrl(request.meetingInvoicePath),
       ]);
 
       return {
         ...request,
         carEvidenceImageUrl,
+        meetingInvoiceUrl,
         ticketAttachmentUrls,
       };
     }),
@@ -3309,6 +3318,20 @@ export async function createManagerExpenseAsAdmin(
     tripStartDate: input.tripStartDate,
   });
 
+  // Uploaded BEFORE the insert, on a synthetic draft id — the row's real id does not exist yet.
+  // Mirrors the mobile submit path (car evidence / ticket attachments upload, then the insert
+  // references the path), so a failed insert never leaves a DB row an admin thought had its
+  // invoice attached.
+  let meetingInvoiceMetadata: OutstationTicketAttachmentMetadata | null = null;
+  if (input.meetingInvoiceDataUrl) {
+    meetingInvoiceMetadata = await uploadOutstationMeetingInvoice({
+      dataUrl: input.meetingInvoiceDataUrl,
+      employeeHrId: employee.hrId,
+      fileName: input.meetingInvoiceFileName ?? "invoice",
+      requestId: `admin-manual-${randomUUID()}`,
+    });
+  }
+
   const { data, error } = await getSupabaseAdmin()
     .from("outstation_expense_requests")
     .insert({
@@ -3382,6 +3405,8 @@ export async function createManagerExpenseAsAdmin(
       territory_validation_status: "not_available",
       ...workloadPayload,
       meeting_amount: input.meetingAmount ?? 0,
+      meeting_invoice_metadata: meetingInvoiceMetadata,
+      meeting_invoice_path: meetingInvoiceMetadata?.path ?? null,
       other_amount: input.otherAmount ?? 0,
       ticket_amount: ticketAmount,
       ticket_attachment_metadata: [],
@@ -3398,7 +3423,10 @@ export async function createManagerExpenseAsAdmin(
     .select("*")
     .single();
 
-  if (error) throw new Error(error.message);
+  if (error) {
+    await deleteOutstationMeetingInvoice(meetingInvoiceMetadata?.path ?? null);
+    throw new Error(error.message);
+  }
 
   const created = mapOutstationRequestRow(data as Record<string, unknown>);
 
@@ -3599,6 +3627,25 @@ export async function updateManagerExpenseAsAdmin(
     tripStartDate,
   });
 
+  // Meeting invoice: upload the replacement BEFORE the update (same ordering as
+  // addExtraOutstationTickets) so a failed write never leaves the row pointing at a file that was
+  // never saved. The OLD file (if any) is deleted only once the new row state is confirmed,
+  // below — deleting it up front would lose the only copy if the update then failed.
+  // `"meetingInvoiceDataUrl" in input` is the tri-state: absent leaves the existing invoice
+  // untouched, a data URL replaces it, and an explicit `null` removes it.
+  let meetingInvoiceMetadata: OutstationTicketAttachmentMetadata | null | undefined;
+  if ("meetingInvoiceDataUrl" in input) {
+    meetingInvoiceMetadata = input.meetingInvoiceDataUrl
+      ? await uploadOutstationMeetingInvoice({
+          dataUrl: input.meetingInvoiceDataUrl,
+          employeeHrId,
+          fileName:
+            input.meetingInvoiceFileName ?? existing.meetingInvoiceMetadata?.name ?? "invoice",
+          requestId,
+        })
+      : null;
+  }
+
   const updatePayload: Record<string, unknown> = {
     allowance_amount: allowance.allowanceAmount,
     allowance_breakdown_json: JSON.stringify(allowance.breakdown),
@@ -3613,6 +3660,12 @@ export async function updateManagerExpenseAsAdmin(
     expected_total_amount: expectedTotalAmount,
     fuel_amount: fuelAmount,
     meeting_amount: input.meetingAmount ?? existing.meetingAmount ?? 0,
+    ...(meetingInvoiceMetadata !== undefined
+      ? {
+          meeting_invoice_metadata: meetingInvoiceMetadata,
+          meeting_invoice_path: meetingInvoiceMetadata?.path ?? null,
+        }
+      : {}),
     notes: appendAllowanceGuardNote(notes, allowance.breakdown),
     other_amount: input.otherAmount ?? existing.otherAmount ?? 0,
     overnight_days: allowance.overnightDays,
@@ -3650,9 +3703,20 @@ export async function updateManagerExpenseAsAdmin(
     .select("*")
     .maybeSingle();
 
-  if (error) throw new Error(error.message);
+  if (error) {
+    if (meetingInvoiceMetadata) await deleteOutstationMeetingInvoice(meetingInvoiceMetadata.path);
+    throw new Error(error.message);
+  }
   if (!data) {
+    if (meetingInvoiceMetadata) await deleteOutstationMeetingInvoice(meetingInvoiceMetadata.path);
     throw new Error("Outstation request state changed. Refresh and retry.");
+  }
+
+  // The write landed — now it is safe to drop the file it replaced or removed.
+  if (meetingInvoiceMetadata !== undefined && existing.meetingInvoicePath) {
+    if (existing.meetingInvoicePath !== meetingInvoiceMetadata?.path) {
+      await deleteOutstationMeetingInvoice(existing.meetingInvoicePath);
+    }
   }
 
   const updated = mapOutstationRequestRow(data as Record<string, unknown>);

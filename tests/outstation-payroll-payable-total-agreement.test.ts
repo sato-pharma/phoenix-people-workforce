@@ -49,6 +49,8 @@ function baseRequest(overrides: Partial<OutstationExpenseRequest>): OutstationEx
     kilometerReading: null,
     medicalTripHrId: null,
     medicalTripName: null,
+    meetingInvoiceMetadata: null,
+    meetingInvoicePath: null,
     minimumRequiredDistanceKm: 0,
     notes: null,
     offlineCaptured: false,
