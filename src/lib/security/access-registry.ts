@@ -551,11 +551,22 @@ export const accessRegistry = [
   // only thing that lets a direct order reach a rep's CRM contact list (2026-09-03). Read-only, so
   // no CSRF. `create` rather than `read`, for the same reason invoice-extract below is: enumerating
   // contacts to declare one against a venue is only useful to someone who may register a venue.
-  // guard: "domain-helper" — listVenueContactOptions() is the boundary. It calls assertPermission
-  // itself AND resolves the caller's own reach (their CRM list UNION their org subtree) from the
-  // live AccessContext, never from the query string, so the route cannot return a contact the
-  // caller could not already see. assertVenueContactInScope() re-runs that same resolution on the
-  // WRITE path, because a picker whose choice is not re-checked server-side is decoration.
+  //
+  // TWO DOORS, ONE ROUTE. `direct_orders:create` is the SUBMIT form's authority and the one declared
+  // here. The ADMIN REGISTRY reaches the same picker on a different authority — Super Admin or SFE
+  // Manager, per canManagePharmacyRegistry — because the SFE Manager holds `read, export, approve`
+  // and NO `create`, yet is one of the two roles the owner allowed to manage the registry
+  // (2026-08-04). Declaring the widest permission would be the security lie; declaring the narrow
+  // one and saying so is the truth. assertMayDeclareVenueContact() in venue-contact-options.ts is
+  // where the two are joined, and it is the only place either is granted.
+  //
+  // guard: "domain-helper" — listVenueContactOptions() is the boundary. It calls that gate itself
+  // AND resolves the caller's own reach (their CRM list UNION their org subtree) from the live
+  // AccessContext, never from the query string, so the route cannot return a contact the caller
+  // could not already see. Neither door widens that scope: both registry roles resolve to `company`
+  // on their own merits, being in the doctor list's own COMPANY_ROLES. assertVenueContactInScope()
+  // re-runs the same resolution on the WRITE path, because a picker whose choice is not re-checked
+  // server-side is decoration.
   sessionApi({ methods: ["GET"], pattern: "/api/direct-orders/crm-contacts", permission: { resource: "direct_orders", action: "create" }, guard: "domain-helper" }),
   // Reads a photographed invoice to prefill the order form (spec B5). POST because the payload is
   // an image, but it writes NOTHING — hence no audit classification. `create` rather than `read`:

@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
+import { canManagePharmacyRegistry } from "../src/lib/direct-orders/registry-access.ts";
 import { parseVenueContactId } from "../src/lib/direct-orders/venue-contact-options.ts";
+import type { AccessContext } from "../src/lib/auth/permissions.ts";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // A direct order could not reach the rep's CRM contact list, and no matcher could fix it.
@@ -64,6 +66,9 @@ export function runDirectOrderVenueCrmContactLinkTests() {
   const contactsRoute = read("app/api/direct-orders/crm-contacts/route.ts");
   const form = read("src/components/direct-orders/direct-order-submit-form.tsx");
   const picker = read("src/components/direct-orders/crm-contact-picker.tsx");
+  const registryAccess = read("src/lib/direct-orders/registry-access.ts");
+  const registryRoute = read("app/api/direct-orders/pharmacies/registry/route.ts");
+  const manager = read("src/components/direct-orders/pharmacy-registry-manager.tsx");
 
   // ── 1. "Not declared" must never be an error ──────────────────────────────
   //
@@ -269,4 +274,214 @@ export function runDirectOrderVenueCrmContactLinkTests() {
     "the form must SAY the link is optional — an unexplained required-looking field is how invented " +
       "values get typed into one",
   );
+
+  // ── 8. THE RETROACTIVE DOOR — the admin registry ──────────────────────────
+  //
+  // The submit form only ever reaches a venue it is CREATING. Every venue registered before
+  // 2026-09-03 carries no link, because the column did not exist when it was created, and a rep
+  // cannot edit an existing venue at all. Measured on production the morning this shipped: 74
+  // venues, 0 declared. Without an admin door those 74 stay unlinked permanently, and the feature
+  // only ever helps venues that do not exist yet.
+  //
+  // THE PERMISSION IS THE WHOLE PROBLEM. The picker's own gate was `direct_orders:create`, and the
+  // SFE Manager — one of exactly two roles the owner allowed to manage the registry on 2026-08-04 —
+  // holds `read, export, approve` and no `create`. Shipping the picker onto the registry without
+  // widening that gate would have 403'd it for the very person the registry exists for, and it
+  // would have read as a broken page rather than as a permission decision.
+
+  // The gate predicate is a pure function, so this is a real behaviour check rather than a pin.
+  const asAccess = (role: string, scope: string): AccessContext =>
+    ({ hrId: "a-1", loginId: "a-1", role, scope, source: "session" } as unknown as AccessContext);
+  assert.equal(
+    canManagePharmacyRegistry(asAccess("SFE Manager", "company")),
+    true,
+    "the SFE Manager must reach the registry gate — they have no direct_orders:create, and gating the " +
+      "picker on create alone would 403 the very role the registry was widened for (owner, 2026-08-04)",
+  );
+  assert.equal(canManagePharmacyRegistry(asAccess("Super Admin", "system")), true, "a system scope must pass");
+  for (const role of ["District Manager", "Medical Rep", "CEO", "National Sales Manager", "Employee"]) {
+    assert.equal(
+      canManagePharmacyRegistry(asAccess(role, "team")),
+      false,
+      `${role} must NOT be able to manage the registry — the owner named two roles, and this predicate ` +
+        "now gates a SECOND surface, so a quiet widening here would widen both at once",
+    );
+  }
+
+  // One definition, not a copy. The gate moved out of service.ts precisely so the picker could ask
+  // the same question; a re-added local copy is what drifts.
+  assert.match(
+    registryAccess,
+    /export function canManagePharmacyRegistry/,
+    "the registry gate must live in its own module — service.ts imports venue-contact-options, so the " +
+      "picker importing the gate back out of service.ts would close an import cycle",
+  );
+  assert.doesNotMatch(
+    service,
+    /(function|const) canManagePharmacyRegistry/,
+    "service.ts must IMPORT the gate, never redeclare it — two copies of a role list drift, and the " +
+      "drift is silent because both compile",
+  );
+  {
+    const start = options.indexOf("async function assertMayDeclareVenueContact");
+    const end = options.indexOf("\n}", start);
+    assert.ok(start > -1 && end > start, "assertMayDeclareVenueContact must be findable");
+    const body = options.slice(start, end);
+    assert.match(
+      body,
+      /if \(canManagePharmacyRegistry\(access\)\) return;/,
+      "a registry manager must reach the picker WITHOUT direct_orders:create",
+    );
+    assert.match(
+      body,
+      /await assertPermission\(access, "direct_orders", "create"\)/,
+      "everyone else must still be held to direct_orders:create — the registry roles are an ADDITIONAL " +
+        "door, never a replacement for the submit form's authority",
+    );
+  }
+  assert.match(
+    options,
+    /await assertMayDeclareVenueContact\(access\);/,
+    "listVenueContactOptions must OPEN with the gate — an enumerating route whose check sits further " +
+      "down is a route that has already done the read",
+  );
+
+  // ── 9. The retroactive write must be a PATCH, not an overwrite ────────────
+  //
+  // "An OPTIONAL field written UNCONDITIONALLY is a silent erase." An admin fixing a venue's address
+  // must not clear a CRM link someone else declared, so absence and null have to stay different
+  // answers at every layer: the component sends the key only when touched, the route forwards on the
+  // KEY's presence, and the service patches on `!== undefined`.
+  {
+    const start = registryRoute.indexOf('if (body.action === "updateDetails")');
+    const end = registryRoute.indexOf('if (body.action === "replaceCodes")', start);
+    assert.ok(start > -1 && end > start, "the updateDetails branch must be findable");
+    const branch = registryRoute.slice(start, end);
+    assert.match(
+      branch,
+      /\.\.\.\("crmContactId" in body \? \{ crmContactId: body\.crmContactId \} : \{\}\)/,
+      "the route must forward the CRM link on the KEY's presence — `body.crmContactId ?? null` would " +
+        "clear every link on any other edit, silently, with nothing recording what was lost",
+    );
+    assert.doesNotMatch(
+      branch,
+      /crmContactId: body\.crmContactId \?\? null/,
+      "the `?? null` form is exactly the silent erase this branch exists to avoid",
+    );
+  }
+  {
+    const start = service.indexOf("export async function updateDirectOrderPharmacyDetails");
+    const end = service.indexOf("\nexport ", start + 1);
+    assert.ok(start > -1 && end > start, "updateDirectOrderPharmacyDetails must be findable");
+    const body = service.slice(start, end);
+    assert.match(
+      body,
+      /if \(input\.crmContactId !== undefined\)/,
+      "the service must patch on `!== undefined` — a truthiness test makes CLEARING a link impossible",
+    );
+    assert.match(
+      body,
+      /await assertVenueContactInScope\(access, crmContactId\)/,
+      "the retroactive door must run the SAME write gate as the create path — an admin route that " +
+        "accepts any id is how a false trade badge lands on a rep who never sold to the venue",
+    );
+    const gate = body.indexOf("assertVenueContactInScope");
+    const write = body.indexOf("patch.crm_contact_id");
+    assert.ok(gate > -1 && write > gate, "the scope check must run BEFORE the patch is assembled");
+    assert.match(
+      body,
+      /patch\.crm_contact_linked_by_hr_id = crmContactId === null \? null : /,
+      "clearing a link must clear its author too — an author with no link is a value that cannot say " +
+        "what it refers to, and it would outlive the fact it recorded",
+    );
+    assert.match(
+      body,
+      /patch\.crm_contact_linked_at = crmContactId === null \? null : /,
+      "clearing a link must clear its timestamp, for the same reason",
+    );
+    assert.match(
+      body,
+      /crm_contact_id, crm_contact_linked_by_hr_id, crm_contact_linked_at/,
+      "the before-image must READ the three columns, or the audit row records a change it cannot describe",
+    );
+  }
+
+  // ── 10. The admin board: names, never ids, and no unintended clear ────────
+  assert.match(manager, /<CrmContactPicker\b/, "the registry must actually render the picker");
+  assert.match(
+    manager,
+    /editContactTouched \? \{ crmContactId: editContact\?\.contactCrmId \?\? null \} : \{\}/,
+    "the edit form must send the link ONLY when it was touched — sending it on every save would clear " +
+      "a link the board could not NAME (a contact outside the viewer's reach) purely because the " +
+      "picker had nothing to show",
+  );
+  assert.match(
+    manager,
+    /crmContactId: newContact\?\.contactCrmId \?\? null/,
+    "the register form must declare the link at creation, exactly as the rep's own form does",
+  );
+  {
+    // The owner's rule: a screen shows human-readable names, never raw codes or ids. A bare
+    // `crmContactId` is legitimate in the three-state TEST below, so the sweep is for RENDERING one.
+    const rendered = stripSourceComments(manager);
+    assert.doesNotMatch(
+      rendered,
+      /\{row\.crmContactId\}|\{r\.crmContactId\}/,
+      "the board must never PRINT the raw contact id — it renders the resolved name, and says the link " +
+        "is unnameable when it cannot",
+    );
+    assert.match(
+      rendered,
+      /row\.crmContactId !== null/,
+      "declared-but-unnameable must be its own state — collapsing it into 'not linked' would invite an " +
+        "admin to declare a second contact over a link that is still there",
+    );
+  }
+  {
+    const start = service.indexOf("export async function listDirectOrderPharmacyRegistry");
+    const end = service.indexOf("\n/**", start + 1);
+    assert.ok(start > -1 && end > start, "listDirectOrderPharmacyRegistry must be findable");
+    const body = service.slice(start, end);
+    assert.match(
+      body,
+      /describeVenueContacts\(/,
+      "the registry must resolve its declared links to NAMES server-side — the column holds an id, and " +
+        "the owner's rule is that no screen prints one",
+    );
+  }
+  {
+    const start = options.indexOf("export async function describeVenueContacts");
+    const end = options.indexOf("\n/**", start + 1);
+    assert.ok(start > -1 && end > start, "describeVenueContacts must be findable");
+    const body = options.slice(start, end);
+    assert.match(
+      body,
+      // Anchored on the closing paren: a bare `index += 50` is a SUBSTRING of `index += 5000`, so
+      // the loose form passed while the chunking was disabled — the exact false green this test
+      // exists to prevent, caught by breaking it deliberately.
+      /index \+= 50\)/,
+      "the id lookup must be chunked at 50 — a PostgREST .in() carrying several hundred ids returns " +
+        "ZERO rows with NO error, which here would silently unname every link at once",
+    );
+    assert.match(
+      body,
+      /scopeAllowsAgent\(scope, record\.agent_hr_id\)/,
+      "the label resolver must be scoped like the picker — both registry roles are company TODAY, but " +
+        "assuming that is how widening who manages the registry turns this into an unscoped read",
+    );
+  }
+
+  // ── 11. Validating ONE id must not read the whole table ───────────────────
+  {
+    const start = options.indexOf("export async function assertVenueContactInScope");
+    const body = options.slice(start);
+    assert.match(
+      body,
+      /readContactsById\(contactCrmId\)/,
+      "the write gate must ask about the ONE id. Reading the scope and searching it paged through all " +
+        "9,698 production contact rows on every save for a company-scoped caller — invisible while only " +
+        "District Managers reached this, and the admin registry is exactly the door that IS company-wide",
+    );
+    assert.doesNotMatch(body, /readScopedContacts\(scope\)/, "the read-then-search form is what this replaced");
+  }
 }

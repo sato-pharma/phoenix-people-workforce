@@ -3,8 +3,10 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
+import { CrmContactPicker } from "@/components/direct-orders/crm-contact-picker";
 import { DistributorCustomerPicker } from "@/components/direct-orders/distributor-customer-picker";
 import type { DirectOrderRegistryPharmacy } from "@/lib/direct-orders/service";
+import type { VenueContactOption } from "@/lib/direct-orders/venue-contact-options";
 import {
   choiceRequiresDistributorCode,
   VENUE_TYPE_UNANSWERED_MESSAGE,
@@ -40,6 +42,34 @@ async function post(body: unknown): Promise<void> {
   if (!res.ok || !data.success) throw new Error(data.message || "Update failed.");
 }
 
+/**
+ * One venue's declared CRM contact, NAMED — the owner's rule that a screen never prints a raw id.
+ *
+ * Three states, and they are genuinely different answers rather than a present/absent pair:
+ * declared and nameable; declared but not nameable from here (the contact is outside the viewer's
+ * CRM reach, or the mirror no longer holds it); and not declared at all, which is the state the
+ * admin is being invited to fix.
+ */
+function CrmContactLine({ row }: { row: DirectOrderRegistryPharmacy }) {
+  if (row.crmContact) {
+    return (
+      <div className="mt-0.5 break-words text-phx-xs font-semibold text-emerald-700">
+        CRM: {row.crmContact.name}
+        {row.crmContact.nameAr && row.crmContact.nameAr !== row.crmContact.name ? ` · ${row.crmContact.nameAr}` : ""}
+        {row.crmContact.agentName ? ` · on ${row.crmContact.agentName}'s list` : ""}
+      </div>
+    );
+  }
+  if (row.crmContactId !== null) {
+    return (
+      <div className="mt-0.5 break-words text-phx-xs font-semibold text-amber-700">
+        CRM: linked, but that contact is not on any list you can see
+      </div>
+    );
+  }
+  return <div className="mt-0.5 text-phx-xs font-semibold text-slate-400">Not linked to the CRM</div>;
+}
+
 export function PharmacyRegistryManager({
   rows,
   areas,
@@ -73,6 +103,7 @@ export function PharmacyRegistryManager({
   const [newDoctor, setNewDoctor] = useState("");
   const [newAddress, setNewAddress] = useState("");
   const [newCodes, setNewCodes] = useState<CodeRow[]>([{ ...EMPTY_ROW }]);
+  const [newContact, setNewContact] = useState<VenueContactOption | null>(null);
 
   // Per-row editing. Only one pharmacy is open at a time — a grid of simultaneously-dirty rows is
   // how you save the wrong one at 4am.
@@ -83,6 +114,13 @@ export function PharmacyRegistryManager({
   const [editDoctor, setEditDoctor] = useState("");
   const [editAddress, setEditAddress] = useState("");
   const [editCodes, setEditCodes] = useState<CodeRow[]>([]);
+  const [editContact, setEditContact] = useState<VenueContactOption | null>(null);
+  // Whether the CRM link was TOUCHED in this edit. The three-way patch semantics run all the way
+  // from here: an untouched link is not sent at all, so saving an address change can never clear a
+  // link someone else declared — and it also protects a link this board could not NAME (a contact
+  // outside the viewer's CRM reach, or one the mirror has since dropped), which would otherwise be
+  // posted back as `null` simply because the picker had nothing to show.
+  const [editContactTouched, setEditContactTouched] = useState(false);
 
   async function run(fn: () => Promise<void>, message: string) {
     setBusy(true);
@@ -117,7 +155,12 @@ export function PharmacyRegistryManager({
           r.phoenixPharmacyCode.toLowerCase().includes(term) ||
           r.distributorCodes.some(
             (c) => c.customerCode.toLowerCase().includes(term) || c.distributorName.toLowerCase().includes(term),
-          ),
+          ) ||
+          // The CRM name is often the only name an admin knows a shop by — the whole reason the
+          // declared link exists is that the two strings do not meet.
+          (r.crmContact
+            ? `${r.crmContact.name} ${r.crmContact.nameAr ?? ""} ${r.crmContact.agentName}`.toLowerCase().includes(term)
+            : false),
       )
     : rows;
 
@@ -133,6 +176,8 @@ export function PharmacyRegistryManager({
         ? row.distributorCodes.map((c) => ({ distributorCode: c.distributorCode, customerCode: c.customerCode }))
         : [{ ...EMPTY_ROW }],
     );
+    setEditContact(row.crmContact);
+    setEditContactTouched(false);
     setError(null);
     setOk(null);
   }
@@ -151,6 +196,8 @@ export function PharmacyRegistryManager({
       regionCode: brick?.regionCode ?? null,
       doctorName: editDoctor,
       pharmacyAddress: editAddress,
+      // Present only when touched — the route forwards on the KEY, not on the value.
+      ...(editContactTouched ? { crmContactId: editContact?.contactCrmId ?? null } : {}),
     });
     await post({
       action: "replaceCodes",
@@ -174,6 +221,7 @@ export function PharmacyRegistryManager({
       doctorName: newDoctor,
       pharmacyAddress: newAddress,
       venueType: newVenueType,
+      crmContactId: newContact?.contactCrmId ?? null,
       // The server refuses a code on a venue that cannot hold one, so rows left behind by a type
       // switch would 400 the whole registration instead of being quietly dropped.
       distributorCodes: choiceRequiresDistributorCode(newVenueType) ? newCodes : [],
@@ -186,11 +234,13 @@ export function PharmacyRegistryManager({
     setNewDoctor("");
     setNewAddress("");
     setNewCodes([{ ...EMPTY_ROW }]);
+    setNewContact(null);
   }
 
   const inputClass = "w-full border border-slate-300 px-2 py-1.5 text-sm";
   const pendingCount = rows.filter((r) => r.verificationStatus === "pending_review").length;
   const uncodedCount = rows.filter((r) => r.distributorCodes.length === 0).length;
+  const unlinkedCount = rows.filter((r) => r.crmContactId === null).length;
 
   return (
     <div className="space-y-4">
@@ -215,6 +265,11 @@ export function PharmacyRegistryManager({
         {uncodedCount > 0 ? (
           <span className="border border-amber-200 bg-amber-50 px-3 py-1.5 font-bold text-amber-800">
             {uncodedCount} with no distributor code — their distributor sales cannot be linked
+          </span>
+        ) : null}
+        {unlinkedCount > 0 ? (
+          <span className="border border-slate-200 bg-slate-50 px-3 py-1.5 font-bold text-slate-700">
+            {unlinkedCount} not linked to a CRM contact — no trade badge reaches the rep&rsquo;s list
           </span>
         ) : null}
       </div>
@@ -348,6 +403,11 @@ export function PharmacyRegistryManager({
             </button>
           </div>
 
+          {/* Asked of EVERY venue type, unlike the distributor codes above. A nursery has no
+              distributor account but it can still be a doctor on a rep's AM list, and that is
+              precisely the venue a name match would never find. */}
+          <CrmContactPicker disabled={busy} onChange={setNewContact} picked={newContact} />
+
           <button
             type="button"
             disabled={busy || !newName.trim() || !venueTypeIsAnswered(newVenueType)}
@@ -366,7 +426,11 @@ export function PharmacyRegistryManager({
             <tr className="text-left text-phx-xs font-black uppercase tracking-wider">
               <th className="px-3 py-2">Venue</th>
               <th className="px-3 py-2">Geography</th>
-              <th className="px-3 py-2">Doctor</th>
+              {/* MERGED rather than a new column: this table already carries a min-width floor, and
+                  the golden rule is that a board fits by merging columns, never by adding one more
+                  for the scrollbar to pay for. The CRM row is part of the venue's identity, so it
+                  belongs beside the doctor it names. */}
+              <th className="px-3 py-2">Doctor · CRM contact</th>
               <th className="px-3 py-2">Distributor codes</th>
               <th className="px-3 py-2">Status</th>
               <th className="px-3 py-2">Orders</th>
@@ -393,7 +457,10 @@ export function PharmacyRegistryManager({
                     {row.areaName ?? "—"} · {row.regionName ?? "—"}
                   </div>
                 </td>
-                <td className="whitespace-nowrap px-3 py-2 text-phx-sm text-slate-600">{row.doctorName ?? "—"}</td>
+                <td className="px-3 py-2 text-phx-sm text-slate-600">
+                  <div className="whitespace-nowrap">{row.doctorName ?? "—"}</div>
+                  <CrmContactLine row={row} />
+                </td>
                 <td className="px-3 py-2 text-phx-sm text-slate-600">
                   {row.distributorCodes.length === 0 ? (
                     <span className="font-semibold text-amber-700">No code — sales cannot be linked</span>
@@ -489,6 +556,7 @@ export function PharmacyRegistryManager({
                 ? "No distributor code"
                 : row.distributorCodes.map((c) => `${c.distributorName}: ${c.customerCode}`).join(" · ")}
             </div>
+            <CrmContactLine row={row} />
             {canManage ? (
               <button
                 type="button"
@@ -578,6 +646,26 @@ export function PharmacyRegistryManager({
                     + Add distributor
                   </button>
                 </div>
+
+                {/* THE RETROACTIVE DOOR. Every venue registered before 2026-09-03 carries no link,
+                    because the column did not exist when it was created — and a rep's own submit
+                    form cannot fix that, since only an admin may edit an existing venue. This is
+                    the only place those venues can be linked. */}
+                {row.crmContactId !== null && !row.crmContact && !editContactTouched ? (
+                  <p className="mt-3 border border-amber-200 bg-amber-50 px-3 py-2 text-phx-sm font-semibold text-amber-900">
+                    This venue is linked to a CRM contact that is not on any list you can see — it may
+                    have been removed from the CRM mirror. Leaving this alone keeps the link exactly as
+                    it is; picking a contact below replaces it.
+                  </p>
+                ) : null}
+                <CrmContactPicker
+                  disabled={busy}
+                  onChange={(option) => {
+                    setEditContact(option);
+                    setEditContactTouched(true);
+                  }}
+                  picked={editContact}
+                />
 
                 <div className="mt-3 flex gap-2">
                   <button
