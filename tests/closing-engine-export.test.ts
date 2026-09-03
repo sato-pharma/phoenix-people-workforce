@@ -43,6 +43,7 @@ import { checkWorkbook } from "../scripts/check-workbook-integrity.mjs";
 const DASH = String.fromCharCode(0x2014);
 const UP = String.fromCharCode(0x25b2);
 const DOWN = String.fromCharCode(0x25bc);
+const STAR = String.fromCharCode(0x2605);
 
 const PRODUCTS = [
   { family: "Tebofortin", productCode: "TB001", productName: "Tebofortin 40mg" },
@@ -441,6 +442,152 @@ export async function runClosingEngineExportTests() {
     arrowFormulas.some((formula) => /&gt;=1,/.test(formula)),
     "the card's arrow turns at target, the same place every static sheet's does",
   );
+
+  // ── The Rep Card is the sheet a rep is meant to be proud to share ───────────────────────────
+  //
+  // Owner, 2026-09-03, on the tab he had just tried to send: "the medical rep name should be
+  // perfectly perfectly appearing", "never an overflow of the text under the logo", "Don't show
+  // codes. Always show names", "as if he's a star". Every assertion below is one of those four,
+  // and each one is invisible to every other check in this repository: a caption running under the
+  // emblem, a name set in the same 10.5pt as its own label, and a tile printing D16 where a
+  // district's name belongs are all perfectly valid OOXML that Excel opens without a murmur.
+  const cardStyles = await zip.file("xl/styles.xml")!.async("string");
+  const cardXfs = [...(/<cellXfs\b[^>]*>([\s\S]*?)<\/cellXfs>/.exec(cardStyles)?.[1] ?? "").matchAll(/<xf\b[^>]*?(?:\/>|>[\s\S]*?<\/xf>)/g)].map((one) => one[0]);
+  const cardFonts = [...(/<fonts\b[^>]*>([\s\S]*?)<\/fonts>/.exec(cardStyles)?.[1] ?? "").matchAll(/<font\b[^>]*?(?:\/>|>[\s\S]*?<\/font>)/g)].map((one) => one[0]);
+  /** Point size of whatever a cell is set in, followed through the style table the way Excel does. */
+  const pointsAt = (ref: string): number => {
+    const style = Number(new RegExp(`<c r="${ref}"[^>]*?\\bs="(\\d+)"`).exec(repCardXml)?.[1] ?? NaN);
+    const font = Number(/\bfontId="(\d+)"/.exec(cardXfs[style] ?? "")?.[1] ?? NaN);
+    return Number(/<sz val="([\d.]+)"/.exec(cardFonts[font] ?? "")?.[1] ?? NaN);
+  };
+  const formulaAt = (ref: string): string =>
+    new RegExp(`<c r="${ref}"[^>]*>\\s*<f[^>]*>([\\s\\S]*?)</f>`).exec(repCardXml)?.[1] ?? "";
+
+  // 1. The masthead is two lines, and the second one is why the first can never reach the emblem.
+  //
+  // The card is eight columns and 798px wide, and the logo is anchored at 689px with 16px of slack
+  // — so `clearTitleEmblem`, which answers this everywhere else by sliding the emblem right, has
+  // nowhere to slide it. Splitting the caption is the only fix that holds, and it holds for a
+  // longer line name than Anti Infective too.
+  const masthead = readRow(repCardXml, 1).A ?? "";
+  const deckLine = readRow(repCardXml, 2).A ?? "";
+  assert.match(masthead, /^Rep Card\b/, "the masthead still opens with the sheet's own name");
+  assert.match(masthead, /Anti Infective|CNS/, "and still says which line and month it is");
+  assert.doesNotMatch(
+    masthead,
+    /one person, one month/,
+    "the descriptive half belongs on row 2 — on row 1 it runs under the SATO PHARMA emblem",
+  );
+  assert.match(deckLine, /one person, one month, every product/, "and row 2 is where it went");
+
+  // Measured, not assumed: the caption's own advance width against the emblem's own anchor, both in
+  // EMU, read out of the produced file. A future caption that grows past the logo fails here rather
+  // than in the owner's hands.
+  const cardCols = [...(/<cols>[\s\S]*?<\/cols>/.exec(repCardXml)?.[0] ?? "").matchAll(/<col\b[^>]*?\/>/g)].map((one) => ({
+    min: Number(/min="(\d+)"/.exec(one[0])?.[1]),
+    max: Number(/max="(\d+)"/.exec(one[0])?.[1]),
+    width: /hidden="1"/.test(one[0]) ? 0 : Number(/width="([\d.]+)"/.exec(one[0])?.[1] ?? 9.140625),
+  }));
+  const columnEmu = (index: number): number => {
+    const run = cardCols.find((one) => index + 1 >= one.min && index + 1 <= one.max);
+    const width = run ? run.width : 9.140625;
+    return width > 0 ? (Math.round(width * 7) + 5) * 9525 : 0;
+  };
+  const cardRels = await zip.file(CLOSING_ENGINE_TEMPLATE_MANIFEST.sheets["Rep Card"]!.file.replace(/worksheets\/([^/]+)$/, "worksheets/_rels/$1.rels"))!.async("string");
+  const cardDrawing = await zip.file(`xl/${/Target="\.\.\/(drawings\/drawing\d+\.xml)"/.exec(cardRels)![1]}`)!.async("string");
+  // The emblem is the anchor carrying a picture; the button bar's shapes carry none.
+  const emblem = [...cardDrawing.matchAll(/<xdr:(?:twoCell|oneCell)Anchor[\s\S]*?<\/xdr:(?:twoCell|oneCell)Anchor>/g)]
+    .find((one) => /<xdr:pic\b/.test(one[0]));
+  assert.ok(emblem, "the Rep Card still carries its emblem — the whole masthead is built around it");
+  const fromCol = Number(/<xdr:from>[\s\S]*?<xdr:col>(\d+)<\/xdr:col>/.exec(emblem![0])?.[1] ?? NaN);
+  const fromOff = Number(/<xdr:from>[\s\S]*?<xdr:colOff>(\d+)<\/xdr:colOff>/.exec(emblem![0])?.[1] ?? 0);
+  let emblemLeft = fromOff;
+  for (let index = 0; index < fromCol; index += 1) emblemLeft += columnEmu(index);
+  const mastheadWidth = masthead.length * 91_500;
+  assert.ok(
+    mastheadWidth < emblemLeft,
+    `the masthead must end before the emblem begins — it runs to ${Math.round(mastheadWidth / 9525)}px and the logo starts at ${Math.round(emblemLeft / 9525)}px`,
+  );
+
+  // 2. Names, never codes. The owner's rule, and the tile that broke it said "Area code / D16".
+  const cardText = [...repCardXml.matchAll(/<t[^>]*>([\s\S]*?)<\/t>/g)].map((one) => one[1]!);
+  for (const text of cardText) {
+    assert.doesNotMatch(text, /\bcode\b/i, `no visible cell on the card may offer a code — found "${text}"`);
+  }
+  assert.equal(readRow(repCardXml, 9).F, "District manager", "the third tile is the manager, by name");
+  assert.match(formulaAt("F10"), /AreaBook\[District manager\]/, "and it resolves his name, not his area's code");
+  assert.match(formulaAt("B10"), /AreaBook\[Area\]/, "the area tile reads the area's name");
+  assert.match(formulaAt("D10"), /AreaBook\[Region\]/, "and the region tile the region's");
+
+  // The code itself has to survive out of sight, because it is the key every product row sums on.
+  // Removing the tile and removing the lookup look identical on screen for exactly one second.
+  assert.match(formulaAt("N2"), /AreaBook\[Area Code\]/, "$N$2 still resolves the area code — hidden, not deleted");
+  assert.ok(
+    [...repCardXml.matchAll(/<f[^>]*>([\s\S]*?)<\/f>/g)].filter((one) => /SUMIFS\([\s\S]*\$N\$2/.test(one[1]!)).length > 0,
+    "and the product rows still key their SUMIFS on it — hiding the code must not gut the card",
+  );
+
+  // 3. The name is the hero of the card, which is a measurement, not an opinion: it is set larger
+  //    than the money under it and larger than the label above it.
+  assert.match(formulaAt("B8"), /AreaBook\[Medical rep\]/, "the hero line is the rep's own name");
+  assert.equal(readRow(repCardXml, 7).B, "Medical rep", "with an eyebrow above it saying what it is");
+  const heroPoints = pointsAt("B8");
+  assert.ok(
+    heroPoints > pointsAt("B13") && heroPoints > pointsAt("B7"),
+    `the rep's name outsizes both the KPI figures and its own label — ${heroPoints}pt against ${pointsAt("B13")}pt and ${pointsAt("B7")}pt`,
+  );
+
+  // 4. The star is first place, and nothing else. A star on every card is not a star.
+  const badge = formulaAt("F5");
+  assert.match(badge, new RegExp(`AreaBook\\[Rank\\],\\$N\\$1\\)=1,"${STAR} "`), "the star is gated on rank 1");
+  assert.equal(
+    cardText.filter((text) => text.includes(STAR)).length,
+    0,
+    "and it is never a fixed piece of text — a card that always says star says nothing",
+  );
+
+  // ── The style table's declared counts are its real ones ──────────────────────────────────────
+  // The card's polish appends fonts and formats to the workbook's own table. A `count` left behind
+  // is how Excel is told to stop reading before the last entry: the file still opens, and the cells
+  // using those entries come back unstyled — or the file is repaired and they are dropped. Neither
+  // is visible to any other check here, and both land on the sheet this whole section is about.
+  for (const [tag, child] of [["fonts", "font"], ["fills", "fill"], ["borders", "border"], ["cellXfs", "xf"]] as const) {
+    const block = new RegExp(`<${tag} count="(\\d+)"[^>]*>([\\s\\S]*?)</${tag}>`).exec(cardStyles);
+    assert.ok(block, `the workbook still declares its ${tag}`);
+    const real = [...block![2]!.matchAll(new RegExp(`<${child}\\b`, "g"))].length;
+    assert.equal(Number(block![1]), real, `<${tag} count> must be the number of ${tag} actually there`);
+  }
+
+  // ── No two merged regions may overlap ────────────────────────────────────────────────────────
+  // The polish reshapes five rows and re-lays their merges. An overlap is the one mistake here that
+  // Excel refuses outright — "We found a problem with some content" — and it is trivially made by
+  // adding a merge without dropping the one it lands on.
+  const mergeBlock = /<mergeCells\b[^>]*>[\s\S]*?<\/mergeCells>/.exec(repCardXml)?.[0] ?? "";
+  const mergeRefs = [...mergeBlock.matchAll(/<mergeCell ref="([^"]+)"/g)].map((one) => one[1]!);
+  assert.equal(
+    Number(/<mergeCells count="(\d+)"/.exec(mergeBlock)?.[1]),
+    mergeRefs.length,
+    "the merge count is the number of merges actually written",
+  );
+  const box = (ref: string) => {
+    const [from, to] = ref.split(":");
+    const at = (one: string) => {
+      const parts = /^([A-Z]+)(\d+)$/.exec(one)!;
+      return { column: [...parts[1]!].reduce((sum, letter) => sum * 26 + letter.charCodeAt(0) - 64, 0), row: Number(parts[2]) };
+    };
+    return { start: at(from!), end: at(to ?? from!) };
+  };
+  for (let i = 0; i < mergeRefs.length; i += 1) {
+    for (let j = i + 1; j < mergeRefs.length; j += 1) {
+      const a = box(mergeRefs[i]!);
+      const b = box(mergeRefs[j]!);
+      assert.ok(
+        a.end.row < b.start.row || b.end.row < a.start.row ||
+          a.end.column < b.start.column || b.end.column < a.start.column,
+        `${mergeRefs[i]} and ${mergeRefs[j]} overlap — Excel refuses to open a sheet with two merges over one cell`,
+      );
+    }
+  }
 
   // ── A month that was never uploaded is blank, not zero ───────────────────────────────────────
   // A zero here reads as a collapse in sales. The distinction is the whole reason the prior month
