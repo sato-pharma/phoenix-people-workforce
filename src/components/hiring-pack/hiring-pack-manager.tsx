@@ -25,6 +25,8 @@ import {
   Archive,
   CalendarCheck,
   CheckCircle2,
+  ChevronDown,
+  ChevronUp,
   Copy,
   DoorOpen,
   FileSignature,
@@ -42,7 +44,6 @@ import {
   AdminCallout,
   AdminInsightChip,
   AdminPageHero,
-  AdminStatCard,
   AdminTableShell,
 } from "@/components/admin/admin-design-system";
 import { HiringPackPaperEditor } from "@/components/hiring-pack/paper-editor";
@@ -977,20 +978,39 @@ export function HiringPackManager({
           />
         ) : null}
 
-        <AdminTableShell
-          description="Current staff first, newest hires at the top, then everyone who has left with the date they left — Form 6 and the exit forms are filed after somebody has gone. Search by HR ID, name, job title or that date."
-          title="Choose the employee"
-        >
-          <div className="px-5 py-5 sm:px-6">
-            <label className={labelClassName} htmlFor="hiring-pack-employee">
+        {/*
+          THE PICKER IS A BAR, NOT A SECTION.
+
+          It used to be a full card: a heading, a two-line description of how the list is sorted, a
+          label, and then the one control — 230px of chrome around a dropdown, measured at 1440px,
+          on a page that runs past 4,000px. Everything the description explained is visible in the
+          list itself the moment it opens, so it was being paid for twice. As a bar it is 66px, and
+          the name sitting in the box now does the job the heading used to: it says who you are
+          printing for.
+
+          NOT STICKY, AND NOT FOR WANT OF TRYING. Following the page down is what this control
+          actually wants to do — the work here is one person's papers and then the next person's,
+          and from the foot of the page changing person means scrolling back past everything. But
+          `AdminHeroFrame`, which wraps every admin page, is `overflow-hidden`, and a sticky element
+          inside a clipped ancestor simply scrolls away with the content. Measured: with `sticky
+          top-2` the bar's own top read −1183px at a scroll of 1500. Making it stick means changing
+          that shared frame, which is a decision about every admin screen, not this one.
+        */}
+        <div className="rounded-2xl border border-slate-200/90 bg-white/95 px-4 py-3 shadow-[0_12px_32px_rgba(15,23,42,0.10)] sm:px-5">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <label
+              className="flex shrink-0 items-center gap-2 text-phx-xs font-black uppercase tracking-[0.12em] text-phx-ink-soft"
+              htmlFor="hiring-pack-employee"
+            >
+              <UserRound className="h-4 w-4 text-phx-accent-press" />
               Employee
             </label>
             <SearchableSelect
-              className={cn(inputClassName, "w-full max-w-2xl")}
+              className={cn(inputClassName, "w-full min-w-0 flex-1")}
               disabled={busy === "load"}
               id="hiring-pack-employee"
               onValueChange={(value) => void selectEmployee(value)}
-              placeholder="Search by HR ID, name, or job title"
+              placeholder="Search by HR ID, name, job title or the date they left"
               value={selectedHrId}
             >
               <option value="">Select an employee</option>
@@ -1001,78 +1021,85 @@ export function HiringPackManager({
               ))}
             </SearchableSelect>
             {busy === "load" ? (
-              <p className="mt-3 inline-flex items-center gap-2 text-sm font-semibold text-phx-ink-soft">
-                <Loader2 className="h-4 w-4 animate-spin" /> Loading the pack…
+              <p className="inline-flex shrink-0 items-center gap-2 text-sm font-semibold text-phx-ink-soft">
+                <Loader2 className="h-4 w-4 animate-spin" /> Loading…
               </p>
             ) : null}
           </div>
-        </AdminTableShell>
+        </div>
 
         {pack && employee ? (
           <>
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              <AdminStatCard
-                description={
-                  pack.profile.contractSignedDate
-                    ? formatDate(pack.profile.contractSignedDate)
-                    : "Not signed yet"
-                }
-                icon={<FileText className="h-5 w-5" />}
-                label="Contract"
-                tone={pack.profile.contractSignedDate ? "emerald" : "orange"}
-                value={pack.profile.contractSignedDate ? "Signed" : "Pending"}
-              />
-              <AdminStatCard
-                description={
-                  pack.profile.form1SignedDate
-                    ? formatDate(pack.profile.form1SignedDate)
-                    : "Not signed yet"
-                }
-                icon={<ShieldCheck className="h-5 w-5" />}
-                label="Form 1"
-                tone={pack.profile.form1SignedDate ? "emerald" : "orange"}
-                value={pack.profile.form1SignedDate ? "Signed" : "Pending"}
-              />
-              <AdminStatCard
-                description="Values the document cannot be handed over without."
-                icon={<AlertTriangle className="h-5 w-5" />}
-                label="Blocking gaps"
-                tone={blockingGaps.length > 0 ? "rose" : "emerald"}
-                value={blockingGaps.length}
-              />
-              <AdminStatCard
-                description="Prints without them, but they are still missing."
-                icon={<CalendarCheck className="h-5 w-5" />}
-                label="To fill later"
-                tone="blue"
-                value={advisoryGaps.length}
-              />
-            </div>
+            {/*
+              ONE STATUS BAND WHERE THERE WERE FOUR CARDS AND A CALLOUT UNDER THEM.
 
-            {blockingGaps.length > 0 ? (
-              <AdminCallout tone="warning">
-                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-                <div className="flex flex-col gap-2">
-                  <p className="font-bold">
-                    {blockingGaps.length} value{blockingGaps.length === 1 ? "" : "s"} the documents
-                    ask for are still missing. Both will still print — the blanks stay blank rather
-                    than being guessed.
-                  </p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {blockingGaps.map((gap) => (
-                      <Badge key={gap.field} variant="danger">
-                        {gap.labelEn} · {gap.labelAr}
-                      </Badge>
-                    ))}
-                  </div>
-                  <p className="text-xs font-semibold text-amber-800">
-                    Employee-record gaps are fixed on the employee. Company-settings gaps are the
-                    company&apos;s own registration numbers, and are missing for every employee
-                    until they are supplied once.
+              Two of those cards were counts — "Blocking gaps 7", "To fill later 3" — sitting
+              directly above a callout that said "7 values … are still missing" and then listed all
+              seven by name. A number beside the list it counts is the number read twice, and it
+              cost 322px to do it.
+
+              So the counts are now the headings of the lists themselves: the chips ARE the count,
+              and they say which values rather than how many. Nothing was dropped — the advisory
+              gaps were never listed anywhere before, only counted, so this band shows strictly more
+              than the row it replaces, in under half the height.
+            */}
+            <div className="rounded-2xl border border-slate-200/90 bg-white/95 p-4 shadow-[0_16px_40px_rgba(15,23,42,0.08)] sm:p-5">
+              <div className="flex flex-wrap items-center gap-2">
+                <SignaturePill
+                  icon={<FileText className="h-4 w-4" />}
+                  label="Contract"
+                  signedDate={pack.profile.contractSignedDate}
+                />
+                <SignaturePill
+                  icon={<ShieldCheck className="h-4 w-4" />}
+                  label="Form 1"
+                  signedDate={pack.profile.form1SignedDate}
+                />
+              </div>
+
+              {blockingGaps.length > 0 || advisoryGaps.length > 0 ? (
+                <div className="mt-4 flex flex-col gap-3 border-t border-slate-200/80 pt-4">
+                  {blockingGaps.length > 0 ? (
+                    <div className="flex flex-col gap-1.5">
+                      <p className="flex items-center gap-2 text-phx-xs font-black uppercase tracking-[0.12em] text-rose-700">
+                        <AlertTriangle className="h-3.5 w-3.5" />
+                        {blockingGaps.length} value{blockingGaps.length === 1 ? "" : "s"} the
+                        documents ask for — they print blank rather than guessed
+                      </p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {blockingGaps.map((gap) => (
+                          <Badge key={gap.field} tone="danger">
+                            {gap.labelEn} · {gap.labelAr}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {advisoryGaps.length > 0 ? (
+                    <div className="flex flex-col gap-1.5">
+                      <p className="flex items-center gap-2 text-phx-xs font-black uppercase tracking-[0.12em] text-sky-700">
+                        <CalendarCheck className="h-3.5 w-3.5" />
+                        {advisoryGaps.length} to fill in later — the documents print without them
+                      </p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {advisoryGaps.map((gap) => (
+                          <Badge key={gap.field} tone="info">
+                            {gap.labelEn} · {gap.labelAr}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  <p className="text-xs leading-5 text-phx-ink-faint">
+                    Employee-record values are fixed on the employee below. Company-settings values
+                    are the company&apos;s own registration numbers, and are missing for every
+                    employee until they are supplied once.
                   </p>
                 </div>
-              </AdminCallout>
-            ) : null}
+              ) : null}
+            </div>
 
             <AdminTableShell
               action={
@@ -1805,12 +1832,31 @@ function TemplateArchive({
 }) {
   const archived = archivedTemplateVersions();
 
+  // CLOSED UNTIL ASKED FOR, because of who asks and how often. The archive is 441px of superseded
+  // contracts at the foot of the screen, and it is read when a labour office or a dispute asks what
+  // the old text said — rarely, deliberately, and never in the middle of printing today's papers.
+  // It stays a section with its own heading and its count on the outside, so it is still obviously
+  // there; what changes is that it no longer occupies a tenth of the page to say so.
+  const [open, setOpen] = useState(false);
+
   return (
     <AdminTableShell
+      action={
+        <Button
+          aria-expanded={open}
+          className="h-10 gap-2 rounded-xl"
+          onClick={() => setOpen((current) => !current)}
+          type="button"
+          variant="outline"
+        >
+          {open ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+          {open ? "Hide" : `Show ${archived.length} archived`}
+        </Button>
+      }
       description="Every paper that has been replaced. Nothing is ever deleted — a document somebody signed has to stay reproducible as the document they signed."
       title="Archive"
     >
-      {archived.length === 0 ? (
+      {!open ? null : archived.length === 0 ? (
         <div className="px-5 py-5 sm:px-6">
           <AdminCallout>
             <Archive className="mt-0.5 h-4 w-4 shrink-0" />
@@ -1893,6 +1939,43 @@ function TemplateArchive({
         </div>
       )}
     </AdminTableShell>
+  );
+}
+
+/**
+ * Whether one signable document has been signed, and when — as a pill rather than a stat card.
+ *
+ * It replaces a 169px card carrying the same two facts. The date is the whole point of the state:
+ * "Signed" with no date would be a claim nobody can check, and this is the value Form 6 files with
+ * the Authority later, so it is shown in full rather than abbreviated.
+ */
+function SignaturePill({
+  icon,
+  label,
+  signedDate,
+}: {
+  icon: ReactNode;
+  label: string;
+  signedDate: string | null;
+}) {
+  const signed = Boolean(signedDate);
+
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-sm font-bold ring-1 ring-inset",
+        signed
+          ? "border-phx-ok-line bg-phx-ok-bg text-phx-ok ring-phx-ok-line"
+          : "border-phx-warn-line bg-phx-warn-bg text-phx-warn ring-phx-warn-line",
+      )}
+    >
+      {icon}
+      <span>{label}</span>
+      <span className="font-black">{signed ? "signed" : "not signed yet"}</span>
+      {signedDate ? (
+        <span className="font-semibold opacity-80">{formatDate(signedDate)}</span>
+      ) : null}
+    </span>
   );
 }
 
