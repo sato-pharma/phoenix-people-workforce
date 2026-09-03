@@ -877,6 +877,7 @@ import { runExpenseClaimsRefreshTraceTests } from "./expense-claims-refresh-fail
 import { runOutstationDecisionFailureTraceTests } from "./outstation-decision-failures-leave-a-trace.test.ts";
 import { runOutstationAdminApproveOutcomeTests } from "./outstation-admin-approve-reports-its-outcome.test.ts";
 import { runPharmacySearchTests } from "./pharmacy-search.test.ts";
+import { runClientBundleServerLeakTests } from "./client-bundle-server-leak.test.ts";
 import { runRscClientFunctionPropTests } from "./rsc-client-function-props.test.ts";
 import { runDirectOrdersInvoiceScanTests } from "./direct-orders-invoice-scan.test.ts";
 import { runDirectOrdersArabicSearchTests } from "./direct-orders-arabic-search.test.ts";
@@ -2659,6 +2660,7 @@ await runTest("Expense claims refresh failures are legible (no raw Supabase reth
 await runTest("Outstation admin approve reports its outcome (the in-modal message is not gated on the already-cleared busy flag, and the action toast outranks the details modal it appears over)", runOutstationAdminApproveOutcomeTests);
 await runTest("HR shell mobile tables (closure scan from the HR sidebar: every wide table desktop-gated with a mobile half beside it, stacking primitives pinned, exemptions justified)", runHrShellMobileTableTests);
 await runTest("RSC boundary (no server component hands a function prop to a client component — the crash that 500d Doctor Coverage; follows the real import graph so client-parent files are not flagged)", runRscClientFunctionPropTests);
+await runTest("client bundle boundary (no \"use client\" module reaches node:crypto or the service-role client — the leak that made the Direct Orders new-request page 500 the whole dev server)", runClientBundleServerLeakTests);
 await runTest("direct orders invoice scan (a dim page gains real contrast, a failed prepare returns the original, EXIF rotation is applied, no binarisation, the reader is sent the PREPARED image)", runDirectOrdersInvoiceScanTests);
 await runTest("direct orders Arabic search (every fold survives, the strip class never swallows a letter, an unnamed customer is ranked down not hidden, both birth paths are searched)", runDirectOrdersArabicSearchTests);
 await runTest("CRM brick-centroids cache (shared Data Cache not a per-segment module var, 300s TTL unchanged, sos-reference tag, DB read byte-identical, catch OUTSIDE the cache so a transient error is never cached as [])", runCrmBrickCentroidsCacheTests);

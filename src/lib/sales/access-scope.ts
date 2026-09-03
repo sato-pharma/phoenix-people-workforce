@@ -8,6 +8,11 @@ import {
 import { getUserLineScopeOverride, getUserProductScopeOverride } from "@/lib/auth/scope-visibility";
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
 import {
+  isHeadOfficeLine,
+  normalizeLineKey,
+  RESTRICTED_PRODUCT_CODES,
+} from "@/lib/sales/confidential-products";
+import {
   bridgeEmployeeLineToOfficial,
   OFFICIAL_LINE_VALUES,
   resolveOfficialLineValue,
@@ -29,9 +34,6 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 // the sales files carry line/region/area/brick/product/customer but not rep ownership.
 // So role scope limits WHICH lines/regions a user sees, resolved from their employee row.
 // ─────────────────────────────────────────────────────────────────────────────
-
-/** Confidential products excluded by default everywhere. Single source of truth. */
-export const RESTRICTED_PRODUCT_CODES = ["LA003", "LA004", "SS001"] as const;
 
 const RESTRICTED_SET = new Set(RESTRICTED_PRODUCT_CODES.map((code) => code.toUpperCase()));
 
@@ -57,14 +59,6 @@ export function canViewHeadOfficeLine(role: PhoenixRole): boolean {
  */
 export function canExportSosDashboard(role: PhoenixRole): boolean {
   return role === "CEO" || role === "Super Admin";
-}
-
-/** Case/whitespace-insensitive keys that identify the confidential Head Office line. */
-const HEAD_OFFICE_LINE_KEYS = new Set(["head office", "headoffice", "office", "hq"]);
-
-/** True when a line name (employee line or SoS official line) is the confidential Head Office line. */
-export function isHeadOfficeLine(line: string | null | undefined): boolean {
-  return HEAD_OFFICE_LINE_KEYS.has(normalizeLineKey(line));
 }
 
 /**
@@ -147,10 +141,12 @@ export function __resetRestrictedNameCacheForTests(): void {
 // employee-directory chain into a client bundle; re-exported here for existing server callers.
 export { bridgeEmployeeLineToOfficial, OFFICIAL_LINE_VALUES, resolveOfficialLineValue };
 
-/** Case/whitespace-insensitive key for comparing line names from different sources. */
-export function normalizeLineKey(value: string | null | undefined): string {
-  return (value ?? "").trim().toLowerCase();
-}
+// The restricted-product list, the Head Office line test and the line key they compare on live in
+// ./confidential-products.ts (a dependency-free module) for the same reason official-lines.ts does:
+// direct-orders/product-family.ts imports them and is reached from a CLIENT component, which before
+// the split pulled this file's server-only employee-directory/node:crypto chain into the browser
+// bundle. Re-exported here so every existing server caller is untouched.
+export { isHeadOfficeLine, normalizeLineKey, RESTRICTED_PRODUCT_CODES };
 
 /** Case/whitespace-insensitive key for comparing region names from different sources. */
 export function canonicalizeRegionName(value: string | null | undefined): string {
