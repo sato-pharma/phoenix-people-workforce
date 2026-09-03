@@ -17,10 +17,11 @@ function bodyFields(source: string): Set<string> {
   );
 }
 
-/** The six fields the offline route used to take from the request body and the online submit
- * route does not. Each one reaches a report_* override column that payroll-expense-mapping.ts
- * prefers over the resolved value — see the impact half below, which is what makes their absence
- * from the route load-bearing rather than cosmetic. */
+/** Six fields no employee-submitted claim may carry, on EITHER submit path. Each reaches a
+ * report_* override column that payroll-expense-mapping.ts prefers over the resolved value — see
+ * the impact half below, which is what makes their absence from the routes load-bearing rather
+ * than cosmetic. Both routes assert the same permission, the submitter's own outstation:create,
+ * so a field one of them refuses is a field neither may take. */
 const SELF_SET_REPORT_FIELDS = [
   "travelCostAmount",
   "amWorkload",
@@ -116,39 +117,45 @@ export function runOutstationOfflineSyncBodyParityTests() {
   assert.equal(overriddenReport.hr, "Approved", "report_hr_status is rendered as the row's HR column");
   assert.equal(overriddenReport.hrNotes, "Cleared.", "report_hr_notes is rendered as the row's HR note");
 
-  // ── The gate: the offline route may not be handed any of them ──────────────────────────────
+  // ── The gate: NEITHER submit path may be handed any of them ────────────────────────────────
   // Both routes assert the same permission — the submitting employee's own outstation:create —
-  // and the offline path is the one deliberately exempted from carrying a ticket attachment up
-  // front. Least evidence must not mean most control.
+  // and the offline path is additionally the one deliberately exempted from carrying a ticket
+  // attachment up front. Least evidence must not mean most control, and the online path is not
+  // a licence either: it is the same claim by the same person into the same columns.
 
-  const offlineRoute = readFileSync("app/api/outstation/sync-offline/route.ts", "utf8");
-  const submitRoute = readFileSync("app/api/outstation/submit/route.ts", "utf8");
-  const offlineFields = bodyFields(offlineRoute);
-  const submitFields = bodyFields(submitRoute);
+  const routes = [
+    { fields: bodyFields(readFileSync("app/api/outstation/sync-offline/route.ts", "utf8")), name: "sync-offline" },
+    { fields: bodyFields(readFileSync("app/api/outstation/submit/route.ts", "utf8")), name: "submit" },
+  ];
 
-  // Vacuity guard. If the route is renamed, emptied, or stops reading its body the way this
-  // check assumes, the set goes small and every assertion below passes for the wrong reason.
-  assert.ok(
-    offlineFields.size >= 15,
-    `expected the offline route to still read its request body; found ${offlineFields.size} field(s)`,
-  );
-  for (const structural of ["capturedLatitude", "claimedTotalAmount", "tripStartDate"]) {
+  // Vacuity guard. If a route is renamed, emptied, or stops reading its body the way this check
+  // assumes, the set goes small and every assertion below passes for the wrong reason.
+  for (const route of routes) {
     assert.ok(
-      offlineFields.has(structural),
-      `the offline route must still read body.${structural} — this check is reading the wrong file`,
+      route.fields.size >= 15,
+      `expected the ${route.name} route to still read its request body; found ${route.fields.size} field(s)`,
     );
+    for (const structural of ["capturedLatitude", "claimedTotalAmount", "tripStartDate"]) {
+      assert.ok(
+        route.fields.has(structural),
+        `the ${route.name} route must still read body.${structural} — this check is reading the wrong file`,
+      );
+    }
   }
 
-  for (const field of SELF_SET_REPORT_FIELDS) {
-    assert.equal(
-      offlineFields.has(field),
-      false,
-      `the offline sync route must not read body.${field} — the online submit route does not, and an employee replaying a claim as "offline" must not gain control the online path denies him. If offline replay genuinely needs it, the owner approves it and it gets an explicit gate, never a default.`,
-    );
+  for (const route of routes) {
+    for (const field of SELF_SET_REPORT_FIELDS) {
+      assert.equal(
+        route.fields.has(field),
+        false,
+        `the ${route.name} route must not read body.${field} — an employee does not set this on his own claim, whichever path he submits it through, because it reaches a report_* column the payroll approval mapper prefers over the value the server resolved. If a path genuinely needs it, the owner approves it and it gets an explicit gate, never a default.`,
+      );
+    }
   }
 
   // The general rule, so a NEW extra field is caught without anyone remembering to list it.
-  const widerThanSubmit = [...offlineFields].filter((field) => !submitFields.has(field)).sort();
+  const [offline, submit] = routes;
+  const widerThanSubmit = [...offline.fields].filter((field) => !submit.fields.has(field)).sort();
   assert.deepEqual(
     widerThanSubmit,
     [],
@@ -157,6 +164,7 @@ export function runOutstationOfflineSyncBodyParityTests() {
 
   // The sibling rule: the offline flag itself is set server-side on both routes, never trusted
   // from the caller. It is what exempts a train/bus claim from its ticket.
+  const offlineRoute = readFileSync("app/api/outstation/sync-offline/route.ts", "utf8");
   assert.doesNotMatch(
     offlineRoute,
     /offlineCaptured:\s*Boolean\(body\./,

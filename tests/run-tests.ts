@@ -3805,8 +3805,8 @@ await runTest("repo-doctor offers only what --strip-idle will actually reclaim",
 await runTest("the CRM client's timeout bounds the response BODY, and an empty body is not a shape change", runCrmClientTimeoutsTests);
 await runTest("the payroll push mapper and the payroll display mapper agree on one outstation total, even when the claim differs from the expected total", runOutstationPayrollPayableTotalAgreementTests);
 await runTest(
-  "the offline outstation sync route accepts no field the online submit route refuses "
-    + "(a self-set travel cost, AM/PM workload, HR column or trip type on the least-evidenced path)",
+  "neither outstation submit path lets an employee set his own claim's travel cost, AM/PM "
+    + "workload, HR column or trip type, and the offline body stays a subset of the online one",
   runOutstationOfflineSyncBodyParityTests,
 );
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
