@@ -2433,7 +2433,7 @@ await runTest("hiring document audit (every write names its actor, before-images
 await runTest("hiring document capture (polish keeps colour, pages become one A4 PDF, paths never collide)", runHiringDocumentCaptureTests);
 await runTest("hiring document deadlines (a blur that changed nothing must not write, in both renders)", runHiringDocumentsDeadlineTests);
 await runTest("hiring document status notes (an omitted notes key must not blank the cell)", runHiringDocumentsStatusNotesTests);
-await runTest("hiring pack (Form 1 coordinate map, blank back page, تفقيط agreement)", runHiringPackTests);
+await runTest("hiring pack (Form 1 coordinate map, back-page إقرار, تفقيط agreement)", runHiringPackTests);
 await runTest(
   "hiring pack insurance wage (Form 1 rule pinned to the owner's Yasmen setup: base 18,000 → 13,846, "
     + "flat basic 2,450, divisor 1.3, ceiling 16,700, null base prints blank)",

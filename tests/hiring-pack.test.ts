@@ -171,6 +171,22 @@ function packFixture(
   };
 }
 
+/**
+ * What one key actually PRINTS on one sheet, whatever shape it was placed in.
+ *
+ * A `digits` placement scatters its value one character per printed cell and a `text` placement
+ * keeps it whole, so comparing the two by their markup would compare the layout rather than the
+ * value. This reassembles the cells, which is what a reader of the paper sees.
+ */
+function printedValue(sheet: string, key: string): string {
+  const field = new RegExp(
+    `<span class="f [^"]*" data-hp-key="${key}"[^>]*>([\\s\\S]*?)</span></span>`,
+    "u",
+  ).exec(sheet);
+  if (!field) return "";
+  return field[1].replace(/<[^>]*>/gu, "");
+}
+
 /** Every `<section class="sheet">` in a rendered Form 1, in print order. */
 function form1Sheets(html: string): string[] {
   return html.split('<section class="sheet">').slice(1);
@@ -269,13 +285,27 @@ function testWagePoundsAreOnTheLeft() {
   }
 }
 
-function testTheBackOfForm1IsPrintedBlank() {
-  // The owner's instruction, 2026-08-22: the government form prints exactly as the Authority
-  // issues it. Nothing of Phoenix's goes on the back.
+/**
+ * The back of Form 1 carries its إقرار — the owner's instruction of 2026-09-03.
+ *
+ * THIS TEST USED TO PIN THE OPPOSITE, and that is the point of the note. Page 2 printed blank from
+ * 2026-08-22, when the owner asked that the government form come off the printer exactly as the
+ * Authority issues it; on 2026-09-03 he reversed it — "the insurance form 1 back page should have
+ * printable data". Neither state is a defect. What would be a defect is the back silently emptying
+ * again, which is why the values are asserted by NAME rather than by a count of marks: a page that
+ * prints three of the four declaration fields passes any "is something on it" check.
+ *
+ * THE FRONT/BACK PAIRING IS THE PART THAT NEVER CHANGED. Form 1 is duplex and page 2 is the back of
+ * page 1, not a second sheet, so the artwork must still alternate — that half of the old test is
+ * kept verbatim, because it was never about whether the back carried values.
+ */
+function testTheBackOfForm1CarriesItsDeclaration() {
+  const backKeys = FORM1_PAGE_2_PLACEMENTS.map((placement) => placement.key);
   assert.deepEqual(
-    FORM1_PAGE_2_PLACEMENTS,
-    [],
-    "page 2 of Form 1 must carry no Phoenix-written values — it is the government's own back page",
+    [...backKeys].sort(),
+    ["companyAddress", "companyName", "establishmentNumber", "insuredName"],
+    "the back page's إقرار asks for the establishment's name, insurance number and address, and " +
+      "the employee's own name — placing some of those and not others prints a half-signed declaration",
   );
 
   const html = renderForm1Html(packFixture(), 2);
@@ -288,13 +318,32 @@ function testTheBackOfForm1IsPrintedBlank() {
       sheet.includes(isBack ? "form1-page2.svg" : "form1-page1.svg"),
       `sheet ${index + 1} carries the wrong side of the artwork`,
     );
-    if (isBack) {
+    if (!isBack) continue;
+
+    // Reaching the PAGE, not merely the placement list. A key with no value renders nothing at all
+    // by design, so a back page can be correctly configured and still print empty.
+    for (const key of backKeys) {
       assert.ok(
-        !sheet.includes('class="f'),
-        `sheet ${index + 1} is the back page and must carry no written value`,
+        sheet.includes(`data-hp-key="${key}"`),
+        `sheet ${index + 1} is the back page and must print ${key} — it is placed but not rendered`,
       );
     }
   }
+
+  // THE TWO SIDES MUST STATE ONE INSURANCE NUMBER — checked on the printed page, not on the
+  // placement lists, and this is the ONE way they can disagree that nothing else catches.
+  //
+  // The front writes the number into a grid of eight printed boxes and CLIPS anything longer;
+  // the back writes it as free text on a rule and clips nothing. So a number of nine digits or
+  // more prints two different insurance numbers on the two sides of one government form, with no
+  // error anywhere — the front simply loses its last digit. Every other kind of drift is already
+  // impossible: the key names above are pinned here, and page 1's own cell count is pinned by
+  // `testForm1LayoutIsTheMeasuredForm`, which would fail first.
+  assert.equal(
+    printedValue(sheets[1], "establishmentNumber"),
+    printedValue(sheets[0], "establishmentNumber"),
+    "the front and back of Form 1 must print the same establishment insurance number",
+  );
 }
 
 function testForm1PrintsOneSheetPairPerCopy() {
@@ -871,7 +920,7 @@ function testFactsSaveAnchorsBaseSalaryEditThroughTheRealFormula() {
 export function runHiringPackTests() {
   testForm1LayoutIsTheMeasuredForm();
   testWagePoundsAreOnTheLeft();
-  testTheBackOfForm1IsPrintedBlank();
+  testTheBackOfForm1CarriesItsDeclaration();
   testForm1PrintsOneSheetPairPerCopy();
   testForm1ClipsToItsPrintedBoxes();
   testForm1WritesTheWageIntoTheRightColumns();
