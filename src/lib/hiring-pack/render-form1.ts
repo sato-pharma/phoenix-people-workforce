@@ -65,8 +65,10 @@ function buildForm1Values(data: HiringPackData): Record<string, string> {
     taxRegPart1,
     taxRegPart2,
     taxRegPart3,
-    // The back page's إقرار also asks for the company's insurance number and address. It is not
-    // written here, because Phoenix writes nothing on that page — see FORM1_PAGE_2_PLACEMENTS.
+    // The back page's إقرار asks for the company's address as well. Its insurance number and name
+    // need nothing extra here: `establishmentNumber` and `companyName` above are the same two facts,
+    // and page 2 places those very keys rather than restating them — see FORM1_PAGE_2_PLACEMENTS.
+    companyAddress: systemLegalEntity.headOfficeAr,
 
     insuranceNumber: employee.socialInsuranceNumber ?? "",
     nationalId: employee.nationalId ?? "",
