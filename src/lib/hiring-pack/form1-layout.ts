@@ -167,21 +167,42 @@ export const FORM1_PAGE_1_PLACEMENTS: readonly Form1Placement[] = [
 ];
 
 /**
- * Page 2 — the إرشادات and the إقرار on the back. PRINTED BLANK, BY THE OWNER'S INSTRUCTION.
+ * Page 2 — the إرشادات and the إقرار on the back. NOW PRINTED WITH DATA.
  *
- * Nothing is placed on this side. The back of the form is the government's instructions and two
- * declarations the employee and the responsible manager sign in the first person, and the owner's
- * instruction (2026-08-22) is that it comes off the printer exactly as the Authority issues it,
- * with no value written on it by Phoenix.
+ * THE OWNER REVERSED HIS OWN INSTRUCTION ON 2026-09-03: "the insurance form 1 back page should have
+ * printable data". It had printed blank since 2026-08-22, when he asked that the back come off the
+ * printer exactly as the Authority issues it. The blank version was not a defect somebody fixed —
+ * it was his earlier decision, and this is his later one.
+ *
+ * THE COORDINATES DID NOT NEED FINDING AGAIN. Whoever emptied this list wrote all four measurements
+ * into the note they left behind, against exactly this possibility, so the reversal cost a placement
+ * list rather than a re-measure of the artwork. They are transcriptions out of the source PDF, like
+ * every other number in this file.
+ *
+ * `establishmentNumber` IS THE COMPANY'S INSURANCE NUMBER, and it is reused here rather than given a
+ * `companyInsuranceNumber` of its own as the old note suggested. The إقرار asks for the same number
+ * page 1 already carries in its box grid, and two keys for one fact are two things that can
+ * disagree — a form whose front and back state different insurance numbers is worse than one that
+ * states neither. The same value prints in both places: digits on the front, text on the back.
  *
  * The artwork itself was verified against the source PDF at 200 DPI: with a one-pixel tolerance,
- * zero ink in the rendered page is absent from the original. The back is the original document.
- *
- * IF THAT DECISION IS EVER REVERSED, the four blanks were already measured and do not need finding
- * again — اسم المنشأة at x=249 y=510 w=241 (right), رقمها التأميني at x=31 y=510 w=130 (centre),
- * العنوان at x=30 y=536 w=468 (right), and the "أقر أنا ..." name rule at x=320 y=714 w=210
- * (centre). Re-adding them means listing them below AND restoring `companyInsuranceNumber` and
- * `companyAddress` in `buildForm1Values`, plus `insuranceEntityNumber` in `systemLegalEntity` —
- * all three were removed once nothing on a printed page read them. It is not a rendering change.
+ * zero ink in the rendered page is absent from the original.
  */
-export const FORM1_PAGE_2_PLACEMENTS: readonly Form1Placement[] = [];
+export const FORM1_PAGE_2_PLACEMENTS: readonly Form1Placement[] = [
+  // The إقرار's establishment identification — "اسم المنشأة ... ورقمها التأميني ...".
+  { kind: "text", key: "companyName", x: 249, y: 510, w: 241, h: 13, align: "right", size: 9 },
+  {
+    kind: "text",
+    key: "establishmentNumber",
+    x: 31,
+    y: 510,
+    w: 130,
+    h: 13,
+    align: "center",
+    size: 9,
+  },
+  { kind: "text", key: "companyAddress", x: 30, y: 536, w: 468, h: 13, align: "right", size: 9 },
+
+  // "أقر أنا ..." — the employee's own declaration, in his Arabic name, as on the front.
+  { kind: "text", key: "insuredName", x: 320, y: 714, w: 210, h: 13, align: "center", size: 9 },
+];
