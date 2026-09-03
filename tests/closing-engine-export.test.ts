@@ -42,6 +42,7 @@ import { checkWorkbook } from "../scripts/check-workbook-integrity.mjs";
 
 const DASH = String.fromCharCode(0x2014);
 const UP = String.fromCharCode(0x25b2);
+const DOWN = String.fromCharCode(0x25bc);
 
 const PRODUCTS = [
   { family: "Tebofortin", productCode: "TB001", productName: "Tebofortin 40mg" },
@@ -266,9 +267,105 @@ export async function runClosingEngineExportTests() {
     "stripping the macros must not strip the pivots — they are what the .xlsx is for",
   );
 
+  // ── No button may outlive the VBA it calls ──────────────────────────────────────────────────
+  // Removing vbaProject.bin was not the whole strip: it left 36 shapes across 11 drawings still
+  // naming a routine — macro="PhxExportPdf", macro="PhxRegionButton" and the rest — in a package
+  // that no longer holds one. Excel answers a macro reference in a macro-free part with "We found
+  // a problem with some content in ...", and repairs it by dropping the drawing, so the reader
+  // loses the emblem and the button bar anyway after being told his file is damaged. It is
+  // schema-VALID, which is why checkWorkbook below passes the broken build too.
+  const drawingsOf = async (book: Buffer): Promise<Record<string, string>> => {
+    const opened = await JSZip.loadAsync(book);
+    const out: Record<string, string> = {};
+    for (const file of opened.file(/^xl\/drawings\/drawing\d+\.xml$/)) out[file.name] = await file.async("string");
+    return out;
+  };
+  const wiredButtons = (drawings: Record<string, string>) =>
+    Object.values(drawings).reduce((n, xml) => n + (xml.match(/<xdr:sp\b[^>]*\smacro="[^"]+"/g) ?? []).length, 0);
+
+  const macroDrawings = await drawingsOf(macroBook);
+  const plainDrawings = await drawingsOf(plainBook);
+  assert.ok(wiredButtons(macroDrawings) > 0, "the .xlsm is the build that KEEPS the button bar — it has the VBA");
+  assert.equal(wiredButtons(plainDrawings), 0, "a macro-free .xlsx may not name a VBA routine: that IS the repair prompt");
+
+  // The cut is per anchor, not per drawing, and these are what it must leave standing. The emblem
+  // rides in its own anchor with an r:embed; the two slicers ride inside an mc:AlternateContent.
+  // Cutting a drawing wholesale would take all three, and every sheet would lose its logo.
+  assert.equal(
+    Object.keys(plainDrawings).length,
+    Object.keys(macroDrawings).length,
+    "no drawing part may be removed, only anchors inside one",
+  );
+  for (const [name, xml] of Object.entries(plainDrawings)) {
+    assert.match(xml, /r:embed="/, `${name}: the emblem picture must survive the cut`);
+    assert.equal(
+      (xml.match(/<mc:AlternateContent\b/g) ?? []).length,
+      (macroDrawings[name].match(/<mc:AlternateContent\b/g) ?? []).length,
+      `${name}: the slicers ride in mc:AlternateContent and must survive the cut`,
+    );
+  }
+
   const cacheDefinition = await zip.file("xl/pivotCache/pivotCacheDefinition1.xml")!.async("string");
   assert.match(cacheDefinition, /<worksheetSource[^>]*name="SalesData"/, "the cache reads the TABLE, not a fixed range");
   assert.ok(!/June/.test(cacheDefinition), "no month name may be baked into the cache — it is filled every month");
+
+  // ── Every shared-item index the workbook holds must land inside the cache's pool ─────────────
+  //
+  // This is the repair prompt the owner hit on 2026-09-02: "We found a problem with some content",
+  // on every premium export. The template build empties each `<sharedItems>` (they hold the July
+  // CNS values it was cut from) and trusts `refreshOnLoad="1"` to refill them. Excel validates the
+  // pivots against the cache FIRST, finds `<item x="49"/>` pointing into an empty pool, removes all
+  // three PivotTable parts and calls the file damaged. Measured against Excel itself: the owner's
+  // own export is refused every time, the same export with the pool refilled opens clean with all
+  // three pivots. The demand is recomputed here from the produced workbook rather than imported
+  // from the fill code, so this fails if either half of the pair drifts.
+  const partsOf = (xml: string, tag: string): string[] =>
+    xml.match(new RegExp(`<${tag}\\b[^>]*?\\/>|<${tag}\\b[^>]*?>[\\s\\S]*?<\\/${tag}>`, "g")) ?? [];
+
+  const cacheFields = partsOf(cacheDefinition, "cacheField");
+  assert.equal(cacheFields.length, 16, "the cache still declares all sixteen fields");
+
+  const fieldNames = cacheFields.map((field) => /\bname="([^"]*)"/.exec(field)?.[1] ?? "");
+  const poolOf = (field: string): number =>
+    ((/<sharedItems\b[^>]*?\/>|<sharedItems\b[^>]*?>[\s\S]*?<\/sharedItems>/.exec(field)?.[0] ?? "").match(
+      /<(?:s|n|d|b|e|m)\b[^>]*\/>/g,
+    ) ?? []).length;
+
+  const demand = new Map<number, { count: number; from: string }>();
+  const claim = (field: number, count: number, from: string) => {
+    if (field < 0 || count <= (demand.get(field)?.count ?? 0)) return;
+    demand.set(field, { count, from });
+  };
+
+  let enumeratedItems = 0;
+  for (const name of parts.filter((p) => /^xl\/pivotTables\/pivotTable\d+\.xml$/.test(p))) {
+    const xml = await zip.file(name)!.async("string");
+    const block = /<pivotFields\b[^>]*>([\s\S]*?)<\/pivotFields>/.exec(xml)?.[1] ?? "";
+    partsOf(block, "pivotField").forEach((field, index) => {
+      for (const item of field.matchAll(/<item\b[^>]*\bx="(\d+)"/g)) {
+        enumeratedItems += 1;
+        claim(index, Number(item[1]) + 1, `${name} pivotField ${index}`);
+      }
+    });
+  }
+  for (const name of parts.filter((p) => /^xl\/slicerCaches\/[^/]+\.xml$/.test(p))) {
+    const xml = await zip.file(name)!.async("string");
+    const field = fieldNames.indexOf(/\bsourceName="([^"]*)"/.exec(xml)?.[1] ?? "");
+    for (const item of xml.matchAll(/<i\b[^>]*\bx="(\d+)"/g)) claim(field, Number(item[1]) + 1, name);
+  }
+
+  // If this ever reads 0 the check below has gone vacuous — it would pass on a workbook whose
+  // pivots had simply been gutted, which is the other way to stop Excel complaining and the one
+  // that loses the owner's three views.
+  assert.ok(enumeratedItems > 0, "the pivots must still enumerate their items — deleting them is not the fix");
+  assert.ok(demand.size > 0, "at least one cache field must be indexed, or this proves nothing");
+
+  for (const [field, { count, from }] of demand) {
+    assert.ok(
+      poolOf(cacheFields[field]!) >= count,
+      `cache field ${field} (${fieldNames[field]}) holds ${poolOf(cacheFields[field]!)} shared items but ${from} indexes ${count} — Excel removes every PivotTable part over this and reports the file as damaged`,
+    );
+  }
 
   // The two tables must end where the data ends, or the pivots read blank rows as a category.
   const salesRows = fill.data.salesData.length;
@@ -313,7 +410,37 @@ export async function runClosingEngineExportTests() {
   assert.equal(cairo2!.F, "44000", "its sales still count, and still total in money");
 
   const cairo1 = ranked.find((row) => row.C === "Cairo 1");
-  assert.equal(cairo1!.I, UP, "an area at 96% of target is above the halfway arrow");
+  // ── The arrow turns at TARGET ───────────────────────────────────────────────────────────────
+  // Owner's decision, 2026-09-03: "fix the arrow to only show above target". It used to turn at
+  // half, so 97% and 140% carried the same mark and the Watch List -- a page that holds nothing but
+  // shortfalls -- printed an up arrow on every row of it. Cairo 1 sits at 97.5%: close, and short.
+  assert.equal(cairo1!.I, DOWN, "97% of target is short of target, and the arrow says so");
+
+  // Swept as a rule over every ranked row rather than asserted on one, because the bug was never a
+  // single wrong cell -- it was one threshold, applied everywhere.
+  for (const row of ranked) {
+    const achievement = Number(row.H);
+    if (!Number.isFinite(achievement)) continue;
+    assert.equal(
+      row.I,
+      achievement >= 1 ? UP : DOWN,
+      `${row.C}: at ${(achievement * 100).toFixed(1)}% the arrow must follow whether the target was MET`,
+    );
+  }
+
+  // The live Rep Card's arrow is a FORMULA inside the owner's engine, not a value this code writes,
+  // so it carries its own copy of the threshold and drifted the moment the constant moved. It is
+  // rewritten at fill time from that same constant; this is what proves card and pages agree.
+  const repCardXml = await zip.file(CLOSING_ENGINE_TEMPLATE_MANIFEST.sheets["Rep Card"]!.file)!.async("string");
+  const arrowFormulas = [...repCardXml.matchAll(/<f[^>]*>(IF\(ISNUMBER\([^<]*)<\/f>/g)].map((match) => match[1]!);
+  assert.ok(arrowFormulas.length > 0, "the Rep Card still carries its arrow formula");
+  for (const formula of arrowFormulas) {
+    assert.doesNotMatch(formula, /&gt;=0\.5/, "no arrow on the card still turns at half of target");
+  }
+  assert.ok(
+    arrowFormulas.some((formula) => /&gt;=1,/.test(formula)),
+    "the card's arrow turns at target, the same place every static sheet's does",
+  );
 
   // ── A month that was never uploaded is blank, not zero ───────────────────────────────────────
   // A zero here reads as a collapse in sales. The distinction is the whole reason the prior month
@@ -494,6 +621,94 @@ export async function runClosingEngineExportTests() {
   const bookedRep = review.areas.find((area) => area.areaCode === booked.areaCode)?.repName;
   if (bookedRep) {
     assert.equal(rebookedRow.C, bookedRep, "and it is the rep the closing paid, not the one whose street the shop is on");
+  }
+
+  // ── What prints is what is on the sheet ─────────────────────────────────────────────────────
+  // A print area is a defined name, and content outside it is dropped from the PDF in silence: no
+  // warning, no marker, the page simply ends early. It was clamped to the last row of DATA, while
+  // `fillPresentationSheet` re-lands the owner's footnotes `trailerGap` rows BELOW that. So every
+  // note he wrote was on screen and on none of the five exports that carry one -- the Rep Card was
+  // the only sheet that printed its own, and only because it had a trailer-aware branch nothing
+  // else shared. Rendered through Excel, the five sheets went from MISSING to PRESENT on the fix.
+  //
+  // Pinned against the sheet's own `<dimension>` rather than a row number, because both sides are
+  // computed from the month: a bigger fixture moves them together, where a hardcoded row would pin
+  // this month instead of the rule.
+  const workbookXml = await zip.file("xl/workbook.xml")!.async("string");
+  const definedNames = [...workbookXml.matchAll(/<definedName name="([^"]+)"[^>]*>([^<]*)<\/definedName>/g)]
+    .map((match) => ({ name: match[1]!, ref: match[2]! }));
+  const rangeFor = (name: string, sheetName: string): string | undefined =>
+    definedNames.find((entry) => entry.name === name && entry.ref.replace(/'/g, "").startsWith(`${sheetName}!`))?.ref;
+  const lastRowOf = (ref: string): number => Number(/\$(\d+)$/.exec(ref)?.[1] ?? 0);
+
+  let footnoteSheets = 0;
+  for (const [sheetName, spec] of Object.entries(CLOSING_ENGINE_TEMPLATE_MANIFEST.sheets)) {
+    if (spec.kind !== "data" || !(spec.trailerRows ?? []).length) continue;
+    const sheetXml = await zip.file(spec.file)!.async("string");
+    const lastRow = Number(/<dimension ref="[A-Z]+\d+:[A-Z]+(\d+)"/.exec(sheetXml)?.[1] ?? 0);
+    assert.ok(lastRow > 0, `${sheetName}: the sheet declares a dimension`);
+
+    // The last row has to BE a footnote, or every assertion below passes on an empty sheet.
+    const lastRowXml = new RegExp(`<row[^>]*\\br="${lastRow}"[\\s\\S]*?</row>`).exec(sheetXml)?.[0] ?? "";
+    assert.match(lastRowXml, /<t[^>]*>[^<]{20,}/, `${sheetName}: the last row carries one of the owner's footnotes`);
+
+    const printArea = rangeFor("_xlnm.Print_Area", sheetName);
+    assert.ok(printArea, `${sheetName}: has a print area at all`);
+    assert.equal(lastRowOf(printArea!), lastRow, `${sheetName}: the print area reaches the footnotes`);
+
+    // `PhxPrintArea` is the range the export-to-PDF button prints, so it has to agree or the button
+    // and Ctrl+P disagree about the same sheet.
+    const macroArea = rangeFor("PhxPrintArea", sheetName);
+    if (macroArea) assert.equal(lastRowOf(macroArea), lastRow, `${sheetName}: the export button prints them too`);
+
+    // ...and the filter must NOT reach them. A footnote inside the AutoFilter range becomes a
+    // filterable row, and disappears the moment anyone filters the sheet.
+    const filter = rangeFor("_xlnm._FilterDatabase", sheetName);
+    if (filter) assert.ok(lastRowOf(filter) < lastRow, `${sheetName}: the AutoFilter stops above the footnotes`);
+    footnoteSheets += 1;
+  }
+  assert.ok(footnoteSheets >= 4, `four or more sheets carry footnotes, not ${footnoteSheets} -- this is not an empty loop`);
+
+  // ── A pivot label reads as a word ───────────────────────────────────────────────────────────
+  // The template's pivots carry a `<formats>` list pinned to CACHE-POOL INDICES -- `<x v="0"/>` is
+  // "whatever the first region happens to be", so a list saved against CNS's seven regions lands on
+  // whatever this month's regions are, in the wrong order. Every one of them was `labelOnly="1"`
+  // pointing at the same alignment-only `<dxf>`: `horizontal="left" indent="1"`. On a MERGED and
+  // WRAPPED label cell an indent eats most of the usable width, and Excel then wraps the caption one
+  // glyph per line -- "Cairo" printed as a column of letters, cut off after four. They are dropped
+  // rather than re-pinned: the look they carry is an indent this workbook does not want anywhere.
+  const stylesXml = await zip.file("xl/styles.xml")!.async("string");
+  const dxfBodies = [...(/<dxfs\b[^>]*>[\s\S]*?<\/dxfs>/.exec(stylesXml)?.[0] ?? "").matchAll(/<dxf>([\s\S]*?)<\/dxf>/g)]
+    .map((match) => match[1]!);
+  const alignmentOnly = (id: number): boolean =>
+    dxfBodies[id] !== undefined && dxfBodies[id]!.replace(/<alignment\b[^>]*\/>/g, "").trim() === "";
+  assert.ok(dxfBodies.some((_body, id) => alignmentOnly(id)), "the style itself survives -- this check has something to catch");
+
+  for (const file of zip.file(/^xl\/pivotTables\/pivotTable\d+\.xml$/)) {
+    const pivotXml = await file.async("string");
+    const formats = /<formats\b[^>]*>[\s\S]*?<\/formats>/.exec(pivotXml)?.[0] ?? "";
+    for (const one of formats.matchAll(/<format\b[^>]*>[\s\S]*?<\/format>|<format\b[^>]*\/>/g)) {
+      const dxfId = Number(/dxfId="(\d+)"/.exec(one[0])?.[1] ?? -1);
+      assert.ok(
+        !(/\blabelOnly="1"/.test(one[0]) && alignmentOnly(dxfId)),
+        `${file.name}: a stale label format survived and will stack a region name one letter per line`,
+      );
+    }
+  }
+
+  // ── The Region slicer has a button per region ───────────────────────────────────────────────
+  // `columnCount` is saved with the template, so it was CNS's seven for every line. An eighth region
+  // wrapped onto a second row inside a frame sized for one, which cut the frame's own bottom edge
+  // through it. It is the region count or it is wrong -- there is no default that is right twice.
+  const slicerFiles = zip.file(/^xl\/slicers\/slicer\d+\.xml$/);
+  assert.equal(slicerFiles.length, 2, "both matrices keep their Region slicer");
+  for (const file of slicerFiles) {
+    const slicerXml = await file.async("string");
+    assert.match(
+      slicerXml,
+      new RegExp(`columnCount="${july.regions.length}"`),
+      `${file.name}: one column per region, so no caption wraps out of the frame`,
+    );
   }
 
   // ── The file the owner receives is named for a month, a line and a scope ─────────────────────

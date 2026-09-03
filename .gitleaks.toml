@@ -18,6 +18,15 @@ paths = [
   # never supply it. Without this exclusion the generic high-entropy rule would fail the required
   # `secret-scan` check the moment he arms the lock with `pnpm run office-rule:password`.
   '''src/lib/sales/office-golden-rule\.lock\.json''',
+  # The closing engine template: the owner's .xlsm, emptied of its data and committed as one
+  # base64 blob wrapped at 120 characters (it opens `UEsDBA...`, a zip header). Every line of it
+  # is high-entropy by construction, so the generic high-entropy rule hits it on the luck of the
+  # draw — it passed on one build of the template and failed on the very next, with no credential
+  # involved in either. Nothing here is written by hand: the file is regenerated wholesale by
+  # `scripts/build-closing-engine-template.mjs` and reviewed as the binary it is. The tradeoff is
+  # worth stating plainly — a secret sitting inside the SOURCE workbook would ride along unseen,
+  # so what has to be trusted here is the workbook, not this scan. Owner-approved 2026-09-03.
+  '''src/lib/sales/closing-engine-template-generated\.ts''',
 ]
 regexes = [
   # This codebase names internal step/template/milestone identifiers "key"/"stepKey"/
