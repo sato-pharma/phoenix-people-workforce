@@ -8,8 +8,13 @@ import {
 export function runOutstationPayrollExpenseMappingTests() {
   assert.equal(outstationPayrollTripId(42), "OUTSTATION-42");
 
+  // The workload pair is the resolved am_workload/pm_workload, NOT report_am_workload /
+  // report_pm_workload — those are `NOT NULL DEFAULT 0`, carry 0 on every live row, and are read
+  // by neither mapper (see outstationWorkloadCount). They are set to 0 here, as production has
+  // them, so this fixture cannot drift back into pinning the old override preference.
   const mapped = mapOutstationRequestRowToPayrollApproval({
     allowance_amount: 300,
+    am_workload: 1,
     claimed_total_amount: 1500,
     created_at: "2026-05-20T10:00:00.000Z",
     distance_from_residence_km: 80,
@@ -20,12 +25,13 @@ export function runOutstationPayrollExpenseMappingTests() {
     fuel_amount: 700,
     id: 42,
     notes: "Manual correction",
-    report_am_workload: 1,
+    pm_workload: 7,
+    report_am_workload: 0,
     report_hr_notes: "Reviewed by HR",
     report_hr_status: "Approved",
     report_meeting_amount: 150,
     report_other_amount: 25,
-    report_pm_workload: 7,
+    report_pm_workload: 0,
     report_travel_cost: 900,
     report_trip_type: "Return same day",
     status: "approved",
@@ -46,8 +52,8 @@ export function runOutstationPayrollExpenseMappingTests() {
   assert.equal(mapped.other, 25);
   assert.equal(mapped.hr, "Approved");
   assert.equal(mapped.hrNotes, "Reviewed by HR");
-  assert.equal(mapped.amWorkload, 1);
-  assert.equal(mapped.pmWorkload, 7);
+  assert.equal(mapped.amWorkload, 1, "the resolved am_workload, not the zeroed report_am_workload");
+  assert.equal(mapped.pmWorkload, 7, "the resolved pm_workload, not the zeroed report_pm_workload");
   assert.equal(mapped.tripType, "Return same day");
   assert.equal(mapped.payoutMonth, 6);
   assert.equal(mapped.payoutYear, 2026);
