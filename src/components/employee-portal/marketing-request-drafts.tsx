@@ -648,6 +648,8 @@ function MarketingRequestDraftWorkspaceInner() {
     string | null
   >(null);
   const [customerId, setCustomerId] = useState("");
+  // The raw choice. Read `customerContactId` below instead — it is the one that is safe to send.
+  const [customerContactChoice, setCustomerContactChoice] = useState("");
   const [requestTypeId, setRequestTypeId] = useState("");
   const [requestDate, setRequestDate] = useState(todayDate);
   const [payDate, setPayDate] = useState("");
@@ -821,6 +823,23 @@ function MarketingRequestDraftWorkspaceInner() {
   const pharmacyOptions = useMemo(
     () => (customerId ? workspace.pharmaciesByCustomer[customerId] ?? [] : []),
     [customerId, workspace.pharmaciesByCustomer],
+  );
+
+  const contactOptions = useMemo(
+    () => (customerId ? workspace.contactsByCustomer[customerId] ?? [] : []),
+    [customerId, workspace.contactsByCustomer],
+  );
+
+  // Derived, not synced — the same reason the pharmacy list is. A contact chosen before the
+  // customer was switched is simply not among the new customer's options, so it resolves to "" on
+  // its own. Sending it instead would be refused by the server, which checks the contact belongs
+  // to the customer, and the requester would see a save fail for a field they never touched.
+  const customerContactId = useMemo(
+    () =>
+      contactOptions.some((option) => option.id === customerContactChoice)
+        ? customerContactChoice
+        : "",
+    [contactOptions, customerContactChoice],
   );
 
   const selectedPharmacyIds = useMemo(
@@ -1050,6 +1069,7 @@ function MarketingRequestDraftWorkspaceInner() {
 
   function resetForm() {
     setCustomerId(workspace.customers[0]?.id ?? "");
+    setCustomerContactChoice("");
     setRequestTypeId(String(workspace.requestTypes[0]?.id ?? ""));
     setRequestDate(todayDate);
     setPayDate("");
@@ -1107,6 +1127,7 @@ function MarketingRequestDraftWorkspaceInner() {
     if (!detail) return;
 
     setCustomerId(detail.request.customerId);
+    setCustomerContactChoice(detail.request.customerContactId ?? "");
     setRequestTypeId(String(detail.request.requestTypeId));
     setRequestDate(detail.request.requestDate || todayDate);
     setPayDate(detail.request.payDate ?? "");
@@ -1155,6 +1176,7 @@ function MarketingRequestDraftWorkspaceInner() {
     }
 
     const draftPayload = {
+      customerContactId: customerContactId || null,
       customerId,
       estimatedCost: fieldNumber(estimatedCost),
       lineId: workspace.requesterLineId,
@@ -1602,6 +1624,35 @@ function MarketingRequestDraftWorkspaceInner() {
                         <option key={customer.id} value={customer.id}>
                           {customer.displayName} -{" "}
                           {customer.customerType}
+                        </option>
+                      ))}
+                    </SelectField>
+                  </Field>
+                </div>
+
+                {/*
+                  Which contact this request concerns. Optional on purpose: a campaign aimed at a
+                  customer as a whole genuinely has no single contact, and forcing a choice would
+                  put a confident wrong name on every one of those. Naming one links the request to
+                  that person's CRM record; leaving it blank keeps the old customer-level behaviour,
+                  where the request counts for every linked contact the customer has.
+                */}
+                <div className="sm:col-span-3">
+                  <Field label="Customer Contact (optional)">
+                    <SelectField
+                      disabled={isLoading || !customerId || contactOptions.length === 0}
+                      onChange={setCustomerContactChoice}
+                      value={customerContactId}
+                    >
+                      <option value="">
+                        {customerId && contactOptions.length === 0
+                          ? "This customer has no contacts yet"
+                          : "No specific contact"}
+                      </option>
+                      {contactOptions.map((option) => (
+                        <option key={option.id} value={option.id}>
+                          {option.contactName}
+                          {option.crmContactId ? " - CRM linked" : ""}
                         </option>
                       ))}
                     </SelectField>

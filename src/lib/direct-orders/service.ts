@@ -4500,6 +4500,12 @@ export async function reverseDirectOrder(
       sales_value: original.salesValue,
       pharmacy_id: original.pharmacyId,
       collection_date: original.collectionDate,
+      // Mirrored for exactly the reason the three pricing fields above are: a field the original
+      // carries and the reversal drops makes the pair disagree, silently. This one is the link back
+      // to the campaign that produced the order, so a reversal that loses it detaches the money
+      // from the request it reverses — the original would still count against the campaign's ROI
+      // while its reversal counted against nothing.
+      marketing_request_id: original.marketingRequestId,
       reversal_of_request_id: original.id,
       created_by_login_id: access.loginId ?? null,
       submitted_at: new Date().toISOString(),
