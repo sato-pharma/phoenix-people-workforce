@@ -120,6 +120,7 @@ import { runProbationProvisioningTests } from "./probation-provisioning.test.ts"
 import { runProbationDateTests } from "./probation-date.test.ts";
 import { runProbationCaseProvisioningTests } from "./probation-case-provisioning.test.ts";
 import { runProbationDomainMigrationReadinessTests } from "./probation-domain-migration-readiness.test.ts";
+import { runCrmContactCodeTests } from "./crm-contact-code.test.ts";
 import { runCrmIdentityTests } from "./crm-identity.test.ts";
 import { runCrmBlockCountingTests } from "./crm-block-counting.test.ts";
 import { runCrmPostExitAttributionTests } from "./crm-post-exit-attribution.test.ts";
@@ -1454,6 +1455,7 @@ await runTest("probation provisioning", runProbationProvisioningTests);
 await runTest("probation date (hire+90 canonical, edge cases)", runProbationDateTests);
 await runTest("probation case provisioning (idempotent ensureCase + hire trigger + backfill dry-run)", runProbationCaseProvisioningTests);
 await runTest("probation domain migration readiness (Phase 1 schema + Phase 2 trigger)", runProbationDomainMigrationReadinessTests);
+await runTest("crm contact code parsing (a code with trailing text is not a link; the roster is not a registry)", runCrmContactCodeTests);
 await runTest("crm identity waterfall (override>crm_id>unique username, no-guess) + double-visit predicate", runCrmIdentityTests);
 await runTest("crm post-exit attribution guard (work after an exit date is never filed under the leaver)", runCrmPostExitAttributionTests);
 await runTest("crm pre-hire attribution guard (nobody is credited with work dated before they joined)", runCrmPreHireAttributionTests);
