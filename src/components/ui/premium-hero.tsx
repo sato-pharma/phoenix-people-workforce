@@ -1,5 +1,12 @@
 import type { ReactNode } from "react";
 
+import {
+  pageHeaderDescriptionClassName,
+  pageHeaderKickerClassName,
+  pageHeaderRailClassName,
+  pageHeaderRuleClassName,
+  pageHeaderTitleClassName,
+} from "@/components/admin/admin-design-tokens";
 import { cn } from "@/lib/utils";
 
 type PremiumHeroProps = {
@@ -34,20 +41,23 @@ type PremiumHeroProps = {
  * disappearing.
  */
 export function PremiumHero({ kicker, title, subtitle, subtitleClassName, badge }: PremiumHeroProps) {
+  // POLISHED 2026-09-03 (second pass, same day): the accent rail and fading rule from
+  // `admin-design-tokens`, so a module page's header is the same object as an admin page's
+  // header. Both are zero-height additions — see the note on the tokens themselves.
   return (
-    <section className="flex flex-col gap-3 border-b border-phx-line pb-4 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
-      <div className="min-w-0 space-y-1.5">
-        {/* Literal bracket sizes, not the named text-phx-* scale — cn() runs over the subtitle
-            below and tailwind-merge silently drops custom NAMED font sizes. */}
-        <p className="text-[11px] font-black uppercase tracking-[0.22em] text-orange-600">{kicker}</p>
-        <h1 className="max-w-4xl text-[1.15rem] font-black leading-tight tracking-[-0.03em] text-slate-900 sm:text-[1.3rem]">
-          {title}
-        </h1>
-        {subtitle ? (
-          <p className={cn("max-w-3xl text-[13px] leading-5 text-slate-600", subtitleClassName)}>{subtitle}</p>
-        ) : null}
+    <section className="min-w-0">
+      <div className="flex flex-col gap-3 pb-4 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
+        <div className="relative min-w-0 space-y-1.5 pl-3.5">
+          <span aria-hidden="true" className={pageHeaderRailClassName} />
+          <p className={pageHeaderKickerClassName}>{kicker}</p>
+          <h1 className={pageHeaderTitleClassName}>{title}</h1>
+          {subtitle ? (
+            <p className={cn(pageHeaderDescriptionClassName, subtitleClassName)}>{subtitle}</p>
+          ) : null}
+        </div>
+        {badge ? <div className="min-w-0 shrink-0 sm:self-start">{badge}</div> : null}
       </div>
-      {badge ? <div className="min-w-0 shrink-0 sm:self-start">{badge}</div> : null}
+      <div aria-hidden="true" className={pageHeaderRuleClassName} />
     </section>
   );
 }

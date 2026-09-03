@@ -119,16 +119,27 @@ function MetricTile({ tile }: { tile: HrCommandTile }) {
   // A thin top-edge stripe in the tile's own tone, so a group scans as a row of colour before it
   // scans as a row of numbers. Purely decorative - the tone already governs the figure's own
   // colour above; this repeats the same signal, not a second one.
+  //
+  // It FADES AT BOTH ENDS as of 2026-09-03 (the owner's premium pass). A hard edge-to-edge bar
+  // butts into the tile's own border at each corner and reads as a rendering seam; tapering it
+  // makes the same signal look chosen. Literal hex rather than Tailwind colour classes because
+  // this is one arbitrary background-image value, not five utilities.
   const toneBarClass = {
-    amber: "bg-amber-400",
-    emerald: "bg-emerald-400",
-    rose: "bg-rose-400",
-    slate: "bg-slate-200",
+    amber: "bg-[linear-gradient(90deg,transparent_0%,#FBBF24_18%,#F59E0B_50%,#FBBF24_82%,transparent_100%)]",
+    emerald: "bg-[linear-gradient(90deg,transparent_0%,#34D399_18%,#10B981_50%,#34D399_82%,transparent_100%)]",
+    rose: "bg-[linear-gradient(90deg,transparent_0%,#FB7185_18%,#F43F5E_50%,#FB7185_82%,transparent_100%)]",
+    slate: "bg-[linear-gradient(90deg,transparent_0%,#CBD5E1_20%,#94A3B8_50%,#CBD5E1_80%,transparent_100%)]",
   }[tile.tone];
 
   return (
     <Link
-      className="group/tile relative min-h-32 border border-slate-200 bg-white px-4 py-4 text-center transition-all duration-200 hover:-translate-y-0.5 hover:border-orange-200 hover:bg-slate-50 hover:shadow-[0_10px_24px_rgba(15,23,42,0.08)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500"
+      // RESTING STATE CARRIES THE POLISH, not just the hover (owner's premium pass, 2026-09-03).
+      // It was flat #FFF inside a hard 1px border, which is a box rather than a card: on a grid of
+      // five it read as table cells. It now sits on a barely-there top-to-bottom wash with a
+      // hairline contact shadow, and brightens to pure white as it lifts. Every value here is a
+      // colour or a shadow - the tile's size, min-height and centred axis are untouched, so it
+      // still matches Finance's tile pixel for pixel where it counts.
+      className="group/tile relative min-h-32 border border-slate-200/90 bg-[linear-gradient(180deg,#FFFFFF_0%,#FDFEFF_55%,#F7F9FC_100%)] px-4 py-4 text-center shadow-[0_1px_2px_rgba(15,23,42,0.045)] transition-all duration-200 hover:-translate-y-0.5 hover:border-orange-200 hover:bg-[linear-gradient(180deg,#FFFFFF_0%,#FFFFFF_100%)] hover:shadow-[0_14px_30px_rgba(15,23,42,0.11)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500"
       href={tile.href}
     >
       <span aria-hidden="true" className={`absolute inset-x-0 top-0 h-0.5 ${toneBarClass}`} />

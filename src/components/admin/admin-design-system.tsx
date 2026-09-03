@@ -26,6 +26,11 @@ export {
   adminSoftPanelClassName,
 } from "@/components/admin/admin-design-tokens";
 import {
+  pageHeaderDescriptionClassName,
+  pageHeaderKickerClassName,
+  pageHeaderRailClassName,
+  pageHeaderRuleClassName,
+  pageHeaderTitleClassName,
   adminHeroAccentBarClassName,
   adminHeroGlowAmberClassName,
   adminHeroGlowOrangeClassName,
@@ -102,35 +107,43 @@ export function AdminPageHero({
   //
   // `AdminHeroFrame` itself STAYS. It is still the frame for the two command centers and the
   // employee-360 / personal-workspace identity heroes, which supply their own inner content.
+  //
+  // POLISHED 2026-09-03, same day, second pass — the owner's words were "premium polish ... but
+  // WITHOUT this thick banner block". The flattening above was correct and looked unfinished: a
+  // bare title over a flat grey rule. What it gets here is an accent rail and a fading rule, both
+  // from `admin-design-tokens`, and NEITHER ADDS A PIXEL OF HEIGHT — the rail sits inside the text
+  // block's own left padding, the rule takes the same 1px the border-b took. The brief was polish
+  // at zero vertical cost, and that is the test to apply to anything added here later.
   return (
-    <section
-      className={cn(
-        "flex flex-col gap-3 border-b border-phx-line pb-4 lg:flex-row lg:items-start lg:justify-between lg:gap-6",
-        compact && "gap-2 pb-3",
-        className,
-      )}
-    >
-      <div className="min-w-0 space-y-1.5">
-        <div className="inline-flex w-fit items-center gap-2 text-[11px] font-black uppercase tracking-[0.22em] text-orange-600">
-          {icon}
-          {eyebrow}
+    <section className={cn("min-w-0", className)}>
+      <div
+        className={cn(
+          "flex flex-col gap-3 pb-4 lg:flex-row lg:items-start lg:justify-between lg:gap-6",
+          compact && "gap-2 pb-3",
+        )}
+      >
+        {/* pl-3.5 is the rail's gutter. The rail is absolute, so it costs nothing but this
+            padding, and `relative` here is what anchors it. */}
+        <div className="relative min-w-0 space-y-1.5 pl-3.5">
+          <span aria-hidden="true" className={pageHeaderRailClassName} />
+          <div className={pageHeaderKickerClassName}>
+            {icon}
+            {eyebrow}
+          </div>
+          <h1 className={pageHeaderTitleClassName}>{title}</h1>
+          <p className={pageHeaderDescriptionClassName}>{description}</p>
+          {badges ? (
+            <div className="flex flex-wrap gap-2 pt-1 text-[12px] text-slate-600">{badges}</div>
+          ) : null}
         </div>
-        {/* Literal bracket sizes, not the named text-phx-* scale: cn() runs over the wrapper
-            above and tailwind-merge silently drops custom NAMED font sizes. */}
-        <h1 className="max-w-4xl text-[1.15rem] font-black tracking-[-0.03em] text-slate-900 sm:text-[1.3rem]">
-          {title}
-        </h1>
-        <p className="max-w-3xl text-[13px] leading-5 text-slate-600">{description}</p>
-        {badges ? (
-          <div className="flex flex-wrap gap-2 pt-0.5 text-[12px] text-slate-600">{badges}</div>
+        {actions || aside ? (
+          <div className="flex min-w-0 flex-wrap items-center gap-2 lg:justify-end">
+            {actions}
+            {aside}
+          </div>
         ) : null}
       </div>
-      {actions || aside ? (
-        <div className="flex min-w-0 flex-wrap items-center gap-2 lg:justify-end">
-          {actions}
-          {aside}
-        </div>
-      ) : null}
+      <div aria-hidden="true" className={pageHeaderRuleClassName} />
     </section>
   );
 }
