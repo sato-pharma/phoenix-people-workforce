@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 
+import { describeThrown } from "@/lib/error-monitor/describe-thrown";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
-import { failureDetail, pingDeadMansSwitch } from "@/lib/observability/dead-mans-switch";
+import { pingDeadMansSwitch } from "@/lib/observability/dead-mans-switch";
 import { logError } from "@/lib/observability/log";
 import { refreshExpenseClaims } from "@/lib/outstation/claims-refresh";
 import { assertCronAuthorized } from "@/lib/security/cron-auth";
@@ -111,7 +112,12 @@ export async function GET(request: Request) {
       labels: { event: "cron_failed", job: "expense-claims-refresh" },
       error,
     });
-    await pingDeadMansSwitch(JOB_SLUG, "fail", failureDetail(error));
+    // Calling String() on the thrown value here wrote the literal "[object Object]" into
+    // job_heartbeats.last_detail on every failed run from 2026-09-03 02:51 Cairo — a red job that
+    // could not say why. Supabase throws a plain object, so the non-Error branch was the one that
+    // ran. claims-refresh.ts now wraps at source; describeThrown is the backstop for anything else
+    // that reaches here.
+    await pingDeadMansSwitch(JOB_SLUG, "fail", describeThrown(error));
     const message = clientSafeErrorMessage(error, "Expense claims refresh failed.");
     return NextResponse.json({ error: "expense_claims_refresh_failed", message }, { status: 500 });
   }

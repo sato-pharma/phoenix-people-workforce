@@ -10,6 +10,7 @@ import {
 } from "../src/lib/sales/closing-performance-review.ts";
 import { closingFileName } from "../src/lib/sales/closing-export-filename.ts";
 import { CLOSING_ENGINE_TEMPLATE_MANIFEST } from "../src/lib/sales/closing-engine-template-generated.ts";
+import type { MonthlySourceCoverage, SourceCoverageEntry } from "../src/lib/sales/source-coverage.ts";
 import type { ClosingDetailRow } from "../src/lib/sales/monthly-closing-details.ts";
 import type {
   MonthlyClosingAreaRow,
@@ -855,6 +856,171 @@ export async function runClosingEngineExportTests() {
       slicerXml,
       new RegExp(`columnCount="${july.regions.length}"`),
       `${file.name}: one column per region, so no caption wraps out of the frame`,
+    );
+  }
+
+  // ── An incomplete month says so, on every tab ────────────────────────────────────────────────
+  //
+  // 2026-09-03, August. Fourteen of eighteen distributor files had not arrived — 84% of the month's
+  // value absent — and this workbook rendered immaculately regardless: Rep Cards, ranks and a rank-1
+  // star over a sixth of a month. Every number on it was arithmetically exact, which is exactly what
+  // makes it dangerous, and it is the workbook built to be sent round. The closing SCREEN warns and
+  // the OLD export carries a Source Coverage sheet; the premium export carried no completeness
+  // surface at all. Same failure `source-coverage.ts` was written for in July, through another door.
+  const coverageEntry = (name: string, prevValue: number): SourceCoverageEntry => ({
+    curUnits: 0,
+    curValue: 0,
+    key: name.toUpperCase(),
+    name,
+    prevUnits: 0,
+    prevValue,
+    status: "missing",
+  });
+  const coverageOf = (missing: SourceCoverageEntry[], over = true): MonthlySourceCoverage => ({
+    directRegions: [],
+    hasPrevData: over,
+    latestUploadAt: null,
+    line: july.line ?? "CNS",
+    missingDirectRegions: [],
+    missingPrevValue: missing.reduce((sum, one) => sum + one.prevValue, 0),
+    missingSources: missing,
+    period: july.period ?? "2026-07",
+    prevPeriod: "2026-06",
+    prevSourceCount: 17,
+    sources: missing,
+  });
+  const buildWith = async (coverage: MonthlySourceCoverage | null) =>
+    JSZip.loadAsync(
+      await fillClosingEngine(
+        buildClosingEngineFill({ coverage, matrix: july, priorMatrix: june, review }),
+        { macroFree: true },
+      ),
+    );
+
+  const holed = await buildWith(
+    coverageOf([
+      coverageEntry("overseas", 45_364_844),
+      coverageEntry("EGD", 4_100_000),
+      coverageEntry("ramco", 2_513_761),
+    ]),
+  );
+  const warnedOverview = await holed.file("xl/worksheets/sheet1.xml")!.async("string");
+  const warnedCard = await holed.file(CLOSING_ENGINE_TEMPLATE_MANIFEST.sheets["Rep Card"]!.file)!.async("string");
+  const warnedNote = readRow(warnedOverview, 2).A ?? "";
+
+  assert.match(warnedNote, /INCOMPLETE/, "an incomplete month announces itself on its own row");
+  assert.match(warnedNote, /missing 3 sources of the 17/, "it says how many are gone, against how many fed the month before");
+  assert.match(warnedNote, /51,978,605 EGP/, "and the scale of the hole, so 'the number looks low' answers itself");
+  assert.match(warnedNote, /understated/, "and states the consequence rather than leaving the reader to infer it");
+  assert.doesNotMatch(
+    readRow(warnedOverview, 1).A ?? "",
+    /INCOMPLETE/,
+    "row 1 stays the sheet's identity — a note appended there slides the emblem off the sheet",
+  );
+
+  // Months in words. The standing rule is human-readable everywhere, and a note that says
+  // "2026-06" beside a headline that says "July 2026" reads as two different systems talking.
+  assert.match(warnedNote, /June 2026/, "the month compared against is named, not keyed");
+  assert.doesNotMatch(warnedNote, /2026-0\d/, "and never as a raw period key");
+
+
+  // The card takes the short form, and it DISPLACES the tagline rather than joining it — the sheet
+  // is 798px wide and the warning has to survive the trip, not trail off the edge behind a slogan.
+  const warnedDeck = readRow(warnedCard, 2).A ?? "";
+  assert.match(warnedDeck, /INCOMPLETE/, "the card says it too — it is the tab most likely to be shared alone");
+  assert.doesNotMatch(warnedDeck, /one person, one month/, "and the warning takes the tagline's place, not room beside it");
+  assert.doesNotMatch(
+    readRow(warnedCard, 1).A ?? "",
+    /INCOMPLETE/,
+    "row 1 stays the card's identity — the note goes on the row that is clear of the emblem",
+  );
+  const deckWidth = warnedDeck.length * 91_500;
+  const cardWidth = [0, 1, 2, 3, 4, 5, 6, 7].reduce((sum, index) => sum + columnEmu(index), 0);
+  assert.ok(
+    deckWidth < cardWidth,
+    `the warning has to fit the card it is warning about — ${Math.round(deckWidth / 9525)}px against ${Math.round(cardWidth / 9525)}px`,
+  );
+
+  // The emblem stays on the sheet it belongs to.
+  //
+  // This is the assertion that caught the first attempt at this change. The note began life
+  // appended to A1, where the caption overflows rightwards and `clearTitleEmblem` answers by
+  // sliding the logo along ahead of it — which is correct until the caption is long enough to slide
+  // it past the last column. It put the emblem into empty space on 8 of the 12 sheets, by as much
+  // as 1783px, and Area x Product had 3px of slack before it. Nothing else in this repository can
+  // see that: the file is valid, Excel opens it without a murmur, and the logo is simply gone from
+  // where anyone looks.
+  for (const [name, meta] of Object.entries(CLOSING_ENGINE_TEMPLATE_MANIFEST.sheets)) {
+    const sheetXml = await holed.file(meta.file)?.async("string");
+    if (!sheetXml) continue;
+    const rels = await holed
+      .file(meta.file.replace(/worksheets\/([^/]+)$/, "worksheets/_rels/$1.rels"))
+      ?.async("string");
+    const drawingHref = rels ? /Target="\.\.\/(drawings\/drawing\d+\.xml)"/.exec(rels)?.[1] : null;
+    if (!drawingHref) continue;
+    const drawing = await holed.file(`xl/${drawingHref}`)!.async("string");
+    const emblem = [...drawing.matchAll(/<xdr:(?:twoCell|oneCell)Anchor[\s\S]*?<\/xdr:(?:twoCell|oneCell)Anchor>/g)]
+      .map((one) => one[0])
+      .find((one) => /<xdr:pic\b/.test(one));
+    if (!emblem) continue;
+
+    const runs = [...(/<cols>[\s\S]*?<\/cols>/.exec(sheetXml)?.[0] ?? "").matchAll(/<col\b[^>]*?\/>/g)].map((one) => ({
+      max: Number(/max="(\d+)"/.exec(one[0])?.[1]),
+      min: Number(/min="(\d+)"/.exec(one[0])?.[1]),
+      width: /hidden="1"/.test(one[0]) ? 0 : Number(/width="([\d.]+)"/.exec(one[0])?.[1] ?? 9.140625),
+    }));
+    const widthEmu = (index: number): number => {
+      const run = runs.find((one) => index + 1 >= one.min && index + 1 <= one.max);
+      const width = run ? run.width : 9.140625;
+      return width > 0 ? (Math.round(width * 7) + 5) * 9525 : 0;
+    };
+    // The used width comes from <dimension>, never from <cols> — a default min="1" max="16384" run
+    // measures 1,130,760px and would certify anything at all.
+    const lastLetters = /<dimension ref="[A-Z]+\d+(?::([A-Z]+)\d+)?"/.exec(sheetXml)?.[1] ?? "A";
+    const lastColumn = [...lastLetters].reduce((sum, letter) => sum * 26 + letter.charCodeAt(0) - 64, 0);
+    let used = 0;
+    for (let index = 0; index < lastColumn; index += 1) used += widthEmu(index);
+
+    const from = /<xdr:from>[\s\S]*?<\/xdr:from>/.exec(emblem)?.[0] ?? "";
+    const fromColumn = Number(/<xdr:col>(\d+)<\/xdr:col>/.exec(from)?.[1] ?? 0);
+    let left = Number(/<xdr:colOff>(\d+)<\/xdr:colOff>/.exec(from)?.[1] ?? 0);
+    for (let index = 0; index < fromColumn; index += 1) left += widthEmu(index);
+
+    assert.ok(
+      left <= used,
+      `${name}: the emblem sits ${Math.round((left - used) / 9525)}px past the last column — the caption slid it off the sheet`,
+    );
+
+    // And while we are on a sheet that carries an emblem — every one of them is a sheet a reader
+    // looks at, so every one of them carries the note. Carrying an emblem is the discriminator, not
+    // "has something in A1": the Data sheet has a column header there and no reader at all.
+    //
+    // Area x Product is the reason this is a loop rather than a spot check. It is the single sheet
+    // in the owner's template with NO row 2, and a cell aimed at a row that does not exist used to
+    // be dropped in silence — the note appeared on eleven tabs and was missing, unremarked, from
+    // the twelfth. A warning absent from one sheet is worse than one absent from all of them.
+    assert.match(
+      `${readRow(sheetXml, 2).A ?? ""}`,
+      /INCOMPLETE/,
+      `${name} carries the completeness note — every sheet a reader opens does, or they learn not to look`,
+    );
+  }
+
+  // Silence is the other half. A workbook that certifies its own completeness on every tab teaches
+  // the reader to skip the line, and then the one month that needed it is the one nobody reads.
+  for (const [what, book] of [
+    ["a month with nothing missing", await buildWith(coverageOf([]))],
+    ["a month with no prior to compare against", await buildWith(coverageOf([coverageEntry("overseas", 1)], false))],
+    ["a coverage check that could not run", await buildWith(null)],
+  ] as const) {
+    const quietNote = readRow(await book.file("xl/worksheets/sheet1.xml")!.async("string"), 2).A ?? "";
+    const quietCard = await book.file(CLOSING_ENGINE_TEMPLATE_MANIFEST.sheets["Rep Card"]!.file)!.async("string");
+    assert.doesNotMatch(quietNote, /INCOMPLETE/, `${what} says nothing in the masthead`);
+    assert.doesNotMatch(readRow(quietCard, 2).A ?? "", /INCOMPLETE/, `${what} says nothing on the card either`);
+    assert.match(
+      readRow(quietCard, 2).A ?? "",
+      /one person, one month, every product/,
+      `${what} keeps the card's own tagline`,
     );
   }
 

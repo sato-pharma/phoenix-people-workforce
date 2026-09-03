@@ -24,8 +24,24 @@ import type { ClosingEngineFill, EngineValue } from "./closing-engine-fill";
 import type { ClosingPerformanceReview } from "./closing-performance-review";
 import type { ClosingDetailRow } from "./monthly-closing-details";
 import type { MonthlyClosingCell, MonthlyClosingMatrix } from "./monthly-distributor-import";
+import type { MonthlySourceCoverage } from "./source-coverage";
 
 export type ClosingEngineDataInput = {
+  /**
+   * Which sources actually fed this month, or null when the check could not run.
+   *
+   * WHY THIS IS HERE (2026-09-03). This is the workbook people are meant to send round, and it had
+   * no completeness surface at all: the closing screen shows a coverage banner and the old export
+   * carries a Source Coverage sheet, but the premium workbook carried neither. August 2026 was
+   * built on 4 of its 18 sources — 84% of the month's value absent — and every tab still rendered
+   * immaculately, Rep Cards and rank stars included, because the arithmetic over what HAD arrived
+   * was exact. That is the same failure `source-coverage.ts` was written for in July, arriving by
+   * a different door.
+   *
+   * Null is "we could not tell", not "it is complete", and prints nothing either way — the note is
+   * only ever added when a source is provably missing.
+   */
+  coverage?: MonthlySourceCoverage | null;
   /** Every invoice line the viewer may see, unpaged. Omitted only when the load failed. */
   details?: ClosingDetailRow[] | null;
   /** "Cairo and Delta (1) only" — appended to every sheet title so a filtered export says so. */
@@ -45,6 +61,8 @@ export type ClosingEngineDataInput = {
 
 const UP = "▲";
 const DOWN = "▼";
+/** Prefixes the completeness note. The card already ships ★, so the glyph set is house style. */
+const WARN = "⚠";
 const DOT = "·";
 const DASH = "—";
 const GAP = "   ";
@@ -496,7 +514,59 @@ export function buildClosingEngineFill(input: ClosingEngineDataInput): ClosingEn
     year: "numeric",
   }).format(new Date());
 
+  /**
+   * The completeness note, in two lengths, or null when nothing is provably missing.
+   *
+   * Two lengths because the sheets have two different amounts of room. Every sheet but the card
+   * runs its caption along A1 and lets `clearTitleEmblem` slide the logo aside, so the long form
+   * costs nothing there. The card cannot do that, so it gets a form short enough to sit inside its
+   * own 798px.
+   *
+   * Null is silence, deliberately. A month with nothing missing says nothing — a workbook that
+   * announced its own completeness on every tab would train the reader to stop reading the line,
+   * which is the one thing this note cannot afford.
+   */
+  const coverageNote = ((): { full: string; terse: string } | null => {
+    const coverage = input.coverage;
+    if (!coverage?.hasPrevData) return null;
+    const missing = coverage.missingSources ?? [];
+    const regions = coverage.missingDirectRegions ?? [];
+    if (missing.length === 0 && regions.length === 0) return null;
+
+    // Sources first when both are missing: a whole absent distributor outweighs an absent region
+    // of the Direct sheet, and the long form still names the region count after it.
+    const gone =
+      missing.length > 0 ? count(missing.length, "source") : count(regions.length, "Direct region");
+    const against =
+      missing.length > 0 && coverage.prevSourceCount > 0
+        ? ` of the ${formatInt(coverage.prevSourceCount)} that fed ${monthParts(coverage.prevPeriod).label}`
+        : "";
+    const scale =
+      missing.length > 0 && coverage.missingPrevValue > 0
+        ? `${GAP}${formatInt(coverage.missingPrevValue)} EGP of ${monthParts(coverage.prevPeriod).label} value is absent.`
+        : "";
+    const alsoRegions =
+      missing.length > 0 && regions.length > 0
+        ? ` The Direct sheet has nothing yet from ${count(regions.length, "region")}.`
+        : "";
+    return {
+      full: `${WARN} INCOMPLETE${GAP}${month.label} is missing ${gone}${against}.${scale}${alsoRegions}`
+        + " Totals are understated until they arrive.",
+      terse: `${WARN} INCOMPLETE${GAP}${gone} missing`,
+    };
+  })();
+
   const headline = (sheet: string) => `${sheet}${GAP}${month.label}${GAP}${line}`;
+  /**
+   * The completeness note does NOT go here, and that was measured rather than assumed.
+   *
+   * A1 overflows right until it meets the emblem, and `clearTitleEmblem` answers by sliding the
+   * emblem out of the way — which works until the caption is long enough to slide it past the last
+   * column, where the logo floats in empty space. Putting the note in A1 did exactly that on 8 of
+   * the 12 sheets, by as much as 1783px; Area x Product had 3px of slack in the baseline, so it
+   * cannot absorb one character. The note lives on row 2 instead — empty on every sheet, and clear
+   * of an emblem that anchors to row 1 alone. See `stampCoverageNote` in closing-engine-fill.ts.
+   */
   const title = (sheet: string, subtitle: string) =>
     [headline(sheet), subtitle, filterNote].filter(Boolean).join(SEP);
   /**
@@ -512,8 +582,16 @@ export function buildClosingEngineFill(input: ClosingEngineDataInput): ClosingEn
    * So the sheet name, the month and the line stay on A1 and the descriptive half drops to A2,
    * where the template already reserves a full empty row. Half the length, twice the air, and a
    * longer line name can never reach the logo again.
+   *
+   * Row 2 is clear of the emblem outright, not merely roomier: the picture anchors `from row=0` to
+   * `to row=0` in the template's own drawing, so it occupies row 1 alone. What still binds row 2 is
+   * the card's width — eight columns, 798px — which is why the completeness note DISPLACES the
+   * tagline here rather than joining it. On the one sheet built to be shared, "this month is
+   * missing sources" outranks "one person, one month, every product", and displacing it keeps the
+   * line short enough to be read rather than run off the card.
    */
-  const deck = (subtitle: string) => [subtitle, filterNote].filter(Boolean).join(SEP);
+  const deck = (subtitle: string) =>
+    [coverageNote?.terse ?? subtitle, filterNote].filter(Boolean).join(SEP);
 
   const areas = buildAreas(input);
   const salesData = buildSalesData(input, areas);
@@ -827,7 +905,7 @@ export function buildClosingEngineFill(input: ClosingEngineDataInput): ClosingEn
         .join(SEP)
     : "no invoice lines in scope";
 
-  return {
+  const fill: ClosingEngineFill = {
     data: {
       areaBook,
       pickList: areaBook.map((row) => String(row[0] ?? "")),
@@ -936,6 +1014,28 @@ export function buildClosingEngineFill(input: ClosingEngineDataInput): ClosingEn
       },
     },
   };
+
+  // The completeness note, on its own row, on every sheet that carries a caption.
+  //
+  // Row 2 rather than the end of A1: the caption overflows right into the emblem and
+  // `clearTitleEmblem` answers by sliding the emblem along, so a note appended there pushed the
+  // logo past the last column on 8 of the 12 sheets. Row 2 is empty on every sheet in the owner's
+  // own template and the emblem anchors to row 1 alone, so the note has a line to itself and
+  // nothing to collide with.
+  //
+  // The Rep Card is skipped because it already carries the short form on A2 — it is the one sheet
+  // whose row 2 is spoken for, and the one most likely to be shared on its own. A sheet with no
+  // caption (Data) has no emblem and no reader, and is skipped with it.
+  if (coverageNote) {
+    for (const [name, sheet] of Object.entries(fill.sheets)) {
+      if (name === "Rep Card") continue;
+      const cells = sheet.cells;
+      if (!cells?.A1) continue;
+      cells.A2 = coverageNote.full;
+    }
+  }
+
+  return fill;
 }
 
 /** "2026-07" -> "2026-06". Returns null for anything that is not a period. */

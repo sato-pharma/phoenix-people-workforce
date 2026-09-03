@@ -115,8 +115,15 @@ function finish() {
 /**
  * Unpushed commits + uncommitted files: the two ways work can be laptop-only.
  *
- * `unpushed` is null when git could not answer. That is NOT the same as zero and must never be
- * rendered as "clean" — an unmeasurable branch is the one you least want to delete.
+ * `unpushed` AND `dirty` are each null when git could not answer. That is NOT the same as zero and
+ * must never be rendered as "clean" — an unmeasurable branch is the one you least want to delete.
+ *
+ * `dirty` reads `status === null ? null`, never `?? ""`. gitAt returns null when the command FAILED
+ * and "" when the tree is clean, so collapsing the two turns an unreadable working tree into a
+ * verified-clean one — and "tree clean" is printed on the same line as `git worktree remove` and
+ * `git branch -D`, which are the irreversible steps. Not knowing must read LOUDER than clean, never
+ * quieter: the same trap scripts/repo-doctor.mjs documents in four places, and this file's own
+ * `unpushed` half already avoided.
  *
  * With no upstream the question is not "how far ahead of main" but "what is reachable from NO
  * remote ref at all", which is the test scripts/check-unbacked-branches.ts uses and for its two
@@ -132,7 +139,8 @@ function backupState(at, branch) {
     ? gitAt(at, ["rev-list", "--count", "@{u}..HEAD"])
     : gitAt(at, ["rev-list", "--count", branch, "--not", "--remotes"]);
   const unpushed = counted === null ? null : Number(counted);
-  const dirty = (gitAt(at, ["status", "--porcelain"]) ?? "").split("\n").filter(Boolean).length;
+  const status = gitAt(at, ["status", "--porcelain"]);
+  const dirty = status === null ? null : status.split("\n").filter(Boolean).length;
   return { hasUpstream, unpushed, dirty };
 }
 
@@ -210,9 +218,16 @@ function runPreRemoval() {
     }
     const { hasUpstream, unpushed, dirty } = backupState(target, branch);
 
-    if (unpushed === null) {
-      say(`PRE-REMOVAL WARNING — ${target} (${branch}): git could not measure unpushed commits. UNVERIFIED, not clean.`);
-      say(`  Check by hand before removing: git -C "${target}" log --branches --not --remotes --oneline`);
+    // EITHER half being unmeasurable is the same verdict: UNVERIFIED, not clean. This runs
+    // immediately before a deletion, so a working tree git could not read must never fall through
+    // to the "clean, nothing unpushed. Safe to remove." line below.
+    if (unpushed === null || dirty === null) {
+      const unmeasured = [];
+      if (unpushed === null) unmeasured.push("unpushed commits");
+      if (dirty === null) unmeasured.push("uncommitted files");
+      say(`PRE-REMOVAL WARNING — ${target} (${branch}): git could not measure ${unmeasured.join(" or ")}. UNVERIFIED, not clean.`);
+      if (unpushed === null) say(`  Check by hand before removing: git -C "${target}" log --branches --not --remotes --oneline`);
+      if (dirty === null) say(`  Check by hand before removing: git -C "${target}" status --porcelain`);
       continue;
     }
     if (unpushed > 0 || dirty > 0) {
@@ -304,7 +319,13 @@ if (INVOKED_DIRECTLY) {
   );
 
   if (verdict.verdict === "retirable") {
-    if (dirty === 0 && unpushed === 0) {
+    if (dirty === null) {
+      // Refuse to print RETIRABLE at all. That line carries `git worktree remove` and
+      // `git branch -D` directly under it, so "tree clean" from a status read that never
+      // succeeded is the one wrong word that costs the work.
+      say(`Worktree has a merged PR #${verdict.pr}, but git could not read its working tree. UNVERIFIED, not clean — NOT retirable.`);
+      say(`  git -C "${cwd}" status --porcelain`);
+    } else if (dirty === 0 && unpushed === 0) {
       say(`Worktree is RETIRABLE: PR #${verdict.pr} merged, tree clean, nothing unpushed.`);
       say(`  git worktree remove "${cwd}"`);
       say(`  git branch -D ${branch}    # -D, not -d: a squash merge is never an ancestor of main`);
@@ -318,7 +339,13 @@ if (INVOKED_DIRECTLY) {
     if (verdict.verdict !== "none") {
       say(`Worktree exit — ${branch} is NOT retirable: ${verdict.reason}.`);
     }
-    if (dirty > 0) {
+    if (dirty === null) {
+      // An unread working tree must not pass in silence either. `null > 0` is false, so the count
+      // check below would have said nothing at all — which reads as nothing to report, the same
+      // failure as calling it clean, only quieter.
+      say(`Worktree exit — git could not read the working tree of ${branch}. UNVERIFIED, not clean.`);
+      say(`  git -C "${cwd}" status --porcelain`);
+    } else if (dirty > 0) {
       say(`Worktree exit — ${dirty} uncommitted file(s) on ${branch}. Pushing only covers commits; these are still local only.`);
     }
   }

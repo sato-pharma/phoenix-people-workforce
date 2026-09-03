@@ -39,7 +39,7 @@ export async function runDbHealthSnapshotLivenessTests() {
 
   assert.match(
     source,
-    /import \{[^}]*pingDeadMansSwitch[^}]*\} from "@\/lib\/observability\/dead-mans-switch";/,
+    /import \{ pingDeadMansSwitch \} from "@\/lib\/observability\/dead-mans-switch";/,
     `${ROUTE} must import the dead-man's-switch — this job runs every 6 hours and nobody watches it by hand`,
   );
 

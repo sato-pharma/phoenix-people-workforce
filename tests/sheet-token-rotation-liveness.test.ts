@@ -54,7 +54,7 @@ export async function runSheetTokenRotationLivenessTests() {
 
     assert.match(
       source,
-      /import \{[^}]*pingDeadMansSwitch[^}]*\} from "@\/lib\/observability\/dead-mans-switch";/,
+      /import \{ pingDeadMansSwitch \} from "@\/lib\/observability\/dead-mans-switch";/,
       `${route.path} must import the dead-man's-switch — this route rotates a secret nobody watches by hand`,
     );
 

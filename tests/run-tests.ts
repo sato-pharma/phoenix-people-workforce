@@ -862,6 +862,7 @@ import { runEmployeePortalMobileTableCardTests } from "./employee-portal-mobile-
 import { runCrmMobileTableCardTests } from "./crm-mobile-table-cards.test.ts";
 import { runHrShellMobileTableTests } from "./hr-shell-mobile-tables.test.ts";
 import { runOutstationMobileTableCardTests } from "./outstation-mobile-table-cards.test.ts";
+import { runExpenseClaimsRefreshTraceTests } from "./expense-claims-refresh-failure-is-legible.test.ts";
 import { runOutstationDecisionFailureTraceTests } from "./outstation-decision-failures-leave-a-trace.test.ts";
 import { runOutstationAdminApproveOutcomeTests } from "./outstation-admin-approve-reports-its-outcome.test.ts";
 import { runPharmacySearchTests } from "./pharmacy-search.test.ts";
@@ -2611,6 +2612,7 @@ await runTest("employee portal mobile table cards (every converted table is desk
 await runTest("CRM mobile table cards (whole-directory scan: every CRM table desktop-gated, every table file has a card path, no bare overflow-x-auto, both coverage boards moved together)", runCrmMobileTableCardTests);
 await runTest("Outstation mobile table cards (whole-directory scan: every outstation table desktop-gated, every table file has a card path, no fixed-pixel floor in an ungated scroll box, HR decision controls shared by both halves)", runOutstationMobileTableCardTests);
 await runTest("Outstation decision failures leave a trace (every catch on /api/admin/outstation/[id] records the unsanitised cause before returning, awaited)", runOutstationDecisionFailureTraceTests);
+await runTest("Expense claims refresh failures are legible (no raw Supabase rethrow, no String(error) in either recorder, so the job names its own cause)", runExpenseClaimsRefreshTraceTests);
 await runTest("Outstation admin approve reports its outcome (the in-modal message is not gated on the already-cleared busy flag, and the action toast outranks the details modal it appears over)", runOutstationAdminApproveOutcomeTests);
 await runTest("HR shell mobile tables (closure scan from the HR sidebar: every wide table desktop-gated with a mobile half beside it, stacking primitives pinned, exemptions justified)", runHrShellMobileTableTests);
 await runTest("RSC boundary (no server component hands a function prop to a client component — the crash that 500d Doctor Coverage; follows the real import graph so client-parent files are not flagged)", runRscClientFunctionPropTests);
@@ -3559,7 +3561,8 @@ await runTest(
 await runTest(
   "Worktree backup guard logs before the worktree goes (the pre-removal check names the target, "
   + "warns on unpushed commits and uncommitted files, logs the clean case too so silence cannot be "
-  + "mistaken for coverage, and never blocks the removal)",
+  + "mistaken for coverage, reports a working tree it cannot read as UNVERIFIED rather than clean "
+  + "in both modes, and never blocks the removal)",
   runWorktreeExitGuardPreRemovalTests,
 );
 
