@@ -265,6 +265,9 @@ export async function fillClosingEngine(fill: ClosingEngineFill, options: FillOp
   }
 
   await fillRepCard(zip, fill);
+  // After the card is filled, never before: it rewrites whole rows, and the filler would then be
+  // stamping products and moving footnotes around a layout it had not been told about.
+  await polishRepCard(zip, fill);
   await updateReferences(zip, fill);
   await fitRegionControls(zip, fill);
   await sizeMatrixColumns(zip, fill);
@@ -1253,6 +1256,253 @@ async function dropStaleLabelFormats(zip: JSZip): Promise<void> {
     if (kept.length === each.length) continue;
     zip.file(file.name, xml.replace(formats, kept.length ? `<formats count="${kept.length}">${kept.join("")}</formats>` : ""));
   }
+}
+
+/** The name, one point larger than the KPI numbers under it — which is the whole point. */
+const REP_CARD_HERO_PT = 20;
+/** The rank, up from the 10.5pt it shared with every ordinary caption on the sheet. */
+const REP_CARD_BADGE_PT = 12;
+const REP_CARD_DECK_PT = 10.5;
+const REP_CARD_INK = "FF0F1E2B";
+const REP_CARD_MUTED = "FF7A93A3";
+const REP_CARD_BRAND = "FF0868A8";
+/** Marks first place, and only first place. */
+const REP_CARD_STAR = "★";
+const REP_CARD_ROW_HEIGHT = { deck: 18, eyebrow: 14.1, hero: 30, tileLabel: 14.1, tileValue: 18 };
+
+type RepCardStyles = { headline: number; plain: number; deck: number; hero: number; badge: number };
+
+/**
+ * Add the five formats the card needs, cloned from the ones the template already uses on it.
+ *
+ * Cloning rather than naming ids matters: the ids are whatever position the owner's source workbook
+ * happened to put them in, and they move whenever the engine is rebuilt from a fresh one. A wrong id
+ * is not an error — it is a differently coloured cell that nobody notices until it is printed.
+ */
+async function addRepCardStyles(zip: JSZip, sheetXml: string): Promise<RepCardStyles | null> {
+  const file = zip.file("xl/styles.xml");
+  if (!file) return null;
+  const xml = await file.async("string");
+
+  const fontCount = Number(/<fonts count="(\d+)"/.exec(xml)?.[1] ?? NaN);
+  const cellXfs = /<cellXfs count="\d+"[^>]*>([\s\S]*?)<\/cellXfs>/.exec(xml);
+  if (!Number.isFinite(fontCount) || !cellXfs) return null;
+  const xfs = [...cellXfs[1]!.matchAll(/<xf\b[^>]*?\/>|<xf\b[^>]*?>[\s\S]*?<\/xf>/g)].map((one) => one[0]);
+  if (!xfs.length) return null;
+
+  const styleOf = (ref: string) =>
+    Number(new RegExp(`<c r="${ref}"[^>]*?\\bs="(\\d+)"`).exec(sheetXml)?.[1] ?? NaN);
+  // A1 is the caption, B1 a blank carrying the masthead's rule, B8 a tile value, F5 the rank,
+  // B5 the picker — whose rule the rank has to pick up if row 5 is to read as one band.
+  const base = [styleOf("A1"), styleOf("B1"), styleOf("B8"), styleOf("F5"), styleOf("B5")];
+  if (base.some((one) => !Number.isFinite(one) || !xfs[one])) return null;
+  const [titleXf, plainXf, valueXf, badgeXf, pickerXf] = base as [number, number, number, number, number];
+  const pickerRule = Number(/\bborderId="(\d+)"/.exec(xfs[pickerXf]!)?.[1] ?? NaN);
+
+  const swap = (xf: string, patch: { fontId?: number; borderId?: number }) => {
+    let out = xf;
+    if (patch.fontId !== undefined) out = out.replace(/\bfontId="\d+"/, `fontId="${patch.fontId}"`);
+    if (patch.borderId !== undefined) {
+      out = out.replace(/\bborderId="\d+"/, `borderId="${patch.borderId}"`);
+      // Without `applyBorder`, a cellXf's borderId is free to be ignored in favour of the style it
+      // derives from — so a rule set here would simply not be drawn, with nothing to see anywhere.
+      if (!/\bapplyBorder="1"/.test(out)) out = out.replace(/\bxfId="(\d+)"/, `xfId="$1" applyBorder="1"`);
+    }
+    return out;
+  };
+
+  const fonts = [
+    `<font><sz val="${REP_CARD_DECK_PT}"/><color rgb="${REP_CARD_MUTED}"/><name val="Segoe UI"/><family val="2"/></font>`,
+    `<font><b/><sz val="${REP_CARD_HERO_PT}"/><color rgb="${REP_CARD_INK}"/><name val="Segoe UI"/><family val="2"/></font>`,
+    `<font><b/><sz val="${REP_CARD_BADGE_PT}"/><color rgb="${REP_CARD_BRAND}"/><name val="Segoe UI"/><family val="2"/></font>`,
+  ];
+  // The blue rule under the masthead moves down with the caption: row 1 gives it up, row 2 takes it.
+  const added = [
+    swap(xfs[titleXf]!, { borderId: 0 }),
+    swap(xfs[plainXf]!, { borderId: 0 }),
+    swap(xfs[plainXf]!, { fontId: fontCount }),
+    swap(xfs[valueXf]!, { fontId: fontCount + 1 }),
+    // The rank takes the picker's rule so row 5 reads as one band across the card. It stays
+    // unfilled: the tint is what marks the half of the row you can actually click.
+    swap(xfs[badgeXf]!, {
+      fontId: fontCount + 2,
+      ...(Number.isFinite(pickerRule) ? { borderId: pickerRule } : {}),
+    }),
+  ];
+
+  zip.file(
+    "xl/styles.xml",
+    xml
+      .replace(/<fonts count="\d+"/, `<fonts count="${fontCount + fonts.length}"`)
+      .replace("</fonts>", `${fonts.join("")}</fonts>`)
+      .replace(/<cellXfs count="\d+"/, `<cellXfs count="${xfs.length + added.length}"`)
+      .replace("</cellXfs>", `${added.join("")}</cellXfs>`),
+  );
+
+  return {
+    headline: xfs.length,
+    plain: xfs.length + 1,
+    deck: xfs.length + 2,
+    hero: xfs.length + 3,
+    badge: xfs.length + 4,
+  };
+}
+
+/**
+ * Make the Rep Card the sheet a rep would want to send someone.
+ *
+ * It is the only sheet in the workbook that is about a person rather than a number, and the only one
+ * anybody outside the company is likely to be shown. Three things were wrong with it as that.
+ *
+ * The caption ran the full width in one eighty-character line and stopped 25pt short of the
+ * wordmark. Every other sheet solves that by sliding the emblem right — `clearTitleEmblem` below —
+ * but this sheet is eight columns wide, 798px, and the emblem already sits at 689px with 16px of
+ * slack. There is nowhere for it to go, so here the caption is what gives: it splits across the two
+ * masthead rows the template already reserves, and the blue rule moves down to sit under both.
+ *
+ * One of the three tiles printed `D16`. The owner's standing rule is names, never codes, and a card
+ * meant to be shared is the last place to break it. The tile now names the district manager, and the
+ * full-width strip that used to carry the manager moves up to carry the REP, at 20pt — larger than
+ * the KPI numbers beneath it, and above everything that merely describes them. First place gets a
+ * star on the rank. Every value on the card is now a name or a number; none of them is a code.
+ *
+ * Nothing here is new machinery. The strip, the tiles, their merges and their formats all exist in
+ * the owner's engine; what changes is which of them says what, and how loudly.
+ *
+ * `$N$2` is deliberately untouched. It holds the same area code the tile was showing — and it is
+ * also the key every one of the card's product rows SUMIFS on. Hiding the code from the reader is
+ * the ask; taking it off the sheet would empty the card.
+ */
+async function polishRepCard(zip: JSZip, fill: ClosingEngineFill): Promise<void> {
+  const spec = MANIFEST.sheets[REP_CARD];
+  const file = spec ? zip.file(spec.file) : null;
+  if (!spec || !file) return;
+
+  const sheetXml = await file.async("string");
+  const styles = await addRepCardStyles(zip, sheetXml);
+  if (!styles) return;
+
+  const { head, rows, tail } = splitSheet(sheetXml);
+  const rowAt = (n: number) => rows.find((row) => row.r === n)?.xml ?? "";
+  const cellAt = (rowXml: string, ref: string) =>
+    new RegExp(`<c\\b[^>]*?r="${ref}"[^>]*?(?:/>|>[\\s\\S]*?</c>)`).exec(rowXml)?.[0] ?? "";
+  const styleAt = (ref: string) =>
+    Number(new RegExp(`<c r="${ref}"[^>]*?\\bs="(\\d+)"`).exec(sheetXml)?.[1] ?? NaN);
+
+  const label = styleAt("B7"); // 8.5pt grey on the tint — the tile captions
+  const value = styleAt("B8"); // 10.5pt bold navy — the tile values
+  const ruled = styleAt("B1"); // a blank carrying the masthead's blue rule
+  if (![label, value, ruled].every((one) => Number.isFinite(one) && one > 0)) return;
+
+  const blanks = (row: number, from: string, to: string, style: number) => {
+    let out = "";
+    for (let column = columnIndex(from); column <= columnIndex(to); column += 1) {
+      out += `<c r="${columnLetters(column)}${row}" s="${style}"/>`;
+    }
+    return out;
+  };
+  // Formulas go in as written. The ones built here carry no `&`, `<` or `>`; the rank formula is
+  // lifted from the sheet already escaped, and escaping it a second time would double its `&amp;`.
+  const formula = (ref: string, style: number, body: string) =>
+    `<c r="${ref}" s="${style}"><f>${body}</f></c>`;
+  const caption = (ref: string, style: number, text: string) =>
+    `<c r="${ref}" s="${style}" t="inlineStr"><is><t>${xmlEscape(text)}</t></is></c>`;
+  const open = (row: number, height: number) =>
+    `<row r="${row}" spans="1:14" ht="${height}" customHeight="1" x14ac:dyDescent="0.25">`;
+  const lookUp = (column: string) => `IF($N$1=0,"",INDEX(AreaBook[${column}],$N$1))`;
+
+  const written = new Map<number, string>();
+
+  // 1 — the caption keeps its place and gives up the rule under it.
+  written.set(
+    1,
+    rowAt(1)
+      .replace(/(<c r="A1"[^>]*?)\bs="\d+"/, `$1s="${styles.headline}"`)
+      .replace(/(<c r="[B-H]1"[^>]*?)\bs="\d+"/g, `$1s="${styles.plain}"`),
+  );
+
+  // 2 — the deck line, and the rule, on a row the template left empty apart from `$N$2`.
+  written.set(
+    2,
+    `${open(2, REP_CARD_ROW_HEIGHT.deck)}`
+      + `${cellXml("A2", styles.deck, String(fill.sheets[REP_CARD]?.cells?.A2 ?? ""))}`
+      + `${blanks(2, "B", "H", ruled)}${cellAt(rowAt(2), "N2")}</row>`,
+  );
+
+  // 4 — the picker's caption. It read "Medical rep or area", which now sits three rows above a band
+  // captioned "Medical rep"; the imperative is what the dropdown's own prompt already says.
+  written.set(
+    4,
+    rowAt(4).replace(/(<c r="B4"[^>]*><is><t[^>]*>)[\s\S]*?(<\/t>)/, `$1Pick a rep or an area$2`),
+  );
+
+  // 5 — the rank reads as an award rather than a caption, and first place is marked as one. The
+  // owner's own wording for the unranked case is kept by patching his formula, never retyping it.
+  // F5:H5 also picks up the picker's rule, so the row is one band edge to edge rather than a
+  // tinted box that stops two thirds of the way across with the rank floating past its edge.
+  const rank = /<f[^>]*>([\s\S]*?)<\/f>/.exec(cellAt(rowAt(5), "F5"))?.[1] ?? "";
+  let row5 = rowAt(5).replace(/(<c r="[GH]5"[^>]*?)\bs="\d+"/g, `$1s="${styles.badge}"`);
+  if (rank.includes('"Rank "')) {
+    row5 = row5.replace(
+      new RegExp(`<c\\b[^>]*?r="F5"[^>]*?(?:/>|>[\\s\\S]*?</c>)`),
+      formula(
+        "F5",
+        styles.badge,
+        rank.replace(
+          '"Rank "',
+          () => `IF(INDEX(AreaBook[Rank],$N$1)=1,"${REP_CARD_STAR} ","")&amp;"Rank "`,
+        ),
+      ),
+    );
+  }
+  written.set(5, row5);
+
+  // 7/8 — the rep, full width, above everything that describes them.
+  written.set(
+    7,
+    `${open(7, REP_CARD_ROW_HEIGHT.eyebrow)}${caption("B7", label, "Medical rep")}`
+      + `${blanks(7, "C", "H", label)}</row>`,
+  );
+  written.set(
+    8,
+    `${open(8, REP_CARD_ROW_HEIGHT.hero)}${formula("B8", styles.hero, lookUp("Medical rep"))}`
+      + `${blanks(8, "C", "H", value)}</row>`,
+  );
+
+  // 9/10 — the three tiles that describe them. Every one of them is a name.
+  written.set(
+    9,
+    `${open(9, REP_CARD_ROW_HEIGHT.tileLabel)}${caption("B9", label, "Area")}<c r="C9" s="${label}"/>`
+      + `${caption("D9", label, "Region")}<c r="E9" s="${label}"/>`
+      + `${caption("F9", label, "District manager")}${blanks(9, "G", "H", label)}</row>`,
+  );
+  written.set(
+    10,
+    `${open(10, REP_CARD_ROW_HEIGHT.tileValue)}${formula("B10", value, lookUp("Area"))}`
+      + `<c r="C10" s="${value}"/>${formula("D10", value, lookUp("Region"))}<c r="E10" s="${value}"/>`
+      + `${formula("F10", value, lookUp("District manager"))}${blanks(10, "G", "H", value)}</row>`,
+  );
+
+  let out = `${head}${rows.map((row) => written.get(row.r) ?? row.xml).join("")}${tail}`;
+
+  // The bands swapped shape as well as content: rows 7 and 8 are one merge each now, rows 9 and 10
+  // are three. Only the rows whose SHAPE changed are re-merged — rows 1, 4 and 5 were patched in
+  // place and keep the merges they have, and so does everything the filler has already moved.
+  const reshaped = new Set([2, 7, 8, 9, 10]);
+  const block = /<mergeCells[^>]*>[\s\S]*?<\/mergeCells>/.exec(out);
+  if (block) {
+    const kept = [...block[0].matchAll(/<mergeCell ref="([^"]*)"\s*\/>/g)]
+      .filter((one) => !reshaped.has(Number(/\d+/.exec(one[1] ?? "")?.[0] ?? 0)))
+      .map((one) => one[0]);
+    const fresh = ["A2:H2", "B7:H7", "B8:H8", "B9:C9", "D9:E9", "F9:H9", "B10:C10", "D10:E10", "F10:H10"]
+      .map((ref) => `<mergeCell ref="${ref}"/>`);
+    out = out.replace(
+      block[0],
+      `<mergeCells count="${kept.length + fresh.length}">${kept.join("")}${fresh.join("")}</mergeCells>`,
+    );
+  }
+
+  zip.file(spec.file, out);
 }
 
 /** Advance-width units of the title font, in EMU. Fitted to the sheets whose titles do fit. */
