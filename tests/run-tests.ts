@@ -121,6 +121,7 @@ import { runProbationDateTests } from "./probation-date.test.ts";
 import { runProbationCaseProvisioningTests } from "./probation-case-provisioning.test.ts";
 import { runProbationDomainMigrationReadinessTests } from "./probation-domain-migration-readiness.test.ts";
 import { runCrmContactCodeTests } from "./crm-contact-code.test.ts";
+import { runCustomerGeographySpineTests } from "./customer-geography-spine.test.ts";
 import { runCrmIdentityTests } from "./crm-identity.test.ts";
 import { runCrmBlockCountingTests } from "./crm-block-counting.test.ts";
 import { runCrmPostExitAttributionTests } from "./crm-post-exit-attribution.test.ts";
@@ -246,6 +247,7 @@ import { runAttendanceCairoMidnightBoundaryTests } from "./attendance-cairo-midn
 import { runAttendanceTrackingEligibilityTests } from "./attendance-tracking-eligibility.test.ts";
 import { runAttendanceManagerViewAccessTests } from "./attendance-manager-view-access.test.ts";
 import { runAttendanceFlexibleHoursTests } from "./attendance-flexible-hours.test.ts";
+import { runAttendancePolicyExplainerTests } from "./attendance-policy-explainer.test.ts";
 import { runPayrollCopilotCycleWindowTests } from "./payroll-copilot-cycle-window.test.ts";
 import { runPayrollCycleWindowRoleAwareTests } from "./payroll-cycle-window-role-aware.test.ts";
 import { runAttendanceReconcileDayTests } from "./attendance-reconcile-day.test.ts";
@@ -1178,6 +1180,7 @@ import { runMarketingFinanceRequirementOnApprovalTests } from "./marketing-finan
 import { runMarketingInvoiceOverdueMarkerTests } from "./marketing-invoice-overdue-marker.test.ts";
 import { runMarketingFinanceHoldTests } from "./marketing-finance-hold.test.ts";
 import { runMarketingFinanceHoldUiTests } from "./marketing-finance-hold-ui.test.ts";
+import { runDistributorUploadNudgeTests } from "./distributor-upload-nudge.test.ts";
 import { runMarketingInvoiceOverdueNudgeTests } from "./marketing-invoice-overdue-nudge.test.ts";
 
 import { runLeaverRosterExclusionTests } from "./leaver-roster-exclusion.test.ts";
@@ -1715,6 +1718,7 @@ await runTest("attendance Cairo-midnight boundary (shared cairoMidnightUtcIso, E
 await runTest("attendance tracking eligibility (device mapping OR field title)", runAttendanceTrackingEligibilityTests);
 await runTest("attendance manager view access (self + direct reports)", runAttendanceManagerViewAccessTests);
 await runTest("attendance flexible-hours engine", runAttendanceFlexibleHoursTests);
+await runTest("attendance policy explainer card", runAttendancePolicyExplainerTests);
 await runTest("payroll copilot cycle window + week tiling", runPayrollCopilotCycleWindowTests);
 await runTest(
   "payroll cycle window is role-aware (Head Office 24->23, field force 1->30/31)",
@@ -1946,6 +1950,7 @@ await runTest("closing reads the org chart WITH history, so a dated territory mo
 await runTest("employee template Area->Team dropdown (builder and Excel resolve the same range)", runEmployeeTemplateTeamDropdownTests);
 await runTest("direct channel", runDirectChannelTests);
 await runTest("direct orders land on their own area", runDirectOrdersLandOnTheirOwnAreaTests);
+await runTest("the place spine resolves EXACT customer-code pairs (two .in() filters are independent)", runCustomerGeographySpineTests);
 await runTest("office pivot", runOfficePivotTests);
 await runTest("office allocation", runOfficeAllocationTests);
 await runTest("office golden rule LOCK (owner, 2026-08-11)", runOfficeGoldenRuleLockTests);
@@ -3753,6 +3758,11 @@ await runTest(
   "marketing invoice overdue nudge (the requester hears about their own, finance gets one digest, "
     + "never by email, and finance gets no link because no screen shows him one)",
   runMarketingInvoiceOverdueNudgeTests,
+);
+await runTest(
+  "distributor upload overdue nudge (each distributor judged against its own previous arrival day, "
+    + "silent while a month is merely incomplete, never by email)",
+  runDistributorUploadNudgeTests,
 );
 
 await runTest("leaver roster exclusion (resigned/terminated never reach a picker, recipient search or account template)", runLeaverRosterExclusionTests);
