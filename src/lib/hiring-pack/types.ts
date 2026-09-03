@@ -282,6 +282,15 @@ export type HiringPackEmployeeFacts = {
   fullName: string;
   nameAr: string | null;
   nationalId: string | null;
+  /**
+   * `male` / `female` as `employees.gender` stores it — NOT printed on any paper.
+   *
+   * It is here for one reason: Arabic inflects nationality for gender, so the papers need to know
+   * which of مصري / مصرية to print when nobody recorded a nationality. Required rather than
+   * optional on purpose — optional lets a loader quietly forget to select it, and the failure that
+   * causes is invisible and lands on a signed contract. See `nationality.ts`.
+   */
+  gender: string | null;
   socialInsuranceNumber: string | null;
   socialInsuranceWage: number | null;
   /**

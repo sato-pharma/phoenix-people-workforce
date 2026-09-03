@@ -20,6 +20,7 @@ import {
   resolvePermanentAddress,
 } from "@/lib/hiring-pack/render-shared";
 import type { HiringPackData } from "@/lib/hiring-pack/types";
+import { resolveNationality } from "@/lib/hiring-pack/nationality";
 
 // The employment contract, laid out for A4 and printed by the browser.
 //
@@ -115,7 +116,7 @@ function buildContractValues(data: HiringPackData): Partial<Record<ContractToken
     // The Arabic name governs: مادة (18) makes the Arabic text controlling, so the party named in
     // it has to be the Arabic name wherever the record carries one.
     EMPLOYEE_NAME: employee.nameAr ?? employee.fullName,
-    NATIONALITY: profile.nationality ?? "",
+    NATIONALITY: resolveNationality(profile.nationality, employee).value,
     QUALIFICATION: profile.qualification ?? "",
     BIRTH_DATE: pinLtr(formatDayMonthYear(employee.birthDate)),
     BIRTH_PLACE: profile.birthPlace ?? "",

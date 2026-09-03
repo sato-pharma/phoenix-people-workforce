@@ -26,6 +26,7 @@ import {
 } from "@/lib/hiring-pack/render-shared";
 import { STATUTORY_BASIC_WAGE, insuranceWageFromBase } from "@/lib/hiring-pack/insurance-wage";
 import type { HiringPackData } from "@/lib/hiring-pack/types";
+import { resolveNationality } from "@/lib/hiring-pack/nationality";
 
 // Rendering government Form 1: the official artwork as a vector background, the values placed over
 // it at measured coordinates.
@@ -71,7 +72,7 @@ function buildForm1Values(data: HiringPackData): Record<string, string> {
     nationalId: employee.nationalId ?? "",
     // The Arabic name, never the English one — this is a document for an Arabic-language registry.
     insuredName: employee.nameAr ?? "",
-    nationality: profile.nationality ?? "",
+    nationality: resolveNationality(profile.nationality, employee).value,
     qualification: profile.qualification ?? "",
     occupationCodeLeft: occupationCode.slice(0, 3),
     occupationCodeRight: occupationCode.slice(3, 6),

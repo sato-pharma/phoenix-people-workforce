@@ -133,10 +133,28 @@ export const systemLegalEntity = {
      * If it should carry a leading zero ("02807693"), change it here — nothing else needs touching.
      */
     insuranceEstablishmentNumber: "2807693",
-    /** قطاع المنشأة — two digits. */
-    insuranceSectorCode: "",
-    /** رقم التسجيل الضريبي — printed as three groups (nnn/nnnnn/nnn). */
-    taxRegistrationNumber: "",
+    /**
+     * قطاع المنشأة — the form prints TWO boxes (`form1-layout.ts`, `cells: 2`).
+     *
+     * Set 2026-09-03 to the owner's answer, "2". The grid fills LEFT TO RIGHT, one character per
+     * box, so this prints `2` in the left box and leaves the right one blank — the same convention
+     * as `insuranceEstablishmentNumber`, whose 7 digits leave box 8 blank and which the owner has
+     * already checked against a printed form. If the Authority expects the pair written "02", store
+     * it as "02" here; nothing else needs touching.
+     *
+     * This was the LAST blank registration number. With it set, Form 1 is no longer blocked
+     * company-wide — see `COMPANY_REGISTRATION_GAPS` for what that changed in the tests.
+     */
+    insuranceSectorCode: "2",
+    /**
+     * رقم التسجيل الضريبي — printed as three free-text runs with the form's own "/" between them.
+     *
+     * Set 2026-09-03 from the owner's answer, "٣١٨-١٠٨-٤٧٧". STORED IN ASCII DIGITS ON PURPOSE:
+     * `splitTaxRegistration` reads Arabic-Indic digits too now, but every other consumer of this
+     * value — a CSV, a search, a comparison against the tax card — expects 0-9, and the form
+     * renderer is what decides how it is drawn.
+     */
+    taxRegistrationNumber: "318-108-477",
     /** The default NOSI branch office ("مكتب ..........") for new files. */
     defaultInsuranceOffice: "",
   },

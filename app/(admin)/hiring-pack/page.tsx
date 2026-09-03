@@ -12,7 +12,9 @@ import {
   isHiringPackSchemaMissing,
   listHiringPackCandidates,
   listHiringPackLines,
+  loadHiringPackReadiness,
 } from "@/lib/hiring-pack/service";
+import type { HiringPackReadiness } from "@/lib/hiring-pack/readiness";
 import type { HiringPackCandidate, HiringPackData } from "@/lib/hiring-pack/types";
 
 export const dynamic = "force-dynamic";
@@ -74,6 +76,7 @@ async function HiringPackContent({
   let lines: { id: number; name: string }[] = [];
   let initialPack: HiringPackData | null = null;
   let initialError: string | null = null;
+  let readiness: HiringPackReadiness | null = null;
 
   try {
     candidates = await listHiringPackCandidates();
@@ -87,6 +90,16 @@ async function HiringPackContent({
     lines = await listHiringPackLines();
   } catch {
     lines = [];
+  }
+
+  // The readiness board, and it fails the same way for the same reason: it is a view over the whole
+  // payroll, and losing it must not cost HR the ability to type one person's contract. It is also
+  // the one read here that touches every employee row, so before the hiring-profile migration has
+  // run it is exactly the query that throws — the screen still has to work in that window.
+  try {
+    readiness = await loadHiringPackReadiness();
+  } catch {
+    readiness = null;
   }
 
   // A `?hrId=` deep link opens straight on that person — that is how the hiring documents tracker
@@ -107,6 +120,7 @@ async function HiringPackContent({
       initialError={initialError}
       initialPack={initialPack}
       lines={lines}
+      readiness={readiness}
     />
   );
 }

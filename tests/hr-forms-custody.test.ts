@@ -74,6 +74,8 @@ function employeeFixture(
     fullName: "Nour Adel",
     nameAr: "نور عادل",
     nationalId: "29709091234567",
+    // Left unrecorded so the fixtures exercise the national-ID derivation rather than masking it.
+    gender: null,
     socialInsuranceNumber: "123456789",
     socialInsuranceWage: 6000,
     baseSalary: 11000,
