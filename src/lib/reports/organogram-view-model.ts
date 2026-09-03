@@ -79,7 +79,8 @@ export function isOfficeLine(row: OrganogramRow) {
  *    offering "Head Office" there would open a branch the viewer cannot see.
  *  - As a real BRANCH — the 13-person Head Office tree built by
  *    organogram-head-office.ts, sent only to viewers who pass
- *    canAccessHeadOffice (Super Admin, CEO, Finance Manager, Talent Acquisition).
+ *    canAccessHeadOffice (Super Admin, CEO, Finance Manager, HR Advisory,
+ *    HR Operations, Training Manager, and the A-3 account pin).
  *
  * The caller decides which case it is via `includeHeadOffice`; the server sets
  * it from the entitlement, never the client. Without it the picker silently

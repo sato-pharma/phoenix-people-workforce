@@ -217,9 +217,11 @@ export function runOrganogramHeadOfficeBranchTests() {
   // office organogram." Both must hold, or the branch above is built and then stripped.
   assert.equal(canAccessHeadOffice(ctx("Super Admin")), true, "the admin account");
   assert.equal(canAccessHeadOffice(ctx("HR Advisory")), true, "…and HR Advisory");
+  // Training Manager joined them 2026-09-03 (owner) — Head Office staff himself, so the branch
+  // built above was being stripped from the one viewer who sits inside it.
+  assert.equal(canAccessHeadOffice(ctx("Training Manager")), true, "…and Training Manager");
   // The boundary still exists for everyone else who can open a company chart.
   assert.equal(canAccessHeadOffice(ctx("Marketing Manager")), false);
-  assert.equal(canAccessHeadOffice(ctx("Training Manager")), false);
   assert.equal(canAccessHeadOffice(ctx("SFE Manager")), false);
   assert.equal(canAccessHeadOffice(ctx("National Sales Manager")), false);
 }
