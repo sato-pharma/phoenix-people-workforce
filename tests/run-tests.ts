@@ -196,6 +196,7 @@ import { runRecruitmentManagerGroupingTests } from "./recruitment-manager-groupi
 import { runRecruitmentCandidateSeenTests } from "./recruitment-candidate-seen.test.ts";
 import { runRecruitmentScreeningPageTests } from "./recruitment-screening-page.test.ts";
 import { runCandidateFolderTests } from "./candidate-folders.test.ts";
+import { runCandidatePoolFiledSearchTests } from "./candidate-pool-filed-search.test.ts";
 import { runCandidateFolderSuggestionTests } from "./candidate-folder-suggestion.test.ts";
 import { runDriveCvFolderTests } from "./drive-cv-folders.test.ts";
 import { runHiringManagerTeamScopeTests } from "./hiring-manager-team-scope.test.ts";
@@ -1621,6 +1622,10 @@ await runTest(
 await runTest(
   "recruitment CV folders (a filed CV leaves the pool, the region shelf is EIGHT, and a rejection cannot be shelved)",
   runCandidateFolderTests,
+);
+await runTest(
+  "recruitment filed-CV search (a filed CV stays OFF the pool and stays FINDABLE — 150 of 734 were neither)",
+  runCandidatePoolFiledSearchTests,
 );
 await runTest(
   "recruitment declared filing (only a TAPPED answer files a CV — 64 of production's 82 job titles are extractor output)",
