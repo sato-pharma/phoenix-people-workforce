@@ -7,12 +7,9 @@ import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import {
   parseCarEvidenceImageDataUrl,
   parseCarEvidenceMetadata,
+  parseOutstationTypeFields,
 } from "@/app/api/outstation/request-body";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
-import type {
-  OutstationExpenseType,
-  OutstationTransportationType,
-} from "@/lib/outstation/types";
 import { isWorkflowRegistryTransitionError } from "@/lib/workflow-registry/service";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
@@ -55,6 +52,14 @@ export async function POST(request: Request) {
     await assertPermission(access, "outstation", "create");
 
     const body = (await request.json()) as Record<string, unknown>;
+    const outstationTypes = parseOutstationTypeFields(body);
+    if (!outstationTypes.ok) {
+      return NextResponse.json(
+        { error: outstationTypes.error, message: outstationTypes.message },
+        { status: 400 },
+      );
+    }
+
     const rawTicketAttachments = Array.isArray(body.ticketAttachments)
       ? (body.ticketAttachments as Array<Record<string, unknown>>)
       : [];
@@ -72,7 +77,7 @@ export async function POST(request: Request) {
       capturedLatitude: Number(body.capturedLatitude),
       capturedLongitude: Number(body.capturedLongitude),
       claimedTotalAmount: Number(body.claimedTotalAmount ?? 0),
-      expenseType: String(body.expenseType ?? "traveling") as OutstationExpenseType,
+      expenseType: outstationTypes.expenseType,
       goTicketAmount: Number(body.goTicketAmount ?? 0),
       hasTicketAttachments: Boolean(body.hasTicketAttachments),
       kilometerReading:
@@ -101,7 +106,7 @@ export async function POST(request: Request) {
       // resolve to 0 — exactly what the wizard has been sending since those inputs went.
       returnTicketAmount: Number(body.returnTicketAmount ?? 0),
       carEvidenceMetadata: parseCarEvidenceMetadata(body),
-      transportationType: String(body.transportationType ?? "car") as OutstationTransportationType,
+      transportationType: outstationTypes.transportationType,
       tripEndDate: String(body.tripEndDate ?? ""),
       tripStartDate: String(body.tripStartDate ?? ""),
       attachmentCount: Number(body.attachmentCount ?? 0),
