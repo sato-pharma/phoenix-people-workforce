@@ -4,14 +4,11 @@ import { assertPermission } from "@/lib/auth/permissions";
 import {
   parseCarEvidenceImageDataUrl,
   parseCarEvidenceMetadata,
+  parseOutstationTypeFields,
 } from "@/app/api/outstation/request-body";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { syncOfflineOutstationRequest } from "@/lib/outstation/service";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
-import type {
-  OutstationExpenseType,
-  OutstationTransportationType,
-} from "@/lib/outstation/types";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
@@ -32,6 +29,14 @@ export async function POST(request: Request) {
     await assertPermission(access, "outstation", "create");
 
     const body = (await request.json()) as Record<string, unknown>;
+    const outstationTypes = parseOutstationTypeFields(body);
+    if (!outstationTypes.ok) {
+      return NextResponse.json(
+        { error: outstationTypes.error, message: outstationTypes.message },
+        { status: 400 },
+      );
+    }
+
     // This body must stay a SUBSET of what /api/outstation/submit accepts, never a superset.
     // Both routes assert the same permission — the submitting employee's own `outstation:create`
     // — so anything read here that submit does not read is a field an employee can set on his own
@@ -63,7 +68,7 @@ export async function POST(request: Request) {
       capturedLatitude: Number(body.capturedLatitude),
       capturedLongitude: Number(body.capturedLongitude),
       claimedTotalAmount: Number(body.claimedTotalAmount ?? 0),
-      expenseType: String(body.expenseType ?? "traveling") as OutstationExpenseType,
+      expenseType: outstationTypes.expenseType,
       goTicketAmount: Number(body.goTicketAmount ?? 0),
       hasTicketAttachments: Boolean(body.hasTicketAttachments),
       kilometerReading:
@@ -78,7 +83,7 @@ export async function POST(request: Request) {
       otherAmount: optionalNumber(body.otherAmount),
       returnTicketAmount: Number(body.returnTicketAmount ?? 0),
       carEvidenceMetadata: parseCarEvidenceMetadata(body),
-      transportationType: String(body.transportationType ?? "car") as OutstationTransportationType,
+      transportationType: outstationTypes.transportationType,
       tripEndDate: String(body.tripEndDate ?? ""),
       tripStartDate: String(body.tripStartDate ?? ""),
       attachmentCount: Number(body.attachmentCount ?? 0),
