@@ -1367,59 +1367,136 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
         {myRequests.length === 0 ? (
           <p className="px-4 py-6 text-sm text-slate-500">You have not submitted any direct orders yet.</p>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[640px] border-collapse text-sm">
-              <thead>
-                <tr className="border-b border-phx-line bg-slate-50 text-left text-phx-xs font-black uppercase tracking-wider text-slate-500">
-                  <th className="px-3 py-2">Product</th>
-                  <th className="px-3 py-2 text-right">Qty</th>
-                  <th className="px-3 py-2 text-right">Bonus</th>
-                  <th className="px-3 py-2 text-right">Value</th>
-                  <th className="px-3 py-2">Venue</th>
-                  <th className="px-3 py-2">Status</th>
-                  <th className="px-3 py-2">Waiting on</th>
-                  <th className="px-3 py-2" />
-                </tr>
-              </thead>
-              <tbody>
-                {myRequests.map((r) => (
-                  <tr key={r.id} className="border-b border-[#eef1f3]">
-                    <td className="px-3 py-2">
-                      <div className="font-semibold text-slate-800">{r.productName}</div>
-                      <div className="text-phx-xs text-slate-500">{r.line}</div>
-                    </td>
-                    <td className="px-3 py-2 text-right tabular-nums">{r.qty.toLocaleString("en-US")}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">
-                      {bonusCell(r)}
+          <>
+            {/* Desktop only (FITS-THE-SCREEN GOLDEN RULE — AGENTS.md §4). The old table sat behind
+                `overflow-x-auto` over a `min-w-[640px]` floor: a min-width floor forced beyond a
+                container's real width is the bug the rule names, not a fix for it, and every cell
+                below it carried `whitespace-nowrap` — so on a 375px phone this ONE table dragged
+                the whole form out to 782px wide (431px of horizontal overflow across 191 spilling
+                elements, measured 2026-09-03) and even clipped 82 elements past `main`'s edge on a
+                1440px desktop, where this section's own grid column is narrower than 640px. Eight
+                nowrap columns were never going to fit a phone regardless of shrinking — the fix is
+                `table-fixed` + a `<colgroup>` so the table always exactly fills its container
+                (never wider, never narrower), text WRAPS instead of forcing width (the ellipsis ban
+                is untouched), and two related pairs merge into one column each (Qty+bonus,
+                Status+waiting-on) rather than shrinking type to fit. Mobile gets the card list
+                below instead, per the admin-shell convention: desktop shows full tables, mobile
+                never does. */}
+            <div className="hidden md:block">
+              <table className="w-full table-fixed border-collapse text-sm">
+                <colgroup>
+                  <col className="w-[24%]" />
+                  <col className="w-[13%]" />
+                  <col className="w-[12%]" />
+                  <col className="w-[19%]" />
+                  <col className="w-[25%]" />
+                  <col className="w-[7%]" />
+                </colgroup>
+                <thead>
+                  <tr className="border-b border-phx-line bg-slate-50 text-left text-phx-xs font-black uppercase tracking-wider text-slate-500">
+                    <th className="px-3 py-2">Product</th>
+                    <th className="px-3 py-2 text-right">Qty / bonus</th>
+                    <th className="px-3 py-2 text-right">Value</th>
+                    <th className="px-3 py-2">Venue</th>
+                    <th className="px-3 py-2">Status</th>
+                    <th className="px-3 py-2" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {myRequests.map((r) => (
+                    <tr key={r.id} className="border-b border-[#eef1f3] align-top">
+                      <td className="break-words px-3 py-2">
+                        <div className="font-semibold text-slate-800">{r.productName}</div>
+                        <div className="text-phx-xs text-slate-500">{r.line}</div>
+                      </td>
+                      <td className="break-words px-3 py-2 text-right tabular-nums">
+                        <div>{r.qty.toLocaleString("en-US")}</div>
+                        <div className="mt-0.5 text-phx-xs text-slate-500">
+                          {bonusCell(r)}
+                          {r.bonusOverCap ? (
+                            <span className="ml-1 inline-block rounded-full bg-phx-danger-bg px-1.5 py-0.5 text-phx-3xs font-black uppercase tracking-wide text-phx-danger">
+                              over cap
+                            </span>
+                          ) : null}
+                        </div>
+                      </td>
+                      <td className="break-words px-3 py-2 text-right font-bold tabular-nums">{money(r.salesValue)}</td>
+                      <td className="break-words px-3 py-2">{r.pharmacyName}</td>
+                      <td className="break-words px-3 py-2">
+                        {/* `wrap` (see direct-order-status-pill.tsx) — this column is too narrow for
+                            the longest label ("Customer Verification Required", 206px unwrapped) on
+                            every row just for the rare one that needs it, and shrinking the label's
+                            type is the one fix the FITS-THE-SCREEN GOLDEN RULE forbids. */}
+                        <DirectOrderStatusPill status={r.status} salesMonth={r.salesMonth} wrap />
+                        <div className="mt-1 text-phx-xs text-slate-600">
+                          Waiting on: {r.status === "pending_approval" ? r.activeStepLabel || "—" : "—"}
+                        </div>
+                      </td>
+                      {/* The requester could see a summary row but never open it. Track leads to the
+                          SAME detail the approvers read, so they can see exactly which rung holds it. */}
+                      <td className="break-words px-3 py-2 text-right">
+                        <Link
+                          href={`${basePath}/${encodeURIComponent(r.id)}`}
+                          className="font-bold text-orange-600 hover:text-orange-700"
+                        >
+                          Track →
+                        </Link>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Mobile — cards, not a shrunk table (admin-shell convention). Same fields as the
+                desktop table, none dropped, laid out for a phone-width column instead of a
+                7-column row. */}
+            <div className="space-y-3 p-4 md:hidden">
+              {myRequests.map((r) => (
+                <div
+                  key={`${r.id}-mobile`}
+                  className="border border-[#eef1f3] bg-white p-3 shadow-[0_12px_28px_rgba(15,23,42,0.06)]"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="font-black text-slate-900">{r.productName}</p>
+                      <p className="text-phx-xs text-slate-500">{r.line}</p>
+                    </div>
+                    {/* `wrap` — see the desktop cell above for why. */}
+                    <div className="shrink-0 text-right">
+                      <DirectOrderStatusPill status={r.status} salesMonth={r.salesMonth} wrap />
+                    </div>
+                  </div>
+                  <p className="mt-2 text-sm font-semibold text-slate-700">{r.pharmacyName}</p>
+                  <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-sm">
+                    <p className="text-slate-600">
+                      Qty: <span className="font-bold text-slate-900">{r.qty.toLocaleString("en-US")}</span>
+                    </p>
+                    <p className="text-slate-600">
+                      Bonus: <span className="font-bold text-slate-900">{bonusCell(r)}</span>
                       {r.bonusOverCap ? (
-                        <span className="ml-1.5 inline-block rounded-full bg-phx-danger-bg px-1.5 py-0.5 text-phx-3xs font-black uppercase tracking-wide text-phx-danger">
+                        <span className="ml-1 inline-block rounded-full bg-phx-danger-bg px-1.5 py-0.5 text-phx-3xs font-black uppercase tracking-wide text-phx-danger">
                           over cap
                         </span>
                       ) : null}
-                    </td>
-                    <td className="px-3 py-2 text-right font-bold tabular-nums">{money(r.salesValue)}</td>
-                    <td className="px-3 py-2">{r.pharmacyName}</td>
-                    <td className="px-3 py-2">
-                      <DirectOrderStatusPill status={r.status} salesMonth={r.salesMonth} />
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-2 text-slate-600">
-                      {r.status === "pending_approval" ? r.activeStepLabel || "—" : "—"}
-                    </td>
-                    {/* The requester could see a summary row but never open it. Track leads to the
-                        SAME detail the approvers read, so they can see exactly which rung holds it. */}
-                    <td className="whitespace-nowrap px-3 py-2 text-right">
-                      <Link
-                        href={`${basePath}/${encodeURIComponent(r.id)}`}
-                        className="font-bold text-orange-600 hover:text-orange-700"
-                      >
-                        Track →
-                      </Link>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                    </p>
+                    <p className="col-span-2 text-slate-600">
+                      Value: <span className="font-bold text-slate-900">{money(r.salesValue)}</span>
+                    </p>
+                  </div>
+                  <p className="mt-2 text-phx-xs text-slate-600">
+                    Waiting on: {r.status === "pending_approval" ? r.activeStepLabel || "—" : "—"}
+                  </p>
+                  <Link
+                    href={`${basePath}/${encodeURIComponent(r.id)}`}
+                    className="mt-2 inline-block text-phx-sm font-bold text-orange-600 hover:text-orange-700"
+                  >
+                    Track →
+                  </Link>
+                </div>
+              ))}
+            </div>
+          </>
         )}
       </section>
     </div>
