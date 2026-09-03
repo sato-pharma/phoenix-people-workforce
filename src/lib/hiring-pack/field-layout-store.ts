@@ -22,6 +22,11 @@
 import { documentSurface, type DocumentFieldRow, type FlowAnchor } from "@/lib/hiring-pack/field-layout";
 import { validateFieldTemplate } from "@/lib/hiring-pack/field-template";
 import { canonicalHrIdForDisplay } from "@/lib/hr-id";
+import {
+  templateVersionsFor,
+  type DocumentTemplateVersion,
+  type TemplateStatus,
+} from "@/lib/hiring-pack/template-registry";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import type { HiringPackDocument } from "@/lib/hiring-pack/types";
 
@@ -441,4 +446,238 @@ export function parseDocumentFieldWrite(
       source,
     },
   };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// CARRYING A LAYOUT FORWARD TO A NEW TEMPLATE VERSION
+//
+// Field rows are scoped to `template_version_id`, and that scoping is deliberate: an archived
+// contract has to reprint as the document that was signed, so its layout cannot be disturbed by
+// work done on the current one. The cost is that the day a template is replaced — `contract-v1` to
+// `contract-v2` happened on 2026-08-30, so this is not hypothetical — every rule and every added
+// box written against the outgoing version stops appearing. No error, no marker: the fields are
+// simply back to their compiled defaults, and nothing on any screen says why.
+//
+// So the editor offers to bring them over, and the offer is the whole feature. It is NEVER
+// automatic, because a page document's coordinates are read off the authority's own artwork: if the
+// artwork moved between versions, carrying a coordinate forward puts text in the wrong place on a
+// government form. That is a decision a person makes with both versions in front of them.
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+
+/** How many rows each version of one document holds — the basis of the offer. */
+export type VersionFieldCount = {
+  templateVersionId: string;
+  version: number;
+  status: TemplateStatus;
+  labelEn: string;
+  /** Rows on this version, counted after validation so a row nothing can draw is not offered. */
+  fields: number;
+};
+
+/**
+ * What the editor can offer to carry into `templateVersionId`, or null when there is nothing to say.
+ *
+ * OFFERED ONLY INTO AN EMPTY VERSION. Merging one layout into another produces a page that was
+ * never either version's, and no screen can then show which box came from where. A version that
+ * already holds work is left alone.
+ */
+export type CarryForwardOffer = {
+  /** The version being edited — always empty, or there is no offer. */
+  intoTemplateVersionId: string;
+  /** The newest earlier version that holds rows. */
+  fromTemplateVersionId: string;
+  fromLabelEn: string;
+  fromVersion: number;
+  /** How many rows would be copied. */
+  fields: number;
+};
+
+/**
+ * Every version of one document with a count of the rows stored against it.
+ *
+ * One query for the document, grouped in memory. The alternative — a count per version — is a round
+ * trip per archived template, and the table is small enough that reading its ids costs less than
+ * asking five times.
+ */
+export async function countDocumentFieldsByVersion(
+  document: HiringPackDocument,
+): Promise<VersionFieldCount[]> {
+  const versions = templateVersionsFor(document);
+  if (versions.length === 0) return [];
+
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from(TABLE)
+    .select(COLUMNS)
+    .eq("document", document)
+    .is("employee_hr_id", null)
+    .limit(2000);
+
+  if (error) {
+    if (isFieldLayerMissing(error)) return versions.map((entry) => versionCount(entry, 0));
+    throw new Error(error.message);
+  }
+
+  const counts = new Map<string, number>();
+  for (const record of (data ?? []) as unknown as FieldRecord[]) {
+    // Counted only if it can be drawn. Offering to carry a row the editor would drop on arrival
+    // would promise seven boxes and deliver six, with nothing to say which one went missing.
+    if (!documentFieldFromRecord(record)) continue;
+    counts.set(record.template_version_id, (counts.get(record.template_version_id) ?? 0) + 1);
+  }
+
+  return versions.map((entry) => versionCount(entry, counts.get(entry.id) ?? 0));
+}
+
+function versionCount(entry: DocumentTemplateVersion, fields: number): VersionFieldCount {
+  return {
+    templateVersionId: entry.id,
+    version: entry.version,
+    status: entry.status,
+    labelEn: entry.labelEn,
+    fields,
+  };
+}
+
+/**
+ * The offer for one version, or null when there is nothing worth offering.
+ *
+ * Null in three cases, and each is a real one rather than a guard for its own sake: the version
+ * being edited already holds work; no earlier version holds any; or the id is not a version of this
+ * document at all.
+ */
+export async function carryForwardOffer(
+  document: HiringPackDocument,
+  templateVersionId: string,
+): Promise<CarryForwardOffer | null> {
+  const target = templateVersionsFor(document).find((entry) => entry.id === templateVersionId);
+  if (!target) return null;
+
+  const counts = await countDocumentFieldsByVersion(document);
+  const source = pickCarryForwardSource(counts, target.version, templateVersionId);
+  if (!source) return null;
+
+  return {
+    intoTemplateVersionId: templateVersionId,
+    fromTemplateVersionId: source.templateVersionId,
+    fromLabelEn: source.labelEn,
+    fromVersion: source.version,
+    fields: source.fields,
+  };
+}
+
+/**
+ * Which version to offer carrying from — the whole decision, separated so it can be pinned.
+ *
+ * THE NEWEST EARLIER VERSION THAT HOLDS ANYTHING. Not the oldest, and not the one with the most
+ * rows: a layout is corrected forward over time, so the most recent work is the most correct, and
+ * offering v1 when v2 also has changes would hand back a layout somebody had already improved on.
+ *
+ * Returns null when the target version already holds work — merging two layouts makes a page that
+ * was never either version's — and when nothing earlier holds any.
+ */
+export function pickCarryForwardSource(
+  counts: readonly VersionFieldCount[],
+  targetVersion: number,
+  targetVersionId: string,
+): VersionFieldCount | null {
+  const into = counts.find((entry) => entry.templateVersionId === targetVersionId);
+  if (!into || into.fields > 0) return null;
+
+  return (
+    counts
+      .filter((entry) => entry.version < targetVersion && entry.fields > 0)
+      .sort((a, b) => b.version - a.version)[0] ?? null
+  );
+}
+
+/**
+ * Copy every field row from one template version of a document to another.
+ *
+ * REFUSES rather than merges when the target already holds rows, and refuses a version id belonging
+ * to a different document — copying a contract's coordinates onto Form 1 would place text over a
+ * government form's own boxes, and the failure would be visible only on paper.
+ *
+ * THE ACTOR IS RECORDED AS THE AUTHOR, not as a system migration, because deciding that the old
+ * boxes still apply to new artwork IS an authoring act. Someone reading the row's history later
+ * needs to see a person there.
+ */
+export async function carryForwardDocumentFields(
+  document: HiringPackDocument,
+  fromTemplateVersionId: string,
+  toTemplateVersionId: string,
+  actorHrId: string | null,
+): Promise<number> {
+  if (fromTemplateVersionId === toTemplateVersionId) {
+    throw new Error("A layout cannot be carried onto the version it already belongs to.");
+  }
+
+  const versions = templateVersionsFor(document);
+  const from = versions.find((entry) => entry.id === fromTemplateVersionId);
+  const to = versions.find((entry) => entry.id === toTemplateVersionId);
+  if (!from || !to) {
+    throw new Error(
+      `Both versions must belong to ${document}. Carrying a layout between documents would place ` +
+        "boxes at coordinates read off a different page.",
+    );
+  }
+
+  const existing = await loadDocumentFieldLayout(document, toTemplateVersionId);
+  if (existing.length > 0) {
+    throw new Error(
+      `${to.labelEn} already has ${existing.length} field${existing.length === 1 ? "" : "s"} of its own. ` +
+        "Carrying forward is offered only into a version nothing has been done to yet.",
+    );
+  }
+
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from(TABLE)
+    .select(COLUMNS)
+    .eq("document", document)
+    .eq("template_version_id", fromTemplateVersionId)
+    .is("employee_hr_id", null)
+    .order("created_at", { ascending: true })
+    .limit(500);
+  if (error) throw new Error(error.message);
+
+  const actor = actorHrId ? canonicalHrIdForDisplay(actorHrId) : null;
+  const now = new Date().toISOString();
+  const payload = ((data ?? []) as unknown as FieldRecord[])
+    // Same validation as the count, for the same reason: a row that cannot be drawn is not carried.
+    .filter((record) => documentFieldFromRecord(record) !== null)
+    .map((record) => ({
+      document,
+      // A NEW id, deliberately — the insert omits it. These rows are per-version by design, and
+      // reusing the id would either collide or move the old version's field instead of copying it.
+      template_version_id: toTemplateVersionId,
+      employee_hr_id: null,
+      default_key: record.default_key,
+      hidden: record.hidden,
+      page: record.page,
+      anchor_selector: record.anchor_selector,
+      anchor_dx: record.anchor_dx,
+      anchor_dy: record.anchor_dy,
+      x: record.x,
+      y: record.y,
+      w: record.w,
+      h: record.h,
+      align: record.align,
+      font_size: record.font_size,
+      source_kind: record.source_kind,
+      value_key: record.value_key,
+      literal_text: record.literal_text,
+      created_by_hr_id: actor,
+      updated_at: now,
+      updated_by_hr_id: actor,
+    }));
+
+  if (payload.length === 0) return 0;
+
+  const { data: inserted, error: insertError } = await supabase
+    .from(TABLE)
+    .insert(payload)
+    .select("id");
+  if (insertError) throw new Error(insertError.message);
+  return (inserted ?? []).length;
 }

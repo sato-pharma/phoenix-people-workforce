@@ -44,7 +44,7 @@
 // for both; only what a fresh ADD records as the anchor differs between them.
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 
-import { AlertTriangle, Check, Eye, EyeOff, Loader2, Lock, MapPin, Move, PencilLine, Plus, Printer, RotateCw, Trash2, X } from "lucide-react";
+import { AlertTriangle, Check, Eye, EyeOff, History, Loader2, Lock, MapPin, Move, PencilLine, Plus, Printer, RotateCw, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { FieldTable } from "@/components/hiring-pack/field-table";
@@ -56,6 +56,7 @@ import {
   type DocumentFieldRow,
   type DocumentFieldSource,
 } from "@/lib/hiring-pack/field-layout";
+import type { CarryForwardOffer } from "@/lib/hiring-pack/field-layout-store";
 import {
   buildPaperEditPatch,
   PAPER_FIELD_BINDINGS,
@@ -408,15 +409,18 @@ async function fetchDocumentInventory(url: string): Promise<DocumentFieldInvento
   return body?.fields ?? [];
 }
 
-async function fetchDocumentFields(url: string): Promise<DocumentFieldRow[]> {
+/** The layout, and — only when this version is untouched and an earlier one is not — the offer. */
+type LayoutPayload = { rows: DocumentFieldRow[]; carryForward: CarryForwardOffer | null };
+
+async function fetchDocumentFields(url: string): Promise<LayoutPayload> {
   const response = await fetch(url);
   const body = (await response.json().catch(() => null)) as
-    | { fields?: DocumentFieldRow[]; message?: string }
+    | { fields?: DocumentFieldRow[]; carryForward?: CarryForwardOffer | null; message?: string }
     | null;
   if (!response.ok) {
     throw new Error(body?.message ?? `Could not load the layout (${response.status}).`);
   }
-  return body?.fields ?? [];
+  return { rows: body?.fields ?? [], carryForward: body?.carryForward ?? null };
 }
 
 export function HiringPackPaperEditor({
@@ -479,6 +483,8 @@ export function HiringPackPaperEditor({
   const [fields, setFields] = useState<DocumentFieldRow[]>([]);
   const [fieldsLoading, setFieldsLoading] = useState(false);
   const [fieldsError, setFieldsError] = useState<string | null>(null);
+  /** Null in the ordinary case — an offer exists only on a version nothing has been done to yet. */
+  const [carryOffer, setCarryOffer] = useState<CarryForwardOffer | null>(null);
   const [layoutBusy, setLayoutBusy] = useState(false);
   const [layoutSelection, setLayoutSelection] = useState<PendingWrite | null>(null);
   const layoutModeRef = useRef(false);
@@ -616,9 +622,10 @@ export function HiringPackPaperEditor({
     setFieldsLoading(true);
     setFieldsError(null);
     try {
-      const rows = await fetchDocumentFields(fieldsUrl);
-      setFields(rows);
-      fieldsRef.current = rows;
+      const payload = await fetchDocumentFields(fieldsUrl);
+      setFields(payload.rows);
+      fieldsRef.current = payload.rows;
+      setCarryOffer(payload.carryForward);
     } catch (cause) {
       setFieldsError(cause instanceof Error ? cause.message : "Could not load the layout.");
     } finally {
@@ -643,10 +650,11 @@ export function HiringPackPaperEditor({
     if (!layoutMode) return;
     let live = true;
     void fetchDocumentFields(fieldsUrl).then(
-      (rows) => {
+      (payload) => {
         if (!live) return;
-        setFields(rows);
-        fieldsRef.current = rows;
+        setFields(payload.rows);
+        fieldsRef.current = payload.rows;
+        setCarryOffer(payload.carryForward);
         setFieldsError(null);
         setFieldsLoading(false);
       },
@@ -755,6 +763,57 @@ export function HiringPackPaperEditor({
       setLayoutBusy(false);
     }
   }, [documentKey, documentLabel, effectiveVersionId, loadFields]);
+
+  /**
+   * Bring a previous version's layout onto this one.
+   *
+   * CONFIRMED IN PLAIN WORDS, and never automatic — the reason is in `field-layout-store.ts`, but
+   * the short version is that a page document's coordinates are read off the authority's artwork.
+   * If the artwork moved between versions, carrying a coordinate forward puts text in the wrong
+   * place on a government form, and the only person who can see whether it moved is the one with
+   * both versions in front of them.
+   */
+  const carryLayoutForward = useCallback(async () => {
+    const offer = carryOffer;
+    if (!offer) return;
+    const sure = window.confirm(
+      `Bring ${offer.fields} field${offer.fields === 1 ? "" : "s"} from ${offer.fromLabelEn} onto this version?
+
+` +
+        "Positions come across exactly as they were. If the artwork changed between the two " +
+        "versions, check every box on the page afterwards — a coordinate that was right on the old " +
+        "page can land somewhere else on the new one.",
+    );
+    if (!sure) return;
+    setLayoutBusy(true);
+    setFieldsError(null);
+    try {
+      const response = await fetch("/api/hiring-pack/document-fields", {
+        body: JSON.stringify({
+          document: documentKey,
+          fromTemplateVersionId: offer.fromTemplateVersionId,
+          intent: "carryForward",
+          toTemplateVersionId: offer.intoTemplateVersionId,
+        }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+      const body = (await response.json().catch(() => null)) as { carried?: number; message?: string } | null;
+      if (!response.ok) {
+        throw new Error(body?.message ?? `Could not carry the layout forward (${response.status}).`);
+      }
+      setNotice(
+        `${body?.carried ?? 0} field${body?.carried === 1 ? "" : "s"} brought over from ${offer.fromLabelEn}. ` +
+          "Check each one against the page.",
+      );
+      await loadFields();
+      setReloadToken((token) => token + 1);
+    } catch (cause) {
+      setFieldsError(cause instanceof Error ? cause.message : "Could not carry the layout forward.");
+    } finally {
+      setLayoutBusy(false);
+    }
+  }, [carryOffer, documentKey, loadFields]);
 
   /**
    * Read the template's field list whenever the table is the visible half.
@@ -1571,6 +1630,41 @@ export function HiringPackPaperEditor({
               <div className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-phx-xs text-red-800">
                 <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
                 <span>{fieldsError}</span>
+              </div>
+            ) : null}
+
+            {/*
+              WORK ON AN EARLIER VERSION OF THIS TEMPLATE, WHICH THIS VERSION CANNOT SEE.
+              Field rows are scoped to a template version so an archived contract reprints as the
+              document that was signed — which means the day a template is replaced, every change
+              made to the old one silently stops appearing. This is the only place that says so.
+              It offers; it never acts on its own. See `carryLayoutForward`.
+            */}
+            {carryOffer ? (
+              <div className="flex flex-col gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-phx-xs text-amber-900 sm:flex-row sm:items-start sm:justify-between">
+                <div className="flex items-start gap-2">
+                  <History className="mt-0.5 h-4 w-4 shrink-0" />
+                  <span>
+                    <strong>
+                      {carryOffer.fromLabelEn} has {carryOffer.fields} field
+                      {carryOffer.fields === 1 ? "" : "s"} you changed.
+                    </strong>{" "}
+                    This version starts from the built-in layout, so none of them appear here. Bring
+                    them over, then check each one against the page — if the paper itself changed
+                    between the two versions, a position that was right before can land elsewhere.
+                  </span>
+                </div>
+                <Button
+                  className="shrink-0 gap-1 self-start"
+                  disabled={layoutBusy}
+                  onClick={() => void carryLayoutForward()}
+                  size="sm"
+                  type="button"
+                  variant="outline"
+                >
+                  <History className="h-3.5 w-3.5" />
+                  Bring them over
+                </Button>
               </div>
             ) : null}
 

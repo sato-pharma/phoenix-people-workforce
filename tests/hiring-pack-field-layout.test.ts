@@ -11,11 +11,14 @@ import {
   type DocumentFieldRow,
 } from "@/lib/hiring-pack/field-layout";
 import {
+  carryForwardDocumentFields,
   documentFieldFromRecord,
   isFieldLayerMissing,
   parseDocumentFieldWrite,
+  pickCarryForwardSource,
   type DocumentFieldWriteInput,
   type FieldRecord,
+  type VersionFieldCount,
 } from "@/lib/hiring-pack/field-layout-store";
 import { PAPER_FIELD_BINDINGS } from "@/lib/hiring-pack/paper-fields";
 import { isHiringPackSchemaMissing } from "@/lib/hiring-pack/service";
@@ -587,7 +590,85 @@ function testTheWriteValidatorRejectsEveryConstraintTheTableEnforces() {
   assert.equal(parseDocumentFieldWrite(pageWrite({ defaultKey: "" })).ok, false, "defaultKey must be non-empty when present, never a blank string");
 }
 
-export function runHiringPackFieldLayoutTests() {
+async function testCarryingALayoutForwardToANewVersion() {
+  // ── Carrying a layout forward to a new template version ──────────────────────────────────────
+  //
+  // Field rows are scoped to `template_version_id` so an archived contract reprints as the document
+  // that was signed. The cost is that replacing a template — `contract-v1` to `contract-v2`, which
+  // really happened on 2026-08-30 — silently strands every change made against the old one. These
+  // pin the offer that answers that, and the two refusals that keep it from doing harm.
+  {
+    const counts = (
+      entries: [id: string, version: number, fields: number][],
+    ): VersionFieldCount[] =>
+      entries.map(([templateVersionId, version, fields]) => ({
+        fields,
+        labelEn: `${templateVersionId} label`,
+        status: fields > 0 ? "archived" : "current",
+        templateVersionId,
+        version,
+      }));
+
+    // THE NEWEST EARLIER VERSION WINS, not the oldest and not the fullest. v1 holding more rows than
+    // v2 is the case that separates "most recent" from "most work": a layout is corrected forward,
+    // so v2's four boxes supersede v1's nine rather than losing to them.
+    const layered = counts([
+      ["doc-v1", 1, 9],
+      ["doc-v2", 2, 4],
+      ["doc-v3", 3, 0],
+    ]);
+    const picked = pickCarryForwardSource(layered, 3, "doc-v3");
+    assert.equal(
+      picked?.templateVersionId,
+      "doc-v2",
+      "the most recent earlier version is the most correct one to carry",
+    );
+
+    // A version that already holds work is left alone. Merging produces a page that was never
+    // either version's, and afterwards nothing can say which box came from where.
+    assert.equal(
+      pickCarryForwardSource(counts([["doc-v1", 1, 9], ["doc-v2", 2, 3]]), 2, "doc-v2"),
+      null,
+      "a version with its own fields must never be offered a merge",
+    );
+
+    // Nothing earlier holds anything: the ordinary case on a document nobody has edited.
+    assert.equal(
+      pickCarryForwardSource(counts([["doc-v1", 1, 0], ["doc-v2", 2, 0]]), 2, "doc-v2"),
+      null,
+    );
+
+    // A LATER version is never a source. Carrying backwards would put work done on the current
+    // template onto an archived one, changing how an already-signed document reprints.
+    assert.equal(
+      pickCarryForwardSource(counts([["doc-v1", 1, 0], ["doc-v2", 2, 7]]), 1, "doc-v1"),
+      null,
+      "a newer version is not a source — an archived layout must reprint as it was signed",
+    );
+
+    // An id that is not in the counts at all answers null rather than picking something.
+    assert.equal(pickCarryForwardSource(counts([["doc-v1", 1, 5]]), 2, "doc-v2"), null);
+  }
+
+  // The two refusals in the copy itself, which both fire BEFORE any database client is created.
+  {
+    await assert.rejects(
+      () => carryForwardDocumentFields("contract", "contract-v2", "contract-v2", "HR-001"),
+      /cannot be carried onto the version it already belongs to/,
+      "carrying a version onto itself must be refused, not silently duplicated",
+    );
+
+    // A version id from another document. The damage would be invisible until it printed: a
+    // contract's coordinates land over a government form's own boxes.
+    await assert.rejects(
+      () => carryForwardDocumentFields("form1", "contract-v1", "form1-v1", "HR-001"),
+      /Both versions must belong to form1/,
+      "a version id belonging to another document must be refused",
+    );
+  }
+}
+
+export async function runHiringPackFieldLayoutTests() {
   testEveryDocumentDeclaresItsSurface();
   testAnUntouchedDocumentIsUnchanged();
   testMovingADefaultKeepsWhatItIs();
@@ -605,4 +686,5 @@ export function runHiringPackFieldLayoutTests() {
   testAnUnknownSourceIsDropped();
   testTheWriteValidatorAcceptsAWellFormedRowOfEachSurface();
   testTheWriteValidatorRejectsEveryConstraintTheTableEnforces();
+  await testCarryingALayoutForwardToANewVersion();
 }

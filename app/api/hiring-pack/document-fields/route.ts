@@ -3,6 +3,8 @@ import { NextResponse } from "next/server";
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import {
+  carryForwardDocumentFields,
+  carryForwardOffer,
   deleteDocumentField,
   isFieldLayerMissing,
   loadDocumentFieldLayout,
@@ -62,8 +64,14 @@ export async function GET(request: Request) {
       );
     }
 
-    const fields = await loadDocumentFieldLayout(document, templateVersionId);
-    return NextResponse.json({ fields });
+    // THE OFFER RIDES WITH THE LAYOUT, in one round trip rather than two. It is needed at exactly
+    // the moment a layout is read and is null in every ordinary case — a version with work on it
+    // never has one — so a second request would spend a trip to be told nothing almost every time.
+    const [fields, carryForward] = await Promise.all([
+      loadDocumentFieldLayout(document, templateVersionId),
+      carryForwardOffer(document, templateVersionId),
+    ]);
+    return NextResponse.json({ fields, carryForward });
   } catch (error) {
     const { message, status } = apiError(error);
     return NextResponse.json({ error: "hiring_pack_field_layout_read_failed", message }, { status });
@@ -100,6 +108,37 @@ export async function POST(request: Request) {
       }
       const removed = await resetDocumentFieldLayout(document, templateVersionId);
       return NextResponse.json({ removed });
+    }
+
+    // CARRY A PREVIOUS VERSION'S LAYOUT ONTO THIS ONE. Both ids are named by the caller rather
+    // than re-derived here: the offer the editor showed is what the operator agreed to, and a
+    // server that recomputed the source could copy a different version than the one on screen.
+    if (body.intent === "carryForward") {
+      const document = body.document;
+      const fromTemplateVersionId = body.fromTemplateVersionId;
+      const toTemplateVersionId = body.toTemplateVersionId;
+      if (
+        !isKnownDocument(document) ||
+        typeof fromTemplateVersionId !== "string" ||
+        typeof toTemplateVersionId !== "string" ||
+        fromTemplateVersionId.trim() === "" ||
+        toTemplateVersionId.trim() === ""
+      ) {
+        return NextResponse.json(
+          {
+            error: "invalid_request",
+            message: "Pass document, fromTemplateVersionId and toTemplateVersionId to carry a layout forward.",
+          },
+          { status: 400 },
+        );
+      }
+      const carried = await carryForwardDocumentFields(
+        document,
+        fromTemplateVersionId,
+        toTemplateVersionId,
+        access.hrId ?? null,
+      );
+      return NextResponse.json({ carried });
     }
 
     const parsed = parseDocumentFieldWrite(body as DocumentFieldWriteInput);
