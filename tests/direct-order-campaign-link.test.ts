@@ -112,10 +112,29 @@ export async function runDirectOrderCampaignLinkTests() {
     /marketingRequestId: body\.marketingRequestId \?\? null,/,
     "the submit route must pass marketingRequestId to the service",
   );
+  // The form posts the DERIVED selection, never the raw state. `selectedCampaignId` is read back
+  // through the same line filter that builds the offer, so a campaign that stops being offered —
+  // because the requester changed product, or because a response for the PREVIOUS line landed late
+  // — stops being submitted too, with nothing to clear and no second render. Clearing it inside the
+  // effect is both weaker and a lint error here (react-hooks/set-state-in-effect fails the build).
   assert.match(
     FORM_SOURCE,
-    /marketingRequestId: marketingRequestId \|\| null,/,
-    "the submit form must post the chosen campaign",
+    /marketingRequestId: selectedCampaignId \|\| null,/,
+    "the submit form must post the campaign that is still actually on offer, not the raw state",
+  );
+  assert.match(
+    FORM_SOURCE,
+    /const selectedCampaignId = campaignOptionsForLine\.some\(/,
+    "the submitted campaign must be derived from the line-filtered list",
+  );
+  assert.match(
+    FORM_SOURCE,
+    /option\.lineName \?\? ""\)\.trim\(\)\.toLowerCase\(\) === key/,
+    "the offer must be filtered to the product's line, so another line's campaign can never be shown",
+  );
+  assert.ok(
+    !/setCampaignOptions\(\[\]\);\s*\n\s*setMarketingRequestId\(""\);/.test(FORM_SOURCE),
+    "the effect must not clear campaign state synchronously — eslint fails the build on it",
   );
   assert.match(
     FORM_SOURCE,

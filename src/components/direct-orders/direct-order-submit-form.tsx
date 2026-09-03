@@ -54,6 +54,8 @@ type CampaignOption = {
   requestCode: string;
   customerName: string | null;
   areaName: string | null;
+  /** The campaign’s own line. Read back so the offer can be filtered to the product’s line. */
+  lineName: string | null;
   status: string;
   raisedByMe: boolean;
 };
@@ -346,33 +348,42 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
   // The server re-validates on submit regardless; this keeps the form honest, it does not gate.
   const productLine = product?.line ?? "";
   useEffect(() => {
-    if (!productLine) {
-      setCampaignOptions([]);
-      setMarketingRequestId("");
-      return;
-    }
+    // No synchronous setState here: eslint forbids it (react-hooks/set-state-in-effect), and it is
+    // not needed. Nothing is CLEARED on a line change — campaignOptionsForLine below derives the
+    // offer from the line, so the previous line's campaigns stop being offered the instant the
+    // product changes, without waiting for the new fetch and without a second render.
+    if (!productLine) return;
     let cancelled = false;
     (async () => {
       try {
         const res = await fetch(`/api/direct-orders/campaign-options?line=${encodeURIComponent(productLine)}`);
         const data = (await res.json().catch(() => ({}))) as { options?: CampaignOption[] };
         if (cancelled) return;
-        const options = Array.isArray(data.options) ? data.options : [];
-        setCampaignOptions(options);
-        setMarketingRequestId((current) => (options.some((option) => option.id === current) ? current : ""));
+        setCampaignOptions(Array.isArray(data.options) ? data.options : []);
       } catch {
         // A campaign is optional, so a failed lookup must degrade to "no campaigns offered" rather
         // than showing an error the requester cannot act on or blocking a submission that is valid.
-        if (!cancelled) {
-          setCampaignOptions([]);
-          setMarketingRequestId("");
-        }
+        if (!cancelled) setCampaignOptions([]);
       }
     })();
     return () => {
       cancelled = true;
     };
   }, [productLine]);
+
+  // What may actually be offered, and what is actually selected — both DERIVED, never stored.
+  // A campaign only belongs to this order if it sits on the product's own line, so filtering by
+  // line here means a stale response (or an in-flight one for the previous product) can never put
+  // another line's campaign in the list. The selection is read back through the same filter, so a
+  // choice that stops being offered simply stops being submitted — the server re-validates anyway.
+  const campaignOptionsForLine = useMemo(() => {
+    const key = productLine.trim().toLowerCase();
+    if (!key) return [] as CampaignOption[];
+    return campaignOptions.filter((option) => (option.lineName ?? "").trim().toLowerCase() === key);
+  }, [campaignOptions, productLine]);
+  const selectedCampaignId = campaignOptionsForLine.some((option) => option.id === marketingRequestId)
+    ? marketingRequestId
+    : "";
 
   // ── The family basket (owner, 2026-08-12) ──────────────────────────────────
   //
@@ -581,7 +592,7 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
           discountPct: dealType === "discount" ? discountNum : null,
           bonusOverrideReason: overCap ? overrideReason.trim() || null : null,
           collectionDate,
-          marketingRequestId: marketingRequestId || null,
+          marketingRequestId: selectedCampaignId || null,
           // Only the lines still shown. Every rule about what may share a request is re-checked
           // server-side; this is the convenience, never the gate.
           items: activeExtras.map(([code, line]) => ({
@@ -889,11 +900,11 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
               <label className={labelClass()}>Came from a campaign</label>
               <select
                 className={inputClass()}
-                value={marketingRequestId}
+                value={selectedCampaignId}
                 onChange={(e) => setMarketingRequestId(e.target.value)}
               >
                 <option value="">No campaign</option>
-                {campaignOptions.map((option) => (
+                {campaignOptionsForLine.map((option) => (
                   <option key={option.id} value={option.id}>
                     {[
                       option.requestCode,
@@ -908,7 +919,7 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
                 ))}
               </select>
               <p className="mt-1 text-phx-xs text-slate-400">
-                {campaignOptions.length === 0
+                {campaignOptionsForLine.length === 0
                   ? `No approved ${product.line} campaign is open, so this order is recorded without one.`
                   : "Pick it only if this order came out of that campaign — it credits the campaign’s ROI with this sale."}
               </p>
