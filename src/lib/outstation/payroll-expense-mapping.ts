@@ -122,12 +122,19 @@ export function mapOutstationRequestToPayrollExpenseRecord(
   // Prefer the override (survives an extra-ticket append, which updates report_travel_cost
   // without touching fuel_amount/ticket_amount) over the raw fuel+ticket sum.
   const travelCost = request.reportTravelCost ?? request.fuelAmount + request.ticketAmount;
+  // Resolve ONCE and store what was summed. Every component this mapper writes has to be the
+  // same figure the total counted, or the payroll row disagrees with itself: `other` used to be
+  // written from the raw `other_amount` column while the total summed the `report_other_amount`
+  // override, so an overridden row would file an "Other" component that its own total contradicts.
+  // `expense-metrics.ts` adds these columns up into the dashboard's "Other" card and the export
+  // carries them, so the gap would surface as an under-reported category, not as an error.
+  const otherAmount = request.reportOtherAmount || request.otherAmount || 0;
   const { meetingAmount, total } = outstationPayableTotal({
     allowanceAmount: request.allowanceAmount,
     expectedTotalAmount: request.expectedTotalAmount,
     isMeetingTrip: request.expenseType === "meeting",
     meetingAmount: request.reportMeetingAmount || request.meetingAmount || 0,
-    otherAmount: request.reportOtherAmount || request.otherAmount || 0,
+    otherAmount,
     travelCost,
   });
 
@@ -153,7 +160,7 @@ export function mapOutstationRequestToPayrollExpenseRecord(
     location: request.toLabel ?? request.toCity ?? request.toArea ?? "",
     meetingAmount,
     open: "",
-    other: request.otherAmount ?? 0,
+    other: otherAmount,
     pharmacyVisits: snapshotKindCount(request.workloadEvidenceSnapshot, "pharmacyVisits"),
     pmWorkload: request.pmWorkload ?? 0,
     reportId: options.reportId ?? undefined,
