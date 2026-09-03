@@ -224,8 +224,11 @@ export function runOrganogramHeadOfficeBranchTests() {
   // Head Office too — line_id 4, reporting to the CEO — so the branch built above was being
   // stripped from a second viewer who sits inside it.
   assert.equal(canAccessHeadOffice(ctx("SFE Manager")), true, "…and the SFE Manager");
-  // The boundary still exists for everyone else who can open a company chart. Marketing Manager is
-  // the last company-scope role outside the gate, so this line is now load-bearing on its own.
-  assert.equal(canAccessHeadOffice(ctx("Marketing Manager")), false);
-  assert.equal(canAccessHeadOffice(ctx("National Sales Manager")), false);
+  // Marketing Manager completed the sweep the same day ("marketing manager also"). A-9 is Head
+  // Office too — line_id 4, reporting to the CEO — and is the LAST role that was being stripped.
+  assert.equal(canAccessHeadOffice(ctx("Marketing Manager")), true, "…and the Marketing Manager");
+  // The boundary itself still exists, and this is now the only thing proving it: an unnamed role
+  // carrying scope `company` must still be refused. It is what fails if this helper is ever
+  // collapsed to `access.scope === "company"`, now that no named role is left outside it.
+  assert.equal(canAccessHeadOffice(ctx("National Sales Manager", "company")), false);
 }

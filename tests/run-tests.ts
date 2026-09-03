@@ -639,6 +639,7 @@ import { runVacancyReportOrganogramConsistencyTests } from "./vacancy-report-org
 import { runA3FullOrganogramTests } from "./a3-account-sees-the-full-organogram.test.ts";
 import { runTrainingManagerHeadOfficeTests } from "./training-manager-sees-head-office.test.ts";
 import { runSfeManagerHeadOfficeTests } from "./sfe-manager-sees-head-office.test.ts";
+import { runMarketingManagerHeadOfficeTests } from "./marketing-manager-sees-head-office.test.ts";
 import { runOrganogramGodmodeTests } from "./organogram-godmode.test.ts";
 import { runOrganogramHeadOfficeBranchTests } from "./organogram-head-office-branch.test.ts";
 import { runOrganogramHeadOfficeMarketingAndOpenSeatsTests } from "./organogram-head-office-marketing-and-open-seats.test.ts";
@@ -2295,6 +2296,10 @@ await runTest(
 await runTest(
   "SFE Manager sees Head Office (same defect, but a REAL disclosure — no canSeeEmployee branch)",
   runSfeManagerHeadOfficeTests,
+);
+await runTest(
+  "Marketing Manager sees Head Office (the last of the five, and the tripwire on canAccessHeadOffice and canAccessCompanyOrganogram now naming the same set)",
+  runMarketingManagerHeadOfficeTests,
 );
 await runTest("organogram head office branch (the AU seat model has no Head Office seats — the department was on nobody's chart)", runOrganogramHeadOfficeBranchTests);
 await runTest(
