@@ -120,6 +120,7 @@ import { runProbationProvisioningTests } from "./probation-provisioning.test.ts"
 import { runProbationDateTests } from "./probation-date.test.ts";
 import { runProbationCaseProvisioningTests } from "./probation-case-provisioning.test.ts";
 import { runProbationDomainMigrationReadinessTests } from "./probation-domain-migration-readiness.test.ts";
+import { runCrmContactCodeTests } from "./crm-contact-code.test.ts";
 import { runCustomerGeographySpineTests } from "./customer-geography-spine.test.ts";
 import { runCustomer360Tests } from "./customer-360.test.ts";
 import { runCrmIdentityTests } from "./crm-identity.test.ts";
@@ -270,6 +271,7 @@ import { runDeductionsDsmNoRecordTests } from "./deductions-dsm-no-record.test.t
 import { runDeductionsVacationLedgerGuardTests } from "./deductions-vacation-ledger-guard.test.ts";
 import { runWeeklyPlanningFoundationTests } from "./weekly-planning-foundation.test.ts";
 import { runWeeklyMonthlyPlansV1Tests } from "./weekly-monthly-plans-v1.test.ts";
+import { runPlanSyncConversationEmailTests } from "./plan-sync-conversation-email.test.ts";
 import { runPlanWorkweekLinkageTests } from "./plan-workweek-linkage.test.ts";
 import { runWeeklyPlansRpcContractTests } from "./weekly-plans-rpc-contract.test.ts";
 import { runWeeklyPlansConcurrencyTests } from "./weekly-plans-concurrency.test.ts";
@@ -864,6 +866,7 @@ import { runDirectOrderEvidenceCheckTests } from "./direct-orders-evidence-check
 import { runDirectOrdersApprovalWindowMobileTests } from "./direct-orders-approval-window-mobile.test.ts";
 import { runEmployeePortalMobileInputZoomTests } from "./employee-portal-mobile-input-zoom.test.ts";
 import { runEmployeePortalMobileTableCardTests } from "./employee-portal-mobile-table-cards.test.ts";
+import { runPortalIdentityBandAndSalesWindowTests } from "./portal-identity-band-and-sales-window.test.ts";
 import { runCrmMobileTableCardTests } from "./crm-mobile-table-cards.test.ts";
 import { runHrShellMobileTableTests } from "./hr-shell-mobile-tables.test.ts";
 import { runOutstationMobileTableCardTests } from "./outstation-mobile-table-cards.test.ts";
@@ -1458,6 +1461,7 @@ await runTest("probation provisioning", runProbationProvisioningTests);
 await runTest("probation date (hire+90 canonical, edge cases)", runProbationDateTests);
 await runTest("probation case provisioning (idempotent ensureCase + hire trigger + backfill dry-run)", runProbationCaseProvisioningTests);
 await runTest("probation domain migration readiness (Phase 1 schema + Phase 2 trigger)", runProbationDomainMigrationReadinessTests);
+await runTest("crm contact code parsing (a code with trailing text is not a link; the roster is not a registry)", runCrmContactCodeTests);
 await runTest("crm identity waterfall (override>crm_id>unique username, no-guess) + double-visit predicate", runCrmIdentityTests);
 await runTest("crm post-exit attribution guard (work after an exit date is never filed under the leaver)", runCrmPostExitAttributionTests);
 await runTest("crm pre-hire attribution guard (nobody is credited with work dated before they joined)", runCrmPreHireAttributionTests);
@@ -1770,6 +1774,7 @@ await runTest(
 );
 await runTest("weekly planning foundation", runWeeklyPlanningFoundationTests);
 await runTest("weekly monthly plans v1", runWeeklyMonthlyPlansV1Tests);
+await runTest("plan weekly/monthly sync + conversation email addressing", runPlanSyncConversationEmailTests);
 await runTest("plan workweek + linkage (role-aware week, slots, new activity types)", runPlanWorkweekLinkageTests);
 await runTest("weekly plans RPC contract", runWeeklyPlansRpcContractTests);
 await runTest("weekly plans concurrency", runWeeklyPlansConcurrencyTests);
@@ -2626,6 +2631,7 @@ await runTest("direct orders cancel held (requester-or-Super-Admin, held-only, r
 await runTest("direct orders approval window on mobile (every table desktop-only, every table has cards, no min-width reachable at 375px, totals and the not-final flag survive)", runDirectOrdersApprovalWindowMobileTests);
 await runTest("employee portal mobile input zoom (16px floor on every portal input/select/textarea under 768px, max() not a flat size, the shell class still exists, pinch-zoom never disabled)", runEmployeePortalMobileInputZoomTests);
 await runTest("employee portal mobile table cards (every converted table is desktop-gated with cards beside it, one shared SourceBreakdown, no <table> nested inside PortalDesktopTable)", runEmployeePortalMobileTableCardTests);
+await runTest("portal identity band and sales window (nothing renders above the identity banner on any of the 9 role centers, no horizontal nav rows on the portal, no ellipsis, a leaver leaves the list but not the money, every keycard names its closing month, and the landing page fits a 375px screen)", runPortalIdentityBandAndSalesWindowTests);
 await runTest("CRM mobile table cards (whole-directory scan: every CRM table desktop-gated, every table file has a card path, no bare overflow-x-auto, both coverage boards moved together)", runCrmMobileTableCardTests);
 await runTest("Outstation mobile table cards (whole-directory scan: every outstation table desktop-gated, every table file has a card path, no fixed-pixel floor in an ungated scroll box, HR decision controls shared by both halves)", runOutstationMobileTableCardTests);
 await runTest("Outstation decision failures leave a trace (every catch on /api/admin/outstation/[id] records the unsanitised cause before returning, awaited)", runOutstationDecisionFailureTraceTests);

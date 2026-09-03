@@ -315,17 +315,25 @@ export async function runHrSeatRouteCoherenceTests() {
     assert.ok(opsKeys.has(key), `HR Operations owns offboarding but lacks ${key}`);
   }
 
-  // The role-set extractor has nothing to match on today — no page an HR seat is offered gates by
-  // role name any more, which is the point of the fix below. That makes it a tripwire with no live
-  // subject, so pin it to the page that taught it: if this stops reading {Super Admin, CEO} out of
-  // the Deductions page, the pattern has rotted and the tripwire is disarmed without saying so.
+  // The role-set extractor's live subject, and as of 2026-09-03 it is live in both senses. The
+  // Deductions page is the page that taught this test — it admitted {Super Admin, CEO} by name
+  // while the HR sidebar offered HR Operations a link on `deductions:read`, a grant she really
+  // holds, and the page bounced her to /employee-portals. The owner closed that on 2026-09-03
+  // ("yes give HR access to the deductions screen") by adding her to the SET rather than by
+  // swapping the set for a permission check, which would have handed the page back to the Finance
+  // Manager he revoked on 2026-08-11.
+  //
+  // So this pin does two jobs now. It still proves the extractor can see a role-name gate at all —
+  // if it stops reading this page the pattern has rotted and every role-name gate goes invisible
+  // without saying so — and it additionally pins WHO that gate admits, which the nav half below
+  // then checks she can actually reach.
   const deductionsPage = readFileSync(
     path.join(REPO_ROOT, "app", "(admin)", "admin", "deductions", "page.tsx"),
     "utf8",
   );
   assert.deepEqual(
     roleSetGates(deductionsPage),
-    [["Super Admin", "CEO"]],
+    [["Super Admin", "CEO", "HR Operations"]],
     "the role-set gate extractor no longer reads app/(admin)/admin/deductions/page.tsx — either the " +
       "page changed shape, or the pattern broke and every role-name gate is now invisible to this test",
   );

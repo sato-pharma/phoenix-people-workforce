@@ -20,6 +20,7 @@ import type { EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { resolveJobFunctionRole } from "@/lib/employees/job-function";
 import { resolveGovernorate } from "@/lib/geo/egypt-locations";
 import { conflictError, forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
+import { parseCrmContactCode } from "@/lib/crm/contact-code";
 // The one definition of "this link was inferred, not field-validated". Imported rather than
 // re-implemented so the validation report and the Customer Pharmacy Mapping page can never drift
 // into disagreeing about which links the backfill wrote.
@@ -127,6 +128,7 @@ import { resolveMarketingPharmacyCodes } from "@/lib/marketing-requests/master-r
 import { pingMarketingRequestSheet } from "@/lib/marketing-requests/sheet-webhook";
 import { applyMasterTerritoryToVenues } from "@/lib/marketing-requests/venue-territory";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { notifyConversationMessage } from "@/lib/conversations/notify";
 
 type MarketingProductDbRow = {
   active?: boolean | null;
@@ -7314,16 +7316,20 @@ export async function getMarketingRequestDraftWorkspace(access: AccessContext): 
   }
 
   // Every active contact of every customer, so the form can offer the one a campaign concerns.
-  // `crm_code` is stored as text holding a CRM id; parsed the same way contact-trade.ts parses it
-  // so a contact reads as CRM-linked on both screens or on neither.
+  // `crm_code` is stored as text holding a CRM id, parsed by the shared strict parser that
+  // src/lib/crm/contact-trade.ts also uses, so a contact reads as CRM-linked on both screens or on
+  // neither. That parser's header carries the measurement that matters here: a code counts as
+  // linked when it PARSES, never when it appears in `ireports360_contacts` — that table is one
+  // agent's contact list, not a registry, and 40 of these 133 contacts are absent from it while
+  // carrying real CRM visits. Do not "tighten" this label against it.
   const contactsByCustomer: Record<string, MarketingRequestContactOption[]> = {};
   for (const row of (contactsResult.data ?? []) as MarketingCustomerContactDbRow[]) {
     if (!row.customer_id) continue;
-    const parsedCrmId = Number.parseInt((row.crm_code ?? "").trim(), 10);
+    const parsedCrmId = parseCrmContactCode(row.crm_code);
     const list = contactsByCustomer[row.customer_id] ?? [];
     list.push({
       contactName: cleanText(row.contact_name) ?? "Unnamed contact",
-      crmContactId: Number.isFinite(parsedCrmId) ? parsedCrmId : null,
+      crmContactId: parsedCrmId,
       id: row.id,
       mobileNumber: cleanText(row.mobile_number) ?? null,
     });
@@ -8625,7 +8631,77 @@ export async function postMarketingAdvisoryComment(
     summary: `Advisory comment posted on ${cleanRequestId}`,
   });
 
+  await notifyAdvisoryComment({
+    actorHrId,
+    comment: text,
+    requestId: cleanRequestId,
+    steps,
+  });
+
   return { requestId: cleanRequestId };
+}
+
+/**
+ * Email an advisory comment out, To the requester and CC the reviewer who wrote it.
+ *
+ * An advisory comment is a CC reviewer's opinion recorded against a request they cannot block -
+ * which, until 2026-09-03, was written into `decision_note` and shown to nobody unless somebody
+ * reopened the request. The requester is the thread's owner (`requester_hr_id`), and everyone who
+ * has already decided a step on the request is a participant, so a running discussion keeps its
+ * audience rather than resetting to two people each time.
+ *
+ * Best-effort: the comment is already stored, and a mail failure must not undo it.
+ */
+async function notifyAdvisoryComment(input: {
+  actorHrId: string;
+  comment: string;
+  requestId: string;
+  steps: Array<{ assignedHrId: string | null; decisionAt: string | null }>;
+}): Promise<void> {
+  try {
+    const supabase = getSupabaseAdmin();
+    const { data } = await supabase
+      .from("marketing_requests")
+      .select("id,request_code,requester_hr_id,manager_hr_id")
+      .eq("id", input.requestId)
+      .maybeSingle();
+    const request = data as {
+      manager_hr_id?: string | null;
+      request_code?: string | null;
+      requester_hr_id?: string | null;
+    } | null;
+    if (!request?.requester_hr_id) return;
+
+    const participantHrIds = [
+      request.requester_hr_id,
+      request.manager_hr_id ?? null,
+      // Everyone who has actually acted on the request. An assignee who has not decided yet is not
+      // a participant in the conversation, only a name on a future step.
+      ...input.steps.filter((step) => step.decisionAt).map((step) => step.assignedHrId),
+    ];
+
+    await notifyConversationMessage({
+      // The shared helper, not a portal path: a notification actionUrl is stored once for every
+      // recipient, and the portal shell redirects admin-shell approvers to /overview.
+      actionUrl: marketingActionUrl(input.requestId),
+      authorHrId: input.actorHrId,
+      authorName: null,
+      body: input.comment,
+      eventType: "marketing_request_comment",
+      metadata: { requestId: input.requestId },
+      module: "marketing_requests",
+      participantHrIds,
+      recordId: input.requestId,
+      submitterHrId: request.requester_hr_id,
+      subjectLabel: String(request.request_code ?? "").trim() || input.requestId,
+      threadLabel: "marketing request",
+    });
+  } catch (error) {
+    logError("Marketing advisory comment failed to notify the thread", {
+      labels: { event: "marketing_advisory_comment_notify_failed", requestId: input.requestId },
+      error,
+    });
+  }
 }
 
 /**

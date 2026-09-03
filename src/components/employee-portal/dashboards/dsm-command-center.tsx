@@ -10,15 +10,16 @@ import {
   Wallet,
 } from "lucide-react";
 
-import { IdentityCard } from "@/components/employee-portal/identity-card";
 import {
   ActionStrip,
   DashboardsGrid,
+  DepartedFromBoardNote,
   KeycardGrid,
   PendingActions,
-  ProfileIntelBar,
+  PortalIdentityBand,
   RankingPanel,
   SectionHead,
+  SectionMeta,
   egpCompact,
   type ActionStripItem,
   type DashboardLink,
@@ -61,30 +62,57 @@ export function DsmCommandCenter({ snapshot, access }: { snapshot: PortalHomeSna
   const achValueClass =
     pctNum >= 100 ? "text-emerald-600" : pctNum >= 90 ? "text-amber-600" : pctNum >= 70 ? "text-orange-600" : "text-rose-600";
 
+  // Which closing month these figures cover. Published closings only, so on 3 September the
+  // newest is July's — see SectionMeta for why every one of these headers now says so.
+  const windowLabel = dsmTeam?.windowLabel ?? null;
+  const salesSub = windowLabel ? `${windowLabel} closing` : "published closing sales";
+
   const cards: Keycard[] = [
     { icon: Users, label: "Team Size", value: dsmTeam ? String(dsmTeam.memberCount) : "—", sub: "medical reps", accent: "bg-slate-900", valueClass: "text-slate-900" },
-    { icon: Wallet, label: "Sales", value: dsmTeam ? egpCompact(dsmTeam.totalSales) : "—", sub: "achieved this period", accent: "bg-slate-900", valueClass: "text-slate-900" },
+    { icon: Wallet, label: "Sales", value: dsmTeam ? egpCompact(dsmTeam.totalSales) : "—", sub: salesSub, accent: "bg-slate-900", valueClass: "text-slate-900" },
     { icon: Target, label: "Target", value: dsmTeam ? egpCompact(dsmTeam.totalTarget) : "—", sub: "district target", accent: "bg-slate-900", valueClass: "text-slate-900" },
     { icon: TrendingUp, label: "Achievement", value: pct !== null ? `${pct}%` : "—", sub: "vs district target", accent: achAccent, valueClass: achValueClass },
   ];
 
   return (
     <div className="mx-auto w-full space-y-3" dir="auto">
-      <IdentityCard data={shell} />
-      <ProfileIntelBar shell={shell} />
+      <PortalIdentityBand shell={shell} planAdherence={snapshot.planAdherence} />
 
       {totalPending > 0 && (
         <PendingActions pendingVacationCount={pendingVacationCount} pendingExcuseCount={pendingExcuseCount} />
       )}
 
       <div className="overflow-hidden border border-slate-200 bg-white">
-        <SectionHead title="District Performance" />
+        <SectionHead
+          title="District Performance"
+          right={
+            <SectionMeta
+              items={[
+                windowLabel,
+                dsmTeam ? `${dsmTeam.memberCount} ${dsmTeam.memberCount === 1 ? "rep" : "reps"}` : null,
+              ]}
+            />
+          }
+        />
         {dsmTeam ? <KeycardGrid cards={cards} /> : <p className="bg-white px-5 py-6 text-sm text-slate-500">No team sales data synced for the current period yet.</p>}
       </div>
 
       <DashboardsGrid items={DASHBOARDS} />
 
-      <RankingPanel title="My Reps" subtitle="by achievement %" icon={Trophy} rows={dsmTeam?.members ?? []} />
+      <RankingPanel
+        title="My Reps"
+        subtitle="by achievement %"
+        icon={Trophy}
+        rows={dsmTeam?.members ?? []}
+        windowLabel={windowLabel}
+        footer={
+          <DepartedFromBoardNote
+            count={dsmTeam?.departedCount ?? 0}
+            sales={dsmTeam?.departedSales ?? 0}
+            totalLabel="District Performance"
+          />
+        }
+      />
 
       <EarlyBirdOfTheFortnightCard stars={earlyBirdStars} />
 

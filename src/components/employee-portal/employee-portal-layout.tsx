@@ -69,15 +69,6 @@ import { PageTransition } from "@/components/ui/page-transition";
 import type { EmployeePortalShellData } from "@/lib/employee-portal/service";
 import type { EmployeePortalNavVisibility } from "@/lib/employee-portal/navigation";
 import { isEmployeePortalOwnedRoute } from "@/lib/employee-portal/routes";
-import {
-  HorizontalNavProvider,
-  LowerNavRow,
-  UpperNavRow,
-  usePortalCompactNavAdd,
-} from "@/components/layout/horizontal-nav-rows";
-import { NavRowAddButton } from "@/components/layout/nav-row-add-button";
-import type { NavigationSection } from "@/config/system-navigation";
-import type { PersonalNavigationLayout } from "@/lib/navigation/personal-layout";
 import { resolveDeepestActiveHref } from "@/lib/navigation/active-path";
 import { hardNavigate } from "@/lib/navigation/browser-navigation";
 import { systemAssets } from "@/config/system-settings";
@@ -662,11 +653,6 @@ export function EmployeePortalTopNav({
   const [searchQuery, setSearchQuery] = useState("");
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const closeMobileMenu = () => setMobileMenuOpen(false);
-  // Replaces the two full-width empty nav-row bars the portal used to force open — see
-  // usePortalCompactNavAdd for why. Reads HorizontalNavContext, so this component must sit
-  // inside the same HorizontalNavProvider that wraps the sidebar/rows below it.
-  const compactNavAdd = usePortalCompactNavAdd();
-
   const employeeName = data.employee.fullName.trim();
   const firstName = employeeName.split(/\s+/)[0] || "Employee";
 
@@ -797,14 +783,6 @@ export function EmployeePortalTopNav({
               </div>
             ) : null}
           </div>
-          {compactNavAdd ? (
-            <NavRowAddButton
-              dark={false}
-              pinned={compactNavAdd.pinned}
-              sections={compactNavAdd.sections}
-              target={compactNavAdd.target}
-            />
-          ) : null}
           <InAppNotificationsBell isAdminMode={false} />
           <InternalMessagesMenu isAdminMode={false} />
           <div className="hidden items-center gap-1.5 rounded border border-slate-200 bg-white px-2.5 py-1.5 text-phx-xs font-semibold text-slate-500 lg:flex">
@@ -1099,41 +1077,12 @@ export function EmployeePortalSidebar({
   );
 }
 
-/**
- * The portal's own nav tree, in the shape the shared horizontal row understands.
- *
- * ONE source, deliberately. `buildEmployeePortalSections` is already what the sidebar, the top nav
- * and the bottom nav read, so the row offers exactly the tabs the portal itself offers and cannot
- * drift from them. A second hand-written copy of a list is how Capture Evidence shipped rejecting
- * 59 of the 65 customers it existed for.
- *
- * The gate travels with the list. These sections are already filtered by
- * EmployeePortalNavVisibility, and `applyPersonalLayout` can only ever emit hrefs drawn from the
- * set handed to it — so no arrangement, personal or company-wide, can put a portal page in front of
- * someone who may not open it.
- */
-function portalNavigationSections(visibility: EmployeePortalNavVisibility): NavigationSection[] {
-  return buildEmployeePortalSections(visibility)
-    .filter((section) => section.items.length > 0)
-    .map((section) => ({
-      id: section.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, ""),
-      label: section.title,
-      items: section.items.map((item) => ({
-        href: item.href as `/${string}`,
-        icon: item.icon,
-        label: item.label,
-        ...(item.navBadge ? { navBadge: item.navBadge } : {}),
-      })),
-    }));
-}
-
 export function EmployeePortalChrome({
   activePathOverride,
   children,
   data,
   disableSessionGuard = false,
   lockedModuleKeys,
-  personalLayout = null,
   visibility,
 }: {
   activePathOverride?: string;
@@ -1143,17 +1092,11 @@ export function EmployeePortalChrome({
   /**
    * Modules a system administrator has temporarily locked for THIS viewer, resolved server-side by
    * EmployeePortalServerShell. Shared through context rather than threaded as a prop because four
-   * navigation surfaces need it — the sidebar, the mobile drawer, the two horizontal rows and the
-   * bottom nav — and none of them share a parent below this one. A surface that missed the prop
+   * navigation surfaces need it — the sidebar, the mobile drawer and the bottom nav — and none of
+   * them share a parent below this one. A surface that missed the prop
    * would not look broken; it would look UNLOCKED, which is the one thing this must never show.
    */
   lockedModuleKeys?: readonly string[];
-  /**
-   * The viewer's own saved arrangement, or the company default when they have saved nothing —
-   * resolved server-side by EmployeePortalServerShell. Null means "nothing arranged", which renders
-   * an empty row carrying only its "+".
-   */
-  personalLayout?: PersonalNavigationLayout | null;
   visibility: EmployeePortalNavVisibility;
 }) {
   return (
@@ -1164,47 +1107,37 @@ export function EmployeePortalChrome({
         <div className="pointer-events-none absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r from-sky-500 via-orange-500 to-emerald-500" />
         <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(rgba(15,23,42,0.035)_1px,transparent_1px),linear-gradient(90deg,rgba(15,23,42,0.035)_1px,transparent_1px)] bg-[size:56px_56px] [mask-image:linear-gradient(180deg,rgba(0,0,0,0.52),transparent_58%)]" />
         <div className="pointer-events-none absolute inset-x-0 top-0 h-[520px] bg-[linear-gradient(180deg,rgba(255,255,255,0.92),rgba(255,255,255,0)_72%)]" />
-        {/* The two horizontal rows, now on the portal as well — 116 accounts, 72% of everyone with a
-            login, and until this the only workspace with no arrangeable row at all. The sections are
-            handed in rather than read from system-navigation.ts because the portal builds its own
-            tree; see portalNavigationSections above. The provider now wraps the header too, not just
-            the rows below it — the header's own compact "+" (usePortalCompactNavAdd, rendered by
-            EmployeePortalTopNav) needs the same context, since it is this row's entry point now. */}
-        <HorizontalNavProvider
-          navigationMode="employee-portal"
-          personalLayout={personalLayout}
-          sections={portalNavigationSections(visibility)}
-        >
-          <EmployeePortalTopNav
-            activePathOverride={activePathOverride}
-            data={data}
-            disableSessionGuard={disableSessionGuard}
-            visibility={visibility}
-          />
-          <div className="relative mx-auto flex w-full max-w-[1580px] items-start gap-4 px-3 py-4 sm:px-4 sm:py-5 lg:gap-7 lg:px-8 lg:py-7">
-            <EmployeePortalSidebar activePathOverride={activePathOverride} visibility={visibility} />
-            <div className="phx-navrow-scope flex min-w-0 flex-1 flex-col">
-              {/* FROZEN CHROME, portal edition. Both rows pin as one block directly beneath the
-                  portal's fixed header, so they stay put while the page scrolls — the same
-                  behaviour AppShell gets from its own sticky wrapper, which is what "fixed in every
-                  module" means. The offset is the header's OWN height, read off EmployeePortalTopNav
-                  (`h-[56px] lg:h-[64px]`) rather than guessed, so the rows tuck exactly under it at
-                  both sizes; the shell's `pt-[56px] lg:pt-[64px]` is the same pair of numbers. z-20
-                  keeps the block under that header (z-30) and above the page. The portal is a light
-                  card layout, so the rows take the sidebar's own frame — same rounded edge, border,
-                  translucent white and ring — rather than the admin chrome's full-bleed bar; the
-                  shadow is lighter because these are thin strips, not a full-height panel. Neither
-                  row keeps itself open empty any more (2026-09-01) — see usePortalCompactNavAdd. */}
-              <div className="sticky top-[56px] z-20 lg:top-[64px]">
-                <UpperNavRow className="mb-2 rounded-sm border border-slate-200/90 bg-white/96 px-3 py-1.5 shadow-[0_10px_30px_rgba(15,23,42,0.08)] ring-1 ring-white/80 backdrop-blur sm:px-4" />
-                <LowerNavRow className="mb-4 rounded-sm border border-slate-200/90 bg-white/96 px-3 py-1.5 shadow-[0_10px_30px_rgba(15,23,42,0.08)] ring-1 ring-white/80 backdrop-blur sm:px-4" />
-              </div>
-              <main className="employee-portal-mobile-safe min-w-0 flex-1 space-y-5 pb-24 lg:space-y-7 lg:pb-0">
-                <PageTransition>{children}</PageTransition>
-              </main>
-            </div>
+        {/* NO ARRANGEABLE NAV ROWS ON THE PORTAL — owner rule, 2026-09-03, stated twice in one
+            sitting: "never put anything above the identity banner", then "the upper nav bar that
+            has the plus sign and the weekly or monthly plan — remove it totally."
+
+            The portal's landing page opens with a person's own signature identity card, and the two
+            rows sat directly above it: on a phone they pushed it most of a screen down, and the
+            upper one was usually an empty white strip carrying nothing but a "+". There is no other
+            place to put them here — anything between the header and `main` is above the identity
+            card by construction — so they are gone from the portal entirely, along with the
+            header's compact "+" that was their entry point. The sidebar, the mobile drawer and the
+            bottom nav (which IS customizable — see BottomNavCustomizer) are how the portal
+            navigates now.
+
+            The admin shell KEEPS its rows: AppShell has no identity banner, and the instruction
+            named the portal. Do not "restore parity" by adding them back here. HorizontalNavProvider
+            went with them, and with it the cross-Atlantic loadEffectiveLayout read that ran on every
+            portal page render. */}
+        <EmployeePortalTopNav
+          activePathOverride={activePathOverride}
+          data={data}
+          disableSessionGuard={disableSessionGuard}
+          visibility={visibility}
+        />
+        <div className="relative mx-auto flex w-full max-w-[1580px] items-start gap-4 px-3 py-4 sm:px-4 sm:py-5 lg:gap-7 lg:px-8 lg:py-7">
+          <EmployeePortalSidebar activePathOverride={activePathOverride} visibility={visibility} />
+          <div className="flex min-w-0 flex-1 flex-col">
+            <main className="employee-portal-mobile-safe min-w-0 flex-1 space-y-5 pb-24 lg:space-y-7 lg:pb-0">
+              <PageTransition>{children}</PageTransition>
+            </main>
           </div>
-        </HorizontalNavProvider>
+        </div>
         <EmployeePortalBottomNav activePathOverride={activePathOverride} visibility={visibility} />
       </div>
       </ModuleLockProvider>

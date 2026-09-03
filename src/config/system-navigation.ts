@@ -1854,17 +1854,29 @@ const hrNavigationSectionSeeds = [
       // in the HR Business Partner job description, and her payslips:read is the grant that shows
       // her HER OWN payslip through the employee-portal path, which this row does not affect.
       { href: "/hr/admin/payslips-center", icon: ScrollText, label: "Payslips Center", permissions: [{ resource: "payslips", action: "read" }], excludedRoles: ["HR Advisory"] },
-      // NO "Deductions" row here, deliberately. The legacy Deductions Governance page was retired in
-      // the C6 cutover (2026-08-30); its unified replacement app/(admin)/admin/deductions/page.tsx
-      // gates on a hard-coded `VIEW_ROLES = {Super Admin, CEO}` — a role set, not a permission — and
-      // redirects everyone else to /employee-portals. This catalogue serves `hrNamespaceRoles`, the
-      // two HR seats and nobody else, so the unified page admits none of its readers and a row here
-      // could only ever be a dead link (offered on `deductions:read`, which HR Operations holds, then
-      // refused by the page). Widening VIEW_ROLES is the owner's call — he set that boundary by role on
-      // 2026-08-11, and hidden is not revoked. HR Operations still sees the deduction month as
-      // read-only count tiles on her HR command center (payroll_inputs), drilling into Payroll
-      // Management; the full review screen is Super Admin / CEO only.
+      // Deductions, added 2026-09-03. This row did not exist between the C6 cutover (2026-08-30) and
+      // that date, and the note left in its place explained why: the unified replacement
+      // app/(admin)/admin/deductions/page.tsx gated on a hard-coded `VIEW_ROLES = {Super Admin, CEO}`
+      // — a role set, not a permission — so a row offered on `deductions:read` would have been
+      // admitted by this catalogue and then refused by the page. A dead link, which is worse than no
+      // link. The note said widening VIEW_ROLES was the owner's call; he made it on 2026-09-03,
+      // asked because the employee-comment thread now mails HR and the link in that mail bounced.
       //
+      // excludedRoles: HR Advisory, for the same reason as the two rows above — payroll appears
+      // nowhere in the HR Business Partner job description. It is belt-and-braces here rather than
+      // the gate: she does not hold `deductions:read` at all (payroll_inputs is in the HR Operations
+      // bundle alone), so the permission would refuse her first. Named anyway, so that a future
+      // widening of her grant for some other surface cannot quietly hand her this one.
+      //
+      // What she sees is bounded by the page: READ ONLY, and no download. Her grant is
+      // deductions:["read"] with no `export`, so /api/admin/deductions/export refuses her while the
+      // screen renders — the same split the owner set for her payslips on 2026-09-01, figures on
+      // screen and no document out of the building. No decision control renders (canDecide is Super
+      // Admin alone) and every mutating route asserts deductions:approve or deductions:create,
+      // which HR_ROLE_BOUNDARIES pins ABSENT from both seats. Her HR command center keeps its
+      // read-only deduction count tiles; this row is the drill-through those tiles never had.
+      { href: "/hr/admin/deductions", icon: ReceiptText, label: "Deductions", permissions: [{ resource: "deductions", action: "read" }], excludedRoles: ["HR Advisory"] },
+
       // Payslips Center, added 2026-09-01 at the owner's instruction. It renders for BOTH seats and
       // shows each a different set of people: HR Operations company-wide (getPayrollScope), HR
       // Advisory the audience he named that day — "the district managers, the Medicare reps, and
@@ -2856,13 +2868,20 @@ export const payrollManagementPageItems: readonly AdminToolsPageItem[] = [
     // would not have hidden this card. (This was previously worded "same reasoning as Deductions
     // Governance above"; that legacy card was retired in the C6 cutover, 2026-08-30.)
     //
-    // HR Operations excluded 2026-08-29, for the same reason and by the same mechanism. Her seat holds
-    // deductions:read — the grant behind the read-only deduction count tiles on her HR command center —
-    // so this card admitted her, but app/(admin)/admin/deductions/page.tsx gates on a hard-coded role
-    // set of {Super Admin, CEO} and redirects everyone else to /employee-portals. It would be a dead
-    // link for her. Excluded by NAME rather than by widening VIEW_ROLES: that boundary is the owner's,
-    // set by role on 2026-08-11, and hidden is not revoked — the page refuses her either way.
-    excludedRoles: ["Finance Manager", "HR Operations"],
+    // HR Operations was excluded here 2026-08-29 and is admitted again 2026-09-03. The exclusion was
+    // never about her authority: her seat has held deductions:read since it was composed, so this
+    // card already admitted her, but app/(admin)/admin/deductions/page.tsx gated on a hard-coded
+    // {Super Admin, CEO} and bounced her to /employee-portals — a dead link, so the row went. The
+    // note left with it said widening VIEW_ROLES was the owner's call. He made it, in these words:
+    // "yes give HR access to the deductions screen." The page now names her, so the link resolves
+    // and the card is honest again. She READS ONLY: her grant carries no `export`, so this route's
+    // sibling /api/admin/deductions/export still refuses her, as does every mutating route and every
+    // control on the page (see the page's own note). The Finance Manager above is the opposite case
+    // — he holds read AND export, and lost the screen.
+    //
+    // HR Advisory is NOT admitted, and deductions:read is why she never was — she does not hold it.
+    // The seats compose differently: payroll_inputs is in the HR Operations bundle alone.
+    excludedRoles: ["Finance Manager"],
   },
 ] as const satisfies readonly AdminToolsPageItem[];
 

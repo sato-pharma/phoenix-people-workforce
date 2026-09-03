@@ -176,6 +176,24 @@ export function addressNamesArea(haystack: string, areaName: string | null): boo
   return false;
 }
 
+/**
+ * EVERY governorate an area's own name mentions, in the order the name mentions them.
+ *
+ * Usually one, and then this is `areaGovernorate` with the answer in a list. It exists for the
+ * area that spans two: "Port said - Domiat" is the only area covering Damietta, and reading just
+ * the first governorate off that name loses Damietta entirely — a candidate there stays in "No area
+ * named" while the one folder that covers them sits in the same district, empty of them.
+ */
+export function areaGovernorates(areaName: string | null): string[] {
+  const found: string[] = [];
+  for (const token of areaTokens(areaName)) {
+    if (NON_PLACE_TOKENS.has(token)) continue;
+    const label = governorateNamedBy(token);
+    if (label && !found.includes(label)) found.push(label);
+  }
+  return found;
+}
+
 /** Which governorate an area sits in, read from its own name through the shared vocabulary. */
 export function areaGovernorate(areaName: string | null): string | null {
   for (const token of areaTokens(areaName)) {
@@ -256,7 +274,7 @@ export function neighbourhoodMatchStrength(
  * covers up to twelve areas in this company, so it identifies a REGION and never an area, and the
  * caller that wants that answer already has `districtRoutingRegion` for it.
  */
-export type CvAreaGrade = "area" | "neighbourhood";
+export type CvAreaGrade = "area" | "neighbourhood" | "governorate";
 
 /** What a CV's own text says about where its writer is, resolved against a list of real areas. */
 export type CvAreaEvidence = {
@@ -318,4 +336,41 @@ export function areaNamedByCv(
   }
   if (winners.size === 1) return { areaName: [...winners][0]!, grade: "neighbourhood" };
   return null;
+}
+
+/**
+ * The one area a CV's GOVERNORATE alone points to, or null.
+ *
+ * The owner, 2026-09-03, asked directly: a candidate whose only location is the governorate, where
+ * that governorate is served by exactly one area, belongs in that area's folder.
+ *
+ * THIS IS THE WEAKEST GRADE AND IT IS DELIBERATELY LAST. It is not the CV naming an area — it is
+ * the CV naming a governorate that happens to have only one. Where the governorate holds several
+ * areas this returns null and the CV stays in the district's catch-all, because "Cairo" does not
+ * distinguish Nasr City from Heliopolis and never will. Six of Egypt's governorates route here;
+ * twelve refuse.
+ *
+ * MATCHED THROUGH THE GOVERNORATE EACH AREA SITS IN, NEVER THROUGH THE AREA'S NAME. Testing the
+ * name instead looks equivalent and is not: only one area name contains the word "Giza", so a CV
+ * saying "Giza" would resolve to "Giza - Giza Centers" outright — while Giza governorate in fact
+ * holds five areas and the CV distinguishes none of them. Grouping by governorate refuses that,
+ * which is the whole point of the tier.
+ */
+export function areaGovernedByCv(
+  input: { address?: string | null; governorate?: string | null },
+  areaNames: readonly string[],
+): CvAreaEvidence | null {
+  const haystack = [normalizePlaceText(input.address), normalizePlaceText(input.governorate)]
+    .filter(Boolean)
+    .join(" ");
+  if (!haystack) return null;
+
+  const governorate = governorateNamedBy(haystack);
+  if (!governorate) return null;
+
+  const inThatGovernorate = areaNames.filter((areaName) =>
+    areaGovernorates(areaName).includes(governorate),
+  );
+  if (inThatGovernorate.length !== 1) return null;
+  return { areaName: inThatGovernorate[0]!, grade: "governorate" };
 }

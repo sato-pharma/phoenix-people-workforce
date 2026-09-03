@@ -68,8 +68,16 @@ import path from "node:path";
  * deleted. They were also the panel's only ellipsised text — one of them hid 2556px
  * of a metadata value inside a 161px box, which is how the rendered `idempotencyKey`
  * managed to sit in front of the owner unnoticed. `truncate` -> `break-words`.
+ *
+ * 271 -> 254 on 2026-09-03: seventeen fell the expensive way in one pass, all in the
+ * employee portal, when the owner asked for it to be polished end to end. Every one
+ * was on a live screen and every one was fixed rather than deleted. The boards were
+ * the worst of them: they truncated the one thing on a row that identifies it, a
+ * person's name, so "Hana Abdelaziz Samir Abdelaziz Ghoniem" and a colleague sharing
+ * her first two names were the same row to a reader. `truncate` -> `break-words`,
+ * with `break-all` reserved for filenames, which have no spaces to break at.
  */
-const BASELINE = 271;
+const BASELINE = 254;
 
 const ROOTS = ["app", "src"];
 
