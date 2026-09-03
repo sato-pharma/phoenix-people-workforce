@@ -1245,6 +1245,8 @@ import { runOutstationMobileWizardStaleCalculationTests } from "./outstation-mob
 import { runOutstationPayrollPayableTotalAgreementTests } from "./outstation-payroll-payable-total-agreement.test.ts";
 import { runOutstationOfflineSyncBodyParityTests } from "./outstation-offline-sync-body-parity.test.ts";
 import { runOutstationManagerExpenseEditValidationTests } from "./outstation-manager-expense-edit-validation.test.ts";
+import { runDirectOrderPharmacyDeadDistributorColumnsTests } from "./direct-order-pharmacy-dead-distributor-columns.test.ts";
+
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -3842,6 +3844,10 @@ await runTest(
 await runTest(
   "outstation manager-expense edit validation (PATCH refuses an unknown expense/transportation type, never spreads the raw body)",
   runOutstationManagerExpenseEditValidationTests,
+);
+await runTest(
+  "direct_order_pharmacies.distributor_code / .distributor_customer_code stay dead (the link lives in the child table)",
+  runDirectOrderPharmacyDeadDistributorColumnsTests,
 );
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
