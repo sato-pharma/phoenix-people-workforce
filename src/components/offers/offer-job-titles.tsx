@@ -179,18 +179,38 @@ export function OfferJobTitleCatalogue({
       >
         {/* Desktop: the full table. Mobile gets cards below — the admin shell never shows a table
             on a phone. */}
-        <div className="hidden overflow-x-auto md:block">
-          <table className="w-full min-w-[900px] text-sm">
+        {/*
+          Fits-the-screen golden rule (AGENTS.md §4). This was `overflow-x-auto` over a
+          `min-w-[900px]` floor — wider than the content column at 768px (where the sidebar first
+          appears) or in a 1024px window, so the cost-of-living input and the Save/Remove buttons
+          sat behind a sideways scroll on a laptop.
+
+          Fixed by MERGING columns, which is what the rule asks for — never by shrinking type.
+          "Reports to" and "Contract" were two narrow text columns describing the title in the
+          first column; they are now a second line inside it, taking six columns down to four.
+
+          The `<select>` keeps its `min-w-[220px]`: the rule names a native select as the one
+          control that may NOT be shrunk, so the merge exists to buy it room, not to squeeze it.
+          Its column is the widest share here, and the control columns drop to `px-3` so the
+          padding does not eat the width the select needs. At 768px of content that is ~237px of
+          usable box for a 220px control.
+        */}
+        <div className="hidden md:block">
+          <table className="w-full table-fixed text-sm">
+            <colgroup>
+              <col className="w-[26%]" />
+              <col className="w-[34%]" />
+              <col className="w-[18%]" />
+              <col className="w-[22%]" />
+            </colgroup>
             <thead>
               <tr className="border-b border-slate-200/80 bg-slate-50/60 text-left">
-                <th className="px-5 py-3 text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">Title</th>
-                <th className="px-5 py-3 text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">Reports to</th>
-                <th className="px-5 py-3 text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">Contract</th>
-                <th className="px-5 py-3 text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">Letter design</th>
-                <th className="px-5 py-3 text-right text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">
+                <th className="break-words px-5 py-3 text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">Title</th>
+                <th className="break-words px-3 py-3 text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">Letter design</th>
+                <th className="break-words px-3 py-3 text-right text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">
                   Cost of living (EGP)
                 </th>
-                <th className="px-5 py-3" />
+                <th className="px-3 py-3" />
               </tr>
             </thead>
             <tbody>
@@ -198,10 +218,13 @@ export function OfferJobTitleCatalogue({
                 const pending = edits[row.id];
                 return (
                   <tr className="border-b border-slate-100 last:border-0" key={row.id}>
-                    <td className="whitespace-nowrap px-5 py-3 font-bold text-slate-900">{row.title}</td>
-                    <td className="whitespace-nowrap px-5 py-3 text-slate-600">{row.reportsTo || "—"}</td>
-                    <td className="whitespace-nowrap px-5 py-3 text-slate-600">{row.contractTerm || "—"}</td>
-                    <td className="px-5 py-3">
+                    <td className="break-words px-5 py-3">
+                      <span className="block font-bold text-slate-900">{row.title}</span>
+                      <span className="mt-0.5 block text-xs text-slate-500">
+                        Reports to {row.reportsTo || "—"} · {row.contractTerm || "—"}
+                      </span>
+                    </td>
+                    <td className="px-3 py-3">
                       <select
                         aria-label={`Letter design for ${row.title}`}
                         className={`${offerInputClassName} min-w-[220px]`}
@@ -215,7 +238,7 @@ export function OfferJobTitleCatalogue({
                         ))}
                       </select>
                     </td>
-                    <td className="px-5 py-3 text-right">
+                    <td className="px-3 py-3 text-right">
                       <input
                         aria-label={`Cost of living for ${row.title}`}
                         className={`${offerInputClassName} max-w-[160px] text-right tabular-nums`}
@@ -225,8 +248,10 @@ export function OfferJobTitleCatalogue({
                         value={pending?.costOfLiving ?? String(row.costOfLiving)}
                       />
                     </td>
-                    <td className="whitespace-nowrap px-5 py-3 text-right">
-                      <div className="inline-flex gap-2">
+                    <td className="px-3 py-3 text-right">
+                      {/* `flex-wrap`: if the column ever gets tighter the two buttons stack
+                          instead of overflowing — wrapping is the rule's permitted answer. */}
+                      <div className="flex flex-wrap justify-end gap-2">
                         <Button
                           disabled={!canManage || pending === undefined || busy === row.id}
                           onClick={() => void saveRow(row)}
@@ -254,7 +279,7 @@ export function OfferJobTitleCatalogue({
               })}
               {jobTitles.length === 0 ? (
                 <tr>
-                  <td className="px-5 py-8 text-center text-slate-500" colSpan={6}>
+                  <td className="px-5 py-8 text-center text-slate-500" colSpan={4}>
                     No job titles yet. Add the first one below.
                   </td>
                 </tr>

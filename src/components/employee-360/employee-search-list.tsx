@@ -214,8 +214,15 @@ export function EmployeeSearchList({
 
   return (
     <div className="space-y-4">
-      {/* Role tabs */}
-      <div className="flex gap-2 overflow-x-auto pb-1">
+      {/*
+        Role tabs — bound by the owner's fits-the-screen golden rule (AGENTS.md §4): never a
+        horizontal scroll, mobile AND desktop friendly. This was `flex gap-2 overflow-x-auto pb-1`,
+        which parked three of the six role pills behind a sideways scroll on a phone. `flex-wrap`
+        is the rule's permitted answer — the row wraps onto a second line instead of scrolling, and
+        the pills keep their `shrink-0` so no label is squeezed below its own text width. (The
+        `pb-1` went with the scrollbar it made room for; `gap-2` now spaces the wrapped rows.)
+      */}
+      <div className="flex flex-wrap gap-2">
         {tabs.map((c) => {
           const Icon = TAB_ICON[c];
           const active = c === activeTab;
