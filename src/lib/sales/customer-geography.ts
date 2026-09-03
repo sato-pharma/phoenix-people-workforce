@@ -35,6 +35,14 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 export type CustomerGeography = {
   areaCode: string | null;
   brickId: string | null;
+  /**
+   * What the DISTRIBUTOR calls this customer. Carried here because it comes off the same row as
+   * the territory — one query answers both "where is it" and "what is its name". It is the
+   * authority when our own register holds a code where a name should be: a direct-order pharmacy
+   * was filed as "433106", its own customer code, and the real name (اسماء موسى ابوطافش) was
+   * sitting on this row the whole time.
+   */
+  customerName: string | null;
   regionCode: string | null;
 };
 
@@ -95,6 +103,7 @@ export function selectExactPairGeography(
     resolved.set(key, {
       areaCode: row.area_code ? String(row.area_code) : null,
       brickId: row.brick_id ? String(row.brick_id) : null,
+      customerName: row.customer_name ? String(row.customer_name) : null,
       regionCode: row.region_code ? String(row.region_code) : null,
     });
   }
@@ -124,7 +133,7 @@ export async function resolveCustomerGeography(
       () =>
         supabase
           .from("source_of_sales_customer_map")
-          .select("id, distributor_code, customer_code, brick_id, area_code, region_code")
+          .select("id, distributor_code, customer_code, customer_name, brick_id, area_code, region_code")
           .in("distributor_code", distributorCodes)
           .in("customer_code", customerCodes),
       { cursorColumn: "id", cursorOf: (row) => row.id as number | string | null },

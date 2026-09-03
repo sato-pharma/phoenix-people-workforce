@@ -347,6 +347,23 @@ const adminNavigationSectionSeeds = [
     ],
     label: "Employee 360",
   },
+  // ── Customer 360: the place-side twin of Employee 360. One page per pharmacy — the campaigns
+  // raised for it, the orders placed on it, and the sales that landed — joined on the distributor
+  // code pair, which is the only key the marketing register, the direct-order desk and Source of
+  // Sales all share. Gated by sales:read; the LIST itself is scoped to the viewer's own territory
+  // in src/lib/customer-360/access.ts, because the names a picker offers are the disclosure.
+  {
+    id: "customer-360",
+    items: [
+      {
+        href: "/customer-360",
+        icon: Building2,
+        label: "Customer 360",
+        permissions: [{ resource: "sales", action: "read" }],
+      },
+    ],
+    label: "Customer 360",
+  },
   // ── PM Product Master, lifted out of the Employee 360 block (module audit, 2026-08-30) ───────
   // Restored to its own row on 2026-08-08 after being folded into the Marketing & ROI hub on
   // 2026-08-02; it remains a card in marketingRoiPageItems, which is how the SFE Manager (excluded

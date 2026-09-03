@@ -47,7 +47,7 @@ export function runCustomerGeographySpineTests() {
     { customerCode: "222", distributorCode: "IBN" },
   ];
   const rowsTheInFiltersReturn = [
-    { area_code: "GZ3", brick_id: "b-1", customer_code: "111", distributor_code: "PS", region_code: "GIZ" },
+    { area_code: "GZ3", brick_id: "b-1", customer_code: "111", customer_name: "صيدلية النور", distributor_code: "PS", region_code: "GIZ" },
     { area_code: "CA1", brick_id: "b-2", customer_code: "222", distributor_code: "IBN", region_code: "CAI" },
     // The two nobody asked for.
     { area_code: "WRONG-A", brick_id: "b-3", customer_code: "222", distributor_code: "PS", region_code: "WRONG-R" },
@@ -58,6 +58,19 @@ export function runCustomerGeographySpineTests() {
   assert.equal(resolved.size, 2, "only the pairs actually asked for may resolve");
   assert.equal(resolved.get("PS::111")?.areaCode, "GZ3", "an asked pair must resolve to its own territory");
   assert.equal(resolved.get("IBN::222")?.areaCode, "CA1", "an asked pair must resolve to its own territory");
+
+  // The distributor's own name for the customer rides on the SAME row as the territory, so one
+  // query answers both. It is what rescues a register row filed as its own customer code.
+  assert.equal(
+    resolved.get("PS::111")?.customerName,
+    "صيدلية النور",
+    "the resolver must carry the distributor's name for the customer, not only its territory",
+  );
+  assert.equal(
+    resolved.get("IBN::222")?.customerName,
+    null,
+    "a row with no name must resolve to null rather than to an empty string",
+  );
   assert.equal(
     resolved.has("PS::222"),
     false,
