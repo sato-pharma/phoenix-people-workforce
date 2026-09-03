@@ -102,21 +102,25 @@ const DRIFTED_CONTACT_GRID_HTML = CONTACT_GRID_HTML.replace("<th>Grade</th>", "<
   "<th>Location</th>",
 );
 
-// Trimmed from Agents.aspx. Column order verified live 2026-08-28: the three counters at 1/2/3, the
-// account label at 6, title 8, username 9, line 10, the CRM's own active flag at 11, hiring date 12.
+// Trimmed from Agents.aspx. Column order re-verified live 2026-09-03, this time against the grid's
+// OWN header captions rather than by eye: 0 Area (the ContactsList link) · 1 PM · 2 AM · 3 PH ·
+// 4 All · 5 ID · 6 Real Name · 7 Email · 8 Privilege · 9 Manager · 10 Line · 11 Active ·
+// 12 Hiring Date. Column 9 was read as a login name until that check — see assertion 5 below.
+// Email (7) is left blank in every row because nothing parses it; 55 of the 305 live accounts have
+// it blank too, so a blank is faithful and no real address needs to live in this repository.
 const AGENT_GRID_HTML = `
 <html><body>
 <table id="ctl00_ContentPlaceHolder1_RadGrid1_ctl00">
   <tr id="ctl00_ContentPlaceHolder1_RadGrid1_ctl00__0">
-    <td><a href="ContactsList.aspx?t=PM&amp;q=1391">open</a></td>
-    <td>104</td><td>12</td><td>47</td><td>x</td><td>y</td>
-    <td>Ashraf.Maged ( Mahalla / A )</td><td>z</td><td>Medical Rep</td><td>amaged</td><td>A</td>
+    <td><a href="ContactsList.aspx?t=PM&amp;q=1391">Area</a></td>
+    <td>104</td><td>12</td><td>47</td><td>All</td><td>1391</td>
+    <td>Ashraf.Maged ( Mahalla / A )</td><td>&nbsp;</td><td>Medical Rep</td><td>Saad.Mohamed</td><td>A</td>
     <td>Yes</td><td>2026-04-01</td>
   </tr>
   <tr id="ctl00_ContentPlaceHolder1_RadGrid1_ctl00__1">
-    <td><a href="ContactsList.aspx?t=PM&amp;q=1402">open</a></td>
-    <td>0</td><td>0</td><td>0</td><td>x</td><td>y</td>
-    <td>( Mahalla / E )</td><td>z</td><td>Medical Rep</td><td>vacant</td><td>E</td>
+    <td><a href="ContactsList.aspx?t=PM&amp;q=1402">Area</a></td>
+    <td>0</td><td>0</td><td>0</td><td>All</td><td>1402</td>
+    <td>( Mahalla / E )</td><td>&nbsp;</td><td>Medical Rep</td><td>( Others DM / C )</td><td>E</td>
     <td>No</td><td>&nbsp;</td>
   </tr>
   <tr id="ctl00_ContentPlaceHolder1_RadGrid1_ctl00_noLink">
@@ -210,6 +214,40 @@ export function runCrmContactListsTests() {
   assert.equal(agents[1].label, "( Mahalla / E )");
   assert.equal(agents[1].isActive, false);
   assert.equal(agents[1].hiringDate, null);
+
+  // Column 9 is the grid's `Manager` — the SUPERVISOR's own Real Name. It is NOT this account's
+  // login name; the grid has no login column at all. It was parsed into a field literally called
+  // `username` until 2026-09-03, and the cost of that name was an ad-hoc audit which matched CRM
+  // accounts to employees on `label` OR that field: 22 dormant accounts were credited to the live
+  // managers above them and reported as still in service, so it named 19 accounts as retirable
+  // where the true answer was 48. Every wrong match landed on a real, currently employed person,
+  // which is exactly why nothing looked wrong. Identify an account by its `label` and nothing else.
+  assert.equal(
+    agents[0].supervisor,
+    "Saad.Mohamed",
+    "column 9 is the supervisor's Real Name — the manager the account reports to, never its own login",
+  );
+  assert.notEqual(
+    agents[0].supervisor,
+    "Ashraf.Maged",
+    "the supervisor is never the row's own holder — reading it as one is what made 22 dormant accounts look staffed",
+  );
+  assert.equal(
+    agents[0].title,
+    "Medical Rep",
+    "column 8 is the grid's `Privilege` caption — the CRM's role name, and the column that 9 is easily confused with",
+  );
+  // A supervisor value can itself be a nameless `[ ]( Area / Line )` label: 13 of the 305 live
+  // accounts point at a manager seat rendered that way, so it must survive as a value, not blank.
+  assert.equal(
+    agents[1].supervisor,
+    "( Others DM / C )",
+    "a supervisor rendered as a nameless seat label is a real value, not an empty one",
+  );
+  assert.ok(
+    !("username" in agents[0]),
+    "`username` was the wrong name for column 9 and must not return — the agents grid has no login column",
+  );
 
   // ── 6. THE SAFETY RULE: an empty answer never empties the mirror ──────────────────────────────
   // The CRM returns live contacts only, so "no rows" is how a removal is expressed — and also how an
