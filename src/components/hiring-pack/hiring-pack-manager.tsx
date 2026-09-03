@@ -923,8 +923,15 @@ export function HiringPackManager({
 
   const employee = pack?.employee ?? null;
 
+  // THE OUTER WRAPPER IS `overflow-clip`, NOT `overflow-hidden`, AND THE STICKY PICKER IS THE
+  // WHOLE REASON. Both clip a child to the rounded corners and both paint identically. The
+  // difference is that `hidden` makes the div a SCROLL CONTAINER and `clip` does not — and
+  // `position: sticky` sticks to the nearest scroll container. With `hidden` the picker stuck to
+  // a box that never scrolls, which looks exactly like sticky being broken: measured, the bar's own
+  // top read -1183px at a scroll of 1500. With `clip` the nearest scroll container is the page, so
+  // it sticks to the viewport, and the corners are still clipped.
   return (
-    <div className="relative overflow-hidden rounded-[34px] border border-phx-line bg-phx-paper p-4 shadow-[0_24px_70px_rgba(15,23,42,0.1)] sm:p-6">
+    <div className="relative overflow-clip rounded-[34px] border border-phx-line bg-phx-paper p-4 shadow-[0_24px_70px_rgba(15,23,42,0.1)] sm:p-6">
       <div className="flex flex-col gap-5">
         <AdminPageHero
           badges={
@@ -988,15 +995,17 @@ export function HiringPackManager({
           the name sitting in the box now does the job the heading used to: it says who you are
           printing for.
 
-          NOT STICKY, AND NOT FOR WANT OF TRYING. Following the page down is what this control
-          actually wants to do — the work here is one person's papers and then the next person's,
-          and from the foot of the page changing person means scrolling back past everything. But
-          `AdminHeroFrame`, which wraps every admin page, is `overflow-hidden`, and a sticky element
-          inside a clipped ancestor simply scrolls away with the content. Measured: with `sticky
-          top-2` the bar's own top read −1183px at a scroll of 1500. Making it stick means changing
-          that shared frame, which is a decision about every admin screen, not this one.
+          IT FOLLOWS THE PAGE, because the work here is one person's papers and then the next
+          person's, and from the foot of a 4,000px page changing person meant scrolling all the way
+          back up. What stopped it sticking was not this bar and not a shared component — it was
+          this page's OWN outer wrapper being `overflow-hidden`, which makes it a scroll container
+          for sticky purposes. That is now `overflow-clip`: same clipping, no scroll container, and
+          nothing outside this file was touched. See the note on the wrapper above.
+
+          `z-30` sits above the page body and below the SearchableSelect's dropdown, which portals
+          to the document and carries its own stacking.
         */}
-        <div className="rounded-2xl border border-slate-200/90 bg-white/95 px-4 py-3 shadow-[0_12px_32px_rgba(15,23,42,0.10)] sm:px-5">
+        <div className="sticky top-2 z-30 rounded-2xl border border-slate-200/90 bg-white/95 px-4 py-3 shadow-[0_12px_32px_rgba(15,23,42,0.10)] backdrop-blur-sm sm:px-5">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
             <label
               className="flex shrink-0 items-center gap-2 text-phx-xs font-black uppercase tracking-[0.12em] text-phx-ink-soft"
@@ -1005,21 +1014,31 @@ export function HiringPackManager({
               <UserRound className="h-4 w-4 text-phx-accent-press" />
               Employee
             </label>
-            <SearchableSelect
-              className={cn(inputClassName, "w-full min-w-0 flex-1")}
-              disabled={busy === "load"}
-              id="hiring-pack-employee"
-              onValueChange={(value) => void selectEmployee(value)}
-              placeholder="Search by HR ID, name, job title or the date they left"
-              value={selectedHrId}
-            >
-              <option value="">Select an employee</option>
-              {candidates.map((candidate) => (
-                <option key={candidate.hrId} value={candidate.hrId}>
-                  {candidateLabel(candidate)}
-                </option>
-              ))}
-            </SearchableSelect>
+            {/*
+              THE `flex-1` GOES ON THIS WRAPPER, NOT ON THE CONTROL, and that is not a tidy-up.
+              `SearchableSelect` puts `className` on its INPUT and renders its own
+              `<div className="relative">` around it — so a `flex-1` passed in landed on a
+              `w-full` child of a plain block, and the block sized itself to its content. Measured
+              at a 1440px viewport: the box came out 207px wide in a row with room for over 1100,
+              and the value read "AI-0018 · SamahAshraf · M" with the job title simply gone.
+            */}
+            <div className="min-w-0 flex-1">
+              <SearchableSelect
+                className={cn(inputClassName, "w-full")}
+                disabled={busy === "load"}
+                id="hiring-pack-employee"
+                onValueChange={(value) => void selectEmployee(value)}
+                placeholder="Search by HR ID, name, job title or the date they left"
+                value={selectedHrId}
+              >
+                <option value="">Select an employee</option>
+                {candidates.map((candidate) => (
+                  <option key={candidate.hrId} value={candidate.hrId}>
+                    {candidateLabel(candidate)}
+                  </option>
+                ))}
+              </SearchableSelect>
+            </div>
             {busy === "load" ? (
               <p className="inline-flex shrink-0 items-center gap-2 text-sm font-semibold text-phx-ink-soft">
                 <Loader2 className="h-4 w-4 animate-spin" /> Loading…

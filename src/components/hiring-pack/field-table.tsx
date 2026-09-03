@@ -37,7 +37,8 @@
 // input is worse than saying it plainly. Adding a box works on both.
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 
-import { AlertTriangle, Check, MapPin, Plus, RotateCcw, Trash2 } from "lucide-react";
+import { AlertTriangle, Check, Eye, EyeOff, MapPin, Plus, RotateCcw, Search, Trash2, X } from "lucide-react";
+import type { KeyboardEvent } from "react";
 import { useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -59,6 +60,17 @@ export type FieldTableProps = {
   onSaveRule: (entry: DocumentFieldInventoryEntry, text: string | null) => void;
   /** Retype the text of a field the operator added. */
   onSaveRowText: (row: DocumentFieldRow, text: string) => void;
+  /**
+   * Put a hidden field back on the paper.
+   *
+   * THIS TAB IS THE ONLY WAY BACK, and that is why the prop exists. `mergePagePlacements` skips a
+   * hidden override outright — `if (override.hidden) continue` — so a hidden field renders NO box,
+   * not even a dashed one in layout mode. There is nothing on the page left to click, which made
+   * hiding a one-way door out of which the only exit was "Reset this document", throwing away every
+   * other change on it. The table lists the template's INVENTORY rather than what rendered, so a
+   * hidden field is still here to be shown again.
+   */
+  onToggleHidden: (row: DocumentFieldRow) => void;
   rows: readonly DocumentFieldRow[];
   surface: DocumentSurface;
 };
@@ -86,6 +98,7 @@ export function FieldTable({
   onDeleteRow,
   onSaveRule,
   onSaveRowText,
+  onToggleHidden,
   rows,
   surface,
 }: FieldTableProps) {
@@ -94,6 +107,16 @@ export function FieldTable({
    * being edited to an empty string, and the difference is the whole cancel behaviour.
    */
   const [drafts, setDrafts] = useState<Record<string, string>>({});
+
+  /**
+   * NARROWING THE LIST, because the list is long enough that scrolling it is the slow part.
+   * Form 1 carries 33 fields and the employment contract 28, and the field somebody opens this tab
+   * to change is exactly one of them. `search` matches the English name, the key, and the value on
+   * the paper — the value because "2807693" is often what you remember about a field whose name you
+   * do not. `changedOnly` answers the other question: what have I already rewritten for everyone.
+   */
+  const [search, setSearch] = useState("");
+  const [changedOnly, setChangedOnly] = useState(false);
 
   /** The values map, for previewing a rule exactly as the renderer will resolve it. */
   const values = useMemo(() => {
@@ -117,6 +140,64 @@ export function FieldTable({
   /** Fields the operator added, which are rows in their own right rather than rules over a default. */
   const added = useMemo(() => rows.filter((row) => row.defaultKey === null), [rows]);
 
+  /**
+   * WHAT HAS BEEN REWRITTEN FOR EVERYONE, counted before anything is filtered away.
+   *
+   * The page tab has always said "Nothing moved, hidden or added yet" — this tab had no equivalent,
+   * so the only way to know which of 33 rules you had changed was to read all 33. It counts rules
+   * and added boxes separately because they undo differently: a rule goes back with "Use the
+   * record", an added box goes with Delete, and telling somebody "4 changes" without saying which
+   * kind is telling them to go and look.
+   *
+   * Counted from `entries` and `rows` directly, NEVER from the filtered lists below — a summary that
+   * shrinks when you type in the search box is worse than no summary, because it reads as though
+   * changes disappeared.
+   */
+  const rewritten = useMemo(
+    () => entries.filter((entry) => currentRule(overrides.get(entry.key) ?? null) !== null).length,
+    [entries, overrides],
+  );
+
+  /** A field is "changed by you" if you rewrote its rule OR took it off the paper. Both are edits to
+   *  the template, and a filter that showed one and swallowed the other would hide the more drastic
+   *  of the two. */
+  const changedByOperator = (key: string) => {
+    const override = overrides.get(key) ?? null;
+    return currentRule(override) !== null || (override?.hidden ?? false);
+  };
+  const hidden = useMemo(() => rows.filter((row) => row.hidden).length, [rows]);
+
+  /**
+   * The two lists as the screen shows them. An entry matches on its English name, its key, or the
+   * value it currently prints; `changedOnly` keeps rules you wrote and drops the rest.
+   *
+   * ADDED FIELDS ARE NEVER DROPPED BY `changedOnly` — every one of them IS a change, by definition.
+   */
+  const needle = search.trim().toLowerCase();
+  const matches = (...parts: (string | null)[]) =>
+    needle === "" || parts.some((part) => (part ?? "").toLowerCase().includes(needle));
+
+  const visibleEntries = useMemo(
+    () =>
+      entries.filter((entry) => {
+        if (changedOnly && !changedByOperator(entry.key)) return false;
+        return matches(entry.labelEn, entry.key, humaniseKey(entry.key), entry.value);
+      }),
+    // `matches` closes over `needle`, which is what actually changes between renders.
+    [changedOnly, entries, needle, overrides],
+  );
+
+  const visibleAdded = useMemo(
+    () =>
+      added.filter((row) =>
+        matches(
+          row.source.kind === "literal" ? row.source.text : humaniseKey(row.source.key),
+          row.source.kind === "value" ? row.source.key : null,
+        ),
+      ),
+    [added, needle],
+  );
+
   const setDraft = (key: string, text: string) => setDrafts((current) => ({ ...current, [key]: text }));
   const clearDraft = (key: string) =>
     setDrafts((current) => {
@@ -124,6 +205,32 @@ export function FieldTable({
       delete next[key];
       return next;
     });
+
+  /**
+   * Save on Enter, abandon on Escape.
+   *
+   * PLAIN ENTER IS SAFE HERE and that had to be checked rather than assumed: a placement is a
+   * `<span>` with a fixed `line-height`, so a newline inside a rule collapses to a space on the
+   * paper and can never mean anything. Shift+Enter still writes one, for anybody who reaches for it
+   * out of habit. Escape restores the saved rule rather than clearing the field — the draft is
+   * discarded, which is what Cancel does, because an editor that empties the box on Escape is one
+   * keystroke away from wiping a rule that applies to everyone.
+   */
+  const editorKeys = (
+    key: string,
+    canSave: boolean,
+    save: () => void,
+  ) => (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      clearDraft(key);
+      return;
+    }
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      if (canSave) save();
+    }
+  };
 
   const insertPlaceholder = (key: string, placeholder: string, fallback: string) => {
     if (!placeholder) return;
@@ -158,7 +265,80 @@ export function FieldTable({
         <code className="rounded bg-white px-1 py-0.5 font-mono">{"{{fieldName}}"}</code> — use{" "}
         <em>Insert a field</em> so the name is always one this document has. If a placeholder has no
         value for someone, that whole field prints blank for them rather than printing half a
-        sentence.
+        sentence. While a field is open, <strong>Enter</strong> saves it and <strong>Esc</strong>
+        abandons the edit.
+      </div>
+
+      {/*
+        THE TOOLBAR — find one field, and see what you have already changed.
+
+        Both halves exist because of the same measurement: this template has 33 fields, and the one
+        being looked for is one of them. The count on the right is deliberately NOT filtered, so it
+        keeps telling the truth while the list below it narrows.
+      */}
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-1 items-center gap-2">
+          <div className="relative min-w-0 flex-1 sm:max-w-xs">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-phx-ink-faint" />
+            <input
+              aria-label="Find a field"
+              className="w-full rounded-lg border border-phx-line bg-white py-1.5 pl-8 pr-8 text-phx-xs text-phx-ink outline-none focus:border-phx-accent"
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Find a field — name, key or value"
+              type="search"
+              value={search}
+            />
+            {search !== "" ? (
+              <button
+                aria-label="Clear the search"
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-phx-ink-faint hover:text-phx-ink"
+                onClick={() => setSearch("")}
+                type="button"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            ) : null}
+          </div>
+          <Button
+            className="shrink-0 gap-1.5"
+            disabled={rewritten === 0 && hidden === 0}
+            onClick={() => setChangedOnly((current) => !current)}
+            size="sm"
+            type="button"
+            variant={changedOnly ? "default" : "outline"}
+          >
+            Only what I changed
+          </Button>
+        </div>
+
+        <p className="text-phx-2xs text-phx-ink-soft">
+          {rewritten === 0 && added.length === 0 ? (
+            <span className="text-phx-ink-faint">
+              Nothing rewritten yet — every field prints the template’s own value.
+            </span>
+          ) : (
+            <>
+              <span className="font-semibold text-phx-accent">
+                {rewritten} rule{rewritten === 1 ? "" : "s"} rewritten
+              </span>
+              {added.length > 0 ? (
+                <>
+                  {" · "}
+                  <span className="font-semibold text-phx-ink">
+                    {added.length} field{added.length === 1 ? "" : "s"} added
+                  </span>
+                </>
+              ) : null}
+              {hidden > 0 ? (
+                <>
+                  {" · "}
+                  <span className="font-semibold text-phx-ink-soft">{hidden} hidden</span>
+                </>
+              ) : null}
+              {" · for everyone"}
+            </>
+          )}
+        </p>
       </div>
 
       {error ? (
@@ -180,14 +360,27 @@ export function FieldTable({
       ) : null}
 
       <div className="space-y-2">
-        {entries.map((entry) => {
+        {visibleEntries.length === 0 ? (
+          <p className="rounded-xl border border-dashed border-phx-line px-3 py-4 text-phx-2xs text-phx-ink-faint">
+            {changedOnly && rewritten === 0 && hidden === 0
+              ? "You have not rewritten any of this template’s own rules. Everything below prints the value the document was built with."
+              : "No field here matches that. Try part of the name, the key, or the value it prints."}
+          </p>
+        ) : null}
+        {visibleEntries.map((entry) => {
           const override = overrides.get(entry.key) ?? null;
           const saved = currentRule(override);
           const editing = entry.key in drafts;
           const draft = drafts[entry.key] ?? saved ?? "";
           const message = editing ? validateFieldTemplate(draft, isKnownKey) : null;
           const preview = editing && !message ? resolveFieldTemplate(draft, values) : null;
-          const missing = entry.value !== "" && !entry.placed;
+          const hiddenHere = override?.hidden === true ? override : null;
+          // A HIDDEN FIELD IS NOT A MISSING ONE, and conflating them offered the wrong repair. The
+          // inventory reads `placed` off what actually rendered, and a hidden override renders
+          // nothing — so without this the row read "Has a value but no box on the paper" and put an
+          // "Add a box" button beside it. Pressing that would have added a SECOND box while the
+          // original sat there hidden, which is the opposite of what was wanted.
+          const missing = entry.value !== "" && !entry.placed && hiddenHere === null;
 
           return (
             <div
@@ -203,6 +396,12 @@ export function FieldTable({
                   <p className="mt-0.5 font-mono text-phx-2xs text-phx-ink-faint break-all">
                     {entry.key}
                   </p>
+                  {hiddenHere ? (
+                    <p className="mt-1 inline-flex items-center gap-1 text-phx-2xs font-semibold text-phx-ink-soft">
+                      <EyeOff className="h-3 w-3" />
+                      Hidden by you — this prints nothing
+                    </p>
+                  ) : null}
                   {missing ? (
                     <p className="mt-1 text-phx-2xs font-semibold text-amber-700">
                       Has a value but no box on the paper
@@ -223,6 +422,10 @@ export function FieldTable({
                         className="w-full resize-y rounded-lg border border-phx-accent-line bg-white px-2 py-1.5 text-phx-xs leading-relaxed text-phx-ink outline-none focus:border-phx-accent"
                         dir="auto"
                         onChange={(event) => setDraft(entry.key, event.target.value)}
+                        onKeyDown={editorKeys(entry.key, !busy && message === null, () => {
+                          onSaveRule(entry, draft);
+                          clearDraft(entry.key);
+                        })}
                         rows={2}
                         value={draft}
                       />
@@ -306,6 +509,18 @@ export function FieldTable({
                     </>
                   ) : (
                     <>
+                      {hiddenHere ? (
+                        <Button
+                          className="gap-1"
+                          disabled={busy}
+                          onClick={() => onToggleHidden(hiddenHere)}
+                          size="sm"
+                          type="button"
+                        >
+                          <Eye className="h-3.5 w-3.5" />
+                          Show it again
+                        </Button>
+                      ) : null}
                       {canRetype && entry.placed ? (
                         <Button
                           disabled={busy}
@@ -330,7 +545,7 @@ export function FieldTable({
                           Use the record
                         </Button>
                       ) : null}
-                      {!entry.placed ? (
+                      {!entry.placed && hiddenHere === null ? (
                         <Button
                           className="gap-1"
                           disabled={busy}
@@ -376,8 +591,13 @@ export function FieldTable({
           <p className="text-phx-2xs text-phx-ink-faint">
             None yet. <em>Add a field</em> — then click the spot on the page where it belongs.
           </p>
+        ) : visibleAdded.length === 0 ? (
+          <p className="text-phx-2xs text-phx-ink-faint">
+            None of the {added.length} field{added.length === 1 ? "" : "s"} you added matches that
+            search.
+          </p>
         ) : (
-          added.map((row) => {
+          visibleAdded.map((row) => {
             const key = `row:${row.id}`;
             const saved = row.source.kind === "literal" ? row.source.text : "";
             const editing = key in drafts;
@@ -411,6 +631,10 @@ export function FieldTable({
                           className="w-full resize-y rounded-lg border border-phx-accent-line bg-white px-2 py-1.5 text-phx-xs leading-relaxed text-phx-ink outline-none focus:border-phx-accent"
                           dir="auto"
                           onChange={(event) => setDraft(key, event.target.value)}
+                          onKeyDown={editorKeys(key, !busy && message === null, () => {
+                            onSaveRowText(row, draft);
+                            clearDraft(key);
+                          })}
                           rows={2}
                           value={draft}
                         />

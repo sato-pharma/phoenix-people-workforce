@@ -871,6 +871,18 @@ export function HiringPackPaperEditor({
         pendingAddKeyRef.current = null;
         setPendingAddKey(null);
 
+        // CLEARING THE STATE IS NOT ENOUGH — the crosshair lives on a CLASS on the framed body.
+        // `applyLayoutClasses` is called from the toggles and from `enhance`, and from nowhere
+        // else; no effect re-syncs it when `addMode` changes. So every exit here used to set
+        // `addMode` false and leave `hp-adding-field` on the document, which left the page under
+        // a crosshair, still LOOKING armed, after the box had already been placed. The next click
+        // then selected a field instead of adding one, and the only tell was a cursor.
+        const disarm = () => {
+          addModeRef.current = false;
+          setAddMode(false);
+          applyLayoutClasses(doc, layoutModeRef.current, false);
+        };
+
         if (surface === "page") {
           const sheetEl = target.closest(".sheet") as HTMLElement | null;
           if (!sheetEl) {
@@ -897,15 +909,13 @@ export function HiringPackPaperEditor({
           const copyRoot = target.closest(".copy") ?? doc.body;
           if (target === copyRoot) {
             setFieldsError("Click on some text or a cell to anchor the new field there.");
-            addModeRef.current = false;
-            setAddMode(false);
+            disarm();
             return;
           }
           const selector = cssPathWithin(copyRoot, target);
           if (!selector) {
             setFieldsError("Could not place a field there — try a different spot.");
-            addModeRef.current = false;
-            setAddMode(false);
+            disarm();
             return;
           }
           const anchorRect = target.getBoundingClientRect();
@@ -927,8 +937,7 @@ export function HiringPackPaperEditor({
             y: 0,
           });
         }
-        addModeRef.current = false;
-        setAddMode(false);
+        disarm();
         return;
       }
 
@@ -1428,6 +1437,20 @@ export function HiringPackPaperEditor({
                 }}
                 onSaveRule={saveFieldRule}
                 onSaveRowText={saveRowText}
+                onToggleHidden={(row) => void commitLayoutField({
+                  align: row.align,
+                  anchor: row.anchor,
+                  defaultKey: row.defaultKey,
+                  h: row.h,
+                  hidden: !row.hidden,
+                  id: row.id,
+                  page: row.page,
+                  size: row.size,
+                  source: row.source,
+                  w: row.w,
+                  x: row.x,
+                  y: row.y,
+                })}
                 rows={fields}
                 surface={surface}
               />
