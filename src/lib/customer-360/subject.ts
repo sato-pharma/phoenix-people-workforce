@@ -70,3 +70,30 @@ export function decodeCustomerSubjectId(raw: string | null | undefined): Custome
 export function customerRegisterLabel(register: CustomerRegister): string {
   return register === "marketing" ? "Marketing" : "Direct orders";
 }
+
+/**
+ * Follow a register's merge pointers to the row that actually survived.
+ *
+ * `merged_into_pharmacy_id` does not mean "hide this row" — it means this row IS that row now. A
+ * retired Phoenix code goes on living in places nobody can rewrite: an emailed report, and above
+ * all a VALIDATED Source of Sales batch, which stores the code the pharmacy had at the moment the
+ * order was injected. DOP-000034 sits in the August 2026 batch permanently and correctly. So a link
+ * built from a retired code has to land on the surviving pharmacy, not on "Customer not found",
+ * which is what the picker's merged-row exclusion gives you on its own.
+ *
+ * Followed transitively, because duplicates are found one at a time: C merged into B, and later B
+ * merged into A, is an ordinary sequence rather than a corruption. The database forbids a row
+ * pointing at ITSELF (`direct_order_pharmacies_merged_not_self_check`) but nothing forbids a longer
+ * cycle, so this stops at any id it has already visited instead of trusting the data to be acyclic.
+ */
+export function resolveMergeTarget(startId: string, mergedInto: ReadonlyMap<string, string>): string {
+  let current = startId;
+  const seen = new Set<string>([current]);
+  let next = mergedInto.get(current);
+  while (next && !seen.has(next)) {
+    seen.add(next);
+    current = next;
+    next = mergedInto.get(current);
+  }
+  return current;
+}
