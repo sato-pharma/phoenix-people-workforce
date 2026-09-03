@@ -9,6 +9,10 @@ import {
 } from "../src/lib/customer-360/sales-visibility.ts";
 import type { CustomerSubjectSummary } from "../src/lib/customer-360/service.ts";
 import {
+  validationStatusLabel,
+  venueTypeLabel,
+} from "../src/lib/customer-360/labels.ts";
+import {
   decodeCustomerSubjectId,
   encodeCustomerSubjectId,
 } from "../src/lib/customer-360/subject.ts";
@@ -164,4 +168,36 @@ export function runCustomer360Tests() {
     !/\.in\(\s*["']distributor_code["']/.test(serviceSource),
     "Customer 360 must never pair-match with two independent .in() filters",
   );
+
+  // ── No raw code reaches the screen ────────────────────────────────────────────────────────────
+  // The owner's standing rule is human-readable names, never raw codes. Two live values also carry
+  // a meaning their plain English reading gets backwards, and both are pinned by name.
+  for (const raw of ["pending", "system_validated", "sfe_validated"]) {
+    const label = validationStatusLabel(raw);
+    assert.ok(label && !label.includes("_"), `validation status "${raw}" must not render as a raw code`);
+  }
+  for (const raw of ["pharmacy", "nursery"]) {
+    const label = venueTypeLabel(raw);
+    assert.ok(label && !label.includes("_"), `venue type "${raw}" must not render as a raw code`);
+  }
+
+  // `system_validated` means NO HUMAN LOOKED. A bare "System validated" reads as an assurance,
+  // which is the opposite of what the value records, so the label must say so outright.
+  assert.match(
+    validationStatusLabel("system_validated") ?? "",
+    /no human review/i,
+    "system_validated must never be presented as though a person had checked it",
+  );
+
+  // `nursery` is the owner's own filing for a venue with no distributor account — a clinic filed
+  // this way is CORRECT. The label has to carry that, or the next reader "fixes" five right rows.
+  assert.match(
+    venueTypeLabel("nursery") ?? "",
+    /no distributor account/i,
+    "nursery must explain itself, or it reads as a data-quality defect it is not",
+  );
+
+  // A value nobody has mapped yet still arrives as English, never as a code and never as a blank.
+  assert.equal(validationStatusLabel("field_validated"), "Field validated", "an unmapped status is humanised");
+  assert.equal(venueTypeLabel(null), null, "an absent value stays absent rather than becoming a label");
 }

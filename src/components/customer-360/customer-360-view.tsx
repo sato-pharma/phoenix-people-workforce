@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Ban, Building2, Eye, Info, Landmark, MapPin, Receipt, ShoppingCart, Sparkles, User } from "lucide-react";
 
+import { validationStatusLabel, venueTypeLabel } from "@/lib/customer-360/labels";
 import type { Customer360Profile } from "@/lib/customer-360/service";
 import { customerRegisterLabel } from "@/lib/customer-360/subject";
 
@@ -57,15 +58,15 @@ export function Customer360View({ profile }: { profile: Customer360Profile }) {
             { label: "Area", value: profile.areaName },
             { label: "Region", value: profile.regionName },
             { label: "Line", value: profile.lineName },
-            { label: "Venue type", value: profile.venueType },
+            { label: "Venue type", value: venueTypeLabel(profile.venueType) },
             { label: "Owner", value: profile.ownerName },
             { label: "Manager", value: profile.managerName },
-            { label: "Validation", value: profile.validationStatus },
+            { label: "Validation", value: validationStatusLabel(profile.validationStatus) },
             { label: "Address", value: profile.address },
           ].map((entry) => (
             <div key={entry.label} className="min-w-0">
               <dt className="text-[11px] font-black uppercase tracking-wide text-slate-400">{entry.label}</dt>
-              <dd className="break-words text-[13px] font-semibold text-slate-800">{entry.value || "—"}</dd>
+              <dd dir="auto" className="break-words text-[13px] font-semibold text-slate-800">{entry.value || "—"}</dd>
             </div>
           ))}
         </dl>

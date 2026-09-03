@@ -82,7 +82,10 @@ export default async function Customer360DetailPage({
         <p className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-400">
           {customerRegisterLabel(profile.register)}
         </p>
-        <h1 className="mt-1 break-words text-2xl font-black tracking-tight text-slate-950">
+        {/* A customer name is free text and is frequently Arabic — "(مصر)حازم" is a real one.
+            It is SINGLE-language, which is the case block-level dir="auto" is house style for; the
+            composed territory line below it is our own English vocabulary and must NOT take one. */}
+        <h1 dir="auto" className="mt-1 break-words text-2xl font-black tracking-tight text-slate-950">
           {profile.displayName}
         </h1>
         <p className="mt-1 break-words text-[13px] font-semibold text-slate-500">

@@ -172,7 +172,7 @@ function CustomerCard({ customer }: { customer: Customer360ListItem }) {
       </span>
       <div className="min-w-0 flex-1 space-y-1.5">
         {/* Wraps rather than truncating — a pharmacy name a reader cannot finish is not a name. */}
-        <p className="break-words text-[13px] font-bold leading-5 text-slate-900">{customer.displayName}</p>
+        <p dir="auto" className="break-words text-[13px] font-bold leading-5 text-slate-900">{customer.displayName}</p>
         <div className="flex flex-wrap items-center gap-1.5">
           <span className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-black uppercase tracking-wide ring-1 ${meta.tone}`}>
             {customer.register === "marketing" ? (
@@ -200,7 +200,7 @@ function CustomerCard({ customer }: { customer: Customer360ListItem }) {
         {customer.ownerName ? (
           <p className="flex flex-wrap items-center gap-1.5 text-[12px] font-semibold text-slate-500">
             <Building2 aria-hidden className="h-3.5 w-3.5 shrink-0 text-slate-400" />
-            <span className="break-words">{customer.ownerName}</span>
+            <span dir="auto" className="break-words">{customer.ownerName}</span>
           </p>
         ) : null}
       </div>
