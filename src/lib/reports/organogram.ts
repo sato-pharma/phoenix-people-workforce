@@ -91,20 +91,29 @@ export function canAccessHeadOffice(access: AccessContext) {
     // lines and hide his own department — the one part of the tree he sits in.
     //
     // Named by ROLE, never `access.scope === "company"`. The scope shortcut would hand Head Office
-    // to every current and future company-scope role in one edit; tests/organogram-godmode.test.ts
-    // keeps Marketing Manager pinned to `false` at the helper's default company scope — and `true`
-    // at system scope — precisely so that shortcut fails loudly if anyone reaches for it. (Talent
-    // Acquisition was such a pin until 2026-08-25, Training Manager until 2026-09-03, and the SFE
-    // Manager until later the same day — see their entries below.
+    // to every current and future company-scope caller in one edit.
     //
-    // Marketing Manager is now genuinely the ONLY company-scope role left outside this helper, so
-    // it is the whole of that guard on its own. The 2026-09-03 Training Manager commit claimed that
-    // was already true; it was not — the SFE Manager was still outside at that point, and
-    // tests/finance-manager-six-module-access.test.ts called its SFE pair "the sharpest" guard of
-    // the same shortcut. Clearing the SFE Manager retired that pair, which is why the Marketing
-    // Manager pair was moved into that test too. Do NOT clear Marketing Manager without first
-    // putting another company-scope role in its place in BOTH tests, or the shortcut becomes
-    // introducible with every assertion still green.)
+    // ## How that shortcut is still caught, now that no named role is left outside
+    //
+    // Every role this helper refuses used to double as the guard — Talent Acquisition until
+    // 2026-08-25, then the Training Manager, the SFE Manager and finally the Marketing Manager, all
+    // on 2026-09-03. With the Marketing Manager cleared the two functions below name the SAME set,
+    // so there is no role left to pin. The guard therefore moved to a SYNTHETIC context and is
+    // stronger for it: `ctx("National Sales Manager", "company")` — an unnamed role carrying scope
+    // `company` — must be REFUSED, and the same role at scope `system` must PASS. Collapse this
+    // body to `access.scope === "company"` and the first flips true and the second false, so both
+    // halves fail loudly. That pair no longer depends on any role's real scope, which is what made
+    // the old guard fragile.
+    //
+    // Two corrections worth keeping, because both were asserted confidently and both were wrong.
+    // The 2026-09-03 Training Manager commit said Marketing Manager was already the only role
+    // outside this helper; the SFE Manager still was too. And every comment here called Marketing
+    // Manager "a company-scope role" — `scopeForRole` gives it `line`. The company scope in those
+    // tests was always the ctx() helper's synthetic default, never that seat's real scope, so the
+    // guard was never measuring what its own comments claimed.
+    //
+    // The pair lives in tests/organogram-godmode.test.ts, tests/marketing-manager-sees-head-office
+    // and tests/finance-manager-six-module-access.test.ts. Keep it in all three.
     access.role === "Finance Manager" ||
     // Talent Acquisition added 2026-08-25 (owner: "in the admin account and talent
     // acquisition show the head office organogram"). She recruits FOR Head Office — the
@@ -138,9 +147,9 @@ export function canAccessHeadOffice(access: AccessContext) {
     // changes which door, not what is behind it.
     //
     // Named by ROLE, never `access.scope === "company"` — the shortcut this whole helper is written
-    // to refuse. Marketing Manager stays pinned to false at default company scope (and true at
-    // system scope) in tests/organogram-godmode.test.ts, so the guard against that shortcut is
-    // still armed after this addition; it is one role lighter, not retired.
+    // to refuse. This entry originally pinned the guard on the Marketing Manager, who was still
+    // outside the helper when it was written; he was cleared hours later the same day, so the guard
+    // is the synthetic pair described at the top of this function instead. It is not retired.
     //
     // Sensitive fields stay shut. canViewOrganogramSensitiveFields does NOT list him, so he gets
     // the safe org + contact profile and never salary or national ID — the owner's "no pay anywhere
@@ -168,6 +177,18 @@ export function canAccessHeadOffice(access: AccessContext) {
     // key at all, so app/api/reports/vacancies/route.ts refuses him at assertPermission before
     // getScopedVacancyReport's Head Office mirror below is ever reached.
     access.role === "SFE Manager" ||
+    // Marketing Manager added 2026-09-03 (owner: "marketing manager also", completing the sweep he
+    // began with the Training Manager). The FIFTH and last holder of one defect: A-9 Hossam
+    // AboElftouh, line_id 4, reporting to the CEO — Head Office staff, so the company chart he has
+    // always held hid the branch containing himself, his own manager, and the three people who
+    // report to him (A-7 Training Manager, A-8 GPM, A-10 PM).
+    //
+    // A new disclosure, like the SFE Manager and unlike the Training Manager: there is no Marketing
+    // Manager branch in canSeeEmployee, and getPayrollScope returns SELF for this seat. Unlike the
+    // SFE Manager, the Vacancy Report DOES follow the chart here — he holds `vacancies: ["read"]`,
+    // so the mirror in getScopedVacancyReport applies to him the way it does to the Training
+    // Manager.
+    access.role === "Marketing Manager" ||
     access.scope === "system"
   );
 }
@@ -484,6 +505,18 @@ export async function getOrganogramReport(
   const seatReport = await buildOrganogramSeatReport();
   let scopedRows = scopeAuOrganogramRows(seatReport.organogramRows, options);
 
+  // UNREACHABLE AS OF 2026-09-03, and deliberately kept. `mode: "company"` is only ever passed
+  // after canAccessCompanyOrganogram has said yes, and since the Marketing Manager was cleared that
+  // function and canAccessHeadOffice name the SAME set — so this condition cannot currently be
+  // true and this filter strips nothing from anybody.
+  //
+  // Do NOT read the presence of this filter as evidence that somebody is being filtered, and do not
+  // delete it either. organogram-head-office.ts documents the exact trap in the other direction:
+  // canAccessHeadOffice and isHeadOfficeRow spent months filtering a set that was always empty, and
+  // "the gate looked healthy because stripping nothing from nothing throws no error." This is the
+  // safety net for the next role added to canAccessCompanyOrganogram without Head Office, and
+  // tests/marketing-manager-sees-head-office.test.ts fails the moment the two sets diverge again —
+  // which is the signal that this line has gone live rather than a defect in its own right.
   if (options.mode === "company" && !canAccessHeadOffice(access)) {
     scopedRows = scopedRows.filter((row) => !isHeadOfficeRow(row));
   }
@@ -694,6 +727,14 @@ export async function getScopedVacancyReport(access: AccessContext): Promise<Vac
     // Do not "fix" that by granting him `vacancies` to make the two surfaces match —
     // the owner asked for the organogram, and the report he cannot open cannot disagree
     // with anything.
+    //
+    // The Marketing Manager followed on the same day, and with him this condition became
+    // UNREACHABLE: canAccessCompanyVacancies is built on canAccessCompanyOrganogram, and
+    // that function and canAccessHeadOffice now name the SAME set, so a caller who passes
+    // the first can no longer fail the second. Kept as the safety net for the next role
+    // added to one without the other — see the identical note in getOrganogramReport, and
+    // the divergence assertion in tests/marketing-manager-sees-head-office.test.ts that
+    // fires when this line goes live again.
     //
     // That sentence about Talent Acquisition described the INTENT, not the behaviour,
     // until 2026-08-25: she passes canAccessCompanyOrganogram and failed

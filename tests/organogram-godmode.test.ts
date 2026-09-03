@@ -160,15 +160,20 @@ export function runOrganogramGodmodeTests() {
   assert.equal(canAccessHeadOffice(ctx("Super Admin")), true);
   assert.equal(canAccessHeadOffice(ctx("HR Advisory")), true);
   assert.equal(canAccessHeadOffice(ctx("Training Manager")), true);
-  assert.equal(canAccessHeadOffice(ctx("National Sales Manager")), false);
+  assert.equal(canAccessHeadOffice(ctx("SFE Manager")), true);
+  assert.equal(canAccessHeadOffice(ctx("Marketing Manager")), true);
 
-  // Marketing Manager is the LAST company-scope role still outside canAccessHeadOffice, which
-  // makes this pair the whole of the guard against an `access.scope === "company"` shortcut in
-  // that helper: false at the default company scope, true only when the scope is genuinely
-  // `system`. If a future change clears Marketing Manager too, another company-scope role must
-  // take its place here — otherwise the shortcut can be introduced with every assertion green.
-  assert.equal(canAccessHeadOffice(ctx("Marketing Manager")), false);
-  assert.equal(canAccessHeadOffice(ctx("Marketing Manager", "system")), true);
+  // The guard against collapsing this helper to `access.scope === "company"`.
+  //
+  // It used to be whichever named role was still refused — Talent Acquisition, then the Training
+  // Manager, the SFE Manager, and finally the Marketing Manager, all cleared by 2026-09-03. No
+  // named role is left to pin, so the pair is now SYNTHETIC and does not depend on any role's real
+  // scope: an UNNAMED role carrying scope `company` must be refused, and the same role at scope
+  // `system` must pass. Collapse the helper and the first flips true, the second false — both
+  // halves fail. (National Sales Manager's real scope is `line`; the `company` here is this ctx()
+  // helper's argument, which is the point of the construction rather than a mistake in it.)
+  assert.equal(canAccessHeadOffice(ctx("National Sales Manager", "company")), false);
+  assert.equal(canAccessHeadOffice(ctx("National Sales Manager", "system")), true);
 
   // MD-9 — a member's node key must depend only on their identity, never on
   // their position in the input array, or a re-sorted/re-filtered render
