@@ -9,6 +9,7 @@ import {
   resolvePermanentAddress,
 } from "@/lib/hiring-pack/render-shared";
 import type { HiringPackData } from "@/lib/hiring-pack/types";
+import { resolveNationality } from "@/lib/hiring-pack/nationality";
 import {
   WORKER_FORM_BLANK_RULE,
   WORKER_FORM_TEMPLATE_V1,
@@ -92,7 +93,7 @@ function buildWorkerFormValues(data: HiringPackData): Partial<Record<WorkerFormT
     // controlling — so the person is named here in Arabic wherever the record carries it.
     EMPLOYEE_NAME: employee.nameAr ?? employee.fullName,
     NATIONAL_ID: employee.nationalId ?? "",
-    NATIONALITY: profile.nationality ?? "",
+    NATIONALITY: resolveNationality(profile.nationality).value,
     BIRTH_DATE_PLACE: birthDatePlace(employee.birthDate, profile.birthPlace),
     QUALIFICATION: profile.qualification ?? "",
 

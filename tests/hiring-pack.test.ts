@@ -24,6 +24,7 @@ import {
   renderMutualTerminationHtml,
   renderResignationHtml,
 } from "../src/lib/hiring-pack/render-labour-exit.ts";
+import { DEFAULT_NATIONALITY_AR } from "../src/lib/hiring-pack/nationality.ts";
 import { resolveFixedSalaryAmounts } from "../src/lib/payroll/policy.ts";
 import {
   addMonthsToIsoDate,
@@ -565,6 +566,46 @@ function testGapsSeparateBlockingFromChaseLater() {
  *
  * Both directions are pinned, because fixing one and not the other is how it happened.
  */
+/**
+ * A DEFAULT IS ONLY SAFE IF IT REACHES THE PAPER AND THE SCREEN AGREES WITH IT.
+ *
+ * Nationality stopped blocking on 2026-09-03 because every paper now prints مصري when nobody has
+ * recorded one. That trade is only sound while the printing half actually happens: a board saying
+ * "ready" over a contract that prints "الجنسية: (  )" is a worse failure than the block it replaced,
+ * because nothing would ever tell anybody. The renderers are asserted here rather than the helper,
+ * since the helper being right is not the part that was ever in doubt.
+ */
+function testAnUnrecordedNationalityStillPrintsOnEveryPaper() {
+  const occurrences = (haystack: string, needle: string) => haystack.split(needle).length - 1;
+
+  const unrecordedContract = renderContractHtml(packFixture({}, { nationality: null }), 1);
+  const statedContract = renderContractHtml(packFixture({}, { nationality: "سوداني" }), 1);
+
+  // A RECORDED nationality always wins. Recruitment is Egyptians only, but the candidate pool has
+  // held Pakistani, Sudanese and Syrian applicants — a default that overrode a stated nationality
+  // would put a false fact on an instrument somebody signs.
+  assert.ok(statedContract.includes("سوداني"), "a recorded nationality must print exactly as recorded");
+
+  // COUNT, DO NOT SEARCH — and this is not fastidiousness, it is measured. The obvious assertion,
+  // `renderContractHtml(unrecorded).includes(DEFAULT_NATIONALITY_AR)`, PASSES ON A CONTRACT THAT
+  // PRINTS NO NATIONALITY AT ALL: the document cites قانون العمل المصري, so مصري appears in every
+  // copy whatever the nationality is. It was written that way first, the default was then removed to
+  // check the test bites, and this line stayed green while the contract printed "الجنسية: (  )".
+  // The sound assertion is the DIFFERENCE — the unrecorded copy prints it exactly once more, and
+  // that one extra occurrence is the nationality slot.
+  assert.equal(
+    occurrences(unrecordedContract, DEFAULT_NATIONALITY_AR),
+    occurrences(statedContract, DEFAULT_NATIONALITY_AR) + 1,
+    "a contract with no recorded nationality must print the default exactly once more than one that has it",
+  );
+
+  assert.equal(
+    occurrences(renderForm1Html(packFixture({}, { nationality: null }), 1), DEFAULT_NATIONALITY_AR),
+    occurrences(renderForm1Html(packFixture({}, { nationality: "سوداني" }), 1), DEFAULT_NATIONALITY_AR) + 1,
+    "Form 1 must print the default nationality rather than leaving الجنسية blank",
+  );
+}
+
 function testEveryCompanySettingsGapReachesThePage() {
   const placedKeys = new Set(
     [...FORM1_PAGE_1_PLACEMENTS, ...FORM1_PAGE_2_PLACEMENTS].map((placement) => placement.key),
@@ -767,6 +808,7 @@ export function runHiringPackTests() {
   testTafqitAgreement();
   testContractTermsFallBackToTheCompanyDefault();
   testGapsSeparateBlockingFromChaseLater();
+  testAnUnrecordedNationalityStillPrintsOnEveryPaper();
   testEveryCompanySettingsGapReachesThePage();
   testNoNumberCanPrintBackwards();
   testFactsSaveAnchorsBaseSalaryEditThroughTheRealFormula();

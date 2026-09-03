@@ -35,7 +35,7 @@ import {
 } from "@/components/admin/admin-design-system";
 import { Input } from "@/components/ui/input";
 import { READINESS_DOCUMENTS } from "@/lib/hiring-pack/readiness";
-import type { HiringPackReadiness, ReadinessRow } from "@/lib/hiring-pack/readiness";
+import type { DerivedValue, HiringPackReadiness, ReadinessRow } from "@/lib/hiring-pack/readiness";
 import { cn } from "@/lib/utils";
 
 type StatusKey = "ready" | "company" | "blocked";
@@ -122,6 +122,49 @@ function PapersCell({ row }: { row: ReadinessRow }) {
   );
 }
 
+/** What each derived value is called, and where it actually came from. */
+const DERIVED_LABELS: Record<DerivedValue, string> = {
+  birthDate: "date of birth",
+  birthPlace: "place of birth",
+  jobTitleAr: "Arabic job title",
+  nationality: "nationality",
+  qualification: "qualification",
+};
+
+const DERIVED_SOURCES: Record<DerivedValue, string> = {
+  birthDate: "the national ID",
+  birthPlace: "the national ID",
+  jobTitleAr: "the Arabic list",
+  nationality: "the company default",
+  qualification: "the Arabic list",
+};
+
+/**
+ * "date of birth and place of birth from the national ID; nationality from the company default".
+ *
+ * This line used to read "N values read from the national ID" for everything, which was already
+ * wrong for the two Arabic-list values and would have credited the national ID with knowing a
+ * person's nationality. A derived value is only honest if it says where it came from — that is the
+ * whole reason these are shown rather than quietly filled in.
+ */
+function describeDerived(derived: readonly DerivedValue[]): string {
+  const bySource = new Map<string, string[]>();
+  for (const value of derived) {
+    const source = DERIVED_SOURCES[value];
+    bySource.set(source, [...(bySource.get(source) ?? []), DERIVED_LABELS[value]]);
+  }
+
+  return [...bySource.entries()]
+    .map(([source, names]) => `${joinWords(names)} from ${source}`)
+    .join("; ");
+}
+
+/** "a", "a and b", "a, b and c" — never a trailing "and" on a single item. */
+function joinWords(words: readonly string[]): string {
+  if (words.length <= 1) return words[0] ?? "";
+  return `${words.slice(0, -1).join(", ")} and ${words[words.length - 1]}`;
+}
+
 function MissingCell({ row }: { row: ReadinessRow }) {
   const labels = missingLabels(row);
 
@@ -142,9 +185,7 @@ function MissingCell({ row }: { row: ReadinessRow }) {
         </div>
       )}
       {row.derived.length > 0 ? (
-        <span className="text-xs font-medium text-slate-500">
-          {row.derived.length === 1 ? "1 value" : `${row.derived.length} values`} read from the national ID
-        </span>
+        <span className="text-xs font-medium text-slate-500">Filled in for you: {describeDerived(row.derived)}</span>
       ) : null}
       {row.idConflict ? (
         <span className="text-xs font-semibold leading-5 text-amber-700">{row.idConflict}</span>

@@ -2433,8 +2433,9 @@ await runTest(
   "HR Forms readiness (the board counts blocking gaps per person and per document, an empty company "
     + "setting is reported once as blocking every Form 1 rather than 108 times, derived values clear "
     + "the gaps they fill, somebody missing two Arabic values is still one person, the owner's own "
-    + "confirmed wording cannot be tidied away, and a tax number in Arabic-Indic digits still reaches "
-    + "the form instead of printing three blank runs)",
+    + "confirmed wording cannot be tidied away, a tax number in Arabic-Indic digits still reaches the "
+    + "form instead of printing three blank runs, and the company nationality default is reported as "
+    + "derived rather than applied silently or written onto the stored profile)",
   runHrFormsReadinessTests,
 );
 

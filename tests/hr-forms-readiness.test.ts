@@ -425,6 +425,40 @@ function testATaxNumberInArabicDigitsStillReachesTheForm(): void {
   assert.deepEqual(splitTaxRegistration(""), ["", "", ""], "a blank setting must print nothing");
 }
 
+/**
+ * THE DEFAULT MUST BE VISIBLE, AND MUST NEVER BECOME STORED DATA.
+ *
+ * Two failure modes, and they pull in opposite directions. Applied silently, a wrong nationality
+ * reaches a signature with nothing on any screen to catch it. Applied to the stored profile, the
+ * next save writes مصري onto 107 employee records as though a person had entered it, and the
+ * assumption becomes indistinguishable from a fact. So it is reported as DERIVED and the enrichment
+ * returns new objects — the save path keeps reading the profile it was handed.
+ */
+function testTheNationalityDefaultIsVisibleAndNeverStored() {
+  const defaulted = rowFor({}, { nationality: null });
+
+  for (const document of READINESS_DOCUMENTS) {
+    assert.ok(
+      !defaulted.blockers[document].some((gap) => gap.field === "nationality"),
+      `a missing nationality must not block the ${document} — every paper prints the default`,
+    );
+  }
+
+  assert.ok(
+    defaulted.derived.includes("nationality"),
+    "a defaulted nationality must be reported as derived, not applied silently",
+  );
+  assert.ok(
+    !rowFor({}, { nationality: "سوداني" }).derived.includes("nationality"),
+    "a recorded nationality is not a derived one, and must not be labelled as assumed",
+  );
+
+  // The enrichment must not write back. If it ever mutates, the default stops being a default.
+  const stored = profileFixture({ nationality: null });
+  enrichForReadiness(employeeFixture(), stored);
+  assert.equal(stored.nationality, null, "enrichment must not write the default onto the stored profile");
+}
+
 export function runHrFormsReadinessTests(): void {
   testACompletePersonIsPrintable();
   testCompanyGapsAreReportedOnceNotPerPerson();
@@ -435,4 +469,5 @@ export function runHrFormsReadinessTests(): void {
   testAPersonWaitingOnBothArabicValuesIsCountedOnce();
   testTheOwnersOwnWordingIsNotTidiedAway();
   testATaxNumberInArabicDigitsStillReachesTheForm();
+  testTheNationalityDefaultIsVisibleAndNeverStored();
 }

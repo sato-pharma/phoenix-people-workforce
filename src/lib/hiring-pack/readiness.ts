@@ -32,6 +32,7 @@ import {
   resolveQualificationAr,
 } from "@/lib/hiring-pack/arabic-lookups";
 import { describeNationalIdConflict, fillFromNationalId } from "@/lib/hiring-pack/national-id";
+import { resolveNationality } from "@/lib/hiring-pack/nationality";
 import type {
   HiringPackDocument,
   HiringPackEmployeeFacts,
@@ -45,7 +46,7 @@ export const READINESS_DOCUMENTS = ["contract", "form1"] as const satisfies read
 export type ReadinessDocument = (typeof READINESS_DOCUMENTS)[number];
 
 /** Which value a row filled without anybody typing it, so the screen can say where it came from. */
-export type DerivedValue = "birthDate" | "birthPlace" | "jobTitleAr" | "qualification";
+export type DerivedValue = "birthDate" | "birthPlace" | "jobTitleAr" | "qualification" | "nationality";
 
 export type ReadinessRow = {
   hrId: string;
@@ -153,9 +154,20 @@ export function enrichForReadiness(
     }
   }
 
+  // The company default. Reported as derived rather than applied quietly — see the module header
+  // in `nationality.ts` for why a nationality is the one default that must stay visible.
+  const resolvedNationality = resolveNationality(profile.nationality);
+  if (resolvedNationality.defaulted) derived.push("nationality");
+
   return {
     employee: { ...employee, birthDate: fromId.birthDate },
-    profile: { ...profile, birthPlace: fromId.birthPlace, jobTitleAr, qualification },
+    profile: {
+      ...profile,
+      birthPlace: fromId.birthPlace,
+      jobTitleAr,
+      nationality: resolvedNationality.value,
+      qualification,
+    },
     derived,
   };
 }

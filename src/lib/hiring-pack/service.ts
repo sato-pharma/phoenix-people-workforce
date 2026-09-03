@@ -591,7 +591,12 @@ export function collectHiringPackGaps(
   }
 
   // ── From the hiring profile ─────────────────────────────────────────────────────────────────
-  if (!profile.nationality) add("nationality", "Nationality", "الجنسية", HIRING, true, "hiring-profile");
+  // NOT BLOCKING since 2026-09-03: every paper now prints `DEFAULT_NATIONALITY_AR` when this is
+  // empty (see `hiring-pack/nationality.ts`), so refusing to print would be refusing over a value
+  // the form is going to carry regardless. It stays REPORTED, because "we assumed Egyptian" is
+  // exactly the kind of thing somebody must be able to notice and correct before a contract is
+  // signed — a default that nothing mentions is how the wrong nationality reaches a signature.
+  if (!profile.nationality) add("nationality", "Nationality", "الجنسية", HIRING, false, "hiring-profile");
   if (!profile.qualification) add("qualification", "Qualification", "المؤهل", HIRING, true, "hiring-profile");
   if (!profile.birthPlace) add("birthPlace", "Place of birth", "محل الميلاد", ["contract"], true, "hiring-profile");
   // The Arabic job title is what both labour templates print in "بوظيفة .........." — the English
