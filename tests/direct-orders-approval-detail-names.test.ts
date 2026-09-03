@@ -46,6 +46,7 @@ function request(overrides: Partial<DirectOrderRequest> = {}): DirectOrderReques
     line: "CNS",
     productCode: "CN001",
     productName: "Roya",
+    familyCode: "RO",
     pharmacyPriceSnapshot: 111.15,
     qty: 100,
     bonus: 25,
