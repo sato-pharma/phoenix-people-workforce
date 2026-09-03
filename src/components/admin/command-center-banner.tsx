@@ -64,9 +64,18 @@ export function CommandCenterBanner({
   const isClear = status === "clear";
 
   return (
-    <div className="relative overflow-hidden border-b border-slate-200 bg-slate-900 px-5 py-4 text-center">
+    <div className="relative overflow-hidden border-b-0 bg-slate-900 px-5 py-4 text-center">
       {/* Depth, back to front: a warm ember centred behind the nameplate so the bar is lit rather
-          than flat, then a hairline top and bottom to frame it. */}
+          than flat, then a hairline top and bottom to frame it.
+
+          `border-b-0` is load-bearing, not noise. On the Super Admin landing this bar is a direct
+          child of `divide-y divide-slate-200`, so the parent draws a slate-200 rule beneath it —
+          and the very next band there is another `bg-slate-900` bar. A light rule between two
+          identical darks reads as a bright seam splitting what should be one block; it measured
+          `oklch(0.929 0.011 86)` against bars otherwise byte-identical. Tailwind v4 wraps
+          `divide-*` in `:where()`, so this plain utility outranks it with no `!`. The amber
+          hairline below is the intended finish; on the HR landing the band underneath is white,
+          so the colour change is its own edge and killing the rule costs nothing there. */}
       <span
         aria-hidden="true"
         className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_58%_130%_at_50%_50%,rgba(249,115,22,0.09)_0%,rgba(249,115,22,0.03)_45%,transparent_76%)]"
