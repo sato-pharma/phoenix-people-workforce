@@ -146,6 +146,33 @@ function refOf(cellXml) {
 }
 
 /** Replace whatever inline string a header cell holds, keeping its style and its `t` attribute. */
+/** The relationship namespace, spelt once. */
+const REL_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+
+/**
+ * Widen one column, 1-based, splitting the run it belongs to when the run covers several.
+ *
+ * `<cols>` stores runs, so column E is usually not a `<col>` of its own — here it shares one with
+ * D. Writing the width onto the run would widen D as well, which is why the run is cut instead.
+ */
+function setColumnWidth(sheetXml, column, width) {
+  const cols = /<cols>[\s\S]*?<\/cols>/.exec(sheetXml);
+  if (!cols) throw new Error("sheet has no <cols> to widen");
+  const runs = cols[0].match(/<col\b[^>]*\/>/g) ?? [];
+  const run = runs.find((candidate) => {
+    const min = Number(/\bmin="(\d+)"/.exec(candidate)?.[1] ?? 0);
+    const max = Number(/\bmax="(\d+)"/.exec(candidate)?.[1] ?? 0);
+    return column >= min && column <= max;
+  });
+  if (!run) throw new Error(`no <col> run covers column ${column}`);
+  const min = Number(/\bmin="(\d+)"/.exec(run)[1]);
+  const max = Number(/\bmax="(\d+)"/.exec(run)[1]);
+  const bounded = (from, to) => run.replace(/\bmin="\d+"/, `min="${from}"`).replace(/\bmax="\d+"/, `max="${to}"`);
+  const widened = bounded(column, column).replace(/\bwidth="[\d.]+"/, `width="${width}"`);
+  const pieces = [min < column ? bounded(min, column - 1) : "", widened, max > column ? bounded(column + 1, max) : ""];
+  return sheetXml.replace(cols[0], cols[0].replace(run, pieces.join("")));
+}
+
 function setHeaderText(sheetXml, ref, text) {
   return sheetXml.replace(
     new RegExp(`(<c r="${ref}"[^>]*>)[\\s\\S]*?(</c>)`),
@@ -175,22 +202,203 @@ function setHeaderText(sheetXml, ref, text) {
  *     target" (green at 1.0, amber below 0.5) but "against the month before" (green at or above
  *     zero, amber below). Left alone, every family that grew 40% would be painted amber.
  */
+// ── Corrections to the owner's own workbook ───────────────────────────────────
+//
+// Everything below repairs something that was wrong in the source .xlsm itself, not something this
+// script broke. They live here rather than in the filler because each is a property of the ENGINE —
+// a conditional format, a pivot option, a style — and the filler's job is to pour a month into the
+// engine, not to re-decide how it looks on every export.
+
+const CF_RULE = /<cfRule\b[^>]*\/>|<cfRule\b[^>]*>[\s\S]*?<\/cfRule>/g;
+const CELL_XF = /<xf\b[^>]*\/>|<xf\b[^>]*>[\s\S]*?<\/xf>/g;
+
+// Every sheet's zebra banding is written as MOD(ROW()-<first data row>,2)=1.
+const BANDING_RULE = /MOD\(ROW\(\)/;
+
+/**
+ * Make the zebra banding the LAST rule a cell is judged by, on every sheet that has one.
+ *
+ * Conditional formats are merged property by property, and for each property the LOWEST priority
+ * number wins. The banding sets a fill and sat at priority 1 on seven of these sheets, so it beat
+ * the achievement flags — which also set a fill — on every second row. The flag's bold red or green
+ * TEXT still showed, because nothing else set a font, so the page reads as one where the highlight
+ * comes and goes at random: green on rows 9, 11 and 13, pale blue on 10, 12 and 14, the same kind
+ * of number in both. `stopIfTrue` on the flag rules cannot help — it suppresses only the rules
+ * BELOW the one that fired, and the banding was above them all.
+ *
+ * Renumbering rather than deleting keeps both effects: a flagged cell takes the flag's fill and its
+ * `stopIfTrue` then stops the banding, and every unflagged cell still bands.
+ */
+function bandingLast(sheetXml) {
+  const rules = sheetXml.match(CF_RULE) ?? [];
+  const banding = rules.map((rule) => BANDING_RULE.test(rule));
+  if (!banding.some(Boolean) || banding.every(Boolean)) return sheetXml;
+
+  const ranked = rules
+    .map((rule, at) => ({ at, banding: banding[at], priority: Number(/priority="(\d+)"/.exec(rule)?.[1] ?? 0) }))
+    .sort((a, b) => Number(a.banding) - Number(b.banding) || a.priority - b.priority);
+  const renumbered = new Map(ranked.map((rule, rank) => [rule.at, rank + 1]));
+
+  let at = -1;
+  return sheetXml.replace(CF_RULE, (rule) => {
+    at += 1;
+    return rule.replace(/priority="\d+"/, `priority="${renumbered.get(at)}"`);
+  });
+}
+
+/**
+ * Colour the Overview's growth headline by its SIGN.
+ *
+ * I5 is "Against <the month before>", formatted `\+0.0%;\-0.0%;0.0%` in a style whose font is a
+ * fixed dark green. A month that fell therefore prints "-64.8%" in the same green a month that grew
+ * prints "+64.8%" in — and green is the one thing on that page a reader takes at a glance without
+ * reading the sign. August Anti Infective shipped exactly that, on the single biggest number of the
+ * page.
+ *
+ * Green stays for growth; a fall borrows the red the achievement flags already use, so the workbook
+ * keeps one vocabulary of colour instead of two.
+ */
+function flagNegativeGrowth(sheetXml, dxfId) {
+  const rule =
+    `<conditionalFormatting sqref="I5:J5">`
+    + `<cfRule type="cellIs" dxfId="${dxfId}" priority="99" operator="lessThan"><formula>0</formula></cfRule>`
+    + `</conditionalFormatting>`;
+  const close = "</conditionalFormatting>";
+  const last = sheetXml.lastIndexOf(close);
+  if (last < 0) throw new Error("Overview has no conditional formatting to hang the growth rule beside");
+  const at = last + close.length;
+  return sheetXml.slice(0, at) + rule + sheetXml.slice(at);
+}
+
+/** The dxf index of the first format that sets a font colour of `colour` and nothing else. */
+function fontOnlyDxf(stylesXml, colour) {
+  const dxfs = /<dxfs count="\d+">([\s\S]*?)<\/dxfs>/.exec(stylesXml)?.[1] ?? "";
+  const list = dxfs.match(/<dxf>[\s\S]*?<\/dxf>/g) ?? [];
+  const at = list.findIndex((dxf) => dxf === `<dxf><font><color rgb="${colour}"/></font></dxf>`);
+  if (at < 0) throw new Error(`no font-only dxf for ${colour}`);
+  return at;
+}
+
+/**
+ * Merge and centre the product label above the three columns it heads.
+ *
+ * Both matrices repeat Sales Value / Target Value / Ach under every product, and without
+ * `mergeItem` Excel writes the product name into the first of the three and leaves the other two
+ * blank — so the name sits over its Sales Value column and reads as belonging to that one column.
+ * The owner asked for this in his own words: "merge the rifloxacin, the product above it sales
+ * value target value achievement — merge them".
+ *
+ * The two matrices only. Area x Product has a single column field and nothing to merge.
+ */
+function mergeProductLabels(pivotXml) {
+  if (/\bmergeItem="/.test(pivotXml)) return pivotXml;
+  if (!/<colFields count="2">/.test(pivotXml)) return pivotXml;
+  return pivotXml.replace(/(<pivotTableDefinition\b[^>]*?)\s+dataCaption=/, '$1 mergeItem="1" dataCaption=');
+}
+
+/** Number formats whose cells hold a figure, and so line up on the right. */
+const NUMERIC_FORMATS = new Set(["3", "164", "165", "166", "167"]);
+
+/**
+ * Right-align every numeric column, explicitly.
+ *
+ * A number is right-aligned by default and TEXT is not — and these columns carry both: a target
+ * nobody set prints the words "no target", an achievement with no target prints "—". Left where
+ * they fall, those words sit hard against the number in the column before them, and "9,395" beside
+ * "no target" reads as a single value saying 9,395 no target.
+ *
+ * Only styles that state no alignment of their own are touched, so nothing the owner positioned by
+ * hand moves; and for the numbers themselves it is a no-op, because right is where they already
+ * were.
+ */
+function rightAlignNumericStyles(stylesXml) {
+  const block = /<cellXfs count="\d+">([\s\S]*?)<\/cellXfs>/.exec(stylesXml);
+  if (!block) throw new Error("styles.xml has no cellXfs");
+  let touched = 0;
+  const fixed = block[1].replace(CELL_XF, (xf) => {
+    const format = /numFmtId="(\d+)"/.exec(xf)?.[1];
+    if (!format || !NUMERIC_FORMATS.has(format) || /horizontal="/.test(xf)) return xf;
+    touched += 1;
+    if (/<alignment\b/.test(xf)) return xf.replace(/<alignment\b/, '<alignment horizontal="right"');
+    return `${xf.replace(/\s*\/>$/, "")} applyAlignment="1"><alignment horizontal="right"/></xf>`;
+  });
+  return { touched, xml: stylesXml.replace(block[1], fixed) };
+}
+
+/**
+ * Apply all of the above to the emptied workbook.
+ *
+ * Runs BEFORE `addFamilyByMonth`, so the sheet cloned from Family Performance inherits the
+ * corrected conditional formats instead of needing the same repair applied twice.
+ */
+async function polishEngine(zip, manifest) {
+  const styles = await zip.file("xl/styles.xml").async("string");
+  const red = fontOnlyDxf(styles, "FFCC3424");
+  const aligned = rightAlignNumericStyles(styles);
+  zip.file("xl/styles.xml", aligned.xml);
+
+  let reordered = 0;
+  for (const [name, spec] of Object.entries(manifest.sheets)) {
+    const before = await zip.file(spec.file).async("string");
+    // The growth rule goes in FIRST so the renumbering below takes it into account rather than
+    // leaving it on the placeholder priority it was written with.
+    const after = bandingLast(name === "Overview" ? flagNegativeGrowth(before, red) : before);
+    if (after !== before) {
+      zip.file(spec.file, after);
+      reordered += 1;
+    }
+  }
+
+  let merged = 0;
+  for (const file of zip.file(/^xl\/pivotTables\/pivotTable\d+\.xml$/)) {
+    const before = await file.async("string");
+    const after = mergeProductLabels(before);
+    if (after !== before) {
+      zip.file(file.name, after);
+      merged += 1;
+    }
+  }
+
+  console.log(
+    `  polish                 ${reordered} sheets re-ranked, ${merged} pivots merge labels,`
+    + ` ${aligned.touched} numeric styles right-aligned, growth uses dxf ${red}`,
+  );
+}
+
 async function addFamilyByMonth(zip, manifest) {
   const SOURCE = "Family Performance";
   const NAME = "Family by Month";
   const FILE = "xl/worksheets/sheet13.xml";
   const REL_ID = "rId20";
+  // A drawing part is referenced by ONE sheet, so the clone needs its own copy rather than a
+  // second reference to the original's. Eleven exist; twelve is free.
+  const DRAWING = "xl/drawings/drawing12.xml";
+  const SOURCE_DRAWING = "xl/drawings/drawing8.xml";
   const spec = manifest.sheets[SOURCE];
   if (!spec) throw new Error(`cannot clone ${SOURCE}: it is not in the manifest`);
 
   let sheet = await zip.file(spec.file).async("string");
   sheet = sheet.replace(/xr:uid="\{[^}]*\}"/, 'xr:uid="{00000000-0001-0000-0C00-000000000000}"');
   sheet = sheet.replace(/<sheetPr codeName="[^"]*"/, "<sheetPr");
-  sheet = sheet.replace(/<drawing r:id="[^"]*"\s*\/>/, "");
+  // The clone used to drop its drawing outright, on the reasoning that a relationship id
+  // resolving to nothing is itself a repair prompt. True, and it left this page as the only one
+  // in the workbook with no Sato emblem and no Export PDF button — the owner reads it beside its
+  // twelve siblings and the difference is the first thing visible. The right answer is not a
+  // dangling id but a drawing of its own, so it gets one: the same part Family Performance uses,
+  // copied, with its own relationship file pointing at the same emblem image.
+  sheet = sheet.replace(/<drawing r:id="[^"]*"\s*\/>/, '<drawing r:id="rId1"/>');
   sheet = sheet.replace(/(<pageSetup [^>]*?)\s+r:id="[^"]*"/, "$1");
   // Freeze the four header rows rather than six: this page scrolls, and the owner's original split
   // was cut for a sheet that never ran past one screen.
   sheet = sheet.replace(/<pane xSplit="1" ySplit="\d+" topLeftCell="[A-Z]+\d+"/, '<pane xSplit="1" ySplit="4" topLeftCell="B5"');
+
+  // Three headings on this page are longer than the columns Family Performance sized for its
+  // own, shorter ones, and a clipped heading is the ellipsis ban in another costume: "Share of
+  // the month" showed as "Share of the mo", "Against the month before" as "Against the mont".
+  // Widened rather than abbreviated — the owner's wording is the wording.
+  sheet = setColumnWidth(sheet, 5, 19.7109375);
+  sheet = setColumnWidth(sheet, 6, 25.7109375);
+  sheet = setColumnWidth(sheet, 8, 20.7109375);
 
   sheet = setHeaderText(sheet, "C4", "Month");
   sheet = setHeaderText(sheet, "E4", "Share of the month");
@@ -204,12 +412,27 @@ async function addFamilyByMonth(zip, manifest) {
   sheet = sheet.replaceAll("$F5&gt;=1)", "$F5&gt;=0)").replaceAll("$F5&lt;0.5)", "$F5&lt;0)");
   zip.file(FILE, sheet);
 
+  zip.file(DRAWING, await zip.file(SOURCE_DRAWING).async("string"));
+  zip.file(
+    DRAWING.replace(/drawings\/([^/]+)$/, "drawings/_rels/$1.rels"),
+    await zip.file(SOURCE_DRAWING.replace(/drawings\/([^/]+)$/, "drawings/_rels/$1.rels")).async("string"),
+  );
+  zip.file(
+    FILE.replace(/worksheets\/([^/]+)$/, "worksheets/_rels/$1.rels"),
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n`
+      + `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">`
+      + `<Relationship Id="rId1" Type="${REL_NS}/drawing" Target="../${DRAWING.replace("xl/", "")}"/>`
+      + `</Relationships>`,
+  );
+
   const contentTypes = await zip.file("[Content_Types].xml").async("string");
   zip.file(
     "[Content_Types].xml",
     contentTypes.replace(
       "</Types>",
-      `<Override PartName="/${FILE}" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>`,
+      `<Override PartName="/${FILE}" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`
+        + `<Override PartName="/${DRAWING}" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/>`
+        + `</Types>`,
     ),
   );
 
@@ -268,7 +491,7 @@ async function addFamilyByMonth(zip, manifest) {
     file: FILE,
     stampCells: spec.stampCells.map((cell) => (cell.col === "E" ? { ...cell, s: percentStyle } : cell)),
   };
-  console.log(`  ${NAME.padEnd(22)} cloned from ${SOURCE} -> ${FILE}  (sheetId ${sheetId}, ${REL_ID}, no codeName)`);
+  console.log(`  ${NAME.padEnd(22)} cloned from ${SOURCE} -> ${FILE}  (sheetId ${sheetId}, ${REL_ID}, ${DRAWING})`);
 }
 
 async function main() {
@@ -421,7 +644,18 @@ async function main() {
   let cacheDef = await zip.file(cacheDefPath).async("string");
   cacheDef = cacheDef.replace(/\srefreshOnLoad="[^"]*"/, "").replace(/<pivotCacheDefinition /, '<pivotCacheDefinition refreshOnLoad="1" ');
   cacheDef = cacheDef.replace(/\srecordCount="\d+"/, ' recordCount="0"');
-  // Cached shared items are July's values. Strip them; a refresh repopulates from SalesData.
+  // Cached shared items are July's values. Strip them so no other line's areas and reps ship
+  // inside this template.
+  //
+  // THE STRIP IS ONLY HALF A CHANGE, and the other half is NOT here. `refreshOnLoad="1"` does not
+  // rescue it: `xl/pivotTables/*.xml` still enumerate July's items (`<item x="0"/>` … `<item x="49"/>`)
+  // and Excel validates the pivots against the cache BEFORE it honours the refresh — so it removes
+  // all three views and declares the workbook damaged. Every premium export prompted "We found a
+  // problem with some content" on open until 2026-09-02. `restorePivotCacheSharedItems` in
+  // src/lib/sales/closing-engine-fill.ts refills the pool with placeholders at fill time, which is
+  // what makes the output openable; it lives there so it also repairs templates built before this
+  // was understood. Drop the strip below and that function goes with it — one without the other is
+  // the bug, in either direction.
   //
   // The PAIRED form is collapsed first, and its opening tag must be proven NOT self-closing. Done
   // the other way round — normalise `<sharedItems .../>` first, then collapse pairs — the pair
@@ -520,6 +754,7 @@ async function main() {
   workbookRels = workbookRels.replace(/<Relationship [^>]*Target="calcChain\.xml"[^>]*\/>/, "");
   zip.file("xl/_rels/workbook.xml.rels", workbookRels);
 
+  await polishEngine(zip, manifest);
   await addFamilyByMonth(zip, manifest);
 
   const outDir = resolve(root, "assets/closing-engine");

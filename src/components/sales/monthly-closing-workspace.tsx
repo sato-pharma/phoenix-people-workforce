@@ -327,12 +327,14 @@ export function MonthlyClosingWorkspace({ canPublish = false, initialCoverage = 
    * What comes back is the owner's OWN .xlsm engine with the month written into it -- its Excel
    * Tables, pivots, slicers and the Rep Card's formulas all live -- plus the pages that were added
    * to it: Watch List, Top Customers, Details and Family by Month. Thirteen sheets. It serves as
-   * .xlsx by default and only as .xlsm when the caller asks for the macros, because a
-   * macro-enabled attachment is stripped by too many mail systems to be the default.
+   * .xlsm, so the owner's button bar is live -- Export PDF, Refresh, Expand/Collapse all, Reset
+   * filters and the region buttons. Export PDF has no macro-free equivalent inside a workbook and
+   * a .xlsx holds no code at all, so buttons and extension are one decision, not two. Pass
+   * `macros: false` for the plain .xlsx, which removes the buttons rather than ship dead ones.
    */
   async function handlePremiumExport() {
     await runExport({
-      fallbackName: "phoenix-monthly-closing-premium.xlsx",
+      fallbackName: "phoenix-monthly-closing-premium.xlsm",
       setBusy: setIsExportingPremium,
       url: "/api/sales/monthly-closing/premium-export",
     });
