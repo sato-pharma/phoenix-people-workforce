@@ -4,10 +4,10 @@ import path from "node:path";
 
 import {
   candidateRegionForGovernorate,
-  egyptRegionFromFreeText,
   foreignCountryForGovernorate,
   recruitmentAreaRegionOverrides,
 } from "../src/lib/recruitment/candidate-region.ts";
+import { egyptRegionFromFreeText } from "../src/lib/recruitment/candidate-region-freetext.ts";
 import { inferCandidatePlacement } from "../src/lib/recruitment/candidate-folder-inference.ts";
 import {
   driveFileNameFor,

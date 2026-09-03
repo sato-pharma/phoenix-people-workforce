@@ -51,7 +51,6 @@
 // hiring a District Manager into it while an applicant could not choose it at all. UE-1/UE-2 are
 // deliberately NOT here — they are sales subdivisions of Upper Egypt, and offering all three to a
 // job applicant asks them to know an internal split they cannot be expected to know.
-import { normalizeArabic, placeAliases } from "@/lib/geo/egypt-locations";
 
 export const candidateRegionCodes = ["CA", "GZ", "AB", "D1", "D2", "D3", "UE", "OT"] as const;
 export type CandidateRegionCode = (typeof candidateRegionCodes)[number];
@@ -424,64 +423,16 @@ export function foreignCountryForGovernorate(raw: string | null | undefined): st
 }
 
 /**
- * The company region a piece of FREE TEXT names — a street address, a city, an Arabic line — or null.
+ * The free-text reader lives in `candidate-region-freetext.ts`, NOT here, and may not move back.
  *
- * WHY THIS IS NOT JUST `candidateRegionForGovernorate`.
- *
- * That function answers for a governorate FIELD. Measured on production 2026-09-04, 53 candidates
- * holding a CV had no governorate at all and an address the map could not read: "Damanhour, Damanhour
- * 22511", "Baltim, Kafr El-Sheikh, Egypt", "Naga Hammadi, Egypt", "10th of Ramadan". Every one of
- * those places is already in `src/lib/geo/egypt-locations.ts`, which carries town-level names in both
- * scripts. So this reuses that vocabulary rather than starting a fourth copy of Egypt.
- *
- * TWO THINGS IT DOES NOT DO, AND BOTH ARE THE POINT.
- *
- * 1. It does NOT call `resolveGovernorate`. That function matches with a bare `includes`, so a key
- *    can match inside an unrelated word: "Sagamu, Ogun State, Nigeria" resolves to **Dakahlia**,
- *    because the Dakahlia alias "aga" sits inside "Sagamu". A Nigerian CV would have been filed in a
- *    Delta folder. Measured, not hypothetical — it is why the matching below is whole-word.
- *
- * 2. It asks whether the text is EGYPTIAN before it asks which country it is, rather than the other
- *    way round. Those two questions overlap: "riyadh" is a real town in Kafr El-Sheikh and also the
- *    Saudi capital. So an explicit Egyptian signal — the word "Egypt", or a governorate's own name —
- *    settles it first, and only text carrying no such signal is offered to the foreign list.
- *
- * Null means "nothing recognised", never "Others" — same rule, and same reason, as the governorate
- * lookup above.
+ * This module is one of the three vocabularies `screening-link` is allowed to import, and
+ * `tests/recruitment-screening-page.test.ts` pins it to ZERO imports — otherwise screening-link's
+ * purity is only one level deep, and a server-only module reaching a client graph in this repo
+ * 500s every later request, `/api/healthz` included. Reading free text needs the town-level
+ * vocabulary in `@/lib/geo/egypt-locations`, and importing it here fails that check. Inlining a
+ * copy would be a fourth copy of Egypt, which is its own standing rule against. So the reader sits
+ * in a sibling module free to import both.
  */
-export function egyptRegionFromFreeText(raw: string | null | undefined): CandidateRegionCode | null {
-  const text = normalizeGovernorate(normalizeArabic(String(raw ?? "")));
-  if (!text) return null;
-
-  // Whole-word / whole-phrase containment. The padding is what `resolveGovernorate`'s `includes`
-  // lacks, and it is the entire difference between "Sagamu" matching Dakahlia and not.
-  const holds = (needle: string): boolean => {
-    const key = normalizeGovernorate(normalizeArabic(needle));
-    return key.length > 0 && ` ${text} `.includes(` ${key} `);
-  };
-
-  // An explicit Egyptian signal: the country itself, or a governorate called by its own name.
-  const namesEgypt =
-    holds("egypt") || holds("مصر") || placeAliases.some((place) => holds(place.label));
-
-  if (!namesEgypt && foreignCountryForGovernorate(text)) return null;
-
-  // This file's OWN map first: it is where the misspellings production actually produces live
-  // ("Behaira", "Kafr Elshikh"), and the geo module carries only correct spellings and real town
-  // names. Word-matched already, so it is safe on a long address.
-  const fromSpellingMap = candidateRegionForGovernorate(text);
-  if (fromSpellingMap) return fromSpellingMap;
-
-  // Then governorate names, then the town-level aliases beneath them, so a line naming both its
-  // town and its governorate is decided by the governorate.
-  for (const place of placeAliases) {
-    if (holds(place.label)) return candidateRegionForGovernorate(place.label);
-  }
-  for (const place of placeAliases) {
-    if (place.aliases.some(holds)) return candidateRegionForGovernorate(place.label);
-  }
-  return null;
-}
 
 // ── The AREA rows the apply flow shows under each region ───────────────────────────────────────────
 // Question 3's area LIST is read live from the SALES geography (`au.canonical_areas`, via

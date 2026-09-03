@@ -41,10 +41,10 @@
 
 import {
   candidateRegionLabels,
-  egyptRegionFromFreeText,
   foreignCountryForGovernorate,
   type CandidateRegionCode,
 } from "@/lib/recruitment/candidate-region";
+import { egyptRegionFromFreeText } from "@/lib/recruitment/candidate-region-freetext";
 
 /** Everything this module reads. Structural, so a caller need not build a whole candidate. */
 export type InferableCandidate = {
