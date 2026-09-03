@@ -2,6 +2,7 @@ import { strict as assert } from "node:assert";
 import { readFileSync } from "node:fs";
 
 import { HR_SEAT_ROLES, resolveConversationAudience } from "../src/lib/conversations/notify.ts";
+import { isDeductionsReadActor } from "../src/lib/deductions/permissions.ts";
 import { enforceCandidateAssignedEmailBlock } from "../src/lib/notifications/recruitment-candidate-assigned-channel-guard.ts";
 import { enforceRecruitmentCvEmailBlock } from "../src/lib/notifications/recruitment-cv-channel-guard.ts";
 import { planDayFingerprint } from "../src/lib/weekly-planning/service.ts";
@@ -22,6 +23,7 @@ const servicePath = new URL("../src/lib/weekly-planning/service.ts", import.meta
 const service = readFileSync(servicePath, "utf8");
 const deductionsComments = readFileSync(new URL("../src/lib/deductions/comments.ts", import.meta.url), "utf8");
 const conversationNotify = readFileSync(new URL("../src/lib/conversations/notify.ts", import.meta.url), "utf8");
+const deductionsPage = readFileSync(new URL("../app/(admin)/admin/deductions/page.tsx", import.meta.url), "utf8");
 
 export function runPlanSyncConversationEmailTests() {
   // -------------------------------------------------------------------------
@@ -255,6 +257,41 @@ export function runPlanSyncConversationEmailTests() {
     /subjectLabel: authorName \?\? "an employee"/.test(deductionsComments),
     "HR must be told which PERSON commented, never their HR id",
   );
+
+  // THE LINK IN THAT MAIL HAS TO OPEN. This is the pin that closes the loop the feature opened:
+  // a notification is an actionUrl and a body, and wiring an audience to a page that redirects them
+  // produces a mail that reads as a bug rather than as a message. HR Operations was in exactly that
+  // state on the day the mail was written - offered the row on deductions:read, refused by the
+  // page's hard-coded role set - and the owner closed it: "yes give HR access to the deductions
+  // screen."
+  //
+  // Both halves are asserted, because either alone is the offered-but-closed shape. The page is the
+  // door; isDeductionsReadActor is the data behind it, checked separately by every company-wide
+  // read route, so passing the door with the gate closed renders a screen whose every panel 403s.
+  assert.ok(
+    /actionUrl: "\/admin\/deductions"/.test(deductionsComments),
+    "the deductions comment must link to the unified deductions screen",
+  );
+  assert.ok(
+    /const VIEW_ROLES = new Set\(\[[^\]]*"HR Operations"/.test(deductionsPage),
+    "the deductions page must admit HR Operations - it is mailed the comment, so its link must open",
+  );
+  assert.ok(
+    isDeductionsReadActor({ role: "HR Operations" }),
+    "HR Operations must pass the module read gate too, or the page opens and every panel 403s",
+  );
+  // HR Advisory is mailed the same comment and cannot open the screen. That is deliberate and the
+  // owner was told so - payroll appears nowhere in the HR Business Partner job description - and it
+  // is pinned so a later session does not "fix" the asymmetry in either direction by accident. What
+  // makes it safe is the body: the message carries the comment IN FULL, asserted above.
+  assert.ok(
+    !isDeductionsReadActor({ role: "HR Advisory" }),
+    "HR Advisory must NOT read the company's deductions - she is mailed the comment, not the ledger",
+  );
+  // That BOTH seats stay on this conversation - an employee disputing a deduction is an employee
+  // concern, and engagement is hrbp 2 - is already pinned by the HR_SEAT_ROLES deepEqual above.
+  // Repeating it here would be an assertion that can never fire on its own, which is the shape this
+  // suite exists to avoid.
 
   // The guards themselves still do their job, so this pin cannot pass by having neutered them.
   assert.ok(

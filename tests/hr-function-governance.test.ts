@@ -90,6 +90,22 @@ const FILES_NAMING_AN_HR_SEAT: readonly string[] = [
   // answered EGP 0 payroll / EGP 0 sales / EGP 0 expenses for HR Advisory and EGP 0 sales /
   // EGP 0 expenses for HR Operations, so nothing they could act on was lost with it.
   "app/(admin)/admin/page.tsx",
+  // Names HR Operations in VIEW_ROLES, added 2026-09-03. Reviewed verdict: it GRANTS reach, and it
+  // is the string that opens the Deductions screen for her — listed for exactly that reason.
+  //
+  // The owner asked for it in these words: "yes give HR access to the deductions screen." It hands
+  // her nothing her job description withholds. payroll_inputs — cited to "ops 3 — Payroll HR Inputs
+  // & Monthly Closure", whose line is "ensure no deduction is processed without evidence and
+  // approval" — has granted her deductions:read since the seat was composed; only this hard-coded
+  // set was refusing her, which is why the link the new deductions-comment mail carries used to
+  // bounce. Her named boundaries are deductions:approve/create/update, and all three stay ABSENT:
+  // Rule 4 below asserts that against the composed matrix, canDecide on the page is Super Admin
+  // alone, and every mutating route asserts approve or create rather than read.
+  //
+  // Added to the SET rather than replaced by canAccess(access, "deductions", "read"): the Finance
+  // Manager still holds that grant and the owner revoked his screen on 2026-08-11, so a permission
+  // check would have handed the page back to him as a side effect. HR Advisory is not here.
+  "app/(admin)/admin/deductions/page.tsx",
   "app/(admin)/admin/recruitment-hiring/page.tsx",
   "app/(admin)/attendance/page.tsx",
   "app/employee-portals/account-activation/page.tsx",
@@ -112,11 +128,14 @@ const FILES_NAMING_AN_HR_SEAT: readonly string[] = [
   // two strings are the argument to `.in("role", ...)` against app_auth_users, used only to decide
   // who is mailed; no page opens, no query widens, no record is read on either seat's behalf.
   //
-  // It is deliberately NOT a grant, and the distinction is live rather than theoretical: the
-  // deductions screen these emails point at gates on VIEW_ROLES = {"Super Admin", "CEO"} and
-  // redirects both seats away, exactly as it did the Finance Manager after 2026-08-11. HR reads
-  // the comment in the email body and cannot reach the record - which is the state the owner was
-  // told about, not an oversight to quietly close from here.
+  // It is deliberately NOT a grant, and it did not become one when the screen opened. Told that
+  // the deductions screen these emails point at gated on VIEW_ROLES = {"Super Admin", "CEO"} and
+  // would bounce both seats, the owner answered "yes give HR access to the deductions screen" the
+  // same day. That access was granted where access is granted — the page's role set and
+  // isDeductionsReadActor, both listed below and both HR OPERATIONS ONLY. This audience list stayed
+  // as it is: BOTH seats are mailed, because an employee disputing a deduction is an employee
+  // concern and hrbp 2 is engagement. HR Advisory therefore reads the comment in full in the mail
+  // body and her link lands on /employee-portals — the owner was told that in those words.
   //
   // Resolved by ROLE and never by job title, per the owner's rule that an HR seat is composed from
   // a function catalogue. That is not stylistic: weekly-planning's hrAcknowledgementRecipients
@@ -135,6 +154,22 @@ const FILES_NAMING_AN_HR_SEAT: readonly string[] = [
   // COMPANY_READ), which is why this is a per-seat note and not a general invariant.
   "src/lib/auth/supabase-identity.ts",
   "src/lib/contracts/service.ts",
+  // Names HR Operations in isDeductionsReadActor, added 2026-09-03 with the page above. Reviewed
+  // verdict: it GRANTS reach, and it is the wider half of the two — the page is a door, this is the
+  // data. Every company-wide deductions read route asserts this gate ON TOP of the matrix, so
+  // without it she would have opened the screen and had each panel 403.
+  //
+  // It is company-wide by necessity, not by choice: the screen has no self-only mode. That is a
+  // smaller step than it reads as, because getPayrollScope already returns COMPANY for her seat
+  // (owner, 2026-08-29) and payroll_inputs already grants payroll and payslips read+export — every
+  // employee's gross and net is on her screen today, and a deduction is a component of the payslip
+  // she can already open.
+  //
+  // What it does NOT hand her is the file. Her deductions grant is ["read"] with no `export`, so
+  // /api/admin/deductions/export refuses her at assertPermission even though it calls this same
+  // gate — the same split the owner set for her payslips on 2026-09-01. tests/deductions-read-gate
+  // .test.ts pins that absence directly, because widening it would look like tidying.
+  "src/lib/deductions/permissions.ts",
   "src/lib/employee-360/access.ts",
   "src/lib/employees/access-provisioning.ts",
   "src/lib/excuses/service.ts",
