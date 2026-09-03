@@ -299,9 +299,10 @@ function pathForShelf(kind, key, areaRegions) {
 async function main() {
   console.log(DRY_RUN ? "DRY RUN — nothing will be written to Drive.\n" : "Backfilling CVs to Google Drive.\n");
 
-  const areas = await rest("canonical_areas?select=area_name,code_region_code&is_active=eq.true", {
-    headers: { "Accept-Profile": "au" },
-  });
+  // The PUBLIC view, not `au.canonical_areas` directly: PostgREST exposes only public,
+  // graphql_public and analytics, so reaching into the `au` schema answers PGRST106
+  // "Invalid schema: au". Same view listCandidateFolderAreaOptions reads.
+  const areas = await rest("au_v_canonical_areas?select=area_name,code_region_code&is_active=eq.true");
   const areaRegions = {};
   for (const row of areas) if (row.area_name && row.code_region_code) areaRegions[row.area_name] = row.code_region_code;
   console.log(`Area map: ${Object.keys(areaRegions).length} active areas.`);
