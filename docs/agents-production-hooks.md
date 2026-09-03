@@ -353,3 +353,74 @@ expected to yield around 150 bytes, not more.
 **The arithmetic that matters is still on the other side.** PR #2880 added 884 bytes to §2.1 in one
 commit — two thirds of everything four editing passes have recovered. Cue in `AGENTS.md`, account in
 `docs/`, enforced when the hook is written, is the only lever with a better rate than that.
+
+## New hook — the venue resolver cache goes stale, and reads as unmappable (2026-09-03)
+
+**The hook is in §2.3, "Production data".** This is the account.
+
+**What was audited.** A sweep of the marketing to CRM to Source-of-Sales links reported *"6 of 345
+rows in `marketing_customers` have a NULL `area_id`"*, against the §4.1 rule that marketing
+pharmacies are territorial and a NULL `area_id` makes one invisible. **Two things in that framing
+were wrong, and both are worth keeping.**
+
+**First, the table was the neighbouring one.** `public.marketing_customers` holds **207 rows with
+zero** NULL areas. The 345/6 measurement belongs to `public.marketing_pharmacies`. The two tables sit
+side by side with near-identical columns — `area_id`, `region_name`, `extracted_area_name`,
+`captured_*`, `validation_status` — so a query written against the wrong one returns a clean,
+plausible, entirely misleading answer. **Confirm the row count matches the claim before working the
+claim**; here the count was the thing that caught it.
+
+**Second, the harm did not bite.** All 6 NULL-area rows were `active = false`, and **all 335 active
+pharmacies already carried an area**. They were also excluded by a second, independent condition:
+the reusable-pharmacy workspace query in `src/lib/marketing-requests/service.ts` filters
+`.not("owner_hr_id", "is", null)` as well as `active`, and all 6 have no owner. `area_id` was not
+what hid them. Fixing it was still right — a row reactivated later would have become genuinely
+invisible — but it was latent hygiene, **not a live blind spot**, and saying otherwise would have
+overstated the finding. The 6 were an unowned import batch created 20 Jun 2026, 16:45–16:48 Cairo,
+never validated, no photo, no GPS; the other 4 inactive rows are app-minted `MKT-PHA-*` venues with
+real owners, and they kept their areas.
+
+**THE TRAP.** `marketing_pharmacy_distributor_codes` carries `mapped_area_code`, `mapped_brick_id`,
+`reference_status` and `master_match_kind`. **These are a cache, not an authority.** Five of the six
+resolved straight off it. The sixth — حضانة زمزم, a `nursery`, code `0001511111` — read
+`reference_status = not_found`, `master_match_kind = unresolved`, every `mapped_*` column NULL. On
+that reading it was unrecoverable, and the next step under §4's standing rule would have been an XLSX
+of candidate areas put to the owner.
+
+**It was not unrecoverable. The cache was ten days out of date.** `master_resolved_at` on that row is
+**9 Aug 2026, 12:16 Cairo**. The `source_of_sales_customer_map` row that answers it was written
+**19 Aug 2026, 23:57 Cairo** — `source = direct-order-evidence-hadanat-zamzam-2026-08-19`,
+`confidence = 90`, exact customer code, exact name `حضانة زمزم`, address `الزراعة بالمحلة الكبرى`,
+brick `B192-1` (المحله الكبرى), area **D15, Gharbia 2 (Mahalla)**. A re-resolution of a *different*
+row four hours earlier the same evening (19 Aug, 19:55 Cairo) had still missed it. The venue's own
+inactive link to a doctor in D15 agreed independently.
+
+**So the question would have been asked of the owner about a fact production already held.** That is
+the cost of the trap, and it is silent in both directions: no error, no staleness marker, and a
+`not_found` that looks like a settled answer rather than a stale one.
+
+**Same shape as `au.f_monthly_achievement` in §2.1** — a precomputed rollup whose fingerprint does not
+cover the data that would invalidate it. Treat any `mapped_*` / `*_resolved_at` pair as that family:
+**the resolved-at timestamp is the question, not the verdict.**
+
+**What was set.** All six recovered from the registered distributor code against the live map — the
+owner's rule that the registered code beats live GPS, applied to the column that governs sight.
+
+| Venue | Area set | Independent confirmation |
+| --- | --- | --- |
+| محمود محمد موسى -الشهداء | Menoufia 1 (D12, id 1101) | code `PS/0001576768`, exact name; brick الشهداء |
+| هبه خالد البدرشين | Giza - Giza Centers (GZ1, id 1113) | code `PS/0001537376`, exact name; brick البدراشين |
+| حضانة زمزم | Gharbia 2 (Mahalla) (D15, id 1104) | live map only; address and linked doctor both Mahalla |
+| السنترال - سمالوط ت | Minia 1 (UE1, id 1123) | code `PS/0001511917`, exact name; brick سمالوط |
+| صيدلية خاصة بمستشفى تبارك للاطفال | Haram - Faisal (GZ4, id 1116) | own code `IS/431302` exact name, and POS `0001533787`, both to GZ4 |
+| مصطفى احمد وحيد القوصية | Assuit 1 (UE3, id 1125) | code `PS/0001548234`, exact name; brick القوصيه |
+
+In every case the brick's Arabic name is the town in the venue's own name, every code returned
+exactly one active map row, and no area is a Delta (3) moved area. Post-state: 345 rows, **0 NULL
+areas**, 345 valid area FKs, 335 active / 10 inactive unchanged, **0 other columns changed**.
+`updated_by_hr_id` was deliberately left NULL — no person made the edit, and §2.1 already records
+that this column lies about who wrote a row.
+
+**Rollback.** `marketing_rollback.pharmacy_area_null_pre_20260903`, 6 rows, areas preserved as NULL.
+Per §2.1 a `create table … as select` copies rows but never RLS: **measure that table's ACL before
+assuming anything about it either way.**
