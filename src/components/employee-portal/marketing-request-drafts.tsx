@@ -59,6 +59,7 @@ import { UNVERIFIED_CODE_REASON_MIN_LENGTH } from "@/lib/marketing-requests/type
 import { venueTypeLabel } from "@/lib/venues/venue-type";
 import type {
   MarketingApprovedRequestRow,
+  MarketingRequestContactOption,
   MarketingRequestPharmacyOption,
   MarketingCustomer,
   MarketingProduct,
@@ -77,6 +78,7 @@ type DraftWorkspacePayload = {
   canCreateDraft: boolean;
   customers: MarketingCustomer[];
   drafts: MarketingRequest[];
+  contactsByCustomer: Record<string, MarketingRequestContactOption[]>;
   pharmaciesByCustomer: Record<string, MarketingRequestPharmacyOption[]>;
   inApproval: MarketingRequest[];
   products: MarketingProduct[];
@@ -265,6 +267,7 @@ function emptyPayload(): DraftWorkspacePayload {
     // server's explicit value applies once the workspace is fetched.
     canCreateDraft: true,
     customers: [],
+    contactsByCustomer: {},
     pharmaciesByCustomer: {},
     drafts: [],
     inApproval: [],
@@ -767,6 +770,7 @@ function MarketingRequestDraftWorkspaceInner() {
         approvedRequests: payload.approvedRequests ?? [],
         canCreateDraft: payload.canCreateDraft ?? true,
         customers: payload.customers ?? [],
+        contactsByCustomer: payload.contactsByCustomer ?? {},
         pharmaciesByCustomer: payload.pharmaciesByCustomer ?? {},
         drafts: payload.drafts ?? [],
         inApproval: payload.inApproval ?? [],
