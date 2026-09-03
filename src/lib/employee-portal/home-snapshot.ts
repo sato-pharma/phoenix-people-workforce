@@ -3,6 +3,7 @@ import { canonicalHrIdForDisplay } from "@/lib/hr-id";
 import { queryVisitsLimited } from "@/lib/crm/reads";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { devSafePromiseAllSettled } from "@/lib/utils/dev-safe-promise-all";
+import { isReviewPeriod, windowLabel } from "@/lib/business-review/period-format";
 import { getVacationBalancePeriod } from "@/lib/vacation/calculations";
 import {
   getDsmTeamPerformance,
@@ -114,16 +115,64 @@ export const DV_FOCUS_ROLES = new Set([
  * would erase the whole roster — which this board renders as "nobody on your team submitted
  * today", a confident lie. A failed directory read must degrade to unfiltered, never to empty.
  */
-export function activeRosterOnly<T extends { hrId: string }>(
+/**
+ * Split a performance roster into the people still employed and the people who have left.
+ *
+ * The DIRECTORY is the authority on employment here, never the sales rows. Source of Sales keeps a
+ * rep's July money after they resign in August — correct, the money was earned — but it means a
+ * leaver keeps surfacing on their manager's leaderboard for as long as the achievement window
+ * still includes a month they worked. On 2026-09-03 two of the seven names on one district
+ * manager's board had already left (last working days 2026-08-09 and 2026-08-17) and the owner
+ * asked, plainly, how he was still seeing them.
+ *
+ * Their SALES stay in the headline totals. Only the people lists and head counts are filtered, and
+ * `departed` is returned rather than discarded so a caller can say out loud how much of its own
+ * total is carried by names it is not showing.
+ *
+ * FAIL-OPEN: when the directory read came back empty, EVERY row is treated as active. A failed
+ * lookup must never quietly empty a manager's team.
+ */
+export function splitDepartedRoster<T extends { hrId: string }>(
   roster: readonly T[],
   directoryRows: readonly EmployeeDirectoryRow[],
-): T[] {
+): { active: T[]; departed: T[] } {
   const key = (value?: string | null) => (value ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
   const activeKeys = new Set(
     directoryRows.filter(isActiveDirectoryEmployee).map((row) => key(row.hrId)).filter(Boolean),
   );
-  if (activeKeys.size === 0) return [...roster];
-  return roster.filter((row) => activeKeys.has(key(row.hrId)));
+  if (activeKeys.size === 0) return { active: [...roster], departed: [] };
+  const active: T[] = [];
+  const departed: T[] = [];
+  for (const row of roster) (activeKeys.has(key(row.hrId)) ? active : departed).push(row);
+  return { active, departed };
+}
+
+export function activeRosterOnly<T extends { hrId: string }>(
+  roster: readonly T[],
+  directoryRows: readonly EmployeeDirectoryRow[],
+): T[] {
+  return splitDepartedRoster(roster, directoryRows).active;
+}
+
+/** Total sales carried by rows that are being filtered off a leaderboard. */
+function sumSales(rows: readonly { totalSales: number }[]): number {
+  return rows.reduce((sum, row) => sum + (Number.isFinite(row.totalSales) ? row.totalSales : 0), 0);
+}
+
+/**
+ * The sales window a performance keycard actually covers, named.
+ *
+ * These keycards are built with no requested period, which means EVERY PUBLISHED period in the
+ * achievement window — not "this month". On 2026-09-03 that was July 2026 alone, while the cards
+ * read "achieved this period" and a manager opening them in September had no way to tell which
+ * month he was looking at. Owner, 2026-09-03: "you must show this achievement is in which window?"
+ *
+ * Null when nothing is published; the caller must then say so rather than print a bare number.
+ */
+export function salesWindowLabel(periods: readonly string[] | null | undefined): string | null {
+  const sorted = (periods ?? []).filter(isReviewPeriod).slice().sort();
+  if (sorted.length === 0) return null;
+  return windowLabel(sorted[0], sorted[sorted.length - 1]);
 }
 
 export type UpcomingMarketingActivity = { id: string; requestCode: string; payDate: string; estimatedCost: number };
@@ -176,13 +225,28 @@ export type PortalHomeSnapshot = {
         totalSales: number;
         totalTarget: number;
         pendingApprovals: number;
+        /** Which published month(s) these numbers cover, e.g. "Jul 2026". Null when none is
+         *  published — the keycards must then say so rather than print a bare number. */
+        windowLabel: string | null;
+        /** Reps who left during the window: excluded from `members` and `memberCount`, but their
+         *  sales are still inside `totalSales`, which is what `departedSales` accounts for. */
+        departedCount: number;
+        departedSales: number;
         members: Array<{ hrId: string; name: string; achievementPercent: number; totalSales: number; totalTarget: number }>;
         crm: NsmCrmComplianceData;
       }
     | null;
   /** National Sales Manager only: the NSM's line, rolled up by DSM, + approvals awaiting the NSM. */
   nsmNational:
-    | { achievementPercent: number; dsmCount: number; totalSales: number; totalTarget: number; pendingApprovals: number }
+    | {
+        achievementPercent: number;
+        dsmCount: number;
+        totalSales: number;
+        totalTarget: number;
+        pendingApprovals: number;
+        /** Which published month(s) these numbers cover. See dsmTeam.windowLabel. */
+        windowLabel: string | null;
+      }
     | null;
   /**
    * National Sales Manager only: leaderboards (DSMs + top med reps by achievement %) and the
@@ -200,6 +264,9 @@ export type PortalHomeSnapshot = {
           managerName: string | null;
         }>;
         crm: NsmCrmComplianceData | null;
+        /** People who left during the window: off both leaderboards, still inside the line total. */
+        departedCount: number;
+        departedSales: number;
       }
     | null;
   /**
@@ -219,6 +286,11 @@ export type PortalHomeSnapshot = {
         /** Region sales carried by no district row (vacant-DM reps + in-region direct orders). */
         unattributedSales: number;
         pendingApprovals: number;
+        /** Which published month(s) these numbers cover. See dsmTeam.windowLabel. */
+        windowLabel: string | null;
+        /** People who left during the window: off both leaderboards, still inside the region total. */
+        departedCount: number;
+        departedSales: number;
         /** Districts (DSMs) inside the RM's region set, ranked by achievement % then sales. */
         dsms: Array<{ hrId: string; name: string; achievementPercent: number; totalSales: number; totalTarget: number }>;
         /** Top med reps inside the RM's region set, ranked the same way. */
@@ -318,7 +390,11 @@ async function getRoleSpecificExtras(access: AccessContext, role: string, hrId: 
       const display = (hrId: string | null | undefined, fallback: string) =>
         displayByKey.get(nameKey(hrId)) ?? fallback;
 
-      const members = (team.members ?? [])
+      // Leavers come off BEFORE the top-10 slice, never after: a rep who resigned mid-window still
+      // carries real sales, so filtering afterwards would let a departed name hold one of the ten
+      // slots and push a serving rep off the board entirely.
+      const roster = splitDepartedRoster(team.members ?? [], directoryRows);
+      const members = roster.active
         .slice()
         .sort((a, b) => b.achievementPercent - a.achievementPercent || b.totalSales - a.totalSales)
         .slice(0, 10)
@@ -356,10 +432,15 @@ async function getRoleSpecificExtras(access: AccessContext, role: string, hrId: 
         ...emptyRoleExtras,
         dsmTeam: {
           achievementPercent: team.teamAchievementPercent,
-          memberCount: team.teamMemberCount,
+          // The count of reps he actually has today, not the count of rows with sales in the
+          // window — those differ by exactly the people who have since left.
+          memberCount: roster.active.length,
           totalSales: team.teamTotalSales,
           totalTarget: team.teamTotalTarget,
           pendingApprovals: approvals.length,
+          windowLabel: salesWindowLabel(team.periods),
+          departedCount: roster.departed.length,
+          departedSales: sumSales(roster.departed),
           members,
           crm,
         },
@@ -386,7 +467,11 @@ async function getRoleSpecificExtras(access: AccessContext, role: string, hrId: 
       const display = (hrId: string | null | undefined, fallback: string) =>
         displayByKey.get(nameKey(hrId)) ?? fallback;
 
-      const dsms = national.dsms.map((d) => ({
+      // Same rule as the district board: people who have left come off the leaderboards before the
+      // slice, and their sales stay in the line total (see splitDepartedRoster).
+      const dsmRoster = splitDepartedRoster(national.dsms, directoryRows);
+      const repRoster = splitDepartedRoster(repTeam?.members ?? [], directoryRows);
+      const dsms = dsmRoster.active.map((d) => ({
         hrId: d.hrId,
         name: display(d.hrId, d.name),
         achievementPercent: d.achievementPercent,
@@ -394,7 +479,7 @@ async function getRoleSpecificExtras(access: AccessContext, role: string, hrId: 
         totalTarget: d.totalTarget,
       }));
 
-      const repMembers = repTeam?.members ?? [];
+      const repMembers = repRoster.active;
       const topReps = repMembers
         .slice()
         .sort((a, b) => b.achievementPercent - a.achievementPercent || b.totalSales - a.totalSales)
@@ -431,12 +516,19 @@ async function getRoleSpecificExtras(access: AccessContext, role: string, hrId: 
         ...emptyRoleExtras,
         nsmNational: {
           achievementPercent: national.lineAchievementPercent,
-          dsmCount: national.dsmCount,
+          dsmCount: dsmRoster.active.length,
           totalSales: national.lineTotalSales,
           totalTarget: national.lineTotalTarget,
           pendingApprovals: approvals.length,
+          windowLabel: salesWindowLabel(national.periods),
         },
-        nsmBoard: { dsms, topReps, crm },
+        nsmBoard: {
+          dsms,
+          topReps,
+          crm,
+          departedCount: dsmRoster.departed.length + repRoster.departed.length,
+          departedSales: sumSales(dsmRoster.departed) + sumSales(repRoster.departed),
+        },
       };
     }
     if (role === "Regional Manager") {
@@ -459,7 +551,10 @@ async function getRoleSpecificExtras(access: AccessContext, role: string, hrId: 
       const display = (hrId: string | null | undefined, fallback: string) =>
         displayByKey.get(nameKey(hrId)) ?? fallback;
 
-      const dsms = regional.dsms.map((d) => ({
+      // Same rule as the district and line boards — see splitDepartedRoster.
+      const dsmRoster = splitDepartedRoster(regional.dsms, directoryRows);
+      const repRoster = splitDepartedRoster(regional.topReps, directoryRows);
+      const dsms = dsmRoster.active.map((d) => ({
         hrId: d.hrId,
         name: display(d.hrId, d.name),
         achievementPercent: d.achievementPercent,
@@ -467,7 +562,7 @@ async function getRoleSpecificExtras(access: AccessContext, role: string, hrId: 
         totalTarget: d.totalTarget,
       }));
 
-      const topReps = regional.topReps.slice(0, 10).map((m) => ({
+      const topReps = repRoster.active.slice(0, 10).map((m) => ({
         hrId: m.hrId,
         name: display(m.hrId, m.name),
         achievementPercent: m.achievementPercent,
@@ -501,11 +596,14 @@ async function getRoleSpecificExtras(access: AccessContext, role: string, hrId: 
         ...emptyRoleExtras,
         rmRegional: {
           achievementPercent: regional.regionAchievementPercent,
-          dsmCount: regional.dsmCount,
+          dsmCount: dsmRoster.active.length,
           totalSales: regional.regionTotalSales,
           totalTarget: regional.regionTotalTarget,
           unattributedSales: regional.unattributedSales,
           pendingApprovals: approvals.length,
+          windowLabel: salesWindowLabel(regional.periods),
+          departedCount: dsmRoster.departed.length + repRoster.departed.length,
+          departedSales: sumSales(dsmRoster.departed) + sumSales(repRoster.departed),
           dsms,
           topReps,
           crm,

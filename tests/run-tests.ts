@@ -859,6 +859,7 @@ import { runDirectOrderEvidenceCheckTests } from "./direct-orders-evidence-check
 import { runDirectOrdersApprovalWindowMobileTests } from "./direct-orders-approval-window-mobile.test.ts";
 import { runEmployeePortalMobileInputZoomTests } from "./employee-portal-mobile-input-zoom.test.ts";
 import { runEmployeePortalMobileTableCardTests } from "./employee-portal-mobile-table-cards.test.ts";
+import { runPortalIdentityBandAndSalesWindowTests } from "./portal-identity-band-and-sales-window.test.ts";
 import { runCrmMobileTableCardTests } from "./crm-mobile-table-cards.test.ts";
 import { runHrShellMobileTableTests } from "./hr-shell-mobile-tables.test.ts";
 import { runOutstationMobileTableCardTests } from "./outstation-mobile-table-cards.test.ts";
@@ -2608,6 +2609,7 @@ await runTest("direct orders cancel held (requester-or-Super-Admin, held-only, r
 await runTest("direct orders approval window on mobile (every table desktop-only, every table has cards, no min-width reachable at 375px, totals and the not-final flag survive)", runDirectOrdersApprovalWindowMobileTests);
 await runTest("employee portal mobile input zoom (16px floor on every portal input/select/textarea under 768px, max() not a flat size, the shell class still exists, pinch-zoom never disabled)", runEmployeePortalMobileInputZoomTests);
 await runTest("employee portal mobile table cards (every converted table is desktop-gated with cards beside it, one shared SourceBreakdown, no <table> nested inside PortalDesktopTable)", runEmployeePortalMobileTableCardTests);
+await runTest("portal identity band and sales window (nothing renders above the identity banner on any of the 9 role centers, no horizontal nav rows on the portal, no ellipsis, a leaver leaves the list but not the money, every keycard names its closing month, and the landing page fits a 375px screen)", runPortalIdentityBandAndSalesWindowTests);
 await runTest("CRM mobile table cards (whole-directory scan: every CRM table desktop-gated, every table file has a card path, no bare overflow-x-auto, both coverage boards moved together)", runCrmMobileTableCardTests);
 await runTest("Outstation mobile table cards (whole-directory scan: every outstation table desktop-gated, every table file has a card path, no fixed-pixel floor in an ungated scroll box, HR decision controls shared by both halves)", runOutstationMobileTableCardTests);
 await runTest("Outstation decision failures leave a trace (every catch on /api/admin/outstation/[id] records the unsanitised cause before returning, awaited)", runOutstationDecisionFailureTraceTests);

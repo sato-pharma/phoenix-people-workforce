@@ -39,12 +39,18 @@ export function EmployeePortalRouteLoading() {
 
       <section className="grid gap-4 xl:grid-cols-[1.35fr_0.65fr]">
         <div className="rounded border border-white/80 bg-white/82 p-5 shadow-[0_16px_42px_rgba(15,23,42,0.07)] backdrop-blur-xl sm:p-6">
-          <div className="mb-5 flex items-center justify-between">
-            <div>
-              <div className="employee-portal-skeleton h-5 w-44 rounded" />
-              <div className="employee-portal-skeleton mt-3 h-3.5 w-64 rounded" />
+          {/* FITS THE SCREEN. These two bars used to be FIXED widths (w-44 and w-64) beside a
+              w-24 block in a row that could not wrap, giving the card a 394px min-content. Its
+              grid column is auto-sized, so at 375px the column grew to 394 and the whole portal
+              scrolled sideways — on EVERY page load, before any real content existed to blame.
+              A skeleton is a placeholder: it must claim a share of the width, never a fixed
+              number of pixels. The max-w caps keep the desktop proportions identical. */}
+          <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+            <div className="min-w-0 flex-1 space-y-3">
+              <div className="employee-portal-skeleton h-5 w-full max-w-[11rem] rounded" />
+              <div className="employee-portal-skeleton h-3.5 w-full max-w-[16rem] rounded" />
             </div>
-            <div className="employee-portal-skeleton h-9 w-24 rounded" />
+            <div className="employee-portal-skeleton h-9 w-24 shrink-0 rounded" />
           </div>
           <div className="employee-portal-skeleton h-[260px] rounded" />
         </div>
