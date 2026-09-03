@@ -41,7 +41,13 @@ const AREA_MAP_TTL_MS = 30 * 60_000;
 let areaMapCache: { at: number; map: AreaRegionMap } | null = null;
 
 /**
- * area_name -> its SALES region code, straight from `au.canonical_areas`.
+ * area_name -> its SALES region code, from `au_v_canonical_areas`.
+ *
+ * READ THE PUBLIC VIEW, NEVER `.schema("au")`. PostgREST exposes only public, graphql_public and
+ * analytics, so `.schema("au").from("canonical_areas")` answers PGRST106 "Invalid schema: au" — and
+ * because every caller here is best-effort, that error is SWALLOWED: no crash, no log a person
+ * reads, just every CV filed under "Not yet classified" for ever. `listCandidateFolderAreaOptions`
+ * reads this same view, and `tests/drive-cv-folders.test.ts` pins the choice.
  *
  * The recruitment override (Delta (3)) is applied later, inside `driveFolderPathFor`, deliberately:
  * this function's job is to report what the database says, and the override's job is to be the one
@@ -53,8 +59,7 @@ export async function loadAreaRegionMap(): Promise<AreaRegionMap> {
 
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
-    .schema("au")
-    .from("canonical_areas")
+    .from("au_v_canonical_areas")
     .select("area_name, code_region_code")
     .eq("is_active", true);
   if (error) throw error;

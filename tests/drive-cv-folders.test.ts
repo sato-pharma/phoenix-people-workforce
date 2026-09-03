@@ -223,4 +223,45 @@ export function runDriveCvFolderTests() {
     5,
     "Delta (3) covers five areas — if this changes, update the backfill script's copy too",
   );
+
+  // ── Both readers of the area→region grouping must use the PUBLIC view ─────────────────────────
+  //
+  // This shipped broken once. `au.canonical_areas` is the real table, so `.schema("au")` reads like
+  // the honest source — but PostgREST exposes only public, graphql_public and analytics, so it
+  // answers PGRST106 "Invalid schema: au". The backfill surfaced it immediately; the live mirror did
+  // NOT, because every path into it is best-effort and swallows the error. The visible result would
+  // have been every CV, for ever, in "Not yet classified" — with nothing on screen saying so.
+  //
+  // Pinned as source text rather than behaviour because the failure is a network round-trip away:
+  // a unit test cannot reach PostgREST, and by the time production could tell us, it is already
+  // filing CVs into the wrong folder silently.
+
+  const mirrorSource = fs.readFileSync(
+    path.join(process.cwd(), "src", "lib", "recruitment", "drive-cv-mirror.ts"),
+    "utf8",
+  );
+  // The FUNCTION BODY, not the whole file — the comment above it names the wrong call on purpose, to
+  // explain why it is wrong, and a whole-file scan would read that explanation as the defect.
+  const loaderStart = mirrorSource.indexOf("export async function loadAreaRegionMap(");
+  assert.ok(loaderStart >= 0, "the Drive mirror must still export loadAreaRegionMap");
+  const loaderEnd = mirrorSource.indexOf("\n}", loaderStart);
+  assert.ok(loaderEnd > loaderStart, "loadAreaRegionMap must be a closed function body");
+  const loaderBody = mirrorSource.slice(loaderStart, loaderEnd);
+
+  assert.ok(
+    loaderBody.includes('.from("au_v_canonical_areas")'),
+    "the Drive mirror must read the public view au_v_canonical_areas",
+  );
+  assert.ok(
+    !loaderBody.includes('.schema("au")'),
+    'the Drive mirror must never call .schema("au") — PostgREST does not expose that schema',
+  );
+  assert.ok(
+    backfillSource.includes("au_v_canonical_areas?select="),
+    "the backfill script must read the public view au_v_canonical_areas",
+  );
+  assert.ok(
+    !backfillSource.includes('"Accept-Profile": "au"'),
+    "the backfill script must not ask PostgREST for the au schema profile",
+  );
 }
