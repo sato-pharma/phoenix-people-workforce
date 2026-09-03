@@ -17,6 +17,10 @@ import {
 } from "lucide-react";
 import type { ReactNode } from "react";
 
+import {
+  pageHeaderRailClassName,
+  pageHeaderRuleClassName,
+} from "@/components/admin/admin-design-tokens";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { LineChart } from "./charts";
@@ -428,8 +432,14 @@ function IdentityHero({
   // white: present in the DOM, invisible on screen, and reading as missing data rather than as a
   // styling bug. If anything here ever goes blank, that is the first thing to check.
   return (
-    <section className="flex flex-col gap-3 border-b border-phx-line pb-4 lg:flex-row lg:items-center lg:justify-between lg:gap-6">
-      <div className="flex min-w-0 items-center gap-3">
+    // POLISHED 2026-09-03 (second pass): the rail and fading rule from the shared tokens, so this
+    // person's header matches every page header around it. The rail sits OUTSIDE the avatar, at
+    // the block's leading edge, which is where it sits on every other header - it marks the start
+    // of the header, not the start of the text.
+    <section className="min-w-0">
+      <div className="flex flex-col gap-3 pb-4 lg:flex-row lg:items-center lg:justify-between lg:gap-6">
+      <div className="relative flex min-w-0 items-center gap-3 pl-3.5">
+        <span aria-hidden="true" className={pageHeaderRailClassName} />
         <span
           aria-hidden
           className={cn(
@@ -473,6 +483,8 @@ function IdentityHero({
         </span>
         <span className="text-[11px] text-slate-500">{benchmarkLabel}</span>
       </div>
+      </div>
+      <div aria-hidden="true" className={pageHeaderRuleClassName} />
     </section>
   );
 }

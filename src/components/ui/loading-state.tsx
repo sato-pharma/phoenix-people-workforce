@@ -1,5 +1,12 @@
 ﻿import { Loader2 } from "lucide-react";
 
+import {
+  pageHeaderDescriptionClassName,
+  pageHeaderKickerClassName,
+  pageHeaderRailClassName,
+  pageHeaderRuleClassName,
+  pageHeaderTitleClassName,
+} from "@/components/admin/admin-design-tokens";
 import { Card } from "@/components/ui/card";
 import { systemIdentity } from "@/config/system-settings";
 import { cn } from "@/lib/utils";
@@ -69,19 +76,21 @@ export function AppRouteLoadingState({
           removed it everywhere — "remove from all pages this dump block". A skeleton that still
           painted a full black band would flash one for the whole load and then jump to a light
           title line, which reads as a layout bug rather than as a load. */}
-      <section className="flex flex-col gap-3 border-b border-phx-line pb-4 lg:flex-row lg:items-end lg:justify-between lg:gap-6">
-        <div className="min-w-0 space-y-1.5">
-          <p className="text-[11px] font-black uppercase tracking-[0.22em] text-orange-600">
-            {systemIdentity.appName}
-          </p>
-          <h1 className="text-[1.15rem] font-black tracking-[-0.03em] text-slate-900 sm:text-[1.3rem]">
-            {title}
-          </h1>
-          <p className="max-w-3xl text-[13px] leading-5 text-slate-600">
-            {description}
-          </p>
+      {/* THE SKELETON HAS TO CARRY THE POLISH TOO. It matched the flattened header exactly; when
+          the rail and fading rule landed on `AdminPageHero` the skeleton stopped matching, and a
+          skeleton one gesture short of what arrives is a visible jump at the end of every load.
+          Same tokens, same geometry. */}
+      <section className="min-w-0">
+        <div className="flex flex-col gap-3 pb-4 lg:flex-row lg:items-end lg:justify-between lg:gap-6">
+          <div className="relative min-w-0 space-y-1.5 pl-3.5">
+            <span aria-hidden="true" className={pageHeaderRailClassName} />
+            <p className={pageHeaderKickerClassName}>{systemIdentity.appName}</p>
+            <h1 className={pageHeaderTitleClassName}>{title}</h1>
+            <p className={pageHeaderDescriptionClassName}>{description}</p>
+          </div>
+          <LoadingSpinner className="h-6 w-6 shrink-0 text-orange-500" />
         </div>
-        <LoadingSpinner className="h-6 w-6 shrink-0 text-orange-500" />
+        <div aria-hidden="true" className={pageHeaderRuleClassName} />
       </section>
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">

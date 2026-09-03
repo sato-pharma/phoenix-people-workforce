@@ -15,6 +15,13 @@ import {
   UserRound,
 } from "lucide-react";
 
+import {
+  pageHeaderDescriptionClassName,
+  pageHeaderKickerClassName,
+  pageHeaderRailClassName,
+  pageHeaderRuleClassName,
+  pageHeaderTitleClassName,
+} from "@/components/admin/admin-design-tokens";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { RadarChart } from "@/components/charts/radar-chart";
@@ -340,15 +347,19 @@ function ReviewHeroHeader({
     // pills below. This is a report a medical rep opens to read their own coaching assessment, so
     // the zone in particular is the point of the page and not decoration.
     <Card className="overflow-hidden rounded border border-slate-200 bg-white shadow-[0_2px_8px_rgba(15,23,42,0.06)]">
-      <div className="grid gap-3 border-b border-phx-line px-4 py-4 sm:px-6 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
-        <div className="min-w-0 space-y-1.5">
+      {/* Rail and fading rule from the shared tokens (2026-09-03, second pass). The rule is
+          absolutely positioned on the block's bottom edge rather than added as a sibling, because
+          this header is the first row of a Card and a sibling div would sit inside the card's
+          padding instead of spanning it - the one place the standard shape does not fit. */}
+      <div className="relative grid gap-3 px-4 py-4 sm:px-6 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+        <span aria-hidden="true" className={`absolute inset-x-0 bottom-0 ${pageHeaderRuleClassName}`} />
+        <div className="relative min-w-0 space-y-1.5 pl-3.5">
+          <span aria-hidden="true" className={pageHeaderRailClassName} />
           <p className="inline-flex rounded border border-orange-200 bg-orange-50 px-2 py-0.5 text-[11px] font-bold uppercase tracking-[0.18em] text-orange-700">
             {reportNumber}
           </p>
-          <h2 className="text-[1.15rem] font-black tracking-[-0.03em] text-slate-900 sm:text-[1.3rem]">
-            Field Coaching Review
-          </h2>
-          <p className="max-w-3xl text-[13px] leading-5 text-slate-600">
+          <h2 className={pageHeaderTitleClassName}>Field Coaching Review</h2>
+          <p className={pageHeaderDescriptionClassName}>
             Review the structured assessment and feedback submitted by your coach.
           </p>
         </div>

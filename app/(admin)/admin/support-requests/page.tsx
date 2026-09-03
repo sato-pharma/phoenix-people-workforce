@@ -1,5 +1,13 @@
 import { redirect } from "next/navigation";
 
+import {
+  pageHeaderDescriptionClassName,
+  pageHeaderKickerClassName,
+  pageHeaderRailClassName,
+  pageHeaderRuleClassName,
+  pageHeaderTitleClassName,
+} from "@/components/admin/admin-design-tokens";
+
 import { SupportRequestsWorkspace } from "@/components/admin/support-requests-workspace";
 import { canAccess } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
@@ -28,15 +36,17 @@ export default async function AdminSupportRequestsPage() {
           `AdminPageHero`, so flattening that component on 2026-09-03 did not reach it — it is
           spelled out light here to match the other 131. Owner: "remove from all pages this dump
           block". */}
-      <section className="space-y-1.5 border-b border-phx-line pb-4">
-        <p className="text-[11px] font-black uppercase tracking-[0.22em] text-orange-600">Employee Care</p>
-        <h1 className="max-w-4xl text-[1.15rem] font-black tracking-[-0.03em] text-slate-900 sm:text-[1.3rem]">
-          HR Support Requests
-        </h1>
-        <p className="max-w-3xl text-[13px] leading-5 text-slate-600">
-          Review tickets opened by employees and move each one through Pending, In Progress,
-          Resolved, and Closed.
-        </p>
+      <section className="min-w-0">
+        <div className="relative space-y-1.5 pb-4 pl-3.5">
+          <span aria-hidden="true" className={pageHeaderRailClassName} />
+          <p className={pageHeaderKickerClassName}>Employee Care</p>
+          <h1 className={pageHeaderTitleClassName}>HR Support Requests</h1>
+          <p className={pageHeaderDescriptionClassName}>
+            Review tickets opened by employees and move each one through Pending, In Progress,
+            Resolved, and Closed.
+          </p>
+        </div>
+        <div aria-hidden="true" className={pageHeaderRuleClassName} />
       </section>
       <SupportRequestsWorkspace canManage={canManage} initialItems={initialItems} />
     </div>

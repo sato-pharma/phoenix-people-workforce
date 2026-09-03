@@ -1,5 +1,13 @@
 import Link from "next/link";
 
+import {
+  pageHeaderDescriptionClassName,
+  pageHeaderKickerClassName,
+  pageHeaderRailClassName,
+  pageHeaderRuleClassName,
+  pageHeaderTitleClassName,
+} from "@/components/admin/admin-design-tokens";
+
 import { KpisFilterBar } from "@/components/crm/kpis-filter-bar";
 import { KpisPeriodPicker, type KpiPickerOption } from "@/components/crm/kpis-period-picker";
 import {
@@ -227,21 +235,30 @@ function KpiHero({ board }: { board: KpisBoard }) {
   const verdict = teamVerdict(board);
   const tone = toneOf(verdict.tone);
   return (
-    <section className="flex flex-wrap items-start justify-between gap-3 border-b border-phx-line pb-4 sm:gap-6">
-      <div className="min-w-0 flex-1 space-y-1.5">
-        <p className="text-[11px] font-black uppercase tracking-[0.22em] text-orange-600">Field performance</p>
-        <h1 className="text-[1.15rem] font-black leading-tight tracking-[-0.03em] text-slate-900 sm:text-[1.3rem]">KPIs</h1>
-        <p className="max-w-3xl text-[13px] leading-5 text-slate-600">{verdict.headline}</p>
-        <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-          {board.scopeLabel} · {board.monthLabel} · {board.range.periodLabel}
-        </p>
-      </div>
-      <div className="min-w-0">
-        <div className={`border px-3 py-2 ${tone.chip}`}>
-          <p className="text-[10px] font-black uppercase tracking-[0.14em]">Team standing</p>
-          <p className="mt-0.5 text-[13px] font-black">{verdict.standing ?? KPI_BAND_LABEL[verdict.tone]}</p>
+    // POLISHED 2026-09-03 (second pass): this page spells its own header out rather than calling
+    // `AdminPageHero`, so it did not inherit the accent rail and fading rule when those landed.
+    // It pulls the same four tokens now, so a hand-rolled header and a component one are the same
+    // object on screen. Zero height added - the rail lives in the text block's own left padding
+    // and the rule takes the 1px the border-b took.
+    <section className="min-w-0">
+      <div className="flex flex-wrap items-start justify-between gap-3 pb-4 sm:gap-6">
+        <div className="relative min-w-0 flex-1 space-y-1.5 pl-3.5">
+          <span aria-hidden="true" className={pageHeaderRailClassName} />
+          <p className={pageHeaderKickerClassName}>Field performance</p>
+          <h1 className={pageHeaderTitleClassName}>KPIs</h1>
+          <p className={pageHeaderDescriptionClassName}>{verdict.headline}</p>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+            {board.scopeLabel} · {board.monthLabel} · {board.range.periodLabel}
+          </p>
+        </div>
+        <div className="min-w-0">
+          <div className={`border px-3 py-2 ${tone.chip}`}>
+            <p className="text-[10px] font-black uppercase tracking-[0.14em]">Team standing</p>
+            <p className="mt-0.5 text-[13px] font-black">{verdict.standing ?? KPI_BAND_LABEL[verdict.tone]}</p>
+          </div>
         </div>
       </div>
+      <div aria-hidden="true" className={pageHeaderRuleClassName} />
     </section>
   );
 }

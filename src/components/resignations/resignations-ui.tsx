@@ -16,6 +16,14 @@
  */
 
 import { useEffect, useRef, type ReactNode } from "react";
+
+import {
+  pageHeaderDescriptionClassName,
+  pageHeaderKickerClassName,
+  pageHeaderRailClassName,
+  pageHeaderRuleClassName,
+  pageHeaderTitleClassName,
+} from "@/components/admin/admin-design-tokens";
 import { createPortal } from "react-dom";
 
 // ── Hero ─────────────────────────────────────────────────────────────────────
@@ -40,17 +48,20 @@ export function RgHero({
   // a page into a horizontal scroll at 375px, which is the one thing the owner's fits-the-screen
   // rule forbids outright.
   return (
-    <section className="flex flex-wrap items-end justify-between gap-3 border-b border-phx-line pb-4 sm:gap-6">
-      <div className="min-w-0 space-y-1.5">
-        <span className="inline-flex items-center text-[11px] font-black uppercase tracking-[0.22em] text-orange-600">
-          {eyebrow}
-        </span>
-        <h1 className="max-w-4xl text-[1.15rem] font-black tracking-[-0.03em] text-slate-900 sm:text-[1.3rem]">
-          {title}
-        </h1>
-        <p className="text-[13px] font-medium leading-5 text-slate-600">{subtitle}</p>
+    // POLISHED 2026-09-03 (second pass): same accent rail and fading rule as `AdminPageHero`,
+    // pulled from the shared tokens rather than respelled here. Nothing grew - the rail sits in
+    // the text block's left padding and the rule replaces the border-b 1-for-1.
+    <section className="min-w-0">
+      <div className="flex flex-wrap items-end justify-between gap-3 pb-4 sm:gap-6">
+        <div className="relative min-w-0 space-y-1.5 pl-3.5">
+          <span aria-hidden="true" className={pageHeaderRailClassName} />
+          <span className={pageHeaderKickerClassName}>{eyebrow}</span>
+          <h1 className={pageHeaderTitleClassName}>{title}</h1>
+          <p className={pageHeaderDescriptionClassName}>{subtitle}</p>
+        </div>
+        {actions ? <div className="flex min-w-0 flex-wrap items-center gap-2">{actions}</div> : null}
       </div>
-      {actions ? <div className="flex min-w-0 flex-wrap items-center gap-2">{actions}</div> : null}
+      <div aria-hidden="true" className={pageHeaderRuleClassName} />
     </section>
   );
 }
