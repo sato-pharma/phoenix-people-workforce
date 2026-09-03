@@ -176,16 +176,16 @@ export async function runSfeManagerHeadOfficeTests() {
   );
 
   // ── 6. The scope shortcut must still fail loudly ─────────────────────────────────────────────
-  // With the SFE Manager cleared, Marketing Manager is the LAST company-scope role outside
-  // canAccessHeadOffice, so this pair is the entire remaining guard — in this file, in
-  // organogram-godmode and in finance-manager-six-module-access alike.
+  // The Marketing Manager was cleared later the same day, leaving NO named role outside
+  // canAccessHeadOffice. The guard is therefore synthetic in this file too: an unnamed role
+  // carrying scope `company` must be refused, the same role at scope `system` must pass.
   assert.equal(
-    canAccessHeadOffice(ctx("Marketing Manager")),
+    canAccessHeadOffice(ctx("National Sales Manager", "company")),
     false,
-    "a company-scope role that was NOT named must still be refused — the shortcut guard",
+    "a role that was NOT named must still be refused even at company scope — the shortcut guard",
   );
   assert.equal(
-    canAccessHeadOffice(ctx("Marketing Manager", "system")),
+    canAccessHeadOffice(ctx("National Sales Manager", "system")),
     true,
     "…and the same role at genuine system scope must pass, or the guard above would also hold for " +
       "a helper that had simply stopped working",

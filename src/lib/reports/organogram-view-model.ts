@@ -79,8 +79,12 @@ export function isOfficeLine(row: OrganogramRow) {
  *    offering "Head Office" there would open a branch the viewer cannot see.
  *  - As a real BRANCH — the 13-person Head Office tree built by
  *    organogram-head-office.ts, sent only to viewers who pass
- *    canAccessHeadOffice (Super Admin, CEO, Finance Manager, HR Advisory,
- *    HR Operations, Training Manager, SFE Manager, and the A-3 account pin).
+ *    canAccessHeadOffice — which since 2026-09-03 names exactly the same set as
+ *    canAccessCompanyOrganogram (Super Admin, CEO, Finance Manager, HR Advisory,
+ *    HR Operations, Training Manager, SFE Manager, Marketing Manager, system scope
+ *    and the A-3 account pin). The two are still asked separately here because a
+ *    line-scoped viewer holds Office rows as CHAIN CONTEXT and must not be offered
+ *    the branch — that case is unaffected by the two sets converging.
  *
  * The caller decides which case it is via `includeHeadOffice`; the server sets
  * it from the entitlement, never the client. Without it the picker silently
