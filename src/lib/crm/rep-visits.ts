@@ -65,6 +65,9 @@ import { indexCheckinsByAgentContactDay } from "@/lib/crm/checkin-match";
  * "unmapped" is a TODO with a name and an id attached, not a data fault, and it must never render
  * as a blank or a zero. On 2026-08-28 every visit in production was in that state:
  * `ireports360_crm_region_brick_resolutions` held 0 rows against 239 distinct CRM regions.
+ *
+ * That is no longer true, and "mapped" is NOT dead code: re-measured 2026-09-03 the table holds 105
+ * resolutions covering 100 of 261 contact regions, so all three states occur in production.
  */
 export type RepVisitTerritory =
   | {

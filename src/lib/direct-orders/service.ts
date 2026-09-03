@@ -12,6 +12,7 @@ import {
 } from "@/lib/employees/employee-directory";
 import { canonicalHrIdKey, hrIdForStorage, hrIdLookupKeys } from "@/lib/hr-id";
 import { ApiError, validationError } from "@/lib/http/api-errors";
+import { assertVenueContactInScope, parseVenueContactId } from "@/lib/direct-orders/venue-contact-options";
 import { createSystemNotificationForRecipients, type SystemNotificationChannel } from "@/lib/notifications/system";
 import { logError } from "@/lib/observability/log";
 import { canonicalizeRegionName, resolveSalesAccessScope } from "@/lib/sales/access-scope";
@@ -652,6 +653,11 @@ function mapPharmacyRow(row: Record<string, unknown>): DirectOrderPharmacy {
     doctorName: row.doctor_name ? String(row.doctor_name) : null,
     pharmacyAddress: row.pharmacy_address ? String(row.pharmacy_address) : null,
     venueType: normalizeVenueType(row.venue_type),
+    // A declared CRM contact. Absent before the 2026-09-03 migration reaches an environment, so a
+    // missing column reads as "not declared" rather than throwing on every venue read.
+    crmContactId: parseVenueContactId(row.crm_contact_id),
+    crmContactLinkedByHrId: row.crm_contact_linked_by_hr_id ? String(row.crm_contact_linked_by_hr_id) : null,
+    crmContactLinkedAt: row.crm_contact_linked_at ? String(row.crm_contact_linked_at) : null,
     distributorCodes: [],
     contestedCodeClaims: normalizeContestedCodeClaims(row.contested_code_claims),
     geoVarianceResolved: row.geo_variance_resolved === true,
@@ -1096,6 +1102,17 @@ export async function createDirectOrderPharmacy(
     /** Defaults to `pharmacy`. A nursery may not carry a distributor code — see below. */
     venueType?: string | null;
     /**
+     * The CRM contact the submitter says this venue IS. OPTIONAL, and a malformed value degrades to
+     * "not declared" rather than failing the registration — same rule as the distributor codes
+     * (2026-08-04): refusing a field the submitter cannot answer produces an invented value.
+     *
+     * It is checked against the submitter's OWN scope before it is stored. Skipping that would make
+     * the picker decoration: the form would offer one district's contacts while the route accepted
+     * any id in the CRM, and a wrong id puts a "1 direct order" badge on the contact list of a rep
+     * who never sold to them.
+     */
+    crmContactId?: number | string | null;
+    /**
      * The submitter was shown the pharmacy that already holds a code they typed, and answered that
      * theirs is a DIFFERENT pharmacy.
      *
@@ -1216,6 +1233,15 @@ export async function createDirectOrderPharmacy(
   // ONE TRANSACTION. phx_create_direct_order_pharmacy writes the pharmacy and its code rows in a
   // single plpgsql body, so a failure on the codes rolls the pharmacy back with it. Two client
   // inserts could not do that, and the half-success is what created the orphan.
+  //
+  // A DECLARED CRM contact is checked against the submitter's own reach before it is written. The
+  // picker offers self UNION org subtree; this refuses anything outside it, so the read scope and
+  // the write scope are one answer rather than two that can drift. A wrong id here is not a cosmetic
+  // mistake — it puts "1 direct order" on the contact list of a rep who never sold to them, and a
+  // false trade record is the one direction that is not recoverable by looking again later.
+  const crmContactId = parseVenueContactId(input.crmContactId);
+  await assertVenueContactInScope(access, crmContactId);
+
   const { data: created, error } = await supabase.rpc("phx_create_direct_order_pharmacy", {
     p_pharmacy: {
       pharmacy_name: name,
@@ -1227,6 +1253,7 @@ export async function createDirectOrderPharmacy(
       created_by_hr_id: hrIdForStorage(access.hrId),
       contested_code_claims: contestedCodeClaims,
       venue_type: venueType,
+      crm_contact_id: crmContactId,
     },
     p_codes: buildDistributorCodeRows(null, claimablePairs, mapByKey),
   });

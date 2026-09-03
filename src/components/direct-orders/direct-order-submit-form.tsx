@@ -11,6 +11,8 @@ import {
 } from "@/lib/direct-orders/product-family";
 
 import { DirectOrderStatusPill } from "@/components/direct-orders/direct-order-status-pill";
+import { CrmContactPicker } from "@/components/direct-orders/crm-contact-picker";
+import type { VenueContactOption } from "@/lib/direct-orders/venue-contact-options";
 import { DistributorCustomerPicker } from "@/components/direct-orders/distributor-customer-picker";
 import { InvoiceCapture } from "@/components/direct-orders/invoice-capture";
 import { PharmacyComboBox, type PharmacySearchHit } from "@/components/direct-orders/pharmacy-combo-box";
@@ -112,6 +114,9 @@ function inputClass() {
 export function DirectOrderSubmitForm({ products, areas, bricks, distributors, caps, myRequests, basePath }: Props) {
   const router = useRouter();
 
+  // The CRM contact the submitter declares this venue to be. Optional: null is the normal case and
+  // registers the venue exactly as before. See crm-contact-picker.tsx for why it is asked at all.
+  const [crmContact, setCrmContact] = useState<VenueContactOption | null>(null);
   const [productCode, setProductCode] = useState("");
   const [dealType, setDealType] = useState<DirectOrderDealType>("bonus");
   const [qty, setQty] = useState("");
@@ -558,6 +563,9 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
         // type switch would 400 the whole registration rather than being quietly ignored.
         distributorCodes: venueRequiresDistributorCode(newVenueType) ? pairs : [],
         venueType: newVenueType,
+        // The declared CRM contact, or null. The server re-resolves the submitter's own scope and
+        // refuses an id outside it, so this is a convenience for the form, never the authority.
+        crmContactId: crmContact?.contactCrmId ?? null,
         // "No, mine is a different venue." The server re-checks the collision and records the
         // contested claim; it never takes this flag as permission to claim the code.
         acknowledgedCodeConflict,
@@ -1194,6 +1202,10 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
                   placeholder={`${venueTypeChoiceLabel(newVenueType)} address *`}
                   value={newAddress}
                 />
+
+                {/* The one thing that lets this order ever reach the rep's CRM contact list.
+                    Optional by design — see the component header. */}
+                <CrmContactPicker onChange={setCrmContact} picked={crmContact} />
 
                 {/* Optional since 2026-08-04 — the note explains what leaving it empty costs. */}
                 {/* Hidden until the type is known: asking a venue for a code before it has said it

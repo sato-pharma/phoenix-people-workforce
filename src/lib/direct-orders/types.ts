@@ -329,6 +329,22 @@ export type DirectOrderPharmacy = {
   doctorName: string | null;
   pharmacyAddress: string | null;
   /**
+   * The CRM contact this venue IS, as DECLARED by whoever registered it — never inferred.
+   *
+   * This is the whole direct-order half of the CRM contact link. `contact-trade.ts` has three rules
+   * and an explicit id is rule 1, beating every name/area test; marketing already fires it through
+   * `marketing_customer_contacts.crm_code`, while direct orders had no id to give and could only
+   * reach the two inferred rules. Measured 2026-09-03, that left exactly ONE of 63 venues linked,
+   * with a ceiling of 4 even if the area gate were removed entirely — the names do not meet.
+   *
+   * NULL is the normal, permitted case. The picker is optional on purpose (the 2026-08-04 rule:
+   * refusing a field the submitter cannot answer produces an invented value, not a correct one).
+   */
+  crmContactId: number | null;
+  /** Who declared {@link crmContactId}, and when. Null together with it. */
+  crmContactLinkedByHrId: string | null;
+  crmContactLinkedAt: string | null;
+  /**
    * Distributor customer-code pairs, at most one per distributor. OPTIONAL since 2026-08-04 —
    * a submitter who does not know the distributor or the code registers the pharmacy without
    * them, and the request picks up the System Admin rung instead of being refused.

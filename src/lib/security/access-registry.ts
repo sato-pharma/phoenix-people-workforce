@@ -547,6 +547,16 @@ export const accessRegistry = [
   // distributor customer directory and Phoenix pharmacies; area scope enforced in the service.
   sessionApi({ methods: ["GET"], pattern: "/api/direct-orders/pharmacy-search", permission: { resource: "direct_orders", action: "read" }, guard: "domain-helper" }),
   sessionApi({ methods: ["GET"], pattern: "/api/direct-orders/campaign-options", permission: { resource: "direct_orders", action: "read" }, guard: "domain-helper" }),
+  // The venue form's "this venue on the CRM" picker — the campaign picker's counterpart, and the
+  // only thing that lets a direct order reach a rep's CRM contact list (2026-09-03). Read-only, so
+  // no CSRF. `create` rather than `read`, for the same reason invoice-extract below is: enumerating
+  // contacts to declare one against a venue is only useful to someone who may register a venue.
+  // guard: "domain-helper" — listVenueContactOptions() is the boundary. It calls assertPermission
+  // itself AND resolves the caller's own reach (their CRM list UNION their org subtree) from the
+  // live AccessContext, never from the query string, so the route cannot return a contact the
+  // caller could not already see. assertVenueContactInScope() re-runs that same resolution on the
+  // WRITE path, because a picker whose choice is not re-checked server-side is decoration.
+  sessionApi({ methods: ["GET"], pattern: "/api/direct-orders/crm-contacts", permission: { resource: "direct_orders", action: "create" }, guard: "domain-helper" }),
   // Reads a photographed invoice to prefill the order form (spec B5). POST because the payload is
   // an image, but it writes NOTHING — hence no audit classification. `create` rather than `read`:
   // prefilling a submission is only useful to someone who may submit one.
