@@ -65,6 +65,22 @@ export type PaperFieldBinding = {
    * operator who does not know that will go and type it again somewhere else.
    */
   alsoOn?: string;
+  /**
+   * Where the paper reads this value from when the bound field is empty.
+   *
+   * NOT A CONVENIENCE — it mirrors a `??` chain that already exists in a renderer, and every one of
+   * them was found by reading the renderers rather than guessed. A binding without a declared
+   * fallback whose renderer has one makes this file disagree with the printed page, silently:
+   * `tests/hiring-pack-paper-editor.test.ts` pins the four that exist.
+   *
+   * ONE LINK IS DELIBERATELY NOT MODELLED. `render-clearance.ts` reads a last working day as
+   * `offboarding ?? the resignation record ?? the employee row`; the middle link needs a fourth
+   * table. Measured on production 2026-09-04: of 61 leavers, 61 carry `employees.last_working_date`
+   * and ZERO hold a date only in `employee_resignations`, so the two links below are exact against
+   * today's data. If that ever stops being true the count under-reports, which flags more rows
+   * rather than fewer.
+   */
+  printFallback?: { store: PaperStore; field: string };
 };
 
 /**
@@ -80,6 +96,7 @@ export const PAPER_FIELD_BINDINGS: Readonly<Record<string, PaperFieldBinding>> =
   EMPLOYEE_NAME: {
     store: "employee",
     field: "nameAr",
+    printFallback: { store: "employee", field: "fullName" },
     kind: "text",
     labelEn: "Employee name (Arabic)",
     alsoOn: "every document in the pack",
@@ -87,6 +104,7 @@ export const PAPER_FIELD_BINDINGS: Readonly<Record<string, PaperFieldBinding>> =
   insuredName: {
     store: "employee",
     field: "nameAr",
+    printFallback: { store: "employee", field: "fullName" },
     kind: "text",
     labelEn: "Employee name (Arabic)",
     alsoOn: "every document in the pack",
@@ -94,6 +112,7 @@ export const PAPER_FIELD_BINDINGS: Readonly<Record<string, PaperFieldBinding>> =
   employeeName: {
     store: "employee",
     field: "nameAr",
+    printFallback: { store: "employee", field: "fullName" },
     kind: "text",
     labelEn: "Employee name (Arabic)",
     alsoOn: "every document in the pack",
@@ -204,6 +223,7 @@ export const PAPER_FIELD_BINDINGS: Readonly<Record<string, PaperFieldBinding>> =
   addressStreet: {
     store: "profile",
     field: "addressStreet",
+    printFallback: { store: "employee", field: "residenceAddress" },
     kind: "text",
     labelEn: "Street",
     alsoOn: "Form 1 and Form 6",
@@ -231,34 +251,45 @@ export const PAPER_FIELD_BINDINGS: Readonly<Record<string, PaperFieldBinding>> =
   },
   // Form 1 prints the contract start date as three separate box grids, so each is bound to its own
   // component of one date rather than to three fields that could disagree.
-  startDay: { store: "profile", field: "contractStartDate", kind: "dateDay", labelEn: "Start day" },
+  startDay: {
+    store: "profile",
+    field: "contractStartDate",
+    kind: "dateDay",
+    labelEn: "Start day",
+    printFallback: { store: "employee", field: "hireDate" },
+  },
   startMonth: {
     store: "profile",
     field: "contractStartDate",
+    printFallback: { store: "employee", field: "hireDate" },
     kind: "dateMonth",
     labelEn: "Start month",
   },
   startYear: {
     store: "profile",
     field: "contractStartDate",
+    printFallback: { store: "employee", field: "hireDate" },
     kind: "dateYear",
     labelEn: "Start year",
   },
   contractStartDay: {
     store: "profile",
     field: "contractStartDate",
+    printFallback: { store: "employee", field: "hireDate" },
     kind: "dateDay",
     labelEn: "Contract start day",
   },
   contractStartMonth: {
     store: "profile",
     field: "contractStartDate",
+    printFallback: { store: "employee", field: "hireDate" },
     kind: "dateMonth",
     labelEn: "Contract start month",
   },
   contractStartYear: {
     store: "profile",
     field: "contractStartDate",
+    printFallback: { store: "employee", field: "hireDate" },
     kind: "dateYear",
     labelEn: "Contract start year",
   },
@@ -313,6 +344,7 @@ export const PAPER_FIELD_BINDINGS: Readonly<Record<string, PaperFieldBinding>> =
   lastWorkingDate: {
     store: "offboarding",
     field: "lastWorkingDate",
+    printFallback: { store: "employee", field: "lastWorkingDate" },
     kind: "date",
     labelEn: "Last working day",
     alsoOn: "Form 6 and both exit templates",
@@ -320,6 +352,7 @@ export const PAPER_FIELD_BINDINGS: Readonly<Record<string, PaperFieldBinding>> =
   LAST_WORKING_DATE: {
     store: "offboarding",
     field: "lastWorkingDate",
+    printFallback: { store: "employee", field: "lastWorkingDate" },
     kind: "date",
     labelEn: "Last working day",
     alsoOn: "Form 6 and both exit templates",
@@ -327,36 +360,42 @@ export const PAPER_FIELD_BINDINGS: Readonly<Record<string, PaperFieldBinding>> =
   lastWorkingDay: {
     store: "offboarding",
     field: "lastWorkingDate",
+    printFallback: { store: "employee", field: "lastWorkingDate" },
     kind: "dateDay",
     labelEn: "Last working day (day)",
   },
   lastWorkingMonth: {
     store: "offboarding",
     field: "lastWorkingDate",
+    printFallback: { store: "employee", field: "lastWorkingDate" },
     kind: "dateMonth",
     labelEn: "Last working day (month)",
   },
   lastWorkingYear: {
     store: "offboarding",
     field: "lastWorkingDate",
+    printFallback: { store: "employee", field: "lastWorkingDate" },
     kind: "dateYear",
     labelEn: "Last working day (year)",
   },
   endDay: {
     store: "offboarding",
     field: "lastWorkingDate",
+    printFallback: { store: "employee", field: "lastWorkingDate" },
     kind: "dateDay",
     labelEn: "End of subscription (day)",
   },
   endMonth: {
     store: "offboarding",
     field: "lastWorkingDate",
+    printFallback: { store: "employee", field: "lastWorkingDate" },
     kind: "dateMonth",
     labelEn: "End of subscription (month)",
   },
   endYear: {
     store: "offboarding",
     field: "lastWorkingDate",
+    printFallback: { store: "employee", field: "lastWorkingDate" },
     kind: "dateYear",
     labelEn: "End of subscription (year)",
   },
@@ -398,35 +437,98 @@ export function stripDirectionMarks(value: string): string {
   return value.replace(/[⁦-⁩‪-‮‎‏]/gu, "");
 }
 
-/** What the operator sees when they click a value: the stored form, ready to be retyped. */
+/**
+ * The three record objects a bound field can read from — and nothing else.
+ *
+ * A structural slice of `HiringPackData`, so a full pack satisfies it, but so does a bare set of
+ * three mapped rows. That matters for the fill-rate count, which needs to read one field across the
+ * whole roster and cannot afford to build 108 complete packs to do it: a pack build joins
+ * departments, resolves terms, computes gaps and looks up a suggested Arabic job title, none of
+ * which a "does this field have a value" question needs.
+ */
+export type PaperFieldSource = {
+  employee: HiringPackData["employee"];
+  profile: HiringPackData["profile"];
+  offboarding: HiringPackData["offboarding"];
+};
+
+/**
+ * What the operator sees when they click a value: the stored form, ready to be retyped.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────────────────────
+ * ONLY THE THREE DATE-PART KINDS GO THROUGH `splitIso`, AND THAT ORDER IS THE WHOLE CORRECTNESS
+ * OF THIS FUNCTION. It used to fall through to `splitIso` for every kind it had not already
+ * returned for, and bail with "" when the parse failed — so a `text` field returned the empty
+ * string for anything that was not coincidentally an ISO date. `NATIONAL_ID` and
+ * `INSURANCE_NUMBER` are `text` AND render as digit grids, and the grid branch of the paper editor
+ * is the one place that calls this: clicking a national ID that was on file opened the edit bar
+ * EMPTY, so the obvious next action — type it and save — would have written over a correct number
+ * with whatever was retyped. Found 2026-09-04 by the roster fill-rate count, which reported the
+ * national ID as stored for 0 of 169 people while the form was printing it.
+ * ─────────────────────────────────────────────────────────────────────────────────────────────
+ */
 export function paperFieldCurrentValue(
-  pack: HiringPackData,
+  pack: PaperFieldSource,
   binding: PaperFieldBinding,
 ): string {
   const stored = readStored(pack, binding);
   if (stored === null) return "";
-  if (binding.kind === "money") return String(stored);
-  if (binding.kind === "date") return String(stored);
-  const parts = splitIso(String(stored));
-  if (!parts) return "";
-  if (binding.kind === "dateDay") return parts.day;
-  if (binding.kind === "dateMonth") return parts.month;
-  if (binding.kind === "dateYear") return parts.year;
+
+  if (
+    binding.kind === "dateDay" ||
+    binding.kind === "dateMonth" ||
+    binding.kind === "dateYear"
+  ) {
+    // A date part can only come out of a real ISO date — a half-written one has no day to show,
+    // and guessing is how a wrong date reaches a form somebody signs.
+    const parts = splitIso(String(stored));
+    if (!parts) return "";
+    if (binding.kind === "dateDay") return parts.day;
+    if (binding.kind === "dateMonth") return parts.month;
+    return parts.year;
+  }
+
   return String(stored);
 }
 
 /** The value as it sits in the store today — before this edit. */
-function readStored(pack: HiringPackData, binding: PaperFieldBinding): string | number | null {
+function readField(
+  pack: PaperFieldSource,
+  store: PaperStore,
+  field: string,
+): string | number | null {
   const source =
-    binding.store === "employee"
+    store === "employee"
       ? (pack.employee as unknown as Record<string, unknown>)
-      : binding.store === "profile"
+      : store === "profile"
         ? (pack.profile as unknown as Record<string, unknown>)
         : (pack.offboarding as unknown as Record<string, unknown>);
-  const value = source[binding.field];
+  const value = source[field];
   if (value === null || value === undefined) return null;
   if (typeof value === "number") return value;
   return String(value);
+}
+
+/**
+ * What the paper would print for this binding — the bound field, or its fallback when it is empty.
+ *
+ * READING HAS TO AGREE WITH PRINTING, and until now it did not. `render-form1.ts` prints
+ * `profile.addressStreet ?? employee.residenceAddress`; this function read only the first half, so
+ * clicking Street on a Form 1 that visibly showed an address opened an EMPTY edit box — the same
+ * shape of defect as the boxed national ID above, and an invitation to retype a value that was
+ * already correct. It also made the fill count say "fills for 0 of 169" beside a row displaying a
+ * real street.
+ *
+ * WRITING IS UNAFFECTED. A save still goes to `store`/`field`; the fallback is a read. So editing a
+ * start day seeded from the hire date writes an explicit `contractStartDate`, which is exactly what
+ * an operator who changed it meant — and `resolveDateBase` already measured that write against the
+ * resolved date, so this only brings the read into line with the write.
+ */
+function readStored(pack: PaperFieldSource, binding: PaperFieldBinding): string | number | null {
+  const stored = readField(pack, binding.store, binding.field);
+  if (stored !== null && stored !== "") return stored;
+  if (!binding.printFallback) return stored;
+  return readField(pack, binding.printFallback.store, binding.printFallback.field);
 }
 
 function splitIso(iso: string): { day: string; month: string; year: string } | null {

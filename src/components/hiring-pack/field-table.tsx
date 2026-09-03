@@ -39,12 +39,22 @@
 
 import { AlertTriangle, Check, Eye, EyeOff, MapPin, Plus, RotateCcw, Search, Trash2, X } from "lucide-react";
 import type { KeyboardEvent } from "react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import type { DocumentFieldInventoryEntry } from "@/lib/hiring-pack/document-inventory";
+import { literalValueKey } from "@/lib/hiring-pack/field-layout";
 import type { DocumentFieldRow, DocumentSurface } from "@/lib/hiring-pack/field-layout";
-import { resolveFieldTemplate, validateFieldTemplate } from "@/lib/hiring-pack/field-template";
+import {
+  fieldTemplateKeys,
+  resolveFieldTemplate,
+  validateFieldTemplate,
+} from "@/lib/hiring-pack/field-template";
+import {
+  FILLS_FOR_EVERYONE,
+  useFieldFillRates,
+  type FieldFillRate,
+} from "@/components/hiring-pack/use-field-fill-rates";
 
 export type FieldTableProps = {
   busy: boolean;
@@ -54,6 +64,14 @@ export type FieldTableProps = {
   loading: boolean;
   /** Arm the page to receive a new box carrying this key — the operator clicks where it goes. */
   onAddBox: (key: string | null) => void;
+  /**
+   * Show a rule ON THE PAPER before it is saved — the dry run.
+   *
+   * `text: null` means the rule resolves to nothing for this employee, which the page shows as an
+   * empty box in a red ring rather than as no box at all. `null` for the whole argument takes the
+   * overlay off and puts the document back exactly as the server rendered it.
+   */
+  onDryRun: (dry: { key: string; text: string | null } | null) => void;
   /** Remove a field-layer row: an added field goes, an override returns to its compiled default. */
   onDeleteRow: (row: DocumentFieldRow) => void;
   /** Write a rule for a field the template already places. `null` restores the record value. */
@@ -89,12 +107,86 @@ function currentRule(override: DocumentFieldRow | null): string | null {
   return override.source.kind === "literal" ? override.source.text : null;
 }
 
+/**
+ * Which record values a field depends on — the question the roster count is asked about.
+ *
+ * A rule is a template: its dependencies are its placeholders, and a plain literal with none has no
+ * dependencies at all, so it prints for everybody. With NO rule the field still prints the compiled
+ * default, which reads one value straight off the record — so its dependency is its own key.
+ */
+function keySetFor(rule: string | null, defaultKey: string | null): string[] {
+  if (rule !== null) return fieldTemplateKeys(rule);
+  return defaultKey === null ? [] : [defaultKey];
+}
+
+/**
+ * The `data-hp-key` the PAGE marks a field's span with — which is not always the key the table
+ * lists it under, and getting that wrong is a dry run that silently does nothing.
+ *
+ * A field with no rule of its own renders under its compiled key. The moment it carries a LITERAL
+ * rule — an override or an added field — `fieldPrintedValue` mints `hpLiteral:<rowId>` for it and
+ * the span is marked with that instead, because two fixed strings on one page sharing a key would
+ * make the second print the first's text. So the target follows the row, not the table.
+ */
+function dryRunTargetKey(row: DocumentFieldRow | null, fallbackKey: string): string {
+  if (!row) return fallbackKey;
+  return row.source.kind === "literal" ? literalValueKey(row.id) : row.source.key;
+}
+
+/**
+ * "Fills for 2 of 169 · blank for 167" — what this rule does to everybody who is not on screen.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────────────────────
+ * THE ONE THING THE PREVIEW ABOVE IT CANNOT TELL YOU. "Prints:" resolves the rule against the ONE
+ * employee the screen is showing, and the rule being written applies to every person the document
+ * is printed for. On production `job_title_ar` is stored for 2 of 108 active employees, so a rule
+ * reading {{jobTitleAr}} previews perfectly against either of those two and prints an empty field
+ * for everybody else — silently and by design, because one unresolvable placeholder blanks the
+ * whole field.
+ *
+ * IT WARNS, IT NEVER BLOCKS. The owner's standing rule is that the system flags and a person
+ * decides; a rule that blanks for most of the roster is often exactly right, and being told is the
+ * whole ask.
+ *
+ * SILENT WHEN THERE IS NOTHING TO SAY. A field with no record dependency does not vary by person,
+ * and printing "fills for everyone" on every fixed line would bury the rows that matter under rows
+ * that do not.
+ * ─────────────────────────────────────────────────────────────────────────────────────────────
+ */
+function FillRateNote({ rate, roster }: { rate: FieldFillRate | null; roster: number }) {
+  if (!rate || roster === 0) return null;
+  if (rate.filled === FILLS_FOR_EVERYONE) return null;
+
+  const blank = roster - rate.filled;
+  if (blank === 0) {
+    return (
+      <p className="text-phx-2xs text-phx-ink-faint">Fills for all {roster} people on the list.</p>
+    );
+  }
+
+  // AMBER BELOW HALF, plain above it. Almost every record-bound field is blank for SOMEBODY — a
+  // missing mobile number, an employee hired last week — so colouring every shortfall would make
+  // the whole table amber and the colour would stop meaning anything. Under half the roster is
+  // where "this rule mostly does not print" starts being the honest reading of the number.
+  const tone = rate.filled * 2 < roster ? "text-amber-700 font-semibold" : "text-phx-ink-soft";
+  const names = rate.blankNames.join(", ");
+
+  return (
+    <p className={`text-phx-2xs break-words ${tone}`}>
+      Fills for {rate.filled} of {roster} · blank for {blank}
+      {names === "" ? "" : ` — including ${names}`}
+      {rate.unbound.length > 0 ? ` (${rate.unbound.join(", ")} is the same for everyone)` : ""}
+    </p>
+  );
+}
+
 export function FieldTable({
   busy,
   entries,
   error,
   loading,
   onAddBox,
+  onDryRun,
   onDeleteRow,
   onSaveRule,
   onSaveRowText,
@@ -198,13 +290,99 @@ export function FieldTable({
     [added, needle],
   );
 
-  const setDraft = (key: string, text: string) => setDrafts((current) => ({ ...current, [key]: text }));
-  const clearDraft = (key: string) =>
+  /**
+   * Every key set the table needs a roster count for — the saved rules, the compiled defaults, and
+   * whatever is being typed right now.
+   *
+   * ASKED FOR THE WHOLE TABLE, NOT JUST THE VISIBLE ROWS. The counts are cached by key set, so
+   * asking for all of them once costs one request, while asking per filter would re-ask on every
+   * keystroke in the search box. And the number is most useful exactly when you are SCANNING: it is
+   * how you find the field that quietly prints nothing for most of the company.
+   *
+   * DRAFTS ARE IN HERE TOO, which is what makes the count arrive before the rule is saved rather
+   * than after. A half-typed placeholder is a key set of its own; the hook's debounce is what stops
+   * each intermediate spelling from being asked about.
+   */
+  const keySets = useMemo(() => {
+    const sets: string[][] = [];
+    for (const entry of entries) {
+      sets.push(keySetFor(currentRule(overrides.get(entry.key) ?? null), entry.key));
+    }
+    for (const row of added) {
+      sets.push(
+        row.source.kind === "literal"
+          ? fieldTemplateKeys(row.source.text)
+          : [row.source.key],
+      );
+    }
+    for (const draft of Object.values(drafts)) {
+      if (validateFieldTemplate(draft) === null) sets.push(fieldTemplateKeys(draft));
+    }
+    return sets.filter((keys) => keys.length > 0);
+  }, [added, drafts, entries, overrides]);
+
+  const fillRates = useFieldFillRates(keySets, entries.length > 0);
+
+  /**
+   * WHICH FIELD IS BEING TRIED ON THE PAPER — one at a time, and only while it is being edited.
+   *
+   * Driven from the handlers rather than from an effect that watches the draft. Both work; this one
+   * is honest about what is happening — a keystroke changes the paper, so the keystroke is what
+   * writes to it — and it keeps the overlay out of the render cycle entirely.
+   */
+  const [dryKey, setDryKey] = useState<string | null>(null);
+
+  /** What that rule resolves to right now: the text, or null when it would print nothing. */
+  const dryTextFor = (text: string) =>
+    validateFieldTemplate(text, isKnownKey) === null ? resolveFieldTemplate(text, values) : null;
+
+  /**
+   * Which span each open draft is aimed at, so a keystroke can refresh the overlay without the row
+   * that owns it being in scope. Filled in when a dry run starts and read by `setDraft`.
+   */
+  const [dryTarget, setDryTarget] = useState<string | null>(null);
+
+  const showDryRun = (key: string, target: string, text: string) => {
+    setDryKey(key);
+    setDryTarget(target);
+    onDryRun({ key: target, text: dryTextFor(text) });
+  };
+
+  const stopDryRun = () => {
+    setDryKey(null);
+    setDryTarget(null);
+    onDryRun(null);
+  };
+
+  /**
+   * Leaving this tab, or the editor, takes the overlay off the paper. Without it the document would
+   * keep showing unsaved text with nothing on screen left to explain where it came from.
+   *
+   * THROUGH A REF, WITH AN EMPTY DEPENDENCY LIST, and the alternative is a real bug rather than a
+   * style point. `onDryRun` is a plain function on the parent, so it has a new identity every
+   * render; depending on it directly would run this cleanup after EVERY keystroke and wipe the
+   * overlay the keystroke had just drawn. The ref is written in its own effect rather than during
+   * render, because a render can be thrown away and a discarded render that had already moved a ref
+   * leaves it describing a state that never existed.
+   */
+  const onDryRunRef = useRef(onDryRun);
+  useEffect(() => {
+    onDryRunRef.current = onDryRun;
+  });
+  useEffect(() => () => onDryRunRef.current(null), []);
+
+  const setDraft = (key: string, text: string) => {
+    setDrafts((current) => ({ ...current, [key]: text }));
+    if (dryKey === key && dryTarget !== null) onDryRun({ key: dryTarget, text: dryTextFor(text) });
+  };
+  const clearDraft = (key: string) => {
     setDrafts((current) => {
       const next = { ...current };
       delete next[key];
       return next;
     });
+    if (dryKey === key) stopDryRun();
+  };
 
   /**
    * Save on Enter, abandon on Escape.
@@ -267,7 +445,35 @@ export function FieldTable({
         value for someone, that whole field prints blank for them rather than printing half a
         sentence. While a field is open, <strong>Enter</strong> saves it and <strong>Esc</strong>
         abandons the edit.
+        {fillRates.roster > 0 ? (
+          <>
+            {" "}
+            Under each field is how many of the{" "}
+            <strong>{fillRates.roster} people this module can print for</strong> it would actually
+            fill.
+          </>
+        ) : null}
       </div>
+
+      {/*
+        A FAILED COUNT IS SAID OUT LOUD RATHER THAN LEFT BLANK. Every "fills for N of M" line
+        disappears when the count cannot be fetched, and a silently missing warning reads exactly
+        like a field with nothing to warn about — which is the one reading that must not happen on a
+        screen whose whole purpose is to report emptiness.
+      */}
+      {fillRates.error ? (
+        <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-phx-2xs text-amber-800">
+          Could not count how many people each field fills for: {fillRates.error} The rules below
+          still work — you are editing without that check.
+        </p>
+      ) : null}
+
+      {dryKey !== null ? (
+        <p className="rounded-xl border border-emerald-300 bg-emerald-50 px-3 py-2 text-phx-2xs font-semibold text-emerald-800">
+          You are trying a rule on the page. The green box is not saved — press Save to keep it, or
+          Cancel and it goes back to what the document prints today.
+        </p>
+      ) : null}
 
       {/*
         THE TOOLBAR — find one field, and see what you have already changed.
@@ -432,18 +638,24 @@ export function FieldTable({
                       {message ? (
                         <p className="text-phx-2xs font-semibold text-red-700 break-words">{message}</p>
                       ) : (
-                        <p className="text-phx-2xs text-phx-ink-soft break-words">
-                          <span className="text-phx-ink-faint">Prints: </span>
-                          {preview === null ? (
-                            <em className="text-amber-700">
-                              nothing for this employee — a placeholder has no value
-                            </em>
-                          ) : preview === "" ? (
-                            <em className="text-phx-ink-faint">nothing</em>
-                          ) : (
-                            <span dir="auto">{preview}</span>
-                          )}
-                        </p>
+                        <>
+                          <p className="text-phx-2xs text-phx-ink-soft break-words">
+                            <span className="text-phx-ink-faint">Prints: </span>
+                            {preview === null ? (
+                              <em className="text-amber-700">
+                                nothing for this employee — a placeholder has no value
+                              </em>
+                            ) : preview === "" ? (
+                              <em className="text-phx-ink-faint">nothing</em>
+                            ) : (
+                              <span dir="auto">{preview}</span>
+                            )}
+                          </p>
+                          <FillRateNote
+                            rate={fillRates.rateFor(fieldTemplateKeys(draft))}
+                            roster={fillRates.roster}
+                          />
+                        </>
                       )}
                     </>
                   ) : (
@@ -462,6 +674,12 @@ export function FieldTable({
                       Set by you for everyone
                     </p>
                   ) : null}
+                  {editing ? null : (
+                    <FillRateNote
+                      rate={fillRates.rateFor(keySetFor(saved, entry.key))}
+                      roster={fillRates.roster}
+                    />
+                  )}
                 </div>
 
                 {/* Column three — what you can DO. */}
@@ -484,6 +702,33 @@ export function FieldTable({
                           </option>
                         ))}
                       </select>
+                      {/*
+                        TRY IT ON THE PAPER — the answer to "where does this land", which the
+                        resolved text alone cannot give. Disabled when the field has no box on the
+                        page: an empty compiled placement is dropped from the markup entirely, so
+                        there is nothing to write into, and a button that appeared to work and did
+                        nothing would be worse than one that says why.
+                      */}
+                      <Button
+                        className="gap-1"
+                        disabled={busy || message !== null || !entry.placed}
+                        onClick={() =>
+                          dryKey === entry.key
+                            ? stopDryRun()
+                            : showDryRun(entry.key, dryRunTargetKey(override, entry.key), draft)
+                        }
+                        size="sm"
+                        title={
+                          entry.placed
+                            ? "Show this rule on the page without saving it"
+                            : "This field has no box on the paper yet, so there is nothing to show it in."
+                        }
+                        type="button"
+                        variant={dryKey === entry.key ? "secondary" : "ghost"}
+                      >
+                        <Eye className="h-3.5 w-3.5" />
+                        {dryKey === entry.key ? "Stop" : "Try it"}
+                      </Button>
                       <Button
                         className="gap-1"
                         disabled={busy || message !== null}
@@ -622,9 +867,15 @@ export function FieldTable({
 
                   <div className="min-w-0 flex-1 space-y-1.5">
                     {row.source.kind === "value" ? (
-                      <p className="text-phx-xs text-phx-ink break-words" dir="auto">
-                        {values[row.source.key] ?? <em className="text-phx-ink-faint">empty</em>}
-                      </p>
+                      <>
+                        <p className="text-phx-xs text-phx-ink break-words" dir="auto">
+                          {values[row.source.key] ?? <em className="text-phx-ink-faint">empty</em>}
+                        </p>
+                        <FillRateNote
+                          rate={fillRates.rateFor([row.source.key])}
+                          roster={fillRates.roster}
+                        />
+                      </>
                     ) : editing ? (
                       <>
                         <textarea
@@ -641,22 +892,34 @@ export function FieldTable({
                         {message ? (
                           <p className="text-phx-2xs font-semibold text-red-700 break-words">{message}</p>
                         ) : (
-                          <p className="text-phx-2xs text-phx-ink-soft break-words">
-                            <span className="text-phx-ink-faint">Prints: </span>
-                            {preview === null ? (
-                              <em className="text-amber-700">nothing for this employee</em>
-                            ) : preview === "" ? (
-                              <em className="text-phx-ink-faint">nothing</em>
-                            ) : (
-                              <span dir="auto">{preview}</span>
-                            )}
-                          </p>
+                          <>
+                            <p className="text-phx-2xs text-phx-ink-soft break-words">
+                              <span className="text-phx-ink-faint">Prints: </span>
+                              {preview === null ? (
+                                <em className="text-amber-700">nothing for this employee</em>
+                              ) : preview === "" ? (
+                                <em className="text-phx-ink-faint">nothing</em>
+                              ) : (
+                                <span dir="auto">{preview}</span>
+                              )}
+                            </p>
+                            <FillRateNote
+                              rate={fillRates.rateFor(fieldTemplateKeys(draft))}
+                              roster={fillRates.roster}
+                            />
+                          </>
                         )}
                       </>
                     ) : (
-                      <p className="text-phx-xs text-phx-ink break-words" dir="auto">
-                        {saved === "" ? <em className="text-phx-ink-faint">empty</em> : saved}
-                      </p>
+                      <>
+                        <p className="text-phx-xs text-phx-ink break-words" dir="auto">
+                          {saved === "" ? <em className="text-phx-ink-faint">empty</em> : saved}
+                        </p>
+                        <FillRateNote
+                          rate={fillRates.rateFor(fieldTemplateKeys(saved))}
+                          roster={fillRates.roster}
+                        />
+                      </>
                     )}
                   </div>
 
@@ -679,6 +942,22 @@ export function FieldTable({
                             </option>
                           ))}
                         </select>
+                        <Button
+                          className="gap-1"
+                          disabled={busy || message !== null}
+                          onClick={() =>
+                            dryKey === key
+                              ? stopDryRun()
+                              : showDryRun(key, dryRunTargetKey(row, key), draft)
+                          }
+                          size="sm"
+                          title="Show this text on the page without saving it"
+                          type="button"
+                          variant={dryKey === key ? "secondary" : "ghost"}
+                        >
+                          <Eye className="h-3.5 w-3.5" />
+                          {dryKey === key ? "Stop" : "Try it"}
+                        </Button>
                         <Button
                           className="gap-1"
                           disabled={busy || message !== null}

@@ -235,6 +235,22 @@ const EDITOR_CSS = `
     outline: 2px solid #f59e0b !important;
     background-color: rgba(245, 158, 11, 0.2) !important;
   }
+  /* A RULE BEING TRIED, NOT ONE THAT IS SAVED. Green rather than the editor's blue, because blue
+     already means "you can edit this" everywhere else on the page and a second blue would read as
+     one more editable box. The dashed ring plus the tint says the words under it are not what the
+     document would print if it were printed right now. */
+  [data-hp-dry] {
+    outline: 2px dashed #059669 !important;
+    outline-offset: 2px;
+    background-color: rgba(5, 150, 105, 0.14) !important;
+  }
+  /* A rule that resolves to nothing keeps its ring so the box does not simply vanish — an empty
+     outline IS the warning, and a field that disappeared would read as the preview being broken. */
+  [data-hp-dry][data-hp-dry-empty] {
+    background-color: rgba(220, 38, 38, 0.12) !important;
+    outline-color: #dc2626 !important;
+  }
+
   /* A value the page prints but nothing can store — the company's own registry numbers, a figure
      derived from another one. Marked as locked rather than left looking ordinary, so it is obvious
      WHY it will not take a keystroke. */
@@ -493,6 +509,8 @@ export function HiringPackPaperEditor({
    */
   const pendingAddKeyRef = useRef<string | null>(null);
   const [pendingAddKey, setPendingAddKey] = useState<string | null>(null);
+
+
 
   const previewUrl = useMemo(() => {
     const version = versionId ? `&version=${encodeURIComponent(versionId)}` : "";
@@ -768,7 +786,68 @@ export function HiringPackPaperEditor({
     return () => {
       live = false;
     };
-  }, [inventoryUrl, layoutMode, layoutTab, reloadToken]);
+  }, [inventoryUrl, layoutMode, layoutTab, reloadToken]);  /**
+   * Put a rule ON THE PAPER before it is anybody's rule — the field table's dry run.
+   *
+   * ─────────────────────────────────────────────────────────────────────────────────────────────
+   * WRITTEN INTO THE IFRAME'S DOM, NOT RENDERED BY THE SERVER, and that is a deliberate trade.
+   * Rendering it properly would mean threading a pending override through all ten renderers' value
+   * maps, and it would put text nobody has saved onto the route that also PRINTS. Here it cannot:
+   * this is a `preview=1` frame, the change lives only in this browser, and the next reload — which
+   * every save triggers anyway — erases it.
+   *
+   * A CALLBACK, NOT AN EFFECT, and that had to change: reading `frameRef.current` inside an effect
+   * makes every later write to the framed document a lint error, because the compiler then treats
+   * the ref as effect state. A keystroke is what changes the paper, so the keystroke is what calls
+   * this — which is also the more honest description of what happens.
+   *
+   * `text: null` means the rule resolves to NOTHING for this employee. That is a real answer rather
+   * than an absence — a placeholder with no value blanks the whole field — so the box is emptied and
+   * ringed in red instead of being left showing the old value.
+   *
+   * WHAT IT CANNOT SHOW, said plainly rather than papered over: a compiled field whose value is
+   * empty is not in the markup at all, since `renderPlacement` drops an empty placement, so there is
+   * no box to write into. The table disables the button in that case and says why; the repair there
+   * is to add a box, which it already offers.
+   * ─────────────────────────────────────────────────────────────────────────────────────────────
+   */
+  const applyDryRun = (dry: { key: string; text: string | null } | null) => {
+    const doc = frameRef.current?.contentDocument;
+    if (!doc) return;
+
+    // THE UNDO LIVES ON THE NODE, not in a ref beside it. A reload replaces the whole document, so
+    // a remembered element is a detached node the moment anything is saved — whereas markup parked
+    // in the element's own dataset goes away with it, and the query below simply finds nothing.
+    for (const marked of doc.querySelectorAll<HTMLElement>("[data-hp-dry]")) {
+      const original = marked.dataset.hpDryOriginal;
+      if (original !== undefined) marked.innerHTML = original;
+      marked.removeAttribute("data-hp-dry");
+      marked.removeAttribute("data-hp-dry-empty");
+      marked.removeAttribute("data-hp-dry-original");
+    }
+    if (!dry) return;
+
+    const element = doc.querySelector<HTMLElement>(`[data-hp-key="${CSS.escape(dry.key)}"]`);
+    if (!element) return;
+
+    // A box grid paints one character per printed cell as positioned children, so overwriting its
+    // text would destroy the grid rather than preview anything. Those are left alone; the field
+    // table still reports what the rule resolves to and how many people it fills for.
+    if (
+      element.classList.contains("grid") ||
+      element.classList.contains("tick") ||
+      element.classList.contains("wage")
+    ) {
+      return;
+    }
+
+    element.dataset.hpDryOriginal = element.innerHTML;
+    element.textContent = dry.text ?? "";
+    element.setAttribute("data-hp-dry", "true");
+    if (dry.text === null || dry.text === "") {
+      element.setAttribute("data-hp-dry-empty", "true");
+    }
+  };
 
   const commitLayoutFieldRef = useRef(commitLayoutField);
 
@@ -1427,6 +1506,7 @@ export function HiringPackPaperEditor({
                 error={fieldsError}
                 loading={inventoryLoading}
                 onAddBox={armAddBox}
+                onDryRun={applyDryRun}
                 onDeleteRow={(row) => {
                   const sure = window.confirm(
                     row.defaultKey

@@ -413,6 +413,102 @@ export function runHiringPackPaperEditorTests() {
     const startDay = paperFieldBinding("startDay");
     assert.ok(startDay);
     assert.equal(paperFieldCurrentValue(pack, startDay), "01");
+
+    // ── A TEXT FIELD COMES BACK AS ITSELF ────────────────────────────────────────────────────
+    //
+    // This is a regression pin, not a tautology. `paperFieldCurrentValue` used to run EVERY kind it
+    // had not already returned for through `splitIso` and bail with "" when the parse failed — so a
+    // `text` value came back empty unless it happened to look like an ISO date.
+    //
+    // The reachable damage was on the two `text` fields that render as DIGIT GRIDS. `NATIONAL_ID`
+    // and `INSURANCE_NUMBER` are boxed, and the grid branch of the paper editor is the only caller
+    // of this function: clicking a national ID that was on file opened the edit bar EMPTY, and the
+    // obvious next action — type it and save — writes over a correct number with a retyped one.
+    // Found 2026-09-04 by the roster fill-rate count, which reported the national ID as stored for
+    // 0 of 169 people on a form that was printing it.
+    const nationalId = paperFieldBinding("NATIONAL_ID");
+    assert.ok(nationalId);
+    assert.equal(
+      paperFieldCurrentValue(pack, nationalId),
+      "29001011200123",
+      "a boxed national ID must open the editor holding the number that is on file",
+    );
+
+    const phone = paperFieldBinding("PHONE");
+    assert.ok(phone);
+    assert.equal(paperFieldCurrentValue(pack, phone), employeeFixture().mobileNumber ?? "");
+
+    // A date PART still refuses a value it cannot read a day out of, which is the behaviour the
+    // old fall-through was reaching for. Guessing here puts a wrong date on a signed form.
+    const brokenDay = packFixture({}, { contractStartDate: "not a date" });
+    assert.equal(paperFieldCurrentValue(brokenDay, startDay), "");
+  }
+
+  // ── WHAT THE EDITOR READS MUST BE WHAT THE PAPER PRINTS ──────────────────────────────────────
+  //
+  // Four values on these documents are printed from a `??` chain rather than from one column, and
+  // `paper-fields.ts` used to read only the first link of each. The result was a page showing a
+  // value beside an edit box that opened EMPTY — and, once the roster count existed, a note reading
+  // "fills for 0 of 169" beside a row visibly displaying a street.
+  //
+  // Each pair below renders the real document with the first link empty and asserts that the paper
+  // and the binding agree. Asserting through the renderer rather than against its source text is
+  // deliberate: a chain that moves or is reformatted still passes, and a chain that is REMOVED from
+  // a renderer without its `printFallback` being removed too correctly fails.
+  {
+    // 1. The Arabic name falls back to the Latin one — on every document, not just this one.
+    const noArabicName = packFixture({ nameAr: null, fullName: "Omar Sample" });
+    const nameBinding = paperFieldBinding("insuredName");
+    assert.ok(nameBinding);
+    assert.equal(
+      paperFieldCurrentValue(noArabicName, nameBinding),
+      "Omar Sample",
+      "with no Arabic name the paper prints the Latin one, so the editor must offer it",
+    );
+    assert.ok(renderForm1Html(noArabicName, 1).includes("Omar Sample"));
+
+    // 2. Form 1's street falls back to the free-text residence address on the employee record.
+    const noStreet = packFixture(
+      { residenceAddress: "12 شارع النيل، المعادي" },
+      { addressStreet: null },
+    );
+    const streetBinding = paperFieldBinding("addressStreet");
+    assert.ok(streetBinding);
+    assert.equal(
+      paperFieldCurrentValue(noStreet, streetBinding),
+      "12 شارع النيل، المعادي",
+      "Form 1 prints the residence address when no street is stored",
+    );
+    assert.ok(renderForm1Html(noStreet, 1).includes("12 شارع النيل، المعادي"));
+
+    // 3. The insurance start date falls back to the hire date. The write side already resolved this
+    //    (`resolveDateBase`), so before this the read and the write disagreed with each other.
+    const noContractStart = packFixture({ hireDate: "2026-03-01" }, { contractStartDate: null });
+    const startDayBinding = paperFieldBinding("startDay");
+    assert.ok(startDayBinding);
+    assert.equal(
+      paperFieldCurrentValue(noContractStart, startDayBinding),
+      "01",
+      "with no contract start date the form prints the hire date, and so must the editor",
+    );
+
+    // 4. A last working day falls back from the offboarding override to the employee record.
+    const noOverride = packFixture({ lastWorkingDate: "2026-07-31" });
+    const lastWorking = paperFieldBinding("lastWorkingDate");
+    assert.ok(lastWorking);
+    assert.equal(paperFieldCurrentValue(noOverride, lastWorking), "2026-07-31");
+
+    // THE STORED VALUE STILL WINS. A fallback is what the paper does when there is nothing there,
+    // never a value that overrides one somebody typed.
+    const bothPresent = packFixture(
+      { residenceAddress: "the employee record" },
+      { addressStreet: "the stored street" },
+    );
+    assert.equal(
+      paperFieldCurrentValue(bothPresent, streetBinding),
+      "the stored street",
+      "a stored value must never be displaced by its fallback",
+    );
   }
 
   // ── 6. The renderers still stamp the keys ────────────────────────────────────────────────────
