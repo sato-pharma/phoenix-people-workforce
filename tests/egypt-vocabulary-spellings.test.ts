@@ -80,6 +80,25 @@ export async function runEgyptVocabularySpellingsTests(): Promise<void> {
     );
   }
 
+  // ── 3b. Two more spellings, found the same way and costing the same thing ──
+  //
+  // Sweeping the candidates who reached NO district manager on 2026-09-03 turned up two more of
+  // exactly the shape section 1 fixed. Both had a place written on them and neither resolved:
+  // "Kafr El-Shiekh" transposes the vowels of a governorate the table already carried four ways,
+  // and "Bani Swef" is a spelling of Beni Suef the table missed while carrying "bani sweif". The
+  // second belonged to a SHORTLISTED candidate — someone the company was actively hiring, whom no
+  // district manager could see.
+  {
+    assert.equal(resolveGovernorate("Kafr El-Shiekh"), "Kafr El-Sheikh", "the transposed spelling resolves");
+    assert.equal(governorateNamedBy("Kafr El-Shiekh"), "Kafr El-Sheikh", "on the recruitment path too");
+    assert.equal(resolveGovernorate("Kafr El-Sheikh"), "Kafr El-Sheikh", "and the usual spelling is untouched");
+
+    assert.equal(resolveGovernorate("Bani Swef city"), "Beni Suef", "a Beni Suef address spelled the way a candidate wrote it");
+    assert.equal(governorateNamedBy("Bani Swef city"), "Beni Suef", "on both paths, since only one of them routes a CV");
+    assert.equal(resolveGovernorate("Beni Suef"), "Beni Suef", "and the usual spelling is untouched");
+    assert.equal(resolveGovernorate("Bani Sweif"), "Beni Suef", "as is the variant the table already carried");
+  }
+
   // ── 4. The vocabulary stays single ─────────────────────────────────────────
   //
   // The correction is worth nothing if a caller keeps its own copy of Egypt. Both spellings are
