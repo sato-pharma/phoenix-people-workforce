@@ -52,6 +52,13 @@ export async function POST(request: Request) {
        * else, absent included, is unanswered and 400s; it is no longer quietly read as a pharmacy.
        */
       venueType?: string | null;
+      /**
+       * The CRM contact the submitter says this venue IS — the picker's answer. Optional, and a
+       * malformed value is read as "not declared" rather than refused, so a client that cannot
+       * offer the picker still registers venues exactly as before. The service checks the id
+       * against the caller's OWN scope before storing it; this route never widens that.
+       */
+      crmContactId?: number | string | null;
     };
     const pharmacy = await createDirectOrderPharmacy(access, {
       acknowledgedCodeConflict: body.acknowledgedCodeConflict === true,
@@ -62,6 +69,7 @@ export async function POST(request: Request) {
       doctorName: body.doctorName ?? null,
       pharmacyAddress: body.pharmacyAddress ?? null,
       venueType: body.venueType ?? null,
+      crmContactId: body.crmContactId ?? null,
       distributorCodes: (body.distributorCodes ?? []).map((pair) => ({
         distributorCode: String(pair.distributorCode ?? "").trim(),
         customerCode: String(pair.customerCode ?? "").trim(),

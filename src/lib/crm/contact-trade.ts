@@ -61,6 +61,44 @@
  * badge reads as "no record of trading with them", while a wrong badge tells a rep the company sold
  * to a pharmacy it never sold to. Under-reporting is recoverable; a false trade record is not.
  *
+ * ## MEASURED YIELD, 2026-09-03 — the direct-order side is effectively inert, and better matching
+ * ## cannot fix it
+ *
+ * Replaying all three rules against production: of 63 live direct-order venues, exactly ONE links to
+ * a CRM contact.
+ *
+ * The tempting diagnosis is the area gate, because the gate really is starved — 759 of the 1,872 CRM
+ * pharmacies (41%) resolve to no area at all, and 21 of the 63 venues sit in an area holding no
+ * area-resolved CRM pharmacy whatsoever, so no name could match there however good it was. That
+ * diagnosis is WRONG, and the number that settles it is the ceiling: drop the area gate entirely and
+ * ask only whether a venue name has ANY twin among all 1,872 CRM pharmacies, and the answer is 4 —
+ * four exact, zero prefix. So a company-wide brick-resolution drive would move this from 1 to at most
+ * 4 of 63. The names do not meet. A rep types a venue into an order form; the CRM holds a different
+ * string for the same shop, and no normalizer recovers the difference.
+ *
+ * WHY MARKETING WORKED AND DIRECT ORDERS DID NOT. The two channels were not doing the same thing.
+ * `loadTradeCounterparties` gives a marketing party a real `contactCrmId` out of
+ * `marketing_customer_contacts.crm_code`, so marketing fires RULE 1 — an id a human wrote down,
+ * not area-gated, always wins. The direct-order branch hardcoded `contactCrmId: null`, so it could
+ * only ever reach rules 2 and 3, the inferential ones, whose measured ceiling is the 4 above.
+ *
+ * So the gap was a MISSING DECLARATION, not a weak matcher, and the matching core already had the
+ * feature that closes it. CLOSED 2026-09-03: `direct_order_pharmacies.crm_contact_id` now carries
+ * the contact the submitter picked when the venue was registered — the same shape as the campaign
+ * picker on the order form, where the requester declares the link instead of the system guessing
+ * it — and `loadDeclaredVenueContacts` below passes it in. Rule 1 fires and NOTHING in the matching
+ * core changed, which was the point: the three rules and their fixtures are untouched.
+ *
+ * The yield is therefore no longer a property of this file. It is a property of how many venues
+ * have been registered THROUGH the picker, which on the day it shipped was zero — every one of the
+ * 72 existing venues predates it and still resolves by name and area alone. Do not read a low
+ * number here as the matcher failing again; read `crm_contact_id is not null` first.
+ *
+ * DO NOT loosen the rules to raise the number. The candidates immediately below the current bar are
+ * wrong in the expensive direction: `المنصورية الجديدة` against `المصرية الجديدة`,
+ * `اسماء عبد العزيز` against `هند عبد العزيز`, `السيد ابو الفتوح` against `احمد ابو الفتوح`
+ * — different businesses, similarity 0.40-0.44, indistinguishable by threshold from the real ones.
+ *
  * The matching core is pure and fixture-tested; the Supabase reads sit below it.
  */
 
@@ -243,9 +281,52 @@ const LIVE_MARKETING = new Set(["active", "approved", "closed", "executed"]);
  * The whole set is small — 57 venues and 20 customers as of 2026-09-01 — so it is read entire and
  * matched in process rather than queried per rep.
  */
+/**
+ * A missing COLUMN, specifically — not a missing table.
+ *
+ * `isCrmSchemaMissingError` deliberately refuses to swallow 42703/PGRST204, because a missing
+ * column is normally a projection bug that must surface loudly. This one case is the exception, and
+ * it is narrow on purpose: a deploy applies NO migrations, so between shipping this code and
+ * applying `20260903193000_direct_order_venue_crm_contact_link.sql` the column genuinely does not
+ * exist yet. In that window "no venue has declared a contact" is the TRUE answer, not a degraded
+ * one — and the alternative is a 500 that takes out the whole CRM contact board for every rep.
+ */
+function isMissingColumnError(error: { code?: string; message?: string } | null): boolean {
+  if (!error) return false;
+  const message = `${error.code ?? ""} ${error.message ?? ""}`;
+  return /42703|PGRST204|column .* does not exist|Could not find the .* column/i.test(message);
+}
+
+/**
+ * The CRM contact each direct-order venue was DECLARED to be, by the person who registered it.
+ *
+ * Read separately from the main venue select rather than folded into it, so that the tolerance
+ * above applies to this column alone. Widening the main projection would mean one absent column
+ * could silently empty the whole trade board instead of just the declarations.
+ */
+async function loadDeclaredVenueContacts(): Promise<Map<string, number>> {
+  const { data, error } = await getSupabaseAdmin()
+    .from("direct_order_pharmacies")
+    .select("id, crm_contact_id")
+    .not("crm_contact_id", "is", null);
+  if (error) {
+    if (isMissingColumnError(error) || isCrmSchemaMissingError(error)) return new Map();
+    throw new Error(`Could not read declared venue contacts: ${error.message}`);
+  }
+  const byPharmacyId = new Map<string, number>();
+  for (const row of (data ?? []) as Array<{ crm_contact_id: number | null; id: string }>) {
+    const parsed = Number(row.crm_contact_id);
+    if (!row.id || !Number.isInteger(parsed) || parsed <= 0) continue;
+    byPharmacyId.set(String(row.id), parsed);
+  }
+  return byPharmacyId;
+}
+
 export async function loadTradeCounterparties(): Promise<TradeCounterparty[]> {
   const supabase = getSupabaseAdmin();
   const parties: TradeCounterparty[] = [];
+
+  const declaredContacts = await loadDeclaredVenueContacts();
 
   const [pharmacies, orders, customers, requests, crmLinks, areas] = await Promise.all([
     supabase.from("direct_order_pharmacies").select("id, pharmacy_name, area_code"),
@@ -278,7 +359,11 @@ export async function loadTradeCounterparties(): Promise<TradeCounterparty[]> {
       approved: counted.approved,
       areaCode: row.area_code,
       channel: "direct-order",
-      contactCrmId: null,
+      // RULE 1 when the submitter declared one. This is the whole direct-order half of the link:
+      // an id a human wrote down, beating every name/area inference, exactly as marketing already
+      // does through `marketing_customer_contacts.crm_code`. Null keeps the old behaviour — the
+      // venue falls through to the two inferred rules, which is all it could ever reach before.
+      contactCrmId: declaredContacts.get(row.id) ?? null,
       count: counted.total,
       name: row.pharmacy_name,
     });

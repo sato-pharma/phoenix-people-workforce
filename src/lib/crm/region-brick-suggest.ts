@@ -6,6 +6,10 @@
  * `ireports360_crm_region_brick_resolutions` held 0 rows against 295 distinct CRM regions and every
  * visit in the system sat in an unresolved place — no brick, no area, no region, on 89,058 calls.
  *
+ * This suggester has since been used: re-measured 2026-09-03 the table holds 105 resolutions,
+ * covering 100 of the 261 regions that appear on contacts. The unresolved remainder is what it is
+ * still for — the 0-rows line above is the starting point, not the current state.
+ *
  * TWO INDEPENDENT SIGNALS, and the answer is only trusted where they agree.
  *
  *   1. THE NAME. `@/lib/geo/arabic-name-key` collapses either script to a consonant skeleton, so

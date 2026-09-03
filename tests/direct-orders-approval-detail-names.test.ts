@@ -129,6 +129,13 @@ function detail(overrides: Partial<DirectOrderApprovalDetail> = {}): DirectOrder
       holdReleaseReason: null,
       holdReleaseDecidedByHrId: null,
       holdReleaseDecidedAt: null,
+      // Declared at registration, and REQUIRED on the type rather than optional: mapPharmacyRow
+      // always supplies all three, and the point of a fixture is to be able to represent the whole
+      // shape. Making them optional to spare this literal would let a real caller drop the link
+      // silently, which is the failure mode the column exists to end.
+      crmContactId: null,
+      crmContactLinkedByHrId: null,
+      crmContactLinkedAt: null,
     },
     productPharmacyPrice: null,
     productPublicPrice: null,

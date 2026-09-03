@@ -5,8 +5,14 @@
  * (`source_of_sales_fact_rollup`, 99.4% of rows carry a `brick_id`); a rep's VISITS are tagged
  * only with the CRM vendor's own locality id (`ireports360_visits.crm_region_id`). The translation
  * table between the two — `ireports360_crm_region_brick_resolutions` — shipped with an admin UI and
- * is EMPTY in production (0 of 302 regions, checked 2026-08-21), so no visit can be placed on the
+ * was EMPTY in production (0 of 302 regions, checked 2026-08-21), so no visit could be placed on the
  * brick map by its own geography.
+ *
+ * PARTLY FILLED SINCE — re-measured 2026-09-03 it holds 105 resolutions, covering 105 of the 307
+ * regions on visits (34%). That does NOT make this board redundant, and it has deliberately NOT been
+ * rewritten to use them: scoring a rep from a third of his territory would understate coverage
+ * exactly where the mapping is thinnest, which is the unfair-zero trap rule 2 below exists to
+ * prevent. The check-in route stays the measure until region coverage can stand on its own.
  *
  * This board is the interim answer, built on the one CRM record that does carry real coordinates:
  * the GPS CHECK-IN. Each check-in is snapped to the nearest brick centroid through the existing

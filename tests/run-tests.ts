@@ -1089,6 +1089,7 @@ import { runDirectOrdersPharmacyStandingTests } from "./direct-orders-pharmacy-s
 
 import { runDirectOrdersPharmacyComboboxPlacementTests } from "./direct-orders-pharmacy-combobox-placement.test.ts";
 import { runDirectOrdersPharmacyCodeCollisionTests } from "./direct-orders-pharmacy-code-collision.test.ts";
+import { runDirectOrderVenueCrmContactLinkTests } from "./direct-order-venue-crm-contact-link.test.ts";
 import { runDirectOrdersBasketLabelTests } from "./direct-orders-basket-label.test.ts";
 
 import { runDirectOrdersSheetEditableColumnsTests } from "./direct-orders-sheet-editable-columns.test.ts";
@@ -3272,6 +3273,11 @@ await runTest(
 await runTest(
   "direct orders pharmacy combo box opens where there is room (measured against visualViewport, flips up, never a fixed 320px)",
   runDirectOrdersPharmacyComboboxPlacementTests,
+);
+
+await runTest(
+  "a direct-order venue carries the CRM contact the submitter DECLARED, scoped to self union subtree (1 of 63 venues linked by name alone, ceiling 4 with the area gate removed; the write is gated by the same scope as the read; the main venue select must not name the new column before the migration is applied)",
+  runDirectOrderVenueCrmContactLinkTests,
 );
 
 await runTest(
