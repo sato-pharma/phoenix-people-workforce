@@ -18,9 +18,11 @@
  * column would make a five-tile group a scroll marathon on a 375px screen. The tile's min height
  * and centred axis are what make the pair read cleanly at that width.
  *
- * THERE IS NO HERO — see the note at the top of the returned tree. It matched Finance's exactly
- * (`AdminHeroFrame` + `CeoHeroIdentity`) until the owner removed it on 2026-09-03 for taking a
- * third of the first screen. The seat's identity lives in the topbar chip instead.
+ * THE HERO IS A 92px STRIP, NOT A BAND — see the note at the top of the returned tree. It matched
+ * Finance's exactly (`AdminHeroFrame` + `CeoHeroIdentity`) until the owner removed it on
+ * 2026-09-03 for taking a third of the first screen, then asked the same day for the identity back
+ * in the employee portal's language and under 96px tall. Height, not presence, is the rule that
+ * survived both instructions.
  *
  * EVERYTHING ON THIS PAGE IS A REUSE, NOT AN INVENTION. The group header's icon badge borrows
  * `AdminStatCard`'s icon-container language. The tile's hover lift and corner arrow reuse
@@ -62,11 +64,11 @@ import {
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { CommandCenterBanner } from "@/components/admin/command-center-banner";
 import { HrCommandCharts } from "@/components/hr/hr-command-charts";
 import { HrMyRecord } from "@/components/hr/hr-my-record";
 import { HrTodayPanel } from "@/components/hr/hr-today-panel";
-import { displayTitleForRole, type HrFunctionKey } from "@/lib/auth/hr-functions";
+import { PhoenixIdentityStrip } from "@/components/phoenix-signature-card/PhoenixIdentityStrip";
+import { type HrFunctionKey } from "@/lib/auth/hr-functions";
 import type { HrCommandCenterData, HrCommandGroup, HrCommandTile } from "@/lib/hr/command-center";
 
 const GROUP_ICONS: Record<HrFunctionKey, LucideIcon> = {
@@ -78,6 +80,19 @@ const GROUP_ICONS: Record<HrFunctionKey, LucideIcon> = {
   recruiting: BriefcaseBusiness,
   time_attendance: Fingerprint,
   workforce_insight: Network,
+};
+
+/**
+ * What the identity strip needs. A narrowed shape rather than `ViewerIdentity` itself, because
+ * this page has no business with the rest of that type and a narrower prop is one less thing a
+ * future change to the auth module can silently alter here.
+ */
+export type HrCommandCenterIdentity = {
+  displayName: string;
+  employeeCode: string | null;
+  photoUrl: string | null;
+  /** The seat's JOB TITLE, already resolved — never the raw permission key. */
+  roleLabel: string;
 };
 
 /** Per-browser, per-viewer. See the header — this is a convenience, not a saved preference. */
@@ -187,15 +202,15 @@ function UnavailableNotice({ sources }: { sources: string[] }) {
 
 export function HrCommandCenter({
   data,
-  viewerName,
+  identity,
 }: {
   data: HrCommandCenterData;
   /**
-   * Whose page this is, for the banner nameplate. The owner asked for the landing banner to carry
-   * the person rather than the surface — "I want it by name" — and named these two seats as
-   * Yasmine and Aya, so this is her own name, never the seat key.
+   * The signed-in seat, for the identity strip at the top. Resolved by the page from
+   * `resolveViewerIdentityFromPage`, which is the same source the topbar chip reads — so the
+   * strip and the chip can never disagree about whose account this is.
    */
-  viewerName: string;
+  identity: HrCommandCenterIdentity;
 }) {
   const [query, setQuery] = useState("");
   const [attentionOnly, setAttentionOnly] = useState(false);
@@ -275,29 +290,6 @@ export function HrCommandCenter({
     [data.groups],
   );
 
-  /**
-   * The banner's one-line answer to "do I need to do anything today".
-   *
-   * Counts TASKS, not tiles. The ring this page used to open with read "5 of 18 waiting" and was
-   * removed because its denominator counted figures rather than work — see the header of
-   * hr-today-panel.tsx. So this reads the same `data.tasks` the panel directly below renders,
-   * which means the banner and the list under it can never disagree about how much is waiting.
-   *
-   * An unanswered source outranks the count. A queue that threw contributes no open task, so a
-   * partial load would otherwise report "All clear" — the one wrong answer a queue can give.
-   */
-  const openTaskCount = useMemo(
-    () => data.tasks.filter((task) => task.urgency !== "clear").length,
-    [data.tasks],
-  );
-  const sourcesIncomplete = data.unavailableSources.length > 0;
-  const bannerStatus = sourcesIncomplete || openTaskCount > 0 ? "attention" : "clear";
-  const bannerStatusLabel = sourcesIncomplete
-    ? "Not all figures loaded"
-    : openTaskCount === 0
-      ? "All clear"
-      : `${openTaskCount} task${openTaskCount === 1 ? "" : "s"} waiting`;
-
   const trimmedQuery = query.trim().toLowerCase();
   const isFiltering = trimmedQuery.length > 0 || attentionOnly;
 
@@ -332,29 +324,36 @@ export function HrCommandCenter({
 
   return (
     <div className="min-w-0 max-w-full overflow-x-hidden">
-      {/* THE HEAVY HERO STAYS GONE; THIS IS NOT IT.
+      {/* THE IDENTITY IS BACK, AS A 92px STRIP — and the size is the whole point.
 
-          The page opened with `AdminHeroFrame` + `CeoHeroIdentity` until 2026-09-03 — a
-          full-bleed dark band holding a photo, a badge, a greeting and a clock, which cost
-          roughly a third of the first screen before one row of real work appeared. The owner
-          had it removed: "no heavy banner in any of her pages taking all the space".
+          History, because both halves of it were the owner's own instruction and a session that
+          knows only one half will undo the other:
 
-          Later the same day he asked for a banner back on the landing surfaces — "but not a
-          block like the before" — and named them: the Super Admin, and the HR team, "Yasmine
-          and Aya", which is both seats and therefore this one component. `CommandCenterBanner`
-          is the answer to that: one wrapping row at `px-5 py-4`, an ordinary header's height,
-          with none of what was removed — no photo, no greeting, no clock. Her name and, via
-          HR_SEAT_JOB_TITLES, her JOB TITLE rather than the seat key are already in the topbar
-          chip on every page of the shell, from `resolveViewerIdentityFromPage`.
+            1. This page opened with `AdminHeroFrame` + `CeoHeroIdentity`, matching Finance and
+               the CEO — a full-bleed dark band holding a photo, a badge, a greeting and a clock.
+               It cost roughly a THIRD of the first screen before one row of real work appeared,
+               and on 2026-09-03 he removed it: "no heavy banner in any of her pages taking all
+               the space".
+            2. Later the same day he asked for the identity back, in the employee portal's
+               language rather than the dark band's: "check the employee portal one ... but the
+               most important thing that I don't want it to be too thick, too many space in the
+               page. I want it to be narrow, to have much space for the page to show data." He
+               set the height himself, under 96px.
 
-          Finance and SFE keep their own banners and were explicitly excluded from this change
-          ("leave them as they are"), and the CEO command center was not named. Do not "restore
-          parity" in either direction — the divergence IS the instruction. */}
-      <CommandCenterBanner
-        name={viewerName}
-        roleLabel={displayTitleForRole(data.seat)}
-        status={bannerStatus}
-        statusLabel={bannerStatusLabel}
+          So the rule that survived both instructions is HEIGHT, not presence. `PhoenixIdentityStrip`
+          is a fixed 88px on a phone and 92px from `sm` up — about a third of what the old band took
+          and a quarter of the portal card it borrows from. Anything added here later is measured
+          against that, not against how the CEO and Finance pages look: those keep their own heroes
+          on purpose, and this divergence is still the instruction.
+
+          It reads its seat from `resolveViewerIdentityFromPage`, the same source as the topbar
+          chip, so the two can never disagree — including on the JOB TITLE, which that resolver
+          maps through HR_SEAT_JOB_TITLES rather than printing the permission key. */}
+      <PhoenixIdentityStrip
+        employeeCode={identity.employeeCode}
+        name={identity.displayName}
+        photoSrc={identity.photoUrl}
+        title={identity.roleLabel}
       />
 
       {/* ── Your day. The page's opening answer to "what do I do today", as a list of real

@@ -1,11 +1,21 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// THE LANDING BANNER — Super Admin overview and HR command center ONLY.
+// THE LANDING BANNER — the Super Admin overview ONLY.
 //
 // Added 2026-09-03 at the owner's instruction: "the landing command center needs a banner, but
 // not a block like the before", then scoped in his next breath — "don't touch the banner of the
 // finance manager or the SFE, leave them as they are, I'm talking about the super admin and the
-// HR team". So this mounts on exactly two surfaces. Finance keeps `FinanceOwnerBanner`, SFE keeps
-// `SfeDepartmentBanner`, and the CEO command center was not named and is left alone.
+// HR team". Finance keeps `FinanceOwnerBanner`, SFE keeps `SfeDepartmentBanner`, and the CEO
+// command center was not named and is left alone.
+//
+// HR IS DELIBERATELY NOT HERE, AND THAT IS NOT THE INSTRUCTION BEING IGNORED.
+// He did name the HR team ("and HR Yasmine and Aya"), and this component was briefly mounted on
+// `HrCommandCenter` for both seats. In parallel, another session answered the SAME need from a
+// later instruction of his — the identity back in the employee portal's language, narrow, a
+// height he set himself at under 96px — and shipped `PhoenixIdentityStrip` there in #3037, which
+// merged first. Mounting this banner as well would have stacked two identity bars on one page,
+// which is precisely the thickness he was removing. So HR keeps the merged strip and this stays
+// on the one surface that has no other identity bar. If he ever wants the two seats to read like
+// the Super Admin landing instead, REPLACE the strip — never add this above it.
 //
 // WHAT "NOT A BLOCK" MEANS, MECHANICALLY
 // The thing removed earlier the same day was `AdminHeroFrame` holding `CeoHeroIdentity`: a
@@ -68,14 +78,13 @@ export function CommandCenterBanner({
       {/* Depth, back to front: a warm ember centred behind the nameplate so the bar is lit rather
           than flat, then a hairline top and bottom to frame it.
 
-          `border-b-0` is load-bearing, not noise. On the Super Admin landing this bar is a direct
-          child of `divide-y divide-slate-200`, so the parent draws a slate-200 rule beneath it —
-          and the very next band there is another `bg-slate-900` bar. A light rule between two
-          identical darks reads as a bright seam splitting what should be one block; it measured
+          `border-b-0` is load-bearing, not noise. This bar is a direct child of
+          `divide-y divide-slate-200`, so the parent draws a slate-200 rule beneath it — and the
+          very next band is another `bg-slate-900` bar. A light rule between two identical darks
+          reads as a bright seam splitting what should be one block; it measured
           `oklch(0.929 0.011 86)` against bars otherwise byte-identical. Tailwind v4 wraps
           `divide-*` in `:where()`, so this plain utility outranks it with no `!`. The amber
-          hairline below is the intended finish; on the HR landing the band underneath is white,
-          so the colour change is its own edge and killing the rule costs nothing there. */}
+          hairline below is the intended finish. */}
       <span
         aria-hidden="true"
         className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_58%_130%_at_50%_50%,rgba(249,115,22,0.09)_0%,rgba(249,115,22,0.03)_45%,transparent_76%)]"

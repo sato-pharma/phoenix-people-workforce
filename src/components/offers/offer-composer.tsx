@@ -677,13 +677,32 @@ export function OfferComposer({
       </AdminTableShell>
 
       <AdminTableShell description="Newest first. A sent offer keeps the exact letter it was sent with." title="Offers">
-        <div className="hidden overflow-x-auto md:block">
-          <table className="w-full min-w-[860px] text-sm">
+        {/*
+          Desktop: mobile already gets the cards below, so the rule's mobile half was met — the
+          desktop half was not. `overflow-x-auto` over a `min-w-[860px]` floor is the shape the
+          fits-the-screen golden rule (AGENTS.md §4) names as the bug, not the fix: 860px is wider
+          than the content column at 768px or in a 1024px window, so Status, Sent and the PDF
+          button sat behind a sideways scroll on a laptop.
+
+          `table-fixed` + `<colgroup>` instead, with the cells wrapping. The candidate's name and
+          email were one nowrap line and are now stacked, which is the column merge the rule asks
+          for rather than a narrower font.
+        */}
+        <div className="hidden md:block">
+          <table className="w-full table-fixed text-sm">
+            <colgroup>
+              <col className="w-[26%]" />
+              <col className="w-[18%]" />
+              <col className="w-[16%]" />
+              <col className="w-[13%]" />
+              <col className="w-[13%]" />
+              <col className="w-[14%]" />
+            </colgroup>
             <thead>
               <tr className="border-b border-slate-200/80 bg-slate-50/60 text-left">
                 {["Candidate", "Title", "Package", "Status", "Sent", ""].map((heading) => (
                   <th
-                    className="whitespace-nowrap px-5 py-3 text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft"
+                    className="break-words px-5 py-3 text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft"
                     key={heading}
                   >
                     {heading}
@@ -694,21 +713,22 @@ export function OfferComposer({
             <tbody>
               {offers.map((offer) => (
                 <tr className="border-b border-slate-100 last:border-0" key={offer.id}>
-                  <td className="whitespace-nowrap px-5 py-3">
-                    <span className="font-bold text-slate-900">{offer.candidateName}</span>
-                    <span className="ml-2 text-xs text-slate-500">{offer.candidateEmail}</span>
+                  <td className="break-words px-5 py-3">
+                    <span className="block font-bold text-slate-900">{offer.candidateName}</span>
+                    {/* `break-all`: an email address has no space to break at. */}
+                    <span className="block break-all text-xs text-slate-500">{offer.candidateEmail}</span>
                   </td>
-                  <td className="whitespace-nowrap px-5 py-3 text-slate-600">{offer.title}</td>
-                  <td className="whitespace-nowrap px-5 py-3 text-right tabular-nums text-slate-900">
+                  <td className="break-words px-5 py-3 text-slate-600">{offer.title}</td>
+                  <td className="break-words px-5 py-3 text-right tabular-nums text-slate-900">
                     EGP {offerMoney(offer.totalMonthly)}
                   </td>
-                  <td className="whitespace-nowrap px-5 py-3">
+                  <td className="px-5 py-3">
                     <Badge className="capitalize" variant={STATUS_VARIANT[offer.status]}>
                       {offer.status}
                     </Badge>
                   </td>
-                  <td className="whitespace-nowrap px-5 py-3 text-slate-600">{offerWhen(offer.sentAt)}</td>
-                  <td className="whitespace-nowrap px-5 py-3 text-right">
+                  <td className="break-words px-5 py-3 text-slate-600">{offerWhen(offer.sentAt)}</td>
+                  <td className="px-5 py-3 text-right">
                     <Button asChild size="sm" type="button" variant="secondary">
                       <a href={`/api/offers/${offer.id}/pdf`} rel="noreferrer" target="_blank">
                         <FileDown className="h-3.5 w-3.5" /> PDF

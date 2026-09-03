@@ -490,8 +490,11 @@ export function CeoCommandCenter({
 
           So `variant === "admin"` is the whole condition. The CEO variant was not named and keeps
           its clean opening; `SfeDepartmentBanner` and `FinanceOwnerBanner` are untouched. Do NOT
-          "restore parity" by widening this to the other variants — the divergence IS the rule, and
-          the same instruction reached `HrCommandCenter` for Yasmine's and Aya's seats.
+          "restore parity" by widening this to the other variants — the divergence IS the rule.
+
+          He named the HR team in the same breath, and this banner was briefly mounted there too;
+          `PhoenixIdentityStrip` (#3037) answers that need on those two seats now, so HR is served
+          and does not want a second bar. See `command-center-banner.tsx` for the full account.
 
           What was removed is still gone: no photo, no greeting, no clock. The name and role label
           are in the topbar chip on every page of the shell, from `resolveViewerIdentityFromPage`.

@@ -868,7 +868,7 @@ export function CandidateScreeningSession({
             and an ellipsis, the person whose CV is on screen, unreadable, at every width the pane
             was measured at. With a floor the header wraps instead of shaving, which is the right
             trade: the row is allowed to get taller, the name is not allowed to disappear. */}
-        <p className="min-w-56 flex-1 truncate text-sm font-semibold">
+        <p className="min-w-56 flex-1 break-words text-sm font-semibold">
           {candidateDisplayName(current.fullName)}
         </p>
         {/* Which group this person is in, and how many are in it. Without this the queue's order is
