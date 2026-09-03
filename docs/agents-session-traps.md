@@ -679,6 +679,33 @@ Phoenix business rules, and the index line at its cliff is the wrong place for t
   `bare-worktree-cannot-push-pre-push-gate-needs-node-modules`
 - **"Permission denied" on `git worktree remove` still DEREGISTERS the worktree.**
   `worktree-remove-permission-denied-still-deregisters`
+- **And a DEREGISTERED folder is worse than a husk: a shell still sitting in it resolves git
+  against the PRIMARY checkout.** Measured 2026-09-03. A peer session ran
+  `node scripts/repo-doctor.mjs --fix --force` from the primary and deregistered-then-emptied a
+  `.claude/worktrees/` folder that a live session was still working in. Nothing announced it: the
+  session kept running commands, and because the folder no longer held a `.git` file, git walked
+  UP the tree and found the primary's. `git rev-parse --absolute-git-dir` returned
+  `F:/Phoenix Workforce/phoenix-workforce/.git` and `git log -1` reported `main`'s head, not the
+  session's own branch — so any mutating command would have landed on production's branch, with
+  no error and no prompt. The session noticed only because it re-read the worktree list after a
+  peer message, and stopped issuing mutating git commands from there.
+
+  Two consequences worth knowing before you trust anything read from such a folder:
+
+  1. **`cd` cannot escape it.** The harness resets the shell cwd back inside the pinned folder
+     after every command (the same mechanism §2.1 records as "a session can NEVER clear its own
+     husk"). Address the real repository explicitly — `git -C <path>` — rather than trying to
+     move out of the husk first.
+  2. **Path-filtered reads LIE there.** `git log <ref> -- <path>` exited 0 with no output and
+     `git ls-tree <ref> --name-only | grep <path>` matched nothing, for a file `git show` then
+     read 127 lines from. A blank from either form is indistinguishable from "clean", which is
+     exactly how an empty read certifies a check nobody performed. Verify with a POSITIVE
+     CONTROL: print the bytes or lines actually read and the count of the thing you expect to
+     find, so a zero-hit result is only believable alongside a non-zero read.
+
+  The recovery is not to fix the folder — it cannot be fixed from inside. Create a fresh worktree
+  addressed at the primary (`git -C <primary> worktree add ...`), work there, and let the husk
+  clear once the pinned session exits.
 - **`--fix` / `--strip-idle` need exactly ONE live session**, and **`--fix` can NEVER clear a `_wt-*`
   husk** — `fs.rmSync` EPERMs on dangling pnpm junctions. Use `rmdir /s /q`, then re-check the folder:
   an OLD `CreationTime` proves it never went. **Run that `rmdir` from PowerShell, not the Bash
