@@ -721,6 +721,24 @@ Phoenix business rules, and the index line at its cliff is the wrong place for t
   tested for `typecheck`/`lint`/`node scripts/…`, none of which go through Turbopack's root
   resolution. **Do not burn more than one retry on it** — verify against the primary checkout's server,
   or prove the change at data level instead. `turbopack-cannot-resolve-a-junctioned-node-modules-here`
+- **`gh pr merge` from a worktree exits NON-ZERO after the merge already SUCCEEDED.** `main` is
+  checked out in the primary checkout, so `gh`'s local post-merge step — switch to the base branch,
+  delete the local branch — cannot run, and the command dies `failed to run git: fatal: 'main' is
+  already used by worktree at 'F:/Phoenix Workforce/phoenix-workforce'`. The REMOTE merge has
+  already landed by then: `gh` merges via the API first and only afterwards touches the local
+  checkout. 2026-09-03, PR #2998 — the command "failed", and the PR was `MERGED` at 04:18:15Z as
+  `9f31ac376` with its remote branch already deleted. Every session here works in a `_wt-*` tree
+  while the primary holds `main`, so this fires on **every** merge, not as an edge case. The text
+  names `main` and says `fatal:`, so it reads as a merge that did not happen — and both tempting
+  responses are damage in reply to a no-op: a retry errors on an already-merged PR, which reads like
+  a second and worse failure, and checking `main` out here to "unblock" it strands the primary.
+  **Treat a non-zero `gh pr merge` in a worktree as UNKNOWN, never as failed**, and settle it
+  against the PR before doing anything else:
+  `gh pr view <n> --json state,mergedAt,mergeCommit --jq '{state:.state,sha:.mergeCommit.oid}'`.
+  `state: MERGED` means done, and the only residue is the local branch (`git branch -D <branch>`).
+  Note `gh pr view` has **no `merged` JSON field** — it is `state`; asking for one errors out and
+  prints the valid field list, which costs a round trip mid-incident.
+  `gh-pr-merge-exits-nonzero-from-a-worktree-after-it-succeeded`
 
 **Next.js runtime**
 
