@@ -11,6 +11,7 @@
 // The severity field is kept as-is: it is a useful convention on any platform, and it is what a
 // future log drain would key on. Never pass secrets/PII in message or labels.
 
+import { describeThrown } from "@/lib/error-monitor/describe-thrown";
 import { getDeployRevision } from "@/lib/observability/deploy-identity";
 
 export type LogSeverity = "DEBUG" | "INFO" | "NOTICE" | "WARNING" | "ERROR" | "CRITICAL";
@@ -29,7 +30,12 @@ function serializeError(error: unknown) {
     return { name: error.name, message: error.message, stack: error.stack ?? null };
   }
   if (error == null) return undefined;
-  return { message: String(error) };
+  // NOT every throw is an Error. Supabase rethrows a plain { message, details, hint, code }, and
+  // `String(error)` on one yields the literal "[object Object]" — which is exactly what
+  // phoenix-expense-claims-refresh logged on every failed run from 2026-09-03 02:51 Cairo. That
+  // route's own docstring names `railway logs | grep expense_claims_refresh` as the detection that
+  // works, so this line silently disarmed the documented diagnosis path.
+  return { message: describeThrown(error) };
 }
 
 function cleanLabels(labels?: LogLabels): Record<string, string> | undefined {

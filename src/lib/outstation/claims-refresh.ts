@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { describeThrown } from "@/lib/error-monitor/describe-thrown";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 /**
@@ -69,6 +70,28 @@ function isInterlockRefusal(error: { code?: string | null } | null): boolean {
 }
 
 /**
+ * Turn a PostgREST error into a real `Error` before it leaves this module.
+ *
+ * Supabase hands back a PLAIN OBJECT — `{ message, details, hint, code }` — not an Error. Throwing
+ * it as-is means every recorder downstream falls into its non-Error branch and writes the literal
+ * "[object Object]": that is precisely what `job_heartbeats.last_detail` held for
+ * phoenix-expense-claims-refresh on every failed run from 2026-09-03 02:51 Cairo, and what the
+ * Railway log line said too. The job was red, hourly, and said nothing about why.
+ *
+ * `code` is carried in the message because it is the part that decides what to do — 23514 (a check
+ * constraint refused the rebuilt row) and 57014 (this function's own 60s statement_timeout) are
+ * different problems with the same red job, and the message is the only field every recorder keeps.
+ * `cause` keeps the original object for anything that wants the structured fields.
+ */
+function asError(error: unknown, context: string): Error {
+  if (error instanceof Error) return error;
+  const code = (error as { code?: string | null } | null)?.code;
+  const wrapped = new Error(`${context}: ${code ? `[${code}] ` : ""}${describeThrown(error)}`, { cause: error });
+  wrapped.name = "ExpenseClaimsRefreshError";
+  return wrapped;
+}
+
+/**
  * Read parity back without ever selecting the whole view.
  *
  * An unbounded PostgREST `.select()` stops at 1000 rows with no marker (AGENTS.md §2.1), which on
@@ -79,14 +102,14 @@ async function readParity(supabase: SupabaseAdmin): Promise<ExpenseClaimsParity>
   const totalResult = await supabase
     .from("v_expense_claims_parity")
     .select("verdict", { count: "exact", head: true });
-  if (totalResult.error) throw totalResult.error;
+  if (totalResult.error) throw asError(totalResult.error, "parity total read failed");
 
   const driftResult = await supabase
     .from("v_expense_claims_parity")
     .select("claim_ref", { count: "exact" })
     .neq("verdict", "OK")
     .limit(20);
-  if (driftResult.error) throw driftResult.error;
+  if (driftResult.error) throw asError(driftResult.error, "parity drift read failed");
 
   const drifted = driftResult.count ?? 0;
   const driftedRefs = (driftResult.data ?? [])
@@ -116,7 +139,7 @@ export async function refreshExpenseClaims(client?: SupabaseAdmin): Promise<Expe
     if (isInterlockRefusal(error)) {
       return { status: "blocked", reason: error.message };
     }
-    throw error;
+    throw asError(error, "phx_refresh_expense_claims() failed");
   }
 
   const payload = (data ?? {}) as {

@@ -133,15 +133,20 @@ export async function runExpenseClaimsRefreshTests() {
     const { supabase } = fakeSupabase({
       rpcResult: { data: null, error: { code: "57014", message: "canceling statement due to statement timeout" } },
     });
-    // Matched by shape, not by regex: a Supabase error is a plain object, not an Error instance,
-    // and this module rethrows it untouched exactly as `expenses.ts` does. Asserting on the object
-    // is what pins that the original code and message survive the trip.
+    // This block used to pin the raw rethrow — "untouched exactly as `expenses.ts` does" — and that
+    // is precisely what broke the job on 2026-09-03: a Supabase error is a plain OBJECT, so every
+    // recorder downstream took its non-Error branch, called String() on it, and wrote the literal
+    // "[object Object]" into job_heartbeats.last_detail. A red job that cannot say why is worse than
+    // no job. So the contract is now an Error that carries the original, not the original raw:
+    // nothing is swallowed, and the code and message still survive the trip.
     await assert.rejects(
       () => refreshExpenseClaims(supabase),
       (error: unknown) => {
-        const raw = error as { code?: string; message?: string };
-        assert.equal(raw.code, "57014", "the original error propagates unchanged, code and all");
-        assert.match(String(raw.message), /statement timeout/);
+        assert(error instanceof Error, "the throw must be an Error so every recorder can describe it");
+        assert(error.message.includes("57014"), "the database's own error code survives in the message");
+        assert(error.message.includes("statement timeout"), "so does the database's own message");
+        const cause = error.cause as { code?: string } | undefined;
+        assert.equal(cause?.code, "57014", "the untouched original hangs off cause for anything that needs it");
         return true;
       },
       "a non-P0001 error must throw, not be reported as an interlock refusal",
