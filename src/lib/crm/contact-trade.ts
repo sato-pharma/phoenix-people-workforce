@@ -61,6 +61,38 @@
  * badge reads as "no record of trading with them", while a wrong badge tells a rep the company sold
  * to a pharmacy it never sold to. Under-reporting is recoverable; a false trade record is not.
  *
+ * ## MEASURED YIELD, 2026-09-03 — the direct-order side is effectively inert, and better matching
+ * ## cannot fix it
+ *
+ * Replaying all three rules against production: of 63 live direct-order venues, exactly ONE links to
+ * a CRM contact.
+ *
+ * The tempting diagnosis is the area gate, because the gate really is starved — 759 of the 1,872 CRM
+ * pharmacies (41%) resolve to no area at all, and 21 of the 63 venues sit in an area holding no
+ * area-resolved CRM pharmacy whatsoever, so no name could match there however good it was. That
+ * diagnosis is WRONG, and the number that settles it is the ceiling: drop the area gate entirely and
+ * ask only whether a venue name has ANY twin among all 1,872 CRM pharmacies, and the answer is 4 —
+ * four exact, zero prefix. So a company-wide brick-resolution drive would move this from 1 to at most
+ * 4 of 63. The names do not meet. A rep types a venue into an order form; the CRM holds a different
+ * string for the same shop, and no normalizer recovers the difference.
+ *
+ * WHY MARKETING WORKS AND DIRECT ORDERS DO NOT. The two channels are not doing the same thing.
+ * `loadTradeCounterparties` gives a marketing party a real `contactCrmId` out of
+ * `marketing_customer_contacts.crm_code`, so marketing fires RULE 1 — an id a human wrote down,
+ * not area-gated, always wins. The direct-order branch hardcodes `contactCrmId: null`, so it can
+ * only ever reach rules 2 and 3, the inferential ones, whose measured ceiling is the 4 above.
+ *
+ * So the gap is a MISSING DECLARATION, not a weak matcher, and the matching core already has the
+ * feature that closes it. `direct_order_pharmacies` carries no CRM contact id for anyone to pass.
+ * The fix is to let the rep name the CRM pharmacy when the venue is created — the same shape as the
+ * campaign picker on the order form, where the requester declares the link instead of the system
+ * guessing it — and then pass that id here. Rule 1 starts firing and nothing in this file changes.
+ *
+ * DO NOT loosen the rules to raise the number. The candidates immediately below the current bar are
+ * wrong in the expensive direction: `المنصورية الجديدة` against `المصرية الجديدة`,
+ * `اسماء عبد العزيز` against `هند عبد العزيز`, `السيد ابو الفتوح` against `احمد ابو الفتوح`
+ * — different businesses, similarity 0.40-0.44, indistinguishable by threshold from the real ones.
+ *
  * The matching core is pure and fixture-tested; the Supabase reads sit below it.
  */
 

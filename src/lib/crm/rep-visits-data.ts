@@ -57,11 +57,15 @@ type CheckinRow = { agent_crm_id: number | null; contact_crm_id: number | null; 
  * showing "not mapped yet", which is true, rather than take the page down.
  *
  * Measured against production 2026-08-28: `ireports360_crm_region_brick_resolutions` held 0 rows
- * against 239 distinct CRM regions in the August window, so today this returns empty and every visit
- * renders unmapped. That is the honest state of the data and the screen says so in those words. The
- * moment an admin fills the Region Mapping sheet (Admin -> CRM -> Region Mapping, which downloads a
- * brick-dropdown workbook and re-imports it) this index fills and the whole column resolves — no
- * code change, no deploy.
+ * against 239 distinct CRM regions in the August window, so this returned empty and every visit
+ * rendered unmapped. Filling it is an admin action, not a deploy: the Region Mapping sheet
+ * (Admin -> CRM -> Region Mapping) downloads a brick-dropdown workbook and re-imports it, and this
+ * index then fills on its own.
+ *
+ * IT HAS SINCE BEEN FILLED, PARTLY — re-measured 2026-09-03 the table holds 105 rows, every one
+ * carrying a brick, covering 100 of the 261 distinct regions on contacts (38%) and 105 of the 307
+ * on visits. So the 2026-08-28 line is history, not current state: both outcomes are live now, and
+ * a reader must not assume this returns empty.
  */
 export async function loadCrmRegionTerritoryIndex(): Promise<CrmRegionTerritoryIndex> {
   const supabase = getSupabaseAdmin();
