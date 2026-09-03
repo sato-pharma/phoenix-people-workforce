@@ -410,6 +410,23 @@ export function runCompanyActivityReportTests() {
   assert.deepEqual(sfeItem?.roles, ["SFE Manager"]);
   assert.deepEqual(sfeItem?.excludedRoles, ["Super Admin", "CEO"], "excludedRoles keeps Super Admin from seeing the page twice — his sidebar already reaches it via the hub card");
 
+  // The SFE Manager is the ONLY role this row renders for, and he is also the only role on the
+  // FLAT sidebar (flatSidebarRoles), so getSections blanks every section label for him — the
+  // section heading "Company Activity Report" never reaches his screen. Without this override the
+  // only words he sees are "Activity Report", 14th of 24 headingless buttons, which is why he
+  // reported the page missing on 2026-09-03 while every gate above it measured green.
+  // Owner instruction that day: rename it to "Company Activity Report" for him.
+  //
+  // labelByRole rather than renaming the canonical label: defaultModuleId() embeds that label and
+  // moduleIds are persisted in sidebar_module_assignments, so a plain rename changes the id and
+  // can silently unfile the row. resolveItemLabel applies this override at display time only.
+  assert.equal(
+    sfeItem?.labelByRole?.["SFE Manager"],
+    "Company Activity Report",
+    "his flat sidebar renders no section heading, so the row itself must carry the full name",
+  );
+  assert.equal(sfeItem?.label, "Activity Report", "the canonical label must NOT change — defaultModuleId embeds it");
+
   const hubCard = peopleManagementPageItems.find((item) => item.href === "/admin/company-activity-report");
   assert.ok(hubCard, "the Super Admin hub card must exist");
   // HR Operations joined this card 2026-08-29 with the owner's ruling, and it is NOT cosmetic even

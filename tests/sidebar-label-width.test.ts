@@ -7,7 +7,7 @@ import {
   hrNavigationSections,
   type NavigationSection,
 } from "../src/config/system-navigation.ts";
-import { getSections, type PermissionLookup } from "../src/lib/navigation/active-path.ts";
+import { getSections, usesFlatSidebar, type PermissionLookup } from "../src/lib/navigation/active-path.ts";
 import {
   labelBudgetPx,
   PORTAL_GEOMETRY_CHECKPOINT,
@@ -94,7 +94,12 @@ function worstCaseRows(): Measured[] {
       // in full wherever a section really can collapse to one row.
       if (mode === "admin" && usesHrNamespace(role)) continue;
       for (const section of getSections(sections, mode, lookupForRole(role), role)) {
-        const isHub = section.items.length === 1;
+        // The ↗ is what the +hub 20px buys, and `SortableSectionBlock` renders it as
+        // `standalone={!flatSidebar}` — so a role on the FLAT sidebar (SFE Manager) never sees one.
+        // Charging it anyway is the same false positive the HR pairing above documents: it read a
+        // single-row section of a rail whose only viewer gets no arrow, called that hub chrome, and
+        // demanded a label be shortened to fit 20px it does not spend.
+        const isHub = section.items.length === 1 && !usesFlatSidebar(role);
         for (const navItem of section.items) {
           const key = `${shell}|${navItem.href}|${navItem.label}`;
           const existing = byKey.get(key);
