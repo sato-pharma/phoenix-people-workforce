@@ -48,6 +48,15 @@ type ProductOption = {
   publicPrice: number | null;
   pharmacyPrice: number | null;
 };
+/** A campaign the requester may attach this order to. Labels only — the API returns no money. */
+type CampaignOption = {
+  id: string;
+  requestCode: string;
+  customerName: string | null;
+  areaName: string | null;
+  status: string;
+  raisedByMe: boolean;
+};
 type AreaOption = { areaCode: string; areaName: string; regionCode: string; regionName: string };
 type BrickOption = {
   brickId: string;
@@ -108,6 +117,10 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
   const [discount, setDiscount] = useState("");
   const [overrideReason, setOverrideReason] = useState("");
   const [collectionDate, setCollectionDate] = useState("");
+  // The campaign this order came from, declared by the requester (owner rule). Optional: most
+  // direct orders are not campaign-driven, so "" is both the default and a valid answer.
+  const [marketingRequestId, setMarketingRequestId] = useState("");
+  const [campaignOptions, setCampaignOptions] = useState<CampaignOption[]>([]);
 
   // "mine" = the rep's own already-approved pharmacies (owner, 2026-08-13) — the fastest correct
   // answer, and the one that removes the reason duplicates get typed at all; "picked" = chosen from
@@ -327,6 +340,40 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
 
   const product = useMemo(() => products.find((p) => p.productCode === productCode) ?? null, [products, productCode]);
 
+  // Campaigns for the chosen product's line. Re-fetched whenever the line changes, because a
+  // campaign is only offerable against its own line — and the selection is cleared when the new
+  // list no longer contains it, so changing product can never leave a stale campaign attached.
+  // The server re-validates on submit regardless; this keeps the form honest, it does not gate.
+  const productLine = product?.line ?? "";
+  useEffect(() => {
+    if (!productLine) {
+      setCampaignOptions([]);
+      setMarketingRequestId("");
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/direct-orders/campaign-options?line=${encodeURIComponent(productLine)}`);
+        const data = (await res.json().catch(() => ({}))) as { options?: CampaignOption[] };
+        if (cancelled) return;
+        const options = Array.isArray(data.options) ? data.options : [];
+        setCampaignOptions(options);
+        setMarketingRequestId((current) => (options.some((option) => option.id === current) ? current : ""));
+      } catch {
+        // A campaign is optional, so a failed lookup must degrade to "no campaigns offered" rather
+        // than showing an error the requester cannot act on or blocking a submission that is valid.
+        if (!cancelled) {
+          setCampaignOptions([]);
+          setMarketingRequestId("");
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [productLine]);
+
   // ── The family basket (owner, 2026-08-12) ──────────────────────────────────
   //
   // "make him able to choose lacto adv 1 and lacto adv 2 but this only with lacto". The rule is
@@ -534,6 +581,7 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
           discountPct: dealType === "discount" ? discountNum : null,
           bonusOverrideReason: overCap ? overrideReason.trim() || null : null,
           collectionDate,
+          marketingRequestId: marketingRequestId || null,
           // Only the lines still shown. Every rule about what may share a request is re-checked
           // server-side; this is the convenience, never the gate.
           items: activeExtras.map(([code, line]) => ({
@@ -831,6 +879,41 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
             <input type="date" className={inputClass()} value={collectionDate} onChange={(e) => setCollectionDate(e.target.value)} />
             <p className="mt-1 text-phx-xs text-slate-400">When you expect this direct order to be collected / paid (تاريخ التحصيل).</p>
           </div>
+
+          {/* The campaign this order came from. Shown only once a product is chosen, because the
+              list is scoped to that product's line — offering it earlier would show an empty box
+              for a reason the requester cannot see. Optional by design: leaving it as "No campaign"
+              is the ordinary answer for most orders. */}
+          {product ? (
+            <div>
+              <label className={labelClass()}>Came from a campaign</label>
+              <select
+                className={inputClass()}
+                value={marketingRequestId}
+                onChange={(e) => setMarketingRequestId(e.target.value)}
+              >
+                <option value="">No campaign</option>
+                {campaignOptions.map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {[
+                      option.requestCode,
+                      option.customerName,
+                      option.areaName,
+                      option.status === "active" ? null : option.status.replace(/_/g, " "),
+                      option.raisedByMe ? "yours" : null,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-1 text-phx-xs text-slate-400">
+                {campaignOptions.length === 0
+                  ? `No approved ${product.line} campaign is open, so this order is recorded without one.`
+                  : "Pick it only if this order came out of that campaign — it credits the campaign’s ROI with this sale."}
+              </p>
+            </div>
+          ) : null}
 
           {/* Pharmacy — combo box over the master database (spec B1/B2/B3), now behind three tabs. */}
           <div className="border-t border-[#eef1f3] pt-3">

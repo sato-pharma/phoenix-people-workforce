@@ -22,6 +22,8 @@ export async function POST(request: Request) {
       discountPct?: number | string;
       bonusOverrideReason?: string | null;
       collectionDate?: string | null;
+      /** The campaign the requester says this order came from. Validated in the domain service. */
+      marketingRequestId?: string | null;
       /**
        * EXTRA lines for a family basket. Passed through UNVALIDATED on purpose: every rule about
        * what may share a request — same family, an allow-listed family, no product twice, the
@@ -45,6 +47,7 @@ export async function POST(request: Request) {
       discountPct: body.discountPct == null ? null : Number(body.discountPct),
       bonusOverrideReason: body.bonusOverrideReason ?? null,
       collectionDate: body.collectionDate ?? null,
+      marketingRequestId: body.marketingRequestId ?? null,
       items: (body.items ?? []).map((item) => ({
         productCode: String(item.productCode ?? "").trim(),
         qty: Number(item.qty ?? 0),

@@ -489,6 +489,7 @@ import { runMarketingMasterResolutionTests } from "./marketing-master-resolution
 import { runMarketingReferenceImporterTests } from "./marketing-reference-importer.test.ts";
 import { runMarketingRequestAccessTests } from "./marketing-request-access.test.ts";
 import { runMarketingRequestContactLinkTests } from "./marketing-request-contact-link.test.ts";
+import { runDirectOrderCampaignLinkTests } from "./direct-order-campaign-link.test.ts";
 import { runMarketingRequestServiceTests } from "./marketing-request-service.test.ts";
 import { runMarketingValidationDraftTests } from "./marketing-validation-draft.test.ts";
 import { runMarketingVenueTerritoryTests } from "./marketing-venue-territory.test.ts";
@@ -2112,6 +2113,7 @@ await runTest("marketing approval inbox workspace layout (queues, disclosure, de
 await runTest("marketing premium notifications + review view", runMarketingPremiumNotificationTests);
 await runTest("marketing request access", runMarketingRequestAccessTests);
 await runTest("a marketing request names its own CRM contact (customer_contact_id is written)", runMarketingRequestContactLinkTests);
+await runTest("a direct order names the campaign it came from (marketing_request_id is written)", runDirectOrderCampaignLinkTests);
 await runTest("marketing validation service", runMarketingValidationServiceTests);
 await runTest(
   "marketing validation: capturing a customer already on record completes it instead of duplicating it",
