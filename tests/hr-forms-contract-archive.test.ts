@@ -360,9 +360,18 @@ function testEveryContractTextIsPinned() {
       + "supplied a new draft, that is a further version: archive this one and append the new text — "
       + "never edit this text in place.",
   );
+  // RE-PINNED ONCE, on 2026-09-03, and the delta was proved before it was re-pinned rather than
+  // after. The owner re-sent his own Word file because the system reproduced its words and not the
+  // document; correcting the typesetting brought back the footer his file carries, the per-page
+  // signing line for مادة (13)(11). That footer is a printed string, so this hash legitimately
+  // moved. Substituting the old footer back into the hashed text reproduced d52db474… EXACTLY —
+  // 1 of 63 hashed strings changed, and every article, party line, preamble and closing is
+  // untouched. Version 3 had been signed by nobody, which is why it could be corrected in place at
+  // all; that will not be true a second time. DO NOT re-pin this again on the strength of "it is
+  // only the footer" — prove the delta the same way, or archive and append.
   assert.equal(
     textFingerprint("contract-v3"),
-    "d52db4746a92a72c71d50c1bc9ee9461adfcc30e3bd3140557ec89c26223b735",
+    "39cd23a2f0e5cf4093bd775cabe4b710a7304bacb49764687be5803f40c72ec0",
     "VERSION 3'S ARABIC HAS CHANGED. This is the contract Phoenix prints today. If the owner "
       + "supplied a new draft, archive this version and append the new one; do not edit this text.",
   );
@@ -382,9 +391,10 @@ function testTheStructureOfEveryVersionHoldsUp() {
   assert.equal(v2.articles[18].number, "مادة (19)");
 
   // The layouts are genuinely different documents, not a restyling: version 1 runs as untitled
-  // prose; version 2 titles every article and bands the parties; version 3 keeps version 2's banded,
-  // titled layout but consolidates the same subject matter into thirteen articles. All three must
-  // stay printable, so each is asserted in its own right.
+  // prose; version 2 titles every article and bands the parties; version 3 consolidates the same
+  // subject matter into thirteen titled articles and is typeset as the owner's own Word file — a
+  // white page with a repeating letterhead and no shading. All three must stay printable, so each
+  // is asserted in its own right.
   assert.equal(v1.layout, "prose");
   assert.equal(v2.layout, "banded");
   assert.equal(
@@ -407,7 +417,10 @@ function testTheStructureOfEveryVersionHoldsUp() {
   assert.equal(v3.articles.length, 13, "version 3 lost or gained an article");
   assert.equal(v3.articles[0].number, "مادة (1)");
   assert.equal(v3.articles[12].number, "مادة (13)");
-  assert.equal(v3.layout, "banded");
+  // Re-typeset 2026-09-03 from the owner's own file: `document`, not version 2's `banded`. The
+  // Arabic did not move — the assertions below still pin the same thirteen titles and subtitle —
+  // and nothing had been signed against version 3, which is why it could be corrected in place.
+  assert.equal(v3.layout, "document");
   assert.equal(
     v3.articles.filter((article) => article.titleAr !== null).length,
     13,
@@ -724,21 +737,35 @@ function testEveryCopyRequestedIsPrinted() {
  * filed at the labour office. v1 bound these pairs from the day it shipped; v2 arrived as a new
  * layout with its own party renderer and did NOT, and nothing on screen shows it — only a printed
  * page at a particular column width does. So it is pinned per version, not once for "the contract".
+ *
+ * TWO MECHANISMS, ONE PROPERTY — assert the property. `prose` and `banded` set the pair in flowing
+ * text and hold it together with a nowrap span. `document` puts the label and the value in SEPARATE
+ * CELLS of a ruled grid, where a line break cannot part them at all: the guarantee is stronger and
+ * there is no span to find. Pinning one layout's span on all three is exactly what went red when
+ * version 3 was re-typeset on 2026-09-03 — it read as a lost binding and was a tightened one.
  */
 function testEveryVersionBindsAnIdentityFieldToItsValue(): void {
   for (const template of CONTRACT_TEMPLATES) {
-    const html = renderContractHtml(packFixture(), 1, template.id);
-    assert.ok(
-      html.includes('<span class="field">'),
-      `${template.id} must keep its party field pairs unbreakable`,
-    );
-    // The insurance number specifically: the longest label in the block, so the first to wrap.
     // The fill spans are stripped first — they sit INSIDE the binding span in the banded layout.
+    const html = renderContractHtml(packFixture(), 1, template.id).replace(
+      /<\/?span class="fill[^>]*>/g,
+      "",
+    );
+
     assert.ok(
-      /<span class="field">[^<]*الرقم التأميني/u.test(
-        html.replace(/<\/?span class="fill[^>]*>/g, "").replace(/<\/span>/g, "</span>"),
-      ),
-      `${template.id} must bind الرقم التأميني to the number that follows it`,
+      html.includes('<span class="field">') || html.includes('<th class="doc-ident__label">'),
+      `${template.id} must keep its party field pairs unbreakable — neither a nowrap binding span ` +
+        `nor a label cell was emitted, so nothing holds a label to its value`,
+    );
+
+    // The insurance number specifically: the longest label in the block, so the first to wrap.
+    const boundBySpan = /<span class="field">[^<]*الرقم التأميني/u.test(html);
+    const boundByCell =
+      /<th class="doc-ident__label">الرقم التأميني<\/th><td class="doc-ident__value"/u.test(html);
+    assert.ok(
+      boundBySpan || boundByCell,
+      `${template.id} must bind الرقم التأميني to the number that follows it — it is neither ` +
+        `inside a nowrap span nor in a label cell of its own`,
     );
   }
 }
