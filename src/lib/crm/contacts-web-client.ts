@@ -14,7 +14,8 @@
  * empty list, because a silent empty list is indistinguishable from "this rep has no doctors" and
  * would prune a real mirror to nothing. `assertContactGridShape` is the specific guard.
  *
- * TWO TRAPS THIS PAGE CARRIES — both cost real time on 2026-08-28.
+ * THREE TRAPS THIS PAGE CARRIES — the first two cost real time on 2026-08-28, the third on
+ * 2026-09-03.
  *
  *  1. The pharmacy list type is spelled `Pharmacy` in the URL, NOT `PH`. Asking for an unknown type
  *     returns HTTP 200 with a well-formed but EMPTY grid rather than an error, so a sweep using
@@ -25,6 +26,13 @@
  *     is no "show everything" option. It must be walked with the Next Page postback, reposting
  *     every hidden field — seven pages, 305 agents. That grid also carries each agent's PM/AM/
  *     Pharmacy COUNTS, which is what makes trap 1 detectable without fetching anything.
+ *
+ *  3. The agents grid has NO login-name column. Its `Manager` column holds the SUPERVISOR's Real
+ *     Name, and was parsed into a field called `username` until 2026-09-03 — see the
+ *     `supervisor` field on `CrmAgentRow` and the column map in `parseAgentGrid`. Identify an account by its `label` and
+ *     nothing else: matching employees on `label` OR the manager value credits a dormant account
+ *     to the live manager above it, and because every such value is a real serving employee the
+ *     mismatch is invisible. One ad-hoc audit reported 19 accounts as retirable instead of 48.
  *
  * The agents grid's own Yes/No active column is NOT Phoenix's roster — it marks 121 medical-rep
  * accounts live against 67 active Medical Representatives in `employees`, because the CRM admin
@@ -78,8 +86,21 @@ export type CrmAgentRow = {
   line: string | null;
   pharmacyCount: number;
   pmCount: number;
+  /**
+   * The account this one reports to, as the grid's `Manager` column renders it: the SUPERVISOR's
+   * own `Real Name` value, verbatim — usually a bare `Firstname.Lastname`, occasionally the full
+   * `[Name ]( Area / Line )` label (13 of 305 on 2026-09-03), blank for the few accounts at the top.
+   *
+   * THIS IS NOT THE ACCOUNT'S LOGIN NAME, and it was called `username` until 2026-09-03. The grid
+   * has no login column at all. Reading it as one is silently wrong in the worst possible way:
+   * every value is a real, currently-employed person, so an audit that matched CRM accounts to
+   * employees on `label` OR this field credited 22 dormant accounts to the live managers above
+   * them and called them still in service — 19 deactivation candidates reported instead of 48.
+   * Match an account to a person on `label` ALONE.
+   */
+  supervisor: string | null;
+  /** The grid's `Privilege` column — the CRM's own role name, e.g. `Medical Rep`. */
   title: string | null;
-  username: string | null;
 };
 
 /**
@@ -388,8 +409,31 @@ export function parseAgentGrid(html: string): CrmAgentRow[] {
     const link = match[1].match(/ContactsList\.aspx\?t=[A-Za-z]+&(?:amp;)?q=(\d+)/i);
     if (!link) continue;
     const cells = rowCells(match[1]);
-    // Column order verified live 2026-08-28. The three counters sit at 1/2/3 and are the cheapest
-    // cross-check there is that a fetched list is not silently empty.
+    // Column order re-verified live 2026-09-03, this time against the grid's OWN header captions
+    // rather than by eye — every `<td>` index below is the caption one place to its right in the
+    // header row, which carries a leading command-item cell the data rows do not repeat:
+    //
+    //   0 Area (the ContactsList link) · 1 PM · 2 AM · 3 PH · 4 All · 5 ID · 6 Real Name ·
+    //   7 Email · 8 Privilege · 9 Manager · 10 Line · 11 Active · 12 Hiring Date ·
+    //   13 Edit · 14 Target · 15 Delete
+    //
+    // The three counters at 1/2/3 are the cheapest cross-check there is that a fetched list is not
+    // silently empty.
+    //
+    // 8/9/10 are the trio that reads wrong at a glance, and 9 was in fact read wrong until
+    // 2026-09-03 (it was mapped to a field named `username`). What they actually hold:
+    //
+    //   8  Privilege — the CRM's role name: `Medical Rep`, `District Manager`, `Product Manager`…
+    //   9  Manager   — the SUPERVISOR's own Real Name, verbatim. Not a login; the grid has no
+    //                  login column. Measured over all 305 accounts: 296 of the values are another
+    //                  account's Real Name character-for-character, exactly 1 equals the row's own
+    //                  name, and the accounts pointed at are 212 District Managers, 38 National
+    //                  Sales Managers, 18 Administrators and 13 Regional Sales Managers. Slot 1485
+    //                  `Manar.Sadek ( Behira 2 / C )` carries `Saad.Mohamed`, her district manager.
+    //   10 Line      — `CNS Line`, `Anti-Infective Line`, `Ped Line`.
+    //
+    // Email at 7 is populated for 250 of 305 accounts and is deliberately not parsed: nothing needs
+    // it, and a company address is the one field here that would make this row personal data.
     out.push({
       agentCrmId: Number(link[1]),
       amCount: Number(cells[2] ?? 0) || 0,
@@ -399,8 +443,8 @@ export function parseAgentGrid(html: string): CrmAgentRow[] {
       line: blankToNull(cells[10]),
       pharmacyCount: Number(cells[3] ?? 0) || 0,
       pmCount: Number(cells[1] ?? 0) || 0,
+      supervisor: blankToNull(cells[9]),
       title: blankToNull(cells[8]),
-      username: blankToNull(cells[9]),
     });
   }
   return out;
