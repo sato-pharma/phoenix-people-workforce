@@ -24,9 +24,14 @@ import {
   renderMutualTerminationHtml,
   renderResignationHtml,
 } from "../src/lib/hiring-pack/render-labour-exit.ts";
+import {
+  DEFAULT_NATIONALITY_AR,
+  DEFAULT_NATIONALITY_AR_FEMALE,
+} from "../src/lib/hiring-pack/nationality.ts";
 import { resolveFixedSalaryAmounts } from "../src/lib/payroll/policy.ts";
 import {
   addMonthsToIsoDate,
+  COMPANY_REGISTRATION_GAPS,
   collectHiringPackGaps,
   emptyOffboardingProfile,
   resolveContractTerms,
@@ -74,6 +79,8 @@ function employeeFixture(overrides: Partial<HiringPackEmployeeFacts> = {}): Hiri
     // Fourteen digits, which is the real length of an Egyptian national ID and the number of boxes
     // the form prints for it.
     nationalId: "29801011234567",
+    // Left unrecorded so the fixtures exercise the national-ID derivation rather than masking it.
+    gender: null,
     socialInsuranceNumber: "123456789",
     socialInsuranceWage: 6000,
     // 12,750.50 is the figure the Arabic amount-in-words cases above are written against, and the
@@ -564,6 +571,106 @@ function testGapsSeparateBlockingFromChaseLater() {
  *
  * Both directions are pinned, because fixing one and not the other is how it happened.
  */
+/**
+ * A DEFAULT IS ONLY SAFE IF IT REACHES THE PAPER AND THE SCREEN AGREES WITH IT.
+ *
+ * Nationality stopped blocking on 2026-09-03 because every paper now prints مصري when nobody has
+ * recorded one. That trade is only sound while the printing half actually happens: a board saying
+ * "ready" over a contract that prints "الجنسية: (  )" is a worse failure than the block it replaced,
+ * because nothing would ever tell anybody. The renderers are asserted here rather than the helper,
+ * since the helper being right is not the part that was ever in doubt.
+ */
+// Both are valid IDs for 1998-01-01 in Dakahlia (digits 8-9 = "12"), differing in ONE character —
+// digit 13, the Authority's sex digit, odd male and even female. Keeping them one character apart
+// is what makes the assertions below about the sex digit and nothing else.
+const FEMALE_NATIONAL_ID = "29801011234567";
+const MALE_NATIONAL_ID = "29801011234577";
+
+function testAnUnrecordedNationalityStillPrintsOnEveryPaper() {
+  const occurrences = (haystack: string, needle: string) => haystack.split(needle).length - 1;
+
+  // TWO SUBSTRING TRAPS SIT ON THIS TEST, both measured, and each makes the obvious assertion pass
+  // on a paper that is wrong:
+  //
+  //   1. The contract cites قانون العمل المصري, so المصري — and with it مصري — is in every copy
+  //      whatever the nationality is. `includes(DEFAULT_NATIONALITY_AR)` was written first, the
+  //      default was then removed to check the test bites, and it stayed GREEN while the contract
+  //      printed "الجنسية: (  )".
+  //   2. مصرية CONTAINS مصري as a prefix. So counting the masculine form also counts every feminine
+  //      one, and a masculine assertion alone passes on a WOMAN's contract — precisely the defect
+  //      this gendering exists to fix.
+  //
+  // So nothing here searches. Every check is a DIFFERENCE against a control varying in nationality
+  // and nothing else, and a masculine claim pins the feminine delta at 0 too: masculine +1 with
+  // feminine +0 is the only combination that means a standalone مصري reached the page.
+  const deltas = (paper: (nationality: string | null) => string) => {
+    const withDefault = paper(null);
+    const control = paper("سوداني");
+    return {
+      masculine:
+        occurrences(withDefault, DEFAULT_NATIONALITY_AR) - occurrences(control, DEFAULT_NATIONALITY_AR),
+      feminine:
+        occurrences(withDefault, DEFAULT_NATIONALITY_AR_FEMALE) -
+        occurrences(control, DEFAULT_NATIONALITY_AR_FEMALE),
+    };
+  };
+
+  const contract =
+    (employee: Partial<HiringPackEmployeeFacts>) =>
+    (nationality: string | null): string =>
+      renderContractHtml(packFixture(employee, { nationality }), 1);
+
+  // A RECORDED nationality always wins, and is never re-gendered. Recruitment is Egyptians only,
+  // but the candidate pool has held Pakistani, Sudanese and Syrian applicants — a default that
+  // overrode a stated nationality would put a false fact on an instrument somebody signs.
+  assert.ok(
+    contract({ nationalId: FEMALE_NATIONAL_ID })("سوداني").includes("سوداني"),
+    "a recorded nationality must print exactly as recorded",
+  );
+
+  // A woman gets مصرية. This is the case that was wrong until 2026-09-03: 41 of the 94 employees
+  // with a readable national ID are women, and every one was printing the masculine form.
+  const woman = deltas(contract({ nationalId: FEMALE_NATIONAL_ID, gender: null }));
+  assert.equal(woman.feminine, 1, "a woman's contract must print مصرية exactly once more than the control");
+
+  // A man gets مصري — and the feminine delta of 0 is what proves it is the standalone masculine
+  // form rather than the prefix of a مصرية that trap 2 would otherwise have hidden.
+  const man = deltas(contract({ nationalId: MALE_NATIONAL_ID, gender: null }));
+  assert.equal(man.masculine, 1, "a man's contract must print مصري exactly once more than the control");
+  assert.equal(man.feminine, 0, "a man's contract must not print the feminine form at all");
+
+  // THE RECORDED FIELD OUTRANKS THE DERIVED ONE — the rule `national-id.ts` already keeps for the
+  // birth date. `employees.gender` is the wider source (106 of 125 active employees carry one,
+  // against 94 with a readable ID) and the two agreed in 93 of 93 where both exist, so this is an
+  // ordering, not a conflict to reconcile.
+  const storedBeatsId = deltas(contract({ nationalId: FEMALE_NATIONAL_ID, gender: "male" }));
+  assert.equal(storedBeatsId.masculine, 1, "a stored gender must outrank the sex digit in the ID");
+  assert.equal(storedBeatsId.feminine, 0, "a stored gender of male must not print the feminine form");
+
+  // Neither source answers. 18 people on production are in this state, every one with no national
+  // ID at all — so they are already blocked from printing any paper and this fallback is currently
+  // unreachable. It is the owner's stated default, kept for correctness rather than for use.
+  const unknown = deltas(contract({ nationalId: null, gender: null }));
+  assert.equal(unknown.masculine, 1, "an unknown sex must fall back to the masculine default");
+  assert.equal(unknown.feminine, 0, "an unknown sex must not guess the feminine form");
+
+  // Form 1 is the other paper the owner actually prints, and it is filed with the Social Insurance
+  // Authority under somebody's real identity. Same cases, same traps.
+  const form1 =
+    (employee: Partial<HiringPackEmployeeFacts>) =>
+    (nationality: string | null): string =>
+      renderForm1Html(packFixture(employee, { nationality }), 1);
+
+  assert.equal(
+    deltas(form1({ nationalId: FEMALE_NATIONAL_ID, gender: null })).feminine,
+    1,
+    "Form 1 must print مصرية for a woman rather than leaving الجنسية blank",
+  );
+  const form1Man = deltas(form1({ nationalId: MALE_NATIONAL_ID, gender: null }));
+  assert.equal(form1Man.masculine, 1, "Form 1 must print مصري for a man");
+  assert.equal(form1Man.feminine, 0, "Form 1 must not print the feminine form for a man");
+}
+
 function testEveryCompanySettingsGapReachesThePage() {
   const placedKeys = new Set(
     [...FORM1_PAGE_1_PLACEMENTS, ...FORM1_PAGE_2_PLACEMENTS].map((placement) => placement.key),
@@ -579,17 +686,25 @@ function testEveryCompanySettingsGapReachesThePage() {
   const companyGaps = collectHiringPackGaps(employeeFixture(), profileFixture()).filter(
     (gap) => gap.source === "company-settings",
   );
-  assert.ok(
-    companyGaps.length > 0,
-    "at least one company registration field is blank, so the directional check below runs against a real gap",
+
+  // WALK THE DECLARED LIST, not the gaps that happen to be open. This guarded itself with "at least
+  // one company registration field is blank", which tied the pin's strength to the company being
+  // half-configured — and on 2026-09-03 the owner supplied the last blank number (the sector code),
+  // which turned that guard red AND would have left the loop below iterating nothing. A check that
+  // only holds while the data is incomplete is not a check.
+  assert.ok(COMPANY_REGISTRATION_GAPS.length > 0, "no company registration setting is declared at all");
+  assert.equal(
+    Object.keys(printedKeyByGapField).length,
+    COMPANY_REGISTRATION_GAPS.length,
+    "the printed-key map and the declared registration gaps have drifted apart",
   );
 
-  for (const gap of companyGaps) {
-    const printedKey = printedKeyByGapField[gap.field];
-    assert.ok(printedKey, `${gap.field} blocks printing but nothing maps it onto the form`);
+  for (const entry of COMPANY_REGISTRATION_GAPS) {
+    const printedKey = printedKeyByGapField[entry.field];
+    assert.ok(printedKey, `${entry.field} blocks printing but nothing maps it onto the form`);
     assert.ok(
       placedKeys.has(printedKey),
-      `${gap.field} blocks printing but "${printedKey}" has no placement — it can never print`,
+      `${entry.field} blocks printing but "${printedKey}" has no placement — it can never print`,
     );
   }
 
@@ -758,6 +873,7 @@ export function runHiringPackTests() {
   testTafqitAgreement();
   testContractTermsFallBackToTheCompanyDefault();
   testGapsSeparateBlockingFromChaseLater();
+  testAnUnrecordedNationalityStillPrintsOnEveryPaper();
   testEveryCompanySettingsGapReachesThePage();
   testNoNumberCanPrintBackwards();
   testFactsSaveAnchorsBaseSalaryEditThroughTheRealFormula();

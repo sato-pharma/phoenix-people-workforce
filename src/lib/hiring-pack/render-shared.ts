@@ -191,8 +191,20 @@ export const PRINT_BANNER_CSS = `
  * print the slashes themselves. Whatever separators HR types are discarded and the digits are
  * regrouped, so "123-456-789", "123/456/789" and "123456789" all land the same way.
  */
+/** ٠-٩ and ۰-۹ folded to 0-9. Anything else is returned untouched. */
+function toAsciiDigits(value: string): string {
+  return value.replace(/[٠-٩۰-۹]/gu, (char) => {
+    const code = char.charCodeAt(0);
+    return String(code - (code >= 0x06f0 ? 0x06f0 : 0x0660));
+  });
+}
+
 export function splitTaxRegistration(raw: string): [string, string, string] {
-  const groups = raw.split(/[^0-9]+/u).filter(Boolean);
+  // ARABIC-INDIC DIGITS FIRST, and this is not politeness. The owner supplied this number as
+  // "٣١٨-١٠٨-٤٧٧", copied from the tax card. `[^0-9]` does not consider ٣ a digit, so the whole
+  // string reads as one long separator, every group is empty, and Form 1 prints three BLANK runs
+  // where the tax registration belongs — no error, no warning, a government form filed without it.
+  const groups = toAsciiDigits(raw).split(/[^0-9]+/u).filter(Boolean);
   if (groups.length >= 3) return [groups[0], groups[1], groups.slice(2).join("")];
   const digits = groups.join("");
   return [digits.slice(0, 3), digits.slice(3, 6), digits.slice(6, 9)];

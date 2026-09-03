@@ -13,6 +13,12 @@ import {
 import { canonicalHrIdForDisplay, hrIdsMatch } from "@/lib/hr-id";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { arabicDepartmentName } from "@/lib/hiring-pack/department-names";
+import {
+  buildReadinessRow,
+  extractCompanyBlockers,
+  summarizeReadiness,
+} from "@/lib/hiring-pack/readiness";
+import type { HiringPackReadiness, ReadinessRow } from "@/lib/hiring-pack/readiness";
 import { currentTemplateVersion } from "@/lib/hiring-pack/template-registry";
 import {
   ASSET_DOCUMENTS,
@@ -137,6 +143,7 @@ type EmployeeDbRow = {
   department_id: number | null;
   employment_status: string | null;
   full_name: string | null;
+  gender: string | null;
   gross_salary: number | string | null;
   hire_date: string | null;
   hr_id: string;
@@ -278,6 +285,39 @@ function toPositiveInt(value: unknown) {
 }
 
 /** Add whole months to an ISO date, clamping the day so 31 Jan + 1 month is not 3 March. */
+/**
+ * The company's own registration numbers, and which documents each one blocks when it is blank.
+ *
+ * A LIST rather than three `if`s, so a test can walk it. `testEveryCompanySettingsGapReachesThePage`
+ * guarded itself with "at least one of these is blank", which quietly tied the strength of the pin
+ * to the company being half-configured: supplying the last number — the sector code, 2026-09-03 —
+ * would have turned that guard red, and the check it protected would have iterated nothing at all.
+ * A pin that only holds while the data is incomplete is not a pin. Walking this list holds either
+ * way, and the blank-versus-reported direction is still read from the live settings.
+ */
+export const COMPANY_REGISTRATION_GAPS: readonly {
+  readonly field: "insuranceEstablishmentNumber" | "insuranceSectorCode" | "taxRegistrationNumber";
+  readonly labelEn: string;
+  readonly labelAr: string;
+  readonly documents: readonly HiringPackDocument[];
+}[] = [
+  {
+    field: "insuranceEstablishmentNumber",
+    labelEn: "Establishment number",
+    labelAr: "رقم المنشأة",
+    documents: ["form1", "form6"],
+  },
+  // قطاع المنشأة is a Form 1 question only — Form 6 identifies the establishment by its number and
+  // tax registration and never asks which sector it trades in.
+  { field: "insuranceSectorCode", labelEn: "Sector code", labelAr: "قطاع المنشأة", documents: ["form1"] },
+  {
+    field: "taxRegistrationNumber",
+    labelEn: "Tax registration number",
+    labelAr: "رقم التسجيل الضريبي",
+    documents: ["form1", "form6"],
+  },
+];
+
 export function addMonthsToIsoDate(iso: string | null, months: number | null): string | null {
   if (!iso || !months) return null;
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso.trim());
@@ -552,7 +592,12 @@ export function collectHiringPackGaps(
   }
 
   // ── From the hiring profile ─────────────────────────────────────────────────────────────────
-  if (!profile.nationality) add("nationality", "Nationality", "الجنسية", HIRING, true, "hiring-profile");
+  // NOT BLOCKING since 2026-09-03: every paper now prints `DEFAULT_NATIONALITY_AR` when this is
+  // empty (see `hiring-pack/nationality.ts`), so refusing to print would be refusing over a value
+  // the form is going to carry regardless. It stays REPORTED, because "we assumed Egyptian" is
+  // exactly the kind of thing somebody must be able to notice and correct before a contract is
+  // signed — a default that nothing mentions is how the wrong nationality reaches a signature.
+  if (!profile.nationality) add("nationality", "Nationality", "الجنسية", HIRING, false, "hiring-profile");
   if (!profile.qualification) add("qualification", "Qualification", "المؤهل", HIRING, true, "hiring-profile");
   if (!profile.birthPlace) add("birthPlace", "Place of birth", "محل الميلاد", ["contract"], true, "hiring-profile");
   // The Arabic job title is what both labour templates print in "بوظيفة .........." — the English
@@ -592,16 +637,10 @@ export function collectHiringPackGaps(
   // write on — so HR would have been told the form was incomplete because of a value the form never
   // shows. `testEveryCompanySettingsGapReachesThePage` now pins that both ways.
   const registration = systemLegalEntity.registration;
-  if (!registration.insuranceEstablishmentNumber) {
-    add("insuranceEstablishmentNumber", "Establishment number", "رقم المنشأة", INSURANCE, true, "company-settings");
-  }
-  // قطاع المنشأة is a Form 1 question only — Form 6 identifies the establishment by its number and
-  // tax registration and never asks which sector it trades in.
-  if (!registration.insuranceSectorCode) {
-    add("insuranceSectorCode", "Sector code", "قطاع المنشأة", ["form1"], true, "company-settings");
-  }
-  if (!registration.taxRegistrationNumber) {
-    add("taxRegistrationNumber", "Tax registration number", "رقم التسجيل الضريبي", INSURANCE, true, "company-settings");
+  for (const entry of COMPANY_REGISTRATION_GAPS) {
+    if (!registration[entry.field]) {
+      add(entry.field, entry.labelEn, entry.labelAr, entry.documents, true, "company-settings");
+    }
   }
 
   // ── The exit documents ──────────────────────────────────────────────────────────────────────
@@ -652,7 +691,7 @@ async function loadEmployeeFacts(hrId: string): Promise<HiringPackEmployeeFacts>
   const { data, error } = await supabase
     .from("employees")
     .select(
-      "hr_id, full_name, nickname, name_ar, national_id, social_insurance_number, social_insurance_wage, base_salary, gross_salary, birth_date, hire_date, job_title, department_id, line_id, residence_address, residence_city, mobile_number, work_email, employment_status, last_working_date",
+      "hr_id, full_name, nickname, name_ar, national_id, gender, social_insurance_number, social_insurance_wage, base_salary, gross_salary, birth_date, hire_date, job_title, department_id, line_id, residence_address, residence_city, mobile_number, work_email, employment_status, last_working_date",
     )
     .eq("hr_id", hrId)
     .maybeSingle<EmployeeDbRow>();
@@ -683,6 +722,7 @@ async function loadEmployeeFacts(hrId: string): Promise<HiringPackEmployeeFacts>
     fullName: resolveEmployeeDisplayName(data.full_name ?? "", data.nickname, data.hr_id),
     nameAr: cleanText(data.name_ar),
     nationalId: cleanText(data.national_id),
+    gender: cleanText(data.gender),
     socialInsuranceNumber: cleanText(data.social_insurance_number),
     socialInsuranceWage: toNumber(data.social_insurance_wage),
     baseSalary: toNumber(data.base_salary),
@@ -1316,4 +1356,111 @@ export async function markHiringPackSigned(input: MarkHiringPackSignedInput): Pr
   }
 
   return getHiringPack(hrId);
+}
+
+/**
+ * ─────────────────────────────────────────────────────────────────────────────────────────────
+ * THE READINESS BOARD'S LOADER
+ *
+ * Three queries for the whole company, never one per person. `loadEmployeeFacts` resolves the
+ * department with a second round trip, which is right for one employee on the fill screen and would
+ * be 108 extra queries here — so the departments are fetched once and joined in memory.
+ *
+ * It lives in this file rather than in `readiness.ts` so it can reuse `mapProfile` and
+ * `emptyProfile`. A parallel copy of the profile mapping is the kind of duplication that stays
+ * correct for exactly as long as nobody adds a column.
+ * ─────────────────────────────────────────────────────────────────────────────────────────────
+ */
+export async function loadHiringPackReadiness(): Promise<HiringPackReadiness> {
+  const supabase = getSupabaseAdmin();
+
+  // ACTIVE STAFF ONLY. The contract and Form 1 are hiring papers — they are printed for somebody
+  // who has just arrived. A leaver's outstanding paperwork is Form 6 and the two Ministry of Labour
+  // forms, which answer a different question for a different population and have their own gaps.
+  const { data: employeeRows, error: employeeError } = await supabase
+    .from("employees")
+    .select(
+      "hr_id, full_name, nickname, name_ar, national_id, gender, social_insurance_number, social_insurance_wage, base_salary, gross_salary, birth_date, hire_date, job_title, education, department_id, line_id, residence_address, residence_city, mobile_number, work_email, employment_status, last_working_date",
+    )
+    .or(`employment_status.is.null,employment_status.in.${ACTIVE_EMPLOYMENT_STATUSES_IN_LIST}`)
+    .order("hire_date", { ascending: false, nullsFirst: false })
+    .limit(2000);
+
+  if (employeeError) throw new Error(employeeError.message);
+
+  const { data: departmentRows } = await supabase.from("departments").select("id, name");
+  const departmentById = new Map<number, string | null>(
+    (departmentRows ?? []).map((row: { id: number; name: string | null }) => [
+      row.id,
+      arabicDepartmentName(cleanText(row.name)),
+    ]),
+  );
+
+  // One read for every profile that exists. Most people have none — that is the finding this board
+  // was built to show — and `emptyProfile` covers them without a second query.
+  const { data: profileRows, error: profileError } = await supabase
+    .from("employee_hiring_profile")
+    .select("*")
+    .limit(2000);
+
+  if (profileError && !isHiringPackSchemaMissing(profileError)) throw new Error(profileError.message);
+
+  const profileByHrId = new Map<string, HiringPackProfile>();
+  for (const row of (profileRows ?? []) as ProfileDbRow[]) {
+    profileByHrId.set(String(row.hr_id).toLowerCase(), mapProfile(row));
+  }
+
+  const rows: ReadinessRow[] = [];
+  let companyBlockers: HiringPackGap[] = [];
+  let companyBlockersRead = false;
+
+  for (const row of (employeeRows ?? []) as (EmployeeDbRow & { education: string | null })[]) {
+    const employee: HiringPackEmployeeFacts & { education: string | null } = {
+      hrId: row.hr_id,
+      fullName: resolveEmployeeDisplayName(row.full_name ?? "", row.nickname, row.hr_id),
+      nameAr: cleanText(row.name_ar),
+      nationalId: cleanText(row.national_id),
+      gender: cleanText(row.gender),
+      socialInsuranceNumber: cleanText(row.social_insurance_number),
+      socialInsuranceWage: toNumber(row.social_insurance_wage),
+      baseSalary: toNumber(row.base_salary),
+      grossSalary: toNumber(row.gross_salary),
+      birthDate: row.birth_date,
+      hireDate: row.hire_date,
+      jobTitle: cleanText(row.job_title),
+      departmentAr: row.department_id === null ? null : departmentById.get(row.department_id) ?? null,
+      departmentId: row.department_id,
+      lineId: row.line_id,
+      residenceAddress: cleanText(row.residence_address),
+      residenceCity: cleanText(row.residence_city),
+      mobileNumber: cleanText(row.mobile_number),
+      workEmail: cleanText(row.work_email),
+      employmentStatus: cleanText(row.employment_status),
+      departed: hasDepartedEmployment(row.employment_status),
+      lastWorkingDate: row.last_working_date,
+      // Carried alongside the facts rather than added to the shared type — `readiness.ts` reads it
+      // defensively and the five screens built on HiringPackEmployeeFacts are left untouched.
+      education: cleanText(row.education),
+    };
+
+    const profile = profileByHrId.get(String(row.hr_id).toLowerCase()) ?? emptyProfile(row.hr_id);
+    const readinessRow = buildReadinessRow(employee, profile, (facts, profileForGaps) =>
+      collectHiringPackGaps(facts, profileForGaps),
+    );
+    rows.push(readinessRow);
+
+    // Identical on every row by construction — read from the FIRST row and reused, so the header
+    // and the rows can never disagree about what the company still owes. Read once rather than
+    // "until one is non-empty": when the settings are filled the answer is legitimately empty, and
+    // re-deriving it per employee would recompute every gap 108 times to keep learning that.
+    if (!companyBlockersRead) {
+      companyBlockers = extractCompanyBlockers(collectHiringPackGaps(employee, profile));
+      companyBlockersRead = true;
+    }
+  }
+
+  return {
+    rows,
+    summary: summarizeReadiness(rows, companyBlockers),
+  };
 }
