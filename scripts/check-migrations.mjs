@@ -17,13 +17,41 @@ const DESTRUCTIVE_RE = /^\s*(DROP\s+TABLE|TRUNCATE)/im;
 const SAFE_OVERRIDE_RE = /--\s*SAFE:/i;
 
 // Pre-existing duplicate timestamps that were already applied to production.
-// These cannot be renamed without breaking Supabase migration history.
+//
+// These files are NOT frozen. `supabase_migrations.schema_migrations` is matched by `name`, and
+// `version` is stamped when a migration is APPLIED rather than read off the filename — so for a
+// normally stamped row the filename prefix appears nowhere in the ledger, and re-stamping it
+// desyncs nothing. Measured 2026-09-03 over the twelve newest migration files: eleven are applied,
+// and exactly one carries a `version` equal to its filename prefix. Full account in
+// docs/agents-session-traps.md under Migrations.
+//
+// This list is a convenience that keeps a required check green over history — NOT evidence that a
+// rename is unsafe. These comments used to claim renaming "would desync migration history"; that
+// was wrong, and #1419 had already disproved it in this very repo: it re-stamped
+// 20260728100000_restore_report_rpc_statement_timeouts.sql to 20260728100500_…, and that ledger row
+// still reads name=restore_report_rpc_statement_timeouts, version=20260728091832, untouched.
+//
+// ONE row here is stamped abnormally, and it is the reason to look before re-stamping rather than
+// assume: that migration's collision partner sits in the ledger as
+// name=20260728100000_au_resign_vacate_all_open_seats — the FULL filename stem, old timestamp
+// embedded — under version 20260728092516. Read the actual row first; "a rename is safe" holds for
+// a normally stamped row, not unconditionally.
+//
 // Add new entries here ONLY for already-applied duplicates; new migrations must use unique timestamps.
 const GRANDFATHERED_DUPLICATE_TIMESTAMPS = new Set([
-  '20260616120000', // attendance_deferred_atomic_ops / dv_non_mr_status / position_vacancies_status_integrity
-  '20260617130000', // coaching_scale_5 / product_aliases_per_distributor
-  '20260728100000', // au_resign_vacate_all_open_seats (#1416) / restore_report_rpc_statement_timeouts (#1415) — authored in parallel, each green alone, collided at merge; BOTH already applied to prod under distinct schema_migrations versions (20260728092516 / 20260728091832), so renaming either would desync migration history
-  '20260814150000', // phx_rep_bulk_dependency (#2131) / cv_extraction_any_job_title (#2130) — the same parallel-authoring collision as the line above, three minutes apart: #2131 merged green at 13:00 UTC, #2130 merged green at 13:03, and the duplicate only exists once BOTH are on main, so neither PR could have caught it. BOTH already applied to prod under distinct schema_migrations versions (20260814125822 / 20260814125938), so renaming either would desync migration history
+  // DEAD as of 2026-09-03 — no file carries this prefix any more.
+  '20260616120000', // was attendance_deferred_atomic_ops / dv_non_mr_status / position_vacancies_status_integrity
+  // DEAD as of 2026-09-03 — no file carries this prefix any more.
+  '20260617130000', // was coaching_scale_5 / product_aliases_per_distributor
+  // DEAD as of 2026-09-03 — #1419 re-stamped restore_report_rpc_statement_timeouts to 20260728100500,
+  // so au_resign_vacate_all_open_seats (#1416) now holds this prefix alone and it is no longer a duplicate.
+  '20260728100000',
+  // LIVE — the only real duplicate left. phx_rep_bulk_dependency (#2131) / cv_extraction_any_job_title
+  // (#2130), authored in parallel three minutes apart: #2131 merged green at 13:00 UTC, #2130 at 13:03,
+  // and the duplicate only exists once BOTH are on main, so neither PR could have caught it. Both applied
+  // to prod under distinct versions — cv_extraction_any_job_title=20260814125822,
+  // phx_rep_bulk_dependency=20260814125938 (an earlier comment had these two transposed).
+  '20260814150000',
 ]);
 
 let errors = 0;
