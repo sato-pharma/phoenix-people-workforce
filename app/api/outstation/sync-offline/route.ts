@@ -8,10 +8,7 @@ import {
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { syncOfflineOutstationRequest } from "@/lib/outstation/service";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
-import type {
-  OutstationExpenseType,
-  OutstationTransportationType,
-} from "@/lib/outstation/types";
+import { parseOutstationTypeFields } from "@/lib/outstation/request-fields";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
@@ -36,13 +33,23 @@ export async function POST(request: Request) {
     await assertPermission(access, "outstation", "create");
 
     const body = (await request.json()) as Record<string, unknown>;
+    const outstationTypes = parseOutstationTypeFields(body, {
+      onMissing: "default",
+    });
+    if (!outstationTypes.ok) {
+      return NextResponse.json(
+        { error: outstationTypes.error, message: outstationTypes.message },
+        { status: 400 },
+      );
+    }
+
     const result = await syncOfflineOutstationRequest(access, {
       capturedAccuracyMeters: Number(body.capturedAccuracyMeters),
       capturedAt: typeof body.capturedAt === "string" ? body.capturedAt : undefined,
       capturedLatitude: Number(body.capturedLatitude),
       capturedLongitude: Number(body.capturedLongitude),
       claimedTotalAmount: Number(body.claimedTotalAmount ?? 0),
-      expenseType: String(body.expenseType ?? "traveling") as OutstationExpenseType,
+      expenseType: outstationTypes.expenseType,
       goTicketAmount: Number(body.goTicketAmount ?? 0),
       hasTicketAttachments: Boolean(body.hasTicketAttachments),
       amWorkload: optionalNumber(body.amWorkload),
@@ -61,7 +68,7 @@ export async function POST(request: Request) {
       pmWorkload: optionalNumber(body.pmWorkload),
       returnTicketAmount: Number(body.returnTicketAmount ?? 0),
       carEvidenceMetadata: parseCarEvidenceMetadata(body),
-      transportationType: String(body.transportationType ?? "car") as OutstationTransportationType,
+      transportationType: outstationTypes.transportationType,
       travelCostAmount: optionalNumber(body.travelCostAmount),
       tripType: optionalText(body.tripType),
       tripEndDate: String(body.tripEndDate ?? ""),

@@ -1059,6 +1059,7 @@ import { runOutstationAllowanceDuplicateDayGuardTests } from "./outstation-allow
 import { runOutstationCairoNoAllowanceTests } from "./outstation-cairo-no-allowance.test.ts";
 import { runOutstationClaimedTotalTests } from "./outstation-claimed-total.test.ts";
 import { runOutstationClaimValidationTests } from "./outstation-claim-validation.test.ts";
+import { runOutstationRequestTypeValidationTests } from "./outstation-request-type-validation.test.ts";
 import { runOutstationEvidenceWaiverTests } from "./outstation-evidence-waiver.test.ts";
 import { runOutstationNsmNoHoldTests } from "./outstation-nsm-no-hold.test.ts";
 import { runOutstationExpenseNoteAssistTests } from "./outstation-expense-note-assist.test.ts";
@@ -3165,6 +3166,11 @@ await runTest(
 await runTest(
   "outstation claim validation flags a real mismatch and never reads missing CRM data as one",
   runOutstationClaimValidationTests,
+);
+
+await runTest(
+  "an unknown outstation expense or transportation type is refused at the route, never cast through to a zero-cost trip",
+  runOutstationRequestTypeValidationTests,
 );
 
 await runTest(
