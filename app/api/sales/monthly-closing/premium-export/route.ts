@@ -16,6 +16,7 @@ import { loadMonthlyClosingDetails } from "@/lib/sales/monthly-closing-details";
 import { resolvePortalClosingScope } from "@/lib/sales/monthly-closing-portal";
 import { loadMonthlyClosingPartsWithStoreSplit } from "@/lib/sales/monthly-closing-with-store-split";
 import { filterMonthlyClosingMatrix } from "@/lib/sales/monthly-distributor-import";
+import { loadMonthlySourceCoverage } from "@/lib/sales/source-coverage";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -130,7 +131,7 @@ export async function POST(request: Request) {
     // exactly zero. Compare the period on the matrix and discard anything that is not the month
     // that was asked for.
     const priorPeriod = previousPeriod(matrix.period);
-    const [priorParts, details] = await Promise.all([
+    const [priorParts, details, coverage] = await Promise.all([
       priorPeriod
         ? loadMonthlyClosingPartsWithStoreSplit({ line: matrix.line, period: priorPeriod }).catch(() => null)
         : Promise.resolve(null),
@@ -154,6 +155,11 @@ export async function POST(request: Request) {
         // two that answer "which customer", and a page of 200 would answer it for the largest few.
         unpaged: true,
       }).catch(() => null),
+      // Completeness ride-along, the same shape the closing screen uses: a coverage failure costs
+      // the note, never the workbook. It is deliberately asked on the UNFILTERED line and period —
+      // whether a distributor's file arrived is a fact about the month, not about the regions this
+      // particular export happens to be filtered to.
+      loadMonthlySourceCoverage(matrix.line, matrix.period).catch(() => null),
     ]);
     const priorMatrix =
       priorParts && priorParts.combined.period === priorPeriod
@@ -194,7 +200,7 @@ export async function POST(request: Request) {
     // that answer a click with "Cannot run the macro 'PhxExportPdf'".
     const macros = body.macros !== false;
     const buffer = await fillClosingEngine(
-      buildClosingEngineFill({ details: details?.rows ?? null, filterNote, matrix, priorMatrix, review }),
+      buildClosingEngineFill({ coverage, details: details?.rows ?? null, filterNote, matrix, priorMatrix, review }),
       { macroFree: !macros },
     );
     const fileName = closingFileName({

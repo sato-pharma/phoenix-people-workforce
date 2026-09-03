@@ -362,8 +362,16 @@ async function fillPresentationSheet(zip: JSZip, sheetName: string, spec: SheetS
  *
  * The pivot and formula sheets build their own bodies -- a pivot from its cache on load, the Rep
  * Card from its INDEX/MATCH -- so nothing here may touch a row count, a dimension, a merge or a
- * conditional format. It writes the absolute cells it was given, into rows that already exist, and
- * leaves the rest of the part exactly as the owner built it.
+ * conditional format. It writes the absolute cells it was given and leaves the rest of the part
+ * exactly as the owner built it.
+ *
+ * It will create a row the template never wrote, but ONLY one a cell was actually aimed at. It used
+ * to skip those in silence, which is how the completeness note went missing from exactly one tab:
+ * Area x Product is the single sheet in the owner's template with no row 2, so the note aimed there
+ * was dropped with no error while the other eleven carried it. A warning that is absent from one
+ * sheet is worse than one absent from all of them — the reader learns it is not there to look for.
+ * A created row is empty and sits inside the sheet's existing dimension, so no row count, merge or
+ * conditional format moves.
  */
 async function fillHeaderCells(zip: JSZip, spec: SheetSpec, content: EngineSheetFill): Promise<void> {
   const cells = content.cells;
@@ -371,8 +379,18 @@ async function fillHeaderCells(zip: JSZip, spec: SheetSpec, content: EngineSheet
   const file = zip.file(spec.file);
   if (!file) throw new Error(`closing engine template is missing ${spec.file}`);
   const { head, rows, tail } = splitSheet(await file.async("string"));
-  const written = rows.map((row) => applyCells(row.xml, row.r, cells));
-  zip.file(spec.file, `${head}${written.join("")}${tail}`);
+  const written = rows.map((row) => ({ r: row.r, xml: applyCells(row.xml, row.r, cells) }));
+
+  const have = new Set(rows.map((row) => row.r));
+  const wanted = new Set(
+    Object.keys(cells)
+      .map((ref) => Number(/^[A-Z]+(\d+)$/.exec(ref)?.[1] ?? Number.NaN))
+      .filter((row) => Number.isFinite(row) && row > 0 && !have.has(row)),
+  );
+  for (const row of wanted) written.push({ r: row, xml: applyCells(`<row r="${row}"/>`, row, cells) });
+  written.sort((left, right) => left.r - right.r);
+
+  zip.file(spec.file, `${head}${written.map((row) => row.xml).join("")}${tail}`);
 }
 
 /**
