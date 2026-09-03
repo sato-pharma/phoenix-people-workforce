@@ -1,10 +1,15 @@
 import assert from "node:assert/strict";
 
 import { findPossibleDuplicate, normalizeNameForMatch, phoneTailForMatch } from "../src/lib/recruitment/candidate-matching.ts";
-import { extractAllowlistedCvUrl, isAllowlistedCvHost } from "../src/lib/recruitment/inbound/cv-link.ts";
+import {
+  extractAllowlistedCvUrl,
+  fetchCvFromUrl,
+  isAllowlistedCvHost,
+  normalizeCvDownloadUrl,
+} from "../src/lib/recruitment/inbound/cv-link.ts";
 import { shouldAlertIntakeSpike, summarizeInboundIntake } from "../src/lib/recruitment/inbound/intake-analytics.ts";
 
-export function runRecruitmentInboundMasteryTests() {
+export async function runRecruitmentInboundMasteryTests() {
   // --- summarizeInboundIntake ------------------------------------------------------------------
   const rows = [
     { channel: "email", created_at: "2026-07-27T00:00:00Z", outcome: "candidate_created" },
@@ -82,4 +87,112 @@ export function runRecruitmentInboundMasteryTests() {
   );
   assert.equal(extractAllowlistedCvUrl("no links at all", null), null);
   assert.equal(extractAllowlistedCvUrl("only untrusted https://pastebin.com/raw/abc", false), null, "an arbitrary host is never followed (SSRF guard)");
+
+  // --- CV-as-link: viewer URL -> download URL ----------------------------------------------------
+  // Regression for the 0-of-4 capture rate measured in production on 2026-09-03. These three URLs
+  // are the ACTUAL links three real applicants sent to careers@ and lost; each must now be fetched
+  // from its download endpoint, not its viewer page.
+  assert.equal(
+    normalizeCvDownloadUrl("https://drive.google.com/file/d/1chPRmPs4sm2odyq-14AO9ODrN1u1i-iC/view?usp=drivesdk"),
+    "https://drive.google.com/uc?export=download&id=1chPRmPs4sm2odyq-14AO9ODrN1u1i-iC",
+    "a Drive /view link becomes the direct download endpoint",
+  );
+  assert.equal(
+    normalizeCvDownloadUrl("https://drive.google.com/file/d/1MC2qqg1wm2sx8v3JD_IiodV5cE5C9D7I/view?usp=drivesdk"),
+    "https://drive.google.com/uc?export=download&id=1MC2qqg1wm2sx8v3JD_IiodV5cE5C9D7I",
+  );
+  assert.equal(
+    normalizeCvDownloadUrl(
+      "https://docs.google.com/document/d/1MXlJXMNVNkLvMFGvxc-YlrECL-LmR-8V/edit?usp=drivesdk&ouid=116865225604337524551&rtpof=true&sd=true",
+    ),
+    "https://docs.google.com/document/d/1MXlJXMNVNkLvMFGvxc-YlrECL-LmR-8V/export?format=pdf",
+    "a Docs editor link exports the document itself",
+  );
+  assert.equal(
+    normalizeCvDownloadUrl("https://drive.google.com/open?id=ABC123_-xyz"),
+    "https://drive.google.com/uc?export=download&id=ABC123_-xyz",
+    "the older /open?id= share shape is handled too",
+  );
+  assert.equal(
+    normalizeCvDownloadUrl("https://docs.google.com/presentation/d/PID9/edit"),
+    "https://docs.google.com/presentation/d/PID9/export/pdf",
+    "presentations take a different export path shape",
+  );
+  assert.equal(
+    normalizeCvDownloadUrl("https://www.dropbox.com/s/xyz/cv.pdf?dl=0"),
+    "https://www.dropbox.com/s/xyz/cv.pdf?dl=1",
+    "Dropbox serves the preview page unless dl=1",
+  );
+  assert.equal(
+    normalizeCvDownloadUrl("https://wetransfer.com/downloads/abc"),
+    "https://wetransfer.com/downloads/abc",
+    "an unrecognised host is returned unchanged, never guessed at",
+  );
+  assert.equal(normalizeCvDownloadUrl("not a url"), "not a url", "an unparseable value is passed through");
+  for (const shape of [
+    "https://drive.google.com/file/d/ID1/view",
+    "https://docs.google.com/document/d/ID2/edit",
+    "https://www.dropbox.com/s/x/cv.pdf?dl=0",
+  ]) {
+    assert.equal(
+      new URL(normalizeCvDownloadUrl(shape)).hostname,
+      new URL(shape).hostname,
+      "normalization NEVER changes the host — the allowlist must still hold",
+    );
+  }
+
+  // --- CV-as-link: a failed fetch reports WHY, and never passes an HTML page off as a CV ---------
+  const realFetch = globalThis.fetch;
+  const requested: string[] = [];
+  const stubFetch = (body: string | Buffer, contentType: string, status = 200) => {
+    globalThis.fetch = (async (input: unknown) => {
+      requested.push(String(input));
+      return new Response(typeof body === "string" ? body : new Uint8Array(body), {
+        headers: { "content-type": contentType },
+        status,
+      });
+    }) as typeof globalThis.fetch;
+  };
+  try {
+    // The exact production failure: Drive answers the viewer page with a sign-in interstitial.
+    stubFetch("<!DOCTYPE html><html><body>Sign in to continue</body></html>", "text/html; charset=utf-8");
+    requested.length = 0;
+    const privateLink = await fetchCvFromUrl("https://drive.google.com/file/d/ID1/view?usp=drivesdk", 15_000_000);
+    assert.equal(privateLink.ok, false, "an HTML page is never accepted as a CV");
+    assert.match(
+      privateLink.ok ? "" : privateLink.reason,
+      /not public/i,
+      "the reason names the real cause so Talent Acquisition can act on it",
+    );
+    assert.equal(
+      requested[0],
+      "https://drive.google.com/uc?export=download&id=ID1",
+      "THE FIX: the fetch is issued against the download endpoint, not the viewer URL",
+    );
+
+    // Drive labels its interstitial octet-stream, which the generic-type tolerance would wave past.
+    stubFetch("<html><head><title>Google Drive - Quota exceeded</title></head></html>", "application/octet-stream");
+    const disguised = await fetchCvFromUrl("https://drive.google.com/file/d/ID2/view", 15_000_000);
+    assert.equal(disguised.ok, false, "an HTML body is caught even when the header claims octet-stream");
+
+    // The success path still works, and still yields usable bytes.
+    stubFetch(Buffer.from("%PDF-1.4\nreal cv bytes"), "application/pdf");
+    const good = await fetchCvFromUrl("https://drive.google.com/file/d/ID3/view", 15_000_000);
+    assert.equal(good.ok, true, "a genuine PDF behind a share link is captured");
+    assert.equal(good.ok && good.bytes.subarray(0, 5).toString(), "%PDF-", "the real file bytes come back");
+
+    // A host outside the allowlist is refused before any request is made (SSRF guard intact).
+    requested.length = 0;
+    const untrusted = await fetchCvFromUrl("https://evil.com/cv.pdf", 15_000_000);
+    assert.equal(untrusted.ok, false);
+    assert.equal(requested.length, 0, "a non-allowlisted host is never even requested");
+
+    // A dead link reports the status rather than vanishing.
+    stubFetch("nope", "text/plain", 404);
+    const missing = await fetchCvFromUrl("https://drive.google.com/file/d/ID4/view", 15_000_000);
+    assert.equal(missing.ok, false);
+    assert.match(missing.ok ? "" : missing.reason, /404/, "the reason carries the status the host returned");
+  } finally {
+    globalThis.fetch = realFetch;
+  }
 }

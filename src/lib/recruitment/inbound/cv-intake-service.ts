@@ -88,6 +88,10 @@ export type InboundCvIntakeInput = {
   // null => nothing usable arrived with this message (a plain-text reply, an image, etc.) —
   // logged and ignored, no candidate, no notification.
   attachment: InboundCvAttachment | null;
+  // Set by the worker when the message DID carry a CV share link and it could not be downloaded.
+  // Distinguishes "this message never had a CV" from "a CV was there and we failed to fetch it",
+  // which the old code could not tell apart — both landed as ignored_no_attachment.
+  linkFetchFailure?: string | null;
   rawMetadata?: Record<string, unknown>;
   // Set by the durable intake worker when RE-processing a queued item after a prior failure. The
   // queue (ats_inbound_intake_queue) is the single-flight authority in that path — SKIP LOCKED
@@ -326,6 +330,19 @@ export async function ingestInboundCv(input: InboundCvIntakeInput): Promise<Inbo
 
   try {
     if (!input.attachment) {
+      // A CV that arrived as a share link and could not be downloaded is NOT "no attachment" — a
+      // CV was there, and we are the reason it is not here. Recording it as a held-back attachment
+      // puts it on Inbound Intake Health with its reason (listHeldBackIntakeAttachments reads
+      // exactly that outcome + error_message pair) and counts it against the delivery success rate.
+      // Filed as ignored_no_attachment it was invisible: that bucket is excluded from the rate on
+      // the grounds that it never carried a CV, which is precisely what made this loss silent.
+      if (input.linkFetchFailure) {
+        await finalizeIntakeEvent(eventId, {
+          errorMessage: input.linkFetchFailure,
+          outcome: "ignored_unsupported_attachment",
+        });
+        return { outcome: "ignored_unsupported_attachment" };
+      }
       await finalizeIntakeEvent(eventId, { outcome: "ignored_no_attachment" });
       return { outcome: "ignored_no_attachment" };
     }
