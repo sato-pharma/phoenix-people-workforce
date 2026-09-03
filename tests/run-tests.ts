@@ -1175,6 +1175,7 @@ import { runMarketingFinanceRequirementOnApprovalTests } from "./marketing-finan
 import { runMarketingInvoiceOverdueMarkerTests } from "./marketing-invoice-overdue-marker.test.ts";
 import { runMarketingFinanceHoldTests } from "./marketing-finance-hold.test.ts";
 import { runMarketingFinanceHoldUiTests } from "./marketing-finance-hold-ui.test.ts";
+import { runDistributorUploadNudgeTests } from "./distributor-upload-nudge.test.ts";
 import { runMarketingInvoiceOverdueNudgeTests } from "./marketing-invoice-overdue-nudge.test.ts";
 
 import { runLeaverRosterExclusionTests } from "./leaver-roster-exclusion.test.ts";
@@ -3743,6 +3744,11 @@ await runTest(
   "marketing invoice overdue nudge (the requester hears about their own, finance gets one digest, "
     + "never by email, and finance gets no link because no screen shows him one)",
   runMarketingInvoiceOverdueNudgeTests,
+);
+await runTest(
+  "distributor upload overdue nudge (each distributor judged against its own previous arrival day, "
+    + "silent while a month is merely incomplete, never by email)",
+  runDistributorUploadNudgeTests,
 );
 
 await runTest("leaver roster exclusion (resigned/terminated never reach a picker, recipient search or account template)", runLeaverRosterExclusionTests);

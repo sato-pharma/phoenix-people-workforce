@@ -61,14 +61,22 @@ const EXPECTED: Record<string, { roles: string[]; enabled: boolean }> = {
   // requester is always told about their own request and is not configurable, which is why the
   // roles here name the Finance Manager alone rather than including a requester-shaped entry.
   marketing_invoice_overdue_alert: { roles: ["Finance Manager"], enabled: true },
+  // 18th key, added 2026-09-03. Nothing watched the eighteen hand-uploaded distributor files the
+  // monthly closing is assembled from — July 2026 was built on four of its eighteen sources, 84% of
+  // its value absent, and every tab rendered immaculately. Owner, asked directly, answered "sfe" and
+  // "You + Super Admins"; the uploader himself holds Super Admin, so the role list reaches him
+  // without a separate always-on leg that would deliver the same message to him twice. Both default
+  // roles hold sales:import, which is what the /sales/upload link in the message requires, so every
+  // recipient can perform the upload rather than land on a redirect.
+  distributor_upload_overdue_alert: { roles: ["Super Admin", "SFE Manager"], enabled: true },
 };
 
 export function runNotificationRoleRecipientsTests() {
-  assert.equal(notificationRoleKeys.length, 17, "expected exactly the 17 confirmed notification-role keys");
+  assert.equal(notificationRoleKeys.length, 18, "expected exactly the 18 confirmed notification-role keys");
   assert.deepEqual(
     [...notificationRoleKeys].sort(),
     Object.keys(EXPECTED).sort(),
-    "notificationRoleKeys set does not match the confirmed 17 keys",
+    "notificationRoleKeys set does not match the confirmed 18 keys",
   );
 
   for (const key of notificationRoleKeys) {
