@@ -1271,8 +1271,11 @@ export async function transferValidatedCustomerToDirectOrders(
       area_code: geography.areaCode,
       brick_id: brick.brickId,
       created_by_hr_id: actorHrId,
-      distributor_code: distributorCode,
-      distributor_customer_code: distributorCustomerCode,
+      // `distributor_code` and `distributor_customer_code` on THIS table are dead columns: nothing
+      // in the app or the database reads either, and both are empty on every row. Writing the pair
+      // here would also assert a link that the block below deliberately REFUSES to make when the
+      // pair is absent from the master map. The link lives in
+      // `direct_order_pharmacy_distributor_codes`, written a few lines down.
       doctor_name: doctorName,
       entry_source: "marketing_transfer",
       pharmacy_address: address,
