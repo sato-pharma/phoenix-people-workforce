@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
+import { stripComments } from "./support/comment-strip.ts";
+
 /**
  * The way back to an emptied navigation row.
  *
@@ -16,20 +18,18 @@ import { readFileSync } from "node:fs";
  * non-Super-Admin can empty a row in the first place.
  */
 
-/**
- * Strip comments before asserting.
+/*
+ * Comments are stripped with the shared helper in tests/support/comment-strip.ts, NOT a local
+ * regex. Every string these tests look for — the href, the guard, `canAdd: carriesNavRows` — is
+ * also spelled out in the prose that explains the fix, so asserting against the raw file would let
+ * a session delete the code, keep the comment, and stay green.
  *
- * Every string these tests look for — the href, the guard, `canAdd: carriesNavRows` — is also
- * spelled out in the prose that explains the fix. Asserting against the raw file would let a
- * session delete the code, keep the comment, and stay green. That exact trap fired once already on
- * this branch's sibling work, where a `overflow-x-auto` assertion matched the comment forbidding it.
+ * The naive `replace(/\/\*[\s\S]*?\*\//g, "")` cannot do this job here and this test shipped
+ * with it once: topbar.tsx line 53 mentions `/workspace/*` inside a LINE comment, whose `/*` opens
+ * a block comment the naive regex then closes 60 lines later, deleting 1653 characters of real
+ * code — including the very link these tests pin. tests/comment-strip-ratchet.test.ts caught it in
+ * CI. The shared helper tracks string and template state, so a route pattern cannot open a comment.
  */
-function stripComments(source: string): string {
-  return source
-    .replace(/\{\/\*[\s\S]*?\*\/\}/g, "")
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .replace(/^[ \t]*\/\/.*$/gm, "");
-}
 
 export function runNavRowWayBackTests() {
   const topbar = stripComments(readFileSync("src/components/layout/topbar.tsx", "utf8"));
