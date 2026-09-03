@@ -36,7 +36,7 @@ export function DistrictFoldersSection({
   boards,
   files,
   heading = "Your areas",
-  subheading = "Every area you hold in the organogram, and the CVs of applicants who asked to work in it. Open a folder to read them.",
+  subheading = "Every area you hold in the organogram, and the CVs of applicants who asked to work in it or whose CV places them there. Open a folder to read them.",
   viewerHrId,
   ownFolders = false,
 }: {
@@ -164,8 +164,20 @@ export function DistrictFoldersSection({
                     on it — and a manager needs to know that before he reads the first name. */}
                 {openFolder.kind === "region" && openFolder.candidates.length > 0 ? (
                   <p className="text-phx-xs text-slate-500">
-                    These applicants did not say which area they want. Their CV places them in{" "}
+                    These applicants did not say which area they want, and their CV names no area
+                    either — only a governorate, which places them in{" "}
                     {board.regionName ?? "this region"}.
+                  </p>
+                ) : null}
+                {/* The same sentence for the other half of the archive. These people did not name an
+                    area either, but the ADDRESS on their CV names this one — so they are in the right
+                    folder, and the folder still says how they got here. Said once, above the cards,
+                    exactly like the note over the catch-all. */}
+                {openFolder.kind === "area" && openFolder.fromCvText.length > 0 ? (
+                  <p className="text-phx-xs text-slate-500">
+                    {openFolder.fromCvText.length === openFolder.candidates.length
+                      ? "These applicants did not say which area they want — the address written on their CV places them here."
+                      : `${openFolder.fromCvText.length} of these ${openFolder.candidates.length} did not say which area they want — the address written on their CV places them here.`}
                   </p>
                 ) : null}
                 {openFolder.candidates.length === 0 ? (
