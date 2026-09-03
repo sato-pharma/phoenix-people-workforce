@@ -66,9 +66,17 @@ type Props = {
    */
   salesMonth: string | null;
   variant?: "solid" | "ring";
+  /**
+   * Let the label wrap instead of forcing one line. Off everywhere by default — nowrap is right
+   * for the wide badge columns this was built for. Needed by direct-order-submit-form.tsx's
+   * "My direct orders" table, where the FITS-THE-SCREEN GOLDEN RULE (AGENTS.md §4) rules out a
+   * column wide enough for "Customer Verification Required" (206px) on every row just for the
+   * rare row that needs it — and shrinking the label's type is the one fix the rule forbids.
+   */
+  wrap?: boolean;
 };
 
-export function DirectOrderStatusPill({ status, salesMonth, variant = "solid" }: Props) {
+export function DirectOrderStatusPill({ status, salesMonth, variant = "solid", wrap = false }: Props) {
   const key = String(status) as DirectOrderStatus;
   const awaitingFinance = showsAwaitingFinanceMonth(key, salesMonth);
 
@@ -102,7 +110,7 @@ export function DirectOrderStatusPill({ status, salesMonth, variant = "solid" }:
     : presentation.explanation;
 
   return (
-    <span className={`${base} whitespace-nowrap ${tone}`} title={title}>
+    <span className={`${base} ${wrap ? "whitespace-normal break-words" : "whitespace-nowrap"} ${tone}`} title={title}>
       {label}
     </span>
   );
