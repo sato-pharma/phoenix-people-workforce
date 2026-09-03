@@ -23,9 +23,13 @@
 // Pure — no React, no database, no network — so the recruiter's screen and the tests fold the same
 // way and cannot drift apart. Same discipline as position-folder.ts.
 
-import { addressNamesPlace, addressWords, compileArabicPlace, type ArabicPlace } from "@/lib/geo/arabic-place-match";
-import { placeAliases } from "@/lib/geo/egypt-locations";
-import { NEIGHBOURHOOD_AREAS, NEIGHBOURHOOD_PLACES } from "@/lib/geo/neighbourhood-index-generated";
+import {
+  addressNamesArea,
+  areaGovernorate,
+  governorateNamedBy,
+  neighbourhoodMatchStrength,
+  normalizePlaceText,
+} from "@/lib/recruitment/cv-address-place";
 import type { VacancyOption } from "@/lib/recruitment/vacancy-options";
 
 /** What the CV knows that bears on the question. A subset of Candidate, so tests need no fixture. */
@@ -63,226 +67,15 @@ export type SuggestionResult = {
   shortlist: PositionSuggestion[];
 };
 
-// ── Normalisation ────────────────────────────────────────────────────────────
-// Deliberately the same shape as the geography module's own normaliser: lowercase, punctuation to
-// spaces, collapse. Kept local and Latin-first because everything compared HERE — area names and CV
-// addresses alike — is written in Latin script. Arabic arrives too, and is handled where it is
-// actually understood: resolveGovernorate, which carries the Arabic alias tables. Arabic codepoints
-// are preserved rather than stripped so that a wholly Arabic address still reaches that function
-// with its content intact.
-function normalize(value: string | null | undefined): string {
-  return String(value ?? "")
-    .toLowerCase()
-    .normalize("NFKD")
-    .replace(/[̀-ͯ]/g, "")
-    .replace(/[^a-z0-9؀-ۿ]+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-/** " nasr city " — padded so a containment test cannot match inside a longer word. */
-function padded(value: string): string {
-  return ` ${value} `;
-}
-
 // ── Place ────────────────────────────────────────────────────────────────────
-
-/**
- * Governorate names, from the geography module's own exported vocabulary.
- *
- * MATCHED ON WHOLE WORDS, which resolveGovernorate does not do — and that difference is not
- * academic. That function tests `candidate.includes(key)` as a bare substring, and several aliases
- * are three or four letters long, so on the first run of this matcher against the real 447 CVs a
- * candidate living at "New Bapunagar, Bhilwara, Rajasthan" was resolved to DAKAHLIA: "bapunAGAr"
- * contains "aga", the alias for the town of Aga. Twelve more followed it. The alias table is
- * written with a leading space for exactly that reason — " aga" — but normalising the key trims the
- * space back off, so the guard never survives to be applied.
- *
- * The vocabulary itself is reused rather than rewritten; only the comparison is stricter. Writing a
- * second copy of Egypt's place names is a documented mistake in this repository and this is not one
- * — `placeAliases` is imported, and if a name is added there it is picked up here for free.
- */
-const NORMALIZED_ALIASES: ReadonlyArray<{ label: string; keys: string[] }> = placeAliases.map(
-  (entry) => ({
-    keys: entry.aliases.map((alias) => normalize(alias)).filter(Boolean),
-    label: entry.label,
-  }),
-);
-
-/** The canonical governorate labels, normalised — used to tell a governorate name from a place name. */
-const GOVERNORATE_LABELS = new Set(placeAliases.map((entry) => normalize(entry.label)));
-
-/**
- * Which governorate a string names, on a whole-word match, or null.
- *
- * Order follows the vocabulary's own priority, so an address naming two governorates resolves to the
- * one the geography module ranks first. "Alexandria, Egypt (Willing to relocate to Cairo if
- * available Post)" is a real address on file and resolves to Alexandria — where the person lives,
- * which is the question being asked.
- */
-function governorateOf(value: string | null | undefined): string | null {
-  const cleaned = normalize(value);
-  if (!cleaned) return null;
-  const hay = padded(cleaned);
-  // The space-free form as well, so "Down town" reaches the alias "downtown" and vice versa.
-  const squashedHay = padded(cleaned.replace(/\s+/g, ""));
-  for (const { label, keys } of NORMALIZED_ALIASES) {
-    for (const key of keys) {
-      if (hay.includes(padded(key))) return label;
-      const squashedKey = key.replace(/\s+/g, "");
-      if (squashedKey !== key && squashedHay.includes(padded(squashedKey))) return label;
-    }
-  }
-  return null;
-}
-
-/**
- * Area-name fragments an address could plausibly contain.
- *
- * The WHOLE name is a token, and so is each part after splitting on separators. Both are needed and
- * neither is enough: "Dokki - Mohandseen - Bolak" is three neighbourhoods and a CV names one of
- * them, but "Kafr El-Sheikh 1" carries the same hyphen inside a single name, and splitting it alone
- * leaves the fragments "kafr el" and "sheikh" — neither of which is a place. "Gharbia 1 (Tanta)"
- * yields both "gharbia 1" and "tanta"; the second is what anybody actually writes.
- *
- * A trailing index comes off as well ("Assuit 2" -> "assuit", "Sohag1" -> "sohag"), because the
- * number is the company's way of splitting a governorate between two reps and means nothing on a CV.
- */
-function areaTokens(areaName: string | null): string[] {
-  if (!areaName) return [];
-  const tokens = new Set<string>();
-  const add = (raw: string) => {
-    const cleaned = normalize(raw);
-    // A token has to be long enough, and made of letters, to identify anywhere. "Delta (2)" splits
-    // into "delta" and "2"; a street number then matched it, and a sales manager living at "2 St.
-    // El Mahata, El Marg" — which is in Cairo — was pre-filled into the Delta district manager's
-    // seat because their address happened to start with the right digit.
-    if (!cleaned || cleaned.length < 3 || !/[a-z؀-ۿ]/.test(cleaned)) return;
-    tokens.add(cleaned);
-    const withoutIndex = cleaned.replace(/\s+\d+$/, "").trim();
-    if (withoutIndex && withoutIndex !== cleaned) tokens.add(withoutIndex);
-    // "Sohag1" carries no separator at all, so the digit has to come off a bare word too.
-    const glued = cleaned.replace(/([a-z])\d+$/, "$1").trim();
-    if (glued && glued !== cleaned) tokens.add(glued);
-  };
-  add(areaName);
-
-  // Splitting is only safe when it does not cut a name in half. "Kafr El-Sheikh 1" carries the same
-  // hyphen as "Helwan-Maadi" but means something different by it, and splitting it yields "kafr el"
-  // and "sheikh" — at which point a candidate living in Al Sheikh Zayed, which is in GIZA, was being
-  // matched to Kafr El-Sheikh on the fragment. The tell is the leftover article: a piece ending in a
-  // bare "el" or "al" was cut mid-name, so the pieces are thrown away and only the whole name kept.
-  const parts = areaName.split(/[-/(),]/).map((part) => normalize(part)).filter(Boolean);
-  if (!parts.some((part) => /(^|\s)(el|al)$/.test(part))) {
-    for (const part of parts) add(part);
-  }
-  return [...tokens];
-}
-
-/**
- * Tokens that must never match an address.
- *
- * "Egypt" is a real area — the National Sales Manager's seat — and every Egyptian address on file
- * ends with the word. Matching it would hand the country's top sales job to whoever wrote their
- * country down. "Head office" and "office" are the same trap in miniature: an address says "office"
- * for reasons that have nothing to do with a seat at head office.
- */
-const NON_PLACE_TOKENS = new Set(["egypt", "head office", "office"]);
-
-/**
- * True when the address names this area outright — by a name that is the AREA's, not merely its
- * governorate's.
- *
- * A GOVERNORATE NAME IS NOT AN AREA HIT, even when an area is named after one. This is the single
- * correction that mattered most: one of the open seats sits in an area called simply "Cairo" and is
- * a District Sales Manager post. On the first run against the real 447 CVs it took 48 of the 81
- * pre-fills — nearly three in five — because "Cairo" is the only area name a plain Cairo address
- * contains, so it won on precision while eleven genuine Cairo seats sat one tier below it. A
- * general accountant in Shubra was being handed a district manager's job. Writing "Cairo" on a CV
- * says which governorate somebody lives in and nothing whatsoever about which seat they want, so it
- * is scored as what it is.
- */
-function addressNamesArea(haystack: string, areaName: string | null): boolean {
-  const hay = padded(haystack);
-  // "Down town" and "downtown" are the same place spelled two ways, and one of them is the area's
-  // own name — so the space-free form is compared as well, on both sides.
-  const squashedHay = padded(haystack.replace(/\s+/g, ""));
-  for (const token of areaTokens(areaName)) {
-    if (NON_PLACE_TOKENS.has(token)) continue;
-    if (GOVERNORATE_LABELS.has(token)) continue;
-    if (hay.includes(padded(token))) return true;
-    const squashedToken = token.replace(/\s+/g, "");
-    if (squashedToken !== token && squashedHay.includes(padded(squashedToken))) return true;
-  }
-  return false;
-}
-
-/**
- * The neighbourhoods each area covers, compiled so an English address can find an Arabic name.
- *
- * Built once at module load from the generated index — see
- * scripts/generate-neighbourhood-index.ts for where the names come from and
- * src/lib/geo/arabic-place-match.ts for how an English word is tested against one. Keyed on the
- * area NAME rather than its code because that is what a vacancy carries, and because two areas of
- * the same name on two different lines cover the same ground: a candidate living in Helmeyet
- * El-Zeitoun is equally near both.
- */
-const NEIGHBOURHOODS_BY_AREA = new Map<string, ArabicPlace[]>();
-for (const entry of NEIGHBOURHOOD_PLACES) {
-  const separator = entry.lastIndexOf("|");
-  if (separator <= 0) continue;
-  const place = compileArabicPlace(entry.slice(0, separator));
-  if (!place) continue;
-  for (const rawIndex of entry.slice(separator + 1).split(",")) {
-    const areaName = NEIGHBOURHOOD_AREAS[Number(rawIndex)];
-    if (!areaName) continue;
-    const areaKey = normalize(areaName);
-    const existing = NEIGHBOURHOODS_BY_AREA.get(areaKey);
-    if (existing) existing.push(place);
-    else NEIGHBOURHOODS_BY_AREA.set(areaKey, [place]);
-  }
-}
-
-/**
- * Does this address name somewhere INSIDE this area, without naming the area itself?
- *
- * This is the rung that only exists because the two halves of the answer were written in different
- * scripts. The bricks are the company's own map of Egypt and all 697 are in Arabic; every CV
- * address is in English. So "Helmeyet El-Zeitoun" used to reach nothing but "Cairo" — a governorate
- * covering a dozen open seats, which is silence.
- *
- * Reads the ADDRESS only, never the governorate column. A governorate is by definition not a
- * neighbourhood, and letting "Cairo" into this check would hand a neighbourhood-grade answer to a
- * CV that named no neighbourhood at all.
- */
-function neighbourhoodMatchStrength(address: string | null | undefined, areaName: string | null): number {
-  if (!areaName) return 0;
-  const places = NEIGHBOURHOODS_BY_AREA.get(normalize(areaName));
-  if (!places || places.length === 0) return 0;
-  const text = String(address ?? "").trim();
-  if (!text) return 0;
-  const words = addressWords(text);
-  if (words.length === 0) return 0;
-  let strength = 0;
-  for (const place of places) {
-    // The count is how many words of the brick name the address satisfied, and it is the tie-break
-    // between two real places of the same name. "Dar Al-Salam, Sohag" matches both دار السلام, in
-    // Cairo, and دار السلام - سوهاج, in Sohag; the second reads three words of the address where
-    // the first reads two, and it is the one the candidate wrote down.
-    if (place.words.length > strength && addressNamesPlace(place, words)) strength = place.words.length;
-  }
-  return strength;
-}
-
-/** Which governorate an area sits in, read from its own name through the shared vocabulary. */
-function areaGovernorate(areaName: string | null): string | null {
-  for (const token of areaTokens(areaName)) {
-    if (NON_PLACE_TOKENS.has(token)) continue;
-    const label = governorateOf(token);
-    if (label) return label;
-  }
-  return null;
-}
+//
+// Every place helper this file used to define now lives in cv-address-place.ts, moved there
+// unchanged on 2026-09-03 with its comments and its corrections intact. Nothing about the matching
+// changed; what changed is who can reach it. district-manager-folders.ts asks the identical
+// question of the identical string — which area does this CV's own text name — and could not call
+// any of it from here, so a CV that plainly said Nasr City was sitting in a folder called
+// "No area named". The Egypt vocabulary is still imported and still not copied; it is imported one
+// level further out, by the module both callers now share.
 
 /**
  * How firmly this CV points at this seat's area.
@@ -302,8 +95,8 @@ type PlaceMatch = {
 };
 
 function placeMatchFor(input: SuggestionInput, vacancy: VacancyOption): PlaceMatch {
-  const address = normalize(input.address);
-  const governorateText = normalize(input.governorate);
+  const address = normalizePlaceText(input.address);
+  const governorateText = normalizePlaceText(input.governorate);
   const haystack = [address, governorateText].filter(Boolean).join(" ");
   if (!haystack) return { strength: 0, tier: "none" };
 
@@ -327,7 +120,7 @@ function placeMatchFor(input: SuggestionInput, vacancy: VacancyOption): PlaceMat
   // The governorate comes from whichever field names one, address first: it is the longer and more
   // specific string, and a governorate column reading "Cairo" beside an address reading
   // "Alexandria, Egypt (willing to relocate to Cairo if available Post)" is a real row on file.
-  const candidateGovernorate = governorateOf(input.address) ?? governorateOf(input.governorate);
+  const candidateGovernorate = governorateNamedBy(input.address) ?? governorateNamedBy(input.governorate);
   if (!candidateGovernorate) return { strength: 0, tier: "none" };
   const seatGovernorate = areaGovernorate(vacancy.areaName);
   if (!seatGovernorate || seatGovernorate !== candidateGovernorate) return { strength: 0, tier: "none" };
@@ -397,7 +190,7 @@ type FamilyVerdict =
   | { kind: "silent" };
 
 function candidateFamily(input: SuggestionInput): FamilyVerdict {
-  const text = normalize([input.currentJobTitle, input.appliedForJobTitle].filter(Boolean).join(" "));
+  const text = normalizePlaceText([input.currentJobTitle, input.appliedForJobTitle].filter(Boolean).join(" "));
   if (text) {
     for (const entry of TITLE_FAMILIES) {
       if (entry.cv.test(text)) return { family: entry.family, kind: "family" };
@@ -412,7 +205,7 @@ function candidateFamily(input: SuggestionInput): FamilyVerdict {
 
 /** The family a seat belongs to, or null for a title no family claims. */
 function seatFamily(jobTitle: string): string | null {
-  const text = normalize(jobTitle);
+  const text = normalizePlaceText(jobTitle);
   for (const entry of TITLE_FAMILIES) {
     if (entry.seat.test(text)) return entry.family;
   }
@@ -495,7 +288,7 @@ function settleByGovernorate<T extends { vacancy: VacancyOption }>(
   if (survivors.length < 2) return survivors;
   // Address first, for the same reason placeMatchFor reads it first: it is the longer and more
   // specific string, and it is where a candidate writes the truth when the column is wrong.
-  const stated = governorateOf(input.address) ?? governorateOf(input.governorate);
+  const stated = governorateNamedBy(input.address) ?? governorateNamedBy(input.governorate);
   if (!stated) return survivors;
   const agreeing = survivors.filter((entry) => areaGovernorate(entry.vacancy.areaName) === stated);
   // NOTHING AGREES is the load-bearing half: without it a disagreeing governorate would empty the

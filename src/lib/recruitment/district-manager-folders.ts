@@ -42,6 +42,7 @@
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import { resolveBackgroundStanding } from "@/lib/recruitment/background-review";
 import { canFileCandidate } from "@/lib/recruitment/candidate-folder";
+import { areaNamedByCv } from "@/lib/recruitment/cv-address-place";
 import {
   candidateRegionForGovernorate,
   candidateRegionLabels,
@@ -75,11 +76,16 @@ const DISTRICT_TIERS = new Set(["DM", "ACTING_DM"]);
 /**
  * Everything this module reads off a candidate — structural, so a fixture need not be whole.
  *
- * THE LAST FIVE FIELDS ARE WHAT MAKES THE HISTORICAL POOL ROUTABLE, and they are a weaker kind of
+ * THE LAST FIELDS ARE WHAT MAKES THE HISTORICAL POOL ROUTABLE, and they are a weaker kind of
  * evidence than the first ones on purpose. A CV that arrived by email in February named no area and
- * answered no question — the questions did not exist yet. All it carries is the governorate its own
- * text mentions and whatever faculty the extractor read off it. That routes to a REGION, never to
- * an area, and lands in a folder that says so.
+ * answered no question — the questions did not exist yet. All it carries is the address and
+ * governorate its own text mentions and whatever faculty the extractor read off it.
+ *
+ * `address` IS THE ONE THAT WAS BEING THROWN AWAY. Until 2026-09-03 this rule read `governorate`
+ * and stopped, so a CV whose address says "Nasr City" carried the same information as one that says
+ * only "Cairo" — both resolved to a region and both landed in the "No area named" folder. The
+ * address is the longer and more specific string, and cv-address-place.ts has been able to read an
+ * area out of it since 2026-08-28; nothing here could reach that until it moved.
  */
 export type DistrictFolderCandidate = Pick<
   Candidate,
@@ -91,6 +97,7 @@ export type DistrictFolderCandidate = Pick<
   | "folder"
   | "preferredRegionCode"
   | "preferredRegionName"
+  | "address"
   | "governorate"
   | "faculty"
   | "declaredBackground"
@@ -113,6 +120,19 @@ export type DistrictAreaFolder<T = DistrictFolderCandidate> = {
    */
   kind: "area" | "region";
   candidates: T[];
+  /**
+   * The ids in `candidates` that got here because their CV's own text named this area, rather than
+   * because the applicant declared it. Empty on a catch-all, and empty on an area folder nobody
+   * reached that way.
+   *
+   * IT EXISTS SO THE FOLDER CAN STAY HONEST WITHOUT BEING EMPTY. The owner's instruction was to
+   * stop dumping readable CVs into "No area named", and the answer is to read the address — but an
+   * address is still not an answer to "where do you want to work", and a manager ringing somebody
+   * should know which of the two he is holding. So the CV goes in the right folder AND the folder
+   * says which ones arrived that way; the alternative, a third folder kind, would just be "No area
+   * named" again under a politer name.
+   */
+  fromCvText: string[];
 };
 
 /**
@@ -321,8 +341,18 @@ export function districtManagerBoards<T = DistrictFolderCandidate>(
       // present, empty or not, for the same reason the empty area folders are: a manager has to be
       // able to SEE that nothing arrived, rather than infer it from a folder that is not on screen.
       folders: [
-        ...areaNames.map((areaName) => ({ areaName, candidates: [] as T[], kind: "area" as const })),
-        { areaName: REGION_FOLDER_LABEL, candidates: [] as T[], kind: "region" as const },
+        ...areaNames.map((areaName) => ({
+          areaName,
+          candidates: [] as T[],
+          fromCvText: [] as string[],
+          kind: "area" as const,
+        })),
+        {
+          areaName: REGION_FOLDER_LABEL,
+          candidates: [] as T[],
+          fromCvText: [] as string[],
+          kind: "region" as const,
+        },
       ],
       lineName: text(row.line_name) || null,
       managerHrId: seated ? occupant : (standIn?.hrId ?? null),
@@ -360,19 +390,25 @@ export function districtReturnSuppressionKey(
 /**
  * The same boards, with every candidate dropped into every folder that should hold them.
  *
- * ── TWO WAYS IN, AND THE SECOND ONE IS THE BACKFILL ─────────────────────────────────────────────
+ * ── THREE WAYS IN, AND THE LAST TWO ARE THE BACKFILL ────────────────────────────────────────────
  *
  * BY AREA: the applicant went through the apply flow and named an area. `preferencesDeclaredAt` is
  * the gate rather than `preferredAreaName` alone, because that column is ALSO written by the CV
  * extractor reading a career off a PDF — filing on it would place people by where they once worked
  * rather than where they asked to work. candidate-folder-suggestion.ts makes the same choice.
  *
+ * BY THE ADDRESS ON THEIR CV: the same archive, read properly. An address naming an area outright,
+ * or naming a neighbourhood inside one, files into that AREA folder — see the tier itself below for
+ * the owner's instruction and for why one match or none. It is marked `fromCvText` so the folder
+ * can say which of its CVs arrived that way.
+ *
  * BY REGION: the owner, 2026-08-31 — *"you will start backfilling from the historicals ... the two
  * hundred eligible, you will backfill them. But anyone non eligible, you will make the admin be
  * able to check first their CV and confirm."* NOT ONE of the 420 live historical CVs declared an
  * area; they predate the question being asked, so an area-only rule reaches exactly none of them.
- * Their governorate resolves to a region, the region to every district covering it, and there they
- * land in that district's "No area named" folder — a weaker answer, labelled as one.
+ * What is left after the address has been read is a CV naming a governorate and nothing finer. Its
+ * region resolves to every district covering it, and there it lands in that district's "No area
+ * named" folder — a weaker answer, labelled as one, and now genuinely the weakest one there is.
  *
  * ── WHO IS HELD BACK, AND THE ASYMMETRY IS THE IMPORTANT LINE ───────────────────────────────────
  *
@@ -457,7 +493,7 @@ export function placeCandidatesInDistrictFolders<T extends DistrictFolderCandida
   const unplaced: UnplacedDeclaration[] = [];
   let placements = 0;
 
-  const fileInto = (targets: readonly Target[], candidate: T): void => {
+  const fileInto = (targets: readonly Target[], candidate: T, fromCvText = false): void => {
     for (const target of targets) {
       // A CV the board's own manager has returned is dropped HERE, at the single choke point every
       // placement passes through, so both the area path and the region catch-all honour it with no
@@ -471,10 +507,18 @@ export function placeCandidatesInDistrictFolders<T extends DistrictFolderCandida
         continue;
       }
       target.folder.candidates.push(candidate);
+      if (fromCvText) target.folder.fromCvText.push(candidate.id);
       target.board.candidateCount += 1;
       placements += 1;
     }
   };
+
+  // The company's area names, minus any two areas share — the same list `foldersByKey` was built
+  // from, so an area this offers is always an area a folder exists for. Built once: the resolver
+  // walks it per candidate, and rebuilding it 600 times would be the only slow thing here.
+  const routableAreaNames = [...areaByKey.entries()]
+    .filter(([key]) => !ambiguousKeys.has(key))
+    .map(([, areaName]) => areaName);
 
   for (const candidate of input.candidates) {
     if (!canFileCandidate(candidate)) continue;
@@ -517,7 +561,37 @@ export function placeCandidatesInDistrictFolders<T extends DistrictFolderCandida
       continue;
     }
 
-    // ── The region, when they named no area or named one this company does not hold ────────────
+    // ── The area their own CV names, when they declared none ──────────────────────────────────
+    //
+    // The owner, 2026-09-03: *"do a fucking effort for the areas that you're putting in a folder
+    // that you're calling a no area name. Do an effort that's extracted from the CV already."*
+    //
+    // He is right that it was already extracted. `address` has been on these rows the whole time,
+    // and cv-address-place.ts has read an English address down to an Arabic brick name since
+    // 2026-08-28 — a CV saying "Nasr City" or "Helmeyet El-Zeitoun" names an area outright or names
+    // somewhere inside one. This rule read `governorate` and nothing else, so both of those landed
+    // in the catch-all beside a CV that said only "Cairo", which is a strictly worse answer than the
+    // evidence supported.
+    //
+    // IT SITS BELOW THE ELIGIBILITY GATE ON PURPOSE, in the region path's half of the function
+    // rather than beside the declared-area path above. This is the archive being reached into, not
+    // an applicant asking for something, and the owner's instruction on the archive was explicit:
+    // "anyone non eligible, you will make the admin be able to check first their CV and confirm."
+    // An address is a better answer than a governorate; it is not a reason to skip a person.
+    //
+    // ONE AREA OR NONE — `areaNamedByCv` refuses a tie rather than choosing, and the fallback is the
+    // catch-all directly below, which is exactly where the CV would have gone anyway. So the whole
+    // of the downside here is that a CV stays where it already was.
+    if (routableAreaNames.length > 0) {
+      const fromCv = areaNamedByCv(candidate, routableAreaNames);
+      const cvTargets = fromCv ? foldersByKey.get(areaFolderKey(fromCv.areaName)) : undefined;
+      if (cvTargets && cvTargets.length > 0) {
+        fileInto(cvTargets, candidate, true);
+        continue;
+      }
+    }
+
+    // ── The region, when their CV names no area either ─────────────────────────────────────────
     // "Qena" is not an area here — the organogram splits it into Qena 1 and Qena 2 — but it is
     // unmistakably Upper Egypt, and a district's catch-all is a better answer than nobody at all.
     const regionName = districtRoutingRegion(candidate);

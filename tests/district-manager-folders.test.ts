@@ -352,6 +352,84 @@ export function runDistrictManagerFolderTests(): void {
       "no area folder was touched",
     );
 
+    // ── The address on the CV, which used to be thrown away ────────────────────────────────────
+    //
+    // The owner, 2026-09-03: *"do a fucking effort for the areas that you're putting in a folder
+    // that you're calling a no area name."* Until that day this rule read `governorate` and stopped,
+    // so a CV whose address says "Nasr City" carried exactly as much information as one saying only
+    // "Cairo" — both landed in the catch-all. Measured against production the same day, 47 CVs move
+    // out of "No area named" and into a real area folder because of this block.
+    //
+    // THE CONTROL IS THE HALF THAT PROVES IT. The same candidate with the address removed must still
+    // reach the catch-all and nothing else; without that, this test would pass just as happily if the
+    // area folder were being filled by the governorate.
+    {
+      const withAddress = placeCandidatesInDistrictFolders({
+        candidates: [archived("addr", {
+          address: "12 Ismail Elkabany st., Nasr City, Cairo",
+          faculty: "Faculty of Pharmacy",
+          governorate: "Cairo",
+        })],
+        rows: ROWS_UE,
+      });
+
+      // Nasr City is a rep seat on all THREE lines, so one CV reaches three managers — the same
+      // fan-out a declared area gets, because it is the same folder.
+      const named = withAddress.boards
+        .flatMap((board) => board.folders.map((folder) => ({ board, folder })))
+        .filter((entry) => entry.folder.candidates.some((row) => row.id === "addr"));
+      assert.deepEqual(
+        named.map((entry) => `${entry.board.seatId}/${entry.folder.areaName}`).sort(),
+        ["ai-cairo/Nasr City", "cns-cairo/Nasr City", "pd-cairo/Nasr City"],
+        "the address named an area, so the CV is in that area's folder on every line that holds it",
+      );
+      assert.ok(
+        named.every((entry) => entry.folder.fromCvText.includes("addr")),
+        "and each folder records that it got there from the CV's own text, not from the applicant asking",
+      );
+      assert.deepEqual(
+        withAddress.boards
+          .flatMap((board) => board.folders)
+          .filter((folder) => folder.kind === "region")
+          .flatMap((folder) => folder.candidates.map((row) => row.id)),
+        [],
+        "no catch-all still holds it — it was lifted out, not copied",
+      );
+
+      // The control: strip the address, keep everything else. Cairo is a governorate covering twelve
+      // areas, and that is a region answer, not an area one.
+      const withoutAddress = placeCandidatesInDistrictFolders({
+        candidates: [archived("addr", { faculty: "Faculty of Pharmacy", governorate: "Cairo" })],
+        rows: ROWS_UE,
+      });
+      assert.deepEqual(
+        withoutAddress.boards
+          .flatMap((board) => board.folders)
+          .filter((folder) => folder.candidates.some((row) => row.id === "addr"))
+          .map((folder) => folder.kind),
+        ["region", "region", "region"],
+        "with no address, the same CV reaches only the catch-alls — the governorate never names an area",
+      );
+      assert.ok(
+        withoutAddress.boards.flatMap((board) => board.folders).every((folder) => folder.fromCvText.length === 0),
+        "and nothing is marked as read off a CV that said nothing",
+      );
+
+      // The eligibility gate still governs this path. The owner's instruction on the archive was
+      // that anything not eligible waits for an admin to open the CV and confirm; a better-read
+      // address is not a reason to skip that person.
+      const notEligible = placeCandidatesInDistrictFolders({
+        candidates: [archived("addr-unknown", {
+          address: "12 Ismail Elkabany st., Nasr City, Cairo",
+          faculty: "qwerty zzz",
+          governorate: "Cairo",
+        })],
+        rows: ROWS_UE,
+      });
+      assert.equal(notEligible.placements, 0,
+        "a readable address does not carry a CV past the background gate — the admin queue is still where it waits");
+    }
+
     // Every district gets exactly one, empty or not — a manager has to be able to SEE that nothing
     // arrived without an area, rather than infer it from a folder that is not on screen.
     for (const board of boards) {
