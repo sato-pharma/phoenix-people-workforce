@@ -16,6 +16,12 @@
 //     5  are outside Egypt altogether
 //   140  have nothing that names a place
 //
+// A second pass on 2026-09-04, after the first 757 CVs were filed, found three more seams and
+// this module now reads all of them: 31 of that last group had answered the region question in
+// WhatsApp without finishing the conversation; 53 more had a street address naming a town the
+// governorate map did not carry; and the rest of the world was reaching 'no location' rather
+// than its own country. See `egyptRegionFromFreeText` for the two traps that sit on the second.
+//
 // So 387 of 529 CVs were sitting in one flat folder while the database already knew what part of
 // the country each person lives in. The owner's instruction on 2026-09-04 was direct: *"I don't want
 // a CV sitting with no folder."* He is right, and the cost of the old behaviour was worse than the
@@ -34,21 +40,28 @@
 // PURE — no database, no React, same rule as candidate-folder-suggestion.ts and for the same reason.
 
 import {
-  candidateRegionForGovernorate,
   candidateRegionLabels,
   foreignCountryForGovernorate,
   type CandidateRegionCode,
 } from "@/lib/recruitment/candidate-region";
+import { egyptRegionFromFreeText } from "@/lib/recruitment/candidate-region-freetext";
 
 /** Everything this module reads. Structural, so a caller need not build a whole candidate. */
 export type InferableCandidate = {
   address?: string | null;
   governorate?: string | null;
+  /** `preferred_region_code` — the region the APPLICANT chose, in their own words. */
+  preferredRegionCode?: string | null;
   sentForRegion?: string | null;
 };
 
 /** Which field produced the answer — carried so a screen and a log can say why a CV is where it is. */
-export type InferenceBasis = "governorate" | "address" | "vacancy" | "outside-egypt";
+export type InferenceBasis =
+  | "governorate"
+  | "address"
+  | "vacancy"
+  | "declared-preference"
+  | "outside-egypt";
 
 export type InferredPlacement = {
   basis: InferenceBasis;
@@ -91,7 +104,24 @@ export function inferCandidatePlacement(
     return { basis: "vacancy", label: candidateRegionLabels[fromVacancy], regionCode: fromVacancy };
   }
 
-  const fromGovernorate = candidateRegionForGovernorate(candidate.governorate);
+  // The applicant's OWN answer to "which region", when they gave one. It sits below the vacancy
+  // because being put forward for a job is a later and more considered act than stating a
+  // preference, and above the CV because a person typing an answer beats a machine reading a page.
+  //
+  // These exist without `preferences_declared_at` because the WhatsApp flow saves each answer as it
+  // arrives and stamps completion only at the end — so a conversation abandoned at question three
+  // leaves a real, stated region behind. 31 of the 130 candidates whose CV named no place at all
+  // had one (production, 2026-09-04). Filing them as "no location" was reading past their answer.
+  const fromPreference = regionFromStoredCode(candidate.preferredRegionCode);
+  if (fromPreference) {
+    return {
+      basis: "declared-preference",
+      label: candidateRegionLabels[fromPreference],
+      regionCode: fromPreference,
+    };
+  }
+
+  const fromGovernorate = egyptRegionFromFreeText(candidate.governorate);
   if (fromGovernorate) {
     return {
       basis: "governorate",
@@ -100,7 +130,7 @@ export function inferCandidatePlacement(
     };
   }
 
-  const fromAddress = candidateRegionForGovernorate(candidate.address);
+  const fromAddress = egyptRegionFromFreeText(candidate.address);
   if (fromAddress) {
     return { basis: "address", label: candidateRegionLabels[fromAddress], regionCode: fromAddress };
   }

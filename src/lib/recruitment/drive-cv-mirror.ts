@@ -152,6 +152,7 @@ export function placementFor(
       inferCandidatePlacement({
         address: row.address,
         governorate: row.governorate,
+        preferredRegionCode: row.preferred_region_code,
         sentForRegion: row.sent_for_region,
       }),
     ),
