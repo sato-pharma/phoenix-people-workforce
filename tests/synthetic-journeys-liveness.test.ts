@@ -51,7 +51,7 @@ export async function runSyntheticJourneysLivenessTests() {
 
   assert.match(
     source,
-    /import \{ pingDeadMansSwitch \} from "@\/lib\/observability\/dead-mans-switch";/,
+    /import \{[^}]*pingDeadMansSwitch[^}]*\} from "@\/lib\/observability\/dead-mans-switch";/,
     `${ROUTE} must import the dead-man's-switch — an unwatched trigger is how nine nights of 401s went unseen`,
   );
 
