@@ -2,6 +2,12 @@ import { NextResponse } from "next/server";
 
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { assertOutstationAdminAccess } from "@/lib/outstation/admin-access";
+import {
+  INVALID_EXPENSE_TYPE,
+  INVALID_TRANSPORTATION_TYPE,
+  isOutstationExpenseType,
+  isOutstationTransportationType,
+} from "@/lib/outstation/manager-expense-input";
 import { createManagerExpenseAsAdmin } from "@/lib/outstation/service";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import type { ManagerExpenseAdminInput } from "@/lib/outstation/types";
@@ -81,21 +87,18 @@ export async function POST(request: Request) {
       );
     }
 
-    if (!expenseType || !["traveling", "meeting", "other"].includes(expenseType)) {
+    if (!isOutstationExpenseType(expenseType)) {
       return NextResponse.json(
-        { error: "invalid_expense_type", message: "expenseType must be traveling, meeting, or other." },
+        { error: INVALID_EXPENSE_TYPE.error, message: INVALID_EXPENSE_TYPE.message },
         { status: 400 },
       );
     }
 
-    if (
-      !transportationType ||
-      !["car", "train", "bus", "other"].includes(transportationType)
-    ) {
+    if (!isOutstationTransportationType(transportationType)) {
       return NextResponse.json(
         {
-          error: "invalid_transportation_type",
-          message: "transportationType must be car, train, bus, or other.",
+          error: INVALID_TRANSPORTATION_TYPE.error,
+          message: INVALID_TRANSPORTATION_TYPE.message,
         },
         { status: 400 },
       );
