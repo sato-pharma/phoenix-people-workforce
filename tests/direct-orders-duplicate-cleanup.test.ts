@@ -552,4 +552,55 @@ export function runDirectOrderDuplicateCleanupTests() {
         "identity is the code wherever a code exists, and the fallback is scoped to pharmacies with none",
     );
   }
+
+  // ── A merged-away venue must not come back on the registry board ─────────────────────
+  //
+  // The admin board's four summary chips — venue total, waiting for a System Admin, no distributor
+  // code, not linked to a CRM contact — are each `rows.filter(...).length` over the prop the page
+  // hands straight from listDirectOrderPharmacyRegistry. The chips are therefore exactly as honest
+  // as that one query, and sizing the outstanding work is the only thing a chip is for: a tombstone
+  // counted into one overstates the backlog with nothing on screen to give it away.
+  //
+  // MEASURED ON PRODUCTION, 2026-09-03: 74 venue rows — 52 active, 22 inactive, 10 merged, and
+  // merged-but-still-active ZERO. So `active` alone already selects exactly the 52 reachable venues
+  // and this filter moves no row today. That coincidence is the reason to pin it rather than to skip
+  // it. Nothing in the schema ties the two columns — 20260809031500 adds an FK and a not-self check,
+  // no pairing constraint — so the entire invariant is confirmDirectOrderCleanup happening to write
+  // `active: false` in the same update that sets merged_into_pharmacy_id. One writer that sets the
+  // merge without the deactivation and a retired duplicate is back in the list, the picker and the
+  // counts; AGENTS.md sends a merge that stranded a desk validation to hand SQL, which is precisely
+  // such a writer.
+  {
+    const service = readFileSync(new URL("../src/lib/direct-orders/service.ts", import.meta.url), "utf8");
+    const start = service.indexOf("export async function listDirectOrderPharmacyRegistry");
+    assert.ok(start > 0, "the registry read must be findable");
+    const body = topLevelBlock(service, start);
+    // Substring checks rather than regex literals, deliberately. The escaping in a regex is one
+    // transport layer away from being flattened, and the flattened form still MATCHES — an unescaped
+    // /.is("x", null)/ reads every dot and paren as syntax and passes on text that is not the call
+    // at all. A pinning test that goes green for the wrong reason is the failure this file exists
+    // to prevent, so these ask for the literal bytes.
+    assert.ok(
+      body.includes('.is("merged_into_pharmacy_id", null)'),
+      "the registry read must exclude merged-away venues BY NAME rather than trusting the merge to have " +
+        "deactivated them — whatever this query returns is what the board counts, edits and offers",
+    );
+    assert.ok(
+      body.includes('.eq("active", true)'),
+      "and it must still exclude deactivated venues — 11 rejected rows and 1 retired one are live in " +
+        "production and belong in neither the list nor the chips",
+    );
+
+    // WHY the query is the only place this can happen: the row the board receives carries no merged
+    // marker at all, so no amount of client-side filtering could recover one. Mapping the column
+    // instead would be the wrong repair — it would put a tombstone on screen and ask the component to
+    // hide it, giving 'reachable' a second definition that nobody re-measures against the database.
+    const mapStart = service.indexOf("function mapPharmacyRow");
+    assert.ok(mapStart > 0, "mapPharmacyRow must be findable");
+    assert.ok(
+      !topLevelBlock(service, mapStart).includes("merged_into_pharmacy_id"),
+      "the venue row must NOT carry a merged marker to the client — reachability is settled once, at " +
+        "the query, and a board that could see the flag would eventually be asked to filter on it too",
+    );
+  }
 }
