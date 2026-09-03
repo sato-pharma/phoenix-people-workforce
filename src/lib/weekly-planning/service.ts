@@ -1713,6 +1713,11 @@ async function reconcileOneMonth(
   // The overlap, not the whole week. A Saturday-anchored Field Force week straddles a month
   // boundary several times a year, and replacing the whole week's date span inside one month
   // would delete the neighbouring month's days from a plan that legitimately owns them.
+  //
+  // It is also what makes the write legal at all: phx_weekly_plan_replace_items refuses any item
+  // whose activityDate falls outside the header's own period ("item activityDate % is outside plan
+  // period % to %", read from the live function 2026-09-03), so an unclipped week crossing the
+  // boundary would not merely be wrong - it would be rejected outright.
   const from = weeklyPlan.period_start_date > monthly.period_start_date
     ? weeklyPlan.period_start_date
     : monthly.period_start_date;
@@ -1777,21 +1782,37 @@ async function reconcileOneMonth(
     // The RPC rejects an empty payload outright, and an empty merge would mean erasing a month
     // to write nothing in its place. Report the divergence rather than destroy the plan.
     if (merged.length > 0) {
-      await rpcReplacePlanItems({
-        access,
-        expectedRevision: monthly.revision,
-        items: merged,
-        planId: monthly.id,
-        submit: false,
-      });
-      await writeAuditLog({
-        actorLoginId: access.loginId,
-        entityId: monthly.id,
-        entityType: "weekly_plan",
-        newValues: { changedDates, sourceWeeklyPlanId: weeklyPlan.id },
-        summary: `monthly plan ${monthly.period_key} re-synced from submitted weekly plan ${weeklyPlan.period_key}`,
-      });
-      return { changedDates, monthlyPlanId: monthly.id, rewritten: true };
+      try {
+        await rpcReplacePlanItems({
+          access,
+          expectedRevision: monthly.revision,
+          items: merged,
+          planId: monthly.id,
+          submit: false,
+        });
+        await writeAuditLog({
+          actorLoginId: access.loginId,
+          entityId: monthly.id,
+          entityType: "weekly_plan",
+          newValues: { changedDates, sourceWeeklyPlanId: weeklyPlan.id },
+          summary: `monthly plan ${monthly.period_key} re-synced from submitted weekly plan ${weeklyPlan.period_key}`,
+        });
+        return { changedDates, monthlyPlanId: monthly.id, rewritten: true };
+      } catch (error) {
+        // The RPC bumps `revision` on every replace and checks the expected one first, so somebody
+        // editing this month in another tab raises weekly_plan_revision_conflict. Fall through to
+        // the flag rather than throw: the divergence is the half the employee actually needs told,
+        // and letting this escape would drop it for every OTHER overlapping month too, from one
+        // lost race.
+        logError("Monthly plan could not be rewritten from the weekly plan", {
+          labels: {
+            event: "weekly_plan_monthly_rewrite_failed",
+            monthlyPlanId: monthly.id,
+            planId: weeklyPlan.id,
+          },
+          error,
+        });
+      }
     }
   }
   return { changedDates, monthlyPlanId: monthly.id, rewritten: false };
