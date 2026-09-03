@@ -7,15 +7,23 @@
 // HR team". Finance keeps `FinanceOwnerBanner`, SFE keeps `SfeDepartmentBanner`, and the CEO
 // command center was not named and is left alone.
 //
-// HR IS DELIBERATELY NOT HERE, AND THAT IS NOT THE INSTRUCTION BEING IGNORED.
+// HR IS NOT HERE, AND THAT IS NOW A SETTLED OWNER RULING — NOT AN OVERSIGHT.
 // He did name the HR team ("and HR Yasmine and Aya"), and this component was briefly mounted on
 // `HrCommandCenter` for both seats. In parallel, another session answered the SAME need from a
 // later instruction of his — the identity back in the employee portal's language, narrow, a
 // height he set himself at under 96px — and shipped `PhoenixIdentityStrip` there in #3037, which
 // merged first. Mounting this banner as well would have stacked two identity bars on one page,
-// which is precisely the thickness he was removing. So HR keeps the merged strip and this stays
-// on the one surface that has no other identity bar. If he ever wants the two seats to read like
-// the Super Admin landing instead, REPLACE the strip — never add this above it.
+// which is precisely the thickness he was removing.
+//
+// He was then shown both looks side by side and asked which should win. He answered, 2026-09-03:
+// "all hr team members light". So the split is deliberate and decided — the HR seats read the
+// light portal strip, this dark bar is the Super Admin landing's alone. DO NOT "restore parity"
+// in either direction: not by mounting this on HR, and not by swapping the Super Admin landing to
+// the strip. Verified against production the same day: there are exactly TWO live HR accounts,
+// `HR Advisory` (HR-010) and `HR Operations` (HR-009), and `resolveLandingPathForRole` sends both
+// to /hr/admin/hr-command-center, so "all HR team members" is fully covered by that one page.
+// ("HR Specialist" was retired 2026-06 and aliases to Employee; "HR Manager" is a job title the
+// role parser deliberately refuses to read as a role. Neither can reach this banner.)
 //
 // WHAT "NOT A BLOCK" MEANS, MECHANICALLY
 // The thing removed earlier the same day was `AdminHeroFrame` holding `CeoHeroIdentity`: a
