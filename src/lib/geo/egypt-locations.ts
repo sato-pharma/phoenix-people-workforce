@@ -60,7 +60,7 @@ function titleCase(s: string): string {
 // canonical English governorate → recognisable name fragments (Arabic + English,
 // including town names that resolve to that governorate). Order = priority.
 const GOVERNORATE_KEYS: [string, string[]][] = [
-  ["Kafr El-Sheikh", ["كفر الشيخ", "kafr el shaikh", "kafr el sheikh", "kafr elshaikh", "kafr elsheikh", "دسوق", "desouk", "disuq", "بلطيم", "baltim", "بيلا", "biyala", "الحامول", "el hamool", "hamul", "فوه", "fuwwah", "سيدي سالم", "قلين", "دمرو", "damru", "مطوبس", "riyadh"]],
+  ["Kafr El-Sheikh", ["كفر الشيخ", "kafr el shaikh", "kafr el sheikh", "kafr el shiekh", "kafr elshaikh", "kafr elsheikh", "kafr elshiekh", "دسوق", "desouk", "disuq", "بلطيم", "baltim", "بيلا", "biyala", "الحامول", "el hamool", "hamul", "فوه", "fuwwah", "سيدي سالم", "قلين", "دمرو", "damru", "مطوبس", "riyadh"]],
   ["Dakahlia", ["الدقهليه", "dakahlia", "daqahliyah", "المنصوره", "mansoura", "دكرنس", "dikirnis", "اجا", " aga", "ميت غمر", "mit ghamr", "بلقاس", "belqas", "شربين", "sherbin", "منيه النصر", "طلخا", "talkha", "ميت الحلوج", "mit al halluj", "شيوه"]],
   ["Sharqia", ["الشرقيه", "sharqia", "sharkia", "الزقازيق", "zagazig", "بلبيس", "belbeis", "ابو حماد", "abu hammad", "منيا القمح", "فاقوس", "faqous", "ههيا", "ديرب نجم", "كفر صقر", "أبو كبير", "العاشر من رمضان", "10th of ramadan"]],
   ["Gharbia", ["الغربيه", "gharbia", "gharbiyah", "طنطا", "tanta", "المحله", "mahalla", "mahalla el kubra", "كفر الزيات", "kafr el zayat", "السنطه", "santa", "زفتى", "zifta", "سمنود", "samannoud", "بسيون", "basyoun", "قطور"]],
@@ -76,7 +76,7 @@ const GOVERNORATE_KEYS: [string, string[]][] = [
   ["Suez", ["السويس", "suez", "عتاقه", "الجناين"]],
   ["North Sinai", ["شمال سيناء", "north sinai", "العريش", "arish", "الشيخ زويد", "رفح", "بئر العبد", "الحسنه"]],
   ["South Sinai", ["جنوب سيناء", "south sinai", "شرم الشيخ", "sharm", "دهب", "dahab", "نويبع", "nuweiba", "طور سيناء", "el tor", "سانت كاترين", "catherine", "رأس سدر"]],
-  ["Beni Suef", ["بني سويف", "beni suef", "bani sweif", "banisuef", "الواسطى", "wasta", "ناصر", "ببا", "beba", "الفشن", "fashn", "سمسطا", "اهناسيا"]],
+  ["Beni Suef", ["بني سويف", "beni suef", "bani sweif", "bani swef", "banisuef", "baniswef", "الواسطى", "wasta", "ناصر", "ببا", "beba", "الفشن", "fashn", "سمسطا", "اهناسيا"]],
   ["Fayoum", ["الفيوم", "faiyum", "fayoum", "fayyum", "طاميه", "tamiya", "سنورس", "sinnuris", "ابشواي", "ibsheway", "اطسا", "itsa", "يوسف الصديق"]],
   ["Minya", ["المنيا", "minya", "minia", "ملوي", "mallawi", "بني مزار", "beni mazar", "مطاي", "matai", "ابو قرقاص", "abu qurqas", "سمالوط", "samalut", "مغاغه", "maghagha", "ديرمواس", "deir mawas", "العدوه", "adwa"]],
   ["Assiut", ["اسيوط", "assiut", "asyut", "asuit", "asiut", "assuit", "assiout", "assout", "القوصيه", "qusiya", "ديروط", "dairut", "ابنوب", "abnub", "منفلوط", "manfalut", "ابوتيج", "abutig", "الغنايم", "ساحل سليم", "البداري", "badari", "صدفا", "الفتح", "الستامونى", "satamuni", "as satamuni"]],
