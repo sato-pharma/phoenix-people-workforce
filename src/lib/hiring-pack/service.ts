@@ -143,6 +143,7 @@ type EmployeeDbRow = {
   department_id: number | null;
   employment_status: string | null;
   full_name: string | null;
+  gender: string | null;
   gross_salary: number | string | null;
   hire_date: string | null;
   hr_id: string;
@@ -690,7 +691,7 @@ async function loadEmployeeFacts(hrId: string): Promise<HiringPackEmployeeFacts>
   const { data, error } = await supabase
     .from("employees")
     .select(
-      "hr_id, full_name, nickname, name_ar, national_id, social_insurance_number, social_insurance_wage, base_salary, gross_salary, birth_date, hire_date, job_title, department_id, line_id, residence_address, residence_city, mobile_number, work_email, employment_status, last_working_date",
+      "hr_id, full_name, nickname, name_ar, national_id, gender, social_insurance_number, social_insurance_wage, base_salary, gross_salary, birth_date, hire_date, job_title, department_id, line_id, residence_address, residence_city, mobile_number, work_email, employment_status, last_working_date",
     )
     .eq("hr_id", hrId)
     .maybeSingle<EmployeeDbRow>();
@@ -721,6 +722,7 @@ async function loadEmployeeFacts(hrId: string): Promise<HiringPackEmployeeFacts>
     fullName: resolveEmployeeDisplayName(data.full_name ?? "", data.nickname, data.hr_id),
     nameAr: cleanText(data.name_ar),
     nationalId: cleanText(data.national_id),
+    gender: cleanText(data.gender),
     socialInsuranceNumber: cleanText(data.social_insurance_number),
     socialInsuranceWage: toNumber(data.social_insurance_wage),
     baseSalary: toNumber(data.base_salary),
@@ -1378,7 +1380,7 @@ export async function loadHiringPackReadiness(): Promise<HiringPackReadiness> {
   const { data: employeeRows, error: employeeError } = await supabase
     .from("employees")
     .select(
-      "hr_id, full_name, nickname, name_ar, national_id, social_insurance_number, social_insurance_wage, base_salary, gross_salary, birth_date, hire_date, job_title, education, department_id, line_id, residence_address, residence_city, mobile_number, work_email, employment_status, last_working_date",
+      "hr_id, full_name, nickname, name_ar, national_id, gender, social_insurance_number, social_insurance_wage, base_salary, gross_salary, birth_date, hire_date, job_title, education, department_id, line_id, residence_address, residence_city, mobile_number, work_email, employment_status, last_working_date",
     )
     .or(`employment_status.is.null,employment_status.in.${ACTIVE_EMPLOYMENT_STATUSES_IN_LIST}`)
     .order("hire_date", { ascending: false, nullsFirst: false })
@@ -1418,6 +1420,7 @@ export async function loadHiringPackReadiness(): Promise<HiringPackReadiness> {
       fullName: resolveEmployeeDisplayName(row.full_name ?? "", row.nickname, row.hr_id),
       nameAr: cleanText(row.name_ar),
       nationalId: cleanText(row.national_id),
+      gender: cleanText(row.gender),
       socialInsuranceNumber: cleanText(row.social_insurance_number),
       socialInsuranceWage: toNumber(row.social_insurance_wage),
       baseSalary: toNumber(row.base_salary),

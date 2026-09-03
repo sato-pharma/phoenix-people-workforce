@@ -16,6 +16,10 @@ import {
   summarizeReadiness,
 } from "../src/lib/hiring-pack/readiness.ts";
 import type { ReadinessRow } from "../src/lib/hiring-pack/readiness.ts";
+import {
+  DEFAULT_NATIONALITY_AR,
+  DEFAULT_NATIONALITY_AR_FEMALE,
+} from "../src/lib/hiring-pack/nationality.ts";
 import { splitTaxRegistration } from "../src/lib/hiring-pack/render-shared.ts";
 import { collectHiringPackGaps } from "../src/lib/hiring-pack/service.ts";
 import type {
@@ -45,6 +49,12 @@ import type {
  *      nobody can act on, and the failure is invisible unless something asserts the arithmetic.
  */
 
+// Two valid IDs for 1997-09-09 in Dakahlia (digits 8-9 = "12"), differing in ONE character: digit
+// 13, the Authority's sex digit — odd male, even female. One character apart is what keeps the
+// gendering assertions about the sex digit and nothing else.
+const FEMALE_NATIONAL_ID = "29709091234567";
+const MALE_NATIONAL_ID = "29709091234577";
+
 function employeeFixture(overrides: Partial<HiringPackEmployeeFacts> = {}): HiringPackEmployeeFacts {
   return {
     hrId: "H-3003",
@@ -52,6 +62,8 @@ function employeeFixture(overrides: Partial<HiringPackEmployeeFacts> = {}): Hiri
     nameAr: "نور عادل",
     // 1997-09-09, Dakahlia — the same id the worker-data fixture uses, so the two agree.
     nationalId: "29709091234567",
+    // Left unrecorded so the fixtures exercise the national-ID derivation rather than masking it.
+    gender: null,
     socialInsuranceNumber: "123456789",
     socialInsuranceWage: 6000,
     baseSalary: 11000,
@@ -453,9 +465,40 @@ function testTheNationalityDefaultIsVisibleAndNeverStored() {
     "a recorded nationality is not a derived one, and must not be labelled as assumed",
   );
 
+  // THE DEFAULT IS GENDERED, because Arabic inflects nationality: مصري for a man, مصرية for a
+  // woman. These use assert.equal rather than a substring check on purpose — مصرية CONTAINS مصري,
+  // so `includes(DEFAULT_NATIONALITY_AR)` is true of a woman's row and would certify the exact bug
+  // this derivation fixes. Only an exact match tells the two forms apart.
+  const enrichedNationality = (employee: Partial<HiringPackEmployeeFacts>) =>
+    enrichForReadiness(employeeFixture(employee), profileFixture({ nationality: null })).profile
+      .nationality;
+
+  assert.equal(
+    enrichedNationality({ nationalId: FEMALE_NATIONAL_ID, gender: null }),
+    DEFAULT_NATIONALITY_AR_FEMALE,
+    "a woman with no recorded nationality must be shown مصرية",
+  );
+  assert.equal(
+    enrichedNationality({ nationalId: MALE_NATIONAL_ID, gender: null }),
+    DEFAULT_NATIONALITY_AR,
+    "a man with no recorded nationality must be shown مصري",
+  );
+  // A recorded gender outranks the ID — the ordering `national-id.ts` already keeps for birth date.
+  assert.equal(
+    enrichedNationality({ nationalId: FEMALE_NATIONAL_ID, gender: "male" }),
+    DEFAULT_NATIONALITY_AR,
+    "a stored gender must outrank the sex digit in the national ID",
+  );
+  // Neither source answers: fall back to the owner's stated default rather than guess or blank.
+  assert.equal(
+    enrichedNationality({ nationalId: null, gender: null }),
+    DEFAULT_NATIONALITY_AR,
+    "an unknowable sex must fall back to the masculine default, not to a blank",
+  );
+
   // The enrichment must not write back. If it ever mutates, the default stops being a default.
   const stored = profileFixture({ nationality: null });
-  enrichForReadiness(employeeFixture(), stored);
+  enrichForReadiness(employeeFixture({ nationalId: FEMALE_NATIONAL_ID, gender: null }), stored);
   assert.equal(stored.nationality, null, "enrichment must not write the default onto the stored profile");
 }
 

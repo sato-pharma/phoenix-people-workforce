@@ -75,6 +75,8 @@ function employeeFixture(overrides: Partial<HiringPackEmployeeFacts> = {}): Hiri
     fullName: "Kareem Fouad",
     nameAr: "كريم فؤاد",
     nationalId: "29505054321098",
+    // Left unrecorded so the fixtures exercise the national-ID derivation rather than masking it.
+    gender: null,
     socialInsuranceNumber: "98765432",
     socialInsuranceWage: 6000,
     baseSalary: 9000,

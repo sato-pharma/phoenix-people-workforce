@@ -93,7 +93,7 @@ function buildWorkerFormValues(data: HiringPackData): Partial<Record<WorkerFormT
     // controlling — so the person is named here in Arabic wherever the record carries it.
     EMPLOYEE_NAME: employee.nameAr ?? employee.fullName,
     NATIONAL_ID: employee.nationalId ?? "",
-    NATIONALITY: resolveNationality(profile.nationality).value,
+    NATIONALITY: resolveNationality(profile.nationality, employee).value,
     BIRTH_DATE_PLACE: birthDatePlace(employee.birthDate, profile.birthPlace),
     QUALIFICATION: profile.qualification ?? "",
 

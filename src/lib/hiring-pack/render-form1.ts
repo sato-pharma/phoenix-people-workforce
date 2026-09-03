@@ -72,7 +72,7 @@ function buildForm1Values(data: HiringPackData): Record<string, string> {
     nationalId: employee.nationalId ?? "",
     // The Arabic name, never the English one — this is a document for an Arabic-language registry.
     insuredName: employee.nameAr ?? "",
-    nationality: resolveNationality(profile.nationality).value,
+    nationality: resolveNationality(profile.nationality, employee).value,
     qualification: profile.qualification ?? "",
     occupationCodeLeft: occupationCode.slice(0, 3),
     occupationCodeRight: occupationCode.slice(3, 6),

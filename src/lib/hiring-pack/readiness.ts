@@ -156,7 +156,7 @@ export function enrichForReadiness(
 
   // The company default. Reported as derived rather than applied quietly — see the module header
   // in `nationality.ts` for why a nationality is the one default that must stay visible.
-  const resolvedNationality = resolveNationality(profile.nationality);
+  const resolvedNationality = resolveNationality(profile.nationality, employee);
   if (resolvedNationality.defaulted) derived.push("nationality");
 
   return {

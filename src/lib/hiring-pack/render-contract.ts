@@ -116,7 +116,7 @@ function buildContractValues(data: HiringPackData): Partial<Record<ContractToken
     // The Arabic name governs: مادة (18) makes the Arabic text controlling, so the party named in
     // it has to be the Arabic name wherever the record carries one.
     EMPLOYEE_NAME: employee.nameAr ?? employee.fullName,
-    NATIONALITY: resolveNationality(profile.nationality).value,
+    NATIONALITY: resolveNationality(profile.nationality, employee).value,
     QUALIFICATION: profile.qualification ?? "",
     BIRTH_DATE: pinLtr(formatDayMonthYear(employee.birthDate)),
     BIRTH_PLACE: profile.birthPlace ?? "",

@@ -9,6 +9,11 @@
  * was registered in. Measured on production the day this was written, all 94 stored IDs matched the
  * strict form below and none was malformed, so this is a derivation and not a heuristic.
  *
+ * Digit 13 encodes sex, added 2026-09-03 so the papers can print مصري or مصرية — Arabic inflects
+ * nationality for gender, and the masculine form was going onto every woman's contract. That decode
+ * was checked against the 93 employees who carry BOTH a readable ID and a human-entered
+ * `employees.gender`: they agreed in 93 of 93, in both directions.
+ *
  * ── The one rule: fill a blank, never overwrite an answer ──
  * Everything here is a FALLBACK. A birth date somebody typed wins over a birth date read out of an
  * ID, always, even when they disagree — because the disagreement means one of the two is a typo and
@@ -81,6 +86,9 @@ export function governorateEnglishForCode(code: string): string | null {
   return GOVERNORATE_BY_CODE[code]?.en ?? null;
 }
 
+/** What the ID encodes about sex. Not a gender identity — the Authority's own binary field. */
+export type EgyptianSex = "male" | "female";
+
 export type EgyptianNationalIdFacts = {
   /** ISO `yyyy-mm-dd`, read from digits 2-7 with the century digit applied. */
   birthDate: string;
@@ -90,6 +98,14 @@ export type EgyptianNationalIdFacts = {
   governorateEn: string | null;
   /** How a legal document writes it — this is what reaches محل الميلاد. */
   governorateAr: string;
+  /**
+   * Digit 13, the sex digit: odd is male, even is female.
+   *
+   * Part of the serial the Authority issues, so this is a decode and not an inference — nothing
+   * here reads a name, and `cv-field-schemas.ts` forbids exactly that guess for the same reason.
+   * Read by `nationality.ts` to choose between مصري and مصرية, which Arabic inflects for gender.
+   */
+  sex: EgyptianSex;
 };
 
 /**
@@ -145,12 +161,28 @@ export function parseEgyptianNationalId(raw: string | null | undefined): Egyptia
   const governorate = GOVERNORATE_BY_CODE[governorateCode];
   if (!governorate) return null;
 
+  // Digit 13 (1-indexed), i.e. index 12. Deliberately read only after everything above has passed:
+  // if the string is not a well-formed ID then position 13 is not the sex digit, it is whatever
+  // happened to be typed there, and a mis-sexed nationality prints onto a signed contract.
+  const sex: EgyptianSex = Number(digits[12]) % 2 === 1 ? "male" : "female";
+
   return {
     birthDate,
     governorateCode,
     governorateEn: governorate.en,
     governorateAr: governorate.ar,
+    sex,
   };
+}
+
+/**
+ * The sex the ID encodes, when it can be derived at all.
+ *
+ * Null means "this tells us nothing" — no ID, or one that does not fully account for itself. It is
+ * NOT a third value: callers fall back to a default rather than printing an empty nationality.
+ */
+export function derivedSexFromNationalId(nationalId: string | null | undefined): EgyptianSex | null {
+  return parseEgyptianNationalId(nationalId)?.sex ?? null;
 }
 
 /**

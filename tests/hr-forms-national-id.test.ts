@@ -5,6 +5,7 @@ import {
   describeNationalIdConflict,
   derivedBirthDate,
   derivedBirthPlaceAr,
+  derivedSexFromNationalId,
   fillFromNationalId,
   governorateEnglishForCode,
   parseEgyptianNationalId,
@@ -201,6 +202,39 @@ function testTheNamesStillMatchTheOnePlaceVocabulary(): void {
   assert.equal(governorateEnglishForCode("99"), null, "an unissued code resolves to nothing");
 }
 
+function testTheSexDigitIsDecodedNotGuessed(): void {
+  // Digit 13 — the last digit of the four-digit serial — is the Authority's sex field: odd male,
+  // even female. Every id below is the same valid 1997-09-09 Dakahlia id with ONLY that character
+  // varied, so each assertion is about the sex digit and nothing else.
+  const idWithSexDigit = (digit: number) => `297090912345${digit}7`;
+
+  for (let digit = 0; digit <= 9; digit += 1) {
+    const expected = digit % 2 === 1 ? "male" : "female";
+    assert.equal(
+      parseEgyptianNationalId(idWithSexDigit(digit))?.sex,
+      expected,
+      `digit 13 of ${digit} must decode as ${expected}`,
+    );
+    assert.equal(
+      derivedSexFromNationalId(idWithSexDigit(digit)),
+      expected,
+      `the helper must agree with the parse for digit ${digit}`,
+    );
+  }
+
+  // Same number, other keyboard — a card pasted in Arabic-Indic digits must decode the sex exactly
+  // as the ASCII form does, or a woman's papers turn on which keyboard typed her id.
+  assert.equal(derivedSexFromNationalId("٢٩٧٠٩٠٩١٢٣٤٥٦٧"), "female", "Arabic-Indic digits decode the same");
+
+  // STRICTNESS APPLIES TO THE SEX DIGIT TOO. If the string is not a well-formed id then position 13
+  // is not the sex field, it is whatever happened to be typed there. Null is "ask the person" — it
+  // is never a third sex, and callers fall back to a stated default rather than print a blank.
+  assert.equal(derivedSexFromNationalId(null), null, "no id tells us nothing");
+  assert.equal(derivedSexFromNationalId("2970909123456"), null, "thirteen digits is not an id");
+  assert.equal(derivedSexFromNationalId("29709099934567"), null, "an unissued governorate code refuses");
+  assert.equal(derivedSexFromNationalId("29702301234567"), null, "a date that does not exist refuses");
+}
+
 export function runHrFormsNationalIdTests(): void {
   testItReadsTheDateAndTheGovernorate();
   testEveryDoubtReturnsNull();
@@ -209,4 +243,5 @@ export function runHrFormsNationalIdTests(): void {
   testItFillsBlanksAndNeverOverwrites();
   testADisagreementIsReportedNotResolved();
   testTheNamesStillMatchTheOnePlaceVocabulary();
+  testTheSexDigitIsDecodedNotGuessed();
 }
