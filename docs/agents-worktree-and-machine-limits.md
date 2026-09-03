@@ -194,6 +194,29 @@ still worth knowing: filtering every process's command line for the folder path 
 hit, the sweep command itself. Sysinternals `handle.exe` was not installed, so the handle table was
 never inspected in either incident.
 
+**Refined 2026-09-03 — the holder IS identifiable, and quiet time is not always enough.** Retiring
+`.claude/worktrees/wizardly-khorana-65279a` reproduced the shape exactly: payload stripped, junction
+dropped with a non-recursive `rmdir`, `git worktree remove` failing *Permission denied* on the root
+while deregistering the worktree anyway, husk left holding **0** files and **0** subdirectories. Then
+it departed from the 2026-09-02 result. A background job that left every husk on the machine
+**completely untouched for 330 seconds** and then tried once cleared **none** of them.
+
+What explains both runs is a lookup the earlier incidents did not have. `list_sessions` reports each
+Claude session's `cwd`, and every locked husk matched one:
+
+| Husk | Session whose `cwd` it is | Running |
+| --- | --- | --- |
+| `interesting-bartik-99eef2` | "Fix 40 marketing contacts whose crm_code points nowhere" | yes |
+| `nervous-tesla-4a7d83` | "Offline sync route lets the employee set travel cost and HR fields" | no, idle since 03:18 Cairo |
+| `wizardly-khorana-65279a` | the session attempting the cleanup | yes |
+
+So the working-directory reference the OS will not name is still attributable, in one call, from the
+session list. Quiet time cleared the 2026-09-02 husk because nothing was pinned to it any more; it
+cannot clear one a live session is sitting in, and a session can never clear its own — the harness
+resets every shell's working directory back inside the folder on each command. The order is
+therefore: look up the holder, close that session, then delete. Waiting is worth doing only once the
+lookup says nobody is there.
+
 **The dangerous half of the old advice.** "Stop them all" reads as harmless because a daemon is a
 cache that respawns — but the command that implements it, `Get-Process git | Stop-Process`, is
 **machine-wide**, and on a loop it keeps being machine-wide. A parallel session was live in the
