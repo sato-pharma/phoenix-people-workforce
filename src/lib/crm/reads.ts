@@ -59,7 +59,7 @@ export function isCrmDoubleVisitRow(row: {
 export const CRM_RESIGNED_AGENT_CRM_IDS: readonly number[] = [
   832, 851, 1024, 1035, 1071, 1134, 1146, 1148, 1152, 1156, 1158, 1159, 1163, 1166, 1221,
   1222, 1236, 1246, 1249, 1272, 1280, 1284, 1286, 1288, 1295, 1303, 1304, 1330, 1345, 1351,
-  1354, 1357, 1367, 1368, 1369, 1370, 1371, 1372, 1373, 1374, 1376, 1377, 1378, 1381, 1382, 1389,
+  1354, 1357, 1368, 1369, 1370, 1371, 1372, 1373, 1374, 1376, 1377, 1378, 1381, 1382, 1389,
   1396, 1402, 1407, 1409, 1437, 1476, 1478, 1486, 1492, 1493, 1504, 1508, 1510, 1511,
   1512, 1514, 1515, 1516, 1518, 1519, 1522, 1524, 1528,
   // Owner-excluded 2026-07-17 (not necessarily resigned): Ahmed Amer 667, Adel.Sayed 1436,
@@ -96,6 +96,22 @@ export const CRM_RESIGNED_AGENT_CRM_IDS: readonly number[] = [
   // which showed him at 0% adherence; the audit that followed re-checked EVERY id in this list
   // against live employment status and this was the only wrong one. 1436 (Adel El Sayed,
   // Financial Advisor, 0 visits) is a deliberate owner exclusion and deliberately stays.
+  // 2026-09-03: crm_id 1367 REMOVED (owner confirmed) — a dormant placeholder slot (only
+  // auto-generated holiday markers, 2026-01-06 to 2026-08-27, under the vendor's own bucket label
+  // "Others ( Eagles DM )") that started carrying B-1's (Nosiba Salah Hussenin Moussa, ACTIVE
+  // Medical Representative, Minia 1) real fieldwork from 2026-08-29 — the exact day her own
+  // long-standing account (crm_id 1147) logged its last activity. Confirmed, not just inferred
+  // from timing: 6 of the individual doctor/pharmacy contact_crm_ids visited under 1367 are the
+  // literal same contacts 1147 had visited before, including Minia University Hospital, and every
+  // 1367 visit falls within 1147's own district set (Maghagha/Bani Mazar/El Menia/Samalout/Matai).
+  // Unlike 1477/1102/1395/1521/1247/1523, this id was never resolvable purely via
+  // employees.crm_id (that column already holds her own 1147) — it needed a manual identity
+  // mapping too (ireports360_crm_identity_resolutions, crm_id 1367 -> B-1), applied alongside
+  // this removal. Since this id was a genuinely dormant slot rather than a leaver's, its entire
+  // history (including the pre-08-29 holiday markers, retroactively relabeled "Nosiba.Salah" by
+  // the vendor) is real — there is no other occupant's work to protect from misattribution here,
+  // unlike the label-scoped multi-occupant handovers (1102/1395/1399). Seventh of this failure
+  // class after 1477/1102/1395/1521/1247/1523.
 ];
 
 /** PostgREST `in` list literal for the STATIC resigned ids, e.g. "(832,851,...)". Used as the
