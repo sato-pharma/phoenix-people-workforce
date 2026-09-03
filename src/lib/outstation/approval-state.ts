@@ -1,3 +1,5 @@
+import { normalizeApprovedAmount } from "@/lib/outstation/payable";
+
 /**
  * Outstation expense approval is 3-state, and `hr_approved` only encodes one of those states.
  *
@@ -110,4 +112,81 @@ export function planBulkApproval(candidates: ReadonlyArray<BulkApprovalCandidate
   }
 
   return { approvableTripIds, needsReasonTripIds, notPendingTripIds };
+}
+
+/**
+ * The HR decision as it stands on an `outstation_expenses` row right now.
+ *
+ * Deliberately the WHOLE decision, not just the amount. The three-state split above means a
+ * rejection lives in `status`, an approval in `hr_approved`, and neither is derivable from the
+ * other — while the reason a claim was cut lives in `hr_comment` and who cut it in
+ * `approved_by`/`approved_at`. Carry half of that forward and the other half reverts, which reads
+ * as a decision nobody made.
+ */
+export type StoredExpenseDecision = {
+  approvedAmount: number | null;
+  approvedAt: string | null;
+  approvedBy: string | null;
+  hrApproved: boolean;
+  hrComment: string;
+  hrStatus: string;
+  status: string;
+};
+
+export type ExpenseDecisionWrite = StoredExpenseDecision & {
+  /**
+   * Whether this write is itself an approval decision. False for a carry-forward, which writes
+   * back exactly what was already stored and therefore exercises no approval authority — that is
+   * what lets an employee re-price their own trip without holding HR Manager rights.
+   */
+  decidesApproval: boolean;
+};
+
+/**
+ * What belongs in a row's decision columns on a save — the one place that answers it.
+ *
+ * Two kinds of caller write to `outstation_expenses`, and they mean opposite things by the same
+ * payload. The Expense Approvals screen IS the decision: whatever it sends is what HR just chose.
+ * The outstation workflow is not — it re-pushes a trip whenever its own figures move (an employee
+ * adding an extra ticket, an admin editing the trip), and its record carries a hard-coded
+ * "Approved" because that is the right DEFAULT for a trip reaching payroll for the first time,
+ * not because anything was decided this time round.
+ *
+ * Told apart by `preserveExistingDecision`. With it set and a row already stored, the stored
+ * decision wins outright: HR's reduction from 800 to 500 survives the employee adding a ticket,
+ * and an HR rejection is not flipped back to Approved by an admin editing the destination. With
+ * no row stored there is nothing to preserve, so the incoming default creates the row as before.
+ *
+ * A caller that genuinely IS deciding — writeOutstationRequestPayableAmount, carrying HR's typed
+ * figure from the approvals queue — passes `preserveExistingDecision: false` and overwrites, which
+ * is the whole point of that path.
+ */
+export function resolveExpenseDecisionWrite(input: {
+  approvedBy: string;
+  claimedTotal: number | null | undefined;
+  incoming: {
+    approvedAmount?: number | null;
+    hrApproved?: boolean;
+    hrComment?: string;
+    hrStatus?: string;
+    status?: string;
+  };
+  now: string;
+  preserveExistingDecision?: boolean;
+  stored: StoredExpenseDecision | null;
+}): ExpenseDecisionWrite {
+  const carried = input.preserveExistingDecision ? input.stored : null;
+  if (carried) return { ...carried, decidesApproval: false };
+
+  const approved = Boolean(input.incoming.hrApproved);
+  return {
+    approvedAmount: normalizeApprovedAmount(input.incoming.approvedAmount, input.claimedTotal),
+    approvedAt: approved ? input.now : null,
+    approvedBy: approved ? input.approvedBy : null,
+    decidesApproval: approved,
+    hrApproved: approved,
+    hrComment: input.incoming.hrComment ?? "",
+    hrStatus: input.incoming.hrStatus ?? "",
+    status: input.incoming.status ?? "",
+  };
 }

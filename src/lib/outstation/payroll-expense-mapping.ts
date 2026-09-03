@@ -105,16 +105,33 @@ function snapshotKindCount(
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
+/**
+ * A trip's own figures, shaped for `outstation_expenses`.
+ *
+ * The `hr` / `hrApproved` / `status` fields below are a DEFAULT, not a decision: they say what a
+ * trip reaching payroll for the FIRST time should look like. Every caller here re-pushes the same
+ * trip whenever its figures move — an employee adding an extra ticket, an admin editing the
+ * destination — and none of those is HR deciding anything, so the record carries
+ * `preserveExistingDecision: true` and savePayrollExpenseApprovals keeps whatever HR already
+ * decided on the row (see resolveExpenseDecisionWrite). Without it a re-push wrote
+ * approved_amount = NULL / hr_approved = true / status = "Approved" over HR's own reduction or
+ * rejection, and payroll went back to paying the full claim.
+ *
+ * A caller that IS the decision passes `preserveExistingDecision: false`.
+ */
 export function mapOutstationRequestToPayrollExpenseRecord(
   request: OutstationExpenseRequest,
   options: {
     hrComment?: string | null;
+    /** Default true — see above. Only an HR decision may set this false. */
+    preserveExistingDecision?: boolean;
     reportId?: string | null;
   } = {},
 ): ExpenseTripRecord & {
   hrApproved: boolean;
   hrComment: string;
   hrId: string;
+  preserveExistingDecision: boolean;
   reportId?: string | null;
 } {
   const tripStartDate = request.tripStartDate ? request.tripStartDate.slice(0, 10) : "";
@@ -156,6 +173,7 @@ export function mapOutstationRequestToPayrollExpenseRecord(
     other: request.otherAmount ?? 0,
     pharmacyVisits: snapshotKindCount(request.workloadEvidenceSnapshot, "pharmacyVisits"),
     pmWorkload: request.pmWorkload ?? 0,
+    preserveExistingDecision: options.preserveExistingDecision ?? true,
     reportId: options.reportId ?? undefined,
     requestType: "Outstation",
     row: 1,
