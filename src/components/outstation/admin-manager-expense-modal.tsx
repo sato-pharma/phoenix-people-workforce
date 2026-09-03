@@ -6,6 +6,7 @@ import {
   Loader2,
   MapPin,
   Navigation,
+  Paperclip,
   Route,
   X,
 } from "lucide-react";
@@ -48,6 +49,13 @@ type EmployeeLookup =
   | { status: "not_found" }
   | { status: "error"; message: string };
 
+type EmployeeSearchMatch = {
+  hrId: string;
+  isActive: boolean;
+  jobTitle: string | null;
+  name: string;
+};
+
 type CalcPreviewRow = { amount: number; label: string; type: string };
 
 type CalcPreview = {
@@ -73,6 +81,15 @@ type CalcPreview = {
 
 function formatEgp(value: number) {
   return `EGP ${value.toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
+}
+
+function fileToDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result ?? ""));
+    reader.onerror = () => reject(reader.error ?? new Error("Unable to read the selected file."));
+    reader.readAsDataURL(file);
+  });
 }
 
 const SESSION_TOKEN = Math.random().toString(36).slice(2);
@@ -153,6 +170,11 @@ export function AdminManagerExpenseModal({
   const [meetingAmount, setMeetingAmount] = useState(
     request?.meetingAmount ? String(request.meetingAmount) : "",
   );
+  // Meeting invoice: a NEW file staged for upload, and whether the admin asked to remove the
+  // one already on the request (edit mode only — create has nothing to remove yet).
+  const [meetingInvoiceFile, setMeetingInvoiceFile] = useState<File | null>(null);
+  const [removeMeetingInvoice, setRemoveMeetingInvoice] = useState(false);
+  const existingMeetingInvoice = request?.meetingInvoiceMetadata ?? null;
   const [otherAmount, setOtherAmount] = useState(
     request?.otherAmount ? String(request.otherAmount) : "",
   );
@@ -214,6 +236,9 @@ export function AdminManagerExpenseModal({
   );
   const lookupDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const [searchResults, setSearchResults] = useState<EmployeeSearchMatch[]>([]);
+  const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const hrIdForDistance = employeeHrId || request?.employeeHrId;
 
   // Car trips are paid from the fuel formula (km x 2 x rate); every other mode is
@@ -255,6 +280,29 @@ export function AdminManagerExpenseModal({
     } catch {
       setEmployeeLookup({ status: "error", message: "Could not reach the server." });
     }
+  }
+
+  async function searchEmployees(query: string) {
+    if (query.trim().length < 2) {
+      setSearchResults([]);
+      return;
+    }
+    try {
+      const url = new URL("/api/admin/outstation/employee-lookup", window.location.origin);
+      url.searchParams.set("q", query.trim());
+      const response = await fetch(url.toString());
+      const payload = (await response.json()) as { matches?: EmployeeSearchMatch[] };
+      setSearchResults(response.ok ? (payload.matches ?? []) : []);
+    } catch {
+      setSearchResults([]);
+    }
+  }
+
+  function selectCandidate(candidate: EmployeeSearchMatch) {
+    setEmployeeHrId(candidate.hrId);
+    setSearchResults([]);
+    if (lookupDebounceRef.current) clearTimeout(lookupDebounceRef.current);
+    void lookupEmployee(candidate.hrId);
   }
 
   async function calculateDistance(
@@ -464,6 +512,21 @@ export function AdminManagerExpenseModal({
     setSubmitting(true);
     setSubmitError(null);
 
+    // Staged file wins over an explicit removal; removal only applies when nothing new was
+    // picked. Undefined (the common case — nothing touched) leaves the existing invoice alone.
+    let meetingInvoiceDataUrl: string | null | undefined;
+    try {
+      meetingInvoiceDataUrl = meetingInvoiceFile
+        ? await fileToDataUrl(meetingInvoiceFile)
+        : removeMeetingInvoice
+          ? null
+          : undefined;
+    } catch {
+      setSubmitError("Could not read the selected invoice file. Please try again.");
+      setSubmitting(false);
+      return;
+    }
+
     const input: ManagerExpenseAdminInput = {
       amWorkload: amWorkload ? Number(amWorkload) : 0,
       claimedTotalAmount: claimedAmount ? Number(claimedAmount) : 0,
@@ -473,6 +536,12 @@ export function AdminManagerExpenseModal({
       employeeHrId,
       expenseType,
       meetingAmount: meetingAmount ? Number(meetingAmount) : 0,
+      ...(meetingInvoiceDataUrl !== undefined
+        ? {
+            meetingInvoiceDataUrl,
+            meetingInvoiceFileName: meetingInvoiceFile?.name ?? null,
+          }
+        : {}),
       notes: notes.trim() || null,
       otherAmount: otherAmount ? Number(otherAmount) : 0,
       pmWorkload: pmWorkload ? Number(pmWorkload) : 0,
@@ -563,16 +632,51 @@ export function AdminManagerExpenseModal({
                 onChange={(e) => {
                   const value = e.target.value.trim();
                   setEmployeeHrId(value);
+                  if (!value) setSearchResults([]);
                   if (lookupDebounceRef.current) clearTimeout(lookupDebounceRef.current);
                   lookupDebounceRef.current = setTimeout(
                     () => void lookupEmployee(value),
                     500,
                   );
+                  if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+                  searchDebounceRef.current = setTimeout(
+                    () => void searchEmployees(value),
+                    300,
+                  );
                 }}
-                placeholder="e.g. A-12"
+                placeholder="Search by name or HR ID, e.g. A-12"
                 required
                 value={employeeHrId}
               />
+              {searchResults.length > 0 ? (
+                <div className="mt-2 max-h-56 overflow-y-auto rounded-md border border-[#DDE6F1] bg-white shadow-md">
+                  {searchResults.map((match) => (
+                    <button
+                      className="flex w-full items-center justify-between gap-3 border-b border-phx-line px-3 py-2 text-left text-xs last:border-b-0 hover:bg-phx-paper"
+                      key={match.hrId}
+                      onClick={() => selectCandidate(match)}
+                      type="button"
+                    >
+                      <span className="font-black text-phx-ink">
+                        {match.name}
+                        {match.jobTitle ? (
+                          <span className="ml-1 font-semibold text-phx-ink-soft">
+                            {" — "}{match.jobTitle}
+                          </span>
+                        ) : null}
+                      </span>
+                      <span className="shrink-0 font-black uppercase tracking-[0.08em] text-phx-ink-soft">
+                        {match.hrId}
+                        {!match.isActive ? (
+                          <span className="ml-1.5 rounded-full bg-phx-accent-soft px-1.5 py-0.5 text-[10px] text-phx-accent-hover">
+                            inactive
+                          </span>
+                        ) : null}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              ) : null}
               {employeeLookup.status === "loading" ? (
                 <div className="mt-2 flex items-center gap-2 text-xs font-semibold text-phx-ink-soft">
                   <Loader2 className="h-3.5 w-3.5 animate-spin text-phx-accent" />
@@ -598,21 +702,21 @@ export function AdminManagerExpenseModal({
                     </span>
                   ) : null}
                 </div>
-              ) : employeeLookup.status === "not_found" ? (
+              ) : employeeLookup.status === "not_found" && searchResults.length === 0 ? (
                 <div className="mt-2 flex items-center gap-2 rounded-md bg-[#FEF2F2] px-3 py-2 text-xs font-black text-[#B91C1C]">
                   <AlertCircle className="h-3.5 w-3.5 shrink-0" />
                   No employee found with this HR ID.
                 </div>
-              ) : employeeLookup.status === "error" ? (
+              ) : employeeLookup.status === "error" && searchResults.length === 0 ? (
                 <div className="mt-2 flex items-center gap-2 rounded-md bg-[#FEF2F2] px-3 py-2 text-xs font-semibold text-[#B91C1C]">
                   <AlertCircle className="h-3.5 w-3.5 shrink-0" />
                   {employeeLookup.message}
                 </div>
-              ) : (
+              ) : searchResults.length === 0 ? (
                 <p className="mt-1 text-xs text-phx-ink-soft">
-                  Enter the HR ID of the employee — their name will appear automatically.
+                  Type a name or HR ID — matching employees will appear below.
                 </p>
-              )}
+              ) : null}
             </div>
           ) : null}
 
@@ -854,6 +958,67 @@ export function AdminManagerExpenseModal({
                 type="number"
                 value={meetingAmount}
               />
+
+              {/* Meeting invoice — optional receipt/invoice for the amount above. */}
+              <div className="mt-3">
+                <FieldLabel>Invoice (optional)</FieldLabel>
+                {existingMeetingInvoice && !removeMeetingInvoice && !meetingInvoiceFile ? (
+                  <div className="flex items-center justify-between gap-3 rounded-md border border-[#DDE6F1] bg-white/95 px-3 py-2">
+                    <a
+                      className="flex min-w-0 items-center gap-2 text-xs font-black text-phx-accent hover:underline"
+                      href={request?.meetingInvoiceUrl ?? undefined}
+                      rel="noreferrer"
+                      target="_blank"
+                    >
+                      <Paperclip className="h-3.5 w-3.5 shrink-0" />
+                      <span className="break-words">{existingMeetingInvoice.name}</span>
+                    </a>
+                    <button
+                      className="shrink-0 text-xs font-black uppercase tracking-[0.08em] text-[#B91C1C] hover:underline"
+                      onClick={() => setRemoveMeetingInvoice(true)}
+                      type="button"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-3">
+                    <input
+                      accept="application/pdf,image/jpeg,image/png"
+                      className="block w-full text-xs font-semibold text-phx-ink-soft file:mr-3 file:rounded-md file:border-0 file:bg-phx-paper file:px-3 file:py-2 file:text-xs file:font-black file:uppercase file:tracking-[0.08em] file:text-phx-ink"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0] ?? null;
+                        setMeetingInvoiceFile(file);
+                        if (file) setRemoveMeetingInvoice(false);
+                      }}
+                      type="file"
+                    />
+                    {meetingInvoiceFile ? (
+                      <button
+                        className="shrink-0 text-xs font-black uppercase tracking-[0.08em] text-phx-ink-soft hover:underline"
+                        onClick={() => setMeetingInvoiceFile(null)}
+                        type="button"
+                      >
+                        Clear
+                      </button>
+                    ) : null}
+                  </div>
+                )}
+                {removeMeetingInvoice ? (
+                  <p className="mt-1 text-xs font-semibold text-[#B91C1C]">
+                    The current invoice will be removed when you save.{" "}
+                    <button
+                      className="underline"
+                      onClick={() => setRemoveMeetingInvoice(false)}
+                      type="button"
+                    >
+                      Undo
+                    </button>
+                  </p>
+                ) : (
+                  <p className="mt-1 text-xs text-phx-ink-soft">PDF, JPG, or PNG &mdash; up to 5MB.</p>
+                )}
+              </div>
             </div>
             <div>
               <FieldLabel>Other amount (EGP)</FieldLabel>

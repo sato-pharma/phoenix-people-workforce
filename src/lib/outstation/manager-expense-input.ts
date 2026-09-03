@@ -208,6 +208,28 @@ export function buildManagerExpenseAdminPatch(body: unknown): ManagerExpenseAdmi
   if (source.hrNotes !== undefined) input.hrNotes = optionalText(source.hrNotes);
   if (source.hrStatus !== undefined) input.hrStatus = optionalText(source.hrStatus);
   if (source.meetingAmount !== undefined) input.meetingAmount = optionalNumber(source.meetingAmount);
+
+  // A data URL leaving the field alone is the common case (undefined — most edits touch nothing
+  // about the invoice); null is an explicit removal; anything else must be an uploaded file.
+  // updateManagerExpenseAsAdmin reads `"meetingInvoiceDataUrl" in input` to tell "untouched" apart
+  // from "clear it", so the key must only appear here when the caller actually sent it.
+  if (source.meetingInvoiceDataUrl !== undefined) {
+    const raw = source.meetingInvoiceDataUrl;
+    if (raw === null) {
+      input.meetingInvoiceDataUrl = null;
+    } else if (typeof raw === "string" && raw.startsWith("data:")) {
+      input.meetingInvoiceDataUrl = raw;
+    } else {
+      return reject({
+        error: "invalid_meeting_invoice",
+        message: "meetingInvoiceDataUrl must be an uploaded PDF, JPG, or PNG file.",
+      });
+    }
+  }
+  if (source.meetingInvoiceFileName !== undefined) {
+    input.meetingInvoiceFileName = optionalText(source.meetingInvoiceFileName);
+  }
+
   if (source.notes !== undefined) input.notes = optionalText(source.notes);
   if (source.otherAmount !== undefined) input.otherAmount = optionalNumber(source.otherAmount);
   if (source.pmWorkload !== undefined) input.pmWorkload = optionalNumber(source.pmWorkload);

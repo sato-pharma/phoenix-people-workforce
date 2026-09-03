@@ -8,12 +8,16 @@ export const OUTSTATION_EVIDENCE_BUCKET = "outstation-evidence";
 
 const CAR_EVIDENCE_MAX_UPLOAD_BYTES = 2 * 1024 * 1024;
 const TICKET_ATTACHMENT_MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
+const MEETING_INVOICE_MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
 const CAR_EVIDENCE_SIGNED_URL_TTL_SECONDS = 60 * 60;
 const TICKET_ATTACHMENT_ALLOWED_CONTENT_TYPES = new Set([
   "application/pdf",
   "image/jpeg",
   "image/png",
 ]);
+// Same allow-list as ticket attachments — an invoice is the same kind of document (a
+// photographed or scanned receipt), just stored under a different prefix with its own error text.
+const MEETING_INVOICE_ALLOWED_CONTENT_TYPES = TICKET_ATTACHMENT_ALLOWED_CONTENT_TYPES;
 
 export type ParsedCarEvidenceImage = {
   bytes: Buffer;
@@ -266,6 +270,112 @@ export async function uploadOutstationTicketAttachments(
   }
 
   return uploaded;
+}
+
+export type OutstationMeetingInvoiceUpload = {
+  bytes: Buffer;
+  contentType: string;
+  fileName: string;
+  size: number;
+};
+
+/**
+ * The meeting invoice's storage path. Keyed on the request id (a synthetic
+ * `admin-manual-<uuid>` draft id at create time, since the row does not exist yet — see
+ * createManagerExpenseAsAdmin) with `upsert: true`: unlike ticket attachments there is exactly
+ * one invoice per request, so an admin correcting it is expected to replace the same object
+ * rather than accumulate versions.
+ */
+export function buildOutstationMeetingInvoicePath(input: {
+  employeeHrId: string;
+  fileName: string;
+  requestId: string | number;
+}) {
+  const employeeHrId = sanitizeStorageSegment(input.employeeHrId, "unknown-employee");
+  const requestId = sanitizeStorageSegment(String(input.requestId), "unknown-request");
+  const fileName = sanitizeStorageSegment(input.fileName, "invoice");
+
+  return `meeting-invoice/${employeeHrId}/${requestId}-${fileName}`;
+}
+
+/**
+ * Decode a client-supplied invoice data URL. Same PDF/JPG/PNG, 5MB-cap validation as
+ * parseOutstationTicketAttachmentDataUrl, kept as a separate function (rather than shared) so the
+ * error text names the right document — an admin who dropped in a .docx should read "invoice",
+ * not "ticket attachment".
+ */
+export function parseOutstationMeetingInvoiceDataUrl(input: {
+  dataUrl: string;
+  fileName: string;
+}): OutstationMeetingInvoiceUpload {
+  const match = /^data:([a-z0-9.+/-]+);base64,([a-zA-Z0-9+/=]+)$/i.exec(input.dataUrl.trim());
+  if (!match) {
+    throw new Error("Meeting invoice must be an uploaded PDF, JPG, or PNG file.");
+  }
+
+  const contentType = match[1].toLowerCase();
+  if (!MEETING_INVOICE_ALLOWED_CONTENT_TYPES.has(contentType)) {
+    throw new Error("Meeting invoice must be a PDF, JPG, or PNG file.");
+  }
+
+  const bytes = Buffer.from(match[2], "base64");
+  if (bytes.length === 0) {
+    throw new Error("Meeting invoice is empty. Upload a valid invoice file.");
+  }
+  if (bytes.length > MEETING_INVOICE_MAX_UPLOAD_BYTES) {
+    throw new Error("Meeting invoice is too large. Maximum size is 5MB.");
+  }
+
+  return {
+    bytes,
+    contentType,
+    fileName: input.fileName.trim() || "invoice",
+    size: bytes.length,
+  };
+}
+
+export async function uploadOutstationMeetingInvoice(params: {
+  dataUrl: string;
+  employeeHrId: string;
+  fileName: string;
+  requestId: string | number;
+}): Promise<OutstationTicketAttachmentMetadata> {
+  const parsed = parseOutstationMeetingInvoiceDataUrl({
+    dataUrl: params.dataUrl,
+    fileName: params.fileName,
+  });
+  const path = buildOutstationMeetingInvoicePath({
+    employeeHrId: params.employeeHrId,
+    fileName: parsed.fileName,
+    requestId: params.requestId,
+  });
+
+  const { error } = await getSupabaseAdmin()
+    .storage.from(OUTSTATION_EVIDENCE_BUCKET)
+    .upload(path, parsed.bytes, {
+      cacheControl: "31536000",
+      contentType: parsed.contentType,
+      upsert: true,
+    });
+
+  if (error) {
+    throw new Error(`Unable to store the meeting invoice: ${error.message}`);
+  }
+
+  return {
+    contentType: parsed.contentType,
+    name: parsed.fileName,
+    path,
+    size: parsed.size,
+    uploadedAt: new Date().toISOString(),
+  };
+}
+
+export async function deleteOutstationMeetingInvoice(path: string | null) {
+  if (!path) return;
+
+  const supabase = getSupabaseAdmin();
+  await supabase.storage.from(OUTSTATION_EVIDENCE_BUCKET).remove([path]);
 }
 
 export async function deleteOutstationCarEvidenceImage(path: string | null) {
