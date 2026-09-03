@@ -427,25 +427,24 @@ export function runNavigationPersonalLayoutTests() {
       "AdminPageHero must NOT render zone 3 — a row inside this hero cannot be frozen at all, because sticky is bounded by its containing block",
     );
 
-    // The portal freezes the same way, under its own FIXED header. The offset is not free: it has
-    // to equal that header's height, which the shell also pads by. Change the header and this pin
-    // fires, instead of the rows silently floating over the page or leaving a gap under it.
+    // THE PORTAL FREEZES NOTHING, because it renders no rows. It used to pin them in a sticky
+    // block offset by its fixed header's height; the owner removed the rows from the portal on
+    // 2026-09-03 ("never put anything above the identity banner … remove it totally"), so the
+    // offset arithmetic that used to be pinned here has nothing left to describe.
+    //
+    // Inverted rather than deleted: the admin shell's half above is untouched, and this half now
+    // states the rule the portal is actually held to, so "restore parity with admin" fires here
+    // instead of shipping.
     const portal = readFileSync("src/components/employee-portal/employee-portal-layout.tsx", "utf8");
-    const portalSticky = /<div className="(sticky top-\[(\d+)px\][^"]*lg:top-\[(\d+)px\][^"]*)">/.exec(portal);
-    assert.ok(portalSticky, "the portal must pin its rows in a sticky block offset at both sizes");
-    const afterPortalSticky = portal.slice(portalSticky.index + portalSticky[0].length);
-    const portalFrozen = afterPortalSticky.slice(0, afterPortalSticky.indexOf("</div>"));
-    assert.ok(portalFrozen.includes("<UpperNavRow"), "the portal must freeze zone 2");
-    assert.ok(portalFrozen.includes("<LowerNavRow"), "the portal must freeze zone 3 beside it");
-    const offsets = [portalSticky[2], portalSticky[3]];
-    const padded = /pt-\[(\d+)px\] lg:pt-\[(\d+)px\]/.exec(portal);
-    assert.ok(padded, "the portal shell must still pad by its fixed header's height");
-    const padding = [padded[1], padded[2]];
-    assert.deepEqual(
-      offsets,
-      padding,
-      "the portal rows must pin at exactly the fixed header's height — the same pair the shell pads by",
-    );
+    for (const row of ["<UpperNavRow", "<LowerNavRow", "<HorizontalNavProvider", "<NavRowAddButton"]) {
+      assert.ok(
+        !portal.includes(row),
+        `the employee portal renders ${row} again. It has no arrangeable nav rows — owner rule, ` +
+          "2026-09-03. Anything between the portal header and `main` is above the identity card by " +
+          "construction, which is the placement he removed. The ADMIN shell keeps its rows; that is " +
+          "not a parity gap to close.",
+      );
+    }
 
     // And with one copy per module there is nothing to deduplicate, so the :has() rule that hid
     // the duplicate is gone. Leaving it behind would be dead CSS keyed on markers no row carries.
@@ -1240,7 +1239,8 @@ export function runNavigationPersonalLayoutTests() {
     // `alwaysOfferAdd` (2026-09-01, removed same day) forced both rows open EMPTY on the portal, so
     // an account with no saved layout got two full-width "+"-only bars stacked above the dashboard —
     // reported as clutter the day it shipped. `keepWhenEmpty` is uniform across every mode now; the
-    // portal's entry point moved to the header instead (`usePortalCompactNavAdd`, pinned below).
+    // portal got a compact header “+” instead — which then went too, along with the rows
+    // themselves, when the owner removed them from the portal on 2026-09-03.
     assert.equal(
       rows.split("keepWhenEmpty={canAdd && hasSavedLayout}").length - 1,
       2,
@@ -1637,93 +1637,44 @@ export function runNavigationPersonalLayoutTests() {
     );
   }
 
-  // The portal's wiring: one section source, one round trip, and the "+" that has to be there.
+  // The portal's wiring — what is left of it. Until 2026-09-03 this block pinned three things:
+  // that the portal shell read the effective layout inside its existing Promise.all (one
+  // cross-Atlantic round trip, not two), that /payslips made the same read because it mounts the
+  // chrome directly, and that the portal's compact header "+" existed at all, since the portal has
+  // no /admin/sidebar-layout editor to reach `pinHrefToRow` from.
+  //
+  // All three described the arrangeable nav rows, and the owner removed those from the portal
+  // outright: "never put anything above the identity banner … remove it totally." So the layout
+  // read is gone from both files with them — including that Frankfurt round trip, which ran on
+  // every portal page render — and there is no "+" left to need an entry point.
+  //
+  // What remains worth pinning is the negative: neither file may quietly grow the read back.
   {
     const portalShell = readFileSync("src/components/employee-portal/employee-portal-server-shell.tsx", "utf8");
-    // ONE round trip. Every query from here crosses the Atlantic to Frankfurt and this runs on
-    // EVERY portal page render, so the read belongs inside the Promise.all already being awaited.
-    // Pinned by position: a call that merely exists somewhere in the file would satisfy an
-    // "includes" check while costing a second serial round trip on 116 accounts' every page view.
-    const parallelRead = `    [data, hasDeviceMapping, navLayout] = await Promise.all([
-      getEmployeePortalShellData(access),
-      access.hrId ? employeeHasActiveDeviceMapping(access.hrId).catch(() => false) : Promise.resolve(false),
-      loadEffectiveLayout(layoutOwnerKey(access)).then((result) => result.layout),
-    ]);`;
-    assert.ok(
-      portalShell.includes(parallelRead),
-      "the portal shell must read the effective layout INSIDE the existing Promise.all, not after it",
-    );
-    assert.ok(
-      portalShell.includes("personalLayout={navLayout}"),
-      "…and hand it to the chrome, or the row renders empty for everyone",
-    );
-
-    // /payslips mounts the portal chrome DIRECTLY instead of going through the server shell, so it
-    // is the one page that can silently miss the read. The symptom would be a row that looks
-    // emptied on exactly one page, which reads as the feature breaking rather than as a page that
-    // was forgotten — so it is pinned rather than left to a reviewer to notice.
     const payslipsPage = readFileSync("app/payslips/page.tsx", "utf8");
-    assert.ok(
-      payslipsPage.includes("const { layout: navLayout } = await loadEffectiveLayout(layoutOwnerKey(access));") &&
-        payslipsPage.includes("personalLayout={navLayout}"),
-      "the payslips page mounts the portal chrome itself and must read the same effective layout",
-    );
+    for (const [path, source] of [
+      ["src/components/employee-portal/employee-portal-server-shell.tsx", portalShell],
+      ["app/payslips/page.tsx", payslipsPage],
+    ] as const) {
+      assert.ok(
+        !/loadEffectiveLayout|personalLayout=/.test(source),
+        `${path} reads the personal nav layout again. The portal has no arrangeable rows to render ` +
+          "it into — owner rule, 2026-09-03 — so this is a cross-Atlantic round trip on every portal " +
+          "page render, buying nothing. The ADMIN shell still reads it, and should.",
+      );
+    }
 
+    // ONE list. buildEmployeePortalSections is what the sidebar, the top nav and the bottom nav all
+    // read, so they cannot drift from each other. A hand-copied second list is how Capture Evidence
+    // shipped rejecting 59 of the 65 customers it existed for.
     const portalLayout = readFileSync("src/components/employee-portal/employee-portal-layout.tsx", "utf8");
     assert.ok(
-      portalLayout.includes('navigationMode="employee-portal"'),
-      'the portal must declare its own mode — "admin" is the provider default and would gate on admin hrefs',
+      /function buildEmployeePortalSections\(/.test(portalLayout),
+      "the portal must still derive its navigation from one section builder, never a second list",
     );
     assert.ok(
-      portalLayout.includes("sections={portalNavigationSections(visibility)}"),
-      "the portal must hand its own gated sections in; getSections has nothing to gate here",
-    );
-    // ONE list. buildEmployeePortalSections is what the sidebar, the top nav and the bottom nav
-    // already read, so the row cannot drift from them. A hand-copied second list is how Capture
-    // Evidence shipped rejecting 59 of the 65 customers it existed for.
-    assert.ok(
-      portalLayout.includes("return buildEmployeePortalSections(visibility)"),
-      "portalNavigationSections must derive from the one section builder, never a second list",
-    );
-
-    // THE PORTAL HAS NO LAYOUT EDITOR. /admin/sidebar-layout is admin-only, so without SOME entry
-    // point the portal's "+" would be reachable by nobody, ever — the feature would be dead on
-    // arrival, and from outside zero usage looks exactly like zero adoption. That entry point used
-    // to be forcing both rows open empty (`alwaysOfferAdd`, removed above); since 2026-09-01 it is
-    // ONE compact "+" in the portal's own header, next to search, that targets whichever row is
-    // still empty and steps aside once both carry a tab (each row's own trailing "+" takes over
-    // then, same as admin and HR). Admin and HR are untouched — they never had `alwaysOfferAdd` and
-    // keep the editor page as their entry point, as shipped.
-    const rows = readFileSync("src/components/layout/horizontal-nav-rows.tsx", "utf8");
-    assert.ok(
-      /export function usePortalCompactNavAdd\(\)/.test(rows),
-      "the portal's header needs its own hook onto HorizontalNavContext — the editor page it would otherwise need does not exist",
-    );
-    assert.ok(
-      /if \(upperRow\.length === 0\) return \{ pinned: upperRow, sections: upperAddable, target: "upperRow" \};/.test(
-        rows,
-      ) &&
-        /if \(lowerRow\.length === 0\) return \{ pinned: lowerRow, sections: lowerAddable, target: "lowerRow" \};/.test(
-          rows,
-        ),
-      "the compact + must target whichever row is still empty, upper first — never both at once",
-    );
-    assert.ok(
-      portalLayout.includes("usePortalCompactNavAdd()"),
-      "the portal header must actually call the hook, or the + never appears anywhere",
-    );
-    assert.ok(
-      /<NavRowAddButton\s+dark=\{false\}\s+pinned=\{compactNavAdd\.pinned\}\s+sections=\{compactNavAdd\.sections\}\s+target=\{compactNavAdd\.target\}\s*\/>/.test(
-        portalLayout,
-      ),
-      "the header must render the SAME add button the rows use, or pin/unpin behaves differently from the header",
-    );
-    // The provider must wrap the header too now, not just the rows below it — usePortalCompactNavAdd
-    // reads HorizontalNavContext, and a header outside the provider would read the untyped default
-    // (canAdd: false) and never show its +.
-    assert.ok(
-      /<HorizontalNavProvider[\s\S]*?<EmployeePortalTopNav/.test(portalLayout),
-      "HorizontalNavProvider must open BEFORE EmployeePortalTopNav, or the header's + has no context to read",
+      !/usePortalCompactNavAdd/.test(portalLayout),
+      "the portal header renders the rows' add button again. There are no rows for it to add to.",
     );
   }
 }

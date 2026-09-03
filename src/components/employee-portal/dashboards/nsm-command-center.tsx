@@ -20,15 +20,16 @@ import {
   Wallet,
 } from "lucide-react";
 
-import { IdentityCard } from "@/components/employee-portal/identity-card";
 import {
   ActionStrip,
   DashboardsGrid,
+  DepartedFromBoardNote,
   KeycardGrid,
   PendingActions,
-  ProfileIntelBar,
+  PortalIdentityBand,
   RankingPanel,
   SectionHead,
+  SectionMeta,
   egpCompact,
   type ActionStripItem,
   type DashboardLink,
@@ -68,7 +69,15 @@ function NationalKeycards({ nsmNational }: { nsmNational: PortalHomeSnapshot["ns
       accent: achAccent,
       valueClass: achValueClass,
     },
-    { icon: Wallet, label: "Line Sales", value: egpCompact(sales), sub: "achieved this period", accent: "bg-slate-900", valueClass: "text-slate-900" },
+    {
+      icon: Wallet,
+      label: "Line Sales",
+      value: egpCompact(sales),
+      // Names the closing month rather than "this period" — see SectionMeta.
+      sub: nsmNational?.windowLabel ? `${nsmNational.windowLabel} closing` : "published closing sales",
+      accent: "bg-slate-900",
+      valueClass: "text-slate-900",
+    },
     { icon: Target, label: "Target", value: egpCompact(target), sub: "national target", accent: "bg-slate-900", valueClass: "text-slate-900" },
     {
       icon: eligible ? CheckCircle2 : Flag,
@@ -85,11 +94,12 @@ function NationalKeycards({ nsmNational }: { nsmNational: PortalHomeSnapshot["ns
       <SectionHead
         title="National Performance"
         right={
-          nsmNational ? (
-            <span className="whitespace-nowrap text-phx-2xs font-bold uppercase tracking-widest text-slate-400">
-              {nsmNational.dsmCount} {nsmNational.dsmCount === 1 ? "district" : "districts"}
-            </span>
-          ) : undefined
+          <SectionMeta
+            items={[
+              nsmNational?.windowLabel,
+              nsmNational ? `${nsmNational.dsmCount} ${nsmNational.dsmCount === 1 ? "district" : "districts"}` : null,
+            ]}
+          />
         }
       />
       {nsmNational ? (
@@ -131,8 +141,7 @@ export function NsmCommandCenter({ snapshot, access }: { snapshot: PortalHomeSna
 
   return (
     <div className="mx-auto w-full space-y-3" dir="auto">
-      <IdentityCard data={shell} />
-      <ProfileIntelBar shell={shell} />
+      <PortalIdentityBand shell={shell} planAdherence={snapshot.planAdherence} />
 
       {totalPending > 0 && (
         <PendingActions pendingVacationCount={pendingVacationCount} pendingExcuseCount={pendingExcuseCount} />
@@ -154,9 +163,28 @@ export function NsmCommandCenter({ snapshot, access }: { snapshot: PortalHomeSna
           icon={Trophy}
           rows={nsmBoard?.topReps ?? []}
           showManager
+          windowLabel={nsmNational?.windowLabel ?? null}
         />
-        <RankingPanel title="Districts (DSMs)" subtitle="by achievement %" icon={Network} rows={nsmBoard?.dsms ?? []} />
+        <RankingPanel
+          title="Districts (DSMs)"
+          subtitle="by achievement %"
+          icon={Network}
+          rows={nsmBoard?.dsms ?? []}
+          windowLabel={nsmNational?.windowLabel ?? null}
+        />
       </div>
+
+      {/* One note for BOTH boards: departedCount spans the reps and the DSMs together, so
+          repeating it under each panel would state the same people twice. */}
+      {nsmBoard && nsmBoard.departedCount > 0 ? (
+        <div className="border border-slate-200 bg-white">
+          <DepartedFromBoardNote
+            count={nsmBoard.departedCount}
+            sales={nsmBoard.departedSales}
+            totalLabel="National Performance"
+          />
+        </div>
+      ) : null}
 
       <EarlyBirdOfTheFortnightCard stars={earlyBirdStars} />
 

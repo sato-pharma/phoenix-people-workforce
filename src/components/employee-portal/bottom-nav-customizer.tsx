@@ -99,7 +99,9 @@ export function BottomNavCustomizer({
                 >
                   <Icon className="h-4 w-4" />
                 </span>
-                <span className="min-w-0 flex-1 truncate text-sm font-bold text-slate-800">{entry.fullLabel}</span>
+                <span className="min-w-0 flex-1 break-words text-sm font-bold leading-snug text-slate-800">
+                  {entry.fullLabel}
+                </span>
               </Link>
               <button
                 aria-label={isPinned ? `Unpin ${entry.fullLabel}` : `Pin ${entry.fullLabel}`}

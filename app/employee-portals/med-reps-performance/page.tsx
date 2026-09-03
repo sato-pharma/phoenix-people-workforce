@@ -303,7 +303,7 @@ export default async function MedRepsPerformancePage({
                     <p className="text-phx-3xs font-semibold uppercase tracking-wider text-slate-400">
                       Top rep
                     </p>
-                    <p className="max-w-[9rem] truncate text-xs font-bold text-white">
+                    <p className="max-w-[10rem] break-words text-xs font-bold leading-snug text-white">
                       {formatEmployeeDisplayName(bestPerformer.name)}
                     </p>
                   </div>

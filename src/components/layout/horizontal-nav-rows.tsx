@@ -43,19 +43,18 @@
 // emptied their own row leaves them no way back in except the editor — which is
 // the exact trip the "+" exists to save.
 //
-// ── The portal's OWN entry point ────────────────────────────────────────────
-// The employee portal has no /admin/sidebar-layout editor, so a portal account
-// with no saved layout had no OTHER way to reach `pinHrefToRow` — until
-// 2026-09-01 that was solved by forcing both rows to render even fully empty
-// (`alwaysOfferAdd`). On screen that was two dead, full-width strips holding
-// nothing but a "+", stacked above the dashboard on every portal page and
-// squarely on top of the identity card on mobile — reported as clutter the
-// same day it shipped. `usePortalCompactNavAdd` below replaces that: ONE small
-// "+", rendered by the portal's own header beside search, that targets
-// whichever row is still empty (upper first, then lower) and disappears once
-// both carry a tab — at which point each row shows its own trailing "+" same
-// as admin and HR always have. Admin and HR are untouched: they never set
-// `alwaysOfferAdd` and keep the editor page as their entry point, as shipped.
+// ── THE PORTAL HAS NO ROWS AT ALL ───────────────────────────────────────────
+// This file serves the ADMIN and HR shells only. The employee portal carried
+// these rows until 2026-09-03, when the owner removed them outright: "never put
+// anything above the identity banner … remove it totally." They had sat
+// directly above a person's own signature identity card, and on a phone pushed
+// it most of a screen down. Two earlier attempts to give the portal an entry
+// point to `pinHrefToRow` went with them — `alwaysOfferAdd`, which rendered two
+// dead full-width strips holding nothing but a "+", and the compact header "+"
+// that replaced it. Do not reintroduce either, and do not "restore parity" by
+// mounting these rows in the portal: admin and HR keep them because AppShell
+// has no identity banner. Admin and HR were never touched by any of this and
+// keep /admin/sidebar-layout as their entry point, as shipped.
 //
 // Like the sidebar, this is UX and never the security boundary: the items come
 // from `getSections` (already permission- and role-filtered) and are only
@@ -1281,19 +1280,3 @@ export function LowerNavRow({ className }: { className?: string } = {}) {
   );
 }
 
-/**
- * The portal header's own "+", described in the comment above. Returns `null` once there is
- * nothing left for it to do — either the viewer cannot add at all, or both rows already carry a
- * tab and each shows its own trailing "+" via `UpperNavRow`/`LowerNavRow` above.
- */
-export function usePortalCompactNavAdd(): {
-  pinned: readonly NavigationSectionItem[];
-  sections: readonly NavigationSection[];
-  target: keyof PersonalLayoutRowSet;
-} | null {
-  const { canAdd, lowerAddable, lowerRow, upperAddable, upperRow } = useContext(HorizontalNavContext);
-  if (!canAdd) return null;
-  if (upperRow.length === 0) return { pinned: upperRow, sections: upperAddable, target: "upperRow" };
-  if (lowerRow.length === 0) return { pinned: lowerRow, sections: lowerAddable, target: "lowerRow" };
-  return null;
-}
