@@ -244,6 +244,7 @@ import { runAttendanceCairoMidnightBoundaryTests } from "./attendance-cairo-midn
 import { runAttendanceTrackingEligibilityTests } from "./attendance-tracking-eligibility.test.ts";
 import { runAttendanceManagerViewAccessTests } from "./attendance-manager-view-access.test.ts";
 import { runAttendanceFlexibleHoursTests } from "./attendance-flexible-hours.test.ts";
+import { runAttendancePolicyExplainerTests } from "./attendance-policy-explainer.test.ts";
 import { runPayrollCopilotCycleWindowTests } from "./payroll-copilot-cycle-window.test.ts";
 import { runPayrollCycleWindowRoleAwareTests } from "./payroll-cycle-window-role-aware.test.ts";
 import { runAttendanceReconcileDayTests } from "./attendance-reconcile-day.test.ts";
@@ -1706,6 +1707,7 @@ await runTest("attendance Cairo-midnight boundary (shared cairoMidnightUtcIso, E
 await runTest("attendance tracking eligibility (device mapping OR field title)", runAttendanceTrackingEligibilityTests);
 await runTest("attendance manager view access (self + direct reports)", runAttendanceManagerViewAccessTests);
 await runTest("attendance flexible-hours engine", runAttendanceFlexibleHoursTests);
+await runTest("attendance policy explainer card", runAttendancePolicyExplainerTests);
 await runTest("payroll copilot cycle window + week tiling", runPayrollCopilotCycleWindowTests);
 await runTest(
   "payroll cycle window is role-aware (Head Office 24->23, field force 1->30/31)",
