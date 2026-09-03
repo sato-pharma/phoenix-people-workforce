@@ -1,4 +1,5 @@
 import { isProductionRuntime } from "@/config/system-settings";
+import { describeUnexpectedError } from "@/lib/http/api-errors";
 import { recordJobHeartbeat } from "@/lib/observability/job-heartbeat";
 import { logWarning } from "@/lib/observability/log";
 
@@ -92,6 +93,22 @@ export async function pingDeadMansSwitch(jobSlug: string, outcome: DeadMansSwitc
 }
 
 /**
+ * The diagnostic detail for a failed job, from any thrown value.
+ *
+ * MUST be used instead of `String(error)`. Supabase/PostgREST rejects with a PLAIN OBJECT
+ * (`{ message, code, details, hint }`), not an `Error`, so `String(error)` yields the literal
+ * `"[object Object]"` — which is what every cron in this repo recorded until 2026-09-03, and it
+ * destroys the only diagnostic there is. `phoenix-expense-claims-refresh` failed hourly for
+ * three hours reporting exactly that: the heartbeat said `[object Object]`, `app_error_events`
+ * held nothing, and Railway carried only the heartbeat sweep echoing the same string back. The
+ * real cause — a check-constraint violation naming the column and both amounts — was in the
+ * rejected object's `code`/`details` the whole time.
+ */
+export function failureDetail(error: unknown): string {
+  return error instanceof Error ? `${error.name}: ${error.message}` : describeUnexpectedError(error);
+}
+
+/**
  * Wraps a cron job body: pings "success" if `run` resolves, pings "fail" (with the error message
  * as diagnostic detail) if it throws — then re-throws unchanged, so the caller's own try/catch,
  * logError, and HTTP status logic are completely undisturbed. Use this when a route's existing
@@ -106,7 +123,7 @@ export async function withDeadMansSwitch<T>(jobSlug: string, run: () => Promise<
     await pingDeadMansSwitch(jobSlug, "success");
     return result;
   } catch (error) {
-    await pingDeadMansSwitch(jobSlug, "fail", error instanceof Error ? `${error.name}: ${error.message}` : String(error));
+    await pingDeadMansSwitch(jobSlug, "fail", failureDetail(error));
     throw error;
   }
 }

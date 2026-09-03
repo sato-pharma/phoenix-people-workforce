@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 import { writeAuditLog } from "@/lib/admin/audit";
-import { pingDeadMansSwitch } from "@/lib/observability/dead-mans-switch";
+import { failureDetail, pingDeadMansSwitch } from "@/lib/observability/dead-mans-switch";
 import { describeJobHeartbeats } from "@/lib/observability/job-heartbeat-assess";
 import { notifyJobsStranded } from "@/lib/observability/job-heartbeat-alert";
 import { sweepJobHeartbeats } from "@/lib/observability/job-heartbeat";
@@ -106,7 +106,7 @@ export async function GET(request: Request) {
     await pingDeadMansSwitch(
       JOB_HEARTBEAT_SWEEP_SLUG,
       "fail",
-      error instanceof Error ? `${error.name}: ${error.message}` : String(error),
+      failureDetail(error),
     );
     return NextResponse.json(
       { error: "job_heartbeat_sweep_failed", message: clientSafeErrorMessage(error, "The job heartbeat sweep failed.") },

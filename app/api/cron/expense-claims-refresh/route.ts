@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
-import { pingDeadMansSwitch } from "@/lib/observability/dead-mans-switch";
+import { failureDetail, pingDeadMansSwitch } from "@/lib/observability/dead-mans-switch";
 import { logError } from "@/lib/observability/log";
 import { refreshExpenseClaims } from "@/lib/outstation/claims-refresh";
 import { assertCronAuthorized } from "@/lib/security/cron-auth";
@@ -94,14 +94,24 @@ export async function GET(request: Request) {
       );
     }
 
-    await pingDeadMansSwitch(JOB_SLUG, "success", `${result.claims} claim(s) rebuilt, parity clean`);
+    // `flagged` rides along in the success detail because a held row is the one thing a clean
+    // parity verdict CANNOT tell you about. Parity answers "did the rebuild reproduce legacy";
+    // `flagged` answers "does legacy hold something the mirror cannot represent" — an approved
+    // amount above the claim, or components that do not sum. Both are legitimate reasons for a
+    // green run, and without this the count only exists in a response body that cron-job.org
+    // discards (AGENTS.md §3 — its job list returns an empty body).
+    await pingDeadMansSwitch(
+      JOB_SLUG,
+      "success",
+      `${result.claims} claim(s) rebuilt, parity clean, ${result.flagged} flagged for data quality`,
+    );
     return NextResponse.json(body);
   } catch (error) {
     logError("Expense claims refresh failed", {
       labels: { event: "cron_failed", job: "expense-claims-refresh" },
       error,
     });
-    await pingDeadMansSwitch(JOB_SLUG, "fail", error instanceof Error ? `${error.name}: ${error.message}` : String(error));
+    await pingDeadMansSwitch(JOB_SLUG, "fail", failureDetail(error));
     const message = clientSafeErrorMessage(error, "Expense claims refresh failed.");
     return NextResponse.json({ error: "expense_claims_refresh_failed", message }, { status: 500 });
   }

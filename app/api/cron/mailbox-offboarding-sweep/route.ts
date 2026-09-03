@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 import { runMailboxOffboardingSweep } from "@/lib/mailbox-offboarding/sweep";
-import { pingDeadMansSwitch } from "@/lib/observability/dead-mans-switch";
+import { failureDetail, pingDeadMansSwitch } from "@/lib/observability/dead-mans-switch";
 import { logError } from "@/lib/observability/log";
 import { assertCronAuthorized } from "@/lib/security/cron-auth";
 
@@ -55,7 +55,7 @@ export async function GET(request: Request) {
     await pingDeadMansSwitch(
       "phoenix-mailbox-offboarding-sweep",
       "fail",
-      error instanceof Error ? `${error.name}: ${error.message}` : String(error),
+      failureDetail(error),
     );
     logError("Mailbox offboarding sweep failed", {
       labels: { event: "cron_failed", job: "mailbox-offboarding-sweep" },

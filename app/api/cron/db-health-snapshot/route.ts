@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { pingDeadMansSwitch } from "@/lib/observability/dead-mans-switch";
+import { failureDetail, pingDeadMansSwitch } from "@/lib/observability/dead-mans-switch";
 import { logError } from "@/lib/observability/log";
 import { captureQueryStatsSnapshot } from "@/lib/observability/query-stats-snapshot";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
@@ -59,7 +59,7 @@ export async function GET(request: Request) {
     await pingDeadMansSwitch(
       JOB_SLUG,
       "fail",
-      error instanceof Error ? `${error.name}: ${error.message}` : String(error),
+      failureDetail(error),
     );
     const message = clientSafeErrorMessage(error, "Query stats snapshot failed.");
     return NextResponse.json(

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
-import { pingDeadMansSwitch } from "@/lib/observability/dead-mans-switch";
+import { failureDetail, pingDeadMansSwitch } from "@/lib/observability/dead-mans-switch";
 import { describeDrainHealth } from "@/lib/notifications/drain-health";
 import { runScheduledNotificationProcessing } from "@/lib/notifications/scheduled-processing";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
@@ -78,7 +78,7 @@ export async function GET(request: Request) {
     await pingDeadMansSwitch(
       DRAIN_JOB_SLUG,
       "fail",
-      error instanceof Error ? `${error.name}: ${error.message}` : String(error),
+      failureDetail(error),
     );
     console.error(error, { tags: { cron: "notification-outbox-drain" } });
     const message = clientSafeErrorMessage(error, "Notification processing failed.");

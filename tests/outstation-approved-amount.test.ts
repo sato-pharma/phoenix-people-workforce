@@ -103,6 +103,46 @@ export function runOutstationApprovedAmountTests() {
     "a negative is not a payable amount and the column's check constraint rejects it, so it clamps instead of failing the whole batched save",
   );
 
+  // CLAMPS AT THE CLAIM, like its two siblings above. This is the cap the function omitted until
+  // 2026-09-03, and the omission reached the database: OUTSTATION-52 stored 800.00 approved against
+  // 364.00 claimed and OUTSTATION-99 stored 541.90 against 341.90. `expense_claims_approved_total_range`
+  // forbids exactly that, so the hourly mirror rebuild threw on those two rows and froze all 416
+  // claims. An entry above the claim means "pay the claim", which is what null already means.
+  assert.equal(
+    normalizeApprovedAmount(2500, 2000),
+    null,
+    "approving ABOVE the claim reads as 'pay the claim' (null) — outstation approval exists to reduce a claim and never pays an employee more than they asked for",
+  );
+  assert.equal(
+    normalizeApprovedAmount(800, 364),
+    null,
+    "the exact OUTSTATION-52 entry that froze the hourly rebuild must no longer be storable",
+  );
+  assert.equal(
+    normalizeApprovedAmount(541.9, 341.9),
+    null,
+    "the exact OUTSTATION-99 entry that froze the hourly rebuild must no longer be storable",
+  );
+  assert.equal(
+    normalizeApprovedAmount(1999.99, 2000),
+    1999.99,
+    "a genuine reduction a piastre under the claim is untouched — the clamp must not round a real adjustment away",
+  );
+  assert.equal(
+    normalizeApprovedAmount(2500, Number.NaN),
+    2500,
+    "with no readable claim to clamp against, the typed amount is preserved rather than silently discarded",
+  );
+
+  // The three helpers must agree, or the two ends of one decision drift apart.
+  for (const [claimed, typed] of [[364, 800], [341.9, 541.9], [2000, 2000.01]] as const) {
+    assert.equal(
+      normalizeApprovedAmount(typed, claimed),
+      normalizeApprovedAmount(approvedAmountFromDeduction(claimed, deductionFromApprovedAmount(claimed, typed)), claimed),
+      `typing ${typed} as a payable and arriving there via the Deduction field must store the same thing for a ${claimed} claim`,
+    );
+  }
+
   // --- the Deduction field: typing a cut and typing a payable must stay the same decision ---
 
   assert.equal(

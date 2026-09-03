@@ -58,7 +58,7 @@ import {
 import { PARITY_STALE_AFTER_DAYS, latestParityCheckAtMs, runIReports360ParitySweep } from "@/lib/crm/parity";
 import { CRM_SYNC_RUNS_TABLE } from "@/lib/crm/tables";
 import { notifyIReports360SyncResult } from "@/lib/notifications/ireports360-sync-digest";
-import { pingDeadMansSwitch } from "@/lib/observability/dead-mans-switch";
+import { failureDetail, pingDeadMansSwitch } from "@/lib/observability/dead-mans-switch";
 import { runDueEarlyBirdsClose } from "@/lib/early-birds/close";
 import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -638,7 +638,7 @@ async function runScheduledWork(work: Exclude<ScheduledCrmWork, null>): Promise<
       error,
       labels: { event: "crm_live_poll_scheduled_work_failed", job: jobName },
     });
-    await pingDeadMansSwitch(slug, "fail", error instanceof Error ? `${error.name}: ${error.message}` : String(error));
+    await pingDeadMansSwitch(slug, "fail", failureDetail(error));
     await notifyIReports360SyncResult({
       dateFrom: today,
       dateTo: today,
@@ -764,7 +764,7 @@ async function tick(): Promise<void> {
     await pingDeadMansSwitch(
       DEAD_MANS_SWITCH_SLUG,
       "fail",
-      error instanceof Error ? `${error.name}: ${error.message}` : String(error),
+      failureDetail(error),
     );
     await notifySustainedFailure(dateFrom, dateTo, error);
   }

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { pingDeadMansSwitch } from "@/lib/observability/dead-mans-switch";
+import { failureDetail, pingDeadMansSwitch } from "@/lib/observability/dead-mans-switch";
 import { logError, logInfo } from "@/lib/observability/log";
 import { sendCvIntakeDigest6h } from "@/lib/recruitment/inbound/cv-intake-digest-6h";
 import { assertCronAuthorized } from "@/lib/security/cron-auth";
@@ -41,7 +41,7 @@ export async function GET(request: Request) {
       error,
       labels: { event: "cron_failed", job: "phoenix-recruitment-cv-digest" },
     });
-    await pingDeadMansSwitch(JOB_SLUG, "fail", error instanceof Error ? `${error.name}: ${error.message}` : String(error));
+    await pingDeadMansSwitch(JOB_SLUG, "fail", failureDetail(error));
     return NextResponse.json(
       { error: "cv_intake_digest_6h_failed", message: error instanceof Error ? error.message : "Unknown error" },
       { status: 500 },
