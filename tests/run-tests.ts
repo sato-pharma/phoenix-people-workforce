@@ -196,6 +196,7 @@ import { runRecruitmentCandidateSeenTests } from "./recruitment-candidate-seen.t
 import { runRecruitmentScreeningPageTests } from "./recruitment-screening-page.test.ts";
 import { runCandidateFolderTests } from "./candidate-folders.test.ts";
 import { runCandidateFolderSuggestionTests } from "./candidate-folder-suggestion.test.ts";
+import { runDriveCvFolderTests } from "./drive-cv-folders.test.ts";
 import { runHiringManagerTeamScopeTests } from "./hiring-manager-team-scope.test.ts";
 import { runManagerFolderShelfTests } from "./manager-folder-shelf.test.ts";
 import { runBackgroundReviewQueueTests } from "./background-review-queue.test.ts";
@@ -1619,6 +1620,10 @@ await runTest(
 await runTest(
   "recruitment declared filing (only a TAPPED answer files a CV — 64 of production's 82 job titles are extractor output)",
   runCandidateFolderSuggestionTests,
+);
+await runTest(
+  "recruitment Drive mirror (region then area, and Delta (3) files where recruitment says, not where sales does)",
+  runDriveCvFolderTests,
 );
 await runTest(
   "hiring-manager team scope (one National Sales Manager can NEVER read the other's candidates, and the picker is exactly the gate)",
