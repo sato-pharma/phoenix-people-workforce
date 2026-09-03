@@ -94,11 +94,17 @@ export function canAccessHeadOffice(access: AccessContext) {
     // to every current and future company-scope role in one edit; tests/organogram-godmode.test.ts
     // keeps Marketing Manager pinned to `false` at the helper's default company scope — and `true`
     // at system scope — precisely so that shortcut fails loudly if anyone reaches for it. (Talent
-    // Acquisition was a second pin until 2026-08-25 and Training Manager a third until 2026-09-03 —
-    // see their entries below. Marketing Manager is now the only company-scope role still outside
-    // this helper, so it is the whole of that guard: do not add it without leaving another
-    // company-scope role pinned false, or the shortcut becomes untestable. The SFE Manager pair in
-    // tests/finance-manager-six-module-access.test.ts guards the same shortcut independently.)
+    // Acquisition was such a pin until 2026-08-25, Training Manager until 2026-09-03, and the SFE
+    // Manager until later the same day — see their entries below.
+    //
+    // Marketing Manager is now genuinely the ONLY company-scope role left outside this helper, so
+    // it is the whole of that guard on its own. The 2026-09-03 Training Manager commit claimed that
+    // was already true; it was not — the SFE Manager was still outside at that point, and
+    // tests/finance-manager-six-module-access.test.ts called its SFE pair "the sharpest" guard of
+    // the same shortcut. Clearing the SFE Manager retired that pair, which is why the Marketing
+    // Manager pair was moved into that test too. Do NOT clear Marketing Manager without first
+    // putting another company-scope role in its place in BOTH tests, or the shortcut becomes
+    // introducible with every assertion still green.)
     access.role === "Finance Manager" ||
     // Talent Acquisition added 2026-08-25 (owner: "in the admin account and talent
     // acquisition show the head office organogram"). She recruits FOR Head Office — the
@@ -140,6 +146,28 @@ export function canAccessHeadOffice(access: AccessContext) {
     // the safe org + contact profile and never salary or national ID — the owner's "no pay anywhere
     // near an overview" rule is untouched by this.
     access.role === "Training Manager" ||
+    // SFE Manager added 2026-09-03 (owner: "same thing for sfe manager", immediately after the
+    // Training Manager above). The FOURTH holder of one defect: he is Head Office staff — A-2
+    // Khaled Bedair, line_id 4, reporting to the CEO (AA) — so the company chart he has held since
+    // 2026-08-02 showed him the four sales lines and hid the branch containing himself and his own
+    // manager. Same shape as the Finance Manager, A-3 and the Training Manager.
+    //
+    // UNLIKE the Training Manager, this one IS a new disclosure, and the difference is recorded
+    // here so nobody re-derives the wrong justification from the entry above. The Training Manager
+    // has an unconditional branch in canSeeEmployee, so every Head Office record already opened for
+    // him. The SFE Manager has NO such branch: canSeeEmployee falls through to
+    // canSeeDirectReportsByRole, which does not list him, so it returns true only for himself. His
+    // matrix `payroll`/`payslips` grants do not widen this either — getPayrollScope returns SELF
+    // for this seat, so those pages redirect before the grant is ever read. Head Office names,
+    // titles and reporting lines are therefore genuinely new to him as of this change; the owner
+    // was told that plainly and asked for it anyway.
+    //
+    // What it is NOT: canViewOrganogramSensitiveFields still does not list him, so he gets the safe
+    // org + contact profile and never salary or national ID. And the Vacancy Report does not follow
+    // the chart for him the way it does for the Training Manager — his matrix has no `vacancies`
+    // key at all, so app/api/reports/vacancies/route.ts refuses him at assertPermission before
+    // getScopedVacancyReport's Head Office mirror below is ever reached.
+    access.role === "SFE Manager" ||
     access.scope === "system"
   );
 }
@@ -659,6 +687,13 @@ export async function getScopedVacancyReport(access: AccessContext): Promise<Vac
     // beside him are the same disclosure as the filled ones he can now see. Both
     // surfaces move together on purpose — a chart showing a department whose vacancy
     // list silently omits it is how the two were allowed to disagree before.
+    //
+    // The SFE Manager was cleared for Head Office the same day and does NOT reach this
+    // branch at all, which is not an inconsistency: his matrix carries no `vacancies`
+    // key, so both vacancy routes refuse him at assertPermission long before scoping.
+    // Do not "fix" that by granting him `vacancies` to make the two surfaces match —
+    // the owner asked for the organogram, and the report he cannot open cannot disagree
+    // with anything.
     //
     // That sentence about Talent Acquisition described the INTENT, not the behaviour,
     // until 2026-08-25: she passes canAccessCompanyOrganogram and failed

@@ -132,27 +132,51 @@ export async function runFinanceManagerSixModuleAccessTests() {
     "owner decision: he IS head-office staff, so without this the company organogram he was granted " +
       "would hide his own department",
   );
-  // The negative controls. These are what fail if anyone re-implements the two functions above as
+  // The negative control. This is what fails if anyone re-implements the two functions above as
   // `access.scope === "company"` — the tempting one-liner that would hand Head Office to every
   // company-scope role at once.
+  //
+  // This pair was the SFE MANAGER's until 2026-09-03, and was described here as the sharpest guard
+  // of that shortcut. The owner cleared him for Head Office that day ("same thing for sfe manager",
+  // right after the Training Manager), which retired it — he is Head Office staff himself, so his
+  // company chart was hiding his own branch. Marketing Manager inherits the duty because it is now
+  // the ONLY company-scope role left outside canAccessHeadOffice. If it is ever cleared too, a
+  // replacement must be found for this block FIRST: with no company-scope role pinned false, the
+  // collapse can be introduced with every assertion in this file still green.
+  assert.equal(
+    canAccessHeadOffice(ctx("Marketing Manager")),
+    false,
+    "the Marketing Manager has company ORGANOGRAM access but NOT Head Office — this pair is the " +
+      "sharpest guard against the two functions being collapsed into one",
+  );
+  assert.equal(
+    canAccessCompanyOrganogram(ctx("Marketing Manager")),
+    true,
+    "…while still holding the company view. The pair is the point: the first assertion alone would " +
+      "hold just as well for a helper that had stopped working entirely. (The system-scope half of " +
+      "this guard — Marketing Manager at scope `system` must PASS — needs a scope override that " +
+      "this file's ctx() cannot express; it is asserted in organogram-godmode and in " +
+      "training-manager-sees-head-office.)",
+  );
+  // The SFE Manager is now a POSITIVE, for the same reason as the Finance Manager above him: both
+  // are head-office staff whose company chart omitted the one branch they sit in.
   assert.equal(
     canAccessHeadOffice(ctx("SFE Manager")),
-    false,
-    "the SFE Manager has company ORGANOGRAM access but NOT Head Office — this pair is the sharpest " +
-      "guard against the two functions being collapsed into one",
+    true,
+    "owner decision 2026-09-03 — he is Head Office (A-2, line_id 4, reporting to the CEO)",
   );
-  assert.equal(canAccessCompanyOrganogram(ctx("SFE Manager")), true, "…while still holding the company view");
+  assert.equal(canAccessCompanyOrganogram(ctx("SFE Manager")), true, "…and keeps the company view");
   // The retired Talent Acquisition seat WAS a second negative control here. The owner granted her
   // Head Office on 2026-08-25 (she recruits for it, and already browses the whole employee
   // directory), so it became a positive. That decision belongs to the DUTY, not the seat name, so
   // it carries to both successor bundles: HR Advisory recruits for Head Office, and HR Operations
-  // holds its records. The SFE Manager pair above still guards the scope-collapse shortcut.
+  // holds its records. The Marketing Manager pair above now guards the scope-collapse shortcut.
   for (const role of ["HR Advisory", "HR Operations"] as const) {
     assert.equal(
       canAccessHeadOffice(ctx(role)),
       true,
-      `owner decision 2026-08-25, inherited by ${role} — the SFE Manager above remains the negative ` +
-        "control that would fail if these two functions were collapsed into a scope check",
+      `owner decision 2026-08-25, inherited by ${role} — the Marketing Manager above remains the ` +
+        "negative control that would fail if these two functions were collapsed into a scope check",
     );
   }
 

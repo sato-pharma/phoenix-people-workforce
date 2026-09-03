@@ -220,8 +220,12 @@ export function runOrganogramHeadOfficeBranchTests() {
   // Training Manager joined them 2026-09-03 (owner) — Head Office staff himself, so the branch
   // built above was being stripped from the one viewer who sits inside it.
   assert.equal(canAccessHeadOffice(ctx("Training Manager")), true, "…and Training Manager");
-  // The boundary still exists for everyone else who can open a company chart.
+  // SFE Manager followed hours later the same day (owner: "same thing for sfe manager"). A-2 is
+  // Head Office too — line_id 4, reporting to the CEO — so the branch built above was being
+  // stripped from a second viewer who sits inside it.
+  assert.equal(canAccessHeadOffice(ctx("SFE Manager")), true, "…and the SFE Manager");
+  // The boundary still exists for everyone else who can open a company chart. Marketing Manager is
+  // the last company-scope role outside the gate, so this line is now load-bearing on its own.
   assert.equal(canAccessHeadOffice(ctx("Marketing Manager")), false);
-  assert.equal(canAccessHeadOffice(ctx("SFE Manager")), false);
   assert.equal(canAccessHeadOffice(ctx("National Sales Manager")), false);
 }
