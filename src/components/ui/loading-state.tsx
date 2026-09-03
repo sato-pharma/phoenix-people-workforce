@@ -1,11 +1,11 @@
 ﻿import { Loader2 } from "lucide-react";
 
 import {
-  adminHeroAccentBarClassName,
-  adminHeroGlowAmberClassName,
-  adminHeroGlowOrangeClassName,
-  adminHeroGridOverlayClassName,
-  adminHeroSurfaceClassName,
+  pageHeaderDescriptionClassName,
+  pageHeaderKickerClassName,
+  pageHeaderRailClassName,
+  pageHeaderRuleClassName,
+  pageHeaderTitleClassName,
 } from "@/components/admin/admin-design-tokens";
 import { Card } from "@/components/ui/card";
 import { systemIdentity } from "@/config/system-settings";
@@ -71,25 +71,26 @@ export function AppRouteLoadingState({
   return (
     <div aria-live="polite" className="space-y-6" role="status">
       <span className="sr-only">{title}</span>
-      <section className={adminHeroSurfaceClassName}>
-        <div aria-hidden="true" className={adminHeroGridOverlayClassName} />
-        <div aria-hidden="true" className={adminHeroGlowOrangeClassName} />
-        <div aria-hidden="true" className={adminHeroGlowAmberClassName} />
-        <div aria-hidden="true" className={adminHeroAccentBarClassName} />
-        <div className="relative flex flex-col gap-4 p-5 sm:p-6 lg:p-7 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <p className="text-xs font-black uppercase tracking-[0.22em] text-orange-200">
-              {systemIdentity.appName}
-            </p>
-            <h1 className="mt-3 text-2xl font-black tracking-tight text-white">
-              {title}
-            </h1>
-            <p className="mt-2 max-w-xl text-sm leading-6 text-slate-300">
-              {description}
-            </p>
+      {/* MATCHES THE FLATTENED HEADER, and had to move with it. This was the same dark
+          `adminHeroSurfaceClassName` band the real pages carried until 2026-09-03, when the owner
+          removed it everywhere — "remove from all pages this dump block". A skeleton that still
+          painted a full black band would flash one for the whole load and then jump to a light
+          title line, which reads as a layout bug rather than as a load. */}
+      {/* THE SKELETON HAS TO CARRY THE POLISH TOO. It matched the flattened header exactly; when
+          the rail and fading rule landed on `AdminPageHero` the skeleton stopped matching, and a
+          skeleton one gesture short of what arrives is a visible jump at the end of every load.
+          Same tokens, same geometry. */}
+      <section className="min-w-0">
+        <div className="flex flex-col gap-3 pb-4 lg:flex-row lg:items-end lg:justify-between lg:gap-6">
+          <div className="relative min-w-0 space-y-1.5 pl-3.5">
+            <span aria-hidden="true" className={pageHeaderRailClassName} />
+            <p className={pageHeaderKickerClassName}>{systemIdentity.appName}</p>
+            <h1 className={pageHeaderTitleClassName}>{title}</h1>
+            <p className={pageHeaderDescriptionClassName}>{description}</p>
           </div>
-          <LoadingSpinner className="h-7 w-7 text-orange-500" />
+          <LoadingSpinner className="h-6 w-6 shrink-0 text-orange-500" />
         </div>
+        <div aria-hidden="true" className={pageHeaderRuleClassName} />
       </section>
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">

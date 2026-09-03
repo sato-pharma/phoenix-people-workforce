@@ -4,7 +4,7 @@ import { Suspense } from "react";
 import { HrCommandCenter } from "@/components/hr/hr-command-center";
 import { AppRouteLoadingState } from "@/components/ui/loading-state";
 import { resolveLandingPathForRole } from "@/lib/auth/landing";
-import { resolveAccessContextFromPage, resolveViewerIdentityFromPage } from "@/lib/auth/server";
+import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { getHrCommandCenterData, hrBundleForRole } from "@/lib/hr/command-center";
 
 export const dynamic = "force-dynamic";
@@ -46,10 +46,7 @@ async function HrCommandCenterContent({
 }: {
   access: Awaited<ReturnType<typeof resolveAccessContextFromPage>>;
 }) {
-  const [viewer, data] = await Promise.all([
-    resolveViewerIdentityFromPage(access),
-    getHrCommandCenterData(access),
-  ]);
+  const data = await getHrCommandCenterData(access);
 
   // Unreachable in practice — the page gate above already refused every role without a bundle,
   // and that is the only input that makes this null. Handled rather than asserted because a
@@ -59,11 +56,6 @@ async function HrCommandCenterContent({
   }
 
   return (
-    <HrCommandCenter
-      data={data}
-      viewerImageUrl={viewer.imageUrl}
-      viewerInitials={viewer.initials}
-      viewerName={viewer.displayName}
-    />
+    <HrCommandCenter data={data} />
   );
 }

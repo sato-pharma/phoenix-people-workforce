@@ -1,10 +1,16 @@
 export const adminShellBackgroundClassName = "bg-[#F3F6FA]";
 
+// TWO-LAYER SHADOWS (2026-09-03). A single soft 22px blur at 4% is what a card
+// looks like when the shadow was picked to be inoffensive: it reads as a slightly
+// dirty edge rather than as depth. A hairline contact shadow UNDER a wide ambient
+// one is how a real surface sits on paper - the first says the card has an edge,
+// the second says it is above the page. Both are shadows, so nothing here changes
+// any box's size, which is the constraint the whole premium pass runs under.
 export const adminPanelClassName =
-  "rounded-[18px] border border-phx-line bg-white shadow-[0_8px_22px_rgba(15,23,42,0.04)]";
+  "rounded-[18px] border border-phx-line bg-white shadow-[0_1px_2px_rgba(15,23,42,0.05),0_12px_28px_rgba(15,23,42,0.055)]";
 
 export const adminSoftPanelClassName =
-  "rounded-[16px] border border-[#E5EAF1] bg-[#FCFDFE] shadow-[0_6px_18px_rgba(15,23,42,0.035)]";
+  "rounded-[16px] border border-[#E5EAF1] bg-[#FCFDFE] shadow-[0_1px_2px_rgba(15,23,42,0.04),0_10px_24px_rgba(15,23,42,0.045)]";
 
 export const adminInsetPanelClassName =
   "rounded-[14px] border border-phx-line bg-[#FBFCFD]";
@@ -54,3 +60,40 @@ export const adminHeroActionSecondaryClassName =
 
 // Skeleton fill for the dark loading hero.
 export const adminHeroSkeletonClassName = "animate-pulse bg-white/10";
+
+// ── The slim page header ─────────────────────────────────────────────────────
+// What replaced the black band on 2026-09-03. The owner's brief was the whole
+// constraint: premium, but "WITHOUT THIS THICK BANNER BLOCK". So every gram of
+// polish here has to cost ZERO vertical space - the header is exactly as tall as
+// the plain title line it replaces (an accent rail that lives inside the text
+// block's own padding, and a rule that takes the same 1px the old border-b did).
+//
+// ONE SOURCE FOR ALL OF THEM. AdminPageHero (131 pages), PremiumHero (6 module
+// pages), the KPI board, the resignations board and the two route skeletons all
+// pull these, so the language cannot drift page to page - which is what made the
+// flattened version look unfinished in the first place: every header was correct
+// and none of them was designed.
+//
+// The rail is SQUARE by design, not by oversight: the admin shell's LOCKED
+// globals.css rule zeroes border-radius on anything matching [class*="rounded"],
+// so a rounded-full here would be inert inside the shell and rounded in the
+// portal - two looks from one token. A 3px square rail reads the same in both.
+export const pageHeaderRailClassName =
+  "pointer-events-none absolute left-0 top-[0.3rem] bottom-[0.3rem] w-[3px] bg-[linear-gradient(180deg,#F97316_0%,#FB923C_45%,rgba(251,146,60,0.12)_100%)]";
+
+// The rule the header sits on. A flat grey line edge-to-edge is what a header
+// looks like when nobody chose it; this one carries the rail's orange for the
+// first fifth and fades out entirely, so the eye is pulled left to the title.
+// h-px, exactly the border-b it replaces.
+export const pageHeaderRuleClassName =
+  "h-px w-full bg-[linear-gradient(90deg,rgba(249,115,22,0.6)_0%,rgba(251,146,60,0.38)_9%,rgba(148,163,184,0.34)_34%,rgba(148,163,184,0.12)_68%,rgba(148,163,184,0)_100%)]";
+
+// Literal bracket font sizes on purpose, never the named text-phx-* scale:
+// these run through cn() at every call site and tailwind-merge SILENTLY drops
+// custom named sizes (AGENTS.md 2.1).
+export const pageHeaderKickerClassName =
+  "inline-flex w-fit items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.28em] text-orange-600";
+export const pageHeaderTitleClassName =
+  "max-w-4xl text-[1.2rem] font-black leading-[1.15] tracking-[-0.035em] text-slate-900 sm:text-[1.4rem]";
+export const pageHeaderDescriptionClassName =
+  "max-w-3xl text-[13px] leading-5 text-slate-500";

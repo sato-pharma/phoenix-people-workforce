@@ -1,6 +1,6 @@
 import {
-  adminHeroSkeletonClassName,
-  adminHeroSurfaceClassName,
+  pageHeaderRailClassName,
+  pageHeaderRuleClassName,
 } from "@/components/admin/admin-design-tokens";
 
 /**
@@ -11,10 +11,16 @@ import {
 export default function Loading() {
   return (
     <div className="space-y-0 divide-y divide-slate-200">
-      <div className={`${adminHeroSurfaceClassName} p-7`}>
-        <div className={`${adminHeroSkeletonClassName} h-4 w-48`} />
-        <div className={`${adminHeroSkeletonClassName} mt-4 h-8 w-2/3`} />
-        <div className={`${adminHeroSkeletonClassName} mt-3 h-4 w-1/2`} />
+      {/* No dark band — see the note in AdminPageHero. The real page lost its identity banner on
+          2026-09-03, so a skeleton painting one would flash black and then jump. */}
+      <div>
+        <div className="relative pb-4 pl-3.5">
+          <span aria-hidden="true" className={pageHeaderRailClassName} />
+          <div className="h-3 w-48 animate-pulse bg-slate-200" />
+          <div className="mt-3 h-6 w-2/3 animate-pulse bg-slate-200" />
+          <div className="mt-2 h-3 w-1/2 animate-pulse bg-slate-100" />
+        </div>
+        <div aria-hidden="true" className={pageHeaderRuleClassName} />
       </div>
 
       <div className="border border-slate-200 bg-white">

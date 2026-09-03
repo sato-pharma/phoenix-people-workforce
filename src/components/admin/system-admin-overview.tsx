@@ -1,6 +1,6 @@
 import { Database, Network, ShieldCheck, Users, Wrench } from "lucide-react";
 
-import { CeoCommandCenter, QuickLinkCard, SectionShell, type CeoWelcomeProfile } from "@/components/admin/ceo-command-center";
+import { CeoCommandCenter, QuickLinkCard, SectionShell } from "@/components/admin/ceo-command-center";
 import { FinanceAdminBands } from "@/components/admin/finance-command-center";
 import type { SystemAdminOverviewData } from "@/lib/admin/system-overview";
 import type { AccessContext } from "@/lib/auth/permissions";
@@ -28,11 +28,9 @@ import type { AccessContext } from "@/lib/auth/permissions";
 export function SystemAdminOverview({
   access,
   data,
-  welcome,
 }: {
   access: AccessContext;
   data: SystemAdminOverviewData;
-  welcome: CeoWelcomeProfile;
 }) {
   return (
     <CeoCommandCenter
@@ -47,7 +45,6 @@ export function SystemAdminOverview({
         </>
       }
       variant="admin"
-      welcome={welcome}
     />
   );
 }

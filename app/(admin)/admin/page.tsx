@@ -9,9 +9,7 @@ import { AppRouteLoadingState } from "@/components/ui/loading-state";
 import { resolveLandingPathForRole } from "@/lib/auth/landing";
 import { canAccess, resolveNavigationMode, type AccessContext, type PhoenixRole } from "@/lib/auth/permissions";
 import { getSystemAdminOverviewData } from "@/lib/admin/system-overview";
-import { resolveAccessContextFromPage, resolveViewerIdentityFromPage } from "@/lib/auth/server";
-import { uploadedEmployeePhotoUrl } from "@/lib/employees/employee-photo";
-import { formatHrIdForDisplay } from "@/lib/hr-id";
+import { resolveAccessContextFromPage } from "@/lib/auth/server";
 
 export const dynamic = "force-dynamic";
 
@@ -137,15 +135,12 @@ function AccessUnavailableCard() {
 }
 
 async function SystemAdminOverviewContent({ access }: { access: AccessContext }) {
-  const [viewer, result] = await Promise.all([
-    resolveViewerIdentityFromPage(access),
-    getSystemAdminOverviewData(access)
-      .then((data) => ({ data, error: null as string | null }))
-      .catch((error) => {
-        console.error("Failed to load System Administrator Overview:", error);
-        return { data: null, error: error instanceof Error ? error.message : "Unknown error occurred" };
-      }),
-  ]);
+  const result = await getSystemAdminOverviewData(access)
+    .then((data) => ({ data, error: null as string | null }))
+    .catch((error) => {
+      console.error("Failed to load System Administrator Overview:", error);
+      return { data: null, error: error instanceof Error ? error.message : "Unknown error occurred" };
+    });
 
   if (!result.data) {
     return (
@@ -166,19 +161,15 @@ async function SystemAdminOverviewContent({ access }: { access: AccessContext })
     );
   }
 
-  // The hero falls back to the initials medallion when no portrait resolves (CeoHeroIdentity's
-  // onError), so this renders correctly whether or not a photo has been uploaded for the seat.
-  const welcome = {
-    fullName: viewer.displayName,
-    hrId: access.hrId,
-    imageUrl: await uploadedEmployeePhotoUrl(formatHrIdForDisplay(access.hrId) ?? access.hrId),
-    initials: viewer.initials,
-    roleLabel: viewer.roleLabel,
-  };
+  // `welcome` IS GONE. The identity banner it fed was removed 2026-09-03 at the owner's
+  // instruction — "remove from all pages this dump block" — so nothing on this page reads a viewer
+  // name, role label or portrait any more. Dropping the prop rather than leaving it unread also
+  // drops the `resolveViewerIdentityFromPage` round trip and, on /admin, a Storage lookup for an
+  // uploaded photo. The name and role are in the shell's topbar chip, resolved once for every page.
 
   return (
     <div className="min-w-0 max-w-full overflow-x-hidden">
-      <SystemAdminOverview access={access} data={result.data} welcome={welcome} />
+      <SystemAdminOverview access={access} data={result.data} />
       <Suspense fallback={<CeoPhaseBSkeleton variant="admin" />}>
         <CeoPhaseBWidgets
           access={access}

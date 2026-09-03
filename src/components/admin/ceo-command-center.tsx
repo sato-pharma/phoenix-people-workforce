@@ -11,7 +11,6 @@ import {
   CheckCircle2,
   ClipboardCheck,
   Fingerprint,
-  HeartPulse,
   MapPinned,
   Megaphone,
   ShieldCheck,
@@ -20,8 +19,6 @@ import {
   Wallet,
 } from "lucide-react";
 
-import { AdminHeroFrame } from "@/components/admin/admin-design-system";
-import { CeoHeroIdentity } from "@/components/admin/ceo-hero-identity";
 import { CeoTopMoversTable } from "@/components/admin/ceo-top-movers-table";
 import type { AccessContext } from "@/lib/auth/permissions";
 import type {
@@ -31,13 +28,15 @@ import type {
 import { sosPeriodDisplayLabel } from "@/lib/ceo/command-center";
 import { cn } from "@/lib/utils";
 
-export type CeoWelcomeProfile = {
-  fullName: string;
-  roleLabel: string;
-  hrId: string | null;
-  imageUrl?: string | null;
-  initials?: string;
-};
+// `welcome` IS GONE. The identity banner it fed was removed 2026-09-03 at the owner's
+// instruction — "remove from all pages this dump block" — so nothing on this page reads a viewer
+// name, role label or portrait any more. Dropping the prop rather than leaving it unread also
+// drops the `resolveViewerIdentityFromPage` round trip and, on /admin, a Storage lookup for an
+// uploaded photo. The name and role are in the shell's topbar chip, resolved once for every page.
+//
+// The `CeoWelcomeProfile` type went with it. It was exported and `SystemAdminOverview` imported
+// it purely to pass the object straight through, so leaving it behind would have kept three files
+// carrying a shape nothing renders.
 
 // ── Formatters ───────────────────────────────────────────────────────────────
 
@@ -395,14 +394,12 @@ export function QuickLinkCard({
 export function CeoCommandCenter({
   data,
   extraBands,
-  welcome: _welcome,
   access: _access,
   variant = "ceo",
 }: {
   data: CeoCommandCenterData;
   /** Rendered as the last band before the footer. The admin overview passes its Finance bands here. */
   extraBands?: ReactNode;
-  welcome: CeoWelcomeProfile;
   access: AccessContext;
   variant?: "admin" | "ceo" | "sfe";
 }) {
@@ -449,32 +446,15 @@ export function CeoCommandCenter({
     <div className="space-y-0 divide-y divide-slate-200">
 
       {/* ── Hero ────────────────────────────────────────────────────────────── */}
-      <AdminHeroFrame className="z-10 overflow-visible">
-        <div className="p-5 sm:p-6 lg:p-8">
-          <div className="mb-5 inline-flex items-center gap-2 border border-orange-400/40 bg-orange-500/15 px-3 py-1.5 text-phx-3xs font-black uppercase tracking-[0.22em] text-orange-100">
-            <HeartPulse aria-hidden="true" className="h-3.5 w-3.5" />
-            {surfaceLabel}
-          </div>
-          <CeoHeroIdentity
-            fullName={_welcome.fullName}
-            roleLabel={_welcome.roleLabel}
-            imageUrl={_welcome.imageUrl}
-            initials={_welcome.initials}
-            // The CEO's OWN greeting -- "Good morning, Dr. Anwar" and the note written for the
-            // Chief Executive -- belongs to exactly one person. `!isSfe` handed both to the Super
-            // Admin the moment the admin variant existed, which is why this asks for the CEO by
-            // name rather than for "not the SFE".
-            personal={variant === "ceo"}
-            // The shared fallback sub-line is "Here is where sales and the field stand today."
-            // True for a sales seat, wrong for the one that also owns access, data and payroll.
-            subGreeting={
-              variant === "admin"
-                ? "Everything the company is doing, and everything only you can fix."
-                : undefined
-            }
-          />
-        </div>
-      </AdminHeroFrame>
+      {/* NO IDENTITY BANNER. Removed 2026-09-03 at the owner's instruction — "remove from all
+          pages this dump block". This was an `AdminHeroFrame` holding `CeoHeroIdentity`: a
+          full-bleed black band with the viewer's photo, a greeting and a role chip, costing most of
+          the first fold before any real content. The same removal was made on the HR command
+          center and, via `AdminPageHero`, on the other 131 admin pages the same day.
+
+          Nothing was lost. The name and role label are in the topbar chip on every page of the
+          shell, from `resolveViewerIdentityFromPage`. Do not restore it and do not "restore
+          parity" with another command center — none of them carry one any more. */}
 
       <DataUnavailableNotice
         owner={variant === "sfe" ? "SFE" : variant === "admin" ? "system" : "CEO"}

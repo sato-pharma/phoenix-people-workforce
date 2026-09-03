@@ -1201,6 +1201,33 @@ html:has(.admin-shell):not(:has(.employee-portal-shell)) {
    cool surface that has to be named directly. Warm paper, matching --phx-paper. */
 .admin-shell {
   background-color: var(--phx-paper) !important;
+
+  /* PREMIUM GROUND (2026-09-03). The owner asked for a premium finish with no
+     thick banner block anywhere, so the polish had to move OFF the page and INTO
+     the surface it sits on: three no-repeat gradient washes painted on the ground
+     itself. They cost no DOM, no stacking context and NO HEIGHT - which is the
+     whole point, and the test to apply to anything added here later.
+
+     - a warm orange bloom at the top left, sitting under the page header's own
+       accent rail (see pageHeaderRailClassName) so the two read as one gesture;
+     - a cool counter-bloom top right, which is what stops the warm one looking
+       like a rendering artefact on a wide screen;
+     - a white fade over the first 340px, so content starts on near-white paper
+       and settles onto the grey ground as you scroll.
+
+     All three are BACKGROUND-IMAGE, deliberately, and the background-color above
+     keeps its !important: --phx-paper stays the actual ground, and if a browser
+     drops the images the surface is exactly what it was before this change.
+
+     NOT background-attachment: fixed. Fixed would repaint the whole ground on
+     every scroll frame, on a shell that already carries long tables, and it would
+     drag the bloom down the page instead of leaving it framing the header where
+     it belongs. */
+  background-image:
+    radial-gradient(1150px 400px at 14% -6%, rgba(249, 115, 22, 0.075), transparent 62%),
+    radial-gradient(900px 340px at 88% -4%, rgba(99, 130, 190, 0.055), transparent 60%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.72) 0%, rgba(255, 255, 255, 0) 340px);
+  background-repeat: no-repeat;
 }
 
 /* ── NO HORIZONTAL PAGE SCROLL ────────────────────────────────────────────────

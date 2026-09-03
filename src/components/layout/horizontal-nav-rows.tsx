@@ -1032,7 +1032,11 @@ function NavRowStrip({
   // shows; a row pinned by the viewer is the one place they are most likely to look first.
   const lockedModuleKeys = useLockedModuleKeys();
 
-  // An empty row renders nothing — unless `keepWhenEmpty` says this viewer has a layout of their
+  // An empty row renders nothing. NOTHING passes `keepWhenEmpty` any more: the owner removed the
+  // two dead full-width strips on 2026-09-03, the same call he made for the portal earlier that
+  // day ("remove it totally"). A row that holds no tabs is now simply absent, in admin and HR as
+  // well. The prop and its default stay because the guard below is what enforces that.
+  // Historically it said this viewer has a layout of their
   // own, in which case the lone "+" is their way back in. That keeps the promise made at the top of
   // this file: the bar stays invisible for every account that has never arranged anything, rather
   // than a "+" appearing on all 243 pages for everyone.
@@ -1169,7 +1173,7 @@ function pinnableCurrentPage(rows: ResolvedRows): NavigationSectionItem | null {
  */
 export function UpperNavRow({ className }: { className?: string } = {}) {
   const rows = useContext(HorizontalNavContext);
-  const { upperRow, activeHref, upperAddable, canAdd, dark, hasSavedLayout } = rows;
+  const { upperRow, activeHref, upperAddable, canAdd, dark } = rows;
   return (
     <NavRowStrip
       activeHref={activeHref}
@@ -1203,7 +1207,6 @@ export function UpperNavRow({ className }: { className?: string } = {}) {
       // The upper row is read first, so it holds Alt+1 onwards and the lower row carries on from
       // wherever it stops. Numbering each row from 1 would give two tabs the same shortcut.
       jumpBase={0}
-      keepWhenEmpty={canAdd && hasSavedLayout}
       pinnable={pinnableCurrentPage(rows)}
       rich={rows.richInteraction}
       target="upperRow"
@@ -1237,7 +1240,7 @@ export function UpperNavRow({ className }: { className?: string } = {}) {
  */
 export function LowerNavRow({ className }: { className?: string } = {}) {
   const rows = useContext(HorizontalNavContext);
-  const { lowerRow, activeHref, canAdd, dark, hasSavedLayout, lowerAddable } = rows;
+  const { lowerRow, activeHref, canAdd, dark, lowerAddable } = rows;
   return (
     <NavRowStrip
       activeHref={activeHref}
@@ -1262,7 +1265,6 @@ export function LowerNavRow({ className }: { className?: string } = {}) {
       items={lowerRow}
       // Carries on from the upper row's last number — see its own `jumpBase`.
       jumpBase={rows.upperRow.length}
-      keepWhenEmpty={canAdd && hasSavedLayout}
       pinnable={pinnableCurrentPage(rows)}
       rich={rows.richInteraction}
       target="lowerRow"

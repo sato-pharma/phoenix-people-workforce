@@ -21,6 +21,14 @@ import {
   TeamSalesVsTargetChart,
 } from "@/app/employee-portals/team-performance/team-members-breakdown-dynamic";
 
+import {
+  pageHeaderDescriptionClassName,
+  pageHeaderKickerClassName,
+  pageHeaderRailClassName,
+  pageHeaderRuleClassName,
+  pageHeaderTitleClassName,
+} from "@/components/admin/admin-design-tokens";
+
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
@@ -135,12 +143,13 @@ export default async function CompanyDsmPerformancePage({
   return (
     <div className="mx-auto max-w-7xl space-y-5 p-6">
       {/* ── Page header ── */}
-      <div className="flex items-center gap-3 border-b border-border pb-5">
-        <div className="h-12 w-1 shrink-0 bg-phx-accent" />
-        <div>
-          <p className="mb-0.5 text-phx-2xs font-bold uppercase tracking-widest text-phx-accent">Field Sales · Company Scope</p>
-          <h1 className="text-2xl font-bold leading-tight text-foreground">DSM Performance</h1>
-          <p className="mt-0.5 text-xs text-muted-foreground">
+      <div className="relative pb-4">
+        <span aria-hidden="true" className={`absolute inset-x-0 bottom-0 ${pageHeaderRuleClassName}`} />
+        <div className="relative min-w-0 space-y-1.5 pl-3.5">
+          <span aria-hidden="true" className={pageHeaderRailClassName} />
+          <p className={pageHeaderKickerClassName}>Field Sales · Company Scope</p>
+          <h1 className={pageHeaderTitleClassName}>DSM Performance</h1>
+          <p className={pageHeaderDescriptionClassName}>
             Every line&apos;s district managers — targets, sales, achievement and product depth.
             Computed by the same engine each NSM sees, so company totals reconcile exactly.
           </p>

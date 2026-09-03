@@ -106,11 +106,9 @@ import {
   workspaceMarketingRoles,
 } from "@/lib/workspace/admin-shell-employee";
 import {
-  PersonalWorkspaceHero,
   PersonalWorkspaceOverview,
   type PersonalWorkspaceOverviewData,
 } from "@/components/workspace/personal-workspace-overview";
-import { resolveViewerIdentityFromPage } from "@/lib/auth/server";
 import { resolvePersonalWorkspaceTabs } from "@/lib/workspace/personal-workspace-nav";
 
 type SearchParams = Record<string, string | string[] | undefined>;
@@ -289,9 +287,11 @@ function buildResidenceShortSummary(residence: {
  * team-rank panel that read "not available for this period", and territory insight copy about a
  * territory they do not hold. It was the seat's own landing page and showed the seat nothing.
  *
- * It is now built from the viewer's own record, in the command-centre language the owner named —
- * the same identity banner, section shells and metric tiles the CEO, SFE Manager and Finance
- * Manager pages use, imported rather than copied.
+ * It is now built from this seat's own record, in the command-centre language the owner named —
+ * the same section shells and metric tiles the CEO, SFE Manager and Finance Manager pages use,
+ * imported rather than copied. It carried their identity banner too until 2026-09-03, when the
+ * owner removed that band from every page in the shell; the name and role it showed are in the
+ * topbar chip on all of them instead.
  *
  * Each of the three sources is loaded independently and may fail alone: the tile then reads "—"
  * and says which source did not answer. A zero would read as "no leave left" or "never at work
@@ -320,8 +320,10 @@ export async function WorkspaceDashboardPage() {
     new Date(`${monthStart}T00:00:00Z`),
   );
 
-  const [viewer, excuses, leave, attendance] = await Promise.all([
-    resolveViewerIdentityFromPage(access),
+  // `viewer` used to be resolved here for the identity banner this page no longer draws
+  // (owner, 2026-09-03). Dropping it also drops a round trip: the name and role it fetched are
+  // already in the shell topbar, resolved once there.
+  const [excuses, leave, attendance] = await Promise.all([
     getExcuseWorkspace(access).catch((error) => {
       logPortalFailure({ route: "/workspace", module: "workspace-overview-excuses", role: access.role, hrId: access.hrId }, error);
       return null;
@@ -358,14 +360,6 @@ export async function WorkspaceDashboardPage() {
     <WorkspaceFrame
       access={access}
       description="Your own record in the admin shell — leave, excuses, attendance and everything this seat can open."
-      hero={
-        <PersonalWorkspaceHero
-          fullName={excuses?.employee.fullName ?? viewer.displayName}
-          imageUrl={viewer.imageUrl}
-          initials={viewer.initials}
-          roleLabel={excuses?.employee.roleLabel ?? viewer.roleLabel}
-        />
-      }
       icon={<LayoutDashboard className="h-3.5 w-3.5" />}
       title="My Workspace"
     >

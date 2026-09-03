@@ -9,6 +9,14 @@ import { canViewPortalCoreAnalytics, canViewPortalDetailedAnalytics } from "@/li
 import { resolveLandingPathForRole } from "@/lib/auth/landing";
 import { AnalyticsSection } from "@/components/analytics/analytics-section";
 
+import {
+  pageHeaderDescriptionClassName,
+  pageHeaderKickerClassName,
+  pageHeaderRailClassName,
+  pageHeaderRuleClassName,
+  pageHeaderTitleClassName,
+} from "@/components/admin/admin-design-tokens";
+
 export const dynamic = "force-dynamic";
 
 // Portal Sales Analytics hub. The employee-portal layout supplies the portal shell; this page only
@@ -79,12 +87,13 @@ export default async function PortalSalesAnalyticsHubPage() {
 
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-6">
-      <div className="flex items-center gap-3 border-b border-border pb-5">
-        <div className="w-1 h-12 bg-phx-ink shrink-0" />
-        <div>
-          <p className="text-phx-2xs font-bold uppercase tracking-widest text-phx-ink mb-0.5">BI Foundation</p>
-          <h1 className="text-2xl font-bold text-foreground leading-tight">Sales Analytics</h1>
-          <p className="text-xs text-muted-foreground mt-0.5">
+      <div className="relative pb-4">
+        <span aria-hidden="true" className={`absolute inset-x-0 bottom-0 ${pageHeaderRuleClassName}`} />
+        <div className="relative min-w-0 space-y-1.5 pl-3.5">
+          <span aria-hidden="true" className={pageHeaderRailClassName} />
+          <p className={pageHeaderKickerClassName}>BI Foundation</p>
+          <h1 className={pageHeaderTitleClassName}>Sales Analytics</h1>
+          <p className={pageHeaderDescriptionClassName}>
             Distributor sell-in, monthly closing, and weekly trends — scoped to your line and region.
           </p>
         </div>

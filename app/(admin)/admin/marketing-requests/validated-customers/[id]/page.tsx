@@ -4,6 +4,14 @@ import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { canOpenValidatedCustomerRegister } from "@/lib/marketing-requests/validated-customer-transfer";
 import { ValidatedCustomerDetailView } from "@/components/marketing-requests/validated-customer-detail";
 
+import {
+  pageHeaderDescriptionClassName,
+  pageHeaderKickerClassName,
+  pageHeaderRailClassName,
+  pageHeaderRuleClassName,
+  pageHeaderTitleClassName,
+} from "@/components/admin/admin-design-tokens";
+
 export const dynamic = "force-dynamic";
 
 /**
@@ -23,12 +31,16 @@ export default async function AdminValidatedCustomerDetailPage({
 
   return (
     <div className="space-y-6 p-6 sm:p-8">
-      <div className="space-y-2">
-        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-700">Marketing</p>
-        <h1 className="text-2xl font-bold tracking-tight text-slate-950">Customer Check</h1>
-        <p className="max-w-none overflow-hidden text-ellipsis whitespace-nowrap text-phx-md font-medium leading-6 text-slate-600">
-          Everything captured for this customer, what is still missing, and the hand-off to Direct Orders.
-        </p>
+      <div className="relative pb-4">
+        <span aria-hidden="true" className={`absolute inset-x-0 bottom-0 ${pageHeaderRuleClassName}`} />
+        <div className="relative min-w-0 space-y-1.5 pl-3.5">
+          <span aria-hidden="true" className={pageHeaderRailClassName} />
+          <p className={pageHeaderKickerClassName}>Marketing</p>
+          <h1 className={pageHeaderTitleClassName}>Customer Check</h1>
+          <p className={pageHeaderDescriptionClassName}>
+            Everything captured for this customer, what is still missing, and the hand-off to Direct Orders.
+          </p>
+        </div>
       </div>
       <ValidatedCustomerDetailView customerId={id} />
     </div>

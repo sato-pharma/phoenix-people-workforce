@@ -1,10 +1,8 @@
-import { CalendarClock, CircleAlert, Fingerprint, Plane, UserRound } from "lucide-react";
+import { CalendarClock, CircleAlert, Fingerprint, Plane } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
 
-import { AdminHeroFrame } from "@/components/admin/admin-design-system";
 import { MetricTile, SectionShell } from "@/components/admin/ceo-command-center";
-import { CeoHeroIdentity } from "@/components/admin/ceo-hero-identity";
 import type { EmployeeExcuseRequest, EmployeeExcuseWorkspaceData } from "@/lib/excuses/service";
 import type { VacationBalanceSnapshot } from "@/lib/vacation/types";
 import type { PersonalWorkspaceTab } from "@/lib/workspace/personal-workspace-nav";
@@ -19,11 +17,12 @@ import type { PersonalWorkspaceTab } from "@/lib/workspace/personal-workspace-na
  * theirs, none of it was actionable from that seat, and the one thing the page never showed was the
  * person's own state.
  *
- * This is built in the command-centre language the owner named — the same identity banner the CEO,
- * the SFE Manager and the Finance Manager get (`CeoHeroIdentity`), the same square `SectionShell`
- * with its dark header bar, and the same `MetricTile`. Sharing the components rather than copying
- * their markup is deliberate: a restyle of the command centres reaches this page for free, which is
- * the only way four "matching" pages stay matching.
+ * This is built in the command-centre language the owner named — the same square `SectionShell`
+ * with its dark header bar and the same `MetricTile` the CEO, the SFE Manager and the Finance
+ * Manager pages use. Sharing the components rather than copying their markup is deliberate: a
+ * restyle of the command centres reaches this page for free, which is the only way four "matching"
+ * pages stay matching. It shared their `CeoHeroIdentity` banner too until 2026-09-03, when the
+ * owner removed that band from every page in the shell — see the note where it used to be.
  *
  * Every number here is the viewer's OWN. No payroll figure appears anywhere on it — no amount and
  * no month label — which is the owner's standing rule for any overview or landing page, for every
@@ -42,41 +41,17 @@ export type PersonalWorkspaceOverviewData = {
   leave: VacationBalanceSnapshot | null;
 };
 
-/** The hero, handed to WorkspaceFrame so the page still draws exactly one. */
-export function PersonalWorkspaceHero({
-  fullName,
-  imageUrl,
-  initials,
-  roleLabel,
-}: {
-  fullName: string;
-  imageUrl?: string | null;
-  initials?: string;
-  roleLabel: string;
-}) {
-  return (
-    <AdminHeroFrame className="z-10 overflow-visible">
-      <div className="p-5 sm:p-6 lg:p-8">
-        <div className="mb-5 inline-flex items-center gap-2 border border-orange-400/40 bg-orange-500/15 px-3 py-1.5 text-phx-3xs font-black uppercase tracking-[0.22em] text-orange-100">
-          <UserRound aria-hidden="true" className="h-3.5 w-3.5" />
-          My Workspace
-        </div>
-        <CeoHeroIdentity
-          flushToEdges
-          fullName={fullName}
-          imageUrl={imageUrl}
-          initials={initials}
-          personal
-          roleLabel={roleLabel}
-          // The sales sub-greeting is wrong for every seat that lands here — none of them run a
-          // territory. `null` removes the line rather than replacing it, because an empty string
-          // falls straight back through `??` to the sales copy.
-          subGreeting={null}
-        />
-      </div>
-    </AdminHeroFrame>
-  );
-}
+/* NO HERO EXPORT ANY MORE. `PersonalWorkspaceHero` was deleted 2026-09-03 at the owner's
+   instruction — "remove from all pages this dump block" — the same removal made the same day on
+   `AdminPageHero` (131 pages), the HR, CEO and Finance command centers and the employee-360
+   review. It was an `AdminHeroFrame` holding `CeoHeroIdentity`: a full-bleed black band at
+   p-5 / sm:p-6 / lg:p-8 with a photo, a greeting and a "MY WORKSPACE" chip, above a page whose
+   own tab strip already said My Workspace.
+
+   `WorkspaceDashboardPage` no longer passes a `hero` prop at all, so `WorkspaceFrame` falls
+   through to `AdminPageHero`'s plain title line like every other page in the shell. The name and
+   role the band showed are in the topbar chip. Do not add it back, and do not add one here for
+   "parity" with the command centres — none of them carry one now either. */
 
 const STATUS_LABELS: Record<string, { label: string; tone: "amber" | "emerald" | "rose" | "slate" }> = {
   approved: { label: "Approved", tone: "emerald" },
