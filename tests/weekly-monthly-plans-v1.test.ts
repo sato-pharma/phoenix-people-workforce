@@ -166,8 +166,18 @@ export function runWeeklyMonthlyPlansV1Tests() {
     /input\.submit[\s\S]{0,80}?await notifyManager\(/,
     "submit paths must call notifyPlanSubmitted, not notifyManager directly",
   );
-  const submitFanoutCount = (serviceSource.match(/await notifyPlanSubmitted\(/g) ?? []).length;
+  // The three submit paths route through afterPlanSubmitted (2026-09-03), which calls
+  // notifyPlanSubmitted unconditionally as its FIRST statement before reconciling the monthly
+  // plan. Counting the funnel is what this assertion always meant and is strictly stronger than
+  // counting three loose call sites: a fourth submit path can no longer forget the fan-out by
+  // simply not repeating the call, and no path can reach the reconciliation without notifying.
+  const submitFanoutCount = (serviceSource.match(/await afterPlanSubmitted\(/g) ?? []).length;
   assert.ok(submitFanoutCount >= 3, "all three submit paths must fan out to manager + HR");
+  assert.match(
+    serviceSource,
+    /async function afterPlanSubmitted[^{]*\{\s*await notifyPlanSubmitted\(plan\);/,
+    "the submit funnel must notify BEFORE anything else, so no later step can skip the fan-out",
+  );
 
   assert.match(calendarServiceSource, /loadPlanItems/, "company calendar must automatically project saved plan rows");
   assert.match(calendarServiceSource, /employee_plan_headers/, "calendar plan source must read employee plan headers");

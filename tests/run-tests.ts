@@ -269,6 +269,7 @@ import { runDeductionsDsmNoRecordTests } from "./deductions-dsm-no-record.test.t
 import { runDeductionsVacationLedgerGuardTests } from "./deductions-vacation-ledger-guard.test.ts";
 import { runWeeklyPlanningFoundationTests } from "./weekly-planning-foundation.test.ts";
 import { runWeeklyMonthlyPlansV1Tests } from "./weekly-monthly-plans-v1.test.ts";
+import { runPlanSyncConversationEmailTests } from "./plan-sync-conversation-email.test.ts";
 import { runPlanWorkweekLinkageTests } from "./plan-workweek-linkage.test.ts";
 import { runWeeklyPlansRpcContractTests } from "./weekly-plans-rpc-contract.test.ts";
 import { runWeeklyPlansConcurrencyTests } from "./weekly-plans-concurrency.test.ts";
@@ -1769,6 +1770,7 @@ await runTest(
 );
 await runTest("weekly planning foundation", runWeeklyPlanningFoundationTests);
 await runTest("weekly monthly plans v1", runWeeklyMonthlyPlansV1Tests);
+await runTest("plan weekly/monthly sync + conversation email addressing", runPlanSyncConversationEmailTests);
 await runTest("plan workweek + linkage (role-aware week, slots, new activity types)", runPlanWorkweekLinkageTests);
 await runTest("weekly plans RPC contract", runWeeklyPlansRpcContractTests);
 await runTest("weekly plans concurrency", runWeeklyPlansConcurrencyTests);
