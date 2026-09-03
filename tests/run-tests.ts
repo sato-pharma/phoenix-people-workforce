@@ -622,6 +622,7 @@ import { runHrFunctionGovernanceTests } from "./hr-function-governance.test.ts";
 import { runHrRetentionRegisterTests } from "./hr-retention-register.test.ts";
 import { runMailboxOffboardingTests } from "./mailbox-offboarding.test.ts";
 import { runMailboxBulkRecordingTests } from "./mailbox-bulk-recording.test.ts";
+import { runMailboxOffboardingTableFitsTheScreenTests } from "./mailbox-offboarding-table-fits-the-screen.test.ts";
 import { runHrAdvisoryModuleAccessTests } from "./hr-advisory-module-access.test.ts";
 import { runHrTodayTasksTests } from "./hr-today-tasks.test.ts";
 import { runHrCommandCenterTests } from "./hr-command-center.test.ts";
@@ -2267,6 +2268,12 @@ await runTest(
   + "reopen each need their own written reason, so the bulk guard is a NARROWER predicate than "
   + "isMailboxStep; and the batch cap is enforced before any database client is opened)",
   runMailboxBulkRecordingTests,
+);
+await runTest(
+  "mailbox offboarding table fits the screen (nine nowrap columns under an overflow-x-auto wrapper "
+  + "measured 1840px inside a 909px content box, and the page-level overflow check read clean the "
+  + "whole time; four table-fixed columns, merged not shrunk, and long values wrap)",
+  runMailboxOffboardingTableFitsTheScreenTests,
 );
 await runTest("organogram hardening", runOrganogramHardeningTests);
 await runTest("vacancy report / organogram consistency", runVacancyReportOrganogramConsistencyTests);
