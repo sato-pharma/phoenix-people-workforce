@@ -404,9 +404,28 @@ export function runCrmContactListsTests() {
   // `getDoctorListBoard` to the REPS as well as the rows), so the list is the District Manager
   // page's real audience. The assertion did its job: widening it took a deliberate edit here, in
   // the same commit as the loader.
+  //
+  // WIDENED AGAIN 2026-09-03, to the marketing and field-support seats the owner named that day.
+  // Marketing Manager and Training Manager are company seats — neither owns a line or supervises a
+  // rep, so there is nothing narrower to resolve them to that would not resolve them to nothing at
+  // all. Product Manager and Group Product Manager resolve to their own product LINE, which is the
+  // reach they already have on KPIs and in the Business Review access map: a seat whose reach
+  // changes between two screens listing the same reps is a fault that reports itself as confusing
+  // data rather than as a permission bug, so the two lists are kept in agreement.
   assert.deepEqual(
     [...DOCTOR_LIST_ACCESS_ROLES],
-    ["Super Admin", "CEO", "National Sales Manager", "SFE Manager", "Regional Manager", "District Manager"],
+    [
+      "Super Admin",
+      "CEO",
+      "National Sales Manager",
+      "SFE Manager",
+      "Marketing Manager",
+      "Training Manager",
+      "Product Manager",
+      "Group Product Manager",
+      "Regional Manager",
+      "District Manager",
+    ],
     "every widening of this list must be a deliberate edit — the picker is never wider than the viewer",
   );
   assert.equal(canAccessDoctorList({ role: "Super Admin", scope: "company" }), true);
@@ -427,10 +446,17 @@ export function runCrmContactListsTests() {
   for (const role of DOCTOR_LIST_ACCESS_ROLES) {
     const basis = doctorListBasisForRole(role);
     assert.ok(
-      basis === "company" || basis === "team",
+      basis === "company" || basis === "line" || basis === "team",
       `${role} is admitted to the doctor list but resolves to no scope — it would see every rep in the company`,
     );
   }
+  // And the four seats added on 2026-09-03 resolve to the width that was actually decided, not
+  // merely to SOME width. `company` where `line` was intended is the silent over-grant this whole
+  // block exists to catch, and the two are indistinguishable from a board that renders fine.
+  assert.equal(doctorListBasisForRole("Product Manager"), "line", "a PM owns brands on one line, not the company");
+  assert.equal(doctorListBasisForRole("Group Product Manager"), "line");
+  assert.equal(doctorListBasisForRole("Marketing Manager"), "company");
+  assert.equal(doctorListBasisForRole("Training Manager"), "company");
 
   // ── 11. The web app is a DIFFERENT host from the Reporting API ────────────────────────────────
   // The API has no contacts endpoint; site7 404s on ContactsList.aspx. Deriving the web host from

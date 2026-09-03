@@ -58,8 +58,17 @@ export function isAgentInScope(scope: DoctorCoverageScope, agentHrId: string | n
   return scope.agentHrIds.some((allowed) => canonicalHrIdKey(allowed) === key);
 }
 
-/** Whole-company reach: staff/executive seats with no territory of their own. */
-const COMPANY_ROLES = ["Super Admin", "CEO", "SFE Manager", "Marketing Manager"] as const;
+/**
+ * Whole-company reach: staff/executive seats with no territory of their own.
+ *
+ * Training Manager joined 2026-09-03, with the owner's instruction to show the rep list, the plans
+ * and the KPIs to the marketing and field-support seats. He is a COMPANY seat for the same reason
+ * SFE Manager and Marketing Manager are, and the reason is not a preference: he owns no line and
+ * supervises no rep, so there is no subtree to walk and — unlike a Product Manager — no line on his
+ * employee row to scope by. A `line` basis would resolve him to `none` and render an empty board,
+ * which reads as "these reps did nothing" rather than as a missing grant.
+ */
+const COMPANY_ROLES = ["Super Admin", "CEO", "SFE Manager", "Marketing Manager", "Training Manager"] as const;
 /** One product line. Matches the scopes already baked into the Business Review access map for
  * these same three roles, so a viewer's reach does not change between the two modules. */
 const LINE_ROLES = ["National Sales Manager", "Product Manager", "Group Product Manager"] as const;
@@ -90,7 +99,11 @@ export const DOCTOR_COVERAGE_PORTAL_ROLES: readonly string[] = [
   ...LINE_ROLES,
   ...TEAM_ROLES,
   ...SELF_ROLES,
+  // The two company seats that are nonetheless PORTAL-mode. Spelled out rather than spread from
+  // COMPANY_ROLES because that list also holds Super Admin, CEO and SFE Manager, all three of which
+  // are admin-mode — spreading it would offer a portal row to seats this resolver never runs for.
   "Marketing Manager",
+  "Training Manager",
 ];
 
 /** `null` → this role has no access to doctor coverage at all. */
