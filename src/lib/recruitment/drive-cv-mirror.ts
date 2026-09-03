@@ -96,6 +96,7 @@ type MirrorCandidateRow = {
   folder_key: string | null;
   governorate: string | null;
   address: string | null;
+  preferred_region_code: string | null;
   sent_for_region: string | null;
 };
 
@@ -152,6 +153,7 @@ export function placementFor(
       inferCandidatePlacement({
         address: row.address,
         governorate: row.governorate,
+        preferredRegionCode: row.preferred_region_code,
         sentForRegion: row.sent_for_region,
       }),
     ),

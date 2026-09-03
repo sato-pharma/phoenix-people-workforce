@@ -51,6 +51,8 @@
 // hiring a District Manager into it while an applicant could not choose it at all. UE-1/UE-2 are
 // deliberately NOT here — they are sales subdivisions of Upper Egypt, and offering all three to a
 // job applicant asks them to know an internal split they cannot be expected to know.
+import { normalizeArabic, placeAliases } from "@/lib/geo/egypt-locations";
+
 export const candidateRegionCodes = ["CA", "GZ", "AB", "D1", "D2", "D3", "UE", "OT"] as const;
 export type CandidateRegionCode = (typeof candidateRegionCodes)[number];
 
@@ -104,6 +106,7 @@ const governorateRegions: Record<string, CandidateRegionCode> = {
   "\u0627\u0644\u0625\u0633\u0643\u0646\u062f\u0631\u064a\u0629": "AB",
   beheira: "AB",
   behira: "AB",
+  behaira: "AB",
   buhayrah: "AB",
   buhayra: "AB",
   // One word, so the "al " article strip never fires on it - the joined spelling needs its own key.
@@ -116,6 +119,7 @@ const governorateRegions: Record<string, CandidateRegionCode> = {
   mahalla: "D1",
   "kafr el sheikh": "D1",
   "kafr elsheikh": "D1",
+  "kafr elshikh": "D1",
   "kafr al sheikh": "D1",
   kafrelsheikh: "D1",
   "kafr el shiekh": "D1",
@@ -247,6 +251,98 @@ const foreignPlaces: Record<string, string> = {
   gauteng: "South Africa",
   johannesburg: "South Africa",
   "south africa": "South Africa",
+  uitenhage: "South Africa",
+  pretoria: "South Africa",
+  durban: "South Africa",
+  // South Asia — the largest foreign group in the CV pool by a wide margin.
+  pakistan: "Pakistan",
+  karachi: "Pakistan",
+  lahore: "Pakistan",
+  islamabad: "Pakistan",
+  rawalpindi: "Pakistan",
+  india: "India",
+  delhi: "India",
+  mumbai: "India",
+  bengaluru: "India",
+  bangalore: "India",
+  chennai: "India",
+  hyderabad: "India",
+  kolkata: "India",
+  agra: "India",
+  faridabad: "India",
+  dehradun: "India",
+  durgapur: "India",
+  bhilwara: "India",
+  azamgarh: "India",
+  auraiya: "India",
+  rajasthan: "India",
+  karnataka: "India",
+  haryana: "India",
+  assam: "India",
+  "uttar pradesh": "India",
+  "west bengal": "India",
+  bangladesh: "Bangladesh",
+  dhaka: "Bangladesh",
+  nepal: "Nepal",
+  kathmandu: "Nepal",
+  lalitpur: "Nepal",
+  // South-East Asia
+  indonesia: "Indonesia",
+  jakarta: "Indonesia",
+  tangerang: "Indonesia",
+  banten: "Indonesia",
+  philippines: "Philippines",
+  manila: "Philippines",
+  sampaloc: "Philippines",
+  cavite: "Philippines",
+  malaysia: "Malaysia",
+  "kuala lumpur": "Malaysia",
+  // The Levant and the rest of the Arab world
+  jordan: "Jordan",
+  amman: "Jordan",
+  zarqa: "Jordan",
+  irbid: "Jordan",
+  lebanon: "Lebanon",
+  beirut: "Lebanon",
+  syria: "Syria",
+  damascus: "Syria",
+  aleppo: "Syria",
+  iraq: "Iraq",
+  baghdad: "Iraq",
+  erbil: "Iraq",
+  yemen: "Yemen",
+  sanaa: "Yemen",
+  sudan: "Sudan",
+  khartoum: "Sudan",
+  // North and West Africa. Tripoli is Libya's capital and no Egyptian town shares the name.
+  libya: "Libya",
+  tripoli: "Libya",
+  benghazi: "Libya",
+  misrata: "Libya",
+  algeria: "Algeria",
+  algiers: "Algeria",
+  constantine: "Algeria",
+  "grarem gouga": "Algeria",
+  morocco: "Morocco",
+  casablanca: "Morocco",
+  tunisia: "Tunisia",
+  tunis: "Tunisia",
+  nigeria: "Nigeria",
+  lagos: "Nigeria",
+  abuja: "Nigeria",
+  sagamu: "Nigeria",
+  ogun: "Nigeria",
+  ghana: "Ghana",
+  accra: "Ghana",
+  kenya: "Kenya",
+  nairobi: "Kenya",
+  // Europe and North America
+  "united kingdom": "United Kingdom",
+  london: "United Kingdom",
+  canada: "Canada",
+  toronto: "Canada",
+  turkey: "Turkiye",
+  istanbul: "Turkiye",
 };
 
 /**
@@ -317,6 +413,66 @@ export function foreignCountryForGovernorate(raw: string | null | undefined): st
   for (const part of key.split(" ")) {
     const hit = foreignPlaces[part];
     if (hit) return hit;
+  }
+  return null;
+}
+
+/**
+ * The company region a piece of FREE TEXT names — a street address, a city, an Arabic line — or null.
+ *
+ * WHY THIS IS NOT JUST `candidateRegionForGovernorate`.
+ *
+ * That function answers for a governorate FIELD. Measured on production 2026-09-04, 53 candidates
+ * holding a CV had no governorate at all and an address the map could not read: "Damanhour, Damanhour
+ * 22511", "Baltim, Kafr El-Sheikh, Egypt", "Naga Hammadi, Egypt", "10th of Ramadan". Every one of
+ * those places is already in `src/lib/geo/egypt-locations.ts`, which carries town-level names in both
+ * scripts. So this reuses that vocabulary rather than starting a fourth copy of Egypt.
+ *
+ * TWO THINGS IT DOES NOT DO, AND BOTH ARE THE POINT.
+ *
+ * 1. It does NOT call `resolveGovernorate`. That function matches with a bare `includes`, so a key
+ *    can match inside an unrelated word: "Sagamu, Ogun State, Nigeria" resolves to **Dakahlia**,
+ *    because the Dakahlia alias "aga" sits inside "Sagamu". A Nigerian CV would have been filed in a
+ *    Delta folder. Measured, not hypothetical — it is why the matching below is whole-word.
+ *
+ * 2. It asks whether the text is EGYPTIAN before it asks which country it is, rather than the other
+ *    way round. Those two questions overlap: "riyadh" is a real town in Kafr El-Sheikh and also the
+ *    Saudi capital. So an explicit Egyptian signal — the word "Egypt", or a governorate's own name —
+ *    settles it first, and only text carrying no such signal is offered to the foreign list.
+ *
+ * Null means "nothing recognised", never "Others" — same rule, and same reason, as the governorate
+ * lookup above.
+ */
+export function egyptRegionFromFreeText(raw: string | null | undefined): CandidateRegionCode | null {
+  const text = normalizeGovernorate(normalizeArabic(String(raw ?? "")));
+  if (!text) return null;
+
+  // Whole-word / whole-phrase containment. The padding is what `resolveGovernorate`'s `includes`
+  // lacks, and it is the entire difference between "Sagamu" matching Dakahlia and not.
+  const holds = (needle: string): boolean => {
+    const key = normalizeGovernorate(normalizeArabic(needle));
+    return key.length > 0 && ` ${text} `.includes(` ${key} `);
+  };
+
+  // An explicit Egyptian signal: the country itself, or a governorate called by its own name.
+  const namesEgypt =
+    holds("egypt") || holds("مصر") || placeAliases.some((place) => holds(place.label));
+
+  if (!namesEgypt && foreignCountryForGovernorate(text)) return null;
+
+  // This file's OWN map first: it is where the misspellings production actually produces live
+  // ("Behaira", "Kafr Elshikh"), and the geo module carries only correct spellings and real town
+  // names. Word-matched already, so it is safe on a long address.
+  const fromSpellingMap = candidateRegionForGovernorate(text);
+  if (fromSpellingMap) return fromSpellingMap;
+
+  // Then governorate names, then the town-level aliases beneath them, so a line naming both its
+  // town and its governorate is decided by the governorate.
+  for (const place of placeAliases) {
+    if (holds(place.label)) return candidateRegionForGovernorate(place.label);
+  }
+  for (const place of placeAliases) {
+    if (place.aliases.some(holds)) return candidateRegionForGovernorate(place.label);
   }
   return null;
 }
