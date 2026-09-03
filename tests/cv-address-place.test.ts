@@ -159,8 +159,8 @@ export function runCvAddressPlaceTests(): void {
       "the tier reads which governorate each area sits in, so three Giza areas refuse even though only one is called Giza");
 
     assert.deepEqual(areaGovernorates("Nasr City"), ["Cairo"], "an area usually names one governorate");
-    assert.deepEqual(areaGovernorates("Qalubeya"), [],
-      "and an area whose spelling the shared vocabulary does not carry names none — the gap is visible here rather than silent in a folder");
+    assert.deepEqual(areaGovernorates("Qalubeya"), ["Qalyubia"],
+      "and the company's own spelling of an area resolves too — this pinned [] until 2026-09-03, when the owner had the vocabulary corrected rather than the folder rule taught a second spelling");
   }
 
   // ── 9. The module stays pure, and the vocabulary stays single ──────────────
