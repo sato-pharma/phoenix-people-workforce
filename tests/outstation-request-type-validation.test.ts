@@ -7,6 +7,7 @@ import {
   OUTSTATION_EXPENSE_TYPES,
   OUTSTATION_TRANSPORTATION_TYPES,
   parseOutstationTypeFields,
+  parseOutstationTypeFieldsPatch,
 } from "../src/lib/outstation/request-fields.ts";
 
 // expenseType and transportationType reached the outstation service through a bare TypeScript
@@ -21,6 +22,10 @@ import {
 //   - an unrecognised expenseType additionally switches OFF the campaign / double-visit evidence
 //     rule, because outstationCampaignRuleOutcome returns null unless the type is "traveling".
 //
+// The admin PATCH route arrived at the same place by a different road: it spread the request body
+// wholesale into the service input, so both fields reached expense_type / transportation_type
+// unexamined and STAYED there, wrong, on a stored row.
+//
 // Every failure is silent — a wrong value produces a plausible, cheap, un-gated claim rather than
 // an error. Live data was clean when this was written (80 rows, only valid values), so these
 // tests defend a closed gap rather than describing damage.
@@ -34,6 +39,12 @@ const DEFAULTING_ROUTES = [
 
 /** Admin create: both fields have always been required outright. */
 const REJECTING_ROUTES = ["app/api/admin/outstation/manager-expenses/route.ts"];
+
+const BODY_SPREAD = "...body,";
+const PARSED_SPREAD = "...outstationTypes.fields,";
+
+/** Admin partial update: a field the body omits is left alone, one it carries must be valid. */
+const PATCHING_ROUTES = ["app/api/admin/outstation/manager-expenses/[id]/route.ts"];
 
 function apiRouteFiles() {
   return readdirSync("app/api", { recursive: true, withFileTypes: true })
@@ -173,6 +184,107 @@ export function runOutstationRequestTypeValidationTests() {
     );
   }
 
+  // ── The partial-update variant, for PATCH manager-expenses/[id] ────────────────
+
+  {
+    const unknownExpenseType = parseOutstationTypeFieldsPatch({ expenseType: "campaign" });
+    assert.equal(
+      unknownExpenseType.ok,
+      false,
+      "an unrecognised expenseType on a PATCH must be refused — updateManagerExpenseAsAdmin writes it straight to expense_type, where it persists with no CHECK constraint and reads as no-campaign-rule on every later pass over that row",
+    );
+    assert.equal(
+      unknownExpenseType.ok === false && unknownExpenseType.error,
+      "invalid_expense_type",
+      "the PATCH route must refuse with the same error code as the create routes",
+    );
+  }
+
+  {
+    const unknownTransportationType = parseOutstationTypeFieldsPatch({
+      transportationType: "helicopter",
+    });
+    assert.equal(
+      unknownTransportationType.ok,
+      false,
+      "an unrecognised transportationType on a PATCH must be refused — once stored it stops BOTH the car fuel branch and the train/bus ticket-evidence requirement from ever firing on that row again",
+    );
+    assert.equal(
+      unknownTransportationType.ok === false && unknownTransportationType.error,
+      "invalid_transportation_type",
+      "a bad transportationType must name the field it is complaining about",
+    );
+  }
+
+  {
+    const empty = parseOutstationTypeFieldsPatch({});
+    assert.equal(empty.ok, true, "a PATCH carrying neither field is an ordinary partial update");
+    assert.deepEqual(
+      empty.ok === true && Object.keys(empty.fields),
+      [],
+      "an omitted field must be ABSENT from the result, never present-and-undefined — the route spreads these over the body, and a key holding undefined would erase what is stored",
+    );
+  }
+
+  for (const untouched of [
+    { expenseType: null },
+    { expenseType: undefined },
+    { transportationType: null },
+  ]) {
+    const parsed = parseOutstationTypeFieldsPatch(untouched);
+    assert.equal(
+      parsed.ok,
+      true,
+      "null and undefined mean leave-it-alone on a PATCH, because updateManagerExpenseAsAdmin coalesces exactly those two away with input.expenseType ?? existing.expenseType",
+    );
+    assert.deepEqual(
+      parsed.ok === true && Object.keys(parsed.fields),
+      [],
+      "a field the caller did not mean to change must not appear in the result at all",
+    );
+  }
+
+  for (const emptyString of [{ expenseType: "" }, { transportationType: "" }]) {
+    assert.equal(
+      parseOutstationTypeFieldsPatch(emptyString).ok,
+      false,
+      "an empty string is NOT absent on a PATCH — the service coalesces with ??, and an empty string is not nullish, so it would be written to the row. This is the one place the create routes and the patch route must disagree about what absent means",
+    );
+  }
+
+  {
+    const oneField = parseOutstationTypeFieldsPatch({ transportationType: "train" });
+    assert.deepEqual(
+      oneField.ok === true && oneField.fields,
+      { transportationType: "train" },
+      "a PATCH that mentions only transport must leave expenseType out — restating the other field would turn a partial update into a full one",
+    );
+  }
+
+  {
+    const both = parseOutstationTypeFieldsPatch({
+      expenseType: "meeting",
+      transportationType: "bus",
+    });
+    assert.deepEqual(both.ok === true && both.fields, {
+      expenseType: "meeting",
+      transportationType: "bus",
+    });
+  }
+
+  for (const inherited of ["constructor", "__proto__", "toString"]) {
+    assert.equal(
+      parseOutstationTypeFieldsPatch({ expenseType: inherited }).ok,
+      false,
+      inherited + " must not pass the PATCH parser either",
+    );
+    assert.equal(
+      parseOutstationTypeFieldsPatch({ transportationType: inherited }).ok,
+      false,
+      inherited + " must not pass as a transportation type on a PATCH",
+    );
+  }
+
   // ── The allowed sets must equal the unions they claim to police ────────────────
   //
   // The parser states its sets as Record<Union, true>, which TypeScript checks in both
@@ -197,7 +309,7 @@ export function runOutstationRequestTypeValidationTests() {
 
   // ── Every route that builds an outstation input goes through the parser ────────
 
-  for (const route of [...DEFAULTING_ROUTES, ...REJECTING_ROUTES]) {
+  for (const route of [...DEFAULTING_ROUTES, ...REJECTING_ROUTES, ...PATCHING_ROUTES]) {
     const source = readFileSync(route, "utf8");
 
     assert.ok(
@@ -221,6 +333,21 @@ export function runOutstationRequestTypeValidationTests() {
     assert.ok(
       /onMissing: "reject"/.test(readFileSync(route, "utf8")),
       `${route} must keep requiring both fields outright, as it did before the parser was shared`,
+    );
+  }
+
+  for (const route of PATCHING_ROUTES) {
+    const source = readFileSync(route, "utf8");
+
+    assert.ok(
+      source.includes("parseOutstationTypeFieldsPatch(body)"),
+      `${route} must use the partial-update parser — the create parser would reject every PATCH that legitimately omits a field`,
+    );
+    const bodySpread = source.indexOf(BODY_SPREAD);
+    const parsedSpread = source.indexOf(PARSED_SPREAD);
+    assert.ok(
+      bodySpread >= 0 && parsedSpread > bodySpread,
+      `${route} must spread the parsed fields AFTER ...body — the raw body is spread wholesale, so without that line an empty string reaches the row untouched`,
     );
   }
 

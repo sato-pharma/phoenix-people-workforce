@@ -6,6 +6,7 @@ import {
   deleteOutstationRequestAsAdmin,
   updateManagerExpenseAsAdmin,
 } from "@/lib/outstation/service";
+import { parseOutstationTypeFieldsPatch } from "@/lib/outstation/request-fields";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import type { ManagerExpenseAdminInput } from "@/lib/outstation/types";
 import { isWorkflowRegistryTransitionError } from "@/lib/workflow-registry/service";
@@ -93,8 +94,23 @@ export async function PATCH(
       );
     }
 
+    // A partial update may leave either type field out, but one it DOES carry has to be a value
+    // the system recognises. Both are written straight to the row (expense_type /
+    // transportation_type) and neither column has a CHECK constraint behind it, so an unrecognised
+    // value persists: the `car` fuel branch stops firing, the train/bus ticket-evidence
+    // requirement stops firing, and the campaign rule reads anything that is not exactly
+    // "traveling" as "no rule". None of it errors.
+    const outstationTypes = parseOutstationTypeFieldsPatch(body);
+    if (!outstationTypes.ok) {
+      return NextResponse.json(
+        { error: outstationTypes.error, message: outstationTypes.message },
+        { status: 400 },
+      );
+    }
+
     const input: Partial<ManagerExpenseAdminInput> = {
       ...body,
+      ...outstationTypes.fields,
       ...(body.amWorkload !== undefined ? { amWorkload: optionalNumber(body.amWorkload) } : {}),
       ...(body.claimedTotalAmount !== undefined
         ? { claimedTotalAmount: Number(body.claimedTotalAmount ?? 0) }
