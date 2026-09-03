@@ -10,7 +10,9 @@ import {
   type RepCallRate,
   type VisitForCallRate,
 } from "../src/lib/crm/call-rate.ts";
-import { type DoctorCoverageScope } from "../src/lib/crm/doctor-coverage-roles.ts";
+import { crmPageItems, employeePortalNavigationSections } from "../src/config/system-navigation.ts";
+import { canSeeDoctorCoverage, type DoctorCoverageScope } from "../src/lib/crm/doctor-coverage-roles.ts";
+import { REPS_PLANS_ACCESS_ROLES, REPS_PLANS_PORTAL_ROLES } from "../src/lib/crm/reps-plans-access.ts";
 import { buildOrgPlacementTree, type OrgTreeNode } from "../src/lib/crm/org-placement.ts";
 import {
   attainmentTone,
@@ -899,4 +901,56 @@ export function runCrmRepsPlansTests() {
     !boardSource.includes("const CRM_TERRITORY ="),
     "and it must not re-declare the pattern locally",
   );
+
+  // ── Who reaches the board, and through which door ────────────────────────────────────
+  // WIDENED TWICE on 2026-09-03: first to the Regional and District Managers who supervise the reps
+  // it scores, then to the marketing and field-support seats the owner named. Both widenings had
+  // the same trap waiting for them, and the note in reps-plans-access.ts records it: the two seats
+  // wanted first were PORTAL seats, and app/(admin)/layout.tsx redirects a portal-mode viewer out of
+  // the admin shell BEFORE this page's gate could run. Adding them to the admin role list alone
+  // would have shipped green, deployed cleanly and been reachable by nobody — and zero usage looks
+  // exactly like a working feature nobody wanted.
+  //
+  // So the invariant worth pinning is not "these roles are admitted" but "every admitted role has a
+  // DOOR": a portal seat is on the portal entry, an admin seat on the admin card, and neither list
+  // names a role the gate refuses.
+  {
+    const ADMIN_SHELL_SEATS = new Set(["Super Admin", "SFE Manager", "CEO"]);
+
+    for (const role of REPS_PLANS_PORTAL_ROLES) {
+      assert.ok(
+        (REPS_PLANS_ACCESS_ROLES as readonly string[]).includes(role),
+        `${role} is offered the portal Reps Plans row, so the enforcing gate must admit them`,
+      );
+      assert.ok(
+        !ADMIN_SHELL_SEATS.has(role),
+        `${role} is an admin-shell seat, so a portal entry for them renders a row that redirects`,
+      );
+      // The scope resolver is the same one KPIs asks. A role it does not know resolves to `none`,
+      // which renders an empty board — indistinguishable from reps who filed nothing.
+      assert.ok(
+        canSeeDoctorCoverage(role),
+        `${role} is admitted to Reps Plans, so getDoctorCoverageScope must resolve them to a real scope rather than an empty board`,
+      );
+    }
+
+    const portalItems = employeePortalNavigationSections.flatMap((section) => section.items);
+    const portalEntry = portalItems.find((item) => item.href === "/employee-portals/reps-plans");
+    assert.ok(portalEntry, "the portal sidebar catalog must offer Reps Plans");
+    assert.deepEqual(
+      [...(portalEntry.roles ?? [])].sort(),
+      [...REPS_PLANS_PORTAL_ROLES].sort(),
+      "the Reps Plans catalog entry must name exactly REPS_PLANS_PORTAL_ROLES — a hand-maintained second copy is how a row appears for a seat the page refuses",
+    );
+
+    // The admin card carries the OTHER half, and only that half. A portal seat listed here is the
+    // inert entry described above; an admin seat missing from here has no door at all.
+    const adminCard = crmPageItems.find((item) => item.href === "/admin/reps-plans");
+    assert.ok(adminCard, "the CRM hub must still carry the Reps Plans card");
+    assert.deepEqual(
+      [...(adminCard.roles ?? [])].sort(),
+      REPS_PLANS_ACCESS_ROLES.filter((role) => ADMIN_SHELL_SEATS.has(role)).sort(),
+      "the admin Reps Plans card must name exactly the admin-shell half of REPS_PLANS_ACCESS_ROLES",
+    );
+  }
 }

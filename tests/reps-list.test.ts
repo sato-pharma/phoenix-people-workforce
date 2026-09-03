@@ -14,7 +14,8 @@ import {
   venueKey,
   type TradeCounterparty,
 } from "../src/lib/crm/contact-trade.ts";
-import { DOCTOR_LIST_ACCESS_ROLES } from "../src/lib/crm/doctor-list-access.ts";
+import { employeePortalNavigationSections } from "../src/config/system-navigation.ts";
+import { DOCTOR_LIST_ACCESS_ROLES, DOCTOR_LIST_PORTAL_ROLES } from "../src/lib/crm/doctor-list-roles.ts";
 import {
   clusterRows,
   confidenceLabel,
@@ -486,31 +487,53 @@ export function runRepsListTests() {
   }
 
   // ── The nav and the gate name the same roles ────────────────────────────────────────────────
-  // The portal sidebar flag cannot import doctor-list-access.ts (it reaches the Supabase server
-  // client through manager-scope.ts and is consumed by client components), so the role list is
-  // spelled out twice. This is the assertion that keeps the copies honest: a role offered a sidebar
-  // row the page then refuses is the exact "visible row he cannot open" bug the sidebar guards
-  // elsewhere exist to catch, and it is invisible until someone in that role clicks it.
+  // This block used to hold THREE hand-maintained copies of the portal role list honest — the gate,
+  // the sidebar flag and the catalog entry — because the flag could not import doctor-list-access.ts
+  // (it reaches the Supabase server client through manager-scope.ts and is consumed by client
+  // components). On 2026-09-03 the roles moved to doctor-list-roles.ts, which carries no server-only
+  // import, and both nav callers now read that list; the widening from three seats to seven is what
+  // forced it, because keeping a seven-role list in step by hand across three files is not a thing
+  // that survives contact with a tired session at 4am.
+  //
+  // So what is asserted here has changed shape: not "do the copies agree" but "is there still only
+  // one copy". A role offered a sidebar row the page then refuses is the exact "visible row he
+  // cannot open" bug, and it is invisible until someone in that role clicks it.
   {
-    const PORTAL_REPS_LIST_ROLES = ["District Manager", "Regional Manager", "National Sales Manager"] as const;
-    for (const role of PORTAL_REPS_LIST_ROLES) {
+    for (const role of DOCTOR_LIST_PORTAL_ROLES) {
       assert.ok(
         (DOCTOR_LIST_ACCESS_ROLES as readonly string[]).includes(role),
         `${role} is offered the portal Reps List row, so the enforcing gate must admit them`,
       );
     }
 
+    // The catalog entry is still a literal array — the nav config keeps every entry's roles spelled
+    // out so the file reads as one table — so THIS pair is the one that can still drift.
+    const portalItems = employeePortalNavigationSections.flatMap((section) => section.items);
+    const repsListItem = portalItems.find((item) => item.href === "/employee-portals/reps-list");
+    assert.ok(repsListItem, "the portal sidebar catalog must offer Reps List");
+    assert.deepEqual(
+      [...(repsListItem.roles ?? [])].sort(),
+      [...DOCTOR_LIST_PORTAL_ROLES].sort(),
+      "the Reps List catalog entry must name exactly DOCTOR_LIST_PORTAL_ROLES — a hand-maintained second copy is how a row appears for a seat the page refuses",
+    );
+
+    // THE STATEMENT, not a fixed byte window. Both assertions below read `flag`, and slicing a
+    // fixed 400 bytes is how this block false-failed the moment the flag got SHORTER: the window
+    // ran past the end of the statement and swallowed the Reps Plans comment beneath it, which says
+    // "Deliberately NOT isDistrictManager" — so the guard fired on the neighbouring comment that
+    // agrees with it. Ending at the statement's own semicolon cannot drift with what follows.
     const navSource = readFileSync("src/lib/employee-portal/navigation.ts", "utf8");
-    const flag = navSource.slice(navSource.indexOf("const showRepsListTab"));
-    assert.ok(flag.length > 0, "the portal Reps List visibility flag must exist");
-    for (const role of PORTAL_REPS_LIST_ROLES) {
-      assert.ok(
-        flag.slice(0, 400).includes(`"${role}"`),
-        `the portal flag must name ${role} — the sidebar row and the gate are two hand-maintained lists`,
-      );
-    }
+    const flagStart = navSource.indexOf("const showRepsListTab");
+    assert.ok(flagStart >= 0, "the portal Reps List visibility flag must exist");
+    const flag = navSource.slice(flagStart, navSource.indexOf(";", flagStart) + 1);
+    // Pin the fix itself, not just its effect. A future session "simplifying" this back to a
+    // spelled-out chain would restore the very drift the split removed, and nothing would fail.
     assert.ok(
-      !flag.slice(0, 400).includes("isDistrictManager"),
+      flag.includes("DOCTOR_LIST_PORTAL_ROLES"),
+      "the portal flag must ASK the shared list rather than spell the roles out again — that second copy is what this block used to exist to police",
+    );
+    assert.ok(
+      !flag.includes("isDistrictManager"),
       'the flag must not reuse isDistrictManager: that predicate also admits the bare "Manager" title, which the access module does not, so a Manager would see a row the page refuses',
     );
   }

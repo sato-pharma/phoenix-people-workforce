@@ -25,36 +25,30 @@
  * explicit guard, nothing more.
  */
 
-import { getManagerScope, type CrmManagerScope, type CrmScopeBasis } from "@/lib/crm/manager-scope";
-import type { AccessContext, PhoenixRole } from "@/lib/auth/permissions";
+import { getManagerScope, type CrmManagerScope } from "@/lib/crm/manager-scope";
+import { getDoctorCoverageScope } from "@/lib/crm/doctor-coverage-scope";
+import {
+  canAccessDoctorList,
+  doctorListBasisForRole,
+  DOCTOR_LIST_ACCESS_ROLES,
+  DOCTOR_LIST_PORTAL_ROLES,
+  type DoctorListScopeBasis,
+} from "@/lib/crm/doctor-list-roles";
+import type { AccessContext } from "@/lib/auth/permissions";
 
 /**
- * Whole-company reach.
- *
- * Wider than the Plans tab's company list by two seats. SFE Manager and Marketing Manager read rep
- * activity company-wide on Doctor Coverage already, and this board is the same kind of read — the
- * list a rep was given. Neither seat supervises a rep, which is exactly why neither appears on the
- * Plans tab's list.
+ * WHO may open the board now lives in doctor-list-roles.ts, which carries no server-only import so
+ * the navigation config and the portal sidebar flag can read the same list this module enforces.
+ * Re-exported here so every existing caller and test keeps its import path, and so "where is the
+ * role list" has one obvious answer.
  */
-const COMPANY_ROLES = ["Super Admin", "CEO", "National Sales Manager", "SFE Manager"] as const;
-
-/** Own management subtree. The district manager is the seat the owner asked for. */
-const TEAM_ROLES = ["Regional Manager", "District Manager"] as const;
-
-const BASIS_BY_ROLE = new Map<string, CrmScopeBasis>([
-  ...COMPANY_ROLES.map((role) => [role, "company"] as const),
-  ...TEAM_ROLES.map((role) => [role, "team"] as const),
-]);
-
-export const DOCTOR_LIST_ACCESS_ROLES: readonly PhoenixRole[] = [
-  ...COMPANY_ROLES,
-  ...TEAM_ROLES,
-] as unknown as readonly PhoenixRole[];
-
-export function canAccessDoctorList(context: Pick<AccessContext, "role" | "scope">): boolean {
-  if (context.scope === "system") return true;
-  return BASIS_BY_ROLE.has(context.role);
-}
+export {
+  canAccessDoctorList,
+  doctorListBasisForRole,
+  DOCTOR_LIST_ACCESS_ROLES,
+  DOCTOR_LIST_PORTAL_ROLES,
+  type DoctorListScopeBasis,
+};
 
 export function assertDoctorListAccess(context: Pick<AccessContext, "role" | "scope">): void {
   if (!canAccessDoctorList(context)) {
@@ -62,23 +56,48 @@ export function assertDoctorListAccess(context: Pick<AccessContext, "role" | "sc
   }
 }
 
-/** `null` → this role has no access to the doctor list at all. */
-export function doctorListBasisForRole(role: string): CrmScopeBasis | null {
-  return BASIS_BY_ROLE.get(role) ?? null;
-}
-
 /**
  * Which reps' lists the viewer may see.
  *
  * Passed straight into `getDoctorListBoard`, which uses it for BOTH the rows and the picker.
+ *
+ * ## A `line` basis is DELEGATED, not reimplemented
+ *
+ * `manager-scope.ts` answers "which reps report to me", which is the wrong question for a Product
+ * Manager — he owns brands, not people, so his reach is his product line and there is no subtree to
+ * walk. That walk already exists, once, in `getDoctorCoverageScope`, complete with the multi-line
+ * overrides (Ahmed Sharaf covers Pedia and Anti Infective both) and the empty-line handling. A
+ * second copy here would be a fourth place that answers "which line is this viewer's", and the
+ * copies would diverge on the first override the owner adds.
+ *
+ * `DoctorCoverageScope` is structurally a `CrmManagerScope` — same three kinds, plus a `basis` tag
+ * this board does not read — so the delegation needs no adapter.
+ *
+ * THE GUARD BELOW FAILS CLOSED, and it is not decoration. The delegate resolves its basis from the
+ * COVERAGE role map, not from this board's; today both call Product Manager and Group Product
+ * Manager `line`, but nothing in the type system says they must. If that map ever calls one of them
+ * `company`, delegating blindly would silently hand a line seat every rep in the company — the
+ * widening nobody reviewed. An unexpected answer is refused instead.
  */
 export async function getDoctorListScope(access: AccessContext): Promise<CrmManagerScope> {
   const basis = doctorListBasisForRole(access.role);
   if (!basis && access.scope !== "system") {
     return { kind: "none", reason: `Doctor lists are not available to the ${access.role} role.` };
   }
+
+  if (basis === "line") {
+    const scope = await getDoctorCoverageScope(access);
+    if (scope.kind === "company") {
+      return {
+        kind: "none",
+        reason: `A whole-line scope could not be resolved for the ${access.role} role, so no reps can be shown.`,
+      };
+    }
+    return scope;
+  }
+
   return getManagerScope({
-    basis: basis ?? "company",
+    basis: basis === "team" ? "team" : "company",
     label: basis === "team" ? `${access.role} · own team` : `${access.role} · all reps`,
     viewerHrId: access.hrId,
   });

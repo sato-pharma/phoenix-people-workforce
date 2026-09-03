@@ -37,23 +37,48 @@ import type { AccessContext, PhoenixRole } from "@/lib/auth/permissions";
 /**
  * ADMIN-SHELL seats. Company-wide by scope, and the only ones `/admin/reps-plans` can serve.
  *
- * Shorter than Doctor List's company list next door: SFE Manager and Marketing Manager read rep
- * activity company-wide there, but this board is a performance judgement on named individuals and
- * the owner has kept it narrow since it was built. CEO is absent for the same reason — nobody has
- * asked, and the KPIs board already carries the call rate for a seat that wants the summary.
+ * SFE Manager joined 2026-09-03 on the owner's instruction to show the rep list, the plans and the
+ * KPIs to the marketing and field-support seats. He is the ONLY one of the five roles named that
+ * day who belongs here rather than in the portal list below — the other four are portal-mode, and
+ * `app/(admin)/layout.tsx` redirects them out of the admin shell before this page's gate could run.
+ * He already reads rep activity company-wide on Reps List and on KPIs, so this is the third door
+ * onto data he holds, not a new reach.
+ *
+ * CEO remains absent: nobody has asked, and the KPIs board already carries the call rate for a seat
+ * that wants the summary.
  */
-const ADMIN_ROLES = ["Super Admin"] as const;
+const ADMIN_ROLES = ["Super Admin", "SFE Manager"] as const;
 
 /**
- * PORTAL seats, each scoped to his own management subtree by `getDoctorCoverageScope`.
+ * PORTAL seats, each scoped by `getDoctorCoverageScope` — `team` for the two manager seats, `line`
+ * for the three line seats, `company` for the two staff seats.
  *
- * The two seats that supervise a named rep, and the same pair Doctor List and Plan Verification
- * both scope as `team`. A National Sales Manager is deliberately absent: he resolves to `line`
- * basis, which on this board is most of a line's field force at once — a whole-line performance
- * league table is a different thing from a manager reading his own team, and the owner has not
- * asked for one.
+ * WIDENED 2026-09-03, same instruction. Until then this was the two seats that supervise a named
+ * rep, and the note here said a National Sales Manager was "deliberately absent: he resolves to
+ * `line` basis, which on this board is most of a line's field force at once — a whole-line
+ * performance league table is a different thing from a manager reading his own team, and the owner
+ * has not asked for one."
+ *
+ * THAT REASONING IS NOW RETIRED, and it is worth being exact about why, because it reads like a
+ * principle and was not one. What it actually turned on was its own last clause — nobody had asked.
+ * Adding the marketing seats settled the question by itself: a Product Manager resolves to the same
+ * `line` basis and sees the same whole-line league table, so the objection could no longer explain
+ * who was on the list. Leaving the National Sales Manager off would have meant a Product Manager
+ * reading a whole line's performance while the manager who OWNS that line could not — an asymmetry
+ * with nothing behind it. The owner was shown exactly that and answered "yes add nsm too".
+ *
+ * So the league table is now the accepted shape of this board for a line seat, not a hazard being
+ * avoided. A future session should not reinstate the old note by reading it in the history.
  */
-const PORTAL_ROLES = ["Regional Manager", "District Manager"] as const;
+const PORTAL_ROLES = [
+  "Regional Manager",
+  "District Manager",
+  "National Sales Manager",
+  "Product Manager",
+  "Group Product Manager",
+  "Marketing Manager",
+  "Training Manager",
+] as const;
 
 /** Every seat with any door onto the board, either shell. Used by the page gates. */
 export const REPS_PLANS_ACCESS_ROLES: readonly PhoenixRole[] = [
