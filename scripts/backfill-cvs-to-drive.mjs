@@ -5,6 +5,13 @@
 //   node scripts/backfill-cvs-to-drive.mjs               upload for real, resumable
 //   node scripts/backfill-cvs-to-drive.mjs --limit 25    a small first batch
 //   node scripts/backfill-cvs-to-drive.mjs --retry       also revisit rows whose last attempt failed
+//   node scripts/backfill-cvs-to-drive.mjs --refile      re-examine files ALREADY in Drive and move
+//                                                        any whose folder has since changed
+//
+// RUN IT THROUGH THE ALIAS LOADER, because it imports the live inference module rather than copying
+// a hundred governorate spellings that would then drift:
+//
+//   node --experimental-strip-types --experimental-specifier-resolution=node //        --experimental-loader ./tests/alias-loader.mjs scripts/backfill-cvs-to-drive.mjs
 //
 // RESUMABLE BY CONSTRUCTION. A row is claimed by `drive_mirror_file_id` being set, so a run that is
 // interrupted — or a laptop that goes to sleep, which on this machine is the likely outcome of a
@@ -22,6 +29,16 @@
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
+
+// The ONE thing this script does not re-implement. The shelf and region tables below are small and
+// pinned by tests/drive-cv-folders.test.ts, but the governorate vocabulary is ~100 spellings and a
+// copy of it would drift silently the first time somebody adds one. Both modules are pure.
+import { inferCandidatePlacement } from "@/lib/recruitment/candidate-folder-inference";
+import {
+  INFERRED_FOLDER_NAME,
+  NO_LOCATION_FOLDER_NAME,
+  OUTSIDE_EGYPT_FOLDER_NAME,
+} from "@/lib/recruitment/drive-cv-folders";
 
 // ── env ──────────────────────────────────────────────────────────────────────────────────────────
 // Loaded by hand rather than via a dependency: this script has to run from a bare worktree, where
@@ -50,6 +67,7 @@ loadEnvFile(path.resolve(".env"));
 const args = process.argv.slice(2);
 const DRY_RUN = args.includes("--dry-run");
 const RETRY_FAILED = args.includes("--retry");
+const REFILE = args.includes("--refile");
 const LIMIT = (() => {
   const at = args.indexOf("--limit");
   if (at < 0) return Infinity;
@@ -171,6 +189,36 @@ async function ensureFolderPath(segments) {
   return parentId;
 }
 
+/**
+ * Move an existing Drive file into `parentId`, dropping every parent it currently has.
+ *
+ * Drive permits multi-parenting through the API, and that is exactly the state that makes a filing
+ * cabinet lie - the same file appearing in two folders with two different stories about the person.
+ * Returns false when the file is gone, so the caller can re-upload rather than patch a ghost.
+ */
+async function moveInDrive({ driveFileId, parentId }) {
+  const token = await getDriveToken();
+  const id = encodeURIComponent(driveFileId);
+  const current = await fetch(`https://www.googleapis.com/drive/v3/files/${id}?fields=parents`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (current.status === 404) return false;
+  if (!current.ok) throw new Error(`Drive lookup failed (${current.status}).`);
+  const parents = (await current.json()).parents ?? [];
+  if (parents.length === 1 && parents[0] === parentId) return true;
+
+  const params = new URLSearchParams({ addParents: parentId, fields: "id" });
+  if (parents.length > 0) params.set("removeParents", parents.join(","));
+  const res = await fetch(`https://www.googleapis.com/drive/v3/files/${id}?${params.toString()}`, {
+    body: "{}",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    method: "PATCH",
+  });
+  if (res.status === 404) return false;
+  if (!res.ok) throw new Error(`Drive move failed (${res.status}): ${await res.text()}`);
+  return true;
+}
+
 async function uploadToDrive({ bytes, mimeType, name, parentId }) {
   const token = await getDriveToken();
   const boundary = `phx${Math.random().toString(16).slice(2)}${Date.now().toString(16)}`;
@@ -222,7 +270,6 @@ const SHELF_LABELS = {
   other: "Other positions",
   paramedical: "Paramedical",
 };
-const UNCLASSIFIED = "Not yet classified";
 
 function sanitize(name) {
   return String(name ?? "")
@@ -254,28 +301,48 @@ function driveFileName(candidate, mimeType, originalName) {
   return `${stem}${ext}`;
 }
 
+/**
+ * Where a candidate goes when nothing was declared - the caveated shelf, never the confirmed tree.
+ * Mirrors `driveInferredFolderPath`; the vocabulary behind it is imported, not copied.
+ */
+function inferredPathFor(candidate) {
+  const placement = inferCandidatePlacement({
+    address: candidate.address,
+    governorate: candidate.governorate,
+    sentForRegion: candidate.sent_for_region,
+  });
+  if (!placement) return [INFERRED_FOLDER_NAME, NO_LOCATION_FOLDER_NAME].map(sanitize);
+  const segments =
+    placement.basis === "outside-egypt"
+      ? [INFERRED_FOLDER_NAME, OUTSIDE_EGYPT_FOLDER_NAME, placement.label]
+      : [INFERRED_FOLDER_NAME, placement.label];
+  return segments.map(sanitize).filter(Boolean);
+}
+
 function folderPathFor(candidate, areaRegions) {
   // A hand-filed candidate outranks anything derived — same rule as the live module.
   if (candidate.folder_kind && candidate.folder_key && SHELF_LABELS[candidate.folder_kind]) {
     return pathForShelf(candidate.folder_kind, candidate.folder_key, areaRegions);
   }
-  // Only a candidate who ANSWERED gets filed. `applied_for_job_title` alone is three times in four
+  // Only a candidate who ANSWERED reaches the confirmed tree. `applied_for_job_title` alone is three times in four
   // the extractor's guess, not a stated intent — filing on it is what candidate-folder-suggestion.ts
   // exists to refuse.
-  if (!candidate.preferences_declared_at) return [UNCLASSIFIED];
-  if (String(candidate.status ?? "").toLowerCase() === "rejected") return [UNCLASSIFIED];
+  if (!candidate.preferences_declared_at) return inferredPathFor(candidate);
+  if (String(candidate.status ?? "").toLowerCase() === "rejected") return inferredPathFor(candidate);
 
   const title = String(candidate.applied_for_job_title ?? "").trim();
-  if (!title) return [UNCLASSIFIED];
+  if (!title) return inferredPathFor(candidate);
   const lower = title.toLowerCase();
 
   if (/medical\s*rep|\bmr\b|مندوب/.test(lower)) {
     const area = String(candidate.preferred_area_name ?? "").trim();
-    return area ? pathForShelf("medical_rep", area, areaRegions) : [UNCLASSIFIED];
+    return area ? pathForShelf("medical_rep", area, areaRegions) : inferredPathFor(candidate);
   }
   if (/district\s*manager|\bdm\b/.test(lower)) {
     const code = String(candidate.preferred_region_code ?? "").trim().toUpperCase();
-    return REGION_LABELS[code] ? pathForShelf("district_manager", code, areaRegions) : [UNCLASSIFIED];
+    return REGION_LABELS[code]
+      ? pathForShelf("district_manager", code, areaRegions)
+      : inferredPathFor(candidate);
   }
   return pathForShelf("other", title, areaRegions);
 }
@@ -307,13 +374,17 @@ async function main() {
   for (const row of areas) if (row.area_name && row.code_region_code) areaRegions[row.area_name] = row.code_region_code;
   console.log(`Area map: ${Object.keys(areaRegions).length} active areas.`);
 
-  const failedClause = RETRY_FAILED ? "" : "&drive_mirror_error=is.null";
+  // --refile inspects what is ALREADY in Drive; the normal run inspects what is not. The two are
+  // exact opposites on the same column, so a refile can never re-upload and a backfill can never
+  // move - each is blind to the other's rows by construction.
+  const mirrorClause = REFILE ? "&drive_mirror_file_id=not.is.null" : "&drive_mirror_file_id=is.null";
+  const failedClause = RETRY_FAILED || REFILE ? "" : "&drive_mirror_error=is.null";
   const rows = [];
   const PAGE = 500;
   for (let offset = 0; ; offset += PAGE) {
     // Paged with an explicit order: an unbounded PostgREST select silently stops at 1000 rows.
     const page = await rest(
-      `ats_files?select=id,candidate_id,file_name,mime_type,drive_file_id&kind=eq.cv&drive_file_id=not.is.null&drive_mirror_file_id=is.null${failedClause}&order=created_at.asc&offset=${offset}&limit=${PAGE}`,
+      `ats_files?select=id,candidate_id,file_name,mime_type,drive_file_id,drive_mirror_file_id,drive_mirror_path&kind=eq.cv&drive_file_id=not.is.null${mirrorClause}${failedClause}&order=created_at.asc&offset=${offset}&limit=${PAGE}`,
     );
     rows.push(...page);
     if (page.length < PAGE) break;
@@ -322,7 +393,7 @@ async function main() {
   console.log(`${rows.length} CV file(s) not yet in Drive; processing ${todo.length}.\n`);
   if (todo.length === 0) return;
 
-  const counts = { failed: 0, skipped: 0, uploaded: 0 };
+  const counts = { failed: 0, moved: 0, skipped: 0, unchanged: 0, uploaded: 0 };
   const treePreview = new Map();
 
   for (const [index, file] of todo.entries()) {
@@ -333,7 +404,7 @@ async function main() {
         continue;
       }
       const candidates = await rest(
-        `ats_candidates?select=id,full_name,phone,whatsapp,status,applied_for_job_title,preferred_area_name,preferred_region_code,preferences_declared_at,folder_kind,folder_key&id=eq.${file.candidate_id}`,
+        `ats_candidates?select=id,full_name,phone,whatsapp,status,applied_for_job_title,preferred_area_name,preferred_region_code,preferences_declared_at,folder_kind,folder_key,governorate,address,sent_for_region&id=eq.${file.candidate_id}`,
       );
       const candidate = candidates[0];
       if (!candidate) {
@@ -344,7 +415,52 @@ async function main() {
       const segments = folderPathFor(candidate, areaRegions);
       const name = driveFileName(candidate, file.mime_type, file.file_name);
       const key = segments.join("/");
-      treePreview.set(key, (treePreview.get(key) ?? 0) + 1);
+      if (!REFILE || file.drive_mirror_path !== key) {
+        treePreview.set(key, (treePreview.get(key) ?? 0) + 1);
+      }
+
+      if (REFILE) {
+        // Already where it belongs. By far the commonest outcome on a second run, and the reason
+        // this mode is safe to re-run: it is a no-op for everything it has already handled.
+        if (file.drive_mirror_path === key) {
+          counts.unchanged += 1;
+          continue;
+        }
+        if (DRY_RUN) {
+          counts.moved += 1;
+          if (counts.moved <= 15) console.log(`  ${position}  ${file.drive_mirror_path ?? "?"}  ->  ${key}`);
+          continue;
+        }
+        const parentId = await ensureFolderPath(segments);
+        const ok = await moveInDrive({ driveFileId: file.drive_mirror_file_id, parentId });
+        if (!ok) {
+          // The owner moved or deleted it himself. Clear our claim so a later plain run re-uploads
+          // it, rather than leaving a row pointing at a file that is not there.
+          await rest(`ats_files?id=eq.${file.id}`, {
+            body: JSON.stringify({
+              drive_mirror_at: new Date().toISOString(),
+              drive_mirror_error: "The mirrored file is no longer in Drive.",
+              drive_mirror_file_id: null,
+            }),
+            headers: { Prefer: "return=minimal" },
+            method: "PATCH",
+          });
+          counts.failed += 1;
+          continue;
+        }
+        await rest(`ats_files?id=eq.${file.id}`, {
+          body: JSON.stringify({
+            drive_mirror_at: new Date().toISOString(),
+            drive_mirror_error: null,
+            drive_mirror_path: key,
+          }),
+          headers: { Prefer: "return=minimal" },
+          method: "PATCH",
+        });
+        counts.moved += 1;
+        if (counts.moved % 25 === 0 || counts.moved <= 5) console.log(`  ${position}  ->  ${key}`);
+        continue;
+      }
 
       if (DRY_RUN) {
         counts.uploaded += 1;
@@ -386,12 +502,17 @@ async function main() {
     }
   }
 
-  console.log("\nFolders that would receive CVs:");
+  console.log(REFILE ? "\nFolders that would GAIN CVs:" : "\nFolders that would receive CVs:");
   for (const [folder, count] of [...treePreview.entries()].sort((a, b) => b[1] - a[1])) {
     console.log(`  ${String(count).padStart(4)}  ${folder}`);
   }
-  console.log(`\n${DRY_RUN ? "Would upload" : "Uploaded"}: ${counts.uploaded}   skipped: ${counts.skipped}   failed: ${counts.failed}`);
+  console.log(
+    REFILE
+      ? `\n${DRY_RUN ? "Would move" : "Moved"}: ${counts.moved}   already correct: ${counts.unchanged}   skipped: ${counts.skipped}   failed: ${counts.failed}`
+      : `\n${DRY_RUN ? "Would upload" : "Uploaded"}: ${counts.uploaded}   skipped: ${counts.skipped}   failed: ${counts.failed}`,
+  );
   if (!DRY_RUN && counts.failed > 0) console.log("Re-run with --retry to revisit the failures.");
+  if (!REFILE && !DRY_RUN) console.log("Run again with --refile to move any CV whose folder has since changed.");
 }
 
 main().catch((error) => {
