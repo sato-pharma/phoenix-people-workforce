@@ -56,8 +56,8 @@ function baseRequest(overrides: Partial<OutstationExpenseRequest>): OutstationEx
     reportAmWorkload: 0,
     reportHrNotes: null,
     reportHrStatus: null,
-    reportMeetingAmount: 0,
-    reportOtherAmount: 0,
+    reportMeetingAmount: null,
+    reportOtherAmount: null,
     reportPmWorkload: 0,
     reportTravelCost: null,
     reportTripType: null,
@@ -260,16 +260,17 @@ export function runOutstationPayrollPayableTotalAgreementTests() {
   );
   assert.equal(pushedOverride.total, 420, "the overridden other amount must still be paid");
 
-  // The fallback must survive the fix: with no override recorded, the raw column is still what
-  // gets both summed and filed. (`numberValue` collapses a NULL report_other_amount to 0 before
-  // this mapper ever sees it, so 0 has to keep meaning "fall back", not "the override is zero".)
+  // The fallback must survive the fix: with NO override recorded, the raw column is still what
+  // gets both summed and filed. "No override" is `null` — since PR #2960 `mapOutstationRequestRow`
+  // maps these columns with `nullableNumber` instead of collapsing NULL to 0, so a report column
+  // of exactly 0 is a real override that WINS (pinned separately below) and only null falls back.
   const rawOtherOnly = baseRequest({
     allowanceAmount: 200,
     expectedTotalAmount: 375,
     fuelAmount: 100,
     id: 302,
     otherAmount: 75,
-    reportOtherAmount: 0,
+    reportOtherAmount: null,
     ticketAmount: 0,
   });
   const pushedRawOnly = mapOutstationRequestToPayrollExpenseRecord(rawOtherOnly);
@@ -280,6 +281,158 @@ export function runOutstationPayrollPayableTotalAgreementTests() {
     ),
     pushedRawOnly.total,
     "the fallback path's components must add up to its own total too",
+  );
+  // ---------------------------------------------------------------------------------------------
+  // An override of EXACTLY ZERO. `report_other_amount = 0` over an `other_amount` of 50 means "HR
+  // reviewed this and zeroed it" — the override wins, and both mappers must say so. Before
+  // 2026-09-03 the push mapper's `request.reportOtherAmount || request.otherAmount || 0` fell
+  // through the falsy 0 to the raw 50 and PAID it, while the display mapper's null-check showed 0.
+  // A 50 EGP silent divergence, of the same class as PR #2951 (the total) and PR #2957 (the
+  // components). Latent at the time of the fix: 0 of 80 live rows were in this state.
+  const zeroedOtherRequest = baseRequest({
+    allowanceAmount: 300,
+    expectedTotalAmount: 300,
+    id: 301,
+    otherAmount: 50,
+    reportOtherAmount: 0,
+  });
+  const zeroedOtherRow = {
+    allowance_amount: 300,
+    created_at: "2026-08-05T00:00:00.000Z",
+    employee_hr_id: "B-1",
+    employee_name: "Test Employee",
+    expected_total_amount: 300,
+    expense_type: "traveling",
+    id: 301,
+    other_amount: 50,
+    report_other_amount: 0,
+    status: "accepted_by_system",
+    trip_start_date: "2026-08-05T00:00:00.000Z",
+  };
+
+  const pushedZeroOther = mapOutstationRequestToPayrollExpenseRecord(zeroedOtherRequest);
+  const displayedZeroOther = mapOutstationRequestRowToPayrollApproval(zeroedOtherRow);
+
+  assert.equal(
+    pushedZeroOther.other,
+    0,
+    "an `other` override of exactly 0 must beat the raw other_amount on the PUSHED record, not fall through to 50",
+  );
+  assert.equal(
+    displayedZeroOther.other,
+    0,
+    "an `other` override of exactly 0 must beat the raw other_amount on the DISPLAYED record",
+  );
+  assert.equal(
+    pushedZeroOther.total,
+    300,
+    "a zeroed `other` override must not add its raw 50 EGP back into the PUSHED payable total",
+  );
+  assert.equal(
+    pushedZeroOther.total,
+    displayedZeroOther.total,
+    "the pushed and displayed totals must never diverge over an override of exactly zero",
+  );
+  assert.equal(
+    pushedZeroOther.other,
+    displayedZeroOther.other,
+    "the pushed and displayed `other` must never diverge over an override of exactly zero",
+  );
+
+  // Same trap on the meeting column, which reaches the total by a second route (it also feeds the
+  // meeting-trip fallback inside outstationPayableTotal).
+  const zeroedMeetingRequest = baseRequest({
+    allowanceAmount: 300,
+    expectedTotalAmount: 300,
+    id: 302,
+    meetingAmount: 40,
+    reportMeetingAmount: 0,
+  });
+  const zeroedMeetingRow = {
+    allowance_amount: 300,
+    created_at: "2026-08-05T00:00:00.000Z",
+    employee_hr_id: "B-1",
+    employee_name: "Test Employee",
+    expected_total_amount: 300,
+    expense_type: "traveling",
+    id: 302,
+    meeting_amount: 40,
+    report_meeting_amount: 0,
+    status: "accepted_by_system",
+    trip_start_date: "2026-08-05T00:00:00.000Z",
+  };
+
+  const pushedZeroMeeting = mapOutstationRequestToPayrollExpenseRecord(zeroedMeetingRequest);
+  const displayedZeroMeeting = mapOutstationRequestRowToPayrollApproval(zeroedMeetingRow);
+
+  assert.equal(
+    pushedZeroMeeting.meetingAmount,
+    0,
+    "a `meeting` override of exactly 0 must beat the raw meeting_amount on the PUSHED record",
+  );
+  assert.equal(
+    pushedZeroMeeting.total,
+    300,
+    "a zeroed `meeting` override must not add its raw 40 EGP back into the PUSHED payable total",
+  );
+  assert.equal(
+    pushedZeroMeeting.total,
+    displayedZeroMeeting.total,
+    "the pushed and displayed totals must never diverge over a zeroed meeting override",
+  );
+  assert.equal(
+    pushedZeroMeeting.meetingAmount,
+    displayedZeroMeeting.meetingAmount,
+    "the pushed and displayed meeting amounts must never diverge over a zeroed meeting override",
+  );
+
+  // The other half of the same rule, so the fix cannot be "the override always wins": a column that
+  // was never written is NULL, not 0, and the raw amount must still stand. This is what makes the
+  // push mapper able to null-check at all — mapOutstationRequestRow maps these two columns with
+  // `nullableNumber`, so NULL survives as null instead of collapsing to 0.
+  const absentOverrideRequest = baseRequest({
+    allowanceAmount: 300,
+    expectedTotalAmount: 350,
+    id: 303,
+    otherAmount: 50,
+    reportOtherAmount: null,
+  });
+  const absentOverrideRow = {
+    allowance_amount: 300,
+    created_at: "2026-08-05T00:00:00.000Z",
+    employee_hr_id: "B-1",
+    employee_name: "Test Employee",
+    expected_total_amount: 350,
+    expense_type: "traveling",
+    id: 303,
+    other_amount: 50,
+    report_other_amount: null,
+    status: "accepted_by_system",
+    trip_start_date: "2026-08-05T00:00:00.000Z",
+  };
+
+  const pushedAbsent = mapOutstationRequestToPayrollExpenseRecord(absentOverrideRequest);
+  const displayedAbsent = mapOutstationRequestRowToPayrollApproval(absentOverrideRow);
+
+  assert.equal(
+    pushedAbsent.other,
+    50,
+    "an ABSENT (null) other override must leave the raw other_amount standing on the PUSHED record",
+  );
+  assert.equal(
+    displayedAbsent.other,
+    50,
+    "an ABSENT (null) other override must leave the raw other_amount standing on the DISPLAYED record",
+  );
+  assert.equal(
+    pushedAbsent.total,
+    350,
+    "an absent override must still bill the raw 50 EGP in the PUSHED payable total",
+  );
+  assert.equal(
+    pushedAbsent.total,
+    displayedAbsent.total,
+    "the pushed and displayed totals must agree when no override was recorded either",
   );
 }
 

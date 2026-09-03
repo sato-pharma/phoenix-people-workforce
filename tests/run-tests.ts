@@ -1236,6 +1236,7 @@ import { runCommentStripRatchetTests } from "./comment-strip-ratchet.test.ts";
 
 import { runRepoDoctorStripIdleOfferTests } from "./repo-doctor-strip-idle-offer.test.ts";
 import { runCrmClientTimeoutsTests } from "./crm-client-timeouts.test.ts";
+import { runOutstationMobileWizardStaleCalculationTests } from "./outstation-mobile-wizard-stale-calculation.test.ts";
 import { runOutstationPayrollPayableTotalAgreementTests } from "./outstation-payroll-payable-total-agreement.test.ts";
 import { runOutstationManagerExpenseEditValidationTests } from "./outstation-manager-expense-edit-validation.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
@@ -3226,7 +3227,7 @@ await runTest(
   runOutstationManualExpenseTicketPlusAllowanceTests,
 );
 await runTest(
-  "manual admin outstation expense amount visibility (Meeting/Other amount are never hidden by expense type, so an amount typed under one type can never be submitted, invisibly, under another — production request 77)",
+  "outstation expense amount visibility, admin modal AND rep wizard (Meeting/Other amount are never hidden by expense type and never rendered twice, so an amount typed under one type can never be submitted invisibly under another — production request 77)",
   runOutstationAdminManualExpenseAmountVisibilityTests,
 );
 await runTest(
@@ -3808,7 +3809,8 @@ await runTest("no source-pinning test strips comments with a regex that eats the
 
 await runTest("repo-doctor offers only what --strip-idle will actually reclaim", runRepoDoctorStripIdleOfferTests);
 await runTest("the CRM client's timeout bounds the response BODY, and an empty body is not a shape change", runCrmClientTimeoutsTests);
-await runTest("the payroll push mapper and the payroll display mapper agree on one outstation total and on the components behind it, even when the claim differs from the expected total", runOutstationPayrollPayableTotalAgreementTests);
+await runTest("the outstation wizard blocks submit on a stale calculation and never posts its own claimedTotalAmount", runOutstationMobileWizardStaleCalculationTests);
+await runTest("the payroll push mapper and the payroll display mapper agree on one outstation total, even when the claim differs from the expected total", runOutstationPayrollPayableTotalAgreementTests);
 await runTest(
   "outstation manager-expense edit validation (PATCH refuses an unknown expense/transportation type, never spreads the raw body)",
   runOutstationManagerExpenseEditValidationTests,
