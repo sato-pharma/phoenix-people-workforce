@@ -93,6 +93,21 @@ export async function PATCH(
       );
     }
 
+    if (
+      body.meetingInvoiceDataUrl !== undefined &&
+      body.meetingInvoiceDataUrl !== null &&
+      (typeof body.meetingInvoiceDataUrl !== "string" ||
+        !body.meetingInvoiceDataUrl.startsWith("data:"))
+    ) {
+      return NextResponse.json(
+        {
+          error: "invalid_meeting_invoice",
+          message: "meetingInvoiceDataUrl must be an uploaded PDF, JPG, or PNG file.",
+        },
+        { status: 400 },
+      );
+    }
+
     const input: Partial<ManagerExpenseAdminInput> = {
       ...body,
       ...(body.amWorkload !== undefined ? { amWorkload: optionalNumber(body.amWorkload) } : {}),
@@ -104,6 +119,9 @@ export async function PATCH(
       ...(body.hrNotes !== undefined ? { hrNotes: optionalText(body.hrNotes) } : {}),
       ...(body.hrStatus !== undefined ? { hrStatus: optionalText(body.hrStatus) } : {}),
       ...(body.meetingAmount !== undefined ? { meetingAmount: optionalNumber(body.meetingAmount) } : {}),
+      ...(body.meetingInvoiceFileName !== undefined
+        ? { meetingInvoiceFileName: optionalText(body.meetingInvoiceFileName) }
+        : {}),
       ...(body.notes !== undefined ? { notes: optionalText(body.notes) } : {}),
       ...(body.otherAmount !== undefined ? { otherAmount: optionalNumber(body.otherAmount) } : {}),
       ...(body.pmWorkload !== undefined ? { pmWorkload: optionalNumber(body.pmWorkload) } : {}),

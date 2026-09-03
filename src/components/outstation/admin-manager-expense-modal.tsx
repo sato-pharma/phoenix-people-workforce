@@ -6,6 +6,7 @@ import {
   Loader2,
   MapPin,
   Navigation,
+  Paperclip,
   Route,
   X,
 } from "lucide-react";
@@ -80,6 +81,15 @@ type CalcPreview = {
 
 function formatEgp(value: number) {
   return `EGP ${value.toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
+}
+
+function fileToDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result ?? ""));
+    reader.onerror = () => reject(reader.error ?? new Error("Unable to read the selected file."));
+    reader.readAsDataURL(file);
+  });
 }
 
 const SESSION_TOKEN = Math.random().toString(36).slice(2);
@@ -160,6 +170,11 @@ export function AdminManagerExpenseModal({
   const [meetingAmount, setMeetingAmount] = useState(
     request?.meetingAmount ? String(request.meetingAmount) : "",
   );
+  // Meeting invoice: a NEW file staged for upload, and whether the admin asked to remove the
+  // one already on the request (edit mode only — create has nothing to remove yet).
+  const [meetingInvoiceFile, setMeetingInvoiceFile] = useState<File | null>(null);
+  const [removeMeetingInvoice, setRemoveMeetingInvoice] = useState(false);
+  const existingMeetingInvoice = request?.meetingInvoiceMetadata ?? null;
   const [otherAmount, setOtherAmount] = useState(
     request?.otherAmount ? String(request.otherAmount) : "",
   );
@@ -497,6 +512,21 @@ export function AdminManagerExpenseModal({
     setSubmitting(true);
     setSubmitError(null);
 
+    // Staged file wins over an explicit removal; removal only applies when nothing new was
+    // picked. Undefined (the common case — nothing touched) leaves the existing invoice alone.
+    let meetingInvoiceDataUrl: string | null | undefined;
+    try {
+      meetingInvoiceDataUrl = meetingInvoiceFile
+        ? await fileToDataUrl(meetingInvoiceFile)
+        : removeMeetingInvoice
+          ? null
+          : undefined;
+    } catch {
+      setSubmitError("Could not read the selected invoice file. Please try again.");
+      setSubmitting(false);
+      return;
+    }
+
     const input: ManagerExpenseAdminInput = {
       amWorkload: amWorkload ? Number(amWorkload) : 0,
       claimedTotalAmount: claimedAmount ? Number(claimedAmount) : 0,
@@ -506,6 +536,12 @@ export function AdminManagerExpenseModal({
       employeeHrId,
       expenseType,
       meetingAmount: meetingAmount ? Number(meetingAmount) : 0,
+      ...(meetingInvoiceDataUrl !== undefined
+        ? {
+            meetingInvoiceDataUrl,
+            meetingInvoiceFileName: meetingInvoiceFile?.name ?? null,
+          }
+        : {}),
       notes: notes.trim() || null,
       otherAmount: otherAmount ? Number(otherAmount) : 0,
       pmWorkload: pmWorkload ? Number(pmWorkload) : 0,
@@ -900,6 +936,67 @@ export function AdminManagerExpenseModal({
                 type="number"
                 value={meetingAmount}
               />
+
+              {/* Meeting invoice — optional receipt/invoice for the amount above. */}
+              <div className="mt-3">
+                <FieldLabel>Invoice (optional)</FieldLabel>
+                {existingMeetingInvoice && !removeMeetingInvoice && !meetingInvoiceFile ? (
+                  <div className="flex items-center justify-between gap-3 rounded-md border border-[#DDE6F1] bg-white/95 px-3 py-2">
+                    <a
+                      className="flex min-w-0 items-center gap-2 text-xs font-black text-phx-accent hover:underline"
+                      href={request?.meetingInvoiceUrl ?? undefined}
+                      rel="noreferrer"
+                      target="_blank"
+                    >
+                      <Paperclip className="h-3.5 w-3.5 shrink-0" />
+                      <span className="truncate">{existingMeetingInvoice.name}</span>
+                    </a>
+                    <button
+                      className="shrink-0 text-xs font-black uppercase tracking-[0.08em] text-[#B91C1C] hover:underline"
+                      onClick={() => setRemoveMeetingInvoice(true)}
+                      type="button"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-3">
+                    <input
+                      accept="application/pdf,image/jpeg,image/png"
+                      className="block w-full text-xs font-semibold text-phx-ink-soft file:mr-3 file:rounded-md file:border-0 file:bg-phx-paper file:px-3 file:py-2 file:text-xs file:font-black file:uppercase file:tracking-[0.08em] file:text-phx-ink"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0] ?? null;
+                        setMeetingInvoiceFile(file);
+                        if (file) setRemoveMeetingInvoice(false);
+                      }}
+                      type="file"
+                    />
+                    {meetingInvoiceFile ? (
+                      <button
+                        className="shrink-0 text-xs font-black uppercase tracking-[0.08em] text-phx-ink-soft hover:underline"
+                        onClick={() => setMeetingInvoiceFile(null)}
+                        type="button"
+                      >
+                        Clear
+                      </button>
+                    ) : null}
+                  </div>
+                )}
+                {removeMeetingInvoice ? (
+                  <p className="mt-1 text-xs font-semibold text-[#B91C1C]">
+                    The current invoice will be removed when you save.{" "}
+                    <button
+                      className="underline"
+                      onClick={() => setRemoveMeetingInvoice(false)}
+                      type="button"
+                    >
+                      Undo
+                    </button>
+                  </p>
+                ) : (
+                  <p className="mt-1 text-xs text-phx-ink-soft">PDF, JPG, or PNG &mdash; up to 5MB.</p>
+                )}
+              </div>
             </div>
           ) : expenseType === "other" ? (
             <div>

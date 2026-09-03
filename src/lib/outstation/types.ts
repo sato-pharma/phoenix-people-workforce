@@ -330,6 +330,11 @@ export type OutstationExpenseRequest = {
   kilometerReading: number | null;
   medicalTripHrId: string | null;
   medicalTripName: string | null;
+  /** The invoice attached to a Meeting-type manual expense. Null when none was uploaded. */
+  meetingInvoiceMetadata: OutstationTicketAttachmentMetadata | null;
+  meetingInvoicePath: string | null;
+  /** Signed URL for meetingInvoicePath, same read-path caveat as carEvidenceImageUrl. */
+  meetingInvoiceUrl?: string | null;
   minimumRequiredDistanceKm: number;
   notes: string | null;
   offlineCaptured: boolean;
@@ -414,6 +419,13 @@ export type ManagerExpenseAdminInput = {
   hrNotes?: string | null;
   hrStatus?: string | null;
   meetingAmount?: number | null;
+  /**
+   * Base64 data URL (`data:<mime>;base64,<payload>`) of an invoice to attach to the Meeting
+   * amount, PDF/JPG/PNG up to 5MB. Omit to leave any existing invoice unchanged; pass `null`
+   * explicitly (edit only) to remove it.
+   */
+  meetingInvoiceDataUrl?: string | null;
+  meetingInvoiceFileName?: string | null;
   notes: string | null;
   otherAmount?: number | null;
   pmWorkload?: number | null;

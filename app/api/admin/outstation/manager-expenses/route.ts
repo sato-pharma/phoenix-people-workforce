@@ -101,6 +101,20 @@ export async function POST(request: Request) {
       );
     }
 
+    if (
+      body.meetingInvoiceDataUrl != null &&
+      (typeof body.meetingInvoiceDataUrl !== "string" ||
+        !body.meetingInvoiceDataUrl.startsWith("data:"))
+    ) {
+      return NextResponse.json(
+        {
+          error: "invalid_meeting_invoice",
+          message: "meetingInvoiceDataUrl must be an uploaded PDF, JPG, or PNG file.",
+        },
+        { status: 400 },
+      );
+    }
+
     const input: ManagerExpenseAdminInput = {
       amWorkload: typeof body.amWorkload === "number" ? body.amWorkload : null,
       claimedTotalAmount: Number(body.claimedTotalAmount ?? 0),
@@ -111,6 +125,12 @@ export async function POST(request: Request) {
       employeeHrId,
       expenseType,
       meetingAmount: typeof body.meetingAmount === "number" ? body.meetingAmount : null,
+      meetingInvoiceDataUrl:
+        typeof body.meetingInvoiceDataUrl === "string" ? body.meetingInvoiceDataUrl : null,
+      meetingInvoiceFileName:
+        typeof body.meetingInvoiceFileName === "string"
+          ? body.meetingInvoiceFileName.trim() || null
+          : null,
       notes: typeof body.notes === "string" ? body.notes.trim() || null : null,
       otherAmount: typeof body.otherAmount === "number" ? body.otherAmount : null,
       pmWorkload: typeof body.pmWorkload === "number" ? body.pmWorkload : null,
