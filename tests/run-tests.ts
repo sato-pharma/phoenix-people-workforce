@@ -732,6 +732,8 @@ import { runHrFormsClearanceTests } from "./hr-forms-clearance.test.ts";
 import { runHrFormsContractArchiveTests } from "./hr-forms-contract-archive.test.ts";
 import { runHrFormsCustodyTests } from "./hr-forms-custody.test.ts";
 import { runHrFormsExitDocumentTests } from "./hr-forms-exit-documents.test.ts";
+import { runHrFormsNationalIdTests } from "./hr-forms-national-id.test.ts";
+import { runHrFormsReadinessTests } from "./hr-forms-readiness.test.ts";
 import { runHrFormsWorkerDataTests } from "./hr-forms-worker-data.test.ts";
 import { runOfferBuiltinTemplateTests } from "./offer-builtin-templates.test.ts";
 import { runOfferLetterPayAndRenderTests } from "./offer-letter-pay-and-render.test.ts";
@@ -2419,6 +2421,21 @@ await runTest(
     + "{{token}} or paper-editor key reaches the paper, the declaration prints whole, and the form is "
     + "filed not signature-tracked)",
   runHrFormsWorkerDataTests,
+);
+await runTest(
+  "HR Forms national ID (date and governorate read out of the 14 digits, every doubt refused rather "
+    + "than guessed onto a government form, born-abroad fills the date but never the birthplace, a "
+    + "stored answer always beats a derived one, and the governorate names stay pinned to "
+    + "@/lib/geo/egypt-locations)",
+  runHrFormsNationalIdTests,
+);
+await runTest(
+  "HR Forms readiness (the board counts blocking gaps per person and per document, an empty company "
+    + "setting is reported once as blocking every Form 1 rather than 108 times, derived values clear "
+    + "the gaps they fill, somebody missing two Arabic values is still one person, the owner's own "
+    + "confirmed wording cannot be tidied away, and a tax number in Arabic-Indic digits still reaches "
+    + "the form instead of printing three blank runs)",
+  runHrFormsReadinessTests,
 );
 
 await runTest(

@@ -133,10 +133,24 @@ export const systemLegalEntity = {
      * If it should carry a leading zero ("02807693"), change it here — nothing else needs touching.
      */
     insuranceEstablishmentNumber: "2807693",
-    /** قطاع المنشأة — two digits. */
+    /**
+     * قطاع المنشأة — two digits.
+     *
+     * STILL OUTSTANDING, and it is the only thing blocking Form 1 company-wide. Asked on 2026-09-03
+     * and not answered; the readiness board reports it as the company-level blocker with the number
+     * of people it holds up. It is on the establishment's social-insurance registration — do not
+     * guess it, and do not derive it from the sector the company trades in.
+     */
     insuranceSectorCode: "",
-    /** رقم التسجيل الضريبي — printed as three groups (nnn/nnnnn/nnn). */
-    taxRegistrationNumber: "",
+    /**
+     * رقم التسجيل الضريبي — printed as three free-text runs with the form's own "/" between them.
+     *
+     * Set 2026-09-03 from the owner's answer, "٣١٨-١٠٨-٤٧٧". STORED IN ASCII DIGITS ON PURPOSE:
+     * `splitTaxRegistration` reads Arabic-Indic digits too now, but every other consumer of this
+     * value — a CSV, a search, a comparison against the tax card — expects 0-9, and the form
+     * renderer is what decides how it is drawn.
+     */
+    taxRegistrationNumber: "318-108-477",
     /** The default NOSI branch office ("مكتب ..........") for new files. */
     defaultInsuranceOffice: "",
   },
