@@ -78,8 +78,9 @@ import {
   type NavigationMode,
   type PhoenixRole,
 } from "@/lib/auth/permissions";
-import { ACTIVE_EMPLOYMENT_STATUSES_IN_LIST } from "@/lib/auth/session-lifecycle";
 import { resolveViewerAllowedLines } from "@/lib/auth/scope-visibility";
+import { ACTIVE_EMPLOYMENT_STATUSES_IN_LIST } from "@/lib/auth/session-lifecycle";
+import { HR_SEAT_ROLES } from "@/lib/conversations/notify";
 import { pickDeliverableEmail } from "@/lib/email/email-safety";
 import { getEmployeeDirectory, type EmployeeDirectoryData, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { resolveJobFunctionRole } from "@/lib/employees/job-function";
@@ -218,6 +219,7 @@ type PlanReturnNoteRow = {
 type AuthUserRow = {
   auth_email?: string | null;
   hr_id?: string | null;
+  is_active?: boolean | null;
   login_id?: string | null;
   name?: string | null;
   role?: string | null;
@@ -1379,29 +1381,104 @@ async function planReviewActionUrl(hrId: string | null | undefined, planId: stri
   return `/admin/approvals/plan/${planId}`;
 }
 
+/**
+ * Who hears about a plan on HR's behalf - resolved by APP ROLE, never by job title.
+ *
+ * Until 2026-09-03 this matched `job_title ilike '%HR Manager%'` / `'%Admin HR%'` against
+ * `employees`, and selected a `position_title` column beside them. BOTH halves were dead, and
+ * neither said so. `position_title` does not exist on `public.employees`, so PostgREST rejected the
+ * whole request and `const { data } = await ...` discarded the error unread; and even had the
+ * column existed, ZERO of the 186 production employees match either title pattern. Both measured
+ * against production on 2026-09-03. So the HR leg returned nothing on every call this function has
+ * ever made, and every plan notification reached the Super Admins alone - silently, because an
+ * empty HR list looks exactly like an HR team with nothing to say.
+ *
+ * The owner's standing rule is that an HR seat is composed from a function catalogue and is never
+ * named after a job title. `HR_SEAT_ROLES` is that pair, imported rather than re-listed so this
+ * path and the conversation notifier cannot drift into two different answers about who HR is.
+ *
+ * Super Admin stays, deliberately. It was never a fallback here - the old query fetched Super
+ * Admins unconditionally - so dropping it while fixing HR's absence would quietly stop a mail the
+ * owner receives today. The separate empty-list fallback in notifyHrOnSubmit is kept as a net for a
+ * failed query, not because this is expected to return nothing.
+ */
 async function hrAcknowledgementRecipients() {
   const supabase = getSupabaseAdmin();
-  const { data: authRows } = await supabase
+  const { data: authRows, error } = await supabase
     .from("app_auth_users")
-    .select("login_id,hr_id,name,auth_email,role")
-    .in("role", ["Super Admin"]);
-  const { data: employees } = await supabase
-    .from("employees")
-    .select("hr_id,full_name,job_title,position_title")
-    .or("job_title.ilike.%HR Manager%,job_title.ilike.%Admin HR%,position_title.ilike.%HR Manager%,position_title.ilike.%Admin HR%")
-    // These rows are pushed straight into the recipient list below, including ones with no auth
-    // account at all — so without this a resigned HR Manager kept receiving plan acknowledgements.
-    .or(`employment_status.is.null,employment_status.in.${ACTIVE_EMPLOYMENT_STATUSES_IN_LIST}`);
-  const employeeHrIds = new Set(((employees ?? []) as Array<{ hr_id?: string | null }>).map((row) => normalizeHrId(row.hr_id)).filter(Boolean));
-  const recipients = ((authRows ?? []) as AuthUserRow[])
-    .filter((row) => row.role === "Super Admin" || employeeHrIds.has(normalizeHrId(row.hr_id)))
-    .map((row) => ({ hrId: row.hr_id ?? null, userId: row.login_id ?? null }));
-  for (const hrId of employeeHrIds) {
-    if (!recipients.some((recipient) => hrIdsMatch(recipient.hrId, hrId))) {
-      recipients.push({ hrId, userId: null });
-    }
+    .select("login_id,hr_id,name,auth_email,role,is_active")
+    .in("role", ["Super Admin", ...HR_SEAT_ROLES]);
+  if (error) {
+    // Logged, never discarded: reading `data` and ignoring `error` is precisely how the old title
+    // lookup failed for months without producing a single symptom.
+    logError("Weekly plan HR acknowledgement recipients lookup failed", {
+      labels: { event: "weekly_plan_hr_recipients_lookup_failed" },
+      error,
+    });
+    return [];
   }
-  return recipients;
+  const seen = new Set<string>();
+  const recipients: Array<{ hrId: string | null; userId: string | null }> = [];
+  for (const row of (authRows ?? []) as AuthUserRow[]) {
+    // Only an explicit false excludes - `is_active` is nullable, and a null must not be read as
+    // deactivated. Same test resolveHrAudience applies to the conversation audience.
+    if (row.is_active === false) continue;
+    // The admin-HR canary carries hr_id NULL by design, so the login id is what identifies a row
+    // when there is no HR id to key on.
+    const key = normalizeHrId(row.hr_id) || (row.login_id ? `login:${row.login_id}` : "");
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    recipients.push({ hrId: row.hr_id ?? null, userId: row.login_id ?? null });
+  }
+  return dropLeavers(recipients);
+}
+
+/**
+ * Remove anyone who has left, from a recipient list already chosen by role.
+ *
+ * `app_auth_users.is_active` is NOT this test on its own: a resigned employee's login very often
+ * stays active - authority in this app is is_active AND employment_status - so resolving HR by role
+ * alone would keep mailing plans to someone who left. The title lookup this replaced did carry an
+ * employment-status filter, and tests/leaver-roster-exclusion.test.ts pins this file for exactly
+ * that reason; the filter had to come with the fix, not go with the bug.
+ *
+ * Absence from `employees` is NOT a leaver. The admin-HR canary carries hr_id NULL by design, and a
+ * new account can exist before its employee record does, so only a row that is present AND
+ * confirmed terminal is dropped - the same rule as the null-status escape hatch, which treats an
+ * unset status as legacy data rather than a departure.
+ *
+ * Fails OPEN. If either lookup errors the whole list is returned unfiltered, because losing a
+ * notification is the worse failure and this function's entire history is of silent under-delivery.
+ */
+async function dropLeavers(recipients: Array<{ hrId: string | null; userId: string | null }>) {
+  const lookups = Array.from(new Set(recipients.flatMap((recipient) => hrIdLookupKeys(recipient.hrId))));
+  if (lookups.length === 0) return recipients;
+  const supabase = getSupabaseAdmin();
+  const [known, active] = await Promise.all([
+    supabase.from("employees").select("hr_id").in("hr_id", lookups),
+    supabase
+      .from("employees")
+      .select("hr_id")
+      .in("hr_id", lookups)
+      .or(`employment_status.is.null,employment_status.in.${ACTIVE_EMPLOYMENT_STATUSES_IN_LIST}`),
+  ]);
+  if (known.error || active.error) {
+    logError("Weekly plan leaver check failed - notifying the unfiltered list", {
+      labels: { event: "weekly_plan_hr_recipients_leaver_check_failed" },
+      error: known.error ?? active.error,
+    });
+    return recipients;
+  }
+  const keysOf = (rows: unknown) => new Set(
+    ((rows ?? []) as Array<{ hr_id?: string | null }>).map((row) => normalizeHrId(row.hr_id)).filter(Boolean),
+  );
+  const knownKeys = keysOf(known.data);
+  const activeKeys = keysOf(active.data);
+  return recipients.filter((recipient) => {
+    const key = normalizeHrId(recipient.hrId);
+    if (!key || !knownKeys.has(key)) return true;
+    return activeKeys.has(key);
+  });
 }
 
 async function notifyManager(plan: PlanHeaderRow, ccRecipients: Array<{ hrId: string | null; userId?: string | null }> = []): Promise<NotificationDeliveryStatus> {

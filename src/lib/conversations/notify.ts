@@ -80,10 +80,11 @@ async function loadWorkEmails(hrIds: Array<string | null>): Promise<Map<string, 
  * The HR seats, resolved by APP ROLE.
  *
  * Never by job title. The owner's standing rule is that an HR seat is composed from a function
- * catalogue and is never named after a job title, and this repository has a live demonstration of
- * why: `hrAcknowledgementRecipients` in weekly-planning/service.ts matches
- * `job_title ilike '%HR Manager%'` / `'%Admin HR%'`, and production returns ZERO employees for
- * either (measured 2026-09-03). Titles drift; the role is what the app actually gates on.
+ * catalogue and is never named after a job title, and this repository paid for ignoring it:
+ * `hrAcknowledgementRecipients` in weekly-planning/service.ts matched
+ * `job_title ilike '%HR Manager%'` / `'%Admin HR%'`, and production returned ZERO employees for
+ * either (measured 2026-09-03). Titles drift; the role is what the app actually gates on. That
+ * function now imports HR_SEAT_ROLES from here, so there is one answer to who HR is, not two.
  *
  * `HR Advisory` and `HR Operations` are the two HR seats, the same pair `hrAuthorityNavigationRoles`
  * names in system-navigation.ts. That constant is not imported here on purpose - navigation is UX

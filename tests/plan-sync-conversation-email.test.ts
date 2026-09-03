@@ -229,9 +229,10 @@ export function runPlanSyncConversationEmailTests() {
   );
 
   // HR is resolved by APP ROLE, never by job title. The owner's rule is that an HR seat is composed
-  // from a function catalogue and never named after a job title - and production proves the cost:
-  // weekly-planning's hrAcknowledgementRecipients matches job_title ilike '%HR Manager%' /
-  // '%Admin HR%', and BOTH return zero employees, so its HR leg reaches Super Admins alone.
+  // from a function catalogue and never named after a job title - and this repository paid for it:
+  // weekly-planning's hrAcknowledgementRecipients matched job_title ilike '%HR Manager%' /
+  // '%Admin HR%' against a column that does not exist, so its HR leg reached Super Admins alone on
+  // every call it ever made. Fixed 2026-09-03 and pinned at the foot of this file.
   assert.deepEqual(
     [...HR_SEAT_ROLES],
     ["HR Advisory", "HR Operations"],
@@ -252,6 +253,53 @@ export function runPlanSyncConversationEmailTests() {
     /resolveHrAudience[\s\S]*?\.eq\("role", "Super Admin"\)/.test(conversationNotify),
     "an empty HR audience must fall back to Super Admin rather than drop the comment",
   );
+  // WEEKLY PLANNING RESOLVES HR THE SAME WAY. Fixed 2026-09-03: hrAcknowledgementRecipients read
+  // `employees` by job title and selected a `position_title` column that does not exist on that
+  // table, so PostgREST rejected the request outright - and the result was destructured as
+  // `const { data } = await ...`, discarding the error. Two independent faults, one symptom, none
+  // of it visible: HR simply never appeared in a recipient list, which looks the same as an HR
+  // team with nothing to say. Measured on production the same day: `position_title` absent, and 0
+  // of 186 employees matching either title pattern.
+  assert.ok(
+    /\.from\("app_auth_users"\)[\s\S]{0,220}\.in\("role", \[[^\]]*\.\.\.HR_SEAT_ROLES\]\)/.test(service),
+    "the plan's HR audience must be read from the role column, never a job title",
+  );
+  // The QUERY form, not the word - the doc comment above the function deliberately names the
+  // filter it is warning against, and a pin that cannot tell a comment from a query would forbid
+  // recording why the bug happened.
+  assert.ok(
+    !/job_title\.ilike/.test(service),
+    "no plan recipient may be resolved by job title - titles drift, the role is the gate",
+  );
+  assert.ok(
+    !/\.select\([^)]*position_title/.test(service),
+    "position_title does not exist on employees - selecting it rejects the whole request",
+  );
+  // The error is the half that made this silent. A lookup that reads `data` and ignores `error`
+  // cannot tell an empty HR team from a query that never ran.
+  assert.ok(
+    /const \{ data: authRows, error \} = await supabase/.test(service),
+    "the HR recipient lookup must read its error, not just its data",
+  );
+  // A leaver must stop receiving plan mail. Resolving by role made this load-bearing rather than
+  // incidental: `app_auth_users.is_active` is not the leaver test, because a resigned employee's
+  // login very often stays active - authority here is is_active AND employment_status. The title
+  // lookup this replaced did filter employment_status, so the guard had to travel with the fix.
+  // leaver-roster-exclusion pins the file's literals, which a comment alone would satisfy; this
+  // pins that the list is actually routed through the filter.
+  assert.ok(
+    /return dropLeavers\(recipients\);/.test(service),
+    "the role-resolved recipient list must be filtered for leavers, not just mention the constant",
+  );
+
+  // Super Admin was never the fallback here - it was an unconditional recipient - so fixing HR's
+  // absence must not quietly stop a mail the owner receives today. Pinned separately from the
+  // HR_SEAT_ROLES check above so that dropping either side breaks its own assertion.
+  assert.ok(
+    /\.in\("role", \["Super Admin",/.test(service),
+    "Super Admin must stay on the plan's HR recipient list",
+  );
+
   // The employee is named, not numbered - the owner's standing rule, in chat and UI alike.
   assert.ok(
     /subjectLabel: authorName \?\? "an employee"/.test(deductionsComments),
