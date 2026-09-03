@@ -116,7 +116,7 @@ function daysSince(dateIso: string | null, todayIso: string): number {
 }
 
 /**
- * The three derived flags, as a pure function.
+ * The derived flags, as a pure function.
  *
  * Extracted from `mapTask` so a test can reach them without a database — `isHalfRevoked` is the
  * single most consequential line in this module and a rule nothing else in the system can see. It
@@ -133,7 +133,13 @@ export function computeMailboxFlags(
     lastWorkingDate: string | null;
   },
   todayIso: string,
-): { isOverdue: boolean; daysOverdue: number; isHalfRevoked: boolean; isForwardingExpired: boolean } {
+): {
+  isOverdue: boolean;
+  daysOverdue: number;
+  isHalfRevoked: boolean;
+  isForwardingExpired: boolean;
+  canRecordDisposition: boolean;
+} {
   const open = input.status === "pending" || input.status === "in_progress";
   const daysOverdue = open ? daysSince(input.lastWorkingDate, todayIso) : 0;
   return {
@@ -146,6 +152,24 @@ export function computeMailboxFlags(
       input.disposition === "forwarding" &&
       input.forwardingExpiresOn !== null &&
       input.forwardingExpiresOn < todayIso,
+    // Whether step 3 is still offerable — and it MUST mirror the guard in
+    // `phx_mailbox_offboarding_record`, because that guard is the real gate and a screen that
+    // offers a button the database refuses is worse than one that hides it.
+    //
+    // A revoked row is frozen, with one exemption: a disposition on a row revoked by BOTH
+    // timestamps cannot change the status, so it records a fact without weakening the assertion
+    // the freeze protects. Without that exemption step 3 was unreachable in the order the
+    // workspace numbers it, and 57 of 60 closed mailboxes ended up with no record of what became
+    // of them. A row revoked BY its disposition is excluded on purpose: changing `deleted` to
+    // `retained` would drop it back to `in_progress`, and that is a correction, so it goes
+    // through `reopen` with a written reason.
+    //
+    // `not_applicable` is excluded outright. It means there was no mailbox, so there is nothing
+    // for a disposition to describe.
+    canRecordDisposition:
+      input.status !== "not_applicable" &&
+      (input.status !== "revoked" ||
+        (input.passwordResetAt !== null && input.appPasswordsClearedAt !== null)),
   };
 }
 
