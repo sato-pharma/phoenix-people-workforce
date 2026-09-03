@@ -53,6 +53,49 @@ this one. `scripts/dev-server.mjs` already resolves Next the same way — throug
 not through `PATH` — so `node scripts/dev-server.mjs --port 3000` is the equivalent that also
 picks the bundler for you.
 
+## When someone runs `pnpm install` in a worktree anyway, nothing reports it
+
+The ban above is behavioural, so it gets broken. When it is, **neither half of the tooling notices**,
+and the worktree keeps working — which is what makes it durable.
+
+Measured 2026-09-03 in `.claude/worktrees/interesting-bartik-99eef2`: a real `node_modules` of
+**56,553 files**, against the 1-entry junction every healthy worktree has. `repo-doctor` scored that
+worktree at **62,478 files and 3,356 links** while its siblings sat at ~5,710 each — 11x, and
+**44% of the entire checkout's path weight** in one folder. It reported no defect, because there is
+no check for one. The only signal is the file count standing out from its siblings in the LIVE
+worktrees table.
+
+Both repair paths are closed, for different reasons:
+
+- **`--repair` never looks.** It skips every `.claude/worktrees/` path by design — *"belongs to
+  another live session"* — before any readiness test runs. Verified: `node scripts/new-session.mjs
+  --repair` listed nine such worktrees as skipped and reported `0 worktree(s) made runnable`.
+- **`ready()` would pass it anyway.** It tests `fs.existsSync(path.join(dir, "node_modules"))` and
+  nothing else, so a real directory satisfies it exactly as a junction does. Even reached,
+  `linkModules()` returns `"already present"` and replaces nothing.
+- **`--remove` refuses the path too**, by the same `.claude/worktrees/` guard.
+
+So the fix is by hand, and it is safe only in this order:
+
+1. Confirm the target is a **real directory**, not a junction — `(Get-Item -Force $nm).LinkType` must
+   be empty. `rmdir /s` on a junction removes the link rather than the target, but confirm rather
+   than assume.
+2. `cmd /c rmdir /s /q "<worktree>\node_modules"`. Never `Remove-Item -Recurse`, which can follow a
+   link into the primary. Took 46s for 56,553 files.
+3. **Verify the primary's `node_modules` is still intact BEFORE linking** — that is the check that
+   catches a step-2 mistake while it is still recoverable.
+4. `cmd /c mklink /J "<worktree>\node_modules" "<primary>\node_modules"`.
+5. Confirm the junction resolves (`node_modules\next\dist\bin\next` reachable through it) and that
+   `.env.local` is still present — together those are what `ready()` calls runnable.
+
+Result: 62,478 files to 5,925, and the checkout's total path entries from 156,266 to 88,210.
+
+**Check for a live process first.** The worktree's own `.next` had been written 20 minutes earlier,
+and a `next dev` server was live on port 3000 — but it belonged to a *different* worktree
+(`vigorous-gould-7cdf82`, whose parent process named that path) and had taken the port *after* the
+last write here. Deleting `node_modules` under a running dev server breaks it instantly, so resolve
+which worktree owns the port before touching anything.
+
 ## Why the folder name matters
 
 `tsconfig.json`, `eslint.config.mjs` and `.gitignore` all exclude `_wt-*`, `.codex-worktrees/` and
