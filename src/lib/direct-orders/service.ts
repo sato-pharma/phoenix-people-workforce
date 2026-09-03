@@ -2751,7 +2751,14 @@ export type DirectOrderRegistryPharmacy = DirectOrderPharmacy & {
 };
 
 /**
- * Every active pharmacy, with names rather than codes and with what is riding on each one.
+ * Every REACHABLE venue, with names rather than codes and with what is riding on each one.
+ *
+ * Reachable means active and not merged away — a user can open it, edit it, and place an order on
+ * it. That definition lives HERE and nowhere else: the board's summary chips (venue total, waiting
+ * for a System Admin, no distributor code, not linked to the CRM) are all derived from this list,
+ * so re-filtering them in the component would give the backlog two definitions that drift apart.
+ * A chip's whole job is to size the outstanding work, and a tombstone counted into it overstates
+ * that work with no way for the reader to tell.
  *
  * `canClearReview` is deliberately NARROWER than `canManage`. The SFE Manager may register and
  * edit pharmacies, but clearing one that is already holding an order is the System Admin rung the
@@ -2769,6 +2776,15 @@ export async function listDirectOrderPharmacyRegistry(access: AccessContext): Pr
     .from("direct_order_pharmacies")
     .select("*")
     .eq("active", true)
+    // Merged-away rows are finished business: the row IS the survivor now, and re-offering it here
+    // would put a tombstone in the board's counts and in its edit form. They are deactivated by the
+    // same write that merges them, so this changes NO row today (production 2026-09-03: 10 merged,
+    // 10 of them inactive) — it says the rule instead of borrowing it from a co-writer. The merge
+    // is the ONLY thing maintaining that pairing: there is no constraint tying the two columns, and
+    // AGENTS.md sends a stranded desk validation to hand SQL, which is exactly the writer that
+    // would set one without the other. The sibling read getDirectOrderCleanupPlan already filters
+    // on this column for the same reason.
+    .is("merged_into_pharmacy_id", null)
     .order("pharmacy_name", { ascending: true });
   if (error) throw error;
   const pharmacies = ((data ?? []) as Array<Record<string, unknown>>).map(mapPharmacyRow);
