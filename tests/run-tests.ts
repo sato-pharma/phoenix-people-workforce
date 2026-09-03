@@ -1246,6 +1246,7 @@ import { runOutstationPayrollPayableTotalAgreementTests } from "./outstation-pay
 import { runOutstationOfflineSyncBodyParityTests } from "./outstation-offline-sync-body-parity.test.ts";
 import { runOutstationManagerExpenseEditValidationTests } from "./outstation-manager-expense-edit-validation.test.ts";
 import { runDirectOrderPharmacyDeadDistributorColumnsTests } from "./direct-order-pharmacy-dead-distributor-columns.test.ts";
+import { runDirectOrderReversalFamilyCodeTests } from "./direct-orders-reversal-family-code.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -3848,6 +3849,12 @@ await runTest(
 await runTest(
   "direct_order_pharmacies.distributor_code / .distributor_customer_code stay dead (the link lives in the child table)",
   runDirectOrderPharmacyDeadDistributorColumnsTests,
+);
+await runTest(
+  "a direct-order reversal carries its original's family_code (the basket allow-list; nullable, so "
+    + "omitting it wrote a familyless reversal that no later trigger could repair, and null must not "
+    + "become \"\")",
+  runDirectOrderReversalFamilyCodeTests,
 );
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
