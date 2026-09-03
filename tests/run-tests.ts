@@ -103,6 +103,7 @@ import { runPayrollMoneyTests } from "./payroll-money.test.ts";
 import { runSalesMoneyRoundingTests } from "./sales-money-rounding.test.ts";
 import { runExpenseTripDedupTests } from "./expense-trip-dedup.test.ts";
 import { runOutstationDecisionTests } from "./outstation-decision.test.ts";
+import { runOutstationWorkloadFreshnessTests } from "./outstation-workload-freshness.test.ts";
 import { runOutstationExpenseImportTripIdTests } from "./outstation-expense-import-tripid.test.ts";
 import { runMarketingBulkImportAtomicityTests } from "./marketing-bulk-import-atomicity.test.ts";
 import { runSalesBulkImportGatingTests } from "./sales-bulk-import-gating.test.ts";
@@ -3904,6 +3905,7 @@ await runTest(
 await runTest("the CRM client's timeout bounds the response BODY, and an empty body is not a shape change", runCrmClientTimeoutsTests);
 await runTest("the outstation wizard blocks submit on a stale calculation and never posts its own claimedTotalAmount", runOutstationMobileWizardStaleCalculationTests);
 await runTest("the payroll push mapper and the payroll display mapper agree on one outstation total, even when the claim differs from the expected total", runOutstationPayrollPayableTotalAgreementTests);
+await runTest("a stored outstation workload verdict that the CRM has since contradicted is named as stale (14 of 26 \"no activity\" requests on production have visits the stamp does not reflect)", runOutstationWorkloadFreshnessTests);
 await runTest(
   "neither outstation submit path lets an employee set his own claim's travel cost, AM/PM "
     + "workload, HR column or trip type, and the offline body stays a subset of the online one",
