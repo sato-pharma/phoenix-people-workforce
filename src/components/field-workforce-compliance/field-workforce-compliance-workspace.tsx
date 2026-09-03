@@ -571,13 +571,20 @@ function WorkspaceTabs({
   tabs?: Array<{ id: WorkspaceTab; label: string }>;
 }) {
   return (
-    <div className="phoenix-horizontal-scroll overflow-x-auto rounded-2xl border border-slate-200 bg-white/90 p-1.5 shadow-sm">
-      <div className="flex min-w-max gap-1.5">
+    {/*
+      Fits-the-screen golden rule (AGENTS.md §4), and the same fix the analytics tab strip got:
+      this was `overflow-x-auto` over a `min-w-max` row, so the later tabs sat off a phone
+      screen behind a scroll. `flex-wrap` lets the row wrap onto a second line instead, and the
+      buttons take `shrink-0` so no label is squeezed below its own text width — flex items
+      default to `flex-shrink: 1`, which is what paints one label over its neighbour.
+    */}
+    <div className="rounded-2xl border border-slate-200 bg-white/90 p-1.5 shadow-sm">
+      <div className="flex flex-wrap gap-1.5">
         {tabs.map((tab) => (
           <button
             aria-pressed={activeTab === tab.id}
             className={cn(
-              "rounded-xl px-4 py-2 text-sm font-black transition",
+              "shrink-0 rounded-xl px-4 py-2 text-sm font-black transition",
               activeTab === tab.id
                 ? "bg-slate-950 text-white shadow-[0_12px_24px_rgba(15,23,42,0.18)]"
                 : "text-slate-600 hover:bg-orange-50 hover:text-orange-700",

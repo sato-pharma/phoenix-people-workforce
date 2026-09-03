@@ -20,22 +20,40 @@ function OutcomeTable({ title, groups, firstColLabel }: { title: string; groups:
   return (
     <section className="rounded-lg border border-slate-200 bg-white">
       <h2 className="border-b border-slate-100 px-4 py-2.5 text-sm font-semibold text-slate-700">{title}</h2>
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[560px] text-sm">
+      {/*
+        Fits-the-screen golden rule (AGENTS.md §4). This was `overflow-x-auto` over a
+        `min-w-[560px]` floor with no mobile alternative anywhere in this file, so on a 375px
+        phone the pass rate and average score — the two numbers the table exists to show — were
+        off the right edge behind a scroll.
+
+        Every cell here is a short label or a number, so `table-fixed` + `<colgroup>` fits all
+        six columns at any width; the headers wrap on a narrow screen, which is the rule's
+        permitted answer. No column is dropped and no type is shrunk.
+      */}
+      <div>
+        <table className="w-full table-fixed text-sm">
+          <colgroup>
+            <col className="w-[26%]" />
+            <col className="w-[13%]" />
+            <col className="w-[13%]" />
+            <col className="w-[17%]" />
+            <col className="w-[16%]" />
+            <col className="w-[15%]" />
+          </colgroup>
           <thead className="bg-slate-50 text-left text-phx-xs uppercase tracking-wide text-slate-500">
             <tr>
-              <th className="px-3 py-2">{firstColLabel}</th>
-              <th className="px-3 py-2">Decided</th>
-              <th className="px-3 py-2">Passed</th>
-              <th className="px-3 py-2">Terminated</th>
-              <th className="px-3 py-2">Pass rate</th>
-              <th className="px-3 py-2">Avg score</th>
+              <th className="break-words px-3 py-2">{firstColLabel}</th>
+              <th className="break-words px-3 py-2">Decided</th>
+              <th className="break-words px-3 py-2">Passed</th>
+              <th className="break-words px-3 py-2">Terminated</th>
+              <th className="break-words px-3 py-2">Pass rate</th>
+              <th className="break-words px-3 py-2">Avg score</th>
             </tr>
           </thead>
           <tbody>
             {groups.map((g) => (
               <tr key={g.key} className="border-t border-slate-100">
-                <td className="px-3 py-2 font-medium text-slate-800">{g.label}</td>
+                <td className="break-words px-3 py-2 font-medium text-slate-800">{g.label}</td>
                 <td className="px-3 py-2 text-slate-700">{g.total}</td>
                 <td className="px-3 py-2 text-emerald-700">{g.passCount}</td>
                 <td className="px-3 py-2 text-rose-700">{g.terminateCount}</td>
@@ -90,21 +108,29 @@ export function ProbationAnalyticsView({ data }: { data: OutcomesAnalytics }) {
             how often a feedback recommendation matched the eventual decision
           </span>
         </h2>
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[560px] text-sm">
+        {/* Same fix as the outcome table above: no floor, fixed columns, headers wrap. */}
+        <div>
+          <table className="w-full table-fixed text-sm">
+            <colgroup>
+              <col className="w-[30%]" />
+              <col className="w-[15%]" />
+              <col className="w-[17%]" />
+              <col className="w-[20%]" />
+              <col className="w-[18%]" />
+            </colgroup>
             <thead className="bg-slate-50 text-left text-phx-xs uppercase tracking-wide text-slate-500">
               <tr>
-                <th className="px-3 py-2">Recommendation</th>
-                <th className="px-3 py-2">Feedbacks</th>
-                <th className="px-3 py-2">→ Passed</th>
-                <th className="px-3 py-2">→ Terminated</th>
-                <th className="px-3 py-2">Alignment</th>
+                <th className="break-words px-3 py-2">Recommendation</th>
+                <th className="break-words px-3 py-2">Feedbacks</th>
+                <th className="break-words px-3 py-2">→ Passed</th>
+                <th className="break-words px-3 py-2">→ Terminated</th>
+                <th className="break-words px-3 py-2">Alignment</th>
               </tr>
             </thead>
             <tbody>
               {data.predictiveness.map((p) => (
                 <tr key={p.recommendation} className="border-t border-slate-100">
-                  <td className="px-3 py-2 font-medium text-slate-800">{REC_LABEL[p.recommendation] ?? p.recommendation}</td>
+                  <td className="break-words px-3 py-2 font-medium text-slate-800">{REC_LABEL[p.recommendation] ?? p.recommendation}</td>
                   <td className="px-3 py-2 text-slate-700">{p.total}</td>
                   <td className="px-3 py-2 text-emerald-700">{p.endedInPass}</td>
                   <td className="px-3 py-2 text-rose-700">{p.endedInTerminate}</td>

@@ -776,22 +776,38 @@ export function ProbationTracker({
               </PortalRecordCard>
             )}
             renderTable={() => (
-              <div className="hidden overflow-x-auto bg-white/80 md:block">
-            <table className="w-full min-w-[1080px] text-left text-xs">
+              {/*
+                Fits-the-screen golden rule (AGENTS.md §4). `overflow-x-auto` over a
+                `min-w-[1080px]` floor — the widest table on this rail, and the one that most
+                needed the fix: the Feedback Text column it exists to show sat past the right edge
+                at every desktop width below 1080px.
+
+                Merged, not shrunk, and no value is dropped. Twelve columns become six:
+                  * HR ID, Name and Hiring Date all describe one person -> "Employee".
+                  * Direct Manager and Manager of Manager -> "Managers", one above the other.
+                  * Feedback By, Feedback Date and Feedback Text -> "Feedback", the attribution
+                    line above the text itself, which now gets the widest share (30%) instead of
+                    a `max-w-[260px]` box at the far right of a scroll.
+                  * Recommendation and Pending Status -> one decision cell.
+              */}
+              <div className="hidden bg-white/80 md:block">
+            <table className="w-full table-fixed text-left text-xs">
+              <colgroup>
+                <col className="w-[17%]" />
+                <col className="w-[11%]" />
+                <col className="w-[15%]" />
+                <col className="w-[30%]" />
+                <col className="w-[14%]" />
+                <col className="w-[13%]" />
+              </colgroup>
               <thead className="bg-slate-50/90 text-xs uppercase tracking-[0.12em] text-text-secondary">
                 <tr className="border-b border-slate-200">
                   {[
-                    "Employee HR ID",
-                    "Employee Name",
-                    "Hiring Date",
+                    "Employee",
                     "Probation Day / Status",
-                    "Direct Manager",
-                    "Manager of Manager",
-                    "Feedback By",
-                    "Feedback Date",
-                    "Feedback Text",
+                    "Managers",
+                    "Feedback",
                     "Recommendation",
-                    "Pending Status",
                     "Line / Area / Team",
                   ].map((column) => (
                     <th className={adminTableHeaderClassName} key={column}>
@@ -803,20 +819,38 @@ export function ProbationTracker({
               <tbody className="divide-y divide-phx-line">
                 {feedbackReportRows.map((row) => (
                     <tr className="align-top transition-colors hover:bg-slate-50/65" key={`feedback:${row.hr_id}`}>
-                      <td className={cn(probationTableCellClassName, "max-w-[78px] break-words font-mono text-text-secondary")}>{row.hr_id}</td>
-                      <td className={cn(probationTableCellClassName, "font-semibold text-text")}>{row.full_name}</td>
-                      <td className={cn(probationTableCellClassName)}>{formatDate(row.hire_date)}</td>
-                      <td className={cn(probationTableCellClassName)}>{row.probationDayStatus}</td>
-                      <td className={cn(probationTableCellClassName)}>{row.manager_name ?? row.manager_hr_id ?? "-"}</td>
-                      <td className={cn(probationTableCellClassName)}>{row.manager_manager_name ?? row.manager_manager_hr_id ?? "-"}</td>
-                      <td className={cn(probationTableCellClassName)}>{row.workflow?.managerReviewedBy ?? "-"}</td>
-                      <td className={cn(probationTableCellClassName)}>{row.workflow?.managerReviewedAt ? formatDate(row.workflow.managerReviewedAt) : "-"}</td>
-                      <td className={cn("max-w-[260px]", probationTableCellClassName)}>{row.workflow?.managerFeedback ?? "-"}</td>
-                      <td className={cn(probationTableCellClassName)}>{row.workflow?.decision ?? row.workflow?.hrRecommendation ?? "-"}</td>
-                      <td className={cn(probationTableCellClassName)}>
-                        <Badge variant={row.feedbackStatus === "Pending" ? "warning" : "success"}>{row.feedbackStatus}</Badge>
+                      <td className={cn(probationTableCellClassName, "break-words align-top")}>
+                        <span className="block break-words font-semibold text-text">{row.full_name}</span>
+                        <span className="block break-words font-mono text-text-secondary">{row.hr_id}</span>
+                        <span className="block break-words text-text-secondary">
+                          Hired {formatDate(row.hire_date)}
+                        </span>
                       </td>
-                      <td className={cn(probationTableCellClassName, "align-top")}>
+                      <td className={cn(probationTableCellClassName, "break-words align-top")}>{row.probationDayStatus}</td>
+                      <td className={cn(probationTableCellClassName, "break-words align-top")}>
+                        <span className="block break-words">{row.manager_name ?? row.manager_hr_id ?? "-"}</span>
+                        <span className="block break-words text-text-secondary">
+                          via {row.manager_manager_name ?? row.manager_manager_hr_id ?? "-"}
+                        </span>
+                      </td>
+                      <td className={cn(probationTableCellClassName, "break-words align-top")}>
+                        <span className="block break-words text-text-secondary">
+                          {row.workflow?.managerReviewedBy ?? "-"}
+                          {row.workflow?.managerReviewedAt
+                            ? ` · ${formatDate(row.workflow.managerReviewedAt)}`
+                            : ""}
+                        </span>
+                        <span className="mt-1 block break-words">{row.workflow?.managerFeedback ?? "-"}</span>
+                      </td>
+                      <td className={cn(probationTableCellClassName, "break-words align-top")}>
+                        <span className="block break-words">
+                          {row.workflow?.decision ?? row.workflow?.hrRecommendation ?? "-"}
+                        </span>
+                        <span className="mt-1 block">
+                          <Badge variant={row.feedbackStatus === "Pending" ? "warning" : "success"}>{row.feedbackStatus}</Badge>
+                        </span>
+                      </td>
+                      <td className={cn(probationTableCellClassName, "break-words align-top")}>
                         <p>{row.line_name}</p>
                         <p className="mt-1">{row.area_name}</p>
                         <p className="mt-1">{row.team_name ?? "-"}</p>
@@ -842,10 +876,11 @@ export function ProbationTracker({
           description={`Showing ${filteredRows.length} of ${rows.length} employees in the active probation window.`}
           title="Current Probation Employees"
         />
-        {/* Desktop keeps the fourteen-column table; a phone gets one card per employee. The
-            table's minimum is 940px, so on a 375px screen everything from "Days" rightwards —
-            the progress, the review decision, the DV checkboxes and every action button — sat
-            off the right edge inside a container that gave no hint it scrolled. */}
+        {/* Desktop gets the table, a phone one card per employee. The table used to carry a
+            940px minimum, so everything from "Days" rightwards — the progress, the review
+            decision and every action button — sat off the right edge inside a container that
+            gave no hint it scrolled. It is now seven merged columns with no floor at all, so it
+            fits whatever width the desktop shell gives it. */}
         <PortalResponsiveDataList
           empty={
             <PortalEmptyState
@@ -907,20 +942,38 @@ export function ProbationTracker({
             );
           }}
           renderTable={() => (
-            <div className="hidden overflow-x-auto bg-white/80 md:block">
-            <table className="w-full min-w-[940px] text-left text-xs">
+            {/*
+              Fits-the-screen golden rule (AGENTS.md §4). Mobile has `renderCard` above, so the
+              mobile half was met; this desktop half was `overflow-x-auto` over `min-w-[940px]`,
+              wider than the content column at 768px or in a 1024px window, so Status, Probation
+              Review and the Actions buttons — everything the reviewer acts on — sat behind a
+              sideways scroll on a laptop.
+
+              Fixed by MERGING columns, which is what the rule asks for, never by shrinking type.
+              Thirteen columns become seven and NOT ONE VALUE IS DROPPED:
+                * HR ID, CRM ID, Full Name and Job Title all describe one person -> "Employee".
+                * Line and Area -> "Line / Area".
+                * Hire Date, End Date and Days are one interval -> "Probation window".
+              Progress keeps the widest share because its bar carries a `min-w-[125px]` floor of
+              its own, which 17% clears at every desktop width.
+            */}
+            <div className="hidden bg-white/80 md:block">
+            <table className="w-full table-fixed text-left text-xs">
+              <colgroup>
+                <col className="w-[22%]" />
+                <col className="w-[12%]" />
+                <col className="w-[15%]" />
+                <col className="w-[17%]" />
+                <col className="w-[10%]" />
+                <col className="w-[12%]" />
+                <col className="w-[12%]" />
+              </colgroup>
               <thead className="sticky top-0 bg-slate-50/90 backdrop-blur">
                 <tr className="border-b border-slate-200 text-xs uppercase tracking-[0.12em] text-text-secondary">
                 {[
-                  "HR ID",
-                  "CRM ID",
-                  "Full Name",
-                  "Job Title",
-                  "Line",
-                  "Area",
-                  "Hire Date",
-                  "End Date",
-                  "Days",
+                  "Employee",
+                  "Line / Area",
+                  "Probation window",
                   "Progress",
                   "Status",
                   "Probation Review",
@@ -939,15 +992,25 @@ export function ProbationTracker({
 
                   return (
                     <tr className="transition-colors hover:bg-slate-50/65" key={row.hr_id}>
-                      <td className={cn(probationTableCellClassName, "max-w-[78px] break-words font-mono text-text-secondary")}>{row.hr_id || "-"}</td>
-                      <td className={cn(probationTableCellClassName, "max-w-[78px] break-words font-mono text-text-secondary")}>{row.crm_id || "-"}</td>
-                      <td className={cn(probationTableCellClassName, "break-words font-semibold text-text")}>{row.full_name}</td>
-                      <td className={cn("max-w-[190px] break-words", probationTableCellClassName)}>{row.job_title}</td>
-                      <td className={cn(probationTableCellClassName)}>{row.line_name}</td>
-                      <td className={cn(probationTableCellClassName)}>{row.area_name}</td>
-                      <td className={cn(probationTableCellClassName)}>{formatDate(row.hire_date)}</td>
-                      <td className={cn(probationTableCellClassName)}>{formatDate(row.probation_end_date)}</td>
-                      <td className={cn(probationTableValueClassName, "font-semibold text-text")}>{Math.max(0, row.days_remaining)}</td>
+                      <td className={cn(probationTableCellClassName, "break-words align-top")}>
+                        <span className="block break-words font-semibold text-text">{row.full_name}</span>
+                        <span className="block break-words font-mono text-text-secondary">
+                          {row.hr_id || "-"} · {row.crm_id || "-"}
+                        </span>
+                        <span className="block break-words text-text-secondary">{row.job_title}</span>
+                      </td>
+                      <td className={cn(probationTableCellClassName, "break-words align-top")}>
+                        <span className="block break-words">{row.line_name}</span>
+                        <span className="block break-words text-text-secondary">{row.area_name}</span>
+                      </td>
+                      <td className={cn(probationTableCellClassName, "break-words align-top")}>
+                        <span className="block break-words">
+                          {formatDate(row.hire_date)} → {formatDate(row.probation_end_date)}
+                        </span>
+                        <span className="block font-semibold text-text">
+                          {Math.max(0, row.days_remaining)} days
+                        </span>
+                      </td>
                       <td className={cn("min-w-[125px]", probationTableCellClassName)}>
                         {progressCell(traffic, progress)}
                       </td>
