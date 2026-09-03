@@ -1551,7 +1551,12 @@ function LayoutFieldEditor({
       </div>
 
       {draft.anchor ? (
-        <p className="truncate text-phx-2xs text-phx-ink-faint" title={draft.anchor.selector}>
+        // WRAPS, never truncates. A CSS path is long and has no redundant half — cutting it with an
+        // ellipsis would hide exactly the part that says WHICH clause this field hangs on, and the
+        // owner's rule bans that outright. `break-all` because the path is one unbroken token: a
+        // normal word wrap has nowhere to break it and would push the panel sideways instead, which
+        // is the horizontal scroll the fits-the-screen rule bans.
+        <p className="break-all text-phx-2xs text-phx-ink-faint">
           Anchored to: <code>{draft.anchor.selector}</code>
         </p>
       ) : null}
