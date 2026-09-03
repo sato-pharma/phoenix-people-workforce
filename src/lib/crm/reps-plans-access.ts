@@ -51,24 +51,29 @@ const ADMIN_ROLES = ["Super Admin", "SFE Manager"] as const;
 
 /**
  * PORTAL seats, each scoped by `getDoctorCoverageScope` — `team` for the two manager seats, `line`
- * for the two product seats, `company` for the two staff seats.
+ * for the three line seats, `company` for the two staff seats.
  *
  * WIDENED 2026-09-03, same instruction. Until then this was the two seats that supervise a named
  * rep, and the note here said a National Sales Manager was "deliberately absent: he resolves to
  * `line` basis, which on this board is most of a line's field force at once — a whole-line
  * performance league table is a different thing from a manager reading his own team, and the owner
- * has not asked for one." He has now asked for exactly that, for the marketing seats: a Product
- * Manager resolves to the same `line` basis and sees the same league table. So the reasoning is
- * superseded, not forgotten — what it turned on was that nobody had asked.
+ * has not asked for one."
  *
- * The National Sales Manager is STILL not on this list, and that is now an asymmetry rather than a
- * principle: the owner named five roles and he was not one of them. It is worth putting to him
- * rather than closing quietly, because a Product Manager reading a whole line's performance while
- * the manager who owns that line cannot is a hard state to defend if it was not deliberate.
+ * THAT REASONING IS NOW RETIRED, and it is worth being exact about why, because it reads like a
+ * principle and was not one. What it actually turned on was its own last clause — nobody had asked.
+ * Adding the marketing seats settled the question by itself: a Product Manager resolves to the same
+ * `line` basis and sees the same whole-line league table, so the objection could no longer explain
+ * who was on the list. Leaving the National Sales Manager off would have meant a Product Manager
+ * reading a whole line's performance while the manager who OWNS that line could not — an asymmetry
+ * with nothing behind it. The owner was shown exactly that and answered "yes add nsm too".
+ *
+ * So the league table is now the accepted shape of this board for a line seat, not a hazard being
+ * avoided. A future session should not reinstate the old note by reading it in the history.
  */
 const PORTAL_ROLES = [
   "Regional Manager",
   "District Manager",
+  "National Sales Manager",
   "Product Manager",
   "Group Product Manager",
   "Marketing Manager",

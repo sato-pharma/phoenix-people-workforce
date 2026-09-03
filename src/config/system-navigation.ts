@@ -1448,12 +1448,15 @@ const employeePortalNavigationSectionSeeds = [
       // could run, so widening the admin role list alone would have been inert.
       //
       // REPS_PLANS_PORTAL_ROLES verbatim (src/lib/crm/reps-plans-access.ts), which with
-      // crm_visits:read is the enforcing gate. Widened 2026-09-03 from the two manager seats to six,
-      // on the owner's instruction to show the rep list, the plans and the KPIs to the marketing and
-      // field-support seats. It is now one seat SHORT of KPIs directly above rather than four: the
-      // National Sales Manager is still absent, which the note in reps-plans-access.ts flags as an
-      // open question for the owner rather than a rule — he was simply not one of the five roles named.
-      { href: "/employee-portals/reps-plans", icon: Footprints, label: "Reps Plans", permissions: [{ resource: "crm_visits", action: "read" }], roles: ["Regional Manager", "District Manager", "Product Manager", "Group Product Manager", "Marketing Manager", "Training Manager"] },
+      // crm_visits:read is the enforcing gate. Widened 2026-09-03 from the two manager seats to
+      // seven, on the owner's instruction to show the rep list, the plans and the KPIs to the
+      // marketing and field-support seats, then to the National Sales Manager when he was shown that
+      // leaving him off would let a Product Manager read a whole line's performance while the manager
+      // who owns that line could not.
+      //
+      // This list now differs from KPIs directly above by ONE seat, the Medical Rep — who has no
+      // place on a board that scores named reps against each other. That is the only intended gap.
+      { href: "/employee-portals/reps-plans", icon: Footprints, label: "Reps Plans", permissions: [{ resource: "crm_visits", action: "read" }], roles: ["Regional Manager", "District Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager", "Training Manager"] },
     ],
     label: "Sales Operations",
   },
@@ -3582,8 +3585,8 @@ export const crmPageItems: readonly AdminToolsPageItem[] = [
   {
     // THE ADMIN HALF OF REPS_PLANS_ACCESS_ROLES, and only that half. The board was widened twice on
     // 2026-09-03 — first to the Regional and District Managers who supervise the reps it scores,
-    // then to the marketing and field-support seats — and of the eight roles now admitted, only
-    // these two reach the admin shell. Every other one is portal-mode and reaches the identical
+    // then to the marketing, field-support and national sales seats — and of the nine roles now
+    // admitted, only these two reach the admin shell. Every other one is portal-mode and reaches the identical
     // board at /employee-portals/reps-plans; app/(admin)/layout.tsx redirects a portal-mode viewer
     // out of here before this page's own gate could run, so listing them on this entry would show a
     // row that redirects. ("Rep Doctor Lists", which carried the same reasoning and stood in this
