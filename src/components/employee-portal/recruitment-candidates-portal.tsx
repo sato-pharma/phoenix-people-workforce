@@ -11,6 +11,7 @@ import { DistrictFoldersSection } from "@/components/employee-portal/district-fo
 import { ManagerFoldersSection } from "@/components/employee-portal/manager-folders-section";
 import { TeamCandidatesSection, type TeamManagerOption } from "@/components/employee-portal/team-candidates-section";
 import { cairoDateTime } from "@/lib/format/cairo-datetime";
+import { dateOnly } from "@/lib/format/date-only";
 import { APPLIED_FOR_SOURCE_LABEL, candidateRowAppliedFor } from "@/lib/recruitment/applied-for";
 import type { ApplicationWithContext } from "@/lib/recruitment/applications";
 import {
@@ -124,17 +125,11 @@ function formatYesNo(value: boolean | null | undefined) {
   return "Not stated";
 }
 
-function formatDate(value: string | null | undefined) {
-  if (!value) return "";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat("en-US", { day: "numeric", month: "short", year: "numeric" }).format(date);
-}
-
-// Every moment shown to a person is Cairo local time, never a raw UTC string. Written here rather
-// than imported, matching the copies in recruitment-workspace.tsx and intake-health-view.tsx — the
-// three differ in separator and empty-value, and this one matches the workspace, which is the screen
-// a recruiter is looking at when they talk to the manager about the same candidate.
+// Dates on this card follow the backing column, not the field's name. `cairoDateTime` for an
+// instant we stamped (`created_at`, `sent_at`, `ats_interviews.scheduled_at` — all timestamptz),
+// `dateOnly` for a `date` column (`medical_rep_experience_from`/`_to`). Both pin their zone, so the
+// server and the phone render the same characters; the unpinned local formatter that used to live
+// here did not, and an unpinned formatter is a hydration mismatch waiting for its first row.
 const hiringManagerCriteria = [
   { key: "territory_knowledge", label: "Territory knowledge" },
   { key: "sales_skills", label: "Sales skills" },
@@ -253,7 +248,7 @@ function CandidateCard({
 
   const tenureLine = [
     candidate.medicalRepEmployer,
-    [formatDate(candidate.medicalRepExperienceFrom), formatDate(candidate.medicalRepExperienceTo)]
+    [dateOnly(candidate.medicalRepExperienceFrom), dateOnly(candidate.medicalRepExperienceTo)]
       .filter(Boolean)
       .join(" – "),
   ]
@@ -322,7 +317,7 @@ function CandidateCard({
       {canAct && hmInterview && !hmInterview.outcome ? (
         <div className="space-y-3 border-t border-slate-100 pt-3">
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-            Interview{hmInterview.scheduledAt ? ` on ${formatDate(hmInterview.scheduledAt)}` : ""} — record your feedback
+            Interview{hmInterview.scheduledAt ? ` on ${cairoDateTime(hmInterview.scheduledAt)}` : ""} — record your feedback
           </p>
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
             {hiringManagerCriteria.map((criterion) => (

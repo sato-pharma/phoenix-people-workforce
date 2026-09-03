@@ -8,6 +8,7 @@ import { runEmployee360VisitClassificationTests } from "./employee-360-visit-cla
 import { runEmployee360DoubleVisitCountTests } from "./employee-360-double-visit-count.test.ts";
 import { runErrorMonitorNewIssueDiffTests } from "./error-monitor-new-issue-diff.test.ts";
 import { runErrorMonitorDerivedStatusTests } from "./error-monitor-derived-status.test.ts";
+import { runClientErrorCrossOriginNoiseTests } from "./client-error-cross-origin-noise.test.ts";
 import { runErrorMonitorMessageDecodeTests } from "./error-monitor-message-decode.test.ts";
 import { runErrorMonitorAiRedactTests } from "./error-monitor-ai-redact.test.ts";
 import { runErrorMonitorUserAttemptsTests } from "./error-monitor-user-attempts.test.ts";
@@ -1301,6 +1302,10 @@ await runTest("crm portal scope (exact-match agentHrIds, fail-closed, no ?view= 
 await runTest("error monitor new-issue diff", runErrorMonitorNewIssueDiffTests);
 await runTest("error monitor derived status", runErrorMonitorDerivedStatusTests);
 await runTest("error monitor message decode", runErrorMonitorMessageDecodeTests);
+await runTest(
+  "client error noise (1,972 unattributable 'Script error.' rows read as a crash — cap them, keep real ones)",
+  runClientErrorCrossOriginNoiseTests,
+);
 await runTest("error monitor ai redact", runErrorMonitorAiRedactTests);
 await runTest("error monitor per-user attempts (30d default window + real-account partition)", runErrorMonitorUserAttemptsTests);
 await runTest("gcp-metrics service health reader (availability/latency/instances + {available:false} guard)", runGcpMetricsTests);
