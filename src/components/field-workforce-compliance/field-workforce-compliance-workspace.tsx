@@ -1202,31 +1202,48 @@ function ReviewQueue({
           )}
           renderTable={() => (
             <div className="hidden md:block">
-        <table className="w-full min-w-[1180px] text-left text-sm">
+        {/*
+          Fits-the-screen golden rule (AGENTS.md §4). Mobile has `renderCard` above; this
+          desktop half was a `min-w-[1180px]` floor, so Context and the Session Note box — the
+          only cell on the row you can actually type into — were off the right edge at every
+          desktop width. Raw and Meaning are the same reading (the code, and what it means), so
+          they merge into one cell and the note input goes fluid instead of a fixed 256px.
+        */}
+        <table className="w-full table-fixed text-left text-sm">
+          <colgroup>
+            <col className="w-[14%]" />
+            <col className="w-[9%]" />
+            <col className="w-[12%]" />
+            <col className="w-[9%]" />
+            <col className="w-[19%]" />
+            <col className="w-[14%]" />
+            <col className="w-[23%]" />
+          </colgroup>
           <thead className="sticky top-0 z-10 bg-slate-50 text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">
             <tr>
-              <th className="px-4 py-3">Employee</th>
-              <th className="px-4 py-3">Date</th>
-              <th className="px-4 py-3">Raw</th>
-              <th className="px-4 py-3">Meaning</th>
-              <th className="px-4 py-3">Severity</th>
-              <th className="px-4 py-3">Explanation</th>
-              <th className="px-4 py-3">Context</th>
-              <th className="px-4 py-3">Session Note</th>
+              <th className="break-words px-4 py-3">Employee</th>
+              <th className="break-words px-4 py-3">Date</th>
+              <th className="break-words px-4 py-3">Raw / meaning</th>
+              <th className="break-words px-4 py-3">Severity</th>
+              <th className="break-words px-4 py-3">Explanation</th>
+              <th className="break-words px-4 py-3">Context</th>
+              <th className="break-words px-4 py-3">Session Note</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {visibleRows.map((candidate) => (
               <tr className="align-top text-slate-700 hover:bg-slate-50/70" key={candidate.id}>
-                <td className="px-4 py-3">
-                  <p className="font-black text-slate-950">{candidate.employeeName}</p>
-                  <p className="mt-1 font-mono text-xs font-semibold text-slate-500">{candidate.hrId}</p>
+                <td className="break-words px-4 py-3">
+                  <p className="break-words font-black text-slate-950">{candidate.employeeName}</p>
+                  <p className="mt-1 break-words font-mono text-xs font-semibold text-slate-500">{candidate.hrId}</p>
                 </td>
-                <td className="whitespace-nowrap px-4 py-3">{displayDate(candidate.dateIso)}</td>
-                <td className="px-4 py-3 font-mono text-xs font-bold">{formatRawValue(candidate.rawValue)}</td>
-                <td className="px-4 py-3">{candidate.normalizedMeaning}</td>
+                <td className="break-words px-4 py-3">{displayDate(candidate.dateIso)}</td>
+                <td className="break-words px-4 py-3">
+                  <span className="block break-words font-mono text-xs font-bold">{formatRawValue(candidate.rawValue)}</span>
+                  <span className="mt-1 block break-words">{candidate.normalizedMeaning}</span>
+                </td>
                 <td className="px-4 py-3">{severityBadge(candidate.severity)}</td>
-                <td className="max-w-[360px] px-4 py-3 leading-6">{candidate.explanation}</td>
+                <td className="break-words px-4 py-3 leading-6">{candidate.explanation}</td>
                 <td className="px-4 py-3">
                   <div className="flex flex-wrap gap-1.5">
                     {candidate.context.length ? candidate.context.map((item) => (
@@ -1234,7 +1251,7 @@ function ReviewQueue({
                     )) : <span className="text-slate-400">-</span>}
                   </div>
                 </td>
-                <td className="px-4 py-3">{sessionNoteInput(candidate.id, "w-64")}</td>
+                <td className="px-4 py-3">{sessionNoteInput(candidate.id, "w-full")}</td>
               </tr>
             ))}
           </tbody>
@@ -1511,21 +1528,34 @@ function ScorecardTable({ scorecards, title }: { scorecards: FieldWorkforceGroup
           )}
           renderTable={() => (
             <div className="hidden md:block">
-        <table className="w-full min-w-[820px] text-left text-sm">
+        {/*
+          Fits-the-screen golden rule (AGENTS.md §4): the `min-w-[820px]` floor is gone. Every
+          cell here is a group name or a number, so six fixed columns fit at any desktop width
+          with no merge needed — the headers wrap, which is the rule's permitted answer.
+        */}
+        <table className="w-full table-fixed text-left text-sm">
+          <colgroup>
+            <col className="w-[22%]" />
+            <col className="w-[13%]" />
+            <col className="w-[16%]" />
+            <col className="w-[17%]" />
+            <col className="w-[17%]" />
+            <col className="w-[15%]" />
+          </colgroup>
           <thead className="sticky top-0 z-10 bg-slate-50 text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">
             <tr>
-              <th className="px-4 py-3">Group</th>
-              <th className="px-4 py-3">Employees</th>
-              <th className="px-4 py-3">Avg Compliance</th>
-              <th className="px-4 py-3">No Activity Total</th>
-              <th className="px-4 py-3">High Severity Total</th>
-              <th className="px-4 py-3">Flagged Employees</th>
+              <th className="break-words px-4 py-3">Group</th>
+              <th className="break-words px-4 py-3">Employees</th>
+              <th className="break-words px-4 py-3">Avg Compliance</th>
+              <th className="break-words px-4 py-3">No Activity Total</th>
+              <th className="break-words px-4 py-3">High Severity Total</th>
+              <th className="break-words px-4 py-3">Flagged Employees</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {scorecards.map((scorecard) => (
               <tr className="text-slate-700 hover:bg-slate-50/70" key={scorecard.groupName}>
-                <td className="px-4 py-3 font-black text-slate-950">{scorecard.groupName}</td>
+                <td className="break-words px-4 py-3 font-black text-slate-950">{scorecard.groupName}</td>
                 <td className="px-4 py-3">{formatNumber(scorecard.employeeCount)}</td>
                 <td className={cn("px-4 py-3 font-black", scorecard.avgCompliancePercent >= 75 ? "text-emerald-700" : scorecard.avgCompliancePercent >= 50 ? "text-amber-700" : "text-rose-700")}>
                   {scorecard.avgCompliancePercent}%
@@ -1936,46 +1966,72 @@ function RecommendationRows({
           )}
           renderTable={() => (
             <div className="hidden md:block">
-        <table className="w-full min-w-[1480px] text-left text-sm">
+        {/*
+          Fits-the-screen golden rule (AGENTS.md §4), and the widest floor in this file at
+          `min-w-[1480px]` — nearly double the content column at 768px. Everything from the
+          decision select rightwards, which is the entire point of this screen, was off the
+          right edge; an HR reviewer had to scroll to reach the control she came here to use.
+
+          Merged, not shrunk. Eleven columns become seven, and nothing is dropped:
+            * Days is the count of the dates beside it -> folded into the Dates cell.
+            * Decision, Reason, HR Note and Save are one act, not four -> one "HR decision"
+              cell with the three controls stacked and the Save button under them.
+          Those three controls were a fixed `w-64` (256px each, 768px between them) and are
+          now fluid, so they take the width the column actually has. That column is given the
+          second-largest share for exactly that reason — the rule says a native select may not
+          be squeezed, so the merge exists to buy it room rather than to take room from it.
+        */}
+        <table className="w-full table-fixed text-left text-sm">
+          <colgroup>
+            <col className="w-[13%]" />
+            <col className="w-[14%]" />
+            <col className="w-[10%]" />
+            <col className="w-[14%]" />
+            <col className="w-[17%]" />
+            <col className="w-[8%]" />
+            <col className="w-[24%]" />
+          </colgroup>
           <thead className="sticky top-0 z-10 bg-slate-50 text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">
             <tr>
-              <th className="px-4 py-3">Employee</th>
-              <th className="px-4 py-3">Dates</th>
-              <th className="px-4 py-3">Source</th>
-              <th className="px-4 py-3">Days</th>
-              <th className="px-4 py-3">Coverage / Amount</th>
-              <th className="px-4 py-3">Recommendation</th>
-              <th className="px-4 py-3">Severity</th>
-              <th className="px-4 py-3">Decision</th>
-              <th className="px-4 py-3">Reason</th>
-              <th className="px-4 py-3">HR Note</th>
-              <th className="px-4 py-3">Save</th>
+              <th className="break-words px-4 py-3">Employee</th>
+              <th className="break-words px-4 py-3">Dates</th>
+              <th className="break-words px-4 py-3">Source</th>
+              <th className="break-words px-4 py-3">Coverage / Amount</th>
+              <th className="break-words px-4 py-3">Recommendation</th>
+              <th className="break-words px-4 py-3">Severity</th>
+              <th className="break-words px-4 py-3">HR decision</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {visibleRows.map((recommendation) => {
               return (
                 <tr className="align-top text-slate-700 hover:bg-slate-50/70" key={recommendation.recommendationKey}>
-                  <td className="px-4 py-3">
-                    <p className="font-black text-slate-950">{recommendation.employeeName}</p>
-                    <p className="mt-1 font-mono text-xs font-semibold text-slate-500">{recommendation.employeeCode}</p>
+                  <td className="break-words px-4 py-3">
+                    <p className="break-words font-black text-slate-950">{recommendation.employeeName}</p>
+                    <p className="mt-1 break-words font-mono text-xs font-semibold text-slate-500">{recommendation.employeeCode}</p>
                   </td>
-                  <td className="px-4 py-3">
-                    <p className="font-semibold text-slate-900">{formatDates(recommendation.dates)}</p>
+                  <td className="break-words px-4 py-3">
+                    <p className="break-words font-semibold text-slate-900">{formatDates(recommendation.dates)}</p>
                     <p className="mt-1 text-xs text-slate-500">{recommendation.monthKey}</p>
+                    <p className="mt-1 text-xs font-semibold text-slate-500">
+                      {formatNumber(recommendation.daysCount)} days
+                    </p>
                   </td>
-                  <td className="px-4 py-3">{recommendation.sourceLabel}</td>
-                  <td className="px-4 py-3">{formatNumber(recommendation.daysCount)}</td>
-                  <td className="px-4 py-3">
-                    <p>{coverageLabel(recommendation.existingCoverageStatus)}</p>
-                    <p className="mt-1 text-xs text-slate-500">Amount: {recommendation.estimatedAmount === null ? "Requires payroll calculation" : formatNumber(recommendation.estimatedAmount)}</p>
+                  <td className="break-words px-4 py-3">{recommendation.sourceLabel}</td>
+                  <td className="break-words px-4 py-3">
+                    <p className="break-words">{coverageLabel(recommendation.existingCoverageStatus)}</p>
+                    <p className="mt-1 break-words text-xs text-slate-500">Amount: {recommendation.estimatedAmount === null ? "Requires payroll calculation" : formatNumber(recommendation.estimatedAmount)}</p>
                   </td>
-                  <td className="max-w-[360px] px-4 py-3 leading-6">{recommendation.recommendation}</td>
+                  <td className="break-words px-4 py-3 leading-6">{recommendation.recommendation}</td>
                   <td className="px-4 py-3">{severityBadge(recommendation.severity)}</td>
-                  <td className="px-4 py-3">{decisionSelect(recommendation, "w-64")}</td>
-                  <td className="px-4 py-3">{reasonSelect(recommendation, "w-64")}</td>
-                  <td className="px-4 py-3">{hrNoteInput(recommendation, "w-64")}</td>
-                  <td className="px-4 py-3">{saveDecisionButton(recommendation)}</td>
+                  <td className="px-4 py-3">
+                    <div className="flex flex-col gap-2">
+                      {decisionSelect(recommendation, "w-full")}
+                      {reasonSelect(recommendation, "w-full")}
+                      {hrNoteInput(recommendation, "w-full")}
+                      {saveDecisionButton(recommendation)}
+                    </div>
+                  </td>
                 </tr>
               );
             })}
@@ -2051,36 +2107,60 @@ function FinalActionsTable({
           )}
           renderTable={() => (
             <div className="hidden md:block">
-        <table className="w-full min-w-[1280px] text-left text-sm">
+        {/*
+          Fits-the-screen golden rule (AGENTS.md §4). Mobile has `renderCard`; this desktop
+          half was a `min-w-[1280px]` floor, so the HR note and the push status sat off the
+          right edge at every desktop width.
+
+          Merged, not shrunk, and nothing is dropped. Ten columns become eight: the approved
+          dates and their day count are one span, and who approved it and when are one act.
+        */}
+        <table className="w-full table-fixed text-left text-sm">
+          <colgroup>
+            <col className="w-[15%]" />
+            <col className="w-[11%]" />
+            <col className="w-[15%]" />
+            <col className="w-[10%]" />
+            <col className="w-[14%]" />
+            <col className="w-[14%]" />
+            <col className="w-[12%]" />
+            <col className="w-[9%]" />
+          </colgroup>
           <thead className="sticky top-0 z-10 bg-slate-50 text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">
             <tr>
-              <th className="px-4 py-3">Employee</th>
-              <th className="px-4 py-3">Action Type</th>
-              <th className="px-4 py-3">Approved Dates</th>
-              <th className="px-4 py-3">Days</th>
-              <th className="px-4 py-3">Amount</th>
-              <th className="px-4 py-3">Reason</th>
-              <th className="px-4 py-3">Approved By</th>
-              <th className="px-4 py-3">Approved At</th>
-              <th className="px-4 py-3">HR Note</th>
-              <th className="px-4 py-3">Push Status</th>
+              <th className="break-words px-4 py-3">Employee</th>
+              <th className="break-words px-4 py-3">Action Type</th>
+              <th className="break-words px-4 py-3">Approved Dates</th>
+              <th className="break-words px-4 py-3">Amount</th>
+              <th className="break-words px-4 py-3">Reason</th>
+              <th className="break-words px-4 py-3">Approved By</th>
+              <th className="break-words px-4 py-3">HR Note</th>
+              <th className="break-words px-4 py-3">Push Status</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {filteredActions.map((action) => (
               <tr className="align-top text-slate-700 hover:bg-slate-50/70" key={action.recommendationKey}>
-                <td className="px-4 py-3">
-                  <p className="font-black text-slate-950">{action.employeeName}</p>
-                  <p className="mt-1 font-mono text-xs font-semibold text-slate-500">{action.employeeCode}</p>
+                <td className="break-words px-4 py-3">
+                  <p className="break-words font-black text-slate-950">{action.employeeName}</p>
+                  <p className="mt-1 break-words font-mono text-xs font-semibold text-slate-500">{action.employeeCode}</p>
                 </td>
-                <td className="px-4 py-3">{action.actionType}</td>
-                <td className="px-4 py-3">{formatDates(action.approvedDates)}</td>
-                <td className="px-4 py-3">{formatNumber(action.approvedDaysCount)}</td>
-                <td className="px-4 py-3">{action.amount === null ? "Amount requires payroll calculation" : formatNumber(action.amount)}</td>
-                <td className="px-4 py-3">{action.decisionReason || "-"}</td>
-                <td className="px-4 py-3">{action.approvedBy ?? "-"}</td>
-                <td className="px-4 py-3">{displayDateTime(action.approvedAt)}</td>
-                <td className="max-w-[300px] px-4 py-3 leading-6">{action.hrNote || "-"}</td>
+                <td className="break-words px-4 py-3">{action.actionType}</td>
+                <td className="break-words px-4 py-3">
+                  <span className="block break-words">{formatDates(action.approvedDates)}</span>
+                  <span className="mt-1 block text-xs font-semibold text-slate-500">
+                    {formatNumber(action.approvedDaysCount)} days
+                  </span>
+                </td>
+                <td className="break-words px-4 py-3">{action.amount === null ? "Amount requires payroll calculation" : formatNumber(action.amount)}</td>
+                <td className="break-words px-4 py-3">{action.decisionReason || "-"}</td>
+                <td className="break-words px-4 py-3">
+                  <span className="block break-words">{action.approvedBy ?? "-"}</span>
+                  <span className="mt-1 block break-words text-xs font-semibold text-slate-500">
+                    {displayDateTime(action.approvedAt)}
+                  </span>
+                </td>
+                <td className="break-words px-4 py-3 leading-6">{action.hrNote || "-"}</td>
                 <td className="px-4 py-3"><Badge variant="neutral">{action.pushStatus}</Badge></td>
               </tr>
             ))}
