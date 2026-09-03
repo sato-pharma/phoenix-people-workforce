@@ -1037,9 +1037,12 @@ export async function savePayrollExpenseApprovals(input: {
 
   const employeeByName = await employeeCodeBySpecialist();
   const reportTotals = input.records.reduce(
-    (summary, record) => {
+    (summary, record, index) => {
       const date = record.date ? new Date(record.date) : null;
-      summary.approvedRows += record.hrApproved ? 1 : 0;
+      // The resolved decision, not the record: on a carry-forward the record still says
+      // "Approved" while the row it writes stays rejected, and counting the record would make the
+      // report header disagree with its own rows.
+      summary.approvedRows += decisions[index].hrApproved ? 1 : 0;
       summary.rowCount += 1;
       summary.totalExpenses += record.total;
 
