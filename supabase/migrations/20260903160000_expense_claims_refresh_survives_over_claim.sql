@@ -219,6 +219,16 @@ begin
 end;
 $function$;
 
+-- Re-assert the lockdown. `create or replace` KEEPS an existing function's ACL, so this is a no-op
+-- against production (which already reads `postgres=X/postgres | service_role=X/postgres`) -- but on
+-- any database where the function does not yet exist, `create` would hand it the default ACL, which
+-- is EXECUTE to PUBLIC. That would leave a SECURITY DEFINER function that DELETES and rebuilds four
+-- expense tables callable by anon and authenticated. Revoking only anon/authenticated is not enough:
+-- both inherit EXECUTE through PUBLIC membership, so PUBLIC itself has to go -- and because revoking
+-- PUBLIC on a default ACL also strips service_role, the grant has to be re-made explicitly.
+revoke execute on function public.phx_refresh_expense_claims() from public, anon, authenticated;
+grant execute on function public.phx_refresh_expense_claims() to service_role;
+
 -- The parity view's legacy side carries the IDENTICAL clamp, so a held over-claim reads as OK
 -- rather than as permanent APPROVED_DRIFT. Without this the route would return 500 on every run.
 create or replace view public.v_expense_claims_parity as
