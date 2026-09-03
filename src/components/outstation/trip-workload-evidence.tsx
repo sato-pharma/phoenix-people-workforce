@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import { FieldWorkforceRouteMap } from "@/components/field-workforce-compliance/field-workforce-route-map";
 import { Badge } from "@/components/ui/badge";
 import { formatDateValue, formatNumberValue } from "@/lib/i18n/format";
+import { resolveWorkloadFreshness } from "@/lib/outstation/workload-freshness";
 import { cn } from "@/lib/utils";
 import {
   PortalDesktopTable,
@@ -105,12 +106,25 @@ export function TripWorkloadEvidencePanel({
   declaredAm,
   declaredPm,
   hrId,
+  storedMatchedAt = null,
+  storedMatchStatus = null,
   tripEndDate,
   tripStartDate,
 }: {
   declaredAm: number;
   declaredPm: number;
   hrId: string | null;
+  /**
+   * The verdict STAMPED on the request at submission, and when. Optional, so a caller with no
+   * stored verdict (an imported expense) simply gets no staleness notice.
+   *
+   * This panel is the only place both sides exist at once: the stored verdict arrives as a prop,
+   * the live read is fetched below. The request drawer prints the stored verdict as a plain fact
+   * twenty lines above this panel, so when the two disagree it is this panel — the one holding
+   * the evidence — that has to say so. Measurement: `@/lib/outstation/workload-freshness`.
+   */
+  storedMatchedAt?: string | null;
+  storedMatchStatus?: string | null;
   tripEndDate: string;
   tripStartDate: string;
 }) {
@@ -204,6 +218,17 @@ export function TripWorkloadEvidencePanel({
   const actualTotal = data.amWorkload + data.pmWorkload;
   const mismatch = declaredTotal !== actualTotal;
   const tone = statusTone[data.matchStatus] ?? "neutral";
+  // Both sides are in hand here — the stamped verdict as a prop, the live read just fetched — so
+  // this is where a stored "no activity" that the CRM has since contradicted gets named.
+  const freshness = resolveWorkloadFreshness({
+    liveAmWorkload: data.amWorkload,
+    liveMatchStatus: data.matchStatus,
+    livePmWorkload: data.pmWorkload,
+    storedAmWorkload: declaredAm,
+    storedMatchedAt,
+    storedMatchStatus,
+    storedPmWorkload: declaredPm,
+  });
 
   return (
     <div className="space-y-3">
@@ -212,6 +237,17 @@ export function TripWorkloadEvidencePanel({
         <Badge variant={tone}>{data.matchStatus.replace(/_/g, " ")}</Badge>
         <span className="text-phx-xs text-slate-500">{data.sourceLabel}</span>
       </div>
+      {freshness.verdict === "stale" && freshness.headline ? (
+        <div className="flex items-start gap-2 rounded-xl border border-amber-300 bg-amber-50 p-3">
+          <AlertTriangle aria-hidden className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+          <div className="min-w-0">
+            <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-amber-700">
+              Stored verdict is out of date
+            </p>
+            <p className="mt-1 text-xs font-semibold leading-relaxed text-amber-900">{freshness.headline}</p>
+          </div>
+        </div>
+      ) : null}
       <div className="grid gap-2 sm:grid-cols-3">
         <div className="rounded-xl border border-phx-line bg-white p-3">
           <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">Declared (sheet)</p>

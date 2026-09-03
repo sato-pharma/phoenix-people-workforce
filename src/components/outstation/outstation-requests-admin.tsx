@@ -422,7 +422,16 @@ function RequestDetailsModal({
             <Fact label="AM visits" value={String(request.amWorkload ?? 0)} />
             <Fact label="PM visits" value={String(request.pmWorkload ?? 0)} />
             <Fact label="Workload source" value={formatStatus(request.workloadSource ?? "manual")} />
-            <Fact label="Workload match" value={formatStatus(request.workloadMatchStatus ?? "manual")} />
+            {/* Dated on purpose. This verdict is stamped once, when the request is SUBMITTED —
+                the one moment the CRM is guaranteed to be emptiest, because visits are entered
+                through and after the trip and the mirror syncs after that. Nothing re-reads it.
+                Undated it reads as the current state of the world, and for 18 of 26 "no activity"
+                requests measured on production it was already contradicted by the CRM. The panel
+                below holds the live read and names the disagreement outright. */}
+            <Fact
+              label="Workload match (at submission)"
+              value={formatStatus(request.workloadMatchStatus ?? "manual")}
+            />
             <RouteFact
               from={[request.residenceAddress, request.residenceArea, request.residenceCity].filter(Boolean).join(", ") || "Residence"}
               to={request.toLabel ?? request.toCity ?? request.toArea ?? "—"}
@@ -445,6 +454,8 @@ function RequestDetailsModal({
             declaredAm={request.amWorkload ?? 0}
             declaredPm={request.pmWorkload ?? 0}
             hrId={request.employeeHrId ?? null}
+            storedMatchedAt={request.workloadMatchedAt ?? null}
+            storedMatchStatus={request.workloadMatchStatus ?? null}
             tripEndDate={request.tripEndDate}
             tripStartDate={request.tripStartDate}
           />
