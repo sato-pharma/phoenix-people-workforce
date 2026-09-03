@@ -6,7 +6,6 @@ import { adminShellBackgroundClassName } from "@/components/admin/admin-design-t
 import {
   buildPermissionLookup,
   getPermissionMatrix,
-  resolveNavigationMode,
   usesHrNamespace,
   type AccessContext,
   type NavigationMode,
@@ -31,6 +30,7 @@ import { Topbar } from "@/components/layout/topbar";
 import { SessionSecurityGuard } from "@/components/auth/session-security-guard";
 import { OneSignalProvider } from "@/components/notifications/onesignal-provider";
 import { usesAdminChrome } from "@/lib/navigation/active-path";
+import { resolveShellNavigationMode } from "@/lib/navigation/shell-mode";
 import { PATH_HEADER, SHELL_HEADER, toHrNamespacePath } from "@/lib/navigation/shell-headers";
 
 export async function AppShell({
@@ -105,8 +105,16 @@ export async function AppShell({
   // mount their own shell. The header is written by middleware, which strips any inbound copy
   // first, so it cannot be forged. It selects CHROME only: every page behind it still asserts its
   // own permission server-side, so being wrong here shows the right page under the wrong nav.
-  const resolvedNavigationMode: NavigationMode =
-    requestHeaders.get(SHELL_HEADER) === "hr" ? "hr" : navigationMode ?? resolveNavigationMode(access);
+  //
+  // The rule itself lives in resolveShellNavigationMode so a PAGE that needs the mode it is being
+  // rendered under can ask the same question. A page that instead asks resolveNavigationMode alone
+  // gets "admin" for an HR seat — that function answers about the person and never returns "hr" —
+  // and then renders the admin catalogue under HR chrome, which looks like a working page.
+  const resolvedNavigationMode: NavigationMode = resolveShellNavigationMode(
+    access,
+    requestHeaders.get(SHELL_HEADER),
+    navigationMode,
+  );
 
   const permissionLookup = buildPermissionLookup(matrix, access.role);
 
