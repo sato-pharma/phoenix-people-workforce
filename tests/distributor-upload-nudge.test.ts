@@ -220,7 +220,7 @@ export function runDistributorUploadNudgeTests() {
 
   // ── The migration that makes the audience editable without a deploy ─────────────────────────
   const migration = readFileSync(
-    join(ROOT, "supabase/migrations/20260903170000_notification_role_policies_distributor_upload_overdue_key.sql"),
+    join(ROOT, "supabase/migrations/20260903180000_notification_role_policies_distributor_upload_overdue_key.sql"),
     "utf8",
   );
   for (const key of notificationRoleKeys) {
