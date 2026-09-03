@@ -27,6 +27,7 @@ import {
 import { resolveFixedSalaryAmounts } from "../src/lib/payroll/policy.ts";
 import {
   addMonthsToIsoDate,
+  COMPANY_REGISTRATION_GAPS,
   collectHiringPackGaps,
   emptyOffboardingProfile,
   resolveContractTerms,
@@ -579,17 +580,25 @@ function testEveryCompanySettingsGapReachesThePage() {
   const companyGaps = collectHiringPackGaps(employeeFixture(), profileFixture()).filter(
     (gap) => gap.source === "company-settings",
   );
-  assert.ok(
-    companyGaps.length > 0,
-    "at least one company registration field is blank, so the directional check below runs against a real gap",
+
+  // WALK THE DECLARED LIST, not the gaps that happen to be open. This guarded itself with "at least
+  // one company registration field is blank", which tied the pin's strength to the company being
+  // half-configured — and on 2026-09-03 the owner supplied the last blank number (the sector code),
+  // which turned that guard red AND would have left the loop below iterating nothing. A check that
+  // only holds while the data is incomplete is not a check.
+  assert.ok(COMPANY_REGISTRATION_GAPS.length > 0, "no company registration setting is declared at all");
+  assert.equal(
+    Object.keys(printedKeyByGapField).length,
+    COMPANY_REGISTRATION_GAPS.length,
+    "the printed-key map and the declared registration gaps have drifted apart",
   );
 
-  for (const gap of companyGaps) {
-    const printedKey = printedKeyByGapField[gap.field];
-    assert.ok(printedKey, `${gap.field} blocks printing but nothing maps it onto the form`);
+  for (const entry of COMPANY_REGISTRATION_GAPS) {
+    const printedKey = printedKeyByGapField[entry.field];
+    assert.ok(printedKey, `${entry.field} blocks printing but nothing maps it onto the form`);
     assert.ok(
       placedKeys.has(printedKey),
-      `${gap.field} blocks printing but "${printedKey}" has no placement — it can never print`,
+      `${entry.field} blocks printing but "${printedKey}" has no placement — it can never print`,
     );
   }
 

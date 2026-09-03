@@ -284,6 +284,39 @@ function toPositiveInt(value: unknown) {
 }
 
 /** Add whole months to an ISO date, clamping the day so 31 Jan + 1 month is not 3 March. */
+/**
+ * The company's own registration numbers, and which documents each one blocks when it is blank.
+ *
+ * A LIST rather than three `if`s, so a test can walk it. `testEveryCompanySettingsGapReachesThePage`
+ * guarded itself with "at least one of these is blank", which quietly tied the strength of the pin
+ * to the company being half-configured: supplying the last number — the sector code, 2026-09-03 —
+ * would have turned that guard red, and the check it protected would have iterated nothing at all.
+ * A pin that only holds while the data is incomplete is not a pin. Walking this list holds either
+ * way, and the blank-versus-reported direction is still read from the live settings.
+ */
+export const COMPANY_REGISTRATION_GAPS: readonly {
+  readonly field: "insuranceEstablishmentNumber" | "insuranceSectorCode" | "taxRegistrationNumber";
+  readonly labelEn: string;
+  readonly labelAr: string;
+  readonly documents: readonly HiringPackDocument[];
+}[] = [
+  {
+    field: "insuranceEstablishmentNumber",
+    labelEn: "Establishment number",
+    labelAr: "رقم المنشأة",
+    documents: ["form1", "form6"],
+  },
+  // قطاع المنشأة is a Form 1 question only — Form 6 identifies the establishment by its number and
+  // tax registration and never asks which sector it trades in.
+  { field: "insuranceSectorCode", labelEn: "Sector code", labelAr: "قطاع المنشأة", documents: ["form1"] },
+  {
+    field: "taxRegistrationNumber",
+    labelEn: "Tax registration number",
+    labelAr: "رقم التسجيل الضريبي",
+    documents: ["form1", "form6"],
+  },
+];
+
 export function addMonthsToIsoDate(iso: string | null, months: number | null): string | null {
   if (!iso || !months) return null;
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso.trim());
@@ -598,16 +631,10 @@ export function collectHiringPackGaps(
   // write on — so HR would have been told the form was incomplete because of a value the form never
   // shows. `testEveryCompanySettingsGapReachesThePage` now pins that both ways.
   const registration = systemLegalEntity.registration;
-  if (!registration.insuranceEstablishmentNumber) {
-    add("insuranceEstablishmentNumber", "Establishment number", "رقم المنشأة", INSURANCE, true, "company-settings");
-  }
-  // قطاع المنشأة is a Form 1 question only — Form 6 identifies the establishment by its number and
-  // tax registration and never asks which sector it trades in.
-  if (!registration.insuranceSectorCode) {
-    add("insuranceSectorCode", "Sector code", "قطاع المنشأة", ["form1"], true, "company-settings");
-  }
-  if (!registration.taxRegistrationNumber) {
-    add("taxRegistrationNumber", "Tax registration number", "رقم التسجيل الضريبي", INSURANCE, true, "company-settings");
+  for (const entry of COMPANY_REGISTRATION_GAPS) {
+    if (!registration[entry.field]) {
+      add(entry.field, entry.labelEn, entry.labelAr, entry.documents, true, "company-settings");
+    }
   }
 
   // ── The exit documents ──────────────────────────────────────────────────────────────────────

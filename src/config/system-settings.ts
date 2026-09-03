@@ -134,14 +134,18 @@ export const systemLegalEntity = {
      */
     insuranceEstablishmentNumber: "2807693",
     /**
-     * قطاع المنشأة — two digits.
+     * قطاع المنشأة — the form prints TWO boxes (`form1-layout.ts`, `cells: 2`).
      *
-     * STILL OUTSTANDING, and it is the only thing blocking Form 1 company-wide. Asked on 2026-09-03
-     * and not answered; the readiness board reports it as the company-level blocker with the number
-     * of people it holds up. It is on the establishment's social-insurance registration — do not
-     * guess it, and do not derive it from the sector the company trades in.
+     * Set 2026-09-03 to the owner's answer, "2". The grid fills LEFT TO RIGHT, one character per
+     * box, so this prints `2` in the left box and leaves the right one blank — the same convention
+     * as `insuranceEstablishmentNumber`, whose 7 digits leave box 8 blank and which the owner has
+     * already checked against a printed form. If the Authority expects the pair written "02", store
+     * it as "02" here; nothing else needs touching.
+     *
+     * This was the LAST blank registration number. With it set, Form 1 is no longer blocked
+     * company-wide — see `COMPANY_REGISTRATION_GAPS` for what that changed in the tests.
      */
-    insuranceSectorCode: "",
+    insuranceSectorCode: "2",
     /**
      * رقم التسجيل الضريبي — printed as three free-text runs with the form's own "/" between them.
      *
