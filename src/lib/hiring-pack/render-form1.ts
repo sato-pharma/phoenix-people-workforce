@@ -1,5 +1,6 @@
 import { systemLegalEntity } from "@/config/system-settings";
 import { splitPoundsAndPiastres } from "@/lib/hiring-pack/arabic-amount";
+import { layeredPages, type DocumentFieldRow } from "@/lib/hiring-pack/field-layout";
 import {
   FORM1_PAGE_1_PLACEMENTS,
   FORM1_PAGE_1_SVG,
@@ -146,7 +147,17 @@ function renderWageGrid(grid: Form1WageGrid, amount: number | null): string {
   return pounds + piastres;
 }
 
-export function renderForm1Html(data: HiringPackData, copies: number): string {
+/**
+ * @param fields The operator's own field layer — what has been moved, hidden or added on this form.
+ *   Empty is the norm and means "print the compiled coordinates", which is what this did before the
+ *   layer existed and what it still does on any environment where the table is absent.
+ */
+export function renderForm1Html(
+  data: HiringPackData,
+  copies: number,
+  _templateVersionId?: string | null,
+  fields: readonly DocumentFieldRow[] = [],
+): string {
   const values = buildForm1Values(data);
 
   // THE THREE COLUMNS CARRY THREE DIFFERENT FIGURES — owner, 2026-08-31, naming each one:
@@ -181,10 +192,25 @@ export function renderForm1Html(data: HiringPackData, copies: number): string {
     renderWageGrid(grid, wageForGrid(grid.key)),
   ).join("");
 
+  // The field layer over the measured coordinates.
+  //
+  // The wage grids are an EXTRA on the front only. They are not placements — `renderWageGrid` draws
+  // one digit straight into each printed box of a three-column government table — so the layer
+  // neither moves nor hides them, deliberately: dragging that group would put a figure under the
+  // wrong heading, and the three columns exist precisely because they carry three different wages.
+  const [front, back] = layeredPages(
+    [
+      { svg: FORM1_PAGE_1_SVG, placements: FORM1_PAGE_1_PLACEMENTS },
+      { svg: FORM1_PAGE_2_SVG, placements: FORM1_PAGE_2_PLACEMENTS },
+    ],
+    values,
+    fields,
+  );
+
   const sheets: string[] = [];
   for (let copy = 0; copy < Math.max(1, copies); copy += 1) {
-    sheets.push(renderSheet(FORM1_PAGE_1_SVG, FORM1_PAGE_1_PLACEMENTS, values, wageGrids));
-    sheets.push(renderSheet(FORM1_PAGE_2_SVG, FORM1_PAGE_2_PLACEMENTS, values, ""));
+    sheets.push(renderSheet(front.svg, front.placements, front.values, wageGrids));
+    sheets.push(renderSheet(back.svg, back.placements, back.values, ""));
   }
 
   const employeeName = data.employee.nameAr ?? data.employee.fullName;
