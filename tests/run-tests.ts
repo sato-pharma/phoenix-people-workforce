@@ -1270,6 +1270,7 @@ import { runOutstationOfflineSyncBodyParityTests } from "./outstation-offline-sy
 import { runOutstationManagerExpenseEditValidationTests } from "./outstation-manager-expense-edit-validation.test.ts";
 import { runDirectOrderPharmacyDeadDistributorColumnsTests } from "./direct-order-pharmacy-dead-distributor-columns.test.ts";
 import { runDirectOrderReversalFamilyCodeTests } from "./direct-orders-reversal-family-code.test.ts";
+import { runNavRowWayBackTests } from "./nav-row-way-back.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -3947,6 +3948,10 @@ await runTest(
     + "omitting it wrote a familyless reversal that no later trigger could repair, and null must not "
     + "become \"\")",
   runDirectOrderReversalFamilyCodeTests,
+);
+await runTest(
+  "an emptied nav row has a way back (Navigation Layout reachable from the topbar in admin chrome)",
+  runNavRowWayBackTests,
 );
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
