@@ -17,10 +17,13 @@ import {
   isInferredPath,
   isUnclassifiedPath,
   NO_LOCATION_FOLDER_NAME,
+  readsAsAJobTitle,
   regionFolderForArea,
+  regionFolderFromTypedArea,
   samePath,
   sanitizeDriveSegment,
   UNCLASSIFIED_FOLDER_NAME,
+  UNREADABLE_TITLE_FOLDER_NAME,
 } from "../src/lib/recruitment/drive-cv-folders.ts";
 import { escapeDriveQueryValue } from "../src/lib/recruitment/drive-tree.ts";
 
@@ -425,6 +428,80 @@ export function runDriveCvFolderTests() {
     2,
     "an address-derived path stops at the region",
   );
+
+  // ── A hand-typed area still gets a region above it ────────────────────────────────────────────
+  //
+  // Six CVs were found on 2026-09-04 sitting directly under "Medical Representative" with nothing
+  // above them, because the applicant typed a GOVERNORATE where the flow wanted one of our areas.
+  // Loose at the top of a 900-CV shelf is the worst outcome there is: the file is present and
+  // effectively unfindable. Each of these is one of those six, verbatim.
+  for (const [typed, region] of [
+    ["Qena north", "Upper Egypt"],
+    ["Qena", "Upper Egypt"],
+    ["Minia Government", "Upper Egypt"],
+    ["kafrelsheikh", "Delta (1)"],
+    ["Kafr El-Sheikh", "Delta (1)"],
+  ] as const) {
+    assert.deepEqual(
+      driveFolderPathFor({ key: typed, kind: "medical_rep", label: typed }, AREA_REGIONS),
+      ["Medical Representative", region],
+      `a typed governorate must still nest under its region: ${typed}`,
+    );
+  }
+
+  // And deliberately WITHOUT inventing an area folder. "Qena north" sitting beside the real
+  // "Qena 1" and "Qena 2" would read as a company area that nobody owns and no target covers.
+  assert.equal(
+    driveFolderPathFor({ key: "Qena north", kind: "medical_rep", label: "Qena north" }, AREA_REGIONS).length,
+    2,
+    "a hand-typed area never becomes a folder of its own",
+  );
+
+  // A real area is untouched — three levels, area innermost. Sharkia 2 also pins the recruitment
+  // override: the SALES map above still calls it Delta (2), and recruitment files it under
+  // Delta (3). Reading the sales column directly here is the exact mis-file that override prevents.
+  assert.deepEqual(
+    driveFolderPathFor({ key: "Sharkia 2", kind: "medical_rep", label: "Sharkia 2" }, AREA_REGIONS),
+    ["Medical Representative", "Delta (3)", "Sharkia 2"],
+    "a canonical area keeps its own folder, under its RECRUITMENT region",
+  );
+
+  // Nothing readable at all: their own words still beat the top of the shelf.
+  assert.deepEqual(
+    driveFolderPathFor({ key: "somewhere nice", kind: "medical_rep", label: "somewhere nice" }, AREA_REGIONS),
+    ["Medical Representative", "somewhere nice"],
+    "an unreadable area keeps the applicant's own words rather than vanishing up a level",
+  );
+
+  assert.equal(regionFolderFromTypedArea("Minia Government"), "Upper Egypt");
+  assert.equal(regionFolderFromTypedArea("nowhere at all"), null, "an unreadable area names no region");
+
+  // ── A message typed into the job-title box never becomes a folder ─────────────────────────────
+  //
+  // One CV was filed under a folder called "بخصوص الإعلان دا" — "regarding this advertisement".
+  assert.deepEqual(
+    driveFolderPathFor({ key: "بخصوص الإعلان دا", kind: "other", label: "بخصوص الإعلان دا" }, AREA_REGIONS),
+    ["Other positions", UNREADABLE_TITLE_FOLDER_NAME],
+    "a sentence sent as a job title is not a folder name",
+  );
+
+  // The guard is narrow ON PURPOSE. These are the other six titles that shelf actually holds in
+  // production; a cleverer sentence-detector would eventually eat one of them.
+  for (const title of [
+    "Office Coordinator",
+    "Technical Support and infrastructure Engineer",
+    "Area / Regional Manager",
+    "National Sales Manager",
+    "Human Resources",
+    "Other",
+  ] as const) {
+    assert.ok(readsAsAJobTitle(title), `${title} is a real title and must keep its own folder`);
+    assert.equal(
+      driveFolderPathFor({ key: title, kind: "other", label: title }, AREA_REGIONS)[1],
+      sanitizeDriveSegment(title),
+      `${title} must still file under its own name`,
+    );
+  }
 
   // ── Both readers of the area→region grouping must use the PUBLIC view ─────────────────────────
   //

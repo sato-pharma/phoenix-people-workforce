@@ -31,6 +31,7 @@ import {
 } from "@/lib/recruitment/candidate-folder";
 import type { CandidateFolderSuggestion } from "@/lib/recruitment/candidate-folder-suggestion";
 import { recruitmentRegionForArea } from "@/lib/recruitment/candidate-region";
+import { egyptRegionFromFreeText } from "@/lib/recruitment/candidate-region-freetext";
 
 /**
  * Where a CV goes when nobody yet knows where it belongs.
@@ -62,6 +63,21 @@ export const INFERRED_FOLDER_NAME = "From the CV (not confirmed)";
  * genuine, checkable fact about the record rather than a bucket for leftovers.
  */
 export const NO_LOCATION_FOLDER_NAME = "Location not on the CV";
+
+/**
+ * The "other" shelf, when what the applicant typed as their job title is not one.
+ *
+ * Measured on production 2026-09-04: of the seven distinct job titles on that shelf, six are real
+ * free-typed roles — "Office Coordinator" (17 CVs), "Technical Support and infrastructure Engineer",
+ * "National Sales Manager" — and exactly ONE is a WhatsApp message that landed in the title box:
+ * "بخصوص الإعلان دا", which is "regarding this advertisement". It became a Drive folder with that
+ * name.
+ *
+ * So the guard is deliberately narrow. A sentence-detector tuned on one row would eventually eat
+ * "Technical Support and infrastructure Engineer", and a wrong folder is worse than a shallow one —
+ * this module's standing rule. See `readsAsAJobTitle` for the exact, measured test.
+ */
+export const UNREADABLE_TITLE_FOLDER_NAME = "Job title not clear";
 
 /** Inferred and outside Egypt — the country sits under this so the region list stays Egyptian. */
 export const OUTSIDE_EGYPT_FOLDER_NAME = "Outside Egypt";
@@ -113,6 +129,36 @@ export function regionFolderForArea(areaName: string, areaRegions: AreaRegionMap
 }
 
 /**
+ * The region folder a FREE-TYPED area name points at, when the canonical map has never heard of it.
+ *
+ * An applicant types their area by hand, and when they type a GOVERNORATE rather than one of the
+ * company's areas — "Qena", "Minia Government", "kafrelsheikh" — `regionFolderForArea` returns null
+ * and the CV used to land directly under the shelf with no region above it: findable only by
+ * scrolling every medical-rep CV in the company. Six were in that state on 2026-09-04.
+ *
+ * A governorate still names a REGION unambiguously, and `egyptRegionFromFreeText` reads exactly
+ * that. So one level of precision is lost and none of the filing is.
+ */
+export function regionFolderFromTypedArea(areaName: string): string | null {
+  const region = egyptRegionFromFreeText(areaName);
+  if (!region) return null;
+  return candidateFolderLabel("district_manager", region) || null;
+}
+
+/**
+ * Whether a typed job title can be used as a folder name at all.
+ *
+ * The one measured failure is an Arabic SENTENCE sent as a title. Every real title on that shelf in
+ * production is written in Latin script, so requiring one Latin letter separates the seven cases
+ * cleanly and cannot touch a legitimate English title however unusual its wording. It is a narrow
+ * test on purpose: if Arabic job titles ever become normal here, this is the line to revisit, and a
+ * misfile lands in a named folder rather than being lost.
+ */
+export function readsAsAJobTitle(label: string): boolean {
+  return /[A-Za-z]/.test(String(label ?? ""));
+}
+
+/**
  * The Drive path for one CV, as folder segments under the configured root.
  *
  * `null` for the suggestion means "not filed" — no answers yet, already filed, rejected, or any of
@@ -131,11 +177,24 @@ export function driveFolderPathFor(
   const label = suggestion.label || candidateFolderLabel(suggestion.kind, suggestion.key);
 
   if (suggestion.kind === "medical_rep") {
+    // Region first, then area — "Medical Representative / Alex-BHR / Alex Center".
     const region = regionFolderForArea(suggestion.key, areaRegions);
-    // Region first, then area — "Medical Representative / Alex-BHR / Alex Center". An area whose
-    // region cannot be resolved sits directly under the shelf rather than under a guessed region.
-    const segments = region ? [shelf, region, label] : [shelf, label];
-    return segments.map(sanitizeDriveSegment).filter(Boolean);
+    if (region) return [shelf, region, label].map(sanitizeDriveSegment).filter(Boolean);
+
+    // The area is not one of ours — almost always a governorate typed by hand. File under the
+    // region it names, and deliberately WITHOUT an area folder: inventing "Qena north" beside the
+    // real "Qena 1" and "Qena 2" would put a name that looks official on a folder nobody owns, and
+    // a wrong folder is worse than a shallow one. Their exact words stay on the candidate record.
+    const typedRegion = regionFolderFromTypedArea(suggestion.key);
+    if (typedRegion) return [shelf, typedRegion].map(sanitizeDriveSegment).filter(Boolean);
+
+    // Nothing readable at all. Their own words are still better than the top of the shelf.
+    return [shelf, label].map(sanitizeDriveSegment).filter(Boolean);
+  }
+
+  // A job title that is really a message never becomes a folder name.
+  if (suggestion.kind === "other" && !readsAsAJobTitle(label)) {
+    return [shelf, UNREADABLE_TITLE_FOLDER_NAME].map(sanitizeDriveSegment).filter(Boolean);
   }
 
   // The paramedical shelf holds exactly one folder, so the shelf IS the folder — nesting a
