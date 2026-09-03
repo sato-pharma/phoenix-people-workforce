@@ -38,6 +38,30 @@ function hasPermissionGuard(source: string) {
   return /assertPermission\(|assertSystemAdministratorWorkspaceAccess\(|canAccess\(|require[A-Za-z]*Permission|assertCanExportProbation|requireWorkflowControlAdmin|requireRecruitmentAccess|handleSiRequest|resolveSiContext/.test(source);
 }
 
+/**
+ * How many declared actions this check must actually compare before it is allowed to pass.
+ *
+ * A source-parsing check dies by matching nothing, not by going red: rename an export form or move
+ * the route tree and every comparison silently skips, leaving an assertion that proves only that an
+ * empty list equals an empty list. 165 method blocks qualified when this was written.
+ */
+const DECLARED_ACTION_FLOOR = 140;
+
+function methodBlock(source: string, method: HttpMethod) {
+  const start = source.search(new RegExp("export async function " + method + "\\b"));
+  if (start === -1) return null;
+  const rest = source.slice(start + 1);
+  const next = rest.search(/export async function (?:GET|POST|PATCH|PUT|DELETE)\b/);
+  return next === -1 ? rest : rest.slice(0, next);
+}
+
+function assertedPermissions(block: string) {
+  return new Set(
+    Array.from(block.matchAll(/assertPermission\(\s*\w+\s*,\s*"([^"]+)"\s*,\s*"([^"]+)"\s*\)/g))
+      .map((match) => `${match[1]}:${match[2]}`),
+  );
+}
+
 export function runAccessRegistryCoverageTests() {
   assert.ok(accessRegistry.length > 0, "access registry must not be empty");
 
@@ -141,4 +165,71 @@ export function runAccessRegistryCoverageTests() {
   assert.deepEqual(missingExportAudit, [], "export/template/download routes must require audit classification in the registry");
   assert.deepEqual(normalizerFellThrough, [], "every Source Normalizer route must have its own registry entry, not a wildcard blanket");
   assert.deepEqual(normalizerMissingAudit, [], "every Source Normalizer route must declare an audit classification");
+
+  // A DECLARED ACTION MUST BE ONE THE HANDLER ACTUALLY ASSERTS.
+  //
+  // This registry is a declarative inventory - no request path imports it - so a wrong action here
+  // mis-INFORMS rather than mis-enforces, which is precisely why it drifts unnoticed: nothing
+  // breaks. Measured 2026-09-03, seventeen method blocks across sixteen entries had parted from
+  // their handlers, in BOTH directions.
+  //
+  // Seven UNDERSTATED: six deductions routes and the outbox drain declared `read` where the handler
+  // asserts approve / create / export / update, so the inventory said downloading every employee's
+  // amounts, approving a deduction and publishing a month were open to any reader. Nine OVERSTATED,
+  // declaring a stricter action than the code enforces - the direction that reads as false comfort
+  // to anyone auditing who can call a route. The seventeenth declared only half of what its handler
+  // enforces: one POST branching between `create` and `update`.
+  //
+  // Scope is deliberately narrow so that a pass means something. Concrete patterns only: a wildcard
+  // or :param entry can legitimately cover many handlers with different gates. And only method
+  // blocks that actually call assertPermission - a route gated solely by a domain helper is already
+  // covered by missingPermissionGuard above, and demanding a matching assertPermission there would
+  // just force a redundant second gate.
+  const declaredNotAsserted: string[] = [];
+  let declaredActionsChecked = 0;
+  for (const entry of accessRegistry) {
+    if (!entry.permission) continue;
+    if (entry.pattern.includes("*") || entry.pattern.includes(":")) continue;
+    const file = path.join(process.cwd(), "app", ...entry.pattern.replace(/^\//, "").split("/"), "route.ts");
+    let source: string;
+    try {
+      source = readFileSync(file, "utf8");
+    } catch {
+      continue;
+    }
+    // `permission` is either one { resource, action } or an ARRAY of them - the array form is how a
+    // route that gates its methods differently declares the whole set it can require (GET reads,
+    // PATCH updates). Normalising both to a set lets one rule cover both shapes.
+    const declared = new Set(
+      (Array.isArray(entry.permission) ? entry.permission : [entry.permission])
+        .map((permission) => `${permission.resource}:${permission.action}`),
+    );
+    for (const method of entry.methods) {
+      const block = methodBlock(source, method);
+      if (!block) continue;
+      const asserted = assertedPermissions(block);
+      if (asserted.size === 0) continue;
+      declaredActionsChecked += 1;
+      // Every permission the handler enforces must be declared. Stated this way round it catches
+      // drift in BOTH directions: an entry that understates (declaring `read` where the code
+      // asserts `approve`) and one that overstates (declaring `export` where the code only checks
+      // `read`) both leave an asserted permission the entry never names.
+      const undeclared = Array.from(asserted).filter((permission) => !declared.has(permission));
+      if (undeclared.length > 0) {
+        declaredNotAsserted.push(
+          `${method} ${entry.pattern} declares ${Array.from(declared).sort().join(" + ")}, handler asserts ${Array.from(asserted).sort().join(" + ")}`,
+        );
+      }
+    }
+  }
+
+  assert.ok(
+    declaredActionsChecked >= DECLARED_ACTION_FLOOR,
+    `the declared-action check compared only ${declaredActionsChecked} method blocks (floor ${DECLARED_ACTION_FLOOR}) - it has stopped seeing the routes rather than found them clean`,
+  );
+  assert.deepEqual(
+    declaredNotAsserted,
+    [],
+    "every registry entry must declare the permission its handler actually asserts - a declared action the code never checks describes a gate that does not exist",
+  );
 }
