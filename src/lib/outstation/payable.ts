@@ -67,6 +67,16 @@ function toFiniteAmount(value: number | null | undefined): number {
  * Zero is a real decision (approve the trip, pay nothing) and is preserved. A negative is not a
  * payable amount and the column's check constraint rejects it, so it clamps to zero rather than
  * failing the whole batched save.
+ *
+ * CLAMPS AT THE CLAIM, exactly like `approvedAmountFromDeduction` and `deductionFromApprovedAmount`
+ * above — outstation approval exists to REDUCE a claim and never pays more than was asked for.
+ * This function is the one of the three that omitted that cap, and it is the one the approvals UI
+ * writes through, so an entry above the claim was stored verbatim: `OUTSTATION-52` held 800.00
+ * approved against 364.00 claimed and `OUTSTATION-99` 541.90 against 341.90. Nothing downstream
+ * tolerates that — `expense_claims_approved_total_range` forbids `approved_total > claimed_total`,
+ * so the hourly mirror rebuild threw on those two rows and froze all 416 claims from 2026-09-03.
+ * An over-claim entry now reads as "pay the claim" (null), which is what the clamp in the sibling
+ * pair already meant.
  */
 export function normalizeApprovedAmount(
   approvedAmount: number | null | undefined,
@@ -78,8 +88,10 @@ export function normalizeApprovedAmount(
   if (!Number.isFinite(approved)) return null;
   if (approved < 0) return 0;
 
-  const rounded = roundCurrency(approved);
   const claimed = Number(total);
+  const rounded = Number.isFinite(claimed)
+    ? Math.min(roundCurrency(approved), roundCurrency(Math.max(0, claimed)))
+    : roundCurrency(approved);
   if (Number.isFinite(claimed) && Math.abs(rounded - roundCurrency(claimed)) < 0.005) return null;
 
   return rounded;

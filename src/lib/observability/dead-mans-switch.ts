@@ -1,4 +1,5 @@
 import { isProductionRuntime } from "@/config/system-settings";
+import { describeThrown } from "@/lib/error-monitor/describe-thrown";
 import { recordJobHeartbeat } from "@/lib/observability/job-heartbeat";
 import { logWarning } from "@/lib/observability/log";
 
@@ -106,7 +107,7 @@ export async function withDeadMansSwitch<T>(jobSlug: string, run: () => Promise<
     await pingDeadMansSwitch(jobSlug, "success");
     return result;
   } catch (error) {
-    await pingDeadMansSwitch(jobSlug, "fail", error instanceof Error ? `${error.name}: ${error.message}` : String(error));
+    await pingDeadMansSwitch(jobSlug, "fail", describeThrown(error));
     throw error;
   }
 }

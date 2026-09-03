@@ -95,7 +95,17 @@ export async function GET(request: Request) {
       );
     }
 
-    await pingDeadMansSwitch(JOB_SLUG, "success", `${result.claims} claim(s) rebuilt, parity clean`);
+    // `flagged` rides along in the success detail because a held row is the one thing a clean
+    // parity verdict CANNOT tell you about. Parity answers "did the rebuild reproduce legacy";
+    // `flagged` answers "does legacy hold something the mirror cannot represent" — an approved
+    // amount above the claim, or components that do not sum. Both are legitimate reasons for a
+    // green run, and without this the count only exists in a response body that cron-job.org
+    // discards (AGENTS.md §3 — its job list returns an empty body).
+    await pingDeadMansSwitch(
+      JOB_SLUG,
+      "success",
+      `${result.claims} claim(s) rebuilt, parity clean, ${result.flagged} flagged for data quality`,
+    );
     return NextResponse.json(body);
   } catch (error) {
     logError("Expense claims refresh failed", {
