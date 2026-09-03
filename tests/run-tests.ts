@@ -120,6 +120,7 @@ import { runProbationProvisioningTests } from "./probation-provisioning.test.ts"
 import { runProbationDateTests } from "./probation-date.test.ts";
 import { runProbationCaseProvisioningTests } from "./probation-case-provisioning.test.ts";
 import { runProbationDomainMigrationReadinessTests } from "./probation-domain-migration-readiness.test.ts";
+import { runCustomerGeographySpineTests } from "./customer-geography-spine.test.ts";
 import { runCrmIdentityTests } from "./crm-identity.test.ts";
 import { runCrmBlockCountingTests } from "./crm-block-counting.test.ts";
 import { runCrmPostExitAttributionTests } from "./crm-post-exit-attribution.test.ts";
@@ -1945,6 +1946,7 @@ await runTest("closing reads the org chart WITH history, so a dated territory mo
 await runTest("employee template Area->Team dropdown (builder and Excel resolve the same range)", runEmployeeTemplateTeamDropdownTests);
 await runTest("direct channel", runDirectChannelTests);
 await runTest("direct orders land on their own area", runDirectOrdersLandOnTheirOwnAreaTests);
+await runTest("the place spine resolves EXACT customer-code pairs (two .in() filters are independent)", runCustomerGeographySpineTests);
 await runTest("office pivot", runOfficePivotTests);
 await runTest("office allocation", runOfficeAllocationTests);
 await runTest("office golden rule LOCK (owner, 2026-08-11)", runOfficeGoldenRuleLockTests);
