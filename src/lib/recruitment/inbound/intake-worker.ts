@@ -207,15 +207,19 @@ async function processEmailRow(payload: EmailQueuePayload): Promise<InboundCvInt
   let last: InboundCvIntakeResult = { outcome: "ignored_no_attachment" };
   for (const input of inputs) {
     // CV-as-link (E3): no attachment, but an allowlisted share link was found in the body — fetch
-    // it (size/type/redirect-guarded) and treat it as the CV. A failed/unsafe fetch just falls back
-    // to no-attachment.
+    // it (size/type/redirect-guarded) and treat it as the CV.
+    //
+    // A FAILED fetch no longer falls through silently. It used to land as ignored_no_attachment,
+    // which is the outcome a newsletter gets, so four real applicants were filed as "not an
+    // application" with nothing recorded anywhere. The reason now travels with the input and the
+    // event is finalized as a held-back attachment instead — see ingestInboundCv.
     let finalInput = input;
     const cvLinkUrl = (input.rawMetadata as { cvLinkUrl?: string } | undefined)?.cvLinkUrl;
     if (!input.attachment && typeof cvLinkUrl === "string") {
       const fetched = await fetchCvFromUrl(cvLinkUrl, maxInboundCvBytes());
-      if (fetched) {
-        finalInput = { ...input, attachment: { bytes: fetched.bytes, fileName: fetched.fileName, mimeType: fetched.mimeType } };
-      }
+      finalInput = fetched.ok
+        ? { ...input, attachment: { bytes: fetched.bytes, fileName: fetched.fileName, mimeType: fetched.mimeType } }
+        : { ...input, linkFetchFailure: fetched.reason };
     }
     // No bulkArrival: email has no forwarding-handset equivalent — a CV in the careers inbox came
     // from the applicant or an agency acting for one, so it alerts. Measured 2026-08-29 at 2-8 a
