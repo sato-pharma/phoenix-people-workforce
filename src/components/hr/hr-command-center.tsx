@@ -18,9 +18,11 @@
  * column would make a five-tile group a scroll marathon on a 375px screen. The tile's min height
  * and centred axis are what make the pair read cleanly at that width.
  *
- * THERE IS NO HERO — see the note at the top of the returned tree. It matched Finance's exactly
- * (`AdminHeroFrame` + `CeoHeroIdentity`) until the owner removed it on 2026-09-03 for taking a
- * third of the first screen. The seat's identity lives in the topbar chip instead.
+ * THE HERO IS A 92px STRIP, NOT A BAND — see the note at the top of the returned tree. It matched
+ * Finance's exactly (`AdminHeroFrame` + `CeoHeroIdentity`) until the owner removed it on
+ * 2026-09-03 for taking a third of the first screen, then asked the same day for the identity back
+ * in the employee portal's language and under 96px tall. Height, not presence, is the rule that
+ * survived both instructions.
  *
  * EVERYTHING ON THIS PAGE IS A REUSE, NOT AN INVENTION. The group header's icon badge borrows
  * `AdminStatCard`'s icon-container language. The tile's hover lift and corner arrow reuse
@@ -65,6 +67,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { HrCommandCharts } from "@/components/hr/hr-command-charts";
 import { HrMyRecord } from "@/components/hr/hr-my-record";
 import { HrTodayPanel } from "@/components/hr/hr-today-panel";
+import { PhoenixIdentityStrip } from "@/components/phoenix-signature-card/PhoenixIdentityStrip";
 import { type HrFunctionKey } from "@/lib/auth/hr-functions";
 import type { HrCommandCenterData, HrCommandGroup, HrCommandTile } from "@/lib/hr/command-center";
 
@@ -77,6 +80,19 @@ const GROUP_ICONS: Record<HrFunctionKey, LucideIcon> = {
   recruiting: BriefcaseBusiness,
   time_attendance: Fingerprint,
   workforce_insight: Network,
+};
+
+/**
+ * What the identity strip needs. A narrowed shape rather than `ViewerIdentity` itself, because
+ * this page has no business with the rest of that type and a narrower prop is one less thing a
+ * future change to the auth module can silently alter here.
+ */
+export type HrCommandCenterIdentity = {
+  displayName: string;
+  employeeCode: string | null;
+  photoUrl: string | null;
+  /** The seat's JOB TITLE, already resolved — never the raw permission key. */
+  roleLabel: string;
 };
 
 /** Per-browser, per-viewer. See the header — this is a convenience, not a saved preference. */
@@ -186,8 +202,15 @@ function UnavailableNotice({ sources }: { sources: string[] }) {
 
 export function HrCommandCenter({
   data,
+  identity,
 }: {
   data: HrCommandCenterData;
+  /**
+   * The signed-in seat, for the identity strip at the top. Resolved by the page from
+   * `resolveViewerIdentityFromPage`, which is the same source the topbar chip reads — so the
+   * strip and the chip can never disagree about whose account this is.
+   */
+  identity: HrCommandCenterIdentity;
 }) {
   const [query, setQuery] = useState("");
   const [attentionOnly, setAttentionOnly] = useState(false);
@@ -301,20 +324,38 @@ export function HrCommandCenter({
 
   return (
     <div className="min-w-0 max-w-full overflow-x-hidden">
-      {/* NO HERO, DELIBERATELY. Removed 2026-09-03 at the owner's instruction: "no heavy
-          banner in any of her pages taking all the space". This page opened with
-          `AdminHeroFrame` + `CeoHeroIdentity`, matching Finance and the CEO — a full-bleed
-          dark band holding a photo, a badge, a greeting and a clock, which cost roughly a
-          third of the first screen before one row of real work appeared.
+      {/* THE IDENTITY IS BACK, AS A 92px STRIP — and the size is the whole point.
 
-          Nothing was lost with it. The identity it carried — her name and, via
-          HR_SEAT_JOB_TITLES, her JOB TITLE rather than the seat key — is already in the
-          topbar chip on every page of the shell, from `resolveViewerIdentityFromPage`. The
-          date and clock were decoration.
+          History, because both halves of it were the owner's own instruction and a session that
+          knows only one half will undo the other:
 
-          Do not restore it, and do not "restore parity" with the CEO, Finance and SFE
-          heroes: those are untouched on purpose and this divergence IS the instruction. The
-          page now opens on the work. */}
+            1. This page opened with `AdminHeroFrame` + `CeoHeroIdentity`, matching Finance and
+               the CEO — a full-bleed dark band holding a photo, a badge, a greeting and a clock.
+               It cost roughly a THIRD of the first screen before one row of real work appeared,
+               and on 2026-09-03 he removed it: "no heavy banner in any of her pages taking all
+               the space".
+            2. Later the same day he asked for the identity back, in the employee portal's
+               language rather than the dark band's: "check the employee portal one ... but the
+               most important thing that I don't want it to be too thick, too many space in the
+               page. I want it to be narrow, to have much space for the page to show data." He
+               set the height himself, under 96px.
+
+          So the rule that survived both instructions is HEIGHT, not presence. `PhoenixIdentityStrip`
+          is a fixed 88px on a phone and 92px from `sm` up — about a third of what the old band took
+          and a quarter of the portal card it borrows from. Anything added here later is measured
+          against that, not against how the CEO and Finance pages look: those keep their own heroes
+          on purpose, and this divergence is still the instruction.
+
+          It reads its seat from `resolveViewerIdentityFromPage`, the same source as the topbar
+          chip, so the two can never disagree — including on the JOB TITLE, which that resolver
+          maps through HR_SEAT_JOB_TITLES rather than printing the permission key. */}
+      <PhoenixIdentityStrip
+        employeeCode={identity.employeeCode}
+        name={identity.displayName}
+        photoSrc={identity.photoUrl}
+        title={identity.roleLabel}
+      />
+
       {/* ── Your day. The page's opening answer to "what do I do today", as a list of real
           tasks that open into the actual named rows behind them. This replaced a ring reading
           "5 of 18 waiting" whose denominator counted TILES rather than work — see the header of

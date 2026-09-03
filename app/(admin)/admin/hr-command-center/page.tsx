@@ -4,7 +4,8 @@ import { Suspense } from "react";
 import { HrCommandCenter } from "@/components/hr/hr-command-center";
 import { AppRouteLoadingState } from "@/components/ui/loading-state";
 import { resolveLandingPathForRole } from "@/lib/auth/landing";
-import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { resolveAccessContextFromPage, resolveViewerIdentityFromPage } from "@/lib/auth/server";
+import { formatHrIdForDisplay } from "@/lib/hr-id";
 import { getHrCommandCenterData, hrBundleForRole } from "@/lib/hr/command-center";
 
 export const dynamic = "force-dynamic";
@@ -46,7 +47,14 @@ async function HrCommandCenterContent({
 }: {
   access: Awaited<ReturnType<typeof resolveAccessContextFromPage>>;
 }) {
-  const data = await getHrCommandCenterData(access);
+  // Both in parallel: neither needs the other, and the identity is a Storage lookup for the
+  // uploaded photo on top of one row read — serialising them would put that latency in front of
+  // the page's own data for no reason. `resolveViewerIdentityFromPage` is `cache()`d per request,
+  // so the topbar's own call in the shell costs nothing extra.
+  const [data, viewer] = await Promise.all([
+    getHrCommandCenterData(access),
+    resolveViewerIdentityFromPage(access),
+  ]);
 
   // Unreachable in practice — the page gate above already refused every role without a bundle,
   // and that is the only input that makes this null. Handled rather than asserted because a
@@ -56,6 +64,19 @@ async function HrCommandCenterContent({
   }
 
   return (
-    <HrCommandCenter data={data} />
+    <HrCommandCenter
+      data={data}
+      identity={{
+        displayName: viewer.displayName,
+        // `access.hrId`, not the login id: the strip prints an HR ID and an account name is not
+        // one. Null when the account has no linked employee, which the strip draws as nothing
+        // rather than as an empty slot.
+        employeeCode: formatHrIdForDisplay(access.hrId),
+        photoUrl: viewer.imageUrl ?? null,
+        // Already the JOB TITLE — the resolver maps the seat key through HR_SEAT_JOB_TITLES, so
+        // this reads "HR Business Partner", never "HR Advisory".
+        roleLabel: viewer.roleLabel,
+      }}
+    />
   );
 }
