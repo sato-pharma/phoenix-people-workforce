@@ -186,8 +186,8 @@ export function runAuthWebauthnTests() {
   );
   assert.match(
     passwordlessBody,
-    /isLinkedEmployeeTerminal/,
-    "the passwordless lookup must run the SAME terminal-employment gate authenticateLoginId runs; dropping it is the single highest-impact regression this feature can have",
+    /isLinkedEmployeeAccessRevoked/,
+    "the passwordless lookup must run the SAME dated-departure gate authenticateLoginId runs; dropping it is the single highest-impact regression this feature can have",
   );
   assert.match(
     passwordlessBody,

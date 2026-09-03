@@ -67,6 +67,63 @@ export function isTerminalEmploymentStatus(value: string | null | undefined): bo
   return !ACTIVE_EMPLOYMENT_STATUSES.has(status);
 }
 
+/**
+ * Date-only `YYYY-MM-DD`, or null when the value is absent or not a date. A full ISO instant is
+ * accepted by taking its date half, so a caller handing over a timestamp does not silently fall
+ * through to "no grace". Compared lexicographically by the caller — correct for this format, and
+ * it keeps this module free of Date parsing and its timezone traps.
+ */
+const DATE_ONLY_PATTERN = /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/;
+function normalizeDateOnly(value: string | null | undefined): string | null {
+  const raw = String(value ?? "").trim();
+  if (!raw) return null;
+  const candidate = raw.slice(0, 10);
+  return DATE_ONLY_PATTERN.test(candidate) ? candidate : null;
+}
+
+/**
+ * True when a departure has actually TAKEN EFFECT — the person's last working day has passed.
+ *
+ * WHY THIS EXISTS (2026-09-03). Access used to be revoked the moment an exit was FILED rather than
+ * on the day the person actually left, and that is wrong in both directions:
+ *   - Filed EARLY. A-16's exit was filed 2026-08-28 for a 2026-08-31 last working day, so her
+ *     status flipped three days before she left. She was locked out on 2026-08-30 while still
+ *     employed, and it presented as a PASSWORD problem: two failed logins, then a reset link, a
+ *     password reset, a setup link and a password setup inside three minutes — none of which could
+ *     ever have helped, because the block was her employment status.
+ *   - Filed LATE. PD-0006 left 2026-08-20 but his exit was not filed until 2026-08-28, so he
+ *     signed in legitimately on 2026-08-27 and created two junk venue rows in production.
+ *
+ * The LATE case cannot be closed in code — nothing can act on a departure it has not been told
+ * about. This closes the EARLY case, and makes the revocation correctly DATED in both.
+ *
+ * STRICTLY AFTER, deliberately. The grace holds only while the last working day is still in the
+ * future, so a departure dated TODAY revokes access at once and a same-day termination is not
+ * widened by this. `app_auth_users.is_active = false` remains the immediate kill switch and
+ * overrides all of this — it is checked before any of it.
+ *
+ * The grace applies ONLY to the three DEPARTED statuses, i.e. a real person serving out notice.
+ * `historical_payroll_record` and `system_placeholder` are ledger artefacts with no last working
+ * day (see DEPARTED_EMPLOYMENT_STATUSES above) and stay revoked unconditionally, as does any other
+ * non-active status such as `inactive`.
+ *
+ * A missing or unparseable last working day means NO grace, which is exactly the pre-2026-09-03
+ * behaviour. So this can only ever restore access to someone the company's own record still says
+ * is working, and never widens it on missing data.
+ */
+export function isEmploymentAccessRevoked(input: {
+  employmentStatus: string | null | undefined;
+  lastWorkingDate?: string | null;
+  todayCairo?: string | null;
+}): boolean {
+  if (!isTerminalEmploymentStatus(input.employmentStatus)) return false;
+  if (!hasDepartedEmployment(input.employmentStatus)) return true;
+  const lastWorkingDate = normalizeDateOnly(input.lastWorkingDate);
+  const today = normalizeDateOnly(input.todayCairo);
+  if (!lastWorkingDate || !today) return true;
+  return lastWorkingDate <= today;
+}
+
 /** Outcome of the read-time employee lifecycle gate. */
 export type SessionLifecycleGate =
   | { allowed: true }
@@ -87,11 +144,16 @@ export type SessionLifecycleGate =
 export function evaluateEmployeeLifecycleGate(input: {
   lookupFailed: boolean;
   employmentStatus: string | null | undefined;
+  // Both OPTIONAL so every pre-existing caller keeps its exact behaviour: with no date there is no
+  // grace, which is the block this gate has always applied. Supplying them is what lets a departure
+  // filed in advance stop locking out someone who is still working.
+  lastWorkingDate?: string | null;
+  todayCairo?: string | null;
 }): SessionLifecycleGate {
   if (input.lookupFailed) {
     return { allowed: false, reason: "employee_lookup_failed" };
   }
-  if (isTerminalEmploymentStatus(input.employmentStatus)) {
+  if (isEmploymentAccessRevoked(input)) {
     return {
       allowed: false,
       reason: "employee_terminal",

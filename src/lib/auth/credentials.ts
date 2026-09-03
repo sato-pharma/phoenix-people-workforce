@@ -1,7 +1,8 @@
 import bcrypt from "bcryptjs";
 
 import { normalizeRole, type PhoenixRole } from "@/lib/auth/permissions";
-import { isTerminalEmploymentStatus } from "@/lib/auth/session-lifecycle";
+import { isEmploymentAccessRevoked } from "@/lib/auth/session-lifecycle";
+import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export type AppAuthUser = {
@@ -79,24 +80,34 @@ export async function resolveStoredLoginId(identifierInput: string): Promise<str
   return row?.login_id ?? null;
 }
 
-// Login-time lifecycle gate: deny sign-in when the linked employee has a TERMINAL status
-// (resigned / terminated / inactive / non-renewed) even if app_auth_users.is_active is stale —
-// e.g. a status set via CSV import that bypassed the resignation RPC (which normally also flips
-// is_active). Mirrors the read-time session gate in src/lib/auth/server.ts so login and session
-// enforce the SAME rule via isTerminalEmploymentStatus. Only a CONFIRMED terminal status blocks; a
-// lookup error or an unlinked/missing employee row does NOT block here (login stays available during
-// a transient blip — the read-time session gate fails closed and is the backstop).
-async function isLinkedEmployeeTerminal(hrId: string | null | undefined): Promise<boolean> {
+// Login-time lifecycle gate: deny sign-in when the linked employee's departure has TAKEN EFFECT
+// (resigned / terminated / not_renewed with the last working day passed, or any other non-active
+// status) even if app_auth_users.is_active is stale — e.g. a status set via CSV import that
+// bypassed the resignation RPC (which normally also flips is_active). Mirrors the read-time session
+// gate in src/lib/auth/server.ts so login and session enforce the SAME rule via
+// isEmploymentAccessRevoked. Only a CONFIRMED, effective departure blocks; a lookup error or an
+// unlinked/missing employee row does NOT block here (login stays available during a transient blip
+// — the read-time session gate fails closed and is the backstop).
+//
+// The date is what makes this correct: an exit filed in ADVANCE flips employment_status days before
+// the person actually leaves, and without last_working_date that locked out someone still working.
+// See isEmploymentAccessRevoked for the two production incidents behind it.
+async function isLinkedEmployeeAccessRevoked(hrId: string | null | undefined): Promise<boolean> {
   const linkedHrId = String(hrId ?? "").trim();
   if (!linkedHrId) return false;
   try {
     const { data, error } = await getSupabaseAdmin()
       .from("employees")
-      .select("employment_status")
+      .select("employment_status, last_working_date")
       .eq("hr_id", linkedHrId)
       .maybeSingle();
     if (error || !data) return false;
-    return isTerminalEmploymentStatus((data as { employment_status?: string | null }).employment_status);
+    const row = data as { employment_status?: string | null; last_working_date?: string | null };
+    return isEmploymentAccessRevoked({
+      employmentStatus: row.employment_status,
+      lastWorkingDate: row.last_working_date,
+      todayCairo: currentCairoDateOnlyIso(),
+    });
   } catch {
     return false;
   }
@@ -128,8 +139,9 @@ export async function authenticateLoginId(loginIdInput: string, password: string
   const passwordMatches = await bcrypt.compare(password, row.password_hash);
   if (!passwordMatches) return null;
 
-  // Resigned / terminated employees can never sign in, even if their login was left active.
-  if (await isLinkedEmployeeTerminal(row.hr_id)) return null;
+  // An employee whose departure has taken effect can never sign in, even if their login was left
+  // active. Someone serving out notice still can — the block is dated, not filed.
+  if (await isLinkedEmployeeAccessRevoked(row.hr_id)) return null;
 
   return mapAuthUserRow(row);
 }
@@ -150,7 +162,7 @@ export async function resolveAuthUserForPasswordlessLogin(
   const row = await findActiveAuthUserRow(loginId);
   if (!row) return null;
 
-  if (await isLinkedEmployeeTerminal(row.hr_id)) return null;
+  if (await isLinkedEmployeeAccessRevoked(row.hr_id)) return null;
 
   return mapAuthUserRow(row);
 }

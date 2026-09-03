@@ -24,6 +24,7 @@ import {
 import {
   ACTIVE_EMPLOYMENT_STATUSES,
   evaluateEmployeeLifecycleGate,
+  isEmploymentAccessRevoked,
   isTerminalEmploymentStatus,
 } from "../src/lib/auth/session-lifecycle.ts";
 import {
@@ -224,6 +225,141 @@ export async function runAuthSessionTests() {
     "lookup-failure denial carries the employee_lookup_failed reason",
   );
 
+  // ===========================================================================
+  // A departure is DATED, not FILED (2026-09-03).
+  //
+  // Keying access on the moment the exit was filed is wrong in both directions. A-16's exit was
+  // filed 2026-08-28 for a 2026-08-31 last working day, so she was locked out on 2026-08-30 while
+  // still employed — and it presented as a PASSWORD problem: two failed logins, then a reset link,
+  // a password reset, a setup link and a password setup inside three minutes, none of which could
+  // help. PD-0006's exit was filed eight days LATE, so he signed in after leaving and wrote two
+  // junk venue rows to production. Code cannot close the late case; it can make the block DATED.
+  // ===========================================================================
+  const cairoToday = "2026-08-30";
+
+  // Serving out notice: the last working day is still AHEAD, so access holds. This is the A-16 case.
+  assert.equal(
+    isEmploymentAccessRevoked({ employmentStatus: "resigned", lastWorkingDate: "2026-08-31", todayCairo: cairoToday }),
+    false,
+    "a resigned employee whose last working day is still ahead keeps access",
+  );
+  assert.equal(
+    isEmploymentAccessRevoked({ employmentStatus: "terminated", lastWorkingDate: "2026-09-15", todayCairo: cairoToday }),
+    false,
+    "a terminated employee serving notice keeps access until the last working day",
+  );
+  assert.equal(
+    isEmploymentAccessRevoked({ employmentStatus: " Not_Renewed ", lastWorkingDate: "2026-08-31", todayCairo: cairoToday }),
+    false,
+    "status is trimmed and lower-cased before the dated grace is applied",
+  );
+  assert.equal(
+    isEmploymentAccessRevoked({
+      employmentStatus: "resigned",
+      lastWorkingDate: "2026-08-31T00:00:00.000Z",
+      todayCairo: cairoToday,
+    }),
+    false,
+    "a full ISO instant is read by its date half, not dropped to no-grace",
+  );
+
+  // STRICTLY AFTER: a departure dated TODAY revokes at once, so a same-day termination is not widened.
+  assert.equal(
+    isEmploymentAccessRevoked({ employmentStatus: "resigned", lastWorkingDate: cairoToday, todayCairo: cairoToday }),
+    true,
+    "the last working day itself is the last day of access, not the first day after it",
+  );
+  // Departed and the day has passed. This is the PD-0006 case.
+  assert.equal(
+    isEmploymentAccessRevoked({ employmentStatus: "resigned", lastWorkingDate: "2026-08-20", todayCairo: cairoToday }),
+    true,
+    "a resigned employee whose last working day has passed is revoked",
+  );
+
+  // No grace on missing or unusable data -> the pre-2026-09-03 block. This rule can only ever
+  // RESTORE access to someone the company's own record says is still working.
+  assert.equal(
+    isEmploymentAccessRevoked({ employmentStatus: "resigned", lastWorkingDate: null, todayCairo: cairoToday }),
+    true,
+    "a resigned employee with no last working day is revoked, exactly as before this rule",
+  );
+  assert.equal(
+    isEmploymentAccessRevoked({ employmentStatus: "resigned", lastWorkingDate: "not a date", todayCairo: cairoToday }),
+    true,
+    "an unparseable last working day grants no grace",
+  );
+  assert.equal(
+    isEmploymentAccessRevoked({ employmentStatus: "resigned", lastWorkingDate: "2026-08-31", todayCairo: null }),
+    true,
+    "a caller that supplies no today grants no grace",
+  );
+  assert.equal(
+    isEmploymentAccessRevoked({ employmentStatus: "resigned" }),
+    true,
+    "the dateless call is the old behaviour, unchanged",
+  );
+
+  // The grace is for PEOPLE SERVING NOTICE only. Ledger artefacts and any other non-active status
+  // are revoked unconditionally, whatever date sits on the row.
+  for (const ledgerStatus of ["inactive", "historical_payroll_record", "system_placeholder"]) {
+    assert.equal(
+      isEmploymentAccessRevoked({
+        employmentStatus: ledgerStatus,
+        lastWorkingDate: "2099-01-01",
+        todayCairo: cairoToday,
+      }),
+      true,
+      `${ledgerStatus} is revoked unconditionally — a future date grants it no grace`,
+    );
+  }
+
+  // A status that was never terminal is never revoked, whatever date sits beside it.
+  assert.equal(
+    isEmploymentAccessRevoked({ employmentStatus: "active", lastWorkingDate: "2026-08-20", todayCairo: cairoToday }),
+    false,
+    "an active employee is never revoked by a stale last working day",
+  );
+  assert.equal(
+    isEmploymentAccessRevoked({ employmentStatus: null, lastWorkingDate: "2026-08-20", todayCairo: cairoToday }),
+    false,
+    "an unset status stays allowed (unlinked/system account)",
+  );
+
+  // Same decision through the gate the callers actually use.
+  assert.equal(
+    evaluateEmployeeLifecycleGate({
+      lookupFailed: false,
+      employmentStatus: "resigned",
+      lastWorkingDate: "2026-08-31",
+      todayCairo: cairoToday,
+    }).allowed,
+    true,
+    "the gate lets someone serving out notice keep their session",
+  );
+  const datedTerminalGate = evaluateEmployeeLifecycleGate({
+    lookupFailed: false,
+    employmentStatus: "resigned",
+    lastWorkingDate: "2026-08-20",
+    todayCairo: cairoToday,
+  });
+  assert.equal(datedTerminalGate.allowed, false, "the gate denies once the last working day has passed");
+  assert.equal(
+    datedTerminalGate.allowed === false && datedTerminalGate.reason,
+    "employee_terminal",
+    "a dated denial still carries the employee_terminal reason",
+  );
+  // A lookup failure outranks the grace — governance still fails CLOSED.
+  assert.equal(
+    evaluateEmployeeLifecycleGate({
+      lookupFailed: true,
+      employmentStatus: "resigned",
+      lastWorkingDate: "2026-08-31",
+      todayCairo: cairoToday,
+    }).allowed,
+    false,
+    "a lookup failure denies even when the last working day is still ahead",
+  );
+
   // Wiring: server session resolution must enforce lifecycle at read time without
   // relying on app_auth_users.is_active alone, and must keep the existing gates.
   const serverSource = readFileSync(
@@ -251,6 +387,18 @@ export async function runAuthSessionTests() {
     /employment_status/,
     "session resolution must read employees.employment_status",
   );
+  // The gate is only dated if the date is actually SELECTED and handed over. Reading the status
+  // alone silently reverts to blocking on the filing moment.
+  assert.match(
+    serverSource,
+    /\.select\("employment_status, last_working_date"\)/,
+    "session resolution must select last_working_date alongside the status",
+  );
+  assert.match(
+    serverSource,
+    /todayCairo: currentCairoDateOnlyIso\(\)/,
+    "session resolution must compare against the Cairo date, not the server's local date",
+  );
   // Existing gates remain unchanged: inactive app user and session-version checks.
   assert.match(serverSource, /if \(!row\.is_active\)/, "is_active gate must remain");
   assert.match(
@@ -259,20 +407,36 @@ export async function runAuthSessionTests() {
     "session_version invalidation must remain unchanged",
   );
 
-  // Login-time lifecycle gate: authenticateLoginId must ALSO block a terminal employee at sign-in
-  // (defense-in-depth with the read-time session gate), using the SAME isTerminalEmploymentStatus
-  // helper, so a resigned/terminated person cannot sign in even when app_auth_users.is_active is
-  // stale (e.g. status set via CSV import outside the resignation RPC).
+  // Login-time lifecycle gate: authenticateLoginId must ALSO block an employee whose departure has
+  // taken effect (defense-in-depth with the read-time session gate), using the SAME
+  // isEmploymentAccessRevoked helper, so a departed person cannot sign in even when
+  // app_auth_users.is_active is stale (e.g. status set via CSV import outside the resignation RPC).
   const credentialsSource = readFileSync(
     new URL("../src/lib/auth/credentials.ts", import.meta.url),
     "utf8",
   );
-  assert.match(credentialsSource, /isTerminalEmploymentStatus/, "login must reuse the shared terminal-status helper");
-  assert.match(credentialsSource, /employment_status/, "login must read employees.employment_status");
+  assert.match(credentialsSource, /isEmploymentAccessRevoked/, "login must reuse the shared dated-departure helper");
   assert.match(
     credentialsSource,
-    /if \(await isLinkedEmployeeTerminal\(row\.hr_id\)\) return null/,
-    "authenticateLoginId must deny sign-in for a terminal linked employee",
+    /\.select\("employment_status, last_working_date"\)/,
+    "login must read the last working day, not the status alone",
+  );
+  assert.match(
+    credentialsSource,
+    /todayCairo: currentCairoDateOnlyIso\(\)/,
+    "login must compare against the Cairo date",
+  );
+  assert.match(
+    credentialsSource,
+    /if \(await isLinkedEmployeeAccessRevoked\(row\.hr_id\)\) return null/,
+    "authenticateLoginId must deny sign-in once a linked employee's departure has taken effect",
+  );
+  // Passkey sign-in resolves the account AFTER the WebAuthn signature, with no password to compare,
+  // so it must apply the same gate or a passkey becomes a way around it. Both call sites, not one.
+  assert.equal(
+    credentialsSource.split("if (await isLinkedEmployeeAccessRevoked(row.hr_id)) return null").length - 1,
+    2,
+    "both password and passwordless sign-in must apply the lifecycle gate",
   );
 
   // ===========================================================================
