@@ -1237,6 +1237,7 @@ import { runRepoDoctorWorktreeRestoreAdviceTests } from "./repo-doctor-worktree-
 import { runCommentStripRatchetTests } from "./comment-strip-ratchet.test.ts";
 
 import { runRepoDoctorStripIdleOfferTests } from "./repo-doctor-strip-idle-offer.test.ts";
+import { runRepoDoctorNewestPrTests } from "./repo-doctor-newest-pr.test.ts";
 import { runCrmClientTimeoutsTests } from "./crm-client-timeouts.test.ts";
 import { runOutstationMobileWizardStaleCalculationTests } from "./outstation-mobile-wizard-stale-calculation.test.ts";
 import { runOutstationPayrollPayableTotalAgreementTests } from "./outstation-payroll-payable-total-agreement.test.ts";
@@ -3817,6 +3818,14 @@ await runTest("repo-doctor never advises pnpm install in a worktree (restore is 
 await runTest("no source-pinning test strips comments with a regex that eats the code it pins", runCommentStripRatchetTests);
 
 await runTest("repo-doctor offers only what --strip-idle will actually reclaim", runRepoDoctorStripIdleOfferTests);
+await runTest(
+  "a worktree is retirable off its NEWEST pull request, never off a stale merged one (a branch "
+    + "reused after a squash merge reads as retirable from `--state merged`, and the `git branch -D` "
+    + "that prints is unqualified once the reuse is committed and pushed to its OPEN PR; every "
+    + "unknown — gh unreachable, no head SHA, an unreadable HEAD — holds the branch, and the rule "
+    + "lives in exactly one place because both callers print that command)",
+  runRepoDoctorNewestPrTests,
+);
 await runTest("the CRM client's timeout bounds the response BODY, and an empty body is not a shape change", runCrmClientTimeoutsTests);
 await runTest("the outstation wizard blocks submit on a stale calculation and never posts its own claimedTotalAmount", runOutstationMobileWizardStaleCalculationTests);
 await runTest("the payroll push mapper and the payroll display mapper agree on one outstation total, even when the claim differs from the expected total", runOutstationPayrollPayableTotalAgreementTests);
