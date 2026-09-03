@@ -258,6 +258,16 @@ the full account, under
   National Sales Manager has no CRM visits for it to match against — so the hold was structural
   rather than a judgement anyone had made. **NSM only.** It does not extend to the three photo-waived
   roles, and every other role still waits for a human. `nsm-outstation-expense-is-never-held`
+- 🔴 **An NSM's SAME-DAY RETURN outstation allowance is 300.** Owner rule 2026-09-03, given as
+  the settlement of `OUTSTATION-31` — a data-quality hold that had sat unresolved because nothing in
+  the repository could derive the figure. The trip was Ali Mohamed Ali Elsayed (`A-12`, National
+  Sales Manager), Cairo to مركز طنطا by train on 2026-03-31, out and back the same day
+  (`expense_date` = `to_date`). The legacy row carried `allowance = 300` with `travel_cost`,
+  `meeting_amount` and `other_amount` all zero, yet `total = 240` — the components did not add up, so
+  the mirror flagged it. **The 240 was the error, not the 300.** Reconciling the other way — trimming
+  the allowance to match the total — is exactly what a session reaching for arithmetic will do, and it
+  would have quietly underpaid him by 60. The total was corrected to 300 on 2026-09-03 under a guarded
+  `WHERE` that also required the row to be unimported to payroll, so nothing was double-paid.
 - 🔴 **The mailbox-monitor app-password entry is `___`, never "Phoenix".** Owner rule 2026-08-28:
   the entry name an employee types into Yahoo/Turbify is three underscores, and the monitor UI must
   never print the word Phoenix anywhere in that instruction.
