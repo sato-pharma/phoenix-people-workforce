@@ -42,10 +42,10 @@ function TableBreakdown({ entry }: { entry: AreaConsolidationTablePreview }) {
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-3">
       <div className="flex items-center justify-between gap-3">
-        <p className="min-w-0 text-phx-md font-semibold text-slate-900 md:overflow-hidden md:text-ellipsis md:whitespace-nowrap">
+        <p className="min-w-0 break-words text-phx-md font-semibold text-slate-900">
           {entry.label}
         </p>
-        <Badge variant={entry.role === "historical" ? "neutral" : "warning"}>
+        <Badge className="shrink-0" variant={entry.role === "historical" ? "neutral" : "warning"}>
           {entry.count} {entry.count === 1 ? "row" : "rows"}
         </Badge>
       </div>
@@ -60,11 +60,15 @@ function TableBreakdown({ entry }: { entry: AreaConsolidationTablePreview }) {
             // These names are the entire point of the screen — he reads them, THEN presses. So the
             // one place a name must never be hidden is here. Measured at 375px, the longest employee
             // on any legacy area ("Mahmoud El Husseinin Elemam Moslam El Husseinin", 47 chars)
-            // needed 287px in a 243px row and was ellipsis-truncated. It wraps on a phone now and
-            // stays on one line from md: up, so nothing is hidden at either size.
+            // needed 287px in a 243px row and was ellipsis-truncated.
+            //
+            // It wrapped on a phone and kept an ellipsis from md: up until 2026-09-03, which was the
+            // best available answer while the house rule still said text must never wrap either.
+            // AGENTS.md §4 retired that half — where the two collide, WRAPPING wins — so the name
+            // now wraps at EVERY size and is never cut, which is what this comment wanted all along.
             <li
               key={`${entry.table}-${row.primaryKey}`}
-              className="text-phx-sm font-medium text-slate-700 md:overflow-hidden md:text-ellipsis md:whitespace-nowrap"
+              className="break-words text-phx-sm font-medium text-slate-700"
             >
               {row.label}
             </li>
@@ -255,10 +259,10 @@ export function AreaConsolidationWorkspace() {
                 onClick={() => void openPreview(candidate.source.id)}
                 type="button"
               >
-                <p className="text-phx-md font-bold text-slate-900 md:overflow-hidden md:text-ellipsis md:whitespace-nowrap">
+                <p className="break-words text-phx-md font-bold text-slate-900">
                   {candidate.source.name}
                 </p>
-                <p className="mt-0.5 text-phx-sm font-medium text-slate-600 md:overflow-hidden md:text-ellipsis md:whitespace-nowrap">
+                <p className="mt-0.5 break-words text-phx-sm font-medium text-slate-600">
                   {candidate.target
                     ? `Ruled to move into ${candidate.target.name}`
                     : "No ruling yet — nothing can move"}

@@ -20,6 +20,14 @@ import {
 import type { PortalWeeklyFieldForce } from "@/lib/sales/weekly/portal-weekly-field-force";
 import type { WeeklyDashboard } from "@/lib/sales/weekly/types";
 
+import {
+  pageHeaderDescriptionClassName,
+  pageHeaderKickerClassName,
+  pageHeaderRailClassName,
+  pageHeaderRuleClassName,
+  pageHeaderTitleClassName,
+} from "@/components/admin/admin-design-tokens";
+
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -129,12 +137,13 @@ export default async function CompanyWeeklySalesPage({
 
   return (
     <div className="mx-auto max-w-7xl space-y-5 p-6">
-      <div className="flex items-center gap-3 border-b border-border pb-5">
-        <div className="h-12 w-1 shrink-0 bg-phx-accent" />
-        <div>
-          <p className="mb-0.5 text-phx-2xs font-bold uppercase tracking-widest text-phx-accent">Field Sales · Company Scope</p>
-          <h1 className="text-2xl font-bold leading-tight text-foreground">Weekly Sales</h1>
-          <p className="mt-0.5 text-xs text-muted-foreground">
+      <div className="relative pb-4">
+        <span aria-hidden="true" className={`absolute inset-x-0 bottom-0 ${pageHeaderRuleClassName}`} />
+        <div className="relative min-w-0 space-y-1.5 pl-3.5">
+          <span aria-hidden="true" className={pageHeaderRailClassName} />
+          <p className={pageHeaderKickerClassName}>Field Sales · Company Scope</p>
+          <h1 className={pageHeaderTitleClassName}>Weekly Sales</h1>
+          <p className={pageHeaderDescriptionClassName}>
             De-cumulated weekly distributor sell-in across every line and region — value, units, products
             and week-over-week trends. Same live dashboard the field managers use, at company scope.
           </p>

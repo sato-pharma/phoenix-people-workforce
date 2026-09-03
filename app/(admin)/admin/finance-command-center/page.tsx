@@ -8,7 +8,7 @@ import {
   resolveNavigationMode,
   type AccessContext,
 } from "@/lib/auth/permissions";
-import { resolveAccessContextFromPage, resolveViewerIdentityFromPage } from "@/lib/auth/server";
+import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { getFinanceCommandCenterData } from "@/lib/finance/command-center";
 
 export const dynamic = "force-dynamic";
@@ -48,25 +48,12 @@ export default async function FinanceCommandPage() {
 async function FinanceCommandContent({ access }: { access: AccessContext }) {
   // getFinanceCommandCenterData never throws — it degrades to named unavailable sources so a
   // single failing source cannot take down a landing page.
-  const [viewer, view] = await Promise.all([
-    resolveViewerIdentityFromPage(access),
-    getFinanceCommandCenterData(access),
-  ]);
+  // `welcome` IS GONE. The identity banner it fed was removed 2026-09-03 at the owner's
+  // instruction — "remove from all pages this dump block" — so nothing on this page reads a viewer
+  // name, role label or portrait any more. Dropping the prop rather than leaving it unread also
+  // drops the `resolveViewerIdentityFromPage` round trip and, on /admin, a Storage lookup for an
+  // uploaded photo. The name and role are in the shell's topbar chip, resolved once for every page.
+  const view = await getFinanceCommandCenterData(access);
 
-  return (
-    <FinanceCommandCenter
-      view={view}
-      welcome={{
-        fullName: viewer.displayName,
-        hrId: access.hrId,
-        // B-185 has a mapped portrait (src/lib/employees/profile-images.ts); resolveViewerIdentity
-        // already resolves it, and CeoHeroIdentity self-hides on a load error, so passing it
-        // through costs nothing when a viewer has none.
-        imageUrl: viewer.imageUrl,
-        // Falls back to an initials medallion when there is no photo (uploaded or bundled) yet.
-        initials: viewer.initials,
-        roleLabel: viewer.roleLabel,
-      }}
-    />
-  );
+  return <FinanceCommandCenter view={view} />;
 }

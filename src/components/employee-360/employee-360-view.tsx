@@ -17,7 +17,10 @@ import {
 } from "lucide-react";
 import type { ReactNode } from "react";
 
-import { AdminHeroFrame } from "@/components/admin/admin-design-system";
+import {
+  pageHeaderRailClassName,
+  pageHeaderRuleClassName,
+} from "@/components/admin/admin-design-tokens";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { LineChart } from "./charts";
@@ -412,51 +415,77 @@ function IdentityHero({
   benchmarkLabel: string;
   roleLabel: string;
 }) {
+  // NO DARK BAND. Flattened 2026-09-03 at the owner's instruction — "remove from all pages this
+  // dump block" — the same removal made the same day on `AdminPageHero` (131 pages), the HR, CEO
+  // and Finance command centers and My Workspace. This was an `AdminHeroFrame`: a full-bleed
+  // black gradient at p-5 / sm:p-6 / lg:p-7, four decorative layers deep.
+  //
+  // NOTHING HERE WAS DELETED, only recoloured, and that is the difference between this page and
+  // the others. Everywhere else the band was restating the name of the page you had just opened,
+  // so it went. Here it says WHOSE record you are reading — the name, HR ID, employment status,
+  // job title, line, area, manager and tenure — and dropping it would leave a review page with no
+  // subject on it. So it is now a compact line on the page's own surface.
+  //
+  // THE COLOURS ALL HAD TO MOVE WITH IT. `AdminHeroFrame` supplied a dark surface, so every value
+  // above was written to be legible on black — `text-white`, `text-slate-300/400`,
+  // `text-phx-paper`, `bg-white/10`, `ring-white/10`. Kept as-is over white they paint white on
+  // white: present in the DOM, invisible on screen, and reading as missing data rather than as a
+  // styling bug. If anything here ever goes blank, that is the first thing to check.
   return (
-    <AdminHeroFrame>
-      <div className="relative flex flex-col gap-5 p-5 sm:p-6 lg:flex-row lg:items-center lg:justify-between lg:p-7">
-        <div className="flex min-w-0 items-center gap-4">
-          <span
-            aria-hidden
-            className={cn(
-              "flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br text-base font-black text-white shadow-lg ring-2 ring-white/10",
-              avatarTone(subject.hrId),
-            )}
-          >
-            {initials(subject.displayName)}
-          </span>
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <h1 className="truncate text-xl font-black text-white sm:text-2xl">{subject.displayName}</h1>
-              <span className="rounded-full border border-white/20 bg-white/10 px-2 py-0.5 text-phx-xs font-bold text-phx-paper backdrop-blur">
-                {subject.hrId.toUpperCase()}
+    // POLISHED 2026-09-03 (second pass): the rail and fading rule from the shared tokens, so this
+    // person's header matches every page header around it. The rail sits OUTSIDE the avatar, at
+    // the block's leading edge, which is where it sits on every other header - it marks the start
+    // of the header, not the start of the text.
+    <section className="min-w-0">
+      <div className="flex flex-col gap-3 pb-4 lg:flex-row lg:items-center lg:justify-between lg:gap-6">
+      <div className="relative flex min-w-0 items-center gap-3 pl-3.5">
+        <span aria-hidden="true" className={pageHeaderRailClassName} />
+        <span
+          aria-hidden
+          className={cn(
+            "flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br text-[13px] font-black text-white ring-1 ring-slate-900/10",
+            avatarTone(subject.hrId),
+          )}
+        >
+          {initials(subject.displayName)}
+        </span>
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Literal bracket sizes, not the named text-phx-* scale — cn() runs over this
+                subtree and tailwind-merge silently drops custom NAMED font sizes. */}
+            <h1 className="min-w-0 break-words text-[1.05rem] font-black tracking-[-0.03em] text-slate-900 sm:text-[1.2rem]">
+              {subject.displayName}
+            </h1>
+            <span className="rounded-full border border-slate-300 bg-slate-100 px-2 py-0.5 text-[11px] font-bold text-slate-600">
+              {subject.hrId.toUpperCase()}
+            </span>
+            {subject.employmentStatus && subject.employmentStatus !== "active" ? (
+              <span className="rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-amber-700">
+                {subject.employmentStatus.replace(/_/g, " ")}
               </span>
-              {subject.employmentStatus && subject.employmentStatus !== "active" ? (
-                <span className="rounded-full border border-phx-warn-line/40 bg-phx-warn/15 px-2 py-0.5 text-phx-2xs font-black uppercase tracking-wide text-phx-warn-bg">
-                  {subject.employmentStatus.replace(/_/g, " ")}
-                </span>
-              ) : null}
-            </div>
-            <p className="mt-1.5 truncate text-sm text-slate-300">
-              {[subject.jobTitle, subject.lineName, subject.areaName || subject.regionName].filter(Boolean).join(" · ") || "—"}
-            </p>
-            <p className="mt-0.5 text-xs text-slate-400">
-              {subject.managerName ? `Reports to ${subject.managerName}` : "No manager on record"}
-              {tenure ? ` · ${tenure}` : ""}
-            </p>
+            ) : null}
           </div>
-        </div>
-        <div className="flex shrink-0 flex-row flex-wrap items-center gap-2 lg:flex-col lg:items-end lg:gap-1.5">
-          <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-phx-2xs font-black uppercase tracking-[0.14em] text-phx-paper backdrop-blur">
-            {roleLabel}
-          </span>
-          <span className="rounded-full border border-phx-warn-line/40 bg-phx-warn/15 px-3 py-1 text-phx-xs font-bold text-phx-warn-bg">
-            {windowLabel}
-          </span>
-          <span className="text-phx-xs text-slate-400">{benchmarkLabel}</span>
+          <p className="mt-1 text-[13px] leading-5 text-slate-600">
+            {[subject.jobTitle, subject.lineName, subject.areaName || subject.regionName].filter(Boolean).join(" · ") || "—"}
+          </p>
+          <p className="text-[12px] leading-5 text-slate-500">
+            {subject.managerName ? `Reports to ${subject.managerName}` : "No manager on record"}
+            {tenure ? ` · ${tenure}` : ""}
+          </p>
         </div>
       </div>
-    </AdminHeroFrame>
+      <div className="flex shrink-0 flex-row flex-wrap items-center gap-2 lg:flex-col lg:items-end lg:gap-1.5">
+        <span className="rounded-full border border-slate-300 bg-slate-100 px-3 py-1 text-[10px] font-black uppercase tracking-[0.14em] text-slate-600">
+          {roleLabel}
+        </span>
+        <span className="rounded-full border border-amber-300 bg-amber-50 px-3 py-1 text-[11px] font-bold text-amber-700">
+          {windowLabel}
+        </span>
+        <span className="text-[11px] text-slate-500">{benchmarkLabel}</span>
+      </div>
+      </div>
+      <div aria-hidden="true" className={pageHeaderRuleClassName} />
+    </section>
   );
 }
 

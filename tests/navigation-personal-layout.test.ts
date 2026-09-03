@@ -1241,10 +1241,20 @@ export function runNavigationPersonalLayoutTests() {
     // reported as clutter the day it shipped. `keepWhenEmpty` is uniform across every mode now; the
     // portal got a compact header “+” instead — which then went too, along with the rows
     // themselves, when the owner removed them from the portal on 2026-09-03.
+    // AND THEN THE ROWS THEMSELVES WENT, on 2026-09-03. The owner had them taken off the portal
+    // that morning ("remove it totally"), then named the HR one from its own tab labels - "My
+    // pages / My Calendar / Payslips / ... REMOVE THIS NAV BAR" - so NOTHING passes keepWhenEmpty
+    // any more, and an empty row is simply absent in admin and HR as well as the portal.
+    //
+    // INVERTED rather than deleted, because the guard asserted just above is still what decides
+    // whether the bar exists at all. THE CONSEQUENCE IS REAL AND WAS ACCEPTED: a viewer who unpins
+    // the last tab from a row loses the row and the "+" that lived in it, so there is no way back
+    // through the UI - those pages stay reachable from the sidebar and at their own URLs. A future
+    // session that reintroduces the rows turns this red, and should read this before changing it.
     assert.equal(
-      rows.split("keepWhenEmpty={canAdd && hasSavedLayout}").length - 1,
-      2,
-      "both rows must survive being emptied, or the one you emptied has no way back",
+      rows.split("keepWhenEmpty={").length - 1,
+      0,
+      "nothing may pass keepWhenEmpty - an empty nav row is absent, by the owner’s 2026-09-03 call",
     );
     assert.ok(
       !/alwaysOfferAdd\s*[:?]/.test(rows),

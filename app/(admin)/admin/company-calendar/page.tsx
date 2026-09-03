@@ -9,6 +9,14 @@ import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { getCompanyCalendarWorkspace } from "@/lib/calendar/service";
 import { currentCairoDateParts } from "@/lib/i18n/format";
 
+import {
+  pageHeaderDescriptionClassName,
+  pageHeaderKickerClassName,
+  pageHeaderRailClassName,
+  pageHeaderRuleClassName,
+  pageHeaderTitleClassName,
+} from "@/components/admin/admin-design-tokens";
+
 export const dynamic = "force-dynamic";
 
 // Admin-shell host of the portal Company Calendar (company events, public holidays, approved
@@ -59,12 +67,13 @@ export default async function AdminCompanyCalendarPage() {
 
   return (
     <div className="mx-auto max-w-7xl space-y-5 p-6">
-      <div className="flex items-center gap-3 border-b border-border pb-5">
-        <div className="h-12 w-1 shrink-0 bg-phx-accent" />
-        <div>
-          <p className="mb-0.5 text-phx-2xs font-bold uppercase tracking-widest text-phx-accent">Company · Events</p>
-          <h1 className="text-2xl font-bold leading-tight text-foreground">Events Calendar</h1>
-          <p className="mt-0.5 whitespace-nowrap text-xs text-muted-foreground">
+      <div className="relative pb-4">
+        <span aria-hidden="true" className={`absolute inset-x-0 bottom-0 ${pageHeaderRuleClassName}`} />
+        <div className="relative min-w-0 space-y-1.5 pl-3.5">
+          <span aria-hidden="true" className={pageHeaderRailClassName} />
+          <p className={pageHeaderKickerClassName}>Company · Events</p>
+          <h1 className={pageHeaderTitleClassName}>Events Calendar</h1>
+          <p className={pageHeaderDescriptionClassName}>
             Company and team events, public holidays, approved leave, plan days and team birthdays —
             {" "}{reachSentence}
           </p>

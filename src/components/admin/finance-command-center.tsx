@@ -15,9 +15,7 @@ import {
   Wallet,
 } from "lucide-react";
 
-import { AdminHeroFrame } from "@/components/admin/admin-design-system";
 import { AreaSparkline, SectionShell } from "@/components/admin/ceo-command-center";
-import { CeoHeroIdentity } from "@/components/admin/ceo-hero-identity";
 import { APPROVALS_SLA_THRESHOLDS, slaTone } from "@/components/approvals-hub/sla-thresholds";
 import type {
   FinanceCommandCenterData,
@@ -26,13 +24,11 @@ import type {
   FinancePayrollRun,
 } from "@/lib/finance/command-center";
 
-export type FinanceWelcomeProfile = {
-  fullName: string;
-  roleLabel: string;
-  hrId: string | null;
-  imageUrl?: string | null;
-  initials?: string;
-};
+// `welcome` IS GONE. The identity banner it fed was removed 2026-09-03 at the owner's
+// instruction — "remove from all pages this dump block" — so nothing on this page reads a viewer
+// name, role label or portrait any more. Dropping the prop rather than leaving it unread also
+// drops the `resolveViewerIdentityFromPage` round trip and, on /admin, a Storage lookup for an
+// uploaded photo. The name and role are in the shell's topbar chip, resolved once for every page.
 
 // ── Formatters ───────────────────────────────────────────────────────────────
 // Same shape as the CEO centre's local helpers (they are not exported). Compact for tiles so a
@@ -743,10 +739,8 @@ export function FinanceAdminBands({ view }: { view: FinanceCommandCenterView }) 
 
 export function FinanceCommandCenter({
   view,
-  welcome,
 }: {
   view: FinanceCommandCenterView;
-  welcome: FinanceWelcomeProfile;
 }) {
   const { data } = view;
 
@@ -754,22 +748,15 @@ export function FinanceCommandCenter({
 
   return (
     <div className="space-y-0 divide-y divide-slate-200">
-      <AdminHeroFrame className="z-10 overflow-visible">
-        <div className="p-5 sm:p-6 lg:p-8">
-          <div className="mb-5 inline-flex items-center gap-2 border border-orange-400/40 bg-orange-500/15 px-3 py-1.5 text-phx-3xs font-black uppercase tracking-[0.22em] text-orange-100">
-            <Landmark aria-hidden="true" className="h-3.5 w-3.5" />
-            Finance Command Center
-          </div>
-          <CeoHeroIdentity
-            flushToEdges
-            fullName={welcome.fullName}
-            imageUrl={welcome.imageUrl}
-            initials={welcome.initials}
-            roleLabel={welcome.roleLabel}
-            subGreeting={null}
-          />
-        </div>
-      </AdminHeroFrame>
+      {/* NO IDENTITY BANNER. Removed 2026-09-03 at the owner's instruction — "remove from all
+          pages this dump block". This was an `AdminHeroFrame` holding `CeoHeroIdentity`: a
+          full-bleed black band with the Finance Manager's photo, a greeting and a role chip, costing most of
+          the first fold before any real content. The same removal was made on the HR command
+          center and, via `AdminPageHero`, on the other 131 admin pages the same day.
+
+          Nothing was lost. The name and role label are in the topbar chip on every page of the
+          shell, from `resolveViewerIdentityFromPage`. Do not restore it and do not "restore
+          parity" with another command center — none of them carry one any more. */}
 
       <UnavailableNotice sources={view.unavailable} />
 

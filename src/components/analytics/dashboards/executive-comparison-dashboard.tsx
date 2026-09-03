@@ -29,6 +29,14 @@ import { isAnalyticsDemoMode } from "@/lib/analytics/demo-mode";
 import { demoAnalyticsDimensions, demoSosByArea, demoSosByLine, demoSosByProduct } from "@/lib/analytics/demo-fixtures";
 import { StackedChart } from "@/components/charts/stacked-chart";
 
+import {
+  pageHeaderDescriptionClassName,
+  pageHeaderKickerClassName,
+  pageHeaderRailClassName,
+  pageHeaderRuleClassName,
+  pageHeaderTitleClassName,
+} from "@/components/admin/admin-design-tokens";
+
 const DONUT_COLORS = ["#F97316", "#0F172A", "#0EA5E9", "#10B981", "#8B5CF6", "#EF4444"];
 
 function fmt(n: number): string {
@@ -231,12 +239,13 @@ export function ExecutiveComparisonDashboard({
 }) {
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-5">
-      <div className="flex items-center gap-3 border-b border-border pb-5">
-        <div className="w-1 h-12 bg-phx-accent shrink-0" />
-        <div>
-          <p className="text-phx-2xs font-bold uppercase tracking-widest text-phx-accent mb-0.5">Exec</p>
-          <h1 className="text-2xl font-bold text-foreground leading-tight">Executive Comparison</h1>
-          <p className="text-xs text-muted-foreground mt-0.5">
+      <div className="relative pb-4">
+        <span aria-hidden="true" className={`absolute inset-x-0 bottom-0 ${pageHeaderRuleClassName}`} />
+        <div className="relative min-w-0 space-y-1.5 pl-3.5">
+          <span aria-hidden="true" className={pageHeaderRailClassName} />
+          <p className={pageHeaderKickerClassName}>Exec</p>
+          <h1 className={pageHeaderTitleClassName}>Executive Comparison</h1>
+          <p className={pageHeaderDescriptionClassName}>
             Cross-period, cross-line, cross-region contribution and ranking from Source of Sales data.
           </p>
         </div>

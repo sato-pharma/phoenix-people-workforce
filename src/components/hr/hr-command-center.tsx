@@ -18,12 +18,11 @@
  * column would make a five-tile group a scroll marathon on a 375px screen. The tile's min height
  * and centred axis are what make the pair read cleanly at that width.
  *
- * THE HERO matches Finance's exactly, too — `AdminHeroFrame` + `CeoHeroIdentity`, not the flatter
- * `PremiumHero` this used to carry. HR Advisory and HR Operations only opened 1 September 2026, so
- * neither seat has a photo on file yet; `CeoHeroIdentity`'s initials medallion is what fills that
- * gap instead of an empty slot until whoever holds the seat uploads a real one at /admin/profile.
+ * THERE IS NO HERO — see the note at the top of the returned tree. It matched Finance's exactly
+ * (`AdminHeroFrame` + `CeoHeroIdentity`) until the owner removed it on 2026-09-03 for taking a
+ * third of the first screen. The seat's identity lives in the topbar chip instead.
  *
- * EVERYTHING BELOW THE HERO IS A REUSE, NOT AN INVENTION. The group header's icon badge borrows
+ * EVERYTHING ON THIS PAGE IS A REUSE, NOT AN INVENTION. The group header's icon badge borrows
  * `AdminStatCard`'s icon-container language. The tile's hover lift and corner arrow reuse
  * `AdminLinkHint`'s icon and QueueRow's "this goes somewhere" idea, gated behind `group/tile` —
  * declared on the tile long before anything consumed it. None of it touches the tile's RESTING
@@ -57,21 +56,17 @@ import {
   ShieldCheck,
   TriangleAlert,
   UserRound,
-  UsersRound,
   X,
   type LucideIcon,
 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { AdminHeroFrame } from "@/components/admin/admin-design-system";
-import { CeoHeroIdentity } from "@/components/admin/ceo-hero-identity";
 import { HrCommandCharts } from "@/components/hr/hr-command-charts";
 import { HrMyRecord } from "@/components/hr/hr-my-record";
 import { HrTodayPanel } from "@/components/hr/hr-today-panel";
-import { HR_SEAT_JOB_TITLES, type HrFunctionKey } from "@/lib/auth/hr-functions";
+import { type HrFunctionKey } from "@/lib/auth/hr-functions";
 import type { HrCommandCenterData, HrCommandGroup, HrCommandTile } from "@/lib/hr/command-center";
-import { cn } from "@/lib/utils";
 
 const GROUP_ICONS: Record<HrFunctionKey, LucideIcon> = {
   engagement_retention: HeartPulse,
@@ -124,16 +119,27 @@ function MetricTile({ tile }: { tile: HrCommandTile }) {
   // A thin top-edge stripe in the tile's own tone, so a group scans as a row of colour before it
   // scans as a row of numbers. Purely decorative - the tone already governs the figure's own
   // colour above; this repeats the same signal, not a second one.
+  //
+  // It FADES AT BOTH ENDS as of 2026-09-03 (the owner's premium pass). A hard edge-to-edge bar
+  // butts into the tile's own border at each corner and reads as a rendering seam; tapering it
+  // makes the same signal look chosen. Literal hex rather than Tailwind colour classes because
+  // this is one arbitrary background-image value, not five utilities.
   const toneBarClass = {
-    amber: "bg-amber-400",
-    emerald: "bg-emerald-400",
-    rose: "bg-rose-400",
-    slate: "bg-slate-200",
+    amber: "bg-[linear-gradient(90deg,transparent_0%,#FBBF24_18%,#F59E0B_50%,#FBBF24_82%,transparent_100%)]",
+    emerald: "bg-[linear-gradient(90deg,transparent_0%,#34D399_18%,#10B981_50%,#34D399_82%,transparent_100%)]",
+    rose: "bg-[linear-gradient(90deg,transparent_0%,#FB7185_18%,#F43F5E_50%,#FB7185_82%,transparent_100%)]",
+    slate: "bg-[linear-gradient(90deg,transparent_0%,#CBD5E1_20%,#94A3B8_50%,#CBD5E1_80%,transparent_100%)]",
   }[tile.tone];
 
   return (
     <Link
-      className="group/tile relative min-h-32 border border-slate-200 bg-white px-4 py-4 text-center transition-all duration-200 hover:-translate-y-0.5 hover:border-orange-200 hover:bg-slate-50 hover:shadow-[0_10px_24px_rgba(15,23,42,0.08)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500"
+      // RESTING STATE CARRIES THE POLISH, not just the hover (owner's premium pass, 2026-09-03).
+      // It was flat #FFF inside a hard 1px border, which is a box rather than a card: on a grid of
+      // five it read as table cells. It now sits on a barely-there top-to-bottom wash with a
+      // hairline contact shadow, and brightens to pure white as it lifts. Every value here is a
+      // colour or a shadow - the tile's size, min-height and centred axis are untouched, so it
+      // still matches Finance's tile pixel for pixel where it counts.
+      className="group/tile relative min-h-32 border border-slate-200/90 bg-[linear-gradient(180deg,#FFFFFF_0%,#FDFEFF_55%,#F7F9FC_100%)] px-4 py-4 text-center shadow-[0_1px_2px_rgba(15,23,42,0.045)] transition-all duration-200 hover:-translate-y-0.5 hover:border-orange-200 hover:bg-[linear-gradient(180deg,#FFFFFF_0%,#FFFFFF_100%)] hover:shadow-[0_14px_30px_rgba(15,23,42,0.11)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500"
       href={tile.href}
     >
       <span aria-hidden="true" className={`absolute inset-x-0 top-0 h-0.5 ${toneBarClass}`} />
@@ -180,14 +186,8 @@ function UnavailableNotice({ sources }: { sources: string[] }) {
 
 export function HrCommandCenter({
   data,
-  viewerImageUrl,
-  viewerInitials,
-  viewerName,
 }: {
   data: HrCommandCenterData;
-  viewerImageUrl?: string | null;
-  viewerInitials?: string;
-  viewerName: string;
 }) {
   const [query, setQuery] = useState("");
   const [attentionOnly, setAttentionOnly] = useState(false);
@@ -301,54 +301,20 @@ export function HrCommandCenter({
 
   return (
     <div className="min-w-0 max-w-full overflow-x-hidden">
-      <AdminHeroFrame className="z-10 overflow-visible">
-        {/* Width-capped ON PURPOSE, and `relative` ONLY while there is no photo on file.
-            CeoHeroIdentity absolutely positions BOTH its portrait and its initials medallion, so
-            each anchors to the nearest POSITIONED ancestor — which makes this one class decide
-            where the whole identity sits.
+      {/* NO HERO, DELIBERATELY. Removed 2026-09-03 at the owner's instruction: "no heavy
+          banner in any of her pages taking all the space". This page opened with
+          `AdminHeroFrame` + `CeoHeroIdentity`, matching Finance and the CEO — a full-bleed
+          dark band holding a photo, a badge, a greeting and a clock, which cost roughly a
+          third of the first screen before one row of real work appeared.
 
-            NO PHOTO (the medallion): positioned here, so the badge anchors to the end of the
-            TEXT's measure and the identity reads as one tight cluster. Anchored to the frame
-            instead it flew to the far edge of a ~1200px band, leaving a wide dead strip between
-            the greeting and the badge that read as a stretched banner rather than a designed one.
+          Nothing was lost with it. The identity it carried — her name and, via
+          HR_SEAT_JOB_TITLES, her JOB TITLE rather than the seat key — is already in the
+          topbar chip on every page of the shell, from `resolveViewerIdentityFromPage`. The
+          date and clock were decoration.
 
-            PHOTO (the portrait): NOT positioned, so the frame is the anchor and the portrait
-            bleeds into the banner's own right corner — the owner's rule, and pixel-for-pixel what
-            the CEO, SFE and Finance heroes already do (each wraps CeoHeroIdentity in a plain,
-            unpositioned padding box). Pinning it to this capped box instead parked the photo
-            mid-banner, floating in the middle of the dark surface.
-
-            The cap is on the CONTENT, not on the frame: the dark surface still spans the full page
-            width, so the band's height and full-bleed look are untouched — only the spread of what
-            sits inside it changes. Scoped to this page; the CEO, Finance and SFE heroes are not
-            touched. */}
-        <div
-          className={cn(
-            "w-full max-w-4xl p-5 sm:p-6 lg:p-8",
-            !viewerImageUrl && "relative",
-          )}
-        >
-          <div className="mb-5 inline-flex items-center gap-2 border border-orange-400/40 bg-orange-500/15 px-3 py-1.5 text-phx-3xs font-black uppercase tracking-[0.22em] text-orange-100">
-            <UsersRound aria-hidden="true" className="h-3.5 w-3.5" />
-            HR Command Center
-          </div>
-          <CeoHeroIdentity
-            flushToEdges
-            fullName={viewerName}
-            imageUrl={viewerImageUrl}
-            initials={viewerInitials}
-            // Her TITLE, not the seat key. `data.seat` is the permission bundle name, which is
-            // deliberately not a job title and must never be shown to the person holding it.
-            // The seat name is not written out in quotes anywhere in this file on purpose:
-            // tests/hr-function-governance.test.ts flags every file containing a quoted seat name,
-            // so that a seat used as a real grant or gate cannot hide. This file gates nothing by
-            // seat, and adding it to that allowlist would exempt it from the check permanently.
-            roleLabel={HR_SEAT_JOB_TITLES[data.seat]}
-            subGreeting="Your day, by the part of the job it belongs to."
-          />
-        </div>
-      </AdminHeroFrame>
-
+          Do not restore it, and do not "restore parity" with the CEO, Finance and SFE
+          heroes: those are untouched on purpose and this divergence IS the instruction. The
+          page now opens on the work. */}
       {/* ── Your day. The page's opening answer to "what do I do today", as a list of real
           tasks that open into the actual named rows behind them. This replaced a ring reading
           "5 of 18 waiting" whose denominator counted TILES rather than work — see the header of

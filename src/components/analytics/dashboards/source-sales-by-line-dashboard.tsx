@@ -24,6 +24,14 @@ import { isAnalyticsDemoMode } from "@/lib/analytics/demo-mode";
 import { demoAnalyticsDimensions, demoSosByLine } from "@/lib/analytics/demo-fixtures";
 import { SOS_TABS } from "@/lib/analytics/module-nav-config";
 
+import {
+  pageHeaderDescriptionClassName,
+  pageHeaderKickerClassName,
+  pageHeaderRailClassName,
+  pageHeaderRuleClassName,
+  pageHeaderTitleClassName,
+} from "@/components/admin/admin-design-tokens";
+
 async function ByLineContent({
   searchParams,
   role,
@@ -152,12 +160,13 @@ export function SourceSalesByLineDashboard({
 }) {
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-5">
-      <div className="flex items-center gap-3 border-b border-border pb-5">
-        <div className="w-1 h-12 bg-phx-accent shrink-0" />
-        <div>
-          <p className="text-phx-2xs font-bold uppercase tracking-widest text-phx-accent mb-0.5">SoS</p>
-          <h1 className="text-2xl font-bold text-foreground leading-tight">SoS — By Line</h1>
-          <p className="text-xs text-muted-foreground mt-0.5">
+      <div className="relative pb-4">
+        <span aria-hidden="true" className={`absolute inset-x-0 bottom-0 ${pageHeaderRuleClassName}`} />
+        <div className="relative min-w-0 space-y-1.5 pl-3.5">
+          <span aria-hidden="true" className={pageHeaderRailClassName} />
+          <p className={pageHeaderKickerClassName}>SoS</p>
+          <h1 className={pageHeaderTitleClassName}>SoS — By Line</h1>
+          <p className={pageHeaderDescriptionClassName}>
             Source of Sales aggregated by product line. Filter periods, distributors, and regions.
           </p>
         </div>
