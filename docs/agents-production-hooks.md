@@ -424,3 +424,40 @@ that this column lies about who wrote a row.
 **Rollback.** `marketing_rollback.pharmacy_area_null_pre_20260903`, 6 rows, areas preserved as NULL.
 Per §2.1 a `create table … as select` copies rows but never RLS: **measure that table's ACL before
 assuming anything about it either way.**
+
+## New hook — a deploy queue reads exactly like a rollback (2026-09-03)
+
+Two PRs merged 56 seconds apart on 2026-09-03: `#2988` at 06:48:36 Cairo (`b668474d8`) and `#2994`
+at 06:49:32 (`ede6b8435`). `main`'s tip was `ede6b8435`, with `b668474d8` as its parent. Production
+then served **the parent**, and the GitHub deployments API read:
+
+```
+deployment 6236566561  ref=ede6b8435  created 03:49:37Z  in_progress   <- the NEWER commit
+deployment 6236577761  ref=b668474d8  created 03:50:45Z  success       <- the OLDER commit
+/api/healthz           revision=b668474d8...  status: ok
+```
+
+The older commit's deployment carries the **later** `created_at`, because Railway stamps the record
+when a build goes live rather than when it starts. Sorting deployments by `created_at` therefore puts
+the older commit on top and makes production look like it reverted a merge that had just landed
+green.
+
+Every signal matches the `railway service source connect` incident in §2.3: production serving a
+commit that predates a merge, `status: ok` hiding it, and only `revision` telling the truth. The two
+are distinguished by the **state field, not the timestamps** — a real rollback has no `in_progress`
+deployment for the newer commit, whereas a queue does. Here `ede6b8435` finished ~3 minutes later
+and took over on its own.
+
+What made the call safe was content, not timing — the same lesson as the merged/stranded rule in
+§2.1:
+
+```
+git merge-base --is-ancestor ede6b8435 <live revision>   # ancestor => nothing was reverted
+```
+
+The wrong move — re-merging, forcing a `railway redeploy`, or reconnecting the service source —
+would have shipped a second production deploy to fix a queue that was already resolving, and
+`source connect` in particular is the one command that turns this false alarm into the real thing.
+
+Cost of the mistake if unwritten: a session reads a normal two-merge morning as a production
+incident. Sessions here merge back-to-back constantly (~30 commits/day), so the window recurs daily.
