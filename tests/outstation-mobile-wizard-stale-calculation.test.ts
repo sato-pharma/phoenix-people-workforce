@@ -57,7 +57,7 @@ export function runOutstationMobileWizardStaleCalculationTests() {
   // ── The staleness-clearing effect: calculation must not outlive the inputs it was priced from ──
 
   assert.ok(
-    /useEffect\(\(\)\s*=>\s*\{\s*if\s*\(isOffline\)\s*return;\s*setCalculation\(null\);\s*\},\s*\[calculationKey,\s*isOffline\]\);/.test(
+    /useEffect\(\(\)\s*=>\s*\{\s*if\s*\(isOffline\)\s*return;[\s\S]{0,80}setCalculation\(null\);\s*\},\s*\[calculationKey,\s*isOffline\]\);/.test(
       wizard,
     ),
     "a dedicated effect must null `calculation` the instant calculationKey changes (skipped only while offline, where a recalculation cannot run without a server round trip) — without it the old total lingers on screen, submittable, after the trip inputs it priced have already moved on",

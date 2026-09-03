@@ -890,6 +890,7 @@ export function MobileOutstationWizard({
   // the offline path never trusts this value for money anyway (see submit()).
   useEffect(() => {
     if (isOffline) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setCalculation(null);
   }, [calculationKey, isOffline]);
 
