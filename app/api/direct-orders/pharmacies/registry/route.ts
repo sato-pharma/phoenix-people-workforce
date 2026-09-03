@@ -67,6 +67,14 @@ export async function POST(request: Request) {
       distributorCodes?: CodePair[];
       /** See the same field on POST /api/direct-orders/pharmacies — REQUIRED, and refused when absent. */
       venueType?: string | null;
+      /**
+       * The rep's own CRM contact this venue IS. Declared here rather than guessed later: the
+       * name-matching fallback in `contact-trade.ts` linked 1 venue in 63, so a registry that
+       * cannot state the link is a registry whose venues stay unlinked forever.
+       *
+       * On `updateDetails` the KEY's presence is what matters — see the note there.
+       */
+      crmContactId?: number | string | null;
     };
 
     if (body.action === "register") {
@@ -78,6 +86,7 @@ export async function POST(request: Request) {
         doctorName: body.doctorName ?? null,
         pharmacyAddress: body.pharmacyAddress ?? null,
         venueType: body.venueType ?? null,
+        crmContactId: body.crmContactId ?? null,
         distributorCodes: pairs(body.distributorCodes),
       });
       return NextResponse.json({ pharmacy, success: true });
@@ -95,6 +104,9 @@ export async function POST(request: Request) {
         ...("regionCode" in body ? { regionCode: body.regionCode } : {}),
         ...("doctorName" in body ? { doctorName: body.doctorName } : {}),
         ...("pharmacyAddress" in body ? { pharmacyAddress: body.pharmacyAddress } : {}),
+        // `in body`, never `?? null`: this is the field an existing venue gets linked through, so
+        // a caller editing only the address must not silently clear a link someone else declared.
+        ...("crmContactId" in body ? { crmContactId: body.crmContactId } : {}),
       });
       return NextResponse.json({ success: true });
     }

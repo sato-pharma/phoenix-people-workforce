@@ -54,6 +54,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { CRM_CONTACTS_TABLE } from "@/lib/crm/tables";
 import { normalizeHrIdForAccess } from "@/lib/hr-id";
 import { assertPermission, type AccessContext } from "@/lib/auth/permissions";
+import { canManagePharmacyRegistry } from "@/lib/direct-orders/registry-access";
 import { ApiError } from "@/lib/http/api-errors";
 
 /** PostgREST caps a page at 1000. The widest team measured holds 223 pharmacies and 531 doctors. */
@@ -234,6 +235,165 @@ async function readScopedContacts(scope: CrmManagerScope): Promise<ContactRecord
 }
 
 /**
+ * Every row carrying one contact id, regardless of whose list it sits on.
+ *
+ * The caller decides whether the viewer may see it — this only answers "who lists this contact".
+ * The table is keyed `(agent_crm_id, contact_crm_id, list_type)`, so one contact CAN legitimately
+ * appear on several reps' lists; all of them are returned and the caller needs only one to pass.
+ *
+ * Same missing-table tolerance as the scoped read: before the CRM migrations reach an environment
+ * the table is absent, and refusing every link there would be wrong in the expensive direction.
+ * An absent table means nothing can be validated, so nothing is accepted — the caller turns an
+ * empty result into a refusal, which is the safe way round.
+ */
+async function readContactsById(contactCrmId: number): Promise<ContactRecord[]> {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from(CRM_CONTACTS_TABLE)
+    .select(SELECT_COLUMNS)
+    .eq("contact_crm_id", contactCrmId)
+    .limit(PAGE_SIZE);
+  if (error) {
+    if (isCrmSchemaMissingError(error)) return [];
+    throw new Error(`Could not read CRM contacts: ${error.message}`);
+  }
+  return (data ?? []) as unknown as ContactRecord[];
+}
+
+/** Every rep's display name by canonical hr id — human-readable names, never raw ids (owner rule). */
+async function agentNameLookup(): Promise<(hrId: string | null) => string | null> {
+  const employees = await getEmployeeDirectoryRows({ includeInactive: true });
+  const nameByHrId = new Map<string, string>();
+  for (const employee of employees) {
+    const key = normalizeHrIdForAccess(employee.hrId);
+    if (key) nameByHrId.set(key, employee.displayName || employee.fullName);
+  }
+  return (hrId: string | null) => {
+    const key = normalizeHrIdForAccess(hrId);
+    return key ? nameByHrId.get(key) ?? null : null;
+  };
+}
+
+/**
+ * One CRM row as the picker shows it.
+ *
+ * Shared by the picker and by the registry's label resolver ON PURPOSE. Two copies of this mapping
+ * would drift on the first field either side adds, and the drift would show as the SAME contact
+ * described two different ways on two screens — which reads as two different shops.
+ *
+ * A contact whose agent is not on the roster still resolves, naming the CRM account instead of
+ * being dropped: a venue linked to a leaver's list must not silently lose its label.
+ */
+function buildOption(record: ContactRecord, resolveAgentName: (hrId: string | null) => string | null): VenueContactOption {
+  const agentName = resolveAgentName(record.agent_hr_id) ?? `CRM account ${record.agent_crm_id} — not on the roster`;
+  return toOption(
+    {
+      address: record.address,
+      agentCrmId: record.agent_crm_id,
+      agentHrId: record.agent_hr_id,
+      contactCrmId: record.contact_crm_id,
+      firstSeenAt: null,
+      grade: record.contact_grade,
+      listType: (record.list_type === "Pharmacy" || record.list_type === "AM" ? record.list_type : "PM") as
+        DoctorListRow["listType"],
+      name: record.contact_name?.trim() || `Contact ${record.contact_crm_id}`,
+      nameAr: record.contact_name_ar,
+      phone: null,
+      region: record.crm_region_name,
+      speciality: record.speciality,
+      syncedAt: null,
+    },
+    agentName,
+  );
+}
+
+/**
+ * Name the contacts a set of venues are ALREADY declared to be.
+ *
+ * The registry stores a bare `crm_contact_id`, and the owner's rule is that a screen shows
+ * human-readable names and never a raw id. So the board resolves its declared links through here
+ * before rendering them, rather than printing the number the column holds.
+ *
+ * SCOPED, exactly like the picker. Both registry roles resolve to `company` today, so in practice
+ * every label resolves — but the scope is applied rather than assumed, so that widening who may
+ * manage the registry can never turn this into a way to read a contact the viewer may not see. A
+ * link outside the viewer's reach simply has no entry in the map, and the board says the link
+ * exists without naming it.
+ *
+ * The `.in()` is chunked at 50: several hundred ids in one PostgREST `.in()` returns ZERO rows with
+ * no error, and here that would silently unname every link at once.
+ */
+export async function describeVenueContacts(
+  access: AccessContext,
+  contactCrmIds: readonly number[],
+): Promise<Map<number, VenueContactOption>> {
+  const wanted = Array.from(new Set(contactCrmIds.filter((id) => Number.isFinite(id) && id > 0)));
+  const described = new Map<number, VenueContactOption>();
+  if (wanted.length === 0) return described;
+
+  const scope = await resolveVenueContactScope(access);
+  if (scope.kind === "none") return described;
+
+  const supabase = getSupabaseAdmin();
+  const records: ContactRecord[] = [];
+  for (let index = 0; index < wanted.length; index += 50) {
+    const chunk = wanted.slice(index, index + 50);
+    const { data, error } = await supabase
+      .from(CRM_CONTACTS_TABLE)
+      .select(SELECT_COLUMNS)
+      .in("contact_crm_id", chunk)
+      .limit(PAGE_SIZE);
+    if (error) {
+      // Same tolerance as every other read here: before the CRM migrations reach an environment the
+      // table is absent, and 500ing the whole registry over a display label would be wrong.
+      if (isCrmSchemaMissingError(error)) return described;
+      throw new Error(`Could not read CRM contacts: ${error.message}`);
+    }
+    records.push(...((data ?? []) as unknown as ContactRecord[]));
+  }
+
+  const resolveAgentName = await agentNameLookup();
+  for (const record of records) {
+    if (!scopeAllowsAgent(scope, record.agent_hr_id)) continue;
+    const option = buildOption(record, resolveAgentName);
+    const existing = described.get(option.contactCrmId);
+    // One contact can sit on several reps' lists. Rank deterministically rather than taking
+    // whichever row the database returned first, so a label does not change between two loads.
+    if (!existing || compareOptions(option, existing) < 0) described.set(option.contactCrmId, option);
+  }
+  return described;
+}
+
+/**
+ * Who may enumerate CRM contacts in order to declare one against a venue.
+ *
+ * TWO doors reach this picker and they do NOT share a permission, which is why this is a helper
+ * rather than a bare assertPermission:
+ *
+ *  - the SUBMIT FORM, where the authority is `direct_orders:create` — enumerating contacts in
+ *    order to declare one is only useful to someone who may raise the order that creates the
+ *    venue; and
+ *  - the ADMIN REGISTRY, where the authority is `canManagePharmacyRegistry` (Super Admin or SFE
+ *    Manager). This is the RETROACTIVE door: the venues that already exist were registered before
+ *    the column did, so linking one is an EDIT by an admin, never a submission.
+ *
+ * The SFE Manager is exactly why this cannot stay a single assert. Their `direct_orders` grants are
+ * `read, export, approve` — there is no `create` — yet they are one of only two roles the owner
+ * allowed to manage the registry (2026-08-04). Gating this on `create` alone would have 403'd the
+ * picker for the very person the registry exists for, and it would have read as a broken page
+ * rather than as a permission decision.
+ *
+ * Neither door widens the SCOPE. Both still go through `resolveVenueContactScope`, and for both
+ * registry roles that resolves to `company` on their own merits — both sit in the doctor list's
+ * COMPANY_ROLES — so an admin sees every rep's contacts because an admin already may, not because
+ * this gate let them in.
+ */
+async function assertMayDeclareVenueContact(access: AccessContext): Promise<void> {
+  if (canManagePharmacyRegistry(access)) return;
+  await assertPermission(access, "direct_orders", "create");
+}
+
+/**
  * The picker's contents for one viewer.
  *
  * `limit` caps what crosses the wire; `truncated` says whether it bit, so the UI can tell the
@@ -243,27 +403,14 @@ export async function listVenueContactOptions(
   access: AccessContext,
   input?: { search?: string | null; limit?: number | null },
 ): Promise<VenueContactOptions> {
-  // Same authority as registering the venue this picker feeds. The service is the boundary, so a
-  // caller reaching the route directly gets the same answer the form would have got.
-  await assertPermission(access, "direct_orders", "create");
+  await assertMayDeclareVenueContact(access);
   const scope = await resolveVenueContactScope(access);
   if (scope.kind === "none") {
     return { options: [], scopeLabel: "", truncated: false, unavailableReason: scope.reason };
   }
   const scopeLabel = scope.label;
 
-  const [records, employees] = await Promise.all([
-    readScopedContacts(scope),
-    getEmployeeDirectoryRows({ includeInactive: true }),
-  ]);
-
-  // Human-readable names, never raw ids (owner rule). A contact whose agent is not on the roster
-  // still shows — with the CRM account named — rather than being dropped from the picker.
-  const nameByHrId = new Map<string, string>();
-  for (const employee of employees) {
-    const key = normalizeHrIdForAccess(employee.hrId);
-    if (key) nameByHrId.set(key, employee.displayName || employee.fullName);
-  }
+  const [records, resolveAgentName] = await Promise.all([readScopedContacts(scope), agentNameLookup()]);
 
   const needle = (input?.search ?? "").trim().toLowerCase();
   const limit = Math.max(1, Math.min(input?.limit ?? 50, 200));
@@ -280,28 +427,7 @@ export async function listVenueContactOptions(
     // picker offers each shop once — whichever rep's row was read first names it.
     const key = `${record.contact_crm_id}::${record.list_type ?? ""}`;
     if (seen.has(key)) continue;
-    const agentKey = normalizeHrIdForAccess(record.agent_hr_id);
-    const agentName =
-      (agentKey ? nameByHrId.get(agentKey) : null) ?? `CRM account ${record.agent_crm_id} — not on the roster`;
-    const option = toOption(
-      {
-        address: record.address,
-        agentCrmId: record.agent_crm_id,
-        agentHrId: record.agent_hr_id,
-        contactCrmId: record.contact_crm_id,
-        firstSeenAt: null,
-        grade: record.contact_grade,
-        listType: (record.list_type === "Pharmacy" || record.list_type === "AM" ? record.list_type : "PM") as
-          DoctorListRow["listType"],
-        name: record.contact_name?.trim() || `Contact ${record.contact_crm_id}`,
-        nameAr: record.contact_name_ar,
-        phone: null,
-        region: record.crm_region_name,
-        speciality: record.speciality,
-        syncedAt: null,
-      },
-      agentName,
-    );
+    const option = buildOption(record, resolveAgentName);
     if (!matchesSearch(option, needle)) continue;
     seen.add(key);
     matched.push(option);
@@ -333,10 +459,15 @@ export async function assertVenueContactInScope(
   if (scope.kind === "none") {
     throw new ApiError(403, "forbidden", scope.reason);
   }
-  const records = await readScopedContacts(scope);
-  const found = records.some(
-    (record) => record.contact_crm_id === contactCrmId && scopeAllowsAgent(scope, record.agent_hr_id),
-  );
+  // Ask about the ONE id, rather than reading the scope and searching it.
+  //
+  // The behaviour is identical; the cost is not. A company-scoped viewer's scope is the whole
+  // table — 9,698 rows on production as of 2026-09-03 — so the read-then-search form paged through
+  // all of it to answer a yes/no about a single contact, on every save. That was invisible while
+  // only District Managers reached this (a team is a few hundred rows), and the admin registry
+  // added on 2026-09-03 is exactly the door where the scope IS company-wide.
+  const records = await readContactsById(contactCrmId);
+  const found = records.some((record) => scopeAllowsAgent(scope, record.agent_hr_id));
   if (!found) {
     throw new ApiError(
       400,

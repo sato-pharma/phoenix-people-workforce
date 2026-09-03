@@ -12,7 +12,13 @@ import {
 } from "@/lib/employees/employee-directory";
 import { canonicalHrIdKey, hrIdForStorage, hrIdLookupKeys } from "@/lib/hr-id";
 import { ApiError, validationError } from "@/lib/http/api-errors";
-import { assertVenueContactInScope, parseVenueContactId } from "@/lib/direct-orders/venue-contact-options";
+import { assertPharmacyRegistryAccess, canManagePharmacyRegistry } from "@/lib/direct-orders/registry-access";
+import {
+  assertVenueContactInScope,
+  describeVenueContacts,
+  parseVenueContactId,
+  type VenueContactOption,
+} from "@/lib/direct-orders/venue-contact-options";
 import { createSystemNotificationForRecipients, type SystemNotificationChannel } from "@/lib/notifications/system";
 import { logError } from "@/lib/observability/log";
 import { canonicalizeRegionName, resolveSalesAccessScope } from "@/lib/sales/access-scope";
@@ -2721,18 +2727,9 @@ export async function sendHeldDirectOrderNotices(
 // whose distributor code is sitting in the customer map. The registry lets that setup happen in
 // advance, so the order that arrives later is recognised and takes the ordinary chain.
 
-/** Who may open the registry and register pharmacies (owner's choice, 2026-08-04). */
-const PHARMACY_REGISTRY_ROLES = new Set<PhoenixRole>(["Super Admin", "SFE Manager"]);
-
-function canManagePharmacyRegistry(access: AccessContext): boolean {
-  return access.scope === "system" || PHARMACY_REGISTRY_ROLES.has(access.role);
-}
-
-function assertPharmacyRegistryAccess(access: AccessContext): void {
-  if (!canManagePharmacyRegistry(access)) {
-    throw new Error("Forbidden: only a System Admin or the SFE Manager can manage the venue registry.");
-  }
-}
+// The roles and the two gate helpers now live in ./registry-access, because the CRM contact picker
+// needs the SAME predicate and importing it back out of this module would close a cycle (this file
+// already imports assertVenueContactInScope from venue-contact-options).
 
 export type DirectOrderRegistryPharmacy = DirectOrderPharmacy & {
   brickName: string | null;
@@ -2742,6 +2739,15 @@ export type DirectOrderRegistryPharmacy = DirectOrderPharmacy & {
   orderCount: number;
   /** Orders still climbing their chain. Editing a code under one of these moves live money. */
   pendingOrderCount: number;
+  /**
+   * The CRM contact this venue is declared to be, NAMED — never the bare id the column holds
+   * (owner rule). `null` when nothing is declared, and also when the link points at a contact
+   * outside the viewer's own CRM reach; the board tells those two apart by reading `crmContactId`
+   * beside this, so an unnameable link is reported rather than rendered as "not linked".
+   */
+  crmContact: VenueContactOption | null;
+  /** Who declared the link, as a name. */
+  crmContactLinkedByName: string | null;
 };
 
 /**
@@ -2784,6 +2790,16 @@ export async function listDirectOrderPharmacyRegistry(access: AccessContext): Pr
     orderCounts.set(row.pharmacy_id, bucket);
   }
 
+  // Resolved AFTER the rows are known, in one batched read for the whole board rather than one per
+  // venue — most venues carry no link at all, and an empty set costs nothing.
+  const [contactsById, resolveName] = await Promise.all([
+    describeVenueContacts(
+      access,
+      pharmacies.map((pharmacy) => pharmacy.crmContactId).filter((id): id is number => id !== null),
+    ),
+    nameLookup(),
+  ]);
+
   const rows = pharmacies.map((pharmacy) => ({
     ...pharmacy,
     brickName: pharmacy.brickId ? brickNameById.get(pharmacy.brickId) ?? null : null,
@@ -2791,6 +2807,8 @@ export async function listDirectOrderPharmacyRegistry(access: AccessContext): Pr
     regionName: pharmacy.regionCode ? regionNameByCode.get(pharmacy.regionCode) ?? null : null,
     orderCount: orderCounts.get(pharmacy.id)?.total ?? 0,
     pendingOrderCount: orderCounts.get(pharmacy.id)?.pending ?? 0,
+    crmContact: pharmacy.crmContactId === null ? null : contactsById.get(pharmacy.crmContactId) ?? null,
+    crmContactLinkedByName: resolveName(pharmacy.crmContactLinkedByHrId),
   }));
   return {
     rows,
@@ -2936,6 +2954,8 @@ export async function registerDirectOrderPharmacy(
     distributorCodes: Array<{ distributorCode: string; customerCode: string }>;
     /** REQUIRED — see createDirectOrderPharmacy. This form posted nothing at all until 2026-08-26. */
     venueType?: string | null;
+    /** Optional CRM contact this venue IS. Same declaration the submit form carries (2026-09-03). */
+    crmContactId?: number | string | null;
   },
 ): Promise<DirectOrderPharmacy> {
   assertPharmacyRegistryAccess(access);
@@ -2957,6 +2977,12 @@ export async function registerDirectOrderPharmacy(
   const pharmacyAddress = input.pharmacyAddress?.trim() || null;
   const byDistributor = normalizeDistributorCodePairs(input.distributorCodes, await distributorNameResolver());
 
+  // Checked even though this door is Super Admin / SFE Manager: the gate is what makes the id real
+  // rather than merely well-formed. For a registry role the scope resolves to `company`, so this
+  // refuses an id that exists on NO rep's list at all — a typo, or a contact the CRM has dropped.
+  const crmContactId = parseVenueContactId(input.crmContactId);
+  await assertVenueContactInScope(access, crmContactId);
+
   const supabase = getSupabaseAdmin();
   const now = new Date().toISOString();
   const { data: pharmacyRow, error } = await supabase
@@ -2974,6 +3000,12 @@ export async function registerDirectOrderPharmacy(
       verified_by_hr_id: hrIdForStorage(access.hrId),
       verified_at: now,
       venue_type: venueType,
+      crm_contact_id: crmContactId,
+      // Stamped only when something was declared, so an author without a link cannot exist. This
+      // path inserts directly rather than through phx_create_direct_order_pharmacy, so the RPC's
+      // equivalent guard does not cover it and the condition is repeated here on purpose.
+      crm_contact_linked_by_hr_id: crmContactId === null ? null : hrIdForStorage(access.hrId),
+      crm_contact_linked_at: crmContactId === null ? null : now,
     })
     .select("*")
     .single();
@@ -2997,6 +3029,7 @@ export async function registerDirectOrderPharmacy(
       entrySource: "catalogue",
       registeredBy: access.role,
       distributorCodes: Array.from(byDistributor.entries()).map(([d, c]) => `${d}:${c}`),
+      crmContactId,
     },
     summary: `Direct-order venue "${name}" pre-registered and confirmed by ${access.hrId ?? "unknown"} (${access.role}).`,
   });
@@ -3017,13 +3050,30 @@ export async function updateDirectOrderPharmacyDetails(
     regionCode?: string | null;
     doctorName?: string | null;
     pharmacyAddress?: string | null;
+    /**
+     * The CRM contact this venue IS.
+     *
+     * THE RETROACTIVE DOOR. Every venue registered before 2026-09-03 carries no declaration, and
+     * the submit form can only declare one at creation — so without this, the existing venues stay
+     * unlinked forever and the trade badge never reaches their rep's contact list.
+     *
+     * Patch semantics, three-way like the fields above: `undefined` leaves it exactly as it was,
+     * `null` clears it, a value sets it. That distinction is the whole safety of this function —
+     * the registry form edits a few fields at a time, and an optional field written
+     * UNCONDITIONALLY is a silent erase.
+     */
+    crmContactId?: number | string | null;
   },
 ): Promise<void> {
   assertPharmacyRegistryAccess(access);
   const supabase = getSupabaseAdmin();
   const { data: before } = await supabase
     .from("direct_order_pharmacies")
-    .select("pharmacy_name, brick_id, area_code, region_code, doctor_name, pharmacy_address")
+    // ONE string literal, never a concatenation. supabase-js infers the row type by parsing this
+    // argument as a literal type; `"a, b, " + "c"` is not one, so the whole row degrades to
+    // GenericStringError and the `before as Record<string, unknown>` cast below stops compiling.
+    // The error names the CAST, three dozen lines away, not the select that caused it.
+    .select("pharmacy_name, brick_id, area_code, region_code, doctor_name, pharmacy_address, crm_contact_id, crm_contact_linked_by_hr_id, crm_contact_linked_at")
     .eq("id", input.pharmacyId)
     .maybeSingle();
   if (!before) badRequest("Venue not found.");
@@ -3042,6 +3092,19 @@ export async function updateDirectOrderPharmacyDetails(
   if (input.regionCode !== undefined) patch.region_code = input.regionCode || null;
   if (input.doctorName !== undefined) patch.doctor_name = input.doctorName?.trim() || null;
   if (input.pharmacyAddress !== undefined) patch.pharmacy_address = input.pharmacyAddress?.trim() || null;
+  if (input.crmContactId !== undefined) {
+    const crmContactId = parseVenueContactId(input.crmContactId);
+    // Validated on the way IN, exactly like the submit path. An admin resolves to `company` scope,
+    // so what this actually refuses is an id on nobody's list — and the check runs before the write
+    // rather than after it, so a rejected id leaves the row untouched.
+    await assertVenueContactInScope(access, crmContactId);
+    patch.crm_contact_id = crmContactId;
+    // All three move together or none do. Leaving a stale author beside a cleared link would be a
+    // row that claims someone declared nothing, and `updated_by_hr_id` elsewhere in this database
+    // has already proved how badly a mismatched author column reads later.
+    patch.crm_contact_linked_by_hr_id = crmContactId === null ? null : hrIdForStorage(access.hrId);
+    patch.crm_contact_linked_at = crmContactId === null ? null : new Date().toISOString();
+  }
   if (Object.keys(patch).length === 0) return;
 
   const { error } = await supabase.from("direct_order_pharmacies").update(patch).eq("id", input.pharmacyId);

@@ -1483,10 +1483,17 @@ export function runDirectOrdersApprovalDetailNamesTests() {
   // it IS the authority the approval chain would otherwise wait for.
   {
     const serviceSource = readFileSync(new URL("../src/lib/direct-orders/service.ts", import.meta.url), "utf8");
+    // MOVED 2026-09-03 out of service.ts into its own module, so the CRM contact picker could ask
+    // the same question without closing an import cycle (service.ts already imports
+    // venue-contact-options). The role list itself did not change; only where it lives.
+    const registryAccessSource = readFileSync(
+      new URL("../src/lib/direct-orders/registry-access.ts", import.meta.url),
+      "utf8",
+    );
 
     // Who may open the registry (owner's choice: Super Admin + SFE Manager).
     assert.match(
-      serviceSource,
+      registryAccessSource,
       /const PHARMACY_REGISTRY_ROLES = new Set<PhoenixRole>\(\["Super Admin", "SFE Manager"\]\)/,
       "the registry is Super Admin + SFE Manager",
     );
