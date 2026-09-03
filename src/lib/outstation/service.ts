@@ -99,6 +99,7 @@ import {
 import {
   mapOutstationRequestToPayrollExpenseRecord,
   outstationPayrollTripId,
+  outstationReportOverride,
 } from "@/lib/outstation/payroll-expense-mapping";
 import { isAdjustedAmount } from "@/lib/outstation/approval-state";
 import { planOutstationRequestDecision } from "@/lib/outstation/expense-approval-decisions";
@@ -2218,8 +2219,8 @@ function mapOutstationRequestRow(row: Record<string, unknown>): OutstationExpens
     reportAmWorkload: numberValue(row.report_am_workload),
     reportHrNotes: text(row.report_hr_notes) || null,
     reportHrStatus: text(row.report_hr_status) || null,
-    reportMeetingAmount: numberValue(row.report_meeting_amount),
-    reportOtherAmount: numberValue(row.report_other_amount),
+    reportMeetingAmount: nullableNumber(row.report_meeting_amount),
+    reportOtherAmount: nullableNumber(row.report_other_amount),
     reportPmWorkload: numberValue(row.report_pm_workload),
     reportTravelCost:
       row.report_travel_cost == null ? null : numberValue(row.report_travel_cost),
@@ -2443,8 +2444,8 @@ export async function addExtraTicketsToOwnOutstationRequest(
     const newExpectedTotal = reportExpectedTotal({
       allowanceAmount: existing.allowanceAmount,
       eligibilityStatus: existing.eligibilityStatus,
-      meetingAmount: existing.reportMeetingAmount,
-      otherAmount: existing.reportOtherAmount,
+      meetingAmount: outstationReportOverride(existing.reportMeetingAmount, existing.meetingAmount),
+      otherAmount: outstationReportOverride(existing.reportOtherAmount, existing.otherAmount),
       travelCost: newTravelCost,
     });
     const newClaimedTotal =
@@ -3538,12 +3539,17 @@ export async function updateManagerExpenseAsAdmin(
       : existingTravelCost;
   const ticketAmount =
     transportationType === "car" ? 0 : roundMoney(Math.max(0, reportTravelCost - fuelAmount));
+  // Left NULL when the caller sent no override and the row never had one — writing a 0 back would
+  // record an override nobody made, which is exactly the state the two mappers must be able to tell
+  // apart. `resolved*` below is what the pricing and the audit row read.
   const reportMeetingAmount =
     "meetingAmount" in input
       ? positiveMoney(input.meetingAmount)
       : existing.reportMeetingAmount;
   const reportOtherAmount =
     "otherAmount" in input ? positiveMoney(input.otherAmount) : existing.reportOtherAmount;
+  const resolvedMeetingAmount = outstationReportOverride(reportMeetingAmount, existing.meetingAmount);
+  const resolvedOtherAmount = outstationReportOverride(reportOtherAmount, existing.otherAmount);
   const reportAmWorkload =
     "amWorkload" in input ? positiveMoney(input.amWorkload) : existing.reportAmWorkload;
   const reportPmWorkload =
@@ -3579,8 +3585,8 @@ export async function updateManagerExpenseAsAdmin(
     reportExpectedTotal({
       allowanceAmount: allowance.allowanceAmount,
       eligibilityStatus,
-      meetingAmount: reportMeetingAmount,
-      otherAmount: reportOtherAmount,
+      meetingAmount: resolvedMeetingAmount,
+      otherAmount: resolvedOtherAmount,
       travelCost: reportTravelCost,
     });
   const claimedTotal = input.claimedTotalAmount;
@@ -3664,8 +3670,8 @@ export async function updateManagerExpenseAsAdmin(
       destination: destination?.label ?? existing.toLabel,
       distanceKm,
       expenseType,
-      meetingAmount: reportMeetingAmount,
-      otherAmount: reportOtherAmount,
+      meetingAmount: resolvedMeetingAmount,
+      otherAmount: resolvedOtherAmount,
       payrollExpenseRows: syncedPayrollRows,
       source: "admin_manual_outstation_expense_edit",
       status: updated.status,
@@ -4740,13 +4746,13 @@ function buildMyOutstationSubmission(
     hasDeparturePhoto: Boolean(request.departureEvidenceImagePath),
     id: request.id,
     isPayrollEligible: gate.isPayrollEligible,
-    meetingAmount: request.reportMeetingAmount ?? 0,
+    meetingAmount: outstationReportOverride(request.reportMeetingAmount, request.meetingAmount),
     notes: employeeVisibleNotes(request.notes),
     origin:
       [request.residenceArea, request.residenceCity].filter(Boolean).join(", ") ||
       text(request.residenceAddress) ||
       "—",
-    otherAmount: request.reportOtherAmount ?? 0,
+    otherAmount: outstationReportOverride(request.reportOtherAmount, request.otherAmount),
     overnightDays: request.overnightDays,
     pmWorkload: request.pmWorkload ?? 0,
     sameDayTrip: request.sameDayTrip,
