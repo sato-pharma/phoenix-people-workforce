@@ -3559,7 +3559,8 @@ await runTest(
 await runTest(
   "Worktree backup guard logs before the worktree goes (the pre-removal check names the target, "
   + "warns on unpushed commits and uncommitted files, logs the clean case too so silence cannot be "
-  + "mistaken for coverage, and never blocks the removal)",
+  + "mistaken for coverage, reports a working tree it cannot read as UNVERIFIED rather than clean "
+  + "in both modes, and never blocks the removal)",
   runWorktreeExitGuardPreRemovalTests,
 );
 
