@@ -7,8 +7,16 @@ import { Card } from "@/components/ui/card";
 import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
 import { filterCustomerSubjectsForViewer } from "@/lib/customer-360/access";
-import { getCustomer360Profile, listCustomerSubjects } from "@/lib/customer-360/service";
-import { customerRegisterLabel, decodeCustomerSubjectId } from "@/lib/customer-360/subject";
+import {
+  getCustomer360Profile,
+  listCustomerSubjects,
+  resolveCustomerSubjectRef,
+} from "@/lib/customer-360/service";
+import {
+  customerRegisterLabel,
+  decodeCustomerSubjectId,
+  encodeCustomerSubjectId,
+} from "@/lib/customer-360/subject";
 import { resolveSalesAccessScope } from "@/lib/sales/access-scope";
 
 export const dynamic = "force-dynamic";
@@ -46,8 +54,18 @@ export default async function Customer360DetailPage({
   }
   await assertPermission(access, "sales", "read");
 
-  const ref = decodeCustomerSubjectId(subjectId);
-  if (!ref) return <NotFound message="That customer link is not one this page recognises." />;
+  const requested = decodeCustomerSubjectId(subjectId);
+  if (!requested) return <NotFound message="That customer link is not one this page recognises." />;
+
+  // A merged record IS the record it was merged into, so an old link canonicalises to the survivor
+  // instead of dying on the picker's merged-row exclusion. This is not a rare path: a validated
+  // Source of Sales batch stores the Phoenix code a pharmacy had when its order was injected and is
+  // never rewritten, so the August 2026 batch will point at DOP-000034 for good. Redirecting rather
+  // than rendering the survivor under the old URL keeps the promise the picker makes — one URL per
+  // pharmacy — and lets a bookmark heal itself.
+  const ref = await resolveCustomerSubjectRef(requested);
+  const canonicalId = encodeCustomerSubjectId(ref);
+  if (canonicalId !== subjectId) redirect(`/customer-360/${canonicalId}`);
 
   // Gate on the SAME scope the list is filtered by, so a typed URL cannot reach a customer the
   // picker would never have offered.
@@ -59,7 +77,7 @@ export default async function Customer360DetailPage({
     canViewAllSales: scope.canViewAllSales,
   };
   const subjects = await listCustomerSubjects();
-  const subject = subjects.find((entry) => entry.id === subjectId);
+  const subject = subjects.find((entry) => entry.id === canonicalId);
   if (!subject) return <NotFound message="No customer record matches that link." />;
   if (filterCustomerSubjectsForViewer([subject], visibility).length === 0) {
     redirect("/customer-360");
