@@ -5,6 +5,7 @@ import {
   extractAllowlistedCvUrl,
   fetchCvFromUrl,
   isAllowlistedCvHost,
+  isAllowlistedCvRedirectHost,
   normalizeCvDownloadUrl,
 } from "../src/lib/recruitment/inbound/cv-link.ts";
 import { shouldAlertIntakeSpike, summarizeInboundIntake } from "../src/lib/recruitment/inbound/intake-analytics.ts";
@@ -74,6 +75,20 @@ export async function runRecruitmentInboundMasteryTests() {
   assert.equal(isAllowlistedCvHost("www.dropbox.com"), true, "subdomains of an allowlisted host are allowed");
   assert.equal(isAllowlistedCvHost("evil.com"), false);
   assert.equal(isAllowlistedCvHost("drive.google.com.evil.com"), false, "a lookalike suffix is NOT allowlisted");
+    // --- redirect targets: the bytes come from a DIFFERENT host than the share link ---------------
+    // Regression for the failed recovery of 2026-09-03. The post-redirect re-check used the LINK
+    // allowlist, so Drive's own download host was refused and all four queued CVs died a second time
+    // with "redirected to a host we do not download from".
+    assert.equal(isAllowlistedCvRedirectHost("drive.usercontent.google.com"), true, "Drive serves the file from usercontent.google.com");
+    assert.equal(isAllowlistedCvRedirectHost("doc-0k-8c-docs.googleusercontent.com"), true, "a Docs export lands on googleusercontent.com");
+    assert.equal(isAllowlistedCvRedirectHost("uc123.dl.dropboxusercontent.com"), true, "Dropbox dl=1 lands on dropboxusercontent.com");
+    assert.equal(isAllowlistedCvRedirectHost("drive.google.com"), true, "the link allowlist is a subset of the redirect allowlist");
+    assert.equal(isAllowlistedCvRedirectHost("evil.com"), false, "wider is not open — it is still an allowlist");
+    assert.equal(isAllowlistedCvRedirectHost("usercontent.google.com.evil.com"), false, "a lookalike suffix is refused");
+    assert.equal(isAllowlistedCvRedirectHost("xusercontentxgooglexcom"), false, "the dots are literal, not any-char wildcards");
+    // Widening the REDIRECT surface must never widen the LINK surface an untrusted sender aims at.
+    assert.equal(isAllowlistedCvHost("drive.usercontent.google.com"), false, "a download host is never a link we follow out of an email");
+    assert.equal(isAllowlistedCvHost("doc-0k-8c-docs.googleusercontent.com"), false);
 
   assert.equal(
     extractAllowlistedCvUrl("My CV: https://drive.google.com/file/d/abc/view — thanks", null),
@@ -192,6 +207,31 @@ export async function runRecruitmentInboundMasteryTests() {
     const missing = await fetchCvFromUrl("https://drive.google.com/file/d/ID4/view", 15_000_000);
     assert.equal(missing.ok, false);
     assert.match(missing.ok ? "" : missing.reason, /404/, "the reason carries the status the host returned");
+    // End to end, the real Drive shape: we request drive.google.com and Google redirects to its
+    // download host. This exact hop is what lost the four CVs; it must now yield bytes.
+    const stubRedirect = (landsOn: string, body: string) => {
+      globalThis.fetch = (async (input: unknown) => {
+        requested.push(String(input));
+        const res = new Response(new Uint8Array(Buffer.from(body)), {
+          headers: { "content-type": "application/pdf" },
+          status: 200,
+        });
+        Object.defineProperty(res, "url", { value: landsOn });
+        return res;
+      }) as typeof globalThis.fetch;
+    };
+
+    requested.length = 0;
+    stubRedirect("https://drive.usercontent.google.com/download?id=ID5&export=download", "%PDF-1.4 recovered cv");
+    const redirected = await fetchCvFromUrl("https://drive.google.com/file/d/ID5/view?usp=drivesdk", 15_000_000);
+    assert.equal(redirected.ok, true, "THE FIX: Drive's own download host is followed instead of refused");
+    assert.equal(redirected.ok && redirected.bytes.subarray(0, 5).toString(), "%PDF-", "the applicant's real file comes back");
+    assert.equal(requested[0], "https://drive.google.com/uc?export=download&id=ID5", "still requested via the download endpoint");
+
+    stubRedirect("https://evil.com/payload.pdf", "%PDF-1.4 not ours");
+    const offList = await fetchCvFromUrl("https://drive.google.com/file/d/ID6/view", 15_000_000);
+    assert.equal(offList.ok, false, "an off-allowlist redirect is still refused — the SSRF guard is intact");
+    assert.equal(offList.ok ? "" : offList.reason.includes("evil.com"), true, "the reason names the host it refused, so the next provider change is diagnosable");
   } finally {
     globalThis.fetch = realFetch;
   }
