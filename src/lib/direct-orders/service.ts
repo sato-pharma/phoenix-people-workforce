@@ -15,6 +15,7 @@ import { ApiError, validationError } from "@/lib/http/api-errors";
 import { createSystemNotificationForRecipients, type SystemNotificationChannel } from "@/lib/notifications/system";
 import { logError } from "@/lib/observability/log";
 import { canonicalizeRegionName, resolveSalesAccessScope } from "@/lib/sales/access-scope";
+import { customerGeographyKey, resolveCustomerGeography } from "@/lib/sales/customer-geography";
 import { listSourceOfSalesProducts, loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
 import { resolveRegionalManagerRegionCodes } from "@/lib/sales/portal-sos-dashboard";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -937,28 +938,43 @@ function normalizeDistributorCodePairs(
 }
 
 /**
- * Look each (distributor, customer code) up in the customer map to recover its geography.
+ * Territory for this pharmacy's codes, from the SHARED customer-map resolver.
  *
- * Skipped entirely when there are no codes: `.in(col, [])` is not a harmless no-op in PostgREST,
- * and there is nothing to resolve anyway. A miss is normal and never an error — it simply means
- * the code is not one the distributor has reported sales against yet.
+ * The lookup itself now lives in src/lib/sales/customer-geography.ts, so marketing, Source of Sales
+ * and direct orders ask the customer map one question one way. This stays as a thin adapter because
+ * the row builder below speaks {brick, area, region} while the resolver speaks
+ * {brickId, areaCode, regionCode}; keeping the local vocabulary means the migration is the query
+ * and nothing else, and the three call sites are untouched.
+ *
+ * Keys stay exactly what callers already build — the raw `${distributor}::${customer}` of the map
+ * passed in — so nothing downstream has to know the shared key helper exists.
+ *
+ * What actually changed: pairs are matched EXACTLY. The two `.in()` filters this used to pass are
+ * independent, so they also matched pairs nobody asked about — 53 rows returned for 45 wanted,
+ * measured on production 2026-09-03. With no paging behind it, that over-match would silently
+ * truncate at PostgREST's 1000-row cap once it grew, and a real pharmacy would come back with a
+ * null area, which reads as "no territory" rather than as a query that got cut off.
+ *
+ * A miss is still normal and never an error — it simply means the code is not one the distributor
+ * has reported sales against yet.
  */
 async function resolveCustomerCodeGeography(
   byDistributor: Map<string, string>,
 ): Promise<Map<string, { brick: string | null; area: string | null; region: string | null }>> {
   const mapByKey = new Map<string, { brick: string | null; area: string | null; region: string | null }>();
   if (byDistributor.size === 0) return mapByKey;
-  const supabase = getSupabaseAdmin();
-  const { data } = await supabase
-    .from("source_of_sales_customer_map")
-    .select("distributor_code, customer_code, brick_id, area_code, region_code")
-    .in("distributor_code", Array.from(byDistributor.keys()))
-    .in("customer_code", Array.from(byDistributor.values()));
-  for (const row of (data ?? []) as Array<Record<string, unknown>>) {
-    mapByKey.set(`${row.distributor_code}::${row.customer_code}`, {
-      brick: row.brick_id ? String(row.brick_id) : null,
-      area: row.area_code ? String(row.area_code) : null,
-      region: row.region_code ? String(row.region_code) : null,
+
+  const entries = Array.from(byDistributor.entries());
+  const resolved = await resolveCustomerGeography(
+    entries.map(([distributorCode, customerCode]) => ({ customerCode, distributorCode })),
+  );
+  for (const [distributorCode, customerCode] of entries) {
+    const geography = resolved.get(customerGeographyKey(distributorCode, customerCode));
+    if (!geography) continue;
+    mapByKey.set(`${distributorCode}::${customerCode}`, {
+      area: geography.areaCode,
+      brick: geography.brickId,
+      region: geography.regionCode,
     });
   }
   return mapByKey;
