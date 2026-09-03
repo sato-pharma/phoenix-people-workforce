@@ -776,21 +776,21 @@ export function ProbationTracker({
               </PortalRecordCard>
             )}
             renderTable={() => (
-              {/*
-                Fits-the-screen golden rule (AGENTS.md §4). `overflow-x-auto` over a
-                `min-w-[1080px]` floor — the widest table on this rail, and the one that most
-                needed the fix: the Feedback Text column it exists to show sat past the right edge
-                at every desktop width below 1080px.
-
-                Merged, not shrunk, and no value is dropped. Twelve columns become six:
-                  * HR ID, Name and Hiring Date all describe one person -> "Employee".
-                  * Direct Manager and Manager of Manager -> "Managers", one above the other.
-                  * Feedback By, Feedback Date and Feedback Text -> "Feedback", the attribution
-                    line above the text itself, which now gets the widest share (30%) instead of
-                    a `max-w-[260px]` box at the far right of a scroll.
-                  * Recommendation and Pending Status -> one decision cell.
-              */}
               <div className="hidden bg-white/80 md:block">
+                {/*
+                  Fits-the-screen golden rule (AGENTS.md §4). `overflow-x-auto` over a
+                  `min-w-[1080px]` floor — the widest table on this rail, and the one that most
+                  needed the fix: the Feedback Text column it exists to show sat past the right edge
+                  at every desktop width below 1080px.
+
+                  Merged, not shrunk, and no value is dropped. Twelve columns become six:
+                    * HR ID, Name and Hiring Date all describe one person -> "Employee".
+                    * Direct Manager and Manager of Manager -> "Managers", one above the other.
+                    * Feedback By, Feedback Date and Feedback Text -> "Feedback", the attribution
+                      line above the text itself, which now gets the widest share (30%) instead of
+                      a `max-w-[260px]` box at the far right of a scroll.
+                    * Recommendation and Pending Status -> one decision cell.
+                */}
             <table className="w-full table-fixed text-left text-xs">
               <colgroup>
                 <col className="w-[17%]" />
@@ -942,22 +942,22 @@ export function ProbationTracker({
             );
           }}
           renderTable={() => (
-            {/*
-              Fits-the-screen golden rule (AGENTS.md §4). Mobile has `renderCard` above, so the
-              mobile half was met; this desktop half was `overflow-x-auto` over `min-w-[940px]`,
-              wider than the content column at 768px or in a 1024px window, so Status, Probation
-              Review and the Actions buttons — everything the reviewer acts on — sat behind a
-              sideways scroll on a laptop.
-
-              Fixed by MERGING columns, which is what the rule asks for, never by shrinking type.
-              Thirteen columns become seven and NOT ONE VALUE IS DROPPED:
-                * HR ID, CRM ID, Full Name and Job Title all describe one person -> "Employee".
-                * Line and Area -> "Line / Area".
-                * Hire Date, End Date and Days are one interval -> "Probation window".
-              Progress keeps the widest share because its bar carries a `min-w-[125px]` floor of
-              its own, which 17% clears at every desktop width.
-            */}
             <div className="hidden bg-white/80 md:block">
+              {/*
+                Fits-the-screen golden rule (AGENTS.md §4). Mobile has `renderCard` above, so the
+                mobile half was met; this desktop half was `overflow-x-auto` over `min-w-[940px]`,
+                wider than the content column at 768px or in a 1024px window, so Status, Probation
+                Review and the Actions buttons — everything the reviewer acts on — sat behind a
+                sideways scroll on a laptop.
+
+                Fixed by MERGING columns, which is what the rule asks for, never by shrinking type.
+                Thirteen columns become seven and NOT ONE VALUE IS DROPPED:
+                  * HR ID, CRM ID, Full Name and Job Title all describe one person -> "Employee".
+                  * Line and Area -> "Line / Area".
+                  * Hire Date, End Date and Days are one interval -> "Probation window".
+                Progress keeps the widest share because its bar carries a `min-w-[125px]` floor of
+                its own, which 17% clears at every desktop width.
+              */}
             <table className="w-full table-fixed text-left text-xs">
               <colgroup>
                 <col className="w-[22%]" />

@@ -220,17 +220,17 @@ export function ProbationDashboardView({ data }: { data: ProbationDashboard }) {
           </PortalRecordCard>
         )}
         renderTable={() => (
-          {/*
-            Fits-the-screen golden rule (AGENTS.md §4). Mobile has `renderCard` above, so the
-            mobile half was met; this desktop half was `overflow-x-auto` over `min-w-[900px]`,
-            wider than the content column at 768px or in a 1024px window, so Risk and Report — the
-            two columns the reviewer acts on — sat behind a sideways scroll on a laptop.
-
-            The columns were already merged sensibly (Line / Manager, SFE / HR), so no further
-            merge was needed: `table-fixed` + `<colgroup>` share the real width instead, and
-            every cell here already wraps.
-          */}
           <div className="hidden rounded-lg border border-slate-200 md:block">
+            {/*
+              Fits-the-screen golden rule (AGENTS.md §4). Mobile has `renderCard` above, so the
+              mobile half was met; this desktop half was `overflow-x-auto` over `min-w-[900px]`,
+              wider than the content column at 768px or in a 1024px window, so Risk and Report — the
+              two columns the reviewer acts on — sat behind a sideways scroll on a laptop.
+
+              The columns were already merged sensibly (Line / Manager, SFE / HR), so no further
+              merge was needed: `table-fixed` + `<colgroup>` share the real width instead, and
+              every cell here already wraps.
+            */}
             <table className="w-full table-fixed text-sm">
               <colgroup>
                 <col className="w-[20%]" />

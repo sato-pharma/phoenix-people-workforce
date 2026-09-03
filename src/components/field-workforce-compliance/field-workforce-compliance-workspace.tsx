@@ -571,14 +571,14 @@ function WorkspaceTabs({
   tabs?: Array<{ id: WorkspaceTab; label: string }>;
 }) {
   return (
-    {/*
-      Fits-the-screen golden rule (AGENTS.md §4), and the same fix the analytics tab strip got:
-      this was `overflow-x-auto` over a `min-w-max` row, so the later tabs sat off a phone
-      screen behind a scroll. `flex-wrap` lets the row wrap onto a second line instead, and the
-      buttons take `shrink-0` so no label is squeezed below its own text width — flex items
-      default to `flex-shrink: 1`, which is what paints one label over its neighbour.
-    */}
     <div className="rounded-2xl border border-slate-200 bg-white/90 p-1.5 shadow-sm">
+      {/*
+        Fits-the-screen golden rule (AGENTS.md §4), and the same fix the analytics tab strip got:
+        this was `overflow-x-auto` over a `min-w-max` row, so the later tabs sat off a phone
+        screen behind a scroll. `flex-wrap` lets the row wrap onto a second line instead, and the
+        buttons take `shrink-0` so no label is squeezed below its own text width — flex items
+        default to `flex-shrink: 1`, which is what paints one label over its neighbour.
+      */}
       <div className="flex flex-wrap gap-1.5">
         {tabs.map((tab) => (
           <button

@@ -576,17 +576,17 @@ export function HrCalendar({ initialData, initialError }: Props) {
             </PortalRecordCard>
           )}
           renderTable={() => (
-            {/*
-              Fits-the-screen golden rule (AGENTS.md §4). Mobile gets `renderCard` already, so the
-              mobile half was met; this desktop half was `overflow-x-auto` over a
-              `min-w-[980px]` floor, which is more than the content column has at 768px or in a
-              1024px window — Line, Area and Manager sat behind a sideways scroll on a laptop.
-
-              Fixed by MERGING columns, as the rule prescribes, never by shrinking type: eight
-              columns become six. HR ID joins the employee cell that already carried the name and
-              email, and Line and Area — two short codes about the same seat — share one column.
-            */}
             <div className="hidden bg-white/80 md:block">
+              {/*
+                Fits-the-screen golden rule (AGENTS.md §4). Mobile gets `renderCard` already, so the
+                mobile half was met; this desktop half was `overflow-x-auto` over a
+                `min-w-[980px]` floor, which is more than the content column has at 768px or in a
+                1024px window — Line, Area and Manager sat behind a sideways scroll on a laptop.
+
+                Fixed by MERGING columns, as the rule prescribes, never by shrinking type: eight
+                columns become six. HR ID joins the employee cell that already carried the name and
+                email, and Line and Area — two short codes about the same seat — share one column.
+              */}
           <table className="w-full table-fixed text-left text-sm">
             <colgroup>
               <col className="w-[12%]" />
