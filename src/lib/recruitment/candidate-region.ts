@@ -343,6 +343,12 @@ const foreignPlaces: Record<string, string> = {
   toronto: "Canada",
   turkey: "Turkiye",
   istanbul: "Turkiye",
+  usa: "United States",
+  "united states": "United States",
+  "new jersey": "United States",
+  nj: "United States",
+  california: "United States",
+  texas: "United States",
 };
 
 /**

@@ -381,6 +381,8 @@ export function runDriveCvFolderTests() {
     ["Lalitpur, Nepal", "Nepal"],
     ["Azmi Street, Tripoli", "Libya"],
     ["Sampaloc Manila", "Philippines"],
+    ["NJ, USA", "United States"],
+    ["Riyadh, Saudi Arabia", "Saudi Arabia"],
   ] as const) {
     assert.equal(egyptRegionFromFreeText(text), null, `${text} is not in Egypt`);
     assert.equal(foreignCountryForGovernorate(text), country, `${text} is ${country}`);
