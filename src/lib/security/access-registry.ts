@@ -546,6 +546,7 @@ export const accessRegistry = [
   // The submit form's pharmacy combo box (spec B1/B2): read-only type-ahead over the UNION of the
   // distributor customer directory and Phoenix pharmacies; area scope enforced in the service.
   sessionApi({ methods: ["GET"], pattern: "/api/direct-orders/pharmacy-search", permission: { resource: "direct_orders", action: "read" }, guard: "domain-helper" }),
+  sessionApi({ methods: ["GET"], pattern: "/api/direct-orders/campaign-options", permission: { resource: "direct_orders", action: "read" }, guard: "domain-helper" }),
   // Reads a photographed invoice to prefill the order form (spec B5). POST because the payload is
   // an image, but it writes NOTHING — hence no audit classification. `create` rather than `read`:
   // prefilling a submission is only useful to someone who may submit one.

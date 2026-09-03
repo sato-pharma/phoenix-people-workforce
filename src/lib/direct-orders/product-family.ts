@@ -1,4 +1,8 @@
-import { RESTRICTED_PRODUCT_CODES, isHeadOfficeLine } from "@/lib/sales/access-scope";
+// From ./confidential-products.ts, NOT access-scope.ts: this module is imported by the Direct
+// Orders submit form, a client component, and access-scope pulls a server-only
+// employee-directory → node:crypto chain that webpack refuses to put in a browser bundle.
+// The values are identical — access-scope re-exports them unchanged.
+import { RESTRICTED_PRODUCT_CODES, isHeadOfficeLine } from "@/lib/sales/confidential-products";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // One direct order may carry several products — but only from ONE family, and only from a family
