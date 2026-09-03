@@ -1026,8 +1026,14 @@ function CategoryTab({ category, monthKey, canDecide }: { category: DeductionsCa
         </div>
       ) : (
         <>
-          {/* Desktop: table. Mobile: stacked cards — never horizontal-scroll a table. */}
-          <div className="hidden overflow-hidden sm:block">
+          {/* Desktop: table. Mobile: stacked cards — never horizontal-scroll a table.
+              The split is at `md` (768px), not `sm` (640px). Both halves existed from the start;
+              the boundary moved on 2026-09-03 when this screen entered the HR shell, because the
+              640-767px band was still handing a phone-sized viewport all NINE columns. That is the
+              width tests/hr-shell-mobile-tables.test.ts measures, and `md` is the breakpoint every
+              sibling uses — PortalResponsiveDataList emits `md:hidden` cards beside a `md:block`
+              table, so a screen splitting at `sm` disagrees with the rest of the shell. */}
+          <div className="hidden overflow-hidden md:block">
             <table className="w-full text-left text-sm">
               <thead>
                 <tr className="border-b border-slate-200 bg-slate-50 text-phx-xs font-black uppercase tracking-[0.08em] text-slate-500">
@@ -1131,7 +1137,7 @@ function CategoryTab({ category, monthKey, canDecide }: { category: DeductionsCa
               </tbody>
             </table>
           </div>
-          <div className="divide-y divide-slate-100 sm:hidden">
+          <div className="divide-y divide-slate-100 md:hidden">
             {rows.map((row, index) => {
               const appliedDays = appliedDaysOf(row);
               const narrowed = row.unit === "days" && appliedDays !== row.rawValue;

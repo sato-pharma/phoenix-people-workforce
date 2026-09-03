@@ -28,8 +28,15 @@ import { collectPortalDeductionScope } from "../src/lib/deductions/portal.ts";
 export function runDeductionsReadGateTests() {
   const actor = (role: AccessContext["role"]): Pick<AccessContext, "role"> => ({ role });
 
-  // 1. The read audience is exactly the three admin roles, and no field-management role.
-  for (const role of ["Super Admin", "CEO", "Finance Manager"] as const) {
+  // 1. The read audience is exactly four roles, and no field-management role.
+  //
+  //    HR Operations joined on 2026-09-03 — the owner, in his own words: "yes give HR access to the
+  //    deductions screen." The deductions screen has no self-only mode, so admitting her to it is
+  //    company-wide read and nothing less; see src/lib/deductions/permissions.ts for the three
+  //    reasons that makes it a small step (she already reads every payslip company-wide, it is the
+  //    ops 3 duty "ensure no deduction is processed without evidence and approval", and she holds
+  //    no export). Assertion 7 below is the one that keeps that last clause honest.
+  for (const role of ["Super Admin", "CEO", "Finance Manager", "HR Operations"] as const) {
     assert.ok(isDeductionsReadActor(actor(role)), `${role} must keep company-wide deductions read`);
   }
   for (const role of [
@@ -38,7 +45,6 @@ export function runDeductionsReadGateTests() {
     "District Manager",
     "Medical Rep",
     "HR Advisory",
-    "HR Operations",
     "Marketing Manager",
     "Manager",
     "Financial Advisor",
@@ -128,4 +134,24 @@ export function runDeductionsReadGateTests() {
     });
     assert.equal(result.all, true, "system scope must retain full visibility");
   }
+
+  // 7. HR Operations READS and does not EXPORT. This is the half of her 2026-09-03 grant that is
+  //    easy to lose: isDeductionsReadActor now admits her, and the export route calls that same
+  //    gate, so the ONLY thing standing between her and a downloadable file of every employee's
+  //    deduction amounts is the absence of `export` from her matrix grant. Adding "export" to
+  //    payroll_inputs would look like tidying two read-only grants into one READ_EXPORT constant
+  //    and would silently undo it — which is exactly how the incident in the header happened.
+  //
+  //    The same split is the owner's own, set for her payslip access on 2026-09-01: she reads the
+  //    figures on screen and cannot carry the document out of the building.
+  assert.deepEqual(
+    permissionMatrix["HR Operations"].deductions,
+    ["read"],
+    "HR Operations must hold deductions READ ONLY — `export` would let her download every employee's amounts",
+  );
+  assert.equal(
+    permissionMatrix["HR Advisory"].deductions,
+    undefined,
+    "HR Advisory must hold no `deductions` grant — payroll is absent from the HR Business Partner job description",
+  );
 }

@@ -304,11 +304,45 @@ export async function runHrCommandCenterTests() {
     `only ${tilesChecked} tiles were checked across both seats — the builders returned almost ` +
       "nothing and the assertion above passed by reading an empty dashboard",
   );
+  // The negative control, which has to be a row the offered set REALLY rejects — an `offered`
+  // containing everything would pass the loop above blind.
+  //
+  // It used to be /hr/admin/deductions, removed in #2554 because the page admitted {Super Admin,
+  // CEO} by name. That subject expired on 2026-09-03: the owner said "yes give HR access to the
+  // deductions screen", the page now names HR Operations, and the row is back — so the old
+  // assertion would have been a control that passes because its claim is stale, which is worse
+  // than no control at all.
+  //
+  // /hr/offers replaces it, and it is a stronger control because it discriminates in BOTH
+  // directions on the SAME href: offers:read is a recruiting grant, so HR Advisory is offered the
+  // row and HR Operations is not. A one-sided check cannot tell "correctly rejected" from
+  // "rejects everything"; this one can.
   assert.ok(
-    !offeredHrefs("HR Operations").has("/hr/admin/deductions"),
-    "/hr/admin/deductions is offered to HR Operations again — that row was removed in #2554 " +
-      "because the page admits {Super Admin, CEO} by name. If it is back, this whole file's " +
-      "offered-set check has stopped discriminating and every tile assertion above is blind",
+    !offeredHrefs("HR Operations").has("/hr/offers"),
+    "/hr/offers is offered to HR Operations — she holds no offers grant, so if this set now " +
+      "admits it, the offered-set check has stopped discriminating and every tile assertion " +
+      "above is blind",
+  );
+  assert.ok(
+    offeredHrefs("HR Advisory").has("/hr/offers"),
+    "/hr/offers is NOT offered to HR Advisory — offers is hers, so this set is now rejecting " +
+      "everything and the control above passes for the wrong reason",
+  );
+
+  // The row that replaced it as a subject, pinned as a fact rather than left implied. Both
+  // directions again: the seat that was granted the screen on 2026-09-03 is offered it, and the
+  // seat that was deliberately not granted it is not — payroll appears nowhere in the HR Business
+  // Partner job description, and she holds no deductions grant at all.
+  assert.ok(
+    offeredHrefs("HR Operations").has("/hr/admin/deductions"),
+    "/hr/admin/deductions is no longer offered to HR Operations — the owner granted her that " +
+      "screen on 2026-09-03 and the deductions-comment mail links to it, so losing the row " +
+      "restores the offered-but-closed shape this file exists to catch",
+  );
+  assert.ok(
+    !offeredHrefs("HR Advisory").has("/hr/admin/deductions"),
+    "/hr/admin/deductions is offered to HR Advisory — she holds no deductions grant and the page " +
+      "refuses her by name; a row here would be a dead link and a claim she can read payroll",
   );
 
   // ── Every chart plots what it says it plots ───────────────────────────────────────────────────
