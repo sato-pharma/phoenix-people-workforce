@@ -2,11 +2,19 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 
-import { recruitmentAreaRegionOverrides } from "../src/lib/recruitment/candidate-region.ts";
+import {
+  candidateRegionForGovernorate,
+  recruitmentAreaRegionOverrides,
+} from "../src/lib/recruitment/candidate-region.ts";
+import { inferCandidatePlacement } from "../src/lib/recruitment/candidate-folder-inference.ts";
 import {
   driveFileNameFor,
   driveFolderPathFor,
+  driveInferredFolderPath,
+  INFERRED_FOLDER_NAME,
+  isInferredPath,
   isUnclassifiedPath,
+  NO_LOCATION_FOLDER_NAME,
   regionFolderForArea,
   samePath,
   sanitizeDriveSegment,
@@ -215,14 +223,112 @@ export function runDriveCvFolderTests() {
       `the backfill script must carry the Delta (3) override for ${areaName}`,
     );
   }
-  for (const label of ["Alex-BHR", "Delta (3)", "Upper Egypt", "Medical Representative", "Not yet classified"]) {
+  for (const label of ["Alex-BHR", "Delta (3)", "Upper Egypt", "Medical Representative"]) {
     assert.ok(backfillSource.includes(label), `the backfill script must carry the label ${label}`);
   }
+  // The holding and inferred folder NAMES are no longer typed into the script - it imports them,
+  // which is the point: a renamed shelf can no longer mean two different folders in two files.
+  assert.ok(
+    backfillSource.includes('from "@/lib/recruitment/drive-cv-folders"'),
+    "the backfill script must import the folder names rather than re-declare them",
+  );
+  assert.ok(
+    backfillSource.includes("inferCandidatePlacement"),
+    "the backfill script must use the shared inference, not a copied governorate table",
+  );
+  assert.ok(
+    !backfillSource.includes("[UNCLASSIFIED]"),
+    "no path in the backfill may still fall back to the flat holding folder",
+  );
   assert.equal(
     Object.keys(recruitmentAreaRegionOverrides).length,
     5,
     "Delta (3) covers five areas — if this changes, update the backfill script's copy too",
   );
+
+  // ── Inference: a CV with no declared answers still gets a real folder ──────────────────────────
+  //
+  // The owner's instruction on 2026-09-04: "I don't want a CV sitting with no folder." Measured that
+  // day, 529 candidates holding a stored CV had never answered the WhatsApp questions, and 387 of
+  // them had a governorate the CV extractor had ALREADY read and stored. They were all in one flat
+  // folder. These assertions pin the recovery, and pin the limits on it.
+
+  // The governorate route - the one that carries 378 of the 387.
+  assert.deepEqual(
+    driveInferredFolderPath(inferCandidatePlacement({ governorate: "Sohag" })),
+    [INFERRED_FOLDER_NAME, "Upper Egypt"],
+    "a governorate the CV names must reach its region folder",
+  );
+  assert.deepEqual(
+    driveInferredFolderPath(inferCandidatePlacement({ governorate: "Sharqia" })),
+    [INFERRED_FOLDER_NAME, "Delta (3)"],
+    "an inferred Delta (3) governorate files where recruitment says, exactly as a declared one does",
+  );
+
+  // The free-text address, when the governorate column is empty.
+  assert.deepEqual(
+    driveInferredFolderPath(inferCandidatePlacement({ address: "12 Gameat El Dowal, Giza, Egypt" })),
+    [INFERRED_FOLDER_NAME, "Giza"],
+    "an address must be read when the governorate column is blank",
+  );
+
+  // A vacancy a recruiter actually sent them for outranks both - it is a person's action.
+  assert.deepEqual(
+    driveInferredFolderPath(inferCandidatePlacement({ governorate: "Cairo", sentForRegion: "AB" })),
+    [INFERRED_FOLDER_NAME, "Alex-BHR"],
+    "a vacancy a recruiter sent the candidate for outranks the extracted governorate",
+  );
+  // ...but only when it names a region that exists. A typo must not become a folder.
+  assert.deepEqual(
+    driveInferredFolderPath(inferCandidatePlacement({ governorate: "Cairo", sentForRegion: "ZZ" })),
+    [INFERRED_FOLDER_NAME, "Cairo"],
+    "an unrecognised region code is ignored rather than turned into a folder",
+  );
+
+  // Outside Egypt is a real answer, not a blank - and it must not pollute the Egyptian region list.
+  assert.deepEqual(
+    driveInferredFolderPath(inferCandidatePlacement({ governorate: "Dubai" })),
+    [INFERRED_FOLDER_NAME, "Outside Egypt", "United Arab Emirates"],
+    "a foreign address files under its country, one level below Outside Egypt",
+  );
+
+  // Nothing at all is STILL a folder. This is the assertion that carries the owner's instruction.
+  assert.deepEqual(
+    driveInferredFolderPath(inferCandidatePlacement({})),
+    [INFERRED_FOLDER_NAME, NO_LOCATION_FOLDER_NAME],
+    "a record naming nowhere still gets a folder, never the flat pile",
+  );
+  assert.deepEqual(
+    driveInferredFolderPath(null),
+    [INFERRED_FOLDER_NAME, NO_LOCATION_FOLDER_NAME],
+    "a null placement is a folder too - there is no path that returns nothing",
+  );
+
+  // THE LINE: an inference never enters the confirmed tree, and is always recognisable as a guess.
+  assert.ok(isInferredPath(driveInferredFolderPath(inferCandidatePlacement({ governorate: "Cairo" }))));
+  assert.ok(!isInferredPath(driveFolderPathFor({ key: "Nasr City", kind: "medical_rep", label: "Nasr City" }, AREA_REGIONS)));
+  for (const shelf of ["Medical Representative", "District Manager", "Other positions", "Paramedical"]) {
+    assert.notEqual(INFERRED_FOLDER_NAME, shelf, "the inferred shelf must never collide with a real one");
+  }
+  // It stops at REGION. Area is where a wrong folder becomes unfindable, so it is never guessed.
+  for (const gov of ["Cairo", "Sohag", "Sharqia", "Giza", "Alexandria"]) {
+    assert.equal(
+      driveInferredFolderPath(inferCandidatePlacement({ governorate: gov })).length,
+      2,
+      `an inferred path stops at the region for ${gov} - it must never guess an area`,
+    );
+  }
+
+  // The three spellings production held that the map did not recognise, found by auditing the live
+  // rows on 2026-09-04. Each was one real candidate whose CV had nowhere to go.
+  assert.equal(candidateRegionForGovernorate("Albuhayra"), "AB", "Albuhayra is Beheira");
+  assert.equal(candidateRegionForGovernorate("Bani - seuf"), "GZ", "Bani - seuf is Beni Suef");
+  assert.equal(candidateRegionForGovernorate("Kafr El-Shiekh"), "D1", "the transposed Shiekh spelling");
+
+  // A blank stays blank. The normaliser must not turn an empty field into a confident answer.
+  for (const empty of ["", "   ", null, undefined]) {
+    assert.equal(candidateRegionForGovernorate(empty), null, "an empty governorate resolves to nothing");
+  }
 
   // ── Both readers of the area→region grouping must use the PUBLIC view ─────────────────────────
   //

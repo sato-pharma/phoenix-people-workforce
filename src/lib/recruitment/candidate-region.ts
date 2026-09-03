@@ -91,6 +91,8 @@ const governorateRegions: Record<string, CandidateRegionCode> = {
   "bani suef": "GZ",
   "beni sweif": "GZ",
   "benisuef": "GZ",
+  "bani seuf": "GZ",
+  "beni seuf": "GZ",
   fayoum: "GZ",
   faiyum: "GZ",
   "el fayoum": "GZ",
@@ -103,6 +105,9 @@ const governorateRegions: Record<string, CandidateRegionCode> = {
   beheira: "AB",
   behira: "AB",
   buhayrah: "AB",
+  buhayra: "AB",
+  // One word, so the "al " article strip never fires on it - the joined spelling needs its own key.
+  albuhayra: "AB",
   "el beheira": "AB",
   // Delta (1)
   gharbia: "D1",
@@ -113,6 +118,8 @@ const governorateRegions: Record<string, CandidateRegionCode> = {
   "kafr elsheikh": "D1",
   "kafr al sheikh": "D1",
   kafrelsheikh: "D1",
+  "kafr el shiekh": "D1",
+  "kafr elshiekh": "D1",
   menoufia: "D1",
   monufia: "D1",
   menofia: "D1",
