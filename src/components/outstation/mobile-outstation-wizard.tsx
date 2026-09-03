@@ -849,6 +849,13 @@ export function MobileOutstationWizard({
         setMessage(payload.message ?? payload.error ?? "Unable to calculate the request.");
         return;
       }
+      // A newer recalculation can start (and overwrite the ref) while this fetch is still in
+      // flight. Applying this response anyway would land a late, superseded price right after
+      // the effect below clears it for the newer inputs — the same staleness bug from the other
+      // direction. Only the most recently started calculation is allowed to win.
+      if (submittedCalculationKey && submittedCalculationKey !== lastCalculationKeyRef.current) {
+        return;
+      }
       setCalculation(payload);
     } catch {
       if (submittedCalculationKey === lastCalculationKeyRef.current) {
@@ -874,6 +881,18 @@ export function MobileOutstationWizard({
     canAutoCalculate,
     isOffline,
   ]);
+
+  // A change to any pricing input means the current `calculation` no longer matches the trip
+  // being priced. Clearing it right away — rather than waiting out the 350ms debounce above, or
+  // waiting for a recalculation that might fail — is what hides the submit action below (it only
+  // renders once `calculation` is set again), so a stale total can never sit on screen ready to
+  // be submitted. Skipped while offline: recalculation cannot run without a server round trip, and
+  // the offline path never trusts this value for money anyway (see submit()).
+  useEffect(() => {
+    if (isOffline) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setCalculation(null);
+  }, [calculationKey, isOffline]);
 
   async function captureLocation() {
     setMessage(null);
@@ -1200,6 +1219,15 @@ export function MobileOutstationWizard({
       return;
     }
 
+    // The review screen's total is only trustworthy for the exact inputs it was priced from.
+    // `lastCalculationKeyRef` is set the instant a calculation starts, so this also catches a
+    // submit attempted while one is still in flight, not only one made after a change nulled
+    // `calculation` or a recalculation failed outright.
+    if (!isOffline && (isCalculating || !calculation || lastCalculationKeyRef.current !== calculationKey)) {
+      setMessage("Phoenix is still pricing this request. Wait a moment for the total to update, then submit again.");
+      return;
+    }
+
     setIsSubmitting(true);
     setMessage(null);
     try {
@@ -1214,11 +1242,18 @@ export function MobileOutstationWizard({
               })),
             )
           : undefined;
+      // claimedTotalAmount is deliberately left at requestPayload's 0 here, for both the online
+      // and offline paths. The server always recalculates the whole trip itself and only trusts a
+      // posted claim when it is a real positive number (outstationClaimedTotal, in
+      // src/lib/outstation/service.ts) — so posting 0 makes the server's own fresh total the one
+      // that is ever paid, rather than this wizard's `calculation`, which the guard above narrows
+      // but can never fully guarantee is current (a response can still land between the check and
+      // the fetch below). That gap is exactly how request 99 (Dina Fadel, 2026-08-25) was paid 200
+      // EGP short of its own expected total.
       const response = await fetch(endpoint, {
         body: JSON.stringify({
           ...requestPayload,
           carEvidenceImageDataUrl: carEvidence?.imageDataUrl,
-          claimedTotalAmount: calculation?.expectedTotalAmount ?? 0,
           ticketAttachments,
         }),
         headers: { "Content-Type": "application/json" },
