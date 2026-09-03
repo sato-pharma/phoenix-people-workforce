@@ -217,7 +217,11 @@ function partyLine(text: string): string {
  * same archive reason as the highlight above: the prose layout substitutes into plain text with no
  * element to hang an attribute on, and introducing one would alter a document already signed.
  */
-function fillMarkedHtml(template: string, values: Partial<Record<ContractToken, string>>): string {
+function fillMarkedHtml(
+  template: string,
+  values: Partial<Record<ContractToken, string>>,
+  blankRule: string = CONTRACT_BLANK_RULE,
+): string {
   const pattern = /\{\{([A-Z_]+)\}\}/g;
   let out = "";
   let last = 0;
@@ -227,15 +231,30 @@ function fillMarkedHtml(template: string, values: Partial<Record<ContractToken, 
     const token = match[1];
     const raw = values[token as ContractToken];
     const text = typeof raw === "string" ? raw.trim() : "";
-    const key = ` data-hp-key="${escapeHtml(token)}"`;
     out +=
       text.length > 0
-        ? `<span class="fill"${key}>${escapeHtml(text)}</span>`
-        : `<span class="fill fill--blank"${key}>${CONTRACT_BLANK_RULE}</span>`;
+        ? `<span class="fill" data-hp-key="${escapeHtml(token)}">${escapeHtml(text)}</span>`
+        : blankMarker(token, blankRule);
     last = match.index + match[0].length;
     match = pattern.exec(template);
   }
   return out + line(template.slice(last));
+}
+
+/**
+ * The marker for a value that is not there.
+ *
+ * `blankRule` is what prints inside it — the dotted rule everywhere the blank has to draw itself,
+ * and nothing at all on the layout that rules its own boxes.
+ *
+ * THE SPAN IS NEVER DROPPED, however empty it is. It carries `data-hp-key`, and that is the only
+ * thing that lets the preview screen offer a missing value for correction on the page itself, so a
+ * box printed without one is a box nobody can fill from the screen — the exact opposite of what an
+ * empty box is asking for.
+ */
+function blankMarker(token: string, blankRule: string): string {
+  const empty = blankRule.length === 0 ? " fill--empty" : "";
+  return `<span class="fill fill--blank${empty}" data-hp-key="${escapeHtml(token)}">${blankRule}</span>`;
 }
 
 /**
@@ -435,6 +454,32 @@ function splitLabelled(
 const PEN_BLANK = /^[.…ـ\s]*$/u;
 
 /**
+ * One value inside the identity grid, printed the way the source draws it: the CELL is the blank.
+ *
+ * The owner's document rules each box and leaves it empty. Ours printed a dotted rule inside the box
+ * as well — the paper form's blank drawn twice — and he asked for his own on 2026-09-03: "make the
+ * boxes empty like my file". This is the boxes only. A blank in a flowing line still prints its
+ * dots, because there the dots ARE the box, and his document keeps them there too.
+ *
+ * When nothing in the cell is filled, the cell's furniture goes with it: "تاريخ ومحل الميلاد" is one
+ * field written as two tokens either side of a dash, and a lone dash stranded in an empty box is not
+ * what the source draws. A cell holding no tokens at all is literal text and always prints.
+ */
+function documentIdentityValue(
+  value: string,
+  values: Partial<Record<ContractToken, string>>,
+): string {
+  const tokens = [...value.matchAll(/\{\{([A-Z_]+)\}\}/gu)].map((match) => match[1]);
+  if (tokens.length === 0) return fillMarkedHtml(value, values, "");
+  const anyFilled = tokens.some((token) => {
+    const raw = values[token as ContractToken];
+    return typeof raw === "string" && raw.trim().length > 0;
+  });
+  if (anyFilled) return fillMarkedHtml(value, values, "");
+  return tokens.map((token) => blankMarker(token, "")).join("");
+}
+
+/**
  * The second party's identity block as the source draws it: a ruled grid, two label/value pairs to
  * a row, and a row carrying a single pair spanned across the rest.
  *
@@ -460,7 +505,7 @@ function documentIdentityGrid(
           const span = pairs.length === 1 ? ' colspan="3"' : "";
           return (
             `<th class="doc-ident__label">${escapeHtml(label)}</th>` +
-            `<td class="doc-ident__value"${span}>${fillMarkedHtml(value, values)}</td>`
+            `<td class="doc-ident__value"${span}>${documentIdentityValue(value, values)}</td>`
           );
         })
         .join("");
@@ -1000,6 +1045,16 @@ export function renderContractHtml(
      NO BACKTICKS IN THIS BLOCK — it is inside a template literal, and one ends the string. */
   .copy--document .fill { padding: 0; background: none; color: inherit; font-weight: 700; }
   .copy--document .fill--blank { color: #55677a; font-weight: 400; letter-spacing: 0.4pt; }
+
+  /* An empty box, exactly as the source draws it — the ruled cell is the blank, so nothing prints
+     inside it. The marker span survives the emptying, because that is what the preview screen
+     corrects through, and it is given a body ON SCREEN ONLY: an empty inline span has no width and
+     cannot be clicked, while sizing one in print risks an empty row standing taller than a filled
+     one. On screen it stays inside the line box a filled value would occupy, so no row moves. */
+  .copy--document .fill--empty { display: inline-block; }
+  @media screen {
+    .copy--document .fill--empty { min-width: 20mm; min-height: 3.4mm; vertical-align: middle; }
+  }
 
   @media print {
     html, body { background: #fff; }
