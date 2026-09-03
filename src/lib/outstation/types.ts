@@ -337,8 +337,11 @@ export type OutstationExpenseRequest = {
   reportAmWorkload: number;
   reportHrNotes: string | null;
   reportHrStatus: string | null;
-  reportMeetingAmount: number;
-  reportOtherAmount: number;
+  /** NULL when no override was recorded; an explicit 0 is a real override. Resolve against the raw
+   * `meetingAmount`/`otherAmount` with `outstationReportOverride` — never with `||`, which cannot
+   * tell an override of 0 from an absent one. Same shape as `reportTravelCost` below. */
+  reportMeetingAmount: number | null;
+  reportOtherAmount: number | null;
   reportPmWorkload: number;
   reportTravelCost: number | null;
   reportTripType: string | null;
