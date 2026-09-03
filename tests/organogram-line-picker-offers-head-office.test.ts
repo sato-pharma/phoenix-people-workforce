@@ -155,11 +155,11 @@ export function runOrganogramLinePickerHeadOfficeTests() {
   // showHeadOfficeLine = isCompanyScoped && canAccessHeadOffice. Both halves matter: the
   // second alone would offer the branch to a line-scoped viewer holding chain context, and
   // the first alone would offer it to every company role including the ones it is stripped for.
-  for (const role of ["Super Admin", "CEO", "HR Advisory", "Finance Manager"]) {
+  for (const role of ["Super Admin", "CEO", "HR Advisory", "Finance Manager", "Training Manager"]) {
     assert.equal(canAccessCompanyOrganogram(ctx(role)), true, `${role} opens a company chart`);
     assert.equal(canAccessHeadOffice(ctx(role)), true, `${role} is cleared for Head Office`);
   }
-  for (const role of ["Marketing Manager", "Training Manager", "SFE Manager"]) {
+  for (const role of ["Marketing Manager", "SFE Manager"]) {
     assert.equal(canAccessCompanyOrganogram(ctx(role)), true, `${role} opens a company chart`);
     assert.equal(
       canAccessHeadOffice(ctx(role)),

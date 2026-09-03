@@ -92,10 +92,13 @@ export function canAccessHeadOffice(access: AccessContext) {
     //
     // Named by ROLE, never `access.scope === "company"`. The scope shortcut would hand Head Office
     // to every current and future company-scope role in one edit; tests/organogram-godmode.test.ts
-    // keeps Marketing Manager and Training Manager pinned to `false` at the helper's default
-    // company scope precisely so that shortcut fails loudly if anyone reaches for it. (Talent
-    // Acquisition was a third pin until 2026-08-25 — see her entry below. The SFE Manager pair in
-    // tests/finance-manager-six-module-access.test.ts guards the same shortcut.)
+    // keeps Marketing Manager pinned to `false` at the helper's default company scope — and `true`
+    // at system scope — precisely so that shortcut fails loudly if anyone reaches for it. (Talent
+    // Acquisition was a second pin until 2026-08-25 and Training Manager a third until 2026-09-03 —
+    // see their entries below. Marketing Manager is now the only company-scope role still outside
+    // this helper, so it is the whole of that guard: do not add it without leaving another
+    // company-scope role pinned false, or the shortcut becomes untestable. The SFE Manager pair in
+    // tests/finance-manager-six-module-access.test.ts guards the same shortcut independently.)
     access.role === "Finance Manager" ||
     // Talent Acquisition added 2026-08-25 (owner: "in the admin account and talent
     // acquisition show the head office organogram"). She recruits FOR Head Office — the
@@ -112,6 +115,31 @@ export function canAccessHeadOffice(access: AccessContext) {
     // employee/[hrId]/route.ts).
     access.role === "HR Advisory" ||
     access.role === "HR Operations" ||
+    // Training Manager added 2026-09-03 (owner: "the training manager ui want to make him able to
+    // see full company organogram"). He is the THIRD person to hit the exact defect written up for
+    // the Finance Manager above and for A-3 in the pin block above it: he IS Head Office staff, so
+    // the company chart he already held showed him the four sales lines and hid the one branch he
+    // sits in. Measured on production the same day — A-7 Ahmed Elkawas, line_id 4, manager A-9 —
+    // so the chart omitted
+    // himself, his own manager (A-9 Marketing Manager) and both of his peers under that manager
+    // (A-8, A-10). "Full company organogram" therefore means Head Office, because Head Office was
+    // the only thing missing from it.
+    //
+    // This is not a new disclosure, for a stronger reason than Talent Acquisition's above: the
+    // Training-Manager branch in canSeeEmployee (src/lib/auth/permissions.ts) returns true for
+    // EVERY employee unconditionally, and he holds employee_profile:read, so every Head Office
+    // person's record already opens for him through People Management and Employee 360. This
+    // changes which door, not what is behind it.
+    //
+    // Named by ROLE, never `access.scope === "company"` — the shortcut this whole helper is written
+    // to refuse. Marketing Manager stays pinned to false at default company scope (and true at
+    // system scope) in tests/organogram-godmode.test.ts, so the guard against that shortcut is
+    // still armed after this addition; it is one role lighter, not retired.
+    //
+    // Sensitive fields stay shut. canViewOrganogramSensitiveFields does NOT list him, so he gets
+    // the safe org + contact profile and never salary or national ID — the owner's "no pay anywhere
+    // near an overview" rule is untouched by this.
+    access.role === "Training Manager" ||
     access.scope === "system"
   );
 }
@@ -621,10 +649,16 @@ export function scopeAuVacancyReportToTeam(
 export async function getScopedVacancyReport(access: AccessContext): Promise<VacancyReportData> {
   if (canAccessCompanyVacancies(access)) {
     const report = await buildAuBackedVacancyReport();
-    // Mirror the organogram's Head Office boundary: company-org roles without
-    // head-office access (Marketing / Training Manager) must not see Head Office
-    // vacancies either. Talent Acquisition recruits for Head Office, so it is
+    // Mirror the organogram's Head Office boundary: a company-org role without
+    // head-office access (Marketing Manager — the last one left) must not see Head
+    // Office vacancies either. Talent Acquisition recruits for Head Office, so it is
     // unaffected; privileged roles (CEO / Super Admin / system) see everything.
+    //
+    // Training Manager left this strip on 2026-09-03 along with the chart, and that is
+    // deliberate rather than incidental: he is Head Office staff, so the open seats
+    // beside him are the same disclosure as the filled ones he can now see. Both
+    // surfaces move together on purpose — a chart showing a department whose vacancy
+    // list silently omits it is how the two were allowed to disagree before.
     //
     // That sentence about Talent Acquisition described the INTENT, not the behaviour,
     // until 2026-08-25: she passes canAccessCompanyOrganogram and failed
