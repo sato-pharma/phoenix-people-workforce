@@ -155,16 +155,30 @@ export function runOrganogramLinePickerHeadOfficeTests() {
   // showHeadOfficeLine = isCompanyScoped && canAccessHeadOffice. Both halves matter: the
   // second alone would offer the branch to a line-scoped viewer holding chain context, and
   // the first alone would offer it to every company role including the ones it is stripped for.
-  for (const role of ["Super Admin", "CEO", "HR Advisory", "Finance Manager", "Training Manager"]) {
+  for (const role of [
+    "Super Admin",
+    "CEO",
+    "HR Advisory",
+    "Finance Manager",
+    "Training Manager",
+    "SFE Manager",
+  ]) {
     assert.equal(canAccessCompanyOrganogram(ctx(role)), true, `${role} opens a company chart`);
     assert.equal(canAccessHeadOffice(ctx(role)), true, `${role} is cleared for Head Office`);
   }
-  for (const role of ["Marketing Manager", "SFE Manager"]) {
-    assert.equal(canAccessCompanyOrganogram(ctx(role)), true, `${role} opens a company chart`);
-    assert.equal(
-      canAccessHeadOffice(ctx(role)),
-      false,
-      `${role} is company-scoped but must NOT be offered Head Office`,
-    );
-  }
+  // The "still withheld from someone" half. Every NAMED role is cleared as of 2026-09-03, so this
+  // is carried by a synthetic context rather than a role: scope `company` on a role the helper does
+  // not name must still be refused, which is what fails if the entitlement is ever replaced by a
+  // bare scope check. A test that only asserted the cleared roles above would pass just as well
+  // against a picker that offers Head Office to everybody — the failure this file exists for.
+  assert.equal(
+    canAccessHeadOffice(ctx("National Sales Manager", "company")),
+    false,
+    "an unnamed role at scope `company` must NOT be offered Head Office",
+  );
+  assert.equal(
+    canAccessCompanyOrganogram(ctx("National Sales Manager", "company")),
+    false,
+    "…and must not reach a company chart either, so it cannot be offered the picker at all",
+  );
 }

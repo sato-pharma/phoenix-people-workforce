@@ -45,8 +45,10 @@ import {
  *
  * Block 3 is the reason this is a chart change and not a payroll one, and block 4 is the guard
  * that this addition did not quietly become an `access.scope === "company"` shortcut — the thing
- * every comment in `canAccessHeadOffice` is written to refuse. Marketing Manager is now the LAST
- * company-scope role outside the helper, so that pair is the entire remaining guard.
+ * every comment in `canAccessHeadOffice` is written to refuse. By the end of 2026-09-03 no NAMED
+ * role was left outside that helper (the SFE and Marketing Managers followed this one), so block 4
+ * pins a SYNTHETIC context instead: an unnamed role at scope `company` refused, the same role at
+ * scope `system` allowed.
  */
 
 const ctx = (role: string, scope: AccessContext["scope"] = "company"): AccessContext =>
@@ -156,24 +158,25 @@ export async function runTrainingManagerHeadOfficeTests() {
   );
 
   // ── 4. The scope shortcut must still fail loudly ─────────────────────────────────────────────
-  // Marketing Manager is the last company-scope role outside canAccessHeadOffice. If a future
-  // change clears it too, another company-scope role must take its place here, or someone can
-  // replace the whole helper with `access.scope === "company"` and keep every assertion green.
+  // Marketing Manager was the last NAMED role outside canAccessHeadOffice, and was cleared later
+  // the same day. With no named role left to pin, the guard is synthetic: an UNNAMED role carrying
+  // scope `company` must be refused, and the same role at scope `system` must pass. Collapse the
+  // helper to `access.scope === "company"` and the first flips true and the second false.
   assert.equal(
-    canAccessHeadOffice(ctx("Marketing Manager")),
+    canAccessHeadOffice(ctx("National Sales Manager", "company")),
     false,
-    "a company-scope role that was NOT named must still be refused — this is the shortcut guard",
+    "a role that was NOT named must still be refused even at company scope — the shortcut guard",
   );
   assert.equal(
-    canAccessHeadOffice(ctx("Marketing Manager", "system")),
+    canAccessHeadOffice(ctx("National Sales Manager", "system")),
     true,
     "…and the same role at genuine system scope must pass, or the guard above would also hold " +
       "for a helper that had simply stopped working",
   );
   assert.equal(
-    canAccessHeadOffice(ctx("National Sales Manager")),
+    canAccessHeadOffice(createAccessContext({ hrId: "N-1", role: "National Sales Manager" })),
     false,
-    "a line-scoped role must never reach Head Office, even holding chain context",
+    "a line-scoped role at its REAL scope must never reach Head Office, even holding chain context",
   );
 
   // ── 5. The sidebar row he opens it from ──────────────────────────────────────────────────────

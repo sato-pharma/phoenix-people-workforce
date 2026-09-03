@@ -47,6 +47,14 @@ function ctx(role: AccessContext["role"]): AccessContext {
   return createAccessContext({ hrId: "B-185", role });
 }
 
+// A context whose SCOPE is stated rather than derived from the role. createAccessContext resolves
+// scope through scopeForRole, which is exactly what the head-office guard below must not depend on:
+// it has to ask "what happens to an unnamed role carrying scope `company`", and no real role
+// carries that combination any more.
+function scoped(role: AccessContext["role"], scope: AccessContext["scope"] = "company"): AccessContext {
+  return { ...createAccessContext({ hrId: "B-185", role }), scope };
+}
+
 export async function runFinanceManagerSixModuleAccessTests() {
   const fm = ctx("Finance Manager");
 
@@ -132,27 +140,61 @@ export async function runFinanceManagerSixModuleAccessTests() {
     "owner decision: he IS head-office staff, so without this the company organogram he was granted " +
       "would hide his own department",
   );
-  // The negative controls. These are what fail if anyone re-implements the two functions above as
+  // The negative control. This is what fails if anyone re-implements the two functions above as
   // `access.scope === "company"` — the tempting one-liner that would hand Head Office to every
   // company-scope role at once.
+  //
+  // This was the SFE MANAGER's pair until 2026-09-03, then briefly the Marketing Manager's. The
+  // owner cleared both that day, and with them no NAMED role is refused any more: since the
+  // Marketing Manager went, canAccessHeadOffice and canAccessCompanyOrganogram name the same set.
+  //
+  // So the control is now synthetic and no longer depends on any role's real scope — an UNNAMED
+  // role carrying scope `company` must still be refused. Collapse the helper to
+  // `access.scope === "company"` and this flips true. (National Sales Manager's real scope is
+  // `line`; the company scope below is constructed on purpose. That distinction matters: every
+  // earlier version of this comment called Marketing Manager "a company-scope role", which
+  // scopeForRole never agreed with.)
+  assert.equal(
+    canAccessHeadOffice(scoped("National Sales Manager")),
+    false,
+    "an unnamed role at scope `company` must NOT reach Head Office — this is the sharpest guard " +
+      "against the two functions being collapsed into a scope check",
+  );
+  assert.equal(
+    canAccessHeadOffice(scoped("National Sales Manager", "system")),
+    true,
+    "…and the same role at scope `system` must pass. The pair is the point: either assertion " +
+      "alone would hold just as well for a helper that had stopped working entirely",
+  );
+  // Both are POSITIVES now, for the same reason as the Finance Manager above them: all three are
+  // head-office staff whose company chart omitted the one branch they sit in.
   assert.equal(
     canAccessHeadOffice(ctx("SFE Manager")),
-    false,
-    "the SFE Manager has company ORGANOGRAM access but NOT Head Office — this pair is the sharpest " +
-      "guard against the two functions being collapsed into one",
+    true,
+    "owner decision 2026-09-03 — he is Head Office (A-2, line_id 4, reporting to the CEO)",
   );
-  assert.equal(canAccessCompanyOrganogram(ctx("SFE Manager")), true, "…while still holding the company view");
+  assert.equal(
+    canAccessHeadOffice(ctx("Marketing Manager")),
+    true,
+    "owner decision 2026-09-03 — he is Head Office too (A-9, line_id 4, reporting to the CEO)",
+  );
+  assert.equal(
+    canAccessCompanyOrganogram(ctx("Marketing Manager")),
+    true,
+    "…and keeps the company view he already had",
+  );
+  assert.equal(canAccessCompanyOrganogram(ctx("SFE Manager")), true, "…and keeps the company view");
   // The retired Talent Acquisition seat WAS a second negative control here. The owner granted her
   // Head Office on 2026-08-25 (she recruits for it, and already browses the whole employee
   // directory), so it became a positive. That decision belongs to the DUTY, not the seat name, so
   // it carries to both successor bundles: HR Advisory recruits for Head Office, and HR Operations
-  // holds its records. The SFE Manager pair above still guards the scope-collapse shortcut.
+  // holds its records. The Marketing Manager pair above now guards the scope-collapse shortcut.
   for (const role of ["HR Advisory", "HR Operations"] as const) {
     assert.equal(
       canAccessHeadOffice(ctx(role)),
       true,
-      `owner decision 2026-08-25, inherited by ${role} — the SFE Manager above remains the negative ` +
-        "control that would fail if these two functions were collapsed into a scope check",
+      `owner decision 2026-08-25, inherited by ${role} — the Marketing Manager above remains the ` +
+        "negative control that would fail if these two functions were collapsed into a scope check",
     );
   }
 
