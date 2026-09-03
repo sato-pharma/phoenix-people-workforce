@@ -13,9 +13,11 @@ import {
 import {
   carryForwardDocumentFields,
   documentFieldFromRecord,
+  fieldHistoryFromRecord,
   isFieldLayerMissing,
   parseDocumentFieldWrite,
   pickCarryForwardSource,
+  summariseHistoryRows,
   type DocumentFieldWriteInput,
   type FieldRecord,
   type VersionFieldCount,
@@ -668,6 +670,125 @@ async function testCarryingALayoutForwardToANewVersion() {
   }
 }
 
+
+/**
+ * WHAT A FIELD USED TO SAY.
+ *
+ * A save overwrites, so before the history table there was no answer at all to "what did this field
+ * print in September" — on papers people sign — and a reset deleted every row on a document without
+ * leaving a trace of what it deleted. The recording is a database trigger, proved against staging by
+ * inserting, editing and deleting a field and reading both states back; these pin the two decisions
+ * that live in TypeScript and would fail silently rather than loudly.
+ */
+function testTheHistoryOfAField() {
+  // ── The summary's one decision: which change is the LATEST ──────────────────────────────────
+  //
+  // The read asks for newest first, so taking the first sighting of each field would be correct
+  // today and would keep LOOKING correct on the day the ordering changed — showing a field's oldest
+  // state as its most recent change, "changed 3 Jan" beside a rule written last week. So the rows
+  // here arrive deliberately OUT of order.
+  const summary = summariseHistoryRows([
+    { field_id: "a", changed_at: "2026-09-01T08:00:00Z" },
+    { field_id: "b", changed_at: "2026-09-03T11:30:00Z" },
+    { field_id: "a", changed_at: "2026-09-12T14:20:00Z" },
+    { field_id: "a", changed_at: "2026-09-04T09:15:00Z" },
+  ]);
+
+  assert.equal(
+    summary.a?.lastChangedAt,
+    "2026-09-12T14:20:00Z",
+    "the latest change must be found by comparing, not by trusting the query's order",
+  );
+  assert.equal(summary.a?.changes, 3, "every superseded state counts, not just the newest");
+  assert.equal(summary.b?.changes, 1);
+  assert.equal(summary.c, undefined, "a field nobody has rewritten gets no entry and no line");
+  assert.deepEqual(summariseHistoryRows([]), {}, "an empty history is an empty summary, not a throw");
+
+  // ── The entry's one decision: whose state this is ───────────────────────────────────────────
+  //
+  // A history row has TWO ids — its own, and the field's. The state must be built against
+  // `field_id`, because the panel groups and matches on it. Reading the history row's own id
+  // instead would give every entry a different field id, so the newest state would look like it
+  // belonged to a field that has never existed — and the panel, which draws only the answer whose
+  // id matches the row on screen, would render an empty history beside a "Changed" line.
+  const record = {
+    id: "history-row-1",
+    field_id: "field-42",
+    document: "form1",
+    template_version_id: "form1-v1",
+    employee_hr_id: null,
+    default_key: "nationalId",
+    action: "update",
+    hidden: false,
+    page: 1,
+    anchor_selector: null,
+    anchor_dx: null,
+    anchor_dy: null,
+    x: "100.00",
+    y: "200.00",
+    w: "80.00",
+    h: "12.00",
+    align: "right",
+    font_size: "9.00",
+    source_kind: "value",
+    value_key: "nationalId",
+    literal_text: null,
+    updated_at: "2026-09-01T08:00:00Z",
+    updated_by_hr_id: "HR-001",
+    was_updated_at: "2026-09-01T08:00:00Z",
+    was_updated_by_hr_id: "HR-001",
+    changed_at: "2026-09-12T14:20:00Z",
+    changed_by_hr_id: "HR-002",
+  };
+
+  const entry = fieldHistoryFromRecord(record as unknown as Parameters<typeof fieldHistoryFromRecord>[0]);
+  assert.ok(entry, "a well-formed history record must produce an entry");
+  assert.equal(entry.id, "history-row-1", "the entry keeps the history row's own id");
+  assert.equal(
+    entry.state.id,
+    "field-42",
+    "the state belongs to the FIELD, not to the history row that records it",
+  );
+  assert.equal(entry.fieldId, "field-42");
+  // Numerics come back from PostgREST as strings, and "100" + 1 is "1001" — parsed, like a live row.
+  assert.equal(entry.state.x, 100);
+  assert.equal(entry.state.size, 9);
+
+  // A DELETE records no actor, deliberately: there is no incoming row to read one off, and the
+  // field's last editor is not the person who removed it. Proved against staging as well — the
+  // delete row came back with changed_by_hr_id null while its update sibling carried HR-002.
+  const removed = fieldHistoryFromRecord({
+    ...record,
+    action: "delete",
+    changed_by_hr_id: null,
+  } as unknown as Parameters<typeof fieldHistoryFromRecord>[0]);
+  assert.equal(removed?.action, "delete");
+  assert.equal(removed?.changedByHrId, null);
+
+  // An action outside the two the CHECK constraint allows is refused rather than shown as one of
+  // them. A hand-written row is the only way to get one, and guessing would put a state on screen
+  // under a verb nobody wrote.
+  assert.equal(
+    fieldHistoryFromRecord({ ...record, action: "insert" } as unknown as Parameters<
+      typeof fieldHistoryFromRecord
+    >[0]),
+    null,
+    "an unknown action is refused, never displayed as an update",
+  );
+
+  // A state the renderer would refuse to draw is dropped here too — the same rule the live layout
+  // follows. Answering "what did this print" with something that never printed is worse than
+  // answering with nothing.
+  assert.equal(
+    fieldHistoryFromRecord({
+      ...record,
+      source_kind: "nonsense",
+    } as unknown as Parameters<typeof fieldHistoryFromRecord>[0]),
+    null,
+    "a state nothing could have drawn is not a state this field used to print",
+  );
+}
+
 export async function runHiringPackFieldLayoutTests() {
   testEveryDocumentDeclaresItsSurface();
   testAnUntouchedDocumentIsUnchanged();
@@ -687,4 +808,5 @@ export async function runHiringPackFieldLayoutTests() {
   testTheWriteValidatorAcceptsAWellFormedRowOfEachSurface();
   testTheWriteValidatorRejectsEveryConstraintTheTableEnforces();
   await testCarryingALayoutForwardToANewVersion();
+  testTheHistoryOfAField();
 }

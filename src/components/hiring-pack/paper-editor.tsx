@@ -49,6 +49,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { FieldTable } from "@/components/hiring-pack/field-table";
 import { Button } from "@/components/ui/button";
+import { FieldHistoryPanel } from "@/components/hiring-pack/field-history-panel";
 import { Input } from "@/components/ui/input";
 import type { DocumentFieldInventoryEntry } from "@/lib/hiring-pack/document-inventory";
 import {
@@ -56,7 +57,11 @@ import {
   type DocumentFieldRow,
   type DocumentFieldSource,
 } from "@/lib/hiring-pack/field-layout";
-import type { CarryForwardOffer } from "@/lib/hiring-pack/field-layout-store";
+import type {
+  CarryForwardOffer,
+  FieldHistoryEntry,
+  FieldHistorySummary,
+} from "@/lib/hiring-pack/field-layout-store";
 import {
   buildPaperEditPatch,
   PAPER_FIELD_BINDINGS,
@@ -410,17 +415,31 @@ async function fetchDocumentInventory(url: string): Promise<DocumentFieldInvento
 }
 
 /** The layout, and — only when this version is untouched and an earlier one is not — the offer. */
-type LayoutPayload = { rows: DocumentFieldRow[]; carryForward: CarryForwardOffer | null };
+type LayoutPayload = {
+  rows: DocumentFieldRow[];
+  carryForward: CarryForwardOffer | null;
+  /** Per row id, when it was last rewritten — empty until the history migration is applied. */
+  changed: Record<string, FieldHistorySummary>;
+};
 
 async function fetchDocumentFields(url: string): Promise<LayoutPayload> {
   const response = await fetch(url);
   const body = (await response.json().catch(() => null)) as
-    | { fields?: DocumentFieldRow[]; carryForward?: CarryForwardOffer | null; message?: string }
+    | {
+        fields?: DocumentFieldRow[];
+        carryForward?: CarryForwardOffer | null;
+        changed?: Record<string, FieldHistorySummary>;
+        message?: string;
+      }
     | null;
   if (!response.ok) {
     throw new Error(body?.message ?? `Could not load the layout (${response.status}).`);
   }
-  return { rows: body?.fields ?? [], carryForward: body?.carryForward ?? null };
+  return {
+    rows: body?.fields ?? [],
+    carryForward: body?.carryForward ?? null,
+    changed: body?.changed ?? {},
+  };
 }
 
 export function HiringPackPaperEditor({
@@ -485,6 +504,26 @@ export function HiringPackPaperEditor({
   const [fieldsError, setFieldsError] = useState<string | null>(null);
   /** Null in the ordinary case — an offer exists only on a version nothing has been done to yet. */
   const [carryOffer, setCarryOffer] = useState<CarryForwardOffer | null>(null);
+
+  /**
+   * Which fields have been rewritten and when — and the one whose past states are open.
+   *
+   * `changed` arrives with the layout because it is two columns and one line of text per row.
+   * `history` is fetched for the single row somebody opens, since the previous states are the whole
+   * placement each and nobody reads thirty-three of them.
+   */
+  const [changed, setChanged] = useState<Record<string, FieldHistorySummary>>({});
+  const [historyRow, setHistoryRow] = useState<DocumentFieldRow | null>(null);
+  /**
+   * The answer carries the id it is FOR, so a slow reply for a row the operator has moved on from
+   * renders nothing instead of appearing under the new row's heading. A stamped answer is a smaller
+   * and more honest guard than a cancellation flag: there is no window in which the wrong states are
+   * on screen, because the panel only draws an answer whose id matches what it is showing.
+   */
+  const [history, setHistory] = useState<{ fieldId: string; entries: FieldHistoryEntry[] } | null>(
+    null,
+  );
+  const [historyError, setHistoryError] = useState<string | null>(null);
   const [layoutBusy, setLayoutBusy] = useState(false);
   const [layoutSelection, setLayoutSelection] = useState<PendingWrite | null>(null);
   const layoutModeRef = useRef(false);
@@ -626,6 +665,7 @@ export function HiringPackPaperEditor({
       setFields(payload.rows);
       fieldsRef.current = payload.rows;
       setCarryOffer(payload.carryForward);
+      setChanged(payload.changed);
     } catch (cause) {
       setFieldsError(cause instanceof Error ? cause.message : "Could not load the layout.");
     } finally {
@@ -655,6 +695,7 @@ export function HiringPackPaperEditor({
         setFields(payload.rows);
         fieldsRef.current = payload.rows;
         setCarryOffer(payload.carryForward);
+        setChanged(payload.changed);
         setFieldsError(null);
         setFieldsLoading(false);
       },
@@ -814,6 +855,37 @@ export function HiringPackPaperEditor({
       setLayoutBusy(false);
     }
   }, [carryOffer, documentKey, loadFields]);
+
+  /**
+   * Open what one field used to say.
+   *
+   * Fetched on demand rather than carried with the layout: a previous state is a whole placement,
+   * and nobody opens thirty-three of them. The row is put on screen before the answer arrives so the
+   * panel names the field it is loading — an empty panel that fills in later reads as a broken one.
+   *
+   * NOT RACE-GUARDED with a `live` flag like the layout reads. The answer is STAMPED with the id it
+   * belongs to and the panel draws it only when that matches the row on screen, so a slow reply for
+   * a row the operator has moved on from renders nothing rather than appearing under a new heading.
+   */
+  const openHistory = useCallback(async (row: DocumentFieldRow) => {
+    setHistoryRow(row);
+    setHistory(null);
+    setHistoryError(null);
+    try {
+      const response = await fetch(
+        `/api/hiring-pack/document-fields?historyFor=${encodeURIComponent(row.id)}`,
+      );
+      const body = (await response.json().catch(() => null)) as
+        | { history?: FieldHistoryEntry[]; message?: string }
+        | null;
+      if (!response.ok) {
+        throw new Error(body?.message ?? `Could not read the history (${response.status}).`);
+      }
+      setHistory({ entries: body?.history ?? [], fieldId: row.id });
+    } catch (cause) {
+      setHistoryError(cause instanceof Error ? cause.message : "Could not read the history.");
+    }
+  }, []);
 
   /**
    * Read the template's field list whenever the table is the visible half.
@@ -1561,6 +1633,7 @@ export function HiringPackPaperEditor({
             {layoutTab === "fields" ? (
               <FieldTable
                 busy={layoutBusy}
+                changed={changed}
                 entries={inventory}
                 error={fieldsError}
                 loading={inventoryLoading}
@@ -1574,6 +1647,7 @@ export function HiringPackPaperEditor({
                   );
                   if (sure) void deleteLayoutField(row.id);
                 }}
+                onOpenHistory={(row) => void openHistory(row)}
                 onSaveRule={saveFieldRule}
                 onSaveRowText={saveRowText}
                 onToggleHidden={(row) => void commitLayoutField({
@@ -1829,6 +1903,23 @@ export function HiringPackPaperEditor({
           value — the salary in words follows the salary figure, for instance.
         </p>
       </div>
+
+      {/* WHAT A FIELD USED TO SAY. An overlay at the end of the tree rather than a card inside the
+          table, so it sits above whichever tab is open and cannot be clipped by the table's own
+          scrolling container. Opened today from a table row; anything else that learns to open it
+          needs no change here. */}
+      {historyRow ? (
+        <FieldHistoryPanel
+          entries={history?.fieldId === historyRow.id ? history.entries : null}
+          error={historyError}
+          onClose={() => {
+            setHistoryRow(null);
+            setHistory(null);
+            setHistoryError(null);
+          }}
+          row={historyRow}
+        />
+      ) : null}
     </div>
   );
 }

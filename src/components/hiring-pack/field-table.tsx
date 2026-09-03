@@ -37,7 +37,7 @@
 // input is worse than saying it plainly. Adding a box works on both.
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 
-import { AlertTriangle, Check, Eye, EyeOff, MapPin, Plus, RotateCcw, Search, Trash2, X } from "lucide-react";
+import { AlertTriangle, Check, Eye, EyeOff, History, MapPin, Plus, RotateCcw, Search, Trash2, X } from "lucide-react";
 import type { KeyboardEvent } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -55,9 +55,18 @@ import {
   useFieldFillRates,
   type FieldFillRate,
 } from "@/components/hiring-pack/use-field-fill-rates";
+import type { FieldHistorySummary } from "@/lib/hiring-pack/field-layout-store";
 
 export type FieldTableProps = {
   busy: boolean;
+  /**
+   * Per field-layer row id, how often it has been rewritten and when it last was.
+   *
+   * Empty until the history migration is applied, which is deliberate: every row reads its own entry
+   * and simply shows nothing when there is none, so the table is unchanged on a database that does
+   * not have the table yet.
+   */
+  changed: Readonly<Record<string, FieldHistorySummary>>;
   /** Every field this template can print, as the server measured it against this employee. */
   entries: readonly DocumentFieldInventoryEntry[];
   error: string | null;
@@ -74,6 +83,8 @@ export type FieldTableProps = {
   onDryRun: (dry: { key: string; text: string | null } | null) => void;
   /** Remove a field-layer row: an added field goes, an override returns to its compiled default. */
   onDeleteRow: (row: DocumentFieldRow) => void;
+  /** Open what this field used to say. Only ever offered on a row that has been rewritten. */
+  onOpenHistory: (row: DocumentFieldRow) => void;
   /** Write a rule for a field the template already places. `null` restores the record value. */
   onSaveRule: (entry: DocumentFieldInventoryEntry, text: string | null) => void;
   /** Retype the text of a field the operator added. */
@@ -153,6 +164,64 @@ function dryRunTargetKey(row: DocumentFieldRow | null, fallbackKey: string): str
  * that do not.
  * ─────────────────────────────────────────────────────────────────────────────────────────────
  */
+/**
+ * "Changed 12 Sep, 14:20" — an answer to what this field used to print.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────────────────────
+ * IT LEADS WITH THE DATE AND NOT THE NAME, on purpose. A save overwrites, so before the history
+ * existed there was no answer at all to "what did this field print in September" — on papers people
+ * sign. The timestamp is the half that can be relied on: `updated_by_hr_id` is known to be
+ * unreliable across this system, and on a DELETE there is no actor to record at all, so the history
+ * stores null rather than the field's last editor. A name shown where it might be wrong gets
+ * defended rather than looked up.
+ *
+ * SHOWN ONLY ON A ROW THAT HAS BEEN REWRITTEN. A field still printing what the document was built
+ * with has no history and gets no line, which is also what keeps the table quiet on a database where
+ * the history migration has not been applied yet — every row simply has no entry.
+ *
+ * IN CAIRO, because this is an instant this system stamped itself (`now()` on the history row), not
+ * a date column and not a vendor's wall clock.
+ */
+function ChangedNote({
+  onOpen,
+  summary,
+}: {
+  onOpen: () => void;
+  summary: FieldHistorySummary | undefined;
+}) {
+  if (!summary) return null;
+  return (
+    <button
+      className="mt-1 inline-flex items-center gap-1 text-phx-2xs font-semibold text-phx-ink-soft underline decoration-dotted underline-offset-2 hover:text-phx-ink"
+      onClick={onOpen}
+      title={
+        summary.changes === 1
+          ? "See what this field used to say"
+          : `See all ${summary.changes} earlier versions of this field`
+      }
+      type="button"
+    >
+      <History className="h-3 w-3" />
+      Changed {formatChangeStamp(summary.lastChangedAt)}
+      {summary.changes > 1 ? ` · ${summary.changes} versions` : ""}
+    </button>
+  );
+}
+
+/** A recorded instant, in Cairo local time — never raw UTC. See `ChangedNote`. */
+function formatChangeStamp(iso: string): string {
+  const parsed = new Date(iso);
+  if (Number.isNaN(parsed.getTime())) return iso;
+  return parsed.toLocaleString("en-GB", {
+    day: "2-digit",
+    hour: "2-digit",
+    hour12: false,
+    minute: "2-digit",
+    month: "short",
+    timeZone: "Africa/Cairo",
+  });
+}
+
 function FillRateNote({ rate, roster }: { rate: FieldFillRate | null; roster: number }) {
   if (!rate || roster === 0) return null;
   if (rate.filled === FILLS_FOR_EVERYONE) return null;
@@ -182,12 +251,14 @@ function FillRateNote({ rate, roster }: { rate: FieldFillRate | null; roster: nu
 
 export function FieldTable({
   busy,
+  changed,
   entries,
   error,
   loading,
   onAddBox,
   onDryRun,
   onDeleteRow,
+  onOpenHistory,
   onSaveRule,
   onSaveRowText,
   onToggleHidden,
@@ -618,6 +689,14 @@ export function FieldTable({
                       Standing company text — not part of this person’s record
                     </p>
                   ) : null}
+                  {override ? (
+                    <div>
+                      <ChangedNote
+                        onOpen={() => onOpenHistory(override)}
+                        summary={changed[override.id]}
+                      />
+                    </div>
+                  ) : null}
                 </div>
 
                 {/* Column two — what goes IN it. */}
@@ -863,6 +942,9 @@ export function FieldTable({
                       {row.page !== null ? `Page ${row.page + 1}` : "Anchored in the text"}
                       {row.hidden ? " · hidden" : ""}
                     </p>
+                    <div>
+                      <ChangedNote onOpen={() => onOpenHistory(row)} summary={changed[row.id]} />
+                    </div>
                   </div>
 
                   <div className="min-w-0 flex-1 space-y-1.5">

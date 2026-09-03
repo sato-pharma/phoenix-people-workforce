@@ -8,9 +8,11 @@ import {
   deleteDocumentField,
   isFieldLayerMissing,
   loadDocumentFieldLayout,
+  loadFieldHistory,
   parseDocumentFieldWrite,
   resetDocumentFieldLayout,
   saveDocumentField,
+  summariseDocumentFieldHistory,
   type DocumentFieldWriteInput,
 } from "@/lib/hiring-pack/field-layout-store";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
@@ -45,13 +47,25 @@ function apiError(error: unknown) {
   return { message: error instanceof Error ? error.message : "Something went wrong.", status: 500 };
 }
 
-/** Read one document's layout, for one template version. */
+/**
+ * Read one document's layout, for one template version — or the past states of a single field.
+ *
+ * `historyFor=<id>` is the detail read behind opening one row's history, and it is answered before
+ * the document arguments are looked at because a field that has been DELETED still has a history and
+ * no longer has a document row to be found through. That is the case the history exists for.
+ */
 export async function GET(request: Request) {
   try {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "employee_documents", "read");
 
     const url = new URL(request.url);
+
+    const historyFor = url.searchParams.get("historyFor");
+    if (historyFor) {
+      return NextResponse.json({ history: await loadFieldHistory(historyFor) });
+    }
+
     const document = url.searchParams.get("document");
     const templateVersionId = url.searchParams.get("templateVersionId");
     if (!isKnownDocument(document) || !templateVersionId) {
@@ -67,11 +81,17 @@ export async function GET(request: Request) {
     // THE OFFER RIDES WITH THE LAYOUT, in one round trip rather than two. It is needed at exactly
     // the moment a layout is read and is null in every ordinary case — a version with work on it
     // never has one — so a second request would spend a trip to be told nothing almost every time.
-    const [fields, carryForward] = await Promise.all([
+    //
+    // `changed` rides along for the same reason and costs two columns: it is one line of text per
+    // row — "changed 12 Sep, 14:20" — and asking for it separately would double the panel's opening
+    // cost to deliver a timestamp. The full previous states are fetched only for the row somebody
+    // opens, through `historyFor` above.
+    const [fields, carryForward, changed] = await Promise.all([
       loadDocumentFieldLayout(document, templateVersionId),
       carryForwardOffer(document, templateVersionId),
+      summariseDocumentFieldHistory(document, templateVersionId),
     ]);
-    return NextResponse.json({ fields, carryForward });
+    return NextResponse.json({ fields, carryForward, changed });
   } catch (error) {
     const { message, status } = apiError(error);
     return NextResponse.json({ error: "hiring_pack_field_layout_read_failed", message }, { status });

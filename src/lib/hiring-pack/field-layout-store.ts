@@ -681,3 +681,179 @@ export async function carryForwardDocumentFields(
   if (insertError) throw new Error(insertError.message);
   return (inserted ?? []).length;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// WHAT A FIELD USED TO SAY
+//
+// A save OVERWRITES. Before the history table there was no answer at all to "what did this field
+// print in September", and a reset deleted every row without leaving a trace of what it deleted —
+// on papers people sign.
+//
+// The recording is a database trigger, not code in this module, because there are four write paths
+// and the reset is a bulk delete that never passes through the single-row one. A trigger is written
+// once and cannot be forgotten, including by a hand-run statement during an incident, which is when
+// the record matters most. This half only reads.
+//
+// THE TABLE MAY NOT EXIST YET, for exactly the reason the header of this file gives: its migration
+// is a protected action awaiting the owner. Every read degrades to an empty history rather than
+// failing, so the editor is unchanged until the day the migration lands.
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+
+const HISTORY_TABLE = "hiring_pack_document_field_history";
+
+const HISTORY_COLUMNS =
+  "id, field_id, document, template_version_id, default_key, action, hidden, page, " +
+  "anchor_selector, anchor_dx, anchor_dy, x, y, w, h, align, font_size, source_kind, " +
+  "value_key, literal_text, was_updated_at, was_updated_by_hr_id, changed_at, changed_by_hr_id";
+
+type HistoryRecord = FieldRecord & {
+  field_id: string;
+  action: string;
+  was_updated_at: string;
+  was_updated_by_hr_id: string | null;
+  changed_at: string;
+  changed_by_hr_id: string | null;
+};
+
+/**
+ * One state a field used to be in, and when it stopped being true.
+ *
+ * `state` is the same shape the renderer draws, so a history entry can be previewed with the same
+ * code that prints the live row rather than a second, drifting description of a placement.
+ */
+export type FieldHistoryEntry = {
+  id: string;
+  fieldId: string;
+  /** What happened TO this state: it was edited into something else, or the field was removed. */
+  action: "update" | "delete";
+  /** When it stopped being true. The trustworthy half — lead with this, not with the name. */
+  changedAt: string;
+  /**
+   * Who superseded it. NULL on a delete by design: there is no incoming row to read an actor off,
+   * and the field's last editor is not the person who deleted it.
+   */
+  changedByHrId: string | null;
+  /** When this state was itself written — with `changedAt`, the span it was live for. */
+  wasUpdatedAt: string;
+  wasUpdatedByHrId: string | null;
+  /** The state itself, exactly as it stood. */
+  state: DocumentFieldRow;
+};
+
+/** How much a single field has been rewritten — the whole basis of the inline affordance. */
+export type FieldHistorySummary = {
+  /** How many superseded states this field has. */
+  changes: number;
+  /** When it was last rewritten. What the row shows, and what the panel orders by. */
+  lastChangedAt: string;
+};
+
+/**
+ * Per field, how often it has been rewritten and when it last was — for one document version.
+ *
+ * DELIBERATELY NOT THE FULL HISTORY. This read runs every time the panel opens, and the answer it
+ * feeds is one line of text per row: "changed 12 Sep, 14:20". Two columns instead of the whole
+ * previous state keeps the common path small, and the states themselves are fetched for the one
+ * field somebody actually opens.
+ */
+export async function summariseDocumentFieldHistory(
+  document: HiringPackDocument,
+  templateVersionId: string,
+): Promise<Record<string, FieldHistorySummary>> {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from(HISTORY_TABLE)
+    .select("field_id, changed_at")
+    .eq("document", document)
+    .eq("template_version_id", templateVersionId)
+    .order("changed_at", { ascending: false })
+    .limit(2000);
+
+  if (error) {
+    if (isFieldLayerMissing(error)) return {};
+    throw new Error(error.message);
+  }
+
+  return summariseHistoryRows((data ?? []) as unknown as HistoryStampRow[]);
+}
+
+/** The two columns the summary is built from. */
+export type HistoryStampRow = { field_id: string; changed_at: string };
+
+/**
+ * Group change stamps by field: how many, and the latest.
+ *
+ * Pure and exported so the one decision here can be pinned without a database. THE LATEST IS FOUND
+ * BY COMPARING, not by trusting the query's `order`. The read asks for newest first, so taking the
+ * first sighting of each field would be correct today — and would keep being correct-looking on the
+ * day the ordering changed, showing a field's OLDEST state as its most recent change. The row would
+ * read "changed 3 Jan" beside a rule written last week, which is worse than no line at all.
+ */
+export function summariseHistoryRows(
+  rows: readonly HistoryStampRow[],
+): Record<string, FieldHistorySummary> {
+  const summary: Record<string, FieldHistorySummary> = {};
+  for (const row of rows) {
+    const current = summary[row.field_id];
+    if (!current) {
+      summary[row.field_id] = { changes: 1, lastChangedAt: row.changed_at };
+      continue;
+    }
+    current.changes += 1;
+    if (row.changed_at > current.lastChangedAt) current.lastChangedAt = row.changed_at;
+  }
+  return summary;
+}
+
+/**
+ * Every superseded state of ONE field, newest first.
+ *
+ * Read by id rather than by document so it answers for a field that has since been deleted — which
+ * is the case the history exists for. The caller has already proved the document scope; this is the
+ * detail fetch behind opening one row.
+ */
+export async function loadFieldHistory(fieldId: string): Promise<FieldHistoryEntry[]> {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from(HISTORY_TABLE)
+    .select(HISTORY_COLUMNS)
+    .eq("field_id", fieldId)
+    .order("changed_at", { ascending: false })
+    .limit(200);
+
+  if (error) {
+    if (isFieldLayerMissing(error)) return [];
+    throw new Error(error.message);
+  }
+
+  const entries: FieldHistoryEntry[] = [];
+  for (const record of (data ?? []) as unknown as HistoryRecord[]) {
+    const entry = fieldHistoryFromRecord(record);
+    if (entry) entries.push(entry);
+  }
+  return entries;
+}
+
+/**
+ * One history record as an entry, or null if it describes a placement nothing can draw.
+ *
+ * Validated through `documentFieldFromRecord` — the same function the live layout uses — so a state
+ * that would be dropped at render time is dropped here too. Showing a previous state the renderer
+ * would have refused would answer "what did this print" with something that never printed.
+ */
+export function fieldHistoryFromRecord(record: HistoryRecord): FieldHistoryEntry | null {
+  if (record.action !== "update" && record.action !== "delete") return null;
+  // `id` on the history row is the history entry's own id; the state belongs to `field_id`.
+  const state = documentFieldFromRecord({ ...record, id: record.field_id });
+  if (!state) return null;
+  return {
+    id: record.id,
+    fieldId: record.field_id,
+    action: record.action,
+    changedAt: record.changed_at,
+    changedByHrId: record.changed_by_hr_id,
+    wasUpdatedAt: record.was_updated_at,
+    wasUpdatedByHrId: record.was_updated_by_hr_id,
+    state,
+  };
+}
