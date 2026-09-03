@@ -5,13 +5,13 @@
 // to Supabase.
 
 import { isAttendanceTracked } from "@/lib/attendance/eligibility";
-import type { AttendancePolicyRuleRow } from "@/lib/attendance/flexible-hours";
 import { normalizeAttendanceHrId, resolveActiveAttendancePolicy } from "@/lib/attendance/metrics";
 import { loadActiveDeviceMappedHrIds } from "@/lib/attendance/device-user-mapping";
 import { loadAttendanceFlexPolicyGroups } from "@/lib/attendance/policy-groups";
 import {
   buildAttendancePolicyExplainer,
   type AttendancePolicyExplainer,
+  type PolicyExplainerRuleRow,
 } from "@/lib/attendance/policy-explainer";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { cairoTodayIso } from "@/lib/attendance/working-days";
@@ -61,7 +61,9 @@ export async function loadAttendancePolicyExplainer(
       loadAttendanceFlexPolicyGroups({ activeOnly: true }),
       supabase
         .from("attendance_policy_rules")
-        .select("policy_id,event_type,from_minutes,to_minutes,deduction_days,is_active,sort_order")
+        .select(
+          "policy_id,event_type,from_minutes,to_minutes,deduction_days,is_active,sort_order,recommended_action",
+        )
         .eq("is_active", true)
         .order("sort_order"),
       loadActiveDeviceMappedHrIds(),
@@ -84,7 +86,7 @@ export async function loadAttendancePolicyExplainer(
     return buildAttendancePolicyExplainer({
       policy,
       referenceDate: today,
-      rules: (ruleResult.data ?? []) as AttendancePolicyRuleRow[],
+      rules: (ruleResult.data ?? []) as PolicyExplainerRuleRow[],
     });
   } catch {
     return null;

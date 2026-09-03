@@ -20,12 +20,25 @@ import {
   evaluateFlexibleHoursDay,
   type AttendancePolicyRuleRow,
 } from "@/lib/attendance/flexible-hours";
-import { resolvePolicyAttendanceStatus } from "@/lib/attendance/metrics";
+import {
+  resolvePolicyAttendanceStatus,
+  type AttendancePolicyRuleSelectionInput,
+} from "@/lib/attendance/metrics";
 import type { AttendanceFlexPolicyGroupDbRow } from "@/lib/attendance/policy-groups";
 import { formatAttendanceWorkingWeekdays } from "@/lib/attendance/work-schedule";
 
 /** Which engine settles this policy — the two differ enough to need different examples. */
 export type AttendancePolicyModel = "flexible" | "grace";
+
+/**
+ * A rule row as this file needs it: the union of what BOTH engines demand.
+ *
+ * `policy_id` is what the flexible engine's bracket builder scopes on; `recommended_action`
+ * is required by the grace engine's rule selection. Either type alone compiles against one
+ * engine and fails the other, and the half that fails is the two legacy grace policies —
+ * i.e. exactly the employees a narrower type would quietly stop describing.
+ */
+export type PolicyExplainerRuleRow = AttendancePolicyRuleRow & AttendancePolicyRuleSelectionInput;
 
 export type PolicyExplainerRow = {
   clockIn: string;
@@ -104,7 +117,7 @@ function formatBracketRange(fromMinutes: number, toMinutes: number | null): stri
 }
 
 function toBrackets(
-  rules: AttendancePolicyRuleRow[],
+  rules: PolicyExplainerRuleRow[],
   policyId: number,
   eventType: string,
 ): PolicyExplainerBracket[] {
@@ -119,7 +132,7 @@ function toBrackets(
  * returns 0 for it. That dead zone is real policy an employee should be told about
  * rather than discover.
  */
-function freeMinutesBelowFirstBracket(rules: AttendancePolicyRuleRow[], policyId: number): number {
+function freeMinutesBelowFirstBracket(rules: PolicyExplainerRuleRow[], policyId: number): number {
   const brackets = bracketsForEventType(rules, policyId, "late");
   if (brackets.length === 0) return 0;
   return Math.max(0, brackets[0].fromMinutes - 1);
@@ -144,7 +157,7 @@ function flexibleRows(input: {
   ceilingMinutes: number;
   policy: AttendanceFlexPolicyGroupDbRow;
   requiredMinutes: number;
-  rules: AttendancePolicyRuleRow[];
+  rules: PolicyExplainerRuleRow[];
   startMinutes: number;
 }): PolicyExplainerRow[] {
   const { ceilingMinutes, policy, requiredMinutes, rules, startMinutes } = input;
@@ -223,7 +236,7 @@ function graceRows(input: {
   graceMinutes: number;
   policy: AttendanceFlexPolicyGroupDbRow;
   referenceDate: string;
-  rules: AttendancePolicyRuleRow[];
+  rules: PolicyExplainerRuleRow[];
   startMinutes: number;
 }): PolicyExplainerRow[] {
   const { endMinutes, graceMinutes, policy, referenceDate, rules, startMinutes } = input;
@@ -286,7 +299,7 @@ export function buildAttendancePolicyExplainer(input: {
   policy: AttendanceFlexPolicyGroupDbRow | null | undefined;
   /** Only affects money, which this card never shows — but the grace engine requires it. */
   referenceDate: string;
-  rules: AttendancePolicyRuleRow[];
+  rules: PolicyExplainerRuleRow[];
 }): AttendancePolicyExplainer | null {
   const { policy, referenceDate, rules } = input;
   if (!policy) return null;
