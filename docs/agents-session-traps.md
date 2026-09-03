@@ -312,6 +312,38 @@ file holding the full account, under
 - **Migration timestamps COLLIDE across parallel branches**, and **the ledger version never matches the
   filename.** `migration-timestamp-collides-across-parallel-branches` ·
   `migration-ledger-version-never-matches-the-filename`
+
+  **Ask the ledger by NAME, never by the filename's timestamp — and a rename cannot desync it.**
+  Measured on production 2026-09-03 over the twelve most recent migration files: **one**
+  (`ats_whatsapp_question_prompts`) has no `supabase_migrations.schema_migrations` row at all and is
+  genuinely unapplied; the other **eleven** are applied, and of those exactly **one**
+  (`honour_manual_direct_areas`) carries a `version` equal to its filename prefix while the other
+  **ten** carry a different number. So the version is stamped when the migration is applied, not
+  taken from the filename, and a lookup keyed on the filename prefix answers *not applied* for **ten
+  of the eleven** migrations that are in fact applied. That single wrong reading is the whole trap.
+
+  It follows that **re-stamping a colliding migration's timestamp is safe whether or not it has been
+  applied**: the ledger row is found by `name`, the rename changes only the digits in front of it,
+  and the filename prefix was never in the ledger to begin with. Applied-vs-unapplied is simply not
+  what makes the rename safe — which matters, because reasoning from it points the wrong way in
+  both directions. ⚠ `scripts/check-migrations.mjs` carries the mirror error in its
+  `GRANDFATHERED_DUPLICATE_TIMESTAMPS` comments, which say of two already-applied duplicates that
+  "renaming either would desync migration history". **Left as-is deliberately** — grandfathering is
+  harmless and the entries are load-bearing in a required check; this note exists so the next
+  session does not inherit the reasoning.
+
+  **And the applied-state can flip UNDER a PR**, which is how the correct action came to carry a
+  wrong justification. PR #2990's message states the ledger "does NOT hold
+  `notification_role_policies_distributor_upload_overdue_key`". The exact timeline, all UTC:
+  `attendance_rule_eighth_day_precision` applied **03:01:07**; #2984 merged **03:08:38**, landing the
+  notification file; #2983 merged **03:10:47**, creating the collision; the notification migration
+  applied **03:18:00**; #2990 merged **03:23:13**. So that session read the ledger before 03:18 and
+  was **right when it looked** — the migration was applied five minutes before its own PR landed, and
+  the claim was false by the time anyone could read it in `git log`. This is the mirror of the rule
+  above it: a FILE written is not APPLIED, and equally **a migration you measured as unapplied does
+  not stay unapplied**, because nothing about a merge applies one and a human can apply it at any
+  moment. Re-read the ledger immediately before asserting applied-state in anything durable, and
+  prefer stating the reading's timestamp over stating it as a standing fact.
 - **A PostgREST `.in()` carrying several hundred ids returns ZERO rows and NO error.** The filter goes
   in the URL, so past some length the result comes back `{ data: [], error: null }` — an empty set
   indistinguishable from a true answer. On 2026-08-25 a 409-id `.in()` reported "never read: 409 of
