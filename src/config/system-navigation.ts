@@ -870,7 +870,7 @@ const adminNavigationSectionSeeds = [
   {
     id: "company-activity-report",
     items: [
-      { href: "/admin/company-activity-report", icon: Activity, label: "Activity Report", permissions: [{ resource: "leave", action: "read" }], roles: ["SFE Manager"], excludedRoles: ["Super Admin", "CEO"] },
+      { href: "/admin/company-activity-report", icon: Activity, label: "Activity Report", labelByRole: { "SFE Manager": "Company Activity Report" }, permissions: [{ resource: "leave", action: "read" }], roles: ["SFE Manager"], excludedRoles: ["Super Admin", "CEO"] },
     ],
     label: "Company Activity Report",
   },
