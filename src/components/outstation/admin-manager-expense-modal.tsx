@@ -971,7 +971,7 @@ export function AdminManagerExpenseModal({
                       target="_blank"
                     >
                       <Paperclip className="h-3.5 w-3.5 shrink-0" />
-                      <span className="truncate">{existingMeetingInvoice.name}</span>
+                      <span className="break-words">{existingMeetingInvoice.name}</span>
                     </a>
                     <button
                       className="shrink-0 text-xs font-black uppercase tracking-[0.08em] text-[#B91C1C] hover:underline"
