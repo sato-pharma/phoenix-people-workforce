@@ -148,18 +148,27 @@ export function runOrganogramGodmodeTests() {
   assert.equal(isHeadOfficeRow({ lineId: 1, lineName: "Pedia" }), false);
   assert.equal(isHeadOfficeRow({ lineId: null, lineName: null }), false);
 
-  // H-5 — only CEO / Super Admin / Finance Manager / HR Advisory / system scope
-  // may see Head Office. The other company-org roles (Marketing / Training Manager) may
-  // not, so the vacancies route strips Head Office for them exactly like the organogram.
+  // H-5 — only CEO / Super Admin / Finance Manager / HR Advisory / HR Operations /
+  // Training Manager / system scope may see Head Office. Marketing Manager may not, so the
+  // vacancies route strips Head Office for it exactly like the organogram.
   // HR Advisory was added 2026-08-25 on the owner's instruction — she recruits for
-  // Head Office and already browses the whole employee directory.
+  // Head Office and already browses the whole employee directory. Training Manager followed
+  // on 2026-09-03: he is Head Office staff himself (A-7, line_id 4), so the company chart he
+  // already held hid his own branch, and canSeeEmployee already returns true for him on every
+  // employee in the company.
   assert.equal(canAccessHeadOffice(ctx("CEO")), true);
   assert.equal(canAccessHeadOffice(ctx("Super Admin")), true);
-  assert.equal(canAccessHeadOffice(ctx("Marketing Manager", "system")), true);
   assert.equal(canAccessHeadOffice(ctx("HR Advisory")), true);
-  assert.equal(canAccessHeadOffice(ctx("Marketing Manager")), false);
-  assert.equal(canAccessHeadOffice(ctx("Training Manager")), false);
+  assert.equal(canAccessHeadOffice(ctx("Training Manager")), true);
   assert.equal(canAccessHeadOffice(ctx("National Sales Manager")), false);
+
+  // Marketing Manager is the LAST company-scope role still outside canAccessHeadOffice, which
+  // makes this pair the whole of the guard against an `access.scope === "company"` shortcut in
+  // that helper: false at the default company scope, true only when the scope is genuinely
+  // `system`. If a future change clears Marketing Manager too, another company-scope role must
+  // take its place here — otherwise the shortcut can be introduced with every assertion green.
+  assert.equal(canAccessHeadOffice(ctx("Marketing Manager")), false);
+  assert.equal(canAccessHeadOffice(ctx("Marketing Manager", "system")), true);
 
   // MD-9 — a member's node key must depend only on their identity, never on
   // their position in the input array, or a re-sorted/re-filtered render
