@@ -194,6 +194,19 @@ revoke update, delete, truncate on public.hiring_pack_document_field_history fro
 revoke update, delete, truncate on public.hiring_pack_document_field_history from authenticated;
 revoke update, delete, truncate on public.hiring_pack_document_field_history from service_role;
 
+-- Both functions above are SECURITY DEFINER, so both must give up the EXECUTE that PostgreSQL grants
+-- to PUBLIC on every new function in this schema. REVOKING FROM anon AND authenticated ALONE WOULD BE
+-- A NO-OP — both are members of PUBLIC and inherit the grant through it, which is exactly how the
+-- analytics_* overloads leaked to the anonymous key. `tests/migrations-secdef-revoke-guard.test.ts`
+-- enforces this on every migration from 20260719170000 forward, and it is what caught the omission
+-- here.
+--
+-- Nothing calls these two by name in any case: PostgreSQL refuses a direct call to a function
+-- returning `trigger`. That is an argument for the revoke being cheap, not for skipping it — the
+-- guard is a blanket rule precisely so no one has to be right about which functions are reachable.
+revoke execute on function public.hiring_pack_document_field_history_record() from public;
+revoke execute on function public.hiring_pack_document_field_history_is_append_only() from public;
+
 -- RLS on with no policies, matching the field layer it records. Every read goes through the
 -- service-role client behind assertPermission; a browser must never reach these rows directly.
 alter table public.hiring_pack_document_field_history enable row level security;
@@ -212,6 +225,13 @@ commit;
 --   select tgname from pg_trigger
 --    where tgrelid = 'public.hiring_pack_document_fields'::regclass and not tgisinternal;
 --   -- expect: hiring_pack_document_fields_history.
+--
+--   select p.proname, pg_catalog.array_to_string(p.proacl, ' | ')
+--     from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+--    where n.nspname = 'public'
+--      and p.proname like 'hiring_pack_document_field_history%';
+--   -- expect: postgres and service_role only. A bare `=X/postgres` entry would be the PUBLIC grant
+--   -- still standing, which is the leak the revokes above close.
 --
 -- All three refusals, each of which must ERROR:
 --   update public.hiring_pack_document_field_history set action = 'update';
