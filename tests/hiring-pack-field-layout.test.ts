@@ -22,6 +22,7 @@ import {
   type FieldRecord,
   type VersionFieldCount,
 } from "@/lib/hiring-pack/field-layout-store";
+import { fieldWarnings, pageSizeFor } from "@/lib/hiring-pack/field-warnings";
 import { PAPER_FIELD_BINDINGS } from "@/lib/hiring-pack/paper-fields";
 import { isHiringPackSchemaMissing } from "@/lib/hiring-pack/service";
 import type { Placement } from "@/lib/hiring-pack/render-placement";
@@ -789,6 +790,140 @@ function testTheHistoryOfAField() {
   );
 }
 
+
+/**
+ * A BOX THAT WILL NOT PRINT, AND A BOX PRINTING ON TOP OF ANOTHER.
+ *
+ * The drag clamps at zero on the top and left and has NO upper bound, while `.sheet` is
+ * `overflow: hidden`. So a box dragged past the right or bottom edge is clipped in silence: it looks
+ * placed while it is being dragged, it saves, and it prints nothing — on a government form somebody
+ * signs. It is invisible to the golden-rule scroll check too, for the same reason that check cannot
+ * see a clipped band: clipped content adds nothing to `scrollWidth`.
+ */
+function testBoxesThatWillNotPrintAreNamed() {
+  const box = (over: Partial<DocumentFieldRow> & { id: string }): DocumentFieldRow => ({
+    align: "right",
+    anchor: null,
+    defaultKey: null,
+    document: "form1",
+    h: 12,
+    hidden: false,
+    id: over.id,
+    page: 0,
+    size: 9,
+    source: { kind: "value", key: "nationalId" },
+    templateVersionId: "form1-v1",
+    updatedAt: "2026-09-04T00:00:00Z",
+    updatedByHrId: null,
+    w: 80,
+    x: 10,
+    y: 10,
+    ...over,
+  });
+
+  const name = (row: DocumentFieldRow) => `field ${row.id}`;
+
+  // Form 1 is 612.12 × 1008.12pt — the Authority's own artwork, neither A4 nor US Letter.
+  const size = pageSizeFor("form1");
+  assert.ok(size, "a page document must have a printed size to measure against");
+
+  // ── The silent one: dragged off the right-hand edge ────────────────────────────────────────
+  const offRight = fieldWarnings("form1", [box({ id: "r", x: size.width - 10, w: 80 })], name);
+  assert.equal(offRight.length, 1, "a box running past the right edge must be named");
+  assert.equal(offRight[0].kind, "off-page");
+  assert.match(offRight[0].message, /will not print/);
+  assert.match(offRight[0].message, /right/);
+
+  const offBottom = fieldWarnings("form1", [box({ id: "b", y: size.height - 4, h: 12 })], name);
+  assert.equal(offBottom[0]?.kind, "off-page", "a box running past the bottom edge must be named");
+
+  // Reachable only through the fine-tune panel's number inputs, which take a typed value as given —
+  // the drag itself clamps at zero.
+  const negative = fieldWarnings("form1", [box({ id: "n", x: -20 })], name);
+  assert.match(negative[0]?.message ?? "", /left/, "a negative coordinate is off the page too");
+
+  // A box that fits says nothing at all. A warning on a correct layout is worse than none, because
+  // it teaches the operator to scroll past the row that matters.
+  assert.deepEqual(fieldWarnings("form1", [box({ id: "ok" })], name), []);
+
+  // Exactly flush with the edge is ON the page, not off it. Half the compiled placements on a
+  // government form sit against a printed rule by design.
+  assert.deepEqual(
+    fieldWarnings("form1", [box({ id: "flush", w: 80, x: size.width - 80 })], name),
+    [],
+    "a box ending exactly at the edge is inside the page",
+  );
+
+  // ── Overlap, reported on BOTH rows ─────────────────────────────────────────────────────────
+  //
+  // A collision belongs to the PAIR. Naming it on only one of them would make the answer depend on
+  // which row the operator happened to open.
+  const collide = fieldWarnings(
+    "form1",
+    [box({ id: "a", x: 100, y: 100 }), box({ id: "b", x: 120, y: 100 })],
+    name,
+  );
+  assert.equal(collide.length, 2, "an overlap is reported on both of the boxes involved");
+  assert.deepEqual(
+    collide.map((warning) => warning.rowId).sort(),
+    ["a", "b"],
+  );
+  assert.match(collide[0].message, /field b/, "the warning names the OTHER box, not itself");
+
+  // Boxes that merely touch are not overlapping. A row of digit cells on Form 1 abuts its neighbour
+  // by design, so warning on contact would put a line under most of the table.
+  assert.deepEqual(
+    fieldWarnings("form1", [box({ id: "a", x: 100 }), box({ id: "b", x: 180 })], name),
+    [],
+    "boxes that abut are not overlapping",
+  );
+
+  // Two sides of the same paper are not the same space.
+  assert.deepEqual(
+    fieldWarnings("form1", [box({ id: "a", page: 0 }), box({ id: "b", page: 1 })], name),
+    [],
+    "boxes on different pages cannot overlap",
+  );
+
+  // A HIDDEN override renders no box at all — `mergePagePlacements` skips it outright — so it can
+  // neither fall off the page nor collide. Warning about one would send the operator looking for a
+  // box that is not there.
+  assert.deepEqual(
+    fieldWarnings(
+      "form1",
+      [box({ hidden: true, id: "a", x: 100 }), box({ id: "b", x: 120 })],
+      name,
+    ),
+    [],
+    "a hidden field renders nothing and so can neither run off the page nor overlap",
+  );
+
+  // ── The surface the check cannot examine says so, rather than reporting clean ───────────────
+  //
+  // A flow document has no page coordinates: its fields hang off a CSS anchor and land where the
+  // browser puts them, after the text above has been laid out.
+  assert.equal(pageSizeFor("contract"), null, "a flow document has no printed page size");
+  assert.deepEqual(
+    fieldWarnings("contract", [box({ document: "contract", id: "a", page: null })], name),
+    [],
+  );
+
+  // ── The one that catches the NEXT page document ────────────────────────────────────────────
+  //
+  // `pageSizeFor` and `documentSurface` answer the same question two ways, and a new page document
+  // added to the surface map but not to the size map would be UNWARNED — silently exempt from the
+  // whole check, which is exactly the state this exists to end. An exhaustive `Record` would not
+  // catch it: `ignoreBuildErrors` lets a missing key compile, build and deploy.
+  for (const document of HIRING_PACK_DOCUMENTS) {
+    const hasSize = pageSizeFor(document) !== null;
+    assert.equal(
+      hasSize,
+      documentSurface(document) === "page",
+      `${document}: a page document needs a printed size, and a flow document must not have one`,
+    );
+  }
+}
+
 export async function runHiringPackFieldLayoutTests() {
   testEveryDocumentDeclaresItsSurface();
   testAnUntouchedDocumentIsUnchanged();
@@ -809,4 +944,5 @@ export async function runHiringPackFieldLayoutTests() {
   testTheWriteValidatorRejectsEveryConstraintTheTableEnforces();
   await testCarryingALayoutForwardToANewVersion();
   testTheHistoryOfAField();
+  testBoxesThatWillNotPrintAreNamed();
 }

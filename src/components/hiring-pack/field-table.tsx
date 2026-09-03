@@ -56,6 +56,8 @@ import {
   type FieldFillRate,
 } from "@/components/hiring-pack/use-field-fill-rates";
 import type { FieldHistorySummary } from "@/lib/hiring-pack/field-layout-store";
+import { fieldWarningsByRow, type FieldWarning } from "@/lib/hiring-pack/field-warnings";
+import type { HiringPackDocument } from "@/lib/hiring-pack/types";
 
 export type FieldTableProps = {
   busy: boolean;
@@ -67,6 +69,8 @@ export type FieldTableProps = {
    * not have the table yet.
    */
   changed: Readonly<Record<string, FieldHistorySummary>>;
+  /** Which paper this is — the geometry warnings are measured against its printed page size. */
+  document: HiringPackDocument;
   /** Every field this template can print, as the server measured it against this employee. */
   entries: readonly DocumentFieldInventoryEntry[];
   error: string | null;
@@ -208,6 +212,30 @@ function ChangedNote({
   );
 }
 
+/**
+ * "Outside the page — this will not print", and "Overlaps Employee name".
+ *
+ * AMBER AND NOT RED, because neither is an error. An overlap is often deliberate and an off-page box
+ * is a mistake the operator is about to fix — this is the screen telling them where to look, not a
+ * refusal. Nothing here blocks a save.
+ */
+function WarningNotes({ warnings }: { warnings: readonly FieldWarning[] | undefined }) {
+  if (!warnings || warnings.length === 0) return null;
+  return (
+    <ul className="mt-1 space-y-0.5">
+      {warnings.map((warning) => (
+        <li
+          className="flex items-start gap-1 text-phx-2xs font-semibold text-amber-700"
+          key={`${warning.kind}:${warning.message}`}
+        >
+          <AlertTriangle className="mt-px h-3 w-3 shrink-0" />
+          <span className="break-words">{warning.message}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 /** A recorded instant, in Cairo local time — never raw UTC. See `ChangedNote`. */
 function formatChangeStamp(iso: string): string {
   const parsed = new Date(iso);
@@ -252,6 +280,7 @@ function FillRateNote({ rate, roster }: { rate: FieldFillRate | null; roster: nu
 export function FieldTable({
   busy,
   changed,
+  document,
   entries,
   error,
   loading,
@@ -302,6 +331,37 @@ export function FieldTable({
 
   /** Fields the operator added, which are rows in their own right rather than rules over a default. */
   const added = useMemo(() => rows.filter((row) => row.defaultKey === null), [rows]);
+
+  /**
+   * Boxes that will not print, and boxes printing on top of each other.
+   *
+   * ─────────────────────────────────────────────────────────────────────────────────────────
+   * A box dragged past the right or bottom edge is CLIPPED IN SILENCE: the drag clamps at zero on
+   * the top and left and has no upper bound, and `.sheet` is `overflow: hidden`. It looks placed
+   * while it is being dragged, it saves, and it prints nothing — on a government form somebody
+   * signs. This is the only thing on any screen that says so.
+   *
+   * NAMED, NEVER BLOCKED. Overlapping boxes are legitimate: one of a pair is often hidden or empty
+   * for most people, which is exactly how two alternative spellings of a line share one space.
+   *
+   * The label is resolved HERE because this component is the only place that knows what the
+   * operator calls a field — the template's own English label where there is one, the humanised
+   * key otherwise, and a description of the box for a field somebody added and never named.
+   */
+  const warnings = useMemo(() => {
+    const labelOf = (row: DocumentFieldRow) => {
+      if (row.defaultKey !== null) {
+        const entry = entries.find((candidate) => candidate.key === row.defaultKey);
+        return entry?.labelEn ?? humaniseKey(row.defaultKey);
+      }
+      if (row.source.kind === "value") return humaniseKey(row.source.key);
+      // NOT SHORTENED. Truncating here would be the quiet kind: the warning names the box you have
+      // to go and find, and half its text names it half as well. The message wraps instead.
+      const text = row.source.text.trim();
+      return text === "" ? "a field you added" : `“${text}”`;
+    };
+    return fieldWarningsByRow(document, rows, labelOf);
+  }, [document, entries, rows]);
 
   /**
    * WHAT HAS BEEN REWRITTEN FOR EVERYONE, counted before anything is filtered away.
@@ -695,6 +755,7 @@ export function FieldTable({
                         onOpen={() => onOpenHistory(override)}
                         summary={changed[override.id]}
                       />
+                      <WarningNotes warnings={warnings[override.id]} />
                     </div>
                   ) : null}
                 </div>
@@ -944,6 +1005,7 @@ export function FieldTable({
                     </p>
                     <div>
                       <ChangedNote onOpen={() => onOpenHistory(row)} summary={changed[row.id]} />
+                      <WarningNotes warnings={warnings[row.id]} />
                     </div>
                   </div>
 

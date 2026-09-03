@@ -112,6 +112,14 @@ function applyLayoutClasses(doc: Document, layoutOn: boolean, addOn: boolean): v
  *  zoom transform — that scales the ELEMENT from outside, not the page rendered inside it — so this
  *  ratio is the whole conversion between a pointer delta and a point delta. No zoom factor belongs
  *  anywhere in it. */
+/**
+ * How long the arrow keys must be still before a nudge is written.
+ *
+ * A held key repeats about thirty times a second. Long enough that walking a box across the page
+ * writes once; short enough that letting go and reaching for the mouse does not outrun it.
+ */
+const NUDGE_SAVE_MS = 500;
+
 const PT_PER_PX = 0.75;
 
 /**
@@ -716,7 +724,7 @@ export function HiringPackPaperEditor({
    * for a typed value: nothing here is ever patched onto the screen optimistically.
    */
   const commitLayoutField = useCallback(
-    async (write: PendingWrite) => {
+    async (write: PendingWrite, options?: { keepPage?: boolean }): Promise<DocumentFieldRow | null> => {
       setLayoutBusy(true);
       setFieldsError(null);
       try {
@@ -729,16 +737,27 @@ export function HiringPackPaperEditor({
           headers: { "Content-Type": "application/json" },
           method: "POST",
         });
-        const body = (await response.json().catch(() => null)) as { message?: string } | null;
+        const body = (await response.json().catch(() => null)) as {
+          message?: string;
+          field?: DocumentFieldRow;
+        } | null;
         if (!response.ok) {
           throw new Error(body?.message ?? `Could not save the field (${response.status}).`);
         }
-        setLayoutSelection(null);
         setNotice("Layout saved.");
         await loadFields();
-        setReloadToken((token) => token + 1);
+        // `keepPage` leaves the document exactly as it stands. Only the arrow-key nudge asks for it,
+        // and only because the reload is what breaks it: see `onLayoutKeyDown`. Every other caller
+        // rebuilds, which is right for them — a drag has already been let go of, and hiding, adding
+        // or deleting a field changes what the page contains rather than only where one box sits.
+        if (!options?.keepPage) {
+          setLayoutSelection(null);
+          setReloadToken((token) => token + 1);
+        }
+        return body?.field ?? null;
       } catch (cause) {
         setFieldsError(cause instanceof Error ? cause.message : "Could not save the field.");
+        return null;
       } finally {
         setLayoutBusy(false);
       }
@@ -980,6 +999,14 @@ export function HiringPackPaperEditor({
     }
   };
 
+  /**
+   * The nudge handler, through a ref for the same reason `commitLayoutField` is: `enhance` attaches
+   * it to the framed document ONCE per page load, and a listener captured then would otherwise be
+   * the version of the function that existed at load — holding the copies count and surface the
+   * document had before any of them could change.
+   */
+  const onLayoutKeyDownRef = useRef<(event: KeyboardEvent) => void>(() => {});
+
   const commitLayoutFieldRef = useRef(commitLayoutField);
 
   /**
@@ -1193,6 +1220,15 @@ export function HiringPackPaperEditor({
     if (!doc.body.dataset.hpLayoutWired) {
       doc.body.dataset.hpLayoutWired = "1";
       doc.addEventListener("pointerdown", onLayoutPointerDown, true);
+      // Arrow-key nudging. On the FRAMED document because that is where focus sits after a box is
+      // clicked — the parent gets its own listener below, for when focus has moved to the panel.
+      //
+      // THROUGH A WRAPPER, NOT `onLayoutKeyDownRef.current` DIRECTLY. This block runs once per page
+      // load, and passing the ref's value would register whatever it held AT THAT MOMENT — the
+      // do-nothing placeholder, since the effect that fills it has not run yet. Arrow keys would
+      // then do nothing at all, on a page that looks entirely wired. Reading the ref inside the
+      // wrapper defers the lookup to the keypress.
+      doc.addEventListener("keydown", (event) => onLayoutKeyDownRef.current(event));
       doc.addEventListener(
         "click",
         (event) => {
@@ -1301,6 +1337,157 @@ export function HiringPackPaperEditor({
       applyFreeEdit(doc, next);
       applyLayoutClasses(doc, layoutModeRef.current, addModeRef.current);
     }
+  }, []);
+
+
+  /**
+   * Arrow keys move the selected box: 1pt a press, 10pt with Shift.
+   *
+   * ─────────────────────────────────────────────────────────────────────────────────────────────
+   * SPEED RATHER THAN CAPABILITY, and worth saying so plainly: the fine-tune panel below already
+   * takes exact X, Y, width and height in points, so nothing here is otherwise unreachable. But
+   * nudging a point at a time while watching the paper is a different activity from typing a number
+   * and re-reading the page, and on Form 1 — whose boxes are the government's own printed cells — a
+   * single point is the difference between a digit sitting in its cell and sitting on the line.
+   *
+   * IT MOVES THE ELEMENT FIRST AND SAVES AFTERWARDS, exactly as a drag does. The box follows the key
+   * immediately; `buildSelectionFromElement` then reads the geometry back off the live element, so a
+   * nudge and a drag produce the identical write and neither can disagree with the other about where
+   * a field ended up.
+   *
+   * THE SAVE IS DEBOUNCED, which is the whole reason this is not three lines. A held arrow key
+   * repeats about thirty times a second; committing per press would be a round trip per repeat, and
+   * they would land out of order — the field's final position decided by whichever POST the network
+   * happened to deliver last. One write, after the movement stops.
+   *
+   * AND THE SAVE DOES NOT RELOAD THE PAGE — `keepPage`. This is the difference between the feature
+   * working and appearing to work, and it was found by measuring rather than by reading: every
+   * other save rebuilds the framed document, which discards `data-hp-selected` with the rest of the
+   * DOM. Correct for a drag, where the hand has already let go. Fatal here, because the operator is
+   * still tapping: the box moves, settles, saves, and then every further press is silently dropped
+   * for the two or three seconds the rebuild takes, with nothing on screen to say the selection is
+   * gone. Nothing needs rebuilding anyway — the element was the SOURCE of the write, so the page
+   * already shows what was saved. The one thing the rebuild did carry is handled in `save` below.
+   *
+   * IT REFUSES TO ACT WHILE SOMETHING IS BEING TYPED INTO. The panel's own X/Y inputs are arrow-key
+   * targets in their own right, and a search box is one screen away; stealing those presses would
+   * make a number impossible to correct with the keyboard while a box happened to be selected.
+   */
+  const nudgeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** The write a pending nudge would make, so closing the editor can run it rather than lose it. */
+  const pendingNudgeRef = useRef<(() => void) | null>(null);
+  /** The nudge save currently in flight, so a following one waits for the row id it will produce. */
+  const nudgeSaveRef = useRef<Promise<void> | null>(null);
+
+  const onLayoutKeyDown = useCallback((event: KeyboardEvent) => {
+    if (!layoutModeRef.current) return;
+
+    const step = event.key === "ArrowLeft" || event.key === "ArrowRight" ? 1 : 0;
+    const vertical = event.key === "ArrowUp" || event.key === "ArrowDown" ? 1 : 0;
+    if (step === 0 && vertical === 0) return;
+
+    // Never while typing. `isContentEditable` covers the framed document's own free-edit spans,
+    // which are the case a tag-name test alone would miss.
+    const target = event.target as HTMLElement | null;
+    const tag = target?.tagName?.toLowerCase();
+    if (tag === "input" || tag === "textarea" || tag === "select" || target?.isContentEditable) {
+      return;
+    }
+
+    const doc = frameRef.current?.contentDocument;
+    const element = doc?.querySelector<HTMLElement>("[data-hp-selected]");
+    if (!doc || !element) return;
+
+    event.preventDefault();
+
+    const amount = event.shiftKey ? 10 : 1;
+    const dx = event.key === "ArrowRight" ? amount : event.key === "ArrowLeft" ? -amount : 0;
+    const dy = event.key === "ArrowDown" ? amount : event.key === "ArrowUp" ? -amount : 0;
+
+    // Clamped at zero on the top and left, the same bound the drag applies. There is deliberately
+    // no upper bound here either: the off-page WARNING is what names a box pushed past the right or
+    // bottom edge, and a hard stop at the edge would make a box that is already outside impossible
+    // to walk back into view.
+    const left = Math.max(0, (Number.parseFloat(element.style.left) || 0) + dx);
+    const top = Math.max(0, (Number.parseFloat(element.style.top) || 0) + dy);
+    element.style.left = `${left.toFixed(2)}pt`;
+    element.style.top = `${top.toFixed(2)}pt`;
+
+    /** Read the box as it stands right now, including any row id a save has since stamped on it. */
+    const readBox = () => {
+      const rowId = element.getAttribute("data-hp-field");
+      const existing = rowId ? (fieldsRef.current.find((row) => row.id === rowId) ?? null) : null;
+      return buildSelectionFromElement(doc, element, copies, surface, existing);
+    };
+
+    const write = readBox();
+    if (!write) return;
+
+    // The panel below follows the box, so the numbers on screen are the numbers being saved.
+    setLayoutSelection(write);
+
+    const save = () => {
+      pendingNudgeRef.current = null;
+      // REBUILT AT FIRE TIME rather than reused from the press. Two things move in between, and
+      // the second is the one that matters: the box has usually been nudged again, and a save that
+      // was in flight may have just stamped this element with its new row id. `saveDocumentField`
+      // INSERTS any write carrying no id, so a press-time write would try to create a second
+      // override for a field that now has one — refused by the unique index, and presented to the
+      // operator as an unexplained save failure. The press-time write survives only as the fallback
+      // for the flush below, where the frame is being torn down and there is nothing left to read.
+      const live = (element.isConnected ? readBox() : null) ?? write;
+      const inFlight = commitLayoutFieldRef
+        .current(live, { keepPage: true })
+        .then((saved) => {
+          if (nudgeSaveRef.current === inFlight) nudgeSaveRef.current = null;
+          if (!saved || !element.isConnected) return;
+          element.setAttribute("data-hp-field", saved.id);
+        });
+      nudgeSaveRef.current = inFlight;
+    };
+    pendingNudgeRef.current = save;
+    if (nudgeTimerRef.current) clearTimeout(nudgeTimerRef.current);
+    nudgeTimerRef.current = setTimeout(() => {
+      nudgeTimerRef.current = null;
+      // NEVER TWO IN FLIGHT. The second would be built before the first had stamped its row id,
+      // which is the same insert-twice problem one step earlier.
+      const running = nudgeSaveRef.current;
+      if (running) void running.then(save);
+      else save();
+    }, NUDGE_SAVE_MS);
+  }, [copies, surface]);
+
+  /**
+   * Keep the nudge handler current, and let the arrow keys work from OUTSIDE the frame too.
+   *
+   * Two listeners for one gesture because there are two documents. Clicking a box puts focus in the
+   * framed document; reaching for the fine-tune panel below puts it in this one. A single listener
+   * on either would work until the operator touched the other half of the screen, and then stop
+   * silently — which reads as the feature being unreliable rather than as a missing listener.
+   *
+   * THE PENDING NUDGE IS FLUSHED ON THE WAY OUT, not dropped. Closing the editor within half a
+   * second of the last press would otherwise discard a move the operator watched happen on screen,
+   * and nothing would say so — the box would simply be back where it started next time.
+   */
+  useEffect(() => {
+    onLayoutKeyDownRef.current = onLayoutKeyDown;
+  });
+
+  useEffect(() => {
+    if (!layoutMode) return;
+    const handler = (event: KeyboardEvent) => onLayoutKeyDownRef.current(event);
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, [layoutMode]);
+
+  useEffect(() => {
+    return () => {
+      const pending = nudgeTimerRef.current;
+      if (!pending) return;
+      clearTimeout(pending);
+      nudgeTimerRef.current = null;
+      pendingNudgeRef.current?.();
+    };
   }, []);
 
   /** Turn layout mode on or off, on the page and in the frame, in one action. */
@@ -1634,6 +1821,7 @@ export function HiringPackPaperEditor({
               <FieldTable
                 busy={layoutBusy}
                 changed={changed}
+                document={documentKey}
                 entries={inventory}
                 error={fieldsError}
                 loading={inventoryLoading}
