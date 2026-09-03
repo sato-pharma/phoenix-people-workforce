@@ -1422,29 +1422,38 @@ const employeePortalNavigationSectionSeeds = [
       //
       // NO Medical Rep, unlike the CRM row above. This board is about the reps who report to you, so
       // a rep would reach it and see nobody — and the enforcing gate (canAccessDoctorList, in
-      // src/lib/crm/doctor-list-access.ts) does not admit the role at all. These three roles must
-      // stay in step with the portal-side half of DOCTOR_LIST_ACCESS_ROLES.
-      { href: "/employee-portals/reps-list", icon: BookUser, label: "Reps List", permissions: [{ resource: "crm_visits", action: "read" }], roles: ["District Manager", "Regional Manager", "National Sales Manager"] },
+      // src/lib/crm/doctor-list-roles.ts) does not admit the role at all.
+      //
+      // DOCTOR_LIST_PORTAL_ROLES verbatim, and it must stay that way — tests/reps-list.test.ts pins
+      // the two lists equal. Widened 2026-09-03 from three seats to seven, on the owner's
+      // instruction to show the rep list, the plans and the KPIs to the marketing and field-support
+      // seats. Widening it here grants nothing on its own: getDoctorListScope decides whose reps
+      // each viewer sees and getRepsListBoard applies it to the cascade before it derives an option,
+      // so the picker is never wider than the viewer.
+      { href: "/employee-portals/reps-list", icon: BookUser, label: "Reps List", permissions: [{ resource: "crm_visits", action: "read" }], roles: ["National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager", "Training Manager", "Regional Manager", "District Manager"] },
       // KPIs — THE 2026-08-28 REBUILD. Doctor Coverage stood here until the owner retired it that
       // day with "rebuild from the beginning"; this is the entry that comes back in its place, and
       // the drift check retired with it comes back too (tests/doctor-coverage-scope.test.ts).
       //
-      // The role list is DOCTOR_COVERAGE_PORTAL_ROLES verbatim and must stay that way — the same
-      // seven portal-mode roles the retired board offered. Super Admin, CEO and SFE Manager are
-      // absent because they are admin-mode and land on /admin/kpis instead. Widening this list here
-      // grants nothing: getDoctorCoverageScope inside getKpisBoard decides whose reps each viewer
-      // sees, and it is asked on every load.
-      { href: "/employee-portals/kpis", icon: TrendingUp, label: "KPIs", permissions: [{ resource: "crm_visits", action: "read" }], roles: ["Medical Rep", "District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager"] },
+      // The role list is DOCTOR_COVERAGE_PORTAL_ROLES verbatim and must stay that way — the seven
+      // portal-mode roles the retired board offered, plus Training Manager, added 2026-09-03 with
+      // the owner's instruction to show the rep list, the plans and the KPIs to the marketing and
+      // field-support seats. Super Admin, CEO and SFE Manager are absent because they are admin-mode
+      // and land on /admin/kpis instead. Widening this list here grants nothing: getDoctorCoverageScope
+      // inside getKpisBoard decides whose reps each viewer sees, and it is asked on every load.
+      { href: "/employee-portals/kpis", icon: TrendingUp, label: "KPIs", permissions: [{ resource: "crm_visits", action: "read" }], roles: ["Medical Rep", "District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager", "Training Manager"] },
       // Reps Plans — the portal twin of /admin/reps-plans, added 2026-09-03 when the board was
       // widened past Super Admin. THE TWIN IS THE POINT: these two seats are portal-mode, and
       // app/(admin)/layout.tsx redirects them out of the admin shell before that page's own gate
       // could run, so widening the admin role list alone would have been inert.
       //
       // REPS_PLANS_PORTAL_ROLES verbatim (src/lib/crm/reps-plans-access.ts), which with
-      // crm_visits:read is the enforcing gate. Narrower than KPIs directly above on purpose: this
-      // board is a performance judgement on named individuals, so it goes to the two seats that
-      // supervise one — an NSM resolves to a whole line, which is a league table nobody asked for.
-      { href: "/employee-portals/reps-plans", icon: Footprints, label: "Reps Plans", permissions: [{ resource: "crm_visits", action: "read" }], roles: ["Regional Manager", "District Manager"] },
+      // crm_visits:read is the enforcing gate. Widened 2026-09-03 from the two manager seats to six,
+      // on the owner's instruction to show the rep list, the plans and the KPIs to the marketing and
+      // field-support seats. It is now one seat SHORT of KPIs directly above rather than four: the
+      // National Sales Manager is still absent, which the note in reps-plans-access.ts flags as an
+      // open question for the owner rather than a rule — he was simply not one of the five roles named.
+      { href: "/employee-portals/reps-plans", icon: Footprints, label: "Reps Plans", permissions: [{ resource: "crm_visits", action: "read" }], roles: ["Regional Manager", "District Manager", "Product Manager", "Group Product Manager", "Marketing Manager", "Training Manager"] },
     ],
     label: "Sales Operations",
   },
@@ -3571,9 +3580,11 @@ export const crmPageItems: readonly AdminToolsPageItem[] = [
     roles: ["Super Admin", "CEO", "Regional Manager", "District Manager"],
   },
   {
-    // SUPER ADMIN ONLY IN THIS SHELL. The board was widened on 2026-09-03 to the Regional and
-    // District Managers who supervise the reps it scores, but both are portal seats and reach it at
-    // /employee-portals/reps-plans instead — app/(admin)/layout.tsx redirects a portal-mode viewer
+    // THE ADMIN HALF OF REPS_PLANS_ACCESS_ROLES, and only that half. The board was widened twice on
+    // 2026-09-03 — first to the Regional and District Managers who supervise the reps it scores,
+    // then to the marketing and field-support seats — and of the eight roles now admitted, only
+    // these two reach the admin shell. Every other one is portal-mode and reaches the identical
+    // board at /employee-portals/reps-plans; app/(admin)/layout.tsx redirects a portal-mode viewer
     // out of here before this page's own gate could run, so listing them on this entry would show a
     // row that redirects. ("Rep Doctor Lists", which carried the same reasoning and stood in this
     // group, was retired 2026-08-28 — see the note above.) The enforcing gate is canAccessRepsPlans
@@ -3587,7 +3598,7 @@ export const crmPageItems: readonly AdminToolsPageItem[] = [
     label: "Reps Plans",
     description:
       "The split call rate — two AM accounts and ten PM clinics per working day, reported twice: what each rep recorded, and what the check-ins prove.",
-    roles: ["Super Admin"],
+    roles: ["Super Admin", "SFE Manager"],
   },
 ] as const satisfies readonly AdminToolsPageItem[];
 

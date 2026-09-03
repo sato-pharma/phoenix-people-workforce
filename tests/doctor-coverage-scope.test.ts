@@ -58,6 +58,11 @@ export function runDoctorCoverageScopeTests() {
   // ── role → basis ──────────────────────────────────────────────────────────────────────────────
   assert.equal(doctorCoverageScopeBasisForRole("Super Admin"), "company");
   assert.equal(doctorCoverageScopeBasisForRole("Marketing Manager"), "company");
+  // Training Manager joined 2026-09-03 with the owner's instruction to show the rep list, the plans
+  // and the KPIs to the marketing and field-support seats. COMPANY, not line: he owns no line and
+  // supervises no rep, so a `line` basis would find no line on his employee row, resolve him to
+  // `none`, and render an empty board — which reads as "these reps did nothing", not as a fault.
+  assert.equal(doctorCoverageScopeBasisForRole("Training Manager"), "company");
   assert.equal(doctorCoverageScopeBasisForRole("National Sales Manager"), "line");
   assert.equal(doctorCoverageScopeBasisForRole("Product Manager"), "line");
   assert.equal(doctorCoverageScopeBasisForRole("Regional Manager"), "team");

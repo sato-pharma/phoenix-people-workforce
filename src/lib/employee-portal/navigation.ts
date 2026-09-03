@@ -2,6 +2,7 @@ import { parseRoleStrict, type PhoenixRole } from "@/lib/auth/permissions";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import { resolveJobFunctionRole } from "@/lib/employees/job-function";
 import { canSeeDoctorCoverage } from "@/lib/crm/doctor-coverage-roles";
+import { DOCTOR_LIST_PORTAL_ROLES } from "@/lib/crm/doctor-list-roles";
 import { REPS_PLANS_PORTAL_ROLES } from "@/lib/crm/reps-plans-access";
 import { canViewMarketingCoverageReport } from "@/lib/marketing-requests/coverage-report-access";
 import { isDirectOrderRequesterRole } from "@/lib/direct-orders/types";
@@ -340,21 +341,21 @@ export function resolveEmployeePortalNavVisibility(
   const hideMyPerformanceTab = hideMyPerformanceTabRoles.has(resolvedRole);
   const showTeamPerformanceTab = isDistrictManager;
   const showMedRepsPerformanceTab = isNationalSalesManager;
-  // Reps List — the portal twin of /admin/reps-list, scoped to the manager's own reps. The owner
+  // Reps List — the portal twin of /admin/reps-list, scoped to the viewer's own reach. The owner
   // asked for it on 2026-08-31: "every manager in the employee portal has a scoped reps list."
   //
-  // Mirrors the three portal-side roles in DOCTOR_LIST_ACCESS_ROLES
-  // (src/lib/crm/doctor-list-access.ts), which with crm_visits:read is the enforcing gate. Spelled
-  // out rather than imported for the same reason as isExcuseExcludedPortalRole above: that module
-  // reaches the Supabase server client through manager-scope.ts, and nothing here may.
+  // IMPORTED as of 2026-09-03, like Reps Plans and KPIs below, and no longer spelled out. It had to
+  // be spelled out while the list lived in doctor-list-access.ts, which reaches the Supabase server
+  // client through manager-scope.ts and so can never be imported here; the roles moved to
+  // doctor-list-roles.ts, which carries no server-only import for exactly this caller. That removes
+  // the second hand-maintained copy — the widening that day took the portal half from three seats to
+  // seven, which is where keeping two copies in step by hand stops being realistic.
   //
   // Deliberately NOT isDistrictManager — that predicate also admits the bare "Manager" title, which
   // the access module does not. Reusing it would show a Manager a row the page then refuses, which
-  // is the "visible row he cannot open" bug the sidebar tests exist to catch.
-  const showRepsListTab =
-    resolvedRole === "District Manager" ||
-    resolvedRole === "Regional Manager" ||
-    resolvedRole === "National Sales Manager";
+  // is the "visible row he cannot open" bug the sidebar tests exist to catch. Asking the list itself
+  // makes the two answers one answer.
+  const showRepsListTab = DOCTOR_LIST_PORTAL_ROLES.includes(resolvedRole);
   // Reps Plans — IMPORTED rather than spelled out, unlike Reps List above.
   // src/lib/crm/reps-plans-access.ts is the enforcing gate and was deliberately built free of any
   // server-only import for exactly this caller, so there is no second copy to drift out of step.
