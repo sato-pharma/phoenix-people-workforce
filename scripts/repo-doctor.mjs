@@ -104,6 +104,7 @@ import {
   memoryIndexBudgetLines,
 } from "./memory-index-budget.mjs";
 import { classifyMemoryReachability, memoryReachabilityLines } from "./memory-index-reachability.mjs";
+import { classifyBranchPr, listBranchPrs } from "./branch-pr-state.mjs";
 import { countUnpushedCommits } from "./repo-doctor-unpushed.mjs";
 import { archivePushTarget, listArchiveRefs, strandedArchives } from "./repo-doctor-archive-refs.mjs";
 
@@ -411,19 +412,11 @@ if (review.length) {
 
 // ── Retirable registered worktrees: report the commands, never run them ────────────
 const merged = [];
+/** Worktrees a PR state kept OUT of the list above, each with the reason. Printed, never silent. */
+const heldFromRetirement = [];
 for (const r of live) {
   const branch = git(["-C", r.dir, "rev-parse", "--abbrev-ref", "HEAD"]);
   if (!branch || branch === "HEAD" || branch === "main" || branch === "master") continue;
-  let pr = null;
-  try {
-    pr = execFileSync(
-      "gh",
-      ["pr", "list", "--head", branch, "--state", "merged", "--json", "number", "--jq", ".[0].number"],
-      { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 30000 },
-    ).trim();
-  } catch {
-    pr = null;
-  }
   // A retirable worktree can hold the only copy of real work in TWO independent ways, and both
   // have to be reported: uncommitted files, and commits that exist on no origin ref. This block
   // used to check only the first, so for a worktree carrying unpushed commits it printed an
@@ -445,11 +438,27 @@ for (const r of live) {
   // work already unreachable. Measured 2026-08-29 - a branch vanished inside a 2-minute window and
   // its archive survived only because the push carried the SHA rather than the name.
   const tip = git(["-C", r.dir, "rev-parse", "HEAD"]); // null = could not determine
-  if (pr) merged.push({ ...r, branch, pr, dirty, unpushed, tip });
+  // Retirability is decided from the NEWEST pull request for this branch, never from the first
+  // merged one — see scripts/branch-pr-state.mjs for the whole account. In short: this repository
+  // reuses a branch after its PR merges, so "has this branch ever had a merged PR" keeps answering
+  // yes for work that has not merged at all. `claude/vigorous-gould-7cdf82` was reported retirable
+  // off merged PR #2952 on 2026-09-03 while #2965 was OPEN on the same head and a session was
+  // editing in that folder.
+  //
+  // Anything short of "newest PR merged AND HEAD is still the commit it merged" is held back and
+  // NAMED below. A worktree that silently stops appearing reads as one that no longer exists.
+  const verdict = classifyBranchPr(listBranchPrs(branch), tip);
+  if (verdict.verdict === "retirable") {
+    merged.push({ ...r, branch, pr: verdict.pr, dirty, unpushed, tip });
+  } else if (verdict.verdict !== "none") {
+    heldFromRetirement.push(`${rel(r.dir)} (${branch}) — ${verdict.reason}`);
+  }
 }
 
 if (merged.length) {
-  console.log(`RETIRABLE worktrees (PR already merged): ${merged.length}`);
+  console.log(
+    `RETIRABLE worktrees (newest PR merged, HEAD unmoved since): ${merged.length}`,
+  );
   for (const m of merged) {
     // The warning goes on BOTH the header and the `git branch -D` line, on purpose. The header is
     // what a human skims; the branch -D line is what actually gets copied, and copying it is the
@@ -467,6 +476,11 @@ if (merged.length) {
     // this checkout only: a sweep on 2026-08-29 found 17 of 129 such archives existing nowhere
     // else at all. AGENTS.md section 2.1 is explicit that refs/backups/* on ORIGIN is the only copy
     // that survives losing this machine, so that is what gets printed here.
+    //
+    // The `else` is belt-and-braces since the gate above went PR-aware: a worktree whose tip could
+    // not be read is now held back rather than listed, because an unreadable HEAD cannot be
+    // compared against the merged head SHA. Kept anyway — this branch prints a STOP, and a check
+    // that is merely redundant costs nothing next to one that silently stopped existing.
     if (m.tip) {
       console.log(
         `    git push origin ${m.tip}:refs/backups/${m.branch}    # archive OFF-laptop FIRST - by SHA, never by name`,
@@ -490,6 +504,19 @@ if (merged.length) {
     console.log(`    node scripts/repo-doctor.mjs --fix   # then clear the husk it leaves behind`);
   }
   console.log("  Removal needs owner approval (AGENTS.md section 6) — nothing was removed.");
+  console.log("");
+}
+
+// The other half of the retirability answer, and it has to be printed. A worktree held back is one
+// that used to appear under RETIRABLE and now does not, and an unexplained disappearance reads as
+// "that folder is gone" rather than "that folder is still in play" — the same distinction the
+// --strip-idle offer below draws between "there is no cache" and "there is a great deal of it and
+// it is being protected". It is also the only place an UNKNOWN surfaces: gh unreachable on a plane
+// puts every branch here, which is correct and must be visible, because the alternative reading of
+// an empty RETIRABLE list is "nothing is retirable".
+if (heldFromRetirement.length) {
+  console.log(`NOT retirable — the newest PR says the work is still in flight: ${heldFromRetirement.length}`);
+  for (const line of heldFromRetirement) console.log(`  ${line}`);
   console.log("");
 }
 
