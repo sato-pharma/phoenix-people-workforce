@@ -218,7 +218,7 @@ policy):
    | `phoenix-notify-daily` | `36 6 * * *` | 1h | cron-job.org job `8200909` |
    | `phoenix-marketing-field-capture-nudge` | `50 6 * * *` | 1h | cron-job.org job `8348773` |
    | `phoenix-marketing-invoice-overdue-nudge` | `5 7 * * *` | 1h | cron-job.org job `8350529` |
-   | `phoenix-distributor-upload-overdue-nudge` | `20 7 * * *` | 1h | ⚠ **nothing yet** — the cron-job.org job still has to be created (see the deploy table). Until it is, the register will correctly report this job stranded from the first 7:20 AM after deploy |
+   | `phoenix-distributor-upload-overdue-nudge` | `20 7 * * *` | 1h | cron-job.org job `8375333` |
    | `phoenix-mailbox-offboarding-sweep` | `15 8 * * *` | 1h | cron-job.org job `8350624` |
    | `phoenix-process-notifications` | `*/5 * * * *` | 10m | cron-job.org job `8200914` |
    | `phoenix-background-jobs` | `0 3 * * 5` | 2h | cron-job.org job `8200915` |

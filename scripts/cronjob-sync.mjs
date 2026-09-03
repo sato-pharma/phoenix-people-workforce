@@ -115,6 +115,21 @@ const JOBS = {
     // still cuts at 30 regardless (see header).
     requestTimeout: 300,
   },
+  "distributor-upload-overdue-nudge": {
+    title: "Phoenix — distributor upload overdue nudge",
+    path: "/api/cron/distributor-upload-overdue-nudge",
+    // 07:20 Cairo, matching docs/observability.md and JOB_SCHEDULES. Offset from its neighbours in
+    // the morning block: 06:36 is the daily notification bundle, 06:50 the marketing field-capture
+    // nudge, 07:05 the marketing invoice-overdue nudge, 08:15 the mailbox offboarding sweep.
+    // Nothing else runs at :20 in this hour, so a red execution here is unambiguous about which job
+    // produced it.
+    schedule: { hours: [7], minutes: [20], mdays: [-1], months: [-1], wdays: [-1] },
+    // Two indexed reads — the active distributor list, and two periods of validated import batches
+    // — then at most one notification write per recipient, where the default audience is two roles.
+    // Nowhere near the 30s platform cut. 300 matches the rest of the account; the platform still
+    // cuts at 30 regardless (see header).
+    requestTimeout: 300,
+  },
   "reconciliation-check": {
     title: "Phoenix — nightly reconciliation harness",
     path: "/api/cron/reconciliation-check",
