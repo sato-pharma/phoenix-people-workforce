@@ -244,6 +244,7 @@ function RequestActionButtons({
   actionMessage,
   acting,
   actionError,
+  actionRequestId,
   canApprove,
   onApprove,
   onDelete,
@@ -253,6 +254,7 @@ function RequestActionButtons({
   actionError: string | null;
   actionMessage: string | null;
   acting: { action: AdminAction; id: number } | null;
+  actionRequestId: number | null;
   canApprove: boolean;
   onApprove: (request: OutstationExpenseRequest) => void;
   onDelete: (request: OutstationExpenseRequest) => void;
@@ -260,6 +262,8 @@ function RequestActionButtons({
   request: OutstationExpenseRequest;
 }) {
   const busy = acting?.id === request.id;
+  // Show the outcome once the action has SETTLED, which is exactly when `busy` goes false.
+  const settled = !busy && actionRequestId === request.id;
   const approving = busy && acting?.action === "approve";
   const deleting = busy && acting?.action === "delete";
   const rejecting = busy && acting?.action === "reject";
@@ -307,8 +311,10 @@ function RequestActionButtons({
       {request.status.includes("reject") ? (
         <p className="text-xs font-black uppercase tracking-[0.12em] text-[#B91C1C]">Rejected by admin review</p>
       ) : null}
-      {actionMessage && busy ? <p className="text-sm font-semibold text-[#047857]">{actionMessage}</p> : null}
-      {actionError && busy ? <p className="text-sm font-semibold text-[#B91C1C]">{actionError}</p> : null}
+      {actionMessage && settled ? <p className="text-sm font-semibold text-[#047857]">{actionMessage}</p> : null}
+      {actionError && settled ? (
+        <p role="alert" className="text-sm font-semibold text-[#B91C1C]">{actionError}</p>
+      ) : null}
     </div>
   );
 }
@@ -317,6 +323,7 @@ function RequestDetailsModal({
   actionError,
   actionMessage,
   acting,
+  actionRequestId,
   canApprove,
   onApprove,
   onClose,
@@ -327,6 +334,7 @@ function RequestDetailsModal({
   actionError: string | null;
   actionMessage: string | null;
   acting: { action: AdminAction; id: number } | null;
+  actionRequestId: number | null;
   canApprove: boolean;
   onApprove: (request: OutstationExpenseRequest) => void;
   onClose: () => void;
@@ -639,6 +647,7 @@ function RequestDetailsModal({
               actionError={actionError}
               actionMessage={actionMessage}
               acting={acting}
+              actionRequestId={actionRequestId}
               canApprove={canApprove}
               onApprove={onApprove}
               onDelete={onDelete}
@@ -676,6 +685,10 @@ export function OutstationRequestsAdmin({
     requests.some((request) => request.id === initialRequestId) ? initialRequestId : null,
   );
   const [acting, setActing] = useState<{ action: AdminAction; id: number } | null>(null);
+  // The request the last action ran on. `acting` is cleared in each action's finally block, so it
+  // is already null by the time the message exists — gating the in-modal message on it rendered
+  // nothing at all. This survives the clear, so the modal can say what happened.
+  const [actionRequestId, setActionRequestId] = useState<number | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [managerExpenseModal, setManagerExpenseModal] = useState<
@@ -849,6 +862,7 @@ export function OutstationRequestsAdmin({
 
   async function approveRequest(selectedRequest: OutstationExpenseRequest) {
     setActing({ action: "approve", id: selectedRequest.id });
+    setActionRequestId(selectedRequest.id);
     setActionError(null);
     setActionMessage(null);
     try {
@@ -879,6 +893,7 @@ export function OutstationRequestsAdmin({
     }
 
     setActing({ action: "reject", id: request.id });
+    setActionRequestId(request.id);
     setActionError(null);
     setActionMessage(null);
     try {
@@ -907,6 +922,7 @@ export function OutstationRequestsAdmin({
     if (!confirmed) return;
 
     setActing({ action: "delete", id: request.id });
+    setActionRequestId(request.id);
     setActionError(null);
     setActionMessage(null);
     try {
@@ -1260,13 +1276,16 @@ export function OutstationRequestsAdmin({
         </Card>
       </div>
 
+      {/* The details modal is `fixed inset-0 z-[200]`, portalled to document.body. At z-40 this
+          toast painted behind its backdrop, so an action taken from inside the modal — which is
+          the ONLY place the approve button lives — reported nothing at all when it failed. */}
       {actionMessage && !acting ? (
-        <div className="fixed bottom-4 right-4 z-40 max-w-md rounded-md border border-[#A7F3D0] bg-[#ECFDF5] px-4 py-3 text-sm font-semibold text-[#047857] shadow-xl">
+        <div className="fixed bottom-4 right-4 z-[300] max-w-md rounded-md border border-[#A7F3D0] bg-[#ECFDF5] px-4 py-3 text-sm font-semibold text-[#047857] shadow-xl">
           {actionMessage}
         </div>
       ) : null}
       {actionError && !acting ? (
-        <div className="fixed bottom-4 right-4 z-40 max-w-md rounded-md border border-[#FECACA] bg-[#FEF2F2] px-4 py-3 text-sm font-semibold text-[#B91C1C] shadow-xl">
+        <div role="alert" className="fixed bottom-4 right-4 z-[300] max-w-md rounded-md border border-[#FECACA] bg-[#FEF2F2] px-4 py-3 text-sm font-semibold text-[#B91C1C] shadow-xl">
           {actionError}
         </div>
       ) : null}
@@ -1275,6 +1294,7 @@ export function OutstationRequestsAdmin({
           actionError={actionError}
           actionMessage={actionMessage}
           acting={acting}
+          actionRequestId={actionRequestId}
           canApprove={canApprove}
           onApprove={(request) => void approveRequest(request)}
           onClose={() => setDetailRequestId(null)}
