@@ -2702,7 +2702,7 @@ function CandidateActionsControl({
         // Truncated, with the whole sentence on hover: the column is a fixed 220px, and a manager
         // with a long name must not be what pushes the table back into horizontal scroll.
         <div className="space-y-0.5">
-          <p className="truncate text-phx-xs text-slate-500" title={`Sent to ${notified.name} on ${cairoDateTime(notified.sentAt)}`}>
+          <p className="break-words text-phx-xs text-slate-500" title={`Sent to ${notified.name} on ${cairoDateTime(notified.sentAt)}`}>
             Sent to {notified.name} on {cairoDateTime(notified.sentAt)}
           </p>
           {/* The seat, on its own line rather than appended to the one above — the cell is 220px
@@ -2710,7 +2710,7 @@ function CandidateActionsControl({
               is the SENT-TIME seat, not a live lookup: a manager who moves area next month did not
               retroactively move the CVs that were sent to their old one. */}
           {managerSeatLabel(notified) ? (
-            <p className="truncate text-phx-xs font-medium text-slate-400" title={managerSeatLabel(notified)}>
+            <p className="break-words text-phx-xs font-medium text-slate-400" title={managerSeatLabel(notified)}>
               {managerSeatLabel(notified)}
             </p>
           ) : null}
@@ -4342,7 +4342,7 @@ function CandidatesTab({
                       <td className="px-3 py-2.5">
                         <div className="flex min-w-0 items-center gap-1.5">
                           <span
-                            className="min-w-0 truncate font-semibold text-phx-ink"
+                            className="min-w-0 break-words font-semibold text-phx-ink"
                             title={candidate.fullName}
                           >
                             {displayName}
@@ -4375,7 +4375,7 @@ function CandidatesTab({
                             nearly every row, so it carried no information, and it cost a third
                             line of height on all 555 of them (75px → 59px without it). The stored
                             envelope is still the name's hover text, which is where it belongs. */}
-                        <div className="mt-0.5 truncate text-phx-xs text-slate-500" title={contact || undefined}>
+                        <div className="mt-0.5 break-words text-phx-xs text-slate-500" title={contact || undefined}>
                           {contact || <span className="text-slate-300">No contact details</span>}
                         </div>
                       </td>
@@ -4398,7 +4398,7 @@ function CandidatesTab({
                       <td className="px-3 py-2.5">
                         {facts.roleTitle ? (
                           <span
-                            className={`block truncate ${facts.roleTitle.confirmed ? "text-slate-900" : "italic text-slate-500"}`}
+                            className={`block break-words ${facts.roleTitle.confirmed ? "text-slate-900" : "italic text-slate-500"}`}
                             title={
                               facts.roleTitle.confirmed
                                 ? `Their current job title, as recorded.\n${facts.roleTitle.value}`
@@ -4409,7 +4409,7 @@ function CandidatesTab({
                           </span>
                         ) : appliedFor.text ? (
                           <span
-                            className={`block truncate ${appliedFor.source === "stated" ? "text-slate-900" : "italic text-slate-500"}`}
+                            className={`block break-words ${appliedFor.source === "stated" ? "text-slate-900" : "italic text-slate-500"}`}
                             title={
                               appliedFor.source === "stated"
                                 ? [candidate.appliedForJobTitle, candidate.appliedForEvidence].filter(Boolean).join("\n")
@@ -4424,7 +4424,7 @@ function CandidatesTab({
                             reads "Medical Representative" is another line that says nothing, which
                             is the exact fault this rebuild exists to fix. */}
                         {roleFamily && !roleTitleAlreadySaysFamily ? (
-                          <div className="mt-0.5 truncate text-phx-xs font-semibold uppercase tracking-[0.06em] text-slate-400">
+                          <div className="mt-0.5 break-words text-phx-xs font-semibold uppercase tracking-[0.06em] text-slate-400">
                             {candidateRoleFamilyLabels[roleFamily]}
                           </div>
                         ) : null}
@@ -4439,7 +4439,8 @@ function CandidatesTab({
                             this is the cell whose emptiness raises the question: a certificate
                             yields no job title, so the reader is already staring at this blank
                             space asking why. It is also the widest column, where the 332px
-                            Candidate cell would have squeezed a name that already truncates. */}
+                            Candidate cell would have squeezed the name — which since 2026-09-03
+                            wraps rather than truncating, so it needs that width more, not less. */}
                         {isNotACv(candidate) ? (
                           <div className={facts.roleTitle || appliedFor.text ? "mt-0.5" : undefined}>
                             <StagePill tone="amber">
@@ -4458,7 +4459,7 @@ function CandidatesTab({
                       <td className="px-3 py-2.5">
                         {facts.region ? (
                           <span
-                            className={`block truncate font-semibold ${facts.region.confirmed ? "text-slate-800" : "italic font-normal text-slate-500"}`}
+                            className={`block break-words font-semibold ${facts.region.confirmed ? "text-slate-800" : "italic font-normal text-slate-500"}`}
                             title={
                               facts.region.value.declared
                                 ? `The applicant chose this themselves when they applied on WhatsApp.${
@@ -4477,14 +4478,15 @@ function CandidatesTab({
                             the only line on this row the applicant wrote himself. The governorate is
                             not lost — it moves into the tooltip.
 
-                            ONE element, not a branch into two, and that is the no-ellipsis ratchet
-                            rather than a style preference: this second line already truncates, and
-                            two sibling elements each carrying the class would count as two sites and
-                            raise a baseline that is only ever allowed to fall. Choosing the CONTENT
-                            of the existing line leaves the count where it was. */}
+                            ONE element, not a branch into two. That began as a no-ellipsis ratchet
+                            argument — two sibling elements each carrying the class would have counted
+                            as two sites — and since 2026-09-03 this line wraps instead of truncating,
+                            so the ratchet no longer decides it. The choice stands on its own: the two
+                            are alternative answers to one question, not facts to stack, and a second
+                            line would add height to every row to repeat what the tooltip says. */}
                         {facts.area || facts.governorate ? (
                           <div
-                            className={`mt-0.5 truncate text-phx-xs ${facts.area ? "text-slate-600" : "text-slate-500"}`}
+                            className={`mt-0.5 break-words text-phx-xs ${facts.area ? "text-slate-600" : "text-slate-500"}`}
                             title={
                               facts.area
                                 ? `Asked to work in ${facts.area.value}.${
@@ -4655,7 +4657,7 @@ function CandidatesTab({
               <ArrowLeft className="h-3.5 w-3.5" />
               Back to the pool
             </button>
-            <p className="truncate text-xs text-slate-500" title={profile.candidate.fullName}>
+            <p className="break-words text-xs text-slate-500" title={profile.candidate.fullName}>
               {candidateDisplayName(profile.candidate.fullName)}
             </p>
           </div>
