@@ -334,6 +334,11 @@ export type OutstationExpenseRequest = {
   notes: string | null;
   offlineCaptured: boolean;
   overnightDays: number;
+  /** VESTIGIAL — do NOT read this to decide a displayed or pushed workload. Unlike the money
+   * overrides below, `report_am_workload`/`report_pm_workload` are `NOT NULL DEFAULT 0`, so they
+   * cannot express "no override was recorded", and no writer sets a meaningful one any more. Every
+   * live row carries 0 here while the resolved `amWorkload`/`pmWorkload` carry the real counts.
+   * Resolve a workload with `outstationWorkloadCount` off `amWorkload`/`pmWorkload` instead. */
   reportAmWorkload: number;
   reportHrNotes: string | null;
   reportHrStatus: string | null;
@@ -342,6 +347,7 @@ export type OutstationExpenseRequest = {
    * tell an override of 0 from an absent one. Same shape as `reportTravelCost` below. */
   reportMeetingAmount: number | null;
   reportOtherAmount: number | null;
+  /** VESTIGIAL — see `reportAmWorkload` above. */
   reportPmWorkload: number;
   reportTravelCost: number | null;
   reportTripType: string | null;
