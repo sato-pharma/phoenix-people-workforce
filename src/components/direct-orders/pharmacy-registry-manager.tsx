@@ -419,61 +419,87 @@ export function PharmacyRegistryManager({
         </section>
       ) : null}
 
-      {/* Desktop: the full table. Mobile gets the cards below. */}
-      <div className="hidden overflow-x-auto border border-slate-200 md:block">
-        <table className="w-full min-w-[1100px] border-collapse text-sm">
+      {/* Desktop: the full table. Mobile gets the cards below.
+
+          NO `min-w-[…]` FLOOR, and no `overflow-x-auto` of its own. The owner's fits-the-screen
+          golden rule names that exact pair as the bug rather than the fix, and this board was
+          living it: measured against the real shell with production's longest strings, the old
+          seven-column table wanted 1393px and scrolled sideways by 674px at 768px, 726px at
+          1024px — the worst width, because that is where the 292px sidebar appears — and still
+          486px at 1280px. Merging the columns is what fixes it; dropping the wrapper's own class
+          is cosmetic, because `.admin-shell :has(> table)` in app/globals.css re-applies
+          `overflow-x: auto` to any element directly holding a table whatever this file says. That
+          rule is a safety net for the 13 tables with no wrapper at all, and it only ever produces
+          a scrollbar when the table does not fit. This one now always does. */}
+      <div className="hidden border border-slate-200 md:block">
+        <table className="w-full table-fixed border-collapse text-sm">
+          {/* `table-fixed` + a colgroup is the shape the golden rule asks for: the table is exactly
+              as wide as its frame at every viewport, and an over-long value WRAPS instead of
+              pushing a scrollbar. The two sets both sum to 100% — percentages that fall short get
+              redistributed, which quietly undoes the proportions the moment Edit is absent. */}
+          <colgroup>
+            {(canManage ? ["26%", "24%", "22%", "18%", "10%"] : ["29%", "26%", "25%", "20%"]).map((width) => (
+              <col key={width} style={{ width }} />
+            ))}
+          </colgroup>
           <thead className="bg-slate-900 text-white">
             <tr className="text-left text-phx-xs font-black uppercase tracking-wider">
+              {/* Geography MERGED into Venue, and Orders into Status — the golden rule's own
+                  remedy. A venue's brick is part of the same answer as its name, and its order
+                  count is part of the same answer as its standing. Nothing is shortened and
+                  nothing is dropped: the ellipsis ban is untouched, and the order count carries
+                  the word "orders" now that no column heading says it. */}
               <th className="px-3 py-2">Venue</th>
-              <th className="px-3 py-2">Geography</th>
-              {/* MERGED rather than a new column: this table already carries a min-width floor, and
-                  the golden rule is that a board fits by merging columns, never by adding one more
-                  for the scrollbar to pay for. The CRM row is part of the venue's identity, so it
-                  belongs beside the doctor it names. */}
+              {/* MERGED rather than a new column: the CRM row is part of the venue's identity, so
+                  it belongs beside the doctor it names. */}
               <th className="px-3 py-2">Doctor · CRM contact</th>
               <th className="px-3 py-2">Distributor codes</th>
-              <th className="px-3 py-2">Status</th>
-              <th className="px-3 py-2">Orders</th>
+              <th className="px-3 py-2">Status · Orders</th>
               {canManage ? <th className="px-3 py-2">Edit</th> : null}
             </tr>
           </thead>
           <tbody>
             {visible.length === 0 ? (
               <tr>
-                <td colSpan={canManage ? 7 : 6} className="px-3 py-6 text-center text-slate-500">
+                <td colSpan={canManage ? 5 : 4} className="px-3 py-6 text-center text-slate-500">
                   {term ? "No venue matches that search." : "No venues registered yet."}
                 </td>
               </tr>
             ) : null}
             {visible.map((row) => (
               <tr key={row.id} className="border-b border-slate-100 align-top">
-                <td className="whitespace-nowrap px-3 py-2">
+                {/* `whitespace-nowrap` is gone from every cell in this row on purpose: under
+                    `table-fixed` a cell that cannot wrap does not widen the table, it spills out
+                    of it — and `.admin-shell` sets `overflow-x: clip`, so it would be silently
+                    CUT rather than scrolled. Wrapping is the golden rule's permitted answer, and
+                    `break-words` covers the one thing wrapping cannot: an unbroken token such as
+                    a Phoenix code or a customer code. */}
+                <td className="break-words px-3 py-2">
                   <div className="font-semibold text-slate-800">{row.pharmacyName}</div>
                   <div className="text-phx-xs text-slate-400">{row.phoenixPharmacyCode}</div>
-                </td>
-                <td className="whitespace-nowrap px-3 py-2 text-phx-sm text-slate-600">
-                  <div>{row.brickName ?? "—"}</div>
-                  <div className="text-phx-xs text-slate-400">
-                    {row.areaName ?? "—"} · {row.regionName ?? "—"}
+                  {/* Geography, merged in — the same brick · area · region line the mobile card
+                      below already shows, so the two surfaces now read identically. */}
+                  <div className="mt-0.5 text-phx-xs text-slate-500">
+                    {row.brickName ?? "—"} · {row.areaName ?? "—"} · {row.regionName ?? "—"}
                   </div>
                 </td>
-                <td className="px-3 py-2 text-phx-sm text-slate-600">
-                  <div className="whitespace-nowrap">{row.doctorName ?? "—"}</div>
+                <td className="break-words px-3 py-2 text-phx-sm text-slate-600">
+                  <div>{row.doctorName ?? "—"}</div>
                   <CrmContactLine row={row} />
                 </td>
-                <td className="px-3 py-2 text-phx-sm text-slate-600">
+                <td className="break-words px-3 py-2 text-phx-sm text-slate-600">
                   {row.distributorCodes.length === 0 ? (
                     <span className="font-semibold text-amber-700">No code — sales cannot be linked</span>
                   ) : (
                     row.distributorCodes.map((c, i) => (
-                      <div key={i} className="whitespace-nowrap">
+                      <div key={i}>
                         {c.distributorName}: <span className="font-semibold text-slate-800">{c.customerCode}</span>
                         {c.mappedBrickId ? null : <span className="text-amber-700"> · not in their list</span>}
                       </div>
                     ))
                   )}
                 </td>
-                <td className="whitespace-nowrap px-3 py-2">
+                <td className="break-words px-3 py-2">
                   {/* Same reason as the mobile card below: this was a two-way branch, so a rejected
                       pharmacy rendered green as "Confirmed". Tested first, deliberately. */}
                   {row.verificationStatus === "rejected" ? (
@@ -504,15 +530,19 @@ export function PharmacyRegistryManager({
                       Confirmed
                     </span>
                   )}
-                </td>
-                <td className="whitespace-nowrap px-3 py-2 text-phx-sm text-slate-600">
-                  {row.orderCount.toLocaleString("en-US")}
-                  {row.pendingOrderCount > 0 ? (
-                    <span className="text-orange-700"> · {row.pendingOrderCount} in flight</span>
-                  ) : null}
+                  {/* The order count, merged in under the standing it belongs to. It carries the
+                      word "orders" now that no column heading supplies it — a bare number under a
+                      status badge would be a riddle, and abbreviating it is what the ellipsis ban
+                      forbids. */}
+                  <div className="mt-1 text-phx-sm text-slate-600">
+                    {row.orderCount.toLocaleString("en-US")} order{row.orderCount === 1 ? "" : "s"}
+                    {row.pendingOrderCount > 0 ? (
+                      <span className="text-orange-700"> · {row.pendingOrderCount} in flight</span>
+                    ) : null}
+                  </div>
                 </td>
                 {canManage ? (
-                  <td className="whitespace-nowrap px-3 py-2">
+                  <td className="break-words px-3 py-2">
                     <button
                       type="button"
                       className="border border-slate-300 px-2 py-1 text-phx-xs font-bold text-slate-600 hover:bg-slate-50"
