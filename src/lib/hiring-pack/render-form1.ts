@@ -43,7 +43,7 @@ import { resolveNationality } from "@/lib/hiring-pack/nationality";
 // two documents, which is exactly why this must be printed duplex.
 
 /** The values every placement key resolves against. Missing keys simply print nothing. */
-function buildForm1Values(data: HiringPackData): Record<string, string> {
+export function buildForm1Values(data: HiringPackData): Record<string, string> {
   const { employee, profile, terms } = data;
   const registration = systemLegalEntity.registration;
 

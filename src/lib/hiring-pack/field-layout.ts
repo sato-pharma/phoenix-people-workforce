@@ -45,6 +45,7 @@
 //   path was recorded against is the markup it will be resolved against, permanently.
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 
+import { resolveFieldTemplate } from "@/lib/hiring-pack/field-template";
 import type { Placement } from "@/lib/hiring-pack/render-placement";
 import { escapeHtml } from "@/lib/hiring-pack/render-shared";
 import type { HiringPackDocument } from "@/lib/hiring-pack/types";
@@ -149,10 +150,25 @@ export function literalValueKey(rowId: string): string {
   return `hpLiteral:${rowId}`;
 }
 
-/** What a row actually prints, and under which values-map key it is looked up. */
-export function fieldPrintedValue(row: DocumentFieldRow): { key: string; literal: string | null } {
+/**
+ * What a row actually prints, and under which values-map key it is looked up.
+ *
+ * A literal's text is run through `resolveFieldTemplate` on the way out, so "يعمل لدى
+ * {{companyName}}" fills for this employee. Text with no placeholders comes back untouched, which
+ * is why every literal stored before templates existed still prints exactly what it printed.
+ *
+ * A NULL literal means the field prints NOTHING — one of its placeholders has no value for this
+ * employee. That is the same answer a compiled placement gives for a missing value, and it is
+ * deliberate: see the note at the top of field-template.ts about holes in the middle of sentences.
+ * `values` is optional only so a caller that wants the KEY alone need not invent a map; a caller
+ * that wants the printed TEXT must always pass one.
+ */
+export function fieldPrintedValue(
+  row: DocumentFieldRow,
+  values: Partial<Record<string, string>> = {},
+): { key: string; literal: string | null } {
   if (row.source.kind === "literal") {
-    return { key: literalValueKey(row.id), literal: row.source.text };
+    return { key: literalValueKey(row.id), literal: resolveFieldTemplate(row.source.text, values) };
   }
   return { key: row.source.key, literal: null };
 }
@@ -185,14 +201,24 @@ function movedPlacement(placement: Placement, row: DocumentFieldRow): Placement 
   // `fieldId` is the OVERRIDE row's own id, not a fact about the compiled default — it lets the
   // editor address "the row that moved this default" without a second lookup by `defaultKey`, the
   // same way an ADDED field is already addressed by `rowPlacement` above.
+  //
+  // THE ROW'S SOURCE DECIDES WHAT PRINTS, not the compiled placement's own key. Until the field
+  // table existed an override could only move or hide a default, so its source was written and
+  // never read; the table is the screen that changes what a compiled field SAYS, and it does that
+  // by pointing the override somewhere else — at another value, or at fixed text with placeholders
+  // in it. An override nobody has retyped still carries `{ kind: "value", key: <its own key> }`,
+  // which resolves right back to the compiled key, so every row stored before this reads unchanged.
+  const key = fieldPrintedValue(row).key;
+
   if (placement.kind === "tick") {
-    return { ...placement, fieldId: row.id, x: row.x, y: row.y, w: row.w, h: row.h };
+    return { ...placement, key, fieldId: row.id, x: row.x, y: row.y, w: row.w, h: row.h };
   }
   if (placement.kind === "digits") {
     const width = placement.pitch * placement.cells;
     const scale = width > 0 ? row.w / width : 1;
     return {
       ...placement,
+      key,
       fieldId: row.id,
       x: row.x,
       y: row.y,
@@ -203,6 +229,7 @@ function movedPlacement(placement: Placement, row: DocumentFieldRow): Placement 
   }
   return {
     ...placement,
+    key,
     fieldId: row.id,
     x: row.x,
     y: row.y,
@@ -236,12 +263,22 @@ export function mergePagePlacements(
   defaults: readonly Placement[],
   rows: readonly DocumentFieldRow[],
   page: number,
+  values: Partial<Record<string, string>> = {},
 ): MergedPage {
   const forPage = rows.filter((row) => row.page === page);
   const overrides = new Map<string, DocumentFieldRow>();
   for (const row of forPage) {
     if (row.defaultKey !== null) overrides.set(row.defaultKey, row);
   }
+
+  const literals: Record<string, string> = {};
+  // Both loops below need this, and it has to run for an OVERRIDE as well as an added field: since
+  // the field table an override can carry fixed text of its own, and text nobody publishes into the
+  // values map prints as a blank rather than as what the operator typed.
+  const contributeLiteral = (row: DocumentFieldRow) => {
+    const printed = fieldPrintedValue(row, values);
+    if (printed.literal !== null) literals[printed.key] = printed.literal;
+  };
 
   const placements: Placement[] = [];
   for (const placement of defaults) {
@@ -252,14 +289,13 @@ export function mergePagePlacements(
     }
     if (override.hidden) continue;
     placements.push(movedPlacement(placement, override));
+    contributeLiteral(override);
   }
 
-  const literals: Record<string, string> = {};
   for (const row of forPage) {
     if (row.defaultKey !== null || row.hidden) continue;
     placements.push(rowPlacement(row));
-    const printed = fieldPrintedValue(row);
-    if (printed.literal !== null) literals[printed.key] = printed.literal;
+    contributeLiteral(row);
   }
 
   return { placements, literals };
@@ -284,7 +320,7 @@ export function renderFlowField(
   row: DocumentFieldRow,
   values: Partial<Record<string, string>>,
 ): string {
-  const printed = fieldPrintedValue(row);
+  const printed = fieldPrintedValue(row, values);
   const text = printed.literal ?? values[printed.key] ?? "";
   if (!text) return "";
   const anchor = row.anchor;
@@ -305,11 +341,14 @@ export function renderFlowField(
  * still needs its literals resolved. One function, so a literal cannot print on a form and come out
  * blank on a contract.
  */
-export function fieldLiterals(rows: readonly DocumentFieldRow[]): Record<string, string> {
+export function fieldLiterals(
+  rows: readonly DocumentFieldRow[],
+  values: Partial<Record<string, string>> = {},
+): Record<string, string> {
   const literals: Record<string, string> = {};
   for (const row of rows) {
     if (row.hidden) continue;
-    const printed = fieldPrintedValue(row);
+    const printed = fieldPrintedValue(row, values);
     if (printed.literal !== null) literals[printed.key] = printed.literal;
   }
   return literals;
@@ -340,7 +379,7 @@ export function layeredPages(
   fields: readonly DocumentFieldRow[],
 ): LayeredPage[] {
   return pages.map((page, index) => {
-    const merged = mergePagePlacements(page.placements, fields, index + 1);
+    const merged = mergePagePlacements(page.placements, fields, index + 1, values);
     return {
       svg: page.svg,
       placements: merged.placements,

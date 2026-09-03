@@ -20,6 +20,7 @@
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 
 import { documentSurface, type DocumentFieldRow, type FlowAnchor } from "@/lib/hiring-pack/field-layout";
+import { validateFieldTemplate } from "@/lib/hiring-pack/field-template";
 import { canonicalHrIdForDisplay } from "@/lib/hr-id";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import type { HiringPackDocument } from "@/lib/hiring-pack/types";
@@ -398,6 +399,21 @@ export function parseDocumentFieldWrite(
     const text = (rawSource as { text?: unknown }).text;
     if (typeof text !== "string") {
       return { ok: false, message: "a literal field needs text (an empty string is fine)." };
+    }
+    // SHAPE ONLY, AND DELIBERATELY NOT THE KEY NAMES. A literal may carry `{{key}}` placeholders,
+    // and a half-written one — `{{employeeName}` — matches no placeholder at all, so without this it
+    // would print its own braces onto a signed document. That is refused here, where a person is
+    // present to be told.
+    //
+    // WHICH KEYS EXIST IS A PER-DOCUMENT QUESTION AND THIS FUNCTION CANNOT ANSWER IT. A page
+    // document places camelCase record keys, a flow document fills UPPER_SNAKE tokens that are not
+    // in `PAPER_FIELD_BINDINGS` at all, and checking against that table here would refuse
+    // `{{COMPANY_NAME}}` on a contract — a key that resolves perfectly. The editor checks the name
+    // against the document's own live inventory before it ever gets here; and whatever slips past
+    // both, `resolveFieldTemplate` blanks the whole field rather than printing a brace.
+    const templateError = validateFieldTemplate(text);
+    if (templateError) {
+      return { ok: false, message: templateError };
     }
     source = { kind: "literal", text };
   } else {

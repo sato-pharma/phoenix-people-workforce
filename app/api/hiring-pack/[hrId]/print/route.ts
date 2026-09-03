@@ -9,6 +9,7 @@ import {
   renderClearanceCompanyHtml,
   renderClearanceEmployeeHtml,
 } from "@/lib/hiring-pack/render-clearance";
+import { documentFieldInventory } from "@/lib/hiring-pack/document-inventory";
 import { renderContractHtml } from "@/lib/hiring-pack/render-contract";
 import {
   renderCustodyLaptopHtml,
@@ -188,6 +189,27 @@ export async function GET(request: Request, { params }: { params: Promise<{ hrId
       requestedVersion ?? currentTemplateVersion(requested).id,
     );
     const html = renderer.render(data, copies, requestedVersion, fields);
+
+    // ─────────────────────────────────────────────────────────────────────────────────────────
+    // `inventory=1` ANSWERS "WHAT FIELDS DOES THIS TEMPLATE HAVE?" — the field table's whole data
+    // source, and the reason it hangs off this route rather than a route of its own.
+    //
+    // Everything the question needs has already happened by this line: the permission check, the
+    // employee's resolved pack, the version validation, the field layer, and the document rendered
+    // exactly as it would be served. `documentFieldInventory` reads that same `html` rather than
+    // rendering a second time, so the list can never describe a document different from the one on
+    // screen — which is the failure a separate endpoint would eventually produce.
+    //
+    // RETURNED BEFORE THE PRINT STAMP, deliberately. Opening the field table is not printing, and
+    // `preview=1` exists for exactly this reason; falling through would date every document as
+    // printed the moment somebody looked at its field list.
+    // ─────────────────────────────────────────────────────────────────────────────────────────
+    if (url.searchParams.get("inventory") === "1") {
+      return NextResponse.json(
+        { fields: documentFieldInventory(requested, data, html) },
+        { headers: { "Cache-Control": "no-store, max-age=0" } },
+      );
+    }
 
     // ─────────────────────────────────────────────────────────────────────────────────────────
     // `preview=1` RETURNS THE SAME DOCUMENT AND RECORDS NOTHING.

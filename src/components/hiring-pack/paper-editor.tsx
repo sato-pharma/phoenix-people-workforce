@@ -44,11 +44,13 @@
 // for both; only what a fresh ADD records as the anchor differs between them.
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 
-import { AlertTriangle, Check, Eye, EyeOff, Loader2, Lock, Move, PencilLine, Plus, Printer, RotateCw, Trash2, X } from "lucide-react";
+import { AlertTriangle, Check, Eye, EyeOff, Loader2, Lock, MapPin, Move, PencilLine, Plus, Printer, RotateCw, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { FieldTable } from "@/components/hiring-pack/field-table";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import type { DocumentFieldInventoryEntry } from "@/lib/hiring-pack/document-inventory";
 import {
   documentSurface,
   type DocumentFieldRow,
@@ -370,6 +372,26 @@ function buildSelectionFromElement(
  * that loads when the panel opens, and the reload every mutation runs afterwards. It only fetches
  * and never touches state, which is what lets the effect keep each setState inside a callback.
  */
+/**
+ * The template's own field list, for the table.
+ *
+ * At module scope beside `fetchDocumentFields` and for the same reason: a function defined in the
+ * component body is a new function on every render, so an effect depending on it re-runs on every
+ * render, and the repair for that — setting state to break the loop — is the
+ * `react-hooks/set-state-in-effect` error this repository treats as a real defect rather than a
+ * style. Nothing here closes over a render.
+ */
+async function fetchDocumentInventory(url: string): Promise<DocumentFieldInventoryEntry[]> {
+  const response = await fetch(url);
+  const body = (await response.json().catch(() => null)) as
+    | { fields?: DocumentFieldInventoryEntry[]; message?: string }
+    | null;
+  if (!response.ok) {
+    throw new Error(body?.message ?? `Could not read this template's fields (${response.status}).`);
+  }
+  return body?.fields ?? [];
+}
+
 async function fetchDocumentFields(url: string): Promise<DocumentFieldRow[]> {
   const response = await fetch(url);
   const body = (await response.json().catch(() => null)) as
@@ -447,10 +469,45 @@ export function HiringPackPaperEditor({
   const addModeRef = useRef(false);
   const fieldsRef = useRef<DocumentFieldRow[]>([]);
 
+  /**
+   * Which half of the editor is showing: the page, for POSITION, or the table, for CONTENT.
+   *
+   * Two views of one field layer rather than two features — the owner's own division, put to him
+   * directly on 2026-09-03 and chosen in those words. Both write the same rows, so a field moved on
+   * the page and retyped in the table is still one field, and neither screen can hold a version of
+   * it the other does not see.
+   */
+  const [layoutTab, setLayoutTab] = useState<"page" | "fields">("page");
+  const [inventory, setInventory] = useState<DocumentFieldInventoryEntry[]>([]);
+  const [inventoryLoading, setInventoryLoading] = useState(false);
+
+  /**
+   * The key a new field will carry when the operator next clicks the page, or null for fixed text.
+   *
+   * A ref as well as state because `onLayoutPointerDown` is attached to the framed document once and
+   * outlives the render that armed it — the same reason `addModeRef` exists beside `addMode`. This
+   * is what the table's "Add a box" arms: the owner, 2026-09-03, "Phoenix is not showing a field
+   * where a field should be populated so I can add the field and put it here." Rather than invent
+   * coordinates for him, the table arms the key and he clicks where it goes, which is the existing
+   * add path and the one that has been used against real paper.
+   */
+  const pendingAddKeyRef = useRef<string | null>(null);
+  const [pendingAddKey, setPendingAddKey] = useState<string | null>(null);
+
   const previewUrl = useMemo(() => {
     const version = versionId ? `&version=${encodeURIComponent(versionId)}` : "";
     return `/api/hiring-pack/${encodeURIComponent(hrId)}/print?document=${documentKey}&copies=${copies}&preview=1${version}`;
   }, [copies, documentKey, hrId, versionId]);
+
+  /**
+   * The same document, answered as its field list instead of its page.
+   *
+   * Built off `previewUrl` on purpose rather than assembled again: the inventory has to describe the
+   * document in the panel, and two separately-built urls drift the first time a parameter is added
+   * to one of them. `preview=1` is already on it, so opening the field table never stamps a document
+   * as printed.
+   */
+  const inventoryUrl = `${previewUrl}&inventory=1`;
 
   /** The document the frame is meant to be showing right now. */
   const frameKey = `${previewUrl}#${reloadToken}`;
@@ -681,6 +738,38 @@ export function HiringPackPaperEditor({
     }
   }, [documentKey, documentLabel, effectiveVersionId, loadFields]);
 
+  /**
+   * Read the template's field list whenever the table is the visible half.
+   *
+   * Same shape as the field-layer read above, and for the same two reasons: every setState sits
+   * inside the promise's callback rather than in the effect body, and `live` guards the race where
+   * changing document while the table is open lets a slow reply for the OLD one land last. That
+   * failure is quiet — the rows would simply be another document's fields under this one's heading.
+   *
+   * `reloadToken` is a dependency deliberately. It is bumped after every save, and the inventory
+   * carries each field's CURRENT value, so without it the table would keep showing what a field
+   * printed before the rule that just changed it.
+   */
+  useEffect(() => {
+    if (!layoutMode || layoutTab !== "fields") return;
+    let live = true;
+    void fetchDocumentInventory(inventoryUrl).then(
+      (entries) => {
+        if (!live) return;
+        setInventory(entries);
+        setInventoryLoading(false);
+      },
+      (cause: unknown) => {
+        if (!live) return;
+        setFieldsError(cause instanceof Error ? cause.message : "Could not read this template's fields.");
+        setInventoryLoading(false);
+      },
+    );
+    return () => {
+      live = false;
+    };
+  }, [inventoryUrl, layoutMode, layoutTab, reloadToken]);
+
   const commitLayoutFieldRef = useRef(commitLayoutField);
 
   /**
@@ -771,6 +860,17 @@ export function HiringPackPaperEditor({
       event.stopPropagation();
 
       if (addModeRef.current) {
+        // What the new field will PRINT. The table arms a key when the operator asked for a box for
+        // a value the template does not place; a plain "Add field" arms nothing and gets empty text
+        // to type into. Read from the ref rather than the state for the reason at its declaration —
+        // this listener was attached once, long before the button was pressed.
+        const armed = pendingAddKeyRef.current;
+        const addedSource: DocumentFieldSource = armed
+          ? { kind: "value", key: armed }
+          : { kind: "literal", text: "" };
+        pendingAddKeyRef.current = null;
+        setPendingAddKey(null);
+
         if (surface === "page") {
           const sheetEl = target.closest(".sheet") as HTMLElement | null;
           if (!sheetEl) {
@@ -788,7 +888,7 @@ export function HiringPackPaperEditor({
             hidden: false,
             page: resolvePageFor(doc, sheetEl, copies),
             size: 9,
-            source: { kind: "literal", text: "" },
+            source: addedSource,
             w: 140,
             x: Math.max(0, xPt - 60),
             y: Math.max(0, yPt - 7),
@@ -821,7 +921,7 @@ export function HiringPackPaperEditor({
             hidden: false,
             page: null,
             size: 9,
-            source: { kind: "literal", text: "" },
+            source: addedSource,
             w: 140,
             x: 0,
             y: 0,
@@ -1002,6 +1102,9 @@ export function HiringPackPaperEditor({
       addModeRef.current = false;
       setAddMode(false);
       setLayoutSelection(null);
+      pendingAddKeyRef.current = null;
+      setPendingAddKey(null);
+      setLayoutTab("page");
     }
     const doc = frameRef.current?.contentDocument;
     if (doc) applyLayoutClasses(doc, next, addModeRef.current);
@@ -1014,8 +1117,112 @@ export function HiringPackPaperEditor({
     addModeRef.current = next;
     setAddMode(next);
     setLayoutSelection(null);
+    // Turning add mode off by hand abandons whatever the table armed. Leaving the key behind would
+    // put it on the NEXT field added, minutes later and for a different reason.
+    pendingAddKeyRef.current = null;
+    setPendingAddKey(null);
     const doc = frameRef.current?.contentDocument;
     if (doc) applyLayoutClasses(doc, layoutModeRef.current, next);
+  }, []);
+
+  // ───────────────────────────────────────────────────────────────────────────────────────────
+  // DECLARED AFTER `enhance`, AND THAT ORDER IS LOAD-BEARING. These three read the framed
+  // document out of `frameRef`, and `enhance` writes a marker onto its body to record that the
+  // layout listeners are already attached. The React compiler reads the component top to bottom:
+  // with these ABOVE `enhance`, that write becomes "modifying a value previously passed as an
+  // argument to a hook" and `react-hooks/immutability` fails the build — the same rule, and the
+  // same position in the file, as the two toggles just above. Nothing else about them changes.
+  // ───────────────────────────────────────────────────────────────────────────────────────────
+  /**
+   * Build the write for a field the template already places, by reading the box itself.
+   *
+   * The geometry is read from the LIVE element rather than remembered, because the table and the
+   * page are two views of one row: a field dragged a moment ago has coordinates the table never saw,
+   * and writing remembered ones back would silently undo the drag. Returns null when the box is not
+   * on the page — which on a page surface means its value is empty, since `renderPlacement` drops an
+   * empty placement entirely. There is nothing to override in that case; the answer is to add a box,
+   * which is what the table offers instead.
+   */
+  const writeForKey = useCallback(
+    (key: string): PendingWrite | null => {
+      const doc = frameRef.current?.contentDocument;
+      if (!doc) return null;
+      const element = doc.querySelector<HTMLElement>(`[data-hp-key="${CSS.escape(key)}"]`);
+      if (!element) return null;
+      const fieldId = element.getAttribute("data-hp-field");
+      const existing = fieldId ? (fieldsRef.current.find((row) => row.id === fieldId) ?? null) : null;
+      const write = buildSelectionFromElement(doc, element, copies, surface, existing);
+      if (!write) return null;
+      // A compiled default has no row yet, so the write that creates one must name the key it is
+      // overriding. Without `defaultKey` the row would be stored as an ADDED field sitting on top of
+      // the value it was meant to replace, and both would print.
+      return { ...write, defaultKey: existing?.defaultKey ?? key };
+    },
+    [copies, surface],
+  );
+
+  /**
+   * Save the rule for one of the template's own fields — or drop it and go back to the record.
+   *
+   * "Back to the record" restores the SOURCE and keeps everything else, rather than deleting the
+   * row: an override may also be carrying a position the operator dragged, and throwing that away
+   * because they changed their mind about the wording would move the field back under the artwork
+   * they moved it off.
+   */
+  const saveFieldRule = useCallback(
+    (entry: DocumentFieldInventoryEntry, text: string | null) => {
+      const write = writeForKey(entry.key);
+      if (!write) {
+        setFieldsError(
+          `"${entry.labelEn ?? entry.key}" prints nothing at the moment, so there is no box to change. Use "Add a box" and click where it belongs.`,
+        );
+        return;
+      }
+      void commitLayoutField({
+        ...write,
+        source: text === null ? { kind: "value", key: entry.key } : { kind: "literal", text },
+      });
+    },
+    [commitLayoutField, writeForKey],
+  );
+
+  /** Retype a field the operator added. Its geometry is already on the row, so nothing is read back. */
+  const saveRowText = useCallback(
+    (row: DocumentFieldRow, text: string) => {
+      void commitLayoutField({
+        align: row.align,
+        anchor: row.anchor,
+        defaultKey: row.defaultKey,
+        h: row.h,
+        hidden: row.hidden,
+        id: row.id,
+        page: row.page,
+        size: row.size,
+        source: { kind: "literal", text },
+        w: row.w,
+        x: row.x,
+        y: row.y,
+      });
+    },
+    [commitLayoutField],
+  );
+
+  /**
+   * Arm the page to receive a new box, carrying `key` or, for null, fixed text of its own.
+   *
+   * Switches to the page tab because the next act is a click on the paper — leaving the table up
+   * would arm a mode with nothing visible to use it on, which reads as the button doing nothing.
+   */
+  const armAddBox = useCallback((key: string | null) => {
+    pendingAddKeyRef.current = key;
+    setPendingAddKey(key);
+    addModeRef.current = true;
+    setAddMode(true);
+    setLayoutTab("page");
+    setLayoutSelection(null);
+    setFieldsError(null);
+    const doc = frameRef.current?.contentDocument;
+    if (doc) applyLayoutClasses(doc, layoutModeRef.current, true);
   }, []);
 
   /**
@@ -1169,6 +1376,63 @@ export function HiringPackPaperEditor({
 
         {layoutMode ? (
           <div className="space-y-3 rounded-2xl border border-phx-accent-line bg-phx-accent/5 p-3">
+            {/* TABLE FOR CONTENT, PAGE FOR POSITION — the owner's own division of the two jobs,
+                chosen on 2026-09-03. Both tabs write the same field-layer rows, so this is one
+                editor seen two ways rather than two editors that have to be kept in step. */}
+            <div className="flex w-full rounded-xl border border-phx-accent-line bg-white p-0.5">
+              {(["page", "fields"] as const).map((tab) => (
+                <button
+                  className={cn(
+                    "flex-1 rounded-lg px-3 py-1.5 text-phx-2xs font-semibold",
+                    layoutTab === tab
+                      ? "bg-phx-accent text-white"
+                      : "text-phx-ink-soft hover:bg-phx-accent/10",
+                  )}
+                  key={tab}
+                  onClick={() => {
+                    setLayoutTab(tab);
+                    if (tab === "fields") setInventoryLoading(true);
+                  }}
+                  type="button"
+                >
+                  {tab === "page" ? "Page — move things" : "Fields — what goes in them"}
+                </button>
+              ))}
+            </div>
+
+            {pendingAddKey ? (
+              <div className="flex items-start gap-2 rounded-xl border border-phx-accent-line bg-white px-3 py-2 text-phx-xs text-phx-ink">
+                <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-phx-accent" />
+                <span>
+                  Now click the spot on the page where{" "}
+                  <strong>{paperFieldBinding(pendingAddKey)?.labelEn ?? pendingAddKey}</strong>{" "}
+                  should print.
+                </span>
+              </div>
+            ) : null}
+
+            {layoutTab === "fields" ? (
+              <FieldTable
+                busy={layoutBusy}
+                entries={inventory}
+                error={fieldsError}
+                loading={inventoryLoading}
+                onAddBox={armAddBox}
+                onDeleteRow={(row) => {
+                  const sure = window.confirm(
+                    row.defaultKey
+                      ? "Remove this override? It returns to its default position."
+                      : "Delete this field?",
+                  );
+                  if (sure) void deleteLayoutField(row.id);
+                }}
+                onSaveRule={saveFieldRule}
+                onSaveRowText={saveRowText}
+                rows={fields}
+                surface={surface}
+              />
+            ) : (
+              <>
             <div className="flex flex-wrap items-center justify-between gap-2">
               <p className="text-phx-xs leading-relaxed text-phx-ink-soft">
                 Drag any dashed box to move it — it saves the moment you let go. Click one without
@@ -1282,6 +1546,8 @@ export function HiringPackPaperEditor({
                 ))
               )}
             </div>
+              </>
+            )}
           </div>
         ) : null}
 

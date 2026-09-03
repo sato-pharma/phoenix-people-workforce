@@ -44,7 +44,7 @@ import type { HiringPackData } from "@/lib/hiring-pack/types";
 // is not a shortcut — a serial number is checked off the back of the machine, not recalled.
 
 /** Every blank this document can fill, resolved once. */
-function buildCustodyValues(data: HiringPackData): Partial<Record<CustodyToken, string>> {
+export function buildCustodyValues(data: HiringPackData): Partial<Record<CustodyToken, string>> {
   const { employee, profile } = data;
   const recital = systemLegalEntity.contractRecital;
 

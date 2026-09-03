@@ -90,7 +90,7 @@ function formatMoney(value: number | null): string {
  * version only ever reads its own — and collapsing them would let today's wording reach a contract
  * somebody signed under the old one.
  */
-function buildContractValues(data: HiringPackData): Partial<Record<ContractToken, string>> {
+export function buildContractValues(data: HiringPackData): Partial<Record<ContractToken, string>> {
   const { employee, profile, terms } = data;
   const recital = systemLegalEntity.contractRecital;
 
