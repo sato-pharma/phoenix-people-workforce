@@ -35,6 +35,24 @@ That junction is enough for `typecheck`, `lint` and `node scripts/…`. It is **
 as a symlink out of the project root and refuses to start. Measured 2026-08-29: `--webpack` served a
 junctioned worktree fine (`Ready in 1770ms`, HMR and all).
 
+**`pnpm exec` is the same trap, and it was not covered by the original wording.** Measured
+2026-09-03 in `.claude/worktrees/clever-gauss-58b28f` with pnpm 11.13.1: `pnpm exec next dev
+--webpack --port 3000` ran the same deps-status check, tried to purge the junctioned
+`node_modules`, aborted with `ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY` and exited 1 without
+ever starting Next. The failure is shaped to mislead: the background task reported **exit code
+0** while port 3000 stayed dead, so it reads as a `preview_start` permissions or path problem
+rather than as pnpm. What works, verified in the same worktree (`✓ Ready in 1154ms`,
+`GET /api/healthz 200`):
+
+```
+node node_modules/next/dist/bin/next dev --webpack --port 3000
+```
+
+`.claude/launch.json`'s `"//"` note named the `pnpm exec` form until 2026-09-03 and now names
+this one. `scripts/dev-server.mjs` already resolves Next the same way — through the filesystem,
+not through `PATH` — so `node scripts/dev-server.mjs --port 3000` is the equivalent that also
+picks the bundler for you.
+
 ## Why the folder name matters
 
 `tsconfig.json`, `eslint.config.mjs` and `.gitignore` all exclude `_wt-*`, `.codex-worktrees/` and
