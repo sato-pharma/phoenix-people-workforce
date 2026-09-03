@@ -1,12 +1,5 @@
 ﻿import { Loader2 } from "lucide-react";
 
-import {
-  adminHeroAccentBarClassName,
-  adminHeroGlowAmberClassName,
-  adminHeroGlowOrangeClassName,
-  adminHeroGridOverlayClassName,
-  adminHeroSurfaceClassName,
-} from "@/components/admin/admin-design-tokens";
 import { Card } from "@/components/ui/card";
 import { systemIdentity } from "@/config/system-settings";
 import { cn } from "@/lib/utils";
@@ -71,25 +64,24 @@ export function AppRouteLoadingState({
   return (
     <div aria-live="polite" className="space-y-6" role="status">
       <span className="sr-only">{title}</span>
-      <section className={adminHeroSurfaceClassName}>
-        <div aria-hidden="true" className={adminHeroGridOverlayClassName} />
-        <div aria-hidden="true" className={adminHeroGlowOrangeClassName} />
-        <div aria-hidden="true" className={adminHeroGlowAmberClassName} />
-        <div aria-hidden="true" className={adminHeroAccentBarClassName} />
-        <div className="relative flex flex-col gap-4 p-5 sm:p-6 lg:p-7 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <p className="text-xs font-black uppercase tracking-[0.22em] text-orange-200">
-              {systemIdentity.appName}
-            </p>
-            <h1 className="mt-3 text-2xl font-black tracking-tight text-white">
-              {title}
-            </h1>
-            <p className="mt-2 max-w-xl text-sm leading-6 text-slate-300">
-              {description}
-            </p>
-          </div>
-          <LoadingSpinner className="h-7 w-7 text-orange-500" />
+      {/* MATCHES THE FLATTENED HEADER, and had to move with it. This was the same dark
+          `adminHeroSurfaceClassName` band the real pages carried until 2026-09-03, when the owner
+          removed it everywhere — "remove from all pages this dump block". A skeleton that still
+          painted a full black band would flash one for the whole load and then jump to a light
+          title line, which reads as a layout bug rather than as a load. */}
+      <section className="flex flex-col gap-3 border-b border-phx-line pb-4 lg:flex-row lg:items-end lg:justify-between lg:gap-6">
+        <div className="min-w-0 space-y-1.5">
+          <p className="text-[11px] font-black uppercase tracking-[0.22em] text-orange-600">
+            {systemIdentity.appName}
+          </p>
+          <h1 className="text-[1.15rem] font-black tracking-[-0.03em] text-slate-900 sm:text-[1.3rem]">
+            {title}
+          </h1>
+          <p className="max-w-3xl text-[13px] leading-5 text-slate-600">
+            {description}
+          </p>
         </div>
+        <LoadingSpinner className="h-6 w-6 shrink-0 text-orange-500" />
       </section>
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">

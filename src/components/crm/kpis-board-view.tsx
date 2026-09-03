@@ -212,42 +212,34 @@ function teamVerdict(board: KpisBoard): { headline: string; tone: KpiBand; stand
 // ── Hero and tabs ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * The command hero.
+ * The page header.
  *
- * Same shape as `PremiumHero` — slate-900 band, orange kicker, orange glow, accent strip — spelled
- * out here rather than imported because this one carries a tone-coloured standing pill that the
- * shared component has no prop for, and the owner's rule is to match the module's design identity,
- * which is what this does.
+ * NO DARK BAND. Flattened 2026-09-03 at the owner's instruction — "remove from all pages this
+ * dump block" — in step with `PremiumHero`, `AdminPageHero` and the command centres the same
+ * day. It was a hand-spelled copy of `PremiumHero`'s slate-900 band (that copy exists because of
+ * the tone-coloured standing pill, which the shared component has no prop for), so it had to be
+ * flattened here too or this one page would have kept the band every other page just lost.
+ *
+ * The standing pill keeps its own tone colours: `tone.chip` was always a light-surface class set
+ * — it sat on a dark band and looked out of place there, and reads correctly here.
  */
 function KpiHero({ board }: { board: KpisBoard }) {
   const verdict = teamVerdict(board);
   const tone = toneOf(verdict.tone);
   return (
-    <section className="relative overflow-hidden border border-slate-800 bg-slate-900 px-5 py-6 shadow-sm sm:px-8 sm:py-7">
-      {/* Decorative, and aria-hidden so a fits-the-screen measuring pass discounts them: a bleed is
-          MEANT to cross the edge, and both sit inside this section's own overflow-hidden. */}
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-orange-500/0 via-orange-400/80 to-orange-500/0"
-      />
-      <div
-        aria-hidden
-        className="pointer-events-none absolute -right-10 -top-12 h-48 w-48 rounded-full bg-orange-500/10 blur-2xl"
-      />
-      <div className="relative flex flex-wrap items-start gap-4">
-        <div className="min-w-0 flex-1">
-          <p className="text-phx-xs font-black uppercase tracking-[0.25em] text-orange-400">Field performance</p>
-          <h1 className="mt-1 text-2xl font-black leading-tight text-white sm:text-[1.9rem]">KPIs</h1>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">{verdict.headline}</p>
-          <p className="mt-2 text-phx-2xs font-semibold uppercase tracking-[0.12em] text-slate-400">
-            {board.scopeLabel} · {board.monthLabel} · {board.range.periodLabel}
-          </p>
-        </div>
-        <div className="min-w-0">
-          <div className={`border px-3 py-2 ${tone.chip}`}>
-            <p className="text-phx-3xs font-black uppercase tracking-[0.14em]">Team standing</p>
-            <p className="mt-0.5 text-sm font-black">{verdict.standing ?? KPI_BAND_LABEL[verdict.tone]}</p>
-          </div>
+    <section className="flex flex-wrap items-start justify-between gap-3 border-b border-phx-line pb-4 sm:gap-6">
+      <div className="min-w-0 flex-1 space-y-1.5">
+        <p className="text-[11px] font-black uppercase tracking-[0.22em] text-orange-600">Field performance</p>
+        <h1 className="text-[1.15rem] font-black leading-tight tracking-[-0.03em] text-slate-900 sm:text-[1.3rem]">KPIs</h1>
+        <p className="max-w-3xl text-[13px] leading-5 text-slate-600">{verdict.headline}</p>
+        <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+          {board.scopeLabel} · {board.monthLabel} · {board.range.periodLabel}
+        </p>
+      </div>
+      <div className="min-w-0">
+        <div className={`border px-3 py-2 ${tone.chip}`}>
+          <p className="text-[10px] font-black uppercase tracking-[0.14em]">Team standing</p>
+          <p className="mt-0.5 text-[13px] font-black">{verdict.standing ?? KPI_BAND_LABEL[verdict.tone]}</p>
         </div>
       </div>
     </section>

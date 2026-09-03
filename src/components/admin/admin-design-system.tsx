@@ -27,13 +27,10 @@ export {
 } from "@/components/admin/admin-design-tokens";
 import {
   adminHeroAccentBarClassName,
-  adminHeroDescriptionClassName,
   adminHeroGlowAmberClassName,
   adminHeroGlowOrangeClassName,
   adminHeroGridOverlayClassName,
-  adminHeroKickerClassName,
   adminHeroSurfaceClassName,
-  adminHeroTitleClassName,
 } from "@/components/admin/admin-design-tokens";
 
 /**
@@ -86,34 +83,55 @@ export function AdminPageHero({
   icon?: ReactNode;
   title: string;
 }) {
+  // NO DARK BAND. Stripped 2026-09-03 at the owner's instruction — "remove from all pages this
+  // dump block", after the same removal on the HR command center earlier the same day. This was
+  // an `AdminHeroFrame`: a full-bleed black gradient with four decorative layers and
+  // p-5 / sm:p-6 / lg:p-7, which spent most of the first fold restating the name of the page you
+  // had just opened. It is now a plain title line on the page's own surface.
+  //
+  // THE PROP SHAPE IS DELIBERATELY UNCHANGED, and that is the point of doing it here rather than
+  // at the call sites: 131 pages pass these props, and 37 of them pass `actions` that are real
+  // controls — an export button, a "new request" button, a period picker. Deleting the block
+  // outright would have taken those off the page with nothing at all to say so, which is the one
+  // failure mode this change must not have.
+  //
+  // AND IT NO LONGER PROVIDES DarkSurfaceContext. That context is what told Button and
+  // AdminInsightChip to style themselves legible-on-black. Kept over a white surface it paints
+  // white text on white — so if a slot here ever renders blank, that is the first thing to check,
+  // not the data behind it.
+  //
+  // `AdminHeroFrame` itself STAYS. It is still the frame for the two command centers and the
+  // employee-360 / personal-workspace identity heroes, which supply their own inner content.
   return (
-    <AdminHeroFrame>
-      <div className={cn(
-        "relative grid gap-6 p-5 sm:p-6 lg:p-7 lg:grid-cols-[minmax(0,1fr)_auto]",
-        compact && "gap-3 p-3 sm:p-4 lg:p-5",
+    <section
+      className={cn(
+        "flex flex-col gap-3 border-b border-phx-line pb-4 lg:flex-row lg:items-start lg:justify-between lg:gap-6",
+        compact && "gap-2 pb-3",
         className,
-      )}>
-        <div className="min-w-0 space-y-3">
-          <div className={adminHeroKickerClassName}>
-            {icon}
-            {eyebrow}
-          </div>
-          <div className="space-y-2">
-            <h1 className={adminHeroTitleClassName}>{title}</h1>
-            <p className={adminHeroDescriptionClassName}>{description}</p>
-          </div>
-          {actions ? <div className="flex flex-wrap items-center gap-2 pt-1">{actions}</div> : null}
-          {badges ? <div className="flex flex-wrap gap-2 pt-1 text-xs text-slate-300">{badges}</div> : null}
+      )}
+    >
+      <div className="min-w-0 space-y-1.5">
+        <div className="inline-flex w-fit items-center gap-2 text-[11px] font-black uppercase tracking-[0.22em] text-orange-600">
+          {icon}
+          {eyebrow}
         </div>
-        {aside ? <div className="min-w-0 lg:justify-self-end">{aside}</div> : null}
+        {/* Literal bracket sizes, not the named text-phx-* scale: cn() runs over the wrapper
+            above and tailwind-merge silently drops custom NAMED font sizes. */}
+        <h1 className="max-w-4xl text-[1.15rem] font-black tracking-[-0.03em] text-slate-900 sm:text-[1.3rem]">
+          {title}
+        </h1>
+        <p className="max-w-3xl text-[13px] leading-5 text-slate-600">{description}</p>
+        {badges ? (
+          <div className="flex flex-wrap gap-2 pt-0.5 text-[12px] text-slate-600">{badges}</div>
+        ) : null}
       </div>
-      {/* ZONE 3 used to render HERE, directly below the page title. It moved into AppShell's
-          frozen chrome when the owner asked for both rows to stay fixed. Do not put it back: a
-          sticky element is bounded by its containing block, so a row inside this hero unpins the
-          instant the hero scrolls off — it cannot be frozen from here at any price, whatever
-          classes it carries. The row still reaches all 67 pages that use this hero; it now reaches
-          them from the shell, in the same place as on every other page. */}
-    </AdminHeroFrame>
+      {actions || aside ? (
+        <div className="flex min-w-0 flex-wrap items-center gap-2 lg:justify-end">
+          {actions}
+          {aside}
+        </div>
+      ) : null}
+    </section>
   );
 }
 

@@ -31,20 +31,26 @@ export function RgHero({
   subtitle: string;
   title: string;
 }) {
+  // NO DARK BAND. Flattened 2026-09-03 at the owner's instruction — "remove from all pages this
+  // dump block" — in step with `PremiumHero`, `AdminPageHero`, `KpiHero` and the command
+  // centres the same day. This was a slate-950 band at px-5 py-5.
+  //
+  // `actions` is kept and still renders: the resignations workspace passes real controls here.
+  // The h1's `whitespace-nowrap` is gone with the band — a title that cannot wrap is what pushes
+  // a page into a horizontal scroll at 375px, which is the one thing the owner's fits-the-screen
+  // rule forbids outright.
   return (
-    <section className="border border-slate-900 bg-slate-950 px-5 py-5 sm:px-6">
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div className="min-w-0">
-          <span className="inline-flex items-center border border-orange-500/40 bg-orange-500/10 px-2.5 py-1 text-phx-3xs font-black uppercase tracking-[0.22em] text-orange-300">
-            {eyebrow}
-          </span>
-          <h1 className="mt-3 whitespace-nowrap text-2xl font-black tracking-tight text-white">
-            {title}
-          </h1>
-          <p className="mt-1 text-xs font-medium text-slate-400">{subtitle}</p>
-        </div>
-        {actions ? <div className="flex flex-wrap items-center gap-2">{actions}</div> : null}
+    <section className="flex flex-wrap items-end justify-between gap-3 border-b border-phx-line pb-4 sm:gap-6">
+      <div className="min-w-0 space-y-1.5">
+        <span className="inline-flex items-center text-[11px] font-black uppercase tracking-[0.22em] text-orange-600">
+          {eyebrow}
+        </span>
+        <h1 className="max-w-4xl text-[1.15rem] font-black tracking-[-0.03em] text-slate-900 sm:text-[1.3rem]">
+          {title}
+        </h1>
+        <p className="text-[13px] font-medium leading-5 text-slate-600">{subtitle}</p>
       </div>
+      {actions ? <div className="flex min-w-0 flex-wrap items-center gap-2">{actions}</div> : null}
     </section>
   );
 }

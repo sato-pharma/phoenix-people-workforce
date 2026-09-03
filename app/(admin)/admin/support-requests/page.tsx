@@ -1,11 +1,5 @@
 import { redirect } from "next/navigation";
 
-import {
-  adminHeroDescriptionClassName,
-  adminHeroKickerClassName,
-  adminHeroSurfaceClassName,
-  adminHeroTitleClassName,
-} from "@/components/admin/admin-design-tokens";
 import { SupportRequestsWorkspace } from "@/components/admin/support-requests-workspace";
 import { canAccess } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
@@ -30,15 +24,19 @@ export default async function AdminSupportRequestsPage() {
 
   return (
     <div className="space-y-6">
-      <section className={`${adminHeroSurfaceClassName} p-6 sm:p-7`}>
-        <div className="relative z-10 space-y-3">
-          <p className={adminHeroKickerClassName}>Employee Care</p>
-          <h1 className={adminHeroTitleClassName}>HR Support Requests</h1>
-          <p className={adminHeroDescriptionClassName}>
-            Review tickets opened by employees and move each one through Pending, In Progress,
-            Resolved, and Closed.
-          </p>
-        </div>
+      {/* No dark band. This page built one from the hero TOKENS directly instead of using
+          `AdminPageHero`, so flattening that component on 2026-09-03 did not reach it — it is
+          spelled out light here to match the other 131. Owner: "remove from all pages this dump
+          block". */}
+      <section className="space-y-1.5 border-b border-phx-line pb-4">
+        <p className="text-[11px] font-black uppercase tracking-[0.22em] text-orange-600">Employee Care</p>
+        <h1 className="max-w-4xl text-[1.15rem] font-black tracking-[-0.03em] text-slate-900 sm:text-[1.3rem]">
+          HR Support Requests
+        </h1>
+        <p className="max-w-3xl text-[13px] leading-5 text-slate-600">
+          Review tickets opened by employees and move each one through Pending, In Progress,
+          Resolved, and Closed.
+        </p>
       </section>
       <SupportRequestsWorkspace canManage={canManage} initialItems={initialItems} />
     </div>

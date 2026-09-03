@@ -1,8 +1,3 @@
-import {
-  adminHeroSkeletonClassName,
-  adminHeroSurfaceClassName,
-} from "@/components/admin/admin-design-tokens";
-
 /**
  * Mirrors the real page's band structure — hero, a 4-tile "money in motion" row, the payroll
  * cycle panel, then the queues. A skeleton whose shape does not match what arrives reads as a
@@ -11,10 +6,12 @@ import {
 export default function Loading() {
   return (
     <div className="space-y-0 divide-y divide-slate-200">
-      <div className={`${adminHeroSurfaceClassName} p-7`}>
-        <div className={`${adminHeroSkeletonClassName} h-4 w-48`} />
-        <div className={`${adminHeroSkeletonClassName} mt-4 h-8 w-2/3`} />
-        <div className={`${adminHeroSkeletonClassName} mt-3 h-4 w-1/2`} />
+      {/* No dark band — see the note in AdminPageHero. The real page lost its identity banner on
+          2026-09-03, so a skeleton painting one would flash black and then jump. */}
+      <div className="border-b border-phx-line pb-4">
+        <div className="h-3 w-48 animate-pulse bg-slate-200" />
+        <div className="mt-3 h-6 w-2/3 animate-pulse bg-slate-200" />
+        <div className="mt-2 h-3 w-1/2 animate-pulse bg-slate-100" />
       </div>
 
       <div className="border border-slate-200 bg-white">

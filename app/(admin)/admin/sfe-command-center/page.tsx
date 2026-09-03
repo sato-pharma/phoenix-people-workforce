@@ -6,7 +6,7 @@ import { CeoCommandCenter } from "@/components/admin/ceo-command-center";
 import { CeoPhaseBWidgets, CeoPhaseBSkeleton } from "@/components/admin/ceo-phase-b";
 import { Card } from "@/components/ui/card";
 import { AppRouteLoadingState } from "@/components/ui/loading-state";
-import { resolveAccessContextFromPage, resolveViewerIdentityFromPage } from "@/lib/auth/server";
+import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { getCeoCommandCenterData } from "@/lib/ceo/command-center";
 
 export const dynamic = "force-dynamic";
@@ -23,12 +23,9 @@ export default async function SfeCommandPage() {
 }
 
 async function SfeCommandContent({ access }: { access: Awaited<ReturnType<typeof resolveAccessContextFromPage>> }) {
-  const [viewer, result] = await Promise.all([
-    resolveViewerIdentityFromPage(access),
-    getCeoCommandCenterData(access)
-      .then((data) => ({ data, error: null as string | null }))
-      .catch((error) => ({ data: null, error: error instanceof Error ? error.message : "Unknown error occurred" })),
-  ]);
+  const result = await getCeoCommandCenterData(access)
+    .then((data) => ({ data, error: null as string | null }))
+    .catch((error) => ({ data: null, error: error instanceof Error ? error.message : "Unknown error occurred" }));
 
   if (!result.data) {
     return (
@@ -42,25 +39,18 @@ async function SfeCommandContent({ access }: { access: Awaited<ReturnType<typeof
     );
   }
 
-  // Portrait for the identity banner. Same convention as the CEO hero: a transparent-background
-  // PNG under public/people. The hero hides the portrait on load error (CeoHeroIdentity's
-  // onError), so the page renders correctly whether or not the file is present — dropping the
-  // asset in is all that is needed to light it up.
-  const welcome = {
-    fullName: viewer.displayName,
-    roleLabel: "SFE Manager",
-    hrId: access.hrId,
-    // NOT a "-transparent" asset like the CEO's: this photo carries its own dark studio
-    // background, which is why the hero masks its left and bottom edges rather than just
-    // dropping it in.
-    imageUrl: "/people/sfe-khaled-bedair.png",
-    // Only ever needed if the file above 404s (CeoHeroIdentity's onError) — the medallion is the
-    // safety net, not the expected path.
-    initials: viewer.initials,
-  };
+  // `welcome` IS GONE. The identity banner it fed was removed 2026-09-03 at the owner's
+  // instruction — "remove from all pages this dump block" — so nothing on this page reads a viewer
+  // name, role label or portrait any more. Dropping the prop rather than leaving it unread also
+  // drops the `resolveViewerIdentityFromPage` round trip and, on /admin, a Storage lookup for an
+  // uploaded photo. The name and role are in the shell's topbar chip, resolved once for every page.
+  //
+  // /people/sfe-khaled-bedair.png was referenced from here and nowhere else. The FILE stays in
+  // public/people — it is his portrait, not a build artefact.
+
   return (
     <div className="min-w-0 max-w-full overflow-x-hidden">
-      <CeoCommandCenter data={result.data} welcome={welcome} access={access} variant="sfe" />
+      <CeoCommandCenter data={result.data} access={access} variant="sfe" />
       <Suspense fallback={<CeoPhaseBSkeleton variant="sfe" />}>
         <CeoPhaseBWidgets access={access} sosPrefetched={result.data.sos} adminSignalsPrefetched={result.data.adminSignals} variant="sfe" />
       </Suspense>

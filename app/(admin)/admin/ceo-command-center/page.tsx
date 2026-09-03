@@ -11,7 +11,7 @@ import {
   resolveNavigationMode,
   type AccessContext,
 } from "@/lib/auth/permissions";
-import { resolveAccessContextFromPage, resolveViewerIdentityFromPage } from "@/lib/auth/server";
+import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { getCeoCommandCenterData } from "@/lib/ceo/command-center";
 
 export const dynamic = "force-dynamic";
@@ -43,15 +43,12 @@ export default async function CeoCommandPage() {
 }
 
 async function CeoCommandContent({ access }: { access: AccessContext }) {
-  const [viewer, result] = await Promise.all([
-    resolveViewerIdentityFromPage(access),
-    getCeoCommandCenterData(access)
-      .then((data) => ({ data, error: null as string | null }))
-      .catch((error) => {
-        console.error("Failed to load CEO Command Center:", error);
-        return { data: null, error: error instanceof Error ? error.message : "Unknown error occurred" };
-      }),
-  ]);
+  const result = await getCeoCommandCenterData(access)
+    .then((data) => ({ data, error: null as string | null }))
+    .catch((error) => {
+      console.error("Failed to load CEO Command Center:", error);
+      return { data: null, error: error instanceof Error ? error.message : "Unknown error occurred" };
+    });
 
   if (!result.data) {
     return (
@@ -73,30 +70,19 @@ async function CeoCommandContent({ access }: { access: AccessContext }) {
     );
   }
 
-  const welcome = access.role === "CEO"
-    ? {
-        fullName: "Dr. Anwar Gaweesh",
-        roleLabel: "Chief Executive Officer",
-        hrId: access.hrId,
-        imageUrl: "/people/ceo-anwar-gaweesh-transparent.png",
-        // Only ever needed if the portrait file itself 404s (CeoHeroIdentity's onError) — the
-        // medallion is the safety net, not the expected path, for the one person on this system
-        // who always has a portrait.
-        initials: viewer.initials,
-      }
-    : {
-        fullName: viewer.displayName,
-        roleLabel: viewer.roleLabel,
-        hrId: access.hrId,
-        imageUrl: null,
-        // No hardcoded portrait for this branch (e.g. Super Admin viewing the CEO page) — an
-        // initials medallion instead of a blank space where a photo would otherwise be.
-        initials: viewer.initials,
-      };
+  // `welcome` IS GONE. The identity banner it fed was removed 2026-09-03 at the owner's
+  // instruction — "remove from all pages this dump block" — so nothing on this page reads a viewer
+  // name, role label or portrait any more. Dropping the prop rather than leaving it unread also
+  // drops the `resolveViewerIdentityFromPage` round trip and, on /admin, a Storage lookup for an
+  // uploaded photo. The name and role are in the shell's topbar chip, resolved once for every page.
+  //
+  // The CEO's own portrait went with it: /people/ceo-anwar-gaweesh-transparent.png was referenced
+  // from here and nowhere else. The FILE is left in public/people — it is his official portrait,
+  // not a build artefact.
 
   return (
     <>
-      <CeoCommandCenter data={result.data} welcome={welcome} access={access} />
+      <CeoCommandCenter data={result.data} access={access} />
       <Suspense fallback={<CeoPhaseBSkeleton />}>
         <CeoPhaseBWidgets
           access={access}
