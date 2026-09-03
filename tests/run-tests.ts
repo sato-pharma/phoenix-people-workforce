@@ -199,6 +199,7 @@ import { runDistrictManagerFolderTests } from "./district-manager-folders.test.t
 import { runRecruitmentDistrictReturnsTests } from "./recruitment-district-returns.test.ts";
 import { runCandidatePositionFolderTests } from "./candidate-position-folders.test.ts";
 import { runArabicPlaceMatchTests } from "./arabic-place-match.test.ts";
+import { runCvAddressPlaceTests } from "./cv-address-place.test.ts";
 import { runCandidatePositionSuggestionTests } from "./candidate-position-suggestion.test.ts";
 import { runRecruitmentStaleSendCheckTests } from "./recruitment-stale-send-check.test.ts";
 import { runRecruitmentTriageBacklogCheckTests } from "./recruitment-triage-backlog-check.test.ts";
@@ -482,6 +483,7 @@ import { runMarketingManagerRoleTests } from "./marketing-manager-role.test.ts";
 import { runMarketingMasterResolutionTests } from "./marketing-master-resolution.test.ts";
 import { runMarketingReferenceImporterTests } from "./marketing-reference-importer.test.ts";
 import { runMarketingRequestAccessTests } from "./marketing-request-access.test.ts";
+import { runMarketingRequestContactLinkTests } from "./marketing-request-contact-link.test.ts";
 import { runMarketingRequestServiceTests } from "./marketing-request-service.test.ts";
 import { runMarketingValidationDraftTests } from "./marketing-validation-draft.test.ts";
 import { runMarketingVenueTerritoryTests } from "./marketing-venue-territory.test.ts";
@@ -1247,6 +1249,7 @@ import { runOutstationPayrollPayableTotalAgreementTests } from "./outstation-pay
 import { runOutstationOfflineSyncBodyParityTests } from "./outstation-offline-sync-body-parity.test.ts";
 import { runOutstationManagerExpenseEditValidationTests } from "./outstation-manager-expense-edit-validation.test.ts";
 import { runDirectOrderPharmacyDeadDistributorColumnsTests } from "./direct-order-pharmacy-dead-distributor-columns.test.ts";
+import { runDirectOrderReversalFamilyCodeTests } from "./direct-orders-reversal-family-code.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -1614,6 +1617,10 @@ await runTest(
 await runTest(
   "background review queue (an admin's answer outranks the parser in BOTH directions, and actually changes who sees the CV)",
   runBackgroundReviewQueueTests,
+);
+await runTest(
+  "cv address place (which area a CV own text names, and the four addresses that lied)",
+  runCvAddressPlaceTests,
 );
 await runTest(
   "arabic place match (an English address naming an Arabic place: Box is not Bacos, George is not Girga)",
@@ -2091,6 +2098,7 @@ await runTest("marketing approval inbox decision bar (per-step reject/return pow
 await runTest("marketing approval inbox workspace layout (queues, disclosure, desktop table)", runMarketingInboxWorkspaceLayoutTests);
 await runTest("marketing premium notifications + review view", runMarketingPremiumNotificationTests);
 await runTest("marketing request access", runMarketingRequestAccessTests);
+await runTest("a marketing request names its own CRM contact (customer_contact_id is written)", runMarketingRequestContactLinkTests);
 await runTest("marketing validation service", runMarketingValidationServiceTests);
 await runTest(
   "marketing validation: capturing a customer already on record completes it instead of duplicating it",
@@ -3854,6 +3862,12 @@ await runTest(
 await runTest(
   "direct_order_pharmacies.distributor_code / .distributor_customer_code stay dead (the link lives in the child table)",
   runDirectOrderPharmacyDeadDistributorColumnsTests,
+);
+await runTest(
+  "a direct-order reversal carries its original's family_code (the basket allow-list; nullable, so "
+    + "omitting it wrote a familyless reversal that no later trigger could repair, and null must not "
+    + "become \"\")",
+  runDirectOrderReversalFamilyCodeTests,
 );
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);

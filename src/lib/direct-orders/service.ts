@@ -455,6 +455,7 @@ function mapRequestRow(row: Record<string, unknown>): DirectOrderRequest {
     line: String(row.line ?? ""),
     productCode: String(row.product_code ?? ""),
     productName: String(row.product_name ?? ""),
+    familyCode: String(row.family_code ?? ""),
     pharmacyPriceSnapshot: row.pharmacy_price_snapshot == null ? null : Number(row.pharmacy_price_snapshot),
     qty: Number(row.qty ?? 0),
     bonus: Number(row.bonus ?? 0),
@@ -4485,6 +4486,20 @@ export async function reverseDirectOrder(
       line: original.line,
       product_code: original.productCode,
       product_name: original.productName,
+      // The family this basket belongs to. Omitted here until 2026-09-03, and the column is
+      // nullable, so a reversal was written with NO family at all — the one thing that says which
+      // basket allow-list the row answers to (Lacto Advanced and Lacto Basic share `LA` precisely
+      // so they combine). It never self-heals: a reversal is a header-only insert with no
+      // direct_order_request_items row, so the trigger that back-fills a request's family from its
+      // first line never fires for one. Worse than blank — phx_direct_order_item_family_guard
+      // reads a null request family as "adopt the first line's", so the reversal would take
+      // whatever family a later line brought instead of refusing a mismatched one.
+      //
+      // `|| null` because mapRequestRow reads the null a historic request carries as "", and an
+      // empty string is not the same value to the guard: null means "adopt", "" is a REAL family
+      // that matches nothing, so `'' <> 'LA'` raises and no line could ever be added. Mirroring
+      // means an original with no family yields a reversal with no family.
+      family_code: original.familyCode || null,
       // A reversal mirrors its original exactly, so it must carry the same pricing basis.
       // These three used to be omitted, and `deal_type` defaults to 'bonus' in the column
       // definition — so reversing a DISCOUNT order silently produced a 'bonus' row whose
@@ -4500,6 +4515,12 @@ export async function reverseDirectOrder(
       sales_value: original.salesValue,
       pharmacy_id: original.pharmacyId,
       collection_date: original.collectionDate,
+      // Mirrored for exactly the reason the three pricing fields above are: a field the original
+      // carries and the reversal drops makes the pair disagree, silently. This one is the link back
+      // to the campaign that produced the order, so a reversal that loses it detaches the money
+      // from the request it reverses — the original would still count against the campaign's ROI
+      // while its reversal counted against nothing.
+      marketing_request_id: original.marketingRequestId,
       reversal_of_request_id: original.id,
       created_by_login_id: access.loginId ?? null,
       submitted_at: new Date().toISOString(),
