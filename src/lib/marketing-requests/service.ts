@@ -126,6 +126,7 @@ import { resolveMarketingPharmacyCodes } from "@/lib/marketing-requests/master-r
 import { pingMarketingRequestSheet } from "@/lib/marketing-requests/sheet-webhook";
 import { applyMasterTerritoryToVenues } from "@/lib/marketing-requests/venue-territory";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { notifyConversationMessage } from "@/lib/conversations/notify";
 
 type MarketingProductDbRow = {
   active?: boolean | null;
@@ -8583,7 +8584,77 @@ export async function postMarketingAdvisoryComment(
     summary: `Advisory comment posted on ${cleanRequestId}`,
   });
 
+  await notifyAdvisoryComment({
+    actorHrId,
+    comment: text,
+    requestId: cleanRequestId,
+    steps,
+  });
+
   return { requestId: cleanRequestId };
+}
+
+/**
+ * Email an advisory comment out, To the requester and CC the reviewer who wrote it.
+ *
+ * An advisory comment is a CC reviewer's opinion recorded against a request they cannot block -
+ * which, until 2026-09-03, was written into `decision_note` and shown to nobody unless somebody
+ * reopened the request. The requester is the thread's owner (`requester_hr_id`), and everyone who
+ * has already decided a step on the request is a participant, so a running discussion keeps its
+ * audience rather than resetting to two people each time.
+ *
+ * Best-effort: the comment is already stored, and a mail failure must not undo it.
+ */
+async function notifyAdvisoryComment(input: {
+  actorHrId: string;
+  comment: string;
+  requestId: string;
+  steps: Array<{ assignedHrId: string | null; decisionAt: string | null }>;
+}): Promise<void> {
+  try {
+    const supabase = getSupabaseAdmin();
+    const { data } = await supabase
+      .from("marketing_requests")
+      .select("id,request_code,requester_hr_id,manager_hr_id")
+      .eq("id", input.requestId)
+      .maybeSingle();
+    const request = data as {
+      manager_hr_id?: string | null;
+      request_code?: string | null;
+      requester_hr_id?: string | null;
+    } | null;
+    if (!request?.requester_hr_id) return;
+
+    const participantHrIds = [
+      request.requester_hr_id,
+      request.manager_hr_id ?? null,
+      // Everyone who has actually acted on the request. An assignee who has not decided yet is not
+      // a participant in the conversation, only a name on a future step.
+      ...input.steps.filter((step) => step.decisionAt).map((step) => step.assignedHrId),
+    ];
+
+    await notifyConversationMessage({
+      // The shared helper, not a portal path: a notification actionUrl is stored once for every
+      // recipient, and the portal shell redirects admin-shell approvers to /overview.
+      actionUrl: marketingActionUrl(input.requestId),
+      authorHrId: input.actorHrId,
+      authorName: null,
+      body: input.comment,
+      eventType: "marketing_request_comment",
+      metadata: { requestId: input.requestId },
+      module: "marketing_requests",
+      participantHrIds,
+      recordId: input.requestId,
+      submitterHrId: request.requester_hr_id,
+      subjectLabel: String(request.request_code ?? "").trim() || input.requestId,
+      threadLabel: "marketing request",
+    });
+  } catch (error) {
+    logError("Marketing advisory comment failed to notify the thread", {
+      labels: { event: "marketing_advisory_comment_notify_failed", requestId: input.requestId },
+      error,
+    });
+  }
 }
 
 /**
