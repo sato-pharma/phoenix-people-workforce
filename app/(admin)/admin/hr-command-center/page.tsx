@@ -4,7 +4,7 @@ import { Suspense } from "react";
 import { HrCommandCenter } from "@/components/hr/hr-command-center";
 import { AppRouteLoadingState } from "@/components/ui/loading-state";
 import { resolveLandingPathForRole } from "@/lib/auth/landing";
-import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { resolveAccessContextFromPage, resolveViewerIdentityFromPage } from "@/lib/auth/server";
 import { getHrCommandCenterData, hrBundleForRole } from "@/lib/hr/command-center";
 
 export const dynamic = "force-dynamic";
@@ -55,7 +55,14 @@ async function HrCommandCenterContent({
     redirect(resolveLandingPathForRole(access.role));
   }
 
+  // The banner's nameplate. Only the NAME — `imageUrl` is deliberately left behind, because the
+  // portrait is precisely what the owner had removed from this page ("no heavy banner in any of
+  // her pages taking all the space") and the Storage lookup for it is the expensive half of this
+  // resolver. The call itself is free: `resolveViewerIdentityFromPage` is `cache()`d per request
+  // and the app shell has already made it to fill the topbar chip.
+  const viewer = await resolveViewerIdentityFromPage(access);
+
   return (
-    <HrCommandCenter data={data} />
+    <HrCommandCenter data={data} viewerName={viewer.displayName} />
   );
 }

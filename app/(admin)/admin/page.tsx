@@ -9,7 +9,7 @@ import { AppRouteLoadingState } from "@/components/ui/loading-state";
 import { resolveLandingPathForRole } from "@/lib/auth/landing";
 import { canAccess, resolveNavigationMode, type AccessContext, type PhoenixRole } from "@/lib/auth/permissions";
 import { getSystemAdminOverviewData } from "@/lib/admin/system-overview";
-import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { resolveAccessContextFromPage, resolveViewerIdentityFromPage } from "@/lib/auth/server";
 
 export const dynamic = "force-dynamic";
 
@@ -161,15 +161,26 @@ async function SystemAdminOverviewContent({ access }: { access: AccessContext })
     );
   }
 
-  // `welcome` IS GONE. The identity banner it fed was removed 2026-09-03 at the owner's
-  // instruction — "remove from all pages this dump block" — so nothing on this page reads a viewer
-  // name, role label or portrait any more. Dropping the prop rather than leaving it unread also
-  // drops the `resolveViewerIdentityFromPage` round trip and, on /admin, a Storage lookup for an
-  // uploaded photo. The name and role are in the shell's topbar chip, resolved once for every page.
+  // THE PORTRAIT STAYS GONE; THE NAME CAME BACK. The old identity block was removed on
+  // 2026-09-03 ("remove from all pages this dump block") and with it the whole `welcome` prop.
+  // Later the same day the owner asked for a banner on this landing page carrying the person
+  // rather than the surface: "I don't want it to be called the System Administrator Overview, I
+  // want it by name."
+  //
+  // So this reads the identity again, but only `displayName` and `roleLabel`. `imageUrl` is
+  // deliberately not passed on: the Storage lookup for an uploaded photo is the expensive half of
+  // that resolver AND the portrait is exactly what he had removed. The name itself is free here —
+  // `resolveViewerIdentityFromPage` is `cache()`d per request and the app shell has already
+  // called it to fill the topbar chip, so this is the same resolution, not a second one.
+  const viewer = await resolveViewerIdentityFromPage(access);
 
   return (
     <div className="min-w-0 max-w-full overflow-x-hidden">
-      <SystemAdminOverview access={access} data={result.data} />
+      <SystemAdminOverview
+        access={access}
+        data={result.data}
+        viewer={{ displayName: viewer.displayName, roleLabel: viewer.roleLabel }}
+      />
       <Suspense fallback={<CeoPhaseBSkeleton variant="admin" />}>
         <CeoPhaseBWidgets
           access={access}

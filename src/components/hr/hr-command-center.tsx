@@ -62,10 +62,11 @@ import {
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { CommandCenterBanner } from "@/components/admin/command-center-banner";
 import { HrCommandCharts } from "@/components/hr/hr-command-charts";
 import { HrMyRecord } from "@/components/hr/hr-my-record";
 import { HrTodayPanel } from "@/components/hr/hr-today-panel";
-import { type HrFunctionKey } from "@/lib/auth/hr-functions";
+import { displayTitleForRole, type HrFunctionKey } from "@/lib/auth/hr-functions";
 import type { HrCommandCenterData, HrCommandGroup, HrCommandTile } from "@/lib/hr/command-center";
 
 const GROUP_ICONS: Record<HrFunctionKey, LucideIcon> = {
@@ -186,8 +187,15 @@ function UnavailableNotice({ sources }: { sources: string[] }) {
 
 export function HrCommandCenter({
   data,
+  viewerName,
 }: {
   data: HrCommandCenterData;
+  /**
+   * Whose page this is, for the banner nameplate. The owner asked for the landing banner to carry
+   * the person rather than the surface — "I want it by name" — and named these two seats as
+   * Yasmine and Aya, so this is her own name, never the seat key.
+   */
+  viewerName: string;
 }) {
   const [query, setQuery] = useState("");
   const [attentionOnly, setAttentionOnly] = useState(false);
@@ -267,6 +275,29 @@ export function HrCommandCenter({
     [data.groups],
   );
 
+  /**
+   * The banner's one-line answer to "do I need to do anything today".
+   *
+   * Counts TASKS, not tiles. The ring this page used to open with read "5 of 18 waiting" and was
+   * removed because its denominator counted figures rather than work — see the header of
+   * hr-today-panel.tsx. So this reads the same `data.tasks` the panel directly below renders,
+   * which means the banner and the list under it can never disagree about how much is waiting.
+   *
+   * An unanswered source outranks the count. A queue that threw contributes no open task, so a
+   * partial load would otherwise report "All clear" — the one wrong answer a queue can give.
+   */
+  const openTaskCount = useMemo(
+    () => data.tasks.filter((task) => task.urgency !== "clear").length,
+    [data.tasks],
+  );
+  const sourcesIncomplete = data.unavailableSources.length > 0;
+  const bannerStatus = sourcesIncomplete || openTaskCount > 0 ? "attention" : "clear";
+  const bannerStatusLabel = sourcesIncomplete
+    ? "Not all figures loaded"
+    : openTaskCount === 0
+      ? "All clear"
+      : `${openTaskCount} task${openTaskCount === 1 ? "" : "s"} waiting`;
+
   const trimmedQuery = query.trim().toLowerCase();
   const isFiltering = trimmedQuery.length > 0 || attentionOnly;
 
@@ -301,20 +332,31 @@ export function HrCommandCenter({
 
   return (
     <div className="min-w-0 max-w-full overflow-x-hidden">
-      {/* NO HERO, DELIBERATELY. Removed 2026-09-03 at the owner's instruction: "no heavy
-          banner in any of her pages taking all the space". This page opened with
-          `AdminHeroFrame` + `CeoHeroIdentity`, matching Finance and the CEO — a full-bleed
-          dark band holding a photo, a badge, a greeting and a clock, which cost roughly a
-          third of the first screen before one row of real work appeared.
+      {/* THE HEAVY HERO STAYS GONE; THIS IS NOT IT.
 
-          Nothing was lost with it. The identity it carried — her name and, via
-          HR_SEAT_JOB_TITLES, her JOB TITLE rather than the seat key — is already in the
-          topbar chip on every page of the shell, from `resolveViewerIdentityFromPage`. The
-          date and clock were decoration.
+          The page opened with `AdminHeroFrame` + `CeoHeroIdentity` until 2026-09-03 — a
+          full-bleed dark band holding a photo, a badge, a greeting and a clock, which cost
+          roughly a third of the first screen before one row of real work appeared. The owner
+          had it removed: "no heavy banner in any of her pages taking all the space".
 
-          Do not restore it, and do not "restore parity" with the CEO, Finance and SFE
-          heroes: those are untouched on purpose and this divergence IS the instruction. The
-          page now opens on the work. */}
+          Later the same day he asked for a banner back on the landing surfaces — "but not a
+          block like the before" — and named them: the Super Admin, and the HR team, "Yasmine
+          and Aya", which is both seats and therefore this one component. `CommandCenterBanner`
+          is the answer to that: one wrapping row at `px-5 py-4`, an ordinary header's height,
+          with none of what was removed — no photo, no greeting, no clock. Her name and, via
+          HR_SEAT_JOB_TITLES, her JOB TITLE rather than the seat key are already in the topbar
+          chip on every page of the shell, from `resolveViewerIdentityFromPage`.
+
+          Finance and SFE keep their own banners and were explicitly excluded from this change
+          ("leave them as they are"), and the CEO command center was not named. Do not "restore
+          parity" in either direction — the divergence IS the instruction. */}
+      <CommandCenterBanner
+        name={viewerName}
+        roleLabel={displayTitleForRole(data.seat)}
+        status={bannerStatus}
+        statusLabel={bannerStatusLabel}
+      />
+
       {/* ── Your day. The page's opening answer to "what do I do today", as a list of real
           tasks that open into the actual named rows behind them. This replaced a ring reading
           "5 of 18 waiting" whose denominator counted TILES rather than work — see the header of

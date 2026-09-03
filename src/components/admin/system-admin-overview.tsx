@@ -28,14 +28,18 @@ import type { AccessContext } from "@/lib/auth/permissions";
 export function SystemAdminOverview({
   access,
   data,
+  viewer,
 }: {
   access: AccessContext;
   data: SystemAdminOverviewData;
+  /** Passed straight through to the command center's banner nameplate. */
+  viewer?: { displayName: string; roleLabel: string };
 }) {
   return (
     <CeoCommandCenter
       access={access}
       data={data.ceo}
+      viewer={viewer}
       extraBands={
         <>
           {/* Omitted rather than zeroed when the finance aggregates did not answer — see

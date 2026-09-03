@@ -19,6 +19,7 @@ import {
   Wallet,
 } from "lucide-react";
 
+import { CommandCenterBanner } from "@/components/admin/command-center-banner";
 import { CeoTopMoversTable } from "@/components/admin/ceo-top-movers-table";
 import type { AccessContext } from "@/lib/auth/permissions";
 import type {
@@ -396,12 +397,23 @@ export function CeoCommandCenter({
   extraBands,
   access: _access,
   variant = "ceo",
+  viewer,
 }: {
   data: CeoCommandCenterData;
   /** Rendered as the last band before the footer. The admin overview passes its Finance bands here. */
   extraBands?: ReactNode;
   access: AccessContext;
   variant?: "admin" | "ceo" | "sfe";
+  /**
+   * Who is reading, for the Super Admin banner's nameplate — the owner asked for it "by name"
+   * rather than by surface. Optional because only that one variant renders a banner: the CEO and
+   * SFE variants never read this, and passing it to them would imply a hero they do not have.
+   *
+   * Resolved by the PAGE, not here. `resolveViewerIdentityFromPage` is `cache()`d per request and
+   * the app shell has already called it to fill the topbar chip, so the page's call is deduped
+   * rather than a second round trip — but this component is not async and cannot make one anyway.
+   */
+  viewer?: { displayName: string; roleLabel: string };
 }) {
   const { attention, approvals, dataUnavailable, headcount, health, payroll, sos } = data;
   // Name the month AND say what it is, everywhere the month appears. This card shows the last
@@ -442,19 +454,58 @@ export function CeoCommandCenter({
     showApprovalTiles && (approvals.leavePending === null || approvals.plansPending === null);
   const allClear = dataAvailable && visibleAttention.length === 0 && totalApprovals === 0;
 
+  /**
+   * The banner's status line. TWO figures, reported separately and never summed.
+   *
+   * Adding them looks tidier and is meaningless: `totalApprovals` counts individual requests (11
+   * leave forms) while `visibleAttention` counts SIGNALS (5 rows). A single "16" matches nothing
+   * on the page — the reader looks down at five attention rows and two approval tiles and the
+   * banner has already lied to them. Kept apart, each half is checkable against what is rendered
+   * directly below it, which is the same rule the HR banner follows against its task list.
+   *
+   * Both zero while not all clear means a source did not answer. That case has to say so: a
+   * partial load reporting "All clear" is the one wrong answer this bar can give.
+   */
+  const bannerStatusLabel = allClear
+    ? "All clear"
+    : [
+        totalApprovals > 0 ? `${totalApprovals} approval${totalApprovals === 1 ? "" : "s"}` : null,
+        visibleAttention.length > 0 ? `${visibleAttention.length} signal${visibleAttention.length === 1 ? "" : "s"}` : null,
+      ]
+        .filter(Boolean)
+        .join(" · ") || "Not all figures loaded";
+
   return (
     <div className="space-y-0 divide-y divide-slate-200">
 
-      {/* ── Hero ────────────────────────────────────────────────────────────── */}
-      {/* NO IDENTITY BANNER. Removed 2026-09-03 at the owner's instruction — "remove from all
-          pages this dump block". This was an `AdminHeroFrame` holding `CeoHeroIdentity`: a
-          full-bleed black band with the viewer's photo, a greeting and a role chip, costing most of
-          the first fold before any real content. The same removal was made on the HR command
-          center and, via `AdminPageHero`, on the other 131 admin pages the same day.
+      {/* ── Banner ──────────────────────────────────────────────────────────
+          THE ADMIN VARIANT ONLY, AND THAT SCOPE IS THE INSTRUCTION.
 
-          Nothing was lost. The name and role label are in the topbar chip on every page of the
-          shell, from `resolveViewerIdentityFromPage`. Do not restore it and do not "restore
-          parity" with another command center — none of them carry one any more. */}
+          The old identity block was removed from every page on 2026-09-03 ("remove from all pages
+          this dump block") — an `AdminHeroFrame` holding `CeoHeroIdentity`, a full-bleed black
+          band with the viewer's photo, a greeting and a role chip, costing most of the first fold.
+          Later the same day the owner asked for a banner back on the landing surface, "but not a
+          block like the before", then named exactly who: the Super Admin and the HR team, adding
+          "don't touch the banner of the finance manager or the SFE, leave them as they are".
+
+          So `variant === "admin"` is the whole condition. The CEO variant was not named and keeps
+          its clean opening; `SfeDepartmentBanner` and `FinanceOwnerBanner` are untouched. Do NOT
+          "restore parity" by widening this to the other variants — the divergence IS the rule, and
+          the same instruction reached `HrCommandCenter` for Yasmine's and Aya's seats.
+
+          What was removed is still gone: no photo, no greeting, no clock. The name and role label
+          are in the topbar chip on every page of the shell, from `resolveViewerIdentityFromPage`.
+          See `command-center-banner.tsx` for how "not a block" is held mechanically. */}
+      {variant === "admin" && viewer ? (
+        <CommandCenterBanner
+          name={viewer.displayName}
+          roleLabel={viewer.roleLabel}
+          // The "Sato Pharma" section header directly below carries the same mark 1px away.
+          showMark={false}
+          status={allClear ? "clear" : "attention"}
+          statusLabel={bannerStatusLabel}
+        />
+      ) : null}
 
       <DataUnavailableNotice
         owner={variant === "sfe" ? "SFE" : variant === "admin" ? "system" : "CEO"}
