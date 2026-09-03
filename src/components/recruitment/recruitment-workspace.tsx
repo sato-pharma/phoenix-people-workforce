@@ -46,6 +46,10 @@ import { deleteRequest, patchJson, postJson } from "@/components/recruitment/rec
 import type { ApplicationWithContext } from "@/lib/recruitment/applications";
 import type { CandidateProfile } from "@/lib/recruitment/candidates";
 import { APPLIED_FOR_SOURCE_LABEL, APPLIED_FOR_SOURCE_SHORT, candidateRowAppliedFor } from "@/lib/recruitment/applied-for";
+import {
+  candidateMatchesPoolQuery,
+  normalizeCandidatePoolQuery,
+} from "@/lib/recruitment/candidate-pool-search";
 import { candidateDisplayName, isShortenedCandidateName } from "@/lib/recruitment/candidate-display";
 import {
   candidateFolderKeyLabels,
@@ -3370,29 +3374,12 @@ function CandidatesTab({
     (folder) => folder.storedKey,
   );
 
-  const q = query.trim().toLowerCase();
+  const q = normalizeCandidatePoolQuery(query);
   const filteredCandidates = poolCandidates
     .filter((c) => {
-      if (
-        q &&
-        // The DERIVED role is searched as well as the stored one. Searching "district manager" has
-        // to find the 198 rows whose only statement of it is the intake subject line, otherwise the
-        // column answers on screen and the search box still says there is nobody.
-        ![
-          c.fullName,
-          c.email,
-          c.phone,
-          candidateStatusLabel(c.status),
-          c.source,
-          c.nationalId,
-          c.appliedForJobTitle,
-          candidateRowAppliedFor(c).text,
-        ]
-          .filter(Boolean)
-          .some((value) => String(value).toLowerCase().includes(q))
-      ) {
-        return false;
-      }
+      // One predicate, shared with the filed-CV band below. Two copies of it here is how a person
+      // becomes findable on one half of the partition and invisible on the other.
+      if (!candidateMatchesPoolQuery(c, q)) return false;
       if (statusFilter && normalizeCandidateStatus(c.status) !== statusFilter) return false;
       if (sourceFilter && candidateSourceChannel(c.source, c.sourceContext).label !== sourceFilter) return false;
       if (duplicatesOnly && !c.possibleDuplicate) return false;
@@ -3457,6 +3444,42 @@ function CandidatesTab({
   // the definition of red to drift apart from each other and from the pill on the row.
   const cvTabCandidates = partitionCandidatesByRedFlag(filteredCandidates);
   const visibleCandidates = cvTabCandidates[cvTab];
+
+  // THE OTHER HALF OF THE PARTITION — searched only while somebody is actively looking for a person.
+  //
+  // Filing a CV to a folder takes it off this page on purpose, and that rule is untouched: with an
+  // empty search box the pool shows exactly what it showed before. What filing must NOT do is take
+  // the person out of the one box built to find people. On 2026-09-03 the pool held 734 CVs with
+  // 150 filed, the Folders tab had no search of its own, and typing a filed applicant's own name
+  // returned nothing anywhere in the application — a CV nobody can look up is indistinguishable
+  // from a CV that was lost, which is exactly what was reported.
+  //
+  // Deliberately NOT merged into the table above. These rows are not in the pool, and showing them
+  // as if they were would make the count in the tab strip wrong and re-open the complaint that
+  // filed CVs come back to the main page.
+  const filedCount = folderShelves.reduce((total, shelf) => total + shelf.candidateCount, 0);
+  // Says what is being withheld and by which mechanism, because the old wording named only one of
+  // the two. It read "488 of 734 shown ... the red tab holds them, it never removes them" while the
+  // red tab held 97 of the 246 missing and folders held the other 150 — so the sentence sent anyone
+  // looking for a filed CV to a tab that does not contain it. Both mechanisms are named now, and
+  // neither clause is written unless it is actually withholding something.
+  const poolShellDescription = [
+    `${visibleCandidates.length} of ${candidates.length} shown, newest first.`,
+    filedCount > 0 ? `${filedCount} are filed in folders and sit on the Folders tab, not here.` : "",
+    "Nobody is removed — the red tab holds the rest.",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  const filedMatches = q
+    ? folderShelves.flatMap((shelf) =>
+        shelf.folders.flatMap((folder) =>
+          folder.candidates
+            .filter((candidate) => candidateMatchesPoolQuery(candidate, q))
+            .map((candidate) => ({ candidate, folderLabel: folder.label, shelfLabel: shelf.label })),
+        ),
+      )
+    : [];
 
   // Grouped by the manager each CV was SENT to, and only ever over what is already on screen — so
   // narrowing to "this week" narrows the piles too, rather than showing groups that disagree with
@@ -3782,7 +3805,7 @@ function CandidatesTab({
 
       <AdminTableShell
         title="Candidate pool"
-        description={`${visibleCandidates.length} of ${candidates.length} shown, newest first. Every applicant stays here — the red tab holds them, it never removes them.`}
+        description={poolShellDescription}
       >
         <div className="space-y-3 p-3">
           {/* The two piles, before anything else on the toolbar — because which pile you are in
@@ -3827,6 +3850,45 @@ function CandidatesTab({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
+          {/* Filed CVs that answer the search, directly under the box that asked. Rendered only
+              while a search is running, so the page at rest is unchanged — and rendered as its own
+              band rather than as table rows, because these CVs are genuinely not in the pool and a
+              row that looks identical to a pool row would say they were.
+
+              Fits-the-screen rule: no fixed widths, no nowrap, no truncation. A long name and a
+              long folder label both WRAP. */}
+          {q && filedMatches.length > 0 ? (
+            <div className="rounded-md border border-amber-200 bg-amber-50 p-3">
+              <p className="text-xs font-semibold text-amber-900">
+                {filedMatches.length === 1
+                  ? "1 more CV matches, filed in a folder"
+                  : `${filedMatches.length} more CVs match, filed in folders`}
+              </p>
+              <p className="mt-0.5 text-xs text-amber-800">
+                Filed CVs are kept off the pool on purpose. They are listed here so a search never
+                comes back empty for somebody who is in the system.
+              </p>
+              <ul className="mt-2 space-y-1.5">
+                {filedMatches.map(({ candidate, folderLabel, shelfLabel }) => (
+                  <li
+                    className="flex flex-wrap items-center gap-x-2 gap-y-1 border-t border-amber-200 pt-1.5 first:border-t-0 first:pt-0"
+                    key={candidate.id}
+                  >
+                    <button
+                      className="text-left text-xs font-semibold text-amber-900 underline underline-offset-2 hover:text-amber-700"
+                      onClick={() => void openProfile(candidate.id)}
+                      type="button"
+                    >
+                      {candidateDisplayName(candidate.fullName)}
+                    </button>
+                    <span className="text-xs text-amber-800">
+                      {shelfLabel} · {folderLabel}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
           <div className="flex flex-wrap items-end gap-3">
             <label className={poolFilterLabelClass}>
               Received
