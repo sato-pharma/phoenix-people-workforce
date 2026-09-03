@@ -19,11 +19,19 @@ function readSource(relativePath: string) {
  * wrong, silently.
  *
  * Fixed by always rendering both amount boxes, never gating either on expenseType — matching
- * the rep-facing mobile-outstation-wizard, which never gated them either, and matching
  * production reality: six live rep-submitted requests carry a real meeting or "other" amount
  * on an expense_type of "traveling" (e.g. #45 "BRM for delta 1 team7" meeting 627.20, #114
  * parking 20.00 on 2026-09-02). Zeroing whichever amount doesn't match the selected type would
  * have been the wrong fix — it would silently drop real money from every one of those trips.
+ *
+ * The rep-facing mobile-outstation-wizard is now pinned to the same rule, and this file's
+ * earlier claim that it "never gated them either" was wrong: it carried BOTH shapes at once.
+ * The gated pair came first (1a9d4b482, 2026-06-11) and an always-visible pair landed four days
+ * later in ec2a5dded ("expense report fields, rescued from #129") without removing it, so the
+ * two sat on one screen bound to the same meetingAmount / otherAmount state — on a Meeting trip
+ * the rep saw "Meeting Amount" stacked above "Meeting Amount (EGP)", mirroring each other as he
+ * typed. The gated pair is the one that went, leaving both screens on one rule: always show
+ * what you always submit.
  */
 export function runOutstationAdminManualExpenseAmountVisibilityTests() {
   const modal = readSource("../src/components/outstation/admin-manager-expense-modal.tsx");
@@ -82,5 +90,71 @@ export function runOutstationAdminManualExpenseAmountVisibilityTests() {
     submitPayload,
     /otherAmount:\s*otherAmount \? Number\(otherAmount\) : 0/,
     "the submit payload must always carry otherAmount, matching the box that is always shown",
+  );
+
+  // ── The rep-facing wizard, on the same rule ────────────────────────────────────
+  // The wizard is where the reps actually file, and it carried the same expenseType gate on a
+  // duplicate pair of these inputs. Same assertions, same reasoning: an amount that is always
+  // submitted must always be visible.
+  const wizard = readSource("../src/components/outstation/mobile-outstation-wizard.tsx");
+
+  assert.doesNotMatch(
+    wizard,
+    /expenseType === "meeting" \? \(/,
+    "the wizard's Meeting Amount field must not be conditionally rendered on expenseType — a " +
+      'rep on a "traveling" trip must still be able to record a real meeting cost, and one ' +
+      "typed under another type must never be hidden while it is still submitted",
+  );
+  assert.doesNotMatch(
+    wizard,
+    /expenseType === "other" \? \(/,
+    "the wizard's Other Amount field must not be conditionally rendered on expenseType — a rep " +
+      'on a "traveling" trip must still be able to record a real parking cost, and one typed ' +
+      "under another type must never be hidden while it is still submitted",
+  );
+
+  // Both fields must still exist, unconditionally, driven by their own state.
+  assert.match(
+    wizard,
+    /<Field label="Meeting Amount \(EGP\)">[\s\S]{0,240}?onChange=\{\(event\) => setMeetingAmount\(event\.target\.value\)\}/,
+    "the wizard must render a Meeting Amount input bound to setMeetingAmount",
+  );
+  assert.match(
+    wizard,
+    /<Field label="Other Amount \(EGP\)">[\s\S]{0,240}?onChange=\{\(event\) => setOtherAmount\(event\.target\.value\)\}/,
+    "the wizard must render an Other Amount input bound to setOtherAmount",
+  );
+
+  // Exactly one render site each. This is the assertion that catches the shape that was actually
+  // wrong here: not a missing field, but the SAME field twice on one screen — an always-visible
+  // pair and an expenseType-gated pair, both bound to the same state, mirroring each other as
+  // the rep typed.
+  const wizardMeetingSites = (wizard.match(/onChange=\{\(event\) => setMeetingAmount\(/g) ?? []).length;
+  const wizardOtherSites = (wizard.match(/onChange=\{\(event\) => setOtherAmount\(/g) ?? []).length;
+  assert.equal(
+    wizardMeetingSites,
+    1,
+    `the wizard must bind setMeetingAmount from exactly one input — found ${wizardMeetingSites}; two means the rep sees the same amount twice`,
+  );
+  assert.equal(
+    wizardOtherSites,
+    1,
+    `the wizard must bind setOtherAmount from exactly one input — found ${wizardOtherSites}; two means the rep sees the same amount twice`,
+  );
+
+  // And the wizard submits both amounts unconditionally too, on both of its write paths (the
+  // online submit and the offline draft), so "always show what you always submit" holds here in
+  // the same direction it does in the modal.
+  const wizardMeetingSubmits = (wizard.match(/meetingAmount: Number\(meetingAmount \|\| 0\)/g) ?? []).length;
+  const wizardOtherSubmits = (wizard.match(/otherAmount: Number\(otherAmount \|\| 0\)/g) ?? []).length;
+  assert.equal(
+    wizardMeetingSubmits,
+    2,
+    `both wizard write paths must carry meetingAmount unconditionally — found ${wizardMeetingSubmits} of 2`,
+  );
+  assert.equal(
+    wizardOtherSubmits,
+    2,
+    `both wizard write paths must carry otherAmount unconditionally — found ${wizardOtherSubmits} of 2`,
   );
 }

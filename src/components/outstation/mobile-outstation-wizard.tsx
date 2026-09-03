@@ -1577,8 +1577,36 @@ export function MobileOutstationWizard({
             </>
           ) : null}
 
-          <Field label="Meeting Amount">
+          {/*
+            Meeting and Other are ALWAYS both shown, never gated on the expense type.
+
+            They are additive line items on top of travel + allowance — reportExpectedTotal
+            (src/lib/outstation/service.ts) adds travelCost + meetingAmount + allowanceAmount +
+            otherAmount unconditionally — and the expense type only labels the trip. Production
+            agrees: live rep-submitted requests are typed "traveling" while carrying a real
+            meeting or parking cost (#45 "BRM for delta 1 team7" meeting 627.20, #114 parking
+            20.00), which is the shape reps use most, so gating either box by type would make
+            that trip unable to record its own cost.
+
+            A SECOND, expenseType-gated pair of these same two inputs used to sit below Notes.
+            It came first (1a9d4b482, 2026-06-11); this always-visible pair landed four days
+            later in ec2a5dded ("expense report fields, rescued from #129") without removing it,
+            so both were on screen at once, bound to the same meetingAmount / otherAmount state
+            — on a Meeting trip the rep saw "Meeting Amount" above "Meeting Amount (EGP)",
+            mirroring each other as he typed. The gated pair is the one that went, which also
+            settles this screen on the same rule as the admin modal: see
+            src/components/outstation/admin-manager-expense-modal.tsx and
+            tests/outstation-admin-manual-expense-amount-visibility.test.ts (production request
+            77, B-122: 550.00 typed under "meeting", saved under "other" with the visible box
+            reading empty, because handleSubmit sends both amounts whatever is on screen).
+
+            Do NOT reintroduce the conditional, and do NOT "fix" the submit payload by zeroing
+            the amount that does not match the type — that would silently drop real money from
+            every traveling trip that also had a meeting or a parking cost.
+          */}
+          <Field label="Meeting Amount (EGP)">
             <Input
+              min="0"
               onChange={(event) => setMeetingAmount(event.target.value)}
               placeholder="EGP"
               type="number"
@@ -1586,14 +1614,20 @@ export function MobileOutstationWizard({
             />
           </Field>
 
-          <Field label="Other">
+          <Field label="Other Amount (EGP)">
             <Input
+              min="0"
               onChange={(event) => setOtherAmount(event.target.value)}
               placeholder="EGP"
               type="number"
               value={otherAmount}
             />
           </Field>
+
+          <p className="text-xs font-semibold text-slate-500 sm:col-span-2 xl:col-span-4">
+            Both are paid on top of the travel cost and the allowance, whatever the expense type
+            is. Leave a box empty if that cost was not incurred.
+          </p>
 
           {/*
             The editable "AM Workload" / "PM Workload" inputs that used to sit here were removed.
@@ -1619,28 +1653,6 @@ export function MobileOutstationWizard({
               value={notes}
             />
           </Field>
-
-          {expenseType === "meeting" ? (
-            <Field label="Meeting Amount (EGP)">
-              <Input
-                min="0"
-                onChange={(event) => setMeetingAmount(event.target.value)}
-                placeholder="EGP"
-                type="number"
-                value={meetingAmount}
-              />
-            </Field>
-          ) : expenseType === "other" ? (
-            <Field label="Other Amount (EGP)">
-              <Input
-                min="0"
-                onChange={(event) => setOtherAmount(event.target.value)}
-                placeholder="EGP"
-                type="number"
-                value={otherAmount}
-              />
-            </Field>
-          ) : null}
 
           <div className="grid grid-cols-2 gap-3">
             <Field label="AM Visits">
