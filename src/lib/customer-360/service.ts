@@ -26,6 +26,7 @@
  */
 
 import type { PhoenixRole } from "@/lib/auth/permissions";
+import { isCodeShapedName } from "@/lib/customer-360/labels";
 import {
   buildCustomerSalesView,
   type CustomerSalesRollupRow,
@@ -205,7 +206,10 @@ export async function listCustomerSubjects(): Promise<CustomerSubjectSummary[]> 
       { cursorColumn: "id", cursorOf: (row) => row.id as string },
     ),
     fetchAllRowsKeyset<Record<string, unknown>>(
-      () => supabase.from("direct_order_pharmacy_distributor_codes").select("id, pharmacy_id"),
+      () =>
+        supabase
+          .from("direct_order_pharmacy_distributor_codes")
+          .select("id, pharmacy_id, distributor_code, customer_code"),
       { cursorColumn: "id", cursorOf: (row) => row.id as string },
     ),
   ]);
@@ -246,10 +250,38 @@ export async function listCustomerSubjects(): Promise<CustomerSubjectSummary[]> 
     });
   }
 
+  // A direct-order pharmacy is named by whoever raises the first order, and the box takes anything:
+  // two of the 54 live ones are filed as "433106", which is their own customer code. That put a
+  // number in the picker where a pharmacy should be. The distributor's own name for that customer is
+  // the better answer and it sits on the row the place resolver already reads — so where our register
+  // holds a code, we ask the spine. Only the affected rows are resolved, so the ordinary case (a real
+  // name) costs no extra query at all.
+  const directPairsByPharmacy = new Map<string, CustomerCodePair[]>();
+  for (const row of directCodes) {
+    const pharmacyId = text(row.pharmacy_id);
+    const distributorCode = text(row.distributor_code);
+    const customerCode = text(row.customer_code);
+    if (!pharmacyId || !distributorCode || !customerCode) continue;
+    const list = directPairsByPharmacy.get(pharmacyId) ?? [];
+    list.push({ customerCode, distributorCode });
+    directPairsByPharmacy.set(pharmacyId, list);
+  }
+
+  const nameFixes: { pairs: CustomerCodePair[]; position: number }[] = [];
+
   for (const row of directRows) {
     if (row.active === false || row.merged_into_pharmacy_id != null) continue;
     const id = text(row.id);
     if (!id) continue;
+    const pharmacyName = text(row.pharmacy_name);
+    const codePairs = directPairsByPharmacy.get(id) ?? [];
+    const namedByItsOwnCode =
+      codePairs.length === 0
+        ? isCodeShapedName(pharmacyName)
+        : codePairs.some((pair) => isCodeShapedName(pharmacyName, pair.customerCode));
+    if (namedByItsOwnCode && codePairs.length > 0) {
+      nameFixes.push({ pairs: codePairs, position: subjects.length });
+    }
     subjects.push({
       areaCode: text(row.area_code),
       areaName: text(row.area_code),
@@ -263,6 +295,20 @@ export async function listCustomerSubjects(): Promise<CustomerSubjectSummary[]> 
       validationStatus: text(row.verification_status),
       venueType: text(row.venue_type),
     });
+  }
+
+  if (nameFixes.length > 0) {
+    const named = await resolveCustomerGeography(nameFixes.flatMap((fix) => fix.pairs));
+    for (const fix of nameFixes) {
+      const distributorName = fix.pairs
+        .map((pair) => named.get(customerGeographyKey(pair.distributorCode, pair.customerCode))?.customerName)
+        .find((value) => (value ?? "").trim());
+      // A pair the customer map does not know leaves the register's own value alone. A code on the
+      // screen is bad; a blank where a customer exists is worse.
+      if (distributorName) {
+        subjects[fix.position] = { ...subjects[fix.position], displayName: distributorName.trim() };
+      }
+    }
   }
 
   return subjects.sort((a, b) => a.displayName.localeCompare(b.displayName));
@@ -395,6 +441,21 @@ export async function getCustomer360Profile(
     };
   });
 
+  // The same rule the picker applies, applied here too: where our register holds a code instead of
+  // a name, the distributor's own name for that customer wins. The detail page must never disagree
+  // with the card that led to it — one page per pharmacy is the whole point of this screen.
+  const registerName = text(head.display_name) ?? text(head.pharmacy_name);
+  const namedByItsOwnCode =
+    pairs.length === 0
+      ? isCodeShapedName(registerName)
+      : pairs.some((pair) => isCodeShapedName(registerName, pair.customerCode));
+  const distributorGivenName = !namedByItsOwnCode
+    ? null
+    : (pairs
+        .map((pair) => geography.get(customerGeographyKey(pair.distributorCode, pair.customerCode))?.customerName)
+        .find((value) => (value ?? "").trim()) ?? null);
+  const resolvedDisplayName = (distributorGivenName ?? registerName ?? "Unnamed pharmacy").trim();
+
   // Marketing requests reach a pharmacy through the join table; direct orders name it directly.
   const marketingRequests: CustomerMarketingRequestRow[] = [];
   if (ref.register === "marketing") {
@@ -456,7 +517,7 @@ export async function getCustomer360Profile(
     areaName: area?.name ?? text(head.area_code) ?? areaFromCodes,
     codes,
     directOrders,
-    displayName: text(head.display_name) ?? text(head.pharmacy_name) ?? "Unnamed pharmacy",
+    displayName: resolvedDisplayName,
     id: encodeCustomerSubjectId(ref),
     lineName: (lineId == null ? null : names.lines.get(lineId) ?? null) ?? area?.line ?? null,
     managerName: names.employees.get((text(head.manager_hr_id) ?? "").toLowerCase()) ?? null,

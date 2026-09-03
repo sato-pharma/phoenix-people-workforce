@@ -9,6 +9,7 @@ import {
 } from "../src/lib/customer-360/sales-visibility.ts";
 import type { CustomerSubjectSummary } from "../src/lib/customer-360/service.ts";
 import {
+  isCodeShapedName,
   validationStatusLabel,
   venueTypeLabel,
 } from "../src/lib/customer-360/labels.ts";
@@ -200,4 +201,27 @@ export function runCustomer360Tests() {
   // A value nobody has mapped yet still arrives as English, never as a code and never as a blank.
   assert.equal(validationStatusLabel("field_validated"), "Field validated", "an unmapped status is humanised");
   assert.equal(venueTypeLabel(null), null, "an absent value stays absent rather than becoming a label");
+
+  // ── A code is not a name ──────────────────────────────────────────────────────────────────────
+  // Two live direct-order pharmacies are filed as "433106", their own customer code, so the picker
+  // offered a number where a pharmacy should be.
+  assert.equal(isCodeShapedName("433106", "433106"), true, "a name that IS the customer code is a code");
+  assert.equal(isCodeShapedName("433106", null), true, "a value with no letter in it is a code");
+  assert.equal(isCodeShapedName("", "433106"), true, "an empty name has nothing to lose");
+  assert.equal(isCodeShapedName(null, null), true, "an absent name has nothing to lose");
+
+  // THE OVER-REACH GUARD. Replacing a name a human chose with one a distributor did would be a
+  // worse bug than the one being fixed, so the predicate must be narrow. "46260 الرحمة الجديدة"
+  // is a real live name that merely begins with digits.
+  assert.equal(
+    isCodeShapedName("46260 الرحمة الجديدة", "46260"),
+    false,
+    "a real name that merely STARTS with its code must keep its own name",
+  );
+  assert.equal(
+    isCodeShapedName("Tabarak hospital pharmacy", "433106"),
+    false,
+    "an ordinary name is never treated as a code",
+  );
+  assert.equal(isCodeShapedName("صيدلية النور", null), false, "an Arabic name is a name, not a code");
 }

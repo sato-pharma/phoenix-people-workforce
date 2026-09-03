@@ -49,3 +49,30 @@ export function venueTypeLabel(value: string | null | undefined): string | null 
   if (!key) return null;
   return VENUE_LABELS[key.toLowerCase()] ?? humanise(key);
 }
+
+/**
+ * Is this "name" actually a code?
+ *
+ * A direct-order pharmacy is named by whoever raises the first order, and the box accepts anything.
+ * Two of the 54 live ones were filed as "433106" — their own customer code — so the picker offered a
+ * number where a pharmacy should be, against the owner's rule that a screen shows human-readable
+ * names and never codes. Marketing's 335 are all clean today, but the box is the same shape, so the
+ * rule is applied to the value rather than to the two rows that happen to have it now.
+ *
+ * Deliberately narrow. It answers true only when there is no name there to lose:
+ *
+ *   - nothing at all, or
+ *   - the customer code repeated back, or
+ *   - no letter in any script (Latin or Arabic) anywhere in the value.
+ *
+ * A real name that merely STARTS with digits — "46260 الرحمة الجديدة" is a live one — keeps its own
+ * name. Overriding that would be a worse bug than the one being fixed, because it would replace a
+ * name a human chose with one a distributor did.
+ */
+export function isCodeShapedName(value: string | null | undefined, customerCode?: string | null): boolean {
+  const name = (value ?? "").trim();
+  if (!name) return true;
+  const code = (customerCode ?? "").trim();
+  if (code && name.toLowerCase() === code.toLowerCase()) return true;
+  return !/\p{L}/u.test(name);
+}
