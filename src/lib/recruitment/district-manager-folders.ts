@@ -42,7 +42,7 @@
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import { resolveBackgroundStanding } from "@/lib/recruitment/background-review";
 import { canFileCandidate } from "@/lib/recruitment/candidate-folder";
-import { areaNamedByCv } from "@/lib/recruitment/cv-address-place";
+import { areaGovernedByCv, areaNamedByCv } from "@/lib/recruitment/cv-address-place";
 import {
   candidateRegionForGovernorate,
   candidateRegionLabels,
@@ -133,6 +133,16 @@ export type DistrictAreaFolder<T = DistrictFolderCandidate> = {
    * named" again under a politer name.
    */
   fromCvText: string[];
+  /**
+   * The ids in `candidates` that got here because their CV named a GOVERNORATE served by exactly
+   * one area — this one. Weaker evidence than `fromCvText` and kept apart from it for that reason.
+   *
+   * A folder cannot describe these two the same way without saying something false. "The address
+   * on their CV places them here" is true of `fromCvText`; most of these have no address at all
+   * and reached the folder because their governorate has only one area in it. Same folder, and the
+   * screen says which is which.
+   */
+  fromGovernorate: string[];
 };
 
 /**
@@ -345,12 +355,14 @@ export function districtManagerBoards<T = DistrictFolderCandidate>(
           areaName,
           candidates: [] as T[],
           fromCvText: [] as string[],
+          fromGovernorate: [] as string[],
           kind: "area" as const,
         })),
         {
           areaName: REGION_FOLDER_LABEL,
           candidates: [] as T[],
           fromCvText: [] as string[],
+          fromGovernorate: [] as string[],
           kind: "region" as const,
         },
       ],
@@ -493,7 +505,11 @@ export function placeCandidatesInDistrictFolders<T extends DistrictFolderCandida
   const unplaced: UnplacedDeclaration[] = [];
   let placements = 0;
 
-  const fileInto = (targets: readonly Target[], candidate: T, fromCvText = false): void => {
+  const fileInto = (
+    targets: readonly Target[],
+    candidate: T,
+    via: "declared" | "cv-text" | "governorate" = "declared",
+  ): void => {
     for (const target of targets) {
       // A CV the board's own manager has returned is dropped HERE, at the single choke point every
       // placement passes through, so both the area path and the region catch-all honour it with no
@@ -507,7 +523,8 @@ export function placeCandidatesInDistrictFolders<T extends DistrictFolderCandida
         continue;
       }
       target.folder.candidates.push(candidate);
-      if (fromCvText) target.folder.fromCvText.push(candidate.id);
+      if (via === "cv-text") target.folder.fromCvText.push(candidate.id);
+      if (via === "governorate") target.folder.fromGovernorate.push(candidate.id);
       target.board.candidateCount += 1;
       placements += 1;
     }
@@ -561,6 +578,28 @@ export function placeCandidatesInDistrictFolders<T extends DistrictFolderCandida
       continue;
     }
 
+    // ── THE CATCH-ALLS FIRST, BECAUSE THE TWO TIERS BELOW UPGRADE THEM RATHER THAN REPLACE ────
+    //
+    // Reading an area out of a CV must never COST that CV a board. Both tiers below narrow to the
+    // districts holding that particular area NAME, and area names are per line: Anti Infective
+    // splits Upper Egypt into Qena 1 and Qena 2 where CNS covers the same ground from Sohag. Filing
+    // a Qena CV into "Qena 1" and stopping there took it off the CNS manager's board altogether —
+    // a manager who could see that CV yesterday could not see it today, which is strictly worse
+    // than the catch-all it replaced, and invisible from the folder that gained it.
+    //
+    // So the region's catch-alls are resolved first and each tier below is an upgrade OVER them,
+    // district by district: the manager who has a folder for that ground gets the CV in it, and
+    // every other district in the region keeps it exactly where it already was.
+    const regionName = districtRoutingRegion(candidate);
+    const catchAlls = (regionName ? catchAllsByRegion.get(regionFamilyKey(regionName)) : undefined) ?? [];
+
+    // The catch-alls the area folders did not already reach — keyed by SEAT, so a district is never
+    // handed the same CV twice, once in an area folder and once in its own "No area named".
+    const upgrading = (areaTargets: readonly Target[]): Target[] => {
+      const reached = new Set(areaTargets.map((target) => target.board.seatId));
+      return catchAlls.filter((target) => !reached.has(target.board.seatId));
+    };
+
     // ── The area their own CV names, when they declared none ──────────────────────────────────
     //
     // The owner, 2026-09-03: *"do a fucking effort for the areas that you're putting in a folder
@@ -586,7 +625,30 @@ export function placeCandidatesInDistrictFolders<T extends DistrictFolderCandida
       const fromCv = areaNamedByCv(candidate, routableAreaNames);
       const cvTargets = fromCv ? foldersByKey.get(areaFolderKey(fromCv.areaName)) : undefined;
       if (cvTargets && cvTargets.length > 0) {
-        fileInto(cvTargets, candidate, true);
+        fileInto(cvTargets, candidate, "cv-text");
+        fileInto(upgrading(cvTargets), candidate);
+        continue;
+      }
+    }
+
+    // ── The governorate, when it holds exactly one area ────────────────────────────────────────
+    //
+    // The owner, 2026-09-03, asked the question directly and answered it: a candidate whose only
+    // location is the governorate, where that governorate is served by ONE area, goes in that area's
+    // folder. Beni Suef, Fayoum, Kafr El-Sheikh, Port Said, Suez and Damietta are the six where that
+    // holds today; for the twelve governorates split across two or more areas this resolves to
+    // nothing and the CV drops to the catch-all below, unchanged.
+    //
+    // It is the weakest of the three routes and it is last for that reason. What makes it right
+    // rather than a guess is that the area and the governorate are the same ground: telling a
+    // Fayoum candidate's manager "no area named" when Fayoum IS the area names nothing he does not
+    // already know, and hides a person in a folder built for people who cannot be placed.
+    if (routableAreaNames.length > 0) {
+      const governed = areaGovernedByCv(candidate, routableAreaNames);
+      const govTargets = governed ? foldersByKey.get(areaFolderKey(governed.areaName)) : undefined;
+      if (govTargets && govTargets.length > 0) {
+        fileInto(govTargets, candidate, "governorate");
+        fileInto(upgrading(govTargets), candidate);
         continue;
       }
     }
@@ -594,7 +656,6 @@ export function placeCandidatesInDistrictFolders<T extends DistrictFolderCandida
     // ── The region, when their CV names no area either ─────────────────────────────────────────
     // "Qena" is not an area here — the organogram splits it into Qena 1 and Qena 2 — but it is
     // unmistakably Upper Egypt, and a district's catch-all is a better answer than nobody at all.
-    const regionName = districtRoutingRegion(candidate);
     if (!regionName) {
       unplaced.push({
         candidateId: candidate.id,
@@ -609,8 +670,7 @@ export function placeCandidatesInDistrictFolders<T extends DistrictFolderCandida
       continue;
     }
 
-    const catchAlls = catchAllsByRegion.get(regionFamilyKey(regionName));
-    if (!catchAlls || catchAlls.length === 0) {
+    if (catchAlls.length === 0) {
       unplaced.push({
         candidateId: candidate.id,
         candidateName: candidate.fullName ?? null,
