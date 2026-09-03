@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
-import { failureDetail, pingDeadMansSwitch } from "@/lib/observability/dead-mans-switch";
+import { describeThrown } from "@/lib/error-monitor/describe-thrown";
+import { pingDeadMansSwitch } from "@/lib/observability/dead-mans-switch";
 import { dispatchSyntheticJourneys } from "@/lib/observability/dispatch-synthetic-journeys";
 import { logError } from "@/lib/observability/log";
 import { assertCronAuthorized } from "@/lib/security/cron-auth";
@@ -78,7 +79,7 @@ export async function GET(request: Request) {
     await pingDeadMansSwitch(
       JOB_SLUG,
       "fail",
-      failureDetail(error),
+      describeThrown(error),
     );
     return NextResponse.json({ success: false, error: "dispatch_failed" }, { status: 500 });
   }

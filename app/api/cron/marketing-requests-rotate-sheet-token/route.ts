@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 
 import { rotateMarketingSheetToken } from "@/lib/marketing-requests/sheet-token-rotation";
-import { failureDetail, pingDeadMansSwitch } from "@/lib/observability/dead-mans-switch";
+import { describeThrown } from "@/lib/error-monitor/describe-thrown";
+import { pingDeadMansSwitch } from "@/lib/observability/dead-mans-switch";
 import { logError } from "@/lib/observability/log";
 import { assertCronAuthorized } from "@/lib/security/cron-auth";
 
@@ -70,7 +71,7 @@ export async function GET(request: Request) {
     await pingDeadMansSwitch(
       JOB_SLUG,
       "fail",
-      failureDetail(error),
+      describeThrown(error),
     );
     return NextResponse.json({ success: false, error: "rotation_failed" }, { status: 500 });
   }

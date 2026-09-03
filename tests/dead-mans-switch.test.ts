@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 
-import { failureDetail, pingDeadMansSwitch, withDeadMansSwitch } from "../src/lib/observability/dead-mans-switch.ts";
+import { pingDeadMansSwitch, withDeadMansSwitch } from "../src/lib/observability/dead-mans-switch.ts";
 
 type FetchCall = { url: string; init: RequestInit | undefined };
 
@@ -16,51 +16,6 @@ function stubFetch(behavior: "resolve" | "reject") {
 }
 
 export async function runDeadMansSwitchTests() {
-  // --- failureDetail: the diagnostic a failed cron actually leaves behind ---
-  //
-  // Supabase/PostgREST rejects with a PLAIN OBJECT, not an Error, so the `String(error)` this
-  // repo used at 13 call sites produced the literal "[object Object]". On 2026-09-03
-  // phoenix-expense-claims-refresh failed hourly recording exactly that: the heartbeat said
-  // "[object Object]", app_error_events held nothing, and the real cause — a check-constraint
-  // violation naming the constraint and both amounts — was in the rejected object the whole time.
-  {
-    const postgrestError = {
-      code: "23514",
-      details: "Failing row contains (OUTSTATION-52, approved, 364.00, 800.00).",
-      hint: null,
-      message: 'new row for relation "expense_claims" violates check constraint "expense_claims_approved_total_range"',
-    };
-    const detail = failureDetail(postgrestError);
-
-    assert.notEqual(
-      detail,
-      "[object Object]",
-      "a PostgREST rejection must never render as [object Object] — that is the whole diagnostic gone",
-    );
-    assert.ok(
-      detail.includes("expense_claims_approved_total_range"),
-      `the failing constraint must survive into the heartbeat detail, got: ${detail}`,
-    );
-    assert.ok(
-      detail.includes("23514"),
-      `the SQLSTATE must survive into the heartbeat detail, got: ${detail}`,
-    );
-    assert.ok(
-      detail.includes("OUTSTATION-52"),
-      `PostgREST's own details field names the offending row and must not be dropped, got: ${detail}`,
-    );
-
-    assert.equal(
-      failureDetail(new Error("real failure")),
-      "Error: real failure",
-      "a genuine Error keeps its existing name: message shape, so nothing already readable in the job history changes",
-    );
-    assert.ok(
-      typeof failureDetail("plain string") === "string" && typeof failureDetail(null) === "string",
-      "failureDetail must return a string for any thrown value — it runs on the failure path and must never throw itself",
-    );
-  }
-
   const saved = {
     APP_ENV: process.env.APP_ENV,
     NODE_ENV: process.env.NODE_ENV,
