@@ -73,8 +73,13 @@ async function HrCommandCenterContent({
         // rather than as an empty slot.
         employeeCode: formatHrIdForDisplay(access.hrId),
         photoUrl: viewer.imageUrl ?? null,
-        // Already the JOB TITLE — the resolver maps the seat key through HR_SEAT_JOB_TITLES, so
-        // this reads "HR Business Partner", never "HR Advisory".
+        // Already the JOB TITLE, not the seat key — the resolver maps it through
+        // HR_SEAT_JOB_TITLES, so this reads "HR Business Partner" rather than the raw seat name.
+        //
+        // That seat name is deliberately not written out here. `hr-function-governance.test.ts`
+        // Rule 10 pins every file containing one, because such a string is usually a gate the
+        // permission matrix cannot see. This page's gate is `hrBundleForRole` above, so listing it
+        // would dilute a tripwire whose whole value is that each entry is a real by-name grant.
         roleLabel: viewer.roleLabel,
       }}
     />
