@@ -122,6 +122,7 @@ import { runProbationCaseProvisioningTests } from "./probation-case-provisioning
 import { runProbationDomainMigrationReadinessTests } from "./probation-domain-migration-readiness.test.ts";
 import { runCrmContactCodeTests } from "./crm-contact-code.test.ts";
 import { runCustomerGeographySpineTests } from "./customer-geography-spine.test.ts";
+import { runCustomer360Tests } from "./customer-360.test.ts";
 import { runCrmIdentityTests } from "./crm-identity.test.ts";
 import { runCrmBlockCountingTests } from "./crm-block-counting.test.ts";
 import { runCrmPostExitAttributionTests } from "./crm-post-exit-attribution.test.ts";
@@ -1954,6 +1955,7 @@ await runTest("employee template Area->Team dropdown (builder and Excel resolve 
 await runTest("direct channel", runDirectChannelTests);
 await runTest("direct orders land on their own area", runDirectOrdersLandOnTheirOwnAreaTests);
 await runTest("the place spine resolves EXACT customer-code pairs (two .in() filters are independent)", runCustomerGeographySpineTests);
+await runTest("Customer 360 hides confidential money and never offers a picker wider than its viewer", runCustomer360Tests);
 await runTest("office pivot", runOfficePivotTests);
 await runTest("office allocation", runOfficeAllocationTests);
 await runTest("office golden rule LOCK (owner, 2026-08-11)", runOfficeGoldenRuleLockTests);

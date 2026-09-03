@@ -136,6 +136,12 @@ const TWIN_RULES: readonly TwinRule[] = [
   { from: "/leave-management/vacation-request", to: "/employee-portals/vacation-request" },
 
   // ── Sales ──────────────────────────────────────────────────────────────────
+  // Customer 360 is a sales surface that lives at its own root path rather than under
+  // /sales, so it is grouped here by subject rather than by prefix. Both the picker and a
+  // single customer resolve to the portal's one sales screen — the same answer every other
+  // admin sales tool gives, and the destination both pages already name in their own source.
+  { from: "/customer-360", to: SOS },
+  { from: "/customer-360/:subjectId", to: SOS },
   { from: "/sales", to: SOS },
   { from: "/sales/closing-corrections", to: SOS },
   { from: "/sales/customer-directory", to: SOS },
