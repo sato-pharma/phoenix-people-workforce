@@ -32,7 +32,7 @@ import {
   Trash2,
   Upload,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 
 import { AdminCallout, AdminTableShell } from "@/components/admin/admin-design-system";
 import { Badge } from "@/components/ui/badge";
@@ -296,11 +296,21 @@ export function TemplateStudio() {
     }
   }, []);
 
-  // Loaded when the section is first opened, never on page load. This sits at the foot of a screen
-  // whose real job is printing today's papers, and a list nobody has asked for is a request nobody
-  // asked for.
-  useEffect(() => {
-    if (open && !loaded) void loadTemplates();
+  /**
+   * Loaded when the section is first opened, never on page load. This sits at the foot of a screen
+   * whose real job is printing today's papers, and a list nobody has asked for is a request nobody
+   * asked for.
+   *
+   * IN THE CLICK HANDLER, NOT IN AN EFFECT. `loadTemplates` clears the error banner synchronously
+   * before it reaches its first `await`, so calling it from an effect body is a `setState` inside
+   * an effect — a lint ERROR in this repo, not a warning, because it can cascade renders. Opening
+   * the section is a click, so the click is where the fetch belongs, and it then happens for the
+   * reason it really happens rather than as a consequence of a render.
+   */
+  const toggle = useCallback(() => {
+    const next = !open;
+    setOpen(next);
+    if (next && !loaded) void loadTemplates();
   }, [loadTemplates, loaded, open]);
 
   /**
@@ -448,7 +458,7 @@ export function TemplateStudio() {
         <Button
           aria-expanded={open}
           className="h-10 gap-2 rounded-xl"
-          onClick={() => setOpen((current) => !current)}
+          onClick={toggle}
           type="button"
           variant="outline"
         >
@@ -704,8 +714,12 @@ export function TemplateStudio() {
                     {templates.filter((template) => template.group === option).map((template) => (
                       <li className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-start" key={template.id}>
                         {template.pages[0] ? (
-                          // eslint-disable-next-line @next/next/no-img-element -- streamed from a private
-                          // bucket through an authenticated route; next/image cannot fetch it.
+                          // Streamed from a private bucket through an authenticated route, so
+                          // next/image cannot fetch it. The directive goes on the line ABOVE the
+                          // element with nothing between: `eslint-disable-next-line` disables the
+                          // very next line, so a second comment line under it disables the COMMENT
+                          // and leaves the element reported — which is what happened here.
+                          // eslint-disable-next-line @next/next/no-img-element
                           <img
                             alt=""
                             className="h-24 w-auto shrink-0 rounded-lg border border-phx-line bg-white"
