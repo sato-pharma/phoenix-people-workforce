@@ -209,6 +209,8 @@ function testNothingIsEverRemovedFromTheArchive() {
   const everKnown = [
     "contract-v1",
     "contract-v2",
+    "contract-v3",
+    "contract-v4",
     "form1-v1",
     "form6-v1",
     "resignation-v1",
@@ -257,7 +259,7 @@ function testTheArchiveListIsWhatTheScreenShows() {
   const archived = archivedTemplateVersions();
   assert.deepEqual(
     archived.map((entry) => entry.id),
-    ["contract-v2", "contract-v1"],
+    ["contract-v3", "contract-v2", "contract-v1"],
     "the Archive screen lists exactly the superseded versions, newest supersession first",
   );
   for (const entry of archived) {
@@ -269,13 +271,13 @@ function testTheArchiveListIsWhatTheScreenShows() {
   // Every version of the contract, newest first — what the Archive pages through.
   assert.deepEqual(
     templateVersionsFor("contract").map((entry) => entry.id),
-    ["contract-v3", "contract-v2", "contract-v1"],
+    ["contract-v4", "contract-v3", "contract-v2", "contract-v1"],
   );
 }
 
 function testResolveReproducesTheVersionThatWasSigned() {
   const unsigned = resolveTemplateVersion("contract", null);
-  assert.equal(unsigned.version.id, "contract-v3");
+  assert.equal(unsigned.version.id, "contract-v4");
   assert.equal(unsigned.reproducedFromSignature, false);
 
   const signedAgainstV1 = resolveTemplateVersion("contract", "contract-v1");
@@ -289,13 +291,13 @@ function testResolveReproducesTheVersionThatWasSigned() {
   // An id from a branch that never shipped must not make an employee's file unprintable — it falls
   // back to the current version and SAYS it did, so the screen can explain itself.
   const unknown = resolveTemplateVersion("contract", "contract-v99");
-  assert.equal(unknown.version.id, "contract-v3");
+  assert.equal(unknown.version.id, "contract-v4");
   assert.equal(unknown.reproducedFromSignature, false);
 
   // A stored id belonging to another document is the same case, and the cross-check matters: a
   // lookup by id alone would happily hand back the Form 1 entry for a contract.
   const crossed = resolveTemplateVersion("contract", "form1-v1");
-  assert.equal(crossed.version.id, "contract-v3");
+  assert.equal(crossed.version.id, "contract-v4");
   assert.equal(crossed.reproducedFromSignature, false);
 }
 
@@ -372,7 +374,20 @@ function testEveryContractTextIsPinned() {
   assert.equal(
     textFingerprint("contract-v3"),
     "39cd23a2f0e5cf4093bd775cabe4b710a7304bacb49764687be5803f40c72ec0",
-    "VERSION 3'S ARABIC HAS CHANGED. This is the contract Phoenix prints today. If the owner "
+    "VERSION 3'S ARABIC HAS CHANGED. This version is archived. The hash below is the SAME value it "
+      + "was pinned at while current — archiving it on 2026-09-04 did not move one byte of its text, "
+      + "which is the point: an archived version reprints as the document it always was.",
+  );
+  // Version 4, appended 2026-09-04. The delta was measured before this was pinned, not after:
+  // version 3 hashes 63 strings and version 4 hashes 66, of which 60 are byte-identical. The three
+  // that leave are the recital's single register line, the old closing, and the الصفة signing field;
+  // the six that arrive are the recital's two register lines, the closing that now names the day,
+  // the two lines naming who signs for the company, and the receipt line. All thirteen articles
+  // compare equal — asserted in its own right by `testTheStructureOfEveryVersionHoldsUp`.
+  assert.equal(
+    textFingerprint("contract-v4"),
+    "3b05fdc2972f3a755c3c43db906074696210634a9772045d90f708dbd74fed71",
+    "VERSION 4'S ARABIC HAS CHANGED. This is the contract Phoenix prints today. If the owner "
       + "supplied a new draft, archive this version and append the new one; do not edit this text.",
   );
 }
@@ -431,6 +446,61 @@ function testTheStructureOfEveryVersionHoldsUp() {
   assert.equal(
     v3.subtitleAr,
     "محرر طبقًا لقانون العمل المصري رقم 14 لسنة 2025 والقرارات المنفذة له",
+  );
+
+  // VERSION 4 CARRIES VERSION 3'S ARTICLES UNTOUCHED. That is the central claim of the 2026-09-04
+  // revision — the owner changed the signing apparatus, not the clauses — and it is asserted here
+  // rather than trusted, because the two files are separate copies and nothing but this stops one
+  // drifting from the other. Comparing the ARTICLES ONLY is deliberate: the recital, closing and
+  // signature block are exactly the parts that DID change, so a whole-template comparison would
+  // have to be weakened to pass and would then prove nothing.
+  const v4 = contractTemplateById("contract-v4");
+  assert.ok(v4);
+  assert.deepEqual(
+    v4.articles,
+    v3.articles,
+    "version 4's thirteen articles must be byte-identical to version 3's — this revision changed "
+      + "the signing apparatus, never a clause. If a clause genuinely changed, say so in the "
+      + "registry note and update this assertion deliberately; do not let it drift silently.",
+  );
+  assert.equal(v4.layout, "document");
+  assert.equal(v4.titleAr, v3.titleAr);
+  assert.equal(v4.subtitleAr, v3.subtitleAr);
+  assert.equal(v4.preambleAr, v3.preambleAr);
+  assert.deepEqual(v4.secondPartyLinesAr, v3.secondPartyLinesAr);
+  assert.equal(v4.footerAr, v3.footerAr);
+
+  // The four things that DID change, each pinned in its own right so a regression names itself.
+  assert.equal(v4.firstPartyLinesAr.length, 3, "version 4's company recital breaks in three lines");
+  assert.equal(v3.firstPartyLinesAr.length, 2, "version 3's broke in two — that is the difference");
+  assert.ok(
+    v4.closingAr?.includes("يوم {{DAY_NAME}} الموافق"),
+    "version 4 dates the contract by weekday as well as date",
+  );
+  assert.deepEqual(
+    v4.signatureColumns.map((column) => column.fieldsAr.length),
+    [3, 3],
+    "both parties sign under the same three headings — version 3's ragged 4-against-3 grid printed "
+      + "an empty الصفة cell against the employee, asking a question that was never his to answer",
+  );
+
+  // OPTIONAL ON THE TYPE, REQUIRED ON THE CURRENT VERSION. `signatoryNoteLinesAr` and
+  // `receiptAcknowledgmentAr` are declared optional so versions 1-3 need not be edited to write
+  // `null` into three archived legal texts. The cost of optional is that a future version could omit
+  // them and print nothing at all, silently — no error, no empty box, just a contract missing the
+  // line the employee signs for his copy. This is what makes that loud instead.
+  const current = currentContractTemplate();
+  assert.ok(
+    current.signatoryNoteLinesAr && current.signatoryNoteLinesAr.length === 2,
+    "the current contract must name who signs for the company, beneath its signature row",
+  );
+  assert.ok(
+    current.receiptAcknowledgmentAr && current.receiptAcknowledgmentAr.length > 0,
+    "the current contract must carry the employee's separate signature for receipt of his copy",
+  );
+  assert.ok(
+    !/\{\{[A-Z_]+\}\}/u.test(current.receiptAcknowledgmentAr ?? ""),
+    "the receipt line is signed by hand — a token on it means Phoenix is filling a pen rule",
   );
 }
 
@@ -540,6 +610,19 @@ function testEveryTokenAVersionUsesIsOneTheRendererFills() {
     "TAX_CARD",
     "UNIFIED_REGISTER",
   ]);
+
+  // Version 4 references a strict SUPERSET of version 3's blanks — the same set plus DAY_NAME, which
+  // the closing brings back after two versions without it. Asserted as a derived set rather than a
+  // second hand-typed list: typing twenty-eight token names again is how a difference gets written
+  // into the expectation instead of being caught by it.
+  const v4 = contractTemplateById("contract-v4");
+  assert.ok(v4);
+  assert.deepEqual(
+    contractTemplateTokens(v4),
+    [...contractTemplateTokens(v3), "DAY_NAME"].sort(),
+    "version 4 uses version 3's tokens plus DAY_NAME, and nothing else. A stray {{TOKEN}} the "
+      + "renderer cannot fill prints literal braces onto a signature page.",
+  );
 }
 
 function testAMissingValuePrintsADottedRuleAndNotAnEmptyGap() {
@@ -838,6 +921,71 @@ function testTheDocumentLayoutLeavesAnUnknownValueAsAnEmptyBox(): void {
   }
 }
 
+/**
+ * WHO SIGNS FOR THE COMPANY IS AN OVERRIDE, AND IT MOVES EVERYTHING AT ONCE.
+ *
+ * The owner's rule of 2026-09-04: "sometimes another one may sign". The contract names the company's
+ * signatory in THREE places — the recital (الطرف الأول), the الاسم cell of the signature grid, and
+ * the note beneath it — and his capacity in two. The danger is not that an override fails to apply;
+ * it is that it applies to SOME of them, producing an instrument whose recital names one man and
+ * whose signature line names another. That document would be worse than either name alone, and it
+ * would look completely normal on screen.
+ *
+ * So this asserts both directions: the delegate reaches every place, AND the standing signatory is
+ * nowhere on the page.
+ */
+function testADelegateCanSignForTheCompanyAndReplacesHimEverywhere() {
+  const standing = systemLegalEntity.contractRecital;
+  const delegateName = "الأستاذ/ محمد سمير عبد الله";
+  const delegateTitle = "مدير الموارد البشرية، بتفويض";
+
+  const normal = renderContractHtml(packFixture(), 1);
+  const delegated = renderContractHtml(
+    packFixture({
+      contractSignatoryNameAr: delegateName,
+      contractSignatoryTitleAr: delegateTitle,
+    }),
+    1,
+  );
+
+  const occurrences = (haystack: string, needle: string) => haystack.split(needle).length - 1;
+
+  // The default is untouched: a profile that overrides nothing still prints the standing signatory.
+  assert.ok(
+    occurrences(normal, standing.signatoryNameAr) >= 3,
+    "with no override the contract prints the company's standing signatory in all three places",
+  );
+  assert.equal(
+    occurrences(normal, delegateName),
+    0,
+    "a contract nobody delegated must not name a delegate",
+  );
+
+  // The override reaches all three, and the capacity both places version 4 states it.
+  assert.equal(
+    occurrences(delegated, delegateName),
+    3,
+    "a delegate signs the recital, the signature grid and the note beneath it — all three",
+  );
+  assert.equal(
+    occurrences(delegated, delegateTitle),
+    2,
+    "the delegate's capacity replaces the standing one in the recital and in the note",
+  );
+
+  // The half-applied instrument is the real failure, so it gets its own assertion.
+  assert.equal(
+    occurrences(delegated, standing.signatoryNameAr),
+    0,
+    "a delegated contract must not name the standing signatory ANYWHERE — a recital naming one man over a signature line naming another is a defective instrument",
+  );
+  assert.equal(
+    occurrences(delegated, standing.signatoryTitleAr),
+    0,
+    "nor may it keep the standing signatory's capacity beside the delegate's name",
+  );
+}
+
 export function runHrFormsContractArchiveTests(): void {
   testEveryDocumentHasExactlyOneCurrentVersion();
   testEveryVersionIdIsUniqueAcrossEveryDocument();
@@ -859,4 +1007,5 @@ export function runHrFormsContractArchiveTests(): void {
   testEveryCopyRequestedIsPrinted();
   testEveryVersionBindsAnIdentityFieldToItsValue();
   testTheDocumentLayoutLeavesAnUnknownValueAsAnEmptyBox();
+  testADelegateCanSignForTheCompanyAndReplacesHimEverywhere();
 }

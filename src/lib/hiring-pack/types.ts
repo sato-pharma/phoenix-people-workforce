@@ -229,6 +229,20 @@ export type HiringPackProfileInput = {
   underperformanceMonths?: number | null;
   trainingBondMonths?: number | null;
   notes?: string | null;
+  /**
+   * WHO SIGNS FOR THE COMPANY, when it is not the standing signatory.
+   *
+   * Both are overrides and both are normally NULL, which means "use the signatory in
+   * `system-settings`" — the usual contract needs nothing typed. A value states who signed THIS
+   * instrument, and it moves all three places the contract names him at once: the recital, the
+   * signature grid's الاسم cell, and the note beneath the grid.
+   *
+   * They live here, per employee, and not in settings: settings are shared by every document and
+   * every person, so typing a delegate's name there to print one contract would rewrite the
+   * company's representative on everybody else's paper. See `paper-fields.ts`.
+   */
+  contractSignatoryNameAr?: string | null;
+  contractSignatoryTitleAr?: string | null;
 };
 
 /**

@@ -220,6 +220,20 @@ const TERM_FIELDS: readonly HiringFieldDef[] = [
     labelAr: "مدة الالتزام بعد التدريب",
     kind: "number",
   },
+  {
+    key: "contractSignatoryNameAr",
+    labelEn: "Signed for the company by",
+    labelAr: "يوقّع عن الطرف الأول",
+    kind: "text",
+    hint: "Blank uses the company's standing signatory. Fill it only when someone else signs.",
+  },
+  {
+    key: "contractSignatoryTitleAr",
+    labelEn: "Signatory's capacity",
+    labelAr: "صفة الموقّع",
+    kind: "text",
+    hint: "Blank uses the standing signatory's capacity.",
+  },
 ];
 
 const NUMBER_KEYS = new Set<keyof HiringPackProfileInput>([

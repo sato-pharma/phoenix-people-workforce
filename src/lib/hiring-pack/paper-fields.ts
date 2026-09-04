@@ -206,6 +206,23 @@ export const PAPER_FIELD_BINDINGS: Readonly<Record<string, PaperFieldBinding>> =
   QUALIFICATION: { store: "profile", field: "qualification", kind: "text", labelEn: "Qualification" },
   qualification: { store: "profile", field: "qualification", kind: "text", labelEn: "Qualification" },
   BIRTH_PLACE: { store: "profile", field: "birthPlace", kind: "text", labelEn: "Place of birth" },
+  // THE ONE COMPANY-SIDE VALUE THAT IS THIS EMPLOYEE'S. Everything else the company states about
+  // itself — its name, its registers, its head office — is the legal entity's and is deliberately
+  // read-only here, because typing over it on one contract would rewrite it for everyone. Who
+  // SIGNED is different: it is a fact about this instrument, it is stored per employee, and it is
+  // NULL until somebody other than the standing signatory signs.
+  CONTRACT_SIGNATORY: {
+    store: "profile",
+    field: "contractSignatoryNameAr",
+    kind: "text",
+    labelEn: "Signed for the company by",
+  },
+  CONTRACT_SIGNATORY_TITLE: {
+    store: "profile",
+    field: "contractSignatoryTitleAr",
+    kind: "text",
+    labelEn: "Signatory's capacity",
+  },
   insuranceOffice: {
     store: "profile",
     field: "insuranceOffice",
@@ -740,6 +757,8 @@ function profilePayload(pack: HiringPackData): HiringPackProfileInput {
     addressStreet: profile.addressStreet,
     birthPlace: profile.birthPlace,
     contractDurationMonths: profile.contractDurationMonths,
+    contractSignatoryNameAr: profile.contractSignatoryNameAr,
+    contractSignatoryTitleAr: profile.contractSignatoryTitleAr,
     contractEndDate: profile.contractEndDate,
     contractStartDate: profile.contractStartDate,
     insuranceOffice: profile.insuranceOffice,
