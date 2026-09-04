@@ -245,6 +245,10 @@ export function AdminManagerExpenseModal({
   // paid from the ticket the admin types in. Either way it is ADDED to the allowance.
   const isTicketBased = transportationType !== "car";
   const travelCostForSubmit = isTicketBased && ticketCost ? Number(ticketCost) : null;
+  // A Meeting entry is priced on the meeting amount alone — no transportation, distance, ticket
+  // cost, or allowance. The service layer (src/lib/outstation/service.ts) already zeroes those
+  // for expenseType "meeting"; this just keeps the form from asking for inputs it will ignore.
+  const isMeeting = expenseType === "meeting";
 
   async function lookupEmployee(hrId: string) {
     if (!hrId.trim()) {
@@ -402,7 +406,7 @@ export function AdminManagerExpenseModal({
       setDestination(resolved);
       setResolvingPlace(false);
 
-      if (hrIdForDistance) {
+      if (hrIdForDistance && !isMeeting) {
         await calculateDistance(resolved, hrIdForDistance, isRegion);
       }
     } catch {
@@ -436,7 +440,13 @@ export function AdminManagerExpenseModal({
     const prevHrId = prevHrIdRef.current;
     prevHrIdRef.current = hrIdForDistance;
     const dest = destinationRef.current;
-    if (hrIdForDistance && hrIdForDistance !== prevHrId && dest && !calculatingDistance) {
+    if (
+      hrIdForDistance &&
+      hrIdForDistance !== prevHrId &&
+      dest &&
+      !calculatingDistance &&
+      !isMeeting
+    ) {
       setDistanceResult(null);
       setDistanceError(null);
       setManualDistanceKm("");
@@ -458,10 +468,11 @@ export function AdminManagerExpenseModal({
           destinationLabel: destination?.label ?? null,
           distanceKm: distance,
           employeeHrId: hrId,
+          expenseType,
           meetingAmount: meetingAmount ? Number(meetingAmount) : 0,
           otherAmount: otherAmount ? Number(otherAmount) : 0,
-          transportationType,
-          travelCostAmount: travelCostForSubmit,
+          transportationType: isMeeting ? "other" : transportationType,
+          travelCostAmount: isMeeting ? null : travelCostForSubmit,
           tripEndDate,
           tripStartDate,
         }),
@@ -478,9 +489,14 @@ export function AdminManagerExpenseModal({
   // Live calculation preview: recompute the fuel + allowance breakdown whenever
   // the inputs that drive the payout change.
   useEffect(() => {
-    const distance = Number(manualDistanceKm);
+    const distance = isMeeting ? 0 : Number(manualDistanceKm);
     const hrId = hrIdForDistance;
-    if (!hrId || !Number.isFinite(distance) || distance <= 0 || !tripStartDate || !tripEndDate) {
+    if (
+      !hrId ||
+      (!isMeeting && (!Number.isFinite(distance) || distance <= 0)) ||
+      !tripStartDate ||
+      !tripEndDate
+    ) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setCalcPreview(null);
       return;
@@ -502,12 +518,13 @@ export function AdminManagerExpenseModal({
     meetingAmount,
     otherAmount,
     destination,
+    isMeeting,
   ]);
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
-    const distanceKm = Number(manualDistanceKm);
-    if (!destination || distanceKm <= 0) return;
+    const distanceKm = isMeeting ? 0 : Number(manualDistanceKm);
+    if (!destination || (!isMeeting && distanceKm <= 0)) return;
 
     setSubmitting(true);
     setSubmitError(null);
@@ -545,9 +562,9 @@ export function AdminManagerExpenseModal({
       notes: notes.trim() || null,
       otherAmount: otherAmount ? Number(otherAmount) : 0,
       pmWorkload: pmWorkload ? Number(pmWorkload) : 0,
-      routePolyline: distanceResult?.routePolyline ?? null,
-      transportationType,
-      travelCostAmount: travelCostForSubmit,
+      routePolyline: isMeeting ? null : (distanceResult?.routePolyline ?? null),
+      transportationType: isMeeting ? "other" : transportationType,
+      travelCostAmount: isMeeting ? null : travelCostForSubmit,
       tripEndDate,
       tripStartDate,
     };
@@ -588,7 +605,7 @@ export function AdminManagerExpenseModal({
 
   const canSubmit =
     Boolean(destination) &&
-    Number(manualDistanceKm) > 0 &&
+    (isMeeting || Number(manualDistanceKm) > 0) &&
     Boolean(tripStartDate) &&
     Boolean(tripEndDate) &&
     (isEdit || Boolean(employeeHrId)) &&
@@ -720,9 +737,10 @@ export function AdminManagerExpenseModal({
             </div>
           ) : null}
 
-          {/* Destination */}
+          {/* Destination — for a Meeting this is just the governorate/location of the meeting;
+              no distance is measured against it. */}
           <div>
-            <FieldLabel>Destination</FieldLabel>
+            <FieldLabel>{isMeeting ? "Meeting location (governorate)" : "Destination"}</FieldLabel>
             <PlacesAutocompleteInput
               disabled={resolvingPlace || calculatingDistance}
               onSelect={(prediction) => void resolveAndCalculate(prediction)}
@@ -757,7 +775,7 @@ export function AdminManagerExpenseModal({
               </div>
             ) : null}
 
-            {destinationIsRegion && destination && !resolvingPlace ? (
+            {destinationIsRegion && destination && !resolvingPlace && !isMeeting ? (
               <div className="mt-2 flex items-start gap-2 rounded-md border border-[#FED7AA] bg-phx-accent-soft px-3 py-2 text-xs text-[#9A3412]">
                 <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-phx-accent-hover" />
                 <span>
@@ -769,8 +787,9 @@ export function AdminManagerExpenseModal({
             ) : null}
           </div>
 
-          {/* Distance — Maps result panel (informational) + always-editable input */}
-          {calculatingDistance ? (
+          {/* Distance — Maps result panel (informational) + always-editable input. A Meeting
+              entry never prices travel, so it skips distance entirely. */}
+          {isMeeting ? null : calculatingDistance ? (
             <div className={`${panelClassName} flex items-center gap-3 p-4`}>
               <Loader2 className="h-5 w-5 animate-spin text-phx-accent" />
               <div>
@@ -873,8 +892,9 @@ export function AdminManagerExpenseModal({
             </div>
           </div>
 
-          {/* Expense type + transportation */}
-          <div className="grid gap-4 sm:grid-cols-2">
+          {/* Expense type + transportation — a Meeting has no transportation mode, so that field
+              drops out and Expense type takes the full row. */}
+          <div className={isMeeting ? "grid gap-4" : "grid gap-4 sm:grid-cols-2"}>
             <div>
               <FieldLabel>Expense type</FieldLabel>
               <SelectField
@@ -887,27 +907,36 @@ export function AdminManagerExpenseModal({
                 <option value="meeting">Meeting</option>
                 <option value="other">Other</option>
               </SelectField>
+              {isMeeting ? (
+                <p className="mt-1 text-xs text-phx-ink-soft">
+                  Meeting expenses are priced on the meeting cost alone — no transportation,
+                  distance, or allowance is added.
+                </p>
+              ) : null}
             </div>
-            <div>
-              <FieldLabel>Transportation</FieldLabel>
-              <SelectField
-                onChange={(e) =>
-                  setTransportationType(
-                    e.target.value as "car" | "train" | "bus" | "other",
-                  )
-                }
-                value={transportationType}
-              >
-                <option value="car">Car</option>
-                <option value="train">Train</option>
-                <option value="bus">Bus</option>
-                <option value="other">Other</option>
-              </SelectField>
-            </div>
+            {isMeeting ? null : (
+              <div>
+                <FieldLabel>Transportation</FieldLabel>
+                <SelectField
+                  onChange={(e) =>
+                    setTransportationType(
+                      e.target.value as "car" | "train" | "bus" | "other",
+                    )
+                  }
+                  value={transportationType}
+                >
+                  <option value="car">Car</option>
+                  <option value="train">Train</option>
+                  <option value="bus">Bus</option>
+                  <option value="other">Other</option>
+                </SelectField>
+              </div>
+            )}
           </div>
 
-          {/* Ticket cost — non-car transport is paid from the ticket, not the fuel formula */}
-          {isTicketBased ? (
+          {/* Ticket cost — non-car transport is paid from the ticket, not the fuel formula.
+              Never shown for Meeting, which has no travel cost at all. */}
+          {isTicketBased && !isMeeting ? (
             <div>
               <FieldLabel>Ticket cost (EGP) &mdash; go + return</FieldLabel>
               <InputField
@@ -1098,22 +1127,26 @@ export function AdminManagerExpenseModal({
                 ) : null}
               </div>
               <div className="grid gap-3 sm:grid-cols-2">
-                <div className="rounded-md bg-phx-paper px-3 py-2.5">
-                  <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-soft">
-                    {isTicketBased ? "Ticket cost" : "Fuel (round trip)"}
-                  </p>
-                  <p className="mt-0.5 text-sm font-black text-phx-ink">
-                    {formatEgp(isTicketBased ? calcPreview.ticketAmount : calcPreview.fuelAmount)}
-                  </p>
-                </div>
-                <div className="rounded-md bg-phx-paper px-3 py-2.5">
-                  <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-soft">
-                    Allowance
-                  </p>
-                  <p className="mt-0.5 text-sm font-black text-phx-ink">
-                    {formatEgp(calcPreview.allowanceAmount)}
-                  </p>
-                </div>
+                {isMeeting ? null : (
+                  <>
+                    <div className="rounded-md bg-phx-paper px-3 py-2.5">
+                      <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-soft">
+                        {isTicketBased ? "Ticket cost" : "Fuel (round trip)"}
+                      </p>
+                      <p className="mt-0.5 text-sm font-black text-phx-ink">
+                        {formatEgp(isTicketBased ? calcPreview.ticketAmount : calcPreview.fuelAmount)}
+                      </p>
+                    </div>
+                    <div className="rounded-md bg-phx-paper px-3 py-2.5">
+                      <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-soft">
+                        Allowance
+                      </p>
+                      <p className="mt-0.5 text-sm font-black text-phx-ink">
+                        {formatEgp(calcPreview.allowanceAmount)}
+                      </p>
+                    </div>
+                  </>
+                )}
                 {calcPreview.meetingAmount > 0 ? (
                   <div className="rounded-md bg-phx-paper px-3 py-2.5">
                     <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-soft">
