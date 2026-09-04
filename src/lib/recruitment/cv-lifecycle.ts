@@ -81,6 +81,65 @@ export type CvLifecycleRow = {
   senderDisplayName: string | null;
   sizeBytes: number | null;
   timingSource: CvLifecycleTimingSource;
+
+  // ── The candidate themself. ──
+  //
+  // Everything below arrived with the 2026-09-05 view widening and is used ONLY by the `#DETAIL`
+  // section. The `#LIFECYCLE` section deliberately does not print any of it: that table answers
+  // "did this file make it through the pipeline", and it already has 26 columns.
+  //
+  // Every one of these was already in `ats_candidates` and simply never selected. The old view
+  // exposed the DECLARED area, which only 12% of candidates ever answered, so the owner's sheet
+  // showed an Area column that was blank seven times in eight while `governorate` — filled for 76%
+  // — sat one join away. Reporting "we do not know" when the answer is on the row is the defect
+  // this block exists to close.
+  candidateAddress: string | null;
+  candidateCreatedAt: string | null;
+  candidateEmail: string | null;
+  candidateSource: string | null;
+  candidateStatusNote: string | null;
+  currentEmployer: string | null;
+  currentJobTitle: string | null;
+  cvCertifications: string | null;
+  cvEducation: string | null;
+  cvLanguages: string | null;
+  cvSkills: string | null;
+  cvWorkHistory: string | null;
+  dateOfBirth: string | null;
+  declaredBackground: string | null;
+  declaredExpectedSalary: string | null;
+  declaredExperience: string | null;
+  degree: string | null;
+  expectedSalary: string | null;
+  faculty: string | null;
+  gender: string | null;
+  governorate: string | null;
+  grade: string | null;
+  graduationYear: number | null;
+  hasMedicalRepExperience: boolean | null;
+  hasPriorWorkExperience: boolean | null;
+  linkedinUrl: string | null;
+  managerNotifiedAt: string | null;
+  managerNotifiedName: string | null;
+  maritalStatus: string | null;
+  medicalRepEmployer: string | null;
+  militaryStatus: string | null;
+  nationality: string | null;
+  noticePeriod: string | null;
+  preferredRegionName: string | null;
+  professionalSummary: string | null;
+  screeningAgeBand: string | null;
+  screeningBookingExperience: string | null;
+  screeningCommute: string | null;
+  screeningEnglishLevel: string | null;
+  screeningMsOffice: string | null;
+  screeningStartDate: string | null;
+  sentForArea: string | null;
+  sentForJobTitle: string | null;
+  sentForLine: string | null;
+  sentForRegion: string | null;
+  university: string | null;
+  yearsExperience: number | null;
 };
 
 type RawRow = Record<string, unknown>;
@@ -95,6 +154,36 @@ function num(value: unknown): number | null {
   if (value === null || value === undefined || value === "") return null;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+/**
+ * A date-only column, printed as a date and nothing else.
+ *
+ * `date_of_birth` is a Postgres `date`, so it arrives as "1997-04-11" and `new Date` reads that as
+ * UTC MIDNIGHT. Put through the Cairo datetime formatter it printed "1997-04-11 02:00" — a time
+ * nobody was born at, invented entirely by the +02:00 offset. This repo's own trap notes say it
+ * plainly: a date-only column is not an instant, and formatting it in a timezone is the bug rather
+ * than the fix. Egypt's offset is positive so the calendar day happened to survive; at a negative
+ * offset the same code would have printed the day before somebody's birthday.
+ */
+function dateOnly(value: string | null): string {
+  if (!value) return "";
+  const match = /^(\d{4}-\d{2}-\d{2})/.exec(value.trim());
+  return match ? match[1]! : "";
+}
+
+/**
+ * Tri-state, deliberately. `false` and "we never asked" are different answers about a candidate and
+ * `num`/`text` would flatten both to null — which on "has medical-rep experience" would turn 87% of
+ * a real answer set into blanks.
+ */
+function bool(value: unknown): boolean | null {
+  if (value === null || value === undefined || value === "") return null;
+  if (typeof value === "boolean") return value;
+  const raw = String(value).trim().toLowerCase();
+  if (raw === "true" || raw === "t" || raw === "yes" || raw === "1") return true;
+  if (raw === "false" || raw === "f" || raw === "no" || raw === "0") return false;
+  return null;
 }
 
 function channelOf(value: unknown): CvLifecycleChannel {
@@ -140,6 +229,54 @@ function mapRow(row: RawRow): CvLifecycleRow {
     senderDisplayName: text(row.sender_display_name),
     sizeBytes: num(row.size_bytes),
     timingSource: timingSourceOf(row.timing_source),
+
+    candidateAddress: text(row.candidate_address),
+    candidateCreatedAt: text(row.candidate_created_at),
+    candidateEmail: text(row.candidate_email),
+    candidateSource: text(row.candidate_source),
+    candidateStatusNote: text(row.candidate_status_note),
+    currentEmployer: text(row.current_employer),
+    currentJobTitle: text(row.current_job_title),
+    cvCertifications: text(row.cv_certifications),
+    cvEducation: text(row.cv_education),
+    cvLanguages: text(row.cv_languages),
+    cvSkills: text(row.cv_skills),
+    cvWorkHistory: text(row.cv_work_history),
+    dateOfBirth: text(row.date_of_birth),
+    declaredBackground: text(row.declared_background),
+    declaredExpectedSalary: text(row.declared_expected_salary),
+    declaredExperience: text(row.declared_experience),
+    degree: text(row.degree),
+    expectedSalary: text(row.expected_salary),
+    faculty: text(row.faculty),
+    gender: text(row.gender),
+    governorate: text(row.governorate),
+    grade: text(row.grade),
+    graduationYear: num(row.graduation_year),
+    hasMedicalRepExperience: bool(row.has_medical_rep_experience),
+    hasPriorWorkExperience: bool(row.has_prior_work_experience),
+    linkedinUrl: text(row.linkedin_url),
+    managerNotifiedAt: text(row.manager_notified_at),
+    managerNotifiedName: text(row.manager_notified_name),
+    maritalStatus: text(row.marital_status),
+    medicalRepEmployer: text(row.medical_rep_employer),
+    militaryStatus: text(row.military_status),
+    nationality: text(row.nationality),
+    noticePeriod: text(row.notice_period),
+    preferredRegionName: text(row.preferred_region_name),
+    professionalSummary: text(row.professional_summary),
+    screeningAgeBand: text(row.screening_age_band),
+    screeningBookingExperience: text(row.screening_booking_experience),
+    screeningCommute: text(row.screening_commute),
+    screeningEnglishLevel: text(row.screening_english_level),
+    screeningMsOffice: text(row.screening_ms_office),
+    screeningStartDate: text(row.screening_start_date),
+    sentForArea: text(row.sent_for_area),
+    sentForJobTitle: text(row.sent_for_job_title),
+    sentForLine: text(row.sent_for_line),
+    sentForRegion: text(row.sent_for_region),
+    university: text(row.university),
+    yearsExperience: num(row.years_experience),
   };
 }
 
@@ -386,6 +523,187 @@ export function cvLifecycleRowCells(
   ];
 }
 
+/**
+ * The detail sheet: everything Phoenix holds about the PERSON, one row each.
+ *
+ * ONE ROW PER CANDIDATE, NOT PER FILE — which is what makes this a different table rather than more
+ * columns on the existing one. 982 files belong to 741 candidates, so a per-file detail sheet would
+ * print the same person's education and work history two and three times and make a duplicate look
+ * like two applicants.
+ *
+ * GROUPED, NOT ALPHABETICAL. The order below is the order a human reads a CV in — who they are,
+ * where they are, what they studied, what they have done, what they told us, where they went. The
+ * sheet paints a band over each group, so the grouping has to live here or the bands drift.
+ */
+export const CV_DETAIL_COLUMNS = [
+  "#",
+  "Candidate",
+  "Phone",
+  "Email",
+  "Governorate",
+  "Address",
+  "Nationality",
+  "Gender",
+  "Date of birth",
+  "Marital status",
+  "Military status",
+  "LinkedIn",
+
+  "Faculty",
+  "University",
+  "Degree",
+  "Graduation year",
+  "Grade",
+  "Education history",
+
+  "Applied for",
+  "Current job title",
+  "Current employer",
+  "Years of experience",
+  "Worked before?",
+  "Medical rep before?",
+  "Medical rep employer",
+  "Work history",
+  "Skills",
+  "Languages",
+  "Certifications",
+  "Professional summary",
+
+  "Their own background",
+  "Their own experience",
+  "Salary they asked for",
+  "Expected salary (on file)",
+  "Notice period",
+  "English level",
+  "MS Office / Outlook",
+  "Booking experience",
+  "Can commute to Sheraton",
+  "Can start",
+  "Age band",
+
+  "Prefers region",
+  "Prefers area",
+  "Filed folder",
+  "Drive folder",
+  "Sent for job title",
+  "Sent for area",
+  "Sent for region",
+  "Sent for line",
+  "Manager notified",
+  "Manager notified at",
+
+  "How they reached us",
+  "Channel",
+  "CVs on file",
+  "Candidate status",
+  "Status note",
+  "Added to Phoenix",
+  "Open in Phoenix",
+] as const;
+
+/** Yes / No / blank. A blank means nobody ever asked, which is not the same answer as No. */
+function yesNo(value: boolean | null): string {
+  if (value === null) return "";
+  return value ? "Yes" : "No";
+}
+
+/**
+ * The newest CV per candidate, plus how many that candidate has sent.
+ *
+ * `rows` arrives newest-first, so the FIRST row seen for a candidate id is the newest one and the
+ * count is simply how many times the id recurs. Rows with no candidate id — a file that never got
+ * attached to anybody — are kept individually and keyed by file id, because collapsing them all
+ * under one blank key would silently hide every orphaned CV but the first, which is exactly the
+ * kind of quiet loss this whole report exists to make visible.
+ */
+export function oneRowPerCandidate(
+  rows: readonly CvLifecycleRow[],
+): Array<{ cvCount: number; row: CvLifecycleRow }> {
+  const byKey = new Map<string, { cvCount: number; row: CvLifecycleRow }>();
+  for (const row of rows) {
+    const key = row.candidateId ?? `file:${row.fileId}`;
+    const seen = byKey.get(key);
+    if (seen) seen.cvCount += 1;
+    else byKey.set(key, { cvCount: 1, row });
+  }
+  return [...byKey.values()];
+}
+
+export function cvDetailRowCells(
+  entry: { cvCount: number; row: CvLifecycleRow },
+  index: number,
+  baseUrl: string,
+): Array<string | number | null> {
+  const { cvCount, row } = entry;
+  return [
+    index,
+    row.candidateName ?? "",
+    // Leading apostrophe for the same reason as the lifecycle table: without it Sheets eats the
+    // leading zero and renders +20... in scientific notation.
+    row.candidatePhone ? `'${row.candidatePhone}` : "",
+    row.candidateEmail ?? "",
+    row.governorate ?? "",
+    row.candidateAddress ?? "",
+    row.nationality ?? "",
+    row.gender ?? "",
+    dateOnly(row.dateOfBirth),
+    row.maritalStatus ?? "",
+    row.militaryStatus ?? "",
+    row.linkedinUrl ?? "",
+
+    row.faculty ?? "",
+    row.university ?? "",
+    row.degree ?? "",
+    row.graduationYear ?? "",
+    row.grade ?? "",
+    row.cvEducation ?? "",
+
+    row.appliedForJobTitle ?? "",
+    row.currentJobTitle ?? "",
+    row.currentEmployer ?? "",
+    row.yearsExperience ?? "",
+    yesNo(row.hasPriorWorkExperience),
+    yesNo(row.hasMedicalRepExperience),
+    row.medicalRepEmployer ?? "",
+    row.cvWorkHistory ?? "",
+    row.cvSkills ?? "",
+    row.cvLanguages ?? "",
+    row.cvCertifications ?? "",
+    row.professionalSummary ?? "",
+
+    row.declaredBackground ?? "",
+    row.declaredExperience ?? "",
+    row.declaredExpectedSalary ?? "",
+    row.expectedSalary ?? "",
+    row.noticePeriod ?? "",
+    row.screeningEnglishLevel ?? "",
+    row.screeningMsOffice ?? "",
+    row.screeningBookingExperience ?? "",
+    row.screeningCommute ?? "",
+    row.screeningStartDate ?? "",
+    row.screeningAgeBand ?? "",
+
+    row.preferredRegionName ?? row.preferredRegionCode ?? "",
+    row.preferredAreaName ?? "",
+    folderLabel(row),
+    row.driveFolder ?? "",
+    row.sentForJobTitle ?? "",
+    row.sentForArea ?? "",
+    row.sentForRegion ?? "",
+    row.sentForLine ?? "",
+    row.managerNotifiedName ?? "",
+    cairoDateTimeSortable(row.managerNotifiedAt),
+
+    row.candidateSource ?? "",
+    CHANNEL_LABELS[row.channel],
+    cvCount,
+    row.candidateStatus ?? "",
+    row.candidateStatusNote ?? "",
+    cairoDateTimeSortable(row.candidateCreatedAt),
+    phoenixUrl(baseUrl, row.candidateId),
+  ];
+}
+
 export const CV_LIFECYCLE_DAILY_COLUMNS = [
   "Day",
   "WhatsApp",
@@ -446,6 +764,13 @@ export function buildCvLifecycleCsv(input: {
   out.push(CV_LIFECYCLE_COLUMNS.map(csvCell).join(","));
   for (const [index, row] of rows.entries()) {
     out.push(cvLifecycleRowCells(row, index + 1, baseUrl).map(csvCell).join(","));
+  }
+
+  // One row per candidate rather than per file, so a person with three CVs is one applicant here.
+  out.push("#DETAIL");
+  out.push(CV_DETAIL_COLUMNS.map(csvCell).join(","));
+  for (const [index, entry] of oneRowPerCandidate(rows).entries()) {
+    out.push(cvDetailRowCells(entry, index + 1, baseUrl).map(csvCell).join(","));
   }
 
   // Leading BOM so Excel opens Arabic candidate names correctly instead of as mojibake.

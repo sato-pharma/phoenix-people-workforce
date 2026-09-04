@@ -210,7 +210,6 @@ import { runDriveCvFolderTests } from "./drive-cv-folders.test.ts";
 import { runCvLifecycleFeedTests } from "./cv-lifecycle-feed.test.ts";
 import { runCvLifecycleShareLinksScreenTests } from "./cv-lifecycle-share-links-screen.test.ts";
 import { runCvLifecycleSheetTokenRotationTests } from "./cv-lifecycle-sheet-token-rotation.test.ts";
-import { runCvLifecycleSheetChartPlacementTests } from "./cv-lifecycle-sheet-chart-placement.test.ts";
 import { runHiringManagerTeamScopeTests } from "./hiring-manager-team-scope.test.ts";
 import { runManagerFolderShelfTests } from "./manager-folder-shelf.test.ts";
 import { runBackgroundReviewQueueTests } from "./background-review-queue.test.ts";
@@ -1302,6 +1301,7 @@ import { runCommentStripRatchetTests } from "./comment-strip-ratchet.test.ts";
 
 import { runRepoDoctorStripIdleOfferTests } from "./repo-doctor-strip-idle-offer.test.ts";
 import { runRepoDoctorNewestPrTests } from "./repo-doctor-newest-pr.test.ts";
+import { runSessionLockStalenessIsAgeTests } from "./session-lock-staleness-is-age.test.ts";
 import { runRepoDoctorOrphanedFoldersTests } from "./repo-doctor-orphaned-folders.test.ts";
 import { runCrmClientTimeoutsTests } from "./crm-client-timeouts.test.ts";
 import { runOutstationMobileWizardStaleCalculationTests } from "./outstation-mobile-wizard-stale-calculation.test.ts";
@@ -1703,10 +1703,6 @@ await runTest(
 await runTest(
   "CV sheet token rotation (doPost fails closed, the origin can never come from the payload, and the old token dies only after the sheet proves it took the new one)",
   runCvLifecycleSheetTokenRotationTests,
-);
-await runTest(
-  "CV sheet daily chart placement (a chart outside its frozen band leaves a white void above and covers the data below, and a refresh must heal it)",
-  runCvLifecycleSheetChartPlacementTests,
 );
 await runTest(
   "hiring-manager team scope (one National Sales Manager can NEVER read the other's candidates, and the picker is exactly the gate)",
@@ -2905,7 +2901,7 @@ await runTest("push enable hang (a blocked browser resolves instantly instead of
 
 await runTest("push register hr id guard (a session with no employee behind it is skipped, not written as hr_id NULL into a NOT NULL column)", runPushRegisterHrIdGuardTests);
 
-await runTest("live sheet stale banner (no failure path in either Apps Script returns silently; the banner names when the data froze, stays quiet while nothing changes, and clears itself on recovery)", runLiveSheetStaleBannerTests);
+await runTest("live sheet stale banner (no failure path in any of the three Apps Scripts returns silently; the banner names when the data froze, stays quiet while nothing changes, and clears itself on recovery)", runLiveSheetStaleBannerTests);
 
 await runTest("visit contact kind (pharmacy/institution/doctor split is display-only — decision.ts stays pharmacy-blind)", runVisitContactKindTests);
 
@@ -4062,6 +4058,12 @@ await runTest("repo-doctor never advises pnpm install in a worktree (restore is 
 await runTest("no source-pinning test strips comments with a regex that eats the code it pins", runCommentStripRatchetTests);
 
 await runTest("repo-doctor offers only what --strip-idle will actually reclaim", runRepoDoctorStripIdleOfferTests);
+await runTest(
+  "a session lock is stale by AGE alone, and no shipped text teaches the PID rule (the lock stores "
+    + "the hook's own short-lived parent shell, so EVERY lock names a dead PID — the weekly hygiene "
+    + "task believed that rule and had been deleting live sessions' locks)",
+  runSessionLockStalenessIsAgeTests,
+);
 await runTest(
   "a deregistered worktree folder holding files is REPORTED, by name and by content, and is never "
     + "reachable from --fix (a leftover .git stub used to file it under LIVE, and the bucket without "

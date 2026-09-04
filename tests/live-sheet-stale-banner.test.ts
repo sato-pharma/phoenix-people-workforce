@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
 
-// The two Google Apps Script sheets in docs/ are the owner's live Direct Orders and Marketing
-// Request reports. They fetch a Phoenix share-link feed every minute and, by deliberate design,
+// The Google Apps Script sheets in docs/ are the owner's live Direct Orders, Marketing Request and
+// CV Lifecycle reports. They fetch a Phoenix share-link feed on a timer and, by deliberate design,
 // keep the last good data on screen when a fetch fails — a sheet that blanks itself reads as
 // "every order is gone", which is worse than stale data.
 //
@@ -19,6 +19,11 @@ import vm from "node:vm";
 // These files are not built, linted or imported by the app, so nothing else in CI looks at them
 // at all. This suite is the only thing standing between that fix and a silent regression, so it
 // checks both halves: that no failure path returns quietly, and that the banner actually behaves.
+//
+// The per-sheet fields below exist because the sheets are not clones: they have different tabs,
+// different script-property names and different palettes. Everything the suite ASSERTS is
+// identical for all three — what varies is only the vocabulary needed to drive each file. Adding a
+// field to describe a sheet is fine; adding one that lets a sheet opt out of an assertion is not.
 const SHEETS = [
   {
     file: "../docs/direct-orders-live-sheet.gs",
@@ -26,6 +31,13 @@ const SHEETS = [
     stampWord: "updated",
     // Every early return in the refresh: no token, unreachable, non-200, empty payload.
     minFailurePaths: 4,
+    liveTabs: ["Requests", "Direct Orders", "Executive Summary"],
+    fixedTab: "Cover",
+    liveColumns: 43,
+    stateKey: "phoenixFeedState",
+    lastGoodKey: "phoenixLastGoodStamp",
+    staleBg: "#B91C1C",
+    freshBg: "#000000",
   },
   {
     file: "../docs/marketing-request-live-sheet.gs",
@@ -33,6 +45,34 @@ const SHEETS = [
     stampWord: "refreshed",
     // As above plus an unparseable payload, which this sheet handles separately.
     minFailurePaths: 5,
+    liveTabs: ["Requests", "Direct Orders", "Executive Summary"],
+    fixedTab: "Cover",
+    liveColumns: 43,
+    stateKey: "phoenixFeedState",
+    lastGoodKey: "phoenixLastGoodStamp",
+    staleBg: "#B91C1C",
+    freshBg: "#000000",
+  },
+  {
+    // Added 2026-09-04 with the sheet itself. Its first version THREW on every failure, which in a
+    // time-driven trigger is the silent freeze this whole suite exists to catch — it shipped with
+    // the hole already in it, three weeks after the hole was found and fixed in the other two.
+    file: "../docs/cv-lifecycle-live-sheet.gs",
+    refresh: "function refreshCvLifecycle()",
+    stampWord: "refreshed",
+    // No FEED_URL, unreachable, non-200, unparseable, and a payload carrying no CV rows.
+    minFailurePaths: 5,
+    // This sheet has no separate cover tab, so its own table tab plays the part: a subtitle that
+    // is not a live stamp must survive whichever tab it sits on.
+    liveTabs: ["Summary", "Daily Dashboard"],
+    fixedTab: "CV Lifecycle",
+    liveColumns: 26,
+    // Its own property names, so two sheets open in one browser cannot read each other's state.
+    stateKey: "phoenixCvFeedState",
+    lastGoodKey: "phoenixCvLastGoodStamp",
+    staleBg: "#b91c1c",
+    // A light cover page rather than the other two's black one.
+    freshBg: "#ffffff",
   },
 ];
 
@@ -140,16 +180,16 @@ export async function runLiveSheetStaleBannerTests() {
     );
 
     // 3. Behaviour, driven out of the real file.
-    const live = fakeSheet("Requests", `Everything, live — ${sheet.stampWord} 2026-08-05 15:22:00 (Cairo)`, 43);
+    const live = fakeSheet(
+      sheet.liveTabs[0],
+      `Everything, live — ${sheet.stampWord} 2026-08-05 15:22:00 (Cairo)`,
+      sheet.liveColumns,
+    );
     const fixedText = "CONFIDENTIAL — internal data, do not forward";
-    const fixed = fakeSheet("Cover", fixedText, 2);
-    const tabs = new Map<string, unknown>([
-      ["Requests", live],
-      ["Direct Orders", live],
-      ["Executive Summary", live],
-      ["Cover", fixed],
-    ]);
-    const props: Record<string, string> = { phoenixLastGoodStamp: "2026-08-05 15:22:00" };
+    const fixed = fakeSheet(sheet.fixedTab, fixedText, 2);
+    const tabs = new Map<string, unknown>(sheet.liveTabs.map((tab) => [tab, live] as const));
+    tabs.set(sheet.fixedTab, fixed);
+    const props: Record<string, string> = { [sheet.lastGoodKey]: "2026-08-05 15:22:00" };
     const script = loadScript(source, tabs, props);
 
     script.markFeedStale("the feed answered HTTP 403 (the share link was revoked or has expired)");
@@ -160,7 +200,11 @@ export async function runLiveSheetStaleBannerTests() {
     );
     assert.match(banner, /2026-08-05 15:22:00/, `${sheet.file}: the banner must name when the data froze`);
     assert.match(banner, /HTTP 403/, `${sheet.file}: the banner must name why the last attempt failed`);
-    assert.equal(live.format.get("bg:2:1:43"), "#B91C1C", `${sheet.file}: the banner must be visible, not just wordy`);
+    assert.equal(
+      live.format.get(`bg:2:1:${sheet.liveColumns}`),
+      sheet.staleBg,
+      `${sheet.file}: the banner must be visible, not just wordy`,
+    );
 
     // A tab whose subtitle is a fixed description must never be overwritten by the warning —
     // the banner destroying real content would be the cure causing the disease.
@@ -182,19 +226,27 @@ export async function runLiveSheetStaleBannerTests() {
       !String(live.cells.get("2:1")).startsWith("⚠ STALE"),
       `${sheet.file}: the banner must come down when the feed answers again`,
     );
-    assert.equal(live.format.get("bg:2:1:43"), "#000000", `${sheet.file}: the band must go back to black`);
+    assert.equal(
+      live.format.get(`bg:2:1:${sheet.liveColumns}`),
+      sheet.freshBg,
+      `${sheet.file}: the band must go back to its ordinary colour`,
+    );
     assert.equal(live.format.get("weight:2:1"), "normal", `${sheet.file}: the subtitle must stop shouting`);
-    assert.equal(props.phoenixFeedState, "ok", `${sheet.file}: the stored state must return to ok`);
+    assert.equal(props[sheet.stateKey], "ok", `${sheet.file}: the stored state must return to ok`);
 
     // And a healthy sheet must never be repainted at all.
-    const quiet = fakeSheet("Requests", `Everything, live — ${sheet.stampWord} 2026-08-24 03:00:00 (Cairo)`, 43);
-    const quietTabs = new Map<string, unknown>([["Requests", quiet], ["Direct Orders", quiet], ["Executive Summary", quiet]]);
+    const quiet = fakeSheet(
+      sheet.liveTabs[0],
+      `Everything, live — ${sheet.stampWord} 2026-08-24 03:00:00 (Cairo)`,
+      sheet.liveColumns,
+    );
+    const quietTabs = new Map<string, unknown>(sheet.liveTabs.map((tab) => [tab, quiet] as const));
     const quietProps: Record<string, string> = {};
     const quietScript = loadScript(source, quietTabs, quietProps);
     quietScript.markFeedFresh({ getSheetByName: (name: string) => quietTabs.get(name) ?? null }, "2026-08-24 03:00:00");
     assert.equal(quiet.writes.length, 0, `${sheet.file}: a healthy refresh must not repaint anything`);
     assert.equal(
-      quietProps.phoenixLastGoodStamp,
+      quietProps[sheet.lastGoodKey],
       "2026-08-24 03:00:00",
       `${sheet.file}: a healthy refresh must still record when the data was last good, or a later banner cannot say when it froze`,
     );
