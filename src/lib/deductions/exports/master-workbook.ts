@@ -6,9 +6,14 @@
 //   Summary    — one row per employee, the amount that WILL ACTUALLY be
 //                deducted (the eligible/approved total publish commits), with a
 //                separate Pending column for what is still awaiting a decision.
-//   Detailed   — every candidate, all categories, one row each, with two extra
-//                columns the per-category sheet does not carry: Line and Direct
-//                Manager (the employee's own line and reports-to).
+//   Detailed   — every candidate, all categories, one row each, with three
+//                extra columns the per-category sheet does not carry: Line,
+//                Region and Direct Manager.
+//
+// The workbook can be narrowed to one line and/or one region (see org-filter.ts).
+// A narrowed workbook says so on its Cover, in every sheet title and in its own
+// filename — a filtered total is otherwise indistinguishable from the month's
+// company total, and that is not a mistake anyone catches by reading a number.
 //
 // The money columns resolve exactly the way publishMonth does — see
 // resolvePublishedAppliedValue / resolvePublishedAppliedAmount — so this sheet
@@ -25,18 +30,35 @@ import {
   resolvePublishedAppliedAmount,
   resolvePublishedAppliedValue,
 } from "../calculations.ts";
+import {
+  describeDeductionsOrgFilter,
+  EMPTY_DEDUCTIONS_ORG_FILTER,
+  normalizeOrgLabel,
+  type DeductionsOrgFilter,
+  type DeductionsOrgInfo,
+} from "../org-filter.ts";
 import { summarizeEmployeeMonthCandidates, type EmployeeMonthDeductionSummary } from "../service.ts";
 import { deductionsCategories, type DeductionsCandidateWithDecision, type DeductionsCategory } from "../types.ts";
 
-/** The per-employee org enrichment the Detailed sheet's two extra columns need. */
-export type EmployeeOrgInfo = { lineName: string | null; managerName: string | null };
+/** The per-employee org enrichment the Detailed sheet's extra columns need.
+ *  Shared with the filter module so the columns and the narrowing can never
+ *  read two different answers for the same employee. */
+export type EmployeeOrgInfo = DeductionsOrgInfo;
 
 export type DeductionsMasterMeta = {
   monthKey: string;
   generatedAtIso: string;
   generatedByName: string;
   generatedByHrId: string;
+  /** Optional Line/Region narrowing. Omitted means the whole company. */
+  filter?: DeductionsOrgFilter;
 };
+
+/** " — Line: CNS · Region: Delta (2)", or "" when nothing is filtered. */
+function filterSuffix(filter: DeductionsOrgFilter): string {
+  const description = describeDeductionsOrgFilter(filter);
+  return description ? ` — ${description}` : "";
+}
 
 function money(value: number | null): CellValue {
   return value == null ? null : Math.round(value * 100) / 100;
@@ -72,6 +94,7 @@ type EmployeeSummaryRow = {
   employeeHrId: string;
   employeeName: string;
   lineName: string;
+  regionName: string;
   managerName: string;
   summary: EmployeeMonthDeductionSummary;
 };
@@ -101,7 +124,11 @@ function buildEmployeeSummaries(
     rows.push({
       employeeHrId: group[0].employeeHrId,
       employeeName: summary.employeeName ?? group[0].employeeName ?? group[0].employeeHrId,
-      lineName: org?.lineName ?? "",
+      // Printed through the same normalizer the filter groups by, so a person
+      // the directory has no line for reads "Unassigned" on the sheet and sits
+      // in the "Unassigned" bucket of the dropdown — one word, one meaning.
+      lineName: normalizeOrgLabel(org?.lineName),
+      regionName: normalizeOrgLabel(org?.regionName),
       managerName: org?.managerName ?? "",
       summary,
     });
@@ -114,6 +141,7 @@ function buildSummarySheet(
   workbook: ExcelJS.Workbook,
   monthKey: string,
   employees: EmployeeSummaryRow[],
+  filter: DeductionsOrgFilter,
 ): void {
   // Only render a category column if at least one employee has a real (eligible)
   // deduction in it — an all-zero column is noise on a summary.
@@ -121,11 +149,20 @@ function buildSummarySheet(
     employees.some((employee) => (employee.summary.willPublish[category]?.amount ?? 0) > 0),
   );
 
-  const columns: TableColumn[] = [
+  // Identity columns, then one column per active category. Kept as its own
+  // array so the totals row below indexes off `leadColumns.length` rather than a
+  // hardcoded 4 — adding Region beside Line silently shifted every category
+  // total one column left when that number was written by hand.
+  const leadColumns: TableColumn[] = [
     { label: "HR ID", width: 12 },
     { label: "Employee Name", width: 30 },
     { label: "Line", width: 16 },
+    { label: "Region", width: 16 },
     { label: "Direct Manager", width: 24 },
+  ];
+
+  const columns: TableColumn[] = [
+    ...leadColumns,
     ...activeCategories.map((category) => ({
       label: deductionsCategoryLabel(category),
       numFmt: "#,##0.00",
@@ -140,6 +177,7 @@ function buildSummarySheet(
     employee.employeeHrId,
     employee.employeeName,
     employee.lineName,
+    employee.regionName,
     employee.managerName,
     ...activeCategories.map((category) => money(employee.summary.willPublish[category]?.amount ?? 0)),
     money(employee.summary.willPublishTotal),
@@ -149,22 +187,25 @@ function buildSummarySheet(
   const totals: CellValue[] = new Array(columns.length).fill(null);
   totals[0] = "TOTAL";
   activeCategories.forEach((category, index) => {
-    totals[4 + index] = round2(
+    totals[leadColumns.length + index] = round2(
       employees.reduce((sum, employee) => sum + (employee.summary.willPublish[category]?.amount ?? 0), 0),
     );
   });
   totals[columns.length - 2] = round2(employees.reduce((sum, employee) => sum + employee.summary.willPublishTotal, 0));
   totals[columns.length - 1] = round2(employees.reduce((sum, employee) => sum + employee.summary.pendingTotal, 0));
 
+  const description = describeDeductionsOrgFilter(filter);
   const sheet = workbook.addWorksheet(sanitizeSheetName("Summary"), { properties: { defaultColWidth: 14 } });
   writeTable(sheet, 1, {
     columns,
     rows,
-    title: `Deductions Summary — ${monthKey}`,
+    title: `Deductions Summary — ${monthKey}${filterSuffix(filter)}`,
     totals,
     note:
-      `${employees.length} employee(s) with a deduction this month. ` +
-      "Final Deduction is what publishing takes; Pending is detected but not yet approved. Amounts in EGP.",
+      `${employees.length} employee(s) with a deduction this month` +
+      (description ? ` in ${description}` : "") +
+      ". Final Deduction is what publishing takes; Pending is detected but not yet approved. Amounts in EGP." +
+      (description ? " This is a FILTERED extract — these totals are not the company's totals for the month." : ""),
   });
 }
 
@@ -173,6 +214,7 @@ const DETAIL_COLUMNS: TableColumn[] = [
   { label: "HR ID", width: 12 },
   { label: "Employee Name", width: 30 },
   { label: "Line", width: 16 },
+  { label: "Region", width: 16 },
   { label: "Direct Manager", width: 24 },
   { label: "Hire Date", width: 12 },
   { label: "Month", width: 10 },
@@ -205,7 +247,8 @@ function detailRow(
     deductionsCategoryLabel(candidate.category),
     candidate.employeeHrId,
     candidate.employeeName ?? "",
-    org?.lineName ?? "",
+    normalizeOrgLabel(org?.lineName),
+    normalizeOrgLabel(org?.regionName),
     org?.managerName ?? "",
     candidate.hireDate ?? "",
     candidate.monthKey,
@@ -235,6 +278,7 @@ function buildDetailedSheet(
   monthKey: string,
   candidates: DeductionsCandidateWithDecision[],
   orgByCompactHrId: ReadonlyMap<string, EmployeeOrgInfo>,
+  filter: DeductionsOrgFilter,
 ): void {
   const ordered = [...candidates].sort((left, right) => {
     const byName = String(left.employeeName ?? "").localeCompare(String(right.employeeName ?? ""));
@@ -259,21 +303,30 @@ function buildDetailedSheet(
   totals[appliedAmountColumnIndex] = totalAmount;
 
   const employeeCount = new Set(ordered.map((candidate) => candidate.employeeHrIdCompact)).size;
+  const description = describeDeductionsOrgFilter(filter);
   const sheet = workbook.addWorksheet(sanitizeSheetName("Detailed"), { properties: { defaultColWidth: 14 } });
   writeTable(sheet, 1, {
     columns: DETAIL_COLUMNS,
     rows: ordered.map((candidate) => detailRow(candidate, orgByCompactHrId)),
-    title: `All Deductions — ${monthKey}`,
+    title: `All Deductions — ${monthKey}${filterSuffix(filter)}`,
     totals,
-    note: `${ordered.length} candidate(s), ${employeeCount} employee(s), every category. Amounts in EGP.`,
+    note:
+      `${ordered.length} candidate(s), ${employeeCount} employee(s), every category. Amounts in EGP.` +
+      (description ? ` Filtered to ${description} — not the whole company.` : ""),
   });
 }
 
 /**
  * Builds the master monthly deductions workbook: Cover + Summary + Detailed.
  * `orgByCompactHrId` maps the candidate's `employeeHrIdCompact` to that
- * employee's line and direct manager (resolved by the caller from the employee
- * directory, leavers included); a missing entry simply renders blank.
+ * employee's line, region and direct manager (resolved by the caller from the
+ * employee directory, leavers included); a missing entry renders "Unassigned"
+ * for line and region, and a blank manager.
+ *
+ * `meta.filter` only LABELS the workbook. The caller narrows `candidates`
+ * itself (filterCandidatesByOrg) before handing them over — one function does
+ * the selecting, so a workbook can never be labelled with a filter it did not
+ * actually apply.
  */
 export function buildDeductionsMasterWorkbook(input: {
   meta: DeductionsMasterMeta;
@@ -281,6 +334,8 @@ export function buildDeductionsMasterWorkbook(input: {
   orgByCompactHrId: ReadonlyMap<string, EmployeeOrgInfo>;
 }): ExcelJS.Workbook {
   const { meta, candidates, orgByCompactHrId } = input;
+  const filter = meta.filter ?? EMPTY_DEDUCTIONS_ORG_FILTER;
+  const filterDescription = describeDeductionsOrgFilter(filter);
 
   const employees = buildEmployeeSummaries(candidates, meta.monthKey, orgByCompactHrId);
   const grandTotal = round2(employees.reduce((sum, employee) => sum + employee.summary.willPublishTotal, 0));
@@ -291,12 +346,20 @@ export function buildDeductionsMasterWorkbook(input: {
   workbook.created = new Date(meta.generatedAtIso);
 
   buildCoverSheet(workbook, {
-    title: "Deductions — Master (All Categories)",
-    subtitle: `Every deduction category for ${meta.monthKey}: a per-employee summary and a full detail sheet.`,
+    title: `Deductions — Master (All Categories)${filterDescription ? " — Filtered" : ""}`,
+    subtitle: filterDescription
+      ? `Every deduction category for ${meta.monthKey}, narrowed to ${filterDescription}. A FILTERED extract — the totals below are for this selection only, not for the company.`
+      : `Every deduction category for ${meta.monthKey}: a per-employee summary and a full detail sheet.`,
     confidentialNote:
       "Contains individual payroll deduction data. Internal HR/Finance use only — do not forward outside the organization.",
     rows: [
       ["Month", meta.monthKey],
+      // Both axes are printed even when unset, so "Line: All" is a stated fact
+      // on the cover rather than something the reader has to infer from the
+      // absence of a row.
+      ["Line filter", filter.line ?? "All lines"],
+      ["Region filter", filter.region ?? "All regions"],
+      ["Scope", filterDescription ? "FILTERED EXTRACT — not the whole company" : "Whole company"],
       ["Generated (UTC)", meta.generatedAtIso],
       ["Exported by", `${meta.generatedByName} (${meta.generatedByHrId})`],
       ["Candidates in this export", String(candidates.length)],
@@ -307,8 +370,8 @@ export function buildDeductionsMasterWorkbook(input: {
     ],
   });
 
-  buildSummarySheet(workbook, meta.monthKey, employees);
-  buildDetailedSheet(workbook, meta.monthKey, candidates, orgByCompactHrId);
+  buildSummarySheet(workbook, meta.monthKey, employees, filter);
+  buildDetailedSheet(workbook, meta.monthKey, candidates, orgByCompactHrId, filter);
 
   return workbook;
 }

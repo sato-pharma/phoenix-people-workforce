@@ -7,6 +7,11 @@ import { resolveAccessContext, jsonError } from "@/lib/deductions/http.ts";
 import { assertDeductionsReadActor } from "@/lib/deductions/permissions.ts";
 import { listCandidatesForMonth } from "@/lib/deductions/service.ts";
 import { compactDeductionsHrId } from "@/lib/deductions/candidate-key.ts";
+import {
+  deductionsOrgFilterSlug,
+  filterCandidatesByOrg,
+  orgFilterFromSearchParams,
+} from "@/lib/deductions/org-filter.ts";
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { buildDeductionsMasterWorkbook, type EmployeeOrgInfo } from "@/lib/deductions/exports/master-workbook.ts";
 
@@ -28,22 +33,40 @@ export async function GET(request: Request) {
     if (!monthKey) {
       throw new Error("Validation: monthKey query parameter is required (YYYY-MM).");
     }
+    // Optional narrowing: ?line=<line name>&region=<region name>, both matched
+    // case-insensitively against the employee's own line and region. Absent (or
+    // "all") means the whole company — see org-filter.ts, which is also what the
+    // screen's dropdowns and its "N of M" preview are built from.
+    const filter = orgFilterFromSearchParams(url.searchParams);
 
-    const [candidates, directoryRows] = await Promise.all([
+    const [allCandidates, directoryRows] = await Promise.all([
       listCandidatesForMonth({ monthKey }),
       // Leavers included: a deduction can belong to someone who has since left,
       // and their line + manager still belong on the sheet rather than a blank.
       getEmployeeDirectoryRows({ includeInactive: true }),
     ]);
 
-    // compact HR id -> line + direct manager, keyed the same way candidates are
-    // (employee_hr_id_compact), so the Detailed sheet's two extra columns resolve.
+    // compact HR id -> line + region + direct manager, keyed the same way
+    // candidates are (employee_hr_id_compact), so the Detailed sheet's extra
+    // columns resolve AND the Line/Region filter has something to match on.
+    //
+    // Region comes from `region_name`, never `region_code`: the code is null for
+    // Head Office and for any field seat whose (line, area) pair does not resolve
+    // to a sales region, and on production the same region name is carried both
+    // with and without a code. Keying on the code would split one region in two
+    // and put Head Office beyond the reach of the filter entirely.
     const orgByCompactHrId = new Map<string, EmployeeOrgInfo>();
     for (const row of directoryRows) {
       const compact = compactDeductionsHrId(row.hrId);
       if (!compact || orgByCompactHrId.has(compact)) continue;
-      orgByCompactHrId.set(compact, { lineName: row.lineName, managerName: row.managerName });
+      orgByCompactHrId.set(compact, {
+        lineName: row.lineName,
+        regionName: row.regionName,
+        managerName: row.managerName,
+      });
     }
+
+    const candidates = filterCandidatesByOrg(allCandidates, orgByCompactHrId, filter);
 
     const workbook = buildDeductionsMasterWorkbook({
       meta: {
@@ -51,6 +74,7 @@ export async function GET(request: Request) {
         generatedAtIso: new Date().toISOString(),
         generatedByName: access.hrId ?? access.loginId ?? "system",
         generatedByHrId: access.hrId ?? "",
+        filter,
       },
       candidates,
       orgByCompactHrId,
@@ -60,7 +84,9 @@ export async function GET(request: Request) {
     return new NextResponse(buffer as ArrayBuffer, {
       headers: {
         "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        "Content-Disposition": `attachment; filename="deductions-master-${monthKey}.xlsx"`,
+        // The filter is in the filename too: a filtered download must never land
+        // in the same folder under the same name as the full month's workbook.
+        "Content-Disposition": `attachment; filename="deductions-master-${monthKey}${deductionsOrgFilterSlug(filter)}.xlsx"`,
       },
     });
   } catch (error) {
