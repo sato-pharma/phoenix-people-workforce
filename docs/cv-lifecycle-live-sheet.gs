@@ -88,7 +88,7 @@ var TZ = 'Africa/Cairo';
  * feed's COLUMNS. A sheet that silently keeps the previous design is indistinguishable from one
  * where the update failed.
  */
-var LAYOUT_VERSION = 'v8-phoenix';
+var LAYOUT_VERSION = 'v9-phoenix';
 
 var TAB_SUMMARY = 'Summary';
 var TAB_DAILY = 'Daily Dashboard';
@@ -772,9 +772,41 @@ function humanDuration_(minutes) {
  */
 function asCairoDate_(value) {
   var text = String(value === null || value === undefined ? '' : value).trim();
-  var parts = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
+  var parts = /^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?$/.exec(text);
   if (!parts) return value;
-  return new Date(Number(parts[1]), Number(parts[2]) - 1, Number(parts[3]));
+  return new Date(
+    Number(parts[1]), Number(parts[2]) - 1, Number(parts[3]),
+    Number(parts[4] || 0), Number(parts[5] || 0), Number(parts[6] || 0)
+  );
+}
+
+// The columns Phoenix sends as ISO text. Every one of them read as a database key on the face of
+// the sheet — "1996-11-14", "2026-09-05 00:22" — which is the raw form the owner's standing rule
+// says never to show him. As text they also cannot sort, filter by range, or drive a chart.
+//
+// The clock does not move. The parts are read as local and rendered by a script whose timezone is
+// Africa/Cairo, so what Phoenix sent is what appears; only the spelling changes.
+var DETAIL_DATE_COLUMNS = ['Date of birth'];
+var DETAIL_TIME_COLUMNS = ['Added to Phoenix', 'Manager notified at'];
+var LIFECYCLE_TIME_COLUMNS = [
+  'Reached Phoenix', 'Saved in Phoenix', 'Saved in Google Drive', 'Applicant answered at'
+];
+
+/** Rewrite the named columns of a body from ISO text into real dates. Anything else is untouched. */
+function datify_(header, body, names) {
+  var cols = [];
+  for (var n = 0; n < names.length; n++) {
+    var c = columnByName_(header, names[n]);
+    if (c > 0) cols.push(c - 1);
+  }
+  if (!cols.length) return body;
+
+  for (var r = 0; r < body.length; r++) {
+    for (var i = 0; i < cols.length; i++) {
+      if (cols[i] < body[r].length) body[r][cols[i]] = asCairoDate_(body[r][cols[i]]);
+    }
+  }
+  return body;
 }
 
 /** The subtitle cells that carry a live refresh stamp, and are therefore safe to repaint. */
@@ -1186,7 +1218,8 @@ function writeDetail_(ss, rows, stamp) {
   clearDataBelow_(sheet, DETAIL_HEADER_ROW, header.length);
   if (body.length) {
     sheet.getRange(DETAIL_HEADER_ROW + 1, 1, body.length, header.length)
-      .setValues(linkify_(header, body));
+      .setValues(datify_(header, linkify_(header, body),
+        DETAIL_DATE_COLUMNS.concat(DETAIL_TIME_COLUMNS)));
   }
   fitBody_(sheet, TAB_DETAIL, DETAIL_HEADER_ROW, header.length, body.length);
 
@@ -1274,6 +1307,10 @@ function applyDetailFormats_(sheet, header) {
   // '0' and not '#,##0': a graduation year is not a quantity, and 2,024 reads as a bug.
   format('Graduation year', '0');
   format('Years of experience', '#,##0');
+
+  // A birthday has no clock on it; the two audit stamps do.
+  for (var d = 0; d < DETAIL_DATE_COLUMNS.length; d++) format(DETAIL_DATE_COLUMNS[d], 'dd MMM yyyy');
+  for (var t = 0; t < DETAIL_TIME_COLUMNS.length; t++) format(DETAIL_TIME_COLUMNS[t], 'dd MMM yyyy, HH:mm');
   format('CVs on file', '#,##0');
   format('Salary they asked for', '#,##0');
   format('Expected salary (on file)', '#,##0');
@@ -1435,11 +1472,16 @@ function buildDailyChart_(sheet, cols) {
     .setOption('colors', [C_WHATSAPP, C_EMAIL, C_HAND])
     // The cells read "Fri 24 Jul 2026", which is right in the table and far too long for an axis
     // slot — every label came out clipped mid-word. The chart carries its own shorter format.
+    // `format` does NOTHING here: it applies to a continuous axis, and a column chart's category
+    // axis is discrete, so the label is whatever text the cell shows — "Fri 24 Jul 2026", clipped
+    // to "Fri 24 Ju". The two things that DO work are giving each label the width of three slots
+    // and setting it smaller than the default.
     .setOption('hAxis', {
       title: 'Day (Cairo)',
       slantedText: true,
       slantedTextAngle: 45,
-      format: 'dd MMM'
+      showTextEvery: 3,
+      textStyle: { fontSize: 10 }
     })
     .setOption('vAxis', { title: 'CVs', minValue: 0 })
     .build();
@@ -1529,7 +1571,7 @@ function writeLifecycle_(ss, rows, stamp) {
   clearDataBelow_(sheet, LIFECYCLE_HEADER_ROW, header.length);
   if (body.length) {
     sheet.getRange(LIFECYCLE_HEADER_ROW + 1, 1, body.length, header.length)
-      .setValues(linkify_(header, body));
+      .setValues(datify_(header, linkify_(header, body), LIFECYCLE_TIME_COLUMNS));
   }
 
   if (fresh) markLayoutBuilt_(TAB_LIFECYCLE, header);
@@ -1589,6 +1631,13 @@ function buildLifecycleLayout_(sheet, header) {
   var size = columnByName_(header, 'Size (KB)');
   if (size > 0) {
     sheet.getRange(LIFECYCLE_HEADER_ROW + 1, size, FIXED_RANGE_ROWS, 1).setNumberFormat('#,##0');
+  }
+  for (var t = 0; t < LIFECYCLE_TIME_COLUMNS.length; t++) {
+    var tc = columnByName_(header, LIFECYCLE_TIME_COLUMNS[t]);
+    if (tc > 0) {
+      sheet.getRange(LIFECYCLE_HEADER_ROW + 1, tc, FIXED_RANGE_ROWS, 1)
+        .setNumberFormat('dd MMM yyyy, HH:mm');
+    }
   }
 
   tableChrome_(sheet, LIFECYCLE_HEADER_ROW, header, {
