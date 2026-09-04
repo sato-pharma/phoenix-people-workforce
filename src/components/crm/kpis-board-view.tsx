@@ -220,16 +220,24 @@ function teamVerdict(board: KpisBoard): { headline: string; tone: KpiBand; stand
   if (coverage === "behind") {
     return { headline: "Most of the planned list has not been reached at all yet.", tone: "behind" };
   }
-  if (call === "behind") {
+  if (am === "behind" || pm === "behind") {
+    // NAMED, never merged. A morning that misses 2 and an afternoon that misses 10 are different
+    // failures with different conversations behind them, so the sentence says which one it is.
+    const half =
+      am === "behind" && pm === "behind"
+        ? "neither half of the day is producing"
+        : am === "behind"
+          ? "the morning is not producing"
+          : "the afternoon is not producing";
     return {
-      headline: "Coverage is holding, but the working day is not producing the calls it should.",
+      headline: `Coverage is holding, but ${half} the calls it should.`,
       tone: "behind",
     };
   }
-  if (coverage === "elite" || frequency === "elite" || call === "elite") {
-    return { headline: "One measure is running well ahead of the other two. Worth knowing which.", tone: "strong" };
+  if (coverage === "elite" || frequency === "elite" || am === "elite" || pm === "elite") {
+    return { headline: "One measure is running well ahead of the others. Worth knowing which.", tone: "strong" };
   }
-  return { headline: "All three measures are mid-table. No emergency, no victory.", tone: "steady" };
+  return { headline: "Every measure is mid-table. No emergency, no victory.", tone: "steady" };
 }
 
 // ── Hero and tabs ─────────────────────────────────────────────────────────────────────────────
@@ -640,7 +648,6 @@ function CallRateTable({ context, rows }: { context: ViewContext; rows: KpiRepRo
   const { filters } = board;
   return (
     <table className="hidden w-full table-fixed md:table">
-      <colgroup>
       {/* The Attainment column is gone: it held (AM + PM) over one denominator, which is the
           average the owner banned. Each side now carries its own score in its own column. */}
       <colgroup>

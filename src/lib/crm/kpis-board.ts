@@ -268,7 +268,8 @@ export type KpisBoard = {
   facets: KpiFacets;
   /** The filter state actually applied, echoed back so the UI can render and clear it. */
   filters: KpiFilterState;
-  /** Best three reps on each of the three measures. Never a blended rank — see kpis-filters.ts. */
+  /** Best three reps on each leaderboard — coverage, frequency, AM and PM. Never a blended rank,
+   * and since 2026-09-04 never a combined call-rate one either. See kpis-filters.ts. */
   podium: KpiPodium;
   totals: {
     reps: number;
