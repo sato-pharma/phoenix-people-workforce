@@ -222,18 +222,45 @@ export function PhoenixIdentityStrip({
           its own name. The card is untouched and still draws the old wide phoenix.
 
           IT IS ALREADY ALPHA-TRANSPARENT at source (81.9% of the file is not fully opaque, corner
-          alpha 0), so "make it also transparent" is served by the file plus `multiply` and a low
-          opacity, not by knocking a white box out of it. `multiply` is what makes it read as
-          printed INTO the paper rather than laid on top: on a cream ground the dark ring and the
-          orange flame both darken the stock instead of hazing it.
+          alpha 0), so "make it also transparent" is served by the file itself plus a low opacity,
+          not by knocking a white box out of it.
+
+          IT IS WHOLLY INSIDE THE BAR, AND THAT IS A CORRECTION HE MADE HIMSELF.
+          It shipped once as a large mark cropped by the trailing edge — the reasoning being that a
+          cropped mark reads as chosen furniture rather than a logo dropped in. He looked at it and
+          rejected exactly that: "too embedded, too big, needs to go inside the banner itself and be
+          small in size." DO NOT re-crop it against the edge — that is the specific thing he turned
+          down.
+
+          THE SIZE THEN CAME BACK UP, and both instructions are his, in this order. Taken at its
+          word the first one produced a 74px mark that read as a ghost on a 1084px bar, and he said
+          so: "the Phoenix needs to become bigger a bit. It's now too small. Make it move inside a
+          bit and make it size bigger a bit." So it is now 76%/80% of the bar height with a wider
+          right margin. "Small" was never the goal — INSIDE was; small was how he described the fix
+          for a mark that was bleeding off the edge.
+
+          BOTH ARE CAPPED BY THE CONTENT BAND, not by taste: 80% of 136px is 109px inside a 112px
+          band, and 76% of 120px is 91px inside 96px. Going higher pushes the mark into the wave.
+
+          `mix-blend-mode: multiply` went with it. Multiplying into the cream is what "embedded"
+          described, and a small mark that has to survive at this size needs its own edges.
+
+          THEY SIT IN THE BAND ABOVE THE WAVE, not in the bar's middle: `calc(50% - 12px)` is the
+          centre of the content box, since the wave occupies the bottom 24px at BOTH breakpoints.
+          Centring on the bar itself would push the mark down into the dark band.
 
           TWO ELEMENTS, ONE PER BREAKPOINT, because the owner asked for a different placement on a
           phone — "when mobile, don't center him. Put him on the right" — and an inline style
           cannot carry a media query. That request has a cause worth recording: the OLD watermark
           is 1350x900, so at 165% of a 120px bar it spanned 297px of a 351px phone screen and read
-          as centred no matter what `right` said. The emblem is square, so the same height is only
-          198px wide, and the mobile copy is smaller and pushed harder into the trailing edge on
-          top of that. */}
+          as centred no matter what `right` said. A square mark is 91px wide at this height, which
+          is what makes "on the right" achievable at all on a 351px screen.
+
+          IT DOES SIT UNDER THE END OF A LONG TITLE ON A PHONE, and that is accepted, not missed.
+          At 351px with a 124px portrait and "HR OPERATIONS COORDINATOR" over two lines there is no
+          arrangement where a mark this size clears the text. It is BEHIND (z-0 against the content
+          z-10) and its opacity is 0.2 on mobile against 0.3 on desktop for exactly this reason —
+          the words stay crisp over it. Lower the opacity before shrinking the mark. */}
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         alt=""
@@ -241,11 +268,10 @@ export function PhoenixIdentityStrip({
         className="pointer-events-none absolute z-0 sm:hidden"
         src="/brand/identity-strip-emblem.png"
         style={{
-          height: "142%",
-          mixBlendMode: "multiply",
-          opacity: 0.13,
-          right: "-17%",
-          top: "50%",
+          height: "76%",
+          opacity: 0.2,
+          right: "8%",
+          top: "calc(50% - 12px)",
           transform: "translateY(-50%)",
           width: "auto",
         }}
@@ -257,11 +283,10 @@ export function PhoenixIdentityStrip({
         className="pointer-events-none absolute z-0 hidden sm:block"
         src="/brand/identity-strip-emblem.png"
         style={{
-          height: "205%",
-          mixBlendMode: "multiply",
-          opacity: 0.115,
-          right: "-7%",
-          top: "50%",
+          height: "80%",
+          opacity: 0.3,
+          right: "5%",
+          top: "calc(50% - 12px)",
           transform: "translateY(-50%)",
           width: "auto",
         }}
@@ -284,14 +309,14 @@ export function PhoenixIdentityStrip({
       {photoSrc ? (
         <div
           aria-hidden="true"
-          className="pointer-events-none absolute bottom-0 left-0 top-0 z-[1] w-[108px] sm:hidden"
+          className="pointer-events-none absolute bottom-0 left-0 top-0 z-[1] w-[124px] sm:hidden"
           style={{ maskImage: PORTRAIT_FADE_MASK, WebkitMaskImage: PORTRAIT_FADE_MASK }}
         >
           <Image
             alt=""
             className="object-cover object-top"
             fill
-            sizes="108px"
+            sizes="124px"
             src={photoSrc}
             unoptimized
           />
@@ -304,12 +329,12 @@ export function PhoenixIdentityStrip({
       <div
         className={[
           "absolute inset-x-0 bottom-[24px] top-0 z-10 flex min-w-0 items-center gap-4 pr-4 sm:pl-6 sm:pr-6",
-          photoSrc ? "pl-[112px]" : "pl-4",
+          photoSrc ? "pl-[128px]" : "pl-4",
         ].join(" ")}
       >
         <span
           className={[
-            "relative h-[80px] w-[80px] shrink-0 sm:h-[92px] sm:w-[92px]",
+            "relative h-[80px] w-[80px] shrink-0 sm:h-[110px] sm:w-[110px]",
             // Mobile hands the portrait over to the frameless bleed above — but only when there
             // IS one to hand over.
             photoSrc ? "hidden sm:block" : "block",
@@ -334,7 +359,7 @@ export function PhoenixIdentityStrip({
                 alt={`${name} portrait`}
                 className="object-cover object-top"
                 fill
-                sizes="92px"
+                sizes="110px"
                 src={photoSrc}
                 unoptimized
               />
