@@ -212,3 +212,85 @@ export function mergeScreeningExtraAnswers(
   const changed = Object.keys(merged).length > Object.keys(survivor).length;
   return { changed, merged };
 }
+
+export type RowKeySplit<Row> = {
+  blocked: Row[];
+  movable: Row[];
+};
+
+/**
+ * Splits the duplicate's child rows into the ones a merge may move and the ones that would collide
+ * with a row the survivor already holds.
+ *
+ * Four of the candidate's child tables are unique on `(candidate_id, <something>)` — the same
+ * manager cannot be sent one candidate twice, the same viewer cannot have two view markers on one
+ * record. Re-pointing such a row at a survivor that already has its own is a 23505, and a 23505
+ * part-way through a merge is the failure this whole file exists to prevent: the earlier tables
+ * have already moved, so the duplicate is left an empty shell that reads to a recruiter as "a
+ * candidate with no CV" rather than as a merge that failed.
+ *
+ * So a collision is predicted here instead of being discovered by the database. It is not an error:
+ * two rows for one person meeting the same manager is ordinary, and the survivor's own row is the
+ * one to keep. The blocked rows are reported so the recruiter is told what did not travel, which is
+ * the difference between a partial merge and a silent one.
+ *
+ * `keyOf` returns null for a row that cannot collide, and that covers two distinct cases at once: a
+ * row whose key is NULL (a unique index holds no opinion about NULLs — they never equal each other,
+ * so any number of them coexist), and a row outside a PARTIAL index's WHERE clause. A closed
+ * district return is not constrained by `..._open_unique`, so it always moves.
+ *
+ * The comparison is deliberately exact, NOT case-folded, even though these keys are HR ids and HR
+ * ids in this database are mixed case. The authority here is the btree index, which compares raw
+ * bytes: folding case would invent collisions the database would have allowed and silently strand
+ * rows that could have moved.
+ */
+export function splitRowsByExistingKey<Row>(
+  duplicateRows: readonly Row[],
+  survivorKeys: Iterable<string | null | undefined>,
+  keyOf: (row: Row) => string | null | undefined,
+): RowKeySplit<Row> {
+  const taken = new Set<string>();
+  for (const key of survivorKeys) {
+    if (typeof key === "string" && key.length > 0) taken.add(key);
+  }
+
+  const blocked: Row[] = [];
+  const movable: Row[] = [];
+  for (const row of duplicateRows) {
+    const key = keyOf(row);
+    if (typeof key !== "string" || key.length === 0) {
+      movable.push(row);
+      continue;
+    }
+    if (taken.has(key)) blocked.push(row);
+    else movable.push(row);
+  }
+  return { blocked, movable };
+}
+
+/**
+ * The provenance line stamped onto a history row copied off a duplicate.
+ *
+ * `ats_candidate_status_events` is append-only — a BEFORE DELETE OR UPDATE trigger raises
+ * `restrict_violation` for every role, so the row cannot be re-pointed and cannot be tidied away
+ * afterwards either. Copying it onto the survivor is the only verb the table permits, which leaves
+ * the copy indistinguishable from a decision someone actually made on the survivor unless it says
+ * so. Hence this note, which is what was written by hand on 2026-09-04 when two merges hit the
+ * trigger in production.
+ *
+ * The duplicate is named by the LAST six characters of its id: it is already deleted by the time
+ * anyone reads this, so the label exists to tie the line back to the backup schema, not to be
+ * looked up.
+ */
+export function describeCopiedHistoryLine(input: {
+  duplicateId: string;
+  existingNote?: string | null;
+  mergedOn: string;
+}): string {
+  const shortId = input.duplicateId.replace(/-/g, "").slice(-6) || input.duplicateId;
+  const provenance =
+    `[Copied from duplicate record ${shortId} when it was merged in on ${input.mergedOn}. `
+    + "The original row could not be moved: ats_candidate_status_events is append-only.]";
+  const existing = (input.existingNote ?? "").trim();
+  return existing.length > 0 ? `${existing} ${provenance}` : provenance;
+}
