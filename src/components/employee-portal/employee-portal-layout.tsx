@@ -4,7 +4,10 @@ import { useEffect, useState, useTransition, useSyncExternalStore, type MouseEve
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { NavBadge } from "@/components/layout/sidebar";
+// Straight from the badge module, NOT the sidebar re-export it used until 2026-09-04: that
+// import pulled the whole sidebar — dnd-kit, the layout editor, the preference machinery —
+// into every portal page's bundle for a thirty-line badge. See nav-badge.tsx's own header.
+import { NavBadge } from "@/components/layout/nav-badge";
 import {
   Menu,
   Search,

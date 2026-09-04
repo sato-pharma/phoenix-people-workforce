@@ -68,7 +68,7 @@ test.describe("Sales Performance Page", () => {
     await expect(page.getByText("Family breakdown")).toBeVisible();
   });
 
-  // ─── Filter interactions ──────���─────────────────────────────────────
+  // ─── Filter interactions ──────────────────────────────────────────────
 
   test("period pills are visible and clickable", async ({ page }) => {
     // Period pills should be visible (formatted as month labels)
@@ -130,7 +130,7 @@ test.describe("Sales Performance Page", () => {
     await expect(page.getByText("Products").first()).toBeVisible();
   });
 
-  // ─── Table interactions ─���───────────────────────────────────────────
+  // ─── Table interactions ───────────────────────────────────────────────
 
   test("table sort toggles on column click", async ({ page }) => {
     const salesHeader = page.getByRole("columnheader", {
@@ -157,7 +157,7 @@ test.describe("Sales Performance Page", () => {
     await page.waitForURL(/products=/);
   });
 
-  // ─── Reset filters ───────���──────────────────────────────────────────
+  // ─── Reset filters ────────────────────────────────────────────────────
 
   test("reset filters clears all active filters", async ({ page }) => {
     // Apply a family filter first
@@ -174,7 +174,7 @@ test.describe("Sales Performance Page", () => {
     expect(page.url()).not.toContain("family=Cardio");
   });
 
-  // ─── Mobile viewport ─────���─────────────────────────────────────────
+  // ─── Mobile viewport ─────────────────────────────────────────────────
 
   test("mobile card view appears on small screens", async ({ page }) => {
     await page.setViewportSize({ width: 375, height: 812 });
@@ -199,7 +199,7 @@ test.describe("Sales Performance Page", () => {
     await expect(page.getByText("Sort by")).toBeVisible();
   });
 
-  // ─── Error boundary ───────���────────────────────────────────────────
+  // ─── Error boundary ──────────────────────────────────────────────────
 
   test("page does not crash with empty data sections", async ({ page }) => {
     // The dev preview should render without errors

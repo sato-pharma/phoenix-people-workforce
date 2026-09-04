@@ -15,6 +15,7 @@ import {
   describeDurationMonths,
   escapeHtml,
   formatDayMonthYear,
+  formatMoney,
   pinLtr,
   PRINT_BANNER_CSS,
   printBanner,
@@ -56,22 +57,6 @@ import { resolveNationality } from "@/lib/hiring-pack/nationality";
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 
 /**
- * A money figure in the form the contract prints it: digits only — مادة (2) supplies "جنيه".
- *
- * Piastres print as two digits or not at all. "12,750.5" on a salary clause is the kind of figure
- * that gets read as five piastres by one party and fifty by the other, and مادة (2) prints the same
- * amount again in words directly beside it, so the two have to agree exactly.
- */
-function formatMoney(value: number | null): string {
-  if (value === null || !Number.isFinite(value)) return "";
-  const hasPiastres = Math.round(value * 100) % 100 !== 0;
-  return new Intl.NumberFormat("en-US", {
-    minimumFractionDigits: hasPiastres ? 2 : 0,
-    maximumFractionDigits: 2,
-  }).format(value);
-}
-
-/**
  * Every blank in the contract, resolved once — for every version at the same time.
  *
  * WATCH THE UNITS. Three of these tokens sit inside a sentence that already prints the unit, so the
@@ -90,7 +75,7 @@ function formatMoney(value: number | null): string {
  * version only ever reads its own — and collapsing them would let today's wording reach a contract
  * somebody signed under the old one.
  */
-function buildContractValues(data: HiringPackData): Partial<Record<ContractToken, string>> {
+export function buildContractValues(data: HiringPackData): Partial<Record<ContractToken, string>> {
   const { employee, profile, terms } = data;
   const recital = systemLegalEntity.contractRecital;
 

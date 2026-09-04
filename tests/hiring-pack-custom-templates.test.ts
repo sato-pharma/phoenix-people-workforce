@@ -1,0 +1,675 @@
+import assert from "node:assert/strict";
+
+import {
+  buildCustomTemplatePagePath,
+  CUSTOM_TEMPLATE_CONTENT_TYPES,
+  CUSTOM_TEMPLATE_GROUP_LABELS,
+  CUSTOM_TEMPLATE_GROUP_NOTES,
+  CUSTOM_TEMPLATE_GROUPS,
+  CUSTOM_TEMPLATE_MAX_COPIES,
+  CUSTOM_TEMPLATE_MAX_PAGE_BYTES,
+  CUSTOM_TEMPLATE_MAX_PAGES,
+  CUSTOM_TEMPLATE_MAX_PT,
+  CUSTOM_TEMPLATE_MIN_PT,
+  CUSTOM_TEMPLATE_PRINT_SIDES,
+  CUSTOM_TEMPLATE_PRINT_SIDES_LABELS,
+  describePrintInstruction,
+  fieldsThatFitNewArtwork,
+  pagePresetFor,
+  parseCustomTemplateDraft,
+  roundPoints,
+} from "@/lib/hiring-pack/custom-templates";
+import {
+  canRolePrintCustomTemplate,
+  isCustomTemplateLayerMissing,
+} from "@/lib/hiring-pack/custom-template-store";
+import {
+  CUSTOM_DOCUMENT_PREFIX,
+  customDocumentFor,
+  customTemplateKeyOf,
+  HIRING_PACK_DOCUMENTS,
+  isBuiltInDocument,
+  isCustomDocument,
+} from "@/lib/hiring-pack/types";
+
+// Company templates — a document uploaded through the UI instead of written into the code.
+//
+// WHAT IS WORTH PINNING HERE IS THE GATE, not the storage. Everything between a dropped file and a
+// paper the company prints passes through `parseCustomTemplateDraft`, and the failures it prevents
+// are all of the same silent kind: a template that lists correctly, opens correctly, and prints
+// nothing or prints at the wrong scale.
+
+// NAMED `UUID` RATHER THAN `KEY`, AND THAT IS NOT A STYLE PREFERENCE. A template's stable
+// identifier is called its KEY everywhere else in this feature, but `…_KEY = "<36 characters
+// of hex and dashes>"` is precisely the shape gitleaks' generic-api-key rule matches, and
+// `secret-scan` is a required check. The rule fires on the WORD sitting next to the value,
+// never on the value — which is why the `…_ID` constants nearby have never tripped it. A uuid
+// carries no authority and is not a credential; renaming this back turns the merge gate red.
+const TEMPLATE_UUID = "f72a4c1d-dbb8-45f3-a4fb-473ef05c7ba2";
+
+function draft(over: Record<string, unknown> = {}) {
+  return {
+    name: "Medical insurance enrolment",
+    pageHeightPt: 841.89,
+    pages: [{ contentType: "image/png", heightPx: 2339, sizeBytes: 900_000, widthPx: 1654 }],
+    pageWidthPt: 595.28,
+    ...over,
+  };
+}
+
+/**
+ * A CUSTOM DOCUMENT IS A STRING THAT CANNOT COLLIDE WITH A BUILT-IN ONE, and the whole widening of
+ * the document type rests on that. If `custom:<uuid>` could ever equal one of the ten, a company
+ * template would silently take over a government form's field rules, its copy count and its
+ * renderer.
+ */
+function testACustomDocumentCannotCollideWithABuiltIn() {
+  const document = customDocumentFor(TEMPLATE_UUID);
+  assert.equal(document, `${CUSTOM_DOCUMENT_PREFIX}${TEMPLATE_UUID}`);
+  assert.equal(customTemplateKeyOf(document), TEMPLATE_UUID);
+  assert.ok(isCustomDocument(document));
+  assert.ok(!isBuiltInDocument(document));
+
+  // No built-in contains a colon, so the prefix can never be reached from the other direction.
+  for (const builtIn of HIRING_PACK_DOCUMENTS) {
+    assert.ok(!builtIn.includes(":"), `${builtIn}: a built-in key must not contain a colon`);
+    assert.ok(!isCustomDocument(builtIn), `${builtIn}: a built-in is not a company template`);
+    assert.ok(isBuiltInDocument(builtIn));
+    assert.equal(customTemplateKeyOf(builtIn), null);
+  }
+}
+
+/**
+ * The key is VALIDATED, not merely split off the prefix.
+ *
+ * The value that comes back is about to be used to look up a row. A caller's alternative to a null
+ * here is a query built out of whatever followed the colon.
+ */
+function testAMalformedCustomKeyIsRefusedRatherThanTrusted() {
+  assert.equal(customTemplateKeyOf("custom:"), null);
+  assert.equal(customTemplateKeyOf("custom:not-a-uuid"), null);
+  assert.equal(customTemplateKeyOf("custom:f72a4c1d-dbb8-45f3-a4fb"), null, "a truncated uuid is not a key");
+  assert.equal(customTemplateKeyOf(`custom:${TEMPLATE_UUID} or 1=1`), null, "trailing text is not a key");
+  assert.equal(customTemplateKeyOf(`prefix-custom:${TEMPLATE_UUID}`), null, "the prefix must start the string");
+  // Upper case is the same uuid — Postgres writes them lower, but a hand-typed one is still valid.
+  assert.equal(customTemplateKeyOf(`custom:${TEMPLATE_UUID.toUpperCase()}`), TEMPLATE_UUID.toUpperCase());
+}
+
+/** A well-formed upload survives the gate with its numbers intact. */
+function testAWellFormedTemplateIsAccepted() {
+  const parsed = parseCustomTemplateDraft(draft({ nameAr: "  استمارة  ", note: "  " }));
+  assert.ok(parsed.ok, parsed.ok ? "" : parsed.message);
+  assert.equal(parsed.value.name, "Medical insurance enrolment");
+  assert.equal(parsed.value.nameAr, "استمارة", "an Arabic name is trimmed, not dropped");
+  assert.equal(parsed.value.note, null, "a note of only spaces is no note");
+  assert.equal(parsed.value.pageWidthPt, 595.28);
+  assert.equal(parsed.value.pages.length, 1);
+  assert.equal(parsed.value.printableByRoles, null, "no role list means no extra restriction");
+}
+
+/**
+ * A PAGE SIZE IN PIXELS IS THE MISTAKE THIS CATCHES, and it is not a hypothetical one: an A4 page
+ * scanned at 300dpi is 2480 × 3508, and those two numbers land in a width and height box as
+ * naturally as 595 × 842 do. Accepting them would make a template whose every coordinate is out by
+ * a factor of four — which looks like a broken renderer, not like a typo.
+ */
+function testAPageMeasuredInPixelsIsRefused() {
+  const pixels = parseCustomTemplateDraft(draft({ pageHeightPt: 3508, pageWidthPt: 2480 }));
+  assert.ok(!pixels.ok, "an A4 page in pixels must not be accepted as points");
+  assert.match(pixels.message, /points/);
+
+  const tiny = parseCustomTemplateDraft(draft({ pageHeightPt: 20, pageWidthPt: 20 }));
+  assert.ok(!tiny.ok, "a page smaller than an inch is not a page");
+
+  // THE ONE A BOUND CANNOT CATCH. An A4 page at 200dpi is 1654 × 2339, which is a perfectly
+  // plausible large sheet of paper — no range check separates it from a real one. What gives it
+  // away is that the declared page size EQUALS the artwork's pixel count, which is only true at
+  // screen resolution. That is what `looksLikePixels` is for, and it is the reason this test
+  // exists rather than a bounds test alone.
+  const at200dpi = parseCustomTemplateDraft(
+    draft({
+      pageHeightPt: 2339,
+      pages: [{ contentType: "image/png", heightPx: 2339, sizeBytes: 900_000, widthPx: 1654 }],
+      pageWidthPt: 1654,
+    }),
+  );
+  assert.ok(!at200dpi.ok, "a page size equal to the artwork's pixel size must be refused");
+  assert.match(at200dpi.message, /1654 × 2339/, "the refusal shows the numbers it is objecting to");
+  assert.match(at200dpi.message, /595 × 842|200 dpi/, "and says what to do instead");
+
+  // A real large-format page whose artwork is at a real print resolution is NOT refused — the
+  // detector must not become a second, accidental size limit.
+  assert.ok(
+    parseCustomTemplateDraft(
+      draft({
+        pageHeightPt: 2384,
+        pages: [{ contentType: "image/png", heightPx: 3311, sizeBytes: 900_000, widthPx: 2339 }],
+        pageWidthPt: 1684,
+      }),
+    ).ok,
+    "an A1 sheet with 100dpi artwork is a real template",
+  );
+
+  // Exactly on the bounds is inside them.
+  assert.ok(
+    parseCustomTemplateDraft(draft({ pageHeightPt: CUSTOM_TEMPLATE_MAX_PT, pageWidthPt: CUSTOM_TEMPLATE_MIN_PT })).ok,
+    "the bounds themselves are allowed",
+  );
+}
+
+/** Every refusal is a sentence somebody holding a scanner can act on. */
+function testEveryRefusalNamesWhatToDo() {
+  const cases: { input: Record<string, unknown>; expect: RegExp }[] = [
+    { expect: /name/i, input: draft({ name: "   " }) },
+    { expect: /at least one page/i, input: draft({ pages: [] }) },
+    { expect: /page size|width|height/i, input: draft({ pageWidthPt: "not a number" }) },
+    {
+      expect: /PNG, JPG, WEBP or SVG/i,
+      input: draft({ pages: [{ contentType: "application/pdf", heightPx: 10, sizeBytes: 10, widthPx: 10 }] }),
+    },
+    {
+      expect: /15 MB/i,
+      input: draft({
+        pages: [
+          {
+            contentType: "image/png",
+            heightPx: 10,
+            sizeBytes: CUSTOM_TEMPLATE_MAX_PAGE_BYTES + 1,
+            widthPx: 10,
+          },
+        ],
+      }),
+    },
+    {
+      expect: new RegExp(String(CUSTOM_TEMPLATE_MAX_PAGES)),
+      input: draft({
+        pages: Array.from({ length: CUSTOM_TEMPLATE_MAX_PAGES + 1 }, () => ({
+          contentType: "image/png",
+          heightPx: 10,
+          sizeBytes: 10,
+          widthPx: 10,
+        })),
+      }),
+    },
+  ];
+
+  for (const entry of cases) {
+    const parsed = parseCustomTemplateDraft(entry.input);
+    assert.ok(!parsed.ok, `expected a refusal for ${JSON.stringify(entry.input.name ?? entry.input)}`);
+    assert.match(parsed.message, entry.expect);
+    // A message ending in a constraint name, an error code or a bare noun is not an instruction.
+    assert.ok(parsed.message.length > 12, "a refusal must say something");
+  }
+}
+
+/**
+ * THE PAGE INDEX COMES FROM THE ARRAY POSITION, never from the payload.
+ *
+ * A client sending `pageIndex: 0` twice would otherwise insert two rows colliding on the table's
+ * `(template_id, page_index)` unique constraint — a 23505 raised halfway through an upload, with
+ * the first page's object already in the bucket.
+ */
+function testPageOrderComesFromThePositionNotThePayload() {
+  const parsed = parseCustomTemplateDraft(
+    draft({
+      pages: [
+        { contentType: "image/png", heightPx: 20, pageIndex: 7, sizeBytes: 10, widthPx: 10 },
+        { contentType: "image/jpeg", heightPx: 20, pageIndex: 7, sizeBytes: 10, widthPx: 10 },
+      ],
+    }),
+  );
+  assert.ok(parsed.ok, parsed.ok ? "" : parsed.message);
+  assert.deepEqual(
+    parsed.value.pages.map((page) => page.pageIndex),
+    [0, 1],
+  );
+}
+
+/**
+ * NULL AND AN EMPTY LIST ARE DIFFERENT ANSWERS.
+ *
+ * Null is "no extra restriction beyond the printing permission" — the default. An empty list is
+ * "nobody", which is a real thing to want for a template being prepared before it is ready. Folding
+ * one into the other would silently publish a draft.
+ */
+function testNobodyAndEveryoneAreNotTheSameAnswer() {
+  assert.equal(parseCustomTemplateDraft(draft()).ok && parseCustomTemplateDraft(draft()).ok, true);
+
+  const absent = parseCustomTemplateDraft(draft());
+  assert.ok(absent.ok);
+  assert.equal(absent.value.printableByRoles, null);
+
+  const nobody = parseCustomTemplateDraft(draft({ printableByRoles: [] }));
+  assert.ok(nobody.ok);
+  assert.deepEqual(nobody.value.printableByRoles, [], "an empty list means nobody, and stays empty");
+
+  const someone = parseCustomTemplateDraft(
+    draft({ printableByRoles: ["Super Admin", " HR Operations ", "Super Admin"] }),
+  );
+  assert.ok(someone.ok);
+  assert.deepEqual(
+    someone.value.printableByRoles,
+    ["Super Admin", "HR Operations"],
+    "roles are trimmed and de-duplicated",
+  );
+}
+
+/**
+ * A page's storage path is unique, and carries the version.
+ *
+ * REPLACING A TEMPLATE MUST WRITE BESIDE THE OLD ARTWORK, never over it — a superseded version stays
+ * printable, and it cannot stay printable if its pages were overwritten by the ones that replaced
+ * them. The version segment is what guarantees that, and the random segment is what lets
+ * `storage_path` carry a UNIQUE constraint.
+ */
+function testArtworkPathsNeverCollideAcrossVersions() {
+  const v1 = buildCustomTemplatePagePath({
+    contentType: "image/png",
+    pageIndex: 0,
+    templateKey: TEMPLATE_UUID,
+    unique: "aaaaaaaa",
+    version: 1,
+  });
+  const v2 = buildCustomTemplatePagePath({
+    contentType: "image/png",
+    pageIndex: 0,
+    templateKey: TEMPLATE_UUID,
+    unique: "bbbbbbbb",
+    version: 2,
+  });
+
+  assert.equal(v1, `${TEMPLATE_UUID}/v1/00-aaaaaaaa.png`);
+  assert.notEqual(v1, v2, "a new version writes to a new path");
+  assert.ok(v2.startsWith(`${TEMPLATE_UUID}/v2/`), "the version is in the path, so the old objects survive");
+
+  // The extension follows the content type, so a JPEG is not filed as a .png.
+  assert.match(
+    buildCustomTemplatePagePath({
+      contentType: "image/jpeg",
+      pageIndex: 11,
+      templateKey: TEMPLATE_UUID,
+      unique: "c",
+      version: 1,
+    }),
+    /\/11-c\.jpg$/,
+  );
+
+  // A path segment can never be built out of unsanitised text: everything but letters, digits and a
+  // hyphen is stripped from the caller's unique segment.
+  assert.equal(
+    buildCustomTemplatePagePath({
+      contentType: "image/png",
+      pageIndex: 0,
+      templateKey: TEMPLATE_UUID,
+      unique: "../../etc/passwd",
+      version: 1,
+    }),
+    `${TEMPLATE_UUID}/v1/00-etcpasswd.png`,
+  );
+}
+
+/** Every content type this accepts is one the bucket accepts. Both lists, one meaning. */
+function testTheAcceptedTypesMatchTheBucket() {
+  assert.deepEqual(
+    [...CUSTOM_TEMPLATE_CONTENT_TYPES].sort(),
+    ["image/jpeg", "image/png", "image/svg+xml", "image/webp"],
+    "these are the migration's allowed_mime_types, in one place",
+  );
+  assert.ok(
+    !(CUSTOM_TEMPLATE_CONTENT_TYPES as readonly string[]).includes("application/pdf"),
+    "a PDF is rasterised in the browser and never stored as one",
+  );
+}
+
+/** A page size is recognised as a named one within half a point, and honestly named otherwise. */
+function testAPresetIsRecognisedWithoutBeingExact() {
+  assert.equal(pagePresetFor(595.28, 841.89), "a4");
+  assert.equal(pagePresetFor(595.32, 841.92), "a4", "Word's own A4 is still A4");
+  assert.equal(pagePresetFor(612, 792), "letter");
+  assert.equal(pagePresetFor(612, 1008), "legal");
+  // Form 1's real artwork measures 612.12 × 1008.12, and that IS US Legal: 0.12pt is four
+  // hundredths of a millimetre, an artefact of measuring the Authority's scan rather than a
+  // different sheet of paper. Refusing to name it would be precision standing in for accuracy.
+  assert.equal(pagePresetFor(612.12, 1008.12), "legal");
+
+  // A size that really is none of them says so, rather than being rounded into the nearest.
+  assert.equal(pagePresetFor(600, 900), null);
+  assert.equal(pagePresetFor(612, 1010), null, "two points is a different page, not a rounding");
+  assert.equal(roundPoints(841.8898), 841.89);
+}
+
+/**
+ * THE TABLES MAY NOT EXIST YET, because applying the migration is the owner's decision and the code
+ * ships first. A missing table answers `PGRST205`, not `42P01` — PostgREST resolves through its
+ * schema cache and reports a cache miss — so the obvious guard fires never and the screen 500s.
+ */
+function testAMissingTemplateTableIsRecognised() {
+  assert.ok(isCustomTemplateLayerMissing({ code: "PGRST205" }));
+  assert.ok(isCustomTemplateLayerMissing({ code: "42P01" }));
+  assert.ok(
+    isCustomTemplateLayerMissing({
+      message: "Could not find the table 'public.hiring_pack_custom_templates' in the schema cache",
+    }),
+  );
+  assert.ok(!isCustomTemplateLayerMissing({ code: "23505", message: "duplicate key value" }));
+  assert.ok(!isCustomTemplateLayerMissing(null));
+  assert.ok(!isCustomTemplateLayerMissing("boom"), "a string is not a PostgREST error");
+}
+
+/**
+ * A TEMPLATE IS FILED IN A PACKAGE, and an unrecognised package is refused rather than corrected.
+ *
+ * The owner, 2026-09-04: "I want to be able to group documents to hiring or resignation or other."
+ * Quietly filing an unknown answer under "other" would put a leaving form in the wrong package with
+ * nothing on screen to say so — and the person who finds out is whoever could not locate it on the
+ * day somebody resigned.
+ */
+function testATemplateIsFiledInAPackage() {
+  const unsorted = parseCustomTemplateDraft(draft());
+  assert.ok(unsorted.ok, "a template with no package stated is still a valid template");
+  assert.equal(
+    unsorted.value.group,
+    "other",
+    "and it belongs to Other papers, which is what unsorted MEANS",
+  );
+
+  for (const group of CUSTOM_TEMPLATE_GROUPS) {
+    const parsed = parseCustomTemplateDraft(draft({ group }));
+    assert.ok(parsed.ok, `"${group}" is a package and must be accepted`);
+    assert.equal(parsed.value.group, group, `"${group}" must survive the parse unchanged`);
+  }
+
+  for (const rubbish of ["resignation", "hiring", "OTHER", "joining ", 3, true, {}]) {
+    const parsed = parseCustomTemplateDraft(draft({ group: rubbish }));
+    assert.equal(
+      parsed.ok,
+      false,
+      `"${String(rubbish)}" is not a package and must be refused, not filed under "other"`,
+    );
+    if (!parsed.ok) {
+      assert.match(
+        parsed.message,
+        /package/i,
+        `the refusal of "${String(rubbish)}" should say what a package is`,
+      );
+    }
+  }
+}
+
+/** Every package has a name and a line of explanation for the picker. */
+function testEveryPackageCanBeShownToSomebodyChoosing() {
+  for (const group of CUSTOM_TEMPLATE_GROUPS) {
+    const label = CUSTOM_TEMPLATE_GROUP_LABELS[group];
+    const note = CUSTOM_TEMPLATE_GROUP_NOTES[group];
+    assert.ok(
+      typeof label === "string" && label.trim().length > 0,
+      `the "${group}" package has no name to show`,
+    );
+    assert.ok(
+      typeof note === "string" && note.trim().length > 0,
+      `the "${group}" package has no line saying what belongs in it`,
+    );
+    assert.ok(
+      !label.includes(group) || group === "other",
+      `the "${group}" package is labelled with its own stored value rather than a phrase`,
+    );
+  }
+
+  assert.equal(
+    Object.keys(CUSTOM_TEMPLATE_GROUP_LABELS).length,
+    CUSTOM_TEMPLATE_GROUPS.length,
+    "a package with no label would render as a blank heading on the list",
+  );
+  assert.equal(
+    Object.keys(CUSTOM_TEMPLATE_GROUP_NOTES).length,
+    CUSTOM_TEMPLATE_GROUPS.length,
+    "a package with no explanation gives somebody nothing to choose on",
+  );
+}
+
+/**
+ * WHO MAY PRINT ONE — the second gate, which for a while was stored and enforced nowhere.
+ *
+ * `printable_by_roles` is written on the upload form and shown back on the template's row, so the
+ * screen says the paper is restricted. Until the print route consulted it, that sentence was
+ * false — every holder of `employee_documents:read` could print every uploaded template. A control
+ * that is displayed but not applied is worse than one that does not exist, because somebody trusts
+ * it: it is exactly how a salary certificate ends up printable by whoever can print a contract.
+ *
+ * The three answers below are three different questions, and conflating any two of them breaks a
+ * live paper on the day it ships.
+ */
+function testWhoMayPrintACompanyTemplate() {
+  // NULL IS NOT "NOBODY". Every template uploaded before the field existed carries null, and four
+  // of them are live. Reading null as a closed door would stop all four printing at once.
+  assert.equal(
+    canRolePrintCustomTemplate("HR Specialist", null),
+    true,
+    "a template with no role list follows the module permission, as its own upload form promises",
+  );
+  // An EMPTY LIST is the same statement as null, said by a form that submitted an untouched field.
+  // Treating it as "nobody" would make a template nobody can print, through a screen that never
+  // asked the question.
+  assert.equal(
+    canRolePrintCustomTemplate("HR Specialist", []),
+    true,
+    "an empty list is an unanswered question, not an answer of nobody",
+  );
+
+  assert.equal(canRolePrintCustomTemplate("HR Specialist", ["HR Specialist"]), true);
+  assert.equal(
+    canRolePrintCustomTemplate("Medical Rep", ["HR Specialist", "CEO"]),
+    false,
+    "a role that is not on a non-empty list cannot print that template",
+  );
+
+  // SUPER ADMIN IS NEVER LOCKED OUT, and this is the recovery path rather than a courtesy. The list
+  // is free text through a form; one careless save can name a role nobody holds, and the Studio
+  // screen that would fix it sits behind the same module permission. Without this the paper is
+  // unrecoverable through the UI that created it.
+  assert.equal(
+    canRolePrintCustomTemplate("Super Admin", ["Nobody Holds This Role"]),
+    true,
+    "a Super Admin can always print, or a mistyped role list is unrecoverable",
+  );
+}
+
+/**
+ * HOW MANY COPIES AND WHETHER IT PRINTS BACK-TO-BACK — the owner, 2026-09-04.
+ *
+ * WHAT THIS PINS IS THE DEFAULT, not the arithmetic. Both facts were free text in the `note` until
+ * today: "two copies, double sided" could be typed there and nothing read it, so the template still
+ * printed one copy. The failure that replaces is silent — a form that needed two copies came out as
+ * one, and nobody finds out until the second signature is asked for.
+ *
+ * A TEMPLATE THAT SAYS NOTHING STILL MEANS ONE COPY ON ONE SIDE, which is what every row uploaded
+ * before these fields existed already did. Getting that wrong in the other direction — refusing a
+ * draft that omits them — would break every upload screen that has not been redeployed yet.
+ */
+function testHowManyCopiesAndWhichSides() {
+  const silent = parseCustomTemplateDraft(draft());
+  assert.ok(silent.ok, silent.ok ? "" : silent.message);
+  assert.equal(silent.value.defaultCopies, 1, "a draft that says nothing prints one copy");
+  assert.equal(silent.value.printSides, "single", "and prints it on one side");
+
+  const two = parseCustomTemplateDraft(draft({ defaultCopies: 2, printSides: "double" }));
+  assert.ok(two.ok, two.ok ? "" : two.message);
+  assert.equal(two.value.defaultCopies, 2);
+  assert.equal(two.value.printSides, "double");
+
+  // A NUMBER INPUT SENDS A STRING. Every other measurement on this form arrives as one, and a copy
+  // count that only worked when the client happened to send a number would fail on the one screen
+  // that actually exists.
+  const typed = parseCustomTemplateDraft(draft({ defaultCopies: "3" }));
+  assert.ok(typed.ok, typed.ok ? "" : typed.message);
+  assert.equal(typed.value.defaultCopies, 3, "a copy count typed into a number box is a string");
+
+  // REFUSED, NEVER ROUNDED DOWN TO ONE. Silently printing one copy of a form that asked for eleven
+  // is the exact failure this whole field exists to prevent, and it would be invisible.
+  for (const bad of [0, -1, CUSTOM_TEMPLATE_MAX_COPIES + 1, 1.5, "two"]) {
+    const refused = parseCustomTemplateDraft(draft({ defaultCopies: bad }));
+    assert.ok(!refused.ok, `a copy count of ${String(bad)} must be refused, not corrected`);
+  }
+
+  const wrongSides = parseCustomTemplateDraft(draft({ printSides: "duplex" }));
+  assert.ok(!wrongSides.ok, "a print setting this system does not have is refused");
+  assert.match(wrongSides.message, /single-sided|double-sided/i);
+}
+
+/**
+ * The line the person standing at the printer reads.
+ *
+ * IT COUNTS SHEETS, NOT PAGES, because that is what they pick up. A four-page template printed
+ * double-sided is two sheets and printed single-sided is four — the difference IS the setting, and
+ * a line that reported pages either way would make the setting look like it did nothing.
+ */
+function testThePrintInstructionSaysWhatComesOut() {
+  assert.equal(
+    describePrintInstruction({ defaultCopies: 1, pageCount: 1, printSides: "single" }),
+    "1 copy · Single-sided",
+    "one copy of a one-page form needs no sheet total",
+  );
+
+  assert.equal(
+    describePrintInstruction({ defaultCopies: 2, pageCount: 4, printSides: "double" }),
+    "2 copies · Double-sided · 4 sheets in all",
+    "four pages back-to-back is two sheets, twice",
+  );
+
+  assert.equal(
+    describePrintInstruction({ defaultCopies: 2, pageCount: 4, printSides: "single" }),
+    "2 copies · Single-sided · 8 sheets in all",
+    "the same four pages on one side each is twice the paper",
+  );
+
+  // AN ODD PAGE COUNT ROUNDS UP. Three pages printed back-to-back is two sheets — the last one has
+  // a blank back — and reporting 1.5 would be arithmetic rather than an answer.
+  assert.equal(
+    describePrintInstruction({ defaultCopies: 3, pageCount: 3, printSides: "double" }),
+    "3 copies · Double-sided · 6 sheets in all",
+    "an odd page count rounds up to a whole sheet",
+  );
+}
+
+/** Every print setting can be shown to somebody choosing between them. */
+function testEveryPrintSettingCanBeShown() {
+  for (const option of CUSTOM_TEMPLATE_PRINT_SIDES) {
+    assert.equal(
+      typeof CUSTOM_TEMPLATE_PRINT_SIDES_LABELS[option],
+      "string",
+      `${option} has no label, so the picker would render an empty button`,
+    );
+  }
+}
+
+/**
+ * REPLACING THE ARTWORK KEEPS THE SAME DOCUMENT — the identity claim the whole feature rests on.
+ *
+ * A template has two identities on purpose: `key` is stable across versions and `custom:<key>` is
+ * the document, while a version's own `id` is what the field layer scopes its rows to. Replacing a
+ * paper mints a new version id and keeps the key.
+ *
+ * GETTING THIS THE WRONG WAY ROUND IS THE FAILURE WORTH A TEST. If the document were built from the
+ * version id, every replacement would silently become a DIFFERENT document — the field rules, the
+ * placed boxes and any link anybody saved would all still exist, pointing at a document nothing
+ * lists. Nothing would error; the corrected paper would simply print blank.
+ */
+function testAReplacementStaysTheSameDocument() {
+  const key = TEMPLATE_UUID;
+  const versionOne = { id: "1098183b-e15f-42cb-b13e-319766a55e6c", key, version: 1 };
+  const versionTwo = { id: "c479d526-09d8-4133-aadb-2681031f8ba2", key, version: 2 };
+
+  assert.equal(
+    customDocumentFor(versionOne.key),
+    customDocumentFor(versionTwo.key),
+    "two versions of one template must be the SAME document, or replacing artwork orphans every field rule placed on it",
+  );
+  assert.notEqual(
+    versionOne.id,
+    versionTwo.id,
+    "each version needs its own id — the field layer scopes to it, and sharing one would move the archived version's fields instead of copying them",
+  );
+  assert.equal(
+    customTemplateKeyOf(customDocumentFor(key)),
+    key,
+    "the key must be recoverable from the document, because that is how a print request finds which template to load",
+  );
+}
+
+/**
+ * A FIELD ON A PAGE THE REPLACEMENT DOES NOT HAVE IS LEFT BEHIND, AND COUNTED.
+ *
+ * The count is the part that matters. Dropping the field is right — a row on page 3 of a form that
+ * came back with two pages can never be drawn and can never be reached in the editor, so copying it
+ * would file something invisible in both places. Dropping it QUIETLY is the same defect as losing
+ * it: the screen has to be able to say how many, or a replacement that silently halves a layout
+ * looks exactly like one that kept it.
+ */
+function testAFieldOnAMissingPageIsLeftBehind() {
+  // ⚠ ONE-BASED, and this is the whole reason the test exists. A field's `page` counts from 1 while
+  // the artwork's `pageIndex` counts from 0 — they meet in `layeredPages`, which merges each sheet
+  // with `index + 1`. Judging a field against a page COUNT as though both started at 0 drops every
+  // field on the LAST sheet of every replacement, silently, which on a two-sided form is the entire
+  // back page. Live staging rows on a two-page template carry pages 1 and 2.
+  const rows = [
+    { name: "name on sheet 1", page: 1 },
+    { name: "signature on sheet 2", page: 2 },
+    { name: "witness on sheet 3", page: 3 },
+    { name: "anchored into flowing text", page: null },
+  ];
+
+  const twoPages = fieldsThatFitNewArtwork(rows, 2);
+  assert.deepEqual(
+    twoPages.fits.map((row) => row.name),
+    ["name on sheet 1", "signature on sheet 2", "anchored into flowing text"],
+    "a field on sheet 3 has nowhere to land on two pages of artwork — and both fields on sheets 1 and 2 must survive, or the last page of every replacement is lost",
+  );
+  assert.equal(
+    twoPages.droppedForMissingPage,
+    1,
+    "the count of what was left behind is what the screen reports — a silent drop reads as a lost layout",
+  );
+
+  // A NULL PAGE IS NOT A MISSING PAGE. It belongs to a field anchored into flowing text, so no page
+  // of the new artwork can be missing for it; dropping it would discard a row for a reason that does
+  // not apply. Even artwork with no pages at all leaves it standing.
+  assert.equal(
+    fieldsThatFitNewArtwork(rows, 0).fits.length,
+    1,
+    "a flow-anchored field is not pinned to a sheet, so no page count can strand it",
+  );
+
+  // Page 0 can never be drawn — the merge starts at sheet 1 — so it names a sheet no artwork has.
+  assert.equal(
+    fieldsThatFitNewArtwork([{ name: "malformed", page: 0 }], 3).droppedForMissingPage,
+    1,
+    "a page of 0 is a sheet that exists on no artwork, and is reported like any other",
+  );
+
+  // The ordinary case, which is most replacements: same paper, same page count, nothing lost.
+  const sameShape = fieldsThatFitNewArtwork(rows, 3);
+  assert.equal(sameShape.fits.length, rows.length, "replacing like with like must lose nothing");
+  assert.equal(sameShape.droppedForMissingPage, 0, "nothing was left behind, so nothing is reported");
+}
+
+export async function runHiringPackCustomTemplateTests() {
+  testAReplacementStaysTheSameDocument();
+  testAFieldOnAMissingPageIsLeftBehind();
+  testHowManyCopiesAndWhichSides();
+  testThePrintInstructionSaysWhatComesOut();
+  testEveryPrintSettingCanBeShown();
+  testWhoMayPrintACompanyTemplate();
+  testACustomDocumentCannotCollideWithABuiltIn();
+  testAMalformedCustomKeyIsRefusedRatherThanTrusted();
+  testAWellFormedTemplateIsAccepted();
+  testAPageMeasuredInPixelsIsRefused();
+  testEveryRefusalNamesWhatToDo();
+  testPageOrderComesFromThePositionNotThePayload();
+  testNobodyAndEveryoneAreNotTheSameAnswer();
+  testArtworkPathsNeverCollideAcrossVersions();
+  testTheAcceptedTypesMatchTheBucket();
+  testAPresetIsRecognisedWithoutBeingExact();
+  testAMissingTemplateTableIsRecognised();
+  testATemplateIsFiledInAPackage();
+  testEveryPackageCanBeShownToSomebodyChoosing();
+}

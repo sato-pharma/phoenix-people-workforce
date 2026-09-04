@@ -30,6 +30,13 @@ const targets = [
   // card's container width up to ~460px tall in the widest real case (sidebar
   // collapsed, ≥1580px viewport).
   { dir: "brand", file: "identity-watermark.png", resize: { height: 900 } },
+  // PhoenixIdentityStrip watermark — the full emblem, a SEPARATE copy from the one above so the
+  // design-locked portal banner cannot be changed by an admin-strip edit. Height-driven too: 205%
+  // of the 136px desktop bar is ~279px, so at 512 the source is ~1.8x — under the 2–3x band this
+  // list normally targets, and deliberately so: it draws at 11.5% opacity under `multiply`, where
+  // resampling softness is invisible and a larger file would be paid for on every admin page. The
+  // entry is a no-op (`withoutEnlargement`) that stops a later pass from shrinking it further.
+  { dir: "brand", file: "identity-strip-emblem.png", resize: { height: 512 } },
   // Employee profile photos — render at ~320×360 in PhoenixIdentityCard.
   { dir: "images/hr", file: "B-100.jpg", resize: { width: 720 } },
   { dir: "images/hr", file: "B-85.jpg", resize: { width: 720 } },

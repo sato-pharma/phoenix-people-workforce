@@ -44,7 +44,7 @@ const DASHES = /[‐-―−⁃]/g;
  * state it. U+FFFD (the replacement character) is included for the same reason — it is what a
  * mis-decoded bullet becomes.
  */
-const BULLETS = /^\s*[•‣▪●◦⁃⁌⁍∙·*+\--�]+\s*/;
+const BULLETS = /^\s*[\u2022\u2023\u25AA\u25CF\u25E6\u2043\u204C\u204D\u2219\u00B7*+\-\uE000-\uF8FF\uFFFD]+\s*/;
 
 /** Arabic-Indic (U+0660…) and Extended Arabic-Indic / Persian (U+06F0…) digits. */
 const ARABIC_INDIC = /[٠-٩۰-۹]/g;
