@@ -275,7 +275,18 @@ function parseSections_(text) {
   for (var i = 0; i < rows.length; i++) {
     var row = rows[i];
     var first = row && row.length ? String(row[0]) : '';
-    if (first.charAt(0) === '#') {
+    // A SECTION MARKER IS A ONE-CELL ROW OF #CAPITALS, AND BOTH HALVES ARE LOAD-BEARING.
+    //
+    // The loose test this replaces was `first.charAt(0) === '#'`, which swallowed the CV Details
+    // header row whole: its first column is literally named "#", so the header was read as a
+    // section marker named '' — every detail row was then filed under that empty name, DETAIL came
+    // back empty, and writeDetail_ took its "an older Phoenix does not send this" branch and built
+    // nothing. No error anywhere; the tab simply never appeared while the other three refreshed
+    // normally, which reads exactly like "the new script did nothing".
+    //
+    // Requiring one cell alone would fix today's bug. Requiring the #CAPITALS shape as well is what
+    // stops the next one, because a future single-column section could carry any header at all.
+    if (row.length === 1 && /^#[A-Z][A-Z0-9_]*$/.test(first)) {
       current = first.slice(1);
       sections[current] = [];
       continue;

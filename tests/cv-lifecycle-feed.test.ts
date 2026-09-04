@@ -103,6 +103,40 @@ function row(overrides: Partial<CvLifecycleRow> = {}): CvLifecycleRow {
   };
 }
 
+/**
+ * Apps Script's `Utilities.parseCsv`, to the extent this suite depends on it: RFC 4180 quoting, so a
+ * professional summary carrying a comma stays one cell. It exists because the parser under test is
+ * Apps Script source and cannot be imported — it is run here through `new Function` with this as
+ * its only injected global.
+ */
+function parseCsvLikeAppsScript(text: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = "";
+  let quoted = false;
+
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i]!;
+    if (quoted) {
+      if (char !== '"') cell += char;
+      else if (text[i + 1] === '"') { cell += '"'; i++; }
+      else quoted = false;
+      continue;
+    }
+    if (char === '"') quoted = true;
+    else if (char === ",") { row.push(cell); cell = ""; }
+    else if (char === "\n" || char === "\r") {
+      if (char === "\r" && text[i + 1] === "\n") i++;
+      row.push(cell);
+      rows.push(row);
+      row = [];
+      cell = "";
+    } else cell += char;
+  }
+  if (cell !== "" || row.length) { row.push(cell); rows.push(row); }
+  return rows.filter((entry) => entry.length > 1 || entry[0] !== "");
+}
+
 function detailCellFor(columnName: string, subject: CvLifecycleRow, cvCount = 1): unknown {
   const index = CV_DETAIL_COLUMNS.indexOf(columnName as (typeof CV_DETAIL_COLUMNS)[number]);
   assert.notEqual(index, -1, `no detail column named ${columnName} \u2014 the test and the feed have drifted`);
@@ -396,6 +430,57 @@ export function runCvLifecycleFeedTests() {
   assert.ok(
     script.includes("writeDetail_(ss, sections.DETAIL"),
     "the refresh must actually write the detail tab — registering the name alone builds nothing",
+  );
+
+  // ── The sheet must be able to READ what the feed writes ───────────────────────────
+  //
+  // This is the one seam the two halves of this feature meet at, and it broke in the most expensive
+  // way available: silently, in the direction of doing nothing at all.
+  //
+  // `parseSections_` used to treat any row whose first cell began with "#" as a section marker. The
+  // first column of both big tables is literally named "#", so every refresh read those two header
+  // rows as markers, filed their data under a section named "", and handed back LIFECYCLE = [] and
+  // DETAIL = []. `refreshCvLifecycle` then hit its own guard — fewer than two lifecycle rows means
+  // never overwrite a full sheet — and returned before writing a single tab. The guard was right.
+  // Everything upstream of it was green: the view, the route, the feed, this suite. The sheet just
+  // sat there, and "nothing changed" was the literal truth.
+  //
+  // So this runs the sheet's OWN parser, extracted from the .gs verbatim, over a bundle built by the
+  // real feed builder. Asserting on a hand-written fixture would have missed it; asserting the two
+  // halves agree is the only shape of test that catches it.
+
+  const parserSource = script.slice(script.indexOf("function parseSections_"));
+  const parseSections = new Function(
+    "Utilities",
+    parserSource.slice(0, parserSource.indexOf("\n}\n") + 3) + "\nreturn parseSections_;",
+  )({ parseCsv: parseCsvLikeAppsScript }) as (text: string) => Record<string, string[][]>;
+
+  const parsed = parseSections(csv);
+  for (const [name, minimum] of [
+    ["SUMMARY", 2],
+    ["DAILY", 2],
+    ["DETAIL", 2],
+    ["LIFECYCLE", 2],
+  ] as const) {
+    assert.ok(
+      (parsed[name]?.length ?? 0) >= minimum,
+      `the sheet's parser found ${parsed[name]?.length ?? 0} rows in #${name} — a header row whose first cell is "#" is being eaten as a section marker, and the refresh will write nothing at all`,
+    );
+  }
+  assert.equal(
+    parsed[""],
+    undefined,
+    'the parser invented a section with an empty name — that is a data header being read as a marker',
+  );
+  assert.deepEqual(
+    parsed.LIFECYCLE?.[0],
+    [...CV_LIFECYCLE_COLUMNS],
+    "the lifecycle header must survive the parser intact rather than being consumed as a marker",
+  );
+  assert.deepEqual(
+    parsed.DETAIL?.[0],
+    [...CV_DETAIL_COLUMNS],
+    "the detail header must survive the parser intact rather than being consumed as a marker",
   );
 
   // ── The unauthenticated route must never grow a file surface ─────────────────────────────────
