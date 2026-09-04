@@ -313,6 +313,7 @@ export const accessRegistry = [
   // mutation routes were open to any reader. `assertRegistryMatchesHandlers` in
   // tests/access-registry-coverage.test.ts now fails if a declared action and its handler disagree.
   sessionApi({ audit: { classification: "access-read", required: true }, methods: ["GET"], pattern: "/api/admin/deductions/candidates", permission: { resource: "deductions", action: "read" }, guard: "domain-helper" }),
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: ["GET"], pattern: "/api/admin/deductions/filters", permission: { resource: "deductions", action: "read" }, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/admin/deductions/export", permission: { resource: "deductions", action: "export" }, guard: "domain-helper" }),
   // The whole-month master workbook (every category, summary + detail). Separate path segment from the
   // per-category export above, so it needs its own entry; same export gate + Super-Admin/CEO/Finance read actor.

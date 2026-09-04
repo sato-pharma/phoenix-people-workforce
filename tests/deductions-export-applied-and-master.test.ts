@@ -10,7 +10,8 @@
 //
 // 2. The MASTER export: a per-employee Summary of what will actually be deducted
 //    (eligible only, pending shown apart) and a Detailed sheet carrying two extra
-//    columns the per-category sheet does not — Line and Direct Manager.
+//    columns the per-category sheet does not — Line and Direct Manager (Region
+//    joined them later, with the Line/Region filter).
 
 import { strict as assert } from "node:assert";
 import { readFileSync } from "node:fs";
@@ -238,8 +239,8 @@ export async function runDeductionsExportAppliedAndMasterTests(): Promise<void> 
   });
 
   const orgByCompactHrId = new Map<string, EmployeeOrgInfo>([
-    ["b207", { lineName: "CNS", managerName: "Manager One" }],
-    ["b500", { lineName: "Pedia", managerName: "Manager Two" }],
+    ["b207", { lineName: "CNS", regionName: "Cairo", managerName: "Manager One" }],
+    ["b500", { lineName: "Pedia", regionName: "Delta (2)", managerName: "Manager Two" }],
   ]);
 
   const masterWb = buildDeductionsMasterWorkbook({
@@ -268,6 +269,7 @@ export async function runDeductionsExportAppliedAndMasterTests(): Promise<void> 
   );
   // The summary carries the employee's line + direct manager too.
   assert.equal(cellFor(summary, "B-207", "Line"), "CNS", "the summary shows each employee's line");
+  assert.equal(cellFor(summary, "B-207", "Region"), "Cairo", "the summary shows each employee's region");
   assert.equal(cellFor(summary, "B-207", "Direct Manager"), "Manager One", "the summary shows the direct manager");
 
   const detailed = masterWb.getWorksheet("Detailed")!;

@@ -1,0 +1,172 @@
+// Unified Deductions module: the Line / Region narrowing the Master export uses.
+//
+// Pure. No DB I/O — the caller resolves each employee's line and region from the
+// employee directory and hands this module the map, exactly as the Master export
+// route already does for the Line and Direct Manager columns.
+//
+// Why a module of its own rather than a filter inline in the route: the same
+// three questions are asked in three places that must never disagree — the
+// dropdown options the screen offers, the rows the workbook contains, and the
+// count the screen promises before the download starts. One implementation is
+// what keeps "12 deductions match" and a 12-row sheet the same number.
+//
+// Region is keyed by NAME, not by `region_code`. The code is null for anyone
+// whose (line, area) pair is not a sales seat — Head Office, and a handful of
+// field seats whose area never resolved — and on production 2026-08 the name
+// "Giza" is carried by employees BOTH with code `GZ` and with no code at all.
+// Keying on the code would have split one region into two buckets and silently
+// dropped every Head Office employee out of the region filter entirely.
+
+export const DEDUCTIONS_ORG_UNASSIGNED = "Unassigned";
+
+/** What the caller resolves per employee for the Master sheet's org columns. */
+export type DeductionsOrgInfo = {
+  lineName: string | null;
+  regionName: string | null;
+  managerName: string | null;
+};
+
+/** `null` on either axis means "everything" — the filter is not applied at all. */
+export type DeductionsOrgFilter = {
+  line: string | null;
+  region: string | null;
+};
+
+/** One (line, region) bucket that actually exists in a month's deductions. */
+export type DeductionsOrgGroup = {
+  line: string;
+  region: string;
+  candidates: number;
+  employees: number;
+};
+
+export const EMPTY_DEDUCTIONS_ORG_FILTER: DeductionsOrgFilter = { line: null, region: null };
+
+/**
+ * The label a line/region is filed under. A blank, whitespace-only or missing
+ * value becomes one visible "Unassigned" bucket rather than an empty cell that
+ * cannot be selected — a person with no line still owes the deduction, and a
+ * filter that cannot reach them would quietly leave them out of every export.
+ */
+export function normalizeOrgLabel(value: string | null | undefined): string {
+  const trimmed = String(value ?? "").trim();
+  return trimmed || DEDUCTIONS_ORG_UNASSIGNED;
+}
+
+/** Case- and whitespace-insensitive comparison key. Display keeps the original. */
+function foldOrgLabel(value: string | null | undefined): string {
+  return normalizeOrgLabel(value).toLowerCase().replace(/\s+/g, " ");
+}
+
+/**
+ * Reads one filter axis off a query string. Absent, blank, or the explicit
+ * "all" sentinel all mean unfiltered — so a stray `?line=` can never be read as
+ * "the line whose name is the empty string" and return an empty workbook.
+ */
+export function parseOrgFilterValue(raw: string | null | undefined): string | null {
+  const trimmed = String(raw ?? "").trim();
+  if (!trimmed) return null;
+  if (trimmed.toLowerCase() === "all") return null;
+  return trimmed;
+}
+
+export function orgFilterFromSearchParams(params: URLSearchParams): DeductionsOrgFilter {
+  return {
+    line: parseOrgFilterValue(params.get("line")),
+    region: parseOrgFilterValue(params.get("region")),
+  };
+}
+
+export function isDeductionsOrgFilterActive(filter: DeductionsOrgFilter): boolean {
+  return Boolean(filter.line || filter.region);
+}
+
+export function matchesDeductionsOrgFilter(
+  org: DeductionsOrgInfo | undefined,
+  filter: DeductionsOrgFilter,
+): boolean {
+  if (filter.line && foldOrgLabel(org?.lineName) !== foldOrgLabel(filter.line)) return false;
+  if (filter.region && foldOrgLabel(org?.regionName) !== foldOrgLabel(filter.region)) return false;
+  return true;
+}
+
+/**
+ * Narrows candidates to the employees inside the filter. An employee the
+ * directory does not know is treated as Unassigned on both axes — never as a
+ * silent match, which would put a stranger's deduction into a line's sheet.
+ */
+export function filterCandidatesByOrg<T extends { employeeHrIdCompact: string }>(
+  candidates: readonly T[],
+  orgByCompactHrId: ReadonlyMap<string, DeductionsOrgInfo>,
+  filter: DeductionsOrgFilter,
+): T[] {
+  if (!isDeductionsOrgFilterActive(filter)) return [...candidates];
+  return candidates.filter((candidate) =>
+    matchesDeductionsOrgFilter(orgByCompactHrId.get(candidate.employeeHrIdCompact), filter),
+  );
+}
+
+/**
+ * The (line, region) buckets present in this month's deductions, with their
+ * sizes. The screen builds BOTH dropdowns from this one payload and computes
+ * the live "N of M deductions" preview from it, so the options offered can
+ * never include a combination that holds nothing, and the number shown beside
+ * the button is derived from the same grouping the export itself filters on.
+ */
+export function buildDeductionsOrgGroups(
+  candidates: readonly { employeeHrIdCompact: string }[],
+  orgByCompactHrId: ReadonlyMap<string, DeductionsOrgInfo>,
+): DeductionsOrgGroup[] {
+  const buckets = new Map<string, { line: string; region: string; candidates: number; employees: Set<string> }>();
+  for (const candidate of candidates) {
+    const org = orgByCompactHrId.get(candidate.employeeHrIdCompact);
+    const line = normalizeOrgLabel(org?.lineName);
+    const region = normalizeOrgLabel(org?.regionName);
+    // JSON, not a delimiter: a separator character can appear inside a line or
+    // region name and silently merge two buckets into one.
+    const key = JSON.stringify([foldOrgLabel(line), foldOrgLabel(region)]);
+    const bucket = buckets.get(key) ?? { line, region, candidates: 0, employees: new Set<string>() };
+    bucket.candidates += 1;
+    bucket.employees.add(candidate.employeeHrIdCompact);
+    buckets.set(key, bucket);
+  }
+
+  return Array.from(buckets.values())
+    .map((bucket) => ({
+      line: bucket.line,
+      region: bucket.region,
+      candidates: bucket.candidates,
+      employees: bucket.employees.size,
+    }))
+    .sort((left, right) => left.line.localeCompare(right.line) || left.region.localeCompare(right.region));
+}
+
+/**
+ * How the active filter is written on the workbook's cover, in its sheet titles
+ * and on screen. Returns null when nothing is filtered — the caller then says
+ * "the whole company" rather than printing an empty qualifier.
+ *
+ * A filtered payroll export MUST announce it. A sheet whose total reads 41,000
+ * EGP is otherwise indistinguishable from the month's real company total, and
+ * the person who opens it next is the one who pays for that ambiguity.
+ */
+export function describeDeductionsOrgFilter(filter: DeductionsOrgFilter): string | null {
+  const parts: string[] = [];
+  if (filter.line) parts.push(`Line: ${filter.line}`);
+  if (filter.region) parts.push(`Region: ${filter.region}`);
+  return parts.length > 0 ? parts.join(" · ") : null;
+}
+
+/** Filename fragment, so a filtered download never overwrites the full one. */
+export function deductionsOrgFilterSlug(filter: DeductionsOrgFilter): string {
+  const parts = [filter.line, filter.region]
+    .filter((part): part is string => Boolean(part))
+    .map((part) =>
+      part
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, ""),
+    )
+    .filter(Boolean);
+  return parts.length > 0 ? `-${parts.join("-")}` : "";
+}
