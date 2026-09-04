@@ -877,6 +877,7 @@ export async function runClosingEngineExportTests() {
     status: "missing",
   });
   const coverageOf = (missing: SourceCoverageEntry[], over = true): MonthlySourceCoverage => ({
+    directModuleSourced: false,
     directRegions: [],
     hasPrevData: over,
     latestUploadAt: null,

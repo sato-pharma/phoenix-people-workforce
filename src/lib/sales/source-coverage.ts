@@ -29,6 +29,45 @@ const CONFIDENTIAL_PRODUCT_CODES = new Set(["LA003", "LA004", "SS001"]);
 
 const PAGE = 1000;
 
+/**
+ * The Direct channel changed SOURCE, not identity — so both codes share ONE coverage key.
+ *
+ * Until 2026-07 direct sales arrived as an uploaded "Direct (Company)" sheet under distributor
+ * code DIRECT. From 2026-08 they come from the Direct Request module and land under DirectReq.
+ * Owner, 2026-09-04: "no more direct that will be uploaded like this — the source of direct sales
+ * is the direct request module."
+ *
+ * Without this alias the comparison reads the retired upload as a source that vanished, so EVERY
+ * month from August 2026 onward warns "is missing 1 of the 4 sources that fed <last month> —
+ * Direct (Company) … Totals are understated until these arrive", naming a file that will never
+ * arrive again, on a closing that is in fact complete. Anti Infective August 2026 was the first:
+ * flagged incomplete while holding all four of its sources.
+ */
+const DIRECT_CHANNEL_ALIASES = new Set(["DIRECT", "DIRECTREQ"]);
+/** The surviving code — the module, because that is what feeds every month from here on. */
+const DIRECT_CHANNEL_KEY = "DIRECTREQ";
+
+/**
+ * Coverage key for a distributor code: the import normalization, plus the Direct-channel fold.
+ * Exported so the tests pin the fold rather than re-deriving it.
+ */
+export function canonicalSourceKey(distributorCode: unknown): string {
+  const key = normalizeCodeKey(distributorCode);
+  if (!key) return "";
+  return DIRECT_CHANNEL_ALIASES.has(key) ? DIRECT_CHANNEL_KEY : key;
+}
+
+/** True when this month's direct rows come from the module rather than an uploaded sheet. */
+export function isDirectModuleSourced(rows: readonly CoverageFactRow[], period: string): boolean {
+  let sawDirect = false;
+  for (const row of rows) {
+    if (!row.isDirect || row.period !== period) continue;
+    sawDirect = true;
+    if (normalizeCodeKey(row.distributorCode) !== DIRECT_CHANNEL_KEY) return false;
+  }
+  return sawDirect;
+}
+
 export type SourceCoverageStatus = "present" | "missing" | "new";
 
 export type SourceCoverageEntry = {
@@ -60,6 +99,11 @@ export type MonthlySourceCoverage = {
   /** Derived: sources with rows last month and none this month, biggest first. */
   missingSources: SourceCoverageEntry[];
   missingDirectRegions: SourceCoverageEntry[];
+  /**
+   * True when this month's direct rows come from the Direct Request module. The per-region
+   * drop-out warning is meaningless then — see the suppression in loadMonthlySourceCoverage.
+   */
+  directModuleSourced: boolean;
   prevSourceCount: number;
   /** Last-month value of everything currently missing — the scale of the hole. */
   missingPrevValue: number;
@@ -142,7 +186,7 @@ export function aggregateCoverage(
     // exact shape of the 2026-07 bug: "DIRECT" fed Anti Infective while "Direct" fed Pedia that
     // same month, and the un-normalized key made each look like it vanished while a stranger
     // "arrived" in its place, on a line that had not actually lost anything.
-    const sourceKey = normalizeCodeKey(row.distributorCode) || "(unknown source)";
+    const sourceKey = canonicalSourceKey(row.distributorCode) || "(unknown source)";
     bump(isCurrent ? aggregates.sourcesCur : aggregates.sourcesPrev, sourceKey, row.totalQty, value);
 
     if (row.isDirect) {
@@ -285,10 +329,14 @@ export async function loadMonthlySourceCoverage(
     const typed = row as { distributor_code?: unknown; distributor_name?: unknown; period?: unknown; created_at?: unknown };
     // Same normalization as the sourceKey above, so a name registered under one case of a code
     // (e.g. a batch stamped "Direct") is still found when the aggregate key is "DIRECT".
-    const code = normalizeCodeKey(typed.distributor_code);
+    const code = canonicalSourceKey(typed.distributor_code);
     const name = String(typed.distributor_name ?? "").trim();
-    if (code && name && !sourceNameByCode.has(code)) sourceNameByCode.set(code, name);
     const batchPeriod = String(typed.period ?? "");
+    // The CURRENT month's name wins. Two codes now fold onto one key (DIRECT + DirectReq), and
+    // first-seen would label the live channel with the retired sheet's name at random.
+    if (code && name && (batchPeriod === selectedPeriod || !sourceNameByCode.has(code))) {
+      sourceNameByCode.set(code, name);
+    }
     if (batchPeriod === prevPeriod) hasPrevData = true;
     if (batchPeriod === selectedPeriod) {
       const createdAt = String(typed.created_at ?? "");
@@ -322,7 +370,15 @@ export async function loadMonthlySourceCoverage(
   );
 
   const missingSources = sources.filter((entry) => entry.status === "missing");
-  const missingDirectRegions = directRegions.filter((entry) => entry.status === "missing");
+  // A region that raised no direct request this month is business reality, not a missing upload —
+  // and every consumer of missingDirectRegions renders it as "The Direct sheet has nothing yet
+  // from X. Totals are understated until these arrive", which is false once the module is the
+  // source. The per-region table (directRegions) is untouched, so nothing is hidden, only the
+  // alarm that promises an arrival.
+  const directModuleSourced = isDirectModuleSourced(rows, selectedPeriod);
+  const missingDirectRegions = directModuleSourced
+    ? []
+    : directRegions.filter((entry) => entry.status === "missing");
 
   return {
     line: selectedLine,
@@ -333,6 +389,7 @@ export async function loadMonthlySourceCoverage(
     directRegions,
     missingSources,
     missingDirectRegions,
+    directModuleSourced,
     prevSourceCount: aggregates.sourcesPrev.size,
     missingPrevValue: Number(
       missingSources.reduce((sum, entry) => sum + entry.prevValue, 0).toFixed(2),
