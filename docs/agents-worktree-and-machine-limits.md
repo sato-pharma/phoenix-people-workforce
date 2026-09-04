@@ -327,6 +327,58 @@ than a fixed session number: `Win32_OperatingSystem.TotalVirtualMemorySize` is t
 Why such a freeze leaves no crash dump, and why `VirtualSize` misleads: AGENTS.md §2.1, *Machine
 ceiling*.
 
+### The correction — that relaxation measured the right number for the wrong ceiling (2026-09-04)
+
+**The section above is what produced the incident below.** It retired "4 or fewer" on the strength of
+a commit-headroom reading, and the reading was correct: at 9 sessions, commit really was ~28 GB
+clear. What was never measured is **physical RAM**, and that is the ceiling that actually binds.
+
+A deep audit on **2026-09-04** found **10 sessions** open, in **31** `claude.exe` processes totalling
+**4.65 GB** of working set, beside a `node` process at **3.27 GB**. The two headrooms disagreed
+completely:
+
+| Reading | Value | Verdict it gives |
+| --- | --- | --- |
+| COMMIT free | **54.76 of 79.79 GB** (31.4% used) | healthy — no action |
+| Physical RAM free | **557–1,780 MB of 15.79 GB** | at or under the watchdog floor |
+
+`mem-watchdog.ps1` defends a **1,800 MB** floor and logged `PRESSURE` on every 10-second tick for
+minutes together, each line ending *"no IDLE dev server to reclaim; left everything running on
+purpose."* That is the watchdog working exactly as designed and being **unable to help**: it frees an
+idle dev server, and with none running there is nothing it can give back. The only reclaimable thing
+left was sessions, and nothing was watching them.
+
+Two numbers moved the estimate. Separating the main `claude.exe` from its children put an idle
+session at **~0.5 GB** in the August reading; the September measurement, taken across ten live
+engines, puts it at **~330 MB** — *lower* per session, which is why the count could climb so far
+before anything hurt. Ten of those plus the Electron shell is still **~4.7 GB of 16**.
+
+**So both statements are true and only one is useful.** Sessions were never the *commit* ceiling.
+They are very much the *RAM* ceiling. "Watch the headroom, not a session count" is safe advice only
+if *headroom* means both numbers; read against commit alone it certifies a machine that is minutes
+from the no-dump freeze in AGENTS.md §2.1. **"4 or fewer" is restored — this time on a RAM basis
+rather than a commit one, which is why it now survives a pagefile change.**
+
+**The count was already on screen and that changed nothing.** `statusline.mjs` had been rendering
+`9 sessions` for hours — its own source even names "a 4-session rule" in a comment explaining why it
+filters Claude Desktop's Electron processes out of the count. A number on a status bar is wallpaper
+at 4am after a compaction. Two things were added on 2026-09-04 to make it a control rather than a
+display:
+
+- **`~/.claude/hooks/session-census.mjs`** — a `SessionStart` hook. It reports at 5 sessions and
+  escalates at 7, or whenever free RAM is under the 1,800 MB floor, at the one moment a session is
+  being *added*, which is the only moment the decision is still cheap. It never blocks a session:
+  blocking work at 4am to save 330 MB costs more than the memory. Hard-timed-out at 2.5 s, ~670 ms
+  typical, and it reads the cache `memory-guard.mjs` already populates rather than paying a second
+  PowerShell round-trip.
+- **`~/.claude/scripts/claude-hygiene.mjs`** — reports the same two numbers on demand, and clears the
+  silt the audit found (stale dead-PID locks, aged `.session-starts`, leaked `.tmp` writes, dead
+  `~/.claude.json` project entries, dead permission rules). Report-only by default; `--fix` applies.
+  Scheduled weekly, Sundays 03:00, as **`ClaudeCode Hygiene - Weekly`**.
+
+Keep the census floor and `mem-watchdog.ps1`'s floor **in step** — both are 1,800 MB, and a change to
+one that skips the other reintroduces exactly the gap this correction closes.
+
 ## The dev-server bundler, and why the watchdog sawtooth is NOT a turbopack trait
 
 **Corrected 2026-09-01.** `AGENTS.md` §2.1 previously said the watchdog's 6 GB kills were a

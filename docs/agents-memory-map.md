@@ -158,6 +158,7 @@ status, give it its own line.
 - **The organogram XLSX carries a Mobile column** — `organogram-export-carries-the-mobile-by-owner-override`
 - **The public Territory Management preview link must NEVER display or offer the line** — `territory-preview-link-must-never-show-the-line` · `organogram-chart-source-is-au-seat-model-not-directory` · `whatsapp-button-on-leadership-rows-is-an-owner-decision`
 - **The CEO is NOT a district, and a picker is never wider than its viewer.** — `the-ceo-is-not-a-district-and-a-picker-is-not-wider-than-its-viewer` **(inline — load-bearing)**
+- **SCOPE RUNS DOWNWARD ONLY — an employee never sees his own manager, nor anyone at or above his own RANK.** — `scope-runs-downward-only-never-your-own-manager` **(inline — load-bearing)**
 - **An NSM's outstation expense is NEVER held** — `nsm-outstation-expense-is-never-held` **(inline — load-bearing)**
 - **The mailbox-monitor app-password entry is ___, never "Phoenix".** — `mailbox-monitor-app-password-entry-is-three-underscores-never-phoenix` **(inline — load-bearing)**
 - **Turbify CANNOT issue app passwords centrally — the owner is STAYING, so do not…** — `turbify-cannot-issue-app-passwords-centrally-owner-stays` **(inline — load-bearing)**
