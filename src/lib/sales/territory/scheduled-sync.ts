@@ -104,7 +104,17 @@ export function selectUnpublishedPeriods(
  * `computeSyncPeriods` clamps it to TERRITORY_SYNC_MAX_MONTHS.
  */
 export async function runScheduledTerritorySync(
-  options: { monthsBack?: number; now?: Date } = {},
+  options: {
+    monthsBack?: number;
+    now?: Date;
+    /**
+     * Fired the moment the re-stamp COMMITS, so the cron route can report liveness before the
+     * reconciliation-and-audit tail — which a production deploy cut on 2026-09-04, stranding a
+     * run that had already done its work. NOT fired on the skip path below: that path commits
+     * nothing, and the route reports its own success there instead.
+     */
+    onWorkCommitted?: () => Promise<void> | void;
+  } = {},
 ): Promise<ScheduledTerritorySyncResult> {
   const startedAt = Date.now();
   const now = options.now ?? new Date();
@@ -135,6 +145,7 @@ export async function runScheduledTerritorySync(
   const report = await syncTerritoryData({
     periods: syncedPeriods,
     actorLoginId: SCHEDULED_TERRITORY_SYNC_ACTOR,
+    onWorkCommitted: options.onWorkCommitted,
   });
 
   // Log at INFO whenever the job actually moved rows. A scheduled re-stamp that changes numbers is

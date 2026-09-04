@@ -1153,6 +1153,7 @@ import { runSchemaShapePrivateUsageTests } from "./schema-shape-private-usage.te
 import { runSchemaShapeSnapshotInPublicTests } from "./schema-shape-snapshot-in-public.test.ts";
 import { runTerritorySyncTests } from "./territory-sync.test.ts";
 import { runTerritoryRestampAreaChangeTests } from "./territory-restamp-area-change.test.ts";
+import { runTerritoryRestampLivenessTests } from "./territory-restamp-liveness.test.ts";
 import { runFinanceCommandCenterTests } from "./finance-command-center.test.ts";
 import { runMarketingManagerMonthlyClosingTests } from "./marketing-manager-monthly-closing.test.ts";
 import { runPortalHomePlanCountCanonicalTests } from "./portal-home-plan-count-canonical.test.ts";
@@ -3527,6 +3528,10 @@ await runTest(
 await runTest(
   "territory re-stamp fires on an AREA re-parent, not brick alone (14 rows / EGP 5,274.90 were stranded in 2026-07 while the sync reported 0 re-stamped)",
   runTerritoryRestampAreaChangeTests,
+);
+await runTest(
+  "territory re-stamp reports liveness at the COMMIT, not after the tail a deploy can cut (2026-09-04: committed 03:20:00 Cairo, container replaced 03:20:31, read as stranded for 14h)",
+  runTerritoryRestampLivenessTests,
 );
 await runTest(
   "finance command center (deductions from committed payroll only; one round trip; unbooked predicate parity)",
