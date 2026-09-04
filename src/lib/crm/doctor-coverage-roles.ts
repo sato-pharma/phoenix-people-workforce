@@ -71,7 +71,10 @@ export function isAgentInScope(scope: DoctorCoverageScope, agentHrId: string | n
 const COMPANY_ROLES = ["Super Admin", "CEO", "SFE Manager", "Marketing Manager", "Training Manager"] as const;
 /** One product line. Matches the scopes already baked into the Business Review access map for
  * these same three roles, so a viewer's reach does not change between the two modules. */
-const LINE_ROLES = ["National Sales Manager", "Product Manager", "Group Product Manager"] as const;
+export const LINE_ROLES = ["National Sales Manager", "Product Manager", "Group Product Manager"] as const;
+/** Exported so the scope tests can prove EVERY line role is ranked on the seat ladder in
+ * doctor-coverage-scope.ts. An unranked line role does not error there - it silently falls
+ * back to the chain-only cut and hands that viewer a wider board than the owner asked for. */
 /** Own management subtree — every rep beneath the seat, however many levels down. */
 const TEAM_ROLES = ["Regional Manager", "District Manager"] as const;
 /** Own panel only. */
