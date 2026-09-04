@@ -414,18 +414,30 @@ function NavRow({
           premium && (dark
             ? "bg-[linear-gradient(90deg,rgba(249,115,22,0.18)_0%,rgba(249,115,22,0.05)_60%,transparent_100%)] text-white ring-1 ring-phx-accent/45 shadow-[0_6px_20px_rgba(249,115,22,0.16),inset_0_1px_0_rgba(255,255,255,0.08)] hover:ring-phx-accent/70"
             : "bg-[linear-gradient(90deg,#FFF4E9_0%,#FFFBF7_70%,#FFFFFF_100%)] text-phx-ink ring-1 ring-[#F9A85E]/60 shadow-[0_6px_18px_rgba(249,115,22,0.13)] hover:ring-phx-accent/70"),
+          // The ACTIVE row is where orange gets spent, and almost nowhere else. The owner reversed
+          // orange domain headers on 2026-09-04 as "very noisy", and the reason this row is
+          // findable at a glance is that it is the only warm thing in a black column — so the
+          // wash falls away to nothing across the row rather than filling it. The ring it used to
+          // carry is gone: it drew a box around the row and fought the 3px bar that already marks
+          // it, which is the more legible of the two signals.
+          //
+          // The WEIGHT deliberately does not change. Label widths are pinned against a measured
+          // snapshot (tests/fixtures/sidebar-label-widths.json) with about 5px of slack, taken at
+          // the row's normal weight — so bolding the active label would overflow the budget in a
+          // real browser while the test kept passing against the old measurement, and the overflow
+          // lands on `truncate`, i.e. an ellipsis, which is barred.
           !premium && (dark
             ? active
-              ? "bg-white/[0.08] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] ring-1 ring-phx-accent/30"
-              : "text-slate-400 hover:bg-white/[0.06] hover:text-white"
+              ? "bg-[linear-gradient(90deg,rgba(249,115,22,0.17)_0%,rgba(249,115,22,0.05)_55%,transparent_100%)] text-white"
+              : "text-slate-400 hover:bg-white/[0.05] hover:text-white"
             : active
-              ? "bg-white text-phx-ink shadow-[0_1px_2px_rgba(15,23,42,0.06)] ring-1 ring-[#F4D9BE]"
-              : "text-[#5A6678] hover:bg-white hover:text-phx-ink hover:shadow-[0_1px_2px_rgba(15,23,42,0.05)]"),
+              ? "bg-[linear-gradient(90deg,#FFF1E4_0%,#FFFBF7_65%,transparent_100%)] text-phx-ink"
+              : "text-[#5A6678] hover:bg-[#F7F4EF] hover:text-phx-ink"),
         )}
         href={item.href}
         onClick={onActivate}
       >
-        {active && <span className={cn("absolute left-0 w-[3px] bg-phx-accent", rail ? "top-1.5 bottom-1.5" : "top-1.5 bottom-1.5")} />}
+        {active && <span aria-hidden="true" className="absolute bottom-1.5 left-0 top-1.5 w-[3px] bg-phx-accent" />}
         {!dropIcon && (
         <span
           className={cn(
@@ -498,7 +510,7 @@ function NavRow({
         <button
           aria-label={pinned ? `Unpin ${item.label}` : `Pin ${item.label} to favourites`}
           className={cn(
-            "absolute right-1.5 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded transition",
+            "absolute right-1.5 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center transition",
             pinned ? "opacity-100" : "opacity-0 focus-visible:opacity-100 group-hover:opacity-100",
             dark ? "text-slate-400 hover:text-[#F8B56B]" : "text-phx-ink-faint hover:text-phx-accent",
           )}
@@ -1265,10 +1277,30 @@ function SidebarNav({
               const open = openDomainId === domain.id;
               const DomainIcon = domain.icon;
               return (
-                <div key={domain.id} className="border-b border-white/5 last:border-b-0">
+                // The open domain reads as a raised container rather than as a header that
+                // happened to expand: a barely-there wash, a 2px edge, and its own hairline
+                // suppressed so the block runs into the rows it owns. All of it is absolute or a
+                // background, so it costs ZERO height — every row keeps its 39.5px.
+                //
+                // The edge is NEUTRAL, not orange, and that is the whole point of it. Orange is
+                // spent on the active row alone — that is what makes one row findable in a black
+                // column. An orange edge here runs down the very same 3px gutter the active row's
+                // bar uses, so the two collide and the bar stops reading as "this one": measured
+                // in the harness, the domain edge drew a continuous orange line past every row in
+                // the open domain. White at 12% gives the container its edge and costs nothing.
+                <div
+                  key={domain.id}
+                  className={cn(
+                    "relative border-b border-white/[0.06] transition-colors last:border-b-0",
+                    open && "border-b-transparent bg-white/[0.022]",
+                  )}
+                >
+                  {open && (
+                    <span aria-hidden="true" className="pointer-events-none absolute inset-y-0 left-0 w-[2px] bg-white/[0.12]" />
+                  )}
                   <button
                     aria-expanded={open}
-                    className="group/dom flex w-full items-center gap-2 px-1.5 py-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-phx-accent/60 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900"
+                    className="group/dom flex w-full items-center gap-2 px-1.5 py-2.5 text-left transition-colors hover:bg-white/[0.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-phx-accent/60 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900"
                     onClick={() =>
                       setPicked({ domainId: open ? "" : domain.id, forActive: activeDomainId })
                     }
@@ -1276,10 +1308,10 @@ function SidebarNav({
                   >
                     <span
                       className={cn(
-                        "flex h-7 w-7 shrink-0 items-center justify-center transition-colors",
+                        "flex h-7 w-7 shrink-0 items-center justify-center border transition-colors",
                         open
-                          ? "bg-phx-accent/15 text-phx-accent ring-1 ring-phx-accent/30"
-                          : "bg-white/5 text-slate-400 group-hover/dom:text-slate-200",
+                          ? "border-phx-accent/45 bg-phx-accent/[0.18] text-phx-accent"
+                          : "border-white/[0.07] bg-white/[0.04] text-slate-400 group-hover/dom:border-white/[0.16] group-hover/dom:text-slate-200",
                       )}
                     >
                       <DomainIcon className="h-4 w-4" />
@@ -1303,7 +1335,7 @@ function SidebarNav({
                     <span className="min-w-0 flex-1 text-phx-md font-bold tracking-[-0.01em] text-white">
                       {domain.name}
                     </span>
-                    <span className="shrink-0 text-phx-2xs font-semibold text-slate-500">
+                    <span className="shrink-0 border border-white/[0.07] bg-white/[0.04] px-1.5 py-0.5 text-[10px] font-semibold tabular-nums leading-none text-slate-400">
                       {domain.rowCount}
                     </span>
                     <ChevronRight
@@ -1325,9 +1357,12 @@ function SidebarNav({
                         strategy={verticalListSortingStrategy}
                       >
                         {group.heading !== "" && (
-                          <p className="px-1.5 pb-1 pt-3 text-phx-2xs font-bold uppercase tracking-[0.08em] text-slate-500">
-                            {group.heading}
-                          </p>
+                          <div className="flex items-center gap-2 px-1.5 pb-1 pt-3">
+                            <p className="text-phx-2xs font-bold uppercase tracking-[0.08em] text-slate-500">
+                              {group.heading}
+                            </p>
+                            <span aria-hidden="true" className="h-px flex-1 bg-white/[0.07]" />
+                          </div>
                         )}
                         {group.sections.map((section) =>
                           renderSectionBlock(
@@ -1571,7 +1606,7 @@ export function Sidebar({
         <button
           aria-label={railActive ? "Expand sidebar" : "Collapse sidebar"}
           aria-pressed={railActive}
-          className="absolute -right-3 top-[86px] z-40 flex h-7 w-7 items-center justify-center rounded-full border border-[#333333] bg-[#111111] text-slate-300 shadow-[0_6px_16px_rgba(0,0,0,0.6)] transition hover:border-phx-accent-line hover:text-[#F8B56B] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-phx-accent/60"
+          className="absolute -right-3 top-[86px] z-40 flex h-7 w-7 items-center justify-center border border-[#333333] bg-[#111111] text-slate-300 shadow-[0_6px_16px_rgba(0,0,0,0.6)] transition hover:border-phx-accent-line hover:bg-[#1c1c1c] hover:text-[#F8B56B] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-phx-accent/60"
           onClick={toggleRail}
           type="button"
         >
