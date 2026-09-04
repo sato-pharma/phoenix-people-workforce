@@ -2889,7 +2889,7 @@ await runTest("push enable hang (a blocked browser resolves instantly instead of
 
 await runTest("push register hr id guard (a session with no employee behind it is skipped, not written as hr_id NULL into a NOT NULL column)", runPushRegisterHrIdGuardTests);
 
-await runTest("live sheet stale banner (no failure path in either Apps Script returns silently; the banner names when the data froze, stays quiet while nothing changes, and clears itself on recovery)", runLiveSheetStaleBannerTests);
+await runTest("live sheet stale banner (no failure path in any of the three Apps Scripts returns silently; the banner names when the data froze, stays quiet while nothing changes, and clears itself on recovery)", runLiveSheetStaleBannerTests);
 
 await runTest("visit contact kind (pharmacy/institution/doctor split is display-only — decision.ts stays pharmacy-blind)", runVisitContactKindTests);
 
