@@ -47,6 +47,7 @@ import {
   AdminTableShell,
 } from "@/components/admin/admin-design-system";
 import { HiringPackPaperEditor } from "@/components/hiring-pack/paper-editor";
+import { TemplateStudio } from "@/components/hiring-pack/template-studio";
 import {
   INSURANCE_WAGE_CEILING,
   INSURANCE_WAGE_DIVISOR,
@@ -1723,6 +1724,8 @@ export function HiringPackManager({
           onPreview={(document, versionId) => openPreview(document, versionId)}
           onPrint={(document, versionId) => openPrint(document, versionId)}
         />
+
+        <TemplateStudio />
       </div>
     </div>
   );
