@@ -31,6 +31,7 @@ import { JULY_2026_DIRECT_PERIOD, JULY_2026_DIRECT_ROWS, type JulyDirectRow } fr
 import { lineHasOfficeChannel } from "@/lib/sales/office-distributor";
 import {
   detailStoreSplitByCustomer,
+  isStoreCitySplitActive,
   summariseStoreSplitByArea,
   summariseStoreSplitByCustomer,
   type StoreSplitAreaSummary,
@@ -2366,6 +2367,17 @@ function writeStoreSplitSheet(
   const crossing = summary.reduce((sum, entry) => (inExport(entry) ? sum + entry.netValue : sum), 0);
   const egp = (value: number) => Math.abs(value).toLocaleString("en-US", { maximumFractionDigits: 0 });
 
+  // The split is not applied to every month: it starts at August 2026 (owner, 2026-09-04 — July
+  // stays as published). This sheet has ALWAYS shown the arithmetic whether or not it was applied,
+  // which was harmless while the rule was off everywhere and is a trap now that it is on for some
+  // months and not others — a reader opening July would see movements the Closing Matrix does not
+  // carry and reasonably conclude July was re-split. Say so on the sheet instead.
+  const periodNote = isStoreCitySplitActive(period)
+    ? ""
+    : " NOT APPLIED to this period: the figures below are what the split WOULD move, shown for"
+      + " reference only. The Closing Matrix in this workbook is unsplit — every area carries its"
+      + " own wholesalers in full.";
+
   const scopeNote = !scoped
     ? ""
     : crossing === 0
@@ -2398,10 +2410,11 @@ function writeStoreSplitSheet(
   writeTable(sheet, 4, {
     columns,
     note: summary.length === 0
-      ? "No store customers in this period — nothing to redistribute."
+      ? "No store customers in this period — nothing to redistribute." + periodNote
       : `${totalOut.toLocaleString("en-US", { maximumFractionDigits: 0 })} EGP of store sales redistributed across ${cities} cities. `
         + "Net sums to zero within every city: the split moves money between areas, never creates it. "
         + "Head Office line and pharmacy customers are not touched."
+        + periodNote
         + scopeNote,
     rows: summary.map((entry) => [
       entry.areaName,

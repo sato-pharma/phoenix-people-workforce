@@ -37,7 +37,7 @@ import {
   isSplitEligibleLine,
   netStoreSplitByAreaProduct,
   splitStoreSalesAcrossCityAreas,
-  STORE_CITY_SPLIT_ENABLED,
+  isStoreCitySplitActive,
   type StoreSplitAreaMovement,
 } from "@/lib/sales/store-sales-city-split";
 
@@ -109,13 +109,14 @@ export async function loadClosingStoreSplit(
   line: string | null | undefined,
   period: string | null | undefined,
 ): Promise<ClosingStoreSplit> {
-  // The owner turned the wholesaler city split OFF (2026-08-10, re-applied 2026-08-12 after the
-  // first disable was lost in a squash merge). Gated here — the one loader both the screen and the
-  // export read — so neither surface can apply it while the other does not.
-  if (!STORE_CITY_SPLIT_ENABLED) return emptySplit();
+  // The owner turned the wholesaler city split ON for every city (2026-09-04), from August 2026
+  // forward — July and earlier keep the numbers they were published with. Gated here — the one
+  // loader both the screen and the export read — so neither surface can apply it while the other
+  // does not, and neither can apply it to a month the owner froze.
   const trimmedLine = String(line ?? "").trim();
   const trimmedPeriod = String(period ?? "").trim();
-  if (!trimmedLine || !trimmedPeriod || !isSplitEligibleLine(trimmedLine)) return emptySplit();
+  if (!isStoreCitySplitActive(trimmedPeriod)) return emptySplit();
+  if (!trimmedLine || !isSplitEligibleLine(trimmedLine)) return emptySplit();
   const cached = await loadClosingStoreSplitCached(trimmedLine, trimmedPeriod);
   return {
     exemptStoreValueByBrick: new Map(cached.exempt),
