@@ -303,6 +303,38 @@ function finalizeSlice(slice: CallRateSlice, workingDays: number): CallRateSlice
 }
 
 /**
+ * A rep who logged NOTHING in the window — the row this report cannot produce on its own.
+ *
+ * `computeCallRate` buckets VISIT ROWS, so a rep with no rows is absent from `reps` entirely. That
+ * is right for a report and wrong for a ROSTER: a board that lists a manager's team has to be able
+ * to add back the people the feed is silent about, and the rep who did nothing is precisely the one
+ * such a board exists to surface. Built here rather than spelled out at the call site because a new
+ * field on {@link RepCallRate} must not be able to leave a second "all zeroes" literal quietly
+ * behind — that literal would keep compiling and start lying.
+ *
+ * The slices are FINALIZED against the window's working days, so a rep with two working days and no
+ * calls reads `0.00` and `0%` rather than `—`. The em dash means "there is nothing to divide by";
+ * zero over two days is a measurement, and stating it as an absence would understate it.
+ */
+export function zeroRepCallRate(
+  workingDays: number,
+  identity: { agentCrmId?: number | null; agentHrId: string | null; agentName?: string },
+): RepCallRate {
+  return {
+    agentCrmId: identity.agentCrmId ?? null,
+    agentHrId: identity.agentHrId,
+    agentName: identity.agentName ?? "",
+    workingDays,
+    am: finalizeSlice(emptySlice(AM_CALL_RATE_TARGET), workingDays),
+    pm: finalizeSlice(emptySlice(PM_CALL_RATE_TARGET), workingDays),
+    unspecified: 0,
+    campaignShare: 0,
+    campaignOverLimitDays: [],
+    campaignOnlyDays: 0,
+  };
+}
+
+/**
  * Which proof bucket a visit falls into.
  *
  * Routes on the shared {@link classifyVisit} bucket rather than comparing

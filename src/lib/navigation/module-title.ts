@@ -58,23 +58,52 @@ const SEGMENT_ACRONYMS: Readonly<Record<string, string>> = {
 };
 
 /**
+ * A path segment as it was written, not as the browser escaped it.
+ *
+ * `location.pathname` keeps percent-encoding, so the Reps Plans drill-down key `crm:1468` reaches
+ * the CLIENT half as `crm%3A1468` and the SERVER half as `crm:1468` — one page, two spellings, and
+ * the tab visibly renamed itself between them. Decoding first means every test below sees one
+ * shape. `decodeURIComponent` throws on a malformed escape (a lone `%`), and a bad URL must not
+ * take the title resolver down with it, so a segment that will not decode keeps its raw form.
+ */
+function decodeSegment(segment: string): string {
+  if (!segment.includes("%")) return segment;
+  try {
+    return decodeURIComponent(segment);
+  } catch {
+    return segment;
+  }
+}
+
+/**
  * Is this segment an identifier rather than a name?
  *
  * Detail routes end in one, and an id is never a module name — "A 12" is not a page.
  * The `letter-digits` shape is here for HR ids specifically: they are spelled `a-12`,
  * which is otherwise indistinguishable from an ordinary hyphenated word.
  */
-function looksLikeIdentifier(segment: string): boolean {
+function looksLikeIdentifier(rawSegment: string): boolean {
+  const segment = decodeSegment(rawSegment);
   if (/^\d+$/.test(segment)) return true;
   if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(segment)) return true;
   if (/^[a-z]{1,3}-\d+$/i.test(segment)) return true;
+  // A `kind:value` composite key. `repKeyOf` in crm/reps-plans.ts emits three of them — `crm:1468`,
+  // `hr:b-141` and `name:Bishoy Bahaa` — and the Reps Plans drill-down carries one as its whole
+  // path segment, in both shells. None of the shapes above matches, so the key was falling through
+  // to the humanizer and naming the tab `Crm%3A1468` on a page whose body reads "Bishoy Bahaa".
+  //
+  // The COLON alone is the test, and the value half is deliberately unconstrained: no module in
+  // either shell has a colon in its name, while `name:` carries whatever the CRM holds — a rule
+  // written against `crm`/`hr` would keep titling a tab "Name:bishoy Bahaa", which is the same
+  // defect with a friendlier face.
+  if (segment.includes(":")) return true;
   // A long unbroken token is a token, not a phrase — share links carry one.
   return segment.length >= 24 && !segment.includes("-");
 }
 
 /** `private-calendar` -> `Private Calendar`, `contact-hr-support` -> `Contact HR Support`. */
 export function humanizeSegment(segment: string): string {
-  return segment
+  return decodeSegment(segment)
     .split("-")
     .filter(Boolean)
     .map((word) => SEGMENT_ACRONYMS[word.toLowerCase()] ?? word.charAt(0).toUpperCase() + word.slice(1))

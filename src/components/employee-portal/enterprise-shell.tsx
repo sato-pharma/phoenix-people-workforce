@@ -66,7 +66,12 @@ html, body { overflow-x: hidden; }
 type EmployeePortalPageShellProps = {
   badge?: string;
   children: ReactNode;
-  description: string;
+  /**
+   * The sentence under the title. OPTIONAL, and an empty one renders NOTHING — not an empty
+   * paragraph, which would leave the `mt-2` gap behind and read as a broken header. KPIs is the
+   * first page to want the bare title (owner, 2026-09-04); every other page still passes one.
+   */
+  description?: string;
   descriptionClassName?: string;
   /**
    * Opt-out for the rare page that needs to scope its own
@@ -122,9 +127,11 @@ export function EmployeePortalPageShell({
               <h1 className="mt-3 max-w-4xl text-2xl font-black leading-tight tracking-tight text-white sm:text-3xl">
                 {title}
               </h1>
-              <p className={`mt-2 max-w-3xl text-sm font-semibold leading-6 text-slate-300 ${descriptionClassName ?? ""}`}>
-                {description}
-              </p>
+              {description ? (
+                <p className={`mt-2 max-w-3xl text-sm font-semibold leading-6 text-slate-300 ${descriptionClassName ?? ""}`}>
+                  {description}
+                </p>
+              ) : null}
             </div>
             <div className="grid grid-cols-3 overflow-hidden rounded-sm border border-white/10 bg-white/[0.04] text-center lg:min-w-[300px]">
               <div className="border-r border-white/10 px-3 py-2.5">

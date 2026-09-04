@@ -231,7 +231,7 @@ function teamVerdict(board: KpisBoard): { headline: string; tone: KpiBand; stand
  * The standing pill keeps its own tone colours: `tone.chip` was always a light-surface class set
  * — it sat on a dark band and looked out of place there, and reads correctly here.
  */
-function KpiHero({ board }: { board: KpisBoard }) {
+function KpiHero({ board, showTitle }: { board: KpisBoard; showTitle: boolean }) {
   const verdict = teamVerdict(board);
   const tone = toneOf(verdict.tone);
   return (
@@ -242,10 +242,20 @@ function KpiHero({ board }: { board: KpisBoard }) {
     // and the rule takes the 1px the border-b took.
     <section className="min-w-0">
       <div className="flex flex-wrap items-start justify-between gap-3 pb-4 sm:gap-6">
-        <div className="relative min-w-0 flex-1 space-y-1.5 pl-3.5">
-          <span aria-hidden="true" className={pageHeaderRailClassName} />
-          <p className={pageHeaderKickerClassName}>Field performance</p>
-          <h1 className={pageHeaderTitleClassName}>KPIs</h1>
+        {/* THE TITLE IS THE SHELL'S IN THE PORTAL, NOT THIS BLOCK'S. Inside the employee portal the
+            page already carries the navy command header every sibling in the Field Activity group
+            carries — CRM badge, "KPIs", the module sentence — so drawing the rail, kicker and h1
+            here as well printed the word KPIs twice on one screen under two different type scales.
+            The VERDICT stays in both shells: it changes with the month and the period, so it
+            belongs beside the numbers rather than in a shell header that is written once. */}
+        <div className={`relative min-w-0 flex-1 space-y-1.5 ${showTitle ? "pl-3.5" : ""}`}>
+          {showTitle ? (
+            <>
+              <span aria-hidden="true" className={pageHeaderRailClassName} />
+              <p className={pageHeaderKickerClassName}>Field performance</p>
+              <h1 className={pageHeaderTitleClassName}>KPIs</h1>
+            </>
+          ) : null}
           <p className={pageHeaderDescriptionClassName}>{verdict.headline}</p>
           <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
             {board.scopeLabel} · {board.monthLabel} · {board.range.periodLabel}
@@ -892,12 +902,21 @@ function RepCard({ rank, row }: { rank?: number; row: KpiRepRow }) {
 export function KpisBoardView({
   basePath,
   board,
+  chrome = "admin",
   monthOptions,
   periodOptions,
   tab,
 }: {
   basePath: string;
   board: KpisBoard;
+  /**
+   * WHICH SHELL is drawing the page around this board.
+   *
+   * `admin` (the default, so the admin twin is unchanged by this prop existing) means the board
+   * owns its own page header. `portal` means EmployeePortalPageShell has already drawn one, and
+   * this board must not draw a second — see the note in KpiHero.
+   */
+  chrome?: "admin" | "portal";
   monthOptions: readonly KpiPickerOption[];
   periodOptions: readonly KpiPickerOption[];
   tab: KpiTab;
@@ -938,7 +957,7 @@ export function KpisBoardView({
 
   return (
     <div className="space-y-4">
-      <KpiHero board={board} />
+      <KpiHero board={board} showTitle={chrome === "admin"} />
 
       <div>
         <KpiTabStrip context={context} />
