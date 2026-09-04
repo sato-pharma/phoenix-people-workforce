@@ -27,6 +27,17 @@ export function canonicalizeSalaryLineLabel<T extends string | null>(line: T): T
   return line;
 }
 
+/**
+ * Calendar days in a payroll period — the denominator behind the sheet's Working
+ * Days column. Falls back to 30 for a blank or malformed period so a bad row can
+ * never divide by zero, and never claims 31 days in February.
+ */
+function payrollCalendarDays(month: number, year: number): number {
+  if (!Number.isInteger(month) || month < 1 || month > 12) return 30;
+  if (!Number.isInteger(year) || year < 2000 || year > 2100) return 30;
+  return new Date(Date.UTC(year, month, 0)).getUTCDate();
+}
+
 export type SalaryValidationIssue = {
   code: string;
   column?: string;
@@ -37,8 +48,17 @@ export type SalaryValidationIssue = {
 
 export type SalaryValidationRow = {
   area: string;
+  /**
+   * The FULL contractual base salary — never prorated (owner rule 2026-09-04).
+   * A joiner/leaver is still PAID for their working days only; that proration
+   * lives in monthSalary/firstPart/secondPart, and `workingDays` is what
+   * explains the gap on the sheet. Same rule for grossSalary, netSalary,
+   * extraCostOfLiving and fuelAllowance.
+   */
   baseSalary: number;
   bonus: number;
+  /** Calendar days in the payroll period (28-31) — the proration denominator. */
+  calendarDays: number;
   crm: number;
   hrId: string;
   employmentIncomeTax: number;
@@ -70,6 +90,11 @@ export type SalaryValidationRow = {
   totalAdditions: number;
   totalDeductions: number;
   unpaidVacations: number;
+  /**
+   * Days of the period the employee was on payroll — the "Working Days" column.
+   * Equals `calendarDays` for a regular employee (factor 1, nothing prorated).
+   */
+  workingDays: number;
 };
 
 export type PayrollResignationCandidate = {
@@ -149,6 +174,7 @@ const columnAliases = {
   baseSalary: ["Base Salary", "base_salary", "Fixed Base Salary"],
   grossSalary: ["Gross Salary", "gross_salary", "Total Gross Salary"],
   hireDate: ["Hire Date", "Hiring Date", "Start Date", "hire_date"],
+  workingDays: ["Working Days", "working_days", "Days Worked", "Worked Days"],
   expenses: ["Expenses", "Expenses Prev Month", "Expenses (Prev Month)", "expenses"],
   incentive: ["Incentive", "incentive"],
   overtime: ["Overtime", "overtime"],
@@ -598,6 +624,14 @@ export async function validateSalaryWorkbook(
     const hireDate = toPayrollDateOnly(rowValue(raw, columnAliases.hireDate));
     const payoutMonth = options.expectedPeriod?.month ?? uploadedMonth ?? 0;
     const payoutYear = options.expectedPeriod?.year ?? (Number.isInteger(uploadedYear) ? Number(uploadedYear) : 0);
+    // Working Days is DISPLAY-ONLY on import: the money columns (First Part /
+    // Second Part / Month Salary) are trusted as uploaded, exactly as before, so
+    // an older sheet with no such column imports byte-identically. Defaulting to
+    // the period's calendar days makes the factor 1 for every existing row.
+    const calendarDays = payrollCalendarDays(payoutMonth, payoutYear);
+    const uploadedWorkingDays = toNumber(rowValue(raw, columnAliases.workingDays));
+    const workingDays =
+      uploadedWorkingDays > 0 ? Math.min(uploadedWorkingDays, calendarDays) : calendarDays;
     const hasUploadedBaseSalary = hasBaseSalaryColumn && uploadedBaseSalary > 0;
     const hasUploadedGrossSalary = rowHasValue(raw, columnAliases.grossSalary);
     const hasUploadedNetSalary = rowHasValue(raw, columnAliases.netSalary);
@@ -1008,6 +1042,7 @@ export async function validateSalaryWorkbook(
       area: String(rowValue(raw, columnAliases.area)).trim() || "Unassigned",
       baseSalary,
       bonus,
+      calendarDays,
       crm,
       hrId,
       employmentIncomeTax,
@@ -1039,6 +1074,7 @@ export async function validateSalaryWorkbook(
       totalAdditions,
       totalDeductions,
       unpaidVacations,
+      workingDays,
     };
   });
 

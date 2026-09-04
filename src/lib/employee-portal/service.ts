@@ -561,6 +561,10 @@ function mapPayrollRecordFromPayslipView(row: PortalPayrollSourceRow): PortalPay
     batchId: pickText(row, ["batch_id", "batchId", "payroll_batch_id"]),
     baseSalary: pickNumber(row, ["base_salary", "baseSalary"]),
     bonus: pickNumber(row, ["bonus", "incentive_bonus", "extra_bonus"]),
+    // 0 when the payslip view does not carry the column, or when the row
+    // predates the Working Days rule (2026-09-04) — both mean "not recorded",
+    // and the portal prints nothing rather than inventing a day count.
+    calendarDays: pickNumber(row, ["calendar_days", "calendarDays"]),
     crm: pickNumber(row, ["crm"]),
     employeeCode: pickText(row, ["employee_code", "employee_hr_id", "hr_id", "emp_code"]),
     hrId: pickText(row, ["hr_id", "employee_hr_id", "employee_code"]),
@@ -598,6 +602,7 @@ function mapPayrollRecordFromPayslipView(row: PortalPayrollSourceRow): PortalPay
     createdAt: pickText(row, ["created_at", "createdAt", "date"]),
     period,
     unpaidVacations: pickNumber(row, ["unpaid_vacations", "unpaidVacations"]),
+    workingDays: pickNumber(row, ["working_days", "workingDays"]),
   };
 
   const calculatedTotalAdditions =
@@ -1975,12 +1980,21 @@ export type MedicalRepPortalData = {
       latestPayslip: {
         baseSalary: number;
         basicSalary: number;
+        /** Calendar days in the period. 0 when the period predates the column. */
+        calendarDays: number;
         firstPart: number;
         grossSalary: number;
         netSalary: number;
         secondPart: number;
         totalAdditions: number;
         totalDeductions: number;
+        /**
+         * Days the employee was on payroll. The figures beside it are the FULL
+         * contract (they always have been here — this block is built from the
+         * contract, not from the record), so on a partial month this is the only
+         * thing that explains why the money paid was smaller.
+         */
+        workingDays: number;
       };
       latestBatchLabel: string;
       latestBatchStatus: string | null;
@@ -2270,12 +2284,14 @@ export async function getPayslipPortalData(access: AccessContext): Promise<Medic
   const latestPayslip = {
     baseSalary: fixedSalary.baseSalary,
     basicSalary: fixedSalary.basicSalary,
+    calendarDays: latestRecord?.calendarDays ?? 0,
     firstPart: latestRecord?.firstPart ?? fixedSalary.basicSalary,
     grossSalary: fixedSalary.grossSalary,
     netSalary: fixedSalary.netSalary,
     secondPart: latestRecord?.secondPart ?? payrollParts.secondPart,
     totalAdditions: latestRecord?.totalAdditions ?? 0,
     totalDeductions: latestRecord?.totalDeductions ?? 0,
+    workingDays: latestRecord?.workingDays ?? 0,
   };
   const salaryTrend = payrollDashboard?.records.length
     ? buildSalaryTrendFromRecords(payrollDashboard.records)
@@ -3768,6 +3784,7 @@ export async function getMedicalRepPortalData(
   const latestPayslip = {
     baseSalary: payslipBaseSalary,
     basicSalary: payslipBasicSalary,
+    calendarDays: latestRecord?.calendarDays ?? 0,
     firstPart: latestRecord?.firstPart ?? payslipBasicSalary,
     grossSalary: fixedSalary.grossSalary,
     netSalary: fixedSalary.netSalary,
@@ -3780,6 +3797,7 @@ export async function getMedicalRepPortalData(
       }).secondPart,
     totalAdditions: latestRecord?.totalAdditions ?? 0,
     totalDeductions: latestRecord?.totalDeductions ?? 0,
+    workingDays: latestRecord?.workingDays ?? 0,
   };
 
   const fixedIncentiveSalary = {

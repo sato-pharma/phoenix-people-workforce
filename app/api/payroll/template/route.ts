@@ -23,10 +23,15 @@ import {
 import {
   payrollDaysInMonth,
   payrollMonthMatches,
+  prorationStartDay,
   readyLifecycleComment,
   resolveReadyLifecycleSettlement,
 } from "@/lib/payroll/ready-proration";
-import { payrollSheetHeaders } from "@/lib/payroll/salary-sheet-fields";
+import {
+  payrollCountHeaders,
+  payrollMoneyHeaders,
+  payrollSheetHeaders,
+} from "@/lib/payroll/salary-sheet-fields";
 import { getLatestSalaryExpenseTotalsBefore, getSalaryBatchExport } from "@/lib/payroll/service";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
@@ -44,28 +49,74 @@ const templateFileName = "Phoneix system template.xlsx";
 const dataStartRow = 6;
 const templateDataEndRow = 126;
 const totalsLabel = "TOTALS";
-const headers = [...payrollSheetHeaders, "Bank", "Bank Account"];
-const bankDetailsSectionStart = payrollSheetHeaders.length + 1;
-const moneyColumnNumbers = new Set([
-  11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21,
-  22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32,
-  33, 34,
-]);
-const readyPayrollEditableColumnNumbers = new Set([
-  14, 15, 16, 17, 20,
-  25, 26, 27, 28, 29, 30,
-]);
+type PayrollTemplateHeader = (typeof payrollSheetHeaders)[number] | "Bank" | "Bank Account";
 
+const headers: PayrollTemplateHeader[] = [...payrollSheetHeaders, "Bank", "Bank Account"];
+const bankDetailsSectionStart = payrollSheetHeaders.length + 1;
+
+const columnNumberByHeader = new Map<PayrollTemplateHeader, number>(
+  headers.map((header, index) => [header, index + 1] as const),
+);
+
+/**
+ * 1-based Excel column number for a header, BY NAME.
+ *
+ * Every column index in this file used to be a literal, and there are around
+ * forty of them: three formula blocks, the money/editable/section bands and the
+ * whole TOTALS row. Inserting "Working Days" at column 11 on 2026-09-04 shifted
+ * all of them at once — a class of bug that shows no error and no failing
+ * build, and surfaces only when somebody reads a payslip and finds the income
+ * tax sitting in the loans column. Asking for the column by the name it carries
+ * in `payrollSheetHeaders` makes the writer and the header row incapable of
+ * disagreeing, so the next insert is a one-line change.
+ */
+function col(header: PayrollTemplateHeader): number {
+  const columnNumber = columnNumberByHeader.get(header);
+  if (!columnNumber) throw new Error(`Unknown payroll template column: ${header}`);
+  return columnNumber;
+}
+
+const moneyColumnNumbers = new Set<number>(
+  payrollSheetHeaders.filter((header) => payrollMoneyHeaders.has(header)).map(col),
+);
+/** Plain counts — right-aligned like money, but whole numbers and never summed. */
+const countColumnNumbers = new Set<number>(
+  payrollSheetHeaders.filter((header) => payrollCountHeaders.has(header)).map(col),
+);
+const readyPayrollEditableColumnNumbers = new Set<number>(
+  (
+    [
+      "Expenses",
+      "Incentive",
+      "Overtime",
+      "Bonus",
+      "Other Additions",
+      "CRM",
+      "Finger Print",
+      "Unpaid Vacations",
+      "Medical Insurance",
+      "Loans",
+      "Other Deductions",
+    ] as const
+  ).map(col),
+);
+
+/**
+ * Colour bands over the sheet. Named rather than numbered for the reason given
+ * on `col` — and "Working Days" joins Employee Data, matching the band it was
+ * given in `payrollSheetSections`, so the two renderings of the same sheet
+ * agree about where it belongs.
+ */
 const uploadTemplateSections = [
-  { bodyFill: "FFEFF6FF", end: 10, headerFill: "FF1E3A8A", label: "Employee Data", start: 1 },
-  { bodyFill: "FFF0FDFA", end: 13, headerFill: "FF0F766E", label: "Fixed Salary", start: 11 },
-  { bodyFill: "FFF0FDF4", end: 20, headerFill: "FF16A34A", label: "Additions", start: 14 },
-  { bodyFill: "FFDCFCE7", end: 21, headerFill: "FF166534", label: "Total Additions", start: 21 },
-  { bodyFill: "FFF5F3FF", end: 24, headerFill: "FF7C3AED", label: "Governmental Deductions", start: 22 },
-  { bodyFill: "FFFEF2F2", end: 30, headerFill: "FFDC2626", label: "Internal Deductions", start: 25 },
-  { bodyFill: "FFFEE2E2", end: 31, headerFill: "FF991B1B", label: "Total Deductions", start: 31 },
-  { bodyFill: "FFFFF7ED", end: 36, headerFill: "FFF97316", label: "Payment Split", start: 32 },
-  { bodyFill: "FFF8FAFC", end: 38, headerFill: "FF475569", label: "Bank Details", start: 37 },
+  { bodyFill: "FFEFF6FF", end: col("Working Days"), headerFill: "FF1E3A8A", label: "Employee Data", start: 1 },
+  { bodyFill: "FFF0FDFA", end: col("Net Salary"), headerFill: "FF0F766E", label: "Fixed Salary", start: col("Base Salary") },
+  { bodyFill: "FFF0FDF4", end: col("Other Additions"), headerFill: "FF16A34A", label: "Additions", start: col("Expenses") },
+  { bodyFill: "FFDCFCE7", end: col("Total Additions"), headerFill: "FF166534", label: "Total Additions", start: col("Total Additions") },
+  { bodyFill: "FFF5F3FF", end: col("Governmental Deductions"), headerFill: "FF7C3AED", label: "Governmental Deductions", start: col("Social Insurance") },
+  { bodyFill: "FFFEF2F2", end: col("Other Deductions"), headerFill: "FFDC2626", label: "Internal Deductions", start: col("CRM") },
+  { bodyFill: "FFFEE2E2", end: col("Total Deductions"), headerFill: "FF991B1B", label: "Total Deductions", start: col("Total Deductions") },
+  { bodyFill: "FFFFF7ED", end: col("Policy Comment"), headerFill: "FFF97316", label: "Payment Split", start: col("Month Salary") },
+  { bodyFill: "FFF8FAFC", end: col("Bank Account"), headerFill: "FF475569", label: "Bank Details", start: col("Bank") },
 ] as const;
 
 type PayrollTemplateRow = {
@@ -88,6 +139,12 @@ type PayrollTemplateRow = {
   grossSalary: number;
   /** Last paid day charged for, after Rule 1's >25th waiver (resignations only). */
   effectiveEndDay: number;
+  /**
+   * Days of the month the employee was actually on payroll — the "Working Days"
+   * column. The date-derived span, never the span the money used: a resignation
+   * after the 25th reads its real 28 days while being paid a full month.
+   */
+  workingDays: number;
   hireDate: string | null;
   incentive: number;
   jobTitle: string | null;
@@ -273,10 +330,11 @@ function otherDeductionsFormula(
   month: number,
   year: number,
 ) {
-  const baseSalary = cellRef(rowNumber, 11);
-  const hireDate = cellRef(rowNumber, 10);
+  const baseSalary = cellRef(rowNumber, col("Base Salary"));
+  const hireDate = cellRef(rowNumber, col("Hire Date"));
   // Net = Base + Extra Cost of Living + Fuel, read from the row's own cells
-  // (columns 11, 18, 19) rather than the Net Salary column, so the formula
+  // (Base Salary, Extra Cost of Living, Fuel Allowance) rather than the Net
+  // Salary column, so the formula
   // states the three components it actually prorates. BOTH branches divide this
   // since 2026-08-29 — the owner gave the same instruction for joiners in the
   // morning and for resignations later the same day.
@@ -287,7 +345,7 @@ function otherDeductionsFormula(
   // base — exactly calculateBaseLifecycleProrationDeduction. And because the
   // cells are live, an HR edit to an allowance re-prorates coherently instead of
   // leaving the deduction stating a shortfall on a figure no longer in the row.
-  const netSalary = `(${baseSalary}+${cellRef(rowNumber, 18)}+${cellRef(rowNumber, 19)})`;
+  const netSalary = `(${baseSalary}+${cellRef(rowNumber, col("Extra Cost of Living"))}+${cellRef(rowNumber, col("Fuel Allowance"))})`;
   // Must match payrollDaysInMonth exactly: the workbook recalculates these
   // formulas client-side, so a server-only fix would leave the downloaded sheet
   // disagreeing with the figure Ready Payroll stored.
@@ -480,10 +538,16 @@ function stylePayrollHeaderRow(row: ExcelJS.Row) {
 function stylePayrollDataCell(cell: ExcelJS.Cell) {
   const column = Number(cell.col);
   const section = uploadSectionForColumn(column);
-  const isTotalColumn = column === 21 || column === 24 || column === 31;
+  const isTotalColumn =
+    column === col("Total Additions") ||
+    column === col("Governmental Deductions") ||
+    column === col("Total Deductions");
 
   if (moneyColumnNumbers.has(column)) {
     cell.numFmt = "#,##0.00";
+  } else if (countColumnNumbers.has(column)) {
+    // A day count, not money: whole numbers, no currency decimals.
+    cell.numFmt = "0";
   }
 
   cell.alignment = { vertical: "middle", wrapText: true };
@@ -626,6 +690,7 @@ async function buildUploadRows(month: number, year: number): Promise<PayrollTemp
           "Fixed starter row. Add monthly expenses, additions, and deductions before upload.",
         crm: 0,
         effectiveEndDay: settlement.effectiveEndDay,
+        workingDays: settlement.workingDays,
         employeeCode: employee.hrId,
         employmentIncomeTax,
         expenses: 0,
@@ -845,27 +910,27 @@ function rowValues(
   options: { formulas?: boolean } = {},
 ) {
   if (options.formulas) {
-    const baseSalary = cellRef(rowNumber, 11);
-    const netSalary = cellRef(rowNumber, 13);
-    const expenses = cellRef(rowNumber, 14);
-    const incentive = cellRef(rowNumber, 15);
-    const overtime = cellRef(rowNumber, 16);
-    const bonus = cellRef(rowNumber, 17);
-    const extraCostOfLiving = cellRef(rowNumber, 18);
-    const fuelAllowance = cellRef(rowNumber, 19);
-    const otherAdditions = cellRef(rowNumber, 20);
-    const socialInsurance = cellRef(rowNumber, 22);
-    const employmentIncomeTax = cellRef(rowNumber, 23);
-    const crm = cellRef(rowNumber, 25);
-    const fingerPrint = cellRef(rowNumber, 26);
-    const unpaidVacations = cellRef(rowNumber, 27);
-    const medicalInsurance = cellRef(rowNumber, 28);
-    const loans = cellRef(rowNumber, 29);
-    const otherDeductions = cellRef(rowNumber, 30);
-    const totalDeductions = cellRef(rowNumber, 31);
-    const monthSalary = cellRef(rowNumber, 32);
-    const firstPart = cellRef(rowNumber, 33);
-    const paymentMode = cellRef(rowNumber, 35);
+    const baseSalary = cellRef(rowNumber, col("Base Salary"));
+    const netSalary = cellRef(rowNumber, col("Net Salary"));
+    const expenses = cellRef(rowNumber, col("Expenses"));
+    const incentive = cellRef(rowNumber, col("Incentive"));
+    const overtime = cellRef(rowNumber, col("Overtime"));
+    const bonus = cellRef(rowNumber, col("Bonus"));
+    const extraCostOfLiving = cellRef(rowNumber, col("Extra Cost of Living"));
+    const fuelAllowance = cellRef(rowNumber, col("Fuel Allowance"));
+    const otherAdditions = cellRef(rowNumber, col("Other Additions"));
+    const socialInsurance = cellRef(rowNumber, col("Social Insurance"));
+    const employmentIncomeTax = cellRef(rowNumber, col("Employment Income Tax"));
+    const crm = cellRef(rowNumber, col("CRM"));
+    const fingerPrint = cellRef(rowNumber, col("Finger Print"));
+    const unpaidVacations = cellRef(rowNumber, col("Unpaid Vacations"));
+    const medicalInsurance = cellRef(rowNumber, col("Medical Insurance"));
+    const loans = cellRef(rowNumber, col("Loans"));
+    const otherDeductions = cellRef(rowNumber, col("Other Deductions"));
+    const totalDeductions = cellRef(rowNumber, col("Total Deductions"));
+    const monthSalary = cellRef(rowNumber, col("Month Salary"));
+    const firstPart = cellRef(rowNumber, col("First Part"));
+    const paymentMode = cellRef(rowNumber, col("Payment Group"));
 
     return [
       index,
@@ -878,6 +943,7 @@ function rowValues(
       row.line ?? "",
       row.area ?? "",
       payrollExcelDateOnly(row.hireDate),
+      row.workingDays,
       row.baseSalary,
       formulaValue(`ROUND(${baseSalary}+${socialInsurance}+${employmentIncomeTax},2)`, row.grossSalary),
       formulaValue(`ROUND(${baseSalary}+${extraCostOfLiving}+${fuelAllowance},2)`, row.netSalary),
@@ -935,6 +1001,7 @@ function rowValues(
     row.line ?? "",
     row.area ?? "",
     payrollExcelDateOnly(row.hireDate),
+    row.workingDays,
     row.baseSalary,
     row.grossSalary,
     row.netSalary,
@@ -1002,34 +1069,51 @@ function writeTotals(
       : result;
 
   row.getCell(1).value = totalsLabel;
-  row.getCell(11).value = totalFormula(11, total((item) => item.baseSalary));
-  row.getCell(12).value = totalFormula(12, total((item) => item.grossSalary));
-  row.getCell(13).value = totalFormula(13, total((item) => item.netSalary));
-  row.getCell(14).value = totalFormula(14, total((item) => item.expenses));
-  row.getCell(15).value = totalFormula(15, total((item) => item.incentive));
-  row.getCell(16).value = totalFormula(16, total((item) => item.overtime));
-  row.getCell(17).value = totalFormula(17, total((item) => item.bonus));
-  row.getCell(18).value = totalFormula(18, total((item) => item.extraCostOfLiving));
-  row.getCell(19).value = totalFormula(19, total((item) => item.fuelAllowance));
-  row.getCell(20).value = totalFormula(20, total((item) => item.otherAdditions));
-  row.getCell(21).value = totalFormula(21, total((item) => item.totalAdditions));
-  row.getCell(22).value = totalFormula(22, total((item) => item.socialInsurance));
-  row.getCell(23).value = totalFormula(23, total((item) => item.employmentIncomeTax));
-  row.getCell(24).value = totalFormula(24, total((item) => item.governmentalDeductions));
-  row.getCell(25).value = totalFormula(25, total((item) => item.crm));
-  row.getCell(26).value = totalFormula(26, total((item) => item.fingerPrint));
-  row.getCell(27).value = totalFormula(27, total((item) => item.unpaidVacations));
-  row.getCell(28).value = totalFormula(28, total((item) => item.medicalInsurance));
-  row.getCell(29).value = totalFormula(29, total((item) => item.loans));
-  row.getCell(30).value = totalFormula(30, total((item) => item.otherDeductions));
-  row.getCell(31).value = totalFormula(31, total((item) => item.totalDeductions));
-  row.getCell(32).value = totalFormula(32, total((item) => item.monthSalary));
-  row.getCell(33).value = totalFormula(33, total((item) => item.firstPart));
-  row.getCell(34).value = totalFormula(34, total((item) => item.secondPart));
-  row.getCell(35).value = "";
-  row.getCell(36).value = "";
-  row.getCell(37).value = "";
-  row.getCell(38).value = "";
+
+  // Money only, keyed by NAME. "Working Days" is deliberately absent from this
+  // table and blanked below: a company-wide sum of day counts is meaningless,
+  // and a number sitting under that heading would read as one.
+  const totalsByHeader: Array<[PayrollTemplateHeader, (item: PayrollTemplateRow) => number]> = [
+    ["Base Salary", (item) => item.baseSalary],
+    ["Gross Salary", (item) => item.grossSalary],
+    ["Net Salary", (item) => item.netSalary],
+    ["Expenses", (item) => item.expenses],
+    ["Incentive", (item) => item.incentive],
+    ["Overtime", (item) => item.overtime],
+    ["Bonus", (item) => item.bonus],
+    ["Extra Cost of Living", (item) => item.extraCostOfLiving],
+    ["Fuel Allowance", (item) => item.fuelAllowance],
+    ["Other Additions", (item) => item.otherAdditions],
+    ["Total Additions", (item) => item.totalAdditions],
+    ["Social Insurance", (item) => item.socialInsurance],
+    ["Employment Income Tax", (item) => item.employmentIncomeTax],
+    ["Governmental Deductions", (item) => item.governmentalDeductions],
+    ["CRM", (item) => item.crm],
+    ["Finger Print", (item) => item.fingerPrint],
+    ["Unpaid Vacations", (item) => item.unpaidVacations],
+    ["Medical Insurance", (item) => item.medicalInsurance],
+    ["Loans", (item) => item.loans],
+    ["Other Deductions", (item) => item.otherDeductions],
+    ["Total Deductions", (item) => item.totalDeductions],
+    ["Month Salary", (item) => item.monthSalary],
+    ["First Part", (item) => item.firstPart],
+    ["Second Part", (item) => item.secondPart],
+  ];
+
+  for (const [header, selector] of totalsByHeader) {
+    const columnNumber = col(header);
+    row.getCell(columnNumber).value = totalFormula(columnNumber, total(selector));
+  }
+
+  for (const header of [
+    "Working Days",
+    "Payment Group",
+    "Policy Comment",
+    "Bank",
+    "Bank Account",
+  ] as const) {
+    row.getCell(col(header)).value = "";
+  }
   applyRowStyle(sheet, totalsRow, totalsStyle);
   stylePayrollTotalsRow(row);
   row.commit();
@@ -1480,6 +1564,21 @@ async function buildReadyRows(
           // Batch-export rows are already-computed history with no live last-working date, so the
           // proration formula's leaver branch never runs; month-end keeps the type satisfied.
           effectiveEndDay: payrollDaysInMonth(month, year),
+          // Prefer the count actually stored with the row. Rows written before
+          // 2026-09-04 have none, and rather than assert a full month over a
+          // historical joiner, derive what the record itself can prove: its hire
+          // date sets the start day, and month-end the finish. That is exact for
+          // the ordinary row and for a joiner; it can only overstate a LEAVER,
+          // whose last working date a SalaryRecord does not carry.
+          workingDays:
+            record.workingDays > 0
+              ? record.workingDays
+              : Math.max(
+                  0,
+                  payrollDaysInMonth(month, year)
+                    - prorationStartDay(record.hireDate, month, year)
+                    + 1,
+                ),
           employeeCode: record.hrId,
           employmentIncomeTax: record.employmentIncomeTax ?? 0,
           expenses: record.expenses ?? 0,
@@ -1636,6 +1735,7 @@ async function buildReadyRows(
             : "Day 1: net salary. Day 10: expenses and incentive."),
         crm,
         effectiveEndDay: settlement.effectiveEndDay,
+        workingDays: settlement.workingDays,
         employeeCode: employee.hrId,
         employmentIncomeTax,
         expenses,

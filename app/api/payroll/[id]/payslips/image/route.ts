@@ -6,6 +6,7 @@ import { isDevelopment } from "@/lib/env";
 import { canExportPayslipDocument } from "@/lib/payroll/payslip-center";
 import { getSalaryBatchExport } from "@/lib/payroll/service";
 import {
+  formatWorkingDays,
   payrollMoneyHeaders,
   payrollSheetHeaders,
   payrollSheetSections,
@@ -58,9 +59,12 @@ function formatDate(value: string | null) {
   return new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", timeZone: "UTC", year: "numeric" }).format(d);
 }
 
+// "Working Days" is hidden here and drawn in the employee card instead, the
+// same treatment "Hire Date" gets: the table below is a list of money lines.
 const HIDDEN_HEADERS = new Set([
   "#", "Month", "Year", "HR_ID", "Full Name", "Arabic Name",
-  "Job Title", "Line", "Area", "Hire Date", "Payment Group", "Policy Comment",
+  "Job Title", "Line", "Area", "Hire Date", "Working Days",
+  "Payment Group", "Policy Comment",
 ]);
 
 const VISIBLE_HEADERS = payrollSheetHeaders.filter(h => !HIDDEN_HEADERS.has(h));
@@ -191,6 +195,7 @@ async function renderPayslipPdf(
     ["Area",      asciiSafe(record.area || "-")],
     ["Line",      asciiSafe(record.line || "-")],
     ["Hire Date", formatDate(record.hireDate)],
+    ["Working Days", formatWorkingDays(record) || "-"],
   ];
   const CARD_H = TITLE_H + empFields.length * ROW_H + 4;
   const CARD_TOP = y;

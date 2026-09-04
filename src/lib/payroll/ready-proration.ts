@@ -206,6 +206,20 @@ export type ReadyLifecycleSettlement = {
   fuelAllowance: number;
   /** The last paid day actually charged for, after the >25th waiver. */
   effectiveEndDay: number;
+  /** Calendar days in the payroll month — the proration denominator (28-31). */
+  calendarDays: number;
+  /**
+   * Days of the month the employee was actually on payroll — the sheet's
+   * "Working Days" column, and the whole explanation for a row whose salary
+   * columns show a full contract while Other Deductions takes a slice back.
+   *
+   * ALWAYS the date-derived span, never the span the money was based on. A
+   * resignation after the 25th is PAID a full month (`prorationDeduction` is 0)
+   * yet reads its real 28 days here — exactly as the automated engine's
+   * `computeResignationSettlement().daysWorked` does, so the two sheets can
+   * never disagree about how long somebody was actually here.
+   */
+  workingDays: number;
 };
 
 /**
@@ -287,6 +301,13 @@ export function resolveReadyLifecycleSettlement(input: {
 }): ReadyLifecycleSettlement {
   const { baseSalary, extraCostOfLiving, fuelAllowance, hireDate, isResignation, lastWorkingDate, month, year } = input;
   const daysInMonth = payrollDaysInMonth(month, year);
+  const startDay = prorationStartDay(hireDate, month, year);
+  // The REAL span, from the dates alone. prorationEndDay, never
+  // prorationEffectiveEndDay: the >25th waiver moves the money, not this count.
+  const workingDays = Math.max(
+    0,
+    Math.min(daysInMonth, prorationEndDay(lastWorkingDate, month, year) - startDay + 1),
+  );
   const leavingThisMonth = payrollMonthMatches(lastWorkingDate, month, year);
   const joiningThisMonth = payrollMonthMatches(hireDate, month, year);
 
@@ -305,6 +326,8 @@ export function resolveReadyLifecycleSettlement(input: {
         year,
       ),
       effectiveEndDay: prorationEndDay(lastWorkingDate, month, year),
+      calendarDays: daysInMonth,
+      workingDays,
       extraCostOfLiving: 0,
       fuelAllowance: 0,
     };
@@ -329,7 +352,6 @@ export function resolveReadyLifecycleSettlement(input: {
       // though the employee stayed to month end; a same-month hire still pays for
       // its own unworked start-of-month days. Same helper the Excel formula uses.
       const effectiveEndDay = prorationEffectiveEndDay(lastWorkingDate, month, year);
-      const startDay = prorationStartDay(hireDate, month, year);
       const eligibleDays = Math.max(0, effectiveEndDay - startDay + 1);
       // Prorate NET, not Base (owner, 2026-08-29). The >25th branch arrives here
       // with a full month of eligible days, so it still deducts exactly 0 — the
@@ -344,6 +366,8 @@ export function resolveReadyLifecycleSettlement(input: {
         branch: paidToMonthEnd ? "leaver_after_25" : "leaver_on_or_before_25",
         prorationDeduction,
         effectiveEndDay,
+        calendarDays: daysInMonth,
+        workingDays,
         // The CONTRACTUAL allowances, deliberately not settlement.ecolPaid /
         // fuelPaid. Those are the same month's prorated components, and the
         // deduction above already charges the unworked share of both — taking
@@ -384,6 +408,8 @@ export function resolveReadyLifecycleSettlement(input: {
           year,
         ),
     effectiveEndDay: prorationEndDay(lastWorkingDate, month, year),
+    calendarDays: daysInMonth,
+    workingDays,
     extraCostOfLiving: roundCurrency(extraCostOfLiving),
     fuelAllowance: roundCurrency(fuelAllowance),
   };

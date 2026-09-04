@@ -306,6 +306,11 @@ function mapRecord(row: Record<string, unknown>): SalaryRecord {
     loans +
     otherDeductions;
   const storedNetSalary = Number(row.net_salary ?? 0);
+  // NULL on every row written before 2026-09-04 — the day count was genuinely
+  // never recorded then, so 0 carries "not recorded" and readers print nothing
+  // rather than inventing a full month.
+  const workingDays = Math.max(0, Math.trunc(Number(row.working_days ?? 0)) || 0);
+  const calendarDays = Math.max(0, Math.trunc(Number(row.calendar_days ?? 0)) || 0);
   const uploadedFirstPart = Number(row.first_part ?? 0);
   const uploadedSecondPart = Math.max(0, Number(row.second_part ?? 0));
   const paymentMode = row.payment_mode
@@ -379,6 +384,8 @@ function mapRecord(row: Record<string, unknown>): SalaryRecord {
     monthSalary,
     paymentMode,
     hireDate: row.hire_date ? String(row.hire_date) : null,
+    workingDays,
+    calendarDays,
   };
 }
 
@@ -1205,6 +1212,11 @@ function salaryRecordPayload(batchId: string, row: SalaryValidationRow) {
     total_additions: row.totalAdditions,
     total_deductions: row.totalDeductions,
     unpaid_vacations: row.unpaidVacations,
+    // 0 means "not recorded" in the row model; store NULL rather than a zero day
+    // count so the column keeps saying "we do not know" instead of "he worked no
+    // days" (see 20260905000500_salary_records_working_days.sql).
+    working_days: row.workingDays > 0 ? row.workingDays : null,
+    calendar_days: row.calendarDays > 0 ? row.calendarDays : null,
   };
 }
 
@@ -1235,6 +1247,8 @@ const salaryRecordNumericColumns = new Set([
   "total_additions",
   "total_deductions",
   "unpaid_vacations",
+  "working_days",
+  "calendar_days",
 ]);
 
 function normalizePersistedValue(column: string, value: unknown) {
@@ -1373,7 +1387,9 @@ export async function createSalaryBatch(input: CreateSalaryBatchInput) {
       isMissingColumnError(batchError, "month_salary") ||
       isMissingColumnError(batchError, "name_ar") ||
       isMissingColumnError(batchError, "comment") ||
-      isMissingColumnError(batchError, "payment_mode")
+      isMissingColumnError(batchError, "payment_mode") ||
+      isMissingColumnError(batchError, "working_days") ||
+      isMissingColumnError(batchError, "calendar_days")
     ) {
       throw new Error(
         "Payroll schema is missing salary_records sheet-mapping columns. Run the salary_records SQL migration before uploading payroll.",
@@ -1525,7 +1541,9 @@ export async function replaceSalaryBatch(
       isMissingColumnError(replaceError, "base_salary") ||
       isMissingColumnError(replaceError, "governmental_deductions") ||
       isMissingColumnError(replaceError, "month_salary") ||
-      isMissingColumnError(replaceError, "payment_mode")
+      isMissingColumnError(replaceError, "payment_mode") ||
+      isMissingColumnError(replaceError, "working_days") ||
+      isMissingColumnError(replaceError, "calendar_days")
     ) {
       throw new Error(
         "Payroll schema is missing salary_records sheet-mapping columns. Run the salary_records SQL migration before replacing payroll.",

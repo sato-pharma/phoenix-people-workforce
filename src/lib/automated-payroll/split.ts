@@ -6,6 +6,7 @@ import {
   type PayrollPaymentMode,
 } from "@/lib/payroll/policy";
 import {
+  calendarDaysInMonth,
   computeJoinerPay,
   computeResignationSettlement,
 } from "@/lib/payroll/copilot/proration.ts";
@@ -36,6 +37,22 @@ export type EffectiveSalary = {
   /** This month's Net (Base + ECoL + Fuel), prorated for joiners/leavers. */
   net: number;
   lifecycle: RowLifecycle;
+  /**
+   * Days of the period this person was on payroll — the numerator of the
+   * proration, and the "Working Days" column on the payroll sheet (owner rule
+   * 2026-09-04: the sheet shows the FULL contractual salary, and this column is
+   * what explains why a joiner/leaver is paid less than it).
+   *
+   * Always the date-derived count, so it answers "how many days was he here",
+   * not "what did HR settle him at". Two consequences worth knowing:
+   *  - a leaver after the 25th reads e.g. 28 while being paid the full month,
+   *    because the >25 full-pay waiver is a rule, not a day count;
+   *  - an HR settlement override does not move it, for the same reason.
+   * Equals `calendarDays` for a regular employee, so the factor is exactly 1.
+   */
+  workingDays: number;
+  /** Calendar days in the period — the proration denominator (28-31). */
+  calendarDays: number;
 };
 
 export type EffectiveSalaryInput = {
@@ -72,6 +89,8 @@ export function effectiveSalary(input: EffectiveSalaryInput): EffectiveSalary {
   let effFuel = fuel;
   let effNet = net;
   let lifecycle: RowLifecycle = "regular";
+  const calendarDays = calendarDaysInMonth(input.period);
+  let workingDays = calendarDays;
 
   if (input.lifecycle === "leaver" && input.lastWorkingDate) {
     const settlement = computeResignationSettlement({
@@ -90,6 +109,7 @@ export function effectiveSalary(input: EffectiveSalaryInput): EffectiveSalary {
       effFuel = settlement.fuelPaid;
       effNet = settlement.netForMonth;
       lifecycle = "leaver";
+      workingDays = settlement.daysWorked;
     }
   } else if (input.lifecycle === "joiner" && input.hireDate) {
     const joiner = computeJoinerPay({
@@ -105,6 +125,7 @@ export function effectiveSalary(input: EffectiveSalaryInput): EffectiveSalary {
       effFuel = joiner.fuelPaid;
       effNet = joiner.netForMonth;
       lifecycle = "joiner";
+      workingDays = joiner.daysWorked;
     }
   }
 
@@ -126,7 +147,7 @@ export function effectiveSalary(input: EffectiveSalaryInput): EffectiveSalary {
     effNet = roundCurrency(effBase + effEcol + effFuel);
   }
 
-  return { base: effBase, ecol: effEcol, fuel: effFuel, net: effNet, lifecycle };
+  return { base: effBase, ecol: effEcol, fuel: effFuel, net: effNet, lifecycle, workingDays, calendarDays };
 }
 
 export type FreezeFirstPartInput = {

@@ -224,11 +224,24 @@ export function runPayrollCopilotProrationTests() {
     resignation: { lastWorkingDate: "2026-06-20", unpaidDaysInSpan: 2 },
   });
   assert.ok(resignRow);
-  assert.equal(resignRow.baseSalary, 18000, "row.baseSalary reflects the prorated settlement for this month");
-  assert.equal(resignRow.extraCostOfLiving, 600, "the row carries the PRORATED ECOL, not a withheld zero");
-  assert.equal(resignRow.fuelAllowance, 300, "the row carries the PRORATED Fuel, not a withheld zero");
-  assert.equal(resignRow.netSalary, 18900);
+  // OWNER RULE 2026-09-04, and the reason these four numbers changed: the salary
+  // COLUMNS now show the full monthly contract on every row, and the Working Days
+  // column is what explains a partial month. They used to show the settlement
+  // (18000 / 600 / 300 / 18900) — the same figures the money is still built from,
+  // which is asserted immediately below and did NOT move.
+  assert.equal(resignRow.baseSalary, 30000, "the row shows the FULL contract base, not the settlement");
+  assert.equal(resignRow.extraCostOfLiving, 1000, "the row shows the FULL contract ECOL");
+  assert.equal(resignRow.fuelAllowance, 500, "the row shows the FULL contract Fuel");
+  assert.equal(resignRow.netSalary, 31500, "the row shows a full month's net: 30000 + 1000 + 500");
+  // 20 days to the last working day, less 2 unpaid days inside the span.
+  assert.equal(resignRow.workingDays, 18, "Working Days is what makes the full salary above readable");
+  assert.equal(resignRow.calendarDays, 30, "June");
   assert.equal(resignRow.medicalInsurance, 300, "F: medical insurance still applies in full on a resignation row");
+  // THE MONEY, UNCHANGED. This is the assertion that proves the display change
+  // above is only a display change: payable is still built from the SETTLEMENT
+  // net of 18,900, never from the 31,500 now shown in the Net Salary column. If
+  // showing the full salary ever started paying the full salary, these three
+  // lines are what goes red.
   // total payable = 18900 - 300 medical insurance = 18600; basic anchor = 30000*0.7=21000
   // 18600 < 21000 -> Part1 absorbs everything, paid once
   assert.equal(resignRow.firstPart, 18600);
@@ -271,6 +284,10 @@ export function runPayrollCopilotProrationTests() {
   assert.equal(resignOnePart.baseSalary, 30000);
   assert.equal(resignOnePart.extraCostOfLiving, 1000);
   assert.equal(resignOnePart.fuelAllowance, 500);
+  // Paid a full month under Rule 1, but he was here 28 days and the column says
+  // so. Reporting 30 here would contradict the Ready sheet for the same person.
+  assert.equal(resignOnePart.workingDays, 28, "the count stays date-derived even when the pay is waived up");
+  assert.equal(resignOnePart.calendarDays, 30);
   // total = 31500 net - 300 medical insurance = 31200; one-part -> paid once, Part2 = 0
   assert.equal(resignOnePart.firstPart, 31200);
   assert.equal(resignOnePart.secondPart, 0);
@@ -287,11 +304,42 @@ export function runPayrollCopilotProrationTests() {
     index: 1,
   });
   assert.ok(joinerRow);
-  assert.equal(joinerRow.baseSalary, 12000); // prorated for 12 days
-  assert.equal(joinerRow.extraCostOfLiving, 387.1); // 1000 * 12/31 — prorated, not halved
-  assert.equal(joinerRow.fuelAllowance, 193.55); // 500 * 12/31
-  assert.equal(joinerRow.netSalary, 12580.65); // = 32,500 net * 12/31
+  // Full contract on the row (owner rule 2026-09-04). These were 12000 / 387.1 /
+  // 193.55 / 12580.65 — the settlement figures, which the money below still uses.
+  assert.equal(joinerRow.baseSalary, 31000, "the row shows the FULL contract base");
+  assert.equal(joinerRow.extraCostOfLiving, 1000, "the row shows the FULL contract ECOL, not 12/31 of it");
+  assert.equal(joinerRow.fuelAllowance, 500, "the row shows the FULL contract Fuel");
+  assert.equal(joinerRow.netSalary, 32500, "the row shows a full month's net");
+  assert.equal(joinerRow.workingDays, 12, "hired on the 20th of a 31-day month");
+  assert.equal(joinerRow.calendarDays, 31);
   assert.equal(joinerRow.medicalInsurance, 300, "F: medical insurance still applies in full on a joiner row");
+  // THE MONEY, UNCHANGED — the joiner half of the same proof. Payable is the
+  // SETTLEMENT net (32,500 x 12/31 = 12,580.65) less 300 medical insurance.
+  assert.equal(joinerRow.monthSalary, 12280.65, "a joiner is still PAID for the days worked, not the full contract");
+  // And the two-part split still anchors on the PRORATED base: 12,000 x 70% =
+  // 8,400, NOT 31,000 x 70% = 21,700. Were the split reading the full contract
+  // now shown in the Base Salary column, Part 1 would swallow the whole 12,280.65
+  // and Part 2 would be nil — so this pair is the sharpest test in the file of
+  // whether the display change leaked into the payment.
+  assert.equal(joinerRow.firstPart, 8400, "Part 1 is capped at 70% of the PRORATED base, not of the displayed contract");
+  assert.equal(joinerRow.secondPart, 3880.65);
+  assert.equal(
+    joinerRow.firstPart + joinerRow.secondPart,
+    joinerRow.monthSalary,
+    "the two parts must still add up to what is paid",
+  );
+
+  // A DELIBERATE consequence of the owner's 2026-09-04 choice to show the
+  // allowances at full contract value too: Net + Additions - Deductions no longer
+  // equals Month Salary on a partial-month row (32,500 + 1,500 - 300 = 33,700 vs
+  // 12,280.65 paid). Working Days is what reconciles them. This is pinned so the
+  // gap reads as the decision it is, and nobody "repairs" the row back to the
+  // settlement figures.
+  assert.equal(joinerRow.totalAdditions, 1500, "additions carry the FULL ECOL + Fuel");
+  assert.notEqual(
+    joinerRow.netSalary + joinerRow.totalAdditions - joinerRow.totalDeductions,
+    joinerRow.monthSalary,
+  );
 
   // --- C: unpaid leave (continuing employee) uses Base-only day-rate, ECOL/Fuel
   // stay untouched -------------------------------------------------------------

@@ -504,6 +504,8 @@ export function serializeDraft(draft: CopilotDraftState) {
       hrId: e.hrId,
       fullName: e.fullName,
       hireDate: e.row.hireDate,
+      calendarDays: e.row.calendarDays,
+      workingDays: e.row.workingDays,
       line: e.line,
       area: e.row.area,
       jobTitle: e.jobTitle,

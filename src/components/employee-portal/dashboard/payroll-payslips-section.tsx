@@ -137,6 +137,17 @@ export function PayrollPayslipsSection({ data }: { data: MedicalRepPortalData })
   const hasRows = historyRows.length > 0;
   const payslip = data.payroll.latestPayslip;
   const breakdownToggleLabel = isBreakdownVisible ? "Hide salary breakdown" : "Show salary breakdown";
+  /**
+   * Shown only when the period was partial. The figures above are the full
+   * monthly contract, so on a mid-month join or a resignation they are LARGER
+   * than what was actually paid — without this line that gap reads as an error
+   * in the payslip rather than as the proration it is. A full month needs no
+   * sentence, and a period recorded before the day count existed cannot claim one.
+   */
+  const isPartialMonth =
+    payslip.workingDays > 0 &&
+    payslip.calendarDays > 0 &&
+    payslip.workingDays < payslip.calendarDays;
   const breakdownRows = [
     {
       formula: "Net Salary - Extra Cost of Living - Fuel Allowance",
@@ -213,6 +224,17 @@ export function PayrollPayslipsSection({ data }: { data: MedicalRepPortalData })
               <PayrollStat label="Basic Salary" value={egp(payslip.basicSalary)} />
               <PayrollStat label="Base Salary" value={egp(payslip.baseSalary)} />
             </div>
+
+            {isPartialMonth ? (
+              <p className="mt-4 rounded border border-amber-100 bg-amber-50/70 px-3 py-2 text-xs leading-5 text-amber-900">
+                You were on payroll for{" "}
+                <span className="font-semibold">
+                  {payslip.workingDays} of {payslip.calendarDays} days
+                </span>{" "}
+                this period. The amounts above are your full monthly salary — the pay for
+                this month is calculated on the days worked.
+              </p>
+            ) : null}
           </div>
 
           <div className="grid gap-4 xl:grid-cols-[1.1fr_1.5fr]">
