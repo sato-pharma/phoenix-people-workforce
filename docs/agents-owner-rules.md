@@ -368,6 +368,54 @@ pharmacies** — a 38% overstatement.
 
 `a-pharmacy-is-not-a-contact`
 
+### 🔒 The call rate is never averaged — AM against 2, PM against 10, reported apart
+
+Owner 2026-09-04: *"The call rate is two AM accounts. This is the optimal, and ten PM accounts. I'm
+seeing now that you are putting the call rate out of six. No. Never. This two and this ten. Don't
+never get average."* Asked how he wanted it shown, he answered: *"Show both as separate. AM alone,
+PM alone."*
+
+A medical rep's perfect day is **2 AM accounts and 10 PM clinics** — two standards, five times apart
+in size. Until this date the KPIs board carried one score per rep, verified AM + PM calls over
+`working days × 12`, and its own code comment argued **for** the blend on the grounds that averaging
+two percentages weights a 2-call target equally with a 10-call one. That was an argument against one
+particular way of combining them, answered by combining them a different way. He overruled the idea
+itself.
+
+He is right about what it hides. A rep who does his 2 morning accounts and nothing after lunch reads:
+
+| Method | Reads |
+| --- | --- |
+| Averaging the two percentages | 50% — half a day's work |
+| Both slices over one denominator (what shipped until 2026-09-04) | 2 of 12 = 17% |
+| **What is true** | **100% AM, 0% PM** |
+
+Neither combined figure says the true thing, which is that the morning was perfect and the afternoon
+did not happen. A live August rep made the same point in the other direction: at `0.87 AM · 9.40 PM`
+he blended to about 86% — an excellent-looking month — while his mornings barely happened. He now
+reads **43% AM, 94% PM**, and the board says *"the morning is not producing the calls it should."*
+
+- **No combined figure exists anywhere.** Not `callRateAttainmentPct` on a row, not on the team
+  totals, not as a band, not as a sort field, not as a URL param. Deleting the field is what keeps
+  one from being printed again — a rule that lives only in a comment gets re-derived.
+- **`amAttainmentPct` and `pmAttainmentPct`** are each verified calls over what *that* target asked
+  for across the same working days. `amBandOf` / `pmBandOf` band them apart; a single band would be
+  the banned average wearing a colour.
+- **Two flags, not one** — `below-am-target` and `below-pm-target`. The two failures are different
+  jobs with different conversations behind them.
+- **Four podium leaderboards** — coverage, frequency, AM, PM. The best morning and the best afternoon
+  are usually different people.
+- **Never print the pair with a slash.** `1.63 / 6.57` is what he read as *1.63 out of 6.57*, and it
+  is what started this. The separator is `1.63 AM · 6.57 PM`; column headers are **"Of 2"** and
+  **"Of 10"**.
+- **The verdict sentence names which half is short**, never "the working day" — merging them in prose
+  puts back in one sentence exactly what the numbers stopped doing.
+
+Pinned by `runKpiAttainmentAndIdentityTests` in `tests/kpis-filters.test.ts`, which asserts 100% AM /
+0% PM on that rep **and** that no combined field exists on the row at all. It runs in the required CI
+`validate` job. Shipped in
+[#3068](https://github.com/Gawish-1997/phoenix-people-workforce/pull/3068), live as `28fb7a40d`.
+
 ### 🔒 The August / Delta (3) golden rule
 
 Owner 2026-08-29, who said "golden rule, no negotiation" twice in one breath: *"The closing of August
