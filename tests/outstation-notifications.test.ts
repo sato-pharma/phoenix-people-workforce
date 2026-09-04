@@ -21,18 +21,19 @@ export function runOutstationNotificationsTests() {
   const service = source("src/lib/outstation/service.ts");
   const expenses = source("src/lib/outstation/expenses.ts");
 
-  // ── Rule 1 (revised email-reduction 2026-08-13): Submit mail → the MANAGER, skip-level Cc, ──
-  // ── Super Admin Bcc, the employee is off the email entirely ──────────────────────────────
-  // SUPERSEDES the 2026-08-04 rule, which put the submitting employee on To as a self-confirmation
-  // he did not need (he was just on the submission screen). The envelope is now one message: To
-  // his direct manager (or the skip-level manager, or a Super Admin, whichever is first reachable
-  // — see the fallback chain in submit-recipients.ts), Cc the skip-level manager UNLESS that
-  // person is the CEO, Bcc every active Super Admin. See src/lib/outstation/submit-recipients.ts —
-  // the envelope decision itself is unit-tested in outstation-submit-email-routing.test.ts.
+  // ── Rule 1 (2026-09-04): Submit mail → the EMPLOYEE himself, his manager on Cc, ──────────
+  // ── Super Admin Bcc ────────────────────────────────────────────────────────────────────
+  // REVERSES the 2026-08-13 email-reduction rule, which excluded the submitting employee from
+  // every slot on the reasoning that a copy confirmed nothing he did not already know. The
+  // envelope is now one message: To the employee (unconditionally — it is his own submission),
+  // Cc his direct manager (falling back to the skip-level manager when the direct manager is
+  // missing or the CEO), Bcc every active Super Admin. See
+  // src/lib/outstation/submit-recipients.ts — the envelope decision itself is unit-tested in
+  // outstation-submit-email-routing.test.ts.
   assert.match(
     service,
     /async function notifyOutstationSubmitted/,
-    "RULE 1: notifyOutstationSubmitted must exist — it is the manager's heads-up on a submission",
+    "RULE 1: notifyOutstationSubmitted must exist — it is the employee's confirmation that his submission was received",
   );
 
   const submitNotifySlice = functionSlice(service, "async function notifyOutstationSubmitted");
@@ -44,12 +45,12 @@ export function runOutstationNotificationsTests() {
   assert.match(
     submitNotifySlice,
     /recipientHrId: routing\.toHrId/,
-    "the To recipient must come from routing — the direct manager by default, never the employee",
+    "the To recipient must come from routing — the submitting employee himself",
   );
   assert.match(
     submitNotifySlice,
     /email: \{ bcc: bccAddresses, cc: ccAddresses, metrics \}/,
-    "the skip-level manager must ride on Cc and Super Admins on Bcc of that ONE message — never as separate sends",
+    "the manager must ride on Cc and Super Admins on Bcc of that ONE message — never as separate sends",
   );
   assert.doesNotMatch(
     submitNotifySlice,
@@ -59,7 +60,7 @@ export function runOutstationNotificationsTests() {
   assert.match(
     submitNotifySlice,
     /channels:\s*\["in_app",\s*"email",\s*"telegram",\s*"push"\]/,
-    "submit notification must reach the addressed manager in-app as well as by email/Telegram/push",
+    "submit notification must reach the employee in-app as well as by email/Telegram/push",
   );
   assert.match(
     submitNotifySlice,
@@ -128,7 +129,7 @@ export function runOutstationNotificationsTests() {
   assert.match(
     submitDecisionSlice,
     /notifyOutstationSubmitted\(/,
-    "every submit fires the manager's heads-up alert",
+    "every submit fires the employee's confirmation alert",
   );
   assert.doesNotMatch(
     submitDecisionSlice,
@@ -185,7 +186,7 @@ export function runOutstationNotificationsTests() {
     /existing\.status\.startsWith\("rejected"\)[\s\S]{0,80}notifyOutstationSubmitted\(/,
     "RULE 1: the submit alert fires from approve ONLY when overriding a system rejection — every " +
       "other claim was already alerted at submit, so an unconditional send here would double-mail " +
-      "the manager, the skip-level manager and the Super Admins on every single trip",
+      "the employee, his manager and the Super Admins on every single trip",
   );
   assert.doesNotMatch(
     approveSlice,
