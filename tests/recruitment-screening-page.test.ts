@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 
 import {
@@ -666,8 +666,11 @@ export async function runRecruitmentScreeningPageTests() {
       `screening-filter must not import ${forbidden} — it is the half that has to stay testable`,
     );
   }
+  // Pinned on screening-workspace.ts, the loader the page actually calls. It named screening-queue.ts
+  // until 2026-09-05, which had had no callers since the workstation shipped — so "the loader uses
+  // the shared rule" was being proved about a file nothing ran.
   assert.match(
-    read("src/lib/recruitment/screening-queue.ts"),
+    read("src/lib/recruitment/screening-workspace.ts"),
     /from "@\/lib\/recruitment\/screening-filter"/,
     "the loader must USE that rule rather than keeping a second copy of it",
   );
@@ -794,32 +797,41 @@ export async function runRecruitmentScreeningPageTests() {
   assert.equal(isAfter("2026-09-01T10:20:57.147", "2026-08-29T22:42:45.734+00:00"), true, "the compare must be by instant, not by string order");
   assert.equal(isAfter("not a date", "2026-08-29T22:42:45.734+00:00"), false, "an unreadable stamp never wins");
 
+  // ── THE OVERLAY LIVES IN listCandidates, FOR EVERY SCREEN ─────────────────
+  //
+  // It was in the screening loader alone, so the candidate pool — which reads the same
+  // listCandidates — answered "was this sent, and to whom" from the old column while this page
+  // answered from the trail. One pool, two truths, and nothing on either screen to say which was
+  // right. Moved 2026-09-05 to the one place both go through.
   const workspace = read("src/lib/recruitment/screening-workspace.ts");
-  // BEFORE the narrowing, not inside `rowFor`. `matchesScreeningNarrowing` reads
-  // `candidate.managerNotified` for the `?sent=1` / `?unsent=1` filters, so an overlay applied only
-  // to the rendered row would leave the filters answering from the old column while the list beside
-  // them answered from the trail — one screen, two truths.
-  // Anchored on the real CALL, not the bare name: the comment above the overlay explains itself by
-  // naming `matchesScreeningNarrowing`, and an anchor that matched prose would compare the overlay
-  // against its own documentation instead of against the filter.
-  const overlayAt = workspace.indexOf("latestSends.get(candidate.id)");
-  const narrowAt = workspace.indexOf("matchesScreeningNarrowing(candidate, narrowing");
-  // BOTH anchors must exist before the order between them means anything. A bare `a < b` on two
-  // indexOf results is green when the overlay anchor is simply GONE, because -1 is less than
-  // everything — a pin that passes hardest at the moment the thing it guards is deleted.
-  assert.ok(overlayAt >= 0, "the send-trail overlay must still be in the loader");
-  assert.ok(narrowAt >= 0, "the narrowing call must still be in the loader");
+  const candidatesLoader = read("src/lib/recruitment/candidates.ts");
+  const overlayAt = candidatesLoader.indexOf("latestSends.get(candidate.id)");
+  assert.ok(overlayAt >= 0, "listCandidates must overlay the send trail for every caller");
+  // And exactly ONE copy of it. A second overlay in the page loader is how the two screens drifted
+  // apart in the first place.
   assert.ok(
-    overlayAt < narrowAt,
-    "the send trail must be overlaid before the filters read managerNotified",
+    !workspace.includes("latestSends.get(candidate.id)"),
+    "the screening loader must not keep a second copy of the overlay — listCandidates owns it",
   );
-  // Only WHITESPACE may precede it. The first cut of this pin was a bare match, so commenting the
-  // line out left it green — it was pinning the words, not the statement. That is the same mistake
-  // section 7's `transform: scale` pin already records, in a different disguise.
+
+  // THE SEAT MOVES ONLY WHEN THE NEWER SEND HAS ONE, and the guard is the whole assertion.
+  //
+  // This pinned the UNGUARDED `candidate.sentFor = stamp.sentFor`, on the argument that carrying an
+  // old position onto a newer send files it under a folder nobody chose. True when the new send
+  // names a seat; the reverse when it names none — and 24 of the 72 sends in production carry no
+  // position, so for those the assignment did not move the seat, it ERASED one, taking the row's
+  // "sent for" label and its vacancy attribution with it.
+  //
+  // `hiring-manager-notify.ts` is the authority: `position = input.position ? {…} : {}`, so a
+  // position-less send omits the sent_for_* columns and the previous ones STAND. Without this guard
+  // the loader contradicts the row it is reading.
+  //
+  // Only WHITESPACE may precede it. An earlier cut of this pin was a bare match, so commenting the
+  // line out left it green — it was pinning the words, not the statement.
   assert.match(
-    workspace,
-    /\n[ \t]*candidate\.sentFor = stamp\.sentFor;/,
-    "the seat must move with the send — carrying the old position onto a newer send files it under a folder nobody chose",
+    candidatesLoader,
+    /\n[ \t]*if \(stamp\.sentFor\) candidate\.sentFor = stamp\.sentFor;/,
+    "a newer send with NO position must not erase the seat an earlier one recorded",
   );
 
   // ── 9 · The pool read leaves the repeating CV blocks behind ────────────────
@@ -940,4 +952,75 @@ export async function runRecruitmentScreeningPageTests() {
     /index \+= \d+/,
     "a hand-rolled batch size is a second copy of a number that already has an owner in db-batch.ts",
   );
+
+  // ── 13 · A second press must not notify the manager twice ─────────────────
+  //
+  // The only guard was `busy`, which goes false the moment the last request returns, and nothing
+  // cleared the picker — so the panel came back enabled with the same managers still selected. A
+  // second click was a second REAL notification: candidateAlertIdempotencyKey is built from the send
+  // timestamp, so it does not dedupe, and a manager was told twice about one CV.
+  //
+  // Guarded per (candidate, manager) rather than by clearing the picker, because the picker keeping
+  // its selection across candidates IS the batch workflow — screening a pile for one seat. Clearing
+  // it would have fixed the double press by breaking that.
+  const workstation = read("src/components/recruitment/workstation/screening-workstation.tsx");
+  const guardAt = workstation.indexOf("sentPairs.current.has(");
+  const recordAt = workstation.indexOf("sentPairs.current.add(");
+  const confirmAt = workstation.indexOf("if (!res.ok) throw new Error(data.message");
+  assert.ok(guardAt >= 0, "the send must skip managers this CV already reached in this session");
+  assert.ok(recordAt >= 0, "a confirmed send must be recorded so the next press can see it");
+  assert.ok(confirmAt >= 0, "the send must still check res.ok before believing it succeeded");
+  // RECORDED ONLY AFTER THE RESPONSE IS BELIEVED. Marking the pair before the ok-check would turn
+  // one network blip into a CV that can never be sent to that manager again without a reload.
+  assert.ok(
+    confirmAt < recordAt,
+    "the pair must be recorded AFTER the response is confirmed, so a failed send stays retryable",
+  );
+  // The guard runs before any request goes out, not inside the loop.
+  assert.ok(guardAt < confirmAt, "the already-sent check must run before the first request");
+
+  // ── 14 · The dead loader is gone, and its pins moved to the live one ──────
+  //
+  // screening-queue.ts had no callers from the day the workstation shipped (2026-09-04), but two
+  // invariants were still pinned ON it — including "the loader must judge seen-ness from the
+  // caller's own view map", which is a PRIVACY property. screening-workspace.ts carried the
+  // identical line and nothing tested it, so the guarantee was being proved about a file that never
+  // ran. Deleted 2026-09-05; both pins now name the loader the page actually calls.
+  assert.ok(
+    !existsSync(path.join(process.cwd(), "src/lib/recruitment/screening-queue.ts")),
+    "screening-queue.ts is the dead loader — do not bring it back; screening-workspace.ts is the live one",
+  );
+
+  // ── 15 · A selection that has dropped out of the list is not a selection ───
+  //
+  // `selected` searched `rows` — the whole server-filtered pool — so a candidate the CLIENT
+  // narrowing had hidden stayed "selected": the list rendered its empty state while the pane beside
+  // it showed a person, with a live Shortlist / Reject / Send header for somebody not in the pile
+  // being looked at. `queue` defaults to "new" and the correcting effect deliberately bails on an
+  // empty list, so "Interviews today" — 0 in production, and structurally 0 while no interview
+  // carries a scheduled_at — reproduced it in one click.
+  //
+  // Only the DERIVED value changed. `selectedId` is still remembered, so switching to an empty pile
+  // blanks the pane and switching back restores the same CV.
+  assert.match(
+    workstation,
+    /const selected = useMemo\(\s*\(\) => visible\.find\(\(row\) => row\.id === selectedId\)/,
+    "the selection must come from the VISIBLE list, not from every row the server sent",
+  );
+  // And the two writes must go through it. Reading `selectedId` directly is what let a decision land
+  // on a candidate the list in front of the reader was not showing.
+  for (const [handler, marker] of [
+    ["decide", "      // `selected`, not `selectedId`: a decision must never land on a candidate the list in front of"],
+    ["send", "    // Same rule as `decide`: never send a CV the visible list is not showing."],
+  ] as const) {
+    const at = workstation.indexOf(marker);
+    assert.ok(at >= 0, `${handler} must resolve its target from the visible selection`);
+    // The shadowing const is what makes it safe: every line inside the handler then refers to the
+    // visible selection, so a missed rename cannot silently reach the outer remembered id.
+    assert.match(
+      workstation.slice(at, at + 400),
+      /const selectedId = selected\?\.id;/,
+      `${handler} must take its id from \`selected\`, so it cannot act on a hidden candidate`,
+    );
+  }
 }

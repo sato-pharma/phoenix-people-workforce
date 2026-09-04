@@ -193,12 +193,16 @@ export async function runRecruitmentCandidateSeenTests() {
     false,
     "?seen=1 must drop a CV this viewer has never opened",
   );
-  const queueSource = read("src/lib/recruitment/screening-queue.ts");
+  // THE LIVE LOADER. This pin used to read screening-queue.ts, which nothing had called since the
+  // page moved to the workstation on 2026-09-04 — so the privacy property below was guaranteed on a
+  // file that never ran, while screening-workspace.ts carried the identical line untested. The dead
+  // loader was deleted 2026-09-05 and the pin moved to the code that actually serves the page.
+  const queueSource = read("src/lib/recruitment/screening-workspace.ts");
   // The seen-ness handed to that rule must still come from the map loaded for the CALLER.
   assert.match(
     queueSource,
     /seenByViewer: Boolean\(views\[candidate\.id\]\)/,
-    "the queue must judge seen-ness from the caller's own view map",
+    "the loader must judge seen-ness from the caller's own view map",
   );
   // The view map is loaded for the CALLER. A viewer id in a query string would let one person open
   // a link that reports somebody else's reading as their own.
