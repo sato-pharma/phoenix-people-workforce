@@ -239,28 +239,34 @@ export function PhoenixIdentityStrip({
           right margin. "Small" was never the goal — INSIDE was; small was how he described the fix
           for a mark that was bleeding off the edge.
 
-          BOTH ARE CAPPED BY THE CONTENT BAND, not by taste: 80% of 136px is 109px inside a 112px
-          band, and 76% of 120px is 91px inside 96px. Going higher pushes the mark into the wave.
+          THE TWO BREAKPOINTS NOW DIVERGE COMPLETELY, and that is the owner's third and latest
+          instruction on this mark: "when on mobile view, make the Phoenix logo appear small at the
+          upper right corner. And in desktop view, it needs to be a bigger, a little bit."
 
-          `mix-blend-mode: multiply` went with it. Multiplying into the cream is what "embedded"
-          described, and a small mark that has to survive at this size needs its own edges.
+          MOBILE IS A CORNER MARK: 30% of 120px is 36px, pinned 9px down and 10px in. It is no
+          longer centred on anything, so `translateY` is gone — a corner mark is positioned from
+          the corner, and adding a transform back is how it drifts. Because it has left the text's
+          path entirely it can afford to be seen: opacity went 0.2 -> 0.32. The 0.2 existed only
+          because the mark used to sit under the end of a long title, and that is no longer true.
 
-          THEY SIT IN THE BAND ABOVE THE WAVE, not in the bar's middle: `calc(50% - 12px)` is the
-          centre of the content box, since the wave occupies the bottom 24px at BOTH breakpoints.
-          Centring on the bar itself would push the mark down into the dark band.
+          DESKTOP IS CENTRED ON THE BAR, NOT ON THE CONTENT BAND, and that is what buys the extra
+          size. The band above the wave is 112px, so the old 80% (109px) had already reached its
+          ceiling — the top edge sat 1.6px from the bar. Centring on the full 136px instead lets
+          88% (120px) sit 8px clear of the top while its base tucks behind the wave, which is
+          opaque `#231e18` at z-[3] against this mark's z-0. The wave is NOT a flat 24px bar: its
+          path runs from y=38 on the left to y=4 at the right edge of a 118-unit viewBox drawn
+          30px tall, so on the right — where this mark lives — it stands ~29px and covers the base
+          cleanly. Read the `<svg>` at the end of this file before changing either number.
 
-          TWO ELEMENTS, ONE PER BREAKPOINT, because the owner asked for a different placement on a
-          phone — "when mobile, don't center him. Put him on the right" — and an inline style
-          cannot carry a media query. That request has a cause worth recording: the OLD watermark
-          is 1350x900, so at 165% of a 120px bar it spanned 297px of a 351px phone screen and read
-          as centred no matter what `right` said. A square mark is 91px wide at this height, which
-          is what makes "on the right" achievable at all on a 351px screen.
+          TWO ELEMENTS, ONE PER BREAKPOINT, because an inline style cannot carry a media query.
+          That split began with an earlier instruction — "when mobile, don't center him. Put him on
+          the right" — which has a cause worth recording: the OLD watermark is 1350x900, so at 165%
+          of a 120px bar it spanned 297px of a 351px phone screen and read as centred no matter
+          what `right` said. Only a square mark makes a corner placement possible at 351px.
 
-          IT DOES SIT UNDER THE END OF A LONG TITLE ON A PHONE, and that is accepted, not missed.
-          At 351px with a 124px portrait and "HR OPERATIONS COORDINATOR" over two lines there is no
-          arrangement where a mark this size clears the text. It is BEHIND (z-0 against the content
-          z-10) and its opacity is 0.2 on mobile against 0.3 on desktop for exactly this reason —
-          the words stay crisp over it. Lower the opacity before shrinking the mark. */}
+          IT SHIPPED ONCE CROPPED BY THE TRAILING EDGE AND HE TURNED THAT DOWN. Whatever the sizes
+          become, the mark stays whole against the right edge — the only thing allowed to cover it
+          is the wave, from below. */}
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         alt=""
@@ -268,11 +274,10 @@ export function PhoenixIdentityStrip({
         className="pointer-events-none absolute z-0 sm:hidden"
         src="/brand/identity-strip-emblem.png"
         style={{
-          height: "76%",
-          opacity: 0.2,
-          right: "8%",
-          top: "calc(50% - 12px)",
-          transform: "translateY(-50%)",
+          height: "30%",
+          opacity: 0.32,
+          right: "10px",
+          top: "9px",
           width: "auto",
         }}
       />
@@ -283,10 +288,10 @@ export function PhoenixIdentityStrip({
         className="pointer-events-none absolute z-0 hidden sm:block"
         src="/brand/identity-strip-emblem.png"
         style={{
-          height: "80%",
+          height: "88%",
           opacity: 0.3,
           right: "5%",
-          top: "calc(50% - 12px)",
+          top: "50%",
           transform: "translateY(-50%)",
           width: "auto",
         }}
