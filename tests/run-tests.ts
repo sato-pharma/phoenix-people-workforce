@@ -209,6 +209,7 @@ import { runCandidateFolderSuggestionTests } from "./candidate-folder-suggestion
 import { runDriveCvFolderTests } from "./drive-cv-folders.test.ts";
 import { runCvLifecycleFeedTests } from "./cv-lifecycle-feed.test.ts";
 import { runCvLifecycleShareLinksScreenTests } from "./cv-lifecycle-share-links-screen.test.ts";
+import { runCvLifecycleSheetTokenRotationTests } from "./cv-lifecycle-sheet-token-rotation.test.ts";
 import { runHiringManagerTeamScopeTests } from "./hiring-manager-team-scope.test.ts";
 import { runManagerFolderShelfTests } from "./manager-folder-shelf.test.ts";
 import { runBackgroundReviewQueueTests } from "./background-review-queue.test.ts";
@@ -1698,6 +1699,10 @@ await runTest(
 await runTest(
   "CV sheet links screen (the token is shown once and is never in the list, the page gate IS the API gate, and the feed cannot expire unannounced)",
   runCvLifecycleShareLinksScreenTests,
+);
+await runTest(
+  "CV sheet token rotation (doPost fails closed, the origin can never come from the payload, and the old token dies only after the sheet proves it took the new one)",
+  runCvLifecycleSheetTokenRotationTests,
 );
 await runTest(
   "hiring-manager team scope (one National Sales Manager can NEVER read the other's candidates, and the picker is exactly the gate)",

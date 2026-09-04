@@ -70,6 +70,30 @@
  * UPGRADING FROM AN EARLIER VERSION: paste over the whole file and run `refreshCvLifecycle`.
  * LAYOUT_VERSION below has changed, so every tab rebuilds itself once and then settles.
  *
+ * SETUP, OPTIONAL — LET PHOENIX ROTATE THE TOKEN FOR YOU
+ *
+ * Without this the token in FEED_URL is a long-lived secret: whoever ever sees it can read every
+ * candidate's name and phone number until somebody notices and revokes it by hand. With it, Phoenix
+ * replaces that token every week and the old one is dead within the hour, so a leaked token is
+ * self-healing rather than permanent.
+ *
+ *   5. Deploy ▸ New deployment ▸ Web app. Execute as ME, access ANYONE. Copy the /exec URL.
+ *      "Anyone" is required because Phoenix calls it unauthenticated — which is exactly why the
+ *      URL alone must not be enough, and why step 6 is not optional.
+ *   6. Project Settings ▸ Script Properties ▸ add:
+ *          WEBHOOK_SECRET = <a long random string>
+ *      There is deliberately NO fallback: with this unset, doPost refuses every caller. A push
+ *      endpoint that accepts anyone on the internet because a property is missing is not a
+ *      degraded feature, it is an open door.
+ *   7. In Phoenix's environment set both:
+ *          CV_LIFECYCLE_SHEET_REFRESH_WEBHOOK_URL    = the /exec URL from step 5
+ *          CV_LIFECYCLE_SHEET_REFRESH_WEBHOOK_SECRET = the same string as step 6
+ *
+ * Rotation does NOT extend the expiry date — deliberately, and matching the other two sheets. Each
+ * token lives a week; the LINK still dies on its original date, and Phoenix warns you in-app and on
+ * Telegram for the 30 days before that. A link that renewed itself forever would be an unowned copy
+ * of the candidate pool, which is the one thing the mandatory expiry exists to prevent.
+ *
  * KEEP THE SHEET PRIVATE. The token cannot be typed by a script that has to log in, so the sheet's
  * own Google sharing is the real access control. Anyone you share this sheet with can read every
  * candidate's name and phone number.
@@ -164,6 +188,93 @@ function installTrigger() {
 }
 
 /** A menu, so the sheet can be driven without opening the script editor. */
+/**
+ * Push endpoint — how Phoenix rotates this sheet's feed token without anybody opening the editor.
+ *
+ * WHY THIS EXISTS. The token in FEED_URL reads every candidate's name and phone number and has no
+ * password. Before this handler it was a long-lived secret: the only way to replace it was for the
+ * owner to mint a new link, open Apps Script and paste it, so in practice it never changed. Now
+ * Phoenix mints a replacement weekly and hands it over here, and the old one is revoked within the
+ * hour — a leaked token stops being permanent and becomes a week-long problem that heals itself.
+ *
+ * WHY A WEB APP AND NOT THE SHEETS API. The `iam.disableServiceAccountKeyCreation` org policy
+ * blocks creating a service-account key, correctly — long-lived JSON keys leak. This script already
+ * runs as the sheet's owner, so a Web App deployment needs no key, no GCP project and no exemption.
+ *
+ * SECURITY, AND THE ONE DIFFERENCE FROM THE DIRECT-ORDERS SCRIPT.
+ * The deployment has to be reachable by "Anyone", so the URL cannot be the credential. WEBHOOK_SECRET
+ * is what authorises, and there is deliberately NO fallback to the feed token here. The direct-orders
+ * script falls back, and its own comment explains why that is safe THERE: anyone holding its feed
+ * token can already read its feed, so authorising a refresh with it grants nothing new. That
+ * reasoning does not survive the move to this sheet. Falling back would make the feed token — which
+ * reads candidate PII — double as the key that can REPLACE the feed token, so a single leaked token
+ * would let its holder keep the sheet pointed wherever they liked. Unset means refuse, always.
+ */
+function doPost(e) {
+  var expected = PropertiesService.getScriptProperties().getProperty('WEBHOOK_SECRET');
+  if (!expected) {
+    // Fail CLOSED. The opposite — accepting everything until someone remembers to set a property —
+    // is how a fresh deployment quietly becomes an open endpoint.
+    return textOut_('not configured');
+  }
+
+  var payload = {};
+  try {
+    payload = JSON.parse(e && e.postData ? e.postData.contents : '{}') || {};
+  } catch (err) {
+    payload = {};
+  }
+  // Deliberately vague: a caller learns whether it is authorised, never why not.
+  if (String(payload.secret || '') !== expected) return textOut_('denied');
+
+  var rotate = String(payload.rotateToken || '').trim();
+  if (rotate) {
+    // Anything that is not a plausible token is refused rather than stored. Writing rubbish into
+    // FEED_URL would break every refresh from here on, and the sheet would then report it as a
+    // Phoenix failure — a confusing lie about whose fault it is.
+    if (!/^[A-Za-z0-9_-]{20,}$/.test(rotate)) return textOut_('bad token');
+    if (!storeRotatedToken_(rotate)) return textOut_('bad url');
+    // Use it IMMEDIATELY. This is not a courtesy refresh: Phoenix confirms the rotation by watching
+    // its own access_count for the new token, and revokes the old one only once that read arrives.
+    // A rotation that stored the token but never spent it would look like a failure and be rolled
+    // back — leaving the sheet on a token Phoenix believes it abandoned.
+    refreshCvLifecycle();
+    return textOut_('rotated');
+  }
+
+  refreshCvLifecycle();
+  return textOut_('ok');
+}
+
+/**
+ * Swap the token inside the stored FEED_URL, keeping everything else exactly as it was.
+ *
+ * THE ORIGIN NEVER COMES FROM THE PAYLOAD, and that is the point of rewriting rather than accepting
+ * a whole URL. If this took `feedUrl` from the caller, one leaked WEBHOOK_SECRET would let someone
+ * repoint the sheet at a server they control — and the sheet would go on filling, with plausible
+ * rows, showing data nobody at Phoenix wrote. Rewriting one path segment means the worst an
+ * authorised caller can do is change which Phoenix token is used.
+ *
+ * Idempotent on purpose: a retried push carrying the token already stored is a success, not a
+ * failure. Phoenix retries, and the second attempt must not report `bad url`.
+ */
+function storeRotatedToken_(newToken) {
+  var props = PropertiesService.getScriptProperties();
+  var current = props.getProperty('FEED_URL');
+  if (!current) return false;
+
+  var pattern = /(\/api\/share\/cv-lifecycle\/)[^\/?#]+(\/feed)/;
+  if (!pattern.test(current)) return false;
+
+  props.setProperty('FEED_URL', current.replace(pattern, '$1' + newToken + '$2'));
+  return true;
+}
+
+/** Apps Script's plain-text reply, in one place so every branch above answers the same shape. */
+function textOut_(message) {
+  return ContentService.createTextOutput(message).setMimeType(ContentService.MimeType.TEXT);
+}
+
 function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu('Phoenix')
