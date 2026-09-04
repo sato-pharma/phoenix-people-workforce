@@ -175,13 +175,20 @@ export type KpiRepRow = {
   /** False when the rep logged nothing at all in the period — distinct from a real zero rate. */
   hasCallRate: boolean;
   /**
-   * Verified AM+PM calls as a percentage of what the two targets asked for over the same days.
+   * AM against ITS target, PM against ITS target — two numbers, never one.
    *
-   * NOT a fourth KPI. `attainmentPct` is already a field on CallRateSlice in call-rate.ts; this is
-   * the same arithmetic over both slices at once, so the board can band and sort the call rate the
-   * way it bands coverage and frequency. Null when the window has no working days to divide by.
+   * THE OWNER'S RULE, 2026-09-04: "this two and this ten. Don't never get average." Until that day
+   * the board carried a single `callRateAttainmentPct` = (AM + PM) / (days x 12), and its own
+   * comment defended the blend. He overruled it, and he is right about what it hides: two standards
+   * measured as one let a surplus on either side pay for a shortfall on the other, and the board's
+   * job is to show the shortfall. A rep who does his 2 AM and only 3 of 10 PM read 42% — a passable
+   * looking number for an afternoon that barely happened. He now reads 100% AM and 30% PM.
+   *
+   * Each is verified calls over what THAT target asked for across the same working days. Null when
+   * the window has no working days to divide by. Nothing anywhere may add or average the pair.
    */
-  callRateAttainmentPct: number | null;
+  amAttainmentPct: number | null;
+  pmAttainmentPct: number | null;
 
   // ── Coverage and frequency (the scored window) ────────────────────────────
   /** Every doctor the plan names inside the window, due or not — and THE DENOMINATOR OF BOTH plan
@@ -283,8 +290,10 @@ export type KpisBoard = {
     underDoctors: number;
     overDoctors: number;
     frequencyPct: number;
-    /** Team verified calls against the team's own AM+PM target. Null with no working days. */
-    callRateAttainmentPct: number | null;
+    /** Team AM calls against the AM target, and PM against the PM target. Never summed — see the
+     * per-rep fields above for why the owner banned the blended figure. */
+    amAttainmentPct: number | null;
+    pmAttainmentPct: number | null;
   };
   amTarget: number;
   pmTarget: number;
@@ -296,16 +305,20 @@ export type KpiPodiumEntry = { repName: string; value: number; caption: string }
 /**
  * The three leaderboards, one per measure.
  *
- * THREE, not one. A single "best rep" list would need a blended score, and kpis-board's whole
- * premise is that it adds no fourth measure — the three disagree on purpose (production has run
+ * FOUR, not one. A single "best rep" list would need a blended score, and kpis-board's whole
+ * premise is that it adds no fifth measure — the measures disagree on purpose (production has run
  * 68% coverage against 39% frequency in the same month), and a blend would hide exactly the gap
- * the board exists to show. So the best coverage, the best frequency and the best call rate are
- * three separate answers, and often three different people.
+ * the board exists to show. So these are separate answers, and often different people.
+ *
+ * The call rate is TWO boards, not one, since 2026-09-04: the owner ranks AM against 2 and PM
+ * against 10 and forbids a combined figure, so the best morning and the best afternoon are asked
+ * and answered as the different questions they are.
  */
 export type KpiPodium = {
   coverage: KpiPodiumEntry[];
   frequency: KpiPodiumEntry[];
-  callRate: KpiPodiumEntry[];
+  amCallRate: KpiPodiumEntry[];
+  pmCallRate: KpiPodiumEntry[];
 };
 
 /**
@@ -339,10 +352,15 @@ export function buildKpiPodium(rows: readonly KpiRepRow[]): KpiPodium {
       (row) => row.frequencyPct,
       (row) => `${row.onPlanDoctors} doctors exactly on plan`,
     ),
-    callRate: top(
-      (row) => row.hasCallRate && row.callRateAttainmentPct != null,
-      (row) => row.callRateAttainmentPct ?? 0,
-      (row) => `${row.amVerified + row.pmVerified} verified calls in ${row.workingDays} days`,
+    amCallRate: top(
+      (row) => row.hasCallRate && row.amAttainmentPct != null,
+      (row) => row.amAttainmentPct ?? 0,
+      (row) => `${row.amVerified} verified AM calls in ${row.workingDays} days`,
+    ),
+    pmCallRate: top(
+      (row) => row.hasCallRate && row.pmAttainmentPct != null,
+      (row) => row.pmAttainmentPct ?? 0,
+      (row) => `${row.pmVerified} verified PM calls in ${row.workingDays} days`,
     ),
   };
 }
@@ -436,7 +454,8 @@ export function joinKpiRows(input: {
     campaignShare: 0,
     campaignOnlyDays: 0,
     hasCallRate: false,
-    callRateAttainmentPct: null,
+    amAttainmentPct: null,
+    pmAttainmentPct: null,
     plannedDoctors: 0,
     visitedDoctors: 0,
     missedDoctors: 0,
@@ -529,7 +548,8 @@ export function joinKpiRows(input: {
       // the directory when it has something, but never blank out a name the CRM did supply.
       if (identity.displayName?.trim()) row.repName = identity.displayName.trim();
     }
-    row.callRateAttainmentPct = callRateAttainment(row, amTarget, pmTarget);
+    row.amAttainmentPct = attainmentPct(row, row.amVerified, amTarget);
+    row.pmAttainmentPct = attainmentPct(row, row.pmVerified, pmTarget);
   }
 
   // Scope is applied AFTER the join, never before: a rep whose hr id appears on only one of the two
@@ -551,17 +571,19 @@ export type KpiDirectoryEntry = {
 };
 
 /**
- * Verified calls against what the AM and PM targets asked for over the same days.
+ * ONE slice's verified calls against ONE target, over the working days in the window.
  *
- * Both slices are put over ONE denominator rather than averaging two percentages. Averaging would
- * weight the AM target (2 calls) equally with the PM target (10), so a rep who hit AM and did
- * nothing all afternoon would read 50% — half of a day's work — when he in fact delivered 2 of the
- * 12 calls the targets asked for, which is 17%.
+ * Called twice and never summed. The earlier version of this function put AM and PM over a single
+ * combined denominator; the owner banned that on 2026-09-04 ("this two and this ten. Don't never
+ * get average"). The argument the old comment made for blending — that averaging two percentages
+ * weights a 2-call target equally with a 10-call one — was an argument against ONE particular way
+ * of combining them, and it was answered by combining them a different way rather than by not
+ * combining them. Two standards, two scores, is the answer he wanted.
  */
-function callRateAttainment(row: KpiRepRow, amTarget: number, pmTarget: number): number | null {
-  const expected = row.workingDays * (amTarget + pmTarget);
+function attainmentPct(row: KpiRepRow, verified: number, target: number): number | null {
+  const expected = row.workingDays * target;
   if (!row.hasCallRate || expected <= 0) return null;
-  return Math.round(((row.amVerified + row.pmVerified) / expected) * 100);
+  return Math.round((verified / expected) * 100);
 }
 
 /** Builds the whole board for one viewer. */
@@ -615,7 +637,8 @@ export async function getKpisBoard(input: {
       underDoctors: 0,
       overDoctors: 0,
       frequencyPct: 0,
-      callRateAttainmentPct: null,
+      amAttainmentPct: null,
+      pmAttainmentPct: null,
     },
     amTarget: AM_CALL_RATE_TARGET,
     pmTarget: PM_CALL_RATE_TARGET,
@@ -762,14 +785,11 @@ export async function getKpisBoard(input: {
       overDoctors: totals.overDoctors,
       // ONE denominator under both plan KPIs — the window's whole list. See the header.
       frequencyPct: pct(totals.onPlanDoctors, totals.plannedDoctors),
-      // Same single-denominator rule as the per-rep figure — see `callRateAttainment`.
-      callRateAttainmentPct:
-        denominator > 0
-          ? Math.round(
-              ((totals.amVerified + totals.pmVerified) / (denominator * (AM_CALL_RATE_TARGET + PM_CALL_RATE_TARGET))) *
-                100,
-            )
-          : null,
+      // Two scores, never their blend — the owner's rule. See `attainmentPct`.
+      amAttainmentPct:
+        denominator > 0 ? Math.round((totals.amVerified / (denominator * AM_CALL_RATE_TARGET)) * 100) : null,
+      pmAttainmentPct:
+        denominator > 0 ? Math.round((totals.pmVerified / (denominator * PM_CALL_RATE_TARGET)) * 100) : null,
     },
   };
 }

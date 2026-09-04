@@ -29,10 +29,11 @@ import {
 import { KPI_TABS, KPI_TAB_HINT, KPI_TAB_LABEL, type KpiTab } from "@/lib/crm/kpis-tabs";
 import {
   buildKpisQuery,
-  callRateBandOf,
+  amBandOf,
   coverageBandOf,
   EMPTY_KPI_FILTERS,
   frequencyBandOf,
+  pmBandOf,
   hasActiveKpiFilters,
   kpiBandOf,
   kpiFlagsOf,
@@ -102,9 +103,20 @@ function planPct(row: KpiRepRow, value: number): string {
   return row.hasMeasurablePlan ? `${value}%` : "No plan";
 }
 
-/** Attainment, or a marker when the rep logged nothing at all in the window. */
-function ratePct(row: KpiRepRow): string {
-  return row.hasCallRate && row.callRateAttainmentPct != null ? `${row.callRateAttainmentPct}%` : "No calls";
+/**
+ * AM attainment and PM attainment, each against its own target — or a marker when the rep logged
+ * nothing at all in the window.
+ *
+ * Two functions rather than one taking a slice, so that no call site can accidentally be handed a
+ * blended figure. The owner's rule of 2026-09-04 is that these two numbers never meet: "this two
+ * and this ten. Don't never get average."
+ */
+function amPct(row: KpiRepRow): string {
+  return row.hasCallRate && row.amAttainmentPct != null ? `${row.amAttainmentPct}%` : "No calls";
+}
+
+function pmPct(row: KpiRepRow): string {
+  return row.hasCallRate && row.pmAttainmentPct != null ? `${row.pmAttainmentPct}%` : "No calls";
 }
 
 type ViewContext = {
@@ -191,9 +203,12 @@ function teamVerdict(board: KpisBoard): { headline: string; tone: KpiBand; stand
 
   const coverage = kpiBandOf(totals.coveragePct);
   const frequency = kpiBandOf(totals.frequencyPct);
-  const call = kpiBandOf(totals.callRateAttainmentPct);
+  // Both call-rate bands, and BOTH must be elite. A morning that hit 2 does not buy an afternoon
+  // that missed 10 — which is precisely the sentence the blended score used to write for us.
+  const am = kpiBandOf(totals.amAttainmentPct);
+  const pm = kpiBandOf(totals.pmAttainmentPct);
 
-  if (coverage === "elite" && frequency === "elite" && call === "elite") {
+  if (coverage === "elite" && frequency === "elite" && am === "elite" && pm === "elite") {
     return { headline: "Every measure is above 90%. There is nothing on this board to fix today.", tone: "elite" };
   }
   if (totals.coveragePct >= 75 && frequency === "behind") {
@@ -277,7 +292,10 @@ function KpiHero({ board, showTitle }: { board: KpisBoard; showTitle: boolean })
 function tabHeadline(board: KpisBoard, tab: KpiTab): string {
   const { totals } = board;
   if (tab === "summary") return `${totals.reps} rep${totals.reps === 1 ? "" : "s"}`;
-  if (tab === "call-rate") return `${rate(totals.amRate)} / ${rate(totals.pmRate)}`;
+  // NOT "1.63 / 6.57" — a slash between two rates reads as a fraction, and the owner read it as
+  // one on 2026-09-04 ("you are putting the call rate out of six. No never."). They are two
+  // separate rates against two separate targets, so they are labelled, never divided.
+  if (tab === "call-rate") return `${rate(totals.amRate)} AM · ${rate(totals.pmRate)} PM`;
   if (tab === "coverage") return `${totals.coveragePct}%`;
   return `${totals.frequencyPct}%`;
 }
@@ -381,8 +399,14 @@ function ActiveFilterChips({ context }: { context: ViewContext }) {
   facetChips("managers", "Manager");
   facetChips("titles", "Title");
 
-  for (const key of ["coverage", "frequency", "callRate"] as const) {
-    const prefix = key === "callRate" ? "Call rate" : key === "coverage" ? "Coverage" : "Frequency";
+  const BAND_CHIP_PREFIX = {
+    coverage: "Coverage",
+    frequency: "Frequency",
+    amRate: "AM rate",
+    pmRate: "PM rate",
+  } as const;
+  for (const key of ["coverage", "frequency", "amRate", "pmRate"] as const) {
+    const prefix = BAND_CHIP_PREFIX[key];
     for (const band of filters[key]) {
       chips.push({
         key: `${key}:${band}`,
@@ -458,12 +482,14 @@ function MeasureCell({
  * The rep cell — name, where they sit, and any situation flags.
  *
  * Flags are MERGED in here rather than given a column of their own, which is the golden rule's own
- * answer to a width collision: merge, never shrink. Two flags are left out because every table
- * already prints their underlying number in its own column — `below-target` beside the attainment
- * figure and `over-visiting` beside the Above count would be the same fact said twice.
+ * answer to a width collision: merge, never shrink. Three flags are left out because every table
+ * already prints their underlying number in its own column — the two below-target flags beside the
+ * AM and PM figures, and `over-visiting` beside the Above count, would be the same fact said twice.
  */
 function RepCell({ rank, row }: { rank?: number; row: KpiRepRow }) {
-  const flags = kpiFlagsOf(row).filter((flag) => flag !== "below-target" && flag !== "over-visiting");
+  const flags = kpiFlagsOf(row).filter(
+    (flag) => flag !== "below-am-target" && flag !== "below-pm-target" && flag !== "over-visiting",
+  );
   return (
     <td className={TD}>
       <KpiRepName
@@ -497,8 +523,12 @@ function frequencyFill(row: KpiRepRow): number | null {
   return row.hasMeasurablePlan ? row.frequencyPct : null;
 }
 
-function callRateFill(row: KpiRepRow): number | null {
-  return row.hasCallRate ? row.callRateAttainmentPct : null;
+function amFill(row: KpiRepRow): number | null {
+  return row.hasCallRate ? row.amAttainmentPct : null;
+}
+
+function pmFill(row: KpiRepRow): number | null {
+  return row.hasCallRate ? row.pmAttainmentPct : null;
 }
 
 function RepNameTh({ context }: { context: ViewContext }) {
@@ -520,11 +550,14 @@ function SummaryTable({ context, rows }: { context: ViewContext; rows: KpiRepRow
   const { filters } = context.board;
   return (
     <table className="hidden w-full table-fixed md:table">
+      {/* Five columns, because the call rate is two measures and merging them back into one is
+          the thing the owner banned. Fixed widths, no min-width floor — the fits-the-screen rule. */}
       <colgroup>
-        <col style={{ width: "34%" }} />
-        <col style={{ width: "22%" }} />
-        <col style={{ width: "22%" }} />
-        <col style={{ width: "22%" }} />
+        <col style={{ width: "30%" }} />
+        <col style={{ width: "17%" }} />
+        <col style={{ width: "17%" }} />
+        <col style={{ width: "18%" }} />
+        <col style={{ width: "18%" }} />
       </colgroup>
       <thead className="border-y border-slate-200 bg-slate-50">
         <tr>
@@ -544,11 +577,18 @@ function SummaryTable({ context, rows }: { context: ViewContext; rows: KpiRepRow
             sub="Exact only"
           />
           <KpiSortableTh
-            active={filters.sort === "callrate"}
+            active={filters.sort === "am"}
             direction={filters.direction}
-            href={sortHref(context, "callrate")}
-            label="Call rate"
-            sub="Against target"
+            href={sortHref(context, "am")}
+            label="AM"
+            sub={`Of ${context.board.amTarget}`}
+          />
+          <KpiSortableTh
+            active={filters.sort === "pm"}
+            direction={filters.direction}
+            href={sortHref(context, "pm")}
+            label="PM"
+            sub={`Of ${context.board.pmTarget}`}
           />
         </tr>
       </thead>
@@ -577,10 +617,16 @@ function SummaryTable({ context, rows }: { context: ViewContext; rows: KpiRepRow
               value={planPct(row, row.frequencyPct)}
             />
             <MeasureCell
-              band={callRateBandOf(row)}
-              caption={row.hasCallRate ? `${rate(row.amRate)} AM · ${rate(row.pmRate)} PM` : "No calls logged"}
-              fill={callRateFill(row)}
-              value={ratePct(row)}
+              band={amBandOf(row)}
+              caption={row.hasCallRate ? `${rate(row.amRate)} of ${context.board.amTarget} a day` : "No calls logged"}
+              fill={amFill(row)}
+              value={amPct(row)}
+            />
+            <MeasureCell
+              band={pmBandOf(row)}
+              caption={row.hasCallRate ? `${rate(row.pmRate)} of ${context.board.pmTarget} a day` : "No calls logged"}
+              fill={pmFill(row)}
+              value={pmPct(row)}
             />
           </tr>
         ))}
@@ -595,12 +641,14 @@ function CallRateTable({ context, rows }: { context: ViewContext; rows: KpiRepRo
   return (
     <table className="hidden w-full table-fixed md:table">
       <colgroup>
+      {/* The Attainment column is gone: it held (AM + PM) over one denominator, which is the
+          average the owner banned. Each side now carries its own score in its own column. */}
+      <colgroup>
         <col style={{ width: "26%" }} />
         <col style={{ width: "10%" }} />
-        <col style={{ width: "18%" }} />
-        <col style={{ width: "18%" }} />
-        <col style={{ width: "16%" }} />
-        <col style={{ width: "12%" }} />
+        <col style={{ width: "22%" }} />
+        <col style={{ width: "22%" }} />
+        <col style={{ width: "20%" }} />
       </colgroup>
       <thead className="border-y border-slate-200 bg-slate-50">
         <tr>
@@ -626,13 +674,6 @@ function CallRateTable({ context, rows }: { context: ViewContext; rows: KpiRepRo
             label="PM"
             sub={`Target ${board.pmTarget}`}
           />
-          <KpiSortableTh
-            active={filters.sort === "callrate"}
-            direction={filters.direction}
-            href={sortHref(context, "callrate")}
-            label="Attainment"
-            sub="AM + PM vs target"
-          />
           {/* Merged rather than given two columns — the golden rule resolves a width collision by
               merging, never by shrinking type. */}
           <KpiSortableTh
@@ -650,25 +691,17 @@ function CallRateTable({ context, rows }: { context: ViewContext; rows: KpiRepRo
             <RepCell rank={context.showRank ? index + 1 : undefined} row={row} />
             <td className={NUM}>{row.workingDays}</td>
             <td className={NUM}>
-              {rate(row.amRate)}
+              {rate(row.amRate)} <span className="text-phx-3xs font-bold text-slate-400">of {board.amTarget}</span>
               <span className="mt-0.5 block text-phx-3xs font-semibold leading-4 text-slate-500">
-                {row.amVerified} verified · {rate(row.amReportedRate)} reported
+                {amPct(row)} · {row.amVerified} of {row.workingDays * board.amTarget} asked for
               </span>
             </td>
             <td className={NUM}>
-              {rate(row.pmRate)}
+              {rate(row.pmRate)} <span className="text-phx-3xs font-bold text-slate-400">of {board.pmTarget}</span>
               <span className="mt-0.5 block text-phx-3xs font-semibold leading-4 text-slate-500">
-                {row.pmVerified} verified · {rate(row.pmReportedRate)} reported
+                {pmPct(row)} · {row.pmVerified} of {row.workingDays * board.pmTarget} asked for
               </span>
             </td>
-            <MeasureCell
-              band={callRateBandOf(row)}
-              caption={`${row.amVerified + row.pmVerified} of ${
-                row.workingDays * (board.amTarget + board.pmTarget)
-              } asked for`}
-              fill={callRateFill(row)}
-              value={ratePct(row)}
-            />
             <td className={NUM}>
               {Math.round(row.campaignShare * 100)}%
               <span className="mt-0.5 block text-phx-3xs font-semibold leading-4 text-slate-500">
@@ -844,7 +877,17 @@ function FrequencyTable({ context, rows }: { context: ViewContext; rows: KpiRepR
  * and a manager on a phone wants the whole picture of one rep anyway — which is also why the card
  * carries all three meters rather than only the current tab's.
  */
-function RepCard({ rank, row }: { rank?: number; row: KpiRepRow }) {
+function RepCard({
+  amTarget,
+  pmTarget,
+  rank,
+  row,
+}: {
+  amTarget: number;
+  pmTarget: number;
+  rank?: number;
+  row: KpiRepRow;
+}) {
   const measures: Array<{ band: KpiBand; caption: string; fill: number | null; label: string; value: string }> = [
     {
       band: coverageBandOf(row),
@@ -863,14 +906,23 @@ function RepCard({ rank, row }: { rank?: number; row: KpiRepRow }) {
       value: planPct(row, row.frequencyPct),
     },
     {
-      band: callRateBandOf(row),
-      caption: row.hasCallRate ? `${rate(row.amRate)} AM · ${rate(row.pmRate)} PM` : "No calls",
-      fill: callRateFill(row),
-      label: "Call rate",
-      value: ratePct(row),
+      band: amBandOf(row),
+      caption: row.hasCallRate ? `${rate(row.amRate)} of ${amTarget} a day` : "No calls",
+      fill: amFill(row),
+      label: "AM call rate",
+      value: amPct(row),
+    },
+    {
+      band: pmBandOf(row),
+      caption: row.hasCallRate ? `${rate(row.pmRate)} of ${pmTarget} a day` : "No calls",
+      fill: pmFill(row),
+      label: "PM call rate",
+      value: pmPct(row),
     },
   ];
-  const flags = kpiFlagsOf(row).filter((flag) => flag !== "below-target" && flag !== "over-visiting");
+  const flags = kpiFlagsOf(row).filter(
+    (flag) => flag !== "below-am-target" && flag !== "below-pm-target" && flag !== "over-visiting",
+  );
 
   return (
     <div className="px-4 py-3">
@@ -1041,7 +1093,8 @@ export function KpisBoardView({
             </div>
           ) : null}
 
-          <div className="grid gap-3 border-t border-slate-100 px-4 py-4 sm:grid-cols-2 sm:px-5 lg:grid-cols-4">
+          {/* Five tiles since 2026-09-04: the call rate is two of them. */}
+          <div className="grid gap-3 border-t border-slate-100 px-4 py-4 sm:grid-cols-2 sm:px-5 lg:grid-cols-5">
             <KpiTile
               caption={
                 // "2 working days" alone reads as a footnote; "2 of 22" is the fact that makes the
@@ -1054,11 +1107,18 @@ export function KpisBoardView({
               value={filtered ? `${totals.reps} of ${board.scopedReps}` : String(totals.reps)}
             />
             <KpiTile
-              band={kpiBandOf(totals.callRateAttainmentPct)}
-              caption={`Team average · targets ${board.amTarget} / ${board.pmTarget}`}
-              label="Call rate AM / PM"
-              progress={totals.callRateAttainmentPct}
-              value={`${rate(totals.amRate)} / ${rate(totals.pmRate)}`}
+              band={kpiBandOf(totals.amAttainmentPct)}
+              caption={`${totals.amVerified} verified · target ${board.amTarget} a day`}
+              label="AM call rate"
+              progress={totals.amAttainmentPct}
+              value={`${rate(totals.amRate)} of ${board.amTarget}`}
+            />
+            <KpiTile
+              band={kpiBandOf(totals.pmAttainmentPct)}
+              caption={`${totals.pmVerified} verified · target ${board.pmTarget} a day`}
+              label="PM call rate"
+              progress={totals.pmAttainmentPct}
+              value={`${rate(totals.pmRate)} of ${board.pmTarget}`}
             />
             <KpiTile
               band={kpiBandOf(totals.coveragePct)}
@@ -1107,10 +1167,10 @@ export function KpisBoardView({
                   filtering to one line answers "best in that line". */}
               <div className="border-t border-slate-100">
                 <KpiSection
-                  description="Best three on each measure, from the reps currently in view. Three separate answers — often three different people."
+                  description="Best three on each measure, from the reps currently in view. Separate answers — often different people. The morning and the afternoon are ranked apart."
                   title="Standing out"
                 >
-                  <div className="grid gap-3 px-4 py-4 sm:px-5 lg:grid-cols-3">
+                  <div className="grid gap-3 px-4 py-4 sm:grid-cols-2 sm:px-5 lg:grid-cols-4">
                     {tab === "summary" || tab === "coverage" ? (
                       <KpiPodiumCard entries={podium.coverage} hint="Most of the planned list reached" title="Coverage" />
                     ) : null}
@@ -1123,9 +1183,16 @@ export function KpisBoardView({
                     ) : null}
                     {tab === "summary" || tab === "call-rate" ? (
                       <KpiPodiumCard
-                        entries={podium.callRate}
-                        hint="Most verified calls against target"
-                        title="Call rate"
+                        entries={podium.amCallRate}
+                        hint={`Closest to ${board.amTarget} verified AM calls a day`}
+                        title="AM call rate"
+                      />
+                    ) : null}
+                    {tab === "summary" || tab === "call-rate" ? (
+                      <KpiPodiumCard
+                        entries={podium.pmCallRate}
+                        hint={`Closest to ${board.pmTarget} verified PM calls a day`}
+                        title="PM call rate"
                       />
                     ) : null}
                   </div>
@@ -1136,7 +1203,12 @@ export function KpisBoardView({
                 <div className="divide-y divide-slate-100 md:hidden">
                   {board.reps.map((row, index) => (
                     <div key={String(row.agentCrmId ?? `${row.repName}-${index}`)}>
-                      <RepCard rank={context.showRank ? index + 1 : undefined} row={row} />
+                      <RepCard
+                        amTarget={board.amTarget}
+                        pmTarget={board.pmTarget}
+                        rank={context.showRank ? index + 1 : undefined}
+                        row={row}
+                      />
                     </div>
                   ))}
                 </div>

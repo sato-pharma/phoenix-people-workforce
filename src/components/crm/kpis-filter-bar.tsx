@@ -58,7 +58,17 @@ import {
 
 const LABEL = "text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500";
 
-type FacetKey = "lines" | "regions" | "areas" | "managers" | "titles" | "coverage" | "frequency" | "callRate" | "flags";
+type FacetKey =
+  | "lines"
+  | "regions"
+  | "areas"
+  | "managers"
+  | "titles"
+  | "coverage"
+  | "frequency"
+  | "amRate"
+  | "pmRate"
+  | "flags";
 
 const GROUPS: ReadonlyArray<{ key: FacetKey; title: string; hint: string }> = [
   { key: "lines", title: "Product line", hint: "From the employee record, not the CRM." },
@@ -68,7 +78,8 @@ const GROUPS: ReadonlyArray<{ key: FacetKey; title: string; hint: string }> = [
   { key: "titles", title: "Job title", hint: "Medical Rep, DSM, and anyone else in reach." },
   { key: "coverage", title: "Coverage band", hint: "Share of the planned list reached at all." },
   { key: "frequency", title: "Frequency band", hint: "Exact is the only pass." },
-  { key: "callRate", title: "Call-rate band", hint: "Verified calls against the AM + PM targets." },
+  { key: "amRate", title: "AM band", hint: "Verified morning calls against the AM target alone." },
+  { key: "pmRate", title: "PM band", hint: "Verified afternoon calls against the PM target alone." },
   { key: "flags", title: "Situations", hint: "Any one of these matches — they are OR-ed." },
 ];
 
@@ -120,7 +131,8 @@ export function KpisFilterBar({
       titles: [],
       coverage: [],
       frequency: [],
-      callRate: [],
+      amRate: [],
+      pmRate: [],
       flags: [],
       query: "",
     });
