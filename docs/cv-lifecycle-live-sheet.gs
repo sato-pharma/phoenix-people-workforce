@@ -88,7 +88,7 @@ var TZ = 'Africa/Cairo';
  * feed's COLUMNS. A sheet that silently keeps the previous design is indistinguishable from one
  * where the update failed.
  */
-var LAYOUT_VERSION = 'v9-phoenix';
+var LAYOUT_VERSION = 'v10-phoenix';
 
 var TAB_SUMMARY = 'Summary';
 var TAB_DAILY = 'Daily Dashboard';
@@ -267,6 +267,34 @@ function rebuildLayout() {
  * on screen with a red banner over them saying they are old. See the note at the top of the file.
  */
 function refreshCvLifecycle() {
+  // ONE REFRESH AT A TIME, AND A LOSER THAT SAYS NOTHING.
+  //
+  // The trigger runs every REFRESH_MINUTES and a manual run takes 35-55 seconds, so a Run clicked
+  // in the editor overlaps the next tick often enough to have happened on the first day. On
+  // 2026-09-05 it did: the manual run fetched and wrote the whole sheet, the trigger fired 40
+  // seconds later, ITS fetch failed while the first was still in flight, and it painted a STALE
+  // banner over data that had just been refreshed successfully. The banner even named the time of
+  // the good refresh as the moment things "stopped updating".
+  //
+  // A false stale banner is worse than no banner. It teaches him to ignore the one warning this
+  // sheet has, and the next one will be real.
+  //
+  // The loser returns silently rather than reporting: it has nothing to say. The winner is doing
+  // the exact work it wanted done, and will finish in seconds.
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(1000)) {
+    console.log('Another refresh is already running. Skipping this one.');
+    return;
+  }
+
+  try {
+    refreshCvLifecycleLocked_();
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function refreshCvLifecycleLocked_() {
   var url = PropertiesService.getScriptProperties().getProperty('FEED_URL');
   if (!url) {
     markFeedStale('FEED_URL is not set in Project Settings then Script Properties');
@@ -741,6 +769,27 @@ function fillTile_(sheet, row, col, value, colour) {
 var FEED_STATE_KEY = 'phoenixCvFeedState';
 var LAST_GOOD_KEY = 'phoenixCvLastGoodStamp';
 var STALE_MARKER = '⚠ STALE';
+
+/**
+ * STRIP EVERY URL OUT OF A FAILURE MESSAGE BEFORE IT REACHES THE SHEET.
+ *
+ * This is a security control, not tidiness. FEED_URL carries a share token, and UrlFetchApp puts
+ * the WHOLE url into the text of the exception it throws — "Address unavailable: https://…/<token>
+ * /feed". That string went straight into the banner, so a transient network blip printed the token
+ * in plaintext across row 2 of all four tabs. Anyone the sheet is shared with, at view access,
+ * could read it out of the cell and pull all 986 candidates: names, phones, emails, addresses,
+ * dates of birth. It happened, on 2026-09-05.
+ *
+ * A cell is worse than a log for this. The log is the owner's alone; the sheet is a thing he
+ * hands to people.
+ *
+ * Redacting costs nothing diagnostically — the URL is the same one every time, and it is in the
+ * script properties where it belongs, so the message loses no information he does not already have.
+ */
+function redactUrls_(text) {
+  return String(text === null || text === undefined ? '' : text)
+    .replace(/https?:\/\/[^\s)]+/gi, 'the Phoenix feed link');
+}
 var STALE_BG = '#b91c1c';
 var STALE_FG = '#ffffff';
 
@@ -834,7 +883,7 @@ function markFeedStale(reason) {
     var props = PropertiesService.getScriptProperties();
     // Keyed on the reason too, so a 403 that becomes a network outage repaints with the new cause
     // instead of leaving the first explanation up for ever.
-    var state = 'stale:' + reason;
+    var state = 'stale:' + redactUrls_(reason);
     if (props.getProperty(FEED_STATE_KEY) === state) return;
 
     var ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -844,7 +893,7 @@ function markFeedStale(reason) {
     var now = Utilities.formatDate(new Date(), TZ, 'dd MMM yyyy, HH:mm');
     var message = STALE_MARKER + ' — these figures stopped updating '
       + (frozenAt ? 'on ' + frozenAt : 'at some point before this script was updated')
-      + ' (Cairo). Last attempt ' + now + ' failed: ' + reason
+      + ' (Cairo). Last attempt ' + now + ' failed: ' + redactUrls_(reason)
       + '. Still retrying every ' + REFRESH_MINUTES
       + ' minutes; this line clears itself the moment the feed answers.';
 
