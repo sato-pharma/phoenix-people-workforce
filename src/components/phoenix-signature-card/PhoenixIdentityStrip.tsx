@@ -243,17 +243,27 @@ export function PhoenixIdentityStrip({
           instruction on this mark: "when on mobile view, make the Phoenix logo appear small at the
           upper right corner. And in desktop view, it needs to be a bigger, a little bit."
 
-          MOBILE IS A CORNER MARK: 30% of 120px is 36px, pinned 9px down and 10px in. It is no
-          longer centred on anything, so `translateY` is gone — a corner mark is positioned from
-          the corner, and adding a transform back is how it drifts. Because it has left the text's
-          path entirely it can afford to be seen: opacity went 0.2 -> 0.32. The 0.2 existed only
-          because the mark used to sit under the end of a long title, and that is no longer true.
+          READ THIS BEFORE CHANGING EITHER HEIGHT: THE PNG IS 64% INK AND 36% EMPTY. The file is
+          512x512 but the visible mark occupies only x 97..412, y 76..403 — 316x328, with 76px of
+          transparency above it, 108px below and ~98px each side. So a CSS `height` here is NOT the
+          size of the Phoenix anyone sees: multiply by 0.64 for the ink, and expect the ink to sit
+          ~15% of the box below the box top and ~21% above the box bottom. Sizing against the BOX
+          is exactly how this shipped twice looking a third smaller than its number suggested.
 
-          DESKTOP IS CENTRED ON THE BAR, NOT ON THE CONTENT BAND, and that is what buys the extra
-          size. The band above the wave is 112px, so the old 80% (109px) had already reached its
-          ceiling — the top edge sat 1.6px from the bar. Centring on the full 136px instead lets
-          88% (120px) sit 8px clear of the top while its base tucks behind the wave, which is
-          opaque `#231e18` at z-[3] against this mark's z-0. The wave is NOT a flat 24px bar: its
+          MOBILE IS A CORNER MARK: a 50px box carrying a 32px mark, pinned so the INK lands ~9px
+          from the top and ~10px from the right. The box therefore sits at top 2px / right 0 — the
+          transparent padding supplies the rest of the inset, so setting `top`/`right` to the gap
+          you actually want is what pushes the mark away from the corner. It is no longer centred
+          on anything, so `translateY` is gone; adding a transform back is how it drifts. Because
+          it has left the text's path entirely it can afford to be seen: opacity went 0.2 -> 0.32.
+          The 0.2 existed only because the mark used to sit under a long title, no longer true.
+
+          DESKTOP IS CENTRED ON THE BAR, NOT ON THE CONTENT BAND, and that plus the padding above
+          is what allows A BOX TALLER THAN THE BAR. 120% of 136px is a 163px box carrying a ~105px
+          mark; centred, the ink spans roughly y=11 to y=115, clearing the bar's top edge by 11px
+          while its base tucks behind the wave, which is opaque `#231e18` at z-[3] against this
+          mark's z-0. The box overflowing the bar is harmless — the section is `overflow-hidden`
+          and every pixel that overflows is transparent. The wave is NOT a flat 24px bar: its
           path runs from y=38 on the left to y=4 at the right edge of a 118-unit viewBox drawn
           30px tall, so on the right — where this mark lives — it stands ~29px and covers the base
           cleanly. Read the `<svg>` at the end of this file before changing either number.
@@ -274,10 +284,10 @@ export function PhoenixIdentityStrip({
         className="pointer-events-none absolute z-0 sm:hidden"
         src="/brand/identity-strip-emblem.png"
         style={{
-          height: "30%",
+          height: "42%",
           opacity: 0.32,
-          right: "10px",
-          top: "9px",
+          right: "0px",
+          top: "2px",
           width: "auto",
         }}
       />
@@ -288,9 +298,9 @@ export function PhoenixIdentityStrip({
         className="pointer-events-none absolute z-0 hidden sm:block"
         src="/brand/identity-strip-emblem.png"
         style={{
-          height: "88%",
+          height: "120%",
           opacity: 0.3,
-          right: "5%",
+          right: "3%",
           top: "50%",
           transform: "translateY(-50%)",
           width: "auto",
