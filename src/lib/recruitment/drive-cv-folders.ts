@@ -30,7 +30,7 @@ import {
   type CandidateFolderKind,
 } from "@/lib/recruitment/candidate-folder";
 import type { CandidateFolderSuggestion } from "@/lib/recruitment/candidate-folder-suggestion";
-import { recruitmentRegionForArea } from "@/lib/recruitment/candidate-region";
+import { normalizeGovernorate, recruitmentRegionForArea } from "@/lib/recruitment/candidate-region";
 import { egyptRegionFromFreeText } from "@/lib/recruitment/candidate-region-freetext";
 
 /**
@@ -146,6 +146,161 @@ export function regionFolderFromTypedArea(areaName: string): string | null {
 }
 
 /**
+ * The governorate folder that groups an area, for the governorates the company splits into more
+ * than one selling territory — or `null` for an area that stands on its own.
+ *
+ * WHY. Owner, 2026-09-04: "we can make a folder called Qena and inside we have two folders, Qena 1
+ * and Qena 2. If we can identify which one he is from we put him in the folder. If we can't
+ * identify, we put him in the folder which is called Qena."
+ *
+ * That closes a real gap. An applicant who types "Qena" has named their governorate and nothing
+ * more, and there is no honest way to pick between Qena 1 and Qena 2 for them. Until now such a CV
+ * was filed at the REGION and no deeper — findable only by scrolling every Upper Egypt CV in the
+ * company. The parent folder is the missing rung: it states exactly what is known and nothing that
+ * is not, and the halves sit inside it where a recruiter expects them.
+ *
+ * A REVIEWED MAP, NOT A PATTERN. Deriving the parent by stripping a trailing digit is wrong four
+ * separate ways, every one of them live in `au.canonical_areas` today:
+ *
+ *   - `Gharbia 1 (Tanta)` and `Gharbia 2 (Mahalla)` carry a CITY after the number.
+ *   - `Sohag1` and `Sohag2` have no space before it.
+ *   - `Cairo East 1`/`2` share a first word with `Cairo West`, a DIFFERENT area — a first-word rule
+ *     would file Cairo West CVs under Cairo East.
+ *   - `Aswan (Legacy)` is a retired area sitting beside the live `Aswan`; a bracket-stripping rule
+ *     would fold live Aswan CVs into a territory nobody sells any more.
+ *
+ * And `Port said - Domiat`, `Haram - Faisal`, `Helwan-Maadi`, `Giza - Giza Centers`,
+ * `Dokki - Mohandseen - Bolak` and `Imbaba - Imbaba Centers` are single areas whose names merely
+ * contain a separator. So the grouping is written down and reviewed, exactly as the region grouping
+ * in `candidate-region.ts` is, and an area missing from it files as it always did.
+ *
+ * Verified against production `au.canonical_areas` on 2026-09-04.
+ */
+export const areaGovernorateFolders: Readonly<Record<string, string>> = {
+  // Alex-BHR. Alex is the one group split by WORD rather than number; the owner was asked directly
+  // and included it, on the grounds that it is the same idea — one city cut into territories.
+  "Alex East": "Alex",
+  "Alex Center": "Alex",
+  "Alex West": "Alex",
+  "Behira 1": "Behira",
+  "Behira 2": "Behira",
+  // Cairo. ONLY Cairo East splits — Cairo West, Down town, Heliopolis and Nasr City stand alone.
+  "Cairo East 1": "Cairo East",
+  "Cairo East 2": "Cairo East",
+  // Delta (1). Qalubeya stands alone.
+  "Menoufia 1": "Menoufia",
+  "Menoufia 2": "Menoufia",
+  "Gharbia 1 (Tanta)": "Gharbia",
+  "Gharbia 2 (Mahalla)": "Gharbia",
+  "Kafr El-Sheikh 1": "Kafr El-Sheikh",
+  "Kafr El-Sheikh 2": "Kafr El-Sheikh",
+  // Delta (2) in the SALES geography. Sharkia is Delta (3) in recruitment, which the region level
+  // above already resolves — this level only groups the halves. `Port said - Domiat` stands alone.
+  "Dakahlia 1": "Dakahlia",
+  "Dakahlia 2": "Dakahlia",
+  "Dakahlia 3": "Dakahlia",
+  "Sharkia 1": "Sharkia",
+  "Sharkia 2": "Sharkia",
+  // Upper Egypt.
+  "Minia 1": "Minia",
+  "Minia 2": "Minia",
+  "Assuit 1": "Assuit",
+  "Assuit 2": "Assuit",
+  Sohag1: "Sohag",
+  Sohag2: "Sohag",
+  "Qena 1": "Qena",
+  "Qena 2": "Qena",
+};
+
+/** The governorate folder grouping this area, or null when the area stands on its own. */
+export function areaGovernorateFolder(areaName: string | null | undefined): string | null {
+  const area = cleanFolderKey(areaName ?? "");
+  if (!area) return null;
+  return areaGovernorateFolders[area] ?? null;
+}
+
+/** Every governorate parent the tree can produce, so a test can assert that level exactly. */
+export function governorateFolderNames(): string[] {
+  return [...new Set(Object.values(areaGovernorateFolders))].sort();
+}
+
+/**
+ * Spellings that reach a governorate parent, for text an applicant typed by hand.
+ *
+ * Governorate NAMES only — no city names. "Tanta" is Gharbia 1 and "Mahalla" is Gharbia 2, so
+ * mapping either to the parent would throw away a half we can actually identify, while mapping them
+ * to the numbered area would be inference the owner's rule does not ask for. A city therefore falls
+ * through to the region, exactly as before.
+ *
+ * `kafr` is deliberately absent as a bare key: `Kafr El-Dawar` is in BEHIRA, and a one-word match
+ * would file those CVs under Kafr El-Sheikh. Same reason `sheikh` is absent — Sheikh Zayed is Giza.
+ */
+const governorateFolderKeys: Readonly<Record<string, string>> = {
+  alex: "Alex",
+  alexandria: "Alex",
+  eskandaria: "Alex",
+  iskandaria: "Alex",
+  behira: "Behira",
+  beheira: "Behira",
+  buhayrah: "Behira",
+  bahira: "Behira",
+  dakahlia: "Dakahlia",
+  daqahlia: "Dakahlia",
+  dakahliya: "Dakahlia",
+  gharbia: "Gharbia",
+  gharbiya: "Gharbia",
+  gharbeya: "Gharbia",
+  "kafr el sheikh": "Kafr El-Sheikh",
+  "kafr elsheikh": "Kafr El-Sheikh",
+  kafrelsheikh: "Kafr El-Sheikh",
+  kafrelshiekh: "Kafr El-Sheikh",
+  kafrelshikh: "Kafr El-Sheikh",
+  menoufia: "Menoufia",
+  menofia: "Menoufia",
+  monufia: "Menoufia",
+  menoufiya: "Menoufia",
+  sharkia: "Sharkia",
+  sharqia: "Sharkia",
+  sharkeya: "Sharkia",
+  minia: "Minia",
+  minya: "Minia",
+  menia: "Minia",
+  elminia: "Minia",
+  assuit: "Assuit",
+  asyut: "Assuit",
+  assiut: "Assuit",
+  asiut: "Assuit",
+  sohag: "Sohag",
+  suhag: "Sohag",
+  souhag: "Sohag",
+  qena: "Qena",
+  qina: "Qena",
+  kena: "Qena",
+  quena: "Qena",
+};
+
+/**
+ * Free-typed text reduced to one of the governorate parents, or null.
+ *
+ * Matched word-by-word after `normalizeGovernorate` — the same fallback
+ * `candidateRegionForGovernorate` uses — so "Qena north" and "Minia Government" each reach their
+ * governorate while the extra word stays out of the folder name. That is the whole point: the
+ * applicant's exact words are kept on the candidate record, and the FOLDER only ever carries a name
+ * the company actually owns.
+ */
+export function governorateFolderFromTypedArea(raw: string | null | undefined): string | null {
+  const key = normalizeGovernorate(raw);
+  if (!key) return null;
+  const direct = governorateFolderKeys[key];
+  if (direct) return direct;
+  for (const part of key.split(" ")) {
+    const hit = governorateFolderKeys[part];
+    if (hit) return hit;
+  }
+  return null;
+}
+
+/**
  * Whether a typed job title can be used as a folder name at all.
  *
  * The one measured failure is an Arabic SENTENCE sent as a title. Every real title on that shelf in
@@ -177,16 +332,30 @@ export function driveFolderPathFor(
   const label = suggestion.label || candidateFolderLabel(suggestion.kind, suggestion.key);
 
   if (suggestion.kind === "medical_rep") {
-    // Region first, then area — "Medical Representative / Alex-BHR / Alex Center".
+    // Region, then the governorate when the company splits it, then the area —
+    // "Medical Representative / Upper Egypt / Qena / Qena 1". An area that is nobody’s half keeps
+    // exactly the shape it has always had: "Medical Representative / Giza / Fayoum".
     const region = regionFolderForArea(suggestion.key, areaRegions);
-    if (region) return [shelf, region, label].map(sanitizeDriveSegment).filter(Boolean);
+    if (region) {
+      const governorate = areaGovernorateFolder(suggestion.key);
+      const segments = governorate ? [shelf, region, governorate, label] : [shelf, region, label];
+      return segments.map(sanitizeDriveSegment).filter(Boolean);
+    }
 
-    // The area is not one of ours — almost always a governorate typed by hand. File under the
-    // region it names, and deliberately WITHOUT an area folder: inventing "Qena north" beside the
-    // real "Qena 1" and "Qena 2" would put a name that looks official on a folder nobody owns, and
-    // a wrong folder is worse than a shallow one. Their exact words stay on the candidate record.
+    // The area is not one of ours — almost always a governorate typed by hand. Their TYPED WORDS
+    // still never become a folder: inventing "Qena north" beside the real "Qena 1" and "Qena 2"
+    // would put an official-looking name on a territory nobody owns. What they name is resolved to
+    // a folder the company actually has, and the applicant's exact words stay on their record.
     const typedRegion = regionFolderFromTypedArea(suggestion.key);
-    if (typedRegion) return [shelf, typedRegion].map(sanitizeDriveSegment).filter(Boolean);
+    if (typedRegion) {
+      // If those words name a governorate the company splits, the PARENT folder is the answer. It
+      // says the governorate is known and the half is not, which is exactly true — and it puts the
+      // CV beside the numbered folders a recruiter is already looking in, instead of loose among
+      // every CV in the region.
+      const typedGovernorate = governorateFolderFromTypedArea(suggestion.key);
+      const segments = typedGovernorate ? [shelf, typedRegion, typedGovernorate] : [shelf, typedRegion];
+      return segments.map(sanitizeDriveSegment).filter(Boolean);
+    }
 
     // Nothing readable at all. Their own words are still better than the top of the shelf.
     return [shelf, label].map(sanitizeDriveSegment).filter(Boolean);

@@ -32,7 +32,7 @@ import ExcelJS from "exceljs";
 // live in the modules the app itself calls; a local copy of any of them drifts the first time
 // somebody improves the original — which is exactly how backfill-cvs-to-drive.mjs went stale.
 import { egyptRegionFromFreeText } from "@/lib/recruitment/candidate-region-freetext";
-import { regionFolderFromTypedArea } from "@/lib/recruitment/drive-cv-folders";
+import { driveFolderPathFor, regionFolderFromTypedArea } from "@/lib/recruitment/drive-cv-folders";
 
 // ── env ──────────────────────────────────────────────────────────────────────────────────────────
 // Loaded by hand rather than via a dependency: this has to run from a bare worktree, where
@@ -99,25 +99,31 @@ async function loadAreas() {
   );
   const byRegion = new Map();
   const canonical = new Map();
+  // The same shape `driveFolderPathFor` takes, so this script asks the app where a CV sits rather
+  // than assembling a path of its own that can drift out of step with it.
+  const areaRegions = {};
   for (const area of areas) {
     if (!area.area_name) continue;
     canonical.set(area.area_name.toLowerCase(), area.area_name);
     if (!area.code_region_code) continue;
+    areaRegions[area.area_name] = area.code_region_code;
     if (!byRegion.has(area.code_region_code)) byRegion.set(area.code_region_code, []);
     byRegion.get(area.code_region_code).push(area.area_name);
   }
-  return { areas, byRegion, canonical };
+  return { areas, areaRegions, byRegion, canonical };
 }
 
 /**
  * Every medical-rep CV filed under an area that is not one of ours.
  *
- * The "Filed now" column is what the SYSTEM already worked out — since 2026-09-04 a hand-typed
- * governorate nests under its region on its own, so most of these are already in a sensible place
- * and the only open question is which AREA. The ones with no region at all are the urgent rows:
- * they sort to the top and print in red, and `--unplaceable` narrows the sheet to just those.
+ * The "Filed now" column is what the SYSTEM already worked out, read from `driveFolderPathFor`
+ * itself rather than rebuilt here — a hand-typed governorate nests under its region, and under its
+ * governorate parent where the company splits that governorate in two. So most of these are already
+ * in a sensible place and the only open question is which HALF. The ones with no region at all are
+ * the urgent rows: they sort to the top and print in red, and `--unplaceable` narrows the sheet to
+ * just those.
  */
-async function outstandingQuestions({ byRegion, canonical }) {
+async function outstandingQuestions({ areaRegions, byRegion, canonical }) {
   const candidates = await rest(
     "ats_candidates?select=id,full_name,folder_key,governorate,address,preferred_region_code," +
       "preferred_area_name,created_at&folder_kind=eq.medical_rep&folder_key=not.is.null&order=folder_key.asc",
@@ -129,6 +135,7 @@ async function outstandingQuestions({ byRegion, canonical }) {
 
     // Where the mirror puts it today, and which region's areas the dropdown should offer.
     const placedRegionLabel = regionFolderFromTypedArea(typed);
+    const placedPath = driveFolderPathFor({ key: typed, kind: "medical_rep", label: typed }, areaRegions);
     const stated = candidate.preferred_region_code;
     const region =
       (stated && byRegion.has(stated) ? stated : null) ??
@@ -137,7 +144,7 @@ async function outstandingQuestions({ byRegion, canonical }) {
       egyptRegionFromFreeText(candidate.address);
 
     if (UNPLACEABLE_ONLY && placedRegionLabel) continue;
-    rows.push({ ...candidate, placedRegionLabel, region, typed });
+    rows.push({ ...candidate, placedPath, placedRegionLabel, region, typed });
   }
   // Unplaceable first — those are the CVs nobody can find by browsing the tree.
   rows.sort(
@@ -196,9 +203,7 @@ function buildWorkbook(rows, { areas, byRegion }) {
       entry.typed,
       entry.governorate ?? "—",
       entry.address ?? "—",
-      entry.placedRegionLabel
-        ? `Medical Representative / ${entry.placedRegionLabel}`
-        : "Loose — no region above it",
+      entry.placedRegionLabel ? entry.placedPath.join(" / ") : "Loose — no region above it",
       null,
       null,
       entry.id,
@@ -321,6 +326,7 @@ if (APPLY_FILE) {
   console.log(`${rows.length} question(s) written to ${OUT_FILE}`);
   if (loose) console.log(`  ${loose} of them are sitting loose with no region at all.`);
   for (const row of rows) {
-    console.log(`  ${(row.placedRegionLabel ?? "LOOSE").padEnd(14)}  ${row.full_name} — typed ${JSON.stringify(row.typed)}`);
+    const where = row.placedRegionLabel ? row.placedPath.slice(1).join(" / ") : "LOOSE";
+    console.log(`  ${where.padEnd(24)}  ${row.full_name} — typed ${JSON.stringify(row.typed)}`);
   }
 }
