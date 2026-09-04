@@ -21,7 +21,12 @@ import {
   type MonthlyClosingDirectCell,
   type MonthlyClosingMatrix,
 } from "../src/lib/sales/monthly-distributor-import.ts";
-import { areaProductKey, STORE_CITY_SPLIT_ENABLED } from "../src/lib/sales/store-sales-city-split.ts";
+import {
+  areaProductKey,
+  isStoreCitySplitActive,
+  STORE_CITY_SPLIT_ENABLED,
+  STORE_CITY_SPLIT_FROM_PERIOD,
+} from "../src/lib/sales/store-sales-city-split.ts";
 import { applyStoreSplitToMatrix } from "../src/lib/sales/store-split-matrix.ts";
 
 // A FILTERED Monthly Closing export whose city straddles the filter must not lose sales value.
@@ -351,10 +356,11 @@ function runRouteWiringChecks() {
   );
   assert.match(
     route,
-    /rowLevelActive && STORE_CITY_SPLIT_ENABLED\s*\n?\s*\?\s*Promise\.resolve\(null\)/,
-    "the shared split may be skipped only under a row-level filter AND only while the split is "
-      + "enabled — with the split OFF, a null here would make prepareClosingStoreSplit derive a "
-      + "live split from the rows, re-applying the rule the owner turned off",
+    /rowLevelActive && isStoreCitySplitActive\(matrix\.period\)\s*\n?\s*\?\s*Promise\.resolve\(null\)/,
+    "the shared split may be skipped only under a row-level filter AND only where the split is "
+      + "active FOR THAT PERIOD — a null here makes prepareClosingStoreSplit derive a live split "
+      + "from the rows, so asking the bare flag instead of the period would split a row-level "
+      + "filtered export of July while the screen's July stays unsplit",
   );
   // OWNER RULING 2026-09-04: the wholesaler city split is ON, on every city — "شغل تقسيم المخازن
   // على كل المدن". It was OFF from 2026-08-10 to 2026-09-04; his August Anti Infective manual sheet
@@ -366,6 +372,35 @@ function runRouteWiringChecks() {
     true,
     "the wholesaler city split must stay ON until the owner explicitly orders it back off",
   );
+
+  // OWNER RULING 2026-09-04, the same day and immediately after the flag went on, once the
+  // retroactive restatement was measured for him: "DONT TOUCH JULY APPLY ON AUGUST AND UPCOMING".
+  // July 2026 is PUBLISHED — it is the managers' copy — and turning the split on without this gate
+  // moved 296,444.88 EGP across 34 areas in July CNS alone, invisibly: the publication drift check
+  // compares UNITS only, and the split preserves each line's unit total while moving units between
+  // areas. Moving this constant EARLIER restates a published month with no drift signal at all.
+  assert.equal(
+    STORE_CITY_SPLIT_FROM_PERIOD,
+    "2026-08",
+    "the city split starts at August 2026 — July and earlier keep the numbers they were published with",
+  );
+  assert.equal(isStoreCitySplitActive("2026-07"), false, "July 2026 must never be split");
+  assert.equal(isStoreCitySplitActive("2026-06"), false, "June 2026 must never be split");
+  assert.equal(isStoreCitySplitActive("2026-08"), true, "August 2026 is the first split month");
+  assert.equal(isStoreCitySplitActive("2026-09"), true, "every month after August is split");
+  assert.equal(isStoreCitySplitActive("2027-01"), true, "the gate is a floor, not a window");
+  // Anything unparseable falls to NOT active. That is the safe direction: not splitting leaves a
+  // number where it already was, while splitting a month that should not be moves money between
+  // reps with nothing on screen to say so.
+  for (const bad of ["", "   ", "2026", "2026-8", "August", "2026-08-01"]) {
+    assert.equal(
+      isStoreCitySplitActive(bad),
+      false,
+      `a malformed period (${JSON.stringify(bad)}) must not activate the split`,
+    );
+  }
+  assert.equal(isStoreCitySplitActive(null), false, "a null period must not activate the split");
+  assert.equal(isStoreCitySplitActive(undefined), false, "an absent period must not activate the split");
 }
 
 export async function runMonthlyClosingExportStoreSplitFilteredTests() {

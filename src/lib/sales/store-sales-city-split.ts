@@ -55,6 +55,38 @@ import { isStoreCustomer } from "@/lib/sales/customer-channel";
  */
 export const STORE_CITY_SPLIT_ENABLED = true;
 
+/**
+ * The FIRST period the split applies to. Owner ruling 2026-09-04, immediately after the flag was
+ * turned on and the retroactive restatement was measured for him: "DONT TOUCH JULY APPLY ON AUGUST
+ * AND UPCOMING".
+ *
+ * WHY THIS EXISTS AT ALL. The closing matrix re-derives every month live, so a bare boolean is
+ * retroactive to the first period on record — turning the split on moved 296,444.88 EGP across 34
+ * areas in his PUBLISHED July CNS closing, 96,561.67 in July Anti Infective and 27,016.88 in July
+ * Pedia, and the publication drift check cannot see any of it (it compares UNITS only, and the
+ * split preserves each line's unit total while moving units between areas). July is published and
+ * its numbers are the managers' copy; August is the month being reconciled when the rule was
+ * turned on. So the rule starts at August.
+ *
+ * A plain string compare is correct and deliberate: periods are `YYYY-MM`, which sorts
+ * lexicographically in calendar order. Anything malformed or absent falls to NOT active — the safe
+ * direction, since failing to split leaves a number where it already was, while splitting a month
+ * that should not be split silently moves money between reps.
+ */
+export const STORE_CITY_SPLIT_FROM_PERIOD = "2026-08";
+
+/**
+ * Is the wholesaler city split applied to this period? BOTH gates: the master flag and the start
+ * period. Every apply point asks this, never the bare flag — a caller that reads
+ * STORE_CITY_SPLIT_ENABLED alone would split July.
+ */
+export function isStoreCitySplitActive(period: string | null | undefined): boolean {
+  if (!STORE_CITY_SPLIT_ENABLED) return false;
+  const trimmed = String(period ?? "").trim();
+  if (!/^\d{4}-\d{2}$/.test(trimmed)) return false;
+  return trimmed >= STORE_CITY_SPLIT_FROM_PERIOD;
+}
+
 /** The three rep-carrying lines. Head Office is excluded on purpose — see the header. */
 const SPLIT_LINE_KEYS = new Set(["pedia", "anti infective", "antiinfective", "anti inf", "cns"]);
 

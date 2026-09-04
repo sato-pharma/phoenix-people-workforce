@@ -30,7 +30,7 @@ import { assertExportRateLimit } from "@/lib/http/assert-export-rate-limit";
 import { isApiRateLimitError } from "@/lib/security/api-rate-limit";
 import { prepareClosingStoreSplit } from "@/lib/sales/closing-store-split-export";
 import { loadClosingStoreSplit } from "@/lib/sales/closing-store-split-net";
-import { STORE_CITY_SPLIT_ENABLED } from "@/lib/sales/store-sales-city-split";
+import { isStoreCitySplitActive } from "@/lib/sales/store-sales-city-split";
 import { applyJulyDirectAreasToBreakdown } from "@/lib/sales/july-direct-channel-breakdown";
 import { loadMonthlySourceCoverage } from "@/lib/sales/source-coverage";
 import {
@@ -346,11 +346,13 @@ export async function POST(request: Request) {
       // computed with confidential products excluded, which is exactly the population the Closing
       // Matrix holds (every closing RPC hard-excludes them in SQL) — so it is the correct input for
       // the matrix write-back whether or not the reader opted into the confidential DATA sheet.
-      // `&& STORE_CITY_SPLIT_ENABLED`: the flag can be turned off again (it was, 2026-08-10 to
-      // 2026-09-04), and while it is off the loader returns the EMPTY split — so even a row-level
-      // filter must receive that rather than `null`, because null tells prepareClosingStoreSplit to
-      // derive its own split live from the rows, which is exactly the apply path being switched off.
-      const sharedSplitPromise = rowLevelActive && STORE_CITY_SPLIT_ENABLED
+      // `&& isStoreCitySplitActive(...)`: the split is off before August 2026 (owner, 2026-09-04 —
+      // July stays as published) and can be turned off entirely again, and in both cases the loader
+      // returns the EMPTY split — so even a row-level filter must receive that rather than `null`,
+      // because null tells prepareClosingStoreSplit to derive its own split live from the rows,
+      // which is exactly the apply path being switched off. Asking the PERIOD and not the bare flag
+      // is what stops a row-level filtered export of July splitting when the screen's July does not.
+      const sharedSplitPromise = rowLevelActive && isStoreCitySplitActive(matrix.period)
         ? Promise.resolve(null)
         : loadClosingStoreSplit(matrix.line, matrix.period).catch(() => null);
 
