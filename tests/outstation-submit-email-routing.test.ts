@@ -2,29 +2,30 @@ import assert from "node:assert/strict";
 import { buildOutstationSubmitRouting } from "../src/lib/outstation/submit-recipients.ts";
 
 /**
- * Owner rule (email-reduction project, 2026-08-13) for the outstation submit email envelope —
- * REPLACES the 2026-08-04 rule, which put the submitting employee on To (a self-confirmation he
- * did not need, since he was just on the submission screen):
- *   To   his direct manager                     — the person who actually needs to see it
- *   Cc   his manager's manager                   — ONLY when that person is not the CEO
- *   Bcc  every active Super Admin                — oversight, unchanged
- *   (nobody) the submitting employee — never on this email, in any slot
+ * Owner rule (2026-09-04) for the outstation submit email envelope — REVERSES the 2026-08-13
+ * email-reduction project below, which excluded the submitting employee from every slot:
+ *   To   the employee himself         — it is his own submission
+ *   Cc   his direct manager           — unless that is the CEO, or missing/self-managed
+ *   Bcc  every active Super Admin     — silent oversight, unchanged
  *
- * Fallback when the direct manager cannot be addressed (missing, or the CEO — who is NEVER on
- * this email, in any slot, since 2026-08-08): the skip-level manager steps up to To instead of
- * sitting in Cc with the To slot empty. If neither rung of the reporting line is available, the
- * first active Super Admin is promoted from Bcc to To, so oversight is never silently dropped to
- * zero recipients.
+ * Fallback when the direct manager cannot ride Cc (missing, self-managed, or the CEO — who is
+ * NEVER on this email, in any slot, since 2026-08-08): the skip-level manager steps into Cc
+ * instead of leaving it empty. If neither rung is available, Cc simply stays empty — Bcc still
+ * carries oversight, so nothing is silently dropped to zero recipients.
  *
- * These are behavioural assertions against the pure decision function, not source
- * inspection: the sibling outstation-notifications.test.ts pins that service.ts CALLS this,
- * but only the cases below prove the envelope is actually right.
+ * History (2026-08-13 → 2026-09-04, superseded): To was the direct manager, falling back to the
+ * skip-level manager and then to a Super Admin promoted from Bcc, with the employee excluded
+ * from every slot on the reasoning that a copy confirmed nothing he did not already know.
+ *
+ * These are behavioural assertions against the pure decision function, not source inspection:
+ * the sibling outstation-notifications.test.ts pins that service.ts CALLS this, but only the
+ * cases below prove the envelope is actually right.
  */
 export function runOutstationSubmitEmailRoutingTests() {
   const CEO = ["HR-CEO"];
   const ADMINS = ["HR-SA1", "HR-SA2"];
 
-  // ── The ordinary shape: rep → DM → NSM, none of them the CEO ────────────────────
+  // ── The ordinary shape: rep confirmed, DM copied, none of them the CEO ───────────
   const normal = buildOutstationSubmitRouting({
     ceoHrIds: CEO,
     employeeHrId: "HR-REP",
@@ -32,73 +33,59 @@ export function runOutstationSubmitEmailRoutingTests() {
     managerOfManagerHrId: "HR-NSM",
     superAdminHrIds: ADMINS,
   });
-  assert.equal(normal.toHrId, "HR-DM", "the direct manager is the To — he is the one who needs to see it");
-  assert.deepEqual(normal.ccHrIds, ["HR-NSM"], "the skip-level manager rides Cc");
+  assert.equal(normal.toHrId, "HR-REP", "the submitting employee is the To — it is his own submission");
+  assert.deepEqual(normal.ccHrIds, ["HR-DM"], "the direct manager rides Cc as a courtesy copy");
   assert.deepEqual(normal.bccHrIds, ["HR-SA1", "HR-SA2"], "every active Super Admin is Bcc'd");
-  assert.notEqual(normal.toHrId, "HR-REP", "the submitting employee must never be the To recipient");
+  assert.notEqual(normal.ccHrIds[0], "HR-NSM", "the skip-level manager is not consulted when the direct manager is usable");
 
-  // ── The rule that prompted the 2026-08-04 change: a CEO skip-level is dropped ────
-  const ceoSkipLevel = buildOutstationSubmitRouting({
+  // ── Owner instruction 2026-08-08: the CEO is NEVER on this email, in any slot ────
+  // When the direct manager IS the CEO, the skip-level manager steps into Cc instead — the
+  // owner's explicit answer to "what happens to Cc when the manager is the CEO" (2026-09-04).
+  const ceoIsDirectManagerWithSkipLevel = buildOutstationSubmitRouting({
     ceoHrIds: CEO,
-    employeeHrId: "HR-REP",
-    managerHrId: "HR-DM",
-    managerOfManagerHrId: "HR-CEO",
+    employeeHrId: "HR-NSM",
+    managerHrId: "HR-CEO",
+    managerOfManagerHrId: "HR-NSM2",
     superAdminHrIds: ADMINS,
   });
-  assert.equal(ceoSkipLevel.toHrId, "HR-DM", "the direct manager is still To even when the skip-level is the CEO");
+  assert.equal(ceoIsDirectManagerWithSkipLevel.toHrId, "HR-NSM", "the employee is still To even when his manager is the CEO");
   assert.deepEqual(
-    ceoSkipLevel.ccHrIds,
-    [],
-    "the CEO must NOT be Cc'd as manager-of-manager — that broadcast is exactly what was removed",
+    ceoIsDirectManagerWithSkipLevel.ccHrIds,
+    ["HR-NSM2"],
+    "the skip-level manager takes the Cc slot the CEO is barred from",
   );
   assert.ok(
-    !ceoSkipLevel.bccHrIds.includes("HR-CEO"),
+    !ceoIsDirectManagerWithSkipLevel.bccHrIds.includes("HR-CEO"),
     "dropping the CEO from Cc must not quietly re-add him on Bcc",
   );
 
-  // ── Owner rule 2026-08-08: the CEO is NEVER on an outstation submission ──────────
-  // Widened from the 2026-08-04 skip-level-only exclusion, which still copied him on every
-  // submission by one of his 21 direct reports (all three NSMs, plus DMs, reps, Finance,
-  // Marketing and SFE) — the same broadcast the earlier change set out to stop. When the CEO is
-  // the direct manager AND there is no skip-level to fall back to, the first active Super Admin
-  // is promoted into To so the submission still reaches a real person.
-  const ceoIsDirectManager = buildOutstationSubmitRouting({
+  // Same shape, but with no skip-level manager to fall back to — Cc simply stays empty; Bcc
+  // still carries oversight, so nothing is silently dropped to zero recipients.
+  const ceoIsDirectManagerNoSkipLevel = buildOutstationSubmitRouting({
     ceoHrIds: CEO,
     employeeHrId: "HR-NSM",
     managerHrId: "HR-CEO",
     managerOfManagerHrId: null,
     superAdminHrIds: ADMINS,
   });
-  assert.equal(
-    ceoIsDirectManager.toHrId,
-    "HR-SA1",
-    "neither the CEO (excluded) nor a skip-level (none) is addressable, so the first Super Admin steps up to To",
-  );
-  assert.deepEqual(ceoIsDirectManager.ccHrIds, [], "there is still no Cc — nobody to put there");
-  assert.ok(
-    !ceoIsDirectManager.bccHrIds.includes("HR-CEO"),
-    "the CEO must never appear on Bcc either",
-  );
-  assert.deepEqual(
-    ceoIsDirectManager.bccHrIds,
-    ["HR-SA2"],
-    "the REMAINING Super Admins stay on Bcc — only the one promoted to To leaves that list",
-  );
+  assert.equal(ceoIsDirectManagerNoSkipLevel.toHrId, "HR-NSM", "the employee is still addressed even with no usable Cc at all");
+  assert.deepEqual(ceoIsDirectManagerNoSkipLevel.ccHrIds, [], "no skip-level to fall back to, so Cc stays empty rather than inventing a recipient");
+  assert.deepEqual(ceoIsDirectManagerNoSkipLevel.bccHrIds, ["HR-SA1", "HR-SA2"], "Bcc still carries full oversight");
 
-  // The real manager is still addressed when he is NOT the CEO — the exclusion is about one
-  // person, not about emptying the envelope.
-  const ceoIsNeitherRung = buildOutstationSubmitRouting({
+  // The real manager is still Cc'd when he is NOT the CEO — the exclusion is about one person,
+  // not about emptying the envelope whenever there is no skip-level given.
+  const nonCeoManagerNoSkipLevel = buildOutstationSubmitRouting({
     ceoHrIds: CEO,
     employeeHrId: "HR-REP",
     managerHrId: "HR-DM",
     managerOfManagerHrId: null,
     superAdminHrIds: ADMINS,
   });
-  assert.equal(ceoIsNeitherRung.toHrId, "HR-DM", "a non-CEO direct manager is still addressed, now as To");
-  assert.deepEqual(ceoIsNeitherRung.ccHrIds, [], "no skip-level manager was given, so Cc stays empty");
+  assert.equal(nonCeoManagerNoSkipLevel.toHrId, "HR-REP");
+  assert.deepEqual(nonCeoManagerNoSkipLevel.ccHrIds, ["HR-DM"], "a non-CEO direct manager needs no fallback to be Cc'd");
 
-  // Even if the CEO were also granted Super Admin, he must not reappear on To or Bcc — "removed
-  // from the direct-manager slot" must never silently mean "moved to a quieter header".
+  // Even if the CEO were also granted Super Admin, he must not reappear on Bcc — "removed from
+  // Cc" must never silently mean "moved to a quieter header".
   const ceoIsAlsoSuperAdmin = buildOutstationSubmitRouting({
     ceoHrIds: CEO,
     employeeHrId: "HR-REP",
@@ -106,35 +93,31 @@ export function runOutstationSubmitEmailRoutingTests() {
     managerOfManagerHrId: null,
     superAdminHrIds: ["HR-CEO", "HR-SA1"],
   });
-  assert.equal(
-    ceoIsAlsoSuperAdmin.toHrId,
-    "HR-SA1",
-    "the CEO is skipped even inside the Super Admin fallback list — HR-SA1 is promoted instead",
-  );
-  assert.deepEqual(ceoIsAlsoSuperAdmin.ccHrIds, [], "still no Cc");
+  assert.deepEqual(ceoIsAlsoSuperAdmin.ccHrIds, [], "no skip-level given, so Cc is empty");
   assert.deepEqual(
     ceoIsAlsoSuperAdmin.bccHrIds,
-    [],
+    ["HR-SA1"],
     "a CEO who is also a Super Admin is still off the email entirely, not silently Bcc'd",
   );
 
   // ── One person, one slot: the most visible slot wins ─────────────────────────────
-  const adminIsManager = buildOutstationSubmitRouting({
+  const managerIsSuperAdmin = buildOutstationSubmitRouting({
     ceoHrIds: CEO,
     employeeHrId: "HR-REP",
     managerHrId: "HR-SA1",
     managerOfManagerHrId: null,
     superAdminHrIds: ADMINS,
   });
-  assert.equal(adminIsManager.toHrId, "HR-SA1", "a Super Admin who manages the employee is addressed openly as To");
+  assert.equal(managerIsSuperAdmin.toHrId, "HR-REP");
+  assert.deepEqual(managerIsSuperAdmin.ccHrIds, ["HR-SA1"], "a Super Admin who manages the employee is still Cc'd openly as the manager");
   assert.deepEqual(
-    adminIsManager.bccHrIds,
+    managerIsSuperAdmin.bccHrIds,
     ["HR-SA2"],
     "and is NOT also Bcc'd — one mailbox must never appear in two headers of one message",
   );
 
-  // An employee who is his own manager has no real manager to address at all — the fallback
-  // chain moves past him (he is excluded, being the employee) to the next Super Admin.
+  // An employee who is his own manager has no real manager to Cc at all — the fallback moves to
+  // the skip-level (also absent here), so Cc stays empty; he is still To.
   const selfManaged = buildOutstationSubmitRouting({
     ceoHrIds: CEO,
     employeeHrId: "HR-SA1",
@@ -142,16 +125,11 @@ export function runOutstationSubmitEmailRoutingTests() {
     managerOfManagerHrId: null,
     superAdminHrIds: ["HR-SA1", "HR-SA2"],
   });
-  assert.equal(
-    selfManaged.toHrId,
-    "HR-SA2",
-    "an employee who is his own manager yields no usable manager, so the next Super Admin steps up to To",
-  );
-  assert.deepEqual(selfManaged.ccHrIds, [], "no skip-level manager either");
-  assert.deepEqual(selfManaged.bccHrIds, [], "he is not Bcc'd on his own mail either, even though he is a Super Admin");
+  assert.equal(selfManaged.toHrId, "HR-SA1", "the employee is To regardless of his own reporting-line oddities");
+  assert.deepEqual(selfManaged.ccHrIds, [], "he cannot Cc himself as his own manager, and there is no skip-level either");
+  assert.deepEqual(selfManaged.bccHrIds, ["HR-SA2"], "he is not Bcc'd on his own mail either, even though he is a Super Admin");
 
-  // The employee himself must never appear in Bcc even when he is a Super Admin and someone else
-  // is properly addressed as To — exclusion is about the person, not about which slot is open.
+  // The employee who is also a Super Admin must never appear twice — To only, never also Bcc.
   const employeeIsSuperAdmin = buildOutstationSubmitRouting({
     ceoHrIds: CEO,
     employeeHrId: "HR-SA1",
@@ -159,7 +137,8 @@ export function runOutstationSubmitEmailRoutingTests() {
     managerOfManagerHrId: null,
     superAdminHrIds: ["HR-SA1", "HR-SA2"],
   });
-  assert.equal(employeeIsSuperAdmin.toHrId, "HR-DM", "the real manager is still To");
+  assert.equal(employeeIsSuperAdmin.toHrId, "HR-SA1");
+  assert.deepEqual(employeeIsSuperAdmin.ccHrIds, ["HR-DM"], "the real manager still rides Cc");
   assert.deepEqual(
     employeeIsSuperAdmin.bccHrIds,
     ["HR-SA2"],
@@ -167,23 +146,36 @@ export function runOutstationSubmitEmailRoutingTests() {
   );
 
   // ── HR IDs differing only by case/whitespace are the same person ─────────────────
-  const messyIds = buildOutstationSubmitRouting({
+  // A manager who also appears in the Super Admin list under different casing must be Cc'd
+  // once, not Cc'd AND Bcc'd as if he were two different people.
+  const messyIdsDedupe = buildOutstationSubmitRouting({
     ceoHrIds: [" hr-ceo "],
     employeeHrId: "hr-rep",
     managerHrId: "HR-DM",
-    managerOfManagerHrId: "Hr-Ceo",
+    managerOfManagerHrId: null,
     superAdminHrIds: ["hr-dm", "HR-SA1"],
   });
-  assert.equal(messyIds.toHrId, "HR-DM", "the direct manager is To regardless of casing elsewhere in the input");
+  assert.equal(messyIdsDedupe.toHrId, "hr-rep", "toHrId is emitted verbatim, not normalized");
+  assert.deepEqual(messyIdsDedupe.ccHrIds, ["HR-DM"], "the manager is Cc'd under his original casing");
   assert.deepEqual(
-    messyIds.ccHrIds,
-    [],
-    "the CEO exclusion must survive case/whitespace differences, or the broadcast silently returns",
-  );
-  assert.deepEqual(
-    messyIds.bccHrIds,
+    messyIdsDedupe.bccHrIds,
     ["HR-SA1"],
-    "a Super Admin already addressed as To under different casing must not be Bcc'd as if he were someone else",
+    "the same manager under different casing in the admin list must not be Bcc'd a second time",
+  );
+
+  // The CEO exclusion must survive case/whitespace differences, or the broadcast silently
+  // returns whenever the CEO's HR ID reaches this function in a different case.
+  const messyIdsCeoExclusion = buildOutstationSubmitRouting({
+    ceoHrIds: ["HR-CEO"],
+    employeeHrId: "HR-REP",
+    managerHrId: "hr-ceo",
+    managerOfManagerHrId: "HR-NSM",
+    superAdminHrIds: ["HR-SA1"],
+  });
+  assert.deepEqual(
+    messyIdsCeoExclusion.ccHrIds,
+    ["HR-NSM"],
+    "a direct manager who normalizes to the CEO is excluded from Cc regardless of casing, and the skip-level steps in",
   );
 
   // ── Degraded inputs must fail closed, never mail a partial envelope ──────────────
@@ -198,7 +190,8 @@ export function runOutstationSubmitEmailRoutingTests() {
   assert.deepEqual(noEmployee.ccHrIds, [], "…and no Cc — nobody is mailed about an unattributed submission");
   assert.deepEqual(noEmployee.bccHrIds, [], "…and no Bcc either");
 
-  // Missing reporting line, but Super Admins exist — oversight still reaches someone.
+  // Missing reporting line entirely, but Super Admins exist — oversight still reaches them, and
+  // the employee is still confirmed since To no longer depends on the reporting chain at all.
   const noChain = buildOutstationSubmitRouting({
     ceoHrIds: CEO,
     employeeHrId: "HR-REP",
@@ -206,41 +199,7 @@ export function runOutstationSubmitEmailRoutingTests() {
     managerOfManagerHrId: null,
     superAdminHrIds: ADMINS,
   });
-  assert.equal(
-    noChain.toHrId,
-    "HR-SA1",
-    "a missing reporting line falls all the way through to the first Super Admin, not to nobody",
-  );
-  assert.deepEqual(noChain.ccHrIds, [], "with nobody invented to fill the Cc slot");
-  assert.deepEqual(noChain.bccHrIds, ["HR-SA2"], "the remaining Super Admin still gets the oversight copy");
-
-  // A skip-level with no direct manager between them steps into To directly — it must not sit in
-  // an empty Cc while nobody is addressed, and it must not be dropped for lack of a direct manager.
-  const skipOnly = buildOutstationSubmitRouting({
-    ceoHrIds: CEO,
-    employeeHrId: "HR-REP",
-    managerHrId: null,
-    managerOfManagerHrId: "HR-NSM",
-    superAdminHrIds: [],
-  });
-  assert.equal(
-    skipOnly.toHrId,
-    "HR-NSM",
-    "a skip-level manager steps up to To when the direct manager is missing, rather than riding an empty-To Cc",
-  );
-  assert.deepEqual(skipOnly.ccHrIds, [], "the skip-level occupies To, not Cc, so Cc is empty");
-  assert.deepEqual(skipOnly.bccHrIds, [], "no Super Admins were given");
-
-  // Genuinely nobody available anywhere — the only case that yields a fully empty envelope for a
-  // real (non-null) employee.
-  const nobodyAvailable = buildOutstationSubmitRouting({
-    ceoHrIds: CEO,
-    employeeHrId: "HR-REP",
-    managerHrId: null,
-    managerOfManagerHrId: null,
-    superAdminHrIds: [],
-  });
-  assert.equal(nobodyAvailable.toHrId, null, "with no manager, no skip-level and no Super Admin, nobody can be addressed");
-  assert.deepEqual(nobodyAvailable.ccHrIds, []);
-  assert.deepEqual(nobodyAvailable.bccHrIds, []);
+  assert.equal(noChain.toHrId, "HR-REP", "To never depends on the reporting chain being resolvable");
+  assert.deepEqual(noChain.ccHrIds, [], "nobody to put in Cc");
+  assert.deepEqual(noChain.bccHrIds, ["HR-SA1", "HR-SA2"], "Bcc is unaffected by a missing reporting chain");
 }

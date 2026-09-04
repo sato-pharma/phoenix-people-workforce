@@ -2918,7 +2918,7 @@ await runTest(
 await runTest("incentive semester window (the CALENDAR semester, the same one for every rep; H1 stays closed rather than restated; a rep with no data still gets a named provisional window)", runIncentiveSemesterWindowTests);
 
 await runTest("reconciliation harness (a breach names both figures and their sources; a known-open defect never pages nightly; one bad check cannot blind the rest)", runReconciliationHarnessTests);
-await runTest("outstation submit email envelope (employee To, managers Cc, Super Admins Bcc; a CEO skip-level is dropped but a CEO direct manager is kept; one mailbox never lands in two headers)", runOutstationSubmitEmailRoutingTests);
+await runTest("outstation submit email envelope (employee To, his direct manager Cc, Super Admins Bcc; the CEO is dropped from Cc in every case — direct manager or skip-level — with the skip-level stepping in when the direct manager is the CEO; one mailbox never lands in two headers)", runOutstationSubmitEmailRoutingTests);
 await runTest("outstation two-photo + workload payroll gate (both photos AND a captured workload before payroll; a 'complete' status with no photo behind it never pays; pre-rule requests are exempt, not blocked)", runOutstationExpenseGateTests);
 await runTest("outstation departure photo review (distance is flagged not blocked; both photos at once is flagged; the window closes at the end of the trip's last CAIRO day, DST included)", runOutstationDepartureEvidenceTests);
 await runTest("evidence photo location stamp (full address + Phoenix brick/area/region; a far brick carries its distance; NO line is ever a bare lat/long pair)", runEvidenceLocationStampTests);
