@@ -158,7 +158,7 @@ export function detectSuspectDatesFromCounts(countByDate: Map<string, number>): 
  * A missing anomaly check is not the same as "no anomalies"; the caller now
  * treats a throw as a degraded run and refuses to publish it.
  */
-async function getSuspectDatesForMonth(month: number, year: number): Promise<Set<string>> {
+export async function getSuspectDatesForMonth(month: number, year: number): Promise<Set<string>> {
   const monthStr = String(month).padStart(2, "0");
   const start = `${year}-${monthStr}-01`;
   const end = `${year}-${monthStr}-${String(lastDayOfMonth(year, month)).padStart(2, "0")}`;
