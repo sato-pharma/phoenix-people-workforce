@@ -15,11 +15,21 @@ export type HiringDocumentScanMode = "colour" | "greyscale" | "high-contrast";
  *
  * `upload` — the file came in as it was: the scanner's own PDF, a photo, a picture of a page.
  * `scan`   — pages were photographed in Phoenix, polished, and assembled into one PDF by us.
+ * `issued` — Phoenix generated this paper for this employee and filed it when the owner confirmed
+ *            the signature. It is the document that was put in front of them, never a photograph
+ *            of the ink on it.
  *
  * The distinction is shown to HR, because a `scan` has been through contrast and tone correction,
- * and anyone judging whether a stamp looks right should know that before they judge it.
+ * and anyone judging whether a stamp looks right should know that before they judge it. `issued`
+ * matters for a sharper reason: these land in slots named "Signed employment contract", and
+ * somebody opening one is entitled to know they are looking at the unsigned original rather than
+ * at evidence that anybody signed anything.
+ *
+ * ONLY THE SERVER MAY WRITE `issued`. `app/api/hiring-documents/files/route.ts` deliberately
+ * narrows whatever a client sends to `scan` or `upload`, so a hand-uploaded file can never claim
+ * to have been issued by the system.
  */
-export type HiringDocumentFileSource = "upload" | "scan";
+export type HiringDocumentFileSource = "upload" | "scan" | "issued";
 
 export type HiringDocumentFile = {
   contentType: string;
