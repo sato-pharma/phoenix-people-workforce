@@ -14,6 +14,15 @@
 # this wrapper is the belt-and-suspenders for any residual contention. Because the
 # quota is per-minute, the >=60s backoff lets the window reset before retrying.
 #
+# Second caller, same shape (2026-09-04): ci.yml's dependency-audit step. `pnpm audit`
+# POSTs the dependency graph to registry.npmjs.org's bulk-advisory endpoint and has no
+# retry of its own worth the name — two attempts at 10s/1m, then the step dies with a
+# bare `TimeoutError: The operation was aborted due to timeout`. That registry blip
+# failed `validate` twice in 31 minutes (runs 33832022834 and 33833948465), each time
+# AFTER every real check had passed, so the PR's Test and Build steps never ran. A
+# genuine vulnerability finding fails with an advisory table and matches none of the
+# markers below, so wrapping the audit changes nothing the gate gates on.
+#
 # Usage:   scripts/retry-transient.sh <command> [args...]
 # Tunables (env): RETRY_MAX_ATTEMPTS (default 4), RETRY_BASE_WAIT_SECONDS (default 60).
 # Exit code: 0 on success; otherwise the failing command's last exit code.
@@ -39,7 +48,13 @@ base_wait="${RETRY_BASE_WAIT_SECONDS:-60}"
 #      service account surfaces as 403 / PERMISSION_DENIED, deliberately absent below —
 #      so retrying with the same escalating backoff is safe and lets the endpoint
 #      recover instead of turning a transient blip into a red deploy.
-transient_re='RATE_LIMIT_EXCEEDED|Quota exceeded|Get requests per minute|(^|[^0-9])(429|503)([^0-9]|$)|network connectivity|Deadline exceeded|connection reset|Unable to retrieve Identity Pool subject token|refreshing your current auth tokens|upstream connect error|disconnect/reset before headers|connection timeout'
+#   3. pnpm's fetch aborts and network markers (added 2026-09-04 for the CI dependency
+#      audit — see the header note). pnpm prints `TimeoutError: The operation was
+#      aborted due to timeout` when its abort controller fires, `FetchError` /
+#      `ECONNRESET` / `ETIMEDOUT` / `ECONNREFUSED` on socket failures, and `ERR_PNPM_FETCH_*`
+#      on registry non-2xx. A lockfile, parse, or vulnerability-table failure contains
+#      none of these, so it is still surfaced on the first attempt.
+transient_re='RATE_LIMIT_EXCEEDED|Quota exceeded|Get requests per minute|(^|[^0-9])(429|503)([^0-9]|$)|network connectivity|Deadline exceeded|connection reset|Unable to retrieve Identity Pool subject token|refreshing your current auth tokens|upstream connect error|disconnect/reset before headers|connection timeout|TimeoutError|aborted due to timeout|FetchError|ECONNRESET|ETIMEDOUT|ECONNREFUSED|ERR_PNPM_FETCH'
 
 if [ "$#" -eq 0 ]; then
   echo "retry-transient: no command given" >&2

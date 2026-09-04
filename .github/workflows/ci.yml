@@ -209,7 +209,14 @@ jobs:
         # GHSA-mh99-v99m-4gvg is ignored via pnpm-workspace.yaml's auditConfig — see the
         # comment there for why (forcing a fix broke eslint; the app's real exposure isn't
         # exploitable).
-        run: pnpm audit --audit-level=high --prod
+        # retry-transient.sh because the audit is a NETWORK call to registry.npmjs.org,
+        # and pnpm's own retries (10s, then 1m) do not outlast a registry blip: on
+        # 2026-09-04 that endpoint stopped answering and failed `validate` twice in
+        # 31 minutes (runs 33832022834 and 33833948465) with a bare `TimeoutError`,
+        # AFTER every real check had passed — so the PR's Test and Build steps never
+        # ran. A real high+ finding exits 1 with an advisory table, matches no
+        # transient marker, and fails immediately without a single retry.
+        run: bash scripts/retry-transient.sh pnpm audit --audit-level=high --prod
 
       # THE .next BUILD CACHE WAS DELETED HERE ON 2026-08-29. Do not re-add it.
       #
