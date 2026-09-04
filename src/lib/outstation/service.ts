@@ -438,6 +438,26 @@ function calculateRawAllowanceBreakdown(
 }
 
 /**
+ * The allowance for a Meeting expense — always zero. Owner rule, 2026-09-04: a Meeting entry
+ * is priced on the meeting cost alone, never a distance/day-driven allowance, so the three
+ * ManagerExpense* functions below skip calculateGuardedAllowanceBreakdown entirely for it
+ * rather than compute a real breakdown and then discard it.
+ */
+function zeroAllowanceBreakdown(): ReturnType<typeof calculateRawAllowanceBreakdown> {
+  return {
+    allowanceAmount: 0,
+    breakdown: {
+      overnightDays: 0,
+      returnDayApplied: false,
+      rows: [],
+      sameDayTrip: true,
+    },
+    overnightDays: 0,
+    sameDayTrip: true,
+  };
+}
+
+/**
  * Every calendar day, for one employee, already covered by a live request's allowance —
  * mapped to the id of the request that claims it.
  *
@@ -3137,6 +3157,7 @@ export async function previewManagerExpenseCalculation(
     destinationLabel?: string | null;
     distanceKm: number;
     employeeHrId: string;
+    expenseType: OutstationExpenseType;
     meetingAmount?: number;
     otherAmount?: number;
     transportationType: OutstationTransportationType;
@@ -3156,46 +3177,58 @@ export async function previewManagerExpenseCalculation(
   }
 
   const policy = await getActivePolicyForRole(resolveJobFunctionRole(employee.jobTitle ?? ""));
-  const residence = await getResidenceLocationForEmployee(employee.hrId);
-  const residenceGovernorate = resolveFirstGovernorate(
-    residence?.residenceCity,
-    residence?.residenceArea,
-    residence?.residenceAddress,
-  );
-  const destinationGovernorate = resolveFirstGovernorate(
-    input.destinationCity,
-    input.destinationArea,
-    input.destinationLabel,
-    input.destinationCountry,
-  );
-  const allowance = await calculateGuardedAllowanceBreakdown({
-    destinationGovernorate,
-    employeeHrId: employee.hrId,
-    policy,
-    residenceGovernorate,
-    tripEndDate: input.tripEndDate,
-    tripStartDate: input.tripStartDate,
-  });
-
-  let fuelAmount = 0;
-  if (input.transportationType === "car") {
-    fuelAmount = roundMoney(input.distanceKm * 2 * policy.fuelRatePerKm);
-  }
-  const travelCost = optionalPositiveMoney(input.travelCostAmount) ?? fuelAmount;
-  const ticketAmount =
-    input.transportationType === "car" ? 0 : roundMoney(Math.max(0, travelCost - fuelAmount));
   const meetingAmount = positiveMoney(input.meetingAmount);
   const otherAmount = positiveMoney(input.otherAmount);
 
-  const distanceEligibility = classifyOutstationExpenseEligibility({
-    actualDistanceKm: input.distanceKm,
-    policy: {
-      officialMinimumDistanceKm: policy.minimumDistanceKm,
-      toleranceMinimumDistanceKm: policy.toleranceMinimumDistanceKm,
-    },
-  });
-  const eligibilityStatus: OutstationEligibilityStatus =
-    distanceEligibility.classification === "not_eligible" ? "not_eligible" : "eligible";
+  // A Meeting entry is priced on the meeting cost alone — no distance-driven travel cost, no
+  // allowance, and no distance-eligibility floor. Owner rule, 2026-09-04.
+  const isMeetingExpense = input.expenseType === "meeting";
+
+  let fuelAmount = 0;
+  let ticketAmount = 0;
+  let travelCost = 0;
+  let allowance = zeroAllowanceBreakdown();
+  let eligibilityStatus: OutstationEligibilityStatus = "eligible";
+
+  if (!isMeetingExpense) {
+    const residence = await getResidenceLocationForEmployee(employee.hrId);
+    const residenceGovernorate = resolveFirstGovernorate(
+      residence?.residenceCity,
+      residence?.residenceArea,
+      residence?.residenceAddress,
+    );
+    const destinationGovernorate = resolveFirstGovernorate(
+      input.destinationCity,
+      input.destinationArea,
+      input.destinationLabel,
+      input.destinationCountry,
+    );
+    allowance = await calculateGuardedAllowanceBreakdown({
+      destinationGovernorate,
+      employeeHrId: employee.hrId,
+      policy,
+      residenceGovernorate,
+      tripEndDate: input.tripEndDate,
+      tripStartDate: input.tripStartDate,
+    });
+
+    if (input.transportationType === "car") {
+      fuelAmount = roundMoney(input.distanceKm * 2 * policy.fuelRatePerKm);
+    }
+    travelCost = optionalPositiveMoney(input.travelCostAmount) ?? fuelAmount;
+    ticketAmount =
+      input.transportationType === "car" ? 0 : roundMoney(Math.max(0, travelCost - fuelAmount));
+
+    const distanceEligibility = classifyOutstationExpenseEligibility({
+      actualDistanceKm: input.distanceKm,
+      policy: {
+        officialMinimumDistanceKm: policy.minimumDistanceKm,
+        toleranceMinimumDistanceKm: policy.toleranceMinimumDistanceKm,
+      },
+    });
+    eligibilityStatus =
+      distanceEligibility.classification === "not_eligible" ? "not_eligible" : "eligible";
+  }
 
   const expectedTotalAmount =
     reportExpectedTotal({
@@ -3265,25 +3298,38 @@ export async function createManagerExpenseAsAdmin(
     input.destination.label,
     input.destination.country,
   );
-  const allowance = await calculateGuardedAllowanceBreakdown({
-    destinationGovernorate,
-    employeeHrId: employee.hrId,
-    policy,
-    residenceGovernorate,
-    tripEndDate: input.tripEndDate,
-    tripStartDate: input.tripStartDate,
-  });
+  // A Meeting entry is priced on the meeting cost alone — no distance-driven travel cost, no
+  // allowance, and no distance-eligibility floor. Owner rule, 2026-09-04: for expenseType
+  // "meeting" the admin only records where the meeting happened (destinationGovernorate above)
+  // and what it cost — there is no trip to price.
+  const isMeetingExpense = input.expenseType === "meeting";
+
+  const allowance = isMeetingExpense
+    ? zeroAllowanceBreakdown()
+    : await calculateGuardedAllowanceBreakdown({
+        destinationGovernorate,
+        employeeHrId: employee.hrId,
+        policy,
+        residenceGovernorate,
+        tripEndDate: input.tripEndDate,
+        tripStartDate: input.tripStartDate,
+      });
 
   let fuelAmount = 0;
-  if (input.transportationType === "car") {
+  if (!isMeetingExpense && input.transportationType === "car") {
     fuelAmount = roundMoney(input.distanceKm * 2 * policy.fuelRatePerKm);
   }
-  const reportTravelCost = optionalPositiveMoney(input.travelCostAmount) ?? fuelAmount;
+  const reportTravelCost = isMeetingExpense
+    ? 0
+    : optionalPositiveMoney(input.travelCostAmount) ?? fuelAmount;
   // Keep fuelAmount + ticketAmount === reportTravelCost: the payroll mapper rebuilds
   // travel cost from those two columns, so a ticket trip that leaves ticket_amount at 0
   // reaches payroll with the ticket price missing.
-  const ticketAmount =
-    input.transportationType === "car" ? 0 : roundMoney(Math.max(0, reportTravelCost - fuelAmount));
+  const ticketAmount = isMeetingExpense
+    ? 0
+    : input.transportationType === "car"
+      ? 0
+      : roundMoney(Math.max(0, reportTravelCost - fuelAmount));
   const reportMeetingAmount = positiveMoney(input.meetingAmount);
   const reportOtherAmount = positiveMoney(input.otherAmount);
 
@@ -3295,10 +3341,12 @@ export async function createManagerExpenseAsAdmin(
     },
   });
 
-  const eligibilityStatus: OutstationEligibilityStatus =
-    distanceEligibility.classification === "not_eligible" ? "not_eligible" : "eligible";
-  const eligibilityReason =
-    `Admin-created manual outstation expense. ${distanceEligibility.reason}`;
+  const eligibilityStatus: OutstationEligibilityStatus = isMeetingExpense
+    ? "eligible"
+    : distanceEligibility.classification === "not_eligible" ? "not_eligible" : "eligible";
+  const eligibilityReason = isMeetingExpense
+    ? "Admin-created manual meeting expense — no distance eligibility floor applies."
+    : `Admin-created manual outstation expense. ${distanceEligibility.reason}`;
 
   const expectedTotalAmount =
     reportExpectedTotal({
@@ -3544,29 +3592,39 @@ export async function updateManagerExpenseAsAdmin(
     destination?.country ?? existing.toCountry,
   );
 
-  const allowance = await calculateGuardedAllowanceBreakdown({
-    destinationGovernorate,
-    employeeHrId,
-    excludeRequestId: requestId,
-    policy,
-    residenceGovernorate,
-    tripEndDate,
-    tripStartDate,
-  });
+  // A Meeting entry is priced on the meeting cost alone — no distance-driven travel cost, no
+  // allowance, and no distance-eligibility floor. Owner rule, 2026-09-04.
+  const isMeetingExpense = expenseType === "meeting";
+
+  const allowance = isMeetingExpense
+    ? zeroAllowanceBreakdown()
+    : await calculateGuardedAllowanceBreakdown({
+        destinationGovernorate,
+        employeeHrId,
+        excludeRequestId: requestId,
+        policy,
+        residenceGovernorate,
+        tripEndDate,
+        tripStartDate,
+      });
   let fuelAmount = 0;
-  if (transportationType === "car") {
+  if (!isMeetingExpense && transportationType === "car") {
     fuelAmount = roundMoney(distanceKm * 2 * policy.fuelRatePerKm);
   }
   const existingTravelCost =
     existing.reportTravelCost ?? roundMoney(existing.fuelAmount + existing.ticketAmount);
   const computedTravelCost =
     transportationType === "car" ? fuelAmount : existingTravelCost;
-  const reportTravelCost =
-    "travelCostAmount" in input
+  const reportTravelCost = isMeetingExpense
+    ? 0
+    : "travelCostAmount" in input
       ? optionalPositiveMoney(input.travelCostAmount) ?? computedTravelCost
       : existingTravelCost;
-  const ticketAmount =
-    transportationType === "car" ? 0 : roundMoney(Math.max(0, reportTravelCost - fuelAmount));
+  const ticketAmount = isMeetingExpense
+    ? 0
+    : transportationType === "car"
+      ? 0
+      : roundMoney(Math.max(0, reportTravelCost - fuelAmount));
   // Left NULL when the caller sent no override and the row never had one — writing a 0 back would
   // record an override nobody made, which is exactly the state the two mappers must be able to tell
   // apart. `resolved*` below is what the pricing and the audit row read.
@@ -3607,8 +3665,9 @@ export async function updateManagerExpenseAsAdmin(
     },
   });
 
-  const eligibilityStatus: OutstationEligibilityStatus =
-    distanceEligibility.classification === "not_eligible" ? "not_eligible" : "eligible";
+  const eligibilityStatus: OutstationEligibilityStatus = isMeetingExpense
+    ? "eligible"
+    : distanceEligibility.classification === "not_eligible" ? "not_eligible" : "eligible";
   const expectedTotalAmount =
     reportExpectedTotal({
       allowanceAmount: allowance.allowanceAmount,
@@ -3654,7 +3713,9 @@ export async function updateManagerExpenseAsAdmin(
     distance_from_residence_km: distanceKm,
     distance_km: distanceKm,
     duration_minutes: durationMinutes,
-    eligibility_reason: `Admin-updated manual outstation expense. ${distanceEligibility.reason}`,
+    eligibility_reason: isMeetingExpense
+      ? "Admin-updated manual meeting expense — no distance eligibility floor applies."
+      : `Admin-updated manual outstation expense. ${distanceEligibility.reason}`,
     eligibility_status: eligibilityStatus,
     expense_type: expenseType,
     expected_total_amount: expectedTotalAmount,
