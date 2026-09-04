@@ -1,4 +1,9 @@
 import { systemLegalEntity } from "@/config/system-settings";
+import {
+  houseLetterhead,
+  HOUSE_COLORS,
+  HOUSE_IDENTITY_CSS,
+} from "@/lib/hiring-pack/house-identity";
 import { flowFieldLayer, type DocumentFieldRow } from "@/lib/hiring-pack/field-layout";
 import { spellEgyptianAmount } from "@/lib/hiring-pack/arabic-amount";
 import {
@@ -394,16 +399,12 @@ function renderBandedCopy(
   return `<article class="copy copy--banded">
     <table class="sheet">
       <tbody><tr><td class="sheet__body">
-        <header class="masthead">
-          <div class="masthead__title">
-            <h1>${escapeHtml(template.titleAr)}</h1>
-            <p>${escapeHtml(template.subtitleAr)}</p>
-          </div>
-          <div class="masthead__mark">
-            <img src="/brand/sato-pharma-logo.png" alt="" width="401" height="158">
-          </div>
-        </header>
-        <div class="rule"></div>
+        ${houseLetterhead({
+          titleAr: template.titleAr,
+          subtitleAr: template.subtitleAr,
+          legalNameAr: systemLegalEntity.legalNameAr,
+          legalNameEn: systemLegalEntity.legalNameEn,
+        })}
 
         <section class="parties">
           ${partyBlock(template.firstPartyHeadingAr, template.firstPartyLinesAr)}
@@ -893,34 +894,21 @@ export function renderContractHtml(
     text-align: center;
   }
 
-  .masthead { display: flex; align-items: stretch; background: #0b2a4a; }
-  .masthead__title { flex: 1 1 auto; padding: 4mm 5mm; text-align: center; }
-  .masthead__title h1 { margin: 0; color: #fff; font-size: 15pt; font-weight: 700; }
-  .masthead__title p { margin: 1.5mm 0 0; color: #a8c6e2; font-size: 8.5pt; font-weight: 600; }
-  .masthead__mark {
-    display: flex;
-    flex: 0 0 20.5%;
-    align-items: center;
-    justify-content: center;
-    padding: 3mm;
-  }
-  /* The white-wordmark logo, which is the on-dark variant — the same artwork the source document
-     places on this panel. The light-background variant would disappear here. */
-  .masthead__mark img { width: 100%; max-width: 32mm; height: auto; }
-  .rule { height: 1.6mm; background: #1b7fbf; }
+  /* The house identity — SATO-DIS-2026-01, shared by every document. */
+  ${HOUSE_IDENTITY_CSS}
 
   .parties { margin: 0 0 4mm; border: 0.5pt solid #c9d6e2; border-top: 0; }
   .band {
     margin: 0;
-    padding: 1.6mm 3mm;
-    background: #1b7fbf;
-    color: #fff;
+    padding: 1.6mm 3mm 1.2mm;
+    border-bottom: 0.8pt solid ${HOUSE_COLORS.blue};
+    color: ${HOUSE_COLORS.deep};
     font-size: 9pt;
     font-weight: 700;
     text-align: center;
   }
   .row { margin: 0; padding: 1.8mm 3mm; font-size: 10pt; line-height: 1.45; }
-  .row--even { background: #f2f6fa; }
+  .row--even { background: ${HOUSE_COLORS.tint}; }
   .row--odd { background: #fff; }
 
   .grid { border: 0.5pt solid #c9d6e2; }
@@ -935,7 +923,7 @@ export function renderContractHtml(
   }
   /* Zebra by position, matching the source. Positional rather than a class so an article inserted
      or removed can never leave two identical stripes touching. */
-  .grid__row:nth-child(even) { background: #f2f6fa; }
+  .grid__row:nth-child(even) { background: ${HOUSE_COLORS.tint}; }
   .grid__row:last-child { border-bottom: 0; }
   .grid__label {
     display: flex;
@@ -946,8 +934,8 @@ export function renderContractHtml(
     border-inline-start: 0.5pt solid #c9d6e2;
     text-align: center;
   }
-  .grid__number { color: #0b2a4a; font-size: 11.5pt; font-weight: 700; }
-  .grid__title { color: #1b7fbf; font-size: 9.5pt; font-weight: 700; line-height: 1.25; }
+  .grid__number { color: ${HOUSE_COLORS.deep}; font-size: 11.5pt; font-weight: 700; }
+  .grid__title { color: ${HOUSE_COLORS.blue}; font-size: 9.5pt; font-weight: 700; line-height: 1.25; }
   .grid__body {
     flex: 1 1 auto;
     padding: 2.4mm 3mm;
@@ -958,7 +946,7 @@ export function renderContractHtml(
 
   .closing {
     margin: 5mm 0 4mm;
-    color: #0b2a4a;
+    color: ${HOUSE_COLORS.deep};
     font-size: 10.5pt;
     font-weight: 700;
     text-align: right;
@@ -966,7 +954,7 @@ export function renderContractHtml(
 
   .sign2 {
     display: flex;
-    border-top: 1pt solid #0b2a4a;
+    border-top: 1pt solid ${HOUSE_COLORS.deep};
     border-bottom: 0.5pt solid #c9d6e2;
     break-inside: avoid;
     page-break-inside: avoid;
@@ -975,14 +963,14 @@ export function renderContractHtml(
   .signcol + .signcol { border-inline-end: 0.5pt solid #c9d6e2; }
   .signcol__head {
     margin: 0;
-    padding: 1.8mm 3mm;
-    background: #0b2a4a;
-    color: #fff;
+    padding: 1.8mm 3mm 1.3mm;
+    border-bottom: 0.8pt solid ${HOUSE_COLORS.blue};
+    color: ${HOUSE_COLORS.deep};
     font-size: 10pt;
     font-weight: 700;
     text-align: center;
   }
-  .signcol__body { padding: 2mm 3mm 4mm; background: #f2f6fa; }
+  .signcol__body { padding: 2mm 3mm 4mm; }
   .signcol__field { margin: 2.4mm 0 0; font-size: 10pt; }
 
   /* What Phoenix typed, on the amber the source document uses for its blanks. */
@@ -1011,7 +999,7 @@ export function renderContractHtml(
     gap: 4mm;
     margin-bottom: 2.5mm;
     padding-bottom: 1.5mm;
-    border-bottom: 0.6pt solid #b9cad9;
+    border-bottom: 0.6pt solid ${HOUSE_COLORS.hair};
   }
   .doc-mast__side { flex: 0 0 30mm; }
   .doc-mast__mark { display: flex; justify-content: flex-start; }
@@ -1019,7 +1007,7 @@ export function renderContractHtml(
      The white-wordmark file used by the banded layout would vanish on this page. */
   .doc-mast__mark img { width: 100%; max-width: 30mm; height: auto; }
   .doc-mast__title { flex: 1 1 auto; text-align: center; }
-  .doc-mast__title strong { display: block; color: #0f6ea8; font-size: 13pt; font-weight: 700; }
+  .doc-mast__title strong { display: block; color: ${HOUSE_COLORS.deep}; font-size: 13pt; font-weight: 700; }
   .doc-mast__title em {
     display: block;
     margin-top: 1mm;
