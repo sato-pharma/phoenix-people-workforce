@@ -22,6 +22,10 @@ import { readFileSync } from "node:fs";
  *   3. portal-command-center.tsx — GlanceStrip went to three columns at `sm:` (a 640px WINDOW) while
  *      `main` was 608px, leaving the label 75px: "plans awaiting approval", one word per line, three
  *      lines deep. Re-keyed to the strip's OWN width with a container query.
+ *   4. portal-command-center.tsx — QuickActions. Not a clip: a fixed `grid-cols-2` gave every
+ *      action 172px at 375px, so "Review Marketing Requests" wrapped three lines deep, one word
+ *      per line. Re-shaped so a label wider than half the row claims the whole row, while short
+ *      labels stay two-up. Added 2026-09-05 at the owner's request after the first three shipped.
  *
  * Pinned by SHAPE, not by a byte window. Comments are stripped first: the prose above and each
  * component's own header comment name the banned utilities, and a pinning test that matched its own
@@ -128,4 +132,48 @@ export function runPortalChromeNeverClipsTextTests() {
       `This strip is rendered inside command centers of very different widths — a window-sized ` +
       `query cannot see the one it is actually in.`,
   );
+
+  // ── 4. QuickActions: a long label takes the whole row ──────────────────────────────────────
+  const actionsStart = command.indexOf("export function QuickActions");
+  assert.notEqual(
+    actionsStart,
+    -1,
+    `${COMMAND}: QuickActions is gone — this test is pinning a component that no longer exists.`,
+  );
+  const actions = command.slice(actionsStart, actionsStart + 1600);
+
+  const row = actions.match(/<div className="([^"]*)">/);
+  assert.ok(row, `${COMMAND}: QuickActions no longer opens with a literal className.`);
+  const rowTokens = tokens(row[1]);
+  const fixedCols = rowTokens.filter((token) => /(^|:)grid-cols-/.test(token));
+  assert.deepEqual(
+    fixedCols,
+    [],
+    `${COMMAND}: QuickActions carries fixed column classes ${JSON.stringify(fixedCols)}. A fixed ` +
+      `two-column grid gives every action the same 172px at 375px, and "Review Marketing ` +
+      `Requests" — the longest action label in the repo — then breaks over THREE lines, one word ` +
+      `per line. The row has to size to its content instead.`,
+  );
+
+  const item = actions.match(/className="(flex min-h-\[48px\][^"]*)"/);
+  assert.ok(item, `${COMMAND}: the QuickActions item no longer opens "flex min-h-[48px] …".`);
+  const itemTokens = tokens(item[1]);
+  for (const required of ["min-w-fit", "grow", "basis-[calc(50%-0.25rem)]"]) {
+    assert.ok(
+      itemTokens.includes(required),
+      `${COMMAND}: the QuickActions item is "${item[1]}" — missing "${required}". The three work ` +
+        `together and none is decorative: "basis-[calc(50%-0.25rem)]" puts two per row allowing ` +
+        `for gap-2, "min-w-fit" lets a label wider than half the row push its own item past that ` +
+        `basis so it can no longer share a row, and "grow" then fills the row it lands on alone. ` +
+        `Drop any one and a long label either wraps three deep again or leaves a ragged half-row.`,
+    );
+  }
+  for (const required of ["sm:grow-0", "sm:basis-auto"]) {
+    assert.ok(
+      itemTokens.includes(required),
+      `${COMMAND}: the QuickActions item is "${item[1]}" — missing "${required}". Above sm these ` +
+        `actions are compact content-width pills, measured pixel-identical to the pre-fix markup ` +
+        `at 1280px; without this the mobile 50% basis would leak into the desktop row.`,
+    );
+  }
 }
