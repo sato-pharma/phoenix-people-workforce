@@ -194,14 +194,51 @@ export function runRecruitmentCandidateMergeTests() {
     "ats_candidate_status_events is append-only — an UPDATE of candidate_id raises restrict_violation for every role, so moving it in childTables can only ever fail, and it fails AFTER the other tables have moved",
   );
   const appendOnlyStart = service.indexOf("const appendOnlyChildTables");
-  const appendOnly = service.slice(appendOnlyStart, service.indexOf("] as const", appendOnlyStart));
+  const appendOnly = service.slice(appendOnlyStart, service.indexOf("const linkedByOwnColumn", appendOnlyStart));
   assert.ok(
     appendOnlyStart > 0 && appendOnly.includes("ats_candidate_status_events"),
     "the duplicate's decision history still has to reach the survivor — as COPIES, since append is the only verb the table permits",
   );
   assert.ok(
-    service.includes("await copyAppendOnlyHistory("),
+    service.includes("await copyAppendOnlyRows("),
     "declaring the append-only list without walking it loses the duplicate's history entirely, which is worse than the failure it replaced",
+  );
+
+  // ── THE SECOND append-only table, missed by the first fix ────────────────────────────────────
+  // ats_candidate_comments carries `ats_candidate_comments_no_update` — BEFORE UPDATE, refusing the
+  // very same move with a different message ("delete and write a new comment instead"). The
+  // 2026-09-04 fix moved status events out of childTables and left comments IN it, where it would
+  // have failed in exactly the same way for any duplicate carrying a comment. Nothing in a
+  // catalogue read found it: every check had been aimed at the table the incident named. Rehearsing
+  // a whole merge on staging is what caught it.
+  assert.equal(
+    childTables.includes("ats_candidate_comments"),
+    false,
+    "ats_candidate_comments refuses an UPDATE too — moving it in childTables repeats the exact failure this file exists to prevent",
+  );
+  assert.ok(
+    appendOnly.includes("ats_candidate_comments"),
+    "a comment can only be copied onto the survivor, never re-pointed",
+  );
+
+  // The two append-only tables disagree about the ORIGINALS, and the disagreement is the whole
+  // reason this is a flag rather than a constant. Status events refuse DELETE as firmly as UPDATE,
+  // so their originals must stay. A comment CAN be deleted and has no foreign key, so its original
+  // must go or it outlives the duplicate as an orphan. Getting either backwards fails: one throws,
+  // the other leaks.
+  const appendOnlyDescriptor = (table: string): string => {
+    const at = appendOnly.indexOf(`table: "${table}"`);
+    assert.notEqual(at, -1, `${table} is missing from appendOnlyChildTables`);
+    return appendOnly.slice(appendOnly.lastIndexOf("canDeleteOriginals:", at), at);
+  };
+
+  assert.ok(
+    appendOnlyDescriptor("ats_candidate_status_events").startsWith("canDeleteOriginals: false"),
+    "ats_candidate_status_events refuses DELETE as firmly as UPDATE, so its originals must be left where they are",
+  );
+  assert.ok(
+    appendOnlyDescriptor("ats_candidate_comments").startsWith("canDeleteOriginals: true"),
+    "a comment has no foreign key to cascade it away, so leaving the original behind outlives the candidate as an orphan",
   );
 
   // ── The five tables a merge used to lose on delete ────────────────────────────────────────────
@@ -222,7 +259,7 @@ export function runRecruitmentCandidateMergeTests() {
     "ats_candidate_manager_folders",
   ]) {
     assert.ok(
-      childTables.includes(table) || deduped.includes(table),
+      childTables.includes(table) || deduped.includes(table) || appendOnly.includes(table),
       `${table} carries candidate_id, so a merge that never moves its rows loses them when the duplicate is deleted`,
     );
   }
@@ -269,7 +306,7 @@ export function runRecruitmentCandidateMergeTests() {
     "the merge never walks linkedByOwnColumn — declaring the list without acting on it leaves the session pointing at the row that was just deleted, which is the whole defect",
   );
   assert.ok(
-    relinkLoopAt < service.indexOf("deleteError"),
+    relinkLoopAt < service.indexOf("Step 6: the duplicate row itself"),
     "the session must be repointed BEFORE the duplicate is deleted — afterwards nothing can find it from either end",
   );
   assert.ok(
@@ -295,9 +332,9 @@ export function runRecruitmentCandidateMergeTests() {
   const mergeAt = service.indexOf("export async function mergeCandidates");
   const dedupedLoopAt = service.indexOf("of dedupedChildTables", mergeAt);
   const childLoopAt = service.indexOf("of childTables", mergeAt);
-  const copyAt = service.indexOf("await copyAppendOnlyHistory(", mergeAt);
+  const copyAt = service.indexOf("await copyAppendOnlyRows(", mergeAt);
   const relinkAt = service.indexOf("of linkedByOwnColumn", mergeAt);
-  const deleteAt = service.indexOf("deleteError", mergeAt);
+  const deleteAt = service.indexOf("Step 6: the duplicate row itself", mergeAt);
   // Existence first: indexOf answers -1 for a step that is not there, and -1 is less than every
   // real position, so an ordering assertion alone passes on a merge that skips the step entirely.
   for (const [label, at] of [
@@ -368,13 +405,14 @@ export function runRecruitmentCandidateMergeTests() {
     duplicateId: "369b306e-7de0-478b-8e0d-f183ce70f3f0",
     existingNote: "Sent to Saad Salama for Kafr El-Sheikh 1.",
     mergedOn: "2026-09-04",
+    table: "ats_candidate_status_events",
   });
   assert.ok(copiedWithNote.startsWith("Sent to Saad Salama for Kafr El-Sheikh 1."), "the original note is kept in full — never replaced");
   assert.match(copiedWithNote, /\[Copied from duplicate record 70f3f0 when it was merged in on 2026-09-04\./);
   assert.match(copiedWithNote, /append-only/);
   // The duplicate is deleted by the time anyone reads this, so the label ties the line back to the
   // backup schema. Last six characters, matching the lines written by hand on 2026-09-04.
-  const copiedBlank = describeCopiedHistoryLine({ duplicateId: "ab92cd29-5924-469b-a4b9-6dcd078f40f3", existingNote: null, mergedOn: "2026-09-04" });
+  const copiedBlank = describeCopiedHistoryLine({ duplicateId: "ab92cd29-5924-469b-a4b9-6dcd078f40f3", existingNote: null, mergedOn: "2026-09-04", table: "ats_candidate_status_events" });
   assert.ok(copiedBlank.startsWith("[Copied from duplicate record 8f40f3"), "a line that had no note is the provenance alone, with no stray leading space");
 
   // ── screening_extra_answers: the jsonb analogue of borrowableFields ─────────────────────────────
