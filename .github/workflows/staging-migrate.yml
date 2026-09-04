@@ -87,9 +87,12 @@ jobs:
       # of it.
       - name: Apply missing migrations to staging
         if: ${{ env.HAS_STAGING_DB_URL == 'true' }}
-        run: pnpm run migrate:staging ${{ inputs.dry_run && '-- --dry-run' || '' }}
+        run: pnpm run migrate:staging
         env:
           PHOENIX_STAGING_DATABASE_URL: ${{ secrets.PHOENIX_STAGING_DATABASE_URL }}
+          # An env var, not `-- --dry-run`: see the applier's own note. On a push `inputs` is empty,
+          # so this is the empty string and the run applies, which is the point of the workflow.
+          PHOENIX_MIGRATE_DRY_RUN: ${{ inputs.dry_run }}
 
       # Without this the job would show a green tick having done nothing — indistinguishable at a
       # glance from "ran and applied everything". That silent-green shape is the thing this whole

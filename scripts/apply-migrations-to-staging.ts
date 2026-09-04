@@ -185,7 +185,12 @@ async function readLedger(sql: postgres.Sql): Promise<RemoteLedger> {
 }
 
 async function main() {
-  const dryRun = process.argv.includes("--dry-run");
+  // Two ways in, and the env var is the one CI uses. Passing the flag as `pnpm run x -- --dry-run`
+  // relies on pnpm's argument forwarding, which is one more mechanism to be wrong about, and its
+  // failure mode points the wrong way: a flag that silently fails to arrive turns a requested dry
+  // run into a real apply. An env var either has the value or does not.
+  const dryRun =
+    process.argv.includes("--dry-run") || process.env.PHOENIX_MIGRATE_DRY_RUN === "true";
   const rawUrl = process.env.PHOENIX_STAGING_DATABASE_URL?.trim();
   if (!rawUrl) {
     throw new Error(

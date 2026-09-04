@@ -80,7 +80,7 @@ export function runStagingMigrationApplierTests() {
   ]) {
     assert.throws(
       () => assertStagingTarget(url),
-      /REFUSED.*PRODUCTION/s,
+      /REFUSED[\s\S]*PRODUCTION/,
       "a production URL must be refused by name, in either connection shape",
     );
   }
@@ -89,12 +89,12 @@ export function runStagingMigrationApplierTests() {
   // do with this app, so an unfamiliar ref is a misconfiguration and must stop the run.
   assert.throws(
     () => assertStagingTarget("postgresql://postgres.plleofqyfbknvwcotzqo:pw@aws-0-eu-north-1.pooler.supabase.com:5432/postgres"),
-    /REFUSED.*not \s*staging/s,
+    /REFUSED[\s\S]*not \s*staging/,
     "an unrelated project is refused",
   );
   assert.throws(
     () => assertStagingTarget("postgresql://someone:pw@example.com:5432/postgres"),
-    /REFUSED.*could not read/s,
+    /REFUSED[\s\S]*could not read/,
     "an unidentifiable database is refused rather than tried",
   );
 
