@@ -802,6 +802,7 @@ import { runDmSeatAreaScopeTests } from "./dm-seat-area-scope.test.ts";
 import { runWeeklyAreaScopeTests } from "./weekly-area-scope.test.ts";
 import { runSalesHeadOfficeLockTests } from "./sales-head-office-lock.test.ts";
 import { runSqlExcludeCodesFailClosedTests } from "./sql-exclude-codes-fail-closed.test.ts";
+import { runSosDashboardBlockedBatchTotalsTests } from "./sos-dashboard-blocked-batch-totals.test.ts";
 import { runSosImportDashboardHeadOfficeLockTests } from "./sos-import-dashboard-head-office-lock.test.ts";
 import { runAnalyticsViewerScopeTests } from "./analytics-viewer-scope.test.ts";
 import { runRepAchievementPeriodsTests } from "./rep-achievement-periods.test.ts";
@@ -2672,6 +2673,7 @@ await runTest("weekly sales optional area scope (branch-mapped areas)", runWeekl
 await runTest("sales Head Office confidential lock (all surfaces)", runSalesHeadOfficeLockTests);
 await runTest("SQL p_exclude_codes defaults are fail-closed (and match RESTRICTED_PRODUCT_CODES)", runSqlExcludeCodesFailClosedTests);
 await runTest("SoS import dashboard Head Office line lock (loader + all callers)", runSosImportDashboardHeadOfficeLockTests);
+await runTest("SoS dashboard totals exclude blocked/rejected batches", runSosDashboardBlockedBatchTotalsTests);
 await runTest("analytics per-viewer scope (line/region/product, per role)", runAnalyticsViewerScopeTests);
 await runTest("rep achievement period resolution", runRepAchievementPeriodsTests);
 await runTest("monthly closing geography scope (DM/RM area bound reaches the loader)", runAnalyticsClosingGeographyScopeTests);
