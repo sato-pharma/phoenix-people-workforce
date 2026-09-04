@@ -49,8 +49,6 @@ export type SidebarDomain = {
   id: string;
   /** What the rail calls it. */
   name: string;
-  /** The kicker above the name while the domain is open. One word. */
-  sub: string;
   /** One sentence, shown under the name while the domain is open. */
   desc: string;
   icon: LucideIcon;
@@ -61,7 +59,6 @@ export const adminSidebarDomains: readonly SidebarDomain[] = [
   {
     id: "overview",
     name: "Overview",
-    sub: "Company",
     desc: "Where the day starts — dashboards, the org chart and the 360 views.",
     icon: LayoutDashboard,
     groups: [
@@ -75,7 +72,6 @@ export const adminSidebarDomains: readonly SidebarDomain[] = [
   {
     id: "requests",
     name: "Requests",
-    sub: "Decisions",
     desc: "What is waiting on a decision — yours, and everyone else's.",
     icon: Inbox,
     groups: [
@@ -86,7 +82,6 @@ export const adminSidebarDomains: readonly SidebarDomain[] = [
   {
     id: "people",
     name: "People",
-    sub: "Workforce",
     desc: "Employees, attendance, leave and the hiring pipeline.",
     icon: UsersRound,
     groups: [
@@ -117,7 +112,6 @@ export const adminSidebarDomains: readonly SidebarDomain[] = [
   {
     id: "money",
     name: "Payroll",
-    sub: "Money",
     desc: "Salaries, the payroll runs and outstation expenses.",
     icon: ReceiptText,
     groups: [
@@ -131,7 +125,6 @@ export const adminSidebarDomains: readonly SidebarDomain[] = [
   {
     id: "sales",
     name: "Sales",
-    sub: "Performance",
     desc: "Closings, targets, the source of sales and the CRM.",
     icon: ChartColumnBig,
     groups: [
@@ -153,7 +146,6 @@ export const adminSidebarDomains: readonly SidebarDomain[] = [
   {
     id: "marketing",
     name: "Marketing",
-    sub: "Field",
     desc: "Marketing spend and ROI, and adverse-event reporting.",
     icon: Megaphone,
     groups: [
@@ -164,7 +156,6 @@ export const adminSidebarDomains: readonly SidebarDomain[] = [
   {
     id: "system",
     name: "System",
-    sub: "Admin",
     desc: "Master data, access control and the admin tooling.",
     icon: Settings2,
     groups: [
@@ -185,7 +176,6 @@ export const adminSidebarDomains: readonly SidebarDomain[] = [
 export const UNGROUPED_DOMAIN: SidebarDomain = {
   id: "more",
   name: "More",
-  sub: "Unfiled",
   desc: "Modules not yet placed in a domain.",
   icon: Settings2,
   groups: [],

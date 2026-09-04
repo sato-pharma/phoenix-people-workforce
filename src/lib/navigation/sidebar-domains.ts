@@ -11,7 +11,6 @@ export type RenderedDomainGroup = {
 export type RenderedDomain = {
   id: string;
   name: string;
-  sub: string;
   desc: string;
   icon: LucideIcon;
   groups: RenderedDomainGroup[];
@@ -58,7 +57,18 @@ export function groupAdminSections(sections: readonly NavigationSection[]): Rend
           remaining.delete(id);
         }
       }
-      if (found.length > 0) groups.push({ heading: group.heading, sections: found });
+      if (found.length > 0) {
+        // A heading that merely repeats one of its own rows is worse than no heading: it spends a
+        // line saying the word again. "Command Center" sat directly above a row named "Command
+        // Center". Blanked rather than removed, so the group keeps its identity for ordering and
+        // the renderer simply draws no <p>.
+        const repeatsARow = found.some((section) =>
+          section.items.some(
+            (item) => item.label.trim().toLowerCase() === group.heading.trim().toLowerCase(),
+          ),
+        );
+        groups.push({ heading: repeatsARow ? "" : group.heading, sections: found });
+      }
     }
 
     if (groups.length > 0) domains.push(toRendered(domain, groups));
@@ -78,13 +88,12 @@ export function groupAdminSections(sections: readonly NavigationSection[]): Rend
 }
 
 function toRendered(
-  domain: { id: string; name: string; sub: string; desc: string; icon: LucideIcon },
+  domain: { id: string; name: string; desc: string; icon: LucideIcon },
   groups: RenderedDomainGroup[],
 ): RenderedDomain {
   return {
     id: domain.id,
     name: domain.name,
-    sub: domain.sub,
     desc: domain.desc,
     icon: domain.icon,
     groups,
