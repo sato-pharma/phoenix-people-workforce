@@ -37,23 +37,31 @@
 //
 // TWO SURFACES, ONE GESTURE. `field-layout.ts` explains why a page document places at an absolute
 // point and a flow document anchors to a moving piece of prose; this component does not re-decide
-// that; it reads `documentSurface(documentKey)` once and drags in whichever coordinate the field's
+// that; it reads `documentSurfaceOf(documentKey)` once and drags in whichever coordinate the field's
 // own rendered position is already expressed in — `left`/`top` on a page field are already the page
 // point, and on an added flow field they are already the offset from its anchor. The SAME pointer
 // math (read the inline style the renderer wrote, add the pointer's own delta, write it back) works
 // for both; only what a fresh ADD records as the anchor differs between them.
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 
-import { AlertTriangle, Check, Eye, EyeOff, Loader2, Lock, Move, PencilLine, Plus, Printer, RotateCw, Trash2, X } from "lucide-react";
+import { AlertTriangle, Check, Eye, EyeOff, History, Loader2, Lock, MapPin, Move, PencilLine, Plus, Printer, RotateCw, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { FieldTable } from "@/components/hiring-pack/field-table";
 import { Button } from "@/components/ui/button";
+import { FieldHistoryPanel } from "@/components/hiring-pack/field-history-panel";
 import { Input } from "@/components/ui/input";
-import {
-  documentSurface,
-  type DocumentFieldRow,
-  type DocumentFieldSource,
+import type { DocumentFieldInventoryEntry } from "@/lib/hiring-pack/document-inventory";
+import { documentSurfaceOf } from "@/lib/hiring-pack/document-registry";
+import type {
+  DocumentFieldRow,
+  DocumentFieldSource,
 } from "@/lib/hiring-pack/field-layout";
+import type {
+  CarryForwardOffer,
+  FieldHistoryEntry,
+  FieldHistorySummary,
+} from "@/lib/hiring-pack/field-layout-store";
 import {
   buildPaperEditPatch,
   PAPER_FIELD_BINDINGS,
@@ -69,8 +77,14 @@ import {
   PAGE_HEIGHT_PX,
   PAGE_WIDTH_PX,
 } from "@/lib/hiring-pack/paper-zoom";
+import { pageSizeFor, type PageSize } from "@/lib/hiring-pack/field-warnings";
 import { currentTemplateVersion } from "@/lib/hiring-pack/template-registry";
-import type { HiringPackData, HiringPackDocument } from "@/lib/hiring-pack/types";
+import { isBuiltInDocument } from "@/lib/hiring-pack/types";
+import type {
+  CustomHiringPackDocument,
+  HiringPackData,
+  HiringPackDocument,
+} from "@/lib/hiring-pack/types";
 import { cn } from "@/lib/utils";
 
 /**
@@ -104,6 +118,14 @@ function applyLayoutClasses(doc: Document, layoutOn: boolean, addOn: boolean): v
  *  zoom transform — that scales the ELEMENT from outside, not the page rendered inside it — so this
  *  ratio is the whole conversion between a pointer delta and a point delta. No zoom factor belongs
  *  anywhere in it. */
+/**
+ * How long the arrow keys must be still before a nudge is written.
+ *
+ * A held key repeats about thirty times a second. Long enough that walking a box across the page
+ * writes once; short enough that letting go and reaching for the mouse does not outrun it.
+ */
+const NUDGE_SAVE_MS = 500;
+
 const PT_PER_PX = 0.75;
 
 /**
@@ -233,6 +255,22 @@ const EDITOR_CSS = `
     outline: 2px solid #f59e0b !important;
     background-color: rgba(245, 158, 11, 0.2) !important;
   }
+  /* A RULE BEING TRIED, NOT ONE THAT IS SAVED. Green rather than the editor's blue, because blue
+     already means "you can edit this" everywhere else on the page and a second blue would read as
+     one more editable box. The dashed ring plus the tint says the words under it are not what the
+     document would print if it were printed right now. */
+  [data-hp-dry] {
+    outline: 2px dashed #059669 !important;
+    outline-offset: 2px;
+    background-color: rgba(5, 150, 105, 0.14) !important;
+  }
+  /* A rule that resolves to nothing keeps its ring so the box does not simply vanish — an empty
+     outline IS the warning, and a field that disappeared would read as the preview being broken. */
+  [data-hp-dry][data-hp-dry-empty] {
+    background-color: rgba(220, 38, 38, 0.12) !important;
+    outline-color: #dc2626 !important;
+  }
+
   /* A value the page prints but nothing can store — the company's own registry numbers, a figure
      derived from another one. Marked as locked rather than left looking ordinary, so it is obvious
      WHY it will not take a keystroke. */
@@ -260,16 +298,33 @@ const EDITOR_CSS = `
 }
 `;
 
-type PaperEditorProps = {
+type PaperEditorCommonProps = {
   hrId: string;
-  documentKey: HiringPackDocument;
   documentLabel: string;
   copies: number;
-  versionId?: string | null;
   pack: HiringPackData;
   onPackChange: (pack: HiringPackData) => void;
   onClose: () => void;
 };
+
+/**
+ * A UNION, BECAUSE A COMPANY TEMPLATE CANNOT BE OPENED WITHOUT ITS VERSION and the ten always can.
+ *
+ * `versionId` is what scopes the field layer: every box saved from this editor is written against
+ * it, and every box read back is filtered by it. For the ten it is optional because there is a
+ * compiled answer — `currentTemplateVersion(documentKey)` — and it is passed only when an ARCHIVED
+ * version is being viewed. An uploaded template has no compiled anything: its versions are rows,
+ * and the only thing that has read them is the caller that listed them.
+ *
+ * A required prop rather than a runtime check, because the failure it prevents is silent. Without a
+ * version the layer would save against `undefined`, the boxes would land in a scope nothing reads
+ * back, and the screen would show an empty paper after a save that answered 200.
+ */
+type PaperEditorProps = PaperEditorCommonProps &
+  (
+    | { documentKey: HiringPackDocument; versionId?: string | null }
+    | { documentKey: CustomHiringPackDocument; versionId: string }
+  );
 
 /** The value the operator has clicked, when it is one that cannot be typed into in place. */
 type Selection = {
@@ -370,15 +425,63 @@ function buildSelectionFromElement(
  * that loads when the panel opens, and the reload every mutation runs afterwards. It only fetches
  * and never touches state, which is what lets the effect keep each setState inside a callback.
  */
-async function fetchDocumentFields(url: string): Promise<DocumentFieldRow[]> {
+/**
+ * The field list, and the size of the paper it is a list for.
+ *
+ * The size is here rather than beside it because only the server can answer it for an uploaded
+ * template — see the route's own note. `null` is a flow document: typeset, no fixed page.
+ */
+type InventoryPayload = {
+  entries: DocumentFieldInventoryEntry[];
+  page: PageSize | null;
+};
+
+/**
+ * The template's own field list, for the table.
+ *
+ * At module scope beside `fetchDocumentFields` and for the same reason: a function defined in the
+ * component body is a new function on every render, so an effect depending on it re-runs on every
+ * render, and the repair for that — setting state to break the loop — is the
+ * `react-hooks/set-state-in-effect` error this repository treats as a real defect rather than a
+ * style. Nothing here closes over a render.
+ */
+async function fetchDocumentInventory(url: string): Promise<InventoryPayload> {
   const response = await fetch(url);
   const body = (await response.json().catch(() => null)) as
-    | { fields?: DocumentFieldRow[]; message?: string }
+    | { fields?: DocumentFieldInventoryEntry[]; message?: string; page?: PageSize | null }
+    | null;
+  if (!response.ok) {
+    throw new Error(body?.message ?? `Could not read this template's fields (${response.status}).`);
+  }
+  return { entries: body?.fields ?? [], page: body?.page ?? null };
+}
+
+/** The layout, and — only when this version is untouched and an earlier one is not — the offer. */
+type LayoutPayload = {
+  rows: DocumentFieldRow[];
+  carryForward: CarryForwardOffer | null;
+  /** Per row id, when it was last rewritten — empty until the history migration is applied. */
+  changed: Record<string, FieldHistorySummary>;
+};
+
+async function fetchDocumentFields(url: string): Promise<LayoutPayload> {
+  const response = await fetch(url);
+  const body = (await response.json().catch(() => null)) as
+    | {
+        fields?: DocumentFieldRow[];
+        carryForward?: CarryForwardOffer | null;
+        changed?: Record<string, FieldHistorySummary>;
+        message?: string;
+      }
     | null;
   if (!response.ok) {
     throw new Error(body?.message ?? `Could not load the layout (${response.status}).`);
   }
-  return body?.fields ?? [];
+  return {
+    rows: body?.fields ?? [],
+    carryForward: body?.carryForward ?? null,
+    changed: body?.changed ?? {},
+  };
 }
 
 export function HiringPackPaperEditor({
@@ -427,30 +530,127 @@ export function HiringPackPaperEditor({
   const [reloadToken, setReloadToken] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  /** The template version this open document is actually printing — the one the field layer is
-   *  scoped against. `versionId` is only ever set when a specific archived version is being viewed;
-   *  otherwise this is the same version the print route itself falls back to. */
+  /**
+   * The template version this open document is actually printing — the one the field layer is
+   * scoped against.
+   *
+   * For one of the ten, `versionId` is only ever set when a specific ARCHIVED version is being
+   * viewed; otherwise this falls back to the same version the print route itself would pick, so
+   * the editor and the paper it shows can never disagree about which artwork the boxes sit on.
+   *
+   * For an uploaded template the prop is required (see `PaperEditorProps`), so the `??` never
+   * reaches the registry — which is the point, because `currentTemplateVersion` only knows the ten
+   * and would have nothing to answer with.
+   */
   const effectiveVersionId = useMemo(
-    () => versionId ?? currentTemplateVersion(documentKey).id,
+    () =>
+      versionId ?? (isBuiltInDocument(documentKey) ? currentTemplateVersion(documentKey).id : ""),
     [documentKey, versionId],
   );
-  const surface = useMemo(() => documentSurface(documentKey), [documentKey]);
+  /**
+   * `documentSurfaceOf`, NOT `documentSurface`. The latter reads an exhaustive `Record` over the
+   * ten, so an uploaded template indexes it to `undefined` — and with `ignoreBuildErrors` on, that
+   * compiles, ships, and turns every surface comparison below into a quiet `false`. The registry's
+   * version answers `"page"` for a company template, which is what an uploaded scan always is, and
+   * the registry test pins the two tables to agree on the ten.
+   */
+  const surface = useMemo(() => documentSurfaceOf(documentKey), [documentKey]);
 
   const [layoutMode, setLayoutMode] = useState(false);
   const [addMode, setAddMode] = useState(false);
   const [fields, setFields] = useState<DocumentFieldRow[]>([]);
   const [fieldsLoading, setFieldsLoading] = useState(false);
   const [fieldsError, setFieldsError] = useState<string | null>(null);
+  /** Null in the ordinary case — an offer exists only on a version nothing has been done to yet. */
+  const [carryOffer, setCarryOffer] = useState<CarryForwardOffer | null>(null);
+
+  /**
+   * Which fields have been rewritten and when — and the one whose past states are open.
+   *
+   * `changed` arrives with the layout because it is two columns and one line of text per row.
+   * `history` is fetched for the single row somebody opens, since the previous states are the whole
+   * placement each and nobody reads thirty-three of them.
+   */
+  const [changed, setChanged] = useState<Record<string, FieldHistorySummary>>({});
+  const [historyRow, setHistoryRow] = useState<DocumentFieldRow | null>(null);
+  /**
+   * The answer carries the id it is FOR, so a slow reply for a row the operator has moved on from
+   * renders nothing instead of appearing under the new row's heading. A stamped answer is a smaller
+   * and more honest guard than a cancellation flag: there is no window in which the wrong states are
+   * on screen, because the panel only draws an answer whose id matches what it is showing.
+   */
+  const [history, setHistory] = useState<{ fieldId: string; entries: FieldHistoryEntry[] } | null>(
+    null,
+  );
+  const [historyError, setHistoryError] = useState<string | null>(null);
   const [layoutBusy, setLayoutBusy] = useState(false);
   const [layoutSelection, setLayoutSelection] = useState<PendingWrite | null>(null);
   const layoutModeRef = useRef(false);
   const addModeRef = useRef(false);
   const fieldsRef = useRef<DocumentFieldRow[]>([]);
 
+  /**
+   * Which half of the editor is showing: the page, for POSITION, or the table, for CONTENT.
+   *
+   * Two views of one field layer rather than two features — the owner's own division, put to him
+   * directly on 2026-09-03 and chosen in those words. Both write the same rows, so a field moved on
+   * the page and retyped in the table is still one field, and neither screen can hold a version of
+   * it the other does not see.
+   */
+  const [layoutTab, setLayoutTab] = useState<"page" | "fields">("page");
+  const [inventory, setInventory] = useState<DocumentFieldInventoryEntry[]>([]);
+  const [inventoryLoading, setInventoryLoading] = useState(false);
+  /**
+   * The printed size of an UPLOADED template's page, once the server has said what it is.
+   *
+   * Only ever read for a company template. A built-in paper's size is compiled in and answered
+   * below without a round trip, so the geometry warnings on the ten are never briefly absent
+   * while a fetch is in flight — which would read as "nothing is wrong with this layout".
+   */
+  const [customPage, setCustomPage] = useState<PageSize | null>(null);
+  /**
+   * The paper the field table measures a dragged box against.
+   *
+   * COMPILED IN FOR THE TEN, FETCHED FOR AN UPLOAD, and the split is the point. `pageSizeFor` reads
+   * a table of the ten, so asking it about a company template returns null — and null is not
+   * "unknown" here, it is "flow document, nothing can fall off it". Answering that for an uploaded
+   * scan would silently retire the off-page warning on the one kind of paper where every single box
+   * was positioned by hand.
+   */
+  const page = useMemo<PageSize | null>(
+    () => (isBuiltInDocument(documentKey) ? pageSizeFor(documentKey) : customPage),
+    [customPage, documentKey],
+  );
+
+  /**
+   * The key a new field will carry when the operator next clicks the page, or null for fixed text.
+   *
+   * A ref as well as state because `onLayoutPointerDown` is attached to the framed document once and
+   * outlives the render that armed it — the same reason `addModeRef` exists beside `addMode`. This
+   * is what the table's "Add a box" arms: the owner, 2026-09-03, "Phoenix is not showing a field
+   * where a field should be populated so I can add the field and put it here." Rather than invent
+   * coordinates for him, the table arms the key and he clicks where it goes, which is the existing
+   * add path and the one that has been used against real paper.
+   */
+  const pendingAddKeyRef = useRef<string | null>(null);
+  const [pendingAddKey, setPendingAddKey] = useState<string | null>(null);
+
+
+
   const previewUrl = useMemo(() => {
     const version = versionId ? `&version=${encodeURIComponent(versionId)}` : "";
     return `/api/hiring-pack/${encodeURIComponent(hrId)}/print?document=${documentKey}&copies=${copies}&preview=1${version}`;
   }, [copies, documentKey, hrId, versionId]);
+
+  /**
+   * The same document, answered as its field list instead of its page.
+   *
+   * Built off `previewUrl` on purpose rather than assembled again: the inventory has to describe the
+   * document in the panel, and two separately-built urls drift the first time a parameter is added
+   * to one of them. `preview=1` is already on it, so opening the field table never stamps a document
+   * as printed.
+   */
+  const inventoryUrl = `${previewUrl}&inventory=1`;
 
   /** The document the frame is meant to be showing right now. */
   const frameKey = `${previewUrl}#${reloadToken}`;
@@ -541,9 +741,11 @@ export function HiringPackPaperEditor({
     setFieldsLoading(true);
     setFieldsError(null);
     try {
-      const rows = await fetchDocumentFields(fieldsUrl);
-      setFields(rows);
-      fieldsRef.current = rows;
+      const payload = await fetchDocumentFields(fieldsUrl);
+      setFields(payload.rows);
+      fieldsRef.current = payload.rows;
+      setCarryOffer(payload.carryForward);
+      setChanged(payload.changed);
     } catch (cause) {
       setFieldsError(cause instanceof Error ? cause.message : "Could not load the layout.");
     } finally {
@@ -568,10 +770,12 @@ export function HiringPackPaperEditor({
     if (!layoutMode) return;
     let live = true;
     void fetchDocumentFields(fieldsUrl).then(
-      (rows) => {
+      (payload) => {
         if (!live) return;
-        setFields(rows);
-        fieldsRef.current = rows;
+        setFields(payload.rows);
+        fieldsRef.current = payload.rows;
+        setCarryOffer(payload.carryForward);
+        setChanged(payload.changed);
         setFieldsError(null);
         setFieldsLoading(false);
       },
@@ -592,7 +796,7 @@ export function HiringPackPaperEditor({
    * for a typed value: nothing here is ever patched onto the screen optimistically.
    */
   const commitLayoutField = useCallback(
-    async (write: PendingWrite) => {
+    async (write: PendingWrite, options?: { keepPage?: boolean }): Promise<DocumentFieldRow | null> => {
       setLayoutBusy(true);
       setFieldsError(null);
       try {
@@ -605,16 +809,27 @@ export function HiringPackPaperEditor({
           headers: { "Content-Type": "application/json" },
           method: "POST",
         });
-        const body = (await response.json().catch(() => null)) as { message?: string } | null;
+        const body = (await response.json().catch(() => null)) as {
+          message?: string;
+          field?: DocumentFieldRow;
+        } | null;
         if (!response.ok) {
           throw new Error(body?.message ?? `Could not save the field (${response.status}).`);
         }
-        setLayoutSelection(null);
         setNotice("Layout saved.");
         await loadFields();
-        setReloadToken((token) => token + 1);
+        // `keepPage` leaves the document exactly as it stands. Only the arrow-key nudge asks for it,
+        // and only because the reload is what breaks it: see `onLayoutKeyDown`. Every other caller
+        // rebuilds, which is right for them — a drag has already been let go of, and hiding, adding
+        // or deleting a field changes what the page contains rather than only where one box sits.
+        if (!options?.keepPage) {
+          setLayoutSelection(null);
+          setReloadToken((token) => token + 1);
+        }
+        return body?.field ?? null;
       } catch (cause) {
         setFieldsError(cause instanceof Error ? cause.message : "Could not save the field.");
+        return null;
       } finally {
         setLayoutBusy(false);
       }
@@ -680,6 +895,190 @@ export function HiringPackPaperEditor({
       setLayoutBusy(false);
     }
   }, [documentKey, documentLabel, effectiveVersionId, loadFields]);
+
+  /**
+   * Bring a previous version's layout onto this one.
+   *
+   * CONFIRMED IN PLAIN WORDS, and never automatic — the reason is in `field-layout-store.ts`, but
+   * the short version is that a page document's coordinates are read off the authority's artwork.
+   * If the artwork moved between versions, carrying a coordinate forward puts text in the wrong
+   * place on a government form, and the only person who can see whether it moved is the one with
+   * both versions in front of them.
+   */
+  const carryLayoutForward = useCallback(async () => {
+    const offer = carryOffer;
+    if (!offer) return;
+    const sure = window.confirm(
+      `Bring ${offer.fields} field${offer.fields === 1 ? "" : "s"} from ${offer.fromLabelEn} onto this version?
+
+` +
+        "Positions come across exactly as they were. If the artwork changed between the two " +
+        "versions, check every box on the page afterwards — a coordinate that was right on the old " +
+        "page can land somewhere else on the new one.",
+    );
+    if (!sure) return;
+    setLayoutBusy(true);
+    setFieldsError(null);
+    try {
+      const response = await fetch("/api/hiring-pack/document-fields", {
+        body: JSON.stringify({
+          document: documentKey,
+          fromTemplateVersionId: offer.fromTemplateVersionId,
+          intent: "carryForward",
+          toTemplateVersionId: offer.intoTemplateVersionId,
+        }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+      const body = (await response.json().catch(() => null)) as { carried?: number; message?: string } | null;
+      if (!response.ok) {
+        throw new Error(body?.message ?? `Could not carry the layout forward (${response.status}).`);
+      }
+      setNotice(
+        `${body?.carried ?? 0} field${body?.carried === 1 ? "" : "s"} brought over from ${offer.fromLabelEn}. ` +
+          "Check each one against the page.",
+      );
+      await loadFields();
+      setReloadToken((token) => token + 1);
+    } catch (cause) {
+      setFieldsError(cause instanceof Error ? cause.message : "Could not carry the layout forward.");
+    } finally {
+      setLayoutBusy(false);
+    }
+  }, [carryOffer, documentKey, loadFields]);
+
+  /**
+   * Open what one field used to say.
+   *
+   * Fetched on demand rather than carried with the layout: a previous state is a whole placement,
+   * and nobody opens thirty-three of them. The row is put on screen before the answer arrives so the
+   * panel names the field it is loading — an empty panel that fills in later reads as a broken one.
+   *
+   * NOT RACE-GUARDED with a `live` flag like the layout reads. The answer is STAMPED with the id it
+   * belongs to and the panel draws it only when that matches the row on screen, so a slow reply for
+   * a row the operator has moved on from renders nothing rather than appearing under a new heading.
+   */
+  const openHistory = useCallback(async (row: DocumentFieldRow) => {
+    setHistoryRow(row);
+    setHistory(null);
+    setHistoryError(null);
+    try {
+      const response = await fetch(
+        `/api/hiring-pack/document-fields?historyFor=${encodeURIComponent(row.id)}`,
+      );
+      const body = (await response.json().catch(() => null)) as
+        | { history?: FieldHistoryEntry[]; message?: string }
+        | null;
+      if (!response.ok) {
+        throw new Error(body?.message ?? `Could not read the history (${response.status}).`);
+      }
+      setHistory({ entries: body?.history ?? [], fieldId: row.id });
+    } catch (cause) {
+      setHistoryError(cause instanceof Error ? cause.message : "Could not read the history.");
+    }
+  }, []);
+
+  /**
+   * Read the template's field list whenever the table is the visible half.
+   *
+   * Same shape as the field-layer read above, and for the same two reasons: every setState sits
+   * inside the promise's callback rather than in the effect body, and `live` guards the race where
+   * changing document while the table is open lets a slow reply for the OLD one land last. That
+   * failure is quiet — the rows would simply be another document's fields under this one's heading.
+   *
+   * `reloadToken` is a dependency deliberately. It is bumped after every save, and the inventory
+   * carries each field's CURRENT value, so without it the table would keep showing what a field
+   * printed before the rule that just changed it.
+   */
+  useEffect(() => {
+    if (!layoutMode || layoutTab !== "fields") return;
+    let live = true;
+    void fetchDocumentInventory(inventoryUrl).then(
+      (payload) => {
+        if (!live) return;
+        setInventory(payload.entries);
+        setCustomPage(payload.page);
+        setInventoryLoading(false);
+      },
+      (cause: unknown) => {
+        if (!live) return;
+        setFieldsError(cause instanceof Error ? cause.message : "Could not read this template's fields.");
+        setInventoryLoading(false);
+      },
+    );
+    return () => {
+      live = false;
+    };
+  }, [inventoryUrl, layoutMode, layoutTab, reloadToken]);  /**
+   * Put a rule ON THE PAPER before it is anybody's rule — the field table's dry run.
+   *
+   * ─────────────────────────────────────────────────────────────────────────────────────────────
+   * WRITTEN INTO THE IFRAME'S DOM, NOT RENDERED BY THE SERVER, and that is a deliberate trade.
+   * Rendering it properly would mean threading a pending override through all ten renderers' value
+   * maps, and it would put text nobody has saved onto the route that also PRINTS. Here it cannot:
+   * this is a `preview=1` frame, the change lives only in this browser, and the next reload — which
+   * every save triggers anyway — erases it.
+   *
+   * A CALLBACK, NOT AN EFFECT, and that had to change: reading `frameRef.current` inside an effect
+   * makes every later write to the framed document a lint error, because the compiler then treats
+   * the ref as effect state. A keystroke is what changes the paper, so the keystroke is what calls
+   * this — which is also the more honest description of what happens.
+   *
+   * `text: null` means the rule resolves to NOTHING for this employee. That is a real answer rather
+   * than an absence — a placeholder with no value blanks the whole field — so the box is emptied and
+   * ringed in red instead of being left showing the old value.
+   *
+   * WHAT IT CANNOT SHOW, said plainly rather than papered over: a compiled field whose value is
+   * empty is not in the markup at all, since `renderPlacement` drops an empty placement, so there is
+   * no box to write into. The table disables the button in that case and says why; the repair there
+   * is to add a box, which it already offers.
+   * ─────────────────────────────────────────────────────────────────────────────────────────────
+   */
+  const applyDryRun = (dry: { key: string; text: string | null } | null) => {
+    const doc = frameRef.current?.contentDocument;
+    if (!doc) return;
+
+    // THE UNDO LIVES ON THE NODE, not in a ref beside it. A reload replaces the whole document, so
+    // a remembered element is a detached node the moment anything is saved — whereas markup parked
+    // in the element's own dataset goes away with it, and the query below simply finds nothing.
+    for (const marked of doc.querySelectorAll<HTMLElement>("[data-hp-dry]")) {
+      const original = marked.dataset.hpDryOriginal;
+      if (original !== undefined) marked.innerHTML = original;
+      marked.removeAttribute("data-hp-dry");
+      marked.removeAttribute("data-hp-dry-empty");
+      marked.removeAttribute("data-hp-dry-original");
+    }
+    if (!dry) return;
+
+    const element = doc.querySelector<HTMLElement>(`[data-hp-key="${CSS.escape(dry.key)}"]`);
+    if (!element) return;
+
+    // A box grid paints one character per printed cell as positioned children, so overwriting its
+    // text would destroy the grid rather than preview anything. Those are left alone; the field
+    // table still reports what the rule resolves to and how many people it fills for.
+    if (
+      element.classList.contains("grid") ||
+      element.classList.contains("tick") ||
+      element.classList.contains("wage")
+    ) {
+      return;
+    }
+
+    element.dataset.hpDryOriginal = element.innerHTML;
+    element.textContent = dry.text ?? "";
+    element.setAttribute("data-hp-dry", "true");
+    if (dry.text === null || dry.text === "") {
+      element.setAttribute("data-hp-dry-empty", "true");
+    }
+  };
+
+  /**
+   * The nudge handler, through a ref for the same reason `commitLayoutField` is: `enhance` attaches
+   * it to the framed document ONCE per page load, and a listener captured then would otherwise be
+   * the version of the function that existed at load — holding the copies count and surface the
+   * document had before any of them could change.
+   */
+  const onLayoutKeyDownRef = useRef<(event: KeyboardEvent) => void>(() => {});
 
   const commitLayoutFieldRef = useRef(commitLayoutField);
 
@@ -771,6 +1170,29 @@ export function HiringPackPaperEditor({
       event.stopPropagation();
 
       if (addModeRef.current) {
+        // What the new field will PRINT. The table arms a key when the operator asked for a box for
+        // a value the template does not place; a plain "Add field" arms nothing and gets empty text
+        // to type into. Read from the ref rather than the state for the reason at its declaration —
+        // this listener was attached once, long before the button was pressed.
+        const armed = pendingAddKeyRef.current;
+        const addedSource: DocumentFieldSource = armed
+          ? { kind: "value", key: armed }
+          : { kind: "literal", text: "" };
+        pendingAddKeyRef.current = null;
+        setPendingAddKey(null);
+
+        // CLEARING THE STATE IS NOT ENOUGH — the crosshair lives on a CLASS on the framed body.
+        // `applyLayoutClasses` is called from the toggles and from `enhance`, and from nowhere
+        // else; no effect re-syncs it when `addMode` changes. So every exit here used to set
+        // `addMode` false and leave `hp-adding-field` on the document, which left the page under
+        // a crosshair, still LOOKING armed, after the box had already been placed. The next click
+        // then selected a field instead of adding one, and the only tell was a cursor.
+        const disarm = () => {
+          addModeRef.current = false;
+          setAddMode(false);
+          applyLayoutClasses(doc, layoutModeRef.current, false);
+        };
+
         if (surface === "page") {
           const sheetEl = target.closest(".sheet") as HTMLElement | null;
           if (!sheetEl) {
@@ -788,7 +1210,7 @@ export function HiringPackPaperEditor({
             hidden: false,
             page: resolvePageFor(doc, sheetEl, copies),
             size: 9,
-            source: { kind: "literal", text: "" },
+            source: addedSource,
             w: 140,
             x: Math.max(0, xPt - 60),
             y: Math.max(0, yPt - 7),
@@ -797,15 +1219,13 @@ export function HiringPackPaperEditor({
           const copyRoot = target.closest(".copy") ?? doc.body;
           if (target === copyRoot) {
             setFieldsError("Click on some text or a cell to anchor the new field there.");
-            addModeRef.current = false;
-            setAddMode(false);
+            disarm();
             return;
           }
           const selector = cssPathWithin(copyRoot, target);
           if (!selector) {
             setFieldsError("Could not place a field there — try a different spot.");
-            addModeRef.current = false;
-            setAddMode(false);
+            disarm();
             return;
           }
           const anchorRect = target.getBoundingClientRect();
@@ -821,14 +1241,13 @@ export function HiringPackPaperEditor({
             hidden: false,
             page: null,
             size: 9,
-            source: { kind: "literal", text: "" },
+            source: addedSource,
             w: 140,
             x: 0,
             y: 0,
           });
         }
-        addModeRef.current = false;
-        setAddMode(false);
+        disarm();
         return;
       }
 
@@ -874,6 +1293,15 @@ export function HiringPackPaperEditor({
     if (!doc.body.dataset.hpLayoutWired) {
       doc.body.dataset.hpLayoutWired = "1";
       doc.addEventListener("pointerdown", onLayoutPointerDown, true);
+      // Arrow-key nudging. On the FRAMED document because that is where focus sits after a box is
+      // clicked — the parent gets its own listener below, for when focus has moved to the panel.
+      //
+      // THROUGH A WRAPPER, NOT `onLayoutKeyDownRef.current` DIRECTLY. This block runs once per page
+      // load, and passing the ref's value would register whatever it held AT THAT MOMENT — the
+      // do-nothing placeholder, since the effect that fills it has not run yet. Arrow keys would
+      // then do nothing at all, on a page that looks entirely wired. Reading the ref inside the
+      // wrapper defers the lookup to the keypress.
+      doc.addEventListener("keydown", (event) => onLayoutKeyDownRef.current(event));
       doc.addEventListener(
         "click",
         (event) => {
@@ -984,6 +1412,157 @@ export function HiringPackPaperEditor({
     }
   }, []);
 
+
+  /**
+   * Arrow keys move the selected box: 1pt a press, 10pt with Shift.
+   *
+   * ─────────────────────────────────────────────────────────────────────────────────────────────
+   * SPEED RATHER THAN CAPABILITY, and worth saying so plainly: the fine-tune panel below already
+   * takes exact X, Y, width and height in points, so nothing here is otherwise unreachable. But
+   * nudging a point at a time while watching the paper is a different activity from typing a number
+   * and re-reading the page, and on Form 1 — whose boxes are the government's own printed cells — a
+   * single point is the difference between a digit sitting in its cell and sitting on the line.
+   *
+   * IT MOVES THE ELEMENT FIRST AND SAVES AFTERWARDS, exactly as a drag does. The box follows the key
+   * immediately; `buildSelectionFromElement` then reads the geometry back off the live element, so a
+   * nudge and a drag produce the identical write and neither can disagree with the other about where
+   * a field ended up.
+   *
+   * THE SAVE IS DEBOUNCED, which is the whole reason this is not three lines. A held arrow key
+   * repeats about thirty times a second; committing per press would be a round trip per repeat, and
+   * they would land out of order — the field's final position decided by whichever POST the network
+   * happened to deliver last. One write, after the movement stops.
+   *
+   * AND THE SAVE DOES NOT RELOAD THE PAGE — `keepPage`. This is the difference between the feature
+   * working and appearing to work, and it was found by measuring rather than by reading: every
+   * other save rebuilds the framed document, which discards `data-hp-selected` with the rest of the
+   * DOM. Correct for a drag, where the hand has already let go. Fatal here, because the operator is
+   * still tapping: the box moves, settles, saves, and then every further press is silently dropped
+   * for the two or three seconds the rebuild takes, with nothing on screen to say the selection is
+   * gone. Nothing needs rebuilding anyway — the element was the SOURCE of the write, so the page
+   * already shows what was saved. The one thing the rebuild did carry is handled in `save` below.
+   *
+   * IT REFUSES TO ACT WHILE SOMETHING IS BEING TYPED INTO. The panel's own X/Y inputs are arrow-key
+   * targets in their own right, and a search box is one screen away; stealing those presses would
+   * make a number impossible to correct with the keyboard while a box happened to be selected.
+   */
+  const nudgeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** The write a pending nudge would make, so closing the editor can run it rather than lose it. */
+  const pendingNudgeRef = useRef<(() => void) | null>(null);
+  /** The nudge save currently in flight, so a following one waits for the row id it will produce. */
+  const nudgeSaveRef = useRef<Promise<void> | null>(null);
+
+  const onLayoutKeyDown = useCallback((event: KeyboardEvent) => {
+    if (!layoutModeRef.current) return;
+
+    const step = event.key === "ArrowLeft" || event.key === "ArrowRight" ? 1 : 0;
+    const vertical = event.key === "ArrowUp" || event.key === "ArrowDown" ? 1 : 0;
+    if (step === 0 && vertical === 0) return;
+
+    // Never while typing. `isContentEditable` covers the framed document's own free-edit spans,
+    // which are the case a tag-name test alone would miss.
+    const target = event.target as HTMLElement | null;
+    const tag = target?.tagName?.toLowerCase();
+    if (tag === "input" || tag === "textarea" || tag === "select" || target?.isContentEditable) {
+      return;
+    }
+
+    const doc = frameRef.current?.contentDocument;
+    const element = doc?.querySelector<HTMLElement>("[data-hp-selected]");
+    if (!doc || !element) return;
+
+    event.preventDefault();
+
+    const amount = event.shiftKey ? 10 : 1;
+    const dx = event.key === "ArrowRight" ? amount : event.key === "ArrowLeft" ? -amount : 0;
+    const dy = event.key === "ArrowDown" ? amount : event.key === "ArrowUp" ? -amount : 0;
+
+    // Clamped at zero on the top and left, the same bound the drag applies. There is deliberately
+    // no upper bound here either: the off-page WARNING is what names a box pushed past the right or
+    // bottom edge, and a hard stop at the edge would make a box that is already outside impossible
+    // to walk back into view.
+    const left = Math.max(0, (Number.parseFloat(element.style.left) || 0) + dx);
+    const top = Math.max(0, (Number.parseFloat(element.style.top) || 0) + dy);
+    element.style.left = `${left.toFixed(2)}pt`;
+    element.style.top = `${top.toFixed(2)}pt`;
+
+    /** Read the box as it stands right now, including any row id a save has since stamped on it. */
+    const readBox = () => {
+      const rowId = element.getAttribute("data-hp-field");
+      const existing = rowId ? (fieldsRef.current.find((row) => row.id === rowId) ?? null) : null;
+      return buildSelectionFromElement(doc, element, copies, surface, existing);
+    };
+
+    const write = readBox();
+    if (!write) return;
+
+    // The panel below follows the box, so the numbers on screen are the numbers being saved.
+    setLayoutSelection(write);
+
+    const save = () => {
+      pendingNudgeRef.current = null;
+      // REBUILT AT FIRE TIME rather than reused from the press. Two things move in between, and
+      // the second is the one that matters: the box has usually been nudged again, and a save that
+      // was in flight may have just stamped this element with its new row id. `saveDocumentField`
+      // INSERTS any write carrying no id, so a press-time write would try to create a second
+      // override for a field that now has one — refused by the unique index, and presented to the
+      // operator as an unexplained save failure. The press-time write survives only as the fallback
+      // for the flush below, where the frame is being torn down and there is nothing left to read.
+      const live = (element.isConnected ? readBox() : null) ?? write;
+      const inFlight = commitLayoutFieldRef
+        .current(live, { keepPage: true })
+        .then((saved) => {
+          if (nudgeSaveRef.current === inFlight) nudgeSaveRef.current = null;
+          if (!saved || !element.isConnected) return;
+          element.setAttribute("data-hp-field", saved.id);
+        });
+      nudgeSaveRef.current = inFlight;
+    };
+    pendingNudgeRef.current = save;
+    if (nudgeTimerRef.current) clearTimeout(nudgeTimerRef.current);
+    nudgeTimerRef.current = setTimeout(() => {
+      nudgeTimerRef.current = null;
+      // NEVER TWO IN FLIGHT. The second would be built before the first had stamped its row id,
+      // which is the same insert-twice problem one step earlier.
+      const running = nudgeSaveRef.current;
+      if (running) void running.then(save);
+      else save();
+    }, NUDGE_SAVE_MS);
+  }, [copies, surface]);
+
+  /**
+   * Keep the nudge handler current, and let the arrow keys work from OUTSIDE the frame too.
+   *
+   * Two listeners for one gesture because there are two documents. Clicking a box puts focus in the
+   * framed document; reaching for the fine-tune panel below puts it in this one. A single listener
+   * on either would work until the operator touched the other half of the screen, and then stop
+   * silently — which reads as the feature being unreliable rather than as a missing listener.
+   *
+   * THE PENDING NUDGE IS FLUSHED ON THE WAY OUT, not dropped. Closing the editor within half a
+   * second of the last press would otherwise discard a move the operator watched happen on screen,
+   * and nothing would say so — the box would simply be back where it started next time.
+   */
+  useEffect(() => {
+    onLayoutKeyDownRef.current = onLayoutKeyDown;
+  });
+
+  useEffect(() => {
+    if (!layoutMode) return;
+    const handler = (event: KeyboardEvent) => onLayoutKeyDownRef.current(event);
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, [layoutMode]);
+
+  useEffect(() => {
+    return () => {
+      const pending = nudgeTimerRef.current;
+      if (!pending) return;
+      clearTimeout(pending);
+      nudgeTimerRef.current = null;
+      pendingNudgeRef.current?.();
+    };
+  }, []);
+
   /** Turn layout mode on or off, on the page and in the frame, in one action. */
   const toggleLayoutMode = useCallback(() => {
     const next = !layoutModeRef.current;
@@ -1002,6 +1581,9 @@ export function HiringPackPaperEditor({
       addModeRef.current = false;
       setAddMode(false);
       setLayoutSelection(null);
+      pendingAddKeyRef.current = null;
+      setPendingAddKey(null);
+      setLayoutTab("page");
     }
     const doc = frameRef.current?.contentDocument;
     if (doc) applyLayoutClasses(doc, next, addModeRef.current);
@@ -1014,8 +1596,112 @@ export function HiringPackPaperEditor({
     addModeRef.current = next;
     setAddMode(next);
     setLayoutSelection(null);
+    // Turning add mode off by hand abandons whatever the table armed. Leaving the key behind would
+    // put it on the NEXT field added, minutes later and for a different reason.
+    pendingAddKeyRef.current = null;
+    setPendingAddKey(null);
     const doc = frameRef.current?.contentDocument;
     if (doc) applyLayoutClasses(doc, layoutModeRef.current, next);
+  }, []);
+
+  // ───────────────────────────────────────────────────────────────────────────────────────────
+  // DECLARED AFTER `enhance`, AND THAT ORDER IS LOAD-BEARING. These three read the framed
+  // document out of `frameRef`, and `enhance` writes a marker onto its body to record that the
+  // layout listeners are already attached. The React compiler reads the component top to bottom:
+  // with these ABOVE `enhance`, that write becomes "modifying a value previously passed as an
+  // argument to a hook" and `react-hooks/immutability` fails the build — the same rule, and the
+  // same position in the file, as the two toggles just above. Nothing else about them changes.
+  // ───────────────────────────────────────────────────────────────────────────────────────────
+  /**
+   * Build the write for a field the template already places, by reading the box itself.
+   *
+   * The geometry is read from the LIVE element rather than remembered, because the table and the
+   * page are two views of one row: a field dragged a moment ago has coordinates the table never saw,
+   * and writing remembered ones back would silently undo the drag. Returns null when the box is not
+   * on the page — which on a page surface means its value is empty, since `renderPlacement` drops an
+   * empty placement entirely. There is nothing to override in that case; the answer is to add a box,
+   * which is what the table offers instead.
+   */
+  const writeForKey = useCallback(
+    (key: string): PendingWrite | null => {
+      const doc = frameRef.current?.contentDocument;
+      if (!doc) return null;
+      const element = doc.querySelector<HTMLElement>(`[data-hp-key="${CSS.escape(key)}"]`);
+      if (!element) return null;
+      const fieldId = element.getAttribute("data-hp-field");
+      const existing = fieldId ? (fieldsRef.current.find((row) => row.id === fieldId) ?? null) : null;
+      const write = buildSelectionFromElement(doc, element, copies, surface, existing);
+      if (!write) return null;
+      // A compiled default has no row yet, so the write that creates one must name the key it is
+      // overriding. Without `defaultKey` the row would be stored as an ADDED field sitting on top of
+      // the value it was meant to replace, and both would print.
+      return { ...write, defaultKey: existing?.defaultKey ?? key };
+    },
+    [copies, surface],
+  );
+
+  /**
+   * Save the rule for one of the template's own fields — or drop it and go back to the record.
+   *
+   * "Back to the record" restores the SOURCE and keeps everything else, rather than deleting the
+   * row: an override may also be carrying a position the operator dragged, and throwing that away
+   * because they changed their mind about the wording would move the field back under the artwork
+   * they moved it off.
+   */
+  const saveFieldRule = useCallback(
+    (entry: DocumentFieldInventoryEntry, text: string | null) => {
+      const write = writeForKey(entry.key);
+      if (!write) {
+        setFieldsError(
+          `"${entry.labelEn ?? entry.key}" prints nothing at the moment, so there is no box to change. Use "Add a box" and click where it belongs.`,
+        );
+        return;
+      }
+      void commitLayoutField({
+        ...write,
+        source: text === null ? { kind: "value", key: entry.key } : { kind: "literal", text },
+      });
+    },
+    [commitLayoutField, writeForKey],
+  );
+
+  /** Retype a field the operator added. Its geometry is already on the row, so nothing is read back. */
+  const saveRowText = useCallback(
+    (row: DocumentFieldRow, text: string) => {
+      void commitLayoutField({
+        align: row.align,
+        anchor: row.anchor,
+        defaultKey: row.defaultKey,
+        h: row.h,
+        hidden: row.hidden,
+        id: row.id,
+        page: row.page,
+        size: row.size,
+        source: { kind: "literal", text },
+        w: row.w,
+        x: row.x,
+        y: row.y,
+      });
+    },
+    [commitLayoutField],
+  );
+
+  /**
+   * Arm the page to receive a new box, carrying `key` or, for null, fixed text of its own.
+   *
+   * Switches to the page tab because the next act is a click on the paper — leaving the table up
+   * would arm a mode with nothing visible to use it on, which reads as the button doing nothing.
+   */
+  const armAddBox = useCallback((key: string | null) => {
+    pendingAddKeyRef.current = key;
+    setPendingAddKey(key);
+    addModeRef.current = true;
+    setAddMode(true);
+    setLayoutTab("page");
+    setLayoutSelection(null);
+    setFieldsError(null);
+    const doc = frameRef.current?.contentDocument;
+    if (doc) applyLayoutClasses(doc, layoutModeRef.current, true);
   }, []);
 
   /**
@@ -1169,6 +1855,81 @@ export function HiringPackPaperEditor({
 
         {layoutMode ? (
           <div className="space-y-3 rounded-2xl border border-phx-accent-line bg-phx-accent/5 p-3">
+            {/* TABLE FOR CONTENT, PAGE FOR POSITION — the owner's own division of the two jobs,
+                chosen on 2026-09-03. Both tabs write the same field-layer rows, so this is one
+                editor seen two ways rather than two editors that have to be kept in step. */}
+            <div className="flex w-full rounded-xl border border-phx-accent-line bg-white p-0.5">
+              {(["page", "fields"] as const).map((tab) => (
+                <button
+                  className={cn(
+                    "flex-1 rounded-lg px-3 py-1.5 text-phx-2xs font-semibold",
+                    layoutTab === tab
+                      ? "bg-phx-accent text-white"
+                      : "text-phx-ink-soft hover:bg-phx-accent/10",
+                  )}
+                  key={tab}
+                  onClick={() => {
+                    setLayoutTab(tab);
+                    if (tab === "fields") setInventoryLoading(true);
+                  }}
+                  type="button"
+                >
+                  {tab === "page" ? "Page — move things" : "Fields — what goes in them"}
+                </button>
+              ))}
+            </div>
+
+            {pendingAddKey ? (
+              <div className="flex items-start gap-2 rounded-xl border border-phx-accent-line bg-white px-3 py-2 text-phx-xs text-phx-ink">
+                <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-phx-accent" />
+                <span>
+                  Now click the spot on the page where{" "}
+                  <strong>{paperFieldBinding(pendingAddKey)?.labelEn ?? pendingAddKey}</strong>{" "}
+                  should print.
+                </span>
+              </div>
+            ) : null}
+
+            {layoutTab === "fields" ? (
+              <FieldTable
+                busy={layoutBusy}
+                changed={changed}
+                entries={inventory}
+                error={fieldsError}
+                loading={inventoryLoading}
+                onAddBox={armAddBox}
+                onDryRun={applyDryRun}
+                onDeleteRow={(row) => {
+                  const sure = window.confirm(
+                    row.defaultKey
+                      ? "Remove this override? It returns to its default position."
+                      : "Delete this field?",
+                  );
+                  if (sure) void deleteLayoutField(row.id);
+                }}
+                onOpenHistory={(row) => void openHistory(row)}
+                onSaveRule={saveFieldRule}
+                onSaveRowText={saveRowText}
+                onToggleHidden={(row) => void commitLayoutField({
+                  align: row.align,
+                  anchor: row.anchor,
+                  defaultKey: row.defaultKey,
+                  h: row.h,
+                  hidden: !row.hidden,
+                  id: row.id,
+                  page: row.page,
+                  size: row.size,
+                  source: row.source,
+                  w: row.w,
+                  x: row.x,
+                  y: row.y,
+                })}
+                page={page}
+                rows={fields}
+                surface={surface}
+              />
+            ) : (
+              <>
             <div className="flex flex-wrap items-center justify-between gap-2">
               <p className="text-phx-xs leading-relaxed text-phx-ink-soft">
                 Drag any dashed box to move it — it saves the moment you let go. Click one without
@@ -1204,6 +1965,41 @@ export function HiringPackPaperEditor({
               <div className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-phx-xs text-red-800">
                 <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
                 <span>{fieldsError}</span>
+              </div>
+            ) : null}
+
+            {/*
+              WORK ON AN EARLIER VERSION OF THIS TEMPLATE, WHICH THIS VERSION CANNOT SEE.
+              Field rows are scoped to a template version so an archived contract reprints as the
+              document that was signed — which means the day a template is replaced, every change
+              made to the old one silently stops appearing. This is the only place that says so.
+              It offers; it never acts on its own. See `carryLayoutForward`.
+            */}
+            {carryOffer ? (
+              <div className="flex flex-col gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-phx-xs text-amber-900 sm:flex-row sm:items-start sm:justify-between">
+                <div className="flex items-start gap-2">
+                  <History className="mt-0.5 h-4 w-4 shrink-0" />
+                  <span>
+                    <strong>
+                      {carryOffer.fromLabelEn} has {carryOffer.fields} field
+                      {carryOffer.fields === 1 ? "" : "s"} you changed.
+                    </strong>{" "}
+                    This version starts from the built-in layout, so none of them appear here. Bring
+                    them over, then check each one against the page — if the paper itself changed
+                    between the two versions, a position that was right before can land elsewhere.
+                  </span>
+                </div>
+                <Button
+                  className="shrink-0 gap-1 self-start"
+                  disabled={layoutBusy}
+                  onClick={() => void carryLayoutForward()}
+                  size="sm"
+                  type="button"
+                  variant="outline"
+                >
+                  <History className="h-3.5 w-3.5" />
+                  Bring them over
+                </Button>
               </div>
             ) : null}
 
@@ -1282,6 +2078,8 @@ export function HiringPackPaperEditor({
                 ))
               )}
             </div>
+              </>
+            )}
           </div>
         ) : null}
 
@@ -1366,6 +2164,23 @@ export function HiringPackPaperEditor({
           value — the salary in words follows the salary figure, for instance.
         </p>
       </div>
+
+      {/* WHAT A FIELD USED TO SAY. An overlay at the end of the tree rather than a card inside the
+          table, so it sits above whichever tab is open and cannot be clipped by the table's own
+          scrolling container. Opened today from a table row; anything else that learns to open it
+          needs no change here. */}
+      {historyRow ? (
+        <FieldHistoryPanel
+          entries={history?.fieldId === historyRow.id ? history.entries : null}
+          error={historyError}
+          onClose={() => {
+            setHistoryRow(null);
+            setHistory(null);
+            setHistoryError(null);
+          }}
+          row={historyRow}
+        />
+      ) : null}
     </div>
   );
 }

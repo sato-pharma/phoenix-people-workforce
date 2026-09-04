@@ -90,6 +90,27 @@ export function formatDayMonthYear(iso: string | null | undefined): string {
 }
 
 /**
+ * A money figure in the form these papers print it: digits only, the unit supplied by the prose.
+ *
+ * Piastres print as two digits or not at all. "12,750.5" on a salary clause is the kind of figure
+ * that gets read as five piastres by one party and fifty by the other, and مادة (2) of the
+ * contract prints the same amount again in words directly beside it, so the two have to agree
+ * exactly.
+ *
+ * SHARED RATHER THAN COPIED. It began as a private helper in render-contract.ts; a company template
+ * can carry a salary too, and a second implementation of this is how one paper comes to print
+ * 12,750.50 beside another printing 12750.5 for the same person.
+ */
+export function formatMoney(value: number | null): string {
+  if (value === null || !Number.isFinite(value)) return "";
+  const hasPiastres = Math.round(value * 100) % 100 !== 0;
+  return new Intl.NumberFormat("en-US", {
+    minimumFractionDigits: hasPiastres ? 2 : 0,
+    maximumFractionDigits: 2,
+  }).format(value);
+}
+
+/**
  * Today's date in Cairo, as YYYY-MM-DD.
  *
  * NOT `new Date().toISOString()`. That is UTC, and Cairo runs two or three hours ahead of it — so

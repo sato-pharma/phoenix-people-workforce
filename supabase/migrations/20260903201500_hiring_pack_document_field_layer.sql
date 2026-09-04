@@ -51,14 +51,16 @@
 -- silently permit two overrides of the same placement — one of which would win at random. Reserving
 -- the column costs nothing; reserving the index shape is the actual point.
 --
--- ── NOT APPLIED ────────────────────────────────────────────────────────────────────────────────
+-- ── APPLIED TO PRODUCTION 2026-09-03, on the owner's approval ("apply the migration to production
+--    then merge") ──────────────────────────────────────────────────────────────────────────────
 --
--- This file has NOT been applied to any environment. Applying it to production is a protected action
--- and needs the owner's separate approval. Production has no PITR — seven daily physical backups are
--- the whole recovery story — though this migration is purely additive and reversible by dropping the
--- table, so nothing existing is at risk either way.
+-- Verified live rather than read off the ledger, because `list_migrations` reports the ledger and
+-- not the database: `select to_regclass('public.hiring_pack_document_fields')` answers with the
+-- table, which is the object itself saying it exists.
 --
--- ADDITIVE. One new table, no existing row touched, nothing dropped.
+-- ADDITIVE. One new table, no existing row touched, nothing dropped — and therefore reversible by
+-- dropping the table, which matters because production has no PITR: seven daily physical backups
+-- are the whole recovery story, at one-day granularity, restoring the WHOLE database.
 
 begin;
 

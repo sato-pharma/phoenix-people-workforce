@@ -37,7 +37,7 @@ import type { HiringPackData } from "@/lib/hiring-pack/types";
 // pushes what follows down instead of colliding with a fixed box.
 
 /** Every blank these forms can fill. The settlement amount is not among them — see the template. */
-function buildClearanceValues(data: HiringPackData): Partial<Record<ClearanceToken, string>> {
+export function buildClearanceValues(data: HiringPackData): Partial<Record<ClearanceToken, string>> {
   const { employee, profile, offboarding, exit } = data;
   const recital = systemLegalEntity.contractRecital;
 
