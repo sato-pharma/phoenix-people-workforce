@@ -350,8 +350,17 @@ function writeDaily_(ss, rows) {
     // Whole numbers. Without this a count of 7 can render as 7.00 once the column has ever held a
     // formatted value, which looks like a bug in the data.
     sheet.getRange(DAILY_HEADER_ROW + 1, 2, 1000, header.length - 1).setNumberFormat('0');
-    buildDailyChart_(sheet, header.length);
   }
+
+  // OUTSIDE the `fresh` block, deliberately — this is the fix for a real defect, not a tidy-up.
+  //
+  // The chart used to be built only when the HEADER changed, which is almost never. So the moment
+  // it was missing or had drifted out of its band, nothing ever put it back: rows 1-13 are reserved
+  // for it AND frozen by styleHeader_, so the sheet showed thirteen frozen blank rows permanently
+  // occupying the top of the screen while the chart floated below, covering the data rows it was
+  // supposed to summarise. Both halves of that looked like a styling disaster and neither could
+  // self-heal. Reported from the live sheet, 2026-09-05.
+  ensureDailyChart_(sheet, header.length);
 }
 
 /**
@@ -363,6 +372,31 @@ function writeDaily_(ss, rows) {
  * simply do not plot, so an over-long range costs nothing but is stable for about three years of
  * daily rows.
  */
+/**
+ * Put the chart back in its band if — and only if — it is not already there.
+ *
+ * THIS REVERSES ONE EARLIER RULE ON PURPOSE, so the reversal is written down rather than discovered.
+ * buildDailyChart_ says a rebuilt chart "loses whatever position the reader dragged it to", and
+ * that was the reason it ran once and never again. That reasoning was wrong here, because rows 1-13
+ * are RESERVED for this chart and frozen: a chart dragged out of the band does not merely sit
+ * somewhere else, it leaves a permanent frozen void at the top of the sheet and covers the data
+ * underneath. There is no position outside the band worth preserving.
+ *
+ * A chart that IS in its band is still left completely alone — no rebuild, no flicker, no churn —
+ * so the "a refresh writes values and touches nothing else" rule at the top of this file continues
+ * to hold for every healthy refresh. This costs one getCharts() call.
+ */
+function ensureDailyChart_(sheet, width) {
+  var charts = sheet.getCharts();
+  if (charts.length === 1) {
+    var info = charts[0].getContainerInfo();
+    // Anchored at A1 is the whole test. Offsets are the reader's business — nudging it a few pixels
+    // inside the band is not drift.
+    if (info.getAnchorRow() === 1 && info.getAnchorColumn() === 1) return;
+  }
+  buildDailyChart_(sheet, width);
+}
+
 function buildDailyChart_(sheet, width) {
   var existing = sheet.getCharts();
   for (var i = 0; i < existing.length; i++) sheet.removeChart(existing[i]);

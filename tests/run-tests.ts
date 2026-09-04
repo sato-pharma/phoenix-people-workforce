@@ -210,6 +210,7 @@ import { runDriveCvFolderTests } from "./drive-cv-folders.test.ts";
 import { runCvLifecycleFeedTests } from "./cv-lifecycle-feed.test.ts";
 import { runCvLifecycleShareLinksScreenTests } from "./cv-lifecycle-share-links-screen.test.ts";
 import { runCvLifecycleSheetTokenRotationTests } from "./cv-lifecycle-sheet-token-rotation.test.ts";
+import { runCvLifecycleSheetChartPlacementTests } from "./cv-lifecycle-sheet-chart-placement.test.ts";
 import { runHiringManagerTeamScopeTests } from "./hiring-manager-team-scope.test.ts";
 import { runManagerFolderShelfTests } from "./manager-folder-shelf.test.ts";
 import { runBackgroundReviewQueueTests } from "./background-review-queue.test.ts";
@@ -1702,6 +1703,10 @@ await runTest(
 await runTest(
   "CV sheet token rotation (doPost fails closed, the origin can never come from the payload, and the old token dies only after the sheet proves it took the new one)",
   runCvLifecycleSheetTokenRotationTests,
+);
+await runTest(
+  "CV sheet daily chart placement (a chart outside its frozen band leaves a white void above and covers the data below, and a refresh must heal it)",
+  runCvLifecycleSheetChartPlacementTests,
 );
 await runTest(
   "hiring-manager team scope (one National Sales Manager can NEVER read the other's candidates, and the picker is exactly the gate)",
