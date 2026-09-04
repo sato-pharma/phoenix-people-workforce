@@ -29,6 +29,12 @@ export const MANAGER_SENDS_TABLE = "ats_candidate_manager_sends";
  * fail — `mapSend` simply maps it to null, so one reader silently loses the manager's seat or the
  * vacancy while its siblings keep it.
  */
+/** PostgREST serves at most this many rows for one request, so a whole-table read must page. */
+const SEND_PAGE_SIZE = 1000;
+
+/** A runaway guard, not a data cap: 50 pages is 50,000 recorded sends. */
+const SEND_PAGE_LIMIT = 50;
+
 const SEND_COLUMNS =
   "candidate_id,manager_hr_id,manager_name,manager_area,manager_job_title,manager_region,sent_for_area,sent_for_job_title,sent_for_line,sent_for_region,sent_for_vacancy_id,sent_at";
 
@@ -299,24 +305,29 @@ export async function listSendsForCandidate(candidateId: string): Promise<Manage
  * answers "where is this CV now, and how long has it been there". The full trail is
  * `listSendsForCandidate`, which the timeline already renders.
  *
- * Batched through chunkIds because the id list is the whole live pool — the 597 UNFILED candidates
- * on 2026-09-05, not the 744 rows in the table, since the shelf is taken off before this runs — see
- * db-batch.ts for why an unbatched `.in()` fails as a fetch error that names neither the query nor
- * its size.
+ * THE WHOLE TABLE, not a filtered `.in()` on the caller's ids. Its only caller is listCandidates,
+ * which loads the entire pool anyway, so filtering by id would trade ONE request for eight (744 ids
+ * at db-batch.ts's 100 per batch) to fetch a table holding 72 rows. Paged all the same: PostgREST
+ * caps a request at 1000 rows and says nothing, and a send silently missing from this map reads as
+ * "never sent", which is the exact failure the map exists to end.
  *
  * Returns null — distinct from an empty map — when the table is not there yet, so the caller keeps
  * the old columns' answer instead of turning a missing migration into "nothing was ever sent".
  */
-export async function listLatestSendsByCandidate(
-  candidateIds: readonly string[],
-): Promise<Map<string, ManagerSend> | null> {
+export async function listLatestSendByCandidate(): Promise<Map<string, ManagerSend> | null> {
   const latest = new Map<string, ManagerSend>();
-  const ids = Array.from(new Set(candidateIds.filter((id) => String(id ?? "").trim().length > 0)));
-  if (ids.length === 0) return latest;
-
   const supabase = recruitmentDb();
-  for (const batch of chunkIds(ids)) {
-    const { data, error } = await supabase.from(MANAGER_SENDS_TABLE).select(SEND_COLUMNS).in("candidate_id", batch);
+
+  for (let page = 0; page < SEND_PAGE_LIMIT; page += 1) {
+    const from = page * SEND_PAGE_SIZE;
+    const { data, error } = await supabase
+      .from(MANAGER_SENDS_TABLE)
+      .select(SEND_COLUMNS)
+      // A stable, unique order. `.range()` without one is served in whatever order the planner chose
+      // for THAT request, so page two can repeat page one and omit rows — losing sends with no error.
+      .order("candidate_id", { ascending: true })
+      .order("manager_hr_id", { ascending: true })
+      .range(from, from + SEND_PAGE_SIZE - 1);
 
     if (error) {
       if (isMissingTable(error)) return null;
@@ -333,14 +344,19 @@ export async function listLatestSendsByCandidate(
       if (held && !isAfter(send.sentAt, held.sentAt)) continue;
       latest.set(send.candidateId, send);
     }
+
+    if ((data ?? []).length < SEND_PAGE_SIZE) return latest;
   }
-  return latest;
+
+  throw new Error(
+    `Manager-send paging stopped at ${SEND_PAGE_LIMIT * SEND_PAGE_SIZE} rows. Refusing to report a sent CV as never sent.`,
+  );
 }
 
 /**
  * Is `candidate` strictly later than `than`? Unparseable on either side answers false.
  *
- * Exported so the screening overlay compares its two stamps exactly the way this module picks a
+ * Exported so listCandidates' overlay compares its two stamps exactly the way this module picks a
  * winner — two copies of "which of these is newer" is two places for the answer to differ.
  */
 export function isAfter(candidate: string | null | undefined, than: string | null | undefined): boolean {

@@ -797,25 +797,23 @@ export async function runRecruitmentScreeningPageTests() {
   assert.equal(isAfter("2026-09-01T10:20:57.147", "2026-08-29T22:42:45.734+00:00"), true, "the compare must be by instant, not by string order");
   assert.equal(isAfter("not a date", "2026-08-29T22:42:45.734+00:00"), false, "an unreadable stamp never wins");
 
+  // ── THE OVERLAY LIVES IN listCandidates, FOR EVERY SCREEN ─────────────────
+  //
+  // It was in the screening loader alone, so the candidate pool — which reads the same
+  // listCandidates — answered "was this sent, and to whom" from the old column while this page
+  // answered from the trail. One pool, two truths, and nothing on either screen to say which was
+  // right. Moved 2026-09-05 to the one place both go through.
   const workspace = read("src/lib/recruitment/screening-workspace.ts");
-  // BEFORE the narrowing, not inside `rowFor`. `matchesScreeningNarrowing` reads
-  // `candidate.managerNotified` for the `?sent=1` / `?unsent=1` filters, so an overlay applied only
-  // to the rendered row would leave the filters answering from the old column while the list beside
-  // them answered from the trail — one screen, two truths.
-  // Anchored on the real CALL, not the bare name: the comment above the overlay explains itself by
-  // naming `matchesScreeningNarrowing`, and an anchor that matched prose would compare the overlay
-  // against its own documentation instead of against the filter.
-  const overlayAt = workspace.indexOf("latestSends.get(candidate.id)");
-  const narrowAt = workspace.indexOf("matchesScreeningNarrowing(candidate, narrowing");
-  // BOTH anchors must exist before the order between them means anything. A bare `a < b` on two
-  // indexOf results is green when the overlay anchor is simply GONE, because -1 is less than
-  // everything — a pin that passes hardest at the moment the thing it guards is deleted.
-  assert.ok(overlayAt >= 0, "the send-trail overlay must still be in the loader");
-  assert.ok(narrowAt >= 0, "the narrowing call must still be in the loader");
+  const candidatesLoader = read("src/lib/recruitment/candidates.ts");
+  const overlayAt = candidatesLoader.indexOf("latestSends.get(candidate.id)");
+  assert.ok(overlayAt >= 0, "listCandidates must overlay the send trail for every caller");
+  // And exactly ONE copy of it. A second overlay in the page loader is how the two screens drifted
+  // apart in the first place.
   assert.ok(
-    overlayAt < narrowAt,
-    "the send trail must be overlaid before the filters read managerNotified",
+    !workspace.includes("latestSends.get(candidate.id)"),
+    "the screening loader must not keep a second copy of the overlay — listCandidates owns it",
   );
+
   // THE SEAT MOVES ONLY WHEN THE NEWER SEND HAS ONE, and the guard is the whole assertion.
   //
   // This pinned the UNGUARDED `candidate.sentFor = stamp.sentFor`, on the argument that carrying an
@@ -826,12 +824,12 @@ export async function runRecruitmentScreeningPageTests() {
   //
   // `hiring-manager-notify.ts` is the authority: `position = input.position ? {…} : {}`, so a
   // position-less send omits the sent_for_* columns and the previous ones STAND. Without this guard
-  // the screen contradicts the row it is reading.
+  // the loader contradicts the row it is reading.
   //
   // Only WHITESPACE may precede it. An earlier cut of this pin was a bare match, so commenting the
   // line out left it green — it was pinning the words, not the statement.
   assert.match(
-    workspace,
+    candidatesLoader,
     /\n[ \t]*if \(stamp\.sentFor\) candidate\.sentFor = stamp\.sentFor;/,
     "a newer send with NO position must not erase the seat an earlier one recorded",
   );
@@ -992,4 +990,37 @@ export async function runRecruitmentScreeningPageTests() {
     !existsSync(path.join(process.cwd(), "src/lib/recruitment/screening-queue.ts")),
     "screening-queue.ts is the dead loader — do not bring it back; screening-workspace.ts is the live one",
   );
+
+  // ── 15 · A selection that has dropped out of the list is not a selection ───
+  //
+  // `selected` searched `rows` — the whole server-filtered pool — so a candidate the CLIENT
+  // narrowing had hidden stayed "selected": the list rendered its empty state while the pane beside
+  // it showed a person, with a live Shortlist / Reject / Send header for somebody not in the pile
+  // being looked at. `queue` defaults to "new" and the correcting effect deliberately bails on an
+  // empty list, so "Interviews today" — 0 in production, and structurally 0 while no interview
+  // carries a scheduled_at — reproduced it in one click.
+  //
+  // Only the DERIVED value changed. `selectedId` is still remembered, so switching to an empty pile
+  // blanks the pane and switching back restores the same CV.
+  assert.match(
+    workstation,
+    /const selected = useMemo\(\s*\(\) => visible\.find\(\(row\) => row\.id === selectedId\)/,
+    "the selection must come from the VISIBLE list, not from every row the server sent",
+  );
+  // And the two writes must go through it. Reading `selectedId` directly is what let a decision land
+  // on a candidate the list in front of the reader was not showing.
+  for (const [handler, marker] of [
+    ["decide", "      // `selected`, not `selectedId`: a decision must never land on a candidate the list in front of"],
+    ["send", "    // Same rule as `decide`: never send a CV the visible list is not showing."],
+  ] as const) {
+    const at = workstation.indexOf(marker);
+    assert.ok(at >= 0, `${handler} must resolve its target from the visible selection`);
+    // The shadowing const is what makes it safe: every line inside the handler then refers to the
+    // visible selection, so a missed rename cannot silently reach the outer remembered id.
+    assert.match(
+      workstation.slice(at, at + 400),
+      /const selectedId = selected\?\.id;/,
+      `${handler} must take its id from \`selected\`, so it cannot act on a hidden candidate`,
+    );
+  }
 }

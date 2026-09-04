@@ -18,7 +18,13 @@ import {
 import { describeCandidateSource, type SourceContextRow } from "@/lib/recruitment/candidate-source-context";
 import type { CandidateUnconfirmedCvFacts } from "@/lib/recruitment/candidate-screening-facts";
 import { chunkIds } from "@/lib/recruitment/db-batch";
-import { listSendsForManager, managerSendStamp, type ManagerSend } from "@/lib/recruitment/manager-sends";
+import {
+  isAfter,
+  listLatestSendByCandidate,
+  listSendsForManager,
+  managerSendStamp,
+  type ManagerSend,
+} from "@/lib/recruitment/manager-sends";
 import { hrIdForStorage, hrIdLookupKeys, hrIdsMatch } from "@/lib/hr-id";
 import {
   listHiringManagerOptions,
@@ -538,10 +544,48 @@ export async function listCandidates(
     table.select(columns).order("created_at", { ascending: false }),
   );
   const candidates = rows.map(mapCandidate);
-  // Concurrently: the two enrichments touch different fields on the same objects and neither reads
-  // the other's output, so serialising them would only add a second Atlantic round trip to a page
-  // that already waits on one.
-  await Promise.all([attachAppliedFor(candidates), attachUnconfirmedCvFacts(candidates)]);
+  // Concurrently: the three reads touch different fields on the same objects and none reads
+  // another's output, so serialising them would only add Atlantic round trips to a page that
+  // already waits on one.
+  const [, , latestSends] = await Promise.all([
+    attachAppliedFor(candidates),
+    attachUnconfirmedCvFacts(candidates),
+    listLatestSendByCandidate(),
+  ]);
+
+  // ── WHO HAS THIS CV, RESOLVED ONCE FOR EVERY SCREEN ─────────────────────────────────────────────
+  //
+  // `manager_notified_*` on the candidate row is the pre-2026-08-30 single-manager record: it holds
+  // whoever was sent the CV LAST and the next send overwrites it. `ats_candidate_manager_sends` is
+  // the fan-out that replaced it. Reading either ALONE has a window where it is wrong, and
+  // production has carried rows where they disagreed outright — a CV sent to Saad Salama on 31 Aug
+  // 2026 with both candidate columns NULL, and one re-sent to Dr Anwar Gaweesh on 1 Sep whose row
+  // still named the earlier manager.
+  //
+  // IT LIVES HERE, not in one page's loader, and that is the point. The screening queue got this
+  // overlay on 2026-09-05 and the candidate pool did not, so the two screens answered "was this
+  // sent, and to whom" from different sources — the same pool, two truths, and nothing on either
+  // screen to say which was right. Every caller of this function reads the whole pool for a person
+  // to look at, so every one of them wants the same answer.
+  //
+  // THE POSITION MOVES ONLY WHEN THE NEWER SEND HAS ONE. A third of production's sends (24 of 72)
+  // carry no position at all, and `hiring-manager-notify.ts` omits the `sent_for_*` columns entirely
+  // for those — so the previous seat STANDS in the database. Overwriting it here with the new send's
+  // empty position would not move the seat, it would erase one, and this module would then contradict
+  // the row it just read.
+  //
+  // A null map means the table is not in this database yet, and then the old columns stand — exactly
+  // how every screen behaved before the fan-out existed.
+  if (latestSends) {
+    for (const candidate of candidates) {
+      const send = latestSends.get(candidate.id);
+      if (!send) continue;
+      if (!isAfter(send.sentAt, candidate.managerNotified?.sentAt ?? null)) continue;
+      const stamp = managerSendStamp(send);
+      candidate.managerNotified = stamp.managerNotified;
+      if (stamp.sentFor) candidate.sentFor = stamp.sentFor;
+    }
+  }
   // Advisory soft-duplicate flags across the whole pool (same phone-tail / normalized name). A
   // "worth a look" marker for Talent Acquisition — nothing here merges anything by itself; the flag
   // is what the merge button in the pool reads, and a person presses it (candidate-merge.ts).
