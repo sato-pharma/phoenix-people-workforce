@@ -7,6 +7,8 @@
 //   node scripts/backfill-cvs-to-drive.mjs --retry       also revisit rows whose last attempt failed
 //   node scripts/backfill-cvs-to-drive.mjs --refile      re-examine files ALREADY in Drive and move
 //                                                        any whose folder has since changed
+//   node scripts/backfill-cvs-to-drive.mjs --verify      report only: what is mirrored, what is
+//                                                        missing, what is in the wrong folder
 //
 // RUN IT THROUGH THE ALIAS LOADER, because it imports the live inference module rather than copying
 // a hundred governorate spellings that would then drift:
@@ -30,14 +32,17 @@ import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 
-// The ONE thing this script does not re-implement. The shelf and region tables below are small and
-// pinned by tests/drive-cv-folders.test.ts, but the governorate vocabulary is ~100 spellings and a
-// copy of it would drift silently the first time somebody adds one. Both modules are pure.
+// NOTHING about where a CV goes is re-implemented here. Every folder rule, label table and
+// governorate spelling comes from the same pure modules the app itself calls, so this script and
+// the running site can never disagree about where a candidate belongs. See the block comment
+// above `sanitize` for the drift that made this non-negotiable.
+import { candidateFolderKindLabels } from "@/lib/recruitment/candidate-folder";
 import { inferCandidatePlacement } from "@/lib/recruitment/candidate-folder-inference";
+import { candidateRegionLabels } from "@/lib/recruitment/candidate-region";
 import {
-  INFERRED_FOLDER_NAME,
-  NO_LOCATION_FOLDER_NAME,
-  OUTSIDE_EGYPT_FOLDER_NAME,
+  driveFolderPathFor,
+  driveInferredFolderPath,
+  sanitizeDriveSegment,
 } from "@/lib/recruitment/drive-cv-folders";
 
 // ── env ──────────────────────────────────────────────────────────────────────────────────────────
@@ -68,6 +73,7 @@ const args = process.argv.slice(2);
 const DRY_RUN = args.includes("--dry-run");
 const RETRY_FAILED = args.includes("--retry");
 const REFILE = args.includes("--refile");
+const VERIFY = args.includes("--verify");
 const LIMIT = (() => {
   const at = args.indexOf("--limit");
   if (at < 0) return Infinity;
@@ -244,43 +250,16 @@ async function uploadToDrive({ bytes, mimeType, name, parentId }) {
   return (await res.json()).id;
 }
 
-// ── placement (mirrors src/lib/recruitment/drive-cv-folders.ts) ──────────────────────────────────
-const REGION_LABELS = {
-  AB: "Alex-BHR",
-  CA: "Cairo",
-  D1: "Delta (1)",
-  D2: "Delta (2)",
-  D3: "Delta (3)",
-  GZ: "Giza",
-  OT: "Others",
-  UE: "Upper Egypt",
-};
-// The recruitment-only Delta (3) grouping. Kept in step with recruitmentAreaRegionOverrides, and
-// pinned by tests/drive-cv-folders.test.ts so the two cannot drift apart unnoticed.
-const RECRUITMENT_AREA_REGION_OVERRIDES = {
-  Ismailia: "D3",
-  Qalubeya: "D3",
-  "Sharkia 1": "D3",
-  "Sharkia 2": "D3",
-  Suez: "D3",
-};
-const SHELF_LABELS = {
-  district_manager: "District Manager",
-  medical_rep: "Medical Representative",
-  other: "Other positions",
-  paramedical: "Paramedical",
-};
-
-function sanitize(name) {
-  return String(name ?? "")
-    .replace(/[\u0000-\u001f\u007f]/g, " ")
-    .replace(/[\\/]/g, "-")
-    .replace(/\s+/g, " ")
-    .trim()
-    .replace(/^\.+/, "")
-    .replace(/\.+$/, "")
-    .trim();
-}
+// ── placement (DELEGATED to src/lib/recruitment/drive-cv-folders.ts) ─────────────────────────────
+//
+// This section used to be a COPY of the live module: its own shelf labels, region labels,
+// Delta (3) recruitment overrides, sanitizer and path builder. The copy went stale the first
+// time the app improved. On 2026-09-04 the live module learned to nest a hand-typed governorate
+// under its region, and this script — the one thing that MOVES existing CVs — kept filing them
+// loose, so `--verify` reported a clean tree the app itself disagreed with. A duplicated rule
+// that only drifts when somebody improves the original is the worst kind, because the
+// improvement is what breaks it. Everything here is the live function now, called.
+const sanitize = sanitizeDriveSegment;
 
 const EXT_BY_MIME = {
   "application/msword": ".doc",
@@ -303,7 +282,7 @@ function driveFileName(candidate, mimeType, originalName) {
 
 /**
  * Where a candidate goes when nothing was declared - the caveated shelf, never the confirmed tree.
- * Mirrors `driveInferredFolderPath`; the vocabulary behind it is imported, not copied.
+ * The reading and the path are both live functions; this only assembles the input columns.
  */
 function inferredPathFor(candidate) {
   const placement = inferCandidatePlacement({
@@ -312,17 +291,12 @@ function inferredPathFor(candidate) {
     preferredRegionCode: candidate.preferred_region_code,
     sentForRegion: candidate.sent_for_region,
   });
-  if (!placement) return [INFERRED_FOLDER_NAME, NO_LOCATION_FOLDER_NAME].map(sanitize);
-  const segments =
-    placement.basis === "outside-egypt"
-      ? [INFERRED_FOLDER_NAME, OUTSIDE_EGYPT_FOLDER_NAME, placement.label]
-      : [INFERRED_FOLDER_NAME, placement.label];
-  return segments.map(sanitize).filter(Boolean);
+  return driveInferredFolderPath(placement);
 }
 
 function folderPathFor(candidate, areaRegions) {
   // A hand-filed candidate outranks anything derived — same rule as the live module.
-  if (candidate.folder_kind && candidate.folder_key && SHELF_LABELS[candidate.folder_kind]) {
+  if (candidate.folder_kind && candidate.folder_key && candidateFolderKindLabels[candidate.folder_kind]) {
     return pathForShelf(candidate.folder_kind, candidate.folder_key, areaRegions);
   }
   // Only a candidate who ANSWERED reaches the confirmed tree. `applied_for_job_title` alone is three times in four
@@ -341,26 +315,18 @@ function folderPathFor(candidate, areaRegions) {
   }
   if (/district\s*manager|\bdm\b/.test(lower)) {
     const code = String(candidate.preferred_region_code ?? "").trim().toUpperCase();
-    return REGION_LABELS[code]
+    return candidateRegionLabels[code]
       ? pathForShelf("district_manager", code, areaRegions)
       : inferredPathFor(candidate);
   }
   return pathForShelf("other", title, areaRegions);
 }
 
+// An empty `label` is deliberate: `driveFolderPathFor` then asks `candidateFolderLabel`, which
+// is the same resolution the app performs — a region code becomes its region name, and every
+// other kind keeps the key verbatim.
 function pathForShelf(kind, key, areaRegions) {
-  const shelf = SHELF_LABELS[kind];
-  if (kind === "paramedical") return [shelf].map(sanitize).filter(Boolean);
-  if (kind === "district_manager") {
-    return [shelf, REGION_LABELS[String(key).toUpperCase()] ?? key].map(sanitize).filter(Boolean);
-  }
-  if (kind === "medical_rep") {
-    const salesRegion = areaRegions[key];
-    const regionCode = RECRUITMENT_AREA_REGION_OVERRIDES[key] ?? salesRegion;
-    const region = regionCode ? (REGION_LABELS[regionCode] ?? regionCode) : null;
-    return (region ? [shelf, region, key] : [shelf, key]).map(sanitize).filter(Boolean);
-  }
-  return [shelf, key].map(sanitize).filter(Boolean);
+  return driveFolderPathFor({ key, kind, label: "" }, areaRegions);
 }
 
 // ── run ──────────────────────────────────────────────────────────────────────────────────────────
@@ -374,6 +340,11 @@ async function main() {
   const areaRegions = {};
   for (const row of areas) if (row.area_name && row.code_region_code) areaRegions[row.area_name] = row.code_region_code;
   console.log(`Area map: ${Object.keys(areaRegions).length} active areas.`);
+
+  if (VERIFY) {
+    await verifyMirror(areaRegions);
+    return;
+  }
 
   // --refile inspects what is ALREADY in Drive; the normal run inspects what is not. The two are
   // exact opposites on the same column, so a refile can never re-upload and a backfill can never
@@ -514,6 +485,88 @@ async function main() {
   );
   if (!DRY_RUN && counts.failed > 0) console.log("Re-run with --retry to revisit the failures.");
   if (!REFILE && !DRY_RUN) console.log("Run again with --refile to move any CV whose folder has since changed.");
+}
+
+/**
+ * Report only: does every CV have a Drive file, and is it in the folder its data says?
+ *
+ * WHY THIS EXISTS. Nothing checked this. To trust the 2026-09-04 backfill somebody had to hand-write
+ * a Drive tree walk and count 955 files by eye, and drift here is silent by nature: a candidate is
+ * re-classified, an area is renamed, an upload fails once and nobody looks again. The file stays
+ * exactly where it was and no error is ever raised.
+ *
+ * IT DOES NOT OPEN DRIVE, AND SAYS SO. Every question below is answered from `drive_mirror_path`,
+ * which is what the mirror BELIEVES. That catches every drift caused by our own data changing —
+ * the common case, and instant across the whole pool. It cannot see a file a person moved or
+ * deleted inside Drive by hand; `--refile` is what repairs the first kind, and only a tree walk
+ * would find the second. Printing that limit is the point: a check that quietly certifies what it
+ * never looked at is worse than no check.
+ */
+async function verifyMirror(areaRegions) {
+  const rows = [];
+  const PAGE = 500;
+  for (let offset = 0; ; offset += PAGE) {
+    const page = await rest(
+      `ats_files?select=id,candidate_id,drive_mirror_file_id,drive_mirror_path,drive_mirror_error&kind=eq.cv&drive_file_id=not.is.null&order=created_at.asc&offset=${offset}&limit=${PAGE}`,
+    );
+    rows.push(...page);
+    if (page.length < PAGE) break;
+  }
+
+  // One request per file would be 950+ round-trips for a report somebody should be able to run
+  // casually. Chunked at 50 ids: PostgREST returns ZERO rows and NO error once an `in.()` list
+  // grows to several hundred, so the chunk size here is a correctness limit, not a tuning knob.
+  const wanted = [...new Set(rows.map((f) => f.candidate_id).filter(Boolean))];
+  const byId = new Map();
+  const SELECT =
+    "id,full_name,status,applied_for_job_title,preferred_area_name,preferred_region_code," +
+    "preferences_declared_at,folder_kind,folder_key,governorate,address,sent_for_region";
+  for (let at = 0; at < wanted.length; at += 50) {
+    const chunk = wanted.slice(at, at + 50);
+    const page = await rest(`ats_candidates?select=${SELECT}&id=in.(${chunk.join(",")})`);
+    for (const candidate of page) byId.set(candidate.id, candidate);
+  }
+
+  const stats = { errored: 0, misfiled: 0, mirrored: 0, notMirrored: 0, orphanCandidate: 0, total: rows.length };
+  const moves = new Map();
+  for (const file of rows) {
+    if (file.drive_mirror_error) stats.errored += 1;
+    if (!file.drive_mirror_file_id) {
+      stats.notMirrored += 1;
+      continue;
+    }
+    stats.mirrored += 1;
+    const candidate = file.candidate_id ? byId.get(file.candidate_id) : null;
+    if (!candidate) {
+      stats.orphanCandidate += 1;
+      continue;
+    }
+    const expected = folderPathFor(candidate, areaRegions).join("/");
+    if (expected !== file.drive_mirror_path) {
+      stats.misfiled += 1;
+      const key = `${file.drive_mirror_path || "(nowhere)"}  ->  ${expected}`;
+      moves.set(key, (moves.get(key) ?? 0) + 1);
+    }
+  }
+
+  console.log("\n=== CV mirror health ===");
+  console.log(`  CVs with a stored file        ${stats.total}`);
+  console.log(`  mirrored into Drive           ${stats.mirrored}`);
+  console.log(`  NOT mirrored yet              ${stats.notMirrored}${stats.notMirrored ? "   <- run without --verify" : ""}`);
+  console.log(`  last attempt errored          ${stats.errored}${stats.errored ? "   <- run with --retry" : ""}`);
+  console.log(`  in the WRONG folder           ${stats.misfiled}${stats.misfiled ? "   <- run with --refile" : ""}`);
+  console.log(`  file has no candidate row     ${stats.orphanCandidate}`);
+  if (moves.size) {
+    console.log("\n  Where they should move:");
+    for (const [move, count] of [...moves.entries()].sort((a, b) => b[1] - a[1]).slice(0, 30)) {
+      console.log(`    ${String(count).padStart(4)}  ${move}`);
+    }
+  }
+  console.log(
+    "\n  Read from the mirror\'s own bookkeeping, not from Drive: this sees drift caused by our data\n" +
+      "  changing, and CANNOT see a file moved or deleted inside Drive by hand.",
+  );
+  return stats;
 }
 
 main().catch((error) => {
