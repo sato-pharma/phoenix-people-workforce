@@ -134,3 +134,21 @@ begin
   return query select v_rows, v_refreshed;
 end;
 $function$;
+
+-- CREATE OR REPLACE preserves the live ACL, so these two lines change nothing on an existing
+-- database. They are required for a FRESH replay: on a new database the function is created with
+-- the default ACL, which grants EXECUTE to PUBLIC, and anon/authenticated inherit through PUBLIC
+-- membership — so revoking only those two is a no-op. Revoking PUBLIC on a default ACL also strips
+-- service_role, hence the explicit re-grant. Same pattern as 20260831160000, this body's source.
+revoke execute on function public.phx_sync_sos_run(text[]) from public, anon, authenticated;
+grant  execute on function public.phx_sync_sos_run(text[]) to service_role;
+
+comment on function public.phx_sync_sos_run(text[]) is
+  'Re-stamps source_of_sales_import_rows from the customer map + brick master, then rebuilds the '
+  'rollups for every batch touched. The UPDATE fires when the brick OR the area code OR the region '
+  'code differs — gating on brick alone let an area re-parent (same brick, new area) go un-stamped '
+  'forever, which stranded 14 rows / EGP 5,274.90 in 2026-07 while the sync reported 0 re-stamped. '
+  'area_name/region_name are written but deliberately NOT in the predicate: no rollup carries a name. '
+  'Refreshes SEVEN rollups, not six: source_of_sales_import_summaries is the Source of Sales '
+  'dashboard''s own aggregate, and it was omitted until 20260905003000 — so a mapping correction '
+  'rebuilt everything the monthly closing reads and nothing the dashboard reads.';
