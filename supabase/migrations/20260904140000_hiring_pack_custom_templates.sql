@@ -60,7 +60,11 @@ create table if not exists public.hiring_pack_custom_templates (
   -- ── Version status, mirroring TemplateStatus exactly ────────────────────────────────────────
   status text not null default 'current' check (status in ('current', 'archived')),
   version integer not null default 1 check (version > 0),
-  effective_from date not null default current_date,
+  -- CAIRO, NOT `current_date`. Production Postgres runs on UTC, so an unzoned `current_date` is
+  -- YESTERDAY every night between Cairo 00:00 and 03:00 — and this column dates the paper an
+  -- employee signs. The same slip has shipped a wrong hire date and nightly sales-credit drift here
+  -- before, which is why `tests/migrations-cairo-date-guard.test.ts` fails the build over it.
+  effective_from date not null default (now() at time zone 'Africa/Cairo')::date,
   -- Both null while current; both set when superseded. The CHECK below refuses the half-filled
   -- states, because an archived version with no successor is a paper that stopped printing for no
   -- recorded reason.
@@ -336,7 +340,9 @@ notify pgrst, 'reload schema';
 --   begin;
 --   -- the new version's id is generated here, before its row exists; the deferred FK allows that
 --   update public.hiring_pack_custom_templates
---      set status = 'archived', superseded_on = current_date, superseded_by = :new_id
+--      set status = 'archived',
+--          superseded_on = (now() at time zone 'Africa/Cairo')::date,
+--          superseded_by = :new_id
 --    where key = :key and status = 'current';
 --   insert into public.hiring_pack_custom_templates (id, key, name, page_width_pt, page_height_pt,
 --                                                    version, status)
