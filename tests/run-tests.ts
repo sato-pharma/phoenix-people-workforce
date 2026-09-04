@@ -207,6 +207,7 @@ import { runCandidateFolderTests } from "./candidate-folders.test.ts";
 import { runCandidatePoolFiledSearchTests } from "./candidate-pool-filed-search.test.ts";
 import { runCandidateFolderSuggestionTests } from "./candidate-folder-suggestion.test.ts";
 import { runDriveCvFolderTests } from "./drive-cv-folders.test.ts";
+import { runCvLifecycleFeedTests } from "./cv-lifecycle-feed.test.ts";
 import { runHiringManagerTeamScopeTests } from "./hiring-manager-team-scope.test.ts";
 import { runManagerFolderShelfTests } from "./manager-folder-shelf.test.ts";
 import { runBackgroundReviewQueueTests } from "./background-review-queue.test.ts";
@@ -727,6 +728,7 @@ import { runPhase32ProductionMigrationQueueReviewTests } from "./phase32-product
 import { runPhase33MigrationHistoryReconciliationGateTests } from "./phase33-migration-history-reconciliation-gate.test.ts";
 import { runStagingExecutiveDashboardMigrationReconciliationTests } from "./staging-executive-dashboard-migration-reconciliation.test.ts";
 import { runStagingSafeRebuildTests } from "./staging-safe-rebuild.test.ts";
+import { runSupabaseProjectRefsTests } from "./supabase-project-refs.test.ts";
 import { runEmailProductionReadinessTests } from "./email-production-readiness.test.ts";
 import { runEmailP0TestingTrapTests } from "./email-p0-testing-trap.test.ts";
 import { runEmailEngineHardeningTests } from "./email-engine-hardening.test.ts";
@@ -1307,6 +1309,7 @@ import { runDirectOrderReversalFamilyCodeTests } from "./direct-orders-reversal-
 import { runSidebarLayoutEditorModeTests } from "./sidebar-layout-editor-mode.test.ts";
 import { runNavRowWayBackTests } from "./nav-row-way-back.test.ts";
 import { runCiDependencyAuditTests } from "./ci-dependency-audit.test.ts";
+import { runHeredocBackslashDamageTests } from "./heredoc-backslash-damage.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -1684,6 +1687,10 @@ await runTest(
 await runTest(
   "recruitment Drive mirror (region then area, and Delta (3) files where recruitment says, not where sales does)",
   runDriveCvFolderTests,
+);
+await runTest(
+  "CV lifecycle sheet (the day bucket is Cairo's, a backfilled mirror still counts on its arrival day, and no column claims the candidate's send time)",
+  runCvLifecycleFeedTests,
 );
 await runTest(
   "hiring-manager team scope (one National Sales Manager can NEVER read the other's candidates, and the picker is exactly the gate)",
@@ -2497,6 +2504,10 @@ await runTest("phase 32 production migration queue review", runPhase32Production
 await runTest("phase 33 migration history reconciliation gate", runPhase33MigrationHistoryReconciliationGateTests);
 await runTest("staging executive dashboard migration reconciliation", runStagingExecutiveDashboardMigrationReconciliationTests);
 await runTest("staging safe rebuild", runStagingSafeRebuildTests);
+await runTest(
+  "supabase project refs (every hardcoded ref matches AGENTS.md 3; the CLI link classifier)",
+  runSupabaseProjectRefsTests,
+);
 await runTest("email production readiness", runEmailProductionReadinessTests);
 await runTest("email p0 testing trap", runEmailP0TestingTrapTests);
 await runTest("email engine hardening", runEmailEngineHardeningTests);
@@ -4078,6 +4089,10 @@ await runTest(
 await runTest(
   "an npm outage is told apart from a real advisory (CI dependency audit fails closed on findings, open on timeouts)",
   runCiDependencyAuditTests,
+);
+await runTest(
+  "heredoc backslash damage sweep (no control byte in source, no regex built from a halved escape)",
+  runHeredocBackslashDamageTests,
 );
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);

@@ -3,7 +3,6 @@ import {
   Activity,
   AlertTriangle,
   ArrowRight,
-  BarChart3,
   Building2,
   CalendarClock,
   CalendarDays,
@@ -17,11 +16,8 @@ import {
   PieChart,
   ReceiptText,
   Send,
-  Target,
   TrendingUp,
-  Trophy,
   User,
-  Users,
   Wallet,
 } from "lucide-react";
 
@@ -51,28 +47,6 @@ export function SectionShell({ title, children }: { title: string; children: Rea
         <div className="h-1.5 w-12 bg-orange-500" />
       </div>
       <div className="bg-white p-3 sm:p-5">{children}</div>
-    </div>
-  );
-}
-
-function StatTile({
-  icon: Icon,
-  headline,
-  sub,
-}: {
-  icon: React.ElementType;
-  headline: string;
-  sub: string;
-}) {
-  return (
-    <div className="overflow-hidden border border-slate-200 bg-white">
-      <div className="flex items-center gap-2 bg-slate-900 px-4 py-2">
-        <Icon className="h-3.5 w-3.5 text-slate-400" />
-      </div>
-      <div className="px-3 py-3 sm:px-4 sm:py-4">
-        <p className="break-words text-xl font-bold text-slate-900 sm:text-2xl">{headline}</p>
-        <p className="mt-1 text-phx-2xs font-semibold uppercase tracking-widest text-slate-400">{sub}</p>
-      </div>
     </div>
   );
 }
@@ -786,385 +760,482 @@ function PmGpmCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
   );
 }
 
-// --- Medical Rep layout — premium field rep command center ---
+// --- Medical Rep layout — a data-only field command center ---
+//
+// THE OWNER'S RULES THIS LAYOUT ENFORCES (stated 2026-09-04). Each one is why some obvious thing
+// is missing here, so read them before adding anything back:
+//
+//   * NO DECORATIVE BLOCK. Every panel prints a measurement. What this replaces opened with a
+//     full-width dark gradient hero carrying one sentence and no number — "I don't want big black
+//     irrelevant blocks" — so there is no headline band, no lede and no painted hero anywhere.
+//   * NO EMPTY TILE. "What the fuck is this empty square" — the Achievement tile printed nothing
+//     whenever the CURRENT month had no upload yet, while the chart directly beneath it showed two
+//     closed months. A tile that has a number available and shows none is a bug, not an empty
+//     state, so achievement now falls back to the newest CLOSED month and names the month it is
+//     showing. The only remaining empty text is where no number exists anywhere.
+//   * NO PROSE. Dashboard copy: a label, a number, its denominator. No explanatory sentences.
+//   * NO ROUND OR SEMI-ROUND CORNERS, anywhere (AGENTS.md §4). tokens.css still defaults
+//     --phx-radius to 4px and calls it the card and button default, so square has to be written
+//     out; it is never inherited. A 4px corner is invisible in review, which is how it comes back.
+//   * NO PAYSLIP on a landing surface — not the amount, not the month label. Only the nav link out.
+//   * THE CALL RATE IS TWO NUMBERS. AM against its own target, PM against its own, each with its
+//     own attainment bar, printed apart with no separator that could read as a division — he read
+//     "1.63 / 6.57" as one number over another. There is deliberately no combined figure to reach
+//     for, and MrFieldKpis carries none.
+//   * OUTSTATION EXPENSE IS NOT A REP'S HEADLINE. Last in the tool list; in no tile, no alert row.
+//
+// The two `has*` flags off the CRM KPI board carry the difference between a real zero and no basis
+// to score at all, and the tiles must keep rendering those differently: a rep with no plan is NOT a
+// 0% performer, and a rep who logged nothing has no call rate rather than a rate of zero. Same
+// reason a month with no target draws "no target" instead of a 0% bar.
 
-function MedicalRepCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
-  const { shell, pendingVacationCount, pendingExcuseCount, leaveEntitlementDays, mrSalesAchievement, monthlySalesTrend, doubleVisitPulse, mrPendingExpenseCount, earlyBirdStars } =
-    snapshot;
-  const daysUntilRenewal = shell.hrContract?.daysUntilRenewal;
-  const probationStatus = shell.hrContract?.probationStatus;
-  const serviceDuration = shell.hrContract?.serviceDurationText;
-  const totalPending = pendingVacationCount + pendingExcuseCount;
+/** Target-relative tone. One scale for every percentage on this page, so colour means one thing. */
+function repTone(pct: number): { rail: string; fill: string; text: string } {
+  if (pct >= 100) return { rail: "bg-emerald-600", fill: "bg-emerald-500", text: "text-emerald-700" };
+  if (pct >= 90) return { rail: "bg-amber-500", fill: "bg-amber-400", text: "text-amber-700" };
+  return { rail: "bg-orange-500", fill: "bg-orange-500", text: "text-orange-700" };
+}
 
-  const ach = mrSalesAchievement;
-  const pct = ach ? Math.max(0, Math.round(ach.achievementPercent)) : null;
-  const pctCapped = pct !== null ? Math.min(100, pct) : 0;
-
-  const achNumColor =
-    pct === null ? "text-white" : pct >= 100 ? "text-emerald-300" : pct >= 90 ? "text-amber-300" : "text-orange-300";
-  const barColor =
-    pct === null ? "bg-orange-500" : pct >= 100 ? "bg-emerald-500" : pct >= 90 ? "bg-amber-400" : "bg-orange-500";
-
-  const achStatus =
-    pct === null
-      ? null
-      : pct >= 100
-        ? { label: "Target Hit", cls: "border-emerald-400/30 bg-emerald-500/15 text-emerald-300" }
-        : pct >= 90
-          ? { label: "Almost There", cls: "border-amber-400/30 bg-amber-500/15 text-amber-300" }
-          : pct >= 70
-            ? { label: "On Track", cls: "border-orange-400/30 bg-orange-500/15 text-orange-300" }
-            : { label: "Needs Push", cls: "border-rose-400/30 bg-rose-500/15 text-rose-300" };
-
-  const gapToTarget = ach && pct !== null && pct < 100 ? ach.targetValue - ach.salesValue : null;
-  const surplus = ach && pct !== null && pct >= 100 ? ach.salesValue - ach.targetValue : null;
-
-  const cairoNow = currentCairoDateParts();
-  // The Cairo month is already resolved above; the label is then rendered off a synthetic
-  // `Date.UTC`, so `timeZone: "UTC"` here is CORRECT and must stay — it is what stops the month
-  // slipping back one. Not an instant; do not "fix" this one to Cairo.
-  const thisMonth = new Date(Date.UTC(cairoNow.year, cairoNow.month - 1, 1)).toLocaleString("en-US", {
-    month: "long",
-    year: "numeric",
-    timeZone: "UTC",
-  });
-
-  const dayOfMonth = cairoNow.day;
-  const daysInMonth = new Date(Date.UTC(cairoNow.year, cairoNow.month, 0)).getUTCDate();
-  const pacingPct =
-    ach && pct !== null && dayOfMonth > 0
-      ? Math.round(((ach.salesValue / dayOfMonth) * daysInMonth) / (ach.targetValue || 1) * 100)
-      : null;
-  const pacingVsActual = pacingPct !== null && pct !== null ? pacingPct - pct : null;
-
-  const renewalUrgent = daysUntilRenewal !== null && daysUntilRenewal !== undefined && daysUntilRenewal <= 30;
-  const renewalWarning =
-    daysUntilRenewal !== null && daysUntilRenewal !== undefined && daysUntilRenewal > 30 && daysUntilRenewal <= 60;
-
+/** Square metric tile with a status rail across its top edge. */
+function RepTile({
+  label,
+  meta,
+  rail,
+  children,
+  hint,
+}: {
+  label: string;
+  meta?: string | null;
+  rail?: string;
+  children: React.ReactNode;
+  hint?: string | null;
+}) {
   return (
-    <div className="mx-auto w-full space-y-3 sm:space-y-4" dir="auto">
-      <PortalIdentityBand shell={shell} planAdherence={snapshot.planAdherence} />
-      <PortalContextBar role="Medical Representative" context="Field Performance" />
-
-      <GlanceStrip
-        items={[
-          {
-            icon: TrendingUp,
-            value: pct !== null ? `${pct}%` : "—",
-            label: "achievement",
-            href: "/employee-portals/source-of-sales",
-            urgent: pct !== null && pct < 70,
-          },
-          {
-            icon: CalendarX2,
-            value: String(totalPending),
-            label: totalPending === 1 ? "pending request" : "pending requests",
-            href: "/employee-portals/approvals-hub",
-            urgent: totalPending > 0,
-          },
-          {
-            icon: CalendarDays,
-            value: leaveEntitlementDays != null ? `${leaveEntitlementDays} days` : "—",
-            label: "leave balance",
-            href: "/employee-portals/vacation-request",
-          },
-          // NO PAYSLIP TILE: payslip data (amount OR month) must never render on any
-          // overview/landing surface for any role — owner rule. It lives only on
-          // /employee-portals/payslips.
-        ]}
-      />
-
-      {/* The rep's own landing page is the whole point of the competition — this is where a rep
-          sees who is currently the star and what it would take to be next. */}
-      <EarlyBirdOfTheFortnightCard stars={earlyBirdStars} />
-
-      <QuickActions
-        actions={[
-          { href: "/employee-portals/expenses", icon: ReceiptText, label: "My Expenses" },
-          { href: "/employee-portals/vacation-request", icon: CalendarDays, label: "Request Leave" },
-          { href: "/employee-portals/plans", icon: ClipboardCheck, label: "Submit Plan" },
-          { href: "/employee-portals/source-of-sales", icon: TrendingUp, label: "Sales Dashboard" },
-        ]}
-      />
-      {totalPending > 0 && (
-        <PendingActions pendingVacationCount={pendingVacationCount} pendingExcuseCount={pendingExcuseCount} />
-      )}
-
-      <div className="relative overflow-hidden border border-slate-800 bg-[linear-gradient(135deg,#070707_0%,#111827_58%,#241002_100%)] shadow-[0_16px_48px_rgba(0,0,0,0.24)]">
-        <div className="absolute inset-0 opacity-[0.07] [background-image:linear-gradient(rgba(255,255,255,.3)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.3)_1px,transparent_1px)] [background-size:40px_40px]" />
-
-        <div className="relative grid gap-4 px-4 py-4 sm:gap-6 sm:px-7 sm:py-6 lg:grid-cols-[minmax(0,1.2fr)_minmax(250px,0.8fr)] lg:px-8">
-          {ach && pct !== null ? (
-            <>
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-3">
-                  <p className="text-phx-2xs font-bold uppercase text-slate-400">{thisMonth} | Field Achievement</p>
-                  {achStatus && (
-                    <span className={`inline-flex items-center border px-2.5 py-0.5 text-phx-2xs font-bold uppercase ${achStatus.cls}`}>
-                      {achStatus.label}
-                    </span>
-                  )}
-                </div>
-
-                <div className="mt-5 flex flex-wrap items-end gap-x-5 gap-y-3">
-                  <p className={`text-4xl font-black leading-none tabular-nums sm:text-6xl ${achNumColor}`}>
-                    {pct}<span className="text-2xl sm:text-4xl">%</span>
-                  </p>
-                  <div className="pb-2">
-                    <p className="text-base font-bold text-white">Monthly target progress</p>
-                    <p className="mt-1 text-sm text-slate-400">
-                      {gapToTarget !== null && gapToTarget > 0
-                        ? `${egp(gapToTarget)} remaining`
-                        : surplus !== null && surplus > 0
-                          ? `${egp(surplus)} over target`
-                          : "Target baseline loaded"}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="mt-5 h-3 w-full overflow-hidden bg-white/10">
-                  <div
-                    className={`h-full transition-[width] duration-700 ${barColor}`}
-                    style={{ width: `${Math.max(3, pctCapped)}%` }}
-                  />
-                </div>
-                <div className="mt-3 grid grid-cols-2 gap-2 text-sm sm:max-w-xl sm:grid-cols-3">
-                  <div className="border border-white/10 bg-white/5 px-3 py-2">
-                    <p className="text-phx-2xs font-bold uppercase text-slate-500">Sold</p>
-                    <p className="mt-1 font-black text-white">{egp(ach.salesValue)}</p>
-                  </div>
-                  <div className="border border-white/10 bg-white/5 px-3 py-2">
-                    <p className="text-phx-2xs font-bold uppercase text-slate-500">Target</p>
-                    <p className="mt-1 font-black text-white">{egp(ach.targetValue)}</p>
-                  </div>
-                  <div className="col-span-2 border border-white/10 bg-white/5 px-3 py-2 sm:col-span-1">
-                    <p className="text-phx-2xs font-bold uppercase text-slate-500">Status</p>
-                    <p className="mt-1 font-black text-white">{achStatus?.label ?? "Ready"}</p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex flex-col justify-between border border-orange-500/30 bg-orange-500/10 p-4">
-                <div>
-                  <p className="text-phx-2xs font-bold uppercase text-orange-300">Next field move</p>
-                  <p className="mt-2 text-lg font-black leading-snug text-white">
-                    {pct >= 100 ? "Protect the over-target month." : pct >= 90 ? "Close the final target gap." : "Push the next high-value visit."}
-                  </p>
-                  <p className="mt-2 text-sm leading-6 text-slate-300">
-                    Use the sales dashboard for customer mix, distributor movement, and monthly closing details.
-                  </p>
-                </div>
-                <Link
-                  href="/employee-portals/source-of-sales"
-                  className="mt-5 inline-flex items-center justify-center gap-2 border border-orange-400 bg-orange-500 px-4 py-2.5 text-phx-xs font-black uppercase text-white transition hover:bg-orange-600"
-                >
-                  Open sales dashboard <ArrowRight className="h-3.5 w-3.5" />
-                </Link>
-              </div>
-            </>
-          ) : (
-            <>
-              <div className="flex items-start gap-5">
-                <div className="flex h-[72px] w-[72px] shrink-0 items-center justify-center border border-orange-500/25 bg-orange-500/10">
-                  <TrendingUp className="h-8 w-8 text-orange-400" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-phx-2xs font-bold uppercase text-slate-400">{thisMonth} | Field Achievement</p>
-                  <p className="mt-2 text-2xl font-black text-white">Sales upload pending</p>
-                  <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">
-                    Your monthly achievement will appear here once the current sales upload is available.
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-end justify-start lg:justify-end">
-                <Link
-                  href="/employee-portals/source-of-sales"
-                  className="inline-flex items-center justify-center gap-2 border border-orange-400 bg-orange-500 px-4 py-2.5 text-phx-xs font-black uppercase text-white transition hover:bg-orange-600"
-                >
-                  View dashboard <ArrowRight className="h-3.5 w-3.5" />
-                </Link>
-              </div>
-            </>
+    <div className="flex min-w-0 flex-col border border-slate-200 bg-white">
+      <div aria-hidden="true" className={`h-0.5 w-full ${rail ?? "bg-slate-300"}`} />
+      <div className="flex flex-1 flex-col p-3">
+        <div className="flex items-baseline gap-2">
+          <span className="text-[10px] font-bold uppercase tracking-[0.1em] text-slate-500">{label}</span>
+          {meta && (
+            <span className="ml-auto text-[9px] font-bold uppercase tracking-[0.08em] text-slate-400">{meta}</span>
           )}
         </div>
+        <div className="mt-2">{children}</div>
+        {hint && <p className="mt-auto pt-2 text-[11px] leading-snug text-slate-500">{hint}</p>}
+      </div>
+    </div>
+  );
+}
+
+/** Big percentage plus its attainment bar. The 100% line is drawn so a bar reads against target. */
+function RepPercent({ pct, note }: { pct: number; note?: React.ReactNode }) {
+  const rounded = Math.round(pct);
+  const tone = repTone(rounded);
+  return (
+    <>
+      <div className="flex items-baseline gap-1.5">
+        <span className={`text-[21px] font-bold leading-none tracking-[-0.01em] tabular-nums ${tone.text}`}>
+          {rounded}
+        </span>
+        <span className="text-[11px] font-bold text-slate-400">%</span>
+        {note && <span className="ml-auto">{note}</span>}
+      </div>
+      <div className="relative mt-2 h-1.5 w-full bg-slate-100">
+        <div className={`h-full ${tone.fill}`} style={{ width: `${Math.max(0, Math.min(100, rounded))}%` }} />
+        <div aria-hidden="true" className="absolute -bottom-0.5 -top-0.5 right-0 w-0.5 bg-slate-900" />
+      </div>
+    </>
+  );
+}
+
+/** One half-day of the call rate: its own number, its own target, its own bar. Never merged. */
+function RepCallHalf({ label, rate, target }: { label: string; rate: number; target: number }) {
+  const attainment = target > 0 ? (rate / target) * 100 : 0;
+  const tone = repTone(attainment);
+  return (
+    <div className="min-w-0 flex-1">
+      <p className="text-[9px] font-bold uppercase tracking-[0.08em] text-slate-400">{label}</p>
+      <p className="mt-0.5 flex items-baseline gap-1">
+        <span className={`text-[16px] font-bold leading-none tabular-nums ${tone.text}`}>{rate.toFixed(1)}</span>
+        <span className="text-[10px] font-semibold text-slate-400">of {target}</span>
+      </p>
+      <div className="mt-1.5 h-1 w-full bg-slate-100">
+        <div className={`h-full ${tone.fill}`} style={{ width: `${Math.max(0, Math.min(100, attainment))}%` }} />
+      </div>
+    </div>
+  );
+}
+
+function RepPanel({ title, right, children }: { title: string; right?: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <section className="min-w-0 border border-slate-200 bg-white">
+      <header className="flex items-center gap-2 border-b border-slate-200 bg-slate-50 px-3 py-2">
+        <h2 className="text-[11px] font-bold uppercase tracking-[0.09em] text-slate-600">{title}</h2>
+        {right && <div className="ml-auto">{right}</div>}
+      </header>
+      {children}
+    </section>
+  );
+}
+
+/** An alert row: the count first, the label second, so the panel reads at a glance. */
+function RepNeedRow({
+  count,
+  rail,
+  headline,
+  detail,
+  href,
+  cta,
+}: {
+  count: number;
+  rail: string;
+  headline: string;
+  detail: string;
+  href: string;
+  cta: string;
+}) {
+  return (
+    <div className="flex items-center gap-3 border-b border-slate-200 px-3 py-2.5 last:border-b-0">
+      <span aria-hidden="true" className={`w-1 self-stretch ${rail}`} />
+      <span className="min-w-[28px] text-[18px] font-bold leading-none tabular-nums text-slate-900">{count}</span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-[13px] font-semibold leading-snug text-slate-900">{headline}</span>
+        <span className="mt-0.5 block text-[11px] leading-snug tabular-nums text-slate-500">{detail}</span>
+      </span>
+      <Link
+        className="shrink-0 border border-slate-300 px-2 py-1 text-[11px] font-bold uppercase tracking-[0.06em] text-slate-700 transition hover:border-orange-400 hover:bg-orange-50 hover:text-orange-800"
+        href={href}
+      >
+        {cta}
+      </Link>
+    </div>
+  );
+}
+
+function RepFact({ label, value, tone }: { label: string; value: string; tone?: string }) {
+  return (
+    <div className="min-w-0 bg-white px-3 py-2">
+      <dt className="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-400">{label}</dt>
+      <dd className={`mt-0.5 text-[13px] font-bold tabular-nums ${tone ?? "text-slate-900"}`}>{value}</dd>
+    </div>
+  );
+}
+
+const REP_TOOLS: { href: string; label: string }[] = [
+  { href: "/employee-portals/crm", label: "My visits" },
+  { href: "/employee-portals/kpis", label: "My KPIs" },
+  { href: "/employee-portals/source-of-sales", label: "Sales dashboard" },
+  { href: "/employee-portals/coaching", label: "My coaching reports" },
+  { href: "/employee-portals/incentive", label: "My incentive" },
+  { href: "/employee-portals/vacation-request", label: "Vacation request" },
+  { href: "/employee-portals/payslips", label: "My payslips" },
+  // Last, by the owner's instruction: outstation expense is not what a rep's landing page is for.
+  { href: "/employee-portals/expenses", label: "Outstation expenses" },
+];
+
+function MedicalRepCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
+  const {
+    shell,
+    pendingVacationCount,
+    pendingExcuseCount,
+    pendingCountsAvailable,
+    leaveEntitlementDays,
+    mrSalesAchievement,
+    monthlySalesTrend,
+    mrFieldKpis,
+    doubleVisitPulse,
+    earlyBirdStars,
+  } = snapshot;
+
+  const totalPending = pendingVacationCount + pendingExcuseCount;
+  const kpis = mrFieldKpis;
+  const serviceDuration = shell.hrContract?.serviceDurationText;
+  const daysUntilRenewal = shell.hrContract?.daysUntilRenewal;
+
+  // Oldest first, whatever order the snapshot hands over. A month with no target carries no
+  // achievement at all — targets only start at 2026-07 — so it is excluded from the scale, from
+  // the fallback and from the delta rather than being drawn as 0%, which would read as a collapse.
+  const trend = [...(monthlySalesTrend ?? [])].sort((a, b) => a.year - b.year || a.month - b.month);
+  const closed = trend.filter((t) => t.targetValue > 0);
+  const noTarget = trend.filter((t) => t.targetValue <= 0);
+  const trendMax = Math.max(100, ...closed.map((t) => Math.round(t.achievementPercent)));
+
+  // Synthetic UTC dates, formatted as UTC on purpose: these are period labels, not instants, and
+  // Cairo would shift them back a month. Same reason the rest of this file does it.
+  const monthName = (m: number, y: number) =>
+    `${new Date(Date.UTC(2000, m - 1, 1)).toLocaleString("en-US", { month: "short", timeZone: "UTC" })} ${y}`;
+  // The board hands over "September 2026"; a tile meta has room for "Sep 2026".
+  const shortPeriod = (label: string | undefined) => (label ? label.replace(/^(\w{3})\w*/, "$1") : undefined);
+  const monthShort = (m: number) =>
+    new Date(Date.UTC(2000, m - 1, 1)).toLocaleString("en-US", { month: "short", timeZone: "UTC" }).toUpperCase();
+
+  // mrSalesAchievement is the CURRENT Cairo month, which is empty until that month's sales are
+  // uploaded. Rather than print an empty tile beside a chart full of closed months, fall back to
+  // the newest closed month and say which month is on screen.
+  const cairoNow = currentCairoDateParts();
+  const latestClosed = closed.length > 0 ? closed[closed.length - 1] : null;
+  const priorClosed = closed.length > 1 ? closed[closed.length - 2] : null;
+  const achFromCurrent = mrSalesAchievement != null;
+  const achValue = mrSalesAchievement ?? latestClosed;
+  const achPct = achValue ? Math.max(0, Math.round(achValue.achievementPercent)) : null;
+  const achMonth = achFromCurrent
+    ? monthName(cairoNow.month, cairoNow.year)
+    : latestClosed
+      ? monthName(latestClosed.month, latestClosed.year)
+      : null;
+  // Month on month, only when both months being compared are real closed months.
+  const achDelta =
+    !achFromCurrent && latestClosed && priorClosed
+      ? Math.round(latestClosed.achievementPercent) - Math.round(priorClosed.achievementPercent)
+      : null;
+
+  const missedDoctors = kpis?.hasMeasurablePlan ? kpis.missedDoctors : 0;
+  const openCount = totalPending + missedDoctors;
+
+  return (
+    <div className="mx-auto w-full space-y-2" dir="auto">
+      <PortalIdentityBand shell={shell} planAdherence={snapshot.planAdherence} />
+      <PortalContextBar context="Field Performance" role="Medical Representative" />
+
+      {/* Four measurements, no ornament. Coverage and frequency stand apart on purpose: they
+          disagree by design — production has run 68% coverage against 39% frequency in one month —
+          and any blend of them hides exactly the gap they exist to expose. */}
+      <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+        <RepTile
+          hint={achValue ? `${egp(achValue.salesValue)} of ${egp(achValue.targetValue)}` : "No month uploaded"}
+          label="Achievement"
+          meta={achMonth}
+          rail={achPct !== null ? repTone(achPct).rail : undefined}
+        >
+          {achPct !== null ? (
+            <RepPercent
+              note={
+                achDelta !== null ? (
+                  <span
+                    className={`text-[11px] font-bold tabular-nums ${achDelta >= 0 ? "text-emerald-700" : "text-rose-600"}`}
+                  >
+                    {achDelta >= 0 ? `+${achDelta}` : achDelta} pts
+                  </span>
+                ) : null
+              }
+              pct={achPct}
+            />
+          ) : (
+            <p className="text-[13px] font-semibold text-slate-400">No sales uploaded</p>
+          )}
+        </RepTile>
+
+        <RepTile
+          hint={
+            kpis?.hasMeasurablePlan
+              ? `${kpis.visitedDoctors} of ${kpis.plannedDoctors} doctors seen`
+              : "No doctors planned"
+          }
+          label="Coverage"
+          meta={shortPeriod(kpis?.monthLabel)}
+          rail={kpis?.hasMeasurablePlan ? repTone(kpis.coveragePct).rail : undefined}
+        >
+          {kpis?.hasMeasurablePlan ? (
+            <RepPercent pct={kpis.coveragePct} />
+          ) : (
+            <p className="text-[13px] font-semibold text-slate-400">No plan to score</p>
+          )}
+        </RepTile>
+
+        {/* AM and PM, apart, each against its own target and its own bar. Never averaged, and never
+            printed with a slash between them — he read "1.63 / 6.57" as one number over another. */}
+        <RepTile
+          hint={kpis?.hasCallRate ? `Verified calls per day · ${kpis.workingDays} working days` : "No calls logged"}
+          label="Call rate"
+          meta={shortPeriod(kpis?.monthLabel)}
+          rail="bg-sky-500"
+        >
+          {kpis?.hasCallRate ? (
+            <div className="flex gap-4">
+              <RepCallHalf label="Morning" rate={kpis.amRate ?? 0} target={kpis.amTarget} />
+              <RepCallHalf label="Afternoon" rate={kpis.pmRate ?? 0} target={kpis.pmTarget} />
+            </div>
+          ) : (
+            <p className="text-[13px] font-semibold text-slate-400">Nothing logged yet</p>
+          )}
+        </RepTile>
+
+        <RepTile
+          hint={
+            kpis?.hasMeasurablePlan
+              ? `${kpis.onPlanDoctors} of ${kpis.plannedDoctors} at planned frequency`
+              : "No doctors planned"
+          }
+          label="Frequency"
+          meta={shortPeriod(kpis?.monthLabel)}
+          rail={kpis?.hasMeasurablePlan ? repTone(kpis.frequencyPct).rail : undefined}
+        >
+          {kpis?.hasMeasurablePlan ? (
+            <RepPercent pct={kpis.frequencyPct} />
+          ) : (
+            <p className="text-[13px] font-semibold text-slate-400">No plan to score</p>
+          )}
+        </RepTile>
       </div>
 
-      {(ach || (monthlySalesTrend && monthlySalesTrend.length > 0) || doubleVisitPulse) && (
-        <SectionShell title="Field Intelligence">
-          <div className="grid gap-3 sm:grid-cols-3">
-            {/* Pacing */}
-            <div className="border border-slate-200 bg-slate-50 p-3 sm:p-4">
-              <div className="flex items-center gap-2">
-                <Target className="h-3.5 w-3.5 text-slate-400" />
-                <p className="text-phx-2xs font-bold uppercase tracking-widest text-slate-400">Month Pace</p>
-              </div>
-              {pacingPct !== null ? (
-                <>
-                  <p className={`mt-2 text-2xl font-black tabular-nums ${pacingPct >= 100 ? "text-emerald-600" : pacingPct >= 90 ? "text-amber-600" : "text-orange-500"}`}>
-                    {pacingPct}%
-                  </p>
-                  <p className="mt-0.5 text-phx-2xs font-semibold text-slate-400">projected end-of-month</p>
-                  {pacingVsActual !== null && (
-                    <p className={`mt-1.5 text-xs font-bold ${pacingVsActual >= 0 ? "text-emerald-600" : "text-rose-500"}`}>
-                      {pacingVsActual >= 0 ? `+${pacingVsActual}%` : `${pacingVsActual}%`} vs current
-                    </p>
-                  )}
-                </>
-              ) : (
-                <p className="mt-2 text-sm font-semibold text-slate-400">Data not yet available</p>
-              )}
-            </div>
-
-            {/* Monthly trend mini-bars */}
-            <div className="border border-slate-200 bg-slate-50 p-3 sm:p-4">
-              <div className="flex items-center gap-2">
-                <BarChart3 className="h-3.5 w-3.5 text-slate-400" />
-                <p className="text-phx-2xs font-bold uppercase tracking-widest text-slate-400">Trend (4 Mo.)</p>
-              </div>
-              {monthlySalesTrend && monthlySalesTrend.length > 0 ? (
-                <div className="mt-3 flex items-end gap-1.5" style={{ height: 64 }}>
-                  {[...monthlySalesTrend].reverse().map((m) => {
-                    // Months before targets existed (au.monthly_targets starts 2026-07) carry
-                    // real sales with no target. A 0% bar would read as a collapse in
-                    // performance; a dash says plainly that there is nothing to divide by.
-                    const hasTarget = m.targetValue > 0;
-                    const barH = Math.max(5, Math.min(100, m.achievementPercent));
-                    const bColor = m.achievementPercent >= 100 ? "bg-emerald-500" : m.achievementPercent >= 90 ? "bg-amber-400" : "bg-orange-400";
-                    const mo = new Date(m.year, m.month - 1).toLocaleString("en-US", { month: "short" });
+      <div className="grid gap-2 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
+        <div className="min-w-0 space-y-2">
+          {closed.length > 0 && (
+            <RepPanel
+              right={
+                <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-400">
+                  {noTarget.length > 0
+                    ? `${noTarget.map((t) => monthShort(t.month)).join(", ")} — no target set`
+                    : "Uploaded months"}
+                </span>
+              }
+              title="Achievement by month"
+            >
+              <div className="px-3 pb-3 pt-4">
+                <div className="relative flex h-[118px] items-end gap-2">
+                  {/* The 100% line, positioned on the same scale as the bars. */}
+                  <div
+                    aria-hidden="true"
+                    className="pointer-events-none absolute inset-x-0 border-t border-dashed border-slate-300"
+                    style={{ bottom: `${(100 / trendMax) * 100}%` }}
+                  />
+                  <span
+                    aria-hidden="true"
+                    className="pointer-events-none absolute right-0 text-[9px] font-bold tabular-nums text-slate-400"
+                    style={{ bottom: `calc(${(100 / trendMax) * 100}% + 2px)` }}
+                  >
+                    100%
+                  </span>
+                  {closed.map((t) => {
+                    const pct = Math.max(0, Math.round(t.achievementPercent));
+                    const isLatest =
+                      latestClosed != null && t.year === latestClosed.year && t.month === latestClosed.month;
                     return (
-                      <div key={`${m.year}-${m.month}`} className="flex flex-1 flex-col items-center justify-end gap-0.5">
-                        <p className="text-phx-3xs font-bold tabular-nums text-slate-500">{hasTarget ? `${m.achievementPercent}%` : "—"}</p>
+                      <div className="flex h-full min-w-0 flex-1 flex-col justify-end" key={`bar-${t.year}-${t.month}`}>
+                        <p
+                          className={`mb-1 text-center text-[10px] font-bold tabular-nums ${isLatest ? "text-slate-900" : "text-slate-500"}`}
+                        >
+                          {pct}%
+                        </p>
+                        {/* Capped width: with only two scorable months, full-width bars read as
+                            slabs rather than as a chart. */}
                         <div
-                          className={`w-full ${hasTarget ? bColor : "bg-slate-200"}`}
-                          style={{ height: hasTarget ? `${barH}%` : "5%", minHeight: 4 }}
+                          className={`mx-auto w-full max-w-[84px] ${repTone(pct).fill} ${isLatest ? "outline outline-1 outline-slate-900" : ""}`}
+                          style={{ height: `${Math.max(2, Math.min(100, (pct / trendMax) * 100))}%` }}
                         />
-                        <p className="text-phx-3xs font-semibold text-slate-400">{mo}</p>
                       </div>
                     );
                   })}
                 </div>
-              ) : (
-                <p className="mt-2 text-sm font-semibold text-slate-400">No history yet</p>
-              )}
-            </div>
-
-            {/* Double visit pulse */}
-            <div className="border border-slate-200 bg-slate-50 p-3 sm:p-4">
-              <div className="flex items-center gap-2">
-                <Users className="h-3.5 w-3.5 text-slate-400" />
-                <p className="text-phx-2xs font-bold uppercase tracking-widest text-slate-400">Double Visits</p>
-              </div>
-              {doubleVisitPulse ? (
-                <>
-                  <div className="mt-2 grid grid-cols-2 gap-1.5">
-                    <div>
-                      <p className="text-xl font-black tabular-nums text-slate-900">{doubleVisitPulse.dvsThisMonth}</p>
-                      <p className="text-phx-3xs font-semibold uppercase text-slate-400">this month</p>
+                <div className="mt-1.5 flex gap-2 border-t border-slate-200 pt-1.5">
+                  {closed.map((t) => (
+                    <div className="min-w-0 flex-1 text-center" key={`lab-${t.year}-${t.month}`}>
+                      <p className="text-[10px] font-bold tracking-[0.04em] text-slate-600">{monthShort(t.month)}</p>
+                      <p className="text-[9px] uppercase tracking-[0.04em] text-slate-400">
+                        {egpCompact(t.salesValue)}
+                      </p>
                     </div>
-                    <div>
-                      <p className="text-xl font-black tabular-nums text-slate-900">{doubleVisitPulse.dvsLast90Days}</p>
-                      <p className="text-phx-3xs font-semibold uppercase text-slate-400">last 90 days</p>
-                    </div>
-                  </div>
-                  <p className="mt-2 text-phx-2xs font-semibold text-slate-400">
-                    {doubleVisitPulse.daysSinceLastDv === null
-                      ? "No visits recorded"
-                      : doubleVisitPulse.daysSinceLastDv === 0
-                        ? "Last visit today"
-                        : `Last visit ${doubleVisitPulse.daysSinceLastDv}d ago`}
-                  </p>
-                </>
-              ) : (
-                <p className="mt-2 text-sm font-semibold text-slate-400">No data available</p>
-              )}
-            </div>
-          </div>
-        </SectionShell>
-      )}
-
-      {/* My Status — NO PAYSLIP CARD: payslip data (amount OR month) must never render on any
-          overview/landing surface for any role — owner rule. It lives only on
-          /employee-portals/payslips, reachable from the My Payslips nav tile below. */}
-      <SectionShell title="My Status">
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <Link href="/employee-portals/vacation-request" className="group overflow-hidden border border-slate-200 transition hover:border-orange-300">
-            <div className="flex items-center gap-2 bg-slate-900 px-4 py-2 transition-colors group-hover:bg-orange-600">
-              <CalendarDays className="h-3.5 w-3.5 text-slate-400 transition-colors group-hover:text-white" />
-            </div>
-            <div className="bg-white px-3 py-3 transition-colors group-hover:bg-orange-50 sm:px-4 sm:py-4">
-              <p className="text-2xl font-bold text-slate-900">
-                {leaveEntitlementDays != null ? `${leaveEntitlementDays} days` : "-"}
-              </p>
-              <p className="mt-1 text-phx-2xs font-semibold uppercase tracking-widest text-slate-400">annual leave entitlement</p>
-            </div>
-          </Link>
-
-          {daysUntilRenewal != null ? (
-            <div className={`overflow-hidden border ${renewalUrgent ? "border-rose-200" : renewalWarning ? "border-amber-200" : "border-slate-200"}`}>
-              <div className={`flex items-center gap-2 px-4 py-2 ${renewalUrgent ? "bg-rose-600" : renewalWarning ? "bg-amber-500" : "bg-slate-900"}`}>
-                <CalendarClock className="h-3.5 w-3.5 text-white/70" />
+                  ))}
+                </div>
               </div>
-              <div className={`px-3 py-3 sm:px-4 sm:py-4 ${renewalUrgent ? "bg-rose-50" : renewalWarning ? "bg-amber-50" : "bg-white"}`}>
-                <p className={`text-xl font-bold tracking-tight sm:text-2xl ${renewalUrgent ? "text-rose-700" : renewalWarning ? "text-amber-700" : "text-slate-900"}`}>
-                  {daysUntilRenewal} days
-                </p>
-                <p className={`mt-1 text-phx-2xs font-semibold uppercase tracking-widest ${renewalUrgent ? "text-rose-400" : renewalWarning ? "text-amber-400" : "text-slate-400"}`}>
-                  until contract renewal
-                </p>
-              </div>
-            </div>
-          ) : probationStatus === "On Probation" ? (
-            <div className="overflow-hidden border border-amber-200">
-              <div className="flex items-center gap-2 bg-amber-500 px-4 py-2">
-                <ClipboardCheck className="h-3.5 w-3.5 text-white/70" />
-              </div>
-              <div className="bg-amber-50 px-3 py-3 sm:px-4 sm:py-4">
-                <p className="text-xl font-bold tracking-tight text-amber-700 sm:text-2xl">On Probation</p>
-                <p className="mt-1 text-phx-2xs font-semibold uppercase tracking-widest text-amber-400">
-                  {serviceDuration || "in progress"}
-                </p>
-              </div>
-            </div>
-          ) : (
-            <StatTile
-              icon={ClipboardCheck}
-              headline={serviceDuration || "Active"}
-              sub="employment duration"
-            />
+            </RepPanel>
           )}
-        </div>
-      </SectionShell>
 
-      <div className="overflow-hidden border border-slate-200">
-        <div className="bg-slate-900 px-4 py-2.5 sm:px-5 sm:py-3">
-          <h2 className="text-phx-2xs font-bold uppercase tracking-widest text-slate-300">My Tools</h2>
+          <RepPanel
+            right={
+              pendingCountsAvailable ? (
+                <span
+                  className={`border px-1.5 py-px text-[10px] font-bold uppercase tracking-[0.06em] tabular-nums ${openCount > 0 ? "border-orange-300 bg-orange-50 text-orange-800" : "border-emerald-300 bg-emerald-50 text-emerald-800"}`}
+                >
+                  {openCount} open
+                </span>
+              ) : null
+            }
+            title="Needs you"
+          >
+            {!pendingCountsAvailable ? (
+              <p className="px-3 py-3 text-[12px] font-semibold text-slate-400">Requests unavailable — not zero</p>
+            ) : openCount === 0 ? (
+              <p className="px-3 py-3 text-[12px] font-semibold text-emerald-700">
+                Nothing open — no requests waiting, no doctor missed
+              </p>
+            ) : (
+              <>
+                {totalPending > 0 && (
+                  <RepNeedRow
+                    count={totalPending}
+                    cta="Track"
+                    detail={`${pendingVacationCount} vacation · ${pendingExcuseCount} excuse`}
+                    headline="Requests waiting on your manager"
+                    href="/employee-portals/approvals-hub"
+                    rail="bg-amber-500"
+                  />
+                )}
+                {missedDoctors > 0 && kpis && (
+                  <RepNeedRow
+                    count={missedDoctors}
+                    cta="Open"
+                    detail={`${kpis.visitedDoctors} of ${kpis.plannedDoctors} covered · ${kpis.monthLabel}`}
+                    headline="Planned doctors not seen yet"
+                    href="/employee-portals/kpis"
+                    rail="bg-orange-500"
+                  />
+                )}
+              </>
+            )}
+          </RepPanel>
+
+          <RepPanel title="Your record">
+            <dl className="grid grid-cols-2 gap-px bg-slate-200 sm:grid-cols-3">
+              <RepFact
+                label="Annual leave balance"
+                value={leaveEntitlementDays != null ? `${leaveEntitlementDays} days` : "Not recorded"}
+              />
+              {serviceDuration && <RepFact label="Employment duration" value={serviceDuration} />}
+              {daysUntilRenewal != null && (
+                <RepFact
+                  label="Until contract renewal"
+                  tone={daysUntilRenewal <= 30 ? "text-rose-700" : daysUntilRenewal <= 60 ? "text-amber-700" : undefined}
+                  value={`${daysUntilRenewal} days`}
+                />
+              )}
+              {doubleVisitPulse && (
+                <>
+                  <RepFact label="Double visits this month" value={String(doubleVisitPulse.dvsThisMonth)} />
+                  <RepFact label="Double visits, 90 days" value={String(doubleVisitPulse.dvsLast90Days)} />
+                  {doubleVisitPulse.daysSinceLastDv != null && (
+                    <RepFact
+                      label="Last double visit"
+                      value={doubleVisitPulse.daysSinceLastDv === 0 ? "Today" : `${doubleVisitPulse.daysSinceLastDv} days ago`}
+                    />
+                  )}
+                </>
+              )}
+            </dl>
+          </RepPanel>
         </div>
-        {/* One column until `sm`, matching the "My Workspace" grid below that holds the same tile.
-            Two columns cannot hold a PremiumNavTile on a phone. The tile's min-content floor is 172px
-            (3px rail + 24px padding + 32px icon + two 12px gaps + 16px arrow + its widest label word,
-            "Dashboard", at 73px), while grid-cols-2 yields a 146px column at 320px and 166px at 360px.
-            Grid items are min-width:auto, so the tile refused to shrink and bled past its column —
-            clipped by this card's overflow-hidden, which is why `main` still measured 375/375 and the
-            usual scrollWidth check read clean. Fixed by MERGING columns, per the golden rule: the type
-            is untouched. Floors measured in the running app, not derived. */}
-        <div className="grid grid-cols-1 gap-px bg-slate-200 sm:grid-cols-2">
-          <PremiumNavTile href="/employee-portals/coaching" icon={ClipboardCheck} label="My Coaching" description="View and track coaching reports" />
-          <PremiumNavTile href="/employee-portals/expenses" icon={ReceiptText} label="My Expenses" description="Outstation expense tracker" badge={mrPendingExpenseCount ?? 0} />
-          <PremiumNavTile href="/employee-portals/incentive" icon={Trophy} label="My Incentive" description="Track commission and bonus" />
-          <PremiumNavTile href="/employee-portals/source-of-sales" icon={TrendingUp} label="Sales Dashboard" description="Achievement vs monthly target" />
-          <PremiumNavTile href="/employee-portals/vacation-request" icon={CalendarDays} label="Vacation Request" description="Submit and track leave requests" />
-          <PremiumNavTile href="/employee-portals/payslips" icon={Wallet} label="My Payslips" description="View and download salary slips" />
+
+        <div className="min-w-0 space-y-2">
+          {/* The rep's own landing page is the whole point of the competition — this is where he
+              sees who is currently the star and what it would take to be next. */}
+          <EarlyBirdOfTheFortnightCard stars={earlyBirdStars} />
+
+          <RepPanel title="My tools">
+            <nav>
+              {REP_TOOLS.map((tool) => (
+                <Link
+                  className="flex items-center gap-2 border-b border-slate-200 px-3 py-2 text-[12px] font-medium text-slate-800 transition last:border-b-0 hover:bg-orange-50 hover:text-orange-800"
+                  href={tool.href}
+                  key={tool.href}
+                >
+                  {tool.label}
+                  <ArrowRight aria-hidden="true" className="ml-auto h-3.5 w-3.5 shrink-0 text-orange-600" />
+                </Link>
+              ))}
+            </nav>
+          </RepPanel>
         </div>
       </div>
-
-      {totalPending > 0 ? (
-        <PendingActions pendingVacationCount={pendingVacationCount} pendingExcuseCount={pendingExcuseCount} />
-      ) : (
-        <div className="flex items-center gap-3 border border-emerald-200 bg-emerald-50 px-4 py-3 sm:px-5 sm:py-4">
-          <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
-          <span className="text-sm font-medium text-emerald-800">All clear — nothing needs your attention right now.</span>
-        </div>
-      )}
     </div>
   );
 }

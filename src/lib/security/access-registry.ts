@@ -127,6 +127,11 @@ export const accessRegistry = [
   tokenApi({ authMode: "public-token", methods: ["GET"], pattern: "/api/share/territory/:token/map", reason: "Brick pins for one area of a passwordless preview link; the requested area code is intersected against the link's frozen area list before any row is read, and the internal territory analysis is projected out of the response." }),
   tokenApi({ authMode: "public-token", methods: ["GET"], pattern: "/api/share/marketing-requests/:token/feed", reason: "CSV bundle for the live Marketing Request Google Sheet's Apps Script, which runs on a timer and cannot authenticate; guarded by a 32-byte token with mandatory expiry, revoke and creator-frozen scope." }),
   tokenApi({ authMode: "public-token", methods: ["GET"], pattern: "/api/share/marketing-requests/:token/file", reason: "Streams one evidence photo, invoice or money-transfer proof so the sheet's cells are clickable. Same token, but a SEPARATE allow_files grant, and the storage path is resolved server-side from a request code — the caller never names an object." }),
+  // The CV-lifecycle sheet deliberately has NO file sibling. The two share feeds above can stream
+  // an evidence photo; this one only ever emits links to Drive and to Phoenix, both of which make
+  // the reader log in. A CV is the most sensitive document this system holds, and an
+  // unauthenticated route that streams one is not a feature anybody asked for.
+  tokenApi({ authMode: "public-token", methods: ["GET"], pattern: "/api/share/cv-lifecycle/:token/feed", reason: "CSV bundle for the owner's live CV-lifecycle Google Sheet, whose Apps Script runs on a timer and cannot authenticate; guarded by a 32-byte token with mandatory expiry and one-click revoke, and intended to live inside a private sheet rather than be handed to a person." }),
   tokenApi({ authMode: "public-token", methods: ["POST"], pattern: "/api/auth/change-password", reason: "Auth-layer self-service endpoint: validates the active Phoenix session cookie directly via resolveSessionState before allowing password change." }),
   // Biometric (passkey) sign-in. The two /login/* routes are credential bootstrap exactly like
   // /api/auth/login — no session exists yet, and the WebAuthn signature IS the credential. The
@@ -464,6 +469,11 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/marketing-requests/:id/view-sales/export", permission: { resource: "expenses", action: "read" }, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/marketing-requests/report/export", permission: { resource: "expenses", action: "read" }, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "POST"], pattern: "/api/marketing-requests/report/share-links", permission: { resource: "expenses", action: "read" }, guard: "domain-helper", csrfRequired: true }),
+  // Minting a link that copies candidate names and phone numbers into a Google Sheet is gated on
+  // recruitment:EXPORT, not recruitment:read — reading the pool inside Phoenix and issuing a
+  // credential that survives the session are different acts, and only the second one leaves the
+  // building.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "POST"], pattern: "/api/recruitment/cv-lifecycle/share-links", permission: { resource: "recruitment", action: "export" }, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["PATCH"], pattern: "/api/marketing-requests/control", permission: { resource: "expenses", action: "read" }, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "POST"], pattern: "/api/marketing-requests/venue-merge", permission: { resource: "expenses", action: "read" }, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/marketing-requests/finance-evidence", permission: { resource: "expenses", action: "read" }, guard: "domain-helper", csrfRequired: true }),
