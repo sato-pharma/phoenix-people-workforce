@@ -89,6 +89,82 @@ export const HIRING_PACK_DOCUMENTS: readonly HiringPackDocument[] = [
 ];
 
 /**
+ * A COMPANY TEMPLATE'S DOCUMENT IDENTITY — the second half of what a document can be.
+ *
+ * The ten above are compiled in: their artwork, their placements and their renderers are code. A
+ * company template is a ROW — uploaded through the UI, given a name and a page size, and printed by
+ * the same page-surface machinery. It needs a document identity all the same, because every part of
+ * this module keys on one: the field layer, the copy count, the print route, the editor.
+ *
+ * `custom:<uuid>` is that identity, and the shape is deliberate on two counts. It cannot collide
+ * with a built-in key, now or ever, because no built-in contains a colon. And it is a STRING that
+ * survives a round trip through a query parameter, a JSON body and a database column without needing
+ * a second field beside it saying which kind of document this is — the prefix says so.
+ *
+ * The uuid is the template's `key`, which is stable across versions, NOT the version's own id. That
+ * is the same relationship the built-ins have: `contract` is the document, `contract-v3` is the
+ * version, and the field layer scopes to the version while everything else names the document.
+ */
+export const CUSTOM_DOCUMENT_PREFIX = "custom:";
+
+export type CustomHiringPackDocument = `custom:${string}`;
+
+/** The `custom:<key>` document identity for a company template. */
+export function customDocumentFor(templateKey: string): CustomHiringPackDocument {
+  return `${CUSTOM_DOCUMENT_PREFIX}${templateKey}`;
+}
+
+/**
+ * The uuid inside a `custom:<uuid>` document, or null for anything else.
+ *
+ * VALIDATES THE UUID rather than splitting on the colon and trusting what follows. This value is
+ * about to be used to look up a row, and the caller's alternative to a null here is a query built
+ * from whatever came after the prefix.
+ */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Whether a string is a uuid, for callers about to hand one to a uuid COLUMN.
+ *
+ * Postgres does not answer "no rows" for a malformed uuid — it raises 22P02, which reaches a caller
+ * as a 500 rather than as the 404 the situation actually is. Every id in this module comes from a
+ * url or a request body, so the check belongs at the point of use.
+ */
+export function isUuid(value: string): boolean {
+  return UUID.test(value);
+}
+
+export function customTemplateKeyOf(document: string): string | null {
+  if (!document.startsWith(CUSTOM_DOCUMENT_PREFIX)) return null;
+  const key = document.slice(CUSTOM_DOCUMENT_PREFIX.length);
+  return isUuid(key) ? key : null;
+}
+
+/** Whether this document is a company template rather than one of the ten compiled in. */
+export function isCustomDocument(document: string): document is CustomHiringPackDocument {
+  return customTemplateKeyOf(document) !== null;
+}
+
+/** Whether this is one of the ten documents that are code. */
+export function isBuiltInDocument(document: string): document is HiringPackDocument {
+  return (HIRING_PACK_DOCUMENTS as readonly string[]).includes(document);
+}
+
+/**
+ * Anything this system can print: one of the ten written in code, or a company template.
+ *
+ * IT LIVES HERE RATHER THAN IN document-registry.ts, and only because of an import cycle that is
+ * worth stating out loud. The registry is where the question "what is this document" belongs and
+ * where every lookup over this type is written; but `field-layout.ts` needs the type to describe a
+ * stored row, and the registry needs `DocumentSurface` FROM field-layout. Declaring it in types.ts
+ * — which imports nothing — breaks that cycle and costs nothing, since the registry re-exports it.
+ *
+ * THE UNION IS NOT WIDENED. `HiringPackDocument` still means one of the ten and still keys the
+ * exhaustive `Record` tables; this is the wider type, used where a value may be either kind.
+ */
+export type PrintableDocument = HiringPackDocument | CustomHiringPackDocument;
+
+/**
  * The documents whose signature Phoenix records against the person.
  *
  * The custody receipts are deliberately NOT here, and that is a statement about the document rather

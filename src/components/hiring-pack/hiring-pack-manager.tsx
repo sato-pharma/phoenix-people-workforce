@@ -25,11 +25,14 @@ import {
   Archive,
   CalendarCheck,
   CheckCircle2,
+  ChevronDown,
+  ChevronUp,
   Copy,
   DoorOpen,
   FileSignature,
   FileText,
   Loader2,
+  PencilLine,
   Printer,
   Save,
   ShieldCheck,
@@ -42,10 +45,23 @@ import {
   AdminCallout,
   AdminInsightChip,
   AdminPageHero,
-  AdminStatCard,
   AdminTableShell,
 } from "@/components/admin/admin-design-system";
 import { HiringPackPaperEditor } from "@/components/hiring-pack/paper-editor";
+import { TemplateStudio } from "@/components/hiring-pack/template-studio";
+import {
+  templateNamesOf,
+  useCompanyTemplates,
+  type StoredTemplate,
+} from "@/components/hiring-pack/use-company-templates";
+import {
+  asPrintableDocument,
+  documentDefaultCopies,
+  documentLabel,
+  type CustomDocumentNames,
+  type PrintableDocument,
+} from "@/lib/hiring-pack/document-registry";
+import { describePrintInstruction } from "@/lib/hiring-pack/custom-templates";
 import {
   INSURANCE_WAGE_CEILING,
   INSURANCE_WAGE_DIVISOR,
@@ -56,12 +72,13 @@ import { Button } from "@/components/ui/button";
 import { ChoiceGroup } from "@/components/ui/choice-group";
 import { Input } from "@/components/ui/input";
 import { SearchableSelect } from "@/components/ui/searchable-select";
-import { systemContractDefaults } from "@/config/system-settings";
 import {
   archivedTemplateVersions,
   findTemplateVersion,
 } from "@/lib/hiring-pack/template-registry";
+import { isBuiltInDocument } from "@/lib/hiring-pack/types";
 import type {
+  CustomHiringPackDocument,
   ExitRoute,
   HiringPackCandidate,
   HiringPackData,
@@ -308,20 +325,6 @@ const EXIT_ROUTES: readonly { value: ExitRoute; labelEn: string; labelAr: string
     },
   ];
 
-/** What each document is called in a sentence to the user. */
-const DOCUMENT_LABELS: Record<HiringPackDocument, string> = {
-  contract: "Contract",
-  form1: "Form 1",
-  workerDataForm: "Worker data form",
-  custodyLaptop: "Laptop custody receipt",
-  custodyMobile: "Phone/tablet custody receipt",
-  form6: "Form 6",
-  resignation: "Resignation request",
-  mutualTermination: "Mutual termination agreement",
-  clearanceEmployee: "Employee clearance",
-  clearanceCompany: "Company clearance",
-};
-
 /**
  * The two ends of one employment, shown one at a time. A person is only ever arriving or leaving on
  * the day HR prints, so the screen offers one package rather than one long scroll that mixes a
@@ -333,20 +336,6 @@ const PACKAGE_TABS = [
   { label: "Leaver package", value: "leaver" },
 ] as const satisfies ReadonlyArray<{ label: string; value: "newHire" | "leaver" }>;
 
-/** The standing copy count for each document — each one the form's own stated requirement. */
-const DEFAULT_COPIES: Record<HiringPackDocument, number> = {
-  contract: systemContractDefaults.contractCopies,
-  form1: systemContractDefaults.form1Copies,
-  workerDataForm: systemContractDefaults.workerDataFormCopies,
-  custodyLaptop: systemContractDefaults.custodyLaptopCopies,
-  custodyMobile: systemContractDefaults.custodyMobileCopies,
-  form6: systemContractDefaults.form6Copies,
-  resignation: systemContractDefaults.resignationCopies,
-  mutualTermination: systemContractDefaults.mutualTerminationCopies,
-  clearanceEmployee: systemContractDefaults.clearanceEmployeeCopies,
-  clearanceCompany: systemContractDefaults.clearanceCompanyCopies,
-};
-
 /**
  * How many copies a document is about to be produced in, from whatever is in its box.
  *
@@ -356,9 +345,9 @@ const DEFAULT_COPIES: Record<HiringPackDocument, number> = {
  * see `resolveCopies` there — because a value the server would reject must not be shown here as
  * though it had been accepted.
  */
-function resolveCopyCount(raw: string | undefined, document: HiringPackDocument): number {
+function resolveCopyCount(raw: string | undefined, document: PrintableDocument): number {
   const requested = Number.parseInt(raw ?? "", 10);
-  if (!Number.isFinite(requested) || requested < 1) return DEFAULT_COPIES[document];
+  if (!Number.isFinite(requested) || requested < 1) return documentDefaultCopies(document);
   return Math.min(requested, 20);
 }
 
@@ -629,6 +618,19 @@ function signedDatesFromPack(pack: HiringPackData | null): Record<HiringPackDocu
   };
 }
 
+/**
+ * The paper open on screen, shaped as the two props the editor reads it through.
+ *
+ * SHAPED THAT WAY DELIBERATELY, so it can be spread straight into `HiringPackPaperEditor` and the
+ * two fields stay CORRELATED. `documentKey` and `versionId` are not independent — an uploaded
+ * company template must carry its version and one of the ten need not — and passing them as two
+ * separate props hands the compiler two separate questions it cannot relate. Spread as one object,
+ * the union is checked as the single fact it is.
+ */
+type OpenPaper =
+  | { documentKey: HiringPackDocument; versionId: string | null }
+  | { documentKey: CustomHiringPackDocument; versionId: string };
+
 type Props = {
   canManage: boolean;
   candidates: HiringPackCandidate[];
@@ -658,10 +660,15 @@ export function HiringPackManager({
   // saved record. Someone correcting a base salary should see the insurance wage move with it
   // before they press Save, because that figure goes on Form 1 and they cannot edit it directly.
   const typedInsuranceWage = insuranceWageFromBase(Number.parseFloat(factsForm.baseSalary ?? ""));
-  const [copies, setCopies] = useState<Record<HiringPackDocument, string>>(() =>
-    signDatesShape((document) => String(DEFAULT_COPIES[document])),
+  // KEYED BY STRING, SEEDED EXHAUSTIVELY. The seed is still the explicit ten-key literal, so the
+  // compiler still refuses a built-in document with no starting value — that check is the whole
+  // reason `signDatesShape` is written as a literal. What the wider key type buys is a company
+  // template being able to carry a copy count and a signed date like any other paper, without
+  // every uploaded document having to exist at compile time, which is impossible by construction.
+  const [copies, setCopies] = useState<Record<string, string>>(() =>
+    signDatesShape((document) => String(documentDefaultCopies(document))),
   );
-  const [signDates, setSignDates] = useState<Record<HiringPackDocument, string>>(() =>
+  const [signDates, setSignDates] = useState<Record<string, string>>(() =>
     signedDatesFromPack(initialPack),
   );
   const [busy, setBusy] = useState<
@@ -672,14 +679,68 @@ export function HiringPackManager({
   /**
    * Which document is open on screen as the page it prints as, if any.
    *
-   * `versionId` is only ever set from the Archive, where the point is to look at a SUPERSEDED
-   * template. Null means the same thing it means to the print route: not "the current text", but
-   * "whichever version this employee's signature resolves to".
+   * AS WIDE AS `openPrint` NOW — an uploaded company template opens in the editor like any of the
+   * ten. It was deliberately narrower until the editor could resolve a version for one: the paper
+   * editor scopes its whole field layer to a version id, and the ten have a COMPILED answer
+   * (`currentTemplateVersion`) that an uploaded template has no entry in and cannot have one in.
+   * Opening one before that was settled would have dropped boxes against a version of `undefined`
+   * — saved with a 200, read back by nothing, and shown as an empty paper.
+   *
+   * `PaperEditorProps` now carries that rule in its own type: a company template cannot be handed
+   * to the editor without its version, so this state can be as wide as printing is.
+   *
+   * `versionId` is set from the Archive, where the point is to look at a SUPERSEDED template, and
+   * for every company template, where it is the template row's own id. Null means what it means to
+   * the print route: not "the current text", but "whichever version this employee's signature
+   * resolves to".
    */
-  const [preview, setPreview] = useState<{
-    document: HiringPackDocument;
-    versionId: string | null;
-  } | null>(null);
+  const [preview, setPreview] = useState<OpenPaper | null>(null);
+  /**
+   * The uploaded company templates — read ONCE here and shared with everything that shows them.
+   *
+   * This screen, the Studio at the foot of it, and each package tab all list the same papers. The
+   * list used to belong to the Studio and load when that panel was opened, which was right while
+   * the Studio was the only place they appeared; it stopped being right when a template filed under
+   * "New hires package" had to sit in that tab whether or not anybody opened the Studio today.
+   */
+  const companyTemplates = useCompanyTemplates();
+  /**
+   * What the uploaded templates are CALLED, so a company paper opens under its own name.
+   *
+   * The ten have their labels compiled in; an uploaded template's name is a database row, which is
+   * the entire point of being able to upload one. `documentLabel` falls back to "Company template"
+   * while the list is still in flight — a fallback, never a wrong name.
+   */
+  const customTemplateNames: CustomDocumentNames = useMemo(
+    () => templateNamesOf(companyTemplates.templates),
+    [companyTemplates.templates],
+  );
+  /**
+   * The uploaded templates each package tab shows.
+   *
+   * CURRENT VERSIONS ONLY. An archived row is a superseded edition of a paper the company has since
+   * replaced — it stays readable through the Archive, where the version being asked for is the whole
+   * point, but offering it here would put two spellings of the same form side by side with nothing
+   * on screen saying which one is in force.
+   *
+   * `other` IS FILED IN NEITHER, on purpose. A paper the uploader declined to put in a package is
+   * exactly a paper that belongs to no package; listing it in both would make the two packages stop
+   * meaning anything. It stays in the Studio under its own heading.
+   */
+  const joiningTemplates = useMemo(
+    () =>
+      companyTemplates.templates.filter(
+        (template) => template.group === "joining" && template.status === "current",
+      ),
+    [companyTemplates.templates],
+  );
+  const leavingTemplates = useMemo(
+    () =>
+      companyTemplates.templates.filter(
+        (template) => template.group === "leaving" && template.status === "current",
+      ),
+    [companyTemplates.templates],
+  );
   /**
    * Which package is on screen. The joining papers and the leaving papers are one workflow seen from
    * two ends (see the file header), but a person is only ever at one end on the day HR prints, so the
@@ -868,7 +929,7 @@ export function HiringPackManager({
           return;
         }
         applyPack((await response.json()) as HiringPackData);
-        setNotice(`${DOCUMENT_LABELS[document]} recorded as signed on ${formatDate(signedDate)}.`);
+        setNotice(`${documentLabel(document)} recorded as signed on ${formatDate(signedDate)}.`);
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : "Could not record the signature.");
       } finally {
@@ -884,9 +945,14 @@ export function HiringPackManager({
    * correctly, and "Print → Save as PDF" from that tab produces a real PDF with selectable text.
    */
   const openPrint = useCallback(
-    (document: HiringPackDocument, versionId?: string) => {
+    (document: PrintableDocument, versionId?: string, copiesOverride?: number) => {
       if (!pack) return;
-      const count = resolveCopyCount(copies[document], document);
+      // AN EXPLICIT COUNT WINS, and it has to, because this function ALWAYS sends `copies` in the
+      // URL. The server has a default of its own — a company template's is on its row — but a
+      // parameter that is always present means the server's default is never reached. A caller with
+      // no Copies box on screen, which is every company-template row, passes the template's own
+      // number here rather than letting the box's absence silently mean one.
+      const count = copiesOverride ?? resolveCopyCount(copies[document], document);
       // No `version` parameter is the normal case, and it does NOT mean "print the current text":
       // the route resolves the version this employee signed. The parameter is only for deliberately
       // asking for a superseded template from the Archive.
@@ -903,13 +969,59 @@ export function HiringPackManager({
    * Deliberately does NOT go through `openPrint`: the preview asks the same route for the same
    * bytes but with `preview=1`, which is what stops a look at the paper being recorded as a print.
    */
-  const openPreview = useCallback((document: HiringPackDocument, versionId?: string) => {
+  const openPreview = useCallback((document: PrintableDocument, versionId?: string) => {
     setError(null);
     setNotice(null);
-    setPreview({ document, versionId: versionId ?? null });
+
+    if (isBuiltInDocument(document)) {
+      setPreview({ documentKey: document, versionId: versionId ?? null });
+      return;
+    }
+
+    /*
+      A COMPANY TEMPLATE WITHOUT ITS VERSION CANNOT BE OPENED, and this is the one place that has
+      to say so out loud. Every caller that offers one has just listed it and holds the row, so
+      this is unreachable in practice — but "unreachable in practice" is exactly the kind of claim
+      that stops being true when a new caller is added, and the failure it would cause is silent:
+      boxes saved against a scope nothing reads back, on a paper that then renders empty.
+    */
+    if (!versionId) {
+      setError("That company template could not be opened — its version is not known.");
+      return;
+    }
+
+    setPreview({ documentKey: document, versionId });
   }, []);
 
-  const setCopiesFor = useCallback((document: HiringPackDocument, value: string) => {
+  /**
+   * Open or print one uploaded company template against the employee on screen.
+   *
+   * NARROWED, NEVER CAST. `template.document` arrives as a plain string from the database, and
+   * `asPrintableDocument` is the one thing that decides whether it names a paper this build can
+   * render. A cast would compile identically and then hand `openPrint` a document key the route has
+   * no case for — which returns an empty page rather than an error, on a form somebody signs.
+   *
+   * THE ROW'S OWN ID IS THE VERSION. A template's `key` is its identity across every edition; the
+   * `id` is this edition. Printing without a version asks the route to resolve the one the employee
+   * signed, which is right for the built-ins and wrong here: the operator has just clicked a
+   * specific row in a specific list, so that is the paper to open.
+   */
+  const openTemplate = useCallback(
+    (template: StoredTemplate, how: "preview" | "print") => {
+      const document = asPrintableDocument(template.document);
+      if (!document) {
+        setError(
+          `"${template.name}" cannot be opened — its document id is not one this system recognises.`,
+        );
+        return;
+      }
+      if (how === "print") openPrint(document, template.id, template.defaultCopies);
+      else openPreview(document, template.id);
+    },
+    [openPreview, openPrint],
+  );
+
+  const setCopiesFor = useCallback((document: PrintableDocument, value: string) => {
     setCopies((current) => ({ ...current, [document]: value }));
   }, []);
 
@@ -922,8 +1034,15 @@ export function HiringPackManager({
 
   const employee = pack?.employee ?? null;
 
+  // THE OUTER WRAPPER IS `overflow-clip`, NOT `overflow-hidden`, AND THE STICKY PICKER IS THE
+  // WHOLE REASON. Both clip a child to the rounded corners and both paint identically. The
+  // difference is that `hidden` makes the div a SCROLL CONTAINER and `clip` does not — and
+  // `position: sticky` sticks to the nearest scroll container. With `hidden` the picker stuck to
+  // a box that never scrolls, which looks exactly like sticky being broken: measured, the bar's own
+  // top read -1183px at a scroll of 1500. With `clip` the nearest scroll container is the page, so
+  // it sticks to the viewport, and the corners are still clipped.
   return (
-    <div className="relative overflow-hidden rounded-[34px] border border-phx-line bg-phx-paper p-4 shadow-[0_24px_70px_rgba(15,23,42,0.1)] sm:p-6">
+    <div className="relative overflow-clip rounded-[34px] border border-phx-line bg-phx-paper p-4 shadow-[0_24px_70px_rgba(15,23,42,0.1)] sm:p-6">
       <div className="flex flex-col gap-5">
         <AdminPageHero
           badges={
@@ -965,114 +1084,151 @@ export function HiringPackManager({
         */}
         {pack && preview ? (
           <HiringPackPaperEditor
-            copies={resolveCopyCount(copies[preview.document], preview.document)}
-            documentKey={preview.document}
-            documentLabel={DOCUMENT_LABELS[preview.document]}
+            copies={resolveCopyCount(copies[preview.documentKey], preview.documentKey)}
+            documentLabel={documentLabel(preview.documentKey, customTemplateNames)}
             hrId={pack.employee.hrId}
-            key={`${pack.employee.hrId}-${preview.document}-${preview.versionId ?? "current"}`}
+            key={`${pack.employee.hrId}-${preview.documentKey}-${preview.versionId ?? "current"}`}
             onClose={() => setPreview(null)}
             onPackChange={applyPack}
             pack={pack}
-            versionId={preview.versionId}
+            {...preview}
           />
         ) : null}
 
-        <AdminTableShell
-          description="Current staff first, newest hires at the top, then everyone who has left with the date they left — Form 6 and the exit forms are filed after somebody has gone. Search by HR ID, name, job title or that date."
-          title="Choose the employee"
-        >
-          <div className="px-5 py-5 sm:px-6">
-            <label className={labelClassName} htmlFor="hiring-pack-employee">
+        {/*
+          THE PICKER IS A BAR, NOT A SECTION.
+
+          It used to be a full card: a heading, a two-line description of how the list is sorted, a
+          label, and then the one control — 230px of chrome around a dropdown, measured at 1440px,
+          on a page that runs past 4,000px. Everything the description explained is visible in the
+          list itself the moment it opens, so it was being paid for twice. As a bar it is 66px, and
+          the name sitting in the box now does the job the heading used to: it says who you are
+          printing for.
+
+          IT FOLLOWS THE PAGE, because the work here is one person's papers and then the next
+          person's, and from the foot of a 4,000px page changing person meant scrolling all the way
+          back up. What stopped it sticking was not this bar and not a shared component — it was
+          this page's OWN outer wrapper being `overflow-hidden`, which makes it a scroll container
+          for sticky purposes. That is now `overflow-clip`: same clipping, no scroll container, and
+          nothing outside this file was touched. See the note on the wrapper above.
+
+          `z-30` sits above the page body and below the SearchableSelect's dropdown, which portals
+          to the document and carries its own stacking.
+        */}
+        <div className="sticky top-2 z-30 rounded-2xl border border-slate-200/90 bg-white/95 px-4 py-3 shadow-[0_12px_32px_rgba(15,23,42,0.10)] backdrop-blur-sm sm:px-5">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <label
+              className="flex shrink-0 items-center gap-2 text-phx-xs font-black uppercase tracking-[0.12em] text-phx-ink-soft"
+              htmlFor="hiring-pack-employee"
+            >
+              <UserRound className="h-4 w-4 text-phx-accent-press" />
               Employee
             </label>
-            <SearchableSelect
-              className={cn(inputClassName, "w-full max-w-2xl")}
-              disabled={busy === "load"}
-              id="hiring-pack-employee"
-              onValueChange={(value) => void selectEmployee(value)}
-              placeholder="Search by HR ID, name, or job title"
-              value={selectedHrId}
-            >
-              <option value="">Select an employee</option>
-              {candidates.map((candidate) => (
-                <option key={candidate.hrId} value={candidate.hrId}>
-                  {candidateLabel(candidate)}
-                </option>
-              ))}
-            </SearchableSelect>
+            {/*
+              THE `flex-1` GOES ON THIS WRAPPER, NOT ON THE CONTROL, and that is not a tidy-up.
+              `SearchableSelect` puts `className` on its INPUT and renders its own
+              `<div className="relative">` around it — so a `flex-1` passed in landed on a
+              `w-full` child of a plain block, and the block sized itself to its content. Measured
+              at a 1440px viewport: the box came out 207px wide in a row with room for over 1100,
+              and the value read "AI-0018 · SamahAshraf · M" with the job title simply gone.
+            */}
+            <div className="min-w-0 flex-1">
+              <SearchableSelect
+                className={cn(inputClassName, "w-full")}
+                disabled={busy === "load"}
+                id="hiring-pack-employee"
+                onValueChange={(value) => void selectEmployee(value)}
+                placeholder="Search by HR ID, name, job title or the date they left"
+                value={selectedHrId}
+              >
+                <option value="">Select an employee</option>
+                {candidates.map((candidate) => (
+                  <option key={candidate.hrId} value={candidate.hrId}>
+                    {candidateLabel(candidate)}
+                  </option>
+                ))}
+              </SearchableSelect>
+            </div>
             {busy === "load" ? (
-              <p className="mt-3 inline-flex items-center gap-2 text-sm font-semibold text-phx-ink-soft">
-                <Loader2 className="h-4 w-4 animate-spin" /> Loading the pack…
+              <p className="inline-flex shrink-0 items-center gap-2 text-sm font-semibold text-phx-ink-soft">
+                <Loader2 className="h-4 w-4 animate-spin" /> Loading…
               </p>
             ) : null}
           </div>
-        </AdminTableShell>
+        </div>
 
         {pack && employee ? (
           <>
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              <AdminStatCard
-                description={
-                  pack.profile.contractSignedDate
-                    ? formatDate(pack.profile.contractSignedDate)
-                    : "Not signed yet"
-                }
-                icon={<FileText className="h-5 w-5" />}
-                label="Contract"
-                tone={pack.profile.contractSignedDate ? "emerald" : "orange"}
-                value={pack.profile.contractSignedDate ? "Signed" : "Pending"}
-              />
-              <AdminStatCard
-                description={
-                  pack.profile.form1SignedDate
-                    ? formatDate(pack.profile.form1SignedDate)
-                    : "Not signed yet"
-                }
-                icon={<ShieldCheck className="h-5 w-5" />}
-                label="Form 1"
-                tone={pack.profile.form1SignedDate ? "emerald" : "orange"}
-                value={pack.profile.form1SignedDate ? "Signed" : "Pending"}
-              />
-              <AdminStatCard
-                description="Values the document cannot be handed over without."
-                icon={<AlertTriangle className="h-5 w-5" />}
-                label="Blocking gaps"
-                tone={blockingGaps.length > 0 ? "rose" : "emerald"}
-                value={blockingGaps.length}
-              />
-              <AdminStatCard
-                description="Prints without them, but they are still missing."
-                icon={<CalendarCheck className="h-5 w-5" />}
-                label="To fill later"
-                tone="blue"
-                value={advisoryGaps.length}
-              />
-            </div>
+            {/*
+              ONE STATUS BAND WHERE THERE WERE FOUR CARDS AND A CALLOUT UNDER THEM.
 
-            {blockingGaps.length > 0 ? (
-              <AdminCallout tone="warning">
-                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-                <div className="flex flex-col gap-2">
-                  <p className="font-bold">
-                    {blockingGaps.length} value{blockingGaps.length === 1 ? "" : "s"} the documents
-                    ask for are still missing. Both will still print — the blanks stay blank rather
-                    than being guessed.
-                  </p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {blockingGaps.map((gap) => (
-                      <Badge key={gap.field} variant="danger">
-                        {gap.labelEn} · {gap.labelAr}
-                      </Badge>
-                    ))}
-                  </div>
-                  <p className="text-xs font-semibold text-amber-800">
-                    Employee-record gaps are fixed on the employee. Company-settings gaps are the
-                    company&apos;s own registration numbers, and are missing for every employee
-                    until they are supplied once.
+              Two of those cards were counts — "Blocking gaps 7", "To fill later 3" — sitting
+              directly above a callout that said "7 values … are still missing" and then listed all
+              seven by name. A number beside the list it counts is the number read twice, and it
+              cost 322px to do it.
+
+              So the counts are now the headings of the lists themselves: the chips ARE the count,
+              and they say which values rather than how many. Nothing was dropped — the advisory
+              gaps were never listed anywhere before, only counted, so this band shows strictly more
+              than the row it replaces, in under half the height.
+            */}
+            <div className="rounded-2xl border border-slate-200/90 bg-white/95 p-4 shadow-[0_16px_40px_rgba(15,23,42,0.08)] sm:p-5">
+              <div className="flex flex-wrap items-center gap-2">
+                <SignaturePill
+                  icon={<FileText className="h-4 w-4" />}
+                  label="Contract"
+                  signedDate={pack.profile.contractSignedDate}
+                />
+                <SignaturePill
+                  icon={<ShieldCheck className="h-4 w-4" />}
+                  label="Form 1"
+                  signedDate={pack.profile.form1SignedDate}
+                />
+              </div>
+
+              {blockingGaps.length > 0 || advisoryGaps.length > 0 ? (
+                <div className="mt-4 flex flex-col gap-3 border-t border-slate-200/80 pt-4">
+                  {blockingGaps.length > 0 ? (
+                    <div className="flex flex-col gap-1.5">
+                      <p className="flex items-center gap-2 text-phx-xs font-black uppercase tracking-[0.12em] text-rose-700">
+                        <AlertTriangle className="h-3.5 w-3.5" />
+                        {blockingGaps.length} value{blockingGaps.length === 1 ? "" : "s"} the
+                        documents ask for — they print blank rather than guessed
+                      </p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {blockingGaps.map((gap) => (
+                          <Badge key={gap.field} tone="danger">
+                            {gap.labelEn} · {gap.labelAr}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {advisoryGaps.length > 0 ? (
+                    <div className="flex flex-col gap-1.5">
+                      <p className="flex items-center gap-2 text-phx-xs font-black uppercase tracking-[0.12em] text-sky-700">
+                        <CalendarCheck className="h-3.5 w-3.5" />
+                        {advisoryGaps.length} to fill in later — the documents print without them
+                      </p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {advisoryGaps.map((gap) => (
+                          <Badge key={gap.field} tone="info">
+                            {gap.labelEn} · {gap.labelAr}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  <p className="text-xs leading-5 text-phx-ink-faint">
+                    Employee-record values are fixed on the employee below. Company-settings values
+                    are the company&apos;s own registration numbers, and are missing for every
+                    employee until they are supplied once.
                   </p>
                 </div>
-              </AdminCallout>
-            ) : null}
+              ) : null}
+            </div>
 
             <AdminTableShell
               action={
@@ -1427,6 +1583,13 @@ export function HiringPackManager({
                     title="Custody receipt — phone or tablet"
                   />
                 </div>
+
+                <PackageCompanyTemplates
+                  employeeSelected={Boolean(pack)}
+                  onOpen={(template) => openTemplate(template, "preview")}
+                  onPrint={(template) => openTemplate(template, "print")}
+                  templates={joiningTemplates}
+                />
               </div>
             ) : null}
 
@@ -1662,6 +1825,13 @@ export function HiringPackManager({
                     title="Company clearance"
                   />
                 </div>
+
+                <PackageCompanyTemplates
+                  employeeSelected={Boolean(pack)}
+                  onOpen={(template) => openTemplate(template, "preview")}
+                  onPrint={(template) => openTemplate(template, "print")}
+                  templates={leavingTemplates}
+                />
               </div>
             ) : null}
           </>
@@ -1673,6 +1843,13 @@ export function HiringPackManager({
         )}
 
         <TemplateArchive
+          employeeSelected={Boolean(pack)}
+          onPreview={(document, versionId) => openPreview(document, versionId)}
+          onPrint={(document, versionId) => openPrint(document, versionId)}
+        />
+
+        <TemplateStudio
+          companyTemplates={companyTemplates}
           employeeSelected={Boolean(pack)}
           onPreview={(document, versionId) => openPreview(document, versionId)}
           onPrint={(document, versionId) => openPrint(document, versionId)}
@@ -1805,12 +1982,31 @@ function TemplateArchive({
 }) {
   const archived = archivedTemplateVersions();
 
+  // CLOSED UNTIL ASKED FOR, because of who asks and how often. The archive is 441px of superseded
+  // contracts at the foot of the screen, and it is read when a labour office or a dispute asks what
+  // the old text said — rarely, deliberately, and never in the middle of printing today's papers.
+  // It stays a section with its own heading and its count on the outside, so it is still obviously
+  // there; what changes is that it no longer occupies a tenth of the page to say so.
+  const [open, setOpen] = useState(false);
+
   return (
     <AdminTableShell
+      action={
+        <Button
+          aria-expanded={open}
+          className="h-10 gap-2 rounded-xl"
+          onClick={() => setOpen((current) => !current)}
+          type="button"
+          variant="outline"
+        >
+          {open ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+          {open ? "Hide" : `Show ${archived.length} archived`}
+        </Button>
+      }
       description="Every paper that has been replaced. Nothing is ever deleted — a document somebody signed has to stay reproducible as the document they signed."
       title="Archive"
     >
-      {archived.length === 0 ? (
+      {!open ? null : archived.length === 0 ? (
         <div className="px-5 py-5 sm:px-6">
           <AdminCallout>
             <Archive className="mt-0.5 h-4 w-4 shrink-0" />
@@ -1836,7 +2032,7 @@ function TemplateArchive({
                       Archived
                     </Badge>
                     <Badge size="sm" tone="info">
-                      {DOCUMENT_LABELS[entry.document]}
+                      {documentLabel(entry.document)}
                     </Badge>
                   </div>
                   <p className="mt-1 text-phx-xs font-bold text-phx-ink-soft" dir="auto">
@@ -1892,6 +2088,139 @@ function TemplateArchive({
           ) : null}
         </div>
       )}
+    </AdminTableShell>
+  );
+}
+
+/**
+ * Whether one signable document has been signed, and when — as a pill rather than a stat card.
+ *
+ * It replaces a 169px card carrying the same two facts. The date is the whole point of the state:
+ * "Signed" with no date would be a claim nobody can check, and this is the value Form 6 files with
+ * the Authority later, so it is shown in full rather than abbreviated.
+ */
+function SignaturePill({
+  icon,
+  label,
+  signedDate,
+}: {
+  icon: ReactNode;
+  label: string;
+  signedDate: string | null;
+}) {
+  const signed = Boolean(signedDate);
+
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-sm font-bold ring-1 ring-inset",
+        signed
+          ? "border-phx-ok-line bg-phx-ok-bg text-phx-ok ring-phx-ok-line"
+          : "border-phx-warn-line bg-phx-warn-bg text-phx-warn ring-phx-warn-line",
+      )}
+    >
+      {icon}
+      <span>{label}</span>
+      <span className="font-black">{signed ? "signed" : "not signed yet"}</span>
+      {signedDate ? (
+        <span className="font-semibold opacity-80">{formatDate(signedDate)}</span>
+      ) : null}
+    </span>
+  );
+}
+
+/**
+ * The uploaded templates filed in ONE package, shown beside the built-in papers of that package.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────────────────────
+ * WHY IT IS HERE AND NOT ONLY IN THE STUDIO. The Studio at the foot of this screen is where a
+ * template is ADDED. This is where one is USED. Somebody printing a leaver's papers on their last
+ * day works down the Leaver package tab; a company exit form that only appears in a panel further
+ * down, behind a Show button, is a paper they will not find on the day they need it — and the
+ * screen would look complete without it, which is the failure mode that matters.
+ *
+ * RENDERS NOTHING WHEN THERE ARE NONE, deliberately. An empty heading on a screen most companies
+ * will never upload anything to is a permanent invitation to wonder what is missing.
+ *
+ * `other` NEVER APPEARS HERE. A paper filed as "Other papers" is by definition not part of either
+ * package, and putting it in both tabs would make the two packages stop meaning anything. It is
+ * listed in the Studio, under its own heading.
+ */
+function PackageCompanyTemplates({
+  employeeSelected,
+  onOpen,
+  onPrint,
+  templates,
+}: {
+  employeeSelected: boolean;
+  onOpen: (template: StoredTemplate) => void;
+  onPrint: (template: StoredTemplate) => void;
+  templates: readonly StoredTemplate[];
+}) {
+  if (templates.length === 0) return null;
+  return (
+    <AdminTableShell
+      description="Uploaded through the Company templates panel below, and filed in this package. They print from the employee record exactly as the papers above do."
+      title="Company templates"
+    >
+      <ul className="flex flex-col gap-2">
+        {templates.map((template) => (
+          <li
+            className="flex flex-col gap-2 rounded-2xl border border-phx-line bg-white/95 p-3 sm:flex-row sm:items-center sm:gap-3"
+            key={template.id}
+          >
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold text-phx-ink">{template.name}</p>
+              {template.nameAr ? (
+                <p className="text-phx-xs text-phx-ink-soft" dir="auto">
+                  {template.nameAr}
+                </p>
+              ) : null}
+              <p className="text-phx-xs text-phx-ink-faint">
+                {template.pages.length} {template.pages.length === 1 ? "page" : "pages"} · v
+                {template.version}
+              </p>
+              {/* WHAT COMES OUT OF THE PRINTER, said before the button is pressed rather than
+                  discovered afterwards. Whoever set the template up answered both questions at
+                  upload; this is where that answer reaches the person holding the paper. */}
+              <p className="text-phx-xs font-semibold text-phx-ink-soft">
+                {describePrintInstruction({
+                  defaultCopies: template.defaultCopies,
+                  pageCount: template.pages.length,
+                  printSides: template.printSides,
+                })}
+              </p>
+            </div>
+            {/*
+              DISABLED, NOT HIDDEN, and told why. A template is a blank form: opening one means
+              filling it WITH somebody, so the missing piece is an employee. A control that
+              disappears teaches nothing; one that explains itself teaches the next step.
+            */}
+            <div className="flex flex-wrap items-center gap-2 sm:shrink-0">
+              <Button
+                className="h-9 gap-2 rounded-xl"
+                disabled={!employeeSelected}
+                onClick={() => onOpen(template)}
+                title={employeeSelected ? undefined : "Choose an employee above first."}
+                variant="outline"
+              >
+                <PencilLine className="h-4 w-4" />
+                Open
+              </Button>
+              <Button
+                className="h-9 gap-2 rounded-xl"
+                disabled={!employeeSelected}
+                onClick={() => onPrint(template)}
+                title={employeeSelected ? undefined : "Choose an employee above first."}
+                variant="outline"
+              >
+                <Printer className="h-4 w-4" />
+                Print
+              </Button>
+            </div>
+          </li>
+        ))}
+      </ul>
     </AdminTableShell>
   );
 }

@@ -77,7 +77,7 @@ function birthDatePlace(iso: string | null, place: string | null): string {
  * the template — marital status, military position, bank and IBAN, next of kin — are never in this
  * map at all: Phoenix holds no record of them, so they are always a blank for a pen.
  */
-function buildWorkerFormValues(data: HiringPackData): Partial<Record<WorkerFormToken, string>> {
+export function buildWorkerFormValues(data: HiringPackData): Partial<Record<WorkerFormToken, string>> {
   const { employee, profile } = data;
   const recital = systemLegalEntity.contractRecital;
 
