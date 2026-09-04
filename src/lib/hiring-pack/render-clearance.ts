@@ -1,4 +1,9 @@
 import { systemLegalEntity } from "@/config/system-settings";
+import {
+  houseLetterhead,
+  HOUSE_COLORS,
+  HOUSE_IDENTITY_CSS,
+} from "@/lib/hiring-pack/house-identity";
 import { flowFieldLayer, type DocumentFieldRow } from "@/lib/hiring-pack/field-layout";
 import {
   CLEARANCE_BLANK_RULE,
@@ -198,17 +203,13 @@ function renderCopy(
   }) · الرقم الموحد ${values.UNIFIED_REGISTER ?? ""} · البطاقة الضريبية رقم ${values.TAX_CARD ?? ""}`;
 
   return `<article class="copy">
-    <header class="masthead">
-      <div class="masthead__title">
-        <h1>${escapeHtml(template.titleAr)}</h1>
-        <p>${escapeHtml(template.subtitleAr)}</p>
-      </div>
-      <div class="masthead__mark">
-        <img src="/brand/sato-pharma-logo.png" alt="" width="401" height="158">
-      </div>
-    </header>
-    <div class="rule"></div>
-    <p class="keeper">${escapeHtml(template.keeperAr)}</p>
+    ${houseLetterhead({
+      titleAr: template.titleAr,
+      subtitleAr: template.subtitleAr,
+      purposeAr: template.keeperAr,
+      legalNameAr: systemLegalEntity.legalNameAr,
+      legalNameEn: systemLegalEntity.legalNameEn,
+    })}
 
     <section class="recital">
       <p class="recital__name">${escapeHtml(registry)}</p>
@@ -273,38 +274,17 @@ function renderClearance(
   }
   .copy + .copy { page-break-before: always; break-before: page; }
 
-  /* The house palette, the same navy, blue and zebra the contract and the custody receipt use —
-     read off the source documents rather than chosen here (0B2A4A, 1B7FBF, F2F6FA, A8C6E2). */
-  .masthead { display: flex; align-items: stretch; background: #0b2a4a; }
-  .masthead__title { flex: 1 1 auto; padding: 3.5mm 5mm; text-align: center; }
-  .masthead__title h1 { margin: 0; color: #fff; font-size: 16pt; font-weight: 700; }
-  .masthead__title p { margin: 1.5mm 0 0; color: #a8c6e2; font-size: 8.5pt; font-weight: 600; }
-  .masthead__mark {
-    flex: 0 0 36mm;
-    display: flex; align-items: center; justify-content: center;
-    padding: 2mm 3mm;
-  }
-  /* NO WHITE PANEL BEHIND THE LOGO. The artwork is the on-dark variant and its "SATO" wordmark is
-     WHITE, so on a white panel that half of the mark disappears and the masthead reads "PHARMA".
-     It sits directly on the navy, exactly as the contract's does. */
-  .masthead__mark img { width: 100%; max-width: 30mm; height: auto; }
-  .rule { height: 1.6mm; background: #1b7fbf; }
+  /* The house identity — SATO-DIS-2026-01. One definition, shared by every document; see
+     house-identity.ts for why the navy band this replaced was costing 9.97% page coverage. */
+  ${HOUSE_IDENTITY_CSS}
 
-  /* WHO KEEPS THIS COPY — the one line that stops the pair being confused, so it is given its own
-     full-width band rather than a footnote. */
-  .keeper {
-    margin: 0; padding: 1.8mm 3mm;
-    background: #1b7fbf; color: #fff;
-    font-size: 8.5pt; font-weight: 700; text-align: center;
-  }
-
-  .recital { padding: 2.5mm 3mm; background: #f2f6fa; text-align: center; }
-  .recital__name { margin: 0; color: #0b2a4a; font-size: 10pt; font-weight: 700; }
+  .recital { padding: 2.5mm 3mm; background: ${HOUSE_COLORS.tint}; text-align: center; }
+  .recital__name { margin: 0; color: ${HOUSE_COLORS.deep}; font-size: 10pt; font-weight: 700; }
   .recital__line { margin: 0.8mm 0 0; color: #5a6b7c; font-size: 7.5pt; }
 
   .sec {
-    margin: 3.5mm 0 0; padding: 1.5mm 3mm;
-    background: #0b2a4a; color: #fff;
+    margin: 3.5mm 0 0; padding: 1.5mm 3mm 1.1mm;
+    border-bottom: 0.8pt solid ${HOUSE_COLORS.blue}; color: ${HOUSE_COLORS.deep};
     font-size: 9.5pt; font-weight: 700;
   }
 
@@ -318,18 +298,18 @@ function renderClearance(
   .cell--wide { flex-basis: 100%; min-width: 100%; max-width: 100%; }
   .cell__label { flex: 0 0 auto; color: #5a6b7c; font-size: 8pt; white-space: nowrap; }
   .cell__value { flex: 1 1 auto; }
-  .val { font-weight: 700; color: #0b2a4a; }
+  .val { font-weight: 700; color: ${HOUSE_COLORS.deep}; }
   .rule-line { color: #91a4b7; letter-spacing: 0.2mm; }
   .fixed { font-size: 8pt; }
 
   .stations { width: 100%; border-collapse: collapse; font-size: 8pt; }
   .stations th {
-    padding: 1.5mm 1mm; background: #f2f6fa; color: #0b2a4a;
+    padding: 1.5mm 1mm; background: ${HOUSE_COLORS.tint}; color: ${HOUSE_COLORS.deep};
     border: 0.3mm solid #c9d8e8; font-weight: 700; text-align: center;
   }
   .stations td { padding: 2.4mm 1.5mm; border: 0.3mm solid #c9d8e8; }
   .stations .num { width: 7mm; text-align: center; color: #5a6b7c; }
-  .stations .dept { width: 30mm; font-weight: 700; color: #0b2a4a; }
+  .stations .dept { width: 30mm; font-weight: 700; color: ${HOUSE_COLORS.deep}; }
   .stations .scope { color: #34485c; }
   .stations .tick { width: 24mm; text-align: center; white-space: nowrap; }
   .stations .open { width: 22mm; }
@@ -342,17 +322,18 @@ function renderClearance(
   .clauses { border: 0.3mm solid #c9d8e8; border-top: 0; }
   .clause { display: flex; gap: 2mm; padding: 2mm 3mm; border-top: 0.3mm solid #e3ecf5; }
   .clause:first-child { border-top: 0; }
-  .clause__no { flex: 0 0 auto; color: #1b7fbf; font-weight: 700; }
+  .clause__no { flex: 0 0 auto; color: ${HOUSE_COLORS.blue}; font-weight: 700; }
   .clause__body { flex: 1 1 auto; text-align: justify; }
-  .closing { margin: 3mm 0 0; font-weight: 700; color: #0b2a4a; }
+  .closing { margin: 3mm 0 0; font-weight: 700; color: ${HOUSE_COLORS.deep}; }
 
   .sigs { display: flex; gap: 3mm; margin-top: 4mm; }
   .sig { flex: 1 1 0; border: 0.3mm solid #c9d8e8; }
   .sig__head {
-    margin: 0; padding: 1.6mm 2mm;
-    background: #0b2a4a; color: #fff; font-size: 8pt; font-weight: 700; text-align: center;
+    margin: 0; padding: 1.6mm 2mm 1.2mm;
+    border-bottom: 0.8pt solid ${HOUSE_COLORS.blue}; color: ${HOUSE_COLORS.deep};
+    font-size: 8pt; font-weight: 700; text-align: center;
   }
-  .sig__body { padding: 2.5mm; background: #f2f6fa; }
+  .sig__body { padding: 2.5mm; background: ${HOUSE_COLORS.tint}; }
   .sig__line { margin: 0 0 2mm; font-size: 8pt; }
   .sig__line:last-child { margin-bottom: 0; }
 

@@ -1,4 +1,9 @@
 import { systemLegalEntity } from "@/config/system-settings";
+import {
+  houseLetterhead,
+  HOUSE_COLORS,
+  HOUSE_IDENTITY_CSS,
+} from "@/lib/hiring-pack/house-identity";
 import { flowFieldLayer, type DocumentFieldRow } from "@/lib/hiring-pack/field-layout";
 import {
   CUSTODY_BLANK_RULE,
@@ -252,16 +257,12 @@ function renderCopy(
     }`;
 
   return `<article class="copy">
-    <header class="masthead">
-      <div class="masthead__title">
-        <h1>${escapeHtml(template.titleAr)}</h1>
-        <p>${escapeHtml(template.subtitleAr)}</p>
-      </div>
-      <div class="masthead__mark">
-        <img src="/brand/sato-pharma-logo.png" alt="" width="401" height="158">
-      </div>
-    </header>
-    <div class="rule"></div>
+    ${houseLetterhead({
+      titleAr: template.titleAr,
+      subtitleAr: template.subtitleAr,
+      legalNameAr: systemLegalEntity.legalNameAr,
+      legalNameEn: systemLegalEntity.legalNameEn,
+    })}
 
     <section class="recital">
       <p class="recital__name">${escapeHtml(registry)}</p>
@@ -349,27 +350,13 @@ function renderCustody(
   /* Each copy starts its own sheet. Two copies, and neither may begin halfway down a page. */
   .copy + .copy { page-break-before: always; break-before: page; }
 
-  /* Palette read off the source document: the same navy, blue and zebra the contract uses, because
-     they are the same house style — measured, not assumed (0B2A4A, 1B7FBF, F2F6FA, A8C6E2). */
-  .masthead { display: flex; align-items: stretch; background: #0b2a4a; }
-  .masthead__title { flex: 1 1 auto; padding: 3.5mm 5mm; text-align: center; }
-  .masthead__title h1 { margin: 0; color: #fff; font-size: 15pt; font-weight: 700; }
-  .masthead__title p { margin: 1.5mm 0 0; color: #a8c6e2; font-size: 8pt; font-weight: 600; }
-  .masthead__mark {
-    flex: 0 0 36mm;
-    display: flex; align-items: center; justify-content: center;
-    padding: 2mm 3mm;
-  }
-  /* NO WHITE PANEL BEHIND THE LOGO, and this is not a style preference. The artwork is the on-dark
-     variant: its "SATO" wordmark is WHITE, so on a white panel that half of the mark disappears and
-     the masthead reads "PHARMA". It sits directly on the navy, exactly as the contract's does — the
-     -on-light file is the variant for a pale background, and neither is safe on the other. */
-  .masthead__mark img { width: 100%; max-width: 30mm; height: auto; }
-  .rule { height: 1.6mm; background: #1b7fbf; }
+  /* The house identity — SATO-DIS-2026-01, shared by every document. */
+  ${HOUSE_IDENTITY_CSS}
 
-  .recital { padding: 2.5mm 3mm; background: #f2f6fa; text-align: center; }
-  .recital__name { margin: 0; color: #0b2a4a; font-size: 9.5pt; font-weight: 700; }
-  .recital__line { margin: 0.8mm 0 0; color: #5a6b7c; font-size: 7.5pt; }
+  /* The recital keeps its own words and its own order; only the filled tint behind it goes. */
+  .recital { padding: 2.5mm 3mm; text-align: center; }
+  .recital__name { margin: 0; color: var(--phx-doc-deep); font-size: 9.5pt; font-weight: 700; }
+  .recital__line { margin: 0.8mm 0 0; color: var(--phx-doc-muted); font-size: 7.5pt; }
 
   .hdr { display: flex; margin-top: 2.5mm; border: 0.3mm solid #c9d8e8; }
   .hdr__cell {
@@ -377,15 +364,17 @@ function renderCustody(
     font-size: 8pt; text-align: center;
   }
   .hdr__cell:first-child { border-inline-start: 0; }
-  .hdr__fixed { font-weight: 700; color: #0b2a4a; }
+  .hdr__fixed { font-weight: 700; color: ${HOUSE_COLORS.deep}; }
   .hdr__label { color: #5a6b7c; margin-inline-end: 1.5mm; }
 
   .sec {
-    margin: 3.5mm 0 0; padding: 1.5mm 3mm;
-    background: #0b2a4a; color: #fff;
+    margin: 3.5mm 0 0; padding: 1.5mm 3mm 1.1mm;
+    border-bottom: 0.8pt solid ${HOUSE_COLORS.blue}; color: ${HOUSE_COLORS.deep};
     font-size: 9pt; font-weight: 700;
   }
-  .sec--ret { background: #1b7fbf; }
+  /* The return section reads as the second half of the receipt. It was a lighter FILL; it is now a
+     lighter RULE, which is the same signal for none of the toner. */
+  .sec--ret { border-bottom-color: ${HOUSE_COLORS.light}; }
 
   /* Two boxes to a row, with a wide one taking both. A field label and its value must never end up
      on separate lines, which is what the flex row plus nowrap on the label prevents. */
@@ -399,40 +388,41 @@ function renderCustody(
   .cell--wide { flex-basis: 100%; min-width: 100%; max-width: 100%; }
   .cell__label { flex: 0 0 auto; color: #5a6b7c; font-size: 7.5pt; white-space: nowrap; }
   .cell__value { flex: 1 1 auto; }
-  .val { font-weight: 700; color: #0b2a4a; }
+  .val { font-weight: 700; color: ${HOUSE_COLORS.deep}; }
   .rule-line { color: #91a4b7; letter-spacing: 0.2mm; }
   .fixed { font-size: 7.5pt; }
 
   .items { width: 100%; border-collapse: collapse; font-size: 7.5pt; }
   .items th {
-    padding: 1.4mm 1mm; background: #f2f6fa; color: #0b2a4a;
+    padding: 1.4mm 1mm; background: ${HOUSE_COLORS.tint}; color: ${HOUSE_COLORS.deep};
     border: 0.3mm solid #c9d8e8; font-weight: 700; text-align: center;
   }
   .items td { padding: 1.8mm 1.5mm; border: 0.3mm solid #c9d8e8; }
   .items .num { width: 7mm; text-align: center; color: #5a6b7c; }
-  .items .item { width: 34mm; font-weight: 700; color: #0b2a4a; }
+  .items .item { width: 34mm; font-weight: 700; color: ${HOUSE_COLORS.deep}; }
   .items .open { background: #fff; }
-  .items .total { background: #f2f6fa; font-weight: 700; color: #0b2a4a; text-align: start; }
+  .items .total { background: ${HOUSE_COLORS.tint}; font-weight: 700; color: ${HOUSE_COLORS.deep}; text-align: start; }
 
   .note { margin: 1.5mm 0 0; color: #5a6b7c; font-size: 7pt; line-height: 1.45; }
 
   .clauses { border: 0.3mm solid #c9d8e8; border-top: 0; }
   .cgroup__head {
     margin: 0; padding: 1.4mm 3mm;
-    background: #e7eef6; color: #0b2a4a; font-size: 8pt; font-weight: 700;
+    background: #e7eef6; color: ${HOUSE_COLORS.deep}; font-size: 8pt; font-weight: 700;
   }
   .clause { display: flex; gap: 2mm; padding: 1.6mm 3mm; border-top: 0.3mm solid #e3ecf5; }
-  .clause__no { flex: 0 0 auto; color: #1b7fbf; font-weight: 700; }
+  .clause__no { flex: 0 0 auto; color: ${HOUSE_COLORS.blue}; font-weight: 700; }
   .clause__body { flex: 1 1 auto; text-align: justify; }
-  .closing { margin: 2.5mm 0 0; font-weight: 700; color: #0b2a4a; }
+  .closing { margin: 2.5mm 0 0; font-weight: 700; color: ${HOUSE_COLORS.deep}; }
 
   .sigs { display: flex; gap: 3mm; margin-top: 2mm; }
   .sig { flex: 1 1 0; border: 0.3mm solid #c9d8e8; }
   .sig__head {
-    margin: 0; padding: 1.4mm 2mm;
-    background: #0b2a4a; color: #fff; font-size: 7.5pt; font-weight: 700; text-align: center;
+    margin: 0; padding: 1.4mm 2mm 1.1mm;
+    border-bottom: 0.8pt solid ${HOUSE_COLORS.blue}; color: ${HOUSE_COLORS.deep};
+    font-size: 7.5pt; font-weight: 700; text-align: center;
   }
-  .sig__body { padding: 2mm; background: #f2f6fa; }
+  .sig__body { padding: 2mm; background: ${HOUSE_COLORS.tint}; }
   .sig__line { margin: 0 0 1.4mm; font-size: 7.5pt; }
   .sig__attest { margin: 1.5mm 0 0; color: #5a6b7c; font-size: 7pt; }
 
@@ -442,7 +432,7 @@ function renderCustody(
   .ret { page-break-before: always; break-before: page; }
   .ret__intro {
     margin: 0; padding: 2mm 3mm;
-    background: #f2f6fa; color: #5a6b7c; font-size: 7.5pt; line-height: 1.5;
+    background: ${HOUSE_COLORS.tint}; color: #5a6b7c; font-size: 7.5pt; line-height: 1.5;
   }
 
   /* A clause, a signature column or a labelled box must not be split across two sheets. */

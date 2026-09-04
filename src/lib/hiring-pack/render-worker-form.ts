@@ -1,4 +1,9 @@
 import { systemLegalEntity } from "@/config/system-settings";
+import {
+  houseLetterhead,
+  HOUSE_COLORS,
+  HOUSE_IDENTITY_CSS,
+} from "@/lib/hiring-pack/house-identity";
 import { flowFieldLayer, type DocumentFieldRow } from "@/lib/hiring-pack/field-layout";
 import {
   ARABIC_FONT_STACK,
@@ -208,16 +213,12 @@ function renderCopy(
   return `<article class="copy">
     <table class="sheet">
       <tbody><tr><td class="sheet__body">
-        <header class="masthead">
-          <div class="masthead__title">
-            <h1>${escapeHtml(template.titleAr)}</h1>
-            <p>${escapeHtml(template.subtitleAr)}</p>
-          </div>
-          <div class="masthead__mark">
-            <img src="/brand/sato-pharma-logo.png" alt="" width="401" height="158">
-          </div>
-        </header>
-        <div class="rule"></div>
+        ${houseLetterhead({
+          titleAr: template.titleAr,
+          subtitleAr: template.subtitleAr,
+          legalNameAr: systemLegalEntity.legalNameAr,
+          legalNameEn: systemLegalEntity.legalNameEn,
+        })}
 
         <p class="wf-note">${escapeHtml(template.noteAr)}</p>
         <div class="wf-company">${company}</div>
@@ -303,20 +304,8 @@ export function renderWorkerFormHtml(
     text-align: center;
   }
 
-  /* The banded identity, read off the current contract so a new hire's papers match. */
-  .masthead { display: flex; align-items: stretch; background: #0b2a4a; }
-  .masthead__title { flex: 1 1 auto; padding: 4mm 5mm; text-align: center; }
-  .masthead__title h1 { margin: 0; color: #fff; font-size: 15pt; font-weight: 700; }
-  .masthead__title p { margin: 1.5mm 0 0; color: #a8c6e2; font-size: 8.5pt; font-weight: 600; }
-  .masthead__mark {
-    display: flex;
-    flex: 0 0 20.5%;
-    align-items: center;
-    justify-content: center;
-    padding: 3mm;
-  }
-  .masthead__mark img { width: 100%; max-width: 32mm; height: auto; }
-  .rule { height: 1.6mm; background: #1b7fbf; }
+  /* The house identity — SATO-DIS-2026-01, shared by every document. */
+  ${HOUSE_IDENTITY_CSS}
 
   .wf-note {
     margin: 2.5mm 0 0;
@@ -331,9 +320,9 @@ export function renderWorkerFormHtml(
   .wf-section { margin: 0 0 3.5mm; border: 0.5pt solid #c9d6e2; }
   .wf-band {
     margin: 0;
-    padding: 1.6mm 3mm;
-    background: #1b7fbf;
-    color: #fff;
+    padding: 1.6mm 3mm 1.2mm;
+    border-bottom: 0.8pt solid ${HOUSE_COLORS.blue};
+    color: ${HOUSE_COLORS.deep};
     font-size: 9.5pt;
     font-weight: 700;
     text-align: center;
@@ -354,7 +343,7 @@ export function renderWorkerFormHtml(
   .wf-cell:nth-child(odd) { border-inline-start: 0; }
   .wf-cell:nth-child(1), .wf-cell:nth-child(2) { border-top: 0; }
   .wf-cell--wide { grid-column: 1 / -1; border-inline-start: 0; }
-  .wf-label { color: #0b2a4a; font-size: 8.5pt; font-weight: 700; }
+  .wf-label { color: ${HOUSE_COLORS.deep}; font-size: 8.5pt; font-weight: 700; }
   .wf-value { font-size: 10.5pt; line-height: 1.4; word-break: break-word; }
   .wf-value--ltr { direction: ltr; text-align: right; unicode-bidi: plaintext; }
 
@@ -375,8 +364,8 @@ export function renderWorkerFormHtml(
   }
   .wf-sigrow { display: grid; grid-template-columns: 1.4fr 1fr 1fr 1fr; }
   .wf-sigrow--head .wf-sigcell {
-    background: #0b2a4a;
-    color: #fff;
+    border-bottom: 0.8pt solid ${HOUSE_COLORS.blue};
+    color: ${HOUSE_COLORS.deep};
     font-weight: 700;
     font-size: 9pt;
   }
@@ -389,7 +378,7 @@ export function renderWorkerFormHtml(
     text-align: center;
   }
   .wf-sigrow--head .wf-sigcell { min-height: 0; border-top: 0; }
-  .wf-sigcell--role { text-align: right; font-weight: 700; color: #0b2a4a; }
+  .wf-sigcell--role { text-align: right; font-weight: 700; color: ${HOUSE_COLORS.deep}; }
   .wf-sigrow--head .wf-sigcell--role { color: #fff; }
   .wf-sigcell:nth-child(1) { border-inline-start: 0; }
 
