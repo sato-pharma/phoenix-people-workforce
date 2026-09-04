@@ -17,6 +17,7 @@ import { attachHiringDocumentFiles } from "@/lib/hiring-documents/service";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import type { AccessContext } from "@/lib/auth/permissions";
 import type { PrintableDocument } from "@/lib/hiring-pack/document-registry";
+import { documentCarriesHousePageNumbers } from "@/lib/hiring-pack/house-identity";
 import {
   buildIssuedFileName,
   isFilingSchemaMissing,
@@ -49,27 +50,6 @@ export type FilingOutcome =
  * empty list would be reported as "no slot names this paper", sending somebody to configure a
  * screen that cannot help them.
  */
-/**
- * Whether this paper is one Phoenix wrote, and may therefore carry the house page number.
- *
- * Written as the set that DOES rather than a list of the ones that do not, so a document added
- * later is excluded until somebody decides otherwise. The failure this shape prevents is a new
- * government form silently inheriting a footer because nobody remembered a blocklist — and an
- * altered official form is discovered at the insurance window, not here.
- */
-const HOUSE_NUMBERED_DOCUMENTS: ReadonlySet<string> = new Set([
-  "contract",
-  "workerDataForm",
-  "custodyLaptop",
-  "custodyMobile",
-  "clearanceEmployee",
-  "clearanceCompany",
-]);
-
-function carriesHousePageNumbers(document: PrintableDocument): boolean {
-  return typeof document === "string" && HOUSE_NUMBERED_DOCUMENTS.has(document);
-}
-
 async function loadFilingSlots(): Promise<FilingSlotRow[] | null> {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
@@ -162,11 +142,11 @@ export async function fileSignedPaper(input: {
 
   let pdf: Uint8Array;
   try {
-    // Numbered for the papers Phoenix authors, never for the ones the Authority issues. See
-    // `HiringPaperPdfOptions.pageNumbers`: a government facsimile has no margin for a footer and
-    // must reach the window exactly as the Authority lays it out.
+    // Numbered for the papers Phoenix authors, never for the Authority's own forms — the policy
+    // lives beside the identity it belongs to, so the filed copy and the downloaded one can never
+    // disagree about which documents may carry a footer.
     pdf = await renderHiringPaperPdf(paper.html, {
-      pageNumbers: carriesHousePageNumbers(input.document),
+      pageNumbers: documentCarriesHousePageNumbers(input.document),
     });
   } catch (error) {
     // Both of these are worth saying in full rather than collapsing to "could not file". One is an

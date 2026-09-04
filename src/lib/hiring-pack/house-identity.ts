@@ -134,6 +134,35 @@ export const HOUSE_IDENTITY_CSS = `
  */
 export const HOUSE_HAIRLINE_PT = 0.5;
 
+/**
+ * The papers Phoenix writes, and which may therefore carry the house page number.
+ *
+ * A SET OF THE ONES THAT DO, never a list of the ones that do not. A document added later is then
+ * excluded until somebody decides otherwise, instead of inheriting a footer from a blocklist nobody
+ * remembered to update — and an altered official form is discovered at the insurance window, not
+ * here. Form 1, Form 6, the resignation request and the mutual termination agreement are the
+ * Authority's own artwork on `@page { margin: 0 }`: there is no margin for a footer to sit in, and
+ * printing our numbering onto one is the alteration that gets it refused.
+ */
+const HOUSE_NUMBERED_DOCUMENTS: ReadonlySet<string> = new Set([
+  "contract",
+  "workerDataForm",
+  "custodyLaptop",
+  "custodyMobile",
+  "clearanceEmployee",
+  "clearanceCompany",
+]);
+
+/**
+ * Whether this paper may carry "صفحة N من M".
+ *
+ * Takes a plain string so an uploaded company template — which arrives as `custom:<uuid>` — answers
+ * false without this module needing to know that shape. Somebody's own artwork is theirs.
+ */
+export function documentCarriesHousePageNumbers(document: string): boolean {
+  return HOUSE_NUMBERED_DOCUMENTS.has(document);
+}
+
 export interface HouseLetterheadInput {
   /** The document's own title, in Arabic. Printed 17 pt bold in Brand Deep. */
   titleAr: string;
