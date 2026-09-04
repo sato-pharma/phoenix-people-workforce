@@ -82,12 +82,13 @@ var TZ = 'Africa/Cairo';
  * feed's COLUMNS. A sheet that silently keeps the previous design is indistinguishable from one
  * where the update failed.
  */
-var LAYOUT_VERSION = 'v2-premium';
+var LAYOUT_VERSION = 'v3-detail';
 
 var TAB_SUMMARY = 'Summary';
 var TAB_DAILY = 'Daily Dashboard';
 var TAB_LIFECYCLE = 'CV Lifecycle';
-var TAB_ORDER = [TAB_SUMMARY, TAB_DAILY, TAB_LIFECYCLE];
+var TAB_DETAIL = 'CV Details';
+var TAB_ORDER = [TAB_SUMMARY, TAB_DAILY, TAB_DETAIL, TAB_LIFECYCLE];
 
 // Rows shared by every tab, so the stale banner knows where to paint on all three.
 var ROW_TITLE = 1;
@@ -108,7 +109,15 @@ var SUMMARY_METRIC_TITLE_ROW = 43;
 var SUMMARY_METRIC_HEADER_ROW = 44;
 var SUMMARY_METRIC_CAPACITY = 40;
 
-var DAILY_HEADER_ROW = 20;
+// EVERY TABLE STARTS AT ROW 4, AND THAT IS A FIX, NOT A PREFERENCE.
+//
+// The Daily Dashboard used to put its header at row 20 and reserve rows 4-19 as a canvas for the
+// chart. A Sheets chart is a floating OVERLAY — it never occupies cells — so what the reader
+// actually saw was sixteen empty rows above a header frozen a long way down the page, which is
+// precisely what the owner reported on 2026-09-05. The chart now floats to the RIGHT of the data
+// instead, where it cannot push anything down and cannot leave a hole if it fails to draw at all.
+var DAILY_HEADER_ROW = 4;
+var DETAIL_HEADER_ROW = 4;
 var LIFECYCLE_HEADER_ROW = 4;
 
 /** How many rows the fixed chart and format ranges cover. About three years of daily rows. */
@@ -229,6 +238,7 @@ function refreshCvLifecycle() {
   var rebuilt = false;
   rebuilt = writeSummary_(ss, sections.SUMMARY || [], sections.DAILY || [], lifecycle, stamp) || rebuilt;
   rebuilt = writeDaily_(ss, sections.DAILY || [], stamp) || rebuilt;
+  rebuilt = writeDetail_(ss, sections.DETAIL || [], stamp) || rebuilt;
   rebuilt = writeLifecycle_(ss, lifecycle, stamp) || rebuilt;
 
   // Only on a rebuild: ordering tabs calls setActiveSheet, which would drag the reader off
@@ -747,6 +757,242 @@ function buildSummaryLayout_(sheet, dailyRows) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────────
+// CV Details — everything Phoenix knows about the PERSON
+//
+// One row per candidate, not per CV. 982 files belong to 741 people, so a per-file sheet would
+// print the same education and work history three times for one applicant and make a duplicate
+// look like three candidates.
+//
+// This tab exists because the pipeline tab could not answer "which area is this person in". The
+// old feed carried only the area the candidate DECLARED, which 12% of them ever answered, so the
+// column was blank seven times in eight. `governorate` — filled for 76% — was one join away and
+// simply never selected. The 2026-09-05 view widening brought it, and the rest of the CV with it.
+// ─────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * The coloured band over row 3, so 58 columns read as six ideas rather than one wall.
+ *
+ * Spans are derived from where each `from` column actually sits, never hardcoded. Insert or move a
+ * column upstream and the bands follow it; hardcoded spans would drift silently and label the
+ * wrong block, which is worse than no band at all.
+ */
+var DETAIL_GROUPS = [
+  { bg: '#e8eef7', from: '#',                    label: 'Who they are' },
+  { bg: '#e7f1ea', from: 'Faculty',              label: 'What they studied' },
+  { bg: '#fbf0e2', from: 'Applied for',          label: 'What they have done' },
+  { bg: '#efe9f7', from: 'Their own background', label: 'What they told us themselves' },
+  { bg: '#e6eef4', from: 'Prefers region',       label: 'Where it went' },
+  { bg: '#eef0f1', from: 'How they reached us',  label: 'The record' }
+];
+
+/** Long free text. Wide, and NOT wrapped — a wrapped CV summary makes a 200px tall row. */
+var DETAIL_WIDE = [
+  'Address', 'Education history', 'Work history', 'Skills', 'Languages', 'Certifications',
+  'Professional summary', 'Their own background', 'Their own experience', 'Status note'
+];
+
+var DETAIL_WIDTHS = {
+  '#': 46,
+  'Candidate': 210,
+  'Phone': 130,
+  'Email': 210,
+  'Governorate': 120,
+  'Nationality': 100,
+  'Gender': 80,
+  'Date of birth': 110,
+  'Marital status': 110,
+  'Military status': 120,
+  'LinkedIn': 90,
+  'Faculty': 170,
+  'University': 190,
+  'Degree': 150,
+  'Graduation year': 110,
+  'Grade': 90,
+  'Applied for': 180,
+  'Current job title': 180,
+  'Current employer': 180,
+  'Years of experience': 110,
+  'Worked before?': 100,
+  'Medical rep before?': 120,
+  'Medical rep employer': 180,
+  'Salary they asked for': 130,
+  'Expected salary (on file)': 140,
+  'Notice period': 110,
+  'English level': 110,
+  'MS Office / Outlook': 130,
+  'Booking experience': 130,
+  'Can commute to Sheraton': 150,
+  'Can start': 110,
+  'Age band': 100,
+  'Prefers region': 130,
+  'Prefers area': 130,
+  'Filed folder': 190,
+  'Drive folder': 190,
+  'Sent for job title': 170,
+  'Sent for area': 130,
+  'Sent for region': 130,
+  'Sent for line': 110,
+  'Manager notified': 160,
+  'Manager notified at': 150,
+  'How they reached us': 140,
+  'Channel': 110,
+  'CVs on file': 90,
+  'Candidate status': 140,
+  'Added to Phoenix': 150,
+  'Open in Phoenix': 120
+};
+
+function writeDetail_(ss, rows, stamp) {
+  // An older Phoenix that does not send #DETAIL must leave the tab alone rather than blank it.
+  if (!rows.length) return false;
+  var sheet = sheetFor_(ss, TAB_DETAIL);
+  var header = rows[0];
+  var body = rows.slice(1);
+
+  var fresh = !layoutIsCurrent_(TAB_DETAIL, header);
+  if (fresh) buildDetailLayout_(sheet, header);
+
+  writeSubtitle_(sheet, TAB_DETAIL, stamp);
+
+  clearDataBelow_(sheet, DETAIL_HEADER_ROW, header.length);
+  if (body.length) {
+    sheet.getRange(DETAIL_HEADER_ROW + 1, 1, body.length, header.length)
+      .setValues(linkify_(header, body));
+  }
+  fitBody_(sheet, TAB_DETAIL, DETAIL_HEADER_ROW, header.length, body.length);
+
+  if (fresh) markLayoutBuilt_(TAB_DETAIL, header);
+  return fresh;
+}
+
+function buildDetailLayout_(sheet, header) {
+  resetTab_(sheet);
+  titleBand_(sheet, header.length, '  Everything Phoenix knows about each candidate');
+
+  // titleBand_ leaves row 3 as a 10px spacer. Here it carries the group band instead.
+  sheet.setRowHeight(3, 22);
+  paintDetailGroups_(sheet, header);
+
+  sheet.getRange(DETAIL_HEADER_ROW, 1, 1, header.length).setValues([header]);
+  styleHeader_(sheet, DETAIL_HEADER_ROW, header.length);
+  sheet.setFrozenRows(DETAIL_HEADER_ROW);
+  // The number and the name stay on screen however far right he scrolls. With 58 columns that is
+  // the difference between a usable table and a spreadsheet you get lost in.
+  sheet.setFrozenColumns(2);
+
+  applyDetailWidths_(sheet, header);
+  applyDetailFormats_(sheet, header);
+  applyDetailColours_(sheet, header);
+
+  // A filter, so "show me everyone in Giza who has been a medical rep" is two clicks rather than a
+  // request to me. This is the tab most worth filtering and the only one carrying those fields.
+  if (!sheet.getFilter()) {
+    sheet.getRange(DETAIL_HEADER_ROW, 1, sheet.getMaxRows() - DETAIL_HEADER_ROW + 1, header.length)
+      .createFilter();
+  }
+}
+
+function paintDetailGroups_(sheet, header) {
+  var starts = [];
+  for (var i = 0; i < DETAIL_GROUPS.length; i++) {
+    var col = columnByName_(header, DETAIL_GROUPS[i].from);
+    if (col > 0) starts.push({ col: col, group: DETAIL_GROUPS[i] });
+  }
+  for (var j = 0; j < starts.length; j++) {
+    var from = starts[j].col;
+    var to = (j + 1 < starts.length) ? starts[j + 1].col - 1 : header.length;
+    if (to < from) continue;
+    sheet.getRange(3, from, 1, to - from + 1).merge()
+      .setValue(starts[j].group.label)
+      .setBackground(starts[j].group.bg)
+      .setFontColor(INK)
+      .setFontWeight('bold')
+      .setFontSize(10)
+      .setHorizontalAlignment('center')
+      .setVerticalAlignment('middle');
+  }
+}
+
+function applyDetailWidths_(sheet, header) {
+  for (var i = 0; i < header.length; i++) {
+    var name = String(header[i]);
+    var width = DETAIL_WIDTHS[name];
+    if (width === undefined) width = DETAIL_WIDE.indexOf(name) >= 0 ? 320 : 140;
+    sheet.setColumnWidth(i + 1, width);
+  }
+}
+
+function applyDetailFormats_(sheet, header) {
+  function format(name, pattern) {
+    var c = columnByName_(header, name);
+    if (c > 0) sheet.getRange(DETAIL_HEADER_ROW + 1, c, FIXED_RANGE_ROWS, 1).setNumberFormat(pattern);
+  }
+
+  // Plain text, or Sheets eats the leading zero and renders the number in scientific notation.
+  format('Phone', '@');
+  // '0' and not '#,##0': a graduation year is not a quantity, and 2,024 reads as a bug.
+  format('Graduation year', '0');
+  format('Years of experience', '#,##0');
+  format('CVs on file', '#,##0');
+  format('Salary they asked for', '#,##0');
+  format('Expected salary (on file)', '#,##0');
+
+  // The long text columns are clipped rather than wrapped. Clipping is NOT truncation — the whole
+  // value is in the cell and shows in the formula bar and on click — and it is what keeps 741 rows
+  // the same height. A wrapped work history is six lines tall and makes the table unreadable.
+  for (var i = 0; i < DETAIL_WIDE.length; i++) {
+    var c = columnByName_(header, DETAIL_WIDE[i]);
+    if (c > 0) sheet.getRange(DETAIL_HEADER_ROW + 1, c, FIXED_RANGE_ROWS, 1).setWrap(false);
+  }
+
+  sheet.getRange(DETAIL_HEADER_ROW + 1, 1, FIXED_RANGE_ROWS, header.length)
+    .setVerticalAlignment('middle');
+}
+
+function applyDetailColours_(sheet, header) {
+  var rules = [];
+  function range(name) {
+    var c = columnByName_(header, name);
+    return c > 0 ? sheet.getRange(DETAIL_HEADER_ROW + 1, c, FIXED_RANGE_ROWS, 1) : null;
+  }
+
+  // Experience the recruiter is actually hunting for, findable at a glance down the column.
+  var medrep = range('Medical rep before?');
+  if (medrep) {
+    rules.push(SpreadsheetApp.newConditionalFormatRule()
+      .whenTextEqualTo('Yes').setBackground(GOOD_BG).setFontColor(GOOD)
+      .setRanges([medrep]).build());
+  }
+  var worked = range('Worked before?');
+  if (worked) {
+    rules.push(SpreadsheetApp.newConditionalFormatRule()
+      .whenTextEqualTo('Yes').setBackground(GOOD_BG).setFontColor(GOOD)
+      .setRanges([worked]).build());
+  }
+
+  // A candidate nobody has moved on yet.
+  var status = range('Candidate status');
+  if (status) {
+    rules.push(SpreadsheetApp.newConditionalFormatRule()
+      .whenTextEqualTo('new').setBackground(WARN_BG).setFontColor(WARN_FG)
+      .setRanges([status]).build());
+  }
+
+  // A blank governorate is the one gap worth SEEING rather than glossing over: it is the field this
+  // whole tab was rebuilt around, and a quiet blank is how the old sheet hid it for a month.
+  var gov = range('Governorate');
+  if (gov) {
+    rules.push(SpreadsheetApp.newConditionalFormatRule()
+      .whenCellEmpty().setBackground(BAD_BG)
+      .setRanges([gov]).build());
+  }
+
+  if (rules.length) {
+    sheet.setConditionalFormatRules(sheet.getConditionalFormatRules().concat(rules));
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────────
 // Daily Dashboard
 // ─────────────────────────────────────────────────────────────────────────────────
 
@@ -765,6 +1011,7 @@ function writeDaily_(ss, rows, stamp) {
   if (body.length) {
     sheet.getRange(DAILY_HEADER_ROW + 1, 1, body.length, header.length).setValues(body);
   }
+  fitBody_(sheet, TAB_DAILY, DAILY_HEADER_ROW, header.length, body.length);
 
   if (fresh) markLayoutBuilt_(TAB_DAILY, header);
   return fresh;
@@ -785,11 +1032,8 @@ function buildDailyLayout_(sheet, header) {
   // formatted value, which looks like a bug in the data.
   sheet.getRange(DAILY_HEADER_ROW + 1, 2, FIXED_RANGE_ROWS, header.length - 1).setNumberFormat('#,##0');
 
-  sheet.getRange(DAILY_HEADER_ROW + 1, 1, FIXED_RANGE_ROWS, header.length)
-    .applyRowBanding(SpreadsheetApp.BandingTheme.LIGHT_GREY, false, false);
-
   applyDailyColours_(sheet, header);
-  buildDailyChart_(sheet);
+  buildDailyChart_(sheet, header.length);
 }
 
 /**
@@ -800,13 +1044,15 @@ function buildDailyLayout_(sheet, header) {
  * chart loses whatever position the reader dragged it to. Blank rows inside the range simply do
  * not plot, so an over-long range costs nothing but is stable for about three years of daily rows.
  */
-function buildDailyChart_(sheet) {
+function buildDailyChart_(sheet, cols) {
   var chart = sheet.newChart()
     .setChartType(Charts.ChartType.COLUMN)
     // Day, then the three channel columns — not the totals, which would double the height of every
     // bar and hide the split the chart exists to show.
     .addRange(sheet.getRange(DAILY_HEADER_ROW, 1, FIXED_RANGE_ROWS + 1, 4))
-    .setPosition(4, 1, 0, 0)
+    // Anchored two columns PAST the table rather than above it. A chart placed above the data has
+    // to have rows reserved under it, and reserved rows are indistinguishable from a broken sheet.
+    .setPosition(DAILY_HEADER_ROW, cols + 2, 0, 0)
     .setOption('title', 'CVs received each day, by channel')
     .setOption('isStacked', true)
     .setOption('legend', { position: 'top' })
@@ -817,9 +1063,6 @@ function buildDailyChart_(sheet) {
     .setOption('vAxis', { title: 'CVs', minValue: 0 })
     .build();
   sheet.insertChart(chart);
-
-  // Reserve the band the chart sits in, so it never lands on top of the table.
-  for (var r = 4; r < DAILY_HEADER_ROW; r++) sheet.setRowHeight(r, 20);
 }
 
 /** Green where the Drive mirror kept up, red where it did not. */
@@ -857,6 +1100,33 @@ function applyDailyColours_(sheet, header) {
 // ─────────────────────────────────────────────────────────────────────────────────
 
 /** Clear only the DATA, never the header or the band above it. */
+/**
+ * Stripe exactly as many rows as there is data, and no more.
+ *
+ * THE OTHER HALF OF THE "unfinished sheet" COMPLAINT. Banding a fixed 1000-row range leaves 970
+ * empty striped rows under a Daily table that holds thirty days — a grey ladder running off the
+ * bottom of the screen, which reads as a broken or half-loaded report rather than a finished one.
+ *
+ * This is the ONE thing a refresh is allowed to repaint, and it is deliberately gated on the row
+ * COUNT rather than run every time: the count only moves when a new day or a new candidate appears,
+ * so on the overwhelming majority of refreshes this function returns without touching the sheet.
+ * The gate is what keeps "a refresh writes values and nothing else" true in practice.
+ */
+function fitBody_(sheet, key, headerRow, cols, rowCount) {
+  var props = PropertiesService.getDocumentProperties();
+  var storedKey = 'rows:' + key;
+  if (props.getProperty(storedKey) === String(rowCount)) return;
+
+  var bandings = sheet.getBandings();
+  for (var i = 0; i < bandings.length; i++) bandings[i].remove();
+
+  if (rowCount > 0) {
+    sheet.getRange(headerRow + 1, 1, rowCount, cols)
+      .applyRowBanding(SpreadsheetApp.BandingTheme.LIGHT_GREY, false, false);
+  }
+  props.setProperty(storedKey, String(rowCount));
+}
+
 function clearDataBelow_(sheet, headerRow, width) {
   var lastRow = sheet.getLastRow();
   if (lastRow > headerRow) {
@@ -896,7 +1166,8 @@ function linkify_(header, body) {
   var driveCol = columnByName_(header, 'Open in Drive');
   var phoenixCol = columnByName_(header, 'Open in Phoenix');
   var phoneCol = columnByName_(header, 'Phone');
-  if (driveCol < 0 && phoenixCol < 0 && phoneCol < 0) return body;
+  var linkedinCol = columnByName_(header, 'LinkedIn');
+  if (driveCol < 0 && phoenixCol < 0 && phoneCol < 0 && linkedinCol < 0) return body;
 
   function link(url, label) {
     var clean = String(url || '').trim();
@@ -913,6 +1184,7 @@ function linkify_(header, body) {
     // zero and never turns +20… into scientific notation. This column is already plain text, so
     // the prefix would be one stray character in front of every number.
     if (phoneCol > 0) row[phoneCol - 1] = String(row[phoneCol - 1] || '').replace(/^'/, '');
+    if (linkedinCol > 0) row[linkedinCol - 1] = link(row[linkedinCol - 1], 'LinkedIn');
     out.push(row);
   }
   return out;

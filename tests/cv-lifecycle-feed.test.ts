@@ -6,8 +6,11 @@ import { cairoDateTimeSortable } from "../src/lib/format/cairo-datetime.ts";
 import {
   buildCvLifecycleCsv,
   buildDailyChannelRollup,
+  cvDetailRowCells,
   cvLifecycleRowCells,
+  oneRowPerCandidate,
   summarizeCvLifecycle,
+  CV_DETAIL_COLUMNS,
   CV_LIFECYCLE_COLUMNS,
   CV_LIFECYCLE_DAILY_COLUMNS,
   type CvLifecycleRow,
@@ -46,8 +49,64 @@ function row(overrides: Partial<CvLifecycleRow> = {}): CvLifecycleRow {
     senderDisplayName: "Ahmed Hassan",
     sizeBytes: 204800,
     timingSource: "queued",
+
+    // The candidate themself — the half the sheet could not show before 2026-09-05.
+    candidateAddress: "12 Gamal Abdel Nasser St, Sidi Gaber",
+    candidateCreatedAt: "2026-09-04T08:55:00.000Z",
+    candidateEmail: "ahmed.hassan@example.com",
+    candidateSource: "whatsapp",
+    candidateStatusNote: null,
+    currentEmployer: "Delta Pharma",
+    currentJobTitle: "Medical Representative",
+    cvCertifications: "Good Clinical Practice (2024)",
+    cvEducation: "BSc Pharmacy \u2014 Alexandria University (2019)",
+    cvLanguages: "Arabic, English",
+    cvSkills: "Selling skills, CRM, Presentation",
+    cvWorkHistory: "Medical Representative \u2014 Delta Pharma (2020-03\u2192now)",
+    dateOfBirth: "1997-04-11",
+    declaredBackground: "Pharmacy",
+    declaredExpectedSalary: "12000",
+    declaredExperience: "3 years medical rep",
+    degree: "BSc",
+    expectedSalary: "12000",
+    faculty: "Pharmacy",
+    gender: "male",
+    governorate: "Alexandria",
+    grade: "Good",
+    graduationYear: 2019,
+    hasMedicalRepExperience: true,
+    hasPriorWorkExperience: true,
+    linkedinUrl: "https://www.linkedin.com/in/ahmed-hassan",
+    managerNotifiedAt: "2026-09-04T10:00:00.000Z",
+    managerNotifiedName: "Rasha Fouad",
+    maritalStatus: "single",
+    medicalRepEmployer: "Delta Pharma",
+    militaryStatus: "exempted",
+    nationality: "Egyptian",
+    noticePeriod: "1 month",
+    preferredRegionName: "Alexandria & Behera",
+    professionalSummary: "Three years selling CNS products in Alexandria.",
+    screeningAgeBand: "25-30",
+    screeningBookingExperience: "yes",
+    screeningCommute: "yes",
+    screeningEnglishLevel: "very good",
+    screeningMsOffice: "good",
+    screeningStartDate: "immediately",
+    sentForArea: "Alex Center",
+    sentForJobTitle: "Medical Representative",
+    sentForLine: "CNS",
+    sentForRegion: "AB",
+    university: "Alexandria University",
+    yearsExperience: 3,
+
     ...overrides,
   };
+}
+
+function detailCellFor(columnName: string, subject: CvLifecycleRow, cvCount = 1): unknown {
+  const index = CV_DETAIL_COLUMNS.indexOf(columnName as (typeof CV_DETAIL_COLUMNS)[number]);
+  assert.notEqual(index, -1, `no detail column named ${columnName} \u2014 the test and the feed have drifted`);
+  return cvDetailRowCells({ cvCount, row: subject }, 1, BASE)[index];
 }
 
 function cellFor(columnName: string, subject: CvLifecycleRow): unknown {
@@ -200,7 +259,7 @@ export function runCvLifecycleFeedTests() {
   });
 
   assert.ok(csv.startsWith("﻿"), "the BOM is what makes Excel open Arabic names as names rather than mojibake");
-  for (const marker of ["#SUMMARY", "#DAILY", "#LIFECYCLE"]) {
+  for (const marker of ["#SUMMARY", "#DAILY", "#DETAIL", "#LIFECYCLE"]) {
     assert.ok(csv.includes(`\r\n${marker}\r\n`) || csv.startsWith(`﻿${marker}\r\n`), `missing section ${marker}`);
   }
   assert.ok(csv.includes(CV_LIFECYCLE_DAILY_COLUMNS.join(",")), "the daily header must survive verbatim");
@@ -257,6 +316,86 @@ export function runCvLifecycleFeedTests() {
   assert.ok(
     reader.includes('.order("saved_in_phoenix_at"') && reader.includes('.order("file_id"'),
     "paging needs a TOTAL order — a nullable sort key alone drops rows between pages",
+  );
+
+  // ── CV Details: everything Phoenix already knows about the PERSON ──────────────────────────────────────────────
+  //
+  // This section exists because the sheet showed an Area column that was blank seven times in
+  // eight. It printed the area the candidate DECLARED — answered by 12% of them — while
+  // `governorate`, filled for 76%, sat one join away in `ats_candidates` and was simply never
+  // selected. Reporting "we do not know" when the answer is on the row is the defect being closed.
+
+  assert.ok(
+    csv.includes(CV_DETAIL_COLUMNS.join(",")),
+    "the detail header must survive verbatim — the sheet anchors its column groups by name",
+  );
+
+  const silent = row({
+    governorate: "Beni Suef",
+    preferredAreaName: null,
+    preferredRegionCode: null,
+    preferredRegionName: null,
+  });
+  assert.equal(
+    detailCellFor("Governorate", silent),
+    "Beni Suef",
+    "a candidate who never declared an area still HAS a governorate — an empty cell here is the whole bug",
+  );
+  assert.equal(
+    detailCellFor("Prefers area", silent),
+    "",
+    "the declared area keeps its own column and stays honestly blank rather than borrowing the governorate",
+  );
+
+  // One row per PERSON, not per file: 982 files belong to 741 people, so a per-file tab would
+  // print one applicant's education three times and make a duplicate look like three candidates.
+  const collapsed = oneRowPerCandidate([row({ fileId: "f1" }), row({ fileId: "f2" })]);
+  assert.equal(collapsed.length, 1, "two CVs from one candidate are one row");
+  assert.equal(collapsed[0]!.cvCount, 2, "and the row states how many CVs that candidate has sent");
+
+  // A file that never got attached to anybody must stay individually visible. Keying orphans on a
+  // null candidate id would collapse every one of them under a single blank key and hide all but
+  // the first — which is precisely the population most worth looking at.
+  const orphans = oneRowPerCandidate([
+    row({ candidateId: null, fileId: "f3" }),
+    row({ candidateId: null, fileId: "f4" }),
+  ]);
+  assert.equal(orphans.length, 2, "orphaned CVs are never collapsed into one another");
+
+  // Blank and "No" are different answers. Nobody asked is not the same as they said no, and
+  // printing "No" for an unasked question invents a fact about a real person.
+  assert.equal(detailCellFor("Medical rep before?", row({ hasMedicalRepExperience: null })), "");
+  assert.equal(detailCellFor("Medical rep before?", row({ hasMedicalRepExperience: false })), "No");
+  assert.equal(detailCellFor("Medical rep before?", row({ hasMedicalRepExperience: true })), "Yes");
+
+  // The WhatsApp screening answers. Every one of these was asked, answered and stored, and then
+  // shown on no screen anywhere.
+  assert.equal(detailCellFor("Salary they asked for", row({ declaredExpectedSalary: "9500" })), "9500");
+  assert.equal(detailCellFor("Expected salary (on file)", row({ expectedSalary: "11000" })), "11000");
+  assert.equal(detailCellFor("Can commute to Sheraton", row({ screeningCommute: "yes" })), "yes");
+  assert.equal(detailCellFor("English level", row({ screeningEnglishLevel: "very good" })), "very good");
+  assert.equal(detailCellFor("Can start", row({ screeningStartDate: "immediately" })), "immediately");
+
+  // A date of birth is a DATE, not an instant. Through the Cairo datetime formatter it printed
+  // "1997-04-11 02:00" — a time nobody was born at, invented by reading UTC midnight in Cairo.
+  assert.equal(detailCellFor("Date of birth", row({ dateOfBirth: "1997-04-11" })), "1997-04-11");
+  assert.equal(detailCellFor("Date of birth", row({ dateOfBirth: null })), "");
+
+  // ── The sheet's column groups are anchored by NAME, so a rename here silently mislabels them ──
+
+  const script = fs.readFileSync(path.join(repoRoot, "docs/cv-lifecycle-live-sheet.gs"), "utf8");
+  const anchors = [...script.matchAll(/from: '([^']+)'/g)].map((match) => match[1]!);
+  assert.ok(anchors.length >= 5, "the sheet must still group its 58 detail columns into named bands");
+  for (const anchor of anchors) {
+    assert.ok(
+      (CV_DETAIL_COLUMNS as readonly string[]).includes(anchor),
+      `the sheet paints a group band starting at "${anchor}" and the feed sends no such column — the band would label the wrong block`,
+    );
+  }
+  assert.ok(script.includes("var TAB_DETAIL = 'CV Details';"), "the sheet must still register the detail tab");
+  assert.ok(
+    script.includes("writeDetail_(ss, sections.DETAIL"),
+    "the refresh must actually write the detail tab — registering the name alone builds nothing",
   );
 
   // ── The unauthenticated route must never grow a file surface ─────────────────────────────────
