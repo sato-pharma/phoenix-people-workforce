@@ -88,7 +88,7 @@ var TZ = 'Africa/Cairo';
  * feed's COLUMNS. A sheet that silently keeps the previous design is indistinguishable from one
  * where the update failed.
  */
-var LAYOUT_VERSION = 'v5-navy-gold';
+var LAYOUT_VERSION = 'v6-phoenix';
 
 var TAB_SUMMARY = 'Summary';
 var TAB_DAILY = 'Daily Dashboard';
@@ -129,73 +129,83 @@ var LIFECYCLE_HEADER_ROW = 4;
 /** How many rows the fixed chart and format ranges cover. About three years of daily rows. */
 var FIXED_RANGE_ROWS = 1000;
 
-// ── Palette ──────────────────────────────────────────────────────────────────────
-// ── Typography ────────────────────────────────────────────────────────────────────────────────
+// ── Typography ──────────────────────────────────────────────────
 //
-// The single highest-leverage line in this file is the one that sets a font family. Without it
-// every tab renders in Sheets' default Arial 10, which is what made a sheet carrying real work
-// look like an export somebody forgot to format. Roboto and Roboto Mono are Google's own faces and
-// are always present, so neither can silently fall back to Arial the way a fashionable pick would.
+// Setting a font family at all is the single highest-leverage line in this file: without it every
+// tab renders in Sheets' default Arial 10, which is what makes a sheet carrying real work look
+// like an export somebody forgot to format.
 //
-// Mono is not decoration. Figures set in a proportional face do not line up in a column, so a
-// count of 1,100 and a count of 987 have to be read rather than seen. Tabular figures are the
-// difference between scanning a column and parsing it.
-var FONT = 'Roboto';
-var FONT_MONO = 'Roboto Mono';
+// Calibri, because the two live sheets beside this one are set in Calibri. A third face would make
+// this the odd sheet in a set of three, which is most of what "it looks awful" meant: the figures
+// were fine, the sheet just did not look like it came from the same company as the others.
+var FONT = 'Calibri';
 
-// ── Colour ────────────────────────────────────────────────────────────────────────────────────
+// Deliberately the same face. `mono:` on a column still means "this is a figure" and still
+// right-aligns it — the alignment and the number format are what make a column of figures line up.
+// A second family bought nothing here and cost the sheet its family resemblance.
+var FONT_MONO = 'Calibri';
+
+// ── The Phoenix palette ───────────────────────────────────────────────────────────────────────
 //
-// One neutral ramp plus four semantic pairs. The old palette had eleven one-off hex values with no
-// relationship to each other, which is why nothing on the page looked like it belonged with
-// anything else. Every colour below is either a step on the slate ramp or a semantic pair, and
-// nothing may be added without being one of those two things.
-var INK = '#0f172a';
+// Not chosen here. LIFTED VERBATIM from docs/marketing-request-live-sheet.gs, which is one of the
+// two sheets the owner already reads every morning, so that all three are visibly one system:
+// black masthead, orange wordmark, warm cream cards, a near-black table header.
+//
+// The version this replaces was navy and gold. It was a defensible palette and it was the wrong
+// one, because it was invented for this file alone while two finished sheets in the same repo had
+// already settled the question. AGENTS.md says to match the siblings before building new UI; this
+// is that rule applied after the fact, at the cost of three rounds of "nothing changed".
+var BLACK = '#000000';
+var ORANGE = '#F97316';
+var AMBER = '#FDE7C7';
+var WHITE = '#FFFFFF';
+
+var INK = '#0F172A';
 var INK_SOFT = '#334155';
-var BRAND = '#103c68';
-var BRAND_DEEP = '#0a2947';
-var HEADER_BG = '#103c68';
-var HEADER_FG = '#ffffff';
-var PAPER = '#ffffff';
-var MUTED = '#64748b';
-var FAINT = '#94a3b8';
-var RULE_SOFT = '#e2e8f0';
-var BAND_ALT = '#f8fafc';
+var MUTED = '#94A3B8';
+var FAINT = '#CBD5E1';
+var RULE_SOFT = '#E2E8F0';
+var RULE = '#E2E8F0';
+var PAPER = '#FFFFFF';
 
-// Deep navy carries a gold accent the way a company report does, and neither colour has to shout
-// to do it. This is the one saturated colour in the file and it appears in exactly two places —
-// the rule under the masthead and the edge under a table header — so it reads as a signature
-// rather than as decoration.
-var ACCENT = '#c9a227';
-var HERO_BG = '#0a2947';
-var HERO_SUB = '#9fb6cf';
-var RULE = '#e2e8f0';
-var TILE_BG = '#ffffff';
-var GOOD = '#067647';
-var GOOD_BG = '#ecfdf3';
-var BAD = '#b42318';
-var BAD_BG = '#fef3f2';
-var WARN_BG = '#fffaeb';
-var WARN_FG = '#b54708';
-var INFO = '#175cd3';
-var INFO_BG = '#eff8ff';
+// The house zebra: a warm tint a shade off white, not Google's grey theme. On a 58-column table a
+// heavy stripe fights the status colours for attention and wins, which is how a table ends up
+// looking busy and telling you nothing.
+var BAND_ALT = '#FFF8F1';
+var TILE_BG = '#FFF7ED';
 
-// Type scale. Named, because "11" appearing in four places is not a decision anybody can revisit.
-var TYPE_TITLE = 24;
+var HEADER_BG = '#0F172A';
+var HEADER_FG = '#FFFFFF';
+var HERO_BG = '#000000';
+var HERO_SUB = '#94A3B8';
+var ACCENT = '#F97316';
+var BRAND = '#F97316';
+var BRAND_DEEP = '#000000';
+var TOTAL_BG = '#1F2937';
+
+// Semantic pairs. These are the only colours on the page that mean something, which is why the
+// rest of the sheet is black, white and one orange: a green number has to be able to shout.
+var GOOD = '#15803D';
+var GOOD_BG = '#ECFDF3';
+var BAD = '#B42318';
+var BAD_BG = '#FEF3F2';
+var WARN_FG = '#B45309';
+var WARN_BG = '#FDE7C7';
+var INFO = '#1F2937';
+var INFO_BG = '#F1F5F9';
+
+var TYPE_TITLE = 16;
 var TYPE_SECTION = 12;
 var TYPE_BODY = 10;
-var TYPE_HEADER = 10;
+var TYPE_HEADER = 10.5;
 var TYPE_LABEL = 9;
-var TYPE_TILE = 30;
+var TYPE_TILE = 26;
 
-var ROW_H_TITLE = 44;
+var ROW_H_TITLE = 38;
 var ROW_H_SUBTITLE = 20;
-var ROW_H_RULE = 6;
+var ROW_H_RULE = 5;
 
-// The masthead stops here rather than running the width of the table. Bounded, because on the
-// 58-column tab a full-width band is a stripe about two metres long, and a heading that grows with
-// its table stops reading as a heading.
-var HERO_COLS = 10;
-var ROW_H_HEADER = 34;
+var ROW_H_HEADER = 36;
 var C_WHATSAPP = '#25d366';
 var C_EMAIL = '#4285f4';
 var C_HAND = '#9aa0a6';
@@ -327,24 +337,65 @@ function parseSections_(text) {
 
   for (var i = 0; i < rows.length; i++) {
     var row = rows[i];
-    var first = row && row.length ? String(row[0]) : '';
-    // A SECTION MARKER IS A ONE-CELL ROW OF #CAPITALS, AND BOTH HALVES ARE LOAD-BEARING.
+    var first = row && row.length ? String(row[0]).trim() : '';
+
+    // A SECTION MARKER IS #CAPITALS WITH NOTHING BESIDE IT — AND "NOTHING BESIDE IT" MAY NOT BE
+    // EXPRESSED AS row.length === 1.
     //
-    // The loose test this replaces was `first.charAt(0) === '#'`, which swallowed the CV Details
-    // header row whole: its first column is literally named "#", so the header was read as a
-    // section marker named '' — every detail row was then filed under that empty name, DETAIL came
-    // back empty, and writeDetail_ took its "an older Phoenix does not send this" branch and built
-    // nothing. No error anywhere; the tab simply never appeared while the other three refreshed
-    // normally, which reads exactly like "the new script did nothing".
+    // Two bugs have now lived on this one line, and the second was the fix for the first.
     //
-    // Requiring one cell alone would fix today's bug. Requiring the #CAPITALS shape as well is what
-    // stops the next one, because a future single-column section could carry any header at all.
-    if (row.length === 1 && /^#[A-Z][A-Z0-9_]*$/.test(first)) {
+    // The original test was `first.charAt(0) === '#'`, which swallowed the CV Details header whole:
+    // its first column is literally named "#", so the header was filed as a section named '' and
+    // DETAIL came back empty. The repair added `row.length === 1` — and that is what stopped the
+    // sheet dead. `Utilities.parseCsv` does not hand back the ragged array a hand-written parser
+    // does; a lone `#LIFECYCLE` line in a bundle whose widest section is 58 columns comes back
+    // padded with empty cells, so `row.length === 1` was false for EVERY marker, no section was
+    // ever opened, and `sections` came back `{}`. refreshCvLifecycle then hit its own guard —
+    // fewer than two lifecycle rows means never overwrite a full sheet — and returned before
+    // writing a single cell. Every execution logged "Completed". The sheet sat frozen at its last
+    // good pull for a day, with the stale banner painting onto a layout too old to have a line to
+    // paint it on. Silent, green, and completely stopped.
+    //
+    // So test the SHAPE, not the array's length: the first cell is #CAPITALS and every other cell
+    // is empty. That is true under a ragged parser and a padding one, which is the only version of
+    // this test that cannot be broken again by a parser's internals.
+    var marker = /^#[A-Z][A-Z0-9_]*$/.test(first);
+    for (var c = 1; marker && c < row.length; c++) {
+      if (String(row[c]).trim() !== '') marker = false;
+    }
+    if (marker) {
       current = first.slice(1);
       sections[current] = [];
       continue;
     }
     if (current) sections[current].push(row);
+  }
+
+  // A SECTION IS AS WIDE AS ITS OWN HEADER, NOT AS WIDE AS THE FILE.
+  //
+  // The same padding that hid the markers also inflates every section to the width of the widest
+  // one. Summary has 2 columns, Daily 7, Lifecycle 26, Details 58 — but Utilities.parseCsv hands
+  // all four back at 58, so without this pass Daily draws 7 real columns and 51 empty ones, banded
+  // and bordered like data, and Lifecycle draws 26 and 32. Nothing throws; the tabs just look like
+  // a spreadsheet somebody abandoned halfway.
+  //
+  // The header row is the authority for the width, because it is the one row every column of which
+  // is named by Phoenix. Trailing blanks past the last name are padding by definition, and every
+  // data row is then squared to that same width so setValues still gets a rectangle.
+  var names = Object.keys(sections);
+  for (var s = 0; s < names.length; s++) {
+    var block = sections[names[s]];
+    if (!block.length) continue;
+
+    var width = block[0].length;
+    while (width > 0 && String(block[0][width - 1]).trim() === '') width--;
+    if (width < 1 || width === block[0].length) continue;
+
+    for (var r = 0; r < block.length; r++) {
+      var trimmed = block[r].slice(0, width);
+      while (trimmed.length < width) trimmed.push('');
+      block[r] = trimmed;
+    }
   }
   return sections;
 }
@@ -487,35 +538,44 @@ function resetTab_(sheet, rows, cols) {
  */
 function titleBand_(sheet, cols, title) {
   sheet.setHiddenGridlines(true);
-  sheet.setTabColor(BRAND);
+  sheet.setTabColor(ORANGE);
 
-  // Bounded, not full width. The band is a masthead over the first ten columns; past that the page
-  // is paper. That is the difference between a heading and a stripe.
-  var hero = Math.min(cols, HERO_COLS);
-
-  // The leading space is the inset. Sheets has no cell padding, so type set flush left on a dark
-  // fill touches the edge of the colour, which is what made the old band look cheap.
-  sheet.getRange(ROW_TITLE, 1, 1, hero).merge()
-    .setValue(' ' + String(title).trim())
-    .setBackground(HERO_BG)
-    .setFontColor(HEADER_FG)
-    .setFontSize(TYPE_TITLE)
+  // PAINTED, NEVER MERGED - and that is a correctness rule, not a taste one.
+  //
+  // Merging row 1 across the band makes Google refuse setFrozenColumns: "you can't freeze columns
+  // which contain only part of a merged cell", because the boundary at column 2 bisects a range
+  // spanning ten. CV Details and CV Lifecycle both freeze two columns, so a merged masthead throws
+  // on both of them - after Summary and Daily have already been written. Two tabs update, two do
+  // not, which is indistinguishable from a script that half ran.
+  //
+  // Painting the row's BACKGROUND and leaving the text in an unmerged A1 looks identical: the band
+  // cells beside it are empty, so the title overflows across them the way any long cell does. This
+  // is how the Marketing Requests sheet solves it. The Direct Orders sheet is the one that solved
+  // it by dropping the frozen column instead, which costs the reader their anchor the moment they
+  // scroll right.
+  sheet.getRange(ROW_TITLE, 1, 1, cols).setBackground(BLACK);
+  sheet.getRange(ROW_TITLE, 1)
+    .setValue('Phoenix Workforce — ' + String(title).trim())
+    .setFontFamily(FONT)
+    .setFontColor(ORANGE)
     .setFontWeight('bold')
-    .setVerticalAlignment('middle')
-    .setHorizontalAlignment('left');
+    .setFontSize(TYPE_TITLE)
+    .setVerticalAlignment('middle');
   sheet.setRowHeight(ROW_TITLE, ROW_H_TITLE);
 
-  // Not italic. Italic in a UI face reads as an apology; this line is a fact about the data.
-  sheet.getRange(ROW_SUBTITLE, 1, 1, hero).merge()
-    .setBackground(HERO_BG)
+  sheet.getRange(ROW_SUBTITLE, 1, 1, cols).setBackground(BLACK);
+  sheet.getRange(ROW_SUBTITLE, 1)
+    .setFontFamily(FONT)
     .setFontColor(HERO_SUB)
-    .setFontSize(TYPE_LABEL)
+    .setFontStyle('italic')
+    .setFontSize(TYPE_LABEL + 1)
     .setVerticalAlignment('middle');
   sheet.setRowHeight(ROW_SUBTITLE, ROW_H_SUBTITLE);
 
-  // Gold under navy. Six pixels is enough to finish the block and is the only saturated colour on
-  // the page, which is why it can be this bright without competing with the data.
-  sheet.getRange(3, 1, 1, hero).setBackground(ACCENT);
+  // Five pixels of orange closes the block. It is the only saturated colour on the page apart from
+  // the wordmark above it, which is exactly why it can be this bright without competing with data.
+  // On CV Details this row is overwritten by the group bands, which do the same job with labels.
+  sheet.getRange(3, 1, 1, cols).setBackground(ORANGE);
   sheet.setRowHeight(3, ROW_H_RULE);
 }
 
@@ -535,18 +595,17 @@ function writeSubtitle_(sheet, name, stamp) {
 }
 
 function sectionTitle_(sheet, row, cols, text) {
-  sheet.getRange(row, 1, 1, cols).merge()
-    .setValue(text)
+  // Orange on near-black, the same band the other two sheets use to open a section. Unmerged for
+  // the same reason the masthead is: a merge here is one more thing that can refuse a freeze.
+  sheet.getRange(row, 1, 1, cols).setBackground(INK);
+  sheet.getRange(row, 1)
+    .setValue(' ' + text)
+    .setFontFamily(FONT)
     .setFontSize(TYPE_SECTION)
     .setFontWeight('bold')
-    .setFontColor(INK)
-    .setVerticalAlignment('bottom');
-  sheet.setRowHeight(row, 30);
-
-  // A hairline under a section heading separates it from its own table without drawing a box round
-  // anything. Boxes are what a sheet does when it has not decided what matters.
-  sheet.getRange(row, 1, 1, cols)
-    .setBorder(null, null, true, null, null, null, RULE_SOFT, SpreadsheetApp.BorderStyle.SOLID);
+    .setFontColor(ORANGE)
+    .setVerticalAlignment('middle');
+  sheet.setRowHeight(row, 28);
 }
 
 function styleHeader_(sheet, headerRow, width) {
@@ -561,7 +620,7 @@ function styleHeader_(sheet, headerRow, width) {
     .setWrap(true);
   // A darker edge under the header seats the block on the page instead of letting the fill float.
   // The same gold as the masthead rule, so the two blocks on the page are visibly one system.
-  range.setBorder(null, null, true, null, null, null, ACCENT, SpreadsheetApp.BorderStyle.SOLID_THICK);
+  range.setBorder(null, null, true, null, null, null, ORANGE, SpreadsheetApp.BorderStyle.SOLID_THICK);
   sheet.setRowHeight(headerRow, ROW_H_HEADER);
 }
 
@@ -627,39 +686,40 @@ function applyToNamed_(sheet, headerRow, header, names, apply) {
  * the page through whitespace. Colour is reserved for the one thing on the card that is a
  * judgement — the number itself, which fillTile_ tints when it means something.
  */
-function buildTile_(sheet, row, col, label, accent) {
-  var bar = accent || BRAND;
-
+function buildTile_(sheet, row, col, label) {
   sheet.getRange(row, col, 3, 3)
     .setBackground(TILE_BG)
     .setBorder(true, true, true, true, false, false, RULE_SOFT, SpreadsheetApp.BorderStyle.SOLID);
 
-  // The label sits ON the accent rather than beside it. A white card with a grey label is what
-  // "boring" meant, and it was the right note for a report and the wrong one for a dashboard: six
-  // identical white boxes give the eye nothing to land on, so nothing on the tab looks important.
-  // Colour on the label band names each figure and gives the six cards six identities.
+  // One label treatment for all six, not six colours.
+  //
+  // The version before this gave each card its own colour so a bad number would be visible from
+  // across the room. It made the row read as six unrelated things - and the judgement is the
+  // NUMBER, not the label, so fillTile_ is where a colour belongs. Six identical black-and-orange
+  // labels under one masthead is a set of cards; six coloured ones is a chart of nothing.
   sheet.getRange(row, col, 1, 3).merge()
     .setValue(' ' + label)
-    .setBackground(bar)
+    .setBackground(BLACK)
+    .setFontFamily(FONT)
     .setFontSize(TYPE_LABEL)
-    .setFontColor(HEADER_FG)
+    .setFontColor(ORANGE)
     .setFontWeight('bold')
     .setHorizontalAlignment('left')
     .setVerticalAlignment('middle');
 
   sheet.getRange(row + 1, col, 2, 3).merge()
-    .setFontFamily(FONT_MONO)
+    .setFontFamily(FONT)
     .setFontSize(TYPE_TILE)
     .setFontWeight('bold')
+    .setFontColor(INK)
     .setHorizontalAlignment('center')
     .setVerticalAlignment('middle');
 
-  sheet.setRowHeight(row, 26);
+  sheet.setRowHeight(row, 24);
   sheet.setRowHeight(row + 1, 34);
   sheet.setRowHeight(row + 2, 16);
 }
 
-/** Values only — the tile's box, fonts and merges were built once. */
 function fillTile_(sheet, row, col, value, colour) {
   sheet.getRange(row + 1, col).setValue(value).setFontColor(colour || INK);
 }
@@ -743,6 +803,11 @@ function markFeedFresh(ss, stamp) {
     var props = PropertiesService.getScriptProperties();
     var previous = String(props.getProperty(FEED_STATE_KEY) || '');
     props.setProperty(LAST_GOOD_KEY, stamp);
+
+    // Stamped unconditionally, so the key always answers "what happened on the last run". It used
+    // to be written only on the way out of a banner, which left it unset on a sheet that had never
+    // failed — and an unset key reads exactly like a script that never got as far as this line.
+    props.setProperty(FEED_STATE_KEY, 'ok');
     if (previous.indexOf('stale:') !== 0) return;
 
     var targets = stampedSubtitles(ss);
@@ -751,10 +816,13 @@ function markFeedFresh(ss, stamp) {
       if (targets[i].before.indexOf(STALE_MARKER) === 0) {
         cell.setValue(targets[i].sheet.getName() + ' — refreshed ' + stamp + ' (Cairo)');
       }
-      targets[i].sheet.getRange(ROW_SUBTITLE, 1, 1, targets[i].cols).setBackground(PAPER);
-      cell.setFontColor(MUTED).setFontStyle('italic').setFontWeight('normal');
+      // BLACK, not PAPER. Row 2 is the lower half of the masthead, so restoring it to white paints
+      // a white stripe through the middle of the black band — on the one run that is supposed to
+      // signal everything is fine again. The colour to restore is whatever titleBand_ painted, and
+      // the only way that stays true is to name the same constant it does.
+      targets[i].sheet.getRange(ROW_SUBTITLE, 1, 1, targets[i].cols).setBackground(BLACK);
+      cell.setFontColor(HERO_SUB).setFontStyle('italic').setFontWeight('normal');
     }
-    props.setProperty(FEED_STATE_KEY, 'ok');
   } catch (err) {
     console.error('Could not clear the stale banner: ' + err);
   }
@@ -908,14 +976,12 @@ function buildSummaryLayout_(sheet, dailyRows) {
   // A thin gap under each row of tiles, so they read as cards rather than as a grid.
   for (var t = 0; t < TILE_ROWS.length; t++) sheet.setRowHeight(TILE_ROWS[t] + 3, 12);
 
-  // Colour by what the figure MEANS, never by position: the two that can go wrong wear the warning
-  // colours, so a bad number is visible from across the room before it is read.
-  buildTile_(sheet, TILE_ROWS[0], 1, 'CVs IN TOTAL', HERO_BG);
-  buildTile_(sheet, TILE_ROWS[0], 4, 'RECEIVED TODAY', BRAND);
-  buildTile_(sheet, TILE_ROWS[1], 1, 'SAVED IN GOOGLE DRIVE', GOOD);
-  buildTile_(sheet, TILE_ROWS[1], 4, 'STILL MISSING FROM DRIVE', BAD);
-  buildTile_(sheet, TILE_ROWS[2], 1, 'DRIVE ERRORS', BAD);
-  buildTile_(sheet, TILE_ROWS[2], 4, 'TYPICAL TIME PHOENIX TO DRIVE', INFO);
+  buildTile_(sheet, TILE_ROWS[0], 1, 'CVs IN TOTAL');
+  buildTile_(sheet, TILE_ROWS[0], 4, 'RECEIVED TODAY');
+  buildTile_(sheet, TILE_ROWS[1], 1, 'SAVED IN GOOGLE DRIVE');
+  buildTile_(sheet, TILE_ROWS[1], 4, 'STILL MISSING FROM DRIVE');
+  buildTile_(sheet, TILE_ROWS[2], 1, 'DRIVE ERRORS');
+  buildTile_(sheet, TILE_ROWS[2], 4, 'TYPICAL TIME PHOENIX TO DRIVE');
 
   // ── The daily shape, as one sparkline ──
   sectionTitle_(sheet, SUMMARY_SPARK_TITLE_ROW, SUMMARY_COLS, 'How many arrive each day');
@@ -999,12 +1065,12 @@ function buildSummaryLayout_(sheet, dailyRows) {
  * wrong block, which is worse than no band at all.
  */
 var DETAIL_GROUPS = [
-  { bg: '#eef2f7', from: '#',                    label: 'Who they are' },
-  { bg: '#edf4ef', from: 'Faculty',              label: 'What they studied' },
-  { bg: '#f6f1e9', from: 'Applied for',          label: 'What they have done' },
-  { bg: '#f1eef7', from: 'Their own background', label: 'What they told us themselves' },
-  { bg: '#eaf0f6', from: 'Prefers region',       label: 'Where it went' },
-  { bg: '#f1f2f4', from: 'How they reached us',  label: 'The record' }
+  { bg: '#FFEDD5', from: '#',                    label: 'Who they are' },
+  { bg: '#FEF3C7', from: 'Faculty',              label: 'What they studied' },
+  { bg: '#FFF7ED', from: 'Applied for',          label: 'What they have done' },
+  { bg: '#FDE7C7', from: 'Their own background', label: 'What they told us themselves' },
+  { bg: '#F5F0E8', from: 'Prefers region',       label: 'Where it went' },
+  { bg: '#EDEDEA', from: 'How they reached us',  label: 'The record' }
 ];
 
 /** Long free text. Wide, and NOT wrapped — a wrapped CV summary makes a 200px tall row. */
@@ -1133,14 +1199,17 @@ function paintDetailGroups_(sheet, header) {
     var from = starts[j].col;
     var to = (j + 1 < starts.length) ? starts[j + 1].col - 1 : header.length;
     if (to < from) continue;
-    sheet.getRange(3, from, 1, to - from + 1).merge()
-      .setValue(starts[j].group.label)
+    // Painted, not merged: this tab freezes two columns and the first band starts at column 1, so
+    // a merge here bisects the freeze boundary and setFrozenColumns throws - taking the whole tab
+    // with it, after the two narrow tabs have already been written.
+    sheet.getRange(3, from, 1, to - from + 1)
       .setBackground(starts[j].group.bg)
+      .setFontFamily(FONT)
       .setFontColor(INK)
       .setFontWeight('bold')
       .setFontSize(10)
-      .setHorizontalAlignment('center')
       .setVerticalAlignment('middle');
+    sheet.getRange(3, from).setValue(' ' + starts[j].group.label);
   }
 }
 
