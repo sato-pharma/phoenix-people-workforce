@@ -17,35 +17,59 @@ import { employeePortalNavigationSections } from "../src/config/system-navigatio
  * manager check would give RM-1 the two DMs and NONE of the reps beneath them — the exact silent
  * under-scope that made an S1 region roll up to "0.0%" and EGP 0 in PR #1486.
  */
-function tree(): DoctorCoverageScopeEmployee[] {
-  const row = (
-    hrId: string,
-    managerHrId: string | null,
-    lineName: string | null,
-    lineId: number | null,
-    employmentStatus = "active",
-  ): DoctorCoverageScopeEmployee => ({
+function row(
+  hrId: string,
+  managerHrId: string | null,
+  lineName: string | null,
+  lineId: number | null,
+  jobTitle: string,
+  employmentStatus = "active",
+): DoctorCoverageScopeEmployee {
+  return {
     employmentStatus,
     hrId,
+    jobTitle,
     lineId,
     lineName,
     managerHrId,
     pendingManagerReplacementForHrId: null,
-  });
+  };
+}
+
+function tree(): DoctorCoverageScopeEmployee[] {
   return [
-    row("NSM-1", null, "Pedia", 1),
-    row("RM-1", "NSM-1", "Pedia", 1),
-    row("DM-1", "RM-1", "Pedia", 1),
-    row("REP-1", "DM-1", "Pedia", 1),
-    row("REP-2", "DM-1", "Pedia", 1),
-    row("DM-2", "RM-1", "Pedia", 1),
-    row("REP-3", "DM-2", "Pedia", 1),
+    row("NSM-1", null, "Pedia", 1, "National Sales Manager"),
+    row("RM-1", "NSM-1", "Pedia", 1, "Regional Manager"),
+    row("DM-1", "RM-1", "Pedia", 1, "District Manager"),
+    row("REP-1", "DM-1", "Pedia", 1, "Medical Representative"),
+    row("REP-2", "DM-1", "Pedia", 1, "Medical Representative"),
+    row("DM-2", "RM-1", "Pedia", 1, "District Manager"),
+    row("REP-3", "DM-2", "Pedia", 1, "Medical Representative"),
     // A different region on the same line, and a different line entirely.
-    row("RM-9", "NSM-1", "Pedia", 1),
-    row("DM-9", "RM-9", "Pedia", 1),
-    row("REP-9", "DM-9", "Pedia", 1),
-    row("CNS-REP", "NSM-2", "CNS", 2),
-    row("NSM-2", null, "CNS", 2),
+    row("RM-9", "NSM-1", "Pedia", 1, "Regional Manager"),
+    row("DM-9", "RM-9", "Pedia", 1, "District Manager"),
+    row("REP-9", "DM-9", "Pedia", 1, "Medical Representative"),
+    row("CNS-REP", "NSM-2", "CNS", 2, "Medical Representative"),
+    row("NSM-2", null, "CNS", 2, "National Sales Manager"),
+  ];
+}
+
+/**
+ * The production shape the owner's upward rule was given for, 2026-09-04: Product Manager B-155
+ * reports to A-8, a Group Product Manager who carries the SAME line id he does — so plain line
+ * MEMBERSHIP puts his own manager inside his scope. A-9 above her is the second level, and PM-PEER
+ * is a same-level staff seat that must SURVIVE, because the rule is about who is above you, not
+ * about everyone senior-sounding.
+ */
+function staffTree(): DoctorCoverageScopeEmployee[] {
+  return [
+    row("A-9", null, "Pedia", 2, "Marketing Manager"),
+    row("A-8", "A-9", "Pedia", 2, "Group Product Manager"),
+    row("B-155", "A-8", "Pedia", 2, "Product Manager"),
+    row("PM-PEER", "A-8", "Pedia", 2, "Product Manager"),
+    row("NSM-P", null, "Pedia", 2, "National Sales Manager"),
+    row("DSM-P", "NSM-P", "Pedia", 2, "District Sales Manager"),
+    row("REP-P", "DSM-P", "Pedia", 2, "Medical Representative"),
   ];
 }
 
@@ -122,6 +146,67 @@ export function runDoctorCoverageScopeTests() {
     nsmAgents,
     "PM and GPM resolve to the same line scope as the NSM, matching the S1 access map",
   );
+
+  // ── THE UPWARD RULE ───────────────────────────────────────────────────────────────────────────
+  // Owner, 2026-09-04: "Never an employee sees his direct manager. You see yourself and your scope
+  // down — downgrading, not upgrading." Measured in production that day: B-155's line scope held 57
+  // people including A-8, his own manager, who has 57 CRM visits of her own. Nothing rendered her,
+  // but only because Reps Plans carries a medical-reps-only filter and the KPIs board had no plan
+  // row to build for her — two accidents, not a rule.
+  const pmScope = agentsFor("Product Manager", "B-155", staffTree());
+  assert.ok(
+    !pmScope.includes("A-8"),
+    "a viewer NEVER sees his own direct manager, even when she carries the same line id he does",
+  );
+  assert.ok(
+    !pmScope.includes("A-9"),
+    "the rule climbs the WHOLE chain — the manager's manager is above him too, not just the first rung",
+  );
+  assert.ok(
+    !pmScope.includes("NSM-P"),
+    "a National Sales Manager seat is excluded from a line scope (owner's answer, 2026-09-04)",
+  );
+  assert.ok(
+    pmScope.includes("B-155"),
+    "you always see YOURSELF — the rule removes what is above you, never you",
+  );
+  assert.deepEqual(
+    pmScope,
+    ["B-155", "DSM-P", "PM-PEER", "REP-P"],
+    "what survives is the viewer, the field force beneath the line, and a same-level peer",
+  );
+
+  // The viewer-is-never-excluded guard is load-bearing, not tidy: National Sales Manager is itself
+  // a LINE role, so without it the title rule would delete an NSM from his own board and hand him
+  // finalizeAgents' empty state — which reads as "nobody on your line" rather than as a bug.
+  const nsmOwnBoard = agentsFor("National Sales Manager", "NSM-P", staffTree());
+  assert.ok(
+    nsmOwnBoard.includes("NSM-P"),
+    "an NSM still appears on his OWN board — the title exclusion must never fire on the viewer",
+  );
+  assert.ok(
+    nsmOwnBoard.includes("REP-P") && nsmOwnBoard.includes("DSM-P"),
+    "and he keeps his whole line beneath him",
+  );
+
+  // A pending seat replacement counts as an ancestor too — the conservative direction, because
+  // being wrong here hides one row rather than exposing a manager to his own report.
+  const withPendingManager = staffTree().map((employee) =>
+    employee.hrId === "B-155" ? { ...employee, managerHrId: null, pendingManagerReplacementForHrId: "A-8" } : employee,
+  );
+  assert.ok(
+    !agentsFor("Product Manager", "B-155", withPendingManager).includes("A-8"),
+    "a manager attached only as a PENDING replacement is still above the viewer",
+  );
+
+  // A cycle in the directory must not hang the climb. This has a real precedent: the downward walk
+  // already carries a `visited` guard for exactly this shape.
+  const cyclic = staffTree().map((employee) =>
+    employee.hrId === "A-9" ? { ...employee, managerHrId: "B-155" } : employee,
+  );
+  const cyclicScope = agentsFor("Product Manager", "B-155", cyclic);
+  assert.ok(cyclicScope.includes("B-155"), "a manager cycle resolves instead of hanging the render");
+  assert.ok(!cyclicScope.includes("A-8"), "and the rule still holds through the cycle");
 
   // ── self scope ────────────────────────────────────────────────────────────────────────────────
   assert.deepEqual(agentsFor("Medical Rep", "REP-1"), ["REP-1"], "a Medical Rep sees only their own panel");
