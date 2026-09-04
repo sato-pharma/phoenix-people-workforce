@@ -80,7 +80,6 @@ import {
 } from "@/lib/auth/permissions";
 import { resolveViewerAllowedLines } from "@/lib/auth/scope-visibility";
 import { ACTIVE_EMPLOYMENT_STATUSES_IN_LIST } from "@/lib/auth/session-lifecycle";
-import { HR_SEAT_ROLES } from "@/lib/conversations/notify";
 import { pickDeliverableEmail } from "@/lib/email/email-safety";
 import { getEmployeeDirectory, type EmployeeDirectoryData, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { resolveJobFunctionRole } from "@/lib/employees/job-function";
@@ -1382,32 +1381,33 @@ async function planReviewActionUrl(hrId: string | null | undefined, planId: stri
 }
 
 /**
- * Who hears about a plan on HR's behalf - resolved by APP ROLE, never by job title.
+ * Who hears about a plan on HR's behalf - the HR MANAGER / SECTION HEAD, resolved by APP ROLE.
  *
- * Until 2026-09-03 this matched `job_title ilike '%HR Manager%'` / `'%Admin HR%'` against
- * `employees`, and selected a `position_title` column beside them. BOTH halves were dead, and
- * neither said so. `position_title` does not exist on `public.employees`, so PostgREST rejected the
- * whole request and `const { data } = await ...` discarded the error unread; and even had the
- * column existed, ZERO of the 186 production employees match either title pattern. Both measured
- * against production on 2026-09-03. So the HR leg returned nothing on every call this function has
- * ever made, and every plan notification reached the Super Admins alone - silently, because an
- * empty HR list looks exactly like an HR team with nothing to say.
+ * This is NOT the HR department. Plan acknowledgement is one person's responsibility - the HR
+ * Manager (B-10, held as Super Admin, whose employee job title is "HR Section Head") - and it is
+ * now automated. HR Advisory ("HR Business Partner") and HR Operations ("HR Specialist") are not
+ * acknowledgers: owner 2026-09-04, "the HR manager is the only one responsible for acknowledgement
+ * ... don't mix between roles ... only HR manager or section head". So a Business Partner was being
+ * mailed a plan she has no role in.
  *
- * The owner's standing rule is that an HR seat is composed from a function catalogue and is never
- * named after a job title. `HR_SEAT_ROLES` is that pair, imported rather than re-listed so this
- * path and the conversation notifier cannot drift into two different answers about who HR is.
+ * This path therefore resolves to Super Admin ONLY, and deliberately DIVERGES from the
+ * deductions-comment audience in conversations/notify.ts, which mails both HR seats (HR_SEAT_ROLES)
+ * because the owner asked for that separately. The two were briefly unified on 2026-09-03 - a
+ * change that fixed a genuinely dead HR leg (it matched `job_title ilike '%HR Manager%'` and
+ * selected a `position_title` column that does not exist on `employees`, so PostgREST rejected the
+ * request and `const { data } = await ...` discarded the error unread; even repaired it matched 0
+ * of 186 employees, so every plan mail had in fact been reaching the Super Admins alone). Resolving
+ * by ROLE rather than job title was the right half of that fix and stays; widening to the whole
+ * department was the wrong half and is reverted here.
  *
- * Super Admin stays, deliberately. It was never a fallback here - the old query fetched Super
- * Admins unconditionally - so dropping it while fixing HR's absence would quietly stop a mail the
- * owner receives today. The separate empty-list fallback in notifyHrOnSubmit is kept as a net for a
- * failed query, not because this is expected to return nothing.
+ * `is_active`/dropLeavers still apply, and notifyHrOnSubmit keeps its Super Admin fallback.
  */
 async function hrAcknowledgementRecipients() {
   const supabase = getSupabaseAdmin();
   const { data: authRows, error } = await supabase
     .from("app_auth_users")
     .select("login_id,hr_id,name,auth_email,role,is_active")
-    .in("role", ["Super Admin", ...HR_SEAT_ROLES]);
+    .in("role", ["Super Admin"]);
   if (error) {
     // Logged, never discarded: reading `data` and ignoring `error` is precisely how the old title
     // lookup failed for months without producing a single symptom.

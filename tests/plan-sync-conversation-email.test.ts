@@ -253,16 +253,17 @@ export function runPlanSyncConversationEmailTests() {
     /resolveHrAudience[\s\S]*?\.eq\("role", "Super Admin"\)/.test(conversationNotify),
     "an empty HR audience must fall back to Super Admin rather than drop the comment",
   );
-  // WEEKLY PLANNING RESOLVES HR THE SAME WAY. Fixed 2026-09-03: hrAcknowledgementRecipients read
-  // `employees` by job title and selected a `position_title` column that does not exist on that
-  // table, so PostgREST rejected the request outright - and the result was destructured as
-  // `const { data } = await ...`, discarding the error. Two independent faults, one symptom, none
-  // of it visible: HR simply never appeared in a recipient list, which looks the same as an HR
-  // team with nothing to say. Measured on production the same day: `position_title` absent, and 0
-  // of 186 employees matching either title pattern.
+  // WEEKLY PLANNING DIVERGES ON PURPOSE - it is the HR MANAGER / SECTION HEAD, not the department.
+  // The 2026-09-03 fix did two things: it moved this lookup off a dead job_title match onto the role
+  // column (right), and it resolved that role to ["Super Admin", ...HR_SEAT_ROLES] - the whole HR
+  // department (wrong). The owner corrected the second half on 2026-09-04: plan acknowledgement is
+  // the HR Manager's sole responsibility and is now automated, so "don't mix between roles ... only
+  // HR manager or section head". The HR Manager is B-10, held as Super Admin (employee job title
+  // "HR Section Head"); a Business Partner ("HR Advisory") was being mailed a plan she has no role
+  // in. So the plan audience is Super Admin ONLY - still resolved by ROLE, never a job title.
   assert.ok(
-    /\.from\("app_auth_users"\)[\s\S]{0,220}\.in\("role", \[[^\]]*\.\.\.HR_SEAT_ROLES\]\)/.test(service),
-    "the plan's HR audience must be read from the role column, never a job title",
+    /\.from\("app_auth_users"\)[\s\S]{0,220}\.in\("role", \["Super Admin"\]\)/.test(service),
+    "the plan's HR audience is the HR Manager / Section Head (Super Admin), resolved by role",
   );
   // The QUERY form, not the word - the doc comment above the function deliberately names the
   // filter it is warning against, and a pin that cannot tell a comment from a query would forbid
@@ -292,12 +293,13 @@ export function runPlanSyncConversationEmailTests() {
     "the role-resolved recipient list must be filtered for leavers, not just mention the constant",
   );
 
-  // Super Admin was never the fallback here - it was an unconditional recipient - so fixing HR's
-  // absence must not quietly stop a mail the owner receives today. Pinned separately from the
-  // HR_SEAT_ROLES check above so that dropping either side breaks its own assertion.
+  // The divergence from the deductions audience is the whole point, so it is pinned as its own
+  // assertion: re-widening the plan lookup back to ["Super Admin", ...HR_SEAT_ROLES] - the exact
+  // 2026-09-03 shape the owner rejected - must break a test rather than quietly re-mail every HR
+  // seat. The deductions-comment audience above keeps HR_SEAT_ROLES; this one must not borrow it.
   assert.ok(
-    /\.in\("role", \["Super Admin",/.test(service),
-    "Super Admin must stay on the plan's HR recipient list",
+    !/\.in\("role", \["Super Admin",\s*\.\.\.HR_SEAT_ROLES\]\)/.test(service),
+    "the plan acknowledgement audience must NOT be the HR department - Super Admin only (owner 2026-09-04)",
   );
 
   // The employee is named, not numbered - the owner's standing rule, in chat and UI alike.
