@@ -289,6 +289,60 @@ the full account, under
   2026-08-28 and answered *"NO LEAVE ME AS I AM NOW."*
   `turbify-cannot-issue-app-passwords-centrally-owner-stays`
 
+- 🔒 **Scope runs downward only — an employee never sees his own manager, nor anyone at or above his
+  own rank.** Owner 2026-09-04, dictated: *"Rasha is the product... is the direct manager for Ahmed.
+  Never an employee sees his direct manager. You see yourself and your scope down — downgrading, not
+  upgrading."* Asked how far the cut should reach, he answered: *"remove dsms rsm and peer pms too."*
+
+  **What was wrong.** `resolveDoctorCoverageScope`'s `line` basis is line MEMBERSHIP — everyone
+  carrying that line id — which is neither up nor down. Measured in production 2026-09-04, Product
+  Manager **B-155**'s scope held **57** people: 41 medical reps, 10 District Sales Managers, 2
+  National Sales Managers, a peer Product Manager, a Regional Sales Manager, and **A-8, his own
+  direct manager**, who has **57 real CRM visits** of her own.
+
+  **The dangerous part is that it looked fine.** Signed in as B-155, neither board showed her — Reps
+  Plans carries a medical-reps-only filter that runs BEFORE scope, and the KPIs board (which has no
+  such filter) simply had no plan row to build for her. Two accidents, not a rule: the moment she
+  files a plan, or a new board lists agents without that filter, a manager appears inside her own
+  subordinate's view. **Never read "she isn't on the board" as "the rule is enforced".**
+
+  **The fix, in two independent cuts, both in the resolver** — which IS the security boundary:
+  1. the viewer's whole **management chain**, walked up `managerHrId` and counting
+     `pendingManagerReplacementForHrId` as an ancestor. Identity-based and **title-blind**, so it
+     still catches a manager whose title is misspelt or off the ladder.
+  2. a **seat-rank ladder**, keeping only seats ranked strictly BELOW the viewer's own.
+
+  **Why a ladder and not a list of banned titles.** The `line` basis serves all three of
+  `LINE_ROLES`, and a District Sales Manager is upward from a Product Manager but **downward from a
+  National Sales Manager**. A flat DSM/RSM/peer-PM blocklist would have deleted an NSM's own reports
+  and handed him *"No active employees are recorded on your product line"* — `finalizeAgents`' empty
+  state, indistinguishable from a data fault. Same failure shape as
+  [[the-ceo-is-not-a-district-and-a-picker-is-not-wider-than-its-viewer]]. For the same reason **the
+  viewer is never excluded from his own scope**: an NSM is not strictly below himself.
+
+  Ranks (order only): Medical Representative 1 · District Sales Manager and Product Manager 2 ·
+  Regional Sales Manager and Group Product Manager 3 · National Sales Manager 4. Both vocabularies
+  are listed, because the app ROLE ("Medical Rep", "District Manager") and the employee JOB TITLE
+  ("Medical Representative", "District Sales Manager") differ. The viewer is ranked by his **role**
+  (the live `AccessContext`, never client input); everyone else by their job title.
+
+  **An unranked title is EXCLUDED from a line scope**, deliberately: 12 head-office seats carry a
+  `line_id` in production — the CEO, HR, Finance, QPPV, R&D, even "Buffet" — so "unknown means field
+  force, keep them" would put the CEO inside a Product Manager's scope. It costs nothing: lines 1–3
+  are the field lines and every title on them is ranked, while line 4, which holds those office
+  seats, has no line-scoped viewer on it at all.
+
+  **The ladder runs on the `line` basis ONLY.** A team scope is already provably downward, being
+  walked out of the org tree, and ranking it would drop a report whose title sits off the ladder (an
+  Admin Assistant under a DM) out of his own manager's board. The chain cut runs on both.
+
+  Measured effect on the live directory: B-155 **57 → 42** (himself + the 41 medical reps), A-10
+  **33 → 25**, GPM A-8 **24 → 22** (loses the NSM and the RSM, keeps her PMs and the field force),
+  and all three National Sales Managers **unchanged** at 33 / 34 / 24. Pinned by
+  `runDoctorCoverageScopeTests` in the required CI `validate` job, including a runtime assertion
+  that every `LINE_ROLES` entry is ranked — an unranked one does not error, it silently restores the
+  wide pre-2026-09-04 board. `scope-runs-downward-only-never-your-own-manager`
+
 
 ## Relocated from AGENTS.md — 2026-09-01
 

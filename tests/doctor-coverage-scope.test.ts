@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 
 import {
   DOCTOR_COVERAGE_PORTAL_ROLES,
+  LINE_ROLES,
   canSeeDoctorCoverage,
   doctorCoverageScopeBasisForRole,
 } from "../src/lib/crm/doctor-coverage-roles.ts";
@@ -55,11 +56,14 @@ function tree(): DoctorCoverageScopeEmployee[] {
 }
 
 /**
- * The production shape the owner's upward rule was given for, 2026-09-04: Product Manager B-155
+ * The production shape the owner's downward rule was given for, 2026-09-04: Product Manager B-155
  * reports to A-8, a Group Product Manager who carries the SAME line id he does — so plain line
- * MEMBERSHIP puts his own manager inside his scope. A-9 above her is the second level, and PM-PEER
- * is a same-level staff seat that must SURVIVE, because the rule is about who is above you, not
- * about everyone senior-sounding.
+ * MEMBERSHIP puts his own manager inside his scope, and A-9 above her is the second rung.
+ *
+ * Every rank on the ladder is represented once, because the cut is RELATIVE: the same fixture has
+ * to produce three different answers for a PM, a GPM and an NSM viewer. OFFICE-P is the seat the
+ * ladder does not know — in production 12 head-office seats carry a line_id, so an unranked title
+ * is not a hypothetical.
  */
 function staffTree(): DoctorCoverageScopeEmployee[] {
   return [
@@ -68,8 +72,10 @@ function staffTree(): DoctorCoverageScopeEmployee[] {
     row("B-155", "A-8", "Pedia", 2, "Product Manager"),
     row("PM-PEER", "A-8", "Pedia", 2, "Product Manager"),
     row("NSM-P", null, "Pedia", 2, "National Sales Manager"),
-    row("DSM-P", "NSM-P", "Pedia", 2, "District Sales Manager"),
+    row("RSM-P", "NSM-P", "Pedia", 2, "Regional Sales Manager"),
+    row("DSM-P", "RSM-P", "Pedia", 2, "District Sales Manager"),
     row("REP-P", "DSM-P", "Pedia", 2, "Medical Representative"),
+    row("OFFICE-P", "A-9", "Pedia", 2, "HR Business Partner"),
   ];
 }
 
@@ -141,18 +147,27 @@ export function runDoctorCoverageScopeTests() {
     !nsmAgents.includes("CNS-REP"),
     "an NSM never sees another LINE's reps — the company-wide leak this module was built to close",
   );
-  assert.deepEqual(
-    agentsFor("Product Manager", "NSM-1"),
-    nsmAgents,
-    "PM and GPM resolve to the same line scope as the NSM, matching the S1 access map",
+  // PM, GPM and NSM all resolve to the same LINE. What differs is how far DOWN that line each may
+  // look, which is the seat ladder — tested in full under THE DOWNWARD RULE below. Note the viewer
+  // is ranked by his ROLE, not his job title: NSM-1 carries the title "National Sales Manager"
+  // here but is asked for as a Product Manager, and gets a Product Manager's reach.
+  const pmOnTheSameLine = agentsFor("Product Manager", "NSM-1");
+  assert.ok(
+    pmOnTheSameLine.includes("REP-9") && !pmOnTheSameLine.includes("CNS-REP"),
+    "a PM resolves to the same LINE as the NSM — every region on it, and no other line",
+  );
+  assert.ok(
+    nsmAgents.includes("DM-1") && !pmOnTheSameLine.includes("DM-1"),
+    "but not to the same DEPTH: a District Manager is downward from the NSM and upward from the PM",
   );
 
-  // ── THE UPWARD RULE ───────────────────────────────────────────────────────────────────────────
+  // ── THE DOWNWARD RULE ─────────────────────────────────────────────────────────────────────────
   // Owner, 2026-09-04: "Never an employee sees his direct manager. You see yourself and your scope
-  // down — downgrading, not upgrading." Measured in production that day: B-155's line scope held 57
+  // down — downgrading, not upgrading." Measured in production that day, B-155's line scope held 57
   // people including A-8, his own manager, who has 57 CRM visits of her own. Nothing rendered her,
   // but only because Reps Plans carries a medical-reps-only filter and the KPIs board had no plan
-  // row to build for her — two accidents, not a rule.
+  // row to build for her — two accidents, not a rule. Asked how far the cut should reach, he
+  // answered: "remove dsms rsm and peer pms too."
   const pmScope = agentsFor("Product Manager", "B-155", staffTree());
   assert.ok(
     !pmScope.includes("A-8"),
@@ -160,43 +175,84 @@ export function runDoctorCoverageScopeTests() {
   );
   assert.ok(
     !pmScope.includes("A-9"),
-    "the rule climbs the WHOLE chain — the manager's manager is above him too, not just the first rung",
+    "the chain cut climbs the WHOLE way — the manager's manager is above him too, not just the first rung",
   );
   assert.ok(
-    !pmScope.includes("NSM-P"),
-    "a National Sales Manager seat is excluded from a line scope (owner's answer, 2026-09-04)",
+    !pmScope.includes("NSM-P") && !pmScope.includes("RSM-P") && !pmScope.includes("DSM-P"),
+    "every line manager above a PM's rank is out: NSM, RSM and DSM alike (owner, 2026-09-04)",
+  );
+  assert.ok(
+    !pmScope.includes("PM-PEER"),
+    "a PEER Product Manager is out too — the rule is strictly BELOW the viewer, not below-or-equal",
+  );
+  assert.ok(
+    !pmScope.includes("OFFICE-P"),
+    "a seat the ladder cannot rank is excluded, never waved through — 12 head-office seats carry a line_id in production",
   );
   assert.ok(
     pmScope.includes("B-155"),
-    "you always see YOURSELF — the rule removes what is above you, never you",
+    "you always see YOURSELF — the rule removes what is not below you, never you",
   );
   assert.deepEqual(
     pmScope,
-    ["B-155", "DSM-P", "PM-PEER", "REP-P"],
-    "what survives is the viewer, the field force beneath the line, and a same-level peer",
+    ["B-155", "REP-P"],
+    "a Product Manager's line scope is himself and the medical reps — 57 people became 42 in production",
   );
 
-  // The viewer-is-never-excluded guard is load-bearing, not tidy: National Sales Manager is itself
-  // a LINE role, so without it the title rule would delete an NSM from his own board and hand him
-  // finalizeAgents' empty state — which reads as "nobody on your line" rather than as a bug.
+  // A Group Product Manager sits one rung higher, so the SAME rule leaves her more: she keeps the
+  // Product Managers beneath her and the field force, and still loses everyone at or above her own
+  // rank. This is precisely what a flat blocklist of DSM/RSM/peer-PM titles could not express.
+  const gpmScope = agentsFor("Group Product Manager", "A-8", staffTree());
+  assert.deepEqual(
+    gpmScope,
+    ["A-8", "B-155", "DSM-P", "PM-PEER", "REP-P"],
+    "a GPM keeps her own PMs and the field force, and loses her manager, the NSM and the RSM",
+  );
+
+  // The viewer-is-never-excluded guard is load-bearing, not tidy: a National Sales Manager is not
+  // strictly below himself, so without it the ladder would delete him from his own board and hand
+  // him finalizeAgents' empty state — which reads as "nobody on your line" rather than as a bug.
   const nsmOwnBoard = agentsFor("National Sales Manager", "NSM-P", staffTree());
-  assert.ok(
-    nsmOwnBoard.includes("NSM-P"),
-    "an NSM still appears on his OWN board — the title exclusion must never fire on the viewer",
+  assert.deepEqual(
+    nsmOwnBoard,
+    ["A-8", "B-155", "DSM-P", "NSM-P", "PM-PEER", "REP-P", "RSM-P"],
+    "an NSM keeps his whole line beneath him — the cut is relative to the VIEWER, not a fixed title list",
   );
   assert.ok(
-    nsmOwnBoard.includes("REP-P") && nsmOwnBoard.includes("DSM-P"),
-    "and he keeps his whole line beneath him",
+    !nsmOwnBoard.includes("OFFICE-P") && !nsmOwnBoard.includes("A-9"),
+    "even the top of the line does not collect head-office seats that merely share its line id",
   );
+
+  // EVERY line role must be ranked on the ladder. An unranked one does not error: `viewerRank` falls
+  // to null, the rank cut passes everyone through, and that viewer silently gets the wide
+  // pre-2026-09-04 board back. An exhaustive Record would not catch it either — ignoreBuildErrors
+  // lets a missing key compile, build and deploy — so this has to be a runtime assertion.
+  // LR-VIEW's own title is deliberately OFF the ladder, so the job-title fallback cannot mask an
+  // unranked role and quietly make this pass.
+  for (const role of LINE_ROLES) {
+    const scope = agentsFor(role, "LR-VIEW", [
+      ...staffTree(),
+      row("LR-VIEW", null, "Pedia", 2, "Brand Lead"),
+      row("NSM-X", null, "Pedia", 2, "National Sales Manager"),
+    ]);
+    assert.ok(
+      !scope.includes("NSM-X"),
+      `${role} must be ranked on the seat ladder — an unranked line role silently restores the wide board`,
+    );
+  }
 
   // A pending seat replacement counts as an ancestor too — the conservative direction, because
-  // being wrong here hides one row rather than exposing a manager to his own report.
+  // being wrong here hides one row rather than exposing a manager to his own report. Proven on the
+  // CHAIN cut specifically: A-8 outranks B-155, so the ladder would hide her anyway, and a fixture
+  // that let the ladder answer would certify the chain walk without ever exercising it.
   const withPendingManager = staffTree().map((employee) =>
-    employee.hrId === "B-155" ? { ...employee, managerHrId: null, pendingManagerReplacementForHrId: "A-8" } : employee,
+    employee.hrId === "B-155"
+      ? { ...employee, managerHrId: null, pendingManagerReplacementForHrId: "REP-P" }
+      : employee,
   );
   assert.ok(
-    !agentsFor("Product Manager", "B-155", withPendingManager).includes("A-8"),
-    "a manager attached only as a PENDING replacement is still above the viewer",
+    !agentsFor("Product Manager", "B-155", withPendingManager).includes("REP-P"),
+    "a manager attached only as a PENDING replacement is still above the viewer, even when he outranks her",
   );
 
   // A cycle in the directory must not hang the climb. This has a real precedent: the downward walk

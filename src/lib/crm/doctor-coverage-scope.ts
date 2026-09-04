@@ -59,7 +59,7 @@ export { isAgentInScope, type DoctorCoverageScope } from "@/lib/crm/doctor-cover
 export type DoctorCoverageScopeEmployee = {
   employmentStatus: string | null;
   hrId: string;
-  /** Read ONLY by the upward rule below, to recognise a National Sales Manager seat. */
+  /** Read ONLY by the downward rule below, to rank this seat against the viewer's own. */
   jobTitle: string | null;
   lineId: number | null;
   lineName: string | null;
@@ -68,31 +68,69 @@ export type DoctorCoverageScopeEmployee = {
 };
 
 /**
- * THE UPWARD RULE — owner, 2026-09-04, stated plainly: "Never an employee sees his direct manager.
- * You see yourself and your scope down — downgrading, not upgrading."
+ * THE DOWNWARD RULE - owner, 2026-09-04, stated plainly: "Never an employee sees his direct
+ * manager. You see yourself and your scope down - downgrading, not upgrading." Asked whether the
+ * cut should reach past his own manager, he answered: "remove dsms rsm and peer pms too."
  *
  * A `line` scope is line MEMBERSHIP, which is neither up nor down: it is everyone who happens to
  * carry that line id. Measured in production the day the rule was given, Product Manager B-155's
- * scope held 57 people, and one of them was A-8 — his own direct manager, who has 57 real CRM
- * visits of her own. Nothing rendered her, but only by accident: the Reps Plans board carries an
- * explicit medical-reps-only filter, and the KPIs board simply had no plan row to build for her.
- * Neither is a rule. The moment she files a plan, or a new board lists agents without that filter,
- * a manager appears inside her own subordinate's view.
+ * scope held 57 people - 41 medical reps, 10 District Sales Managers, 2 National Sales Managers, a
+ * peer Product Manager, a Regional Sales Manager, and A-8, his own direct manager, who has 57 real
+ * CRM visits of her own. Nothing rendered her, but only by accident: the Reps Plans board carries
+ * an explicit medical-reps-only filter, and the KPIs board simply had no plan row to build for her.
+ * Neither is a rule. So the stop belongs HERE, in the resolver that IS the security boundary, and
+ * not in whichever downstream board remembers to filter.
  *
- * So the stop belongs HERE, in the resolver that is the security boundary, not in whichever
- * downstream board remembers to filter.
+ * TWO INDEPENDENT CUTS, because they catch different things:
  *
- * Two exclusions, both from the owner's answer:
- *   1. The viewer's own management chain — his manager, his manager's manager, all the way up.
- *   2. Every National Sales Manager seat.
+ *   1. The viewer's own management chain - his manager, his manager's manager, all the way up.
+ *      Identity-based and title-BLIND, so it still catches a manager whose job title is misspelt,
+ *      missing, or absent from the ladder below.
+ *   2. Anyone not ranked strictly BELOW the viewer's own seat, per the ladder.
  *
- * THE VIEWER IS NEVER EXCLUDED FROM HIS OWN SCOPE. That guard is load-bearing rather than tidy:
- * `National Sales Manager` is itself a LINE role (doctor-coverage-roles.ts LINE_ROLES), so without
- * it rule 2 would delete an NSM from his own board and `finalizeAgents` would hand him "no active
- * employees are recorded on your product line" — the module's own empty state, indistinguishable
- * from a data fault.
+ * WHY A LADDER AND NOT A LIST OF BANNED TITLES. The `line` basis serves all three of
+ * doctor-coverage-roles.ts's LINE_ROLES, and "District Sales Manager" is upward from a Product
+ * Manager but DOWNWARD from a National Sales Manager. A flat blocklist of DSM/RSM/peer-PM would
+ * therefore have deleted an NSM's own reports and handed him "no active employees are recorded on
+ * your product line" - the module's own empty state, indistinguishable from a data fault. A ladder
+ * is relative to the viewer, so one rule serves all three seats correctly.
+ *
+ * A title the ladder does not know is EXCLUDED from a line scope. That is deliberate, and it is the
+ * safe direction: in production 12 head-office seats (the CEO, HR, Finance, QPPV, R&D, even
+ * "Buffet") carry a line_id, so "unknown means field force, keep them" would put the CEO inside a
+ * Product Manager's scope. It costs nothing today - lines 1, 2 and 3 are the field lines and every
+ * title on them is ranked here, while line 4, which holds those office seats, has no line-scoped
+ * viewer on it at all.
+ *
+ * THE VIEWER IS NEVER EXCLUDED FROM HIS OWN SCOPE. That guard is load-bearing rather than tidy: a
+ * National Sales Manager is not strictly below himself, so without it the ladder would delete him
+ * from his own board and produce exactly the empty state described above.
+ *
+ * The rank numbers are ORDER ONLY and carry no meaning of their own. Both spellings of each seat
+ * are listed because this repo runs two vocabularies: an app ROLE ("Medical Rep", "District
+ * Manager", "Regional Manager") and an employee JOB TITLE ("Medical Representative", "District
+ * Sales Manager", "Regional Sales Manager"). A Product Manager is ranked alongside a District Sales
+ * Manager on purpose - that is what makes a peer PM, and every DSM, fall outside his scope while
+ * leaving the 41 medical reps inside it.
  */
-const TITLES_EXCLUDED_FROM_A_LINE_SCOPE = new Set(["national sales manager"]);
+const SEAT_RANK = new Map<string, number>([
+  ["medical rep", 1],
+  ["medical representative", 1],
+  ["district manager", 2],
+  ["district sales manager", 2],
+  ["product manager", 2],
+  ["regional manager", 3],
+  ["regional sales manager", 3],
+  ["group product manager", 3],
+  ["national sales manager", 4],
+]);
+
+/** `null` means this seat is not on the ladder at all. */
+function seatRank(titleOrRole: string | null | undefined): number | null {
+  const key = titleOrRole?.trim().toLowerCase();
+  if (!key) return null;
+  return SEAT_RANK.get(key) ?? null;
+}
 
 /**
  * Every ancestor of the viewer, canonicalised. Climbs `managerHrId` exactly as
@@ -123,7 +161,7 @@ function managementChainOf(
   return chain;
 }
 
-/** True when the upward rule says this person must not appear in this viewer's scope. */
+/** Cut 1: true when this person is an ancestor of the viewer, so must not appear in his scope. */
 function isAboveViewer(
   employee: DoctorCoverageScopeEmployee,
   viewerCanonicalHrId: string,
@@ -131,8 +169,7 @@ function isAboveViewer(
 ): boolean {
   const key = normalizeHrIdForAccess(employee.hrId);
   if (!key || key === viewerCanonicalHrId) return false; // you always see yourself
-  if (chain.has(key)) return true;
-  return TITLES_EXCLUDED_FROM_A_LINE_SCOPE.has(employee.jobTitle?.trim().toLowerCase() ?? "");
+  return chain.has(key);
 }
 
 /**
@@ -184,7 +221,7 @@ export function resolveDoctorCoverageScope(input: {
     if (key) byCanonicalHrId.set(key, employee);
   }
   const chain = managementChainOf(viewerKey, byCanonicalHrId);
-  const withinTheUpwardRule = (employee: DoctorCoverageScopeEmployee) =>
+  const notInTheViewersChain = (employee: DoctorCoverageScopeEmployee) =>
     !isAboveViewer(employee, viewerKey, chain);
 
   if (basis === "line") {
@@ -209,10 +246,26 @@ export function resolveDoctorCoverageScope(input: {
           // what a single-line viewer used before overrides existed.
           sameWorkforceLine(viewer, employee);
 
+    // Cut 2 of the downward rule, and the reason it is applied on THIS basis only: a team scope
+    // is already provably downward, because it is walked out of the org tree. The viewer's own
+    // rank comes from his ROLE - the live AccessContext, never client input - and every LINE_ROLE
+    // is on the ladder. The job-title fallback, and the `viewerRank == null` pass-through inside
+    // the predicate, exist only so a line role added later without a ladder entry degrades to the
+    // chain-only behaviour instead of to an empty board; runDoctorCoverageScopeTests asserts every
+    // LINE_ROLE is ranked, because an unranked one would otherwise fail silently right here.
+    const viewerRank = seatRank(input.role) ?? seatRank(viewer.jobTitle);
+    const strictlyBelowTheViewer = (employee: DoctorCoverageScopeEmployee) => {
+      if (viewerRank == null) return true;
+      if (normalizeHrIdForAccess(employee.hrId) === viewerKey) return true; // you always see yourself
+      const rank = seatRank(employee.jobTitle);
+      return rank != null && rank < viewerRank;
+    };
+
     const agentHrIds = input.employees
       .filter((employee) => isActiveLifecycleStatus(employee.employmentStatus))
       .filter(onScopedLine)
-      .filter(withinTheUpwardRule)
+      .filter(notInTheViewersChain)
+      .filter(strictlyBelowTheViewer)
       .map((employee) => employee.hrId);
 
     // Name every line the viewer actually covers — the owner's rule is that a viewer always sees
@@ -238,9 +291,12 @@ export function resolveDoctorCoverageScope(input: {
   // about. Departed reps are still filtered out of the OUTPUT, and the CRM reads door drops their
   // visits independently.
   //
-  // The upward rule is applied here too. On this basis it should be a no-op by construction — an
+  // The chain cut is applied here too. On this basis it should be a no-op by construction — an
   // ancestor is never inside your own subtree — so it is defence in depth against a directory whose
-  // manager links form a cycle, the exact shape the climb above already guards against.
+  // manager links form a cycle, the exact shape the climb above already guards against. The RANK
+  // ladder deliberately does NOT run here: this list is already downward-only, and ranking it would
+  // drop a report whose job title happens to sit off the ladder (an Admin Assistant under a DM,
+  // say) out of his own manager's board.
   const agentHrIds = input.employees
     .filter((employee) => isActiveLifecycleStatus(employee.employmentStatus))
     .filter((employee) =>
@@ -251,7 +307,7 @@ export function resolveDoctorCoverageScope(input: {
         canonicalize: normalizeHrIdForAccess,
       }),
     )
-    .filter(withinTheUpwardRule)
+    .filter(notInTheViewersChain)
     .map((employee) => employee.hrId);
   const label = input.role === "Regional Manager" ? `${input.role} · own region` : `${input.role} · own team`;
   return finalizeAgents(agentHrIds, "team", label);
