@@ -130,6 +130,10 @@ function profileFixture(overrides: Partial<HiringPackProfile> = {}): HiringPackP
     contractPrintedAt: null,
     form1PrintedAt: null,
     contractTemplateVersion: null,
+    // Blank, which is the ordinary contract: the company's standing signatory signs it. A
+    // value here means somebody else did, and replaces him everywhere the paper names him.
+    contractSignatoryNameAr: null,
+    contractSignatoryTitleAr: null,
     updatedAt: null,
     ...overrides,
   };
@@ -275,6 +279,12 @@ export function runHiringPackPaperEditorTests() {
   // Each of these prints on a document and none of them may be typed over there. The company ones
   // belong to the legal entity and are shared by every employee; the derived ones must keep
   // agreeing with the value they are computed from.
+  //
+  // CONTRACT_SIGNATORY used to sit in this list, on the first reading — the man who signs for the
+  // company looked like company data. He is not. The owner's rule (2026-09-04) is that somebody
+  // else signs sometimes, and the paper must then name that person, so the signatory is a property
+  // of the CONTRACT rather than of the legal entity. It moved to the positive check below; the rest
+  // of the list is unchanged, and COMPANY_NAME and its neighbours stay shut.
   for (const key of [
     "COMPANY_NAME",
     "COMPANY_LEGAL_FORM",
@@ -283,7 +293,6 @@ export function runHiringPackPaperEditorTests() {
     "COMMERCIAL_REGISTER",
     "UNIFIED_REGISTER",
     "TAX_CARD",
-    "CONTRACT_SIGNATORY",
     "RESPONSIBLE_MANAGER",
     "SALARY_WORDS",
     "DURATION",
@@ -305,6 +314,27 @@ export function runHiringPackPaperEditorTests() {
       null,
       `${key} must NOT be editable on the page — it is the company's own value or is derived from another`,
     );
+  }
+
+  // ── 3b. …and the two the owner opened, deliberately ──────────────────────────────────────────
+  //
+  // The mirror of the loop above. These two are editable ON PURPOSE, and the assertion exists so
+  // that a future session tidying the allow-list cannot quietly shut them again: a contract signed
+  // by a delegate would then print the standing signatory's name over the delegate's signature,
+  // which is a false instrument rather than a display bug.
+  //
+  // Section 2 above already proved the save carries both fields, so this only has to pin the shape.
+  for (const key of ["CONTRACT_SIGNATORY", "CONTRACT_SIGNATORY_TITLE"]) {
+    const binding = paperFieldBinding(key);
+    assert.ok(binding, `${key} MUST be editable on the page — the owner asked for it by name`);
+    assert.equal(
+      binding.store,
+      "profile",
+      `${key} must live on the employee's own hiring profile, not on a company-wide store — ` +
+        "one contract naming a delegate must not rename him on everybody else's paper",
+    );
+    assert.equal(binding.kind, "text", `${key} is free text — a delegate's name is not a date or a number`);
+    assert.ok(binding.labelEn, `${key} needs an English label or it prints as a bare token in the editor`);
   }
 
   // ── 4. Dates, money, and the invisible direction marks ───────────────────────────────────────

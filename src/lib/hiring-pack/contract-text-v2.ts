@@ -1,5 +1,10 @@
 /**
- * The Sato Pharma fixed-term employment contract — VERSION 2. THE CURRENT TEXT.
+ * The Sato Pharma fixed-term employment contract — VERSION 2. ARCHIVED, still printable.
+ *
+ * This version stopped being the one Phoenix prints on 2026-09-01, when the owner replaced it with the
+ * thirteen-article redraft in `contract-text-v3.ts`. It stays because people signed it: hiring profiles
+ * carrying `contract_template_version = 'contract-v2'` resolve here, and a reprint for one of them has to
+ * put the same words back on the page.
  *
  * ─────────────────────────────────────────────────────────────────────────────────────────────
  * DO NOT EDIT THE ARABIC IN THIS FILE.

@@ -165,6 +165,8 @@ export type ProfileDbRow = {
   contract_duration_months: number | null;
   contract_end_date: string | null;
   contract_printed_at: string | null;
+  contract_signatory_name_ar: string | null;
+  contract_signatory_title_ar: string | null;
   contract_signed_date: string | null;
   contract_start_date: string | null;
   contract_template_version: string | null;
@@ -354,6 +356,8 @@ export function emptyProfile(hrId: string): HiringPackProfile {
     underperformanceMonths: null,
     trainingBondMonths: null,
     notes: null,
+    contractSignatoryNameAr: null,
+    contractSignatoryTitleAr: null,
     contractSignedDate: null,
     form1SignedDate: null,
     contractPrintedAt: null,
@@ -384,6 +388,8 @@ export function mapProfile(row: ProfileDbRow): HiringPackProfile {
     underperformanceMonths: row.underperformance_months,
     trainingBondMonths: row.training_bond_months,
     notes: cleanText(row.notes),
+    contractSignatoryNameAr: cleanText(row.contract_signatory_name_ar),
+    contractSignatoryTitleAr: cleanText(row.contract_signatory_title_ar),
     contractSignedDate: row.contract_signed_date,
     form1SignedDate: row.form1_signed_date,
     contractPrintedAt: row.contract_printed_at,
@@ -1206,6 +1212,8 @@ export async function saveHiringPackProfile(
         underperformance_months: toPositiveInt(input.underperformanceMonths),
         training_bond_months: toPositiveInt(input.trainingBondMonths),
         notes: cleanText(input.notes),
+        contract_signatory_name_ar: cleanText(input.contractSignatoryNameAr),
+        contract_signatory_title_ar: cleanText(input.contractSignatoryTitleAr),
         updated_by_hr_id: cleanText(actorHrId),
       },
       { onConflict: "hr_id" },

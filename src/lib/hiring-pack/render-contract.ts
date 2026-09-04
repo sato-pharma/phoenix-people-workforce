@@ -101,8 +101,14 @@ export function buildContractValues(data: HiringPackData): Partial<Record<Contra
     COMMERCIAL_REGISTER_OFFICE: recital.commercialRegisterOfficeAr,
     UNIFIED_REGISTER: pinLtr(recital.unifiedRegisterNumber),
     TAX_CARD: pinLtr(recital.taxCardNumber),
-    CONTRACT_SIGNATORY: recital.signatoryNameAr,
-    CONTRACT_SIGNATORY_TITLE: recital.signatoryTitleAr,
+    // WHO SIGNS FOR THE COMPANY IS NOT A CONSTANT. The standing signatory in `system-settings` is
+    // the default, not the answer: the owner's rule of 2026-09-04 is that a delegate sometimes
+    // signs, so the hiring profile may name someone else for THIS contract. Both values move
+    // together and reach all three places the contract names him — the recital, the signature
+    // grid's الاسم cell, and the note under the grid — because an instrument naming one person in
+    // its recital and another over the signature line is defective.
+    CONTRACT_SIGNATORY: profile.contractSignatoryNameAr ?? recital.signatoryNameAr,
+    CONTRACT_SIGNATORY_TITLE: profile.contractSignatoryTitleAr ?? recital.signatoryTitleAr,
 
     // The Arabic name governs: مادة (18) makes the Arabic text controlling, so the party named in
     // it has to be the Arabic name wherever the record carries one.
@@ -542,6 +548,18 @@ function documentIdentityGrid(
  * "التاريخ / ……" — label, separator, blank — so the column set is the labels in the order the
  * parties state them, and the leading column carries the party itself. A version that signs with
  * different fields therefore gets its own columns instead of being forced into these.
+ *
+ * THE LABELS ARE A UNION ACROSS THE PARTIES, WHICH IS WHY A LOPSIDED VERSION LOOKS ODD. A field only
+ * one party carries still becomes a column, and the other party's row prints it empty — which reads
+ * on paper as a blank somebody forgot to sign. Version 3 hit exactly that with its الصفة field and
+ * version 4 fixes it by moving the capacity out of the grid into `signatoryNoteLinesAr`; the union is
+ * kept because an archived version must keep rendering as the document that was signed.
+ *
+ * WHO SIGNS FOR THE COMPANY IS NOT DRAWN HERE. It was, briefly: the note went inside the first
+ * party's label cell, which is 34mm wide — so a signatory's full name and his capacity wrapped down
+ * that narrow column into six short lines and pushed the whole block down the page. It is rendered
+ * as one full-width row beneath this table instead (`.doc-signnote`), which is both how the source
+ * sets it and the only shape that fits the name on one line.
  */
 function documentSignatureTable(
   columns: ContractTemplate["signatureColumns"],
@@ -636,6 +654,24 @@ function renderDocumentCopy(
     ? `<p class="doc-closing">${fillMarkedHtml(template.closingAr, values)}</p>`
     : "";
 
+  // Who signs for the company, on ONE row under the signature table. The parts stay separate
+  // strings — the version file states the name and the capacity as two facts — and this layout lays
+  // them side by side rather than joining them, so no punctuation of this layout's invention ends up
+  // inside text that belongs to the contract.
+  const signNote =
+    template.signatoryNoteLinesAr && template.signatoryNoteLinesAr.length > 0
+      ? `<p class="doc-signnote">${template.signatoryNoteLinesAr
+          .map((text) => `<span>${fillMarkedHtml(text, values)}</span>`)
+          .join("")}</p>`
+      : "";
+
+  // The employee's separate signature for his own copy, under the table. Deliberately NOT
+  // token-filled: the line exists to be signed by hand, and `fillMarkedHtml` would mark a pen rule
+  // as though Phoenix had left a blank it ought to have filled.
+  const receipt = template.receiptAcknowledgmentAr
+    ? `<p class="doc-receipt">${escapeHtml(template.receiptAcknowledgmentAr)}</p>`
+    : "";
+
   // The footer's halves are separated in the source by a long run of spaces — one signing rule at
   // each margin. Splitting on that run and spreading the parts reproduces it without this layout
   // needing to know what the parts say.
@@ -674,6 +710,8 @@ function renderDocumentCopy(
         <div class="doc-arts">${articles}</div>
         ${closing}
         ${documentSignatureTable(template.signatureColumns, values)}
+        ${signNote}
+        ${receipt}
       </td></tr></tbody>
       ${foot}
     </table>
@@ -1054,10 +1092,29 @@ export function renderContractHtml(
   .doc-sig th, .doc-sig td { padding: 1.2mm 2mm; border: 0.5pt solid #b9cad9; font-size: 8.5pt; }
   .doc-sig__corner { width: 34mm; }
   .doc-sig__head { color: #0f6ea8; font-weight: 700; text-align: center; }
-  .doc-sig__party { font-weight: 700; text-align: right; }
+  .doc-sig__party { font-weight: 700; text-align: right; vertical-align: middle; }
+  /* Who signs for the company: ONE row under the table, full width. A flex row with a wide gap keeps
+     the name and the capacity side by side instead of stacked, and wrapping means an unusually long
+     name drops to a second line rather than running off the sheet — this contract may never scroll
+     and may never be clipped. It is an annotation, not a field, so it is set lighter than the grid. */
+  .doc-signnote {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0 8mm;
+    margin: 1.8mm 0 0;
+    font-size: 8.5pt;
+    line-height: 1.5;
+    color: #33414f;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
   /* Room for a pen. The cell IS the blank, which is why a field holding nothing but dots prints
      empty here rather than printing a rule inside a box. */
   .doc-sig__cell { height: 12mm; text-align: center; vertical-align: top; }
+
+  /* The employee's separate receipt signature, below the table. It must not be orphaned onto a page
+     of its own away from the signatures it follows. */
+  .doc-receipt { margin: 2.5mm 0 0; break-inside: avoid; page-break-inside: avoid; }
 
   /* A typed value on this layout is set in the text, one weight heavier so it can still be told
      from the standing clause — no highlight, because the source has none and a contract that
