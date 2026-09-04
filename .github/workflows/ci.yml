@@ -209,7 +209,40 @@ jobs:
         # GHSA-mh99-v99m-4gvg is ignored via pnpm-workspace.yaml's auditConfig — see the
         # comment there for why (forcing a fix broke eslint; the app's real exposure isn't
         # exploitable).
-        run: pnpm audit --audit-level=high --prod
+        #
+        # RETRIES A TRANSIENT REGISTRY TIMEOUT ONLY (added 2026-09-04, run 33832022834).
+        # `pnpm audit` calls registry.npmjs.org's bulk advisories endpoint over the network;
+        # when that endpoint is unreachable pnpm's own internal retries exhaust and it raises
+        # `TimeoutError: The operation was aborted due to timeout` after ~4 minutes, with no
+        # vulnerability actually found — a registry blip, not a real audit finding. A second
+        # attempt once the endpoint recovers succeeds normally.
+        #
+        # The retry is a real audit finding NEVER masquerading as a network blip: it fires
+        # only when the log matches a connectivity-error marker AND does not also mention
+        # "vulnerabilit(y|ies)" — an advisory whose own title happens to contain a word like
+        # "timeout" or "socket hang up" (e.g. a real ws DoS advisory) still fails on the first
+        # attempt, un-retried. Each attempt already carries pnpm's own ~4-minute internal
+        # retry chain, so this is capped at 2 attempts total (~30s backoff between them); a
+        # registry outage that outlasts that still fails the check — deliberately fail-closed,
+        # since silently skipping a security gate on an outage is worse than a blocked merge.
+        run: |
+          set -uo pipefail
+          attempt=0
+          while :; do
+            attempt=$((attempt + 1))
+            pnpm audit --audit-level=high --prod 2>&1 | tee /tmp/pnpm-audit.log
+            rc=${PIPESTATUS[0]}
+            if [ "$rc" -eq 0 ]; then
+              exit 0
+            fi
+            if [ "$attempt" -ge 2 ] \
+              || grep -qiE 'vulnerabilit' /tmp/pnpm-audit.log \
+              || ! grep -qiE 'aborted due to timeout|ETIMEDOUT|ECONNRESET|ENOTFOUND|socket hang up|network error' /tmp/pnpm-audit.log; then
+              exit "$rc"
+            fi
+            echo "pnpm audit hit a transient registry error on attempt ${attempt}; retrying in 30s..."
+            sleep 30
+          done
 
       # THE .next BUILD CACHE WAS DELETED HERE ON 2026-08-29. Do not re-add it.
       #
