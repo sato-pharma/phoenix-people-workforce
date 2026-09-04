@@ -1214,7 +1214,7 @@ function salaryRecordPayload(batchId: string, row: SalaryValidationRow) {
     unpaid_vacations: row.unpaidVacations,
     // 0 means "not recorded" in the row model; store NULL rather than a zero day
     // count so the column keeps saying "we do not know" instead of "he worked no
-    // days" (see 20260905000500_salary_records_working_days.sql).
+    // days" (see 20260905001500_salary_records_working_days.sql).
     working_days: row.workingDays > 0 ? row.workingDays : null,
     calendar_days: row.calendarDays > 0 ? row.calendarDays : null,
   };
