@@ -24,6 +24,8 @@
 import { randomUUID } from "node:crypto";
 
 import {
+  isCustomTemplateGroup,
+  type CustomTemplateGroup,
   buildCustomTemplatePagePath,
   CUSTOM_TEMPLATE_BUCKET,
   type CustomTemplateContentType,
@@ -72,6 +74,8 @@ export type CustomTemplate = {
   document: CustomHiringPackDocument;
   name: string;
   nameAr: string | null;
+  /** Which package it prints in: joining, leaving, or other. */
+  group: CustomTemplateGroup;
   pageWidthPt: number;
   pageHeightPt: number;
   status: "current" | "archived";
@@ -93,6 +97,7 @@ type TemplateRecord = {
   key: string;
   name: string;
   name_ar: string | null;
+  document_group: string | null;
   page_width_pt: number | string;
   page_height_pt: number | string;
   status: string;
@@ -153,6 +158,9 @@ function templateFromRecord(record: TemplateRecord, pages: CustomTemplatePage[])
     id: record.id,
     key: record.key,
     name: record.name,
+    // A row written before the group column existed reads null, and `other` is what that MEANS —
+    // a paper nobody has sorted yet — rather than a guess that could put it in the wrong package.
+    group: isCustomTemplateGroup(record.document_group) ? record.document_group : "other",
     nameAr: record.name_ar,
     note: record.note,
     pageHeightPt: toNumber(record.page_height_pt),
@@ -169,7 +177,7 @@ function templateFromRecord(record: TemplateRecord, pages: CustomTemplatePage[])
 }
 
 const TEMPLATE_COLUMNS =
-  "id, key, name, name_ar, page_width_pt, page_height_pt, status, version, effective_from, superseded_on, superseded_by, note, printable_by_roles, created_at, created_by_hr_id, updated_at, updated_by_hr_id";
+  "id, key, name, name_ar, document_group, page_width_pt, page_height_pt, status, version, effective_from, superseded_on, superseded_by, note, printable_by_roles, created_at, created_by_hr_id, updated_at, updated_by_hr_id";
 
 const PAGE_COLUMNS =
   "id, template_id, page_index, storage_path, content_type, size_bytes, width_px, height_px";
@@ -377,6 +385,7 @@ export async function createCustomTemplate(input: {
     .insert({
       created_by_hr_id: actorHrId,
       name: draft.name,
+      document_group: draft.group,
       name_ar: draft.nameAr,
       note: draft.note,
       page_height_pt: draft.pageHeightPt,

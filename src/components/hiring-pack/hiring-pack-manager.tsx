@@ -49,6 +49,11 @@ import {
 import { HiringPackPaperEditor } from "@/components/hiring-pack/paper-editor";
 import { TemplateStudio } from "@/components/hiring-pack/template-studio";
 import {
+  documentDefaultCopies,
+  documentLabel,
+  type PrintableDocument,
+} from "@/lib/hiring-pack/document-registry";
+import {
   INSURANCE_WAGE_CEILING,
   INSURANCE_WAGE_DIVISOR,
   insuranceWageFromBase,
@@ -58,7 +63,6 @@ import { Button } from "@/components/ui/button";
 import { ChoiceGroup } from "@/components/ui/choice-group";
 import { Input } from "@/components/ui/input";
 import { SearchableSelect } from "@/components/ui/searchable-select";
-import { systemContractDefaults } from "@/config/system-settings";
 import {
   archivedTemplateVersions,
   findTemplateVersion,
@@ -310,20 +314,6 @@ const EXIT_ROUTES: readonly { value: ExitRoute; labelEn: string; labelAr: string
     },
   ];
 
-/** What each document is called in a sentence to the user. */
-const DOCUMENT_LABELS: Record<HiringPackDocument, string> = {
-  contract: "Contract",
-  form1: "Form 1",
-  workerDataForm: "Worker data form",
-  custodyLaptop: "Laptop custody receipt",
-  custodyMobile: "Phone/tablet custody receipt",
-  form6: "Form 6",
-  resignation: "Resignation request",
-  mutualTermination: "Mutual termination agreement",
-  clearanceEmployee: "Employee clearance",
-  clearanceCompany: "Company clearance",
-};
-
 /**
  * The two ends of one employment, shown one at a time. A person is only ever arriving or leaving on
  * the day HR prints, so the screen offers one package rather than one long scroll that mixes a
@@ -335,20 +325,6 @@ const PACKAGE_TABS = [
   { label: "Leaver package", value: "leaver" },
 ] as const satisfies ReadonlyArray<{ label: string; value: "newHire" | "leaver" }>;
 
-/** The standing copy count for each document — each one the form's own stated requirement. */
-const DEFAULT_COPIES: Record<HiringPackDocument, number> = {
-  contract: systemContractDefaults.contractCopies,
-  form1: systemContractDefaults.form1Copies,
-  workerDataForm: systemContractDefaults.workerDataFormCopies,
-  custodyLaptop: systemContractDefaults.custodyLaptopCopies,
-  custodyMobile: systemContractDefaults.custodyMobileCopies,
-  form6: systemContractDefaults.form6Copies,
-  resignation: systemContractDefaults.resignationCopies,
-  mutualTermination: systemContractDefaults.mutualTerminationCopies,
-  clearanceEmployee: systemContractDefaults.clearanceEmployeeCopies,
-  clearanceCompany: systemContractDefaults.clearanceCompanyCopies,
-};
-
 /**
  * How many copies a document is about to be produced in, from whatever is in its box.
  *
@@ -358,9 +334,9 @@ const DEFAULT_COPIES: Record<HiringPackDocument, number> = {
  * see `resolveCopies` there — because a value the server would reject must not be shown here as
  * though it had been accepted.
  */
-function resolveCopyCount(raw: string | undefined, document: HiringPackDocument): number {
+function resolveCopyCount(raw: string | undefined, document: PrintableDocument): number {
   const requested = Number.parseInt(raw ?? "", 10);
-  if (!Number.isFinite(requested) || requested < 1) return DEFAULT_COPIES[document];
+  if (!Number.isFinite(requested) || requested < 1) return documentDefaultCopies(document);
   return Math.min(requested, 20);
 }
 
@@ -660,10 +636,15 @@ export function HiringPackManager({
   // saved record. Someone correcting a base salary should see the insurance wage move with it
   // before they press Save, because that figure goes on Form 1 and they cannot edit it directly.
   const typedInsuranceWage = insuranceWageFromBase(Number.parseFloat(factsForm.baseSalary ?? ""));
-  const [copies, setCopies] = useState<Record<HiringPackDocument, string>>(() =>
-    signDatesShape((document) => String(DEFAULT_COPIES[document])),
+  // KEYED BY STRING, SEEDED EXHAUSTIVELY. The seed is still the explicit ten-key literal, so the
+  // compiler still refuses a built-in document with no starting value — that check is the whole
+  // reason `signDatesShape` is written as a literal. What the wider key type buys is a company
+  // template being able to carry a copy count and a signed date like any other paper, without
+  // every uploaded document having to exist at compile time, which is impossible by construction.
+  const [copies, setCopies] = useState<Record<string, string>>(() =>
+    signDatesShape((document) => String(documentDefaultCopies(document))),
   );
-  const [signDates, setSignDates] = useState<Record<HiringPackDocument, string>>(() =>
+  const [signDates, setSignDates] = useState<Record<string, string>>(() =>
     signedDatesFromPack(initialPack),
   );
   const [busy, setBusy] = useState<
@@ -679,7 +660,7 @@ export function HiringPackManager({
    * "whichever version this employee's signature resolves to".
    */
   const [preview, setPreview] = useState<{
-    document: HiringPackDocument;
+    document: PrintableDocument;
     versionId: string | null;
   } | null>(null);
   /**
@@ -870,7 +851,7 @@ export function HiringPackManager({
           return;
         }
         applyPack((await response.json()) as HiringPackData);
-        setNotice(`${DOCUMENT_LABELS[document]} recorded as signed on ${formatDate(signedDate)}.`);
+        setNotice(`${documentLabel(document)} recorded as signed on ${formatDate(signedDate)}.`);
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : "Could not record the signature.");
       } finally {
@@ -886,7 +867,7 @@ export function HiringPackManager({
    * correctly, and "Print → Save as PDF" from that tab produces a real PDF with selectable text.
    */
   const openPrint = useCallback(
-    (document: HiringPackDocument, versionId?: string) => {
+    (document: PrintableDocument, versionId?: string) => {
       if (!pack) return;
       const count = resolveCopyCount(copies[document], document);
       // No `version` parameter is the normal case, and it does NOT mean "print the current text":
@@ -905,13 +886,13 @@ export function HiringPackManager({
    * Deliberately does NOT go through `openPrint`: the preview asks the same route for the same
    * bytes but with `preview=1`, which is what stops a look at the paper being recorded as a print.
    */
-  const openPreview = useCallback((document: HiringPackDocument, versionId?: string) => {
+  const openPreview = useCallback((document: PrintableDocument, versionId?: string) => {
     setError(null);
     setNotice(null);
     setPreview({ document, versionId: versionId ?? null });
   }, []);
 
-  const setCopiesFor = useCallback((document: HiringPackDocument, value: string) => {
+  const setCopiesFor = useCallback((document: PrintableDocument, value: string) => {
     setCopies((current) => ({ ...current, [document]: value }));
   }, []);
 
@@ -976,7 +957,7 @@ export function HiringPackManager({
           <HiringPackPaperEditor
             copies={resolveCopyCount(copies[preview.document], preview.document)}
             documentKey={preview.document}
-            documentLabel={DOCUMENT_LABELS[preview.document]}
+            documentLabel={documentLabel(preview.document)}
             hrId={pack.employee.hrId}
             key={`${pack.employee.hrId}-${preview.document}-${preview.versionId ?? "current"}`}
             onClose={() => setPreview(null)}
@@ -1904,7 +1885,7 @@ function TemplateArchive({
                       Archived
                     </Badge>
                     <Badge size="sm" tone="info">
-                      {DOCUMENT_LABELS[entry.document]}
+                      {documentLabel(entry.document)}
                     </Badge>
                   </div>
                   <p className="mt-1 text-phx-xs font-bold text-phx-ink-soft" dir="auto">

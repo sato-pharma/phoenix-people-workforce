@@ -93,6 +93,48 @@ export const CUSTOM_TEMPLATE_MAX_PT = 2400;
 /** How long a name may be. Long enough for a real form's full title, short enough to fit a row. */
 export const CUSTOM_TEMPLATE_MAX_NAME_LENGTH = 160;
 
+/**
+ * WHICH PACKAGE A TEMPLATE PRINTS IN — the owner, 2026-09-04: "I want to be able to group documents
+ * to hiring or resignation or other."
+ *
+ * The screen has always shown two packages, because a person is only ever arriving or leaving on the
+ * day HR prints. The ten built-in documents are sorted into them by the code, and that sorting is
+ * not a preference — Form 1 is a joining form because the insurance office says so. An uploaded
+ * template has no such rule to read, so it is told at upload.
+ *
+ * "leaving" RATHER THAN "resignation", though resignation is the word he used. That package already
+ * holds Form 6 and a mutual-termination agreement as well as the resignation request, and a group
+ * named after one of its members reads as excluding the other two.
+ */
+export const CUSTOM_TEMPLATE_GROUPS = ["joining", "leaving", "other"] as const;
+
+export type CustomTemplateGroup = (typeof CUSTOM_TEMPLATE_GROUPS)[number];
+
+/** What each group is called on screen, in the words the two package tabs already use. */
+export const CUSTOM_TEMPLATE_GROUP_LABELS: Readonly<Record<CustomTemplateGroup, string>> = {
+  joining: "New hires package",
+  leaving: "Leaver package",
+  other: "Other papers",
+};
+
+/**
+ * A short line saying what belongs in each group, for the picker on the upload screen.
+ *
+ * Written for somebody deciding in the moment rather than as documentation: the question they are
+ * actually answering is "when would I print this", and the examples are the papers this company
+ * already prints.
+ */
+export const CUSTOM_TEMPLATE_GROUP_NOTES: Readonly<Record<CustomTemplateGroup, string>> = {
+  joining: "Printed when somebody arrives — beside the contract and Form 1.",
+  leaving: "Printed when somebody goes — beside Form 6, the resignation and the clearances.",
+  other: "Printed at any other time — an enrolment form, a bank mandate, a certificate.",
+};
+
+/** Whether a value names one of the groups. */
+export function isCustomTemplateGroup(value: unknown): value is CustomTemplateGroup {
+  return (CUSTOM_TEMPLATE_GROUPS as readonly unknown[]).includes(value);
+}
+
 /** One printed side of a template, as the client describes it before it is stored. */
 export type CustomTemplatePageDraft = {
   /** Zero-based, in printing order. */
@@ -108,6 +150,8 @@ export type CustomTemplatePageDraft = {
 export type CustomTemplateDraft = {
   name: string;
   nameAr: string | null;
+  /** Which package this prints in. Defaults to `other` — the honest answer for an unsorted paper. */
+  group: CustomTemplateGroup;
   pageWidthPt: number;
   pageHeightPt: number;
   note: string | null;
@@ -122,6 +166,7 @@ export type CustomTemplateDraft = {
 export type CustomTemplateDraftInput = {
   name?: unknown;
   nameAr?: unknown;
+  group?: unknown;
   pageWidthPt?: unknown;
   pageHeightPt?: unknown;
   note?: unknown;
@@ -308,9 +353,26 @@ export function parseCustomTemplateDraft(
     printableByRoles = Array.from(new Set(roles));
   }
 
+  // A GROUP IS REFUSED RATHER THAN CORRECTED. Silently filing an unknown group under "other" would
+  // put a leaving form in the wrong package with nothing on screen to say so, and the person who
+  // notices is the one who could not find it on the day somebody resigned.
+  let group: CustomTemplateGroup = "other";
+  if (input.group !== undefined && input.group !== null && input.group !== "") {
+    if (!isCustomTemplateGroup(input.group)) {
+      return {
+        message:
+          `"${String(input.group)}" is not a package. Choose the New hires package, the Leaver ` +
+          "package, or Other papers.",
+        ok: false,
+      };
+    }
+    group = input.group;
+  }
+
   return {
     ok: true,
     value: {
+      group,
       name,
       nameAr: readOptionalText(input.nameAr),
       note: readOptionalText(input.note),

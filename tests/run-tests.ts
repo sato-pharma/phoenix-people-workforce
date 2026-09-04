@@ -743,6 +743,7 @@ import { runHiringDocumentsStatusNotesTests } from "./hiring-documents-status-no
 import { runHiringPackInsuranceWageTests } from "./hiring-pack-insurance-wage.test.ts";
 import { runHiringPackPaperEditorTests } from "./hiring-pack-paper-editor.test.ts";
 import { runHiringPackCustomTemplateTests } from "./hiring-pack-custom-templates.test.ts";
+import { runHiringPackDocumentRegistryTests } from "./hiring-pack-document-registry.test.ts";
 import { runHiringPackFieldLayoutTests } from "./hiring-pack-field-layout.test.ts";
 import { runHiringPackFieldTemplateTests } from "./hiring-pack-field-template.test.ts";
 import { runHiringPackTests } from "./hiring-pack.test.ts";
@@ -2444,6 +2445,7 @@ await runTest("hiring document status notes (an omitted notes key must not blank
 await runTest("hiring pack (Form 1 coordinate map, back-page إقرار, تفقيط agreement)", runHiringPackTests);
 await runTest("hiring pack field layer (a dragged default keeps its kind, an added field prints on top, a literal cannot shadow a value)", runHiringPackFieldLayoutTests);
 await runTest("hiring pack company templates (a custom document cannot collide with a built-in, a page in pixels is refused, a new version writes beside the old artwork)", runHiringPackCustomTemplateTests);
+await runTest("hiring pack document registry (every document — the ten in code and an uploaded one — resolves a name, a copy count and a surface at RUNTIME, which ignoreBuildErrors means the compiler cannot promise)", runHiringPackDocumentRegistryTests);
 await runTest("hiring pack field templates (an unknown placeholder never prints its braces, and one missing value blanks the whole field)", runHiringPackFieldTemplateTests);
 await runTest(
   "hiring pack insurance wage (Form 1 rule pinned to the owner's Yasmen setup: base 18,000 → 13,846, "

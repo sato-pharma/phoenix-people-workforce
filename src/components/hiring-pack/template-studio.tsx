@@ -39,11 +39,15 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
+  CUSTOM_TEMPLATE_GROUP_LABELS,
+  CUSTOM_TEMPLATE_GROUP_NOTES,
+  CUSTOM_TEMPLATE_GROUPS,
   CUSTOM_TEMPLATE_MAX_PAGES,
   CUSTOM_TEMPLATE_PAGE_PRESETS,
   pagePresetFor,
   roundPoints,
   type CustomTemplateContentType,
+  type CustomTemplateGroup,
 } from "@/lib/hiring-pack/custom-templates";
 
 const inputClassName =
@@ -263,6 +267,9 @@ export function TemplateStudio() {
   const [name, setName] = useState("");
   const [nameAr, setNameAr] = useState("");
   const [note, setNote] = useState("");
+  // "other" is where an unsorted paper honestly belongs, so it is the starting answer rather than a
+  // blank that has to be filled in before the button works.
+  const [group, setGroup] = useState<CustomTemplateGroup>("other");
   const [widthPt, setWidthPt] = useState("");
   const [heightPt, setHeightPt] = useState("");
   const [reading, setReading] = useState(false);
@@ -315,6 +322,7 @@ export function TemplateStudio() {
     setName("");
     setNameAr("");
     setNote("");
+    setGroup("other");
     setWidthPt("");
     setHeightPt("");
     if (fileInputRef.current) fileInputRef.current.value = "";
@@ -395,6 +403,7 @@ export function TemplateStudio() {
       form.set(
         "template",
         JSON.stringify({
+          group,
           name,
           nameAr: nameAr.trim() === "" ? null : nameAr,
           note: note.trim() === "" ? null : note,
@@ -430,7 +439,7 @@ export function TemplateStudio() {
     } finally {
       setSaving(false);
     }
-  }, [clearDraft, heightPt, loadTemplates, name, nameAr, note, pages, widthPt]);
+  }, [clearDraft, group, heightPt, loadTemplates, name, nameAr, note, pages, widthPt]);
 
   return (
     <AdminTableShell
@@ -579,6 +588,52 @@ export function TemplateStudio() {
                         value={heightPt}
                       />
                     </div>
+                    {/* WHICH PACKAGE THIS PRINTS IN — his request of 2026-09-04, "group documents
+                        to hiring or resignation or other".
+
+                        Three buttons rather than a <select>, for two reasons. The page already
+                        switches between the New hires package and the Leaver package with a
+                        segmented control, and a new control that does the same job should look like
+                        the one beside it. And the fits-the-screen rule names a native <select> as
+                        the one control that cannot be narrowed — three options each carrying a line
+                        of explanation would either overflow a 375px screen or lose the explanation.
+                        Buttons wrap.
+
+                        The chosen/unchosen class pair is the exit-route picker's, verbatim
+                        (`hiring-pack-manager.tsx`), so the two read as one system. The token is
+                        `phx-accent`; there is NO `phx-orange` utility in this repo, so a
+                        `border-phx-orange` compiles, ships and renders exactly nothing — which
+                        on screen is a picker that appears not to respond to being clicked. */}
+                    <div className="sm:col-span-2">
+                      <span className={labelClassName}>Which package does this print in?</span>
+                      <div className="mt-1 flex flex-wrap gap-2" role="group">
+                        {CUSTOM_TEMPLATE_GROUPS.map((option) => {
+                          const chosen = option === group;
+                          return (
+                            <button
+                              aria-pressed={chosen}
+                              className={[
+                                "flex-1 basis-56 rounded-xl border px-3 py-2 text-left transition",
+                                chosen
+                                  ? "border-phx-accent-line bg-phx-accent/10 text-phx-ink shadow-sm"
+                                  : "border-phx-line bg-white/95 text-phx-ink-2 hover:border-phx-accent-line",
+                              ].join(" ")}
+                              key={option}
+                              onClick={() => setGroup(option)}
+                              type="button"
+                            >
+                              <span className="block text-sm font-black">
+                                {CUSTOM_TEMPLATE_GROUP_LABELS[option]}
+                              </span>
+                              <span className="mt-0.5 block text-xs font-semibold text-phx-ink-faint">
+                                {CUSTOM_TEMPLATE_GROUP_NOTES[option]}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
                     <div className="sm:col-span-2">
                       <label className={labelClassName} htmlFor="template-note">
                         What this paper is, for whoever reads the list next
@@ -633,44 +688,58 @@ export function TemplateStudio() {
               <span>No company templates yet. The ten documents above are the ones built in.</span>
             </AdminCallout>
           ) : (
-            <ul className="divide-y divide-phx-line rounded-2xl border border-phx-line bg-white/70">
-              {templates.map((template) => (
-                <li className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-start" key={template.id}>
-                  {template.pages[0] ? (
-                    // eslint-disable-next-line @next/next/no-img-element -- streamed from a private
-                    // bucket through an authenticated route; next/image cannot fetch it.
-                    <img
-                      alt=""
-                      className="h-24 w-auto shrink-0 rounded-lg border border-phx-line bg-white"
-                      src={`/api/hiring-pack/template-artwork/${template.pages[0].id}`}
-                    />
-                  ) : null}
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-sm font-black text-phx-ink">{template.name}</span>
-                      <Badge size="sm" tone="neutral">
-                        v{template.version}
-                      </Badge>
-                      <Badge size="sm" tone={template.status === "current" ? "success" : "neutral"}>
-                        {template.status === "current" ? "Current" : "Archived"}
-                      </Badge>
-                    </div>
-                    {template.nameAr ? (
-                      <p className="mt-0.5 text-sm text-phx-ink-soft" dir="auto">
-                        {template.nameAr}
-                      </p>
-                    ) : null}
-                    <p className="mt-1 text-xs text-phx-ink-faint">
-                      {template.pages.length} page{template.pages.length === 1 ? "" : "s"} ·{" "}
-                      {describePageSize(template.pageWidthPt, template.pageHeightPt)}
-                    </p>
-                    {template.note ? (
-                      <p className="mt-1 text-xs text-phx-ink-soft">{template.note}</p>
-                    ) : null}
-                  </div>
-                </li>
+            /* GROUPED, IN THE ORDER A CAREER RUNS — joining, leaving, then everything else, which
+               is the same order the built-in documents are listed in above. A group with nothing in
+               it is not shown: an empty heading reads as a thing that failed to load. */
+            <div className="space-y-4">
+              {CUSTOM_TEMPLATE_GROUPS.filter((option) =>
+                templates.some((template) => template.group === option),
+              ).map((option) => (
+                <section key={option}>
+                  <h4 className="mb-1.5 text-phx-xs font-black uppercase tracking-wide text-phx-ink-faint">
+                    {CUSTOM_TEMPLATE_GROUP_LABELS[option]}
+                  </h4>
+                  <ul className="divide-y divide-phx-line rounded-2xl border border-phx-line bg-white/70">
+                    {templates.filter((template) => template.group === option).map((template) => (
+                      <li className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-start" key={template.id}>
+                        {template.pages[0] ? (
+                          // eslint-disable-next-line @next/next/no-img-element -- streamed from a private
+                          // bucket through an authenticated route; next/image cannot fetch it.
+                          <img
+                            alt=""
+                            className="h-24 w-auto shrink-0 rounded-lg border border-phx-line bg-white"
+                            src={`/api/hiring-pack/template-artwork/${template.pages[0].id}`}
+                          />
+                        ) : null}
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="text-sm font-black text-phx-ink">{template.name}</span>
+                            <Badge size="sm" tone="neutral">
+                              v{template.version}
+                            </Badge>
+                            <Badge size="sm" tone={template.status === "current" ? "success" : "neutral"}>
+                              {template.status === "current" ? "Current" : "Archived"}
+                            </Badge>
+                          </div>
+                          {template.nameAr ? (
+                            <p className="mt-0.5 text-sm text-phx-ink-soft" dir="auto">
+                              {template.nameAr}
+                            </p>
+                          ) : null}
+                          <p className="mt-1 text-xs text-phx-ink-faint">
+                            {template.pages.length} page{template.pages.length === 1 ? "" : "s"} ·{" "}
+                            {describePageSize(template.pageWidthPt, template.pageHeightPt)}
+                          </p>
+                          {template.note ? (
+                            <p className="mt-1 text-xs text-phx-ink-soft">{template.note}</p>
+                          ) : null}
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
               ))}
-            </ul>
+            </div>
           )}
         </div>
       )}

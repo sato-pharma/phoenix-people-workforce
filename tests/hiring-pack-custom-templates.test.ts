@@ -3,6 +3,9 @@ import assert from "node:assert/strict";
 import {
   buildCustomTemplatePagePath,
   CUSTOM_TEMPLATE_CONTENT_TYPES,
+  CUSTOM_TEMPLATE_GROUP_LABELS,
+  CUSTOM_TEMPLATE_GROUP_NOTES,
+  CUSTOM_TEMPLATE_GROUPS,
   CUSTOM_TEMPLATE_MAX_PAGE_BYTES,
   CUSTOM_TEMPLATE_MAX_PAGES,
   CUSTOM_TEMPLATE_MAX_PT,
@@ -339,6 +342,77 @@ function testAMissingTemplateTableIsRecognised() {
   assert.ok(!isCustomTemplateLayerMissing("boom"), "a string is not a PostgREST error");
 }
 
+/**
+ * A TEMPLATE IS FILED IN A PACKAGE, and an unrecognised package is refused rather than corrected.
+ *
+ * The owner, 2026-09-04: "I want to be able to group documents to hiring or resignation or other."
+ * Quietly filing an unknown answer under "other" would put a leaving form in the wrong package with
+ * nothing on screen to say so — and the person who finds out is whoever could not locate it on the
+ * day somebody resigned.
+ */
+function testATemplateIsFiledInAPackage() {
+  const unsorted = parseCustomTemplateDraft(draft());
+  assert.ok(unsorted.ok, "a template with no package stated is still a valid template");
+  assert.equal(
+    unsorted.value.group,
+    "other",
+    "and it belongs to Other papers, which is what unsorted MEANS",
+  );
+
+  for (const group of CUSTOM_TEMPLATE_GROUPS) {
+    const parsed = parseCustomTemplateDraft(draft({ group }));
+    assert.ok(parsed.ok, `"${group}" is a package and must be accepted`);
+    assert.equal(parsed.value.group, group, `"${group}" must survive the parse unchanged`);
+  }
+
+  for (const rubbish of ["resignation", "hiring", "OTHER", "joining ", 3, true, {}]) {
+    const parsed = parseCustomTemplateDraft(draft({ group: rubbish }));
+    assert.equal(
+      parsed.ok,
+      false,
+      `"${String(rubbish)}" is not a package and must be refused, not filed under "other"`,
+    );
+    if (!parsed.ok) {
+      assert.match(
+        parsed.message,
+        /package/i,
+        `the refusal of "${String(rubbish)}" should say what a package is`,
+      );
+    }
+  }
+}
+
+/** Every package has a name and a line of explanation for the picker. */
+function testEveryPackageCanBeShownToSomebodyChoosing() {
+  for (const group of CUSTOM_TEMPLATE_GROUPS) {
+    const label = CUSTOM_TEMPLATE_GROUP_LABELS[group];
+    const note = CUSTOM_TEMPLATE_GROUP_NOTES[group];
+    assert.ok(
+      typeof label === "string" && label.trim().length > 0,
+      `the "${group}" package has no name to show`,
+    );
+    assert.ok(
+      typeof note === "string" && note.trim().length > 0,
+      `the "${group}" package has no line saying what belongs in it`,
+    );
+    assert.ok(
+      !label.includes(group) || group === "other",
+      `the "${group}" package is labelled with its own stored value rather than a phrase`,
+    );
+  }
+
+  assert.equal(
+    Object.keys(CUSTOM_TEMPLATE_GROUP_LABELS).length,
+    CUSTOM_TEMPLATE_GROUPS.length,
+    "a package with no label would render as a blank heading on the list",
+  );
+  assert.equal(
+    Object.keys(CUSTOM_TEMPLATE_GROUP_NOTES).length,
+    CUSTOM_TEMPLATE_GROUPS.length,
+    "a package with no explanation gives somebody nothing to choose on",
+  );
+}
+
 export async function runHiringPackCustomTemplateTests() {
   testACustomDocumentCannotCollideWithABuiltIn();
   testAMalformedCustomKeyIsRefusedRatherThanTrusted();
@@ -351,4 +425,6 @@ export async function runHiringPackCustomTemplateTests() {
   testTheAcceptedTypesMatchTheBucket();
   testAPresetIsRecognisedWithoutBeingExact();
   testAMissingTemplateTableIsRecognised();
+  testATemplateIsFiledInAPackage();
+  testEveryPackageCanBeShownToSomebodyChoosing();
 }
