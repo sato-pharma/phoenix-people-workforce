@@ -118,6 +118,90 @@ export function memoryReachabilityLines({ relocated, orphans, broken }) {
   return lines;
 }
 
+/**
+ * Wrap text to a width, on word boundaries.
+ *
+ * Not a nicety: the owner's standing rule is that text is NEVER truncated with an ellipsis, and a
+ * memory's `description` is the field that decides whether it is recalled at all (§2.2). Trimming
+ * one to fit a terminal would cut away the exact half that tells the reader where the hook belongs.
+ *
+ * @param {string} text
+ * @param {number} width
+ * @returns {string[]}
+ */
+function wrapAt(text, width) {
+  const out = [];
+  let line = "";
+  for (const word of String(text).split(/\s+/).filter(Boolean)) {
+    if (line === "") line = word;
+    else if (line.length + 1 + word.length <= width) line += " " + word;
+    else {
+      out.push(line);
+      line = word;
+    }
+  }
+  if (line !== "") out.push(line);
+  return out.length > 0 ? out : [""];
+}
+
+/**
+ * The stranded section — the memories nothing points at, BY NAME.
+ *
+ * WHY THIS EXISTS. Until 2026-09-04 this command printed the stranded COUNT and nothing else, and
+ * the gap was found the only way it could be: a real trim, on 2026-09-04, moved the `gh pr merge`
+ * hook out of `MEMORY.md` after its AGENTS.md half had merged to `main`. The command answered
+ * "1 reachable from neither" — correct, and useless. Which one it was took three greps by hand,
+ * and the answer mattered, because the cause was that the checkout loading `AGENTS.md` sat on a
+ * branch predating the merge. A count says a memory is unrecallable; only a name says WHICH, and
+ * the whole point of §2.2's both-halves rule is to act on that one file before anything else.
+ *
+ * The `type` and `description` come with it because they are what route the fix: §2.2 sends a live
+ * rule to `MEMORY.md`, depth or history to `MEMORY-ARCHIVE.md`, and an agent-operating, production
+ * or owner rule into `AGENTS.md` §2.1 / §2.3 / §4.
+ *
+ * NO SILENT CAP, the same rule `repo-doctor` states at its own list: a truncated list that does not
+ * say it was truncated reads as "that is all of them".
+ *
+ * @param {object} input
+ * @param {string[]} input.orphans memory filenames reachable from neither index nor `AGENTS.md`
+ * @param {(file: string) => ({ type?: string, description?: string } | undefined)} [input.describe]
+ * @param {number} [input.limit] `Infinity` prints every one
+ * @returns {string[]}
+ */
+export function strandedLines({ orphans, describe = () => ({}), limit = 20 }) {
+  const lines = ["  STRANDED — no index links these and AGENTS.md does not name them:"];
+
+  if (orphans.length === 0) {
+    lines.push("    none — every memory file is reachable.");
+    return lines;
+  }
+
+  const shown = Number.isFinite(limit) ? orphans.slice(0, limit) : orphans;
+  for (const file of shown) {
+    const { type = "", description = "" } = describe(file) || {};
+    lines.push("    " + file.replace(/\.md$/, "") + (type ? "  (" + type + ")" : ""));
+    // A memory with no description is worse off than the others, not better: recall matches on that
+    // field, so an empty one cannot be found even after it is re-indexed. Say so rather than
+    // printing a blank line that reads like tidy output.
+    const detail = description || "(no description — recall cannot match this one even once re-indexed)";
+    for (const wrapped of wrapAt(detail, 92)) lines.push("        " + wrapped);
+  }
+
+  if (orphans.length > shown.length) {
+    lines.push(
+      "    ... and " + (orphans.length - shown.length) + " more not listed — re-run with --all for the full list.",
+    );
+  }
+
+  lines.push(
+    "    -> Nothing was changed. Give each a line in MEMORY.md if it is a live rule,",
+    "       MEMORY-ARCHIVE.md if it is depth or history, or relocate it into AGENTS.md",
+    "       §2.1 / §2.3 / §4 if it is an agent-operating, production or owner rule — that file",
+    "       auto-loads in full and has no cliff, so it costs the index nothing.",
+  );
+  return lines;
+}
+
 // ── THE COMMAND ────────────────────────────────────────────────────────────────────
 // WHY A CLI WHEN repo-doctor ALREADY PRINTS THIS. `AGENTS.md` §2.2 tells a session to re-run the
 // classifier before removing any slug, and the question it actually needs answered is not "how many
@@ -181,6 +265,27 @@ function memoryDirOrNull(projectRoot) {
   }
 }
 
+/**
+ * A memory's `type` and `description` from its frontmatter, or empty strings when it has none.
+ *
+ * Called only for the stranded files that actually get printed — never across the whole directory.
+ * When `AGENTS.md` cannot be read every memory falls through to stranded (the deliberate one-way
+ * failure above), and reading 900-odd files to describe a report nobody asked for would turn a
+ * degraded read into a slow one.
+ *
+ * @param {string} dir
+ * @param {string} file
+ * @returns {{ type: string, description: string }}
+ */
+function frontmatterOf(dir, file) {
+  const text = readTextOr(join(dir, file));
+  const close = text.indexOf("\n---", 3);
+  // Anything that is not a frontmatter block yields "" for both, and the caller says so out loud.
+  const head = text.startsWith("---") && close !== -1 ? text.slice(3, close) : "";
+  const grab = (key) => head.match(new RegExp("^[ \\t]*" + key + ":[ \\t]*(.+)$", "m"))?.[1].trim() ?? "";
+  return { type: grab("type"), description: grab("description") };
+}
+
 /** Backticked slugs in a chunk of text — the same convention `namedInAgents` matches. */
 function slugsIn(text) {
   const tick = String.fromCharCode(96);
@@ -189,6 +294,9 @@ function slugsIn(text) {
 }
 
 function main() {
+  // Read-only either way. `--all` only lifts the printed cap on the stranded list; there is no flag
+  // that writes an index line, a map row or a memory file, and there must never be one.
+  const printAll = process.argv.slice(2).includes("--all");
   const root = primaryRootOrNull();
   if (root === null) {
     console.error("memory-index-reachability: not inside a git repository.");
@@ -252,6 +360,18 @@ function main() {
   );
   if (agentsText === "") {
     console.log("  WARNING: AGENTS.md could not be read, so every memory falls through to orphan.");
+  }
+  console.log("");
+
+  // Stranded comes FIRST because it is the worse condition. An UNMARKED slug below is a missing
+  // guard against a future mistake; a stranded memory is that mistake already made — the file is
+  // on disk and nothing can recall it.
+  for (const line of strandedLines({
+    orphans,
+    describe: (file) => frontmatterOf(memoryDir, file),
+    limit: printAll ? Infinity : 20,
+  })) {
+    console.log(line);
   }
   console.log("");
 
