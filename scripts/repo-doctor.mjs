@@ -26,10 +26,19 @@
 //
 // SAFETY. --fix removes ONLY husks, and a husk is defined by proof, not by name:
 // not registered as a worktree, no .git entry, and a full recursive walk finding
-// ZERO files. A directory holding even one file is reported as NEEDS-REVIEW and never
-// touched — orphaned worktrees have historically held the only copy of real work.
+// ZERO files. A directory holding even one file is reported under ORPHANED FOLDERS and
+// never touched — orphaned worktrees have historically held the only copy of real work.
 // The zero-file test also satisfies AGENTS.md's "never delete a .xlsx or .pdf" rule by
 // construction; it is re-asserted explicitly before each removal anyway.
+//
+// THE THIRD CATEGORY. Added 2026-09-05. LIVE and HUSKS split on `isRegistered ||
+// hasGitEntry`, which files a DEREGISTERED folder by whatever its leftover `.git` stub
+// decides — stub present and it counted as a LIVE WORKTREE, the heading that reads as
+// healthy. On 2026-09-04 that hid 861 lines of unsaved work in a folder this report had
+// just called fine. ORPHANED FOLDERS keys on REGISTRATION instead and answers by CONTENT,
+// holding every file against main's blob, because a file count cannot tell a leftover
+// checkout from the only copy of an afternoon. It is report-only and disjoint from --fix's
+// input by construction; see scripts/repo-doctor-orphaned-folders.mjs.
 //
 // Removal of REGISTERED worktrees is deliberately never automated. AGENTS.md section 6
 // requires separate owner approval for that, so this prints the exact commands instead —
@@ -44,7 +53,9 @@
 //   node scripts/repo-doctor.mjs --fix --force   # skip the concurrent-session guard
 //   node scripts/repo-doctor.mjs --no-auth   # skip the orphan-auth-user check (offline / no creds)
 //   node scripts/repo-doctor.mjs --deep      # ...also names every unlinked memory file, not the
-//                                            #    first 20, and every one reachable via AGENTS.md
+//                                            #    first 20, and every one reachable via AGENTS.md,
+//                                            #    and every at-risk file in an ORPHANED folder
+//                                            #    rather than the first 10 of each group
 //
 // THE ORPHAN AUTH USER CHECK. Added 2026-08-19 after four Supabase `auth.users` rows were
 // found with no Phoenix account behind them — two duplicate employee entries from 20 May, a
@@ -108,6 +119,11 @@ import { classifyBranchPr, listBranchPrs } from "./branch-pr-state.mjs";
 import { countUnpushedCommits } from "./repo-doctor-unpushed.mjs";
 import { archivePushTarget, listArchiveRefs, strandedArchives } from "./repo-doctor-archive-refs.mjs";
 import { classifySupabaseLink } from "./repo-doctor-supabase-link.mjs";
+import {
+  classifyOrphanedFolder,
+  orphanedFolderLines,
+  REGENERABLE_DIRS,
+} from "./repo-doctor-orphaned-folders.mjs";
 
 const args = process.argv.slice(2);
 const deep = args.includes("--deep");
@@ -347,16 +363,24 @@ addFrom(parentDir, isWt);
 
 const live = [];
 const husks = [];
-const review = [];
+/**
+ * Every candidate, in one list, so the ORPHANED FOLDERS section below can ask its own question of
+ * all of them. It has to: the two buckets here split on `isRegistered || hasGitEntry`, which files
+ * a DEREGISTERED folder under `live` whenever a failed `git worktree remove` left its `.git` stub
+ * behind — the shape that hid 861 lines of unsaved work on 2026-09-04. See the header of
+ * repo-doctor-orphaned-folders.mjs. `live` and `husks` are deliberately UNCHANGED: --fix's input
+ * set is the husk list and nothing else, and this pass must not be able to widen it.
+ */
+const allRows = [];
 
 for (const dir of candidates) {
   const isRegistered = registered.has(canon(dir));
   const hasGitEntry = fs.existsSync(path.join(dir, ".git"));
   const { files, dirs, links, unreadable } = walk(dir);
   const row = { dir, files, dirs, links, isRegistered, hasGitEntry, unreadable };
+  allRows.push(row);
   if (isRegistered || hasGitEntry) live.push(row);
   else if (files === 0 && !unreadable) husks.push(row);
-  else review.push(row);
 }
 
 const rel = (p) => (p.startsWith(parentDir) ? p.slice(parentDir.length + 1) : p);
@@ -400,14 +424,229 @@ const huskEntries = husks.reduce((a, r) => a + r.dirs + r.links, 0);
 if (husks.length) console.log(`  -> ${num(huskEntries)} empty path entries reclaimable`);
 console.log("");
 
-if (review.length) {
-  console.log(`NEEDS REVIEW (unregistered but HOLDS FILES — never auto-deleted): ${review.length}`);
-  for (const r of review) {
-    console.log(
-      `  ${rel(r.dir).padEnd(58)} ${num(r.files).padStart(9)} files${r.unreadable ? " (partly unreadable)" : ""}`,
+// ── ORPHANED FOLDERS: the evidence a file count could not give ─────────────────────
+//
+// This block replaces a NEEDS REVIEW section that printed one padded line per folder and its file
+// count. The count was the whole problem: 4,152 files is what a healthy abandoned worktree looks
+// like AND what one holding the only copy of an afternoon's work looks like. Everything below
+// exists to tell those two apart by CONTENT, per AGENTS.md 2.1 ("Settle by CONTENT ... never a
+// timestamp"), and it runs only for folders git does not account for — normally none, so a healthy
+// run pays nothing for it.
+
+/** Hard ceiling on files compared per folder. A full checkout is ~5,900; this leaves headroom. */
+const ORPHAN_FILE_CAP = 12000;
+
+/**
+ * Like {@link execFileSync} through {@link git}, but treats a git exit code of 1 as an ANSWER
+ * rather than a failure. `git check-ignore` exits 1 to mean "none of these paths are ignored",
+ * which the plain helper cannot distinguish from "git blew up" — and that difference decides
+ * whether six copied `.env.*` files are reported as unsaved work in every orphan on the machine.
+ */
+function gitTolerant(gitArgs, opts = {}) {
+  try {
+    return execFileSync("git", gitArgs, {
+      encoding: "utf8",
+      stdio: ["pipe", "pipe", "ignore"],
+      ...opts,
+    });
+  } catch (err) {
+    if (err && err.status === 1 && typeof err.stdout === "string") return err.stdout;
+    return null;
+  }
+}
+
+/**
+ * Files worth comparing, with their sizes and mtimes. {@link REGENERABLE_DIRS} is skipped whole —
+ * `node_modules` is a junction to the primary's copy, `.next` is build output, `.git` is git's own
+ * bookkeeping, and hashing 45,000 build artefacts to prove they are build artefacts is a slow way
+ * to bury the one file that matters.
+ */
+function comparableFiles(dir) {
+  const out = [];
+  let truncated = false;
+  const visit = (d, prefix) => {
+    if (truncated) return;
+    let entries;
+    try {
+      entries = fs.readdirSync(d, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const e of entries) {
+      if (truncated) return;
+      if (e.isSymbolicLink()) continue; // never follow — see walk()
+      // Skipped by NAME, before the type is looked at. In a worktree `.git` is a FILE holding a
+      // `gitdir:` pointer, not a directory, so a directory-only skip let the stub through and
+      // reported it as "on NO branch at all" — the loudest line in the section, spent on the one
+      // file in the folder that is certainly not anybody's work.
+      if (REGENERABLE_DIRS.has(e.name)) continue;
+      const abs = path.join(d, e.name);
+      const relPath = prefix === "" ? e.name : `${prefix}/${e.name}`;
+      if (e.isDirectory()) {
+        visit(abs, relPath);
+      } else if (e.isFile()) {
+        if (out.length >= ORPHAN_FILE_CAP) {
+          truncated = true;
+          return;
+        }
+        let size = null;
+        let mtimeMs = null;
+        try {
+          const st = fs.statSync(abs);
+          size = st.size;
+          mtimeMs = st.mtimeMs;
+        } catch {
+          /* a file that vanished mid-walk stays null and reads as unproven, never as safe */
+        }
+        out.push({ path: relPath, abs, size, mtimeMs });
+      }
+    }
+  };
+  visit(dir, "");
+  return { files: out, truncated };
+}
+
+/** main's tree as path -> blob id, or null when main itself could not be read. */
+function readMainTree() {
+  for (const ref of ["main", "origin/main"]) {
+    // -z rather than --format: NUL-separated records are never quoted, so a path holding a space
+    // or a non-ASCII byte parses the same as any other. Nine tracked paths here contain spaces.
+    const raw = gitTolerant(["-C", primaryRoot, "ls-tree", "-r", "-z", ref]);
+    if (raw === null || raw === "") continue;
+    const map = new Map();
+    for (const record of raw.split("\0")) {
+      const tab = record.indexOf("\t");
+      if (tab === -1) continue;
+      const meta = record.slice(0, tab).split(" ");
+      if (meta.length < 3) continue;
+      map.set(record.slice(tab + 1), meta[2]);
+    }
+    if (map.size > 0) return map;
+  }
+  return null;
+}
+
+/**
+ * Blob ids for files on disk, via `git hash-object` so the repo's own filters apply. That matters
+ * on Windows: core.autocrlf is true and .gitattributes pins `* text=auto eol=lf` with `eol=crlf`
+ * for .ps1/.bat/.cmd, so a .ps1 sits CRLF on disk and LF in the blob. Hashing the raw bytes in
+ * node would call every one of those files "DIFFERS from main" — a report that cries wolf on a
+ * whole file type is a report nobody reads the day it is right.
+ */
+function hashOnDisk(absPaths) {
+  const out = new Map();
+  const CHUNK = 100; // ~20k chars of argv, well inside the 32,767 CreateProcess limit
+  for (let i = 0; i < absPaths.length; i += CHUNK) {
+    const slice = absPaths.slice(i, i + CHUNK);
+    const raw = git(["-C", primaryRoot, "hash-object", "--", ...slice]);
+    const lines = raw === null ? [] : raw.split("\n").filter(Boolean);
+    if (lines.length === slice.length) {
+      slice.forEach((p, k) => out.set(p, lines[k]));
+      continue;
+    }
+    // One unreadable file fails the whole batch. Retry singly rather than let it take 99 innocent
+    // files down with it and report them all as unproven.
+    for (const p of slice) {
+      const one = git(["-C", primaryRoot, "hash-object", "--", p]);
+      if (one !== null && one !== "") out.set(p, one.split("\n")[0]);
+    }
+  }
+  return out;
+}
+
+/** Sizes for a set of blob ids, so "differs" can say how much. */
+function blobSizes(hashes) {
+  const out = new Map();
+  if (hashes.length === 0) return out;
+  const raw = gitTolerant(["-C", primaryRoot, "cat-file", "--batch-check"], {
+    input: hashes.join("\n") + "\n",
+  });
+  if (raw === null) return out;
+  for (const line of raw.split("\n")) {
+    const parts = line.trim().split(" ");
+    if (parts.length === 3 && parts[1] === "blob") out.set(parts[0], Number(parts[2]));
+  }
+  return out;
+}
+
+/** Which of these repo-relative paths this repository's ignore rules would exclude. */
+function ignoredPaths(relPaths) {
+  const out = new Set();
+  if (relPaths.length === 0) return out;
+  const CHUNK = 2000;
+  for (let i = 0; i < relPaths.length; i += CHUNK) {
+    const slice = relPaths.slice(i, i + CHUNK);
+    // --no-index so a path that is TRACKED here does not make git refuse the whole batch.
+    const raw = gitTolerant(["-C", primaryRoot, "check-ignore", "--no-index", "--stdin"], {
+      input: slice.join("\n") + "\n",
+    });
+    if (raw === null) continue;
+    for (const line of raw.split("\n")) {
+      const p = line.trim();
+      if (p !== "") out.add(p);
+    }
+  }
+  return out;
+}
+
+const orphanCandidates = allRows.filter((r) => !r.isRegistered);
+const orphanVerdicts = [];
+if (orphanCandidates.length > 0) {
+  const mainTree = readMainTree();
+  for (const r of orphanCandidates) {
+    // Cheap pre-test: a proven-empty folder with no .git is a husk, and gathering evidence about
+    // it would be gathering evidence about nothing. The classifier re-applies this itself — this
+    // only avoids the walk.
+    const isHusk = !r.hasGitEntry && r.files === 0 && !r.unreadable;
+    const { files, truncated } = isHusk ? { files: [], truncated: false } : comparableFiles(r.dir);
+
+    const onDisk = hashOnDisk(files.map((f) => f.abs));
+    const ignored = ignoredPaths(files.map((f) => f.path));
+    const wanted = [];
+    for (const f of files) {
+      const mainHash = mainTree === null ? null : (mainTree.get(f.path) ?? null);
+      const hash = onDisk.get(f.abs) ?? null;
+      if (mainHash !== null && hash !== null && hash !== mainHash) wanted.push(mainHash);
+    }
+    const sizes = blobSizes(wanted);
+
+    const newestMtimeMs = files.reduce(
+      (a, f) => (f.mtimeMs !== null && f.mtimeMs > a ? f.mtimeMs : a),
+      0,
+    );
+
+    orphanVerdicts.push(
+      classifyOrphanedFolder({
+        label: rel(r.dir),
+        dir: r.dir,
+        isRegistered: r.isRegistered,
+        hasGitEntry: r.hasGitEntry,
+        totalFiles: r.files,
+        unreadable: r.unreadable,
+        newestMtimeMs: newestMtimeMs === 0 ? null : newestMtimeMs,
+        nowMs: Date.now(),
+        mainTreeAvailable: mainTree !== null,
+        scannedAll: !truncated,
+        listLimit: deep ? Number.POSITIVE_INFINITY : 10,
+        files: files.map((f) => {
+          const mainHash = mainTree === null ? null : (mainTree.get(f.path) ?? null);
+          return {
+            path: f.path,
+            hash: onDisk.get(f.abs) ?? null,
+            mainHash,
+            size: f.size,
+            mainSize: mainHash === null ? null : (sizes.get(mainHash) ?? null),
+            ignored: ignored.has(f.path),
+          };
+        }),
+      }),
     );
   }
-  console.log("  Inspect these by hand. An orphaned worktree has held the only copy of real work before.");
+}
+
+const orphanLines = orphanedFolderLines(orphanVerdicts);
+if (orphanLines.length) {
+  for (const line of orphanLines) console.log(line);
   console.log("");
 }
 
@@ -530,6 +769,17 @@ if (!fix && !stripIdle) {
     console.log(`Run with --fix to delete ${husks.length} husk(s) (${num(huskEntries)} empty path entries).`);
   } else {
     console.log("No husks to clear.");
+  }
+  // Said again down here because the verdict is what a tired reader scrolls to, and the one thing
+  // that must never be lost between the inventory and the verdict is a folder holding work that is
+  // in no git ref. It also states what --fix will not do, so the next line of the report cannot be
+  // read as an offer to clear these away.
+  const alarmingOrphans = orphanVerdicts.filter((v) => v.orphaned && v.severity === "alarm").length;
+  if (alarmingOrphans > 0) {
+    console.log(
+      `${alarmingOrphans} ORPHANED folder(s) may hold the only copy of real work — see the section above. ` +
+        "--fix will NOT touch them; it removes proven ZERO-file husks only.",
+    );
   }
   // Only worktrees that would actually pass the strip gates are counted here. Summing every
   // live worktree's cache instead advertises a saving the command then refuses to deliver:
