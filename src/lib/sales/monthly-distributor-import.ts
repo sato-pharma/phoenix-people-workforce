@@ -2557,6 +2557,20 @@ export function buildSourceOfSalesDashboard(input: {
     : null;
   const stripHeadOffice = input.excludeHeadOfficeLine === true;
 
+  // `input.batches` deliberately carries EVERY status — the page shows recent upload history,
+  // rejected files included. But a rejected upload's row is written with fully populated
+  // total_qty/total_value (see persistDistributorSalesUpload), so anything SUMMED here must come
+  // from the validated subset only. The loader already restricts the summaries query that way;
+  // before this, the unrestricted fast path below summed the batch list UNFILTERED, so the
+  // headline Total Value and the By-Distributor table counted a rejected sheet as revenue while
+  // By Line / By Product / By Region — built from those same validated-only summaries — did not.
+  // The page contradicted itself, and the half that was wrong is the half the CEO reads first.
+  //
+  // Whitelist, never a blacklist: mapSourceOfSalesBatch already coerces any status that is not
+  // exactly "validated" to "blocked", so a batch stuck mid-write (the row is inserted before
+  // finalize, a window of up to ~6h) cannot leak in through a status this code never heard of.
+  const countedBatches = input.batches.filter((batch) => batch.status === "validated");
+
   // ── CEO / unrestricted path ──────────────────────────────────────────────
   // Only safe when BOTH locks are open. The fast path sums whole-BATCH totals, which bake in
   // every line — so a viewer who may see restricted products but not the Head Office line (or
@@ -2564,7 +2578,7 @@ export function buildSourceOfSalesDashboard(input: {
   if (!restrictedSet && !stripHeadOffice) {
     const totals = emptyTotals();
     const distributorMap = new Map<string, SourceOfSalesDashboardDistributor>();
-    input.batches.forEach((batch) => {
+    countedBatches.forEach((batch) => {
       const batchTotals = { rowCount: batch.rowCount, totalBonusQty: batch.totalBonusQty, totalQty: batch.totalQty, totalValue: batch.totalValue };
       addDashboardTotals(totals, batchTotals);
       const key = batch.distributorCode;
@@ -2582,7 +2596,7 @@ export function buildSourceOfSalesDashboard(input: {
       byProduct: aggregateDashboardGroups(input.summaries, "product"),
       byRegion: aggregateDashboardGroups(input.summaries, "region"),
       period: input.period,
-      sheetCount: input.batches.length,
+      sheetCount: countedBatches.length,
       totals: roundedTotals(totals),
     };
   }
@@ -2618,9 +2632,9 @@ export function buildSourceOfSalesDashboard(input: {
   const byLine = [...lineMap.values()].map(roundedTotals).sort((l, r) => r.totalValue - l.totalValue || l.label.localeCompare(r.label));
 
   // byDistributor: re-aggregate from the visible product rows via batchId
-  const batchById = new Map(input.batches.map((b) => [b.batchId, b]));
+  const batchById = new Map(countedBatches.map((b) => [b.batchId, b]));
   const sheetCountByCode = new Map<string, number>();
-  input.batches.forEach((b) => sheetCountByCode.set(b.distributorCode, (sheetCountByCode.get(b.distributorCode) ?? 0) + 1));
+  countedBatches.forEach((b) => sheetCountByCode.set(b.distributorCode, (sheetCountByCode.get(b.distributorCode) ?? 0) + 1));
   const distMap = new Map<string, SourceOfSalesDashboardDistributor>();
   visibleProducts.forEach((row) => {
     const batch = batchById.get(row.batchId ?? "");
@@ -2680,7 +2694,7 @@ export function buildSourceOfSalesDashboard(input: {
     byProduct,
     byRegion,
     period: input.period,
-    sheetCount: input.batches.length,
+    sheetCount: countedBatches.length,
     totals: roundedTotals(totals),
   };
 }
