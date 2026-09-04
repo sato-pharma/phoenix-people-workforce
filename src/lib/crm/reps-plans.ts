@@ -223,8 +223,14 @@ export function repsPlansRange(month: string, todayIso: string, period?: string 
   const requested = (period ?? "").trim();
   const explicit = RANGE_PATTERN.exec(requested);
   if (explicit && explicit[1] <= explicit[2] && isRealCalendarDay(explicit[1]) && isRealCalendarDay(explicit[2])) {
-    windowStart = explicit[1];
-    windowEnd = explicit[2];
+    // CLAMPED TO THE MONTH. The range rides in the URL, so it can name any two days in history —
+    // but every board reading it also reads a doctor list for ONE month, and a window reaching
+    // outside that month would print a period label the month label contradicts, against rows the
+    // plan side never fetched. Clamping keeps the two halves describing the same span. A range
+    // entirely outside the month collapses to a single day at whichever end it ran past, which
+    // scores empty and says so rather than silently widening back to the whole month.
+    windowStart = explicit[1] < monthStart ? monthStart : explicit[1] > monthEnd ? monthEnd : explicit[1];
+    windowEnd = explicit[2] > monthEnd ? monthEnd : explicit[2] < monthStart ? monthStart : explicit[2];
     periodKey = `${windowStart}..${windowEnd}`;
     periodLabel = spanLabel(windowStart, windowEnd);
   } else if (/^w[1-5]$/.test(requested)) {

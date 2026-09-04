@@ -131,8 +131,13 @@ export type RepDoctorListRepRow = {
    * planned. Shipped as `adherencePct` in #2259. The numerator is unchanged; the denominator is
    * `coverageDueDoctors`, not `plannedDoctors` — see that field for why. */
   coveragePct: number;
-  /** The coverage denominator: planned doctors who were due by today, plus any visited early. It is
-   * identical to `plannedDoctors` for any COMPLETE month, so no closed month's number moves.
+  /** The coverage denominator: planned doctors who were due by `asOf`, plus any visited early.
+   *
+   * WITH A WINDOW this is identically `plannedDoctors` — `asOf` is the window's last day, so
+   * nothing in it is undue. The field is still reported because the Reps List drill-down reads the
+   * same builder on the to-date basis, where the two genuinely differ. On the KPIs board, read
+   * `plannedDoctors`. It is identical to `plannedDoctors` for any COMPLETE month either way, so no
+   * closed month's number moves.
    *
    * Mid-month the two are far apart, and the gap is the whole reason this field exists. Measured on
    * production for August 2026: the month finished with 9,812 planned rep-to-doctor pairs, but on
@@ -465,6 +470,24 @@ export type RepDoctorListsInput = {
    * whose answer changes with the wall clock, and a test that depends on the real date is a test
    * that passes today and fails in September. Production never passes it. */
   asOf?: string;
+  /**
+   * The scored period, when it is not the whole month.
+   *
+   * SUPPLYING THIS CHANGES THE BASIS, and that is its whole purpose. Owner, 2026-09-04: *"you can
+   * show that until now, she covered twenty of hundred doctors ... so her coverage is twenty
+   * percent. Also, make an option to filter by period and choose, for example, one week, two
+   * weeks."* A window is therefore scored WHOLE — every planned call inside it counts, whether or
+   * not its day has arrived — so coverage divides by the window's entire list rather than by the
+   * part of it that has come due. The fair mid-month read is a SHORTER WINDOW, not a shrinking
+   * denominator, which is the one lever a manager can see and reason about.
+   *
+   * Rows outside the window are dropped here rather than trusted to the caller: this function is
+   * the pure half and has to be correct for whatever it is handed.
+   *
+   * Omitted, the board keeps its original to-date basis against today — which is what the Reps List
+   * drill-down still wants, and what every closed month has always produced anyway.
+   */
+  window?: { from: string; to: string };
   /** Canonical (upper-cased, trimmed) hr id → the employee's display name. */
   employeeNameByHrId: ReadonlyMap<string, string>;
   /** Departed agents, from the CRM reads door. Applied to the PLAN side here; the visits side has
@@ -491,8 +514,14 @@ export type RepDoctorListsInput = {
 export async function getRepDoctorLists(input: {
   filters?: RepDoctorListFilters;
   month: string;
+  /** The scored period inside that month. Defaults to the whole month. Both mirrors are read for
+   * exactly this span, so a week's board never pays for a month's rows — and the builder cuts to it
+   * again anyway, because it must be right on whatever it is handed. */
+  window?: { from: string; to: string };
 }): Promise<RepDoctorListsBoard> {
-  const { from, to } = monthBounds(input.month);
+  const monthWindow = monthBounds(input.month);
+  const from = input.window?.from ?? monthWindow.from;
+  const to = input.window?.to ?? monthWindow.to;
 
   const [planRows, visitRows, excludedAgentCrmIds, directory, norms] = await Promise.all([
     scanPlanEntries(from, to),
@@ -529,6 +558,7 @@ export async function getRepDoctorLists(input: {
     norms,
     planRows,
     visitRows,
+    window: input.window,
   });
 }
 
@@ -544,13 +574,39 @@ export function buildRepDoctorListsBoard(input: RepDoctorListsInput): RepDoctorL
   const filters = input.filters ?? {};
   const norms = input.norms;
 
-  // The last day scored. For a complete month this is the month's own last day, so the to-date and
-  // full-month bases are identical and the frequency rule reduces to plain exact-match. Only the
-  // live month is affected. String comparison throughout: YYYY-MM-DD sorts correctly as text, and
-  // parsing to a Date would shift the Cairo wall-clock the vendor sends (see DATE DISCIPLINE above).
-  const monthEnd = monthBounds(month).to;
+  // ── THE SCORED WINDOW ────────────────────────────────────────────────────────────────────────
+  // `asOf` is the last day whose planned calls COUNT. Two bases, and which one is in force is
+  // decided by whether a window was asked for:
+  //
+  //   WINDOW GIVEN   asOf = the window's own last day, so the whole window counts. A doctor the
+  //                  plan schedules for the 28th is part of September's list on the 4th, and
+  //                  September's coverage is measured against all of it. Pick week 1 to be judged
+  //                  on week 1.
+  //   NO WINDOW      asOf = today, clamped to the month's end — the original to-date basis, kept
+  //                  for the Reps List drill-down which reads one rep's own month.
+  //
+  // For any COMPLETE month the two are the same day, so no closed month's number moves either way.
+  // String comparison throughout: YYYY-MM-DD sorts correctly as text, and parsing to a Date would
+  // shift the Cairo wall-clock the vendor sends (see DATE DISCIPLINE above).
+  const bounds = monthBounds(month);
+  const monthEnd = bounds.to;
+  const windowFrom = input.window?.from ?? bounds.from;
+  const windowTo = input.window?.to ?? bounds.to;
+  // THE WINDOW WINS when there is one. `asOf` is the to-date injection point for the WINDOWLESS
+  // caller, and letting it override a window would make the basis depend on which of two arguments a
+  // caller happened to set — the KPIs board passes no asOf today, so the bug would have been silent
+  // until someone added one, and then coverage would quietly revert to the due-so-far divisor.
   const today = input.asOf ?? cairoTodayIso();
-  const asOf = today < monthEnd ? today : monthEnd;
+  const asOf = input.window ? windowTo : today < monthEnd ? today : monthEnd;
+
+  // Both sides are cut to the window before anything is counted. A caller that read a whole month
+  // and then asked for week 2 must not have month rows scored against a week's dates.
+  const windowPlanRows = input.planRows.filter(
+    (row) => row.plan_date != null && row.plan_date >= windowFrom && row.plan_date <= windowTo,
+  );
+  const windowVisitRows = input.visitRows.filter(
+    (row) => row.visit_date != null && row.visit_date >= windowFrom && row.visit_date <= windowTo,
+  );
 
   // THE SPLIT. A campaign row (visit type -8) proves the rep worked but names no doctor: every one
   // of the 31,322 recorded between 2026-01-01 and 2026-08-20 carries contact id 0, blank name,
@@ -558,12 +614,12 @@ export function buildRepDoctorListsBoard(input: RepDoctorListsInput): RepDoctorL
   // match. It is counted beside BOTH KPIs instead, so a rep who spent the month on campaign work is
   // never presented as idle (owner's ruling 2026-08-21). Coverage keeps meaning exactly one thing:
   // planned doctors CONFIRMED seen.
-  const visitRows = input.visitRows.filter((row) => row.visit_type !== CAMPAIGN_TYPE);
-  const campaignRows = input.visitRows.filter((row) => row.visit_type === CAMPAIGN_TYPE);
+  const visitRows = windowVisitRows.filter((row) => row.visit_type !== CAMPAIGN_TYPE);
+  const campaignRows = windowVisitRows.filter((row) => row.visit_type === CAMPAIGN_TYPE);
 
   // Symmetry with the visits door, which has already dropped these agents from `visitRows`.
   const excluded = new Set(input.excludedAgentCrmIds);
-  const planRows = input.planRows.filter((row) => !excluded.has(row.agent_crm_id));
+  const planRows = windowPlanRows.filter((row) => !excluded.has(row.agent_crm_id));
 
   // Rep display names: the employee record first (the owner's rule is human-readable names, and the
   // directory carries the nickname-aware one), then the vendor's own label from the visits mirror,
@@ -571,9 +627,9 @@ export function buildRepDoctorListsBoard(input: RepDoctorListsInput): RepDoctorL
   // planned but never visited has only the first source.
   const nameByHrId = input.employeeNameByHrId;
   const vendorNameByCrmId = new Map<number, string>();
-  // input.visitRows, not visitRows: a rep whose whole month is campaign work has NO type-0 row, so
-  // reading only the joinable rows would leave them nameless and print "Unmapped CRM agent 1550".
-  for (const visit of input.visitRows) {
+  // windowVisitRows, not visitRows: a rep whose whole window is campaign work has NO type-0 row,
+  // so reading only the joinable rows would leave them nameless and print "Unmapped CRM agent 1550".
+  for (const visit of windowVisitRows) {
     const crmId = visit.agent_crm_id;
     const name = visit.agent_name?.trim();
     if (crmId && name && !vendorNameByCrmId.has(crmId)) vendorNameByCrmId.set(crmId, name);
@@ -582,7 +638,7 @@ export function buildRepDoctorListsBoard(input: RepDoctorListsInput): RepDoctorL
   for (const row of planRows) {
     if (!hrIdByCrmId.has(row.agent_crm_id)) hrIdByCrmId.set(row.agent_crm_id, row.agent_hr_id);
   }
-  for (const visit of input.visitRows) {
+  for (const visit of windowVisitRows) {
     if (visit.agent_crm_id && !hrIdByCrmId.has(visit.agent_crm_id)) {
       hrIdByCrmId.set(visit.agent_crm_id, visit.agent_hr_id);
     }

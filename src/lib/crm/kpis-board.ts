@@ -17,20 +17,33 @@
 //              proof, because a campaign call names no doctor and cannot be
 //              checked by anybody — see crm/call-rate.ts.
 //
-//   COVERAGE   visitedDoctors / coverageDueDoctors, month to date. "I have a
+//   COVERAGE   visitedDoctors / plannedDoctors, over the SCORED WINDOW. "I have a
 //              hundred contacts in my list; how much did I cover from them?" One
 //              visit is enough — grade and count are the other KPI's business.
-//              The denominator is the part of the list that has COME DUE, the same
-//              basis frequency already used. A doctor first planned for the 28th
-//              is not a miss on the 3rd, and counting him as one capped August's
-//              coverage at 31.5% on 3 August by arithmetic alone (measured: 6,720
-//              of 9,812 planned pairs were still in the future that morning). For
-//              a complete month the two denominators are identical, so no closed
-//              month's number moves.
 //
-//   FREQUENCY  onPlanDoctors / (plannedDoctors - notDue). "If he tell three times
-//              and he visited three times, this is correct." Exact is the ONLY
-//              pass: two is `under`, four is `over`, and both are deviations.
+//   FREQUENCY  onPlanDoctors / plannedDoctors, over the same window. "If he tell
+//              three times and he visited three times, this is correct." Exact is
+//              the ONLY pass: two is `under`, four is `over`, both deviations.
+//
+// THE WINDOW IS THE ONLY LEVER, and that is the 2026-09-04 change. Both plan KPIs
+// divide by the WHOLE window's list — not by the part of it that has come due.
+// Owner, that day: "you can show that until now, she covered twenty of hundred
+// doctors ... so her coverage is twenty percent. Also, make an option to filter by
+// period and choose, for example, one week, two weeks." So a rep two days into
+// September reads 20% of his month, which is what 20% of a month looks like on the
+// 4th; if that is not the question being asked, the Period picker answers the
+// other one.
+//
+// It replaces a to-date denominator that shrank the divisor instead. That was
+// arithmetically fair and unreadable: nobody could say what number it was out of,
+// and the board printed "20 of 22 due so far" beside a list of a hundred. The
+// owner asked for the plain fraction plus a period control, and the two together
+// do the same job in a form a manager can see and steer. For a COMPLETE month the
+// two bases are identical, so no closed month's number moved.
+//
+// COVERAGE AND FREQUENCY NOW HONOUR THE PERIOD PICKER, which until this change
+// only narrowed the call rate: getRepDoctorLists was called with the month and
+// nothing else, so picking week 1 left both plan KPIs on the whole month.
 //
 // WHY THE THREE DISAGREE, which is the first thing a manager asks. They measure
 // different things on purpose: coverage asks whether the doctor was touched at
@@ -54,6 +67,7 @@ import {
   applyKpiFilters,
   buildKpiFacets,
   EMPTY_KPI_FILTERS,
+  KPI_CUSTOM_PERIOD_VALUE,
   type KpiFacets,
   type KpiFilterState,
 } from "@/lib/crm/kpis-filters";
@@ -96,16 +110,21 @@ export function kpiMonthOptions(todayIso: string, count = 12): KpiPeriodOption[]
 }
 
 /**
- * The periods the picker offers: the whole month, then each of its weeks.
+ * The periods the picker offers: the whole month, each of its weeks, then a free date range.
  *
  * Future weeks are deliberately KEPT. Picking one is answered honestly — `notStarted` makes every
  * rate null and the board says the period has not begun — which is more useful than hiding the
  * option and leaving a manager wondering why week 4 vanished on the 10th.
+ *
+ * CUSTOM RANGE carries no dates of its own. It is a mode the picker switches into, and the dates
+ * come back as a `from..to` period key that `repsPlansRange` already parses; the owner chose the
+ * free pair over a fixed list of two-week blocks on 2026-09-04.
  */
 export function kpiPeriodOptions(month: string, todayIso: string): KpiPeriodOption[] {
   return [
     { label: "Whole month", value: "month" },
     ...repsPlansWeeks(month, todayIso).map((week) => ({ label: week.label, value: week.key })),
+    { label: "Custom range", value: KPI_CUSTOM_PERIOD_VALUE },
   ];
 }
 
@@ -164,19 +183,16 @@ export type KpiRepRow = {
    */
   callRateAttainmentPct: number | null;
 
-  // ── Coverage and frequency (the whole month) ──────────────────────────────
-  /** Every doctor on the rep's list for the month, due or not. The list SIZE, not a denominator. */
+  // ── Coverage and frequency (the scored window) ────────────────────────────
+  /** Every doctor the plan names inside the window, due or not — and THE DENOMINATOR OF BOTH plan
+   * KPIs. One number under both percentages, so "20 of 100" and "20%" can never disagree. */
   plannedDoctors: number;
-  /** The coverage denominator: the doctors due by today, plus any seen early. Equals
-   * `plannedDoctors` once the month is complete. */
-  coverageDueDoctors: number;
   visitedDoctors: number;
   missedDoctors: number;
   coveragePct: number;
   onPlanDoctors: number;
   underDoctors: number;
   overDoctors: number;
-  notDueDoctors: number;
   frequencyPct: number;
   /** False when the rep has no planned doctors — he is NOT a 0% performer and must not rank as one. */
   hasMeasurablePlan: boolean;
@@ -261,7 +277,6 @@ export type KpisBoard = {
     campaignCalls: number;
     totalCalls: number;
     plannedDoctors: number;
-    coverageDueDoctors: number;
     visitedDoctors: number;
     coveragePct: number;
     onPlanDoctors: number;
@@ -317,7 +332,7 @@ export function buildKpiPodium(rows: readonly KpiRepRow[]): KpiPodium {
     coverage: top(
       (row) => row.hasMeasurablePlan,
       (row) => row.coveragePct,
-      (row) => `${row.visitedDoctors} of ${row.coverageDueDoctors} doctors reached`,
+      (row) => `${row.visitedDoctors} of ${row.plannedDoctors} doctors reached`,
     ),
     frequency: top(
       (row) => row.hasMeasurablePlan,
@@ -423,14 +438,12 @@ export function joinKpiRows(input: {
     hasCallRate: false,
     callRateAttainmentPct: null,
     plannedDoctors: 0,
-    coverageDueDoctors: 0,
     visitedDoctors: 0,
     missedDoctors: 0,
     coveragePct: 0,
     onPlanDoctors: 0,
     underDoctors: 0,
     overDoctors: 0,
-    notDueDoctors: 0,
     frequencyPct: 0,
     hasMeasurablePlan: false,
     plannedCalls: 0,
@@ -482,14 +495,12 @@ export function joinKpiRows(input: {
   for (const list of docLists) {
     const row = claim(list.agentCrmId, canonicalHrIdKey(list.agentHrId), list.repName);
     row.plannedDoctors = list.plannedDoctors;
-    row.coverageDueDoctors = list.coverageDueDoctors;
     row.visitedDoctors = list.visitedDoctors;
     row.missedDoctors = list.missedDoctors;
     row.coveragePct = list.coveragePct;
     row.onPlanDoctors = list.onPlanDoctors;
     row.underDoctors = list.underDoctors;
     row.overDoctors = list.overDoctors;
-    row.notDueDoctors = list.notDueDoctors;
     row.frequencyPct = list.frequencyPct;
     row.hasMeasurablePlan = list.hasMeasurablePlan;
     row.plannedCalls = list.plannedCalls;
@@ -598,7 +609,6 @@ export async function getKpisBoard(input: {
       campaignCalls: 0,
       totalCalls: 0,
       plannedDoctors: 0,
-      coverageDueDoctors: 0,
       visitedDoctors: 0,
       coveragePct: 0,
       onPlanDoctors: 0,
@@ -621,7 +631,14 @@ export async function getKpisBoard(input: {
   // is only ever putting a name to an id.
   const [callRate, docList, employees, windowHolidays] = await Promise.all([
     loadCallRateReport({ dateFrom: range.dateFrom, dateTo: range.dateTo }),
-    getRepDoctorLists({ month: input.month }),
+    // THE PERIOD REACHES BOTH KPIs. Until 2026-09-04 this was `{ month: input.month }` and the
+    // picker moved the call rate alone, so "Week 1" scored week 1's calls against the whole month's
+    // doctor list. `windowEnd`, not `dateTo`: dateTo is capped at today, and capping the plan side
+    // is exactly the shrinking denominator this change removed.
+    getRepDoctorLists({
+      month: input.month,
+      window: { from: range.dateFrom, to: range.windowEnd },
+    }),
     getEmployeeDirectoryRows({ includeInactive: true }),
     // The window's OWN end, not today. callRate.workingDays counts the days worked so far; this
     // counts the days the window contains. The pair is what separates "the team is behind" from
@@ -680,12 +697,10 @@ export async function getKpisBoard(input: {
       accumulator.campaignCalls += row.campaignCalls;
       accumulator.totalCalls += row.totalCalls;
       accumulator.plannedDoctors += row.plannedDoctors;
-      accumulator.coverageDueDoctors += row.coverageDueDoctors;
       accumulator.visitedDoctors += row.visitedDoctors;
       accumulator.onPlanDoctors += row.onPlanDoctors;
       accumulator.underDoctors += row.underDoctors;
       accumulator.overDoctors += row.overDoctors;
-      accumulator.notDue += row.notDueDoctors;
       return accumulator;
     },
     {
@@ -697,12 +712,10 @@ export async function getKpisBoard(input: {
       campaignCalls: 0,
       totalCalls: 0,
       plannedDoctors: 0,
-      coverageDueDoctors: 0,
       visitedDoctors: 0,
       onPlanDoctors: 0,
       underDoctors: 0,
       overDoctors: 0,
-      notDue: 0,
     },
   );
 
@@ -710,9 +723,6 @@ export async function getKpisBoard(input: {
   // i.e. the average rep's rate, not the sum. Summing the rates instead would make a district of six
   // look six times better than any of its reps.
   const denominator = callRate.workingDays * totals.reps;
-  // notDue doctors are held OUT of the frequency denominator for the same reason they are per rep:
-  // a call the plan schedules for next week is not late, and counting it either way is a lie.
-  const frequencyBase = totals.plannedDoctors - totals.notDue;
 
   return {
     ...empty,
@@ -745,13 +755,13 @@ export async function getKpisBoard(input: {
       campaignCalls: totals.campaignCalls,
       totalCalls: totals.totalCalls,
       plannedDoctors: totals.plannedDoctors,
-      coverageDueDoctors: totals.coverageDueDoctors,
       visitedDoctors: totals.visitedDoctors,
-      coveragePct: pct(totals.visitedDoctors, totals.coverageDueDoctors),
+      coveragePct: pct(totals.visitedDoctors, totals.plannedDoctors),
       onPlanDoctors: totals.onPlanDoctors,
       underDoctors: totals.underDoctors,
       overDoctors: totals.overDoctors,
-      frequencyPct: pct(totals.onPlanDoctors, frequencyBase),
+      // ONE denominator under both plan KPIs — the window's whole list. See the header.
+      frequencyPct: pct(totals.onPlanDoctors, totals.plannedDoctors),
       // Same single-denominator rule as the per-rep figure — see `callRateAttainment`.
       callRateAttainmentPct:
         denominator > 0
