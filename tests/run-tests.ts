@@ -1307,6 +1307,7 @@ import { runDirectOrderReversalFamilyCodeTests } from "./direct-orders-reversal-
 import { runSidebarLayoutEditorModeTests } from "./sidebar-layout-editor-mode.test.ts";
 import { runNavRowWayBackTests } from "./nav-row-way-back.test.ts";
 import { runCiDependencyAuditTests } from "./ci-dependency-audit.test.ts";
+import { runHeredocBackslashDamageTests } from "./heredoc-backslash-damage.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -4078,6 +4079,10 @@ await runTest(
 await runTest(
   "an npm outage is told apart from a real advisory (CI dependency audit fails closed on findings, open on timeouts)",
   runCiDependencyAuditTests,
+);
+await runTest(
+  "heredoc backslash damage sweep (no control byte in source, no regex built from a halved escape)",
+  runHeredocBackslashDamageTests,
 );
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
