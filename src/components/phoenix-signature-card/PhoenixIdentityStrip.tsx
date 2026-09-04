@@ -19,10 +19,12 @@ import { useEffect, useRef, useState } from "react";
  * is a sibling that borrows the vocabulary and leaves the card untouched.
  *
  * WHAT IT BORROWS, so the two read as one family: the warm paper ground (#fdf8f3) with the same
- * two radial washes, the Phoenix watermark bleeding off the right edge under the wave, the
+ * two radial washes, a Phoenix watermark bleeding off the right edge under the wave, the
  * orange-ringed portrait at the leading edge, the Pinyon Script name, the orange rule with its
- * the orange rule with
- * its dot, and the uppercase letter-spaced title.
+ * dot, and the uppercase letter-spaced title.
+ *
+ * The watermark is the same IDEA but no longer the same FILE — the strip draws the full emblem
+ * (ring, phoenix, bars) and the card keeps the wide phoenix. See the two <img> tags below.
  *
  * THE HEIGHT RULE WAS REVERSED BY THE OWNER ON 2026-09-04, AND THIS IS THE NEWER INSTRUCTION.
  * It was 88/92px because on 2026-09-03 he asked for narrow: "I don't want it to be too thick, too
@@ -36,6 +38,13 @@ import { useEffect, useRef, useState } from "react";
  * it is the one this paragraph exists to overrule. What he has never wanted back is the ORIGINAL
  * block, the full `PhoenixSignatureCard` at aspectRatio 1875/420, which is ~243px on this width:
  * "WITHOUT THIS BUFFENK THIVK BANNER BLOCK". 136px sits deliberately between the two.
+ *
+ * THE PORTRAIT IS TWO DIFFERENT THINGS BY BREAKPOINT, AND THAT IS THE OWNER'S OWN SPLIT.
+ * On 2026-09-04 he sent the Phoenix banner artwork and said: "in mobile view i want the photo
+ * frameless fading exactly like this". So below `sm` the photo bleeds off the leading edge at full
+ * height with no bezel, no ring and no corner, dissolving into the paper; from `sm` up it keeps the
+ * framed tile. Both are deliberate — see PORTRAIT_FADE_MASK. A later session "unifying" the two
+ * would be undoing an instruction, not removing a duplicate.
  *
  * WHAT IT DELIBERATELY DOES NOT BORROW: the card's two COLD values. The card sets the wave to
  * #0b1f3a and the name to #2a3a5c, both around hue 257-264. The admin shell those two landings
@@ -69,6 +78,11 @@ const PORTRAIT_BEZEL = "linear-gradient(145deg, #f9c06a, #f47b20 40%, #c45200 70
  * two cannot drift. The strip is not a container, so the `cqw` middles cannot be used and the
  * floors are what a small portrait renders at anyway.
  *
+ * IT NOW APPLIES TO THE INITIALS ONLY, and is not dead code. His later instruction the same day
+ * made the mobile PHOTO frameless, so the framed tile survives on a phone purely as the no-photo
+ * fallback — where a glow is still the right answer, because an initials chip has no edge of its
+ * own to dissolve.
+ *
  * It does NOT clip. The outermost layer is 28px of blur on a 60px portrait with 6px of clearance
  * inside an `overflow-hidden` section — but the layers are warm and low-alpha on a cream ground,
  * and the cut is invisible at 2x. Verified at 375px before shipping.
@@ -79,6 +93,30 @@ const PORTRAIT_GLOW =
 
 /** DESKTOP. The flat ring the strip has always had; the glow was asked for on mobile only. */
 const PORTRAIT_RING = "0 0 0 2px rgba(244,123,32,0.16), 0 4px 12px rgba(15,35,55,0.16)";
+
+/**
+ * MOBILE, FRAMELESS. The owner, 2026-09-04, with the Phoenix banner artwork attached: "in mobile
+ * view i want the photo frameless fading exactly like this". In that reference the portrait is not
+ * a tile sitting ON the card — it IS the card's leading edge: full height, flush left, no bezel, no
+ * ring, no rounded corner, its right side dissolving into the paper so there is no seam anywhere.
+ *
+ * SO THE FADE IS THE FRAME. With nothing but a hard edge holding the photo in, the dissolve is the
+ * only thing standing between "bleeds off the edge" and "got cropped", and a SHORT taper reads as
+ * the second. A two-stop ramp was tried first and the end of it was still visible as a seam at 3x;
+ * this one holds solid for the first 38% and then eases off across the remaining 62% in four stops,
+ * so there is no point where the falloff changes rate. `-webkit-mask-image` rides alongside for
+ * Safari, which still wants the prefix.
+ *
+ * IT DELIBERATELY SITS UNDER THE WAVE (z-[1] against the wave's z-[3]), exactly as the reference
+ * does — the navy band crosses in FRONT of the portrait's lower corner and finishes the shape.
+ * Raising this above the wave is what would make it look pasted on.
+ *
+ * DESKTOP IS UNTOUCHED and keeps the bezel + ring. He asked for mobile, and the wide bar is where
+ * the framed portrait still earns its place: at 1084px a bleeding photo would be a stripe.
+ */
+const PORTRAIT_FADE_MASK =
+  "linear-gradient(90deg, #000 0%, #000 38%, rgba(0,0,0,0.86) 56%,"
+  + " rgba(0,0,0,0.55) 72%, rgba(0,0,0,0.22) 86%, transparent 100%)";
 
 function signatureNameFor(name: string) {
   const parts = name.trim().split(/\s+/).filter(Boolean);
@@ -173,19 +211,135 @@ export function PhoenixIdentityStrip({
         }}
       />
 
-      {/* Watermark — bleeds off the right edge and under the wave, as it does on the card. */}
+      {/* THE WATERMARK IS THE FULL EMBLEM NOW — ring, phoenix and bars — at the owner's
+          instruction on 2026-09-04: "you remove this and you will add this logo that I will upload
+          to you ... make it the same situation as this, but change the photo."
+
+          IT IS A COPY, NOT THE SHARED FILE. `/brand/identity-watermark.png` is also drawn by
+          `PhoenixSignatureCard`, which renders the employee portal's identity banner — a
+          design-locked surface (CLAUDE.md). Repointing or editing that asset would have changed
+          the locked banner as a side effect of an admin-strip request, so the emblem was copied to
+          its own name. The card is untouched and still draws the old wide phoenix.
+
+          IT IS ALREADY ALPHA-TRANSPARENT at source (81.9% of the file is not fully opaque, corner
+          alpha 0), so "make it also transparent" is served by the file itself plus a low opacity,
+          not by knocking a white box out of it.
+
+          IT IS WHOLLY INSIDE THE BAR, AND THAT IS A CORRECTION HE MADE HIMSELF.
+          It shipped once as a large mark cropped by the trailing edge — the reasoning being that a
+          cropped mark reads as chosen furniture rather than a logo dropped in. He looked at it and
+          rejected exactly that: "too embedded, too big, needs to go inside the banner itself and be
+          small in size." DO NOT re-crop it against the edge — that is the specific thing he turned
+          down.
+
+          THE SIZE THEN CAME BACK UP, and both instructions are his, in this order. Taken at its
+          word the first one produced a 74px mark that read as a ghost on a 1084px bar, and he said
+          so: "the Phoenix needs to become bigger a bit. It's now too small. Make it move inside a
+          bit and make it size bigger a bit." So it is now 76%/80% of the bar height with a wider
+          right margin. "Small" was never the goal — INSIDE was; small was how he described the fix
+          for a mark that was bleeding off the edge.
+
+          BOTH ARE CAPPED BY THE CONTENT BAND, not by taste: 80% of 136px is 109px inside a 112px
+          band, and 76% of 120px is 91px inside 96px. Going higher pushes the mark into the wave.
+
+          `mix-blend-mode: multiply` went with it. Multiplying into the cream is what "embedded"
+          described, and a small mark that has to survive at this size needs its own edges.
+
+          THEY SIT IN THE BAND ABOVE THE WAVE, not in the bar's middle: `calc(50% - 12px)` is the
+          centre of the content box, since the wave occupies the bottom 24px at BOTH breakpoints.
+          Centring on the bar itself would push the mark down into the dark band.
+
+          TWO ELEMENTS, ONE PER BREAKPOINT, because the owner asked for a different placement on a
+          phone — "when mobile, don't center him. Put him on the right" — and an inline style
+          cannot carry a media query. That request has a cause worth recording: the OLD watermark
+          is 1350x900, so at 165% of a 120px bar it spanned 297px of a 351px phone screen and read
+          as centred no matter what `right` said. A square mark is 91px wide at this height, which
+          is what makes "on the right" achievable at all on a 351px screen.
+
+          IT DOES SIT UNDER THE END OF A LONG TITLE ON A PHONE, and that is accepted, not missed.
+          At 351px with a 124px portrait and "HR OPERATIONS COORDINATOR" over two lines there is no
+          arrangement where a mark this size clears the text. It is BEHIND (z-0 against the content
+          z-10) and its opacity is 0.2 on mobile against 0.3 on desktop for exactly this reason —
+          the words stay crisp over it. Lower the opacity before shrinking the mark. */}
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         alt=""
         aria-hidden="true"
-        className="pointer-events-none absolute z-0"
-        src="/brand/identity-watermark.png"
-        style={{ right: "-1.5%", top: "-30%", height: "165%", width: "auto", opacity: 0.9 }}
+        className="pointer-events-none absolute z-0 sm:hidden"
+        src="/brand/identity-strip-emblem.png"
+        style={{
+          height: "76%",
+          opacity: 0.2,
+          right: "8%",
+          top: "calc(50% - 12px)",
+          transform: "translateY(-50%)",
+          width: "auto",
+        }}
+      />
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        alt=""
+        aria-hidden="true"
+        className="pointer-events-none absolute z-0 hidden sm:block"
+        src="/brand/identity-strip-emblem.png"
+        style={{
+          height: "80%",
+          opacity: 0.3,
+          right: "5%",
+          top: "calc(50% - 12px)",
+          transform: "translateY(-50%)",
+          width: "auto",
+        }}
       />
 
-      {/* Content sits ABOVE the wave, not on it — hence the bottom inset. */}
-      <div className="absolute inset-x-0 bottom-[24px] top-0 z-10 flex min-w-0 items-center gap-4 px-4 sm:px-6">
-        <span className="relative block h-[80px] w-[80px] shrink-0 sm:h-[92px] sm:w-[92px]">
+      {/* MOBILE ONLY: the portrait as the card's own leading edge — see PORTRAIT_FADE_MASK.
+
+          IT IS `aria-hidden`, NOT A SECOND ANNOUNCEMENT. The framed portrait below carries the
+          real alt text and this replaces it at the same breakpoint, but the person's name sits
+          two inches to its right in plain text, so a screen reader loses nothing and is spared
+          "portrait of X" twice from one bar. It is also what keeps this out of the golden rule's
+          overflow measurement, correctly: a decorative bleed is MEANT to cross the edge.
+
+          NO PHOTO, NO BLEED. A frameless nothing is not a design — it is a gap. So this renders
+          only when there is a real photo, and the initials keep the framed tile at every width.
+
+          The widths here are LITERAL Tailwind classes on purpose: `w-[108px]` and the `pl-[112px]`
+          below are a matched pair (108 of photo, 4 of air), and a class name built from a constant
+          is purged from the stylesheet and silently renders as nothing. Change them together. */}
+      {photoSrc ? (
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute bottom-0 left-0 top-0 z-[1] w-[124px] sm:hidden"
+          style={{ maskImage: PORTRAIT_FADE_MASK, WebkitMaskImage: PORTRAIT_FADE_MASK }}
+        >
+          <Image
+            alt=""
+            className="object-cover object-top"
+            fill
+            sizes="124px"
+            src={photoSrc}
+            unoptimized
+          />
+        </div>
+      ) : null}
+
+      {/* Content sits ABOVE the wave, not on it — hence the bottom inset. The leading inset is
+          the bleeding portrait's width plus 4px of air; with no photo there is no bleed, so it
+          falls back to the ordinary gutter and the framed initials tile takes the space. */}
+      <div
+        className={[
+          "absolute inset-x-0 bottom-[24px] top-0 z-10 flex min-w-0 items-center gap-4 pr-4 sm:pl-6 sm:pr-6",
+          photoSrc ? "pl-[128px]" : "pl-4",
+        ].join(" ")}
+      >
+        <span
+          className={[
+            "relative h-[80px] w-[80px] shrink-0 sm:h-[110px] sm:w-[110px]",
+            // Mobile hands the portrait over to the frameless bleed above — but only when there
+            // IS one to hand over.
+            photoSrc ? "hidden sm:block" : "block",
+          ].join(" ")}
+        >
           {/* TWO RINGS, MUTUALLY EXCLUSIVE BY BREAKPOINT. One element would be neater, but an
               inline style cannot carry a media query and these two shadows are genuinely
               different things — see PORTRAIT_GLOW / PORTRAIT_RING above. */}
@@ -205,7 +359,7 @@ export function PhoenixIdentityStrip({
                 alt={`${name} portrait`}
                 className="object-cover object-top"
                 fill
-                sizes="92px"
+                sizes="110px"
                 src={photoSrc}
                 unoptimized
               />
