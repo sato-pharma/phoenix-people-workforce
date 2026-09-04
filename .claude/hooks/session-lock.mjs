@@ -90,8 +90,10 @@ if (lock && lock.sessionId !== sessionId) {
       `NOT edit files in this folder until you have explicitly confirmed with the user whether that ` +
       `other session is still running. If the user wants to start new work right now, create an ` +
       `isolated worktree instead: git worktree add <path> -b <branch>, and do the new work there. ` +
-      `Note: a session that crashed or was force-closed leaves its lock behind (it self-expires ` +
-      `after 2 hours) — if the reported PID is not a running process, the lock is stale.`;
+      `Note: a session that crashed or was force-closed leaves its lock behind, and it self-expires ` +
+      `after 2 hours — that AGE is the only staleness test. Do NOT check the PID above: it is this ` +
+      `hook's own short-lived parent shell, dead within seconds of the lock being written, so EVERY ` +
+      `lock names a dead PID and "that process is gone" proves nothing about the session.`;
     emit({
       systemMessage: `Warning: another session's lock (PID ${lock.pid ?? "unknown"}, ${when}) is active in this folder.`,
       hookSpecificOutput: {

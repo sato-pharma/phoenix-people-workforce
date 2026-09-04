@@ -198,7 +198,7 @@ it for the hook's wording. Which memory backs which hook:
 
 **Parallel sessions**
 
-- **A parallel session can collide with NO git trace at all** — `gh pr list`, `git log` and `git worktree list` were all clean while another session edited the same file. Read the SessionStart working-tree line as a collision signal. A stale lock proves the PID is dead, not that the folder is unattended. Resolve by MERGING, never discarding.
+- **A parallel session can collide with NO git trace at all** — `gh pr list`, `git log` and `git worktree list` were all clean while another session edited the same file. Read the SessionStart working-tree line as a collision signal. A lock's dead PID proves NOTHING — it is the hook's own parent shell, so every lock has one; staleness is AGE >2h, and even a stale one does not prove the folder is unattended. Resolve by MERGING, never discarding.
 - **ONE approval can reach SEVERAL sessions — N sessions holding the same "yes" is N executions.** Before executing a protected action on a terse approval, check how many sessions are live, say so, and re-verify the target immediately before acting. `mergedBy` naming the owner is NOT evidence of a human click.
 
 **Worktrees** (see also §5)
@@ -416,7 +416,7 @@ Before editing, run `git status`, `git branch --show-current`, `git log -1 --one
 `git worktree list`. **Each line is the rule, not the evidence.** Measurements, dates and incidents
 are in [docs/agents-worktree-and-machine-limits.md](docs/agents-worktree-and-machine-limits.md).
 
-- Use one working tree per active session. **Never two interactive sessions in one folder** — the SessionStart lock warning is a hard stop. (A crashed session's lock self-expires after 2 hours; a lock whose PID is not a running process is stale.)
+- Use one working tree per active session. **Never two interactive sessions in one folder** — the SessionStart lock warning is a hard stop. (A crashed session's lock self-expires after 2 hours, and that AGE is the ONLY staleness test — the lock's `pid` is the hook's own parent shell, so EVERY lock names a dead PID.)
 - Start new work from the latest `origin/main` on a focused `codex/<task>` branch unless told otherwise.
 - Never run `git clone`, `git init`, or anything that recreates the primary repository's `.git`.
 - Never discard, overwrite, clean, reset, or revert changes you did not create. Treat unexpected changes as the owner's work. If the tree is dirty, classify and preserve it.
