@@ -19,6 +19,11 @@ export type AuditEntityType =
   // it any more: the module stopped being a fixed S1 report when it grew a period filter.
   | "business_review_s1_export"
   | "calendar_event"
+  // Minting or revoking a bearer link to the live CV-lifecycle Google Sheet. The link outlives the
+  // session that created it and copies candidate names and phone numbers out of Phoenix, so who
+  // made one — and who killed it — is recorded. The token itself is never written here: an audit
+  // trail that stores the credential it audits turns every reader of the log into a holder of it.
+  | "cv_lifecycle_share_link"
   | "cron_job_control"
   | "deduction_candidate"
   | "deduction_comment"
