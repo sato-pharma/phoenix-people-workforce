@@ -110,7 +110,7 @@ export function PhoenixIdentityStrip({
     <section
       aria-label="Your identity"
       className={[
-        "relative isolate h-[88px] w-full min-w-0 overflow-hidden shadow-[0_6px_20px_rgba(16,35,61,0.10)] sm:h-[92px]",
+        "relative isolate h-[120px] w-full min-w-0 overflow-hidden shadow-[0_8px_26px_rgba(16,35,61,0.13)] sm:h-[136px]",
         className,
       ].join(" ")}
       style={{ background: "#fdf8f3" }}
@@ -136,8 +136,8 @@ export function PhoenixIdentityStrip({
       />
 
       {/* Content sits ABOVE the wave, not on it — hence the bottom inset. */}
-      <div className="absolute inset-x-0 bottom-[16px] top-0 z-10 flex min-w-0 items-center gap-3 px-3 sm:px-4">
-        <span className="relative block h-[60px] w-[60px] shrink-0 sm:h-[66px] sm:w-[66px]">
+      <div className="absolute inset-x-0 bottom-[22px] top-0 z-10 flex min-w-0 items-center gap-4 px-4 sm:px-6">
+        <span className="relative block h-[80px] w-[80px] shrink-0 sm:h-[92px] sm:w-[92px]">
           <span
             aria-hidden="true"
             className="absolute inset-0 rounded-xl"
@@ -152,12 +152,12 @@ export function PhoenixIdentityStrip({
                 alt={`${name} portrait`}
                 className="object-cover object-top"
                 fill
-                sizes="66px"
+                sizes="92px"
                 src={photoSrc}
                 unoptimized
               />
             ) : (
-              <span className="flex h-full w-full items-center justify-center text-lg font-black text-[#f47b20]">
+              <span className="flex h-full w-full items-center justify-center text-3xl font-black text-[#f47b20]">
                 {initialsFor(name)}
               </span>
             )}
@@ -166,7 +166,7 @@ export function PhoenixIdentityStrip({
 
         <span
           aria-hidden="true"
-          className="hidden h-12 w-px shrink-0 sm:block"
+          className="hidden h-16 w-px shrink-0 sm:block"
           style={{ background: "linear-gradient(180deg, transparent, #e0d0bc 20%, #e0d0bc 80%, transparent)" }}
         />
 
@@ -191,11 +191,11 @@ export function PhoenixIdentityStrip({
             still holds. */}
         <div className="flex min-w-0 flex-1 flex-col">
           <p
-            className="italic font-medium text-[#2a3a5c]"
+            className="italic font-medium text-[#16294a]"
             ref={nameBoxRef}
             style={{
               fontFamily: '"Pinyon Script", cursive',
-              fontSize: nameFontPx ? `${nameFontPx}px` : "clamp(1.35rem, 4.2vw, 2.4rem)",
+              fontSize: nameFontPx ? `${nameFontPx}px` : "clamp(1.75rem, 5vw, 3.1rem)",
               lineHeight: 1.15,
               margin: 0,
               whiteSpace: "nowrap",
@@ -205,11 +205,11 @@ export function PhoenixIdentityStrip({
               {sigName}
             </span>
           </p>
-          <span aria-hidden="true" className="mt-[3px] flex items-center">
-            <span className="h-px flex-1" style={{ background: "#f47b20" }} />
-            <span className="mx-[3px] h-[5px] w-[5px] rounded-full" style={{ background: "#f47b20" }} />
+          <span aria-hidden="true" className="mt-[6px] flex items-center">
+            <span className="h-[2px] flex-1" style={{ background: "#f47b20" }} />
+            <span className="mx-[5px] h-[7px] w-[7px] rounded-full" style={{ background: "#f47b20" }} />
             <span
-              className="h-px flex-[2]"
+              className="h-[2px] flex-[2]"
               style={{ background: "linear-gradient(90deg, rgba(244,123,32,0.5), rgba(244,123,32,0))" }}
             />
           </span>
@@ -223,10 +223,10 @@ export function PhoenixIdentityStrip({
             className="break-words text-left font-bold uppercase"
             style={{
               color: "#f47b20",
-              fontSize: "11px",
-              letterSpacing: "0.18em",
+              fontSize: "13px",
+              letterSpacing: "0.2em",
               lineHeight: 1.2,
-              margin: "3px 0 0",
+              margin: "6px 0 0",
             }}
           >
             {titleLabel}
@@ -234,7 +234,7 @@ export function PhoenixIdentityStrip({
         </div>
 
         {employeeCode ? (
-          <span className="ml-auto shrink-0 pl-3 text-[12px] font-semibold text-[#2a3a5c] opacity-80">
+          <span className="ml-auto shrink-0 pl-3 text-[14px] font-semibold text-[#16294a] opacity-85">
             {employeeCode}
           </span>
         ) : null}
@@ -243,12 +243,12 @@ export function PhoenixIdentityStrip({
       {/* The card's wave, scaled to this height. */}
       <svg
         aria-hidden="true"
-        className="absolute bottom-0 left-0 z-[3] h-[20px] w-full"
+        className="absolute bottom-0 left-0 z-[3] h-[28px] w-full"
         preserveAspectRatio="none"
         viewBox="0 0 1875 118"
       >
         <path d="M0 38C420 58 1030 58 1875 4V118H0Z" fill="#0b1f3a" />
-        <path d="M0 38C420 58 1030 58 1875 4" fill="none" stroke="#f47b20" strokeWidth="9" />
+        <path d="M0 38C420 58 1030 58 1875 4" fill="none" stroke="#f47b20" strokeWidth="11" />
       </svg>
     </section>
   );
