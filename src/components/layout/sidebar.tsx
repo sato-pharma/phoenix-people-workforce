@@ -81,11 +81,6 @@ const ADMIN_SIDEBAR_BORDER = "border-[#1a1a1a]";
 
 // ── Public types ─────────────────────────────────────────────────────────────
 export type { PermissionLookup };
-// Re-exported for the employee-portal shell, which imports NavBadge from here. The definition
-// moved to ./nav-badge on 2026-08-29 so the horizontal nav rows could use it without pulling
-// this whole module (dnd-kit, the layout editor) into their bundle.
-export { NavBadge } from "@/components/layout/nav-badge";
-
 const EMPTY_PERMISSION_LOOKUP: PermissionLookup = {};
 
 // localStorage keys
@@ -447,7 +442,7 @@ function NavRow({
           )}
         >
           <LeadingIcon className="h-4 w-4" />
-          {rail && <ApprovalNavBadge compact navBadge={item.navBadge} />}
+          {rail && <ApprovalNavBadge compact dark={dark} navBadge={item.navBadge} />}
         </span>
         {!rail && (
           <span className={cn("flex min-w-0 flex-1 items-center gap-1.5", onTogglePin && "pr-6")}>
@@ -471,7 +466,7 @@ function NavRow({
                 className={cn("h-3.5 w-3.5 shrink-0", dark ? "text-orange-400/70" : "text-orange-500/70")}
               />
             )}
-            <ApprovalNavBadge compact={false} navBadge={item.navBadge} />
+            <ApprovalNavBadge compact={false} dark={dark} navBadge={item.navBadge} />
           </span>
         )}
       </Link>
