@@ -43,13 +43,17 @@
 -- row trigger for update and delete, a STATEMENT-level BEFORE TRUNCATE trigger for truncate — which
 -- fire for every role including the owner. The revokes are kept underneath as a second lock.
 --
--- ── NOT YET APPLIED TO PRODUCTION ───────────────────────────────────────────────────────────────
+-- ── APPLIED TO PRODUCTION 2026-09-04, on the owner's explicit approval ──────────────────────────
 --
--- Applying a migration to the production database is one of the two actions that need the owner's
--- separate approval, and it has not been given. ADDITIVE when it is: one new table, two new
--- functions, three new triggers, no existing row touched and nothing dropped. The one behavioural
--- change to an existing object is that updates and deletes on `hiring_pack_document_fields` now also
--- write a history row; they are not otherwise altered, and neither is blocked.
+-- Recorded in production's ledger as `hiring_pack_document_field_history` under the MCP clock's
+-- version, which is the known apply_migration drift; check-migrations-applied.ts matches by name as
+-- well as by version, so no exception entry is needed. Verified live afterwards: the columns,
+-- constraints, indexes, triggers, function bodies and ACLs all md5-match staging, where this file
+-- was applied verbatim. ADDITIVE as promised: one new table, two new functions, three new triggers,
+-- no existing row touched and nothing dropped — `hiring_pack_document_fields` held 0 rows at the
+-- time. The one behavioural change to an existing object is that updates and deletes on
+-- `hiring_pack_document_fields` now also write a history row; they are not otherwise altered, and
+-- neither is blocked.
 
 begin;
 
