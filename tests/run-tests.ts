@@ -318,6 +318,12 @@ import {
   runKpiUrlTests,
 } from "./kpis-filters.test.ts";
 import { runCrmRepsPlansTests } from "./crm-reps-plans.test.ts";
+import {
+  runPortalKpisNavTabTests,
+  runPortalKpisPageConventionsTests,
+  runRepsPlansPickerScopeTests,
+  runRepsPlansSilentRepTests,
+} from "./portal-crm-boards-audit.test.ts";
 import { runCrmRepVisitsTests } from "./crm-rep-visits.test.ts";
 import { runCrmRegionBrickSuggestTests } from "./crm-region-brick-suggest.test.ts";
 import { runCrmRepsPlansPeriodTests } from "./crm-reps-plans-period.test.ts";
@@ -1862,6 +1868,22 @@ await runTest("KPIs attainment and identity (one denominator, and a mixed-case h
 await runTest("KPIs medical reps only (managers off the board, above the filter layer so no URL undoes it)", runKpiMedicalRepOnlyTests);
 await runTest("KPIs early-window guard (a percentage two days into a month is a position, not a verdict)", runKpiTooEarlyToScoreTests);
 await runTest("crm reps plans board (live-month cap, company rate over days x reps, rep filter leaves totals alone)", runCrmRepsPlansTests);
+await runTest(
+  "reps plans roster (the rep with no visits is a zero row, seeded from the organogram, never a missing person)",
+  runRepsPlansSilentRepTests,
+);
+await runTest(
+  "reps plans pickers (line and region come from the viewer own rows, so no choice returns an empty board)",
+  runRepsPlansPickerScopeTests,
+);
+await runTest(
+  "portal KPIs page conventions (portal shell, mode guard, failure log, and no raw error string)",
+  runPortalKpisPageConventionsTests,
+);
+await runTest(
+  "portal KPIs nav row (gated on the PORTAL role list, not the predicate that answers for admin seats)",
+  runPortalKpisNavTabTests,
+);
 await runTest("crm rep visits drill-down (territory states, proof buckets, reconciles with the board rate)", runCrmRepVisitsTests);
 await runTest(
   "crm region -> brick suggestion (Arabic name key + the reps' own area; Kit Kat, Beba, and the Dokki/Edku trap)",
