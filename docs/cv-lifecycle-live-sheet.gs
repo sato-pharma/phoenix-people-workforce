@@ -469,9 +469,19 @@ function titleBand_(sheet, cols, title) {
   sheet.setRowHeight(3, ROW_H_RULE);
 }
 
-/** The ordinary subtitle. Contains the word the stale detector looks for — do not reword it. */
+/**
+ * The ordinary subtitle. Contains the word the stale detector looks for — do not reword it.
+ *
+ * The version is on the end because "I pasted the new script and nothing changed" is otherwise
+ * unanswerable without opening the editor. Three separate causes produce that sentence — the paste
+ * never saved, a second .gs file in the project still defines these functions and wins, or the
+ * refresh bailed out before writing — and they are indistinguishable by looking at the sheet. With
+ * the version on the page, one glance separates "the new code is not running" from "the new code is
+ * running and I do not like it", which are opposite problems.
+ */
 function writeSubtitle_(sheet, name, stamp) {
-  sheet.getRange(ROW_SUBTITLE, 1).setValue(name + ' — refreshed ' + stamp + ' (Cairo)');
+  sheet.getRange(ROW_SUBTITLE, 1)
+    .setValue(name + ' — refreshed ' + stamp + ' (Cairo) · layout ' + LAYOUT_VERSION);
 }
 
 function sectionTitle_(sheet, row, cols, text) {
