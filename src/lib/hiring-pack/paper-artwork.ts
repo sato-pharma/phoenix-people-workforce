@@ -63,6 +63,13 @@ function readAsset(publicPath: string): string | null {
     // The two logo files are NOT interchangeable. `sato-pharma-logo.png` draws the word SATO in
     // WHITE — correct on the navy sidebar it was made for, invisible on paper. Each renderer
     // already chooses; this only has to read what it chose.
+    // THE VECTOR MARK, which is what the letterhead now asks for. The two PNGs stay allow-listed
+    // below: an archived contract reprints the artwork it was signed with, and contract-v2's banded
+    // layout still references the raster.
+    case "/brand/sato-pharma-logo-on-light.svg":
+      return svg(read(join(process.cwd(), "public", "brand", "sato-pharma-logo-on-light.svg")));
+    case "/brand/sato-pharma-logo.svg":
+      return svg(read(join(process.cwd(), "public", "brand", "sato-pharma-logo.svg")));
     case "/brand/sato-pharma-logo-on-light.png":
       return png(read(join(process.cwd(), "public", "brand", "sato-pharma-logo-on-light.png")));
     case "/brand/sato-pharma-logo.png":
