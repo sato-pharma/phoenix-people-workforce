@@ -194,3 +194,25 @@ those two moments the fact exists in neither auto-loaded file. This is not hypot
 on 2026-08-27 finished the `MEMORY.md` half and not the git half, orphaning two memories that no
 repo-level check could see, because one side of the move is not in the repo at all. Full account in
 §2.1 under Parallel sessions.
+
+### §2.1 has its own floor, and it is the half that regrows
+
+**The same arithmetic applies inside `AGENTS.md`, one level down, with nothing to enforce it.**
+The 2026-09-01 consolidation trimmed §2.1 to **19,059 bytes** by moving its accounts into
+`docs/agents-session-traps.md`. Measured again on 2026-09-04 it was **23,493** — back over the
+floor in three days, about **2,300 bytes a day**, and the growth was not new rules: it was
+measurements, dates and diagnosis narrative creeping back in behind the hooks that legitimately
+arrived with them.
+
+**Why no check catches it.** `repo-doctor` and `tests/autoload-footprint-budget.test.ts` both
+measure the WHOLE file against the 146.5KB footprint budget, which had ~45KB of slack at that
+measurement — enough to stay silent while §2.1 doubles again. A section has no budget of its own
+and cannot easily be given one, because a section boundary is a heading in prose, not a file.
+
+**So the rule is behavioural, exactly like the displacement rule above: measure §2.1 before you
+add to it, and put the account here.** The 2026-09-04 pass took it back to 21,871 by compressing
+seven Worktrees bullets whose narrative duplicated §5 — every rule kept, the accounts moved to
+`docs/agents-worktree-and-machine-limits.md`. It stops there rather than at 19,059 on purpose:
+the remaining gap is RULES added since 2026-09-01, and §2.2 forbids deleting a hook to make room.
+**A floor is only meaningful for the rule-set it was measured on** — re-measure, never chase the
+old number.

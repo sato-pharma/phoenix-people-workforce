@@ -122,6 +122,16 @@ These are the owner's own decisions, stated across many sessions. They are not s
 - Marketing Manager is hidden from the portal Incentive tab; GPM still sees it.
 - The Organogram / AU seat model is the source of truth for org-structure and vacancy data.
 - All SoS sales, historical and future, attribute to **today's** geography — never as-was.
+  **His words, and true in practice — but it is not the mechanism, and reading it as one is the
+  trap.** `au.f_monthly_attribution` and `au.f_monthly_achievement` resolve an area's region
+  through `au.f_line_area_map_asof(period_end)`: the map as it stood at the END of the month
+  being computed, never at the run date. It only looks like today's geography because almost no
+  `au.line_area_map` row has ever been closed, so the as-of lookup returns the single open row
+  for every period. Close a row and it does what it says — which is precisely how the Delta (3)
+  entry directly below leaves July and August resolving to the OLD regions. Verified on
+  production 2026-08-28 by reading `pg_get_functiondef`, and again on 2026-08-29 when the dated
+  pair went in. **Never quote this line as a reason a dated change is unsafe — read the
+  function.** Full account: `attribution-is-period-aware-asof-not-todays-geography`.
 - **Delta (3) territory move — LIVE, dated 2026-09-01, applied as a migration 2026-08-29.** The
   five areas (`D11` Qalubeya, `D24` Sharkia 1, `D25` Sharkia 2, `OT2` Suez, `OT9` Ismailia) now sit
   on a correctly dated PAIR: the pre-split row closed at `effective_to = '2026-09-01'` and a `D3`
