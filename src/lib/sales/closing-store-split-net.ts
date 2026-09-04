@@ -109,9 +109,9 @@ export async function loadClosingStoreSplit(
   line: string | null | undefined,
   period: string | null | undefined,
 ): Promise<ClosingStoreSplit> {
-  // The owner turned the wholesaler city split OFF (2026-08-10, re-applied 2026-08-12 after the
-  // first disable was lost in a squash merge). Gated here — the one loader both the screen and the
-  // export read — so neither surface can apply it while the other does not.
+  // The owner turned the wholesaler city split ON for every city (2026-09-04); it was OFF from
+  // 2026-08-10. Gated here — the one loader both the screen and the export read — so neither
+  // surface can apply it while the other does not.
   if (!STORE_CITY_SPLIT_ENABLED) return emptySplit();
   const trimmedLine = String(line ?? "").trim();
   const trimmedPeriod = String(period ?? "").trim();

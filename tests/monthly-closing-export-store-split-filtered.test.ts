@@ -356,14 +356,15 @@ function runRouteWiringChecks() {
       + "enabled — with the split OFF, a null here would make prepareClosingStoreSplit derive a "
       + "live split from the rows, re-applying the rule the owner turned off",
   );
-  // OWNER RULING 2026-08-10 (re-applied 2026-08-12 after the first disable was lost in the #2015
-  // squash): the wholesaler city split is OFF. His manual closing has never applied it, and it was
-  // the single largest disagreement between Phoenix and his sheet. Flipping this back on is an
-  // owner decision — never a code cleanup.
+  // OWNER RULING 2026-09-04: the wholesaler city split is ON, on every city — "شغل تقسيم المخازن
+  // على كل المدن". It was OFF from 2026-08-10 to 2026-09-04; his August Anti Infective manual sheet
+  // applied the split in Menoufia only (7 of its 30 store rows), and he chose to make that uniform
+  // by turning the rule on everywhere. Flipping this in EITHER direction is an owner decision —
+  // never a code cleanup, and never a way to make a reconciliation go green.
   assert.equal(
     STORE_CITY_SPLIT_ENABLED,
-    false,
-    "the wholesaler city split must stay OFF until the owner explicitly orders it back on",
+    true,
+    "the wholesaler city split must stay ON until the owner explicitly orders it back off",
   );
 }
 

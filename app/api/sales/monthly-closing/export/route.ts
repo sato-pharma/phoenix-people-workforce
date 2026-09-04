@@ -346,10 +346,10 @@ export async function POST(request: Request) {
       // computed with confidential products excluded, which is exactly the population the Closing
       // Matrix holds (every closing RPC hard-excludes them in SQL) — so it is the correct input for
       // the matrix write-back whether or not the reader opted into the confidential DATA sheet.
-      // `&& STORE_CITY_SPLIT_ENABLED`: with the split OFF (owner, 2026-08-10 — the original disable
-      // was lost in the #2015 squash), the loader returns the EMPTY split, and even a row-level
-      // filter must receive it rather than `null` — null tells prepareClosingStoreSplit to derive
-      // its own split live from the rows, which is exactly the apply path being switched off.
+      // `&& STORE_CITY_SPLIT_ENABLED`: the flag can be turned off again (it was, 2026-08-10 to
+      // 2026-09-04), and while it is off the loader returns the EMPTY split — so even a row-level
+      // filter must receive that rather than `null`, because null tells prepareClosingStoreSplit to
+      // derive its own split live from the rows, which is exactly the apply path being switched off.
       const sharedSplitPromise = rowLevelActive && STORE_CITY_SPLIT_ENABLED
         ? Promise.resolve(null)
         : loadClosingStoreSplit(matrix.line, matrix.period).catch(() => null);

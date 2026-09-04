@@ -23,21 +23,37 @@ import { closingAreaOf, isRebookedRow } from "@/lib/sales/closing-row-area";
 import { isStoreCustomer } from "@/lib/sales/customer-channel";
 
 /**
- * OWNER RULING 2026-08-10, RE-APPLIED 2026-08-12: the wholesaler city split is OFF. A wholesaler's
- * sales stay in the area it physically sits in.
+ * OWNER RULING 2026-09-04: the wholesaler city split is ON, on EVERY city. His words, in Arabic:
+ * "شغل تقسيم المخازن على كل المدن" — turn the store split on for all the cities.
  *
- * Measured on July 2026 CNS against his own manual closing, the split was the single largest
- * disagreement between Phoenix and his sheet, and his closing has never applied it. The first
- * disable (cc6edee4) was LOST in the #2015 squash merge, so production kept splitting — which is
- * why the downloaded closing kept diverging from his approved numbers after every data fix.
+ * WHAT DECIDED IT. Reconciling August 2026 Anti Infective against his manual closing, the manual
+ * sheet split five Menoufia wholesalers 50/50 (مخزن القادسية, مخزن العربية, جي زد فارما, التوأمان
+ * فارم in شبين الكوم and الرساله فارم in أشمون) while Phoenix booked each whole to its own brick.
+ * That one district was the largest single disagreement between the two files: Menoufia 1 short
+ * 15,017.10 and Menoufia 2 long 16,128.60. Nationally his sheet held 30 store rows across 24
+ * wholesalers, and only those 7 Menoufia rows were split — 23 rows across 10 other cities were
+ * not. So the manual applied the rule in exactly one district. Asked whether to make it uniform,
+ * he chose to make it uniform by turning the rule ON everywhere rather than off in Menoufia.
+ *
+ * THE RULE IS NOT PERIOD-AWARE, AND THAT IS THE THING TO KNOW BEFORE TOUCHING THIS. The closing
+ * matrix re-derives every month live, so this flag restates EVERY period at once, published ones
+ * included. It is the same shape as a factory-price edit — see
+ * a-price-fix-silently-restates-every-published-closing. Nothing detects it either: the
+ * publication drift check compares UNITS only, and the split preserves units per line while moving
+ * them between areas, so a restated month reports no drift. If a past month must be frozen, that
+ * needs a period gate here — it does not exist today.
+ *
+ * PREVIOUS STATE, kept because it explains the shape of the code. It was OFF from 2026-08-10,
+ * re-applied 2026-08-12 after the first disable (cc6edee4) was LOST in the #2015 squash merge.
+ * Measured then on July 2026 CNS, the split was the single largest disagreement with his sheet.
  *
  * Deliberately a flag at the APPLY points rather than emptying SPLIT_LINE_KEYS or gating
  * isSplitEligible: the pure functions must keep telling the truth (CNS IS a rep line, the split
  * arithmetic IS as tested) so the ~35 assertions covering the geography and the even-share maths
- * stay honest and covered for the day this is switched back on. The maths still runs in tests;
- * it simply is not applied at runtime.
+ * stay honest and covered either way. Flipping this is an OWNER decision in both directions —
+ * never a code cleanup, and never a fix for a red reconciliation.
  */
-export const STORE_CITY_SPLIT_ENABLED = false;
+export const STORE_CITY_SPLIT_ENABLED = true;
 
 /** The three rep-carrying lines. Head Office is excluded on purpose — see the header. */
 const SPLIT_LINE_KEYS = new Set(["pedia", "anti infective", "antiinfective", "anti inf", "cns"]);
