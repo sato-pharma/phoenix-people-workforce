@@ -207,6 +207,7 @@ import { runCandidateFolderTests } from "./candidate-folders.test.ts";
 import { runCandidatePoolFiledSearchTests } from "./candidate-pool-filed-search.test.ts";
 import { runCandidateFolderSuggestionTests } from "./candidate-folder-suggestion.test.ts";
 import { runDriveCvFolderTests } from "./drive-cv-folders.test.ts";
+import { runCvLifecycleFeedTests } from "./cv-lifecycle-feed.test.ts";
 import { runHiringManagerTeamScopeTests } from "./hiring-manager-team-scope.test.ts";
 import { runManagerFolderShelfTests } from "./manager-folder-shelf.test.ts";
 import { runBackgroundReviewQueueTests } from "./background-review-queue.test.ts";
@@ -1684,6 +1685,10 @@ await runTest(
 await runTest(
   "recruitment Drive mirror (region then area, and Delta (3) files where recruitment says, not where sales does)",
   runDriveCvFolderTests,
+);
+await runTest(
+  "CV lifecycle sheet (the day bucket is Cairo's, a backfilled mirror still counts on its arrival day, and no column claims the candidate's send time)",
+  runCvLifecycleFeedTests,
 );
 await runTest(
   "hiring-manager team scope (one National Sales Manager can NEVER read the other's candidates, and the picker is exactly the gate)",
