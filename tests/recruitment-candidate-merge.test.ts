@@ -5,10 +5,12 @@ import {
   borrowableFields,
   canMergeCandidates,
   describeBorrowedFields,
+  describeCopiedHistoryLine,
   isActiveApplicationStage,
   mergeBlockReason,
   mergeableFields,
   mergeScreeningExtraAnswers,
+  splitRowsByExistingKey,
 } from "../src/lib/recruitment/candidate-merge.ts";
 
 /**
@@ -175,9 +177,67 @@ export function runRecruitmentCandidateMergeTests() {
     childTables.indexOf("ats_applications") < childTables.indexOf("ats_files"),
     "applications must move FIRST — it is the only move the database can reject, and a refusal after the files have moved leaves the duplicate half-emptied",
   );
-  assert.ok(
+  // ── THE APPEND-ONLY TABLE: the move that could never have worked ─────────────────────────────
+  // This assertion used to demand the OPPOSITE, and pinned the bug in place: `childTables` listed
+  // ats_candidate_status_events on the reasoning that it has no foreign key, so a merge that did
+  // not move it would orphan the duplicate's history. The foreign key half is true. The conclusion
+  // was not — public.ats_candidate_status_events carries `ats_candidate_status_events_immutable`,
+  // a BEFORE DELETE OR UPDATE row trigger raising `restrict_violation` for EVERY role, so the
+  // UPDATE that "moves" a child row can never succeed there. Because the table sat LAST in the
+  // list, the guaranteed failure landed after applications, files, extractions and intake events
+  // had already moved: 2 of 23 production merges on 2026-09-04 left the duplicate holding 0 files
+  // and 0 extractions, which reads to a recruiter as a candidate with no CV rather than as a merge
+  // that stopped half-way.
+  assert.equal(
     childTables.includes("ats_candidate_status_events"),
-    "ats_candidate_status_events has NO foreign key onto ats_candidates, so a merge that does not move it silently orphans the duplicate's decision history",
+    false,
+    "ats_candidate_status_events is append-only — an UPDATE of candidate_id raises restrict_violation for every role, so moving it in childTables can only ever fail, and it fails AFTER the other tables have moved",
+  );
+  const appendOnlyStart = service.indexOf("const appendOnlyChildTables");
+  const appendOnly = service.slice(appendOnlyStart, service.indexOf("] as const", appendOnlyStart));
+  assert.ok(
+    appendOnlyStart > 0 && appendOnly.includes("ats_candidate_status_events"),
+    "the duplicate's decision history still has to reach the survivor — as COPIES, since append is the only verb the table permits",
+  );
+  assert.ok(
+    service.includes("await copyAppendOnlyHistory("),
+    "declaring the append-only list without walking it loses the duplicate's history entirely, which is worse than the failure it replaced",
+  );
+
+  // ── The five tables a merge used to lose on delete ────────────────────────────────────────────
+  // Each carries candidate_id and was in NEITHER list, so the duplicate's rows were destroyed by
+  // the cascade (sends, district returns, views) or left orphaned with no foreign key at all
+  // (comments, manager folders). A manager send is the evidence of who was actually shown a
+  // candidate; losing it silently is not a tidy-up.
+  const dedupedStart = service.indexOf("const dedupedChildTables");
+  // Sliced to the next declaration rather than to a bracket: this list is not `as const`, so it
+  // has no unique closing token of its own.
+  const deduped = service.slice(dedupedStart, service.indexOf("const appendOnlyChildTables", dedupedStart));
+  assert.ok(dedupedStart > 0, "dedupedChildTables must exist — four child tables are unique on (candidate_id, key)");
+  for (const table of [
+    "ats_candidate_manager_sends",
+    "ats_candidate_district_returns",
+    "ats_candidate_views",
+    "ats_candidate_comments",
+    "ats_candidate_manager_folders",
+  ]) {
+    assert.ok(
+      childTables.includes(table) || deduped.includes(table),
+      `${table} carries candidate_id, so a merge that never moves its rows loses them when the duplicate is deleted`,
+    );
+  }
+
+  // ats_candidate_views HAS NO `id` COLUMN — its primary key IS (candidate_id, viewer_hr_id). The
+  // plain reassign path selects "id" to count what moved, which answers 42703 there, so this table
+  // could never simply be appended to childTables.
+  assert.equal(
+    childTables.includes("ats_candidate_views"),
+    false,
+    "ats_candidate_views has no id column, so the plain reassign path would answer 42703 on it",
+  );
+  assert.ok(
+    deduped.includes("identityColumn: \"viewer_hr_id\""),
+    "ats_candidate_views must be addressed by viewer_hr_id — it has no id column to name its rows by",
   );
   assert.equal(
     childTables.includes("ats_candidate_source_context"),
@@ -226,6 +286,96 @@ export function runRecruitmentCandidateMergeTests() {
     service.includes("mergeScreeningExtraAnswers("),
     "the DB half stopped calling the pure screening-answers merge helper — it must not reimplement the union inline, where this test cannot see it",
   );
+
+  // ── THE PHASE ORDER: everything refusable before anything that is not ────────────────────────
+  // This is the property that makes a failed merge survivable. A merge is several round trips with
+  // no transaction around them, so the question is never "can it fail" but "what does the duplicate
+  // look like when it does". Every step the database could still reject has to happen while the
+  // duplicate is still whole.
+  const mergeAt = service.indexOf("export async function mergeCandidates");
+  const dedupedLoopAt = service.indexOf("of dedupedChildTables", mergeAt);
+  const childLoopAt = service.indexOf("of childTables", mergeAt);
+  const copyAt = service.indexOf("await copyAppendOnlyHistory(", mergeAt);
+  const relinkAt = service.indexOf("of linkedByOwnColumn", mergeAt);
+  const deleteAt = service.indexOf("deleteError", mergeAt);
+  // Existence first: indexOf answers -1 for a step that is not there, and -1 is less than every
+  // real position, so an ordering assertion alone passes on a merge that skips the step entirely.
+  for (const [label, at] of [
+    ["the deduped move", dedupedLoopAt],
+    ["the plain child move", childLoopAt],
+    ["the append-only copy", copyAt],
+    ["the relink", relinkAt],
+    ["the delete", deleteAt],
+  ] as const) {
+    assert.ok(at > 0, `${label} is missing from mergeCandidates entirely`);
+  }
+  assert.ok(
+    dedupedLoopAt < childLoopAt,
+    "the deduped tables must move BEFORE the plain ones: their collision is predicted from a separate read of the survivor, so it is the only move left that can still race into a 23505 — and a throw there must not find the files and extractions already gone",
+  );
+  assert.ok(
+    childLoopAt < copyAt,
+    "the append-only copy is an INSERT and cannot be refused, so it belongs after every move that can be",
+  );
+  assert.ok(copyAt < relinkAt && relinkAt < deleteAt, "nothing may read the duplicate after it is deleted");
+
+  // ── The collision split, exercised rather than grepped ───────────────────────────────────────
+  // Four child tables are unique on (candidate_id, key). The same manager holding both records of
+  // one person is ordinary — it is part of what makes them a duplicate — so a collision is a fact
+  // to report, not an error to raise, and the SURVIVOR's own row is the one kept.
+  const sends = [
+    { id: "d1", manager_hr_id: "a-12" },
+    { id: "d2", manager_hr_id: "b-10" },
+  ];
+  const split = splitRowsByExistingKey(sends, ["a-12"], (row) => row.manager_hr_id);
+  assert.deepEqual(split.movable.map((row) => row.id), ["d2"]);
+  assert.deepEqual(split.blocked.map((row) => row.id), ["d1"], "the survivor already has a-12, so the duplicate's send to a-12 cannot travel");
+
+  // A null key cannot trip a unique index — NULLs never equal each other in one — so it always
+  // moves. Getting this backwards would silently strand every row whose key happens to be blank.
+  const nullKeyed = splitRowsByExistingKey([{ id: "n1", manager_hr_id: null }], ["a-12"], (row) => row.manager_hr_id);
+  assert.deepEqual(nullKeyed.movable.map((row) => row.id), ["n1"]);
+  assert.equal(nullKeyed.blocked.length, 0);
+
+  // `keyOf` returning null is also how a PARTIAL index is honoured: ats_candidate_district_returns
+  // is unique on (manager_hr_id, candidate_id) only WHERE status = 'open', so a resolved return
+  // never collides even when the survivor holds an open one for that same manager.
+  const returns = [
+    { id: "r1", manager_hr_id: "a-12", status: "resolved" },
+    { id: "r2", manager_hr_id: "a-12", status: "open" },
+  ];
+  const partial = splitRowsByExistingKey(
+    returns,
+    ["a-12"],
+    (row) => (row.status === "open" ? row.manager_hr_id : null),
+  );
+  assert.deepEqual(partial.movable.map((row) => row.id), ["r1"], "a resolved return is outside the partial index and must still move");
+  assert.deepEqual(partial.blocked.map((row) => row.id), ["r2"]);
+
+  // The comparison is deliberately EXACT. HR ids in this database are mixed case, and the habit of
+  // lowercasing both sides is right for a query and wrong here: the btree index compares raw bytes,
+  // so case-folding would invent a collision the database would have allowed and drop a real row.
+  const mixedCase = splitRowsByExistingKey([{ id: "m1", manager_hr_id: "A-12" }], ["a-12"], (row) => row.manager_hr_id);
+  assert.deepEqual(
+    mixedCase.movable.map((row) => row.id),
+    ["m1"],
+    "A-12 and a-12 are two different keys to the unique index, so the row moves — folding case here would silently drop it",
+  );
+
+  // ── What a copied history line says ──────────────────────────────────────────────────────────
+  // A copy is indistinguishable from a decision somebody made on the survivor unless it says so.
+  const copiedWithNote = describeCopiedHistoryLine({
+    duplicateId: "369b306e-7de0-478b-8e0d-f183ce70f3f0",
+    existingNote: "Sent to Saad Salama for Kafr El-Sheikh 1.",
+    mergedOn: "2026-09-04",
+  });
+  assert.ok(copiedWithNote.startsWith("Sent to Saad Salama for Kafr El-Sheikh 1."), "the original note is kept in full — never replaced");
+  assert.match(copiedWithNote, /\[Copied from duplicate record 70f3f0 when it was merged in on 2026-09-04\./);
+  assert.match(copiedWithNote, /append-only/);
+  // The duplicate is deleted by the time anyone reads this, so the label ties the line back to the
+  // backup schema. Last six characters, matching the lines written by hand on 2026-09-04.
+  const copiedBlank = describeCopiedHistoryLine({ duplicateId: "ab92cd29-5924-469b-a4b9-6dcd078f40f3", existingNote: null, mergedOn: "2026-09-04" });
+  assert.ok(copiedBlank.startsWith("[Copied from duplicate record 8f40f3"), "a line that had no note is the provenance alone, with no stray leading space");
 
   // ── screening_extra_answers: the jsonb analogue of borrowableFields ─────────────────────────────
   // A jsonb bag of admin-growable keys does not fit mergeableFields' one-column-one-blank-check
