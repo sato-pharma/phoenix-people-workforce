@@ -1556,3 +1556,108 @@ html:has(.admin-shell):not(:has(.employee-portal-shell)) {
 .admin-shell [stop-color="#94A3B8"] {
   stop-color: #a9a193;
 }
+
+/* ══════════════════════════════════════════════════════
+   DISPLAY SCALE — the app's own zoom-out, on the CONTENT only
+   ══════════════════════════════════════════════════════
+
+   The owner's complaint: at the browser's normal 100% the shell renders large enough that a table
+   shows six rows where it should show fifteen, on the admin shell and the portal alike. He asked
+   for the system to OPEN already scaled to ~75-80%, with a zoom control on the navigation bar of
+   every account type.
+
+   THE ZOOM IS THE DASHBOARD, NOT THE CHROME. His words, and the rule this file enforces: the
+   sidebar stays exactly where it is and at the size it was designed at, and so does the top bar.
+   Only <main> scales. That is why `zoom` sits on .phx-zoom-surface and NOT on :root — a root zoom
+   shrinks the navigation rail, the brand block and the zoom control itself along with everything
+   else, which is not what was asked for and reads as the whole app having been made smaller rather
+   than the data having been given more room. It also keeps the control a constant size while you
+   press it, instead of the button shrinking under the pointer as you zoom out.
+
+   A page cannot drive the browser's own zoom control — that is browser chrome, not scriptable.
+   CSS `zoom` is what reproduces it, and unlike a rem-based type-scale change it also scales the px
+   literals this codebase is full of (h-[17px], w-[52px]), so the design shrinks as one piece
+   instead of coming apart optically.
+
+   MEASURED on the live portal at 1440x900 before any of this was written, because three of the
+   four things `zoom` interacts with cannot be reasoned about safely:
+
+     position: fixed   COMPENSATED. `fixed inset-0` painted 1425x900 zoomed and unzoomed — the
+                       containing block stays the real viewport. The 123 files using fixed
+                       positioning need nothing. This was the biggest risk and it is a non-issue.
+     media queries     UNAFFECTED. min-width:1024px and 1280px both still fire at zoom 0.8 —
+                       element zoom does not feed back into the viewport. So the desktop gate
+                       below is stable, and "desktop shows full tables, mobile gets cards" holds.
+     100vh / 100dvh    NOT compensated. 100vh painted 720px of a 900px screen. Compensated below.
+     the width caps    The trap — see .phx-shell-cap-admin.
+
+   PRINT IS EXCLUDED (`@media screen`), and that is load-bearing rather than tidy. Social-insurance
+   Form 1 prints exactly as the Authority issues it, and the hiring-pack papers are pinned to real
+   paper geometry. A4 landscape is 1123px at 96dpi, so a bare `min-width: 1024px` WOULD have fired
+   during printing and shipped every statutory form at 80% size. */
+
+:root {
+  /* Overwritten on <html> by the boot script in app/layout.tsx before first paint. The 1 here is
+     what an unscripted or pre-hydration render gets, so the app degrades to today's exact look
+     rather than to a broken one. */
+  --phx-display-scale: 1;
+  /* What is ACTUALLY in force after the desktop gate. Everything that compensates for the zoom
+     divides by THIS, never by --phx-display-scale, so below 1024px — where no zoom is applied —
+     the compensations correctly become no-ops instead of silently inflating a width cap. */
+  --phx-scale-applied: 1;
+}
+
+@media screen and (min-width: 1024px) {
+  :root {
+    --phx-scale-applied: var(--phx-display-scale, 1);
+  }
+
+  /* The one element that scales, applied to <main> in each shell. */
+  .phx-zoom-surface {
+    zoom: var(--phx-display-scale, 1);
+  }
+
+  /* Viewport units are the one thing `zoom` does not compensate: 100vh resolves against the real
+     viewport and is THEN scaled, so a full-height box painted 720px of a 900px screen and left a
+     strip of background below the fold. Dividing restores it exactly.
+
+     Scoped INSIDE the zoom surface, so the shells' own min-h-screen — which is on the outer,
+     unzoomed wrapper — is deliberately untouched. Scoped to the two page-height utilities on
+     purpose too: the ~100 arbitrary vh values in the app (max-h-[70vh] on a dropdown,
+     max-h-[calc(100vh-7rem)] on a scroll panel) are max-heights on scroll containers, and at 0.8
+     they hold the same content in a physically smaller box, which is what a zoom is SUPPOSED to
+     do. Only a full-page-height box has a visible defect.
+
+     Unlayered, so it beats Tailwind's own @layer utilities copy without an !important. */
+  .phx-zoom-surface .min-h-screen {
+    min-height: calc(100vh / var(--phx-scale-applied, 1));
+  }
+
+  .phx-zoom-surface .h-screen {
+    height: calc(100vh / var(--phx-scale-applied, 1));
+  }
+}
+
+/* THE WIDTH CAP — the half that decides whether this change does anything at all.
+
+   This cap is INSIDE <main>, so it lives in the zoomed coordinate space. It encodes a PHYSICAL
+   intention — never let a line of text run wider than 1,760 device pixels — but at 0.8 a raw
+   1760px cap paints at 1,408 device px, so the column gets NARROWER rather than denser.
+
+   Measured on the portal overview at 1440x900, zoom 0.8, cap left raw: the content column went
+   from 1,425 device px to 1,264, with 81px of dead margin either side, for only 15% more content.
+   That is the failure mode — smaller text showing barely more data, which is exactly what would
+   have come back as "it did nothing".
+
+   Dividing by the scale restores the physical intention precisely: the column paints at the same
+   device width it always did and simply holds more inside it. On a 2560px screen at 0.8 it still
+   paints 1,760 device px, now carrying 2,200 CSS px of content — a quarter more columns at an
+   unchanged physical width.
+
+   Only the admin shell needs this. The portal's caps sit on the flex row that WRAPS the sidebar
+   and main, which is outside the zoom surface and therefore already physical; its content gets
+   denser automatically because main is zoomed inside a container whose device width did not move. */
+
+.phx-shell-cap-admin {
+  max-width: calc(1760px / var(--phx-scale-applied, 1));
+}

@@ -7,6 +7,7 @@ import { useRef, useState } from "react";
 
 import { CalculatorWidget } from "@/components/layout/calculator-widget";
 import { COMMAND_PALETTE_EVENT } from "@/components/layout/command-palette";
+import { DisplayScaleControl } from "@/components/layout/display-scale-control";
 import { InAppNotificationsBell } from "@/components/layout/in-app-notifications-bell";
 import { InternalMessagesMenu } from "@/components/layout/internal-messages-menu";
 import { MobileSidebar } from "@/components/layout/sidebar";
@@ -163,6 +164,7 @@ export function Topbar({
           {/* Admin chrome only, which is where the owner asked for it. The panel it opens is a
               portal, not a dropdown — see calculator-widget.tsx for why that matters here. */}
           {isAdminMode ? <CalculatorWidget isAdminMode={isAdminMode} /> : null}
+          <DisplayScaleControl isAdminMode={isAdminMode} />
           <InAppNotificationsBell isAdminMode={isAdminMode} />
           <InternalMessagesMenu isAdminMode={isAdminMode} />
           <div className="relative" ref={userMenuRef}>
