@@ -100,6 +100,30 @@ docs/observability.md for what it catches and full setup steps.
 | HEALTHCHECKS_PING_KEY | Healthchecks.io project Ping Key. Inert (no ping ever attempted, in any environment) until set. | (unset) |
 | HEALTHCHECKS_PING_HOST | Override for a self-hosted Healthchecks instance | `https://hc-ping.com` |
 
+## Live Google Sheet Token Rotation (Optional)
+
+Three live sheets pull from Phoenix through an unauthenticated bearer token in their Apps Script.
+Each can also be handed a REPLACEMENT token on a weekly cron, so a token that leaks stops being a
+permanent exposure — see `docs/direct-orders-live-sheet.gs`, `docs/marketing-request-live-sheet.gs`
+and `docs/cv-lifecycle-live-sheet.gs` for the sheet-side setup.
+
+Each pair is independently optional. With either half of a pair unset that sheet's rotation route
+answers 200 `{ rotated: false, reason: "not configured" }` and touches nothing, so the cron may be
+scheduled before the sheet is wired up.
+
+| Variable | Description | Default |
+|---|---|---|
+| SHEET_REFRESH_WEBHOOK_URL | Direct-orders sheet: the Apps Script Web App `/exec` URL | (unset) |
+| SHEET_REFRESH_WEBHOOK_SECRET | Direct-orders sheet: must equal its `WEBHOOK_SECRET` script property | (unset) |
+| MARKETING_SHEET_REFRESH_WEBHOOK_URL | Marketing-requests sheet: the Apps Script Web App `/exec` URL | (unset) |
+| MARKETING_SHEET_REFRESH_WEBHOOK_SECRET | Marketing-requests sheet: must equal its `WEBHOOK_SECRET` script property | (unset) |
+| CV_LIFECYCLE_SHEET_REFRESH_WEBHOOK_URL | CV-lifecycle sheet: the Apps Script Web App `/exec` URL | (unset) |
+| CV_LIFECYCLE_SHEET_REFRESH_WEBHOOK_SECRET | CV-lifecycle sheet: must equal its `WEBHOOK_SECRET` script property. **No fallback** — unset means that sheet's `doPost` refuses every caller | (unset) |
+
+The CV-lifecycle secret is the one with no fallback to the feed token, deliberately: that token
+reads candidate names and phone numbers, and letting it double as the key that can REPLACE itself
+would mean one leaked token kept its holder in control of where the sheet points.
+
 ## Dev-Only Variables
 
 These should never be set in production.
