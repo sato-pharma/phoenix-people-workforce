@@ -4,7 +4,7 @@ import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { assertOutstationAdminAccess } from "@/lib/outstation/admin-access";
 import { previewManagerExpenseCalculation } from "@/lib/outstation/service";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
-import type { OutstationTransportationType } from "@/lib/outstation/types";
+import type { OutstationExpenseType, OutstationTransportationType } from "@/lib/outstation/types";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
@@ -38,6 +38,7 @@ export async function POST(request: Request) {
       destinationLabel?: string | null;
       distanceKm?: number;
       employeeHrId?: string;
+      expenseType?: OutstationExpenseType;
       meetingAmount?: number;
       otherAmount?: number;
       transportationType?: OutstationTransportationType;
@@ -48,17 +49,24 @@ export async function POST(request: Request) {
 
     const employeeHrId =
       typeof body.employeeHrId === "string" ? body.employeeHrId.trim() : "";
-    const distanceKm = Number(body.distanceKm);
+    const rawDistanceKm = Number(body.distanceKm);
+    const distanceKm = Number.isFinite(rawDistanceKm) ? rawDistanceKm : 0;
     const tripStartDate =
       typeof body.tripStartDate === "string" ? body.tripStartDate.trim() : "";
     const tripEndDate =
       typeof body.tripEndDate === "string" ? body.tripEndDate.trim() : "";
     const transportationType = body.transportationType;
+    const expenseType: OutstationExpenseType =
+      body.expenseType === "meeting" || body.expenseType === "other"
+        ? body.expenseType
+        : "traveling";
+    // A Meeting entry never prices travel, so distance is the one input it does not need —
+    // the modal stops asking for it once Meeting is selected.
+    const requiresDistance = expenseType !== "meeting";
 
     if (
       !employeeHrId ||
-      !Number.isFinite(distanceKm) ||
-      distanceKm <= 0 ||
+      (requiresDistance && (!Number.isFinite(distanceKm) || distanceKm <= 0)) ||
       !tripStartDate ||
       !tripEndDate ||
       !transportationType ||
@@ -83,6 +91,7 @@ export async function POST(request: Request) {
       destinationLabel: optionalString(body.destinationLabel),
       distanceKm,
       employeeHrId,
+      expenseType,
       meetingAmount: optionalNumber(body.meetingAmount) ?? 0,
       otherAmount: optionalNumber(body.otherAmount) ?? 0,
       transportationType,

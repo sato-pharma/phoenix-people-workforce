@@ -42,7 +42,8 @@ export async function POST(request: Request) {
     const employeeHrId =
       typeof body.employeeHrId === "string" ? body.employeeHrId.trim() : "";
     const destination = body.destination;
-    const distanceKm = Number(body.distanceKm);
+    const rawDistanceKm = Number(body.distanceKm);
+    const distanceKm = Number.isFinite(rawDistanceKm) ? rawDistanceKm : 0;
     const tripStartDate =
       typeof body.tripStartDate === "string" ? body.tripStartDate.trim() : "";
     const tripEndDate =
@@ -73,7 +74,16 @@ export async function POST(request: Request) {
       );
     }
 
-    if (!Number.isFinite(distanceKm) || distanceKm <= 0) {
+    if (!isOutstationExpenseType(expenseType)) {
+      return NextResponse.json(
+        { error: INVALID_EXPENSE_TYPE.error, message: INVALID_EXPENSE_TYPE.message },
+        { status: 400 },
+      );
+    }
+
+    // A Meeting entry never prices travel, so it is the one expense type that does not need a
+    // real distance — the modal stops asking for one once Meeting is selected.
+    if (expenseType !== "meeting" && (!Number.isFinite(distanceKm) || distanceKm <= 0)) {
       return NextResponse.json(
         { error: "invalid_distance", message: "distanceKm must be a positive number." },
         { status: 400 },
@@ -83,13 +93,6 @@ export async function POST(request: Request) {
     if (!tripStartDate || !tripEndDate) {
       return NextResponse.json(
         { error: "missing_dates", message: "tripStartDate and tripEndDate are required." },
-        { status: 400 },
-      );
-    }
-
-    if (!isOutstationExpenseType(expenseType)) {
-      return NextResponse.json(
-        { error: INVALID_EXPENSE_TYPE.error, message: INVALID_EXPENSE_TYPE.message },
         { status: 400 },
       );
     }

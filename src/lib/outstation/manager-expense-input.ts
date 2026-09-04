@@ -175,7 +175,11 @@ export function buildManagerExpenseAdminPatch(body: unknown): ManagerExpenseAdmi
 
   if (source.distanceKm !== undefined) {
     const distanceKm = optionalNumber(source.distanceKm);
-    if (distanceKm == null || distanceKm <= 0) {
+    // A Meeting entry never prices travel, so zero is a valid distance for it — every other
+    // expense type still needs a real, positive one. The modal always sends expenseType
+    // alongside distanceKm, so it is available here to decide which rule applies.
+    const isMeetingExpense = source.expenseType === "meeting";
+    if (distanceKm == null || distanceKm < 0 || (!isMeetingExpense && distanceKm <= 0)) {
       return reject({
         error: "invalid_distance",
         message: "distanceKm must be a positive number.",

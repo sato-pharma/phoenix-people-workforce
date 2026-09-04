@@ -81,9 +81,12 @@ export function runOutstationManualExpenseTicketPlusAllowanceTests() {
     /const input: ManagerExpenseAdminInput = \{[\s\S]*?\n {4}\};/,
   )?.[0];
   assert.ok(submitPayload, "the admin modal must build a ManagerExpenseAdminInput submit payload");
+  // A Meeting entry prices on the meeting amount alone and must send travelCostAmount as
+  // null, but every other expense type must still carry travelCostForSubmit through
+  // unchanged — the ternary must resolve to travelCostForSubmit on the non-meeting branch.
   assert.match(
     submitPayload,
-    /travelCostAmount:\s*travelCostForSubmit/,
+    /travelCostAmount:\s*isMeeting \? null : travelCostForSubmit/,
     "the admin modal's submit payload must carry travelCostAmount, not just the preview call",
   );
   assert.match(
