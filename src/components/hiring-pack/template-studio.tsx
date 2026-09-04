@@ -100,6 +100,7 @@ type StoredTemplate = {
   nameAr: string | null;
   pageWidthPt: number;
   pageHeightPt: number;
+  group: CustomTemplateGroup;
   status: "current" | "archived";
   version: number;
   effectiveFrom: string;
@@ -235,7 +236,7 @@ async function readImageFile(file: File): Promise<RasterPage> {
 function presetForAspect(widthPx: number, heightPx: number) {
   if (widthPx <= 0 || heightPx <= 0) return CUSTOM_TEMPLATE_PAGE_PRESETS[0];
   const ratio = heightPx / widthPx;
-  let best = CUSTOM_TEMPLATE_PAGE_PRESETS[0];
+  let best: (typeof CUSTOM_TEMPLATE_PAGE_PRESETS)[number] = CUSTOM_TEMPLATE_PAGE_PRESETS[0];
   let bestGap = Number.POSITIVE_INFINITY;
   for (const preset of CUSTOM_TEMPLATE_PAGE_PRESETS) {
     const gap = Math.abs(preset.heightPt / preset.widthPt - ratio);
@@ -717,7 +718,7 @@ export function TemplateStudio() {
                             <Badge size="sm" tone="neutral">
                               v{template.version}
                             </Badge>
-                            <Badge size="sm" tone={template.status === "current" ? "success" : "neutral"}>
+                            <Badge size="sm" tone={template.status === "current" ? "ok" : "neutral"}>
                               {template.status === "current" ? "Current" : "Archived"}
                             </Badge>
                           </div>

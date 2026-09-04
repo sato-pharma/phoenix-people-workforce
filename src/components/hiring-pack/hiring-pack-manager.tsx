@@ -655,12 +655,19 @@ export function HiringPackManager({
   /**
    * Which document is open on screen as the page it prints as, if any.
    *
+   * NARROWER THAN `openPrint`, AND THAT GAP IS THE BOUNDARY between printing an uploaded
+   * template and editing one. The print route resolves a company template out of the database, so
+   * printing takes anything printable. The paper editor resolves a COMPILED template version —
+   * `currentTemplateVersion(documentKey)` — which an uploaded template has no entry in and cannot
+   * have one in. Widening this before the editor is given a version to scope its field layer
+   * against would open a paper whose dropped boxes save against a version id of `undefined`.
+   *
    * `versionId` is only ever set from the Archive, where the point is to look at a SUPERSEDED
    * template. Null means the same thing it means to the print route: not "the current text", but
    * "whichever version this employee's signature resolves to".
    */
   const [preview, setPreview] = useState<{
-    document: PrintableDocument;
+    document: HiringPackDocument;
     versionId: string | null;
   } | null>(null);
   /**
@@ -886,7 +893,7 @@ export function HiringPackManager({
    * Deliberately does NOT go through `openPrint`: the preview asks the same route for the same
    * bytes but with `preview=1`, which is what stops a look at the paper being recorded as a print.
    */
-  const openPreview = useCallback((document: PrintableDocument, versionId?: string) => {
+  const openPreview = useCallback((document: HiringPackDocument, versionId?: string) => {
     setError(null);
     setNotice(null);
     setPreview({ document, versionId: versionId ?? null });

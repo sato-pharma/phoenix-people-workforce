@@ -19,7 +19,7 @@
 // prints its compiled default, which is what it printed before this feature existed.
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 
-import { documentSurface, type DocumentFieldRow, type FlowAnchor } from "@/lib/hiring-pack/field-layout";
+import type { DocumentFieldRow, FlowAnchor } from "@/lib/hiring-pack/field-layout";
 import { validateFieldTemplate } from "@/lib/hiring-pack/field-template";
 import { canonicalHrIdForDisplay } from "@/lib/hr-id";
 import {
@@ -28,6 +28,11 @@ import {
   type TemplateStatus,
 } from "@/lib/hiring-pack/template-registry";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import {
+  asPrintableDocument,
+  documentSurfaceOf,
+  type PrintableDocument,
+} from "@/lib/hiring-pack/document-registry";
 import type { HiringPackDocument } from "@/lib/hiring-pack/types";
 
 const TABLE = "hiring_pack_document_fields";
@@ -108,9 +113,16 @@ export function documentFieldFromRecord(record: FieldRecord): DocumentFieldRow |
       ? record.align
       : "right";
 
+  // The stored document is NARROWED, not cast. This column holds a string, and a row naming a
+  // document this build cannot print — a company template deleted from under its layout, a key
+  // from a branch that never shipped — has no coordinates worth drawing. Returning null drops it,
+  // which is what this function already does for a source it cannot read.
+  const document = asPrintableDocument(record.document);
+  if (!document) return null;
+
   return {
     id: record.id,
-    document: record.document as HiringPackDocument,
+    document,
     templateVersionId: record.template_version_id,
     defaultKey: record.default_key,
     hidden: record.hidden === true,
@@ -143,7 +155,7 @@ const COLUMNS =
  * order they expect them to layer.
  */
 export async function loadDocumentFieldLayout(
-  document: HiringPackDocument,
+  document: PrintableDocument,
   templateVersionId: string,
 ): Promise<DocumentFieldRow[]> {
   const supabase = getSupabaseAdmin();
@@ -175,7 +187,7 @@ export async function loadDocumentFieldLayout(
 
 export type DocumentFieldWrite = {
   id?: string;
-  document: HiringPackDocument;
+  document: PrintableDocument;
   templateVersionId: string;
   defaultKey: string | null;
   hidden: boolean;
@@ -252,7 +264,7 @@ export async function deleteDocumentField(id: string): Promise<void> {
  * that was signed, and it is not the caller's to discard.
  */
 export async function resetDocumentFieldLayout(
-  document: HiringPackDocument,
+  document: PrintableDocument,
   templateVersionId: string,
 ): Promise<number> {
   const supabase = getSupabaseAdmin();
@@ -286,6 +298,15 @@ export type DocumentFieldWriteInput = {
   source?: unknown;
 };
 
+/**
+ * The ten written in code, named one by one so this gate never widens by accident.
+ *
+ * A COMPANY TEMPLATE IS ACCEPTED TOO, and not through this set — `asPrintableDocument` below
+ * validates the uuid inside a `custom:<uuid>`, which is the only thing that could be checked here
+ * anyway. The keys of uploaded templates are not knowable at build time; that is what makes them
+ * uploaded. What the check still guarantees is the same thing it always did: whatever reaches the
+ * table is a document this build can print, not an arbitrary string a caller supplied.
+ */
 const KNOWN_DOCUMENTS = new Set<HiringPackDocument>([
   "contract",
   "form1",
@@ -314,9 +335,15 @@ function isFiniteNumber(value: unknown): value is number {
 export function parseDocumentFieldWrite(
   input: DocumentFieldWriteInput,
 ): { ok: true; write: DocumentFieldWrite } | { ok: false; message: string } {
-  const document = input.document;
-  if (typeof document !== "string" || !KNOWN_DOCUMENTS.has(document as HiringPackDocument)) {
-    return { ok: false, message: `document must be one of ${Array.from(KNOWN_DOCUMENTS).join(", ")}.` };
+  const raw = input.document;
+  const document = typeof raw === "string" ? asPrintableDocument(raw) : null;
+  if (!document) {
+    return {
+      ok: false,
+      message:
+        `document must be one of ${Array.from(KNOWN_DOCUMENTS).join(", ")}, ` +
+        "or a company template as custom:<uuid>.",
+    };
   }
 
   const templateVersionId = input.templateVersionId;
@@ -329,7 +356,9 @@ export function parseDocumentFieldWrite(
     return { ok: false, message: 'align must be "right", "center" or "left".' };
   }
 
-  const surface = documentSurface(document as HiringPackDocument);
+  // A company template is always a page surface — fixed artwork, absolute coordinates. See
+  // `documentSurfaceOf`, which is the one function that answers this for both kinds.
+  const surface = documentSurfaceOf(document);
   const rawPage = input.page;
   const rawAnchor = input.anchor;
   let page: number | null = null;
@@ -431,7 +460,7 @@ export function parseDocumentFieldWrite(
     ok: true,
     write: {
       id,
-      document: document as HiringPackDocument,
+      document,
       templateVersionId,
       defaultKey,
       hidden,
@@ -498,6 +527,14 @@ export type CarryForwardOffer = {
  * One query for the document, grouped in memory. The alternative — a count per version — is a round
  * trip per archived template, and the table is small enough that reading its ids costs less than
  * asking five times.
+ */
+/*
+ * STILL ONE OF THE TEN, and so are `carryForwardOffer` and `carryForwardDocumentFields` below.
+ * All three ask `templateVersionsFor` — the COMPILED template registry — which of a document’s
+ * versions exist. A company template’s versions are rows in `hiring_pack_custom_templates`, not
+ * entries there, so widening these signatures would let a caller pass a template whose version
+ * list comes back empty and read that as “no layout to carry”. Carrying a company template’s
+ * layout onto replaced artwork is real work; it belongs with the store that knows those versions.
  */
 export async function countDocumentFieldsByVersion(
   document: HiringPackDocument,
@@ -757,7 +794,7 @@ export type FieldHistorySummary = {
  * field somebody actually opens.
  */
 export async function summariseDocumentFieldHistory(
-  document: HiringPackDocument,
+  document: PrintableDocument,
   templateVersionId: string,
 ): Promise<Record<string, FieldHistorySummary>> {
   const supabase = getSupabaseAdmin();

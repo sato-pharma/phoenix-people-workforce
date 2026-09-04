@@ -16,7 +16,11 @@ import {
   type DocumentFieldWriteInput,
 } from "@/lib/hiring-pack/field-layout-store";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
-import { HIRING_PACK_DOCUMENTS } from "@/lib/hiring-pack/types";
+import {
+  asPrintableDocument,
+  type PrintableDocument,
+} from "@/lib/hiring-pack/document-registry";
+import { HIRING_PACK_DOCUMENTS, isBuiltInDocument } from "@/lib/hiring-pack/types";
 import type { HiringPackDocument } from "@/lib/hiring-pack/types";
 
 export const runtime = "nodejs";
@@ -31,9 +35,29 @@ export const dynamic = "force-dynamic";
 // them is exactly who this screen is for — a separate "layout" permission would only mean asking
 // someone to hold a second grant to move a box on a page they can already fill in and sign off.
 
+/** One of the ten. Still the answer for the two intents that read the COMPILED registry. */
 function isKnownDocument(value: unknown): value is HiringPackDocument {
   return typeof value === "string" && (HIRING_PACK_DOCUMENTS as readonly string[]).includes(value);
 }
+
+/**
+ * The document a request names — one of the ten, or a company template somebody uploaded.
+ *
+ * `asPrintableDocument` rather than a list check, because "which documents are there" stopped
+ * being a closed question the moment a template could be uploaded, and the store already keys
+ * layouts on the wider type. WHAT THIS FIXES was a real half-state: the POST validator accepted a
+ * box dropped on an uploaded paper while the GET refused to list it, so the box saved, vanished
+ * from the field table, and printed anyway — a value on a signed document that the screen said
+ * was not there.
+ */
+function requestedDocument(value: unknown): PrintableDocument | null {
+  return typeof value === "string" ? asPrintableDocument(value) : null;
+}
+
+/** The sentence a caller who named no document, or an unknown one, gets back. */
+const DOCUMENT_EXPECTED =
+  `Pass document= (one of ${HIRING_PACK_DOCUMENTS.join(", ")}, or a company template as ` +
+  "custom:<uuid>)";
 
 function apiError(error: unknown) {
   if (isForbiddenError(error)) return { message: "Not permitted.", status: 403 };
@@ -66,14 +90,11 @@ export async function GET(request: Request) {
       return NextResponse.json({ history: await loadFieldHistory(historyFor) });
     }
 
-    const document = url.searchParams.get("document");
+    const document = requestedDocument(url.searchParams.get("document"));
     const templateVersionId = url.searchParams.get("templateVersionId");
-    if (!isKnownDocument(document) || !templateVersionId) {
+    if (!document || !templateVersionId) {
       return NextResponse.json(
-        {
-          error: "invalid_request",
-          message: `Pass document= (one of ${HIRING_PACK_DOCUMENTS.join(", ")}) and templateVersionId=.`,
-        },
+        { error: "invalid_request", message: `${DOCUMENT_EXPECTED} and templateVersionId=.` },
         { status: 400 },
       );
     }
@@ -86,9 +107,15 @@ export async function GET(request: Request) {
     // row — "changed 12 Sep, 14:20" — and asking for it separately would double the panel's opening
     // cost to deliver a timestamp. The full previous states are fetched only for the row somebody
     // opens, through `historyFor` above.
+    // NO CARRY-FORWARD OFFER FOR A COMPANY TEMPLATE, and null is the honest answer rather than a
+    // gap. The offer is built from `templateVersionsFor` — the COMPILED registry, which knows the
+    // ten and nothing else — so asking it about an uploaded template returns an empty version list,
+    // which reads as "there is no earlier layout to carry" whether or not that is true. An uploaded
+    // template's versions live in a database table, and offering across them is what replacing a
+    // template's artwork will need; until that is built, saying nothing beats answering wrongly.
     const [fields, carryForward, changed] = await Promise.all([
       loadDocumentFieldLayout(document, templateVersionId),
-      carryForwardOffer(document, templateVersionId),
+      isBuiltInDocument(document) ? carryForwardOffer(document, templateVersionId) : null,
       summariseDocumentFieldHistory(document, templateVersionId),
     ]);
     return NextResponse.json({ fields, carryForward, changed });
@@ -118,9 +145,9 @@ export async function POST(request: Request) {
     const body = (await request.json()) as { intent?: string } & Record<string, unknown>;
 
     if (body.intent === "reset") {
-      const document = body.document;
+      const document = requestedDocument(body.document);
       const templateVersionId = body.templateVersionId;
-      if (!isKnownDocument(document) || typeof templateVersionId !== "string" || templateVersionId.trim() === "") {
+      if (!document || typeof templateVersionId !== "string" || templateVersionId.trim() === "") {
         return NextResponse.json(
           { error: "invalid_request", message: "Pass document and templateVersionId to reset." },
           { status: 400 },
@@ -133,6 +160,9 @@ export async function POST(request: Request) {
     // CARRY A PREVIOUS VERSION'S LAYOUT ONTO THIS ONE. Both ids are named by the caller rather
     // than re-derived here: the offer the editor showed is what the operator agreed to, and a
     // server that recomputed the source could copy a different version than the one on screen.
+    // `isKnownDocument`, NOT `requestedDocument`, and that is the same reason the GET above returns
+    // no offer for a company template: this copies a layout between two versions of the COMPILED
+    // registry. An uploaded template's versions are rows, and carrying between them is B6's work.
     if (body.intent === "carryForward") {
       const document = body.document;
       const fromTemplateVersionId = body.fromTemplateVersionId;

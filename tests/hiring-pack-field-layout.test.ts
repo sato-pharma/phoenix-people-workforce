@@ -510,6 +510,19 @@ function testTheWriteValidatorAcceptsAWellFormedRowOfEachSurface() {
     assert.deepEqual(flow.write.source, { kind: "value", key: "EMPLOYEE_NAME" });
   }
 
+  // A COMPANY TEMPLATE IS A PAGE SURFACE, and the validator has to admit one or the first box
+  // dropped on an uploaded paper is refused — which is how this was found: the template printed
+  // perfectly and only the SAVE failed, as a raw constraint violation from Postgres.
+  const custom = parseDocumentFieldWrite(
+    pageWrite({ document: "custom:1857bafe-d3f9-4576-a850-abe82f884f0d" }),
+  );
+  assert.equal(custom.ok, true, "a box on an uploaded company template must be accepted");
+  if (custom.ok) {
+    assert.equal(custom.write.document, "custom:1857bafe-d3f9-4576-a850-abe82f884f0d");
+    assert.equal(custom.write.page, 2, "an uploaded template places by coordinate, like Form 1");
+    assert.equal(custom.write.anchor, null, "nothing on a scanned image reflows, so nothing anchors");
+  }
+
   const withId = parseDocumentFieldWrite(pageWrite({ id: "row-1" }));
   assert.equal(withId.ok && withId.write.id, "row-1");
   const withoutId = parseDocumentFieldWrite(pageWrite());
@@ -523,6 +536,19 @@ function testTheWriteValidatorAcceptsAWellFormedRowOfEachSurface() {
  */
 function testTheWriteValidatorRejectsEveryConstraintTheTableEnforces() {
   assert.equal(parseDocumentFieldWrite(pageWrite({ document: "timesheet" })).ok, false, "an unknown document must be rejected");
+  // The widened half of the same constraint (20260904200000): `custom:<uuid>` and nothing looser.
+  // A template's NAME typed where its key belongs would store a row the print route never asks
+  // for — a box that silently appears on no paper, reported by nothing.
+  assert.equal(
+    parseDocumentFieldWrite(pageWrite({ document: "custom:not-a-uuid" })).ok,
+    false,
+    "a company template whose key is not a uuid must be rejected",
+  );
+  assert.equal(
+    parseDocumentFieldWrite(pageWrite({ document: "custom:" })).ok,
+    false,
+    "a bare custom: prefix names no template",
+  );
   assert.equal(parseDocumentFieldWrite(pageWrite({ templateVersionId: "" })).ok, false, "an empty template version must be rejected");
   assert.equal(parseDocumentFieldWrite(pageWrite({ align: "justify" })).ok, false, "an unknown alignment must be rejected");
 
@@ -808,7 +834,6 @@ function testBoxesThatWillNotPrintAreNamed() {
     document: "form1",
     h: 12,
     hidden: false,
-    id: over.id,
     page: 0,
     size: 9,
     source: { kind: "value", key: "nationalId" },

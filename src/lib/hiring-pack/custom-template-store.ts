@@ -32,7 +32,7 @@ import {
   type CustomTemplateDraft,
 } from "@/lib/hiring-pack/custom-templates";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-import { customDocumentFor, type CustomHiringPackDocument } from "@/lib/hiring-pack/types";
+import { customDocumentFor, isUuid, type CustomHiringPackDocument } from "@/lib/hiring-pack/types";
 
 const TEMPLATES_TABLE = "hiring_pack_custom_templates";
 const PAGES_TABLE = "hiring_pack_custom_template_pages";
@@ -285,6 +285,11 @@ export async function loadCurrentCustomTemplate(templateKey: string): Promise<Cu
 
 /** One specific version, by its own id — which is the `template_version_id` the field layer uses. */
 export async function loadCustomTemplateVersion(id: string): Promise<CustomTemplate | null> {
+  // A non-uuid is NOT FOUND, not an error. Postgres raises 22P02 for a malformed uuid against a
+  // uuid column, which surfaces as a 500 on a route whose honest answer is 404 — and this id comes
+  // from a query string.
+  if (!isUuid(id)) return null;
+
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from(TEMPLATES_TABLE)
@@ -313,6 +318,9 @@ export async function loadCustomTemplateVersion(id: string): Promise<CustomTempl
 export async function loadCustomTemplatePage(
   pageId: string,
 ): Promise<{ page: CustomTemplatePage; template: CustomTemplate } | null> {
+  // Same reason as above: this id is a path segment, and a malformed one is a 404.
+  if (!isUuid(pageId)) return null;
+
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from(PAGES_TABLE)

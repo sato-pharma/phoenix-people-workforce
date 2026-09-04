@@ -42,16 +42,18 @@
 // value can be placed and merged but not edited back into the employee's record.
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 
-import { documentSurface } from "@/lib/hiring-pack/field-layout";
+import { documentSurfaceOf, type PrintableDocument } from "@/lib/hiring-pack/document-registry";
 import { paperFieldBinding } from "@/lib/hiring-pack/paper-fields";
 import { buildClearanceValues } from "@/lib/hiring-pack/render-clearance";
 import { buildContractValues } from "@/lib/hiring-pack/render-contract";
 import { buildCustodyValues } from "@/lib/hiring-pack/render-custody";
+import { buildCustomTemplateValues } from "@/lib/hiring-pack/render-custom-template";
 import { buildForm1Values } from "@/lib/hiring-pack/render-form1";
 import { buildForm6Values } from "@/lib/hiring-pack/render-form6";
 import { buildExitValues } from "@/lib/hiring-pack/render-labour-exit";
 import { buildWorkerFormValues } from "@/lib/hiring-pack/render-worker-form";
-import type { HiringPackData, HiringPackDocument } from "@/lib/hiring-pack/types";
+import { isBuiltInDocument } from "@/lib/hiring-pack/types";
+import type { HiringPackData } from "@/lib/hiring-pack/types";
 
 /** One row of the field table: what it is called, what it would print, and whether it is a record value. */
 export type DocumentFieldInventoryEntry = {
@@ -83,9 +85,16 @@ export type DocumentFieldInventoryEntry = {
  * choosing its builder here, which is the same reason `RENDERERS` in the print route is exhaustive.
  */
 export function documentValues(
-  document: HiringPackDocument,
+  document: PrintableDocument,
   data: HiringPackData,
 ): Record<string, string> {
+  // A COMPANY TEMPLATE GETS THE WHOLE CATALOGUE, and that is the honest answer rather than a
+  // fallback. The ten below each have a builder because their placements are known: Form 1 asks
+  // for exactly the values Form 1 prints. Nothing in this code has seen an uploaded paper, so
+  // there is no shorter list that could be right — what it asks for is decided by whoever drops
+  // the boxes. See buildCustomTemplateValues.
+  if (!isBuiltInDocument(document)) return buildCustomTemplateValues(data);
+
   const raw: Partial<Record<string, string>> =
     document === "form1"
       ? buildForm1Values(data)
@@ -141,7 +150,7 @@ function keysInMarkup(html: string): string[] {
  * the inventory describes the bytes that were served, not a second render that might differ.
  */
 export function documentFieldInventory(
-  document: HiringPackDocument,
+  document: PrintableDocument,
   data: HiringPackData,
   html: string,
 ): DocumentFieldInventoryEntry[] {
@@ -152,7 +161,7 @@ export function documentFieldInventory(
   // flow one. The other half of each pair still contributes — an added field is markup on both
   // surfaces — so the page list is a union and the flow list is not.
   const keys =
-    documentSurface(document) === "page"
+    documentSurfaceOf(document) === "page"
       ? [...Object.keys(values), ...placed.filter((key) => !(key in values))]
       : placed;
 

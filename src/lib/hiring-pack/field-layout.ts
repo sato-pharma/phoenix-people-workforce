@@ -48,7 +48,7 @@
 import { resolveFieldTemplate } from "@/lib/hiring-pack/field-template";
 import type { Placement } from "@/lib/hiring-pack/render-placement";
 import { escapeHtml } from "@/lib/hiring-pack/render-shared";
-import type { HiringPackDocument } from "@/lib/hiring-pack/types";
+import type { HiringPackDocument, PrintableDocument } from "@/lib/hiring-pack/types";
 
 /** Whether a document places by page coordinate or by anchor in the flow. */
 export type DocumentSurface = "page" | "flow";
@@ -116,7 +116,8 @@ export type FlowAnchor = {
  */
 export type DocumentFieldRow = {
   id: string;
-  document: HiringPackDocument;
+  /** Which document these coordinates belong to — one of the ten, or a company template. */
+  document: PrintableDocument;
   /** The template version this layout belongs to. A version's markup never changes; see above. */
   templateVersionId: string;
   /** The compiled placement key this row replaces, or null when the row adds a new field. */

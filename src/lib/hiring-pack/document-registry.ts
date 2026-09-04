@@ -37,12 +37,18 @@ import {
   ONBOARDING_FORM_DOCUMENTS,
   isBuiltInDocument,
   isCustomDocument,
-  type CustomHiringPackDocument,
   type HiringPackDocument,
+  type PrintableDocument,
 } from "@/lib/hiring-pack/types";
 
-/** Anything this system can print: one of the ten, or a company template somebody uploaded. */
-export type PrintableDocument = HiringPackDocument | CustomHiringPackDocument;
+/**
+ * Anything this system can print: one of the ten, or a company template somebody uploaded.
+ *
+ * Declared in types.ts and re-exported here, where it belongs conceptually. See the note there:
+ * field-layout.ts needs this type and the registry needs field-layout, so the declaration sits in
+ * the one module in this package that imports nothing.
+ */
+export type { PrintableDocument } from "@/lib/hiring-pack/types";
 
 /** What each of the ten is called in a sentence to the user. */
 const BUILT_IN_LABELS: Readonly<Record<HiringPackDocument, string>> = {

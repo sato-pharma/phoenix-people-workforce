@@ -15,6 +15,7 @@ import {
   describeDurationMonths,
   escapeHtml,
   formatDayMonthYear,
+  formatMoney,
   pinLtr,
   PRINT_BANNER_CSS,
   printBanner,
@@ -54,22 +55,6 @@ import { resolveNationality } from "@/lib/hiring-pack/nationality";
 // archived contract has to reproduce as the document that was signed, so "improving" how it renders
 // is not an improvement — it is a change to the record.
 // ─────────────────────────────────────────────────────────────────────────────────────────────
-
-/**
- * A money figure in the form the contract prints it: digits only — مادة (2) supplies "جنيه".
- *
- * Piastres print as two digits or not at all. "12,750.5" on a salary clause is the kind of figure
- * that gets read as five piastres by one party and fifty by the other, and مادة (2) prints the same
- * amount again in words directly beside it, so the two have to agree exactly.
- */
-function formatMoney(value: number | null): string {
-  if (value === null || !Number.isFinite(value)) return "";
-  const hasPiastres = Math.round(value * 100) % 100 !== 0;
-  return new Intl.NumberFormat("en-US", {
-    minimumFractionDigits: hasPiastres ? 2 : 0,
-    maximumFractionDigits: 2,
-  }).format(value);
-}
 
 /**
  * Every blank in the contract, resolved once — for every version at the same time.
