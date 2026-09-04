@@ -183,6 +183,48 @@ export async function runDeductionsDsmNoRecordTests(): Promise<void> {
     );
   }
 
+  // ── A company-wide CRM data-gap day is not a manager's absence ────────────
+  // A sync outage depresses EVERY agent's day, so charging through one bills the
+  // whole role for a feed problem. The rep pipeline already drops these; this path
+  // did not, so it must reuse the SAME detector (both agree, and both fail closed
+  // on a CRM outage rather than charging through it).
+  {
+    assert.match(
+      code,
+      /getSuspectDatesForMonth\(input\.month, input\.year\)/,
+      "company-wide CRM data-gap days must be found with the rep pipeline's own detector, so the two paths cannot disagree and both fail closed on a CRM outage",
+    );
+    assert.match(
+      code,
+      /!suspectDates\.has\(day\)/,
+      "a suspect (data-gap) day must be dropped from the working-day set before any manager is charged for it",
+    );
+  }
+
+  // ── Thursday is a HALF working day, not a full one ────────────────────────
+  // Owner rule 2026-08-02: the field-force week is Sat–Wed full, Thursday morning
+  // only, Friday off — and a district manager is a Friday-only title the rule
+  // covers. The rep pipeline charges a no-record Thursday at 0.5; this path billed
+  // a FULL day. The money must come off the weighted count while the reported day
+  // count stays the real number of flagged days.
+  {
+    assert.match(
+      code,
+      /sumDetectedDeductionDayWeights\(missing\)/,
+      "the charged amount must use the Thursday-weighted day count (Thursday = 0.5), matching how the rep pipeline already treats a no-record Thursday",
+    );
+    assert.match(
+      code,
+      /rawValue: missing\.length/,
+      "rawValue must stay the REAL number of flagged days — only the money uses the weighted count",
+    );
+    assert.doesNotMatch(
+      code,
+      /deductionDays: missing\.length/,
+      "the raw day count must never again be charged directly — that is the full-day Thursday bug this guard exists to stop",
+    );
+  }
+
   // ── An unpriceable row must never be emitted ─────────────────────────────
   {
     assert.match(
