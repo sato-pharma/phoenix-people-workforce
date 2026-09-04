@@ -100,6 +100,7 @@
     "check:sql-backups": "node --experimental-strip-types --experimental-specifier-resolution=node scripts/check-sql-backup-placement.ts",
     "check:migrations-applied": "node --experimental-strip-types --experimental-specifier-resolution=node scripts/check-migrations-applied.ts",
     "check:schema-shape": "node --experimental-strip-types --experimental-specifier-resolution=node scripts/check-schema-shape.ts",
+    "migrate:staging": "node --experimental-strip-types --experimental-specifier-resolution=node scripts/apply-migrations-to-staging.ts",
     "check:db-timezone": "node --experimental-strip-types --experimental-specifier-resolution=node scripts/check-db-timezone.ts",
     "check:sos-product-mapping": "node --experimental-strip-types --experimental-specifier-resolution=node scripts/check-sos-product-mapping.ts",
     "check:sos-source-files": "node --env-file-if-exists=.env.local --experimental-strip-types --experimental-specifier-resolution=node --experimental-loader ./tests/alias-loader.mjs scripts/check-sos-source-files.ts",
