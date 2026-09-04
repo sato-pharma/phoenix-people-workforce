@@ -1,6 +1,6 @@
 "use client";
 
-import { Briefcase, ChevronDown, LogOut, Menu, Search, UserCog } from "lucide-react";
+import { Briefcase, ChevronDown, LayoutGrid, LogOut, Menu, Search, UserCog } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRef, useState } from "react";
@@ -219,6 +219,39 @@ export function Topbar({
                   <UserCog className="h-4 w-4" />
                   My Profile
                 </Link>
+                {/* The way back to an emptied nav row. An empty row now renders nothing (owner,
+                    2026-09-03), and the row’s own "+" panel is what used to offer the way back, so
+                    it disappeared along with the row.
+
+                    Every admin-chrome role can empty one: that panel offers remove as well as add,
+                    and it is gated on `carriesNavRows` (horizontal-nav-rows.tsx, `canAdd`), not on
+                    being a Super Admin. The only other door — Admin Tools → Navigation Layout —
+                    sits in a Super-Admin-only hub, so everyone else was left able to empty a row
+                    and unable to restore it. This is that door, on a surface those roles all have.
+
+                    It grants NOTHING. The page gates on `source === "guest"` alone, and builds its
+                    catalogue from the caller’s own permitted sections, so two people opening it see
+                    different lists and no arrangement can emit an href the viewer could not already
+                    reach.
+
+                    Admin chrome only, and that is a LIMIT, not a choice: `carriesNavRows` also
+                    covers the portal, but app/(admin)/layout.tsx redirects every portal-mode viewer
+                    out of this whole route group, so /admin/sidebar-layout is unreachable to them
+                    and a link here would only bounce them home. A portal viewer who empties a row
+                    still has no way back. Closing that needs a portal twin of the editor and a
+                    mode-aware catalogue — the page hardcodes getNavigationSections("admin") — which
+                    is a bigger change than this one and is deliberately not smuggled in here. */}
+                {isAdminMode ? (
+                  <Link
+                    className="flex w-full items-center gap-2 px-4 py-2 text-sm text-[#D4DDE8] hover:bg-[#1a1a1a] hover:text-[#F8B56B]"
+                    href="/admin/sidebar-layout"
+                    onClick={() => setUserMenuOpen(false)}
+                    role="menuitem"
+                  >
+                    <LayoutGrid className="h-4 w-4" />
+                    Navigation Layout
+                  </Link>
+                ) : null}
                 {/* Identity, for the screens that need it. The BUTTON above already prints both
                     lines, but only from `sm:` up — below that it shows the avatar alone, so on a
                     phone this block is the only place the signed-in name appears. Hiding it on
