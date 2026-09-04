@@ -26,13 +26,28 @@ import { formatHireDate } from "./early-birds-format";
 // The owner's fits-the-screen golden rule (AGENTS.md §4) permits exactly one remedy here, and it
 // is the one applied below: WRAPPING. Not a smaller type scale, not an ellipsis or `truncate`, not
 // `overflow-x-auto` over a min-width floor. Pinned by tests/early-birds-fortnight-card-wraps.test.ts.
+//
+// ─── EVERY BREAKPOINT HERE IS THE CARD'S OWN WIDTH, NOT THE WINDOW'S. ─────────────────────────
+// Measured 2026-09-05 at 1440x1000 on /employee-portals as a Medical Rep. The wrapping above was
+// working and nothing was clipped or truncated — and the card still read as mangled, because the
+// old `sm:` prefixes are VIEWPORT queries. On the rep landing page this card sits in a 402px right
+// rail, so on a wide screen `sm:` fired on the window and split those 402px three ways: a 75px name
+// column, with "Hana Abdelaziz Samir Abdelaziz Ghoniem" stacked one word per line over 4 lines.
+// Every reading was clean — `main` 1440/1440, nothing past the card, `text-overflow: clip` — which
+// is exactly why a viewport prefix is the wrong tool in a component dropped into rails of
+// different widths.
+// The golden rule's own remedy is to MERGE columns rather than shrink type, so the three columns
+// now collapse into three full-width rows whenever the CARD is under 768px, however wide the
+// window is. Tailwind v4 ships container queries natively: `@container` on the root, then `@3xl:`
+// for the columns and `@sm:` for the header. 768px is the measured floor at which three names
+// still read on two lines. Do not put an `sm:` prefix back on this card — it cannot see the rail.
 
 function StarColumn({ star }: { star: EarlyBirdsWinnerRecord }) {
   return (
-    <div className="flex flex-1 items-center gap-3 px-4 py-4 sm:px-5">
+    <div className="flex flex-1 items-center gap-3 px-4 py-4 @3xl:px-5">
       {star.isNational && (
         <span
-          className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-amber-400 text-slate-900 shadow"
+          className="flex h-5 w-5 shrink-0 items-center justify-center bg-amber-400 text-slate-900 shadow"
           title="Also this fortnight's overall national winner"
         >
           <Star className="h-3 w-3" fill="currentColor" />
@@ -67,11 +82,11 @@ export function EarlyBirdOfTheFortnightCard({
   if (stars.length === 0) return null;
 
   return (
-    <div className="overflow-hidden border border-slate-200 bg-white" role="region" aria-label="Early Birds of the fortnight">
-      {/* The title takes the whole row on a phone (`basis-full`) so it wraps across the full bar
-          instead of fighting the link for it; from `sm:` up both sit on one line as before. */}
-      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 bg-slate-900 px-4 py-2.5 sm:px-5">
-        <h2 className="flex min-w-0 basis-full items-center gap-1.5 text-phx-2xs font-bold uppercase tracking-widest text-slate-300 sm:basis-auto">
+    <div className="@container overflow-hidden border border-slate-200 bg-white" role="region" aria-label="Early Birds of the fortnight">
+      {/* The title takes the whole row in a narrow card (`basis-full`) so it wraps across the full bar
+          instead of fighting the link for it. From 384px of CARD width up, both sit on one line. */}
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 bg-slate-900 px-4 py-2.5 @sm:px-5">
+        <h2 className="flex min-w-0 basis-full items-center gap-1.5 text-phx-2xs font-bold uppercase tracking-widest text-slate-300 @sm:basis-auto">
           <Trophy className="h-3.5 w-3.5 shrink-0 text-amber-400" />
           {stars.length > 1 ? "Stars of the Fortnight" : "Early Bird"} · {stars[0].periodLabel}
         </h2>
@@ -84,7 +99,7 @@ export function EarlyBirdOfTheFortnightCard({
         </Link>
       </div>
 
-      <div className="flex flex-col divide-y divide-slate-100 sm:flex-row sm:divide-x sm:divide-y-0">
+      <div className="flex flex-col divide-y divide-slate-100 @3xl:flex-row @3xl:divide-x @3xl:divide-y-0">
         {stars.map((star) => (
           <StarColumn key={star.id} star={star} />
         ))}

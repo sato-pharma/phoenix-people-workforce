@@ -197,12 +197,16 @@ function IntelField({
   className?: string;
 }) {
   return (
-    <div className={`flex min-w-0 flex-col gap-1 px-4 py-3 sm:px-7 sm:py-4 ${className}`}>
+    <div className={`flex min-w-0 flex-col gap-1 bg-white px-4 py-3 sm:px-7 sm:py-4 ${className}`}>
       <div className="flex items-center gap-1.5">
-        <Icon className="h-3 w-3 shrink-0 text-[#f47b20]" />
-        <span className="text-phx-3xs font-black uppercase tracking-[0.18em] text-slate-500">{label}</span>
+        <Icon className="h-3 w-3 shrink-0 text-orange-600" />
+        <span className="text-phx-3xs font-black uppercase tracking-[0.18em] text-slate-400">{label}</span>
       </div>
-      <span className="whitespace-nowrap text-sm font-black text-white sm:text-base">{value}</span>
+      {/* Wraps rather than clips. The old value carried `whitespace-nowrap` inside an
+          `overflow-hidden` band, which is the blindness the golden rule names: a long manager name
+          was cut off with `main` still measuring a clean 375/375, because clipped content never
+          reaches scrollWidth. Wrapping is the permitted answer; the ellipsis ban is untouched. */}
+      <span className="text-sm font-black text-slate-900 sm:text-base">{value}</span>
     </div>
   );
 }
@@ -218,20 +222,25 @@ export function ProfileIntelBar({ shell }: { shell: EmployeePortalShellData }) {
       })
     : null;
   if (!employee.line && !hireDateLabel && !employee.manager) return null;
+  // The orange accent is a BORDER, not an absolutely-positioned rule. The cells below are opaque
+  // white now, and a positioned sibling later in the DOM paints over an absolute one — which is
+  // exactly how a 2px rule disappears without anything erroring.
   return (
-    <div className="relative overflow-hidden bg-[#0b1f3a] shadow-[0_8px_32px_rgba(11,31,58,0.35)]">
-      <div className="absolute inset-0 opacity-[0.04] [background-image:linear-gradient(rgba(255,255,255,1)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,1)_1px,transparent_1px)] [background-size:32px_32px]" />
-      <div className="absolute inset-x-0 top-0 h-[2px] bg-gradient-to-r from-transparent via-[#f47b20] to-transparent" />
+    <div className="relative border border-t-2 border-slate-200 border-t-orange-500 bg-slate-200">
+      {/* The on-light file, NOT `sato-pharma-logo.png`. That one draws the word SATO in WHITE — it
+          was made for the navy sidebar and this band's own navy past, and it goes invisible the
+          moment the ground turns light. The two files are not interchangeable. */}
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
-        src="/brand/sato-pharma-logo.png"
+        src="/brand/sato-pharma-logo-on-light.png"
         alt="SATO Pharma"
-        className="pointer-events-none absolute right-5 top-1/2 hidden h-7 w-auto -translate-y-1/2 sm:block"
+        className="pointer-events-none absolute right-5 top-1/2 z-10 hidden h-7 w-auto -translate-y-1/2 sm:block"
       />
-      {/* Mobile: Line + Joined paired, Reports To stacked below. Desktop (sm+): all three on one line. */}
-      <div className="relative flex flex-col sm:flex-row sm:divide-x sm:divide-white/[0.06]">
+      {/* Mobile: Line + Joined paired, Reports To stacked below. Desktop (sm+): all three on one
+          line. The slate ground shows through the 1px gaps as the rules between cells. */}
+      <div className="relative flex flex-col gap-px sm:flex-row">
         {(employee.line || hireDateLabel) && (
-          <div className="flex divide-x divide-white/[0.06] border-b border-white/[0.06] sm:contents sm:border-b-0">
+          <div className="flex gap-px sm:contents">
             {employee.line && (
               <IntelField icon={Layers} label="Line" value={employee.line} className="flex-1 sm:flex-none sm:shrink-0" />
             )}
