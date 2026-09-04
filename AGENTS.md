@@ -445,12 +445,17 @@ to read is the one that stays GREEN while the machine dies.** Measured 2026-09-0
 open: COMMIT 54.8 of 79.8 GB free — healthy by every reading above — while free RAM sat at
 **557–1,780 MB** against the 1,800 MB floor `mem-watchdog.ps1` defends, and the watchdog logged
 continuous PRESSURE while reclaiming NOTHING, because it frees only an IDLE dev server and none was
-running. **So "sessions were never the ceiling" is true of COMMIT and false of RAM:** an idle session
-is ~330 MB of working set, so ten plus the Electron shell is ~4.7 GB of 16. **The ceiling is FOUR
-concurrent sessions** — read BOTH numbers before opening a fifth, and never conclude "healthy" from
-commit alone. Enforced at SessionStart by `~/.claude/hooks/session-census.mjs`, which warns at 5 and
-escalates at 7 or below the RAM floor; `node ~/.claude/scripts/claude-hygiene.mjs` reports on demand.
-**A count on the statusline is not a guard** — it read 9 for hours and nobody acted.
+running. **But the SESSION COUNT is not the term that breaks it, and a ceiling expressed as a count is
+the WRONG INSTRUMENT** — re-measured the same night: a session is **~269 MB**, so the owner's normal
+**10 are ~2.7 GB of 16**, while ONE `next dev` held **3,454 MB** — more than all eleven sessions put
+together, and free RAM fell 2,969 → 750 MB in minutes without a session opening. **So read FREE RAM,
+never the count:** under **2,600 MB** a dev server or cold typecheck (~3.5 GB) would cross the floor;
+under **1,800 MB** you are already in it. Enforced at SessionStart by
+`~/.claude/hooks/session-census.mjs` — RAM-triggered, deliberately **SILENT at 10–12 sessions**, the
+count speaking only at 13/16 for a runaway. **Stop a dev server before closing a session**: ~3.5 GB
+against ~269 MB, and kill it by PORT. **A count on the statusline is not a guard** — it read 9 for
+hours and nobody acted, and a guard that fires at the owner's normal working level becomes that same
+wallpaper by another route.
 
 Route work by tier:
 
