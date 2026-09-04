@@ -88,7 +88,7 @@ var TZ = 'Africa/Cairo';
  * feed's COLUMNS. A sheet that silently keeps the previous design is indistinguishable from one
  * where the update failed.
  */
-var LAYOUT_VERSION = 'v4-premium';
+var LAYOUT_VERSION = 'v5-navy-gold';
 
 var TAB_SUMMARY = 'Summary';
 var TAB_DAILY = 'Daily Dashboard';
@@ -160,6 +160,14 @@ var MUTED = '#64748b';
 var FAINT = '#94a3b8';
 var RULE_SOFT = '#e2e8f0';
 var BAND_ALT = '#f8fafc';
+
+// Deep navy carries a gold accent the way a company report does, and neither colour has to shout
+// to do it. This is the one saturated colour in the file and it appears in exactly two places —
+// the rule under the masthead and the edge under a table header — so it reads as a signature
+// rather than as decoration.
+var ACCENT = '#c9a227';
+var HERO_BG = '#0a2947';
+var HERO_SUB = '#9fb6cf';
 var RULE = '#e2e8f0';
 var TILE_BG = '#ffffff';
 var GOOD = '#067647';
@@ -172,7 +180,7 @@ var INFO = '#175cd3';
 var INFO_BG = '#eff8ff';
 
 // Type scale. Named, because "11" appearing in four places is not a decision anybody can revisit.
-var TYPE_TITLE = 22;
+var TYPE_TITLE = 24;
 var TYPE_SECTION = 12;
 var TYPE_BODY = 10;
 var TYPE_HEADER = 10;
@@ -181,7 +189,12 @@ var TYPE_TILE = 30;
 
 var ROW_H_TITLE = 44;
 var ROW_H_SUBTITLE = 20;
-var ROW_H_RULE = 5;
+var ROW_H_RULE = 6;
+
+// The masthead stops here rather than running the width of the table. Bounded, because on the
+// 58-column tab a full-width band is a stripe about two metres long, and a heading that grows with
+// its table stops reading as a heading.
+var HERO_COLS = 10;
 var ROW_H_HEADER = 34;
 var C_WHATSAPP = '#25d366';
 var C_EMAIL = '#4285f4';
@@ -476,27 +489,33 @@ function titleBand_(sheet, cols, title) {
   sheet.setHiddenGridlines(true);
   sheet.setTabColor(BRAND);
 
-  sheet.getRange(ROW_TITLE, 1, 1, cols).merge()
-    .setValue(String(title).trim())
-    .setBackground(PAPER)
-    .setFontColor(INK)
+  // Bounded, not full width. The band is a masthead over the first ten columns; past that the page
+  // is paper. That is the difference between a heading and a stripe.
+  var hero = Math.min(cols, HERO_COLS);
+
+  // The leading space is the inset. Sheets has no cell padding, so type set flush left on a dark
+  // fill touches the edge of the colour, which is what made the old band look cheap.
+  sheet.getRange(ROW_TITLE, 1, 1, hero).merge()
+    .setValue(' ' + String(title).trim())
+    .setBackground(HERO_BG)
+    .setFontColor(HEADER_FG)
     .setFontSize(TYPE_TITLE)
     .setFontWeight('bold')
-    .setVerticalAlignment('bottom')
+    .setVerticalAlignment('middle')
     .setHorizontalAlignment('left');
   sheet.setRowHeight(ROW_TITLE, ROW_H_TITLE);
 
   // Not italic. Italic in a UI face reads as an apology; this line is a fact about the data.
-  sheet.getRange(ROW_SUBTITLE, 1, 1, cols).merge()
-    .setBackground(PAPER)
-    .setFontColor(MUTED)
+  sheet.getRange(ROW_SUBTITLE, 1, 1, hero).merge()
+    .setBackground(HERO_BG)
+    .setFontColor(HERO_SUB)
     .setFontSize(TYPE_LABEL)
-    .setVerticalAlignment('top');
+    .setVerticalAlignment('middle');
   sheet.setRowHeight(ROW_SUBTITLE, ROW_H_SUBTITLE);
 
-  // The rule. A 5px row of brand colour does what a 48px band was trying to do, and does it at a
-  // scale the eye reads as confidence rather than as decoration.
-  sheet.getRange(3, 1, 1, cols).setBackground(BRAND);
+  // Gold under navy. Six pixels is enough to finish the block and is the only saturated colour on
+  // the page, which is why it can be this bright without competing with the data.
+  sheet.getRange(3, 1, 1, hero).setBackground(ACCENT);
   sheet.setRowHeight(3, ROW_H_RULE);
 }
 
@@ -541,7 +560,8 @@ function styleHeader_(sheet, headerRow, width) {
     .setHorizontalAlignment('left')
     .setWrap(true);
   // A darker edge under the header seats the block on the page instead of letting the fill float.
-  range.setBorder(null, null, true, null, null, null, BRAND_DEEP, SpreadsheetApp.BorderStyle.SOLID_THICK);
+  // The same gold as the masthead rule, so the two blocks on the page are visibly one system.
+  range.setBorder(null, null, true, null, null, null, ACCENT, SpreadsheetApp.BorderStyle.SOLID_THICK);
   sheet.setRowHeight(headerRow, ROW_H_HEADER);
 }
 
@@ -607,25 +627,32 @@ function applyToNamed_(sheet, headerRow, header, names, apply) {
  * the page through whitespace. Colour is reserved for the one thing on the card that is a
  * judgement — the number itself, which fillTile_ tints when it means something.
  */
-function buildTile_(sheet, row, col, label) {
+function buildTile_(sheet, row, col, label, accent) {
+  var bar = accent || BRAND;
+
   sheet.getRange(row, col, 3, 3)
     .setBackground(TILE_BG)
     .setBorder(true, true, true, true, false, false, RULE_SOFT, SpreadsheetApp.BorderStyle.SOLID);
 
+  // The label sits ON the accent rather than beside it. A white card with a grey label is what
+  // "boring" meant, and it was the right note for a report and the wrong one for a dashboard: six
+  // identical white boxes give the eye nothing to land on, so nothing on the tab looks important.
+  // Colour on the label band names each figure and gives the six cards six identities.
   sheet.getRange(row, col, 1, 3).merge()
-    .setValue(label)
+    .setValue(' ' + label)
+    .setBackground(bar)
     .setFontSize(TYPE_LABEL)
-    .setFontColor(MUTED)
+    .setFontColor(HEADER_FG)
     .setFontWeight('bold')
     .setHorizontalAlignment('left')
-    .setVerticalAlignment('bottom');
+    .setVerticalAlignment('middle');
 
   sheet.getRange(row + 1, col, 2, 3).merge()
     .setFontFamily(FONT_MONO)
     .setFontSize(TYPE_TILE)
     .setFontWeight('bold')
-    .setHorizontalAlignment('left')
-    .setVerticalAlignment('top');
+    .setHorizontalAlignment('center')
+    .setVerticalAlignment('middle');
 
   sheet.setRowHeight(row, 26);
   sheet.setRowHeight(row + 1, 34);
@@ -881,12 +908,14 @@ function buildSummaryLayout_(sheet, dailyRows) {
   // A thin gap under each row of tiles, so they read as cards rather than as a grid.
   for (var t = 0; t < TILE_ROWS.length; t++) sheet.setRowHeight(TILE_ROWS[t] + 3, 12);
 
-  buildTile_(sheet, TILE_ROWS[0], 1, 'CVs IN TOTAL');
-  buildTile_(sheet, TILE_ROWS[0], 4, 'RECEIVED TODAY');
-  buildTile_(sheet, TILE_ROWS[1], 1, 'SAVED IN GOOGLE DRIVE');
-  buildTile_(sheet, TILE_ROWS[1], 4, 'STILL MISSING FROM DRIVE');
-  buildTile_(sheet, TILE_ROWS[2], 1, 'DRIVE ERRORS');
-  buildTile_(sheet, TILE_ROWS[2], 4, 'TYPICAL TIME PHOENIX TO DRIVE');
+  // Colour by what the figure MEANS, never by position: the two that can go wrong wear the warning
+  // colours, so a bad number is visible from across the room before it is read.
+  buildTile_(sheet, TILE_ROWS[0], 1, 'CVs IN TOTAL', HERO_BG);
+  buildTile_(sheet, TILE_ROWS[0], 4, 'RECEIVED TODAY', BRAND);
+  buildTile_(sheet, TILE_ROWS[1], 1, 'SAVED IN GOOGLE DRIVE', GOOD);
+  buildTile_(sheet, TILE_ROWS[1], 4, 'STILL MISSING FROM DRIVE', BAD);
+  buildTile_(sheet, TILE_ROWS[2], 1, 'DRIVE ERRORS', BAD);
+  buildTile_(sheet, TILE_ROWS[2], 4, 'TYPICAL TIME PHOENIX TO DRIVE', INFO);
 
   // ── The daily shape, as one sparkline ──
   sectionTitle_(sheet, SUMMARY_SPARK_TITLE_ROW, SUMMARY_COLS, 'How many arrive each day');
