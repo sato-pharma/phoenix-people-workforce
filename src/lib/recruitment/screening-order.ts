@@ -14,6 +14,7 @@
 // exactly as it was. Nothing is hidden and nothing is auto-rejected — every candidate is still in
 // the queue and still gets a human decision. Only the order changes.
 
+import { type CandidateRegionCode } from "@/lib/recruitment/candidate-region";
 import { type CandidateRoleFamily } from "@/lib/recruitment/candidate-role-family";
 import { isNotACv } from "@/lib/recruitment/not-a-cv";
 
@@ -117,7 +118,52 @@ export type ScreeningOrderInput = {
    * nobody has judged it, which is a different claim — see `isNotACv`.
    */
   notACv?: boolean;
+  /**
+   * Where this person is, for the region filter. `null` means no region could be worked out — 73 of
+   * the 534 undecided rows measured 2026-09-04 — and those are shown under their own chip rather
+   * than being quietly dropped from every region a screener might pick.
+   *
+   * Resolved by the CALLER, deliberately. The pure `candidateRegionForGovernorate` reaches 453 of
+   * 534; the free-text address reader adds 8 more and would pull the whole Egypt place vocabulary
+   * into the client bundle for them. Eight rows in an honest "no region" bucket is the better deal.
+   */
+  region?: CandidateRegionCode | null;
+  /**
+   * Groups CVs that are probably the same person — the phone number, in practice.
+   *
+   * Same key does NOT assert same person, and nothing here merges anything. Measured on production
+   * 2026-09-04, 28 undecided rows share a phone with another row, and 9 of those carry a DIFFERENT
+   * name: a mother and daughter, two colleagues, one handset. Collapsing on the number alone would
+   * silently discard three real applicants. So the key only makes those rows land NEXT TO each
+   * other, where a screener can see both names at once and decide — which is the part that was
+   * actually costing time, since the two copies used to sit hundreds of rows apart.
+   */
+  duplicateKey?: string | null;
+  /**
+   * Years of experience, or `null` when nobody has read one off the CV — 296 of 534 undecided rows.
+   * Bucketed, never used as a raw number: see `experienceRank`.
+   */
+  yearsExperience?: number | null;
 };
+
+/**
+ * Three buckets, not a number line.
+ *
+ * The figure is extracted from a CV, so ordering on the exact value would imply a precision the
+ * data has not got — "7.4 years" beating "7.1 years" is noise, not seniority. Three buckets is what
+ * an extracted number can honestly support.
+ *
+ * UNKNOWN SHARES THE MIDDLE BUCKET, and that is the whole point. 296 of 534 undecided rows have no
+ * figure at all; ranking them below everyone with a number would demote more than half the pool for
+ * a gap in OUR data, and ranking them above would invent seniority nobody claimed. The middle is
+ * the only honest place, and it is the same rule `hasPharmaExperience` already follows.
+ */
+export function experienceRank(years: number | null | undefined): number {
+  if (years === null || years === undefined || !Number.isFinite(years)) return 1;
+  if (years >= 5) return 0;
+  if (years >= 2) return 1;
+  return 2;
+}
 
 /**
  * The band a candidate actually lands in.
@@ -135,33 +181,139 @@ export function screeningBand(input: ScreeningOrderInput): ScreeningBand {
  * Sort key, lowest first. Exported for the test, and because a caller that wants to show WHY a
  * candidate is where they are needs the same numbers the sort used.
  */
-export function screeningSortKey(input: ScreeningOrderInput): [number, number, number] {
+export function screeningSortKey(input: ScreeningOrderInput): [number, number, number, number] {
   const band = screeningBand(input);
   // Confirmed pharma experience lifts a candidate within their band; an unanswered one sits in the
   // middle rather than at the bottom, so a data gap never costs somebody their place.
   const pharma = input.hasPharmaExperience === true ? 0 : input.hasPharmaExperience === null ? 1 : 2;
   const created = new Date(input.createdAt).getTime();
-  return [bandRank[band], pharma, Number.isNaN(created) ? 0 : -created];
+  // Experience sits BELOW pharma and ABOVE recency, and the order of those three is the argument.
+  // Pharma experience is the thing Phoenix is actually hiring for, so it stays first. Recency drops
+  // to last because within one band, meeting the 12-year rep before the 1-year rep is worth more
+  // than meeting the one who applied on Tuesday before the one who applied on Monday.
+  return [bandRank[band], pharma, experienceRank(input.yearsExperience), Number.isNaN(created) ? 0 : -created];
 }
 
 /**
- * Reorders a screening queue: best band first, pharma experience first inside it, newest first
- * inside that.
+ * Reorders a screening queue: best band first, pharma experience first inside it, then the more
+ * experienced, then newest — and finally any near-duplicate pulled up beside its best-ranked twin.
  *
  * Returns a NEW array. The caller's list is the visible table's own order and reordering it in
  * place would silently rearrange the page behind the reader.
  */
 export function orderForScreening<T>(items: readonly T[], describe: (item: T) => ScreeningOrderInput): T[] {
-  return [...items]
-    .map((item, index) => ({ index, item, key: screeningSortKey(describe(item)) }))
+  // `describe` is resolved ONCE per item and carried through both passes. It reads the candidate's
+  // facts, and calling it inside the clustering scan instead would make this quadratic — 534 rows
+  // is ~285,000 reads for a list that re-renders on every keystroke.
+  const sorted = items
+    .map((item, index) => ({ described: describe(item), index, item }))
+    .map((entry) => ({ ...entry, key: screeningSortKey(entry.described) }))
     .sort((left, right) => {
       for (let i = 0; i < left.key.length; i += 1) {
         if (left.key[i] !== right.key[i]) return left.key[i] - right.key[i];
       }
       // Stable: equal keys keep the order the caller handed them in.
       return left.index - right.index;
-    })
-    .map((entry) => entry.item);
+    });
+
+  // Then, and only then, make the duplicates adjacent.
+  //
+  // This runs AFTER the sort rather than inside it so a duplicate can never drag its twin up the
+  // queue: the best-ranked member keeps exactly the place the ranking gave it, and the others are
+  // lifted to sit behind it. Everybody else's relative order is untouched, which is why this is
+  // safe to do to a list a person is reading.
+  const followers = new Map<string, T[]>();
+  for (const entry of sorted) {
+    const key = duplicateKeyOf(entry.described);
+    if (key === null) continue;
+    const group = followers.get(key);
+    if (group) group.push(entry.item);
+    else followers.set(key, []); // the first one keeps its own place; only the rest follow it
+  }
+
+  const emitted = new Set<string>();
+  const clustered: T[] = [];
+  for (const entry of sorted) {
+    const key = duplicateKeyOf(entry.described);
+    if (key === null) {
+      clustered.push(entry.item);
+      continue;
+    }
+    if (emitted.has(key)) continue; // already emitted, next to its twin
+    emitted.add(key);
+    clustered.push(entry.item, ...(followers.get(key) ?? []));
+  }
+  return clustered;
+}
+
+/** The grouping key, or `null` when there is nothing to group on. Blank is not a key. */
+function duplicateKeyOf(input: ScreeningOrderInput): string | null {
+  const key = String(input.duplicateKey ?? "").trim();
+  return key ? key : null;
+}
+
+/**
+ * The near-duplicate sets, so the screen can say "2 CVs from this number" and show the other names.
+ *
+ * Only keys with more than one member come back. Showing the OTHER NAMES is not decoration: it is
+ * the whole difference between "they uploaded twice" and "two people share a handset", and only a
+ * person can tell those apart — which is why this reports and never merges.
+ */
+export function duplicateSets<T>(items: readonly T[], describe: (item: T) => ScreeningOrderInput): Map<string, T[]> {
+  const groups = new Map<string, T[]>();
+  for (const item of items) {
+    const key = duplicateKeyOf(describe(item));
+    if (key === null) continue;
+    const group = groups.get(key);
+    if (group) group.push(item);
+    else groups.set(key, [item]);
+  }
+  for (const [key, group] of groups) if (group.length < 2) groups.delete(key);
+  return groups;
+}
+
+/** The chip a candidate belongs under in the region filter. */
+export const NO_REGION = "none" as const;
+
+export type ScreeningRegionKey = CandidateRegionCode | typeof NO_REGION;
+
+export function screeningRegionKey(input: ScreeningOrderInput): ScreeningRegionKey {
+  return input.region ?? NO_REGION;
+}
+
+/**
+ * How many candidates sit in each region, for the filter chips.
+ *
+ * Counted over the WHOLE queue rather than the filtered view, so the chips do not change under the
+ * reader's hand as they narrow — a count that only tells you about what you can already see is not
+ * a count anybody can act on.
+ */
+export function countByRegion<T>(
+  items: readonly T[],
+  describe: (item: T) => ScreeningOrderInput,
+): Map<ScreeningRegionKey, number> {
+  const counts = new Map<ScreeningRegionKey, number>();
+  for (const item of items) {
+    const key = screeningRegionKey(describe(item));
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  return counts;
+}
+
+/**
+ * Narrow a queue to one region. `null` means no filter and returns the list unchanged.
+ *
+ * A filter, never a sort. Ordering by region would fight the band order for control of the top of
+ * the queue and leave a screener meeting a weak local candidate before a strong one an hour away;
+ * picking a region is a decision the screener makes, not one the ranking should make for them.
+ */
+export function filterByRegion<T>(
+  items: readonly T[],
+  describe: (item: T) => ScreeningOrderInput,
+  region: ScreeningRegionKey | null,
+): readonly T[] {
+  if (region === null) return items;
+  return items.filter((item) => screeningRegionKey(describe(item)) === region);
 }
 
 /** How many are in each band, for the one line that tells the screener what they are about to meet. */
