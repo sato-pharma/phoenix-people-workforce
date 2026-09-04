@@ -41,7 +41,7 @@ export function runEmployeePortalNavigationTests() {
 
   assert.doesNotMatch(
     employeePortalSource,
-    /Ã|Â|â|�/,
+    /[\u00C3\u00C2\u00E2\uFFFD]/,
     "Employee portal source should not contain mojibake in UI text, comments, or fallback strings.",
   );
   assert.doesNotMatch(dashboardSource, /href="#"/, "Employee portal dashboard must not ship dead hash links.");
@@ -61,7 +61,7 @@ export function runEmployeePortalNavigationTests() {
     /marketing-requests\/coverage-report/,
     "Coverage Report must remain the Marketing & ROI sidebar tab",
   );
-  assert.doesNotMatch(marketingDraftsSource, /â€¦/, "Marketing request drafts should not render mojibake ellipsis text.");
+  assert.doesNotMatch(marketingDraftsSource, /\u00E2\u20AC\u00A6/, "Marketing request drafts should not render mojibake ellipsis text.");
   assert.match(marketingDraftsSource, /Math\.max\(0, maxLen - 3\)\)\}\.\.\./);
   assert.match(adminPageSource, /canReadAdmin/);
   assert.match(adminPageSource, /canReadOverview/);

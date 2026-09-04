@@ -24,6 +24,8 @@ import { runNavigationGrantedButUnreachableTests } from "./navigation-granted-bu
 import { runPermissionLookupTotalityTests } from "./permission-lookup-totality.test.ts";
 import { runNavigationRuling11AnalyticsTests } from "./navigation-ruling-11-analytics.test.ts";
 import { runHrUrlNamespaceTests } from "./hr-url-namespace.test.ts";
+import { runModuleTabTitlesTests } from "./module-tab-titles.test.ts";
+import { runNavBadgeRestyleTests } from "./nav-badge-restyle.test.ts";
 import { runNotificationLinksResolveTests } from "./notification-links-resolve.test.ts";
 import { runNavPanelPositionTests } from "./nav-panel-position.test.ts";
 import { runNotificationBellPolishTests } from "./notification-bell-polish.test.ts";
@@ -613,6 +615,7 @@ import { runResignationCrmIdentityReleaseTests } from "./resignation-crm-identit
 import { runProbationLegacyFeedbackRetiredTests } from "./probation-legacy-feedback-retired.test.ts";
 import { runAccessProfileHrIdCasingTests } from "./access-profile-hrid-casing.test.ts";
 import { runEmployeePortalNavigationTests } from "./employee-portal-navigation.test.ts";
+import { runSourceEncodingGuardTests } from "./source-encoding-guard.test.ts";
 import { runPortalNavActingDmUsesAppRoleTests } from "./portal-nav-acting-dm-uses-app-role.test.ts";
 import { runEmployeePortalBottomNavTests } from "./employee-portal-bottom-nav.test.ts";
 import { runEmployeePortalNavCatalogSyncTests } from "./employee-portal-nav-catalog-sync.test.ts";
@@ -1282,6 +1285,7 @@ import { runDirectOrderPharmacyDeadDistributorColumnsTests } from "./direct-orde
 import { runDirectOrderReversalFamilyCodeTests } from "./direct-orders-reversal-family-code.test.ts";
 import { runSidebarLayoutEditorModeTests } from "./sidebar-layout-editor-mode.test.ts";
 import { runNavRowWayBackTests } from "./nav-row-way-back.test.ts";
+import { runCiDependencyAuditTests } from "./ci-dependency-audit.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -1299,6 +1303,8 @@ async function runTest(name: string, execute: () => void | Promise<void>) {
 }
 
 await runTest("transactional email survives an unsubscribe (password reset must never be withheld)", runTransactionalEmailNotUnsubscribableTests);
+await runTest("module tab titles (every shell route names its module in the browser tab)", runModuleTabTitlesTests);
+await runTest("sidebar pending badge (restyled fill, motion kept, rail told)", runNavBadgeRestyleTests);
 await runTest("i18n config", runI18nConfigTests);
 await runTest("i18n Cairo date boundary (currentCairoDateOnlyIso EEST/EET rollover)", runI18nCairoDateBoundaryTests);
 await runTest("portal target dedup (med-rep achievement sum-distinct, not max, not naive-sum)", runPortalTargetDedupTests);
@@ -2225,6 +2231,7 @@ await runTest("medical rep expenses", runMedicalRepExpensesTests);
 await runTest("employee portal sales scope", runEmployeePortalSalesScopeTests);
 await runTest("workspace dashboard hides sales panels from non-selling roles", runWorkspaceSalesPanelsScopeTests);
 await runTest("employee portal navigation", runEmployeePortalNavigationTests);
+await runTest("source encoding guard", runSourceEncodingGuardTests);
 await runTest("portal nav acting DM follows app access role, not job title", runPortalNavActingDmUsesAppRoleTests);
 await runTest("employee portal bottom nav", runEmployeePortalBottomNavTests);
 await runTest("employee portal nav catalog sync (M12)", runEmployeePortalNavCatalogSyncTests);
@@ -3987,6 +3994,10 @@ await runTest(
 await runTest(
   "an emptied nav row has a way back (Navigation Layout reachable from the topbar in admin chrome)",
   runNavRowWayBackTests,
+);
+await runTest(
+  "an npm outage is told apart from a real advisory (CI dependency audit fails closed on findings, open on timeouts)",
+  runCiDependencyAuditTests,
 );
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);

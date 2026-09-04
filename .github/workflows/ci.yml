@@ -209,7 +209,13 @@ jobs:
         # GHSA-mh99-v99m-4gvg is ignored via pnpm-workspace.yaml's auditConfig — see the
         # comment there for why (forcing a fix broke eslint; the app's real exposure isn't
         # exploitable).
-        run: pnpm audit --audit-level=high --prod
+        #
+        # Runs the SAME `pnpm audit --audit-level=high --prod`; the wrapper only tells an npm
+        # outage apart from a real advisory. A bare audit exits non-zero for both, and because
+        # this is the first step in `validate` an outage takes the whole required check red
+        # without running a single test — twice on 2026-09-04, once on `main` itself. A genuine
+        # high or critical finding still fails the build. See scripts/ci-dependency-audit.mjs.
+        run: node scripts/ci-dependency-audit.mjs
 
       # THE .next BUILD CACHE WAS DELETED HERE ON 2026-08-29. Do not re-add it.
       #

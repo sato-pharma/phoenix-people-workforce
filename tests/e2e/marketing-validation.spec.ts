@@ -183,7 +183,7 @@ test.describe("Marketing Validation Workspace", () => {
     expect(count).toBeGreaterThan(3); // At least tabs + save + refresh + add pharmacy
   });
 
-  // ─── Alert Messages ───────────────────────────────────────────���──────
+  // ─── Alert Messages ────────────────────────────────────────────────────
 
   test("shows validation error when submitting empty form", async ({ page }) => {
     // Try to submit empty by clicking save (force-enable for test)
@@ -192,7 +192,7 @@ test.describe("Marketing Validation Workspace", () => {
     await expect(saveButton).toBeDisabled();
   });
 
-  // ─── Offline Indicator ────────────────────────────────────────────��─
+  // ─── Offline Indicator ───────────────────────────────────────────────
 
   test("offline indicator shows when network is disconnected", async ({ page, context }) => {
     // Simulate offline
