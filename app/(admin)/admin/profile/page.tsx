@@ -8,7 +8,7 @@ import { ChangePasswordForm } from "@/components/auth/change-password-form";
 import { EmployeePhotoEditor } from "@/components/employee-portal/employee-photo-editor";
 import { NotificationSettingsPanel } from "@/components/notifications/notification-settings-panel";
 import { Card } from "@/components/ui/card";
-import { displayTitleForRole } from "@/lib/auth/hr-functions";
+import { displayTitleForAccount } from "@/lib/auth/account-job-titles";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { uploadedEmployeePhotoUrl } from "@/lib/employees/employee-photo";
 import { employeeProfileImageForHrId } from "@/lib/employees/profile-images";
@@ -101,8 +101,9 @@ export default async function AdminProfilePage({
       loginId: (data as { login_id: string } | null)?.login_id ?? access.loginId,
       name: (data as { name?: string | null } | null)?.name ?? null,
       email: (data as { auth_email?: string | null } | null)?.auth_email ?? null,
-      // Her own profile page must say her TITLE, not the permission key behind it.
-      role: access.role ? displayTitleForRole(access.role) : null,
+      // Her own profile page must say her TITLE, not the permission key behind it — and for an
+      // account that declares one of its own (account-job-titles.ts), that title wins over the seat.
+      role: access.role ? displayTitleForAccount(access.hrId, access.role) : null,
       hrId: (data as { hr_id?: string | null } | null)?.hr_id ?? null,
       createdAt: (data as { created_at?: string | null } | null)?.created_at ?? null,
     };

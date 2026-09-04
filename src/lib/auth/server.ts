@@ -23,7 +23,7 @@ import {
   verifySessionToken,
 } from "@/lib/auth/session";
 import { writeAuthAudit } from "@/lib/auth/audit";
-import { displayTitleForRole } from "@/lib/auth/hr-functions";
+import { displayTitleForAccount } from "@/lib/auth/account-job-titles";
 import {
   evaluateEmployeeLifecycleGate,
   type SessionLifecycleGate,
@@ -550,7 +550,7 @@ export const resolveViewerIdentityFromPage = cache(async (accessContext?: Access
     return {
       displayName: fallbackName,
       initials: buildInitials(fallbackName),
-      roleLabel: displayTitleForRole(fallbackRole),
+      roleLabel: displayTitleForAccount(access.hrId, fallbackRole),
       imageUrl: await resolveViewerPhotoUrl(access.hrId),
     };
   }
@@ -584,7 +584,13 @@ export const resolveViewerIdentityFromPage = cache(async (accessContext?: Access
   // This is the one place the topbar chip and its
   // dropdown get their label from, so mapping it here is what puts the real title on every page of
   // an HR seat's account rather than on the pages someone remembered to fix.
-  const roleLabel = displayTitleForRole(row?.role?.trim() || fallbackRole);
+  //
+  // IT ASKS THE ACCOUNT BEFORE THE SEAT. `displayTitleForAccount` reads account-job-titles.ts
+  // first, which is what makes B-10 read "HR Section Head" rather than the Super Admin key he
+  // signs in with (owner, 2026-09-04), and falls back to the seat map for everyone else. The HR ID
+  // is the row's own where there is a row — an account can be found by login_id alone, and the
+  // request's `access.hrId` is empty in that case.
+  const roleLabel = displayTitleForAccount(row?.hr_id ?? access.hrId, row?.role?.trim() || fallbackRole);
 
   return {
     displayName,

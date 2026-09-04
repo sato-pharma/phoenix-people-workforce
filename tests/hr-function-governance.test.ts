@@ -144,6 +144,14 @@ const FILES_NAMING_AN_HR_SEAT: readonly string[] = [
   "src/lib/conversations/notify.ts",
   "src/config/system-navigation.ts",
   "src/lib/admin/access-control.ts",
+  // Names "HR Advisory" in a comment, added 2026-09-04. Reviewed verdict: it GRANTS NOTHING and
+  // GATES NOTHING — the seat appears once, in the header prose explaining why this module sits
+  // beside displayTitleForRole(), and nowhere in the code. The module maps an ACCOUNT (hr_id
+  // "b-10") to the job title the shell prints for that person, and its only consumer is a
+  // `roleLabel` string. `access.role` is untouched, so every gate still reads the permission key;
+  // the reason it is keyed on the account rather than the role is precisely that admin-HR shares
+  // the Super Admin key and must keep reading Super Admin.
+  "src/lib/auth/account-job-titles.ts",
   "src/lib/auth/hr-functions.ts",
   "src/lib/auth/permissions.ts",
   // Names HR Operations in mapPhoenixRoleToAccessScopeType, which fills the access_scope COLUMN

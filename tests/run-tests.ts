@@ -26,6 +26,8 @@ import { runPermissionLookupTotalityTests } from "./permission-lookup-totality.t
 import { runNavigationRuling11AnalyticsTests } from "./navigation-ruling-11-analytics.test.ts";
 import { runHrUrlNamespaceTests } from "./hr-url-namespace.test.ts";
 import { runModuleTabTitlesTests } from "./module-tab-titles.test.ts";
+import { runAccountJobTitlesTests } from "./account-job-titles.test.ts";
+import { runIdentityStripEmblemTests } from "./identity-strip-emblem.test.ts";
 import { runNavBadgeRestyleTests } from "./nav-badge-restyle.test.ts";
 import { runNotificationLinksResolveTests } from "./notification-links-resolve.test.ts";
 import { runNavPanelPositionTests } from "./nav-panel-position.test.ts";
@@ -1314,6 +1316,14 @@ async function runTest(name: string, execute: () => void | Promise<void>) {
 
 await runTest("transactional email survives an unsubscribe (password reset must never be withheld)", runTransactionalEmailNotUnsubscribableTests);
 await runTest("module tab titles (every shell route names its module in the browser tab)", runModuleTabTitlesTests);
+await runTest(
+  "an account is shown as its own job title, never the permission key (B-10 reads HR Section Head)",
+  runAccountJobTitlesTests,
+);
+await runTest(
+  "the identity banner's phoenix stays sized and columned on the SATO logo below it",
+  runIdentityStripEmblemTests,
+);
 await runTest("sidebar pending badge (restyled fill, motion kept, rail told)", runNavBadgeRestyleTests);
 await runTest("display scale (content-only zoom, desktop-gated, print-excluded, both shells wired)", runDisplayScaleTests);
 await runTest("i18n config", runI18nConfigTests);
