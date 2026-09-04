@@ -203,53 +203,62 @@ export function runDriveCvFolderTests() {
   assert.ok(!samePath(["a", "b"], ["a", "b", "c"]), "a deeper path is a different path");
   assert.ok(!samePath(["a", "b"], ["a", "c"]));
 
-  // ── The backfill script must not drift from the live module ───────────────────────────────────
+  // ── The backfill script must DELEGATE, never keep its own copy ─────────────────────────────────
   //
-  // scripts/backfill-cvs-to-drive.mjs re-implements the placement tables, because it runs as a bare
-  // node script with no TypeScript path resolution. That duplication is the drift risk, so it is
-  // pinned here: if the Delta (3) overrides or the region names change on one side and not the
-  // other, the backfill would file 950 CVs into folders the live intake never uses again.
-
+  // This pin used to assert the exact opposite, and the story of why it flipped is the reason to
+  // keep reading. scripts/backfill-cvs-to-drive.mjs carried its own region labels, its own Delta (3)
+  // overrides, its own shelf labels and its own sanitizer, because a bare node script has no
+  // TypeScript path resolution. This test pinned that duplication in place and tried to hold the two
+  // copies equal by hand.
+  //
+  // That failed the way a copy always fails: silently, and only once somebody IMPROVES the original.
+  // The script's own `--verify` mode reported 0 CVs in the wrong folder while it read its own
+  // tables, and 5 the moment it read the app's — four hand-typed governorates and one Arabic
+  // sentence that had become a Drive folder. The copy was not merely redundant, it was hiding real
+  // damage from the very check written to find it.
+  //
+  // So the assertion is inverted. The script resolves `@/` through tests/alias-loader.mjs and
+  // imports the live modules; what is pinned now is that it holds no private copy left to drift.
   const backfillSource = fs.readFileSync(
     path.join(process.cwd(), "scripts", "backfill-cvs-to-drive.mjs"),
     "utf8",
   );
-  // Read the override table itself, not the whole file: a bare includes("Suez") keeps passing on any
-  // stray mention of the word elsewhere in the script, which is how a drift guard goes quietly vacuous.
-  const tableStart = backfillSource.indexOf("const RECRUITMENT_AREA_REGION_OVERRIDES = {");
-  assert.ok(tableStart >= 0, "the backfill script must still declare RECRUITMENT_AREA_REGION_OVERRIDES");
-  const tableEnd = backfillSource.indexOf("};", tableStart);
-  assert.ok(tableEnd > tableStart, "the override table must be a closed object literal");
-  const overrideTable = backfillSource.slice(tableStart, tableEnd);
 
-  for (const areaName of Object.keys(recruitmentAreaRegionOverrides)) {
+  // The anti-pattern, by name. A future session reaching for a local table is the thing to catch,
+  // and it is cheaper to catch here than in a folder tree holding 960 people's CVs.
+  for (const copied of [
+    "const RECRUITMENT_AREA_REGION_OVERRIDES",
+    "const REGION_LABELS",
+    "const SHELF_LABELS",
+    "function sanitize",
+  ]) {
     assert.ok(
-      overrideTable.includes(`${areaName}: "D3"`) || overrideTable.includes(`"${areaName}": "D3"`),
-      `the backfill script must carry the Delta (3) override for ${areaName}`,
+      !backfillSource.includes(copied),
+      `the backfill script must not re-declare ${copied} — it imports the live one`,
     );
   }
-  for (const label of ["Alex-BHR", "Delta (3)", "Upper Egypt", "Medical Representative"]) {
-    assert.ok(backfillSource.includes(label), `the backfill script must carry the label ${label}`);
+
+  // And the delegation itself, so that removing a copy can never quietly remove the behaviour too.
+  for (const imported of [
+    'from "@/lib/recruitment/drive-cv-folders"',
+    'from "@/lib/recruitment/candidate-folder-inference"',
+    'from "@/lib/recruitment/candidate-region"',
+    'from "@/lib/recruitment/candidate-folder"',
+    "inferCandidatePlacement",
+    "sanitizeDriveSegment",
+  ]) {
+    assert.ok(backfillSource.includes(imported), `the backfill script must import ${imported}`);
   }
-  // The holding and inferred folder NAMES are no longer typed into the script - it imports them,
-  // which is the point: a renamed shelf can no longer mean two different folders in two files.
-  assert.ok(
-    backfillSource.includes('from "@/lib/recruitment/drive-cv-folders"'),
-    "the backfill script must import the folder names rather than re-declare them",
-  );
-  assert.ok(
-    backfillSource.includes("inferCandidatePlacement"),
-    "the backfill script must use the shared inference, not a copied governorate table",
-  );
   assert.ok(
     !backfillSource.includes("[UNCLASSIFIED]"),
     "no path in the backfill may still fall back to the flat holding folder",
   );
-  assert.equal(
-    Object.keys(recruitmentAreaRegionOverrides).length,
-    5,
-    "Delta (3) covers five areas — if this changes, update the backfill script's copy too",
-  );
+
+  // The Delta (3) override reaching the backfill is no longer two tables agreeing — it is the same
+  // function call the live intake makes, pinned by behaviour a few lines below ("an inferred
+  // Delta (3) governorate files where recruitment says"). The count stays so that an override table
+  // silently emptied still fails something here.
+  assert.equal(Object.keys(recruitmentAreaRegionOverrides).length, 5, "Delta (3) covers five areas");
 
   // ── Inference: a CV with no declared answers still gets a real folder ──────────────────────────
   //
