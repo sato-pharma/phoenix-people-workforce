@@ -1009,6 +1009,7 @@ import { runAttendanceMonthlySummaryOutageTests } from "./attendance-monthly-sum
 
 import { runPayrollBatchMembershipTests } from "./payroll-batch-membership.test.ts";
 import { runDeductionsEmployeeSummaryPublishEligibilityTests } from "./deductions-employee-summary-publish-eligibility.test.ts";
+import { runDeductionsExportAppliedAndMasterTests } from "./deductions-export-applied-and-master.test.ts";
 import { runDeductionsVacationDayDoubleChargeTests } from "./deductions-vacation-day-double-charge.test.ts";
 import { runMarketingRoiSharedAttributionTests } from "./marketing-roi-shared-attribution.test.ts";
 import { runCeoLandingSeatAndProbationCountsTests } from "./ceo-landing-seat-and-probation-counts.test.ts";
@@ -2874,6 +2875,8 @@ await runTest("attendance monthly summary (a device-ingestion outage is reported
 await runTest("payroll batch membership is historical (a resignation after payday cannot remove someone from the month they were paid for, incl. the bank file)", runPayrollBatchMembershipTests);
 
 await runTest("deductions By Employee total counts only what publish will actually take (pending shown separately, agrees with Overview)", runDeductionsEmployeeSummaryPublishEligibilityTests);
+
+await runTest("deductions export shows the applied value/amount publish will take for an approved-without-narrowing row (never blank), and the master workbook summarizes eligible-only with Line + Direct Manager columns", runDeductionsExportAppliedAndMasterTests);
 
 await runTest("one employee-day of unpaid vacation is chargeable once regardless of which source found it (re-run supersedes, collisions seen within a category)", runDeductionsVacationDayDoubleChargeTests);
 
