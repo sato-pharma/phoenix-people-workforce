@@ -20,6 +20,13 @@ function cellText(cell: ExcelJS.Cell | undefined): string {
   if (typeof v === "object") {
     const o = v as unknown as Record<string, unknown>;
     if ("result" in o) return String(o.result ?? "");
+    // ExcelJS DROPS the `result` key entirely when a formula's cached value is 0, so a zero-quantity
+    // formula cell arrives as {formula} alone — no result to read. Falling through to String(v) turned
+    // it into "[object Object]", which parseNum reads as NaN on a NON-EMPTY cell, so the row was
+    // rejected as `unparseable_qty` and blocked the whole commit. Read it as an empty cell instead:
+    // an empty quantity legitimately means zero (see the badQty guard). A formula that DID cache a
+    // result — including an error object — still takes the branch above and keeps its old meaning.
+    if ("formula" in o || "sharedFormula" in o) return "";
     if ("text" in o) return String(o.text ?? "");
     if ("richText" in o) return (o.richText as Array<{ text?: string }>).map((t) => t.text ?? "").join("");
     if ("hyperlink" in o) return String(o.text ?? o.hyperlink ?? "");
