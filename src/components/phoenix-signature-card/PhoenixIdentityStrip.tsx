@@ -255,35 +255,77 @@ export function PhoenixIdentityStrip({
           "make the logo small and out at the right upper corner in desktop view and make its
           color a bit more transparent." Mobile got there first; desktop followed.
 
-          A 50px box on mobile carries a 32px mark, a 63px box on desktop a 40px one, each pinned
-          so the INK lands ~10px from the top and ~10-14px from the right. THE BOXES THEREFORE SIT
-          AT top 2-3px / right 0-2px, not at the gap you want to see: the transparent padding
-          already supplies ~9px and ~10px of inset by itself, so setting `top`/`right` to the
-          visible gap is exactly what pushes the mark away from the corner. Neither is centred on
-          anything any more, so no `translateY` — adding a transform back is how it drifts.
-
-          THE OPACITIES ARE DELIBERATELY EQUAL. Mobile briefly ran at 0.32 while desktop was 0.3,
-          which would have made the same corner mark read differently between a phone and a laptop.
-
-          THE MARK NO LONGER TOUCHES THE WAVE AT EITHER SIZE, which is what makes the corner
+          THE MARK NO LONGER TOUCHES THE WAVE AT EITHER SIZE, which is what makes a corner
           placement safe: the wave's box starts at y=90 on mobile and y=106 on desktop, and the
-          ink now ends at y=42 and y=52. Nothing about the wave constrains this any more. It also
-          means the old reasoning here — sizing the mark against the 112px band above the wave, or
-          centring it on the bar to steal height — is dead. Do not restore either; a corner mark
-          is positioned from the corner and sized on its own. The wave is NOT a flat 24px bar: its
-          path runs from y=38 on the left to y=4 at the right edge of a 118-unit viewBox drawn
-          30px tall, so on the right — where this mark lives — it stands ~29px and covers the base
-          cleanly. Read the `<svg>` at the end of this file before changing either number.
-
-          TWO ELEMENTS, ONE PER BREAKPOINT, because an inline style cannot carry a media query.
-          That split began with an earlier instruction — "when mobile, don't center him. Put him on
-          the right" — which has a cause worth recording: the OLD watermark is 1350x900, so at 165%
-          of a 120px bar it spanned 297px of a 351px phone screen and read as centred no matter
-          what `right` said. Only a square mark makes a corner placement possible at 351px.
+          ink now ends at y=32 at both widths. Nothing about the wave constrains this any more. It
+          also means the old reasoning here — sizing the mark against the 112px band above the
+          wave, or centring it on the bar to steal height — is dead. Do not restore either. The
+          wave is NOT a flat 24px bar: its path runs from y=38 on the left to y=4 at the right edge
+          of a 118-unit viewBox drawn 30px tall, so on the right — where this mark lives — it
+          stands ~29px and covers the base cleanly. Read the `<svg>` at the end of this file before
+          changing either number.
 
           IT SHIPPED ONCE CROPPED BY THE TRAILING EDGE AND HE TURNED THAT DOWN. Whatever the sizes
           become, the mark stays whole against the right edge — the only thing allowed to cover it
-          is the wave, from below. */}
+          is the wave, from below.
+
+          THE SIZE AND THE COLUMN BOTH COME FROM THE SATO LOGO NOW, at the owner's instruction on
+          2026-09-04: "make the Phoenix logo in the identity banner same size as Sato Pharma logo
+          and at the same of it. But this is below. This is above." The mark he means is the one in
+          the black SATO band immediately under this bar (`ceo-command-center.tsx`), and it is a
+          plain `h-8` at EVERY width — so the two disagreed twice over: this one was bigger on
+          desktop, and it sat 40px further right than the SATO mark at both widths.
+
+          IT IS THE WIDTH THAT WAS MATCHED, NOT THE HEIGHT, AND HE SETTLED THAT HIMSELF. The two
+          marks are different shapes — the SATO one is a wide wordmark, 79px of ink across and 30px
+          down; this one is square, 316x328 of ink in a 512x512 file. Matched on HEIGHT the phoenix
+          came out 29px wide against the SATO logo's 79px and he read it as unchanged: "the Phoenix
+          logo is still very small. I wanted to be compatible in size as the sato pharma logo down
+          it. And put it exactly above it to be one line." Two marks of equal WIDTH, stacked on one
+          right edge, are what reads as a pair; equal height does not.
+
+          MATCH THE INK, NOT THE BOX — that is the whole trick, and both PNGs carry padding.
+          Measured in the browser rather than assumed: the SATO file is 401x158 with ink filling
+          97.3% of its width, so `h-8` draws 79.0px across; this file's ink is 61.7% of its box
+          wide and 64.1% of it tall. 79.0 / 0.617 = 128, so `height: 128px` (the file is square, so
+          height sets width) draws 79.0px of phoenix across and 82.0px down.
+
+          THE COLUMN IS THE SATO MARK'S OWN RIGHT EDGE, which sits 50px in from the bar's trailing
+          edge. This box carries 24.8px of transparent margin of its own at 128px, so `right: 25px`
+          lands the ink's right edge within 0.3px of the logo below it — which is the "exactly
+          above it" half of the instruction, and why 25 is not a number waiting to be rounded: it
+          is 50 minus the file's own padding.
+
+          `top: -11px` IS PADDING ARITHMETIC TOO, not a nudge over the edge. The box carries 19.0px
+          of transparency above the ink, so this puts the crown 8px below the bar's top edge and
+          the feet at 90px — which is the MOBILE constraint, not a taste call: the wave's box
+          starts at y=90 on a 120px bar, so any lower and the phoenix stands behind it on a phone.
+          On desktop's 136px bar the wave starts at 106 and there is 16px to spare.
+
+          HIS FIRST MEASUREMENT OF THIS SAME MOVE WAS "one centimeter to the left and 0.75
+          centimeter up". The centimetre landed within 1px of the SATO column, which is what
+          identified the column as the thing he was actually aiming at. The 0.75cm up could not be
+          taken literally at the size it was then — 28.3px up from a crown sitting 12.3px below the
+          edge is a crop, and this section is `overflow-hidden`.
+
+          TWO ELEMENTS AGAIN, ONE PER BREAKPOINT, and that is the owner's call, not a drift back.
+          It was two, then one when the sizes stopped differing; it is two again because they
+          differ again. Him, 2026-09-04: "in HRS or identity banner make the Phoenix logo small at
+          the upper right corner in mobile view." An inline style cannot carry a media query and
+          `cn()` silently drops custom named sizes, so the split is by ELEMENT — a `sm:hidden` /
+          `hidden sm:block` pair around two style objects — and never by a size class.
+
+          THE PHONE MARK IS THE SAME MARK AT HALF SIZE, IN THE CORNER. 64px is 128 halved, which
+          draws 39.4px of ink across and 40.9px down; `right: 4px` lands its ink's right edge
+          16.5px in, which is the text column's own `pr-4` gutter, and `top: 0px` needs no nudge
+          because the box carries 9.5px of transparency above the crown by itself. Feet at 50.4px
+          on a 120px bar, so the wave at y=90 is not in play on a phone any more.
+
+          WHAT IT BOUGHT, and it is why he asked: at full size the mark's ink began 128.75px in
+          from a 351px bar, which left the name 98px to live in and crushed the script. Halved and
+          cornered, its ink begins 55.9px in, the name's box is 171px, and the name renders at its
+          natural size again. The desktop mark below is untouched — the SATO column and the
+          "exactly above it" pairing are a desktop reading and still hold there. */}
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         alt=""
@@ -291,10 +333,11 @@ export function PhoenixIdentityStrip({
         className="pointer-events-none absolute z-0 sm:hidden"
         src="/brand/identity-strip-emblem.png"
         style={{
-          height: "42%",
+          // 64 / 4 / 0 are 128 halved and the text column's own gutter. Read the paragraph above.
+          height: "64px",
           opacity: 0.2,
-          right: "0px",
-          top: "2px",
+          right: "4px",
+          top: "0px",
           width: "auto",
         }}
       />
@@ -305,10 +348,12 @@ export function PhoenixIdentityStrip({
         className="pointer-events-none absolute z-0 hidden sm:block"
         src="/brand/identity-strip-emblem.png"
         style={{
-          height: "46%",
+          // 128 / 25 / -11 are the SATO logo's 79px of ink and its 50px column, each minus this
+          // file's own transparent margin. Read the paragraphs above before touching one.
+          height: "128px",
           opacity: 0.2,
-          right: "2px",
-          top: "3px",
+          right: "25px",
+          top: "-11px",
           width: "auto",
         }}
       />
@@ -418,14 +463,34 @@ export function PhoenixIdentityStrip({
             the rule runs out across the bar. Height is untouched — that part of his instruction
             still holds. */}
         <div className="flex min-w-0 flex-1 flex-col">
+          {/* THE NAME STOPS BEFORE THE PHOENIX TOO — the owner, 2026-09-04: "the name too, end it
+              before the logo." Same clearance as the rule below it, and from the same arithmetic
+              at each breakpoint: the mark's ink starts 55.9px in from the bar's trailing edge on a
+              phone and 128.75px in from `sm` up, so the box ends 68px / 141px in — which is 52px
+              of margin on a phone (`pr-4`) and 117px from `sm` up (`pr-6`).
+
+              THE MARGIN IS A CLASS AND THE RESET IS INLINE, and they must stay split that way. An
+              inline style beats any class, so the `margin: 0` that used to sit in the style object
+              would silently swallow `mr-[52px]` and put the name back under the mark with nothing
+              to show for it — the longhands below reset only the top, bottom and left, and leave
+              the right to the two classes.
+
+              THE PHONE READING WAS THE COST, AND HE SPENT THE MARK INSTEAD. Clearing the full-size
+              watermark left the name 98px to live in on a 351px bar, and the script fell to a size
+              he would not have accepted. The answer was the one this comment already predicted —
+              the mark is what gave: halved and moved into the corner, its ink now begins 55.9px
+              in, so the name keeps 171px and renders at its natural 32px. If a later change grows
+              the phone mark again, this margin grows with it and the name shrinks again, so
+              measure the name at 375px before accepting that trade. */}
           <p
-            className="italic font-medium text-[#3f3a33]"
+            className="italic font-medium text-[#3f3a33] mr-[52px] sm:mr-[117px]"
             ref={nameBoxRef}
             style={{
               fontFamily: '"Pinyon Script", cursive',
               fontSize: nameFontPx ? `${nameFontPx}px` : "clamp(2rem, 5vw, 3.1rem)",
               lineHeight: 1.15,
-              margin: 0,
+              marginBlock: 0,
+              marginLeft: 0,
               whiteSpace: "nowrap",
             }}
           >
@@ -433,7 +498,31 @@ export function PhoenixIdentityStrip({
               {sigName}
             </span>
           </p>
-          <span aria-hidden="true" className="mt-[2px] flex items-center">
+          {/* THE RULE STOPS BEFORE THE PHOENIX. The owner, 2026-09-04, on the line under the name:
+              "it's under the name ... I wanted to end before it reached the logo ... I wanted
+              layer the above or below the photo, the phoenix photo logo." Sized to the SATO mark
+              earlier the same day, the watermark grew into the space this rule used to run out
+              across, and the gradient tail crossed it at both widths. Ending the rule short is the
+              first of the two answers he offered; the mark itself does not move.
+
+              THE MARGIN IS THE MARK'S OWN INK EDGE, not a nudge, and it is read per breakpoint.
+              From `sm` up the emblem draws 79px of ink whose left edge lands 128.75px in from the
+              bar's trailing edge (25px right inset + 24.25px of transparent margin + 79px of ink);
+              on a phone the corner mark above is that same mark halved, drawing 39.4px of ink that
+              begins 55.9px in. Twelve pixels of air puts the end of this rule at 141px and 68px
+              respectively — and this row sits inside a column that already stops at the content
+              wrapper's own right padding, so each margin is that figure minus that padding: 52 on
+              a phone (`pr-4`) and 117 from `sm` up (`pr-6`). CHANGE EITHER EMBLEM'S `height` OR
+              `right` AND ITS NUMBER MOVES WITH IT — `tests/identity-strip-emblem.test.ts`
+              recomputes both ink edges from those two and fails if this clearance stops covering
+              them.
+
+              IT IS THE RULE ALONE, deliberately. Reserving the column on the WRAPPER instead would
+              take the same width off the text block at every breakpoint, and a phone cannot spare
+              it: the column is ~223px at 375px and already carries four lines, so the title would
+              wrap a third time and clip against `overflow-hidden`. The name carries its own copy
+              of the margin, for the same reason. */}
+          <span aria-hidden="true" className="mt-[2px] mr-[52px] flex items-center sm:mr-[117px]">
             <span className="h-[2px] flex-1" style={{ background: "#f47b20" }} />
             <span className="mx-[5px] h-[7px] w-[7px] rounded-full" style={{ background: "#f47b20" }} />
             <span
