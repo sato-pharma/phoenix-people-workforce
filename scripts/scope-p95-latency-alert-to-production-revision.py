@@ -16,7 +16,7 @@ This was investigated after the 2026-07-16 22:03 UTC p95-latency alert. Log
 inspection showed that specific alert was actually driven by a genuinely slow
 production request (`/api/notifications/process`, ~18.4s, via
 phoenix-hr.satopharma.com) on a revision that was still 100%-traffic at the
-time and only later got superseded and demoted to a 0%-traffic tag â€” already
+time and only later got superseded and demoted to a 0%-traffic tag — already
 covered by the p95 threshold/duration the owner tuned the same day (8s, near-
 immediate -> 30s sustained 10m, mutated 2026-07-16T22:07:07Z). Confirmed via
 `deploy-cloud-run.yml`'s post-deploy smoke test that the tag-URL-cold-start

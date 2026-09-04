@@ -2,7 +2,7 @@ import { chromium } from "playwright";
 
 const baseUrl = process.env.PHOENIX_EMPLOYEE_PORTAL_BASE_URL ?? "http://localhost:3006";
 const hardErrorPattern = /application error|portal error|employee portal unavailable|internal server error|runtime error|failed to compile|typeerror|referenceerror/i;
-const mojibakePattern = /Ã|Â|â|�/;
+const mojibakePattern = /[\u00C3\u00C2\u00E2\uFFFD]/;
 
 const employeePortalStaticRoutes = [
   "/employee-portals",

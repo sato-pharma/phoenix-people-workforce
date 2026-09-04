@@ -81,7 +81,7 @@ export type EmployeeDirectoryRow = {
   grossSalary: number | null;
   hasBankAccount: string | null;
   // Whether this employee has an uploaded profile photo (from the cached photo
-  // map, see src/lib/employees/employee-photo.ts) â€” lets avatar UI skip the
+  // map, see src/lib/employees/employee-photo.ts) — lets avatar UI skip the
   // /api/employees/[hrId]/photo request entirely when there's nothing to fetch.
   hasPhoto: boolean;
   hireDate: string | null;
@@ -337,7 +337,7 @@ const CACHE_TTL = 30000; // 30 seconds
 // Same TTL + in-flight-dedupe pattern as directoryCache/inFlightDirectory above, applied to
 // getEmployeeDirectoryRows(). Keyed by includeInactive since callers legitimately need two
 // different result sets (active-only vs. full history) that must never be served
-// interchangeably â€” see double-visit-analytics/service.ts for a callsite that depends on the
+// interchangeably — see double-visit-analytics/service.ts for a callsite that depends on the
 // includeInactive:true set containing resigned/terminated employees.
 const directoryRowsCache = new Map<boolean, { data: EmployeeDirectoryRow[]; timestamp: number }>();
 const inFlightDirectoryRows = new Map<boolean, Promise<EmployeeDirectoryRow[]>>();
@@ -368,7 +368,7 @@ export function isActiveLifecycleStatus(value: string | null | undefined) {
 }
 
 // System/console accounts never belong in the employee directory or organogram. Matched by HR_ID
-// first â€” every declared system-admin alias plus the RLS sandbox account â€” with the name+title
+// first — every declared system-admin alias plus the RLS sandbox account — with the name+title
 // check kept as a fallback for rows that predate the alias list.
 //
 // `normalizeHrId` returns a LOWERCASE key, so the previous "ADMIN-HR"/"RLS-ADMIN-HR" comparisons
@@ -839,7 +839,7 @@ async function loadCompensationByHrId(hrIds: string[]) {
  * Defensive loader for the seat-continuity column
  * `pending_manager_replacement_for_hr_id`. Fetched separately (not in the main
  * employee select) so the directory keeps working in any environment/project
- * where the column has not been provisioned yet â€” there it simply degrades to an
+ * where the column has not been provisioned yet — there it simply degrades to an
  * empty map and the seat-continuity feature no-ops. Keyed by raw `hr_id`.
  */
 async function loadPendingManagerReplacementByHrId(hrIds: string[]) {
@@ -966,7 +966,7 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
     });
 
     // Fallback if joined query fails due to schema/relationship issues.
-    // Only selects columns confirmed present in the employees table â€” do NOT add
+    // Only selects columns confirmed present in the employees table — do NOT add
     // columns here that belong to a feature branch or migration that may be reverted.
     const FALLBACK_EMPLOYEE_SELECT = `${baseEmployeeSelect},region_name,region_code,birth_date`;
     const fallbackParams = new URLSearchParams({
@@ -1789,7 +1789,7 @@ async function employeePayload(
   // Only validate the manager when it is actually being assigned or changed (or on create).
   // Re-validating an UNCHANGED manager on every save would block unrelated edits (phone,
   // salary, etc.) for any employee whose manager has since resigned or been hidden from the
-  // organogram â€” a stale reference the seat-continuity flow reconciles separately, not a
+  // organogram — a stale reference the seat-continuity flow reconciles separately, not a
   // reason to reject an edit that never touched the manager field.
   if (!isUpdate || managerHrId !== previousManagerHrId) {
     await ensureManagerIsValid(managerHrId, hrId);
@@ -2143,7 +2143,7 @@ async function reassignLiveManagerOwnership(input: {
 }
 
 // Server-side backstop: an area_id must reference an existing, ACTIVE area (the 42 canonical areas).
-// The picker only offers active areas, but a raw API call could still send a retired/unknown id â€” reject it.
+// The picker only offers active areas, but a raw API call could still send a retired/unknown id — reject it.
 // null is allowed (managers/office staff carry no sales area).
 async function assertActiveCanonicalArea(areaId: number | null | undefined): Promise<void> {
   if (areaId == null) return;
