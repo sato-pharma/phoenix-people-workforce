@@ -46,6 +46,16 @@ const profile: DistributorProfile = {
   discountColumns: ["Discount%"],
 };
 
+// Same header row as buildRaw, but the caller writes the data rows itself — needed to plant a raw
+// ExcelJS formula cell, which a plain value array cannot express.
+async function buildRawWith(fill: (ws: ExcelJS.Worksheet) => void) {
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet("Sheet1");
+  ws.addRow(["Item Code", "Item Name", "Quantity", "Free Unit", "Net", "Date", "Client Code", "Client Name", "Territory Name", "Discount%"]);
+  fill(ws);
+  return wb.xlsx.writeBuffer();
+}
+
 async function buildRaw(rows: unknown[][]) {
   const wb = new ExcelJS.Workbook();
   const ws = wb.addWorksheet("Sheet1");
@@ -147,6 +157,32 @@ export async function runSosNormalizerTests() {
   const ddmmResult = await normalizeRawWorkbook(ddmm as unknown as ArrayBuffer, profile, maps);
   assert.equal(ddmmResult.coded.length, 4);
   for (const r of ddmmResult.coded) assert.equal(r.invoiceDate, "2026-04", `DD-MM date must parse to April, got ${r.invoiceDate}`);
+
+  // ── a zero-quantity FORMULA cell must code, not block (EPDA, 2026-09-04) ──
+  // ExcelJS drops a formula's `result` key when the cached value is 0. The EPDA export builds every
+  // cell as a link into another workbook, so its zero-quantity rows arrive as {formula} with no
+  // result at all. cellText fell through to String(v) — "[object Object]" — which parseNum reads as
+  // NaN on a NON-EMPTY cell, so all 15 zero-quantity rows were rejected as `unparseable_qty` and
+  // blocked the whole commit behind a message telling the operator to map a customer that was never
+  // unmapped. A zero quantity is a real quantity.
+  const zeroFormula = await buildRawWith((ws) => {
+    const row = ws.addRow(["LA001", "لاكتو 1 لبن", null, 0, 0, "2026/04/30", "C999", "Pharmacy X", "الدقي/بين السريات", ""]);
+    row.getCell(3).value = { formula: "[1]Sheet1!$G$56" } as unknown as ExcelJS.CellValue;
+  });
+  const zeroResult = await normalizeRawWorkbook(zeroFormula as unknown as ArrayBuffer, profile, maps);
+  assert.equal(zeroResult.exceptions.length, 0, "a zero-quantity formula cell must not raise unparseable_qty");
+  assert.equal(zeroResult.coded.length, 1, "the zero-quantity row must be coded, not blocked");
+  assert.equal(zeroResult.coded[0]!.qty, 0);
+  assert.equal(zeroResult.coded[0]!.value, 0);
+
+  // ...and the guard this relaxes must still fire: a NON-EMPTY quantity that genuinely cannot be read
+  // stays an exception, so "1,2OO" (letter O) never becomes a silent zero.
+  const unreadableQty = await buildRaw([
+    ["LA001", "لاكتو 1 لبن", "1,2OO", 0, 0, "2026/04/30", "C999", "Pharmacy X", "الدقي/بين السريات", ""],
+  ]);
+  const unreadableResult = await normalizeRawWorkbook(unreadableQty as unknown as ArrayBuffer, profile, maps);
+  assert.equal(unreadableResult.coded.length, 0, "an unreadable quantity must never be coded as zero");
+  assert.equal(unreadableResult.exceptions[0]!.reason, "unparseable_qty");
 
   // ── bulk mapping: suggestProduct (token overlap) + distinctUnknowns (collapse repeats) ──
   const products: ProductRef[] = [
