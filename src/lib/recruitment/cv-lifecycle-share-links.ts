@@ -30,7 +30,8 @@ import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import type { AccessContext } from "@/lib/auth/permissions";
 import { assertPermission } from "@/lib/auth/permissions";
 import { forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
-import { hrIdForStorage } from "@/lib/hr-id";
+import { canonicalHrIdKey, hrIdForStorage, hrIdLookupKeys } from "@/lib/hr-id";
+import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import {
   buildCvLifecycleCsv,
@@ -51,28 +52,88 @@ function mintToken(): string {
   return randomBytes(32).toString("base64url");
 }
 
+/**
+ * A link as the MANAGEMENT screen sees it — deliberately WITHOUT the token.
+ *
+ * The token is returned exactly once, by `createCvLifecycleShareLink`, to the person who just
+ * minted it. It is never in this shape and so can never reach a list, a props payload, a React
+ * hydration blob or a browser devtools tab. `tokenPreview` is the first 8 characters, which is what
+ * the audit trail already stores: enough to say WHICH link a row is talking about, far too little
+ * to BE the link. Anyone who has lost a token revokes it and mints another — that is the whole
+ * point of a bearer credential with one-click revoke, and it is cheaper than a screen that can hand
+ * the candidate pool to whoever is looking over your shoulder.
+ */
 export type CvLifecycleShareLink = {
   accessCount: number;
   createdAt: string;
+  createdByHrId: string;
+  /** The creator's display name, or their HR id when the directory cannot name them. */
+  createdByName: string;
   expiresAt: string;
   id: string;
   label: string | null;
   lastAccessedAt: string | null;
   revokedAt: string | null;
-  token: string;
+  revokedByHrId: string | null;
+  revokedByName: string | null;
+  tokenPreview: string;
 };
 
-function mapLink(row: Record<string, unknown>): CvLifecycleShareLink {
+/** The first 8 characters, matching what the audit rows above store. Never the whole token. */
+function previewOf(token: string): string {
+  return String(token ?? "").slice(0, 8);
+}
+
+function mapLink(row: Record<string, unknown>, names: Map<string, string>): CvLifecycleShareLink {
+  const createdByHrId = String(row.created_by_hr_id ?? "");
+  const revokedByHrId = row.revoked_by_hr_id ? String(row.revoked_by_hr_id) : null;
   return {
     accessCount: Number(row.access_count ?? 0),
     createdAt: String(row.created_at ?? ""),
+    createdByHrId,
+    // Owner rule: human-readable names, never raw ids. The id is the fallback, not the display.
+    createdByName: names.get(canonicalHrIdKey(createdByHrId) ?? "") ?? createdByHrId,
     expiresAt: String(row.expires_at ?? ""),
     id: String(row.id ?? ""),
     label: row.label ? String(row.label) : null,
     lastAccessedAt: row.last_accessed_at ? String(row.last_accessed_at) : null,
     revokedAt: row.revoked_at ? String(row.revoked_at) : null,
-    token: String(row.token ?? ""),
+    revokedByHrId,
+    revokedByName: revokedByHrId ? (names.get(canonicalHrIdKey(revokedByHrId) ?? "") ?? revokedByHrId) : null,
+    tokenPreview: previewOf(String(row.token ?? "")),
   };
+}
+
+/**
+ * HR id -> display name, for the handful of people who have ever minted or revoked one of these.
+ *
+ * Looked up through `hrIdLookupKeys` rather than a bare `.eq`: HR ids in this database are MIXED
+ * CASE, and an `.eq` against the wrong spelling under-returns silently — here that would print a
+ * raw id where a name belongs, which reads as a data fault rather than a lookup miss. A failed
+ * lookup costs the names and nothing else; the rows still render, keyed by id.
+ */
+async function namesForHrIds(hrIds: readonly string[]): Promise<Map<string, string>> {
+  const resolved = new Map<string, string>();
+  const keys = [...new Set(hrIds.filter(Boolean).flatMap((hrId) => hrIdLookupKeys(hrId)))];
+  if (keys.length === 0) return resolved;
+
+  const supabase = getSupabaseAdmin();
+  // Chunked at 50: a PostgREST `.in()` carrying several hundred ids returns ZERO rows and no error.
+  // This list is capped at 100 links, so one chunk is the normal case and the loop is insurance.
+  for (let start = 0; start < keys.length; start += 50) {
+    const { data, error } = await supabase
+      .from("employees")
+      .select("hr_id,full_name,nickname")
+      .in("hr_id", keys.slice(start, start + 50));
+    if (error || !data) continue;
+    for (const row of data as Array<{ full_name?: string | null; hr_id?: string | null; nickname?: string | null }>) {
+      const key = canonicalHrIdKey(row.hr_id);
+      const fullName = String(row.full_name ?? "").trim();
+      if (!key || !fullName) continue;
+      resolved.set(key, resolveEmployeeDisplayName(fullName, row.nickname ?? null, row.hr_id ?? null));
+    }
+  }
+  return resolved;
 }
 
 /**
@@ -142,7 +203,12 @@ export async function listCvLifecycleShareLinks(access: AccessContext): Promise<
     .order("created_at", { ascending: false })
     .limit(100);
   if (error) throw error;
-  return ((data ?? []) as Array<Record<string, unknown>>).map(mapLink);
+
+  const rows = (data ?? []) as Array<Record<string, unknown>>;
+  const names = await namesForHrIds(
+    rows.flatMap((row) => [String(row.created_by_hr_id ?? ""), String(row.revoked_by_hr_id ?? "")]),
+  );
+  return rows.map((row) => mapLink(row, names));
 }
 
 export async function revokeCvLifecycleShareLink(access: AccessContext, linkId: string): Promise<void> {

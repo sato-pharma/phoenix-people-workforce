@@ -37,6 +37,7 @@ import {
   LayoutDashboard,
   LayoutGrid,
   LifeBuoy,
+  Link2,
   Mail,
   MailCheck,
   MailX,
@@ -783,6 +784,17 @@ const adminNavigationSectionSeeds = [
       // no more reach — the same choice Manager CV Engagement made. The recruitment:read clause is
       // what its page gate reads too, so the two cannot drift (every-offered-link-opens.test.ts).
       { href: "/recruitment/returned-cvs", icon: Undo2, label: "Returned CVs", permissions: [{ resource: "recruitment", action: "read" }], roles: hrAuthorityNavigationRoles },
+      // CV Sheet Links — the bearer tokens feeding the owner's live CV-lifecycle Google Sheet
+      // (app/(admin)/recruitment/cv-lifecycle-sheet/page.tsx). #3102 shipped that whole feature
+      // with no UI, so the only token was minted by hand in SQL against production and nothing in
+      // Phoenix could list, revoke or renew it — and when it lapsed the sheet would have gone on
+      // showing yesterday's numbers rather than an error.
+      //
+      // EXPORT, not read: minting a credential that copies the candidate pool out of Phoenix is a
+      // different act from reading it inside, and this clause is the one the page itself asserts,
+      // so the two cannot drift (every-offered-link-opens.test.ts). A plain row rather than a ninth
+      // hub card, the same choice Returned CVs above made.
+      { href: "/recruitment/cv-lifecycle-sheet", icon: Link2, label: "CV Sheet Links", permissions: [{ resource: "recruitment", action: "export" }], roles: hrAuthorityNavigationRoles },
     ],
     label: "Recruitment & Hiring",
   },
@@ -1729,6 +1741,11 @@ const hrNavigationSectionSeeds = [
       // isHrAuthorityRole + recruitment:read — and had no row anywhere, so the district managers'
       // returned CVs sat in a queue nobody could navigate to.
       { href: "/hr/recruitment/returned-cvs", icon: Undo2, label: "Returned CVs", permissions: [{ resource: "recruitment" }] },
+      // The /hr spelling of /recruitment/cv-lifecycle-sheet — same page, rewritten by middleware.
+      // `action: "export"` rather than the bare resource used by its neighbours, because that is
+      // what the page asserts: HR Operations holds no recruitment grant at all, so the row is hers
+      // either way, but naming the action keeps this row honest if the bundles are ever recomposed.
+      { href: "/hr/recruitment/cv-lifecycle-sheet", icon: Link2, label: "CV Sheet Links", permissions: [{ resource: "recruitment", action: "export" }] },
       // `recruitment`, matching the page's own gate — NOT `vacancies`. Owner instruction
       // 2026-09-01, "block the cv database for her too": HR Operations was granted
       // vacancies:read for the Vacancies Report, which handed her this recruiting screen as a

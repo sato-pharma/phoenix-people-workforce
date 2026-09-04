@@ -4,19 +4,37 @@
 // Three jobs run here:
 //   - remind interviewers of interviews scheduled for the next day;
 //   - chase CVs that were sent to a hiring manager and never answered (`stale-send-check.ts`);
-//   - report CVs nobody has looked at yet (`triage-backlog-check.ts`).
+//   - report CVs nobody has looked at yet (`triage-backlog-check.ts`);
+//   - warn before the owner's live CV-lifecycle sheet loses its feed token
+//     (`cv-lifecycle-link-expiry-alert.ts`).
+//
+// The fourth job is composed HERE rather than as a fifth entry in the daily route's Promise.all,
+// deliberately. That list destructures 22 results positionally and has silently gone off-by-one
+// TWICE — 2026-07-18 and again 2026-08-29 — each time by someone adding a job. This module is
+// already in the list, so adding a check inside it changes no position at all.
 
 import { currentCairoDateParts } from "@/lib/i18n/format";
 import { createSystemNotification } from "@/lib/notifications/system";
 import { interviewTypeLabel } from "@/lib/recruitment/interview-notifications";
 import { listInterviewsDueForReminder } from "@/lib/recruitment/interviews";
+import {
+  runCvLifecycleLinkExpiryCheck,
+  type CvLifecycleLinkExpiryRunResult,
+} from "@/lib/recruitment/cv-lifecycle-link-expiry-alert";
 import { runStaleSendCheck, type StaleSendRunResult } from "@/lib/recruitment/stale-send-check";
 import { runTriageBacklogCheck, type TriageBacklogRunResult } from "@/lib/recruitment/triage-backlog-check";
 
 export type RecruitmentDailyResult =
-  | { ok: true; interviewReminders: number; staleSends: StaleSendRunResult; triageBacklog: TriageBacklogRunResult }
+  | {
+      ok: true;
+      cvLifecycleLinkExpiry: CvLifecycleLinkExpiryRunResult;
+      interviewReminders: number;
+      staleSends: StaleSendRunResult;
+      triageBacklog: TriageBacklogRunResult;
+    }
   | {
       ok: false;
+      cvLifecycleLinkExpiry: CvLifecycleLinkExpiryRunResult | null;
       interviewReminders: 0;
       staleSends: StaleSendRunResult | null;
       triageBacklog: TriageBacklogRunResult | null;
@@ -66,12 +84,17 @@ export async function runRecruitmentDailyNotifications(): Promise<RecruitmentDai
   // it before the throwing reminder loop means a bad reminder cannot suppress the day’s backlog
   // report. The two checks are independent and neither reads the other’s result.
   const triageBacklog = await runTriageBacklogCheck();
+  // Third for the same reason as the two above, and it matters most here: this is the check that
+  // exists to break a SILENCE. A feed that has gone dark announces itself nowhere else, so the one
+  // job that would notice must not be the one a throwing reminder loop skips.
+  const cvLifecycleLinkExpiry = await runCvLifecycleLinkExpiryCheck();
   try {
     const interviewReminders = await sendInterviewReminders();
-    return { ok: true, interviewReminders, staleSends, triageBacklog };
+    return { ok: true, cvLifecycleLinkExpiry, interviewReminders, staleSends, triageBacklog };
   } catch (error) {
     return {
       ok: false,
+      cvLifecycleLinkExpiry,
       interviewReminders: 0,
       staleSends,
       triageBacklog,
