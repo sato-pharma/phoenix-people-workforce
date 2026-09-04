@@ -30,6 +30,15 @@ import { readFileSync } from "node:fs";
  * Pinned by SHAPE rather than a byte window, and comments are stripped before reading: the prose
  * above and the component's own comment both spell `grid-cols-2`, and a test that matched its own
  * explanation would pin the anti-pattern (AGENTS.md §2.1).
+ *
+ * RE-POINTED 2026-09-04. The Medical Rep landing page was rebuilt and its "My Tools" grid — the
+ * grid this test was written for — became a full-width `<nav>` of rows, which is stricter than the
+ * rule rather than an escape from it. So the file now holds ONE tile grid ("My Workspace", four
+ * tiles) instead of two, and the old vacuity floors of six tiles and two grids started failing on
+ * a page that had got better. The floors are lowered to what the file actually holds, and the
+ * coverage they were guarding is replaced below by a check on the rep's list itself: turning it
+ * back into a phone-hostile grid fails here rather than on a phone. Deleting either half is what
+ * this comment exists to stop.
  */
 
 const CENTER = "src/components/employee-portal/portal-command-center.tsx";
@@ -77,14 +86,14 @@ export function runPortalToolsGridFitsAPhoneTests() {
   // Vacuity guards: this test is worthless if the file stopped matching what it reads.
   const tileCount = lines.filter((line) => line.includes("<PremiumNavTile")).length;
   assert.ok(
-    tileCount >= 6,
-    `${CENTER}: only ${tileCount} <PremiumNavTile> usages found (expected at least 6). The test ` +
-      `would pass vacuously — re-point it rather than lowering this floor.`,
+    tileCount >= 4,
+    `${CENTER}: only ${tileCount} <PremiumNavTile> usages found (expected at least 4, the four in ` +
+      `"My Workspace"). The test would pass vacuously — re-point it rather than lowering this floor.`,
   );
   assert.ok(
-    gridsByLine.size >= 2,
-    `${CENTER}: found ${gridsByLine.size} tile grid(s), expected at least 2 ("My Tools" and ` +
-      `"My Workspace"). One of them has stopped matching, so its column count is going unchecked.`,
+    gridsByLine.size >= 1,
+    `${CENTER}: found ${gridsByLine.size} tile grid(s), expected at least 1 ("My Workspace"). It ` +
+      `has stopped matching, so its column count is going unchecked.`,
   );
 
   for (const [line, classAttr] of gridsByLine) {
@@ -110,6 +119,29 @@ export function runPortalToolsGridFitsAPhoneTests() {
       `${where} — missing "sm:grid-cols-2". Single-column is right on a phone, but the tiles should ` +
         `still pair up from the "sm" breakpoint, which is what the "My Workspace" grid has always done.`,
     );
+  }
+
+  // The Medical Rep's own tool list, which replaced this file's second tile grid on 2026-09-04.
+  // Its longest label is "Outstation expenses", so it needs the full row exactly as a tile does.
+  const toolsRender = lines.findIndex((line) => line.includes("REP_TOOLS.map("));
+  assert.notEqual(
+    toolsRender,
+    -1,
+    `${CENTER}: REP_TOOLS is no longer rendered. That list is what replaced the second ` +
+      `<PremiumNavTile> grid on the Medical Rep landing page — re-point this test at whatever ` +
+      `renders the rep's tools now rather than dropping the check.`,
+  );
+  for (let j = toolsRender; j >= 0 && j > toolsRender - 12; j -= 1) {
+    const match = lines[j].match(/className="(grid [^"]*)"/);
+    if (!match) continue;
+    const tokens = tokensOf(match[1]);
+    assert.ok(
+      tokens.has("grid-cols-1") && !tokens.has("grid-cols-2"),
+      `${CENTER}:${j + 1}: "${match[1]}" — the rep's tool list is multi-column on a phone. Its ` +
+        `rows carry labels as long as "Outstation expenses", which cannot fit a 146px column at ` +
+        `320px any more than a tile could. Give them the full row, as the <nav> form does.`,
+    );
+    break;
   }
 
   // The remedies the golden rule forbids, scoped to the tile itself — the rest of this file holds

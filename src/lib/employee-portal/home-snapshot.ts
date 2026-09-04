@@ -1,6 +1,8 @@
 import { normalizeHrId, type AccessContext } from "@/lib/auth/permissions";
 import { canonicalHrIdForDisplay } from "@/lib/hr-id";
 import { queryVisitsLimited } from "@/lib/crm/reads";
+import { cairoTodayIso } from "@/lib/crm/dates";
+import { getKpisBoard } from "@/lib/crm/kpis-board";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { devSafePromiseAllSettled } from "@/lib/utils/dev-safe-promise-all";
 import { isReviewPeriod, windowLabel } from "@/lib/business-review/period-format";
@@ -177,6 +179,36 @@ export function salesWindowLabel(periods: readonly string[] | null | undefined):
 
 export type UpcomingMarketingActivity = { id: string; requestCode: string; payDate: string; estimatedCost: number };
 
+/**
+ * One rep's own row off the CRM KPI board, reduced to what the landing page prints.
+ *
+ * THE CALL RATE IS TWO NUMBERS, NEVER ONE. AM is scored against its own target and PM against its
+ * own, and nothing here — or downstream of here — may add or average the pair (owner, 2026-09-04).
+ * That is why there is no combined field to reach for.
+ */
+export type MrFieldKpis = {
+  monthLabel: string;
+  /** Doctors the plan names — the single denominator under BOTH plan percentages. */
+  plannedDoctors: number;
+  visitedDoctors: number;
+  missedDoctors: number;
+  /** Doctors seen at exactly the planned frequency — the numerator under frequencyPct, NOT coverage. */
+  onPlanDoctors: number;
+  coveragePct: number;
+  frequencyPct: number;
+  /** False when the rep has no planned doctors at all. He must not render as 0%. */
+  hasMeasurablePlan: boolean;
+  workingDays: number;
+  amVerified: number;
+  pmVerified: number;
+  amRate: number | null;
+  pmRate: number | null;
+  amTarget: number;
+  pmTarget: number;
+  /** False when the rep logged nothing in the window — distinct from a real zero rate. */
+  hasCallRate: boolean;
+};
+
 export type PortalHomeSnapshot = {
   shell: EmployeePortalShellData;
   role: string;
@@ -206,6 +238,15 @@ export type PortalHomeSnapshot = {
   mrSalesAchievement: { achievementPercent: number; salesValue: number; targetValue: number } | null;
   monthlySalesTrend: Array<{ year: number; month: number; achievementPercent: number; salesValue: number; targetValue: number }> | null;
   doubleVisitPulse: { daysSinceLastDv: number | null; dvsThisMonth: number; dvsLast90Days: number } | null;
+  /**
+   * This rep's own field KPIs for the running month, straight from the CRM KPI board rather than
+   * a second implementation of the same arithmetic — coverage, frequency and the AM/PM call rate.
+   *
+   * Null when the board could not answer. The two `has*` flags carry the difference between a real
+   * zero and no basis to score at all, which the tiles must render differently: a rep with no plan
+   * is NOT a 0% performer.
+   */
+  mrFieldKpis: MrFieldKpis | null;
   mrPendingExpenseCount: number | null;
   /** Product / Group Product Manager only: the PM's own marketing requests still in flight + upcoming pay dates. */
   pmMarketing: { myPendingRequests: number; upcoming: UpcomingMarketingActivity[] } | null;
@@ -626,6 +667,42 @@ export type MrHomeStats = {
   mrSalesAchievement: { achievementPercent: number; salesValue: number; targetValue: number } | null;
 };
 
+/**
+ * The rep's own KPI row, by asking the board that already owns this arithmetic.
+ *
+ * `getKpisBoard` resolves scope through `getDoctorCoverageScope`, and a medical rep's scope is
+ * himself, so the board comes back holding his single row. Matching is done on the hr id with BOTH
+ * sides lower-cased: production hr ids are mixed case, and a plain equality check silently
+ * under-returns.
+ */
+async function loadMrFieldKpis(access: AccessContext, hrId: string): Promise<MrFieldKpis | null> {
+  const todayIso = cairoTodayIso();
+  const board = await getKpisBoard({ access, month: todayIso.slice(0, 7), todayIso });
+  const wanted = hrId.toLowerCase();
+  const row =
+    board.reps.find((r) => (r.agentHrId ?? "").toLowerCase() === wanted) ??
+    (board.reps.length === 1 ? board.reps[0] : null);
+  if (!row) return null;
+  return {
+    monthLabel: board.monthLabel,
+    plannedDoctors: row.plannedDoctors,
+    visitedDoctors: row.visitedDoctors,
+    missedDoctors: row.missedDoctors,
+    onPlanDoctors: row.onPlanDoctors,
+    coveragePct: row.coveragePct,
+    frequencyPct: row.frequencyPct,
+    hasMeasurablePlan: row.hasMeasurablePlan,
+    workingDays: row.workingDays,
+    amVerified: row.amVerified,
+    pmVerified: row.pmVerified,
+    amRate: row.amRate,
+    pmRate: row.pmRate,
+    amTarget: board.amTarget,
+    pmTarget: board.pmTarget,
+    hasCallRate: row.hasCallRate,
+  };
+}
+
 export async function getMrHomeStats(
   access: AccessContext,
   shell: EmployeePortalShellData,
@@ -723,6 +800,8 @@ export async function getPortalHomeSnapshot(access: AccessContext): Promise<Port
 
   // One canonical load serves BOTH the hero and the 4-month trend — they are the same window.
   const mrSalesPromise = isMr && hrId ? loadMrCanonicalSales(hrId) : Promise.resolve(null);
+  const fieldKpisPromise: Promise<MrFieldKpis | null> =
+    isMr && hrId ? loadMrFieldKpis(access, hrId).catch(() => null) : Promise.resolve(null);
   const roleExtrasPromise = getRoleSpecificExtras(access, role, hrId);
   const dvFocusPromise: Promise<DoubleVisitPortalFocus | null> = DV_FOCUS_ROLES.has(role)
     ? getDoubleVisitPortalFocus(access).catch(() => null)
@@ -835,12 +914,16 @@ export async function getPortalHomeSnapshot(access: AccessContext): Promise<Port
   }
 
   // Await all MR + manager promises together (they've been in-flight since the start).
-  const [mrSalesResult, dvResult, expenseResult, managerPlanResult] = await Promise.allSettled([
+  const [mrSalesResult, dvResult, expenseResult, managerPlanResult, fieldKpisResult] = await Promise.allSettled([
     mrSalesPromise,
     dvPromise,
     expensePromise,
     managerPlanCountPromise,
+    fieldKpisPromise,
   ]);
+
+  const mrFieldKpis: PortalHomeSnapshot["mrFieldKpis"] =
+    fieldKpisResult.status === "fulfilled" ? fieldKpisResult.value : null;
 
   // Current-month achievement and the last 4 uploaded months — one canonical load, both shapes.
   const mrCanonical = mrSalesResult.status === "fulfilled" ? mrSalesResult.value : null;
@@ -921,6 +1004,7 @@ export async function getPortalHomeSnapshot(access: AccessContext): Promise<Port
     mrSalesAchievement,
     monthlySalesTrend,
     doubleVisitPulse,
+    mrFieldKpis,
     mrPendingExpenseCount,
     ...roleExtras,
     plansAwaitingManagerApproval,
