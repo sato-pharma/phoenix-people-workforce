@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 
+import { describeThrown } from "@/lib/error-monitor/describe-thrown";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
-import { withDeadMansSwitch } from "@/lib/observability/dead-mans-switch";
+import { pingDeadMansSwitch } from "@/lib/observability/dead-mans-switch";
 import { logError } from "@/lib/observability/log";
 import { runScheduledTerritorySync } from "@/lib/sales/territory/scheduled-sync";
 import { assertCronAuthorized } from "@/lib/security/cron-auth";
@@ -9,6 +10,9 @@ import { assertCronAuthorized } from "@/lib/security/cron-auth";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
+
+/** Healthchecks slug, `phoenix-<route>` like every other watched cron route. */
+const JOB_SLUG = "phoenix-territory-restamp";
 
 /**
  * Keep every OPEN period's Source-of-Sales geography correct, nightly.
@@ -36,12 +40,37 @@ export const maxDuration = 300;
  * so a steady-state night is one indexed scan (the read-only reconciliation over a full 12-month
  * window measured 1.19s). A rare heavy night can outrun the client cut; the work still completes
  * server-side in its single transaction, and the next night's run is a no-op confirming it.
+ *
+ * WHY THE PING IS EXPLICIT, AND WHY IT FIRES AT THE COMMIT RATHER THAN AT THE END.
+ * `withDeadMansSwitch` reports at the very END of the run, which put roughly 25 seconds of
+ * reporting tail — the reconciliation read, the cache invalidation, the audit write — between the
+ * commit and the ping. On 2026-09-04 the run committed at 03:20:00 Cairo and the production deploy
+ * of #3035 went live at 03:20:31, replacing the container mid-tail. The work had landed (7 periods
+ * carry that exact `refreshed_at`) but nothing reported it, so the register alerted "stranded —
+ * nothing has reported" every 15 minutes for 14 hours about a run that had done its job. With
+ * production deploying on every merge, that collision is routine, not freak.
+ *
+ * So success is reported the instant the re-stamp COMMITS, through the domain service's
+ * `onWorkCommitted` hook. `reportSuccessOnce` also covers the skip path, which commits nothing and
+ * so never fires the hook: a night on which every period is published is a healthy run, not a
+ * silent one. A later failure in the tail still pings "fail" on top — `recordJobHeartbeat` writes
+ * only the timestamp for the outcome it is given, so `last_success_at` survives and the register
+ * says what is true: the re-stamp landed, the tail did not.
  */
 export async function GET(request: Request) {
   const denied = assertCronAuthorized(request, "cron/territory-restamp");
   if (denied) return denied;
+
+  let reportedSuccess = false;
+  const reportSuccessOnce = async () => {
+    if (reportedSuccess) return;
+    reportedSuccess = true;
+    await pingDeadMansSwitch(JOB_SLUG, "success");
+  };
+
   try {
-    const result = await withDeadMansSwitch("phoenix-territory-restamp", () => runScheduledTerritorySync());
+    const result = await runScheduledTerritorySync({ onWorkCommitted: reportSuccessOnce });
+    await reportSuccessOnce();
     return NextResponse.json({
       success: true,
       restampedRows: result.restampedRows,
@@ -58,6 +87,7 @@ export async function GET(request: Request) {
       labels: { event: "cron_failed", job: "territory-restamp" },
       error,
     });
+    await pingDeadMansSwitch(JOB_SLUG, "fail", describeThrown(error));
     const message = clientSafeErrorMessage(error, "Territory re-stamp failed.");
     return NextResponse.json({ error: "territory_restamp_failed", message }, { status: 500 });
   }

@@ -127,6 +127,12 @@ export function parseReconciliationRow(row: RawReconciliationRow): TerritorySync
 export async function syncTerritoryData(input: {
   periods: string[];
   actorLoginId: string;
+  /**
+   * Called once the re-stamp transaction has COMMITTED, before the reconciliation read and the
+   * audit write. Optional, and the human Sync button deliberately passes nothing — only the
+   * scheduled run has a liveness register to answer to. See the call site for why it exists.
+   */
+  onWorkCommitted?: () => Promise<void> | void;
 }): Promise<TerritorySyncReport> {
   const startedAt = Date.now();
   const periods = input.periods;
@@ -147,6 +153,32 @@ export async function syncTerritoryData(input: {
     | undefined;
   const restampedRows = toNumber(runRow?.restamped_rows);
   const refreshedBatches = toNumber(runRow?.refreshed_batches);
+
+  // THE DURABLE WORK IS NOW COMMITTED. Everything below this line — the reconciliation read, the
+  // cache invalidation, the audit row — is reporting ABOUT work that has already landed.
+  //
+  // On 2026-09-04 that distinction cost this job its heartbeat. The nightly re-stamp committed at
+  // 03:20:00 Cairo (7 periods' attribution rollups carry that exact `refreshed_at`), and the
+  // production deploy of #3035 went live 31 seconds later and replaced the container. Nothing
+  // below ever ran: no audit row, no ping. The register then reported "stranded — nothing has
+  // reported" every 15 minutes for 14 hours, about a run that had done its job correctly.
+  //
+  // The tail is not fast enough to be safe on its own — the run measured 24.3s on 2026-09-03
+  // against cron-job.org's hard 30s cap — and production deploys land on every merge. So the
+  // caller reports success HERE, at the earliest instant the claim is true, instead of after a
+  // tail any routine deploy can cut.
+  //
+  // AWAITED, not fire-and-forget: an unawaited promise is exactly as orphanable as the tail it
+  // replaces. Wrapped, because a reporting failure must never turn a committed sync into a failed
+  // one — `pingDeadMansSwitch` already swallows its own errors, and this is the belt to that brace.
+  if (input.onWorkCommitted) {
+    try {
+      await input.onWorkCommitted();
+    } catch {
+      // Intentionally silent: this catch exists so the sync's own result survives a broken
+      // reporter, and logging from here could fail for the very reason the callback did.
+    }
+  }
 
   const supabase = getSupabaseAdmin();
 
