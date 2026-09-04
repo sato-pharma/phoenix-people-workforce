@@ -200,9 +200,22 @@ export function ScreeningWorkstation({
     });
   }, [queue, rows, search, vacancyId]);
 
+  // FROM THE VISIBLE LIST, not from every row the server sent.
+  //
+  // This searched `rows`, which is the whole server-filtered pool — so a selection the CLIENT
+  // narrowing had hidden was still "selected": the list rendered its empty state while the pane
+  // beside it showed a candidate, with a live Shortlist / Reject / Send-to-manager header for
+  // somebody not in the pile being looked at. `queue` defaults to "new" and the correcting effect
+  // below deliberately bails on an empty list, so "Interviews today" — 0 in production, and
+  // structurally 0 while no interview carries a scheduled_at — reproduced it in one click.
+  //
+  // Only the DERIVED value changes. `selectedId` is still remembered, so switching to an empty pile
+  // blanks the pane and switching back restores the same CV; the reader never loses their place for
+  // having looked. That is also what the comment further down has always claimed this does: "a
+  // selection that has dropped out of the list is not a selection".
   const selected = useMemo(
-    () => rows.find((row) => row.id === selectedId) ?? null,
-    [rows, selectedId],
+    () => visible.find((row) => row.id === selectedId) ?? null,
+    [visible, selectedId],
   );
 
   // The selection follows the list only when the list has moved out from under it. Re-selecting on
@@ -300,6 +313,9 @@ export function ScreeningWorkstation({
 
   const decide = useCallback(
     async (status: CandidateStatus, note: string | null) => {
+      // `selected`, not `selectedId`: a decision must never land on a candidate the list in front of
+      // the reader is not showing. `selected` is null exactly when that is the case.
+      const selectedId = selected?.id;
       if (!selectedId || busy) return;
       setBusy(true);
       setActionError(null);
@@ -321,8 +337,18 @@ export function ScreeningWorkstation({
         setBusy(false);
       }
     },
-    [busy, goToNext, selectedId],
+    [busy, goToNext, selected],
   );
+
+  /**
+   * Every (candidate, manager) this session has already confirmed a send for.
+   *
+   * A ref, not state: nothing renders from it, and it must not be reset by a re-render mid-send. It
+   * lives for the life of the page, so a genuine re-send is a reload — deliberately, because the
+   * accident it prevents (a manager notified twice about one CV) is not recallable and the case it
+   * blocks is rare.
+   */
+  const sentPairs = useRef<Set<string>>(new Set());
 
   /**
    * Send this CV to everyone chosen — one request per manager, in sequence.
@@ -335,9 +361,30 @@ export function ScreeningWorkstation({
    * PARTIAL SUCCESS IS REPORTED AS PARTIAL. Three sends where the second fails must not read as
    * "sent" and must not read as "failed" — the second lie would have a recruiter re-send to the two
    * managers who already have it.
+   *
+   * AND A SECOND PRESS DOES NOT SEND IT TWICE. The only guard used to be `busy`, which is false again
+   * the moment the last request returns — and nothing cleared the picker, so the panel came back
+   * enabled with the same managers still selected. One more click was a second REAL notification:
+   * the alert's idempotency key is built from the send timestamp (candidateAlertIdempotencyKey), so
+   * it does not dedupe, and a manager was told twice about the same CV.
+   *
+   * Guarded per (candidate, manager) rather than by clearing the picker, because the picker holding
+   * its selection across candidates is the batch workflow — screening a pile for one seat and
+   * sending each one as you go. Clearing it would have fixed the double press by breaking that.
    */
   const send = useCallback(async () => {
+    // Same rule as `decide`: never send a CV the visible list is not showing.
+    const selectedId = selected?.id;
     if (!selectedId || busy || sendState.managerHrIds.length === 0) return;
+    // Everyone selected has already had this CV in this session — the shape of a double press.
+    const targets = sendState.managerHrIds.filter((hrId) => !sentPairs.current.has(`${selectedId}:${hrId}`));
+    if (targets.length === 0) {
+      const names = sendState.managerHrIds
+        .map((hrId) => hiringManagers.find((manager) => manager.hrId === hrId)?.name ?? "that manager")
+        .join(", ");
+      setActionError(`This CV has already gone to ${names}. Reload the page to send it again.`);
+      return;
+    }
     setBusy(true);
     setActionError(null);
     // A picked vacancy sends only its ID — the server reads the seat back and stamps that, so the
@@ -351,7 +398,7 @@ export function ScreeningWorkstation({
           : {};
     const sent: string[] = [];
     const failed: string[] = [];
-    for (const managerHrId of sendState.managerHrIds) {
+    for (const managerHrId of targets) {
       const localName = hiringManagers.find((manager) => manager.hrId === managerHrId)?.name ?? "that manager";
       try {
         const res = await fetch(`/api/recruitment/candidates/${selectedId}/notify-manager`, {
@@ -361,6 +408,9 @@ export function ScreeningWorkstation({
         });
         const data = (await res.json().catch(() => ({}))) as { result?: { managerName?: string }; message?: string };
         if (!res.ok) throw new Error(data.message ?? `Could not send this CV to ${localName}.`);
+        // Recorded only on a CONFIRMED send. A failure must stay retryable — marking the pair here
+        // regardless would turn one network blip into a CV nobody can ever send to that manager.
+        sentPairs.current.add(`${selectedId}:${managerHrId}`);
         // The name the SERVER confirmed — it is the thing that knows who was actually told, and no
         // raw HR_ID ever reaches a person.
         sent.push(data.result?.managerName ?? localName);
@@ -371,7 +421,7 @@ export function ScreeningWorkstation({
     if (sent.length > 0) setSentInSession((prev) => ({ ...prev, [selectedId]: sent.join(", ") }));
     if (failed.length > 0) setActionError(`Could not send this CV to ${failed.join(", ")}.`);
     setBusy(false);
-  }, [busy, hiringManagers, selectedId, sendState]);
+  }, [busy, hiringManagers, selected, sendState]);
 
   const suggestedVacancyIds = selected?.vacancyIds ?? [];
 
@@ -563,8 +613,10 @@ export function ScreeningWorkstation({
               noteCount={selected ? (noteCounts[selected.id] ?? selected.noteCount) : 0}
               onCollapse={() => setPanelOpen(false)}
               onNoteCountChange={(count) => {
-                if (!selectedId) return;
-                setNoteCounts((prev) => ({ ...prev, [selectedId]: count }));
+                // Keyed on the VISIBLE selection, like every other write on this screen — the panel
+                // is fed from `selected`, so counting a note against anything else is impossible.
+                if (!selected) return;
+                setNoteCounts((prev) => ({ ...prev, [selected.id]: count }));
               }}
               onTabChange={setTab}
               tab={tab}

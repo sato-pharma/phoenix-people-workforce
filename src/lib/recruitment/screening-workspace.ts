@@ -42,7 +42,6 @@ import { candidateRowAppliedFor } from "@/lib/recruitment/applied-for";
 import { candidateScreeningFacts, formatYearsOfExperience } from "@/lib/recruitment/candidate-screening-facts";
 import { describeForOrder } from "@/lib/recruitment/screening-describe";
 import { duplicateSets, orderForScreening, screeningBand } from "@/lib/recruitment/screening-order";
-import { isAfter, listLatestSendsByCandidate, managerSendStamp } from "@/lib/recruitment/manager-sends";
 import { isFiledCandidate } from "@/lib/recruitment/candidate-folder";
 import { listCandidateIdsWithInterviewToday } from "@/lib/recruitment/interviews";
 import { listCandidateViews } from "@/lib/recruitment/candidate-views";
@@ -210,42 +209,12 @@ export async function loadScreeningWorkspace(
   // `filteredOut` is counted, so that number means the filters and never the archive.
   const pool = allCandidates.filter((candidate) => !isFiledCandidate(candidate));
 
-  const candidateIds = pool.map((candidate) => candidate.id);
-  // Together, not in sequence — neither reads the other, and this page already waits on one
-  // Atlantic round trip more than it should.
-  const [comments, latestSends] = await Promise.all([
-    summarizeCommentsByCandidate(candidateIds),
-    listLatestSendsByCandidate(candidateIds),
-  ]);
-
-  // ── THE SEND TRAIL WINS WHEN IT IS NEWER ────────────────────────────────────────────────────────
-  //
-  // `manager_notified_*` on the candidate row is the pre-2026-08-30 single-manager record: it holds
-  // whoever was sent the CV LAST, it is overwritten by the next send, and production carries rows
-  // where it disagrees with the fan-out table or is missing entirely. Reading it alone is what put
-  // a CV that went to Saad Salama on 31 Aug outside the Manager-feedback pile that exists to chase
-  // it — see listLatestSendsByCandidate for both live cases.
-  //
-  // OVERLAID HERE, ON THE CANDIDATE, rather than in `rowFor`, because `matchesScreeningNarrowing`
-  // reads `candidate.managerNotified` too. Patching only the row would leave the `?sent=1` /
-  // `?unsent=1` filters answering from the old column while the list beside them answered from the
-  // new one — one screen, two truths, and no way to tell from it which is right.
-  //
-  // BOTH HALVES MOVE TOGETHER. `sentFor` describes the seat the CV was sent FOR, so carrying the
-  // old row's position onto a newer send would file it under a folder nobody chose for it.
-  //
-  // A null map means the table is not in this database yet, and then the old columns stand — which
-  // is exactly how this page behaved before the fan-out existed.
-  if (latestSends) {
-    for (const candidate of pool) {
-      const send = latestSends.get(candidate.id);
-      if (!send) continue;
-      if (!isAfter(send.sentAt, candidate.managerNotified?.sentAt ?? null)) continue;
-      const stamp = managerSendStamp(send);
-      candidate.managerNotified = stamp.managerNotified;
-      candidate.sentFor = stamp.sentFor;
-    }
-  }
+  // WHO HAS THIS CV is already resolved — listCandidates overlays the send trail onto every
+  // candidate it returns, so `managerNotified` and `sentFor` are the newest of (row stamp, send
+  // trail) before this function sees them. This loader used to do that overlay itself, which meant
+  // the pool and this page answered "was it sent, and to whom" from different sources. One rule,
+  // one place: src/lib/recruitment/candidates.ts.
+  const comments = await summarizeCommentsByCandidate(pool.map((candidate) => candidate.id));
 
   // Stamped once. This is a `force-dynamic` page, so one `Date.now()` here is the same instant every
   // "how recently" question is measured against — a second reading mid-loop would let two rows on
