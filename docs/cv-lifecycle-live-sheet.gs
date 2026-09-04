@@ -88,7 +88,7 @@ var TZ = 'Africa/Cairo';
  * feed's COLUMNS. A sheet that silently keeps the previous design is indistinguishable from one
  * where the update failed.
  */
-var LAYOUT_VERSION = 'v7-phoenix';
+var LAYOUT_VERSION = 'v8-phoenix';
 
 var TAB_SUMMARY = 'Summary';
 var TAB_DAILY = 'Daily Dashboard';
@@ -1417,6 +1417,13 @@ function buildDailyChart_(sheet, cols) {
     // Day, then the three channel columns — not the totals, which would double the height of every
     // bar and hide the split the chart exists to show.
     .addRange(sheet.getRange(DAILY_HEADER_ROW, 1, FIXED_RANGE_ROWS + 1, 4))
+    // WITHOUT THIS THE LEGEND IS THREE COLOURED SQUARES NAMING NOTHING.
+    //
+    // The range starts on the header row, but a chart does not assume that — left to guess, it
+    // took row 4 as data and the three series came out unnamed. A legend that names nothing is
+    // worse than no legend: the reader can see that WhatsApp, Email and by-hand are different
+    // colours, and cannot tell which is which.
+    .setNumHeaders(1)
     // Anchored two columns PAST the table rather than above it. A chart placed above the data has
     // to have rows reserved under it, and reserved rows are indistinguishable from a broken sheet.
     .setPosition(DAILY_HEADER_ROW, cols + 2, 0, 0)
@@ -1426,7 +1433,14 @@ function buildDailyChart_(sheet, cols) {
     .setOption('height', 300)
     .setOption('width', 1000)
     .setOption('colors', [C_WHATSAPP, C_EMAIL, C_HAND])
-    .setOption('hAxis', { title: 'Day (Cairo)', slantedText: true, slantedTextAngle: 45 })
+    // The cells read "Fri 24 Jul 2026", which is right in the table and far too long for an axis
+    // slot — every label came out clipped mid-word. The chart carries its own shorter format.
+    .setOption('hAxis', {
+      title: 'Day (Cairo)',
+      slantedText: true,
+      slantedTextAngle: 45,
+      format: 'dd MMM'
+    })
     .setOption('vAxis', { title: 'CVs', minValue: 0 })
     .build();
   sheet.insertChart(chart);
