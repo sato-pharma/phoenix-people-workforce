@@ -130,11 +130,24 @@ export function runSidebarLabelFontSyncTests() {
     {
       shell: "admin",
       file: ADMIN_RAIL,
-      // EVERY label <span>, not just the first. sidebar.tsx renders two — the flat NavRow and the
-      // nested one — carrying byte-identical classes today. Matching only the first would let them
-      // drift apart silently, which is the same shape of gap this whole test exists to close.
-      find: (src: string) =>
-        src.split("\n").filter((l) => l.includes("min-w-0 flex-1 truncate text-phx-")),
+      // The nav row's label span carries NO size or weight of its own — only tracking. Both come
+      // from the enclosing <Link> (`text-phx-md font-semibold`), so the effective type has to be
+      // resolved the way CSS resolves it, by pairing the span with that Link.
+      //
+      // This matcher used to require `text-phx-` ON the span line, which selected the two spans
+      // that DO carry it — the section heading and the search-result row, both `font-bold` — and
+      // never the nav row at all. That is how the model came to say 700 while every rail row
+      // shipped at 600: the guard was green because it was comparing the model against a
+      // different element. Requiring the ABSENCE of `text-phx-` is what picks the inheriting row.
+      find: (src: string) => {
+        const lines = src.split("\n");
+        const link = lines.find(
+          (l) => l.includes("relative flex w-full items-center") && l.includes("text-phx-"),
+        );
+        return lines
+          .filter((l) => l.includes("min-w-0 flex-1 truncate") && !l.includes("text-phx-"))
+          .map((span) => `${link ?? ""} ${span}`);
+      },
       modelled: metrics.match(/LABEL_FONT_CSS\s*=\s*`font-size:(\d+)px;font-weight:(\d+)/),
     },
     {
