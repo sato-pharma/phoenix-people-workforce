@@ -1188,6 +1188,7 @@ import { runAutoloadFootprintBudgetTests } from "./autoload-footprint-budget.tes
 import { runRepoDoctorUnpushedCommitsTests } from "./repo-doctor-unpushed-commits.test.ts";
 import { runRepoDoctorArchiveRefsTests, runStrandedArchiveCases } from "./repo-doctor-archive-refs.test.ts";
 
+import { runCvExtractionNulByteTests } from "./cv-extraction-nul-bytes.test.ts";
 import { runCvRereadAppliesWhatItReadsTests } from "./cv-reread-applies-what-it-reads.test.ts";
 import { runCandidateNameFromCvTests } from "./candidate-name-from-cv.test.ts";
 import { runLegacyDocCvTests } from "./recruitment-legacy-doc-cv.test.ts";
@@ -3751,6 +3752,12 @@ await runTest(
 await runTest(
   "CV re-read applies what it reads (every extraction persister also writes to the candidate)",
   runCvRereadAppliesWhatItReadsTests,
+);
+
+await runTest(
+  "CV extraction NUL bytes (a U+0000 in a CV cannot reach jsonb — Postgres 22P05 loses the whole "
+    + "read and leaves the candidate unreadable forever)",
+  runCvExtractionNulByteTests,
 );
 
 await runTest(
