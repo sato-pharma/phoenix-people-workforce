@@ -299,7 +299,8 @@ export async function listSendsForCandidate(candidateId: string): Promise<Manage
  * answers "where is this CV now, and how long has it been there". The full trail is
  * `listSendsForCandidate`, which the timeline already renders.
  *
- * Batched through chunkIds because the id list is the whole live pool (744 on 2026-09-05) — see
+ * Batched through chunkIds because the id list is the whole live pool — the 597 UNFILED candidates
+ * on 2026-09-05, not the 744 rows in the table, since the shelf is taken off before this runs — see
  * db-batch.ts for why an unbatched `.in()` fails as a fetch error that names neither the query nor
  * its size.
  *

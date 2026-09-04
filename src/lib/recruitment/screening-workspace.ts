@@ -231,8 +231,20 @@ export async function loadScreeningWorkspace(
   // `?unsent=1` filters answering from the old column while the list beside them answered from the
   // new one — one screen, two truths, and no way to tell from it which is right.
   //
-  // BOTH HALVES MOVE TOGETHER. `sentFor` describes the seat the CV was sent FOR, so carrying the
-  // old row's position onto a newer send would file it under a folder nobody chose for it.
+  // THE POSITION MOVES ONLY WHEN THE NEWER SEND ACTUALLY HAS ONE.
+  //
+  // This read `candidate.sentFor = stamp.sentFor` unconditionally, on the argument that carrying an
+  // old position onto a newer send files it under a folder nobody chose. That is right when the new
+  // send names a seat and wrong when it names none: a third of the sends in production (24 of 72 on
+  // 2026-09-05) carry no position at all, and for those the assignment did not move the seat, it
+  // ERASED one — taking the row's "sent for" label and its `sentForVacancyId` with it, which then
+  // drops the row out of its vacancy pile and back into fuzzy place-matching.
+  //
+  // The authority is `hiring-manager-notify.ts`: it builds `position = input.position ? {…} : {}`,
+  // so a position-less send omits the `sent_for_*` columns from its update entirely and the previous
+  // ones STAND. The database therefore holds "newest manager, last recorded seat" — Mohamed Ramadan
+  // Khalaf is the live case, sent to Dr Anwar Gaweesh with no position over an earlier District
+  // Sales Manager send. Nulling here would have made this screen disagree with the row it reads.
   //
   // A null map means the table is not in this database yet, and then the old columns stand — which
   // is exactly how this page behaved before the fan-out existed.
@@ -243,7 +255,7 @@ export async function loadScreeningWorkspace(
       if (!isAfter(send.sentAt, candidate.managerNotified?.sentAt ?? null)) continue;
       const stamp = managerSendStamp(send);
       candidate.managerNotified = stamp.managerNotified;
-      candidate.sentFor = stamp.sentFor;
+      if (stamp.sentFor) candidate.sentFor = stamp.sentFor;
     }
   }
 

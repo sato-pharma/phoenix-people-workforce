@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 
 import {
@@ -666,8 +666,11 @@ export async function runRecruitmentScreeningPageTests() {
       `screening-filter must not import ${forbidden} — it is the half that has to stay testable`,
     );
   }
+  // Pinned on screening-workspace.ts, the loader the page actually calls. It named screening-queue.ts
+  // until 2026-09-05, which had had no callers since the workstation shipped — so "the loader uses
+  // the shared rule" was being proved about a file nothing ran.
   assert.match(
-    read("src/lib/recruitment/screening-queue.ts"),
+    read("src/lib/recruitment/screening-workspace.ts"),
     /from "@\/lib\/recruitment\/screening-filter"/,
     "the loader must USE that rule rather than keeping a second copy of it",
   );
@@ -813,13 +816,24 @@ export async function runRecruitmentScreeningPageTests() {
     overlayAt < narrowAt,
     "the send trail must be overlaid before the filters read managerNotified",
   );
-  // Only WHITESPACE may precede it. The first cut of this pin was a bare match, so commenting the
-  // line out left it green — it was pinning the words, not the statement. That is the same mistake
-  // section 7's `transform: scale` pin already records, in a different disguise.
+  // THE SEAT MOVES ONLY WHEN THE NEWER SEND HAS ONE, and the guard is the whole assertion.
+  //
+  // This pinned the UNGUARDED `candidate.sentFor = stamp.sentFor`, on the argument that carrying an
+  // old position onto a newer send files it under a folder nobody chose. True when the new send
+  // names a seat; the reverse when it names none — and 24 of the 72 sends in production carry no
+  // position, so for those the assignment did not move the seat, it ERASED one, taking the row's
+  // "sent for" label and its vacancy attribution with it.
+  //
+  // `hiring-manager-notify.ts` is the authority: `position = input.position ? {…} : {}`, so a
+  // position-less send omits the sent_for_* columns and the previous ones STAND. Without this guard
+  // the screen contradicts the row it is reading.
+  //
+  // Only WHITESPACE may precede it. An earlier cut of this pin was a bare match, so commenting the
+  // line out left it green — it was pinning the words, not the statement.
   assert.match(
     workspace,
-    /\n[ \t]*candidate\.sentFor = stamp\.sentFor;/,
-    "the seat must move with the send — carrying the old position onto a newer send files it under a folder nobody chose",
+    /\n[ \t]*if \(stamp\.sentFor\) candidate\.sentFor = stamp\.sentFor;/,
+    "a newer send with NO position must not erase the seat an earlier one recorded",
   );
 
   // ── 9 · The pool read leaves the repeating CV blocks behind ────────────────
@@ -939,5 +953,43 @@ export async function runRecruitmentScreeningPageTests() {
     comments,
     /index \+= \d+/,
     "a hand-rolled batch size is a second copy of a number that already has an owner in db-batch.ts",
+  );
+
+  // ── 13 · A second press must not notify the manager twice ─────────────────
+  //
+  // The only guard was `busy`, which goes false the moment the last request returns, and nothing
+  // cleared the picker — so the panel came back enabled with the same managers still selected. A
+  // second click was a second REAL notification: candidateAlertIdempotencyKey is built from the send
+  // timestamp, so it does not dedupe, and a manager was told twice about one CV.
+  //
+  // Guarded per (candidate, manager) rather than by clearing the picker, because the picker keeping
+  // its selection across candidates IS the batch workflow — screening a pile for one seat. Clearing
+  // it would have fixed the double press by breaking that.
+  const workstation = read("src/components/recruitment/workstation/screening-workstation.tsx");
+  const guardAt = workstation.indexOf("sentPairs.current.has(");
+  const recordAt = workstation.indexOf("sentPairs.current.add(");
+  const confirmAt = workstation.indexOf("if (!res.ok) throw new Error(data.message");
+  assert.ok(guardAt >= 0, "the send must skip managers this CV already reached in this session");
+  assert.ok(recordAt >= 0, "a confirmed send must be recorded so the next press can see it");
+  assert.ok(confirmAt >= 0, "the send must still check res.ok before believing it succeeded");
+  // RECORDED ONLY AFTER THE RESPONSE IS BELIEVED. Marking the pair before the ok-check would turn
+  // one network blip into a CV that can never be sent to that manager again without a reload.
+  assert.ok(
+    confirmAt < recordAt,
+    "the pair must be recorded AFTER the response is confirmed, so a failed send stays retryable",
+  );
+  // The guard runs before any request goes out, not inside the loop.
+  assert.ok(guardAt < confirmAt, "the already-sent check must run before the first request");
+
+  // ── 14 · The dead loader is gone, and its pins moved to the live one ──────
+  //
+  // screening-queue.ts had no callers from the day the workstation shipped (2026-09-04), but two
+  // invariants were still pinned ON it — including "the loader must judge seen-ness from the
+  // caller's own view map", which is a PRIVACY property. screening-workspace.ts carried the
+  // identical line and nothing tested it, so the guarantee was being proved about a file that never
+  // ran. Deleted 2026-09-05; both pins now name the loader the page actually calls.
+  assert.ok(
+    !existsSync(path.join(process.cwd(), "src/lib/recruitment/screening-queue.ts")),
+    "screening-queue.ts is the dead loader — do not bring it back; screening-workspace.ts is the live one",
   );
 }

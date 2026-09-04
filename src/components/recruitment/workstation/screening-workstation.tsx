@@ -325,6 +325,16 @@ export function ScreeningWorkstation({
   );
 
   /**
+   * Every (candidate, manager) this session has already confirmed a send for.
+   *
+   * A ref, not state: nothing renders from it, and it must not be reset by a re-render mid-send. It
+   * lives for the life of the page, so a genuine re-send is a reload — deliberately, because the
+   * accident it prevents (a manager notified twice about one CV) is not recallable and the case it
+   * blocks is rare.
+   */
+  const sentPairs = useRef<Set<string>>(new Set());
+
+  /**
    * Send this CV to everyone chosen — one request per manager, in sequence.
    *
    * The route notifies ONE manager and stamps the candidate for that manager, which is the right
@@ -335,9 +345,28 @@ export function ScreeningWorkstation({
    * PARTIAL SUCCESS IS REPORTED AS PARTIAL. Three sends where the second fails must not read as
    * "sent" and must not read as "failed" — the second lie would have a recruiter re-send to the two
    * managers who already have it.
+   *
+   * AND A SECOND PRESS DOES NOT SEND IT TWICE. The only guard used to be `busy`, which is false again
+   * the moment the last request returns — and nothing cleared the picker, so the panel came back
+   * enabled with the same managers still selected. One more click was a second REAL notification:
+   * the alert's idempotency key is built from the send timestamp (candidateAlertIdempotencyKey), so
+   * it does not dedupe, and a manager was told twice about the same CV.
+   *
+   * Guarded per (candidate, manager) rather than by clearing the picker, because the picker holding
+   * its selection across candidates is the batch workflow — screening a pile for one seat and
+   * sending each one as you go. Clearing it would have fixed the double press by breaking that.
    */
   const send = useCallback(async () => {
     if (!selectedId || busy || sendState.managerHrIds.length === 0) return;
+    // Everyone selected has already had this CV in this session — the shape of a double press.
+    const targets = sendState.managerHrIds.filter((hrId) => !sentPairs.current.has(`${selectedId}:${hrId}`));
+    if (targets.length === 0) {
+      const names = sendState.managerHrIds
+        .map((hrId) => hiringManagers.find((manager) => manager.hrId === hrId)?.name ?? "that manager")
+        .join(", ");
+      setActionError(`This CV has already gone to ${names}. Reload the page to send it again.`);
+      return;
+    }
     setBusy(true);
     setActionError(null);
     // A picked vacancy sends only its ID — the server reads the seat back and stamps that, so the
@@ -351,7 +380,7 @@ export function ScreeningWorkstation({
           : {};
     const sent: string[] = [];
     const failed: string[] = [];
-    for (const managerHrId of sendState.managerHrIds) {
+    for (const managerHrId of targets) {
       const localName = hiringManagers.find((manager) => manager.hrId === managerHrId)?.name ?? "that manager";
       try {
         const res = await fetch(`/api/recruitment/candidates/${selectedId}/notify-manager`, {
@@ -361,6 +390,9 @@ export function ScreeningWorkstation({
         });
         const data = (await res.json().catch(() => ({}))) as { result?: { managerName?: string }; message?: string };
         if (!res.ok) throw new Error(data.message ?? `Could not send this CV to ${localName}.`);
+        // Recorded only on a CONFIRMED send. A failure must stay retryable — marking the pair here
+        // regardless would turn one network blip into a CV nobody can ever send to that manager.
+        sentPairs.current.add(`${selectedId}:${managerHrId}`);
         // The name the SERVER confirmed — it is the thing that knows who was actually told, and no
         // raw HR_ID ever reaches a person.
         sent.push(data.result?.managerName ?? localName);
