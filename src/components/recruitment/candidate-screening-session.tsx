@@ -48,13 +48,25 @@ import { candidateDisplayName } from "@/lib/recruitment/candidate-display";
 import { candidateRowAppliedFor } from "@/lib/recruitment/applied-for";
 import { candidateScreeningFacts, candidateScreeningRoleFamily } from "@/lib/recruitment/candidate-screening-facts";
 import type { CandidateView, CandidateViewMap } from "@/lib/recruitment/candidate-views";
+import { normalizePhone } from "@/lib/recruitment/candidate-matching";
+import {
+  candidateRegionCodes,
+  candidateRegionForGovernorate,
+  candidateRegionLabels,
+  type CandidateRegionCode,
+} from "@/lib/recruitment/candidate-region";
 import {
   countByBand,
+  countByRegion,
+  duplicateSets,
+  filterByRegion,
+  NO_REGION,
   orderForScreening,
   screeningBand,
   screeningBandDescriptions,
   screeningBandLabels,
   type ScreeningOrderInput,
+  type ScreeningRegionKey,
 } from "@/lib/recruitment/screening-order";
 import {
   candidateStatusLabels,
@@ -88,6 +100,23 @@ const bandChipClass: Record<ReturnType<typeof screeningBand>, string> = {
 };
 
 /**
+ * Where a candidate is, for the region filter — what they SAID first, then what the CV shows.
+ *
+ * The stated preference wins because it is an answer to our own question, while a governorate is
+ * wherever they happen to live: a Beni Suef pharmacist who asked for Cairo is a Cairo candidate.
+ * Same precedence the Drive filing uses.
+ *
+ * Only the two PURE readers are used. The free-text address reader would place 8 more of the 534
+ * undecided rows and would pull the whole Egypt place vocabulary into this bundle to do it; those
+ * eight land under "Region not on the CV", which is true rather than merely convenient.
+ */
+function screeningRegionOf(candidate: Candidate): CandidateRegionCode | null {
+  const stated = String(candidate.preferredRegionCode ?? "").trim().toUpperCase();
+  if ((candidateRegionCodes as readonly string[]).includes(stated)) return stated as CandidateRegionCode;
+  return candidateRegionForGovernorate(candidate.governorate);
+}
+
+/**
  * What the ordering needs to know about one candidate, resolved through the SAME functions the row
  * and the Role filter use — so the queue cannot disagree with the table about who someone is.
  */
@@ -95,11 +124,17 @@ function describeForOrder(candidate: Candidate): ScreeningOrderInput {
   const facts = candidateScreeningFacts(candidate);
   return {
     createdAt: candidate.createdAt,
+    // The phone, normalized by the SAME function the intake dedupe uses. It groups; it never
+    // merges — `candidate-matching.ts` stopped matching on phone in August precisely because it
+    // merged three different applicants into one record, and this must not walk that back.
+    duplicateKey: normalizePhone(candidate.phone ?? candidate.whatsapp),
     family: candidateScreeningRoleFamily(facts, candidateRowAppliedFor(candidate).text),
     hasPharmaExperience: facts.pharmaRep?.value ?? null,
     // A file the extractor already judged not to be a CV is a settled answer, not an open question,
     // so it goes to the back rather than sitting among the ones only a person can read.
     notACv: candidate.notACv,
+    region: screeningRegionOf(candidate),
+    yearsExperience: candidate.yearsExperience,
   };
 }
 
@@ -289,8 +324,39 @@ export function CandidateScreeningSession({
   // rather than a live view. They move on the next load, which is where a re-sort belongs.
   const cvTabQueues = useMemo(() => partitionCandidatesByRedFlag(candidates), [candidates]);
   const [cvTab, setCvTab] = useState<CandidateCvTab>(initialCvTab);
-  const queue = useMemo(() => orderForScreening(cvTabQueues[cvTab], describeForOrder), [cvTabQueues, cvTab]);
+
+  // Which region the screener is working through, or null for all of them. Held here rather than in
+  // the URL because it is a decision about this sitting, not a place to come back to.
+  const [region, setRegion] = useState<ScreeningRegionKey | null>(null);
+
+  // Counted over the WHOLE tab, never the filtered view, so the numbers on the chips do not move
+  // under the reader's hand as they narrow.
+  const regionCounts = useMemo(() => countByRegion(cvTabQueues[cvTab], describeForOrder), [cvTabQueues, cvTab]);
+  const queue = useMemo(
+    () => orderForScreening(filterByRegion(cvTabQueues[cvTab], describeForOrder, region), describeForOrder),
+    [cvTabQueues, cvTab, region],
+  );
   const bands = useMemo(() => countByBand(cvTabQueues[cvTab], describeForOrder), [cvTabQueues, cvTab]);
+
+  // The near-duplicate sets, over the whole tab. A CV whose twin the region filter hid is still a
+  // CV with a twin, and telling the screener otherwise would be the filter changing a fact.
+  const twins = useMemo(() => duplicateSets(cvTabQueues[cvTab], describeForOrder), [cvTabQueues, cvTab]);
+
+  /**
+   * The chips, in the company's own region order, and only the ones that have somebody in them.
+   *
+   * "Region not on the CV" sorts LAST but is always offered when it has anybody: it is 73 of the 534
+   * undecided rows, and a filter that cannot reach them would make those people unscreenable by the
+   * one control that narrows this queue.
+   */
+  const regionChips = useMemo(() => {
+    const chips = candidateRegionCodes
+      .filter((code) => (regionCounts.get(code) ?? 0) > 0)
+      .map((code) => ({ count: regionCounts.get(code) ?? 0, key: code as ScreeningRegionKey, label: candidateRegionLabels[code] }));
+    const unplaced = regionCounts.get(NO_REGION) ?? 0;
+    if (unplaced > 0) chips.push({ count: unplaced, key: NO_REGION, label: "Region not on the CV" });
+    return chips;
+  }, [regionCounts]);
 
   const [views, setViews] = useState<CandidateViewMap>(initialViews);
 
@@ -336,12 +402,31 @@ export function CandidateScreeningSession({
   const openCvTab = useCallback(
     (next: CandidateCvTab) => {
       if (next === cvTab) return;
-      const nextQueue = orderForScreening(cvTabQueues[next], describeForOrder);
+      const nextQueue = orderForScreening(filterByRegion(cvTabQueues[next], describeForOrder, region), describeForOrder);
       const firstFresh = nextQueue.findIndex((candidate) => isFresh(candidate, views));
       setCvTab(next);
       setIndex(firstFresh >= 0 ? firstFresh : 0);
     },
-    [cvTab, cvTabQueues, isFresh, views],
+    [cvTab, cvTabQueues, isFresh, region, views],
+  );
+
+  /**
+   * Narrow to a region, and land on the right person in it.
+   *
+   * Same shape as `openCvTab` and for the same reason: the filter and the position are two pieces of
+   * state that MUST move in one render. Leaving the index alone would drop the reader at position 41
+   * of a queue that now holds 12, and correcting it afterwards in an effect is both a frame of wrong
+   * screen and a lint error here.
+   */
+  const openRegion = useCallback(
+    (next: ScreeningRegionKey | null) => {
+      const chosen = next === region ? null : next; // pressing the live chip clears the filter
+      const nextQueue = orderForScreening(filterByRegion(cvTabQueues[cvTab], describeForOrder, chosen), describeForOrder);
+      const firstFresh = nextQueue.findIndex((candidate) => isFresh(candidate, views));
+      setRegion(chosen);
+      setIndex(firstFresh >= 0 ? firstFresh : 0);
+    },
+    [cvTab, cvTabQueues, isFresh, region, views],
   );
   const [loaded, setLoaded] = useState<Record<string, LoadedCandidate>>({});
   const [failed, setFailed] = useState<Record<string, string>>({});
@@ -844,6 +929,11 @@ export function CandidateScreeningSession({
   // and throw on .toLowerCase() below — a raw cast asserts a shape the column does not guarantee.
   const existingStatus: CandidateStatus = normalizeCandidateStatus(current.status) ?? "new";
   const currentBand = screeningBand(describeForOrder(current));
+  // The OTHER CVs on this person's number — the current one is excluded, so an empty list means
+  // there is nothing to say and the badge stays off.
+  const currentTwins = (twins.get(normalizePhone(current.phone ?? current.whatsapp) ?? "") ?? []).filter(
+    (twin) => twin.id !== current.id,
+  );
   const loadError = failed[current.id];
 
   return (
@@ -880,6 +970,19 @@ export function CandidateScreeningSession({
         >
           {screeningBandLabels[currentBand]} · {bands[currentBand]}
         </span>
+        {/* Somebody else in this pile is on the same number, and they are sitting immediately after
+            this one in the queue. It says WHO rather than just "duplicate", because the two are not
+            the same question: of the 28 rows measured sharing a number, 9 carried a different name —
+            a relative or a colleague on one handset. Only a person can tell "they uploaded twice"
+            from "these are two applicants", so this shows the names and decides nothing. */}
+        {currentTwins.length > 0 ? (
+          <span
+            className="shrink-0 rounded bg-amber-500/15 px-1.5 py-0.5 text-phx-2xs font-black uppercase tracking-wide text-amber-300"
+            title={`Same phone number as: ${currentTwins.map((twin) => candidateDisplayName(twin.fullName)).join(", ")}. They are next in the queue — read them together and decide once, or treat them as different people if the names say so.`}
+          >
+            Same number · {currentTwins.length + 1}
+          </span>
+        ) : null}
         {/* The running totals, and they are the REAL ones — every shortlist and rejection this
             queue carries, not just the ones made since this screen opened. */}
         <div className="flex items-center gap-3 text-xs tabular-nums">
@@ -935,6 +1038,44 @@ export function CandidateScreeningSession({
         <CvTabStrip counts={cvTabCounts} onSelect={openCvTab} tab={cvTab} tone="dark" />
         <p className="text-xs text-slate-400">{candidateCvTabDescriptions[cvTab]}</p>
       </div>
+
+      {/* Where they are. Its own row and free to WRAP — nine chips beside the pile strip is how a
+          375px screen ends up scrolling sideways, which is the one thing this app never does.
+          Hidden entirely when every candidate in the pile is in one place, because a filter with a
+          single option is a control that cannot do anything. */}
+      {regionChips.length > 1 ? (
+        <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-b border-slate-800 px-4 py-1.5">
+          <span className="mr-1 text-xs font-semibold text-slate-500">Region</span>
+          <button
+            aria-pressed={region === null}
+            className={`rounded-full px-2.5 py-0.5 text-xs font-bold transition ${
+              region === null ? "bg-slate-700 text-white" : "bg-slate-800 text-slate-300 hover:bg-slate-700"
+            }`}
+            onClick={() => openRegion(null)}
+            type="button"
+          >
+            Everywhere <span className="tabular-nums opacity-70">{cvTabQueues[cvTab].length}</span>
+          </button>
+          {regionChips.map((chip) => (
+            <button
+              aria-pressed={region === chip.key}
+              className={`rounded-full px-2.5 py-0.5 text-xs font-bold transition ${
+                region === chip.key ? "bg-slate-700 text-white" : "bg-slate-800 text-slate-300 hover:bg-slate-700"
+              }`}
+              key={chip.key}
+              onClick={() => openRegion(chip.key)}
+              title={
+                chip.key === NO_REGION
+                  ? "Nothing on the CV says where they are. They are still here, and still need a decision."
+                  : undefined
+              }
+              type="button"
+            >
+              {chip.label} <span className="tabular-nums opacity-70">{chip.count}</span>
+            </button>
+          ))}
+        </div>
+      ) : null}
 
       <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
         {/* The CV, already open. This is the single biggest change: the document is the thing a
