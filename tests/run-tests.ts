@@ -1,3 +1,4 @@
+import { runDisplayScaleTests } from "./display-scale.test.ts";
 import { runI18nConfigTests } from "./i18n-config.test.ts";
 import { runI18nCairoDateBoundaryTests } from "./i18n-cairo-date-boundary.test.ts";
 import { runPortalTargetDedupTests } from "./portal-target-dedup.test.ts";
@@ -1313,6 +1314,7 @@ async function runTest(name: string, execute: () => void | Promise<void>) {
 await runTest("transactional email survives an unsubscribe (password reset must never be withheld)", runTransactionalEmailNotUnsubscribableTests);
 await runTest("module tab titles (every shell route names its module in the browser tab)", runModuleTabTitlesTests);
 await runTest("sidebar pending badge (restyled fill, motion kept, rail told)", runNavBadgeRestyleTests);
+await runTest("display scale (content-only zoom, desktop-gated, print-excluded, both shells wired)", runDisplayScaleTests);
 await runTest("i18n config", runI18nConfigTests);
 await runTest("i18n Cairo date boundary (currentCairoDateOnlyIso EEST/EET rollover)", runI18nCairoDateBoundaryTests);
 await runTest("portal target dedup (med-rep achievement sum-distinct, not max, not naive-sum)", runPortalTargetDedupTests);

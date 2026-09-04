@@ -7,6 +7,7 @@ import { useRef, useState } from "react";
 
 import { CalculatorWidget } from "@/components/layout/calculator-widget";
 import { COMMAND_PALETTE_EVENT } from "@/components/layout/command-palette";
+import { DisplayScaleControl } from "@/components/layout/display-scale-control";
 import { InAppNotificationsBell } from "@/components/layout/in-app-notifications-bell";
 import { InternalMessagesMenu } from "@/components/layout/internal-messages-menu";
 import { MobileSidebar } from "@/components/layout/sidebar";
@@ -111,12 +112,12 @@ export function Topbar({
           everything outside. The two surfaces that must keep covering it both still do: the mobile
           drawer (`fixed inset-0 z-50`, rendered just above and higher inside this same context) and
           the sidebar (`z-40`, OUTSIDE it, so it beats the chrome's 30 whatever this says). */}
-      <header className={`relative z-40 px-3 py-3 backdrop-blur-xl sm:px-6 ${
+      <header className={`relative z-40 px-3 py-2 backdrop-blur-xl sm:px-6 ${
         isAdminMode
           ? "border-b border-[#1a1a1a] bg-[#000000]"
           : "border-b border-phx-line/80 bg-white/82"
       }`}>
-        <div className="mx-auto flex min-h-14 w-full max-w-[1760px] items-center gap-2 sm:min-h-16 sm:gap-4">
+        <div className="mx-auto flex min-h-12 w-full max-w-[1760px] items-center gap-2 sm:gap-4">
         <button
           aria-label="Open menu"
           className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded lg:hidden ${
@@ -163,6 +164,7 @@ export function Topbar({
           {/* Admin chrome only, which is where the owner asked for it. The panel it opens is a
               portal, not a dropdown — see calculator-widget.tsx for why that matters here. */}
           {isAdminMode ? <CalculatorWidget isAdminMode={isAdminMode} /> : null}
+          <DisplayScaleControl isAdminMode={isAdminMode} />
           <InAppNotificationsBell isAdminMode={isAdminMode} />
           <InternalMessagesMenu isAdminMode={isAdminMode} />
           <div className="relative" ref={userMenuRef}>

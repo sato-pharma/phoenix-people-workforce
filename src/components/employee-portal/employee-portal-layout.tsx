@@ -60,6 +60,7 @@ import { EmployeePortalBottomNav } from "@/components/employee-portal/employee-p
 import { SessionSecurityGuard } from "@/components/auth/session-security-guard";
 import { OneSignalProvider } from "@/components/notifications/onesignal-provider";
 import { logoutOneSignal } from "@/lib/notifications/onesignal-client";
+import { DisplayScaleControl } from "@/components/layout/display-scale-control";
 import { InAppNotificationsBell } from "@/components/layout/in-app-notifications-bell";
 import { InternalMessagesMenu } from "@/components/layout/internal-messages-menu";
 import {
@@ -786,6 +787,7 @@ export function EmployeePortalTopNav({
               </div>
             ) : null}
           </div>
+          <DisplayScaleControl isAdminMode={false} />
           <InAppNotificationsBell isAdminMode={false} />
           <InternalMessagesMenu isAdminMode={false} />
           <div className="hidden items-center gap-1.5 rounded border border-slate-200 bg-white px-2.5 py-1.5 text-phx-xs font-semibold text-slate-500 lg:flex">
@@ -1133,10 +1135,10 @@ export function EmployeePortalChrome({
           disableSessionGuard={disableSessionGuard}
           visibility={visibility}
         />
-        <div className="relative mx-auto flex w-full max-w-[1580px] items-start gap-4 px-3 py-4 sm:px-4 sm:py-5 lg:gap-7 lg:px-8 lg:py-7">
+        <div className="relative mx-auto flex w-full max-w-[1580px] items-start gap-4 px-3 py-4 sm:px-4 sm:py-5 lg:gap-4 lg:py-7 lg:pl-8 lg:pr-4">
           <EmployeePortalSidebar activePathOverride={activePathOverride} visibility={visibility} />
           <div className="flex min-w-0 flex-1 flex-col">
-            <main className="employee-portal-mobile-safe min-w-0 flex-1 space-y-5 pb-24 lg:space-y-7 lg:pb-0">
+            <main className="phx-zoom-surface employee-portal-mobile-safe min-w-0 flex-1 space-y-5 pb-24 lg:space-y-7 lg:pb-0">
               <PageTransition>{children}</PageTransition>
             </main>
           </div>

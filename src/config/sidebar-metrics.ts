@@ -21,8 +21,8 @@ export type SidebarShell = "admin" | "portal";
 
 // ── Admin rail (src/components/layout/sidebar.tsx) ───────────────────────────
 
-/** `SIDEBAR_WIDTH_EXPANDED = "w-[292px]"` on the <aside>. This is its OFFSET width — border included. */
-export const SIDEBAR_WIDTH = 292;
+/** `SIDEBAR_WIDTH_EXPANDED = "w-[272px]"` on the <aside>. This is its OFFSET width — border included. */
+export const SIDEBAR_WIDTH = 272;
 
 /**
  * The aside's own `border-r`. Tailwind sets `box-sizing: border-box`, so the 1px rule lives INSIDE
@@ -42,15 +42,15 @@ const ASIDE_BORDER = 1;
  */
 const SCROLLBAR_GUTTER = 10;
 
-/** Nav scroller `px-3` (12 each side) + the item group's `px-1` (4 each side). */
-const CONTAINER_PADDING = 12 * 2 + 4 * 2;
+/** Nav scroller `px-2` (8 each side) + the item group's `px-1` (4 each side). */
+const CONTAINER_PADDING = 8 * 2 + 4 * 2;
 
-/** NavRow <Link> `px-2.5` (10 each side). */
-const ROW_PADDING = 10 * 2;
+/** NavRow <Link> `px-2` (8 each side). */
+const ROW_PADDING = 8 * 2;
 
-/** Icon box `h-9 w-9`, shrink-0, plus the Link's `gap-3`. */
-const ICON_BOX = 36;
-const ICON_GAP = 12;
+/** Icon box `h-8 w-8`, shrink-0, plus the Link's `gap-2`. */
+const ICON_BOX = 32;
+const ICON_GAP = 8;
 
 /**
  * `pr-6` on the label wrapper. The pin star is `absolute right-1.5 h-6 w-6` and appears on hover,
@@ -186,8 +186,8 @@ export function bottomBarWordBudgetPx(viewportWidth: number = BOTTOM_BAR_REFEREN
  * certifying a shell it could not see. Making the caller name the shell is what stops that
  * recurring.
  *
- * Admin: 292 - 1 border - 10 gutter - 24 nav px-3 - 8 group px-1 - 20 row px-2.5 - 36 icon
- * - 12 gap - 24 pin = 157 plain; a hub row pays 20 more for the ↗ (137), a badge row 32 (125).
+ * Admin: 272 - 1 border - 10 gutter - 16 nav px-2 - 8 group px-1 - 16 row px-2 - 32 icon
+ * - 8 gap - 24 pin = 157 plain; a hub row pays 20 more for the ↗ (137), a badge row 32 (125).
  * A hub row that also has a badge drops the ↗, so it is charged as a badge row.
  *
  * Portal: 222 nav client - 4 pr-1 - 32 row px-4 - 15 icon - 12 gap = 159 plain; a badge row pays
