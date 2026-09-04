@@ -94,6 +94,7 @@ classifier — the load-bearing set changes as the index does.
 - **--fix / --strip-idle need exactly ONE live session** — `repo-doctor-strip-idle-cannot-run-with-sessions-open` · `repo-doctor-fix-cannot-delete-a-wt-husk-pnpm-junctions-eperm`
 - **A squash-merged branch reads as "on NO origin ref" — that means BACKED UP, not…** — `repo-doctor-no-origin-ref-is-usually-squash-residue`
 - **Self-removing a worktree MUTES its own session-end guard.** — `self-removing-a-worktree-mutes-its-own-session-end-guard`
+- **`gh pr merge` from a worktree exits NON-ZERO after the merge SUCCEEDED.** — `gh-pr-merge-exits-nonzero-from-a-worktree-after-it-succeeded` **(inline — load-bearing)**
 - **next dev in a worktree needs the explicit --webpack flag** — `turbopack-cannot-resolve-a-junctioned-node-modules-here`
 - **A >2MB unstable_cache entry KILLS the dev server** — `next-2mb-data-cache-throws-only-in-dev-and-kills-the-server`
 - **unstable_cache SERIALIZES, so a returned Map comes back {}** — `unstable-cache-serializes-a-map-into-an-empty-object`

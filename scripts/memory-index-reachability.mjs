@@ -1,3 +1,9 @@
+import { execFileSync } from "node:child_process";
+import { readFileSync, readdirSync, statSync } from "node:fs";
+import { homedir } from "node:os";
+import { dirname, join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
+
 // A MEMORY FILE NAMED IN `AGENTS.md` IS REACHABLE. THE DOCTOR USED TO CALL IT AN ORPHAN.
 //
 // WHY THIS EXISTS. The orphan check asks one question — is this file pointed at from `MEMORY.md` or
@@ -111,3 +117,174 @@ export function memoryReachabilityLines({ relocated, orphans, broken }) {
   );
   return lines;
 }
+
+// ── THE COMMAND ────────────────────────────────────────────────────────────────────
+// WHY A CLI WHEN repo-doctor ALREADY PRINTS THIS. `AGENTS.md` §2.2 tells a session to re-run the
+// classifier before removing any slug, and the question it actually needs answered is not "how many
+// memories are relocated" — it is "would cutting THIS slug strand its memory". `repo:doctor --deep`
+// names the relocated files and stops; `tests/memory-index-reachability.test.ts` guards one
+// direction only (a slug the MAP marks load-bearing must still be named in `AGENTS.md`). Nothing
+// checked the map against LIVE reachability, so a memory that becomes AGENTS.md-only WITHOUT
+// gaining its marker is guarded by no test and named in no report — and that is exactly the state
+// every relocation passes through before its map row is written.
+//
+// THE STALE-COUNT LESSON. Until 2026-09-04 §2.2 carried a written count of the load-bearing set
+// ("only the 18 load-bearing ones inline"). A count is precisely what goes quietly wrong here: it
+// reads as authoritative, it costs nothing to leave alone, and it drifts on every relocation. The
+// count is gone from §2.2 and this command is what replaced it, so the number is always measured
+// rather than remembered.
+//
+// READ-ONLY, ALWAYS. It prints. It never writes an index line, a map row, or a memory file.
+
+/** Read a file, or a fallback when it is missing or unreadable. */
+function readTextOr(file, fallback = "") {
+  try {
+    return readFileSync(file, "utf8");
+  } catch {
+    return fallback;
+  }
+}
+
+/**
+ * The PRIMARY checkout's root, never the worktree this happens to run in.
+ *
+ * Memory belongs to the project, and §2.2's both-halves rule keys on the merged file: a hook
+ * written on an unmerged branch SHOULD still read as an orphan here. Reading the worktree's
+ * `AGENTS.md` would certify a relocation that no session can yet see.
+ */
+function primaryRootOrNull() {
+  try {
+    const commonDir = execFileSync("git", ["rev-parse", "--path-format=absolute", "--git-common-dir"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+    return commonDir ? resolve(dirname(commonDir)) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * This checkout's session memory directory, or null when there is none.
+ *
+ * Same lookup as `scripts/repo-doctor.mjs`: `<config>/projects/<slug>/memory`, where the slug is
+ * the absolute project path with every non-alphanumeric character replaced by a hyphen. Returning
+ * null rather than guessing keeps this quiet in CI and on machines with no memory directory.
+ */
+function memoryDirOrNull(projectRoot) {
+  const configRoot = process.env.CLAUDE_CONFIG_DIR?.trim() || join(homedir(), ".claude");
+  const dir = join(configRoot, "projects", resolve(projectRoot).replace(/[^A-Za-z0-9]/g, "-"), "memory");
+  try {
+    return statSync(dir).isDirectory() ? dir : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Backticked slugs in a chunk of text — the same convention `namedInAgents` matches. */
+function slugsIn(text) {
+  const tick = String.fromCharCode(96);
+  const pattern = new RegExp(tick + "([a-z0-9]+(?:-[a-z0-9]+){2,})" + tick, "g");
+  return new Set([...text.matchAll(pattern)].map((m) => m[1]));
+}
+
+function main() {
+  const root = primaryRootOrNull();
+  if (root === null) {
+    console.error("memory-index-reachability: not inside a git repository.");
+    process.exit(1);
+  }
+
+  const memoryDir = memoryDirOrNull(root);
+  if (memoryDir === null) {
+    console.log("SKIPPED — this checkout has no session memory directory.");
+    console.log(
+      "Expected " +
+        join(process.env.CLAUDE_CONFIG_DIR?.trim() || join(homedir(), ".claude"), "projects", "<slug>", "memory"),
+    );
+    return;
+  }
+
+  const INDEX_FILES = ["MEMORY.md", "MEMORY-ARCHIVE.md"];
+  const indexText = INDEX_FILES.map((f) => readTextOr(join(memoryDir, f))).join("\n");
+  const files = readdirSync(memoryDir).filter(
+    (f) => f.endsWith(".md") && !INDEX_FILES.includes(f) && !f.includes(".bak"),
+  );
+  const agentsText = readTextOr(join(root, "AGENTS.md"));
+  const { linked, relocated, orphans } = classifyMemoryReachability({ files, indexText, agentsText });
+
+  // The map is §2.2's authority on which memories AGENTS.md is the ONLY pointer for. Compare it
+  // against what is true right now, in BOTH directions — a marker is every bit as capable of going
+  // stale as the count it replaced.
+  const mapPath = "docs/agents-memory-map.md";
+  const mapText = readTextOr(join(root, mapPath));
+  const marked = new Set();
+  for (const line of mapText.split(/\r?\n/)) {
+    if (!/inline\s*[—-]\s*load-bearing/.test(line)) continue;
+    for (const slug of slugsIn(line)) marked.add(slug);
+  }
+
+  const relocatedSlugs = relocated.map((f) => f.slice(0, -".md".length)).sort();
+  const live = new Set(relocatedSlugs);
+  const present = new Set(files.map((f) => f.slice(0, -".md".length)));
+  const unmarked = relocatedSlugs.filter((s) => !marked.has(s));
+
+  // Two ways a marker goes stale, with opposite severities, so never print them as one list. DEAD
+  // is a defect — the map points at a memory that no longer exists, and the test's by-name check
+  // then guards a slug for nothing. OVER-MARKED is not: an index also links the memory, so the
+  // marker merely over-claims and nothing can be stranded by removing it.
+  const dead = [...marked].filter((s) => !present.has(s)).sort();
+  const overMarked = [...marked].filter((s) => present.has(s) && !live.has(s)).sort();
+
+  console.log("MEMORY REACHABILITY (which memories AGENTS.md is the only pointer for)");
+  console.log("  repo:   " + root);
+  console.log("  memory: " + memoryDir);
+  console.log(
+    "  " +
+      files.length +
+      " memory files — " +
+      linked.length +
+      " linked from an index, " +
+      relocated.length +
+      " reachable only via AGENTS.md, " +
+      orphans.length +
+      " reachable from neither",
+  );
+  if (agentsText === "") {
+    console.log("  WARNING: AGENTS.md could not be read, so every memory falls through to orphan.");
+  }
+  console.log("");
+
+  console.log("  LOAD-BEARING — cutting one of these slugs from AGENTS.md strands its memory:");
+  if (relocatedSlugs.length === 0) console.log("    none — every memory is linked from an index.");
+  for (const slug of relocatedSlugs) {
+    console.log("    " + (marked.has(slug) ? "ok      " : "UNMARKED") + "  " + slug);
+  }
+  console.log("");
+
+  console.log('  vs ' + mapPath + " (" + marked.size + ' rows marked "(inline — load-bearing)"):');
+  if (mapText === "") {
+    console.log("    the map could not be read — the comparison below says nothing. Fix that first.");
+  }
+  if (unmarked.length > 0) {
+    console.log(
+      "    " + unmarked.length + " UNMARKED above: reachable only via AGENTS.md but carrying no map row, so",
+    );
+    console.log("    tests/memory-index-reachability.test.ts does NOT guard them. Add the row, or give the");
+    console.log("    memory an index line — §2.2, both halves or neither.");
+  }
+  for (const slug of dead) {
+    console.log("    DEAD    " + slug + "  (marked load-bearing, but no such memory file exists)");
+  }
+  for (const slug of overMarked) {
+    console.log("    over-marked  " + slug + "  (an index links it too, so the marker over-claims — not a risk)");
+  }
+  if (mapText !== "" && unmarked.length === 0 && dead.length === 0 && overMarked.length === 0) {
+    console.log("    -> in step. Every AGENTS.md-only memory is marked, and every marker is still true.");
+  }
+}
+
+// The import stays inert: repo-doctor and the test load the exports above without any of this
+// running. `pathToFileURL` rather than a path compare, because argv[1] and import.meta.url disagree
+// on slash and drive-letter case on Windows.
+if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) main();
