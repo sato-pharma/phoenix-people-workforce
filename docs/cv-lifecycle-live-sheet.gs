@@ -88,7 +88,7 @@ var TZ = 'Africa/Cairo';
  * feed's COLUMNS. A sheet that silently keeps the previous design is indistinguishable from one
  * where the update failed.
  */
-var LAYOUT_VERSION = 'v3-detail';
+var LAYOUT_VERSION = 'v4-premium';
 
 var TAB_SUMMARY = 'Summary';
 var TAB_DAILY = 'Daily Dashboard';
@@ -130,19 +130,59 @@ var LIFECYCLE_HEADER_ROW = 4;
 var FIXED_RANGE_ROWS = 1000;
 
 // ── Palette ──────────────────────────────────────────────────────────────────────
-var INK = '#0b1f3a';
-var HEADER_BG = '#1f3864';
+// ── Typography ────────────────────────────────────────────────────────────────────────────────
+//
+// The single highest-leverage line in this file is the one that sets a font family. Without it
+// every tab renders in Sheets' default Arial 10, which is what made a sheet carrying real work
+// look like an export somebody forgot to format. Roboto and Roboto Mono are Google's own faces and
+// are always present, so neither can silently fall back to Arial the way a fashionable pick would.
+//
+// Mono is not decoration. Figures set in a proportional face do not line up in a column, so a
+// count of 1,100 and a count of 987 have to be read rather than seen. Tabular figures are the
+// difference between scanning a column and parsing it.
+var FONT = 'Roboto';
+var FONT_MONO = 'Roboto Mono';
+
+// ── Colour ────────────────────────────────────────────────────────────────────────────────────
+//
+// One neutral ramp plus four semantic pairs. The old palette had eleven one-off hex values with no
+// relationship to each other, which is why nothing on the page looked like it belonged with
+// anything else. Every colour below is either a step on the slate ramp or a semantic pair, and
+// nothing may be added without being one of those two things.
+var INK = '#0f172a';
+var INK_SOFT = '#334155';
+var BRAND = '#103c68';
+var BRAND_DEEP = '#0a2947';
+var HEADER_BG = '#103c68';
 var HEADER_FG = '#ffffff';
 var PAPER = '#ffffff';
-var MUTED = '#5f6368';
-var RULE = '#d7dee8';
-var TILE_BG = '#f6f8fc';
-var GOOD = '#0f7b3f';
-var GOOD_BG = '#e7f8ee';
-var BAD = '#b3261e';
-var BAD_BG = '#fce8e6';
-var WARN_BG = '#fff4d6';
-var WARN_FG = '#7a5b00';
+var MUTED = '#64748b';
+var FAINT = '#94a3b8';
+var RULE_SOFT = '#e2e8f0';
+var BAND_ALT = '#f8fafc';
+var RULE = '#e2e8f0';
+var TILE_BG = '#ffffff';
+var GOOD = '#067647';
+var GOOD_BG = '#ecfdf3';
+var BAD = '#b42318';
+var BAD_BG = '#fef3f2';
+var WARN_BG = '#fffaeb';
+var WARN_FG = '#b54708';
+var INFO = '#175cd3';
+var INFO_BG = '#eff8ff';
+
+// Type scale. Named, because "11" appearing in four places is not a decision anybody can revisit.
+var TYPE_TITLE = 22;
+var TYPE_SECTION = 12;
+var TYPE_BODY = 10;
+var TYPE_HEADER = 10;
+var TYPE_LABEL = 9;
+var TYPE_TILE = 30;
+
+var ROW_H_TITLE = 44;
+var ROW_H_SUBTITLE = 20;
+var ROW_H_RULE = 5;
+var ROW_H_HEADER = 34;
 var C_WHATSAPP = '#25d366';
 var C_EMAIL = '#4285f4';
 var C_HAND = '#9aa0a6';
@@ -384,30 +424,49 @@ function resetTab_(sheet) {
   var all = sheet.getRange(1, 1, sheet.getMaxRows(), sheet.getMaxColumns());
   all.breakApart();
   all.clear();
+
+  // Set once, on the whole grid, so every later range inherits it and no builder has to remember.
+  // A tab that misses this is instantly obvious beside one that did not, which is the point.
+  all.setFontFamily(FONT).setFontSize(TYPE_BODY).setFontColor(INK);
 }
 
-/** The dark title band and the subtitle line the stale banner later paints over. */
+/**
+ * The masthead: title, timestamp, rule.
+ *
+ * This used to be a 48px slab of navy with 20pt white text across the full width of the table —
+ * on the 58-column detail tab, a blue stripe roughly two metres wide. It read as a banner rather
+ * than a heading, and banners are what unimportant documents wear.
+ *
+ * A report instead states its name on the paper and draws a line under it. The weight comes from
+ * the type and the rule, and it stays proportionate however wide the table gets, because the rule
+ * is a row height rather than a block of colour.
+ */
 function titleBand_(sheet, cols, title) {
   sheet.setHiddenGridlines(true);
-  sheet.setTabColor(HEADER_BG);
+  sheet.setTabColor(BRAND);
 
   sheet.getRange(ROW_TITLE, 1, 1, cols).merge()
-    .setValue(title)
-    .setBackground(INK)
-    .setFontColor(HEADER_FG)
-    .setFontSize(20)
+    .setValue(String(title).trim())
+    .setBackground(PAPER)
+    .setFontColor(INK)
+    .setFontSize(TYPE_TITLE)
     .setFontWeight('bold')
-    .setVerticalAlignment('middle')
+    .setVerticalAlignment('bottom')
     .setHorizontalAlignment('left');
-  sheet.setRowHeight(ROW_TITLE, 48);
+  sheet.setRowHeight(ROW_TITLE, ROW_H_TITLE);
 
+  // Not italic. Italic in a UI face reads as an apology; this line is a fact about the data.
   sheet.getRange(ROW_SUBTITLE, 1, 1, cols).merge()
     .setBackground(PAPER)
     .setFontColor(MUTED)
-    .setFontStyle('italic')
-    .setVerticalAlignment('middle');
-  sheet.setRowHeight(ROW_SUBTITLE, 24);
-  sheet.setRowHeight(3, 10);
+    .setFontSize(TYPE_LABEL)
+    .setVerticalAlignment('top');
+  sheet.setRowHeight(ROW_SUBTITLE, ROW_H_SUBTITLE);
+
+  // The rule. A 5px row of brand colour does what a 48px band was trying to do, and does it at a
+  // scale the eye reads as confidence rather than as decoration.
+  sheet.getRange(3, 1, 1, cols).setBackground(BRAND);
+  sheet.setRowHeight(3, ROW_H_RULE);
 }
 
 /** The ordinary subtitle. Contains the word the stale detector looks for — do not reword it. */
@@ -418,42 +477,118 @@ function writeSubtitle_(sheet, name, stamp) {
 function sectionTitle_(sheet, row, cols, text) {
   sheet.getRange(row, 1, 1, cols).merge()
     .setValue(text)
-    .setFontSize(12)
+    .setFontSize(TYPE_SECTION)
     .setFontWeight('bold')
     .setFontColor(INK)
-    .setVerticalAlignment('middle');
-  sheet.setRowHeight(row, 28);
+    .setVerticalAlignment('bottom');
+  sheet.setRowHeight(row, 30);
+
+  // A hairline under a section heading separates it from its own table without drawing a box round
+  // anything. Boxes are what a sheet does when it has not decided what matters.
+  sheet.getRange(row, 1, 1, cols)
+    .setBorder(null, null, true, null, null, null, RULE_SOFT, SpreadsheetApp.BorderStyle.SOLID);
 }
 
 function styleHeader_(sheet, headerRow, width) {
   var range = sheet.getRange(headerRow, 1, 1, width);
-  range.setBackground(HEADER_BG).setFontColor(HEADER_FG).setFontWeight('bold');
-  range.setVerticalAlignment('middle').setWrap(true);
-  sheet.setRowHeight(headerRow, 34);
+  range.setBackground(HEADER_BG)
+    .setFontColor(HEADER_FG)
+    .setFontFamily(FONT)
+    .setFontSize(TYPE_HEADER)
+    .setFontWeight('bold')
+    .setVerticalAlignment('middle')
+    .setHorizontalAlignment('left')
+    .setWrap(true);
+  // A darker edge under the header seats the block on the page instead of letting the fill float.
+  range.setBorder(null, null, true, null, null, null, BRAND_DEEP, SpreadsheetApp.BorderStyle.SOLID_THICK);
+  sheet.setRowHeight(headerRow, ROW_H_HEADER);
 }
 
-/** A KPI tile: three rows tall, three columns wide, label over a large number. */
+/**
+ * The body of a table: banding, alignment, and tabular figures where they earn their keep.
+ *
+ * Sheets' stock banding themes are far too heavy — LIGHT_GREY alternates against a grey that
+ * competes with the text sitting on it. `applyRowBanding` hands back the Banding object, so the
+ * colours can be replaced with a near-white alternate that separates rows without shouting. That
+ * one substitution is most of the difference between a table that looks designed and one that
+ * looks striped.
+ *
+ * `names` are matched by column NAME, never by index, for the same reason every other lookup in
+ * this file is: a column inserted upstream must not silently re-align the wrong data.
+ */
+function tableChrome_(sheet, headerRow, header, opts) {
+  var options = opts || {};
+  var body = sheet.getRange(headerRow + 1, 1, FIXED_RANGE_ROWS, header.length);
+
+  var banding = body.applyRowBanding(SpreadsheetApp.BandingTheme.LIGHT_GREY, false, false);
+  banding.setFirstRowColor(PAPER).setSecondRowColor(BAND_ALT).setHeaderRowColor(null);
+
+  body.setVerticalAlignment('middle').setFontSize(TYPE_BODY).setFontColor(INK_SOFT);
+
+  applyToNamed_(sheet, headerRow, header, options.mono, function (range) {
+    range.setFontFamily(FONT_MONO).setHorizontalAlignment('right');
+  });
+  applyToNamed_(sheet, headerRow, header, options.right, function (range) {
+    range.setHorizontalAlignment('right');
+  });
+  applyToNamed_(sheet, headerRow, header, options.centre, function (range) {
+    range.setHorizontalAlignment('center');
+  });
+  applyToNamed_(sheet, headerRow, header, options.quiet, function (range) {
+    range.setFontColor(MUTED);
+  });
+
+  // One hairline down the right edge of the frozen block, so the columns that stay put while he
+  // scrolls read as an anchor rather than as the first two columns of a very wide table.
+  if (options.freezeEdge > 0) {
+    sheet.getRange(headerRow, options.freezeEdge, FIXED_RANGE_ROWS + 1, 1)
+      .setBorder(null, null, null, true, null, null, RULE_SOFT, SpreadsheetApp.BorderStyle.SOLID);
+  }
+}
+
+function applyToNamed_(sheet, headerRow, header, names, apply) {
+  if (!names || !names.length) return;
+  for (var i = 0; i < names.length; i++) {
+    var col = columnByName_(header, names[i]);
+    if (col > 0) apply(sheet.getRange(headerRow + 1, col, FIXED_RANGE_ROWS, 1));
+  }
+}
+
+/**
+ * A KPI card: label above a large tabular number, on white, inside a hairline.
+ *
+ * The old tile centred a 10pt grey label over a 26pt number on a pale blue fill, boxed in on all
+ * four sides. Centring is the problem — a column of centred numbers of different lengths has no
+ * common edge, so the eye cannot compare them without reading each one. Left-aligning the label
+ * and the figure gives every card the same edge, and the figures line up down the page.
+ *
+ * The fill goes white and the border becomes a hairline, because a card earns its separation from
+ * the page through whitespace. Colour is reserved for the one thing on the card that is a
+ * judgement — the number itself, which fillTile_ tints when it means something.
+ */
 function buildTile_(sheet, row, col, label) {
   sheet.getRange(row, col, 3, 3)
     .setBackground(TILE_BG)
-    .setBorder(true, true, true, true, false, false, RULE, SpreadsheetApp.BorderStyle.SOLID);
+    .setBorder(true, true, true, true, false, false, RULE_SOFT, SpreadsheetApp.BorderStyle.SOLID);
 
   sheet.getRange(row, col, 1, 3).merge()
     .setValue(label)
-    .setFontSize(10)
+    .setFontSize(TYPE_LABEL)
     .setFontColor(MUTED)
-    .setHorizontalAlignment('center')
-    .setVerticalAlignment('middle');
+    .setFontWeight('bold')
+    .setHorizontalAlignment('left')
+    .setVerticalAlignment('bottom');
 
   sheet.getRange(row + 1, col, 2, 3).merge()
-    .setFontSize(26)
+    .setFontFamily(FONT_MONO)
+    .setFontSize(TYPE_TILE)
     .setFontWeight('bold')
-    .setHorizontalAlignment('center')
-    .setVerticalAlignment('middle');
+    .setHorizontalAlignment('left')
+    .setVerticalAlignment('top');
 
-  sheet.setRowHeight(row, 20);
-  sheet.setRowHeight(row + 1, 26);
-  sheet.setRowHeight(row + 2, 26);
+  sheet.setRowHeight(row, 26);
+  sheet.setRowHeight(row + 1, 34);
+  sheet.setRowHeight(row + 2, 16);
 }
 
 /** Values only — the tile's box, fonts and merges were built once. */
@@ -794,12 +929,12 @@ function buildSummaryLayout_(sheet, dailyRows) {
  * wrong block, which is worse than no band at all.
  */
 var DETAIL_GROUPS = [
-  { bg: '#e8eef7', from: '#',                    label: 'Who they are' },
-  { bg: '#e7f1ea', from: 'Faculty',              label: 'What they studied' },
-  { bg: '#fbf0e2', from: 'Applied for',          label: 'What they have done' },
-  { bg: '#efe9f7', from: 'Their own background', label: 'What they told us themselves' },
-  { bg: '#e6eef4', from: 'Prefers region',       label: 'Where it went' },
-  { bg: '#eef0f1', from: 'How they reached us',  label: 'The record' }
+  { bg: '#eef2f7', from: '#',                    label: 'Who they are' },
+  { bg: '#edf4ef', from: 'Faculty',              label: 'What they studied' },
+  { bg: '#f6f1e9', from: 'Applied for',          label: 'What they have done' },
+  { bg: '#f1eef7', from: 'Their own background', label: 'What they told us themselves' },
+  { bg: '#eaf0f6', from: 'Prefers region',       label: 'Where it went' },
+  { bg: '#f1f2f4', from: 'How they reached us',  label: 'The record' }
 ];
 
 /** Long free text. Wide, and NOT wrapped — a wrapped CV summary makes a 200px tall row. */
@@ -899,6 +1034,15 @@ function buildDetailLayout_(sheet, header) {
 
   applyDetailWidths_(sheet, header);
   applyDetailFormats_(sheet, header);
+  tableChrome_(sheet, DETAIL_HEADER_ROW, header, {
+    mono: [
+      '#', 'Date of birth', 'Graduation year', 'Years of experience',
+      'Salary they asked for', 'Expected salary (on file)', 'CVs on file', 'Added to Phoenix',
+    ],
+    centre: ['Worked before?', 'Medical rep before?'],
+    quiet: ['Drive folder', 'Filed folder', 'Status note', 'Manager notified at'],
+    freezeEdge: 2,
+  });
   applyDetailColours_(sheet, header);
 
   // A filter, so "show me everyone in Giza who has been a medical rep" is two clicks rather than a
@@ -1048,6 +1192,20 @@ function buildDailyLayout_(sheet, header) {
   // Whole numbers. Without this a count of 7 can render as 7.00 once the column has ever held a
   // formatted value, which looks like a bug in the data.
   sheet.getRange(DAILY_HEADER_ROW + 1, 2, FIXED_RANGE_ROWS, header.length - 1).setNumberFormat('#,##0');
+
+  var dailyBody = sheet.getRange(DAILY_HEADER_ROW + 1, 1, FIXED_RANGE_ROWS, header.length);
+  var dailyBanding = dailyBody.applyRowBanding(SpreadsheetApp.BandingTheme.LIGHT_GREY, false, false);
+  dailyBanding.setFirstRowColor(PAPER).setSecondRowColor(BAND_ALT).setHeaderRowColor(null);
+  dailyBody.setVerticalAlignment('middle').setFontSize(TYPE_BODY).setFontColor(INK_SOFT);
+
+  // Named columns are impossible here — the columns ARE the channels, and a channel Phoenix has
+  // never seen before appears as a new one. The shape is what is stable: day, then counts.
+  sheet.getRange(DAILY_HEADER_ROW + 1, 2, FIXED_RANGE_ROWS, header.length - 1)
+    .setFontFamily(FONT_MONO)
+    .setHorizontalAlignment('right');
+  sheet.getRange(DAILY_HEADER_ROW + 1, 1, FIXED_RANGE_ROWS, 1)
+    .setFontFamily(FONT_MONO)
+    .setFontColor(INK);
 
   applyDailyColours_(sheet, header);
   buildDailyChart_(sheet, header.length);
@@ -1227,9 +1385,13 @@ function buildLifecycleLayout_(sheet, header) {
     sheet.getRange(LIFECYCLE_HEADER_ROW + 1, size, FIXED_RANGE_ROWS, 1).setNumberFormat('#,##0');
   }
 
-  var dataRange = sheet.getRange(LIFECYCLE_HEADER_ROW + 1, 1, FIXED_RANGE_ROWS, header.length);
-  dataRange.applyRowBanding(SpreadsheetApp.BandingTheme.LIGHT_GREY, false, false);
-  dataRange.setVerticalAlignment('middle');
+  tableChrome_(sheet, LIFECYCLE_HEADER_ROW, header, {
+    mono: ['#', 'Size (KB)', 'Phoenix → Drive (minutes)'],
+    centre: ['In Phoenix?', 'On Google Drive?'],
+    // Plumbing, not answers. Present when he goes looking, receding when he is not.
+    quiet: ['Drive folder', 'Filed folder', 'Intake error', 'Drive problem', 'Accuracy of that time'],
+    freezeEdge: 2,
+  });
 
   applyLifecycleColours_(sheet, header);
 
