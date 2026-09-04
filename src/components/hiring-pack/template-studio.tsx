@@ -41,21 +41,24 @@ import { AdminCallout, AdminTableShell } from "@/components/admin/admin-design-s
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  asPrintableDocument,
-  type CustomDocumentNames,
-  type PrintableDocument,
-} from "@/lib/hiring-pack/document-registry";
+import type { CompanyTemplates, StoredTemplate } from "@/components/hiring-pack/use-company-templates";
+import { asPrintableDocument, type PrintableDocument } from "@/lib/hiring-pack/document-registry";
 import {
   CUSTOM_TEMPLATE_GROUP_LABELS,
   CUSTOM_TEMPLATE_GROUP_NOTES,
   CUSTOM_TEMPLATE_GROUPS,
+  CUSTOM_TEMPLATE_MAX_COPIES,
   CUSTOM_TEMPLATE_MAX_PAGES,
   CUSTOM_TEMPLATE_PAGE_PRESETS,
+  CUSTOM_TEMPLATE_PRINT_SIDES,
+  CUSTOM_TEMPLATE_PRINT_SIDES_LABELS,
+  CUSTOM_TEMPLATE_PRINT_SIDES_NOTES,
+  describePrintInstruction,
   pagePresetFor,
   roundPoints,
   type CustomTemplateContentType,
   type CustomTemplateGroup,
+  type CustomTemplatePrintSides,
 } from "@/lib/hiring-pack/custom-templates";
 
 const inputClassName =
@@ -89,33 +92,6 @@ type RasterPage = {
   heightPx: number;
   /** For the thumbnail. Revoked when the draft is cleared — see the effect below. */
   previewUrl: string;
-};
-
-type StoredPage = {
-  id: string;
-  pageIndex: number;
-  contentType: string;
-  sizeBytes: number;
-  widthPx: number;
-  heightPx: number;
-};
-
-type StoredTemplate = {
-  id: string;
-  key: string;
-  document: string;
-  name: string;
-  nameAr: string | null;
-  pageWidthPt: number;
-  pageHeightPt: number;
-  group: CustomTemplateGroup;
-  status: "current" | "archived";
-  version: number;
-  effectiveFrom: string;
-  note: string | null;
-  printableByRoles: string[] | null;
-  createdAt: string;
-  pages: StoredPage[];
 };
 
 function formatBytes(bytes: number): string {
@@ -257,14 +233,18 @@ function presetForAspect(widthPx: number, heightPx: number) {
 }
 
 /**
- * WHO MAY ADD ONE IS ANSWERED BY THE SERVER, not by a prop.
+ * THE LIST ARRIVES; IT IS NOT FETCHED HERE — see `use-company-templates.ts` for why.
  *
- * The list request already knows — it resolves the access context to read the templates — so it
- * says so in the same reply. That keeps the one authority on "can this person change what the
- * company prints" on the server, where the POST enforces it anyway, and means the page above does
- * not have to plumb a role down through a component that is only about templates.
+ * An uploaded template now appears in the package tab above as well as in this panel, so the fetch
+ * belongs to whatever owns both. Two components reading the same endpoint would be two lists that
+ * silently disagree the moment one of them uploads something.
+ *
+ * WHO MAY ADD ONE IS STILL THE SERVER'S ANSWER, carried on `canManage` in that same reply, rather
+ * than a role plumbed down through a component that is only about templates.
  */
 type TemplateStudioProps = {
+  /** The uploaded templates, and whether this viewer may change them. One fetch, shared. */
+  companyTemplates: CompanyTemplates;
   /**
    * Whether an employee is chosen upstairs.
    *
@@ -273,29 +253,27 @@ type TemplateStudioProps = {
    * control that vanishes teaches nothing and one that explains itself teaches the next step.
    */
   employeeSelected: boolean;
-  /**
-   * The uploaded templates' names, handed up as they load.
-   *
-   * This component is the only thing that reads that list, and the screen above needs the names to
-   * title a company paper it opens. Passing them up beats fetching the same list twice, and beats
-   * the screen above owning a list it does not otherwise use.
-   */
-  onNamesChange: (names: CustomDocumentNames) => void;
   onPreview: (document: PrintableDocument, versionId: string) => void;
   onPrint: (document: PrintableDocument, versionId: string) => void;
 };
 
 export function TemplateStudio({
+  companyTemplates,
   employeeSelected,
-  onNamesChange,
   onPreview,
   onPrint,
 }: TemplateStudioProps) {
+  const { canManage, error: listError, loaded, reload: loadTemplates, templates } = companyTemplates;
   const [open, setOpen] = useState(false);
-  const [templates, setTemplates] = useState<StoredTemplate[]>([]);
-  const [canManage, setCanManage] = useState(false);
-  const [loaded, setLoaded] = useState(false);
-  const [listError, setListError] = useState<string | null>(null);
+  /**
+   * A row that could not be OPENED, which is not the same as a list that could not be READ.
+   *
+   * Kept separate from the hook's `error` on purpose: that one is about the fetch and clears when
+   * the fetch succeeds, while this one is about one template's own document id and would be wiped
+   * by the next successful reload — taking the only explanation of why a button did nothing with
+   * it. Both are shown in the same place; only their lifetimes differ.
+   */
+  const [openError, setOpenError] = useState<string | null>(null);
 
   const [pages, setPages] = useState<RasterPage[]>([]);
   const [sourceName, setSourceName] = useState<string | null>(null);
@@ -305,6 +283,16 @@ export function TemplateStudio({
   // "other" is where an unsorted paper honestly belongs, so it is the starting answer rather than a
   // blank that has to be filled in before the button works.
   const [group, setGroup] = useState<CustomTemplateGroup>("other");
+  /*
+    HOW MANY COPIES, AND ONE SIDE OR TWO — the owner, 2026-09-04.
+
+    Held as a STRING, like every other number on this form. A number input's value is a string while
+    it is being typed, and an empty box is a real state a person passes through on the way from 1 to
+    2. Storing a number here would force a 0 or a NaN into that moment, which then renders as "0" in
+    the box the instant they clear it.
+  */
+  const [defaultCopies, setDefaultCopies] = useState("1");
+  const [printSides, setPrintSides] = useState<CustomTemplatePrintSides>("single");
   const [widthPt, setWidthPt] = useState("");
   const [heightPt, setHeightPt] = useState("");
   const [reading, setReading] = useState(false);
@@ -312,36 +300,6 @@ export function TemplateStudio({
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-
-  const loadTemplates = useCallback(async () => {
-    setListError(null);
-    try {
-      const response = await fetch("/api/hiring-pack/custom-templates", { cache: "no-store" });
-      const body = (await response.json().catch(() => null)) as
-        | { canManage?: boolean; message?: string; templates?: StoredTemplate[] }
-        | null;
-      if (!response.ok) throw new Error(body?.message ?? `Could not read the templates (${response.status}).`);
-      const list = body?.templates ?? [];
-      setTemplates(list);
-      setCanManage(body?.canManage === true);
-
-      /*
-        BOTH SPELLINGS, because `documentLabel` accepts either and the call sites split on which
-        one they happen to hold. The bare key is what a row carries; `custom:<uuid>` is what a
-        document is. Writing both here costs one line and removes the question from every reader.
-      */
-      const names: Record<string, string> = {};
-      for (const template of list) {
-        names[template.key] = template.name;
-        names[template.document] = template.name;
-      }
-      onNamesChange(names);
-    } catch (cause) {
-      setListError(cause instanceof Error ? cause.message : "Could not read the templates.");
-    } finally {
-      setLoaded(true);
-    }
-  }, [onNamesChange]);
 
   /**
    * Open an uploaded template on the employee chosen upstairs — in the editor, or straight to print.
@@ -358,12 +316,12 @@ export function TemplateStudio({
     (template: StoredTemplate, how: "preview" | "print") => {
       const document = asPrintableDocument(template.document);
       if (!document) {
-        setListError(
+        setOpenError(
           `"${template.name}" cannot be opened — its document id is not one this system recognises.`,
         );
         return;
       }
-      setListError(null);
+      setOpenError(null);
       if (how === "print") onPrint(document, template.id);
       else onPreview(document, template.id);
     },
@@ -371,21 +329,13 @@ export function TemplateStudio({
   );
 
   /**
-   * Loaded when the section is first opened, never on page load. This sits at the foot of a screen
-   * whose real job is printing today's papers, and a list nobody has asked for is a request nobody
-   * asked for.
+   * Show or hide the list.
    *
-   * IN THE CLICK HANDLER, NOT IN AN EFFECT. `loadTemplates` clears the error banner synchronously
-   * before it reaches its first `await`, so calling it from an effect body is a `setState` inside
-   * an effect — a lint ERROR in this repo, not a warning, because it can cascade renders. Opening
-   * the section is a click, so the click is where the fetch belongs, and it then happens for the
-   * reason it really happens rather than as a consequence of a render.
+   * NO LONGER FETCHES ANYTHING. The list is read once by `useCompanyTemplates` above this component
+   * and passed in, because the package tabs show the same templates and two fetches would be two
+   * lists that disagree after an upload. Opening this panel is now only a disclosure.
    */
-  const toggle = useCallback(() => {
-    const next = !open;
-    setOpen(next);
-    if (next && !loaded) void loadTemplates();
-  }, [loadTemplates, loaded, open]);
+  const toggle = useCallback(() => setOpen((current) => !current), []);
 
   /**
    * Object URLs are revoked when the draft they belong to goes.
@@ -407,6 +357,8 @@ export function TemplateStudio({
     setName("");
     setNameAr("");
     setNote("");
+    setDefaultCopies("1");
+    setPrintSides("single");
     setGroup("other");
     setWidthPt("");
     setHeightPt("");
@@ -489,6 +441,8 @@ export function TemplateStudio({
         "template",
         JSON.stringify({
           group,
+          defaultCopies: Number(defaultCopies),
+          printSides,
           name,
           nameAr: nameAr.trim() === "" ? null : nameAr,
           note: note.trim() === "" ? null : note,
@@ -524,7 +478,19 @@ export function TemplateStudio({
     } finally {
       setSaving(false);
     }
-  }, [clearDraft, group, heightPt, loadTemplates, name, nameAr, note, pages, widthPt]);
+  }, [
+    clearDraft,
+    defaultCopies,
+    group,
+    heightPt,
+    loadTemplates,
+    name,
+    nameAr,
+    note,
+    pages,
+    printSides,
+    widthPt,
+  ]);
 
   return (
     <AdminTableShell
@@ -719,6 +685,67 @@ export function TemplateStudio({
                       </div>
                     </div>
 
+                    {/* HOW MANY COPIES AND HOW IT IS PRINTED — the owner, 2026-09-04: "tell him
+                        that it is for example how many copies and it is only or face back".
+
+                        Beside the note rather than inside it. The note has always been able to SAY
+                        "two copies, double sided", and saying it did nothing: the template still
+                        printed one copy. A note that describes behaviour the system does not have
+                        reads as a setting, and the person who trusts it prints the wrong thing.
+
+                        ONE OF THESE TWO IS ENFORCED AND THE OTHER IS AN INSTRUCTION, and the screen
+                        says which is which rather than leaving them looking equally powerful. The
+                        copy count is real — the print route lays out that many. Nothing in a browser
+                        can set a printer to duplex, so the sided answer travels to a person. */}
+                    <div>
+                      <label className={labelClassName} htmlFor="template-copies">
+                        How many copies
+                      </label>
+                      <Input
+                        className={inputClassName}
+                        id="template-copies"
+                        inputMode="numeric"
+                        max={CUSTOM_TEMPLATE_MAX_COPIES}
+                        min={1}
+                        onChange={(event) => setDefaultCopies(event.target.value)}
+                        type="number"
+                        value={defaultCopies}
+                      />
+                      <p className="mt-1 text-xs text-phx-ink-faint">
+                        Printed this many times unless somebody types a different number.
+                      </p>
+                    </div>
+
+                    <div>
+                      <span className={labelClassName}>One side or two?</span>
+                      <div className="mt-1 flex flex-wrap gap-2" role="group">
+                        {CUSTOM_TEMPLATE_PRINT_SIDES.map((option) => {
+                          const chosen = option === printSides;
+                          return (
+                            <button
+                              aria-pressed={chosen}
+                              className={[
+                                "flex-1 basis-40 rounded-xl border px-3 py-2 text-left transition",
+                                chosen
+                                  ? "border-phx-accent-line bg-phx-accent/10 text-phx-ink shadow-sm"
+                                  : "border-phx-line bg-white/95 text-phx-ink-2 hover:border-phx-accent-line",
+                              ].join(" ")}
+                              key={option}
+                              onClick={() => setPrintSides(option)}
+                              type="button"
+                            >
+                              <span className="block text-sm font-black">
+                                {CUSTOM_TEMPLATE_PRINT_SIDES_LABELS[option]}
+                              </span>
+                              <span className="mt-0.5 block text-xs font-semibold text-phx-ink-faint">
+                                {CUSTOM_TEMPLATE_PRINT_SIDES_NOTES[option]}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
                     <div className="sm:col-span-2">
                       <label className={labelClassName} htmlFor="template-note">
                         What this paper is, for whoever reads the list next
@@ -762,10 +789,10 @@ export function TemplateStudio({
             </AdminCallout>
           )}
 
-          {listError ? (
+          {listError ?? openError ? (
             <AdminCallout tone="warning">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-              <span>{listError}</span>
+              <span>{listError ?? openError}</span>
             </AdminCallout>
           ) : templates.length === 0 && loaded ? (
             <AdminCallout>
@@ -831,6 +858,17 @@ export function TemplateStudio({
                           <p className="mt-1 text-xs text-phx-ink-faint">
                             {template.pages.length} page{template.pages.length === 1 ? "" : "s"} ·{" "}
                             {describePageSize(template.pageWidthPt, template.pageHeightPt)}
+                          </p>
+                          {/* HOW IT PRINTS, on its own line rather than folded into the one above.
+                              The line above describes the PAPER — how many sides it has and how big
+                              they are. This one describes the JOB, and a reader scanning for "do I
+                              need two of these" should not have to find it inside a size. */}
+                          <p className="mt-0.5 text-xs font-semibold text-phx-ink-soft">
+                            {describePrintInstruction({
+                              defaultCopies: template.defaultCopies,
+                              pageCount: template.pages.length,
+                              printSides: template.printSides,
+                            })}
                           </p>
                           {template.note ? (
                             <p className="mt-1 text-xs text-phx-ink-soft">{template.note}</p>

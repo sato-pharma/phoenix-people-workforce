@@ -11,12 +11,9 @@ import {
 } from "@/lib/hiring-pack/render-clearance";
 import { documentFieldInventory } from "@/lib/hiring-pack/document-inventory";
 import { pageSizeFor } from "@/lib/hiring-pack/field-warnings";
+import { asPrintableDocument, type PrintableDocument } from "@/lib/hiring-pack/document-registry";
 import {
-  asPrintableDocument,
-  CUSTOM_DOCUMENT_DEFAULT_COPIES,
-  type PrintableDocument,
-} from "@/lib/hiring-pack/document-registry";
-import {
+  canRolePrintCustomTemplate,
   isCustomTemplateLayerMissing,
   loadCurrentCustomTemplate,
   loadCustomTemplateVersion,
@@ -242,8 +239,36 @@ export async function GET(request: Request, { params }: { params: Promise<{ hrId
       );
     }
 
+    // ─────────────────────────────────────────────────────────────────────────────────────────
+    // THE TEMPLATE'S OWN ROLE LIST, ON TOP OF THE MODULE PERMISSION — the second half of the gate.
+    //
+    // `employee_documents:read` was asserted at the top of this handler and is what the ten
+    // built-in papers stand behind. An uploaded template can narrow that further, because a company
+    // template is not necessarily an HR form: a warning letter or a salary certificate should not
+    // print for everyone who can print a contract. Until now the field was stored, shown on the
+    // upload form, and enforced NOWHERE — which is the worst state for an access control to be in,
+    // because the screen says it is doing something it is not.
+    //
+    // 403 rather than 404: the caller may legitimately see this template listed, so pretending it
+    // does not exist would send somebody chasing a missing paper instead of asking for the role.
+    // ─────────────────────────────────────────────────────────────────────────────────────────
+    if (template && !canRolePrintCustomTemplate(access.role, template.printableByRoles)) {
+      return NextResponse.json(
+        {
+          error: "forbidden_company_template",
+          message: `"${template.name}" is limited to ${(template.printableByRoles ?? []).join(", ")}.`,
+        },
+        { status: 403 },
+      );
+    }
+
+    // THE TEMPLATE'S OWN NUMBER, not a constant — the owner, 2026-09-04: "tell him that it is for
+    // example how many copies". A built-in paper has its count compiled in beside its renderer
+    // because the count is a property of that form; an uploaded template carries the same fact on
+    // its row, set by whoever uploaded it. `CUSTOM_DOCUMENT_DEFAULT_COPIES` is still what a row
+    // written before that column existed resolves to, in the store.
     const defaultCopies = template
-      ? CUSTOM_DOCUMENT_DEFAULT_COPIES
+      ? template.defaultCopies
       : RENDERERS[requested as HiringPackDocument].copies;
     const copies = resolveCopies(url.searchParams.get("copies"), defaultCopies);
 

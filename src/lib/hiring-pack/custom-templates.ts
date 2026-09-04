@@ -135,6 +135,100 @@ export function isCustomTemplateGroup(value: unknown): value is CustomTemplateGr
   return (CUSTOM_TEMPLATE_GROUPS as readonly unknown[]).includes(value);
 }
 
+/**
+ * HOW MANY COPIES AND WHETHER IT PRINTS BACK-TO-BACK — the owner, 2026-09-04: "I can upload any
+ * template I work on and note it and tell him that it is for example how many copies and it is only
+ * or face back."
+ *
+ * Both facts are compiled into the code for the ten built-in papers — the custody receipt is two
+ * copies, Form 1 is single-sided, and both cards say so in words. A template somebody uploads has
+ * no code to compile them into, so it carries them itself.
+ *
+ * THE FREE-TEXT NOTE WAS ALREADY THERE, AND THAT WAS THE PROBLEM. "Two copies, double sided" could
+ * be typed into it, and nothing read it: the template still printed one copy. A note that describes
+ * behaviour the system does not have reads as a setting, and the person who trusts it prints the
+ * wrong thing.
+ */
+
+/**
+ * The most copies a template may default to.
+ *
+ * Ten, not unbounded. The largest built-in paper is two. A form genuinely needing more than ten is a
+ * mailing rather than a hiring document, and an unbounded number is one stray zero away from the
+ * browser laying out four hundred copies of a scanned A4 page.
+ */
+export const CUSTOM_TEMPLATE_MAX_COPIES = 10;
+
+export const CUSTOM_TEMPLATE_PRINT_SIDES = ["single", "double"] as const;
+
+export type CustomTemplatePrintSides = (typeof CUSTOM_TEMPLATE_PRINT_SIDES)[number];
+
+/**
+ * What each answer is called on screen, in the words the built-in cards already use.
+ *
+ * "Single-sided" and "Double-sided" rather than "simplex" and "duplex": the person choosing is an
+ * HR administrator standing at a printer, not someone reading a driver's settings.
+ */
+export const CUSTOM_TEMPLATE_PRINT_SIDES_LABELS: Readonly<
+  Record<CustomTemplatePrintSides, string>
+> = {
+  double: "Double-sided",
+  single: "Single-sided",
+};
+
+/**
+ * A short line saying what each answer means for the paper that comes out.
+ *
+ * SAYS PLAINLY THAT IT IS AN INSTRUCTION. No web API can set a printer to duplex — the browser's own
+ * print dialog owns that, and neither CSS nor `window.print()` can reach it. So this is a note to a
+ * person, and a screen that implied it had configured the printer would be lying about the one thing
+ * the operator cannot check until the paper is already out.
+ */
+export const CUSTOM_TEMPLATE_PRINT_SIDES_NOTES: Readonly<
+  Record<CustomTemplatePrintSides, string>
+> = {
+  double: "Printed back-to-back — set two-sided in the print dialog.",
+  single: "One side per sheet. Leave the print dialog on one-sided.",
+};
+
+/** Whether a value names one of the two answers. */
+export function isCustomTemplatePrintSides(value: unknown): value is CustomTemplatePrintSides {
+  return (CUSTOM_TEMPLATE_PRINT_SIDES as readonly unknown[]).includes(value);
+}
+
+/** How many sheets of paper one copy of this template uses. */
+export function sheetsPerCopy(pageCount: number, printSides: CustomTemplatePrintSides): number {
+  if (pageCount <= 0) return 0;
+  return printSides === "double" ? Math.ceil(pageCount / 2) : pageCount;
+}
+
+/**
+ * The one sentence that tells whoever is about to print what comes out of the printer.
+ *
+ * WRITTEN AS SHEETS, NOT PAGES, because that is the thing a person picks up. A four-page template
+ * printed double-sided is two sheets; printed single-sided it is four, and the difference is the
+ * whole reason the setting exists. The page count is already shown beside this — repeating it here
+ * as "4 pages, 2 sheets" would read as a contradiction rather than as an explanation.
+ *
+ * THE TOTAL IS SPELLED OUT WHEN THERE IS MORE THAN ONE COPY, and only then. "2 copies ·
+ * Double-sided · 4 sheets in all" answers the question somebody standing at the tray is asking; the
+ * same line on a one-copy one-page form is noise.
+ */
+export function describePrintInstruction(input: {
+  defaultCopies: number;
+  pageCount: number;
+  printSides: CustomTemplatePrintSides;
+}): string {
+  const copies =
+    input.defaultCopies === 1 ? "1 copy" : `${input.defaultCopies} copies`;
+  const parts = [copies, CUSTOM_TEMPLATE_PRINT_SIDES_LABELS[input.printSides]];
+  const sheets = sheetsPerCopy(input.pageCount, input.printSides) * input.defaultCopies;
+  if (input.defaultCopies > 1 && sheets > 0) {
+    parts.push(`${sheets} sheet${sheets === 1 ? "" : "s"} in all`);
+  }
+  return parts.join(" · ");
+}
+
 /** One printed side of a template, as the client describes it before it is stored. */
 export type CustomTemplatePageDraft = {
   /** Zero-based, in printing order. */
@@ -160,6 +254,10 @@ export type CustomTemplateDraft = {
    * restriction — the default, and what "anyone who can already print HR forms" looks like.
    */
   printableByRoles: string[] | null;
+  /** How many copies this prints when nobody types a different number. Enforced. */
+  defaultCopies: number;
+  /** Whether it prints back-to-back. Shown to the operator; nothing can enforce it. */
+  printSides: CustomTemplatePrintSides;
   pages: CustomTemplatePageDraft[];
 };
 
@@ -171,6 +269,8 @@ export type CustomTemplateDraftInput = {
   pageHeightPt?: unknown;
   note?: unknown;
   printableByRoles?: unknown;
+  defaultCopies?: unknown;
+  printSides?: unknown;
   pages?: unknown;
 };
 
@@ -369,9 +469,40 @@ export function parseCustomTemplateDraft(
     group = input.group;
   }
 
+  // ABSENT MEANS ONE COPY, and an unreadable value is refused rather than rounded to it. The two
+  // states look the same in a payload and mean opposite things: a screen that has never offered the
+  // box sends nothing, while a screen that offered it and got "two " sent something it could not
+  // read — and quietly printing one copy of a form that needs two is the failure this exists to stop.
+  let defaultCopies = 1;
+  if (input.defaultCopies !== undefined && input.defaultCopies !== null && input.defaultCopies !== "") {
+    const copies = readNumber(input.defaultCopies);
+    if (copies === null || !Number.isInteger(copies)) {
+      return { message: "How many copies must be a whole number.", ok: false };
+    }
+    if (copies < 1 || copies > CUSTOM_TEMPLATE_MAX_COPIES) {
+      return {
+        message: `How many copies must be between 1 and ${CUSTOM_TEMPLATE_MAX_COPIES}.`,
+        ok: false,
+      };
+    }
+    defaultCopies = copies;
+  }
+
+  let printSides: CustomTemplatePrintSides = "single";
+  if (input.printSides !== undefined && input.printSides !== null && input.printSides !== "") {
+    if (!isCustomTemplatePrintSides(input.printSides)) {
+      return {
+        message: `"${String(input.printSides)}" is not a print setting. Choose single-sided or double-sided.`,
+        ok: false,
+      };
+    }
+    printSides = input.printSides;
+  }
+
   return {
     ok: true,
     value: {
+      defaultCopies,
       group,
       name,
       nameAr: readOptionalText(input.nameAr),
@@ -380,6 +511,7 @@ export function parseCustomTemplateDraft(
       pages,
       pageWidthPt: roundPoints(pageWidthPt),
       printableByRoles,
+      printSides,
     },
   };
 }

@@ -25,9 +25,12 @@ import { randomUUID } from "node:crypto";
 
 import {
   isCustomTemplateGroup,
+  isCustomTemplatePrintSides,
   type CustomTemplateGroup,
+  type CustomTemplatePrintSides,
   buildCustomTemplatePagePath,
   CUSTOM_TEMPLATE_BUCKET,
+  CUSTOM_TEMPLATE_MAX_COPIES,
   type CustomTemplateContentType,
   type CustomTemplateDraft,
 } from "@/lib/hiring-pack/custom-templates";
@@ -41,14 +44,23 @@ const PAGES_TABLE = "hiring_pack_custom_template_pages";
 export function isCustomTemplateLayerMissing(error: unknown): boolean {
   if (!error || typeof error !== "object") return false;
   const code = "code" in error ? String((error as { code?: unknown }).code ?? "") : "";
-  if (code === "PGRST205" || code === "PGRST204" || code === "42P01") return true;
+  // 42703 IS A MISSING COLUMN, and it belongs in this set for the same reason 42P01 does: the
+  // deploy reaches production before the migration is applied, so for that window the code asks for
+  // columns the table does not have yet. Without it the whole HR Forms page 500s during a window
+  // that is supposed to degrade to "no company templates". It does hide a mistyped column name in
+  // development — but a mistyped column name shows up as an empty list on the very first run, while
+  // the window this covers shows up as a broken page for everybody.
+  if (code === "PGRST205" || code === "PGRST204" || code === "42P01" || code === "42703") {
+    return true;
+  }
   const message = (
     "message" in error ? String((error as { message?: unknown }).message ?? "") : ""
   ).toLowerCase();
   return (
     message.includes("could not find the table") ||
     message.includes("schema cache") ||
-    (message.includes("relation") && message.includes("does not exist"))
+    (message.includes("relation") && message.includes("does not exist")) ||
+    (message.includes("column") && message.includes("does not exist"))
   );
 }
 
@@ -85,12 +97,44 @@ export type CustomTemplate = {
   supersededBy: string | null;
   note: string | null;
   printableByRoles: string[] | null;
+  /** How many copies this prints when nobody types a different number. Enforced by the print route. */
+  defaultCopies: number;
+  /** Whether it prints back-to-back. Shown beside Print; no web API can set a printer duplex. */
+  printSides: CustomTemplatePrintSides;
   createdAt: string;
   createdByHrId: string | null;
   updatedAt: string;
   updatedByHrId: string | null;
   pages: CustomTemplatePage[];
 };
+
+/**
+ * Whether a viewer holding this role may print this template.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────────────────────
+ * SECOND GATE, NEVER THE ONLY ONE. Every caller has already had to pass
+ * `assertPermission(access, "employee_documents", "read")`, which is the gate the ten built-in
+ * papers stand behind. This narrows that further for one uploaded template, because a company
+ * template is not necessarily an HR form: somebody uploads a warning letter, or a salary
+ * certificate, and it should not print for everyone who can print a contract.
+ *
+ * NULL MEANS "WHOEVER MAY PRINT HR FORMS", not "nobody" and not "everybody". Every template
+ * uploaded before this field existed has null, and reading null as a closed door would stop four
+ * live papers printing on the day this ships; reading it as open matches what the field's own
+ * upload form says — leave it blank and the template follows the module's own permission.
+ *
+ * SUPER ADMIN IS NEVER LOCKED OUT. The list is written through a form, one careless save can name
+ * a role nobody holds, and a paper that no living account can print is unrecoverable through the
+ * UI that created it — the Studio's own screens sit behind the same check.
+ */
+export function canRolePrintCustomTemplate(
+  role: string,
+  printableByRoles: readonly string[] | null,
+): boolean {
+  if (printableByRoles === null || printableByRoles.length === 0) return true;
+  if (role === "Super Admin") return true;
+  return printableByRoles.includes(role);
+}
 
 type TemplateRecord = {
   id: string;
@@ -107,6 +151,8 @@ type TemplateRecord = {
   superseded_by: string | null;
   note: string | null;
   printable_by_roles: string[] | null;
+  default_copies: number | string | null;
+  print_sides: string | null;
   created_at: string;
   created_by_hr_id: string | null;
   updated_at: string;
@@ -136,6 +182,21 @@ function toNumber(value: number | string | null): number {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+/**
+ * A copy count the print route can act on, whatever the row happens to hold.
+ *
+ * The table's own check already refuses anything outside 1–10, so this is not a second opinion about
+ * what is valid — it is what to do with a row written before the column existed, where `toNumber`
+ * answers 0 for the null. Zero copies renders an empty document, which reads as a broken template
+ * rather than as a missing migration.
+ */
+function clampCopies(value: number): number {
+  if (!Number.isFinite(value)) return 1;
+  const whole = Math.round(value);
+  if (whole < 1) return 1;
+  return Math.min(whole, CUSTOM_TEMPLATE_MAX_COPIES);
+}
+
 function pageFromRecord(record: PageRecord): CustomTemplatePage {
   return {
     contentType: record.content_type,
@@ -163,6 +224,11 @@ function templateFromRecord(record: TemplateRecord, pages: CustomTemplatePage[])
     group: isCustomTemplateGroup(record.document_group) ? record.document_group : "other",
     nameAr: record.name_ar,
     note: record.note,
+    // A row written before these columns existed reads null, and one copy printed on one side is
+    // exactly how every such row already printed — so the fallback restores yesterday's behaviour
+    // rather than guessing at an intention nobody recorded.
+    defaultCopies: clampCopies(toNumber(record.default_copies)),
+    printSides: isCustomTemplatePrintSides(record.print_sides) ? record.print_sides : "single",
     pageHeightPt: toNumber(record.page_height_pt),
     pages: pages.slice().sort((a, b) => a.pageIndex - b.pageIndex),
     pageWidthPt: toNumber(record.page_width_pt),
@@ -177,7 +243,7 @@ function templateFromRecord(record: TemplateRecord, pages: CustomTemplatePage[])
 }
 
 const TEMPLATE_COLUMNS =
-  "id, key, name, name_ar, document_group, page_width_pt, page_height_pt, status, version, effective_from, superseded_on, superseded_by, note, printable_by_roles, created_at, created_by_hr_id, updated_at, updated_by_hr_id";
+  "id, key, name, name_ar, document_group, page_width_pt, page_height_pt, status, version, effective_from, superseded_on, superseded_by, note, printable_by_roles, default_copies, print_sides, created_at, created_by_hr_id, updated_at, updated_by_hr_id";
 
 const PAGE_COLUMNS =
   "id, template_id, page_index, storage_path, content_type, size_bytes, width_px, height_px";
@@ -396,6 +462,8 @@ export async function createCustomTemplate(input: {
       document_group: draft.group,
       name_ar: draft.nameAr,
       note: draft.note,
+      default_copies: draft.defaultCopies,
+      print_sides: draft.printSides,
       page_height_pt: draft.pageHeightPt,
       page_width_pt: draft.pageWidthPt,
       printable_by_roles: draft.printableByRoles,

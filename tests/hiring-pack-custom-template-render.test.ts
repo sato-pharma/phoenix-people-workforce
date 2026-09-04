@@ -184,6 +184,8 @@ function templateFixture(overrides: Partial<CustomTemplate> = {}): CustomTemplat
     supersededBy: null,
     note: null,
     printableByRoles: null,
+    defaultCopies: 1,
+    printSides: "single",
     createdAt: "2026-09-01T08:00:00.000Z",
     createdByHrId: "B-1",
     updatedAt: "2026-09-01T08:00:00.000Z",

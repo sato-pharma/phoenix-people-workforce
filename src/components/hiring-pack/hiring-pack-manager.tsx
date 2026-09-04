@@ -32,6 +32,7 @@ import {
   FileSignature,
   FileText,
   Loader2,
+  PencilLine,
   Printer,
   Save,
   ShieldCheck,
@@ -49,11 +50,18 @@ import {
 import { HiringPackPaperEditor } from "@/components/hiring-pack/paper-editor";
 import { TemplateStudio } from "@/components/hiring-pack/template-studio";
 import {
+  templateNamesOf,
+  useCompanyTemplates,
+  type StoredTemplate,
+} from "@/components/hiring-pack/use-company-templates";
+import {
+  asPrintableDocument,
   documentDefaultCopies,
   documentLabel,
   type CustomDocumentNames,
   type PrintableDocument,
 } from "@/lib/hiring-pack/document-registry";
+import { describePrintInstruction } from "@/lib/hiring-pack/custom-templates";
 import {
   INSURANCE_WAGE_CEILING,
   INSURANCE_WAGE_DIVISOR,
@@ -688,15 +696,51 @@ export function HiringPackManager({
    */
   const [preview, setPreview] = useState<OpenPaper | null>(null);
   /**
+   * The uploaded company templates — read ONCE here and shared with everything that shows them.
+   *
+   * This screen, the Studio at the foot of it, and each package tab all list the same papers. The
+   * list used to belong to the Studio and load when that panel was opened, which was right while
+   * the Studio was the only place they appeared; it stopped being right when a template filed under
+   * "New hires package" had to sit in that tab whether or not anybody opened the Studio today.
+   */
+  const companyTemplates = useCompanyTemplates();
+  /**
    * What the uploaded templates are CALLED, so a company paper opens under its own name.
    *
    * The ten have their labels compiled in; an uploaded template's name is a database row, which is
-   * the entire point of being able to upload one. The Template Studio is what reads that list, so
-   * it hands the names up as it loads them rather than this screen fetching the same list twice.
-   * Empty until the Studio has been opened, and `documentLabel` falls back to "Company template"
-   * until then — a fallback, never a wrong name.
+   * the entire point of being able to upload one. `documentLabel` falls back to "Company template"
+   * while the list is still in flight — a fallback, never a wrong name.
    */
-  const [customTemplateNames, setCustomTemplateNames] = useState<CustomDocumentNames>({});
+  const customTemplateNames: CustomDocumentNames = useMemo(
+    () => templateNamesOf(companyTemplates.templates),
+    [companyTemplates.templates],
+  );
+  /**
+   * The uploaded templates each package tab shows.
+   *
+   * CURRENT VERSIONS ONLY. An archived row is a superseded edition of a paper the company has since
+   * replaced — it stays readable through the Archive, where the version being asked for is the whole
+   * point, but offering it here would put two spellings of the same form side by side with nothing
+   * on screen saying which one is in force.
+   *
+   * `other` IS FILED IN NEITHER, on purpose. A paper the uploader declined to put in a package is
+   * exactly a paper that belongs to no package; listing it in both would make the two packages stop
+   * meaning anything. It stays in the Studio under its own heading.
+   */
+  const joiningTemplates = useMemo(
+    () =>
+      companyTemplates.templates.filter(
+        (template) => template.group === "joining" && template.status === "current",
+      ),
+    [companyTemplates.templates],
+  );
+  const leavingTemplates = useMemo(
+    () =>
+      companyTemplates.templates.filter(
+        (template) => template.group === "leaving" && template.status === "current",
+      ),
+    [companyTemplates.templates],
+  );
   /**
    * Which package is on screen. The joining papers and the leaving papers are one workflow seen from
    * two ends (see the file header), but a person is only ever at one end on the day HR prints, so the
@@ -901,9 +945,14 @@ export function HiringPackManager({
    * correctly, and "Print → Save as PDF" from that tab produces a real PDF with selectable text.
    */
   const openPrint = useCallback(
-    (document: PrintableDocument, versionId?: string) => {
+    (document: PrintableDocument, versionId?: string, copiesOverride?: number) => {
       if (!pack) return;
-      const count = resolveCopyCount(copies[document], document);
+      // AN EXPLICIT COUNT WINS, and it has to, because this function ALWAYS sends `copies` in the
+      // URL. The server has a default of its own — a company template's is on its row — but a
+      // parameter that is always present means the server's default is never reached. A caller with
+      // no Copies box on screen, which is every company-template row, passes the template's own
+      // number here rather than letting the box's absence silently mean one.
+      const count = copiesOverride ?? resolveCopyCount(copies[document], document);
       // No `version` parameter is the normal case, and it does NOT mean "print the current text":
       // the route resolves the version this employee signed. The parameter is only for deliberately
       // asking for a superseded template from the Archive.
@@ -943,6 +992,34 @@ export function HiringPackManager({
 
     setPreview({ documentKey: document, versionId });
   }, []);
+
+  /**
+   * Open or print one uploaded company template against the employee on screen.
+   *
+   * NARROWED, NEVER CAST. `template.document` arrives as a plain string from the database, and
+   * `asPrintableDocument` is the one thing that decides whether it names a paper this build can
+   * render. A cast would compile identically and then hand `openPrint` a document key the route has
+   * no case for — which returns an empty page rather than an error, on a form somebody signs.
+   *
+   * THE ROW'S OWN ID IS THE VERSION. A template's `key` is its identity across every edition; the
+   * `id` is this edition. Printing without a version asks the route to resolve the one the employee
+   * signed, which is right for the built-ins and wrong here: the operator has just clicked a
+   * specific row in a specific list, so that is the paper to open.
+   */
+  const openTemplate = useCallback(
+    (template: StoredTemplate, how: "preview" | "print") => {
+      const document = asPrintableDocument(template.document);
+      if (!document) {
+        setError(
+          `"${template.name}" cannot be opened — its document id is not one this system recognises.`,
+        );
+        return;
+      }
+      if (how === "print") openPrint(document, template.id, template.defaultCopies);
+      else openPreview(document, template.id);
+    },
+    [openPreview, openPrint],
+  );
 
   const setCopiesFor = useCallback((document: PrintableDocument, value: string) => {
     setCopies((current) => ({ ...current, [document]: value }));
@@ -1506,6 +1583,13 @@ export function HiringPackManager({
                     title="Custody receipt — phone or tablet"
                   />
                 </div>
+
+                <PackageCompanyTemplates
+                  employeeSelected={Boolean(pack)}
+                  onOpen={(template) => openTemplate(template, "preview")}
+                  onPrint={(template) => openTemplate(template, "print")}
+                  templates={joiningTemplates}
+                />
               </div>
             ) : null}
 
@@ -1741,6 +1825,13 @@ export function HiringPackManager({
                     title="Company clearance"
                   />
                 </div>
+
+                <PackageCompanyTemplates
+                  employeeSelected={Boolean(pack)}
+                  onOpen={(template) => openTemplate(template, "preview")}
+                  onPrint={(template) => openTemplate(template, "print")}
+                  templates={leavingTemplates}
+                />
               </div>
             ) : null}
           </>
@@ -1758,8 +1849,8 @@ export function HiringPackManager({
         />
 
         <TemplateStudio
+          companyTemplates={companyTemplates}
           employeeSelected={Boolean(pack)}
-          onNamesChange={setCustomTemplateNames}
           onPreview={(document, versionId) => openPreview(document, versionId)}
           onPrint={(document, versionId) => openPrint(document, versionId)}
         />
@@ -2035,6 +2126,102 @@ function SignaturePill({
         <span className="font-semibold opacity-80">{formatDate(signedDate)}</span>
       ) : null}
     </span>
+  );
+}
+
+/**
+ * The uploaded templates filed in ONE package, shown beside the built-in papers of that package.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────────────────────
+ * WHY IT IS HERE AND NOT ONLY IN THE STUDIO. The Studio at the foot of this screen is where a
+ * template is ADDED. This is where one is USED. Somebody printing a leaver's papers on their last
+ * day works down the Leaver package tab; a company exit form that only appears in a panel further
+ * down, behind a Show button, is a paper they will not find on the day they need it — and the
+ * screen would look complete without it, which is the failure mode that matters.
+ *
+ * RENDERS NOTHING WHEN THERE ARE NONE, deliberately. An empty heading on a screen most companies
+ * will never upload anything to is a permanent invitation to wonder what is missing.
+ *
+ * `other` NEVER APPEARS HERE. A paper filed as "Other papers" is by definition not part of either
+ * package, and putting it in both tabs would make the two packages stop meaning anything. It is
+ * listed in the Studio, under its own heading.
+ */
+function PackageCompanyTemplates({
+  employeeSelected,
+  onOpen,
+  onPrint,
+  templates,
+}: {
+  employeeSelected: boolean;
+  onOpen: (template: StoredTemplate) => void;
+  onPrint: (template: StoredTemplate) => void;
+  templates: readonly StoredTemplate[];
+}) {
+  if (templates.length === 0) return null;
+  return (
+    <AdminTableShell
+      description="Uploaded through the Company templates panel below, and filed in this package. They print from the employee record exactly as the papers above do."
+      title="Company templates"
+    >
+      <ul className="flex flex-col gap-2">
+        {templates.map((template) => (
+          <li
+            className="flex flex-col gap-2 rounded-2xl border border-phx-line bg-white/95 p-3 sm:flex-row sm:items-center sm:gap-3"
+            key={template.id}
+          >
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold text-phx-ink">{template.name}</p>
+              {template.nameAr ? (
+                <p className="text-phx-xs text-phx-ink-soft" dir="auto">
+                  {template.nameAr}
+                </p>
+              ) : null}
+              <p className="text-phx-xs text-phx-ink-faint">
+                {template.pages.length} {template.pages.length === 1 ? "page" : "pages"} · v
+                {template.version}
+              </p>
+              {/* WHAT COMES OUT OF THE PRINTER, said before the button is pressed rather than
+                  discovered afterwards. Whoever set the template up answered both questions at
+                  upload; this is where that answer reaches the person holding the paper. */}
+              <p className="text-phx-xs font-semibold text-phx-ink-soft">
+                {describePrintInstruction({
+                  defaultCopies: template.defaultCopies,
+                  pageCount: template.pages.length,
+                  printSides: template.printSides,
+                })}
+              </p>
+            </div>
+            {/*
+              DISABLED, NOT HIDDEN, and told why. A template is a blank form: opening one means
+              filling it WITH somebody, so the missing piece is an employee. A control that
+              disappears teaches nothing; one that explains itself teaches the next step.
+            */}
+            <div className="flex flex-wrap items-center gap-2 sm:shrink-0">
+              <Button
+                className="h-9 gap-2 rounded-xl"
+                disabled={!employeeSelected}
+                onClick={() => onOpen(template)}
+                title={employeeSelected ? undefined : "Choose an employee above first."}
+                variant="outline"
+              >
+                <PencilLine className="h-4 w-4" />
+                Open
+              </Button>
+              <Button
+                className="h-9 gap-2 rounded-xl"
+                disabled={!employeeSelected}
+                onClick={() => onPrint(template)}
+                title={employeeSelected ? undefined : "Choose an employee above first."}
+                variant="outline"
+              >
+                <Printer className="h-4 w-4" />
+                Print
+              </Button>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </AdminTableShell>
   );
 }
 

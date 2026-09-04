@@ -6,15 +6,22 @@ import {
   CUSTOM_TEMPLATE_GROUP_LABELS,
   CUSTOM_TEMPLATE_GROUP_NOTES,
   CUSTOM_TEMPLATE_GROUPS,
+  CUSTOM_TEMPLATE_MAX_COPIES,
   CUSTOM_TEMPLATE_MAX_PAGE_BYTES,
   CUSTOM_TEMPLATE_MAX_PAGES,
   CUSTOM_TEMPLATE_MAX_PT,
   CUSTOM_TEMPLATE_MIN_PT,
+  CUSTOM_TEMPLATE_PRINT_SIDES,
+  CUSTOM_TEMPLATE_PRINT_SIDES_LABELS,
+  describePrintInstruction,
   pagePresetFor,
   parseCustomTemplateDraft,
   roundPoints,
 } from "@/lib/hiring-pack/custom-templates";
-import { isCustomTemplateLayerMissing } from "@/lib/hiring-pack/custom-template-store";
+import {
+  canRolePrintCustomTemplate,
+  isCustomTemplateLayerMissing,
+} from "@/lib/hiring-pack/custom-template-store";
 import {
   CUSTOM_DOCUMENT_PREFIX,
   customDocumentFor,
@@ -419,7 +426,146 @@ function testEveryPackageCanBeShownToSomebodyChoosing() {
   );
 }
 
+/**
+ * WHO MAY PRINT ONE — the second gate, which for a while was stored and enforced nowhere.
+ *
+ * `printable_by_roles` is written on the upload form and shown back on the template's row, so the
+ * screen says the paper is restricted. Until the print route consulted it, that sentence was
+ * false — every holder of `employee_documents:read` could print every uploaded template. A control
+ * that is displayed but not applied is worse than one that does not exist, because somebody trusts
+ * it: it is exactly how a salary certificate ends up printable by whoever can print a contract.
+ *
+ * The three answers below are three different questions, and conflating any two of them breaks a
+ * live paper on the day it ships.
+ */
+function testWhoMayPrintACompanyTemplate() {
+  // NULL IS NOT "NOBODY". Every template uploaded before the field existed carries null, and four
+  // of them are live. Reading null as a closed door would stop all four printing at once.
+  assert.equal(
+    canRolePrintCustomTemplate("HR Specialist", null),
+    true,
+    "a template with no role list follows the module permission, as its own upload form promises",
+  );
+  // An EMPTY LIST is the same statement as null, said by a form that submitted an untouched field.
+  // Treating it as "nobody" would make a template nobody can print, through a screen that never
+  // asked the question.
+  assert.equal(
+    canRolePrintCustomTemplate("HR Specialist", []),
+    true,
+    "an empty list is an unanswered question, not an answer of nobody",
+  );
+
+  assert.equal(canRolePrintCustomTemplate("HR Specialist", ["HR Specialist"]), true);
+  assert.equal(
+    canRolePrintCustomTemplate("Medical Rep", ["HR Specialist", "CEO"]),
+    false,
+    "a role that is not on a non-empty list cannot print that template",
+  );
+
+  // SUPER ADMIN IS NEVER LOCKED OUT, and this is the recovery path rather than a courtesy. The list
+  // is free text through a form; one careless save can name a role nobody holds, and the Studio
+  // screen that would fix it sits behind the same module permission. Without this the paper is
+  // unrecoverable through the UI that created it.
+  assert.equal(
+    canRolePrintCustomTemplate("Super Admin", ["Nobody Holds This Role"]),
+    true,
+    "a Super Admin can always print, or a mistyped role list is unrecoverable",
+  );
+}
+
+/**
+ * HOW MANY COPIES AND WHETHER IT PRINTS BACK-TO-BACK — the owner, 2026-09-04.
+ *
+ * WHAT THIS PINS IS THE DEFAULT, not the arithmetic. Both facts were free text in the `note` until
+ * today: "two copies, double sided" could be typed there and nothing read it, so the template still
+ * printed one copy. The failure that replaces is silent — a form that needed two copies came out as
+ * one, and nobody finds out until the second signature is asked for.
+ *
+ * A TEMPLATE THAT SAYS NOTHING STILL MEANS ONE COPY ON ONE SIDE, which is what every row uploaded
+ * before these fields existed already did. Getting that wrong in the other direction — refusing a
+ * draft that omits them — would break every upload screen that has not been redeployed yet.
+ */
+function testHowManyCopiesAndWhichSides() {
+  const silent = parseCustomTemplateDraft(draft());
+  assert.ok(silent.ok, silent.ok ? "" : silent.message);
+  assert.equal(silent.value.defaultCopies, 1, "a draft that says nothing prints one copy");
+  assert.equal(silent.value.printSides, "single", "and prints it on one side");
+
+  const two = parseCustomTemplateDraft(draft({ defaultCopies: 2, printSides: "double" }));
+  assert.ok(two.ok, two.ok ? "" : two.message);
+  assert.equal(two.value.defaultCopies, 2);
+  assert.equal(two.value.printSides, "double");
+
+  // A NUMBER INPUT SENDS A STRING. Every other measurement on this form arrives as one, and a copy
+  // count that only worked when the client happened to send a number would fail on the one screen
+  // that actually exists.
+  const typed = parseCustomTemplateDraft(draft({ defaultCopies: "3" }));
+  assert.ok(typed.ok, typed.ok ? "" : typed.message);
+  assert.equal(typed.value.defaultCopies, 3, "a copy count typed into a number box is a string");
+
+  // REFUSED, NEVER ROUNDED DOWN TO ONE. Silently printing one copy of a form that asked for eleven
+  // is the exact failure this whole field exists to prevent, and it would be invisible.
+  for (const bad of [0, -1, CUSTOM_TEMPLATE_MAX_COPIES + 1, 1.5, "two"]) {
+    const refused = parseCustomTemplateDraft(draft({ defaultCopies: bad }));
+    assert.ok(!refused.ok, `a copy count of ${String(bad)} must be refused, not corrected`);
+  }
+
+  const wrongSides = parseCustomTemplateDraft(draft({ printSides: "duplex" }));
+  assert.ok(!wrongSides.ok, "a print setting this system does not have is refused");
+  assert.match(wrongSides.message, /single-sided|double-sided/i);
+}
+
+/**
+ * The line the person standing at the printer reads.
+ *
+ * IT COUNTS SHEETS, NOT PAGES, because that is what they pick up. A four-page template printed
+ * double-sided is two sheets and printed single-sided is four — the difference IS the setting, and
+ * a line that reported pages either way would make the setting look like it did nothing.
+ */
+function testThePrintInstructionSaysWhatComesOut() {
+  assert.equal(
+    describePrintInstruction({ defaultCopies: 1, pageCount: 1, printSides: "single" }),
+    "1 copy · Single-sided",
+    "one copy of a one-page form needs no sheet total",
+  );
+
+  assert.equal(
+    describePrintInstruction({ defaultCopies: 2, pageCount: 4, printSides: "double" }),
+    "2 copies · Double-sided · 4 sheets in all",
+    "four pages back-to-back is two sheets, twice",
+  );
+
+  assert.equal(
+    describePrintInstruction({ defaultCopies: 2, pageCount: 4, printSides: "single" }),
+    "2 copies · Single-sided · 8 sheets in all",
+    "the same four pages on one side each is twice the paper",
+  );
+
+  // AN ODD PAGE COUNT ROUNDS UP. Three pages printed back-to-back is two sheets — the last one has
+  // a blank back — and reporting 1.5 would be arithmetic rather than an answer.
+  assert.equal(
+    describePrintInstruction({ defaultCopies: 3, pageCount: 3, printSides: "double" }),
+    "3 copies · Double-sided · 6 sheets in all",
+    "an odd page count rounds up to a whole sheet",
+  );
+}
+
+/** Every print setting can be shown to somebody choosing between them. */
+function testEveryPrintSettingCanBeShown() {
+  for (const option of CUSTOM_TEMPLATE_PRINT_SIDES) {
+    assert.equal(
+      typeof CUSTOM_TEMPLATE_PRINT_SIDES_LABELS[option],
+      "string",
+      `${option} has no label, so the picker would render an empty button`,
+    );
+  }
+}
+
 export async function runHiringPackCustomTemplateTests() {
+  testHowManyCopiesAndWhichSides();
+  testThePrintInstructionSaysWhatComesOut();
+  testEveryPrintSettingCanBeShown();
+  testWhoMayPrintACompanyTemplate();
   testACustomDocumentCannotCollideWithABuiltIn();
   testAMalformedCustomKeyIsRefusedRatherThanTrusted();
   testAWellFormedTemplateIsAccepted();
