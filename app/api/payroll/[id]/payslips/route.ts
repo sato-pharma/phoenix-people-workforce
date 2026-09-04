@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { assertPermission } from "@/lib/auth/permissions";
 import { isDevelopment } from "@/lib/env";
 import {
+  formatWorkingDays,
   payrollMoneyHeaders,
   payrollSheetHeaders,
   payrollSheetSections,
@@ -109,6 +110,10 @@ const payslipHiddenHeaders = new Set<PayrollSheetHeader>([
   "Line",
   "Area",
   "Hire Date",
+  // Shown in the employee card above instead, next to the hire date it explains
+  // — exactly how Hire Date itself is handled. The components table below is a
+  // list of money lines, and a day count is not one of those.
+  "Working Days",
   "Payment Group",
   "Policy Comment",
 ]);
@@ -194,6 +199,7 @@ function payslip(record: SalaryRecord, month: number, year: number, batchStatus:
               ${infoRow("Area", record.area)}
               ${infoRow("Line", record.line)}
               ${infoRow("Hire Date", formatDate(record.hireDate))}
+              ${infoRow("Working Days", formatWorkingDays(record))}
             </div>
           </div>
 

@@ -2,6 +2,7 @@ import ExcelJS from "exceljs";
 
 import { buildCoverSheet } from "@/lib/export/phoenix-xlsx-style";
 import {
+  isPayrollNumericHeader,
   payrollMoneyHeaders,
   payrollSheetHeaders,
   payrollSheetValue,
@@ -45,6 +46,11 @@ export const PART1_HEADERS: PayrollSheetHeader[] = [
   "Line",
   "Area",
   "Hire Date",
+  // Owner rule 2026-09-04: the salary columns carry the FULL contract, so the
+  // Part-1 sheet needs the day count beside them — without it a joiner reads as
+  // paid a fraction of a salary the same row says he earns, with nothing to
+  // explain the gap.
+  "Working Days",
   "Base Salary",
   "Gross Salary",
   "Net Salary",
@@ -218,7 +224,7 @@ export async function writePayrollWorksheet(
         name: "Calibri",
         size: 10,
       };
-      cell.alignment = { horizontal: payrollMoneyHeaders.has(header) ? "right" : "left", vertical: "middle" };
+      cell.alignment = { horizontal: isPayrollNumericHeader(header) ? "right" : "left", vertical: "middle" };
       cell.border = gridBorder();
       if (entry.onHold) cell.fill = { fgColor: { argb: HELD_FILL }, pattern: "solid", type: "pattern" };
       else if (ci === executionColumnIndex) {
@@ -268,7 +274,7 @@ export async function writePayrollWorksheet(
       cell.value = value as ExcelJS.CellValue;
       if (payrollMoneyHeaders.has(header) && typeof value === "number") cell.numFmt = VALUE_FMT;
       cell.font = { color: { argb: SLATE }, name: "Calibri", size: 10 };
-      cell.alignment = { horizontal: payrollMoneyHeaders.has(header) ? "right" : "left", vertical: "middle" };
+      cell.alignment = { horizontal: isPayrollNumericHeader(header) ? "right" : "left", vertical: "middle" };
       cell.border = gridBorder();
       if (ci === executionColumnIndex) {
         cell.fill = { fgColor: { argb: EXECUTION_FILL }, pattern: "solid", type: "pattern" };
@@ -321,7 +327,7 @@ export async function writePayrollWorksheet(
     cell.font = { bold: true, color: { argb: BLACK }, name: "Calibri", size: 10.5 };
     cell.fill = { fgColor: { argb: AMBER }, pattern: "solid", type: "pattern" };
     cell.border = gridBorder();
-    cell.alignment = { horizontal: payrollMoneyHeaders.has(header) ? "right" : "left", vertical: "middle" };
+    cell.alignment = { horizontal: isPayrollNumericHeader(header) ? "right" : "left", vertical: "middle" };
     if (options.protect) cell.protection = { locked: true };
   });
 

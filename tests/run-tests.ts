@@ -95,6 +95,7 @@ import { runSheetTokenRotationLivenessTests } from "./sheet-token-rotation-liven
 import { runSyntheticJourneysLivenessTests } from "./synthetic-journeys-liveness.test.ts";
 import { runPayrollEngineHardeningTests } from "./payroll-engine-hardening.test.ts";
 import { runPayrollSheetMappingTests } from "./payroll-sheet-mapping.test.ts";
+import { runPayrollSheetSectionsTests } from "./payroll-sheet-sections.test.ts";
 import { runPayrollWorkflowTests } from "./payroll-workflow.test.ts";
 import { runCspHeaderTests } from "./csp-headers.test.ts";
 import { runPdfCanvasTraceTests } from "./pdf-canvas-trace.test.ts";
@@ -1474,6 +1475,7 @@ await runTest(
 );
 await runTest("money path silent failures (a confident zero is worse than an error)", runMoneyPathSilentFailureTests);
 await runTest("payroll sheet mapping", runPayrollSheetMappingTests);
+await runTest("payroll sheet sections and the Working Days column", runPayrollSheetSectionsTests);
 await runTest("payroll workflow", runPayrollWorkflowTests);
 await runTest("automated payroll split (Part 1/2 freeze + FP-in-Part-1 + reconcile)", runAutomatedPayrollSplitTests);
 await runTest("automated payroll export order (fixed HR-ID sequence)", runAutomatedPayrollExportOrderTests);

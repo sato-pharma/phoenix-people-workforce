@@ -202,6 +202,7 @@ function salaryRow(hrId: string, fullName: string, lookup: LookupContext, expens
     area: lookup.areaName,
     baseSalary: 10000,
     bonus: 0,
+    calendarDays: 30,
     crm: 0,
     employmentIncomeTax: 0,
     expenses,
@@ -233,6 +234,7 @@ function salaryRow(hrId: string, fullName: string, lookup: LookupContext, expens
     totalAdditions: expenses,
     totalDeductions: 0,
     unpaidVacations: 0,
+    workingDays: 30,
   };
 }
 

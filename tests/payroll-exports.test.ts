@@ -11,6 +11,7 @@ function makeRecord(overrides: Partial<SalaryRecord> = {}): SalaryRecord {
     batchId: "batch-1",
     baseSalary: 0,
     bonus: 0,
+    calendarDays: 30,
     crm: 0,
     employeeCode: "",
     hrId: "B-1",
@@ -43,6 +44,7 @@ function makeRecord(overrides: Partial<SalaryRecord> = {}): SalaryRecord {
     totalAdditions: 0,
     totalDeductions: 0,
     unpaidVacations: 0,
+    workingDays: 30,
     ...overrides,
   };
 }

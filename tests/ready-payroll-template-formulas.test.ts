@@ -181,8 +181,13 @@ export function runReadyPayrollTemplateFormulaTests() {
   // to catch. Since 2026-08-29 the LEAVER branch divides the same net, pinned below.
   assert.match(
     templateRouteSource,
-    /const netSalary = `\(\$\{baseSalary\}\+\$\{cellRef\(rowNumber, 18\)\}\+\$\{cellRef\(rowNumber, 19\)\}\)`/,
-    "the formula's Net must be built from Base (col 11) + Extra Cost of Living (col 18) + Fuel (col 19)",
+    // Addressed BY NAME since 2026-09-04: inserting the Working Days column shifted
+    // every literal index in the route, so the columns are looked up through col()
+    // now. Pinning names is also a stronger check than pinning numbers ever was —
+    // it states WHICH THREE FIGURES the Net is built from, not which three cells,
+    // and it cannot be satisfied by a formula that happens to hit the right column.
+    /const netSalary = `\(\$\{baseSalary\}\+\$\{cellRef\(rowNumber, col\("Extra Cost of Living"\)\)\}\+\$\{cellRef\(rowNumber, col\("Fuel Allowance"\)\)\}\)`/,
+    "the formula's Net must be built from Base Salary + Extra Cost of Living + Fuel Allowance",
   );
   assert.match(
     templateRouteSource,
@@ -295,7 +300,10 @@ export function runReadyPayrollTemplateFormulaTests() {
 
   assert.match(
     templateRouteSource,
-    /readyPayrollEditableColumnNumbers = new Set\(\[[\s\S]*?14, 15, 16, 17, 20,[\s\S]*?25, 26, 27, 28, 29, 30,[\s\S]*?\]\)/,
+    // By name since 2026-09-04 (see the netSalary pin above). The eleven columns
+    // are the same eleven; what changed is that the set no longer restates their
+    // positions, which the Working Days insert would have shifted underneath it.
+    /readyPayrollEditableColumnNumbers = new Set<number>\([\s\S]*?"Expenses",[\s\S]*?"Incentive",[\s\S]*?"Overtime",[\s\S]*?"Bonus",[\s\S]*?"Other Additions",[\s\S]*?"CRM",[\s\S]*?"Finger Print",[\s\S]*?"Unpaid Vacations",[\s\S]*?"Medical Insurance",[\s\S]*?"Loans",[\s\S]*?"Other Deductions",[\s\S]*?\)/,
     "Ready payroll must leave monthly additions and deductions editable.",
   );
 

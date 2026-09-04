@@ -245,6 +245,12 @@ export function buildRowForEmployee(input: BuildRowInput): SalaryValidationRow |
   let effectiveFuelAllowance = fuelAllowance;
   let effectiveNetSalary = netSalary;
   let resignationSettlement: ResignationSettlement | null = null;
+  // Days on payroll this month — the "Working Days" column. The salary columns
+  // below show the FULL contract (owner rule 2026-09-04) and this is what
+  // explains a joiner/leaver being paid less than it. Date-derived, so a manual
+  // chat override does not move it: it answers "how many days was he here".
+  const calendarDays = calendarDaysInMonth(period);
+  let workingDays = calendarDays;
 
   // Expenses (reimbursement of money the employee already spent, e.g. approved
   // outstation travel) and incentive must be part of a leaver's settlement too —
@@ -274,6 +280,7 @@ export function buildRowForEmployee(input: BuildRowInput): SalaryValidationRow |
       effectiveExtraCostOfLiving = resignationSettlement.ecolPaid;
       effectiveFuelAllowance = resignationSettlement.fuelPaid;
       effectiveNetSalary = resignationSettlement.netForMonth;
+      workingDays = resignationSettlement.daysWorked;
     }
   } else {
     const hireDate = employee.hireDate;
@@ -284,6 +291,7 @@ export function buildRowForEmployee(input: BuildRowInput): SalaryValidationRow |
         effectiveExtraCostOfLiving = joinerPay.ecolPaid;
         effectiveFuelAllowance = joinerPay.fuelPaid;
         effectiveNetSalary = joinerPay.netForMonth;
+        workingDays = joinerPay.daysWorked;
       }
     }
   }
@@ -309,8 +317,11 @@ export function buildRowForEmployee(input: BuildRowInput): SalaryValidationRow |
     );
   }
 
+  // ECoL/Fuel at their full contract value, matching the salary columns below
+  // (owner, 2026-09-04). Presentational only: totalPayable takes ECoL and Fuel
+  // through netSalary, never through this total.
   const totalAdditions = roundCurrency(
-    expenses + incentive + overtime + bonus + effectiveExtraCostOfLiving + effectiveFuelAllowance + otherAdditions,
+    expenses + incentive + overtime + bonus + extraCostOfLiving + fuelAllowance + otherAdditions,
   );
   const totalDeductions = roundCurrency(
     crm + fingerPrint + unpaidVacations + medicalInsurance + loans + otherDeductions,
@@ -362,18 +373,22 @@ export function buildRowForEmployee(input: BuildRowInput): SalaryValidationRow |
     monthSalary = 0;
   }
 
+  // The salary columns carry the CONTRACT figure; the money the CEO is approving
+  // stays firstPart/secondPart/monthSalary, computed above from the `effective*`
+  // (prorated) values and untouched by this. See assemble.ts's module comment.
   return {
     area: employee.areaName ?? "",
-    baseSalary: effectiveBaseSalary,
+    baseSalary,
     bonus,
+    calendarDays,
     crm,
     hrId: employee.hrId,
     employmentIncomeTax,
     expenses,
-    extraCostOfLiving: effectiveExtraCostOfLiving,
+    extraCostOfLiving,
     fingerPrint,
     firstPart,
-    fuelAllowance: effectiveFuelAllowance,
+    fuelAllowance,
     governmentalDeductions,
     fullName: employee.fullName,
     grossSalary,
@@ -385,7 +400,7 @@ export function buildRowForEmployee(input: BuildRowInput): SalaryValidationRow |
     medicalInsurance,
     monthSalary,
     nameAr: employee.nameAr,
-    netSalary: effectiveNetSalary,
+    netSalary,
     otherAdditions,
     otherDeductions,
     overtime,
@@ -397,5 +412,6 @@ export function buildRowForEmployee(input: BuildRowInput): SalaryValidationRow |
     totalAdditions,
     totalDeductions,
     unpaidVacations,
+    workingDays,
   };
 }

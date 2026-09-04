@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 
 import { PremiumHero } from "@/components/ui/premium-hero";
+import { formatWorkingDays } from "@/lib/payroll/salary-sheet-fields";
 
 type IconType = typeof Users;
 
@@ -97,6 +98,10 @@ export type EmployeeRow = {
   hrId: string;
   fullName: string;
   hireDate: string | null;
+  /** Calendar days in the period — the proration denominator. */
+  calendarDays: number;
+  /** Days on payroll. Explains a row whose full salary exceeds its Month Salary. */
+  workingDays: number;
   line: string;
   area: string;
   jobTitle: string;
@@ -882,6 +887,14 @@ const SHEET_COLUMNS: SheetColumn[] = [
   { key: "jobTitle", label: "Job Title", width: 190, render: (e) => e.jobTitle || "—" },
   { key: "line", label: "Line", width: 110, render: (e) => e.line || "—" },
   { key: "area", label: "Area", width: 160, render: (e) => e.area || "—" },
+  // Sits immediately before Base Salary, the same place it holds in
+  // payrollSheetHeaders, because it is what explains a full salary on a partial
+  // month. Never summed: a company-wide total of day counts means nothing.
+  { key: "workingDays", label: "Working Days", width: 110, numeric: true, render: (e) => (
+    <span className={e.workingDays > 0 && e.workingDays < e.calendarDays ? "font-semibold text-amber-700" : undefined}>
+      {formatWorkingDays(e) || "—"}
+    </span>
+  ) },
   { key: "baseSalary", label: "Base Salary", width: 120, numeric: true, render: (e) => egp(e.baseSalary) },
   { key: "netSalary", label: "Net Salary", width: 120, numeric: true, render: (e) => egp(e.netSalary) },
   { key: "expenses", label: "Expenses", width: 110, numeric: true, render: (e) => egp(e.expenses) },

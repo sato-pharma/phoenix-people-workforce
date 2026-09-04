@@ -42,8 +42,16 @@ export type PayrollPeriodConflict = {
 export type SalaryRecord = {
   area: string;
   batchId: string;
+  /**
+   * The FULL contractual base salary — never prorated (owner rule 2026-09-04).
+   * Applies equally to grossSalary, netSalary, extraCostOfLiving and
+   * fuelAllowance. What the employee is actually PAID for a part month is in
+   * monthSalary/firstPart/secondPart; `workingDays` explains the difference.
+   */
   baseSalary: number;
   bonus: number;
+  /** Calendar days in the payroll period (28-31) — the proration denominator. */
+  calendarDays: number;
   crm: number;
   employeeCode: string;
   hrId: string;
@@ -76,6 +84,11 @@ export type SalaryRecord = {
   totalAdditions: number;
   totalDeductions: number;
   unpaidVacations: number;
+  /**
+   * Days of the period the employee was on payroll — the "Working Days" column.
+   * Equals `calendarDays` for a regular employee (factor 1, nothing prorated).
+   */
+  workingDays: number;
 };
 
 export type SalaryFlag = {

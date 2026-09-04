@@ -42,7 +42,20 @@ function regularEffective(): EffectiveSalary {
 export function runAutomatedPayrollSplitTests() {
   // ---- effectiveSalary: regular carries master values unchanged -------------
   const regular = regularEffective();
-  assert.deepEqual(regular, { base: BASE, ecol: ECOL, fuel: FUEL, net: NET, lifecycle: "regular" });
+  // workingDays/calendarDays joined this shape on 2026-09-04, when the owner
+  // asked for the FULL salary on the sheet with a Working Days column to explain
+  // it. A regular row is the whole month on both counts. Asserted with the rest
+  // of the shape deliberately: this deepEqual is what catches a field being
+  // added to the money struct without anyone deciding what it should hold.
+  assert.deepEqual(regular, {
+    base: BASE,
+    ecol: ECOL,
+    fuel: FUEL,
+    net: NET,
+    lifecycle: "regular",
+    workingDays: 30,
+    calendarDays: 30,
+  });
 
   // ---- effectiveSalary: a joiner prorates EVERY component by the days worked,
   // ECoL and Fuel included (owner instruction 2026-08-29 — the >15th halving
@@ -119,7 +132,20 @@ export function runAutomatedPayrollSplitTests() {
     lastWorkingDate: "2026-06-28",
     unpaidDaysInSpan: 0,
   });
-  assert.deepEqual(leaverLate, { base: BASE, ecol: ECOL, fuel: FUEL, net: NET, lifecycle: "leaver" });
+  // Paid the FULL month under Rule 1 — and he was here 28 of June's 30 days,
+  // which is what the count reports. That pair is the whole point of the column:
+  // the money is waived UP to a full month, and the calendar is not rewritten to
+  // match it. Report 30 here and this sheet contradicts the Ready sheet for the
+  // same person.
+  assert.deepEqual(leaverLate, {
+    base: BASE,
+    ecol: ECOL,
+    fuel: FUEL,
+    net: NET,
+    lifecycle: "leaver",
+    workingDays: 28,
+    calendarDays: 30,
+  });
 
   // ---- HR settlement override wins over computed proration ------------------
   const overridden = effectiveSalary({

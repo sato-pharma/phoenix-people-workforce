@@ -25,6 +25,7 @@ function makeRow(overrides: Partial<SalaryValidationRow> = {}): SalaryValidation
     area: "",
     baseSalary: 0,
     bonus: 0,
+    calendarDays: 30,
     crm: 0,
     hrId: "B-1",
     employmentIncomeTax: 0,
@@ -56,6 +57,7 @@ function makeRow(overrides: Partial<SalaryValidationRow> = {}): SalaryValidation
     totalAdditions: 0,
     totalDeductions: 0,
     unpaidVacations: 0,
+    workingDays: 30,
     ...overrides,
   };
 }

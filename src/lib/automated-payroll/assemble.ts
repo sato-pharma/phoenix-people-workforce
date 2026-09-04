@@ -18,11 +18,21 @@ import type { DraftRow, PayrollPeriod, RowLifecycle, RowSettlementBasis } from "
  * existing createSalaryBatch machinery consumes) from the run's salary sources +
  * confirmed draft rows, using the two-phase split in split.ts.
  *
- * Base/ECoL/Fuel/Net for the month reflect any joiner/leaver proration or HR
- * settlement override; Gross/SI/Tax are carried from the master (matching the
- * existing Copilot's owner-confirmed scope). Held employees keep their computed
- * amounts (rendered red + flagged); they are dropped from the published batch by
- * the publish step, never here.
+ * Base/ECoL/Fuel/Net/Gross carry the FULL contract salary — they are NOT prorated
+ * (owner rule 2026-09-04). A joiner/leaver is still paid for their working days
+ * only: that proration lives in `effective`, which feeds assembleParts and
+ * freezeFirstPart untouched and lands in monthSalary/firstPart/secondPart. The
+ * new `workingDays` column is what explains the gap between the two on the sheet.
+ *
+ * This split is safe because nothing downstream re-derives money from the salary
+ * columns: mapRecord (payroll/service.ts) and the salary importer both prefer the
+ * stored first_part/second_part/month_salary and only fall back to
+ * calculatePayrollParts when those are NULL, which they never are here.
+ *
+ * SI/Tax are carried from the master (matching the existing Copilot's
+ * owner-confirmed scope). Held employees keep their computed amounts (rendered
+ * red + flagged); they are dropped from the published batch by the publish step,
+ * never here.
  */
 
 export type AssembledRow = {
@@ -237,6 +247,15 @@ export function assembleRows(input: {
     const effective = buildEffective(member, source, draft, input.period);
     const paymentMode = normalizePayrollPaymentMode(source?.paymentMode ?? "two_parts");
     const fullBaseSalary = roundCurrency(source?.baseSalary ?? 0);
+    // The CONTRACT salary — what the employee is worth per month, independent of
+    // how many days of this month he was actually on payroll. Owner rule
+    // 2026-09-04: these are what the payroll sheet, the payslip and the portal
+    // DISPLAY. `effective` (the prorated slice) stays the basis of every money
+    // figure below — it is passed to assembleParts and freezeFirstPart untouched,
+    // so nothing about what anybody is PAID moves.
+    const fullExtraCostOfLiving = roundCurrency(source?.extraCostOfLiving ?? 0);
+    const fullFuelAllowance = roundCurrency(source?.fuelAllowance ?? 0);
+    const fullNetSalary = roundCurrency(source?.netSalary ?? 0);
 
     const fingerprint = num(draft?.fingerprintValue);
     const otherPart1Total = otherPart1DeductionsTotal(draft);
@@ -319,14 +338,19 @@ export function assembleRows(input: {
 
     const socialInsurance = roundCurrency(num(source?.socialInsurance));
     const employmentIncomeTax = roundCurrency(num(source?.employmentIncomeTax));
-    // Gross is derived FORWARD from the effective (prorated) base so it reconciles
-    // with net for joiner/leaver rows (Gross = Base + SI + Tax, the locked policy
-    // formula). For a regular employee effective.base == master base, so this
-    // equals the stored gross — no change.
-    const grossSalary = roundCurrency(effective.base + socialInsurance + employmentIncomeTax);
+    // Gross is derived from the CONTRACT base, so the locked policy identity
+    // Gross = Base + SI + Tax still reads true across the row now that Base
+    // shows the full salary (owner rule 2026-09-04). It used to be derived from
+    // effective.base; for a regular employee the two are identical, and for a
+    // joiner/leaver this is the half that had to move with Base.
+    const grossSalary = roundCurrency(fullBaseSalary + socialInsurance + employmentIncomeTax);
     const governmentalDeductions = roundCurrency(socialInsurance + employmentIncomeTax);
+    // ECoL and Fuel are shown at their full contract value too (owner's choice
+    // when asked, 2026-09-04: "show them full too, so Net = Base + ECoL + Fuel
+    // adds up"). This total is presentational — it has never fed the money,
+    // because totalPayable takes ECoL/Fuel through netSalary, not through here.
     const totalAdditions = roundCurrency(
-      expenses + incentive + overtime + bonus + effective.ecol + effective.fuel + otherAdditionsTotal,
+      expenses + incentive + overtime + bonus + fullExtraCostOfLiving + fullFuelAllowance + otherAdditionsTotal,
     );
     const totalDeductions = roundCurrency(
       crm + fingerprint + unpaidVacations + medicalInsurance + loans + otherDeductionsTotal,
@@ -335,16 +359,17 @@ export function assembleRows(input: {
 
     const row: SalaryValidationRow = {
       area: employee.areaName ?? "Unassigned",
-      baseSalary: effective.base,
+      baseSalary: fullBaseSalary,
       bonus,
+      calendarDays: effective.calendarDays,
       crm,
       hrId: employee.hrId,
       employmentIncomeTax,
       expenses,
-      extraCostOfLiving: effective.ecol,
+      extraCostOfLiving: fullExtraCostOfLiving,
       fingerPrint: fingerprint,
       firstPart: parts.firstPart,
-      fuelAllowance: effective.fuel,
+      fuelAllowance: fullFuelAllowance,
       governmentalDeductions,
       fullName: employee.fullName,
       grossSalary,
@@ -356,7 +381,7 @@ export function assembleRows(input: {
       medicalInsurance,
       monthSalary: parts.monthSalary,
       nameAr: employee.nameAr,
-      netSalary: effective.net,
+      netSalary: fullNetSalary,
       otherAdditions: otherAdditionsTotal,
       otherDeductions: otherDeductionsTotal,
       overtime,
@@ -368,6 +393,7 @@ export function assembleRows(input: {
       totalAdditions,
       totalDeductions,
       unpaidVacations,
+      workingDays: effective.workingDays,
     };
 
     results.push({
