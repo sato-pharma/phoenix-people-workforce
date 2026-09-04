@@ -1,29 +1,30 @@
 "use client";
 
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { useEffect } from "react";
 
-import { systemIdentity } from "@/config/system-settings";
-import { getNavigationSections } from "@/config/system-navigation";
-import { getActiveHref, normalizePathnameForMode } from "@/lib/navigation/active-path";
-import type { NavigationMode } from "@/lib/auth/permissions";
+import type { NavigationMode, PhoenixRole } from "@/lib/auth/permissions";
+import { resolveDocumentTitle } from "@/lib/navigation/module-title";
 
-// Sets the browser tab title to the active page's nav label (e.g. "Command Center ·
-// Phoenix Workforce"), so the three identical "Phoenix Workforce" tabs become
-// distinguishable. Driven by the SAME nav config as the sidebar, so it covers every
-// page (incl. nested detail routes, via the longest-prefix match) without per-page edits.
-export function DocumentTitleSync({ mode }: { mode: NavigationMode }) {
-  const pathname = normalizePathnameForMode(usePathname() ?? "", mode);
+// Renames the browser tab to the active module on in-app navigation.
+//
+// The CLIENT half only. A tab's name on FIRST paint comes from `generateMetadata` in
+// the shell layout, which resolves the same address through the same resolver — see
+// src/lib/navigation/module-title.ts. Both halves are needed: a client effect cannot
+// name a tab that has not run our script yet (a new tab, a bookmark, the history
+// list), and a parent layout's `generateMetadata` does not run again on a client
+// navigation. They share one resolver so the name never changes as a page settles.
+//
+// Renders inside a Suspense boundary at both mount sites: `useSearchParams` demands
+// one, and `?tab=`/`?action=` is load-bearing here — two sidebar rows can share a
+// path and only the query says which of them is lit.
+export function DocumentTitleSync({ mode, role }: { mode: NavigationMode; role?: PhoenixRole }) {
+  const pathname = usePathname() ?? "";
+  const query = useSearchParams()?.toString() ?? "";
 
   useEffect(() => {
-    const brand = systemIdentity.appName;
-    const sections = getNavigationSections(mode);
-    const activeHref = getActiveHref(pathname, sections, null);
-    const label = sections
-      .flatMap((section) => section.items)
-      .find((item) => item.href === activeHref)?.label;
-    document.title = label ? `${label} · ${brand}` : brand;
-  }, [mode, pathname]);
+    document.title = resolveDocumentTitle(query ? `${pathname}?${query}` : pathname, mode, role);
+  }, [mode, pathname, query, role]);
 
   return null;
 }

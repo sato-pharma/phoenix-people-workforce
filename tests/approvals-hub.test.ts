@@ -201,17 +201,24 @@ export function runApprovalsHubTests() {
   const portalLayout = readFileSync("src/components/employee-portal/employee-portal-layout.tsx", "utf8");
   assert.match(portalLayout, /navBadge: "vacation-approvals-pending" as const/, "portal Vacation Approvals link carries its pending badge");
   assert.match(portalLayout, /navBadge: "excuse-approvals-pending" as const/, "portal Excuse Approvals link carries its pending badge");
-  assert.match(portalLayout, /import \{ NavBadge \} from "@\/components\/layout\/sidebar";/, "portal reuses the exact same NavBadge polling client as admin, not a new mechanism");
+  assert.match(portalLayout, /import \{ NavBadge \} from "@\/components\/layout\/nav-badge";/, "portal reuses the exact same NavBadge polling client as admin, not a new mechanism");
   assert.match(portalLayout, /<NavBadge src="\/api\/approvals\/vacation\/pending-count" \/>/, "portal vacation badge points at the same count API as admin");
   assert.match(portalLayout, /<NavBadge src="\/api\/approvals\/excuse\/pending-count" \/>/, "portal excuse badge points at the same count API as admin");
   // NavBadge's definition moved to ./nav-badge on 2026-08-29, so the horizontal nav rows could use
   // it without pulling the whole sidebar module (dnd-kit, the layout editor) into their bundle.
-  // sidebar.tsx re-exports it, which is what keeps the portal's import asserted above resolving —
-  // both halves are pinned here, so neither the shared definition nor the re-export can quietly go.
+  //
+  // Until 2026-09-04 the portal still reached it through a re-export in sidebar.tsx, which undid
+  // the point of the move for every portal page: importing the NAME from sidebar.tsx pulls the
+  // MODULE. The portal now imports it directly (asserted above) and the re-export is gone, so what
+  // is pinned here is the arrangement that keeps the bundle honest — one definition, imported at
+  // first hand, with no surface reaching it back through the sidebar.
   const sidebarSource = readFileSync("src/components/layout/sidebar.tsx", "utf8");
   const navBadgeSource = readFileSync("src/components/layout/nav-badge.tsx", "utf8");
   assert.match(navBadgeSource, /export function NavBadge/, "NavBadge is exported so the portal layout can reuse it verbatim");
-  assert.ok(sidebarSource.includes('export { NavBadge } from "@/components/layout/nav-badge";'), "and sidebar.tsx re-exports it, so the portal's own import keeps resolving");
+  assert.ok(
+    !/export \{[^}]*\bNavBadge\b[^}]*\} from/.test(sidebarSource),
+    "sidebar.tsx must not re-export NavBadge — that is what dragged dnd-kit and the layout editor into every portal page's bundle",
+  );
 
   // ── Phase 2.4: history filter + export, type enrichment without touching shared code ─
   assert.match(svc, /export type ResponderHistoryItem = HistoricalApprovalItem & \{ subtype: string \| null \}/, "history items carry an enrichment-only subtype field, not on the shared type");

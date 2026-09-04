@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
@@ -5,8 +6,10 @@ import { redirect } from "next/navigation";
 import { AppShell } from "@/components/layout/app-shell";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { resolveNavigationMode } from "@/lib/auth/permissions";
+import { resolveDocumentTitle } from "@/lib/navigation/module-title";
 import { PORTAL_HOME, resolvePortalTwin } from "@/lib/navigation/portal-twins";
-import { PATH_HEADER } from "@/lib/navigation/shell-headers";
+import { PATH_HEADER, SHELL_HEADER } from "@/lib/navigation/shell-headers";
+import { resolveShellNavigationMode } from "@/lib/navigation/shell-mode";
 
 // Route-group layout for the admin surface. Rendering AppShell here (instead of in
 // every page) keeps the sidebar/topbar mounted across navigation — no remount
@@ -33,6 +36,22 @@ import { PATH_HEADER } from "@/lib/navigation/shell-headers";
 // src/lib/navigation/portal-twins.ts; what it does NOT need is manual upkeep, because
 // tests/portal-twin-forwarding.test.ts re-derives the map from the pages themselves and
 // goes red when they disagree.
+// Names the browser tab after the module being opened, on the FIRST paint — which is the
+// only thing that reaches a tab opened from a link, a bookmark or the history list, before
+// any script of ours has run. `DocumentTitleSync` inside AppShell renames it thereafter, on
+// client navigation, through this same resolver so the name never changes as a page settles.
+//
+// Free: `resolveAccessContextFromPage` is request-cached, so this shares the layout's own
+// resolution rather than repeating it, and both headers are already being read below.
+export async function generateMetadata(): Promise<Metadata> {
+  const requestHeaders = await headers();
+  const access = await resolveAccessContextFromPage();
+  // An HR seat renders HR navigation under an /hr address, so the tab has to be named from
+  // the HR catalogue — the header is the only thing that says so (see resolveShellNavigationMode).
+  const mode = resolveShellNavigationMode(access, requestHeaders.get(SHELL_HEADER), "admin");
+  return { title: resolveDocumentTitle(requestHeaders.get(PATH_HEADER) ?? "", mode, access.role) };
+}
+
 export default async function AdminGroupLayout({ children }: { children: ReactNode }) {
   const access = await resolveAccessContextFromPage();
   if (!access.loginId && !access.hrId) {

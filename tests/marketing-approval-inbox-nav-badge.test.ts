@@ -234,9 +234,13 @@ export function runMarketingApprovalInboxNavBadgeTests() {
   // ── 10. Both shells render it through the ONE shared NavBadge pump ──────────
   // ONE switch, shared by the sidebar and the horizontal nav rows since 2026-08-29.
   const navBadge = readFileSync("src/components/layout/nav-badge.tsx", "utf8");
+  // Prop-TOLERANT: what is pinned is that THIS case resolves to THAT count API, not the prop list
+  // the switch happens to forward. It pinned the call verbatim until 2026-09-04, when every case
+  // gained `dark` so the badge could ring itself in the rail's own background — and this went red
+  // for a change it has no opinion about.
   assert.match(
     navBadge,
-    /case "marketing-approvals-pending":\s*\n\s*return <NavBadge compact=\{compact\} src="\/api\/marketing-requests\/pending-count" \/>;/,
+    /case "marketing-approvals-pending":\s*\n\s*return <NavBadge[^>]*compact=\{compact\}[^>]*src="\/api\/marketing-requests\/pending-count"[^>]*\/>;/,
     "10: the shared badge switch must resolve the marketing badge to its count API",
   );
   const portalLayout = readFileSync("src/components/employee-portal/employee-portal-layout.tsx", "utf8");

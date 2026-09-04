@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { Suspense, type ReactNode } from "react";
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
 
@@ -146,7 +146,12 @@ export async function AppShell({
       <div className={`min-h-screen text-phx-ink ${isAdminMode ? `admin-shell ${adminShellBackgroundClassName}` : "bg-phx-paper"}`}>
         <SessionSecurityGuard />
         <OneSignalProvider />
-        <DocumentTitleSync mode={resolvedNavigationMode} />
+        {/* Suspense because DocumentTitleSync reads useSearchParams. Names the tab on
+            in-app navigation only — the FIRST paint is named by generateMetadata in
+            app/(admin)/layout.tsx, through the same resolver. */}
+        <Suspense fallback={null}>
+          <DocumentTitleSync mode={resolvedNavigationMode} role={access.role} />
+        </Suspense>
         <CommandPalette
           currentRole={access.role}
           navigationMode={resolvedNavigationMode}

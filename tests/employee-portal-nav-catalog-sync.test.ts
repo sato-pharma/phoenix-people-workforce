@@ -89,6 +89,12 @@ export function runEmployeePortalNavCatalogSyncTests() {
     /buildCommandPaletteItems\(/,
     "the command palette still renders the catalog-derived item list",
   );
+  // Same two-halves shape as the palette above. The catalog read moved out of the component on
+  // 2026-09-04, into the resolver both the client sync and the shells' generateMetadata share —
+  // so pin the component's call INTO that resolver, and the resolver's read OF the catalog.
+  // Pinning only the component would now pass while it named tabs from nothing at all.
   const titleSource = readFileSync("src/components/layout/document-title-sync.tsx", "utf8");
-  assert.match(titleSource, /getNavigationSections\(/, "DocumentTitleSync still builds from the nav catalog");
+  assert.match(titleSource, /resolveDocumentTitle\(/, "DocumentTitleSync still names the tab through the shared resolver");
+  const moduleTitleSource = readFileSync("src/lib/navigation/module-title.ts", "utf8");
+  assert.match(moduleTitleSource, /getNavigationSections\(/, "and that resolver still builds from the nav catalog");
 }

@@ -616,7 +616,7 @@ function NavRowTab({
           polling client — a tab pinned up here must not be the one place a queue of 54
           waiting approvals is invisible. `compact={false}` is the pill; the icon-rail
           dot would have nothing to sit on here. */}
-      <ApprovalNavBadge compact={false} navBadge={item.navBadge} />
+      <ApprovalNavBadge compact={false} dark={dark} navBadge={item.navBadge} />
     </Link>
   );
 }

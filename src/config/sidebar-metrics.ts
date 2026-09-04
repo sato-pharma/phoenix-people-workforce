@@ -100,7 +100,7 @@ const PORTAL_ICON = 15;
 const PORTAL_ICON_GAP = 12;
 
 /**
- * The portal reuses the admin `NavBadge` (imported from sidebar.tsx), so the pill is the same
+ * The portal reuses the admin `NavBadge` (from components/layout/nav-badge.tsx), so the pill is the same
  * `min-w-[18px] px-1` = 26px — but it sits as a direct child of the row's `gap-3`, not inside the
  * admin's `gap-1.5` wrapper, so it costs 12px of gap instead of 6.
  */

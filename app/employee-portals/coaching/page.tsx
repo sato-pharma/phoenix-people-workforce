@@ -16,8 +16,12 @@ import { logPortalFailure } from "@/lib/observability/portal-logging";
 
 export const dynamic = "force-dynamic";
 
+// No `title` here on purpose: the portal layout names every tab after the viewer's own nav
+// row for the page (see src/lib/navigation/module-title.ts), which is "My Coaching Reports"
+// for a rep and "Team Coaching Reports" for their manager. A fixed title here would win the
+// first paint and then be renamed by DocumentTitleSync a moment later — a visible flicker,
+// and the wrong wording for one of the two audiences.
 export const metadata: Metadata = {
-  title: "Coaching Reports | Phoenix Workforce",
   description:
     "View and track field coaching reports, performance scores, zone distribution, and acknowledgment status for the medical team.",
 };

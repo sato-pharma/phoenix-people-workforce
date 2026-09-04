@@ -284,7 +284,7 @@ export async function countVacationAwaiting(access: AccessContext): Promise<numb
 }
 
 // True when at least one awaiting vacation request has breached its SLA — drives the sidebar
-// alarm badge's graduated urgency (see NavBadge in components/layout/sidebar.tsx).
+// alarm badge's graduated urgency (see NavBadge in components/layout/nav-badge.tsx).
 export async function isVacationAwaitingOverdue(access: AccessContext): Promise<boolean> {
   try {
     const { awaiting } = await getVacationApprovalsForResponder(access);

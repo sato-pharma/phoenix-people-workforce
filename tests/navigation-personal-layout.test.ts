@@ -1264,8 +1264,13 @@ export function runNavigationPersonalLayoutTests() {
       /target="upperRow"/.test(rows) && /target="lowerRow"/.test(rows),
       "each row's + writes its OWN row",
     );
+    // Prop-TOLERANT on purpose. This pinned the call verbatim until 2026-09-04, when the badge
+    // gained a `dark` prop so it could ring itself in the rail's own background instead of
+    // assuming the dark one — and this assertion went red for a change that did exactly what it
+    // asks for. What it means to pin is that a pinned tab renders the badge, expanded, for its
+    // own item; the prop LIST is not the contract, so match the parts that are.
     assert.ok(
-      /<ApprovalNavBadge compact=\{false\} navBadge=\{item\.navBadge\} \/>/.test(rows),
+      /<ApprovalNavBadge[^>]*compact=\{false\}[^>]*navBadge=\{item\.navBadge\}[^>]*\/>/.test(rows),
       "a tab pinned into a row must not be the one place a pending count is invisible",
     );
   }
