@@ -59,11 +59,81 @@ export { isAgentInScope, type DoctorCoverageScope } from "@/lib/crm/doctor-cover
 export type DoctorCoverageScopeEmployee = {
   employmentStatus: string | null;
   hrId: string;
+  /** Read ONLY by the upward rule below, to recognise a National Sales Manager seat. */
+  jobTitle: string | null;
   lineId: number | null;
   lineName: string | null;
   managerHrId: string | null;
   pendingManagerReplacementForHrId: string | null;
 };
+
+/**
+ * THE UPWARD RULE — owner, 2026-09-04, stated plainly: "Never an employee sees his direct manager.
+ * You see yourself and your scope down — downgrading, not upgrading."
+ *
+ * A `line` scope is line MEMBERSHIP, which is neither up nor down: it is everyone who happens to
+ * carry that line id. Measured in production the day the rule was given, Product Manager B-155's
+ * scope held 57 people, and one of them was A-8 — his own direct manager, who has 57 real CRM
+ * visits of her own. Nothing rendered her, but only by accident: the Reps Plans board carries an
+ * explicit medical-reps-only filter, and the KPIs board simply had no plan row to build for her.
+ * Neither is a rule. The moment she files a plan, or a new board lists agents without that filter,
+ * a manager appears inside her own subordinate's view.
+ *
+ * So the stop belongs HERE, in the resolver that is the security boundary, not in whichever
+ * downstream board remembers to filter.
+ *
+ * Two exclusions, both from the owner's answer:
+ *   1. The viewer's own management chain — his manager, his manager's manager, all the way up.
+ *   2. Every National Sales Manager seat.
+ *
+ * THE VIEWER IS NEVER EXCLUDED FROM HIS OWN SCOPE. That guard is load-bearing rather than tidy:
+ * `National Sales Manager` is itself a LINE role (doctor-coverage-roles.ts LINE_ROLES), so without
+ * it rule 2 would delete an NSM from his own board and `finalizeAgents` would hand him "no active
+ * employees are recorded on your product line" — the module's own empty state, indistinguishable
+ * from a data fault.
+ */
+const TITLES_EXCLUDED_FROM_A_LINE_SCOPE = new Set(["national sales manager"]);
+
+/**
+ * Every ancestor of the viewer, canonicalised. Climbs `managerHrId` exactly as
+ * `isWithinManagerHierarchy` does, and treats a pending seat replacement as an ancestor too — the
+ * conservative direction, because being wrong here hides a row rather than exposing one.
+ *
+ * The `chain.has` break is not decoration: a self-referencing or mutually-referencing manager pair
+ * exists in this directory often enough that the downward walk guards against it, and an unguarded
+ * climb would spin forever inside a server render.
+ */
+function managementChainOf(
+  viewerCanonicalHrId: string,
+  byCanonicalHrId: ReadonlyMap<string, DoctorCoverageScopeEmployee>,
+): ReadonlySet<string> {
+  const chain = new Set<string>();
+  let node = byCanonicalHrId.get(viewerCanonicalHrId);
+
+  while (node) {
+    const pending = normalizeHrIdForAccess(node.pendingManagerReplacementForHrId ?? "");
+    if (pending) chain.add(pending);
+
+    const managerKey = normalizeHrIdForAccess(node.managerHrId ?? "");
+    if (!managerKey || chain.has(managerKey)) break;
+    chain.add(managerKey);
+    node = byCanonicalHrId.get(managerKey);
+  }
+
+  return chain;
+}
+
+/** True when the upward rule says this person must not appear in this viewer's scope. */
+function isAboveViewer(
+  employee: DoctorCoverageScopeEmployee,
+  viewerCanonicalHrId: string,
+  chain: ReadonlySet<string>,
+): boolean {
+  const key = normalizeHrIdForAccess(employee.hrId);
+  if (!key || key === viewerCanonicalHrId) return false; // you always see yourself
+  if (chain.has(key)) return true;
+  return TITLES_EXCLUDED_FROM_A_LINE_SCOPE.has(employee.jobTitle?.trim().toLowerCase() ?? "");
+}
 
 /**
  * Pure core — fixture-testable, no IO. `employees` must be the FULL directory including inactive
@@ -105,6 +175,18 @@ export function resolveDoctorCoverageScope(input: {
     return { kind: "none", reason: "Your employee record could not be found, so no territory can be resolved." };
   }
 
+  // Built from EVERY employee, including inactive ones, and hoisted above both remaining bases —
+  // the team walk needs it (see the note further down) and so does the upward rule, which has to
+  // climb through a manager who may himself have left.
+  const byCanonicalHrId = new Map<string, DoctorCoverageScopeEmployee>();
+  for (const employee of input.employees) {
+    const key = normalizeHrIdForAccess(employee.hrId);
+    if (key) byCanonicalHrId.set(key, employee);
+  }
+  const chain = managementChainOf(viewerKey, byCanonicalHrId);
+  const withinTheUpwardRule = (employee: DoctorCoverageScopeEmployee) =>
+    !isAboveViewer(employee, viewerKey, chain);
+
   if (basis === "line") {
     // Line identity comes off the viewer's own employee row here (not the org tree) because these
     // are staff seats with no reports to walk — a Product Manager owns brands, not people.
@@ -130,6 +212,7 @@ export function resolveDoctorCoverageScope(input: {
     const agentHrIds = input.employees
       .filter((employee) => isActiveLifecycleStatus(employee.employmentStatus))
       .filter(onScopedLine)
+      .filter(withinTheUpwardRule)
       .map((employee) => employee.hrId);
 
     // Name every line the viewer actually covers — the owner's rule is that a viewer always sees
@@ -147,17 +230,17 @@ export function resolveDoctorCoverageScope(input: {
   }
 
   // ── team scope (District Manager: own reps; Regional Manager: every rep under the region) ──
-  // The lookup map is built from EVERY employee, including inactive ones, while only ACTIVE people
-  // are emitted below. That asymmetry is deliberate and load-bearing: isWithinManagerHierarchy
-  // climbs `managerHrId` node by node, so if an intermediate manager (say a DM who has just
-  // resigned) were missing from the map the climb would break at that node and the RM above would
-  // lose every rep beneath them — the exact silent-empty failure PR #1486 was about. Departed reps
-  // are still filtered out of the OUTPUT, and the CRM reads door drops their visits independently.
-  const byCanonicalHrId = new Map<string, DoctorCoverageScopeEmployee>();
-  for (const employee of input.employees) {
-    const key = normalizeHrIdForAccess(employee.hrId);
-    if (key) byCanonicalHrId.set(key, employee);
-  }
+  // `byCanonicalHrId` is built above from EVERY employee, including inactive ones, while only
+  // ACTIVE people are emitted below. That asymmetry is deliberate and load-bearing:
+  // isWithinManagerHierarchy climbs `managerHrId` node by node, so if an intermediate manager (say
+  // a DM who has just resigned) were missing from the map the climb would break at that node and
+  // the RM above would lose every rep beneath them — the exact silent-empty failure PR #1486 was
+  // about. Departed reps are still filtered out of the OUTPUT, and the CRM reads door drops their
+  // visits independently.
+  //
+  // The upward rule is applied here too. On this basis it should be a no-op by construction — an
+  // ancestor is never inside your own subtree — so it is defence in depth against a directory whose
+  // manager links form a cycle, the exact shape the climb above already guards against.
   const agentHrIds = input.employees
     .filter((employee) => isActiveLifecycleStatus(employee.employmentStatus))
     .filter((employee) =>
@@ -168,6 +251,7 @@ export function resolveDoctorCoverageScope(input: {
         canonicalize: normalizeHrIdForAccess,
       }),
     )
+    .filter(withinTheUpwardRule)
     .map((employee) => employee.hrId);
   const label = input.role === "Regional Manager" ? `${input.role} · own region` : `${input.role} · own team`;
   return finalizeAgents(agentHrIds, "team", label);
