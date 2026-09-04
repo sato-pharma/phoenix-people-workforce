@@ -4,6 +4,7 @@ import {
   buildIssuedFileName,
   FILEABLE_BUILT_IN_DOCUMENTS,
   isFileableBuiltIn,
+  isFilingSchemaMissing,
   resolveBuiltInFilingSlot,
   resolveCustomFilingSlot,
   type FilingSlotRow,
@@ -159,6 +160,43 @@ function testTheFileNameSaysWhatItIsWithoutTheSystem() {
   );
 }
 
+/**
+ * The deploy-before-migration window, which is a real window and not a hypothetical one: merging to
+ * `main` ships to production immediately, and applying the migration is a separate deliberate act.
+ *
+ * THE CODE THAT MATTERS IS `PGRST205`. A missing table answers that, through PostgREST's schema
+ * cache, rather than Postgres's `42P01` — so the guard everybody writes first fires never, and the
+ * window 500s instead of explaining itself. `23514` is the other easy one to miss: after the column
+ * exists, the `source` CHECK still refuses 'issued' until 20260904233000 lands.
+ */
+function testTheUnmigratedWindowIsRecognisedRatherThanThrown() {
+  assert.equal(isFilingSchemaMissing({ code: "PGRST205" }), true, "a missing table, via PostgREST");
+  assert.equal(isFilingSchemaMissing({ code: "PGRST204" }), true, "a missing column, via PostgREST");
+  assert.equal(isFilingSchemaMissing({ code: "42P01" }), true, "a missing table, via Postgres");
+  assert.equal(isFilingSchemaMissing({ code: "42703" }), true, "a missing column, via Postgres");
+  assert.equal(
+    isFilingSchemaMissing({ code: "23514", message: 'violates check constraint "hiring_document_files_source_check"' }),
+    true,
+    "the column exists but the CHECK predates 'issued'",
+  );
+
+  // And by message, for the paths that lose the code on the way back.
+  assert.equal(
+    isFilingSchemaMissing({ message: "Could not find the 'hiring_pack_document' column in the schema cache" }),
+    true,
+  );
+  assert.equal(isFilingSchemaMissing({ message: 'column "hiring_pack_document" does not exist' }), true);
+
+  // A REAL FAULT MUST STILL THROW. This guard turns an error into a banner that says the signature
+  // was recorded and nothing was filed; swallowing a genuine failure that way would report a
+  // working system while papers silently stopped being filed.
+  assert.equal(isFilingSchemaMissing({ code: "23505", message: "duplicate key value" }), false);
+  assert.equal(isFilingSchemaMissing({ code: "42501", message: "permission denied" }), false);
+  assert.equal(isFilingSchemaMissing(new Error("fetch failed")), false);
+  assert.equal(isFilingSchemaMissing(null), false);
+  assert.equal(isFilingSchemaMissing("PGRST205"), false, "a bare string is not an error object");
+}
+
 export async function runHiringPackPaperFilingTests() {
   testEverySignablePaperHasAFilingRule();
   testAPaperFilesIntoTheSlotThatNamesIt();
@@ -167,4 +205,5 @@ export async function runHiringPackPaperFilingTests() {
   testACompanyTemplateFilesOnlyWhereItWasPointed();
   testTheTwoResolutionsCannotCrossOver();
   testTheFileNameSaysWhatItIsWithoutTheSystem();
+  testTheUnmigratedWindowIsRecognisedRatherThanThrown();
 }

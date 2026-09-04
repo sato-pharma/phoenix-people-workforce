@@ -130,6 +130,48 @@ export function resolveCustomFilingSlot(
 }
 
 /**
+ * Whether the database simply does not have the filing columns yet.
+ *
+ * THE DEPLOY REACHES PRODUCTION BEFORE THE MIGRATION DOES. Merging to `main` ships immediately, and
+ * applying a migration to production is a separate, deliberate act — so there is a real window in
+ * which this code runs against a database with no `hiring_pack_document` column and a `source`
+ * CHECK that still refuses 'issued'. During that window filing must say so plainly and let the
+ * signature and the print carry on, rather than surfacing a Postgres error string to somebody who
+ * only pressed Confirm.
+ *
+ * FOUR CODES, NOT ONE, and the reason each is here is the reason the obvious guard fails:
+ *
+ * - `PGRST205` — a missing TABLE. PostgREST resolves through its own schema cache and answers this
+ *   rather than Postgres's `42P01`, so a guard written for `42P01` alone fires never.
+ * - `PGRST204` — a missing COLUMN, as PostgREST reports it on a write.
+ * - `42P01` / `42703` — the Postgres codes for the same two things, which do arrive when the error
+ *   comes back from a function rather than through the schema cache.
+ * - `23514` — the third state this one has that the sibling guards do not: the column exists, the
+ *   write is well-formed, and the CHECK constraint predates 'issued'.
+ *
+ * Pure so it can be pinned by a test: it decides about an error object and touches nothing.
+ */
+export function isFilingSchemaMissing(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const code = "code" in error ? String((error as { code?: unknown }).code ?? "") : "";
+  if (["PGRST205", "PGRST204", "42P01", "42703", "23514"].includes(code)) return true;
+  const message = (
+    "message" in error ? String((error as { message?: unknown }).message ?? "") : ""
+  ).toLowerCase();
+  return (
+    message.includes("schema cache")
+    || message.includes("hiring_pack_document")
+    || message.includes("hiring_document_files_source_check")
+    || (message.includes("column") && message.includes("does not exist"))
+  );
+}
+
+/** What is said when the filing migrations have not reached this environment yet. */
+export const SCHEMA_NOT_READY =
+  "Filing is not switched on in this environment yet — its migrations have not been applied. The "
+  + "signature is recorded and the paper still prints.";
+
+/**
  * What the filed PDF is called.
  *
  * THE SIGNED DATE IS IN THE NAME, and it is the date written on the paper rather than the day it

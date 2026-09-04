@@ -777,7 +777,7 @@ export async function attachHiringDocumentFiles(
         bytes: page.bytes,
         contentType: page.contentType.trim().toLowerCase(),
         fileName: page.fileName,
-        pageCount: null,
+        pageCount: page.pageCount ?? null,
       });
     }
   }

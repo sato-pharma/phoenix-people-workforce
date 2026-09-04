@@ -99,6 +99,16 @@ export type CustomTemplate = {
   printableByRoles: string[] | null;
   /** How many copies this prints when nobody types a different number. Enforced by the print route. */
   defaultCopies: number;
+  /**
+   * Which hiring-document checklist slot a confirmed copy of this paper is filed under, or null.
+   *
+   * NULL IS THE NORMAL STATE and means "prints, is not filed" — every template uploaded before
+   * this column existed reads as null, and a template nobody signs never needs a slot. It points
+   * at a slot that already exists rather than creating one, because the hiring-documents dashboard
+   * is every employee crossed with every active definition: inventing a slot per template would
+   * assert a new missing document against all 186 employees at once.
+   */
+  filesUnderDocumentId: string | null;
   /** Whether it prints back-to-back. Shown beside Print; no web API can set a printer duplex. */
   printSides: CustomTemplatePrintSides;
   createdAt: string;
@@ -152,6 +162,7 @@ type TemplateRecord = {
   note: string | null;
   printable_by_roles: string[] | null;
   default_copies: number | string | null;
+  files_under_document_id: string | null;
   print_sides: string | null;
   created_at: string;
   created_by_hr_id: string | null;
@@ -228,6 +239,7 @@ function templateFromRecord(record: TemplateRecord, pages: CustomTemplatePage[])
     // exactly how every such row already printed — so the fallback restores yesterday's behaviour
     // rather than guessing at an intention nobody recorded.
     defaultCopies: clampCopies(toNumber(record.default_copies)),
+    filesUnderDocumentId: record.files_under_document_id,
     printSides: isCustomTemplatePrintSides(record.print_sides) ? record.print_sides : "single",
     pageHeightPt: toNumber(record.page_height_pt),
     pages: pages.slice().sort((a, b) => a.pageIndex - b.pageIndex),
@@ -243,7 +255,7 @@ function templateFromRecord(record: TemplateRecord, pages: CustomTemplatePage[])
 }
 
 const TEMPLATE_COLUMNS =
-  "id, key, name, name_ar, document_group, page_width_pt, page_height_pt, status, version, effective_from, superseded_on, superseded_by, note, printable_by_roles, default_copies, print_sides, created_at, created_by_hr_id, updated_at, updated_by_hr_id";
+  "id, key, name, name_ar, document_group, page_width_pt, page_height_pt, status, version, effective_from, superseded_on, superseded_by, note, printable_by_roles, default_copies, files_under_document_id, print_sides, created_at, created_by_hr_id, updated_at, updated_by_hr_id";
 
 const PAGE_COLUMNS =
   "id, template_id, page_index, storage_path, content_type, size_bytes, width_px, height_px";

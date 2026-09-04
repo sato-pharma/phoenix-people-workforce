@@ -54,7 +54,13 @@ export type AttachHiringDocumentFilesInput = {
    * assembles them into a single PDF — one row for the whole document.
    */
   mode: HiringDocumentFileSource;
-  pages: Array<{ bytes: Buffer; contentType: string; fileName: string }>;
+  /**
+   * `pageCount` is only for a caller that already knows it — the filing path counts the pages of
+   * the PDF it just built. A plain upload leaves it null, because counting the pages of an
+   * arbitrary uploaded file is a different job with different failure modes, and a wrong count is
+   * worse than none: the list prints it as fact.
+   */
+  pages: Array<{ bytes: Buffer; contentType: string; fileName: string; pageCount?: number | null }>;
   scanMode?: HiringDocumentScanMode;
   uploadedByHrId: string | null;
 };
