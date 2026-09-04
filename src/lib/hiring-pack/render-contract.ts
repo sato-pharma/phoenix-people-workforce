@@ -1,9 +1,5 @@
 import { systemLegalEntity } from "@/config/system-settings";
-import {
-  houseLetterhead,
-  HOUSE_COLORS,
-  HOUSE_IDENTITY_CSS,
-} from "@/lib/hiring-pack/house-identity";
+import { HOUSE_COLORS } from "@/lib/hiring-pack/house-identity";
 import { flowFieldLayer, type DocumentFieldRow } from "@/lib/hiring-pack/field-layout";
 import { spellEgyptianAmount } from "@/lib/hiring-pack/arabic-amount";
 import {
@@ -399,12 +395,16 @@ function renderBandedCopy(
   return `<article class="copy copy--banded">
     <table class="sheet">
       <tbody><tr><td class="sheet__body">
-        ${houseLetterhead({
-          titleAr: template.titleAr,
-          subtitleAr: template.subtitleAr,
-          legalNameAr: systemLegalEntity.legalNameAr,
-          legalNameEn: systemLegalEntity.legalNameEn,
-        })}
+        <header class="masthead">
+          <div class="masthead__title">
+            <h1>${escapeHtml(template.titleAr)}</h1>
+            <p>${escapeHtml(template.subtitleAr)}</p>
+          </div>
+          <div class="masthead__mark">
+            <img src="/brand/sato-pharma-logo.png" alt="" width="401" height="158">
+          </div>
+        </header>
+        <div class="rule"></div>
 
         <section class="parties">
           ${partyBlock(template.firstPartyHeadingAr, template.firstPartyLinesAr)}
@@ -897,21 +897,34 @@ export function renderContractHtml(
     text-align: center;
   }
 
-  /* The house identity — SATO-DIS-2026-01, shared by every document. */
-  ${HOUSE_IDENTITY_CSS}
+  .masthead { display: flex; align-items: stretch; background: #0b2a4a; }
+  .masthead__title { flex: 1 1 auto; padding: 4mm 5mm; text-align: center; }
+  .masthead__title h1 { margin: 0; color: #fff; font-size: 15pt; font-weight: 700; }
+  .masthead__title p { margin: 1.5mm 0 0; color: #a8c6e2; font-size: 8.5pt; font-weight: 600; }
+  .masthead__mark {
+    display: flex;
+    flex: 0 0 20.5%;
+    align-items: center;
+    justify-content: center;
+    padding: 3mm;
+  }
+  /* The white-wordmark logo, which is the on-dark variant — the same artwork the source document
+     places on this panel. The light-background variant would disappear here. */
+  .masthead__mark img { width: 100%; max-width: 32mm; height: auto; }
+  .rule { height: 1.6mm; background: #1b7fbf; }
 
   .parties { margin: 0 0 4mm; border: 0.5pt solid #c9d6e2; border-top: 0; }
   .band {
     margin: 0;
-    padding: 1.6mm 3mm 1.2mm;
-    border-bottom: 0.8pt solid ${HOUSE_COLORS.blue};
-    color: ${HOUSE_COLORS.deep};
+    padding: 1.6mm 3mm;
+    background: #1b7fbf;
+    color: #fff;
     font-size: 9pt;
     font-weight: 700;
     text-align: center;
   }
   .row { margin: 0; padding: 1.8mm 3mm; font-size: 10pt; line-height: 1.45; }
-  .row--even { background: ${HOUSE_COLORS.tint}; }
+  .row--even { background: #f2f6fa; }
   .row--odd { background: #fff; }
 
   .grid { border: 0.5pt solid #c9d6e2; }
@@ -926,7 +939,7 @@ export function renderContractHtml(
   }
   /* Zebra by position, matching the source. Positional rather than a class so an article inserted
      or removed can never leave two identical stripes touching. */
-  .grid__row:nth-child(even) { background: ${HOUSE_COLORS.tint}; }
+  .grid__row:nth-child(even) { background: #f2f6fa; }
   .grid__row:last-child { border-bottom: 0; }
   .grid__label {
     display: flex;
@@ -937,8 +950,8 @@ export function renderContractHtml(
     border-inline-start: 0.5pt solid #c9d6e2;
     text-align: center;
   }
-  .grid__number { color: ${HOUSE_COLORS.deep}; font-size: 11.5pt; font-weight: 700; }
-  .grid__title { color: ${HOUSE_COLORS.blue}; font-size: 9.5pt; font-weight: 700; line-height: 1.25; }
+  .grid__number { color: #0b2a4a; font-size: 11.5pt; font-weight: 700; }
+  .grid__title { color: #1b7fbf; font-size: 9.5pt; font-weight: 700; line-height: 1.25; }
   .grid__body {
     flex: 1 1 auto;
     padding: 2.4mm 3mm;
@@ -949,7 +962,7 @@ export function renderContractHtml(
 
   .closing {
     margin: 5mm 0 4mm;
-    color: ${HOUSE_COLORS.deep};
+    color: #0b2a4a;
     font-size: 10.5pt;
     font-weight: 700;
     text-align: right;
@@ -957,7 +970,7 @@ export function renderContractHtml(
 
   .sign2 {
     display: flex;
-    border-top: 1pt solid ${HOUSE_COLORS.deep};
+    border-top: 1pt solid #0b2a4a;
     border-bottom: 0.5pt solid #c9d6e2;
     break-inside: avoid;
     page-break-inside: avoid;
@@ -966,14 +979,14 @@ export function renderContractHtml(
   .signcol + .signcol { border-inline-end: 0.5pt solid #c9d6e2; }
   .signcol__head {
     margin: 0;
-    padding: 1.8mm 3mm 1.3mm;
-    border-bottom: 0.8pt solid ${HOUSE_COLORS.blue};
-    color: ${HOUSE_COLORS.deep};
+    padding: 1.8mm 3mm;
+    background: #0b2a4a;
+    color: #fff;
     font-size: 10pt;
     font-weight: 700;
     text-align: center;
   }
-  .signcol__body { padding: 2mm 3mm 4mm; }
+  .signcol__body { padding: 2mm 3mm 4mm; background: #f2f6fa; }
   .signcol__field { margin: 2.4mm 0 0; font-size: 10pt; }
 
   /* What Phoenix typed, on the amber the source document uses for its blanks. */
@@ -1002,14 +1015,13 @@ export function renderContractHtml(
     gap: 4mm;
     margin-bottom: 2.5mm;
     padding-bottom: 1.5mm;
-    /* THE BRAND RULE. 0.7 mm of Brand Blue, on every document without exception — it is what
-       makes a page recognisable at arm's length, and it replaced the filled navy band that used to
-       do that job for a hundred times the toner. */
+    /* THE BRAND RULE — 0.7 mm of Brand Blue, the one element the house identity puts on every
+       document without exception. It is what makes a page recognisable at arm's length. */
     border-bottom: 0.7mm solid ${HOUSE_COLORS.blue};
   }
   .doc-mast__side { flex: 0 0 34mm; }
-  /* The registered name, opposite the mark. Latin is pinned LTR: the full stop that ends
-     "Sato Pharma L.L.C." is a neutral character, and in a right-to-left page it otherwise resolves
+  /* The registered name, opposite the mark. Latin is pinned LTR: the full stop ending
+     "Sato Pharma L.L.C." is a neutral character, and on a right-to-left page it otherwise resolves
      to the paragraph direction and prints at the FRONT — ".Sato Pharma L.L.C". */
   .doc-mast__id { text-align: right; color: ${HOUSE_COLORS.muted}; font-size: 6.5pt; line-height: 1.5; }
   .doc-mast__id strong { display: block; color: ${HOUSE_COLORS.deep}; font-size: 8pt; font-weight: 700; }
@@ -1028,14 +1040,14 @@ export function renderContractHtml(
     font-weight: 600;
   }
 
-  .doc-foot { padding: 2.5mm 0 0; border-top: 0.6pt solid ${HOUSE_COLORS.hair}; font-size: 8pt; }
+  .doc-foot { padding: 2.5mm 0 0; border-top: 0.6pt solid #b9cad9; font-size: 8pt; }
   /* One signing rule at each margin, as the source sets them. */
   .doc-foot__row { display: flex; justify-content: space-between; color: #33414f; }
 
   .doc-head {
     margin: 3mm 0 1.2mm;
     padding-bottom: 0.8mm;
-    border-bottom: 0.6pt solid ${HOUSE_COLORS.hair};
+    border-bottom: 0.8pt solid ${HOUSE_COLORS.blue};
     color: ${HOUSE_COLORS.deep};
     font-size: 10.5pt;
     font-weight: 700;
@@ -1048,14 +1060,13 @@ export function renderContractHtml(
   .doc-ident { width: 100%; margin-top: 0.5mm; border-collapse: collapse; table-layout: fixed; }
   .doc-ident th, .doc-ident td {
     padding: 1.1mm 2mm;
-    border: 0.5pt solid ${HOUSE_COLORS.hair};
+    border: 0.5pt solid #cfdce7;
     font-size: 8.5pt;
     text-align: right;
     vertical-align: middle;
   }
   .doc-ident__label { width: 32mm; color: ${HOUSE_COLORS.deep}; font-weight: 700; }
-  /* The zebra, at 6% of Brand Blue — the owner's one stated exception to the ink rule. It replaces
-     nothing here (the grid keeps its rules) but makes a long identity block scannable. */
+  /* The zebra, at 6% of Brand Blue — the owner's one stated exception to the ink rule. */
   .doc-ident tbody tr:nth-child(even) th,
   .doc-ident tbody tr:nth-child(even) td { background: ${HOUSE_COLORS.tint}; }
 
@@ -1075,7 +1086,7 @@ export function renderContractHtml(
   .doc-art__no { display: block; color: ${HOUSE_COLORS.deep}; font-size: 9pt; font-weight: 700; }
   .doc-art__title {
     display: block;
-    color: ${HOUSE_COLORS.deep};
+    color: #0f6ea8;
     font-size: 8pt;
     font-weight: 700;
     line-height: 1.25;
@@ -1092,7 +1103,7 @@ export function renderContractHtml(
     break-inside: avoid;
     page-break-inside: avoid;
   }
-  .doc-sig th, .doc-sig td { padding: 1.2mm 2mm; border: 0.5pt solid ${HOUSE_COLORS.hair}; font-size: 8.5pt; }
+  .doc-sig th, .doc-sig td { padding: 1.2mm 2mm; border: 0.5pt solid #b9cad9; font-size: 8.5pt; }
   .doc-sig__corner { width: 34mm; }
   .doc-sig__head { color: ${HOUSE_COLORS.deep}; font-weight: 700; text-align: center; }
   .doc-sig__party { font-weight: 700; text-align: right; vertical-align: middle; color: ${HOUSE_COLORS.deep}; }
