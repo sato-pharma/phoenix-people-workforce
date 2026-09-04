@@ -155,6 +155,33 @@ export function runModuleTabTitlesTests() {
     `a detail route must resolve to its module, not to the record id — got ${String(detail)}`,
   );
 
+  // ── 4b. A COMPOSITE KEY is an identifier too ────────────────────────────────
+  // The Reps Plans drill-down carries `repKeyOf` as its whole path segment — `crm:1468`,
+  // `hr:b-141`, `name:Bishoy Bahaa` — and none of the shapes above matches one. So the key
+  // fell through to the humanizer and named the tab `Crm%3A1468` on a page whose body reads
+  // "Bishoy Bahaa": the address, percent-encoding and all, printed as a module name.
+  //
+  // BOTH SPELLINGS, because there are two: `location.pathname` keeps the encoding, so the
+  // CLIENT half sees `crm%3A1468` where the server sees `crm:1468`. One page, two names, and
+  // the tab visibly renamed itself between the first paint and hydration.
+  for (const spelling of ["crm:1468", "crm%3A1468", "hr:b-141", "name%3ABishoy%20Bahaa"]) {
+    for (const mode of ["employee-portal", "admin"] as const) {
+      const path = mode === "admin" ? `/admin/reps-plans/${spelling}` : `/employee-portals/reps-plans/${spelling}`;
+      const name = resolveModuleName(path, mode);
+      assert.ok(
+        name && !/crm|%3a|:/i.test(name),
+        `a drill-down key must never reach the tab name — ${path} gave ${String(name)}`,
+      );
+      assert.equal(name, "Reps Plans", `and the page is named after its module — ${path}`);
+    }
+  }
+  // A malformed escape must not take the resolver down with it. `decodeURIComponent` throws on
+  // a lone `%`, and a bad URL is exactly where a title resolver must not be the thing that breaks.
+  assert.doesNotThrow(
+    () => resolveModuleName("/employee-portals/reps-plans/100%", "employee-portal"),
+    "an undecodable segment keeps its raw form rather than throwing",
+  );
+
   // ── 5. A query string must not defeat the match ─────────────────────────────
   assert.equal(
     resolveModuleName("/employee-portals/direct-orders?from=inbox", "employee-portal"),

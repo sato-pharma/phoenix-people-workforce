@@ -1,7 +1,7 @@
 import { parseRoleStrict, type PhoenixRole } from "@/lib/auth/permissions";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import { resolveJobFunctionRole } from "@/lib/employees/job-function";
-import { canSeeDoctorCoverage } from "@/lib/crm/doctor-coverage-roles";
+import { DOCTOR_COVERAGE_PORTAL_ROLES } from "@/lib/crm/doctor-coverage-roles";
 import { DOCTOR_LIST_PORTAL_ROLES } from "@/lib/crm/doctor-list-roles";
 import { REPS_PLANS_PORTAL_ROLES } from "@/lib/crm/reps-plans-access";
 import { canViewMarketingCoverageReport } from "@/lib/marketing-requests/coverage-report-access";
@@ -371,8 +371,18 @@ export function resolveEmployeePortalNavVisibility(
   // gate and the data scope both read, which is what stops a visible row the page then refuses.
   //
   // Marketing Manager is in the list and is portal-mode, so she gets the row; Super Admin, CEO and
-  // SFE Manager are admin-mode and land on /admin/kpis instead — this resolver never runs for them.
-  const showKpisTab = canSeeDoctorCoverage(resolvedRole);
+  // SFE Manager are admin-mode and land on /admin/kpis instead.
+  //
+  // DOCTOR_COVERAGE_PORTAL_ROLES, not canSeeDoctorCoverage — the PORTAL half of the list, exactly as
+  // the two flags above take the portal half of theirs. The predicate answers for every role with
+  // any door onto the board, admin-mode seats included, and reading it here rested on the argument
+  // that this resolver never runs for those seats. That argument is true today and is not the kind
+  // of thing this file should depend on: it is a claim about a caller three modules away, it is
+  // untestable from here, and the day a preview or an impersonation path renders the portal rail for
+  // an admin-mode viewer it changes silently. system-navigation.ts already states this row's roles
+  // are DOCTOR_COVERAGE_PORTAL_ROLES verbatim, so the flag and the catalog entry now read one list
+  // and the constant that exists for this caller is no longer unused.
+  const showKpisTab = DOCTOR_COVERAGE_PORTAL_ROLES.includes(resolvedRole);
   // Talent Acquisition is HR staff processing outstation expenses, not a field claimant —
   // she has no outstation expenses of her own, so both expense tabs stay hidden for her.
   const showExpenseActionTab = !isMedicalRep && !isPortalHrOfficeStaff;

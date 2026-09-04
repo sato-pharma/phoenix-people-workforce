@@ -24,6 +24,7 @@ import {
   AM_CALL_RATE_TARGET,
   PM_CALL_RATE_TARGET,
   countCallRateWorkingDays,
+  zeroRepCallRate,
   type CallRateReport,
   type CallRateSlice,
   type RepCallRate,
@@ -749,10 +750,51 @@ export function buildRepsPlansBoard(
   // into a KPI outage, so the board falls back to exactly how it read before this feature existed:
   // everyone scored, no geography column, no pickers.
   const orgAvailable = tree != null;
-  const everyAgentRow = report.reps.map((rep) => {
+  const feedRows = report.reps.map((rep) => {
     const row = toRepsPlansRow(rep, placementOf(rep.agentHrId), options.repNameByHrId, options.jobTitleByHrId);
     return orgAvailable ? row : { ...row, scored: true };
   });
+
+  // ── THE REP WHO DID NOTHING ───────────────────────────────────────────────
+  // The row this board could not previously produce, and the one it exists to find.
+  //
+  // `report.reps` is built by bucketing VISIT ROWS, so a rep with no visits is not a zero in it —
+  // he is ABSENT from it. The roster was therefore seeded from the feed, which means the board
+  // listed "6 of 7" for a District Manager and said nothing at all about the seventh. Measured in
+  // production on 2026-09-04: B-118's team is seven reps, one of whom (B-131) has zero rows in
+  // `ireports360_visits` for September; the board showed six. Nothing on the page was wrong — the
+  // person was simply not on it, which is the worst way for a manager to miss him, because a
+  // missing row looks like a smaller team rather than like a rep who has not worked.
+  //
+  // So the roster comes from the ORGANOGRAM — the owner's source of truth for who holds a seat —
+  // and the feed fills it in. Every scored (REP-tier) seat absent from the feed becomes an explicit
+  // zero row. `index` holds OCCUPIED seats only, so this can never invent a person for a vacancy.
+  //
+  // Gated on `orgAvailable`, exactly as the scored fallback above and the medical-rep filter below
+  // are, and for the same reason: with the chart unreadable there is no roster to seed FROM, and a
+  // partial one would list a fraction of the field force as having done nothing. The degradation is
+  // then precisely how this board read before — feed rows only.
+  //
+  // The zero row is FINALIZED against the window's working days (see zeroRepCallRate), so it reads
+  // `0.00` and `0%` rather than `—`. The em dash means "nothing to divide by"; this rep had working
+  // days and made no calls, and that is a measurement, not an absence.
+  const feedHrKeys = new Set(
+    feedRows.map((row) => orgHrKey(row.agentHrId)).filter((key): key is string => key !== null),
+  );
+  const silentRows = tree
+    ? [...tree.index.entries()]
+        .filter(([hrKey, placement]) => placement.scored && !feedHrKeys.has(hrKey))
+        .map(([hrKey, placement]) =>
+          toRepsPlansRow(
+            zeroRepCallRate(report.workingDays, { agentHrId: hrKey }),
+            placement,
+            options.repNameByHrId,
+            options.jobTitleByHrId,
+          ),
+        )
+    : [];
+
+  const everyAgentRow = [...feedRows, ...silentRows];
 
   // ── MEDICAL REPS ONLY ─────────────────────────────────────────────────────
   // The owner's instruction of 2026-09-03. The CRM has an account for anyone who ever used it, so
@@ -815,9 +857,22 @@ export function buildRepsPlansBoard(
       .map((code) => ({ code, name: names.get(code) ?? code }))
       .sort((a, b) => a.name.localeCompare(b.name));
 
-  const cells = tree?.cells ?? [];
+  // Built from THE VIEWER'S OWN ROWS, never from `tree.cells`.
+  //
+  // `tree.cells` is every real (line, region) on the chart — the whole company. Offering that to a
+  // District Manager put three lines and seven regions in his pickers when his team covers one of
+  // each: choosing any other one returned a board of zeroes, which reads as "my reps did nothing"
+  // and not as "you filtered yourself out of your own scope". Measured on 2026-09-04: a DM whose
+  // reps are all Anti Infective was offered `?line=pedia`, applied it, and got an empty board with
+  // the header reading "· PEDIA".
+  //
+  // The owner's rule is that a picker is never wider than its viewer, and the KPIs board next door
+  // already builds its facets from the scoped rows for exactly this reason. `allRows` is the
+  // viewer's whole world by this point — scoped AND medical-rep filtered — so its territories are
+  // the only line/region pairs any choice here can actually return.
+  const scopedCells = allRows.flatMap((row) => row.territories);
   const lineOptions = optionsOf(
-    cells.map((cell) => cell.lineCode),
+    scopedCells.map((cell) => cell.lineCode),
     lineNames,
   );
 
@@ -831,7 +886,7 @@ export function buildRepsPlansBoard(
     ? take(options.geography?.line)
     : null;
   const regionOptions = optionsOf(
-    cells.filter((cell) => !appliedLine || cell.lineCode === appliedLine).map((cell) => cell.regionCode),
+    scopedCells.filter((cell) => !appliedLine || cell.lineCode === appliedLine).map((cell) => cell.regionCode),
     regionNames,
   );
   const appliedRegion = regionOptions.some((option) => option.code === take(options.geography?.region))
