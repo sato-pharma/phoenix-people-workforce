@@ -21,8 +21,21 @@ import { useEffect, useRef, useState } from "react";
  * WHAT IT BORROWS, so the two read as one family: the warm paper ground (#fdf8f3) with the same
  * two radial washes, the Phoenix watermark bleeding off the right edge under the wave, the
  * orange-ringed portrait at the leading edge, the Pinyon Script name, the orange rule with its
- * dot, and the uppercase letter-spaced title. Same parts, one quarter of the height: 88px on a
- * phone, 92px from `sm` up, both fixed.
+ * the orange rule with
+ * its dot, and the uppercase letter-spaced title.
+ *
+ * THE HEIGHT RULE WAS REVERSED BY THE OWNER ON 2026-09-04, AND THIS IS THE NEWER INSTRUCTION.
+ * It was 88/92px because on 2026-09-03 he asked for narrow: "I don't want it to be too thick, too
+ * many space in the page." That produced a bar whose content ended at 208px of 1084 — 81% empty —
+ * with the name at 27.2px under 30px/900 KPI counters. Shown it, he said: "The banner is too
+ * small. It's too small in comparison with the dashboard", and when asked directly whether he
+ * wanted the bar itself taller or was merely seeing a stale build, he answered "make it taller and
+ * its weak". So it is now 120px on a phone and 136px from `sm` up.
+ *
+ * DO NOT "RESTORE" THE THIN VERSION on the strength of the 09-03 quote — that quote is older, and
+ * it is the one this paragraph exists to overrule. What he has never wanted back is the ORIGINAL
+ * block, the full `PhoenixSignatureCard` at aspectRatio 1875/420, which is ~243px on this width:
+ * "WITHOUT THIS BUFFENK THIVK BANNER BLOCK". 136px sits deliberately between the two.
  *
  * WHAT IT DELIBERATELY DOES NOT BORROW: the card's two COLD values. The card sets the wave to
  * #0b1f3a and the name to #2a3a5c, both around hue 257-264. The admin shell those two landings
@@ -145,7 +158,7 @@ export function PhoenixIdentityStrip({
     <section
       aria-label="Your identity"
       className={[
-        "relative isolate h-[88px] w-full min-w-0 overflow-hidden shadow-[0_6px_20px_rgba(16,35,61,0.10)] sm:h-[92px]",
+        "relative isolate h-[120px] w-full min-w-0 overflow-hidden shadow-[0_8px_26px_rgba(16,35,61,0.13)] sm:h-[136px]",
         className,
       ].join(" ")}
       style={{ background: "#fdf8f3" }}
@@ -171,8 +184,8 @@ export function PhoenixIdentityStrip({
       />
 
       {/* Content sits ABOVE the wave, not on it — hence the bottom inset. */}
-      <div className="absolute inset-x-0 bottom-[16px] top-0 z-10 flex min-w-0 items-center gap-3 px-3 sm:px-4">
-        <span className="relative block h-[60px] w-[60px] shrink-0 sm:h-[66px] sm:w-[66px]">
+      <div className="absolute inset-x-0 bottom-[24px] top-0 z-10 flex min-w-0 items-center gap-4 px-4 sm:px-6">
+        <span className="relative block h-[80px] w-[80px] shrink-0 sm:h-[92px] sm:w-[92px]">
           {/* TWO RINGS, MUTUALLY EXCLUSIVE BY BREAKPOINT. One element would be neater, but an
               inline style cannot carry a media query and these two shadows are genuinely
               different things — see PORTRAIT_GLOW / PORTRAIT_RING above. */}
@@ -192,12 +205,12 @@ export function PhoenixIdentityStrip({
                 alt={`${name} portrait`}
                 className="object-cover object-top"
                 fill
-                sizes="66px"
+                sizes="92px"
                 src={photoSrc}
                 unoptimized
               />
             ) : (
-              <span className="flex h-full w-full items-center justify-center text-lg font-black text-[#f47b20]">
+              <span className="flex h-full w-full items-center justify-center text-3xl font-black text-[#f47b20]">
                 {initialsFor(name)}
               </span>
             )}
@@ -235,7 +248,7 @@ export function PhoenixIdentityStrip({
             ref={nameBoxRef}
             style={{
               fontFamily: '"Pinyon Script", cursive',
-              fontSize: nameFontPx ? `${nameFontPx}px` : "clamp(1.25rem, 4.2vw, 2rem)",
+              fontSize: nameFontPx ? `${nameFontPx}px` : "clamp(1.75rem, 5vw, 3.1rem)",
               lineHeight: 1.15,
               margin: 0,
               whiteSpace: "nowrap",
@@ -246,10 +259,10 @@ export function PhoenixIdentityStrip({
             </span>
           </p>
           <span aria-hidden="true" className="mt-[2px] flex items-center">
-            <span className="h-px flex-1" style={{ background: "#f47b20" }} />
-            <span className="mx-[3px] h-[5px] w-[5px] rounded-full" style={{ background: "#f47b20" }} />
+            <span className="h-[2px] flex-1" style={{ background: "#f47b20" }} />
+            <span className="mx-[5px] h-[7px] w-[7px] rounded-full" style={{ background: "#f47b20" }} />
             <span
-              className="h-px flex-[2]"
+              className="h-[2px] flex-[2]"
               style={{ background: "linear-gradient(90deg, rgba(244,123,32,0.5), rgba(244,123,32,0))" }}
             />
           </span>
@@ -266,7 +279,7 @@ export function PhoenixIdentityStrip({
             className="break-words text-left font-bold uppercase"
             style={{
               color: "#f47b20",
-              fontSize: "11px",
+              fontSize: "13px",
               letterSpacing: "0.18em",
               lineHeight: 1.2,
               margin: "2px 0 0",
@@ -290,7 +303,7 @@ export function PhoenixIdentityStrip({
           {employeeCode ? (
             <p
               className="font-semibold text-[#3f3a33] opacity-75"
-              style={{ fontSize: "10px", letterSpacing: "0.08em", lineHeight: 1.2, margin: "2px 0 0" }}
+              style={{ fontSize: "12px", letterSpacing: "0.08em", lineHeight: 1.2, margin: "4px 0 0" }}
             >
               {employeeCode}
             </p>
@@ -301,12 +314,12 @@ export function PhoenixIdentityStrip({
       {/* The card's wave, scaled to this height. */}
       <svg
         aria-hidden="true"
-        className="absolute bottom-0 left-0 z-[3] h-[20px] w-full"
+        className="absolute bottom-0 left-0 z-[3] h-[30px] w-full"
         preserveAspectRatio="none"
         viewBox="0 0 1875 118"
       >
         <path d="M0 38C420 58 1030 58 1875 4V118H0Z" fill="#231e18" />
-        <path d="M0 38C420 58 1030 58 1875 4" fill="none" stroke="#f47b20" strokeWidth="9" />
+        <path d="M0 38C420 58 1030 58 1875 4" fill="none" stroke="#f47b20" strokeWidth="11" />
       </svg>
     </section>
   );
