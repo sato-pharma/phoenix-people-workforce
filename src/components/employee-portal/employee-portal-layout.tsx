@@ -1135,7 +1135,7 @@ export function EmployeePortalChrome({
           disableSessionGuard={disableSessionGuard}
           visibility={visibility}
         />
-        <div className="relative mx-auto flex w-full max-w-[1580px] items-start gap-4 px-3 py-4 sm:px-4 sm:py-5 lg:gap-7 lg:px-8 lg:py-7">
+        <div className="relative mx-auto flex w-full max-w-[1580px] items-start gap-4 px-3 py-4 sm:px-4 sm:py-5 lg:gap-4 lg:py-7 lg:pl-8 lg:pr-4">
           <EmployeePortalSidebar activePathOverride={activePathOverride} visibility={visibility} />
           <div className="flex min-w-0 flex-1 flex-col">
             <main className="phx-zoom-surface employee-portal-mobile-safe min-w-0 flex-1 space-y-5 pb-24 lg:space-y-7 lg:pb-0">

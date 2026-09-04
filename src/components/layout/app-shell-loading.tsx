@@ -41,7 +41,7 @@ export function AppShellLoading({
           >
             <div className={`h-9 w-full max-w-md animate-pulse rounded ${isAdminMode ? "bg-white/10" : "bg-slate-200"}`} />
           </header>
-          <main className="phx-zoom-surface min-w-0 flex-1 px-3 py-4 sm:px-4 sm:py-5 lg:px-6 lg:py-6 xl:px-8">
+          <main className="phx-zoom-surface min-w-0 flex-1 px-3 py-4 sm:px-4 sm:py-5 lg:px-4 lg:py-6 xl:px-5">
             <div className="mx-auto w-full phx-shell-cap-admin">
               {children}
             </div>

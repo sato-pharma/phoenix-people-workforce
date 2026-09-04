@@ -222,7 +222,7 @@ export async function AppShell({
                   <UpperNavRow />
                   <LowerNavRow />
                 </div>
-                <main className="phx-zoom-surface min-w-0 flex-1 px-3 py-4 sm:px-4 sm:py-5 lg:px-6 lg:py-6 xl:px-8">
+                <main className="phx-zoom-surface min-w-0 flex-1 px-3 py-4 sm:px-4 sm:py-5 lg:px-4 lg:py-6 xl:px-5">
                   <div
                     className={`w-full ${
                       contentWidth !== "full"
