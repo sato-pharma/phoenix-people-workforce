@@ -47,6 +47,54 @@ export function isEmptyExtractedField(field: ExtractedField<ExtractedCvValue> | 
   return false;
 }
 
+// Postgres cannot store a NUL byte (U+0000) in `text` or `jsonb`. An INSERT carrying one fails with
+// 22P05 — "unsupported Unicode escape sequence", detail "\u0000 cannot be converted to text" — and a
+// PDF text layer can absolutely contain one, so this is a property of the applicant's FILE, not of
+// anything we generate. Nothing upstream removes it: there was no sanitizer anywhere in the
+// extraction path before 2026-09-04.
+//
+// The cost of not doing this is silent rather than loud, which is why it went unnoticed. The throw
+// happens in persistCvExtraction, BEFORE the candidate write, so the read is lost whole: the
+// candidate keeps ZERO extraction rows, therefore stays in the "never read by a model" target set
+// forever, and every future re-run fails in exactly the same place. And a Postgres error object
+// carries no `name` and no `stack`, so the bulk re-read script renders it as
+// `FAILED unexpected: [object Object]` — the one shape that tells a reader nothing at all. Recover
+// the real cause with JSON.stringify(err, Object.getOwnPropertyNames(err)), never String(err).
+//
+// Live case, production 2026-09-04: Abd Ulrahim Ahmed Abass (66cdbb28-9003-4e17-858b-953667167ca1),
+// a 181 KB PDF that downloads perfectly and reads fine right up to the insert. He was the only
+// failure in a run of 82.
+//
+// STRIP, never reject. A NUL is never meaningful text in a CV, so dropping one invisible byte is
+// plainly better than dropping the whole candidate — the same fail-open instinct as `is_cv`.
+const NUL_BYTE = /\u0000/g;
+
+// Recurses because the value is not always a scalar: the universal schema stores repeating blocks
+// (workHistory, educationHistory, certifications, skills, languages) as arrays of objects, and a NUL
+// inside one of those entries fails the insert exactly as a top-level one does. jsonb KEYS are
+// scrubbed too — a key is text and is subject to the same rule.
+function scrubNulBytes(value: unknown): unknown {
+  if (typeof value === "string") return value.replace(NUL_BYTE, "");
+  if (Array.isArray(value)) return value.map(scrubNulBytes);
+  if (value && typeof value === "object") {
+    const cleaned: Record<string, unknown> = {};
+    for (const [key, inner] of Object.entries(value as Record<string, unknown>)) {
+      cleaned[key.replace(NUL_BYTE, "")] = scrubNulBytes(inner);
+    }
+    return cleaned;
+  }
+  return value;
+}
+
+/** Every extracted value with NUL bytes removed, so the row and the candidate write cannot 22P05. */
+export function withoutNulBytes(fields: ExtractedCandidateFields): ExtractedCandidateFields {
+  const cleaned: ExtractedCandidateFields = {};
+  for (const [key, field] of Object.entries(fields)) {
+    cleaned[key.replace(NUL_BYTE, "")] = { ...field, value: scrubNulBytes(field.value) as ExtractedCvValue };
+  }
+  return cleaned;
+}
+
 // One stored row of ats_candidate_cv_extractions, read back for review.
 export type StoredCvExtraction = {
   extractionId: string;

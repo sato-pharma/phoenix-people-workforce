@@ -41,6 +41,7 @@ import { selectAutoApplyFields } from "@/lib/recruitment/cv-auto-apply";
 import { resolveCandidateFullNameFromCv } from "@/lib/recruitment/candidate-name-from-cv";
 import {
   normalizeStoredExtractionFields,
+  withoutNulBytes,
   type ExtractedCandidateFields,
   type ExtractedField,
   type StoredCvExtraction,
@@ -1068,7 +1069,9 @@ export async function persistCvExtraction(input: {
       ai_model: input.extraction.model,
       candidate_id: input.candidateId,
       created_by: input.access.hrId ?? input.access.loginId ?? null,
-      extracted_fields: input.extraction.fields,
+      // Scrubbed here as well as at the call site below, because cv-intake-service.ts reaches this
+      // function directly. This is the statement that actually raises 22P05, so the guard belongs on it.
+      extracted_fields: withoutNulBytes(input.extraction.fields),
       file_id: input.fileId,
       // NULL — not the boolean — when no model judged this document. A rules-only read arrives here
       // with isCv already true (the rule engine's own six-signal heuristic; ruleOnly() is reached
@@ -1134,13 +1137,18 @@ export async function extractCandidateFieldsFromCv(
     );
   }
 
-  const extraction = await extractCvFieldsFromBytes({
+  const rawExtraction = await extractCvFieldsFromBytes({
     bytes: downloaded.bytes,
     fileName: downloaded.fileName,
     forceModel: options?.forceModel === true,
     mimeType: downloaded.mimeType,
     positionKey: schema.positionKey,
   });
+  // One scrub for the whole path. Three separate things read these values and every one of them
+  // lands in a Postgres text or jsonb column: the extraction row below, the auto-apply write to
+  // ats_candidates after it, and the proposal this function returns to its caller. Scrubbing here
+  // rather than only at the insert means the candidate write cannot fail for the same reason.
+  const extraction = { ...rawExtraction, fields: withoutNulBytes(rawExtraction.fields) };
   const extractionId = await persistCvExtraction({ access, candidateId, extraction, fileId: cvFile.id });
 
   // Fill the candidate's still-empty columns from this read, by the same conservative rule inbound
