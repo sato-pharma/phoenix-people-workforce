@@ -323,13 +323,18 @@ type GlanceStripItem = {
 };
 
 export function GlanceStrip({ items }: { items: GlanceStripItem[] }) {
+  /* Three columns are keyed to the STRIP's own width, not the window's. Measured 2026-09-05: at a
+     640px viewport `sm:grid-cols-3` fired while `main` was only 608px, leaving each cell 202px and
+     the label just 75px — "plans awaiting approval" came out one word per line, three lines deep.
+     Nothing was clipped and the page read 608/608, the same blindness the Stars card had. At 672px
+     of container the label gets ~132px and reads on two lines. */
   return (
-    <div className="grid grid-cols-1 gap-px bg-slate-200 sm:grid-cols-3">
+    <div className="@container grid grid-cols-1 gap-px bg-slate-200 @2xl:grid-cols-3">
       {items.map((item, i) => (
         <Link
           key={i}
           href={item.href}
-          className={`group flex min-h-[56px] items-center gap-2 bg-white px-3 py-3 transition-colors hover:bg-slate-50 sm:min-h-[64px] sm:gap-4 sm:px-5 border-l-[3px] ${item.urgent ? "border-orange-500" : "border-transparent"}`}
+          className={`group flex min-h-[56px] items-center gap-2 bg-white px-3 py-3 transition-colors hover:bg-slate-50 @2xl:min-h-[64px] @2xl:gap-4 @2xl:px-5 border-l-[3px] ${item.urgent ? "border-orange-500" : "border-transparent"}`}
         >
           <div
             className={`flex h-9 w-9 shrink-0 items-center justify-center border transition-colors group-hover:border-orange-300 group-hover:bg-orange-50${item.urgent ? " border-orange-200 bg-orange-50" : " border-slate-200 bg-slate-50"}`}
@@ -339,10 +344,10 @@ export function GlanceStrip({ items }: { items: GlanceStripItem[] }) {
             />
           </div>
           <div className="min-w-0 flex-1">
-            <p className={`whitespace-nowrap text-sm font-black leading-tight sm:text-base${item.urgent ? " text-orange-600" : " text-slate-900"}`}>{item.value}</p>
+            <p className={`whitespace-nowrap text-sm font-black leading-tight @2xl:text-base${item.urgent ? " text-orange-600" : " text-slate-900"}`}>{item.value}</p>
             {/* The VALUE keeps its nowrap — it is a short number and must not break across
-                lines. The label is prose and wraps: at sm each of the three cells leaves about
-                105px for it, and "pending requests" does not fit. */}
+                lines. The label is prose and wraps: in the three-column form each cell leaves it
+                about 132px, and "pending requests" does not fit on one line. */}
             <p className="break-words text-xs leading-snug text-slate-500">{item.label}</p>
           </div>
           <ArrowRight className="h-4 w-4 shrink-0 text-slate-300 transition-colors group-hover:text-orange-400" />

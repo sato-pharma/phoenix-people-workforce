@@ -1291,6 +1291,7 @@ import { runSosDashboardGroupMergeTests } from "./sos-dashboard-group-merge.test
 import { runWeeklyFieldForceTests } from "./weekly-field-force.test.ts";
 
 import { runEarlyBirdsFortnightCardWrapsTests } from "./early-birds-fortnight-card-wraps.test.ts";
+import { runPortalChromeNeverClipsTextTests } from "./portal-chrome-never-clips-text.test.ts";
 import { runPortalToolsGridFitsAPhoneTests } from "./portal-tools-grid-fits-a-phone.test.ts";
 
 import { runRecruitmentFolderCvPopupTests } from "./recruitment-folder-cv-popup.test.ts";
@@ -4044,6 +4045,10 @@ await runTest(
 await runTest("weekly field force (line+area -> rep, units never summed across products, exact vs allocated)", runWeeklyFieldForceTests);
 
 await runTest("stars of the fortnight card wraps on a phone (no whitespace-nowrap, no truncate, no overflow-x-auto)", runEarlyBirdsFortnightCardWrapsTests);
+await runTest(
+  "portal chrome never clips text (header role label, MM intel tiles, GlanceStrip columns)",
+  runPortalChromeNeverClipsTextTests,
+);
 await runTest("portal tile grids are single-column on a phone (a PremiumNavTile floor is 172px; two columns give 146px at 320px)", runPortalToolsGridFitsAPhoneTests);
 
 await runTest("recruitment folder row opens the CV in place (modal + download, never the ?candidate= redirect)", runRecruitmentFolderCvPopupTests);

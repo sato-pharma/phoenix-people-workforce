@@ -722,10 +722,20 @@ export function EmployeePortalTopNav({
           >
             <Menu className="h-4 w-4" />
           </button>
-          <div className="flex min-w-0 flex-1 items-center lg:flex-none">
+          {/* `md:flex-none`, not `flex-1`, from the width where the search box appears. Measured
+              2026-09-05 at 768x900: `flex-1` is `flex: 1 1 0%`, so this block's basis is ZERO and it
+              was squeezed to 80px while the search input held its full 384px. The role label then
+              overflowed its own box — "Medical Representative" lost 41px, and every one of the seven
+              roles lost between 8 and 41px, cut mid-word under the search box with no ellipsis to
+              show anything was missing. `main` measured a clean 736/736 throughout, because clipped
+              content contributes nothing to scrollWidth. Content width here costs the input 41px,
+              which an input can spare. The label also dropped `whitespace-nowrap`: if a longer job
+              title ever arrives it must WRAP (hence `leading-tight`, which keeps two lines inside the
+              56px bar), never clip. */}
+          <div className="flex min-w-0 flex-1 items-center md:flex-none">
             <div className="min-w-0">
               <p className="text-phx-4xs font-black uppercase tracking-[0.22em] text-orange-600 sm:text-phx-3xs sm:tracking-[0.26em]">Employee Portal</p>
-              <p className="whitespace-nowrap text-phx-2xs font-bold text-slate-500 sm:text-phx-xs">{data.employee.roleLabel}</p>
+              <p className="text-phx-2xs font-bold leading-tight text-slate-500 sm:text-phx-xs">{data.employee.roleLabel}</p>
             </div>
           </div>
 
