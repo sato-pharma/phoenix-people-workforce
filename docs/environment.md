@@ -140,6 +140,7 @@ copies directly with no variable fallback, so deleting the secret copies would s
 | SUPABASE_SERVICE_ROLE_KEY | Production service-role key — canonical, preferred by the Railway sync |
 | STAGING_SUPABASE_SERVICE_ROLE_KEY | Staging service-role key — the login smoke test step in `ci.yml`'s `validate` job + both of `migration-drift-check.yml`'s staging legs |
 | PRODUCTION_SUPABASE_SERVICE_ROLE_KEY | Used ONLY by `migration-drift-check.yml`'s production leg — intentionally a separate secret from `SUPABASE_SERVICE_ROLE_KEY` (see that workflow's comment); never reaches Railway |
+| PHOENIX_STAGING_DATABASE_URL | Staging Postgres connection string — used ONLY by `staging-migrate.yml`, which applies missing migrations to staging on every merge to `main`. Must be the **Session pooler** URI (`postgres.<ref>@aws-0-<region>.pooler.supabase.com`): a direct `db.<ref>.supabase.co` host is IPv6-only and GitHub runners have no IPv6. Without it that workflow applies nothing and emits a `::warning::` |
 | PHOENIX_AUTH_SECRET | Session signing secret |
 
 ### App URLs

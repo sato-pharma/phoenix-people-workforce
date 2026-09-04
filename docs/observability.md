@@ -58,6 +58,43 @@ work, not a solved problem.
     the quick tell on an unfiltered row is `release`, which is `sha-XXXXXXXX` for real
     production traffic and `unknown` for local dev.
 
+## Staging migration auto-apply
+
+`.github/workflows/staging-migrate.yml` runs `pnpm run migrate:staging` on every push to
+`main` that touches `supabase/migrations/**`, applying whatever staging is missing and
+recording each one in staging's ledger under **the file's own version and name**. A
+`workflow_dispatch` with `dry_run` lists without applying.
+
+**Why it exists.** Until 2026-09-04 nothing applied migrations to staging — it was a hand step,
+and hand steps get skipped. That day staging was missing 13 migrations merged between 29 August
+and 2 September, the oldest 137 hours old, while the drift check below had been red for four
+consecutive nights and had delivered four Telegram alerts about it. The gap was never invisible;
+it was nobody's job. Since staging backs `ci.yml`'s login smoke and the staging mutation smokes,
+a stale staging schema makes those tests answer about a database production does not share.
+
+**It cannot reach production.** `scripts/apply-migrations-to-staging.ts` checks the target
+project ref against a one-project allowlist *before opening a connection* and refuses anything
+else by name — reading the ref from the host in a direct URL and from the username in a pooler
+one. There is no override flag, and `tests/staging-migration-applier.test.ts` fails if one is
+added. Production migrations remain a deliberate, owner-approved, one-at-a-time act (AGENTS.md §6).
+
+**Two things it deliberately does differently from the drift check**, which shares its inventory
+module (`scripts/lib/migration-inventory.ts`) so the two can never disagree about what "missing"
+means:
+
+- **It ignores the 48-hour grace window.** The check hides fresh migrations because a nightly
+  report should not nag about an hour-old merge; the applier runs *on* that merge, so inheriting
+  the window would make it skip the one file it exists to apply.
+- **It skips the per-file `git log` commit-time lookup**, which only the grace window needs.
+  That is one process per migration file — 410 today — and dropping it took a run from over
+  three minutes to two seconds.
+
+**Operational requirement:** a `PHOENIX_STAGING_DATABASE_URL` GitHub Actions secret, using the
+**Session pooler** URI (a direct `db.<ref>.supabase.co` host is IPv6-only and a GitHub runner has
+no IPv6). Without it the workflow applies nothing and emits a `::warning::` rather than failing
+every merge — a green tick that did nothing is the silent-green shape this area keeps being bitten
+by, so it says so out loud.
+
 ## Migration drift check
 
 `.github/workflows/migration-drift-check.yml` runs `pnpm run check:migrations-applied` daily

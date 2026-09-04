@@ -52,8 +52,16 @@ written since the baseline. They are kept for reference only — do not treat a 
 application** any more, only the staging Supabase *database* (`cifwmndunmlxjhyjugxa`), so
 the browser-auth smoke (`phase26`) has nothing to run against.
 
-To take a new migration to production, apply via the Supabase MCP `apply_migration` tool (or
-`supabase db push`) to staging first, verify with `get_advisors` plus a targeted
+**Since 2026-09-04 the staging half is automatic.** `.github/workflows/staging-migrate.yml`
+applies whatever staging is missing on every push to `main` that touches
+`supabase/migrations/**`, and records each one under the file's own version and name. So do
+not hand-apply a merged migration to staging: it is already done, or the workflow failed and
+that is the thing to look at. It cannot reach production — the script refuses any project ref
+but `cifwmndunmlxjhyjugxa` before it opens a connection, and has no override flag.
+
+To take a new migration to production, apply to staging first — before merge that still means
+the Supabase MCP `apply_migration` tool (or `supabase db push`), after merge the workflow above
+has done it — verify with `get_advisors` plus a targeted
 `pg_policies`/`pg_constraint`/`has_function_privilege` check, then repeat against
 production after explicit approval. If the apply tool records a drifted
 `schema_migrations` version (it stamps the apply-time server clock, not the repo

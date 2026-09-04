@@ -75,6 +75,12 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # Since 2026-09-04 staging is applied AUTOMATICALLY by staging-migrate.yml on every merge to
+      # main that touches supabase/migrations/**. So this leg's meaning has changed: it used to
+      # report a forgotten chore, and now reports a BROKEN AUTOMATION. Keep it — the automation is
+      # the thing most likely to fail silently, and something has to watch the watcher. What it
+      # should no longer do is prompt a hand-application: re-run the workflow instead, or the next
+      # merge will simply re-open the same gap.
       - name: Check migrations are actually applied (staging)
         run: pnpm run check:migrations-applied
         env:
