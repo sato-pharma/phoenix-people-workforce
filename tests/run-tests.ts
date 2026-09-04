@@ -613,6 +613,7 @@ import { runResignationCrmIdentityReleaseTests } from "./resignation-crm-identit
 import { runProbationLegacyFeedbackRetiredTests } from "./probation-legacy-feedback-retired.test.ts";
 import { runAccessProfileHrIdCasingTests } from "./access-profile-hrid-casing.test.ts";
 import { runEmployeePortalNavigationTests } from "./employee-portal-navigation.test.ts";
+import { runSourceEncodingGuardTests } from "./source-encoding-guard.test.ts";
 import { runPortalNavActingDmUsesAppRoleTests } from "./portal-nav-acting-dm-uses-app-role.test.ts";
 import { runEmployeePortalBottomNavTests } from "./employee-portal-bottom-nav.test.ts";
 import { runEmployeePortalNavCatalogSyncTests } from "./employee-portal-nav-catalog-sync.test.ts";
@@ -2218,6 +2219,7 @@ await runTest("medical rep expenses", runMedicalRepExpensesTests);
 await runTest("employee portal sales scope", runEmployeePortalSalesScopeTests);
 await runTest("workspace dashboard hides sales panels from non-selling roles", runWorkspaceSalesPanelsScopeTests);
 await runTest("employee portal navigation", runEmployeePortalNavigationTests);
+await runTest("source encoding guard", runSourceEncodingGuardTests);
 await runTest("portal nav acting DM follows app access role, not job title", runPortalNavActingDmUsesAppRoleTests);
 await runTest("employee portal bottom nav", runEmployeePortalBottomNavTests);
 await runTest("employee portal nav catalog sync (M12)", runEmployeePortalNavCatalogSyncTests);
