@@ -1300,6 +1300,7 @@ import { runCommentStripRatchetTests } from "./comment-strip-ratchet.test.ts";
 
 import { runRepoDoctorStripIdleOfferTests } from "./repo-doctor-strip-idle-offer.test.ts";
 import { runRepoDoctorNewestPrTests } from "./repo-doctor-newest-pr.test.ts";
+import { runSessionLockStalenessIsAgeTests } from "./session-lock-staleness-is-age.test.ts";
 import { runRepoDoctorOrphanedFoldersTests } from "./repo-doctor-orphaned-folders.test.ts";
 import { runCrmClientTimeoutsTests } from "./crm-client-timeouts.test.ts";
 import { runOutstationMobileWizardStaleCalculationTests } from "./outstation-mobile-wizard-stale-calculation.test.ts";
@@ -4052,6 +4053,12 @@ await runTest("repo-doctor never advises pnpm install in a worktree (restore is 
 await runTest("no source-pinning test strips comments with a regex that eats the code it pins", runCommentStripRatchetTests);
 
 await runTest("repo-doctor offers only what --strip-idle will actually reclaim", runRepoDoctorStripIdleOfferTests);
+await runTest(
+  "a session lock is stale by AGE alone, and no shipped text teaches the PID rule (the lock stores "
+    + "the hook's own short-lived parent shell, so EVERY lock names a dead PID — the weekly hygiene "
+    + "task believed that rule and had been deleting live sessions' locks)",
+  runSessionLockStalenessIsAgeTests,
+);
 await runTest(
   "a deregistered worktree folder holding files is REPORTED, by name and by content, and is never "
     + "reachable from --fix (a leftover .git stub used to file it under LIVE, and the bucket without "
