@@ -17,6 +17,7 @@ import { attachHiringDocumentFiles } from "@/lib/hiring-documents/service";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import type { AccessContext } from "@/lib/auth/permissions";
 import type { PrintableDocument } from "@/lib/hiring-pack/document-registry";
+import { documentCarriesHousePageNumbers } from "@/lib/hiring-pack/house-identity";
 import {
   buildIssuedFileName,
   isFilingSchemaMissing,
@@ -141,7 +142,12 @@ export async function fileSignedPaper(input: {
 
   let pdf: Uint8Array;
   try {
-    pdf = await renderHiringPaperPdf(paper.html);
+    // Numbered for the papers Phoenix authors, never for the Authority's own forms — the policy
+    // lives beside the identity it belongs to, so the filed copy and the downloaded one can never
+    // disagree about which documents may carry a footer.
+    pdf = await renderHiringPaperPdf(paper.html, {
+      pageNumbers: documentCarriesHousePageNumbers(input.document),
+    });
   } catch (error) {
     // Both of these are worth saying in full rather than collapsing to "could not file". One is an
     // environment that cannot render at all; the other is a specific file that could not be read,

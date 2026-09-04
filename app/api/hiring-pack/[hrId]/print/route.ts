@@ -6,6 +6,12 @@ import { documentFieldInventory } from "@/lib/hiring-pack/document-inventory";
 import { pageSizeFor } from "@/lib/hiring-pack/field-warnings";
 import { asPrintableDocument, type PrintableDocument } from "@/lib/hiring-pack/document-registry";
 import { isCustomTemplateLayerMissing } from "@/lib/hiring-pack/custom-template-store";
+import { documentCarriesHousePageNumbers } from "@/lib/hiring-pack/house-identity";
+import {
+  ChromiumUnavailableError,
+  PaperArtworkMissingError,
+  renderHiringPaperPdf,
+} from "@/lib/hiring-pack/paper-pdf";
 import { renderHiringPaper } from "@/lib/hiring-pack/render-paper";
 import {
   hiringPackErrorMessage,
@@ -33,6 +39,18 @@ export const dynamic = "force-dynamic";
 // COPY COUNTS ARE NOT A QUERY PARAMETER BY DEFAULT. Three Form 1s and four contracts are the
 // owner's standing instruction and article 19 of the contract states the four in its own text, so
 // the counts live in `systemContractDefaults` and a caller has to ask deliberately to differ.
+
+/**
+ * A filename HR can file by hand: `contract-A-12.pdf`.
+ *
+ * Deliberately not the Arabic document title. Windows rejects a colon, which every company template
+ * carries in its `custom:<uuid>` key, and a browser that cannot parse the header falls back to the
+ * last path segment — which here would be the word "print" for every paper ever downloaded.
+ */
+function pdfFileName(document: PrintableDocument, hrId: string): string {
+  const safe = String(document).replace(/[^A-Za-z0-9._-]+/g, "-");
+  return `${safe}-${hrId.replace(/[^A-Za-z0-9._-]+/g, "-")}.pdf`;
+}
 
 function apiError(error: unknown) {
   if (isForbiddenError(error)) return { message: hiringPackErrorMessage(error), status: 403 };
@@ -156,6 +174,60 @@ export async function GET(request: Request, { params }: { params: Promise<{ hrId
       // the audit write hiccupped. `recordHiringPackPrinted` swallows its own failures for the same
       // reason.
       void recordHiringPackPrinted(hrId, requested);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────────────────────
+    // `format=pdf` SERVES THE SAME DOCUMENT AS A FILE, and exists for one reason: page numbers.
+    //
+    // The contract and the two clearances flow, so how many sheets they occupy is decided by the
+    // print engine and is not knowable from the DOM — a browser-printed copy therefore cannot carry
+    // "صفحة N من M" and this route does not pretend otherwise. Rendering here makes Chromium the
+    // print engine, so the count is its own answer and the footer is exact.
+    //
+    // IT HANGS OFF THIS ROUTE RATHER THAN A ROUTE OF ITS OWN so it cannot drift: the permission
+    // assert, the document validation, the version the employee actually signed, the field layer
+    // and the print stamp have all already happened above. A parallel endpoint would eventually
+    // resolve a different version from the one on screen, and nothing would say so.
+    // ─────────────────────────────────────────────────────────────────────────────────────────
+    if (url.searchParams.get("format") === "pdf") {
+      try {
+        const pdf = await renderHiringPaperPdf(paper.html, {
+          pageNumbers: documentCarriesHousePageNumbers(requested),
+        });
+        return new Response(Buffer.from(pdf), {
+          headers: {
+            "Content-Type": "application/pdf",
+            // ASCII AND PREDICTABLE. The document label is Arabic and a company template's id is
+            // `custom:<uuid>`, whose colon is not legal in a Windows filename — so the name is
+            // built from the document key and the HR id, both of which are already safe, rather
+            // than from anything a user typed. HR files these by hand; a stable name sorts.
+            "Content-Disposition": `attachment; filename="${pdfFileName(requested, hrId)}"`,
+            "Cache-Control": "no-store, max-age=0",
+          },
+        });
+      } catch (error) {
+        // Said in full rather than collapsed to "could not download": one is an environment that
+        // cannot render at all, the other names a file that could not be read. The HTML is still
+        // available from this same URL without `format=pdf`, so the paper is never unreachable.
+        if (error instanceof PaperArtworkMissingError) {
+          return NextResponse.json(
+            { error: "hiring_pack_artwork_missing", message: error.message },
+            { status: 409 },
+          );
+        }
+        if (error instanceof ChromiumUnavailableError) {
+          return NextResponse.json(
+            {
+              error: "hiring_pack_pdf_unavailable",
+              message:
+                "This environment cannot render a PDF. Open the document and use the browser's own "
+                + "Print dialog instead — the page itself is unaffected.",
+            },
+            { status: 503 },
+          );
+        }
+        throw error;
+      }
     }
 
     return new Response(paper.html, {

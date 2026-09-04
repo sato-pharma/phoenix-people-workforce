@@ -183,9 +183,47 @@ export function printBanner(lines: string[]): string {
   const items = lines.map((line) => `<li>${escapeHtml(line)}</li>`).join("");
   return `<div class="print-banner no-print">
     <button type="button" class="print-banner__action" onclick="window.print()">Print</button>
+    <a class="print-banner__action print-banner__action--ghost" id="phx-pdf" hidden download>Download PDF</a>
     <ul class="print-banner__list">${items}</ul>
-  </div>`;
+  </div>
+  ${DOWNLOAD_LINK_SCRIPT}`;
 }
+
+/**
+ * Point the Download PDF link at this same document, asked for as a file.
+ *
+ * THE HREF IS BUILT FROM `location`, not passed in, and that is the whole reason this works for
+ * every paper including ones added later: the renderers do not know the employee, the document key
+ * or the version being viewed — the ROUTE does, and the browser is already standing on that URL.
+ * Threading those three values through nine renderers to rebuild a URL they are already inside is
+ * how one of them ends up rebuilding it wrong.
+ *
+ * HIDDEN UNTIL PROVEN, because this banner is also served inside the fill screen's preview panel
+ * and by `file://` when a paper is opened from disk, where there is no route behind it. A dead
+ * button on a legal document reads as a broken system; an absent one reads as a screen that does
+ * not offer downloads.
+ *
+ * `preview=1` is dropped deliberately. Downloading the paper is not previewing it, and carrying the
+ * flag through would file the document as never printed.
+ */
+const DOWNLOAD_LINK_SCRIPT = `<script>
+  (function () {
+    var link = document.getElementById("phx-pdf");
+    if (!link) return;
+    try {
+      var here = new URL(window.location.href);
+      if (!/^https?:$/.test(here.protocol)) return;
+      if (!/\/print\/?$/.test(here.pathname)) return;
+      here.searchParams.set("format", "pdf");
+      here.searchParams.delete("preview");
+      here.searchParams.delete("inventory");
+      link.href = here.toString();
+      link.hidden = false;
+    } catch (error) {
+      /* No link rather than a broken one. */
+    }
+  })();
+</script>`;
 
 export const PRINT_BANNER_CSS = `
   .print-banner {
@@ -199,6 +237,13 @@ export const PRINT_BANNER_CSS = `
   .print-banner__action {
     flex: 0 0 auto; padding: 8px 18px; border: 0; border-radius: 4px;
     background: #f8fafc; color: #0f172a; font: inherit; font-weight: 600; cursor: pointer;
+    text-decoration: none; line-height: 1.35;
+  }
+  /* The second action is secondary: Print is still the normal way a paper reaches a signing table,
+     and the download exists for the one thing printing cannot do — number the pages. */
+  .print-banner__action--ghost {
+    background: transparent; color: #f8fafc;
+    box-shadow: inset 0 0 0 1px rgba(248, 250, 252, 0.55);
   }
   .print-banner__list { margin: 0; padding-inline-start: 18px; }
   .print-banner__list li { margin: 0 0 2px; }
