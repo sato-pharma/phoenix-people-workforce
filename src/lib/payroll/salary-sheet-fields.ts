@@ -12,6 +12,7 @@ export const payrollSheetHeaders = [
   "Line",
   "Area",
   "Hire Date",
+  "Working Days",
   "Base Salary",
   "Gross Salary",
   "Net Salary",
@@ -49,13 +50,20 @@ export type PayrollSheetSection = {
   tone: "employee" | "fixed" | "additions" | "governmental" | "deductions" | "payment";
 };
 
+/**
+ * Positional bands over `payrollSheetHeaders` — `start`/`end` are 1-based COLUMN
+ * numbers, so inserting a header shifts every band after it. "Working Days" was
+ * added at column 11 on 2026-09-04; the counts below (11/3/8/3/7/5 = 37) are
+ * pinned by tests/payroll-sheet-sections.test.ts so a future insert cannot
+ * silently leave a band pointing at the wrong columns.
+ */
 export const payrollSheetSections: PayrollSheetSection[] = [
-  { end: 10, label: "Employee Data", start: 1, tone: "employee" },
-  { end: 13, label: "Fixed Salary", start: 11, tone: "fixed" },
-  { end: 21, label: "Additions", start: 14, tone: "additions" },
-  { end: 24, label: "Governmental Deductions", start: 22, tone: "governmental" },
-  { end: 31, label: "Internal Deductions", start: 25, tone: "deductions" },
-  { end: 36, label: "Payment Split", start: 32, tone: "payment" },
+  { end: 11, label: "Employee Data", start: 1, tone: "employee" },
+  { end: 14, label: "Fixed Salary", start: 12, tone: "fixed" },
+  { end: 22, label: "Additions", start: 15, tone: "additions" },
+  { end: 25, label: "Governmental Deductions", start: 23, tone: "governmental" },
+  { end: 32, label: "Internal Deductions", start: 26, tone: "deductions" },
+  { end: 37, label: "Payment Split", start: 33, tone: "payment" },
 ];
 
 export const payrollMoneyHeaders = new Set<PayrollSheetHeader>([
@@ -84,6 +92,36 @@ export const payrollMoneyHeaders = new Set<PayrollSheetHeader>([
   "First Part",
   "Second Part",
 ]);
+
+/**
+ * Columns holding a plain COUNT rather than money. They are right-aligned like
+ * money so a numeric column never sits ragged in a wall of figures, but they are
+ * deliberately NOT in `payrollMoneyHeaders`: that set drives the currency format
+ * and the TOTALS row, and a sum of day counts across the company is meaningless.
+ */
+export const payrollCountHeaders = new Set<PayrollSheetHeader>(["Working Days"]);
+
+/** True when the column should be right-aligned — money, or a plain count. */
+export function isPayrollNumericHeader(header: PayrollSheetHeader) {
+  return payrollMoneyHeaders.has(header) || payrollCountHeaders.has(header);
+}
+
+/**
+ * The Working Days column as a person reads it: "26 of 31".
+ *
+ * The denominator is what makes the numerator mean anything — 26 days is a full
+ * month in February and five days short in March — and a payslip has room for
+ * both where a spreadsheet column does not. Returns EMPTY, never "0", for a row
+ * written before the column existed: such a row genuinely does not know, and a
+ * zero there would read as "worked no days".
+ */
+export function formatWorkingDays(
+  record: Pick<SalaryRecord, "calendarDays" | "workingDays">,
+) {
+  if (!record.workingDays) return "";
+  if (!record.calendarDays) return String(record.workingDays);
+  return `${record.workingDays} of ${record.calendarDays}`;
+}
 
 export function payrollSheetSectionForIndex(index: number) {
   const columnNumber = index + 1;
@@ -125,6 +163,11 @@ export function payrollSheetValue(
       return record.area;
     case "Hire Date":
       return record.hireDate ?? "";
+    // Owner rule 2026-09-04: the salary columns show the FULL contract, and this
+    // column is what explains a joiner/leaver being PAID less than it. The money
+    // itself lives in Month Salary / First Part / Second Part and is unchanged.
+    case "Working Days":
+      return record.workingDays;
     case "Base Salary":
       return record.baseSalary;
     case "Gross Salary":

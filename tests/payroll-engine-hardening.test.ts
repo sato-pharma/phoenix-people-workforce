@@ -567,7 +567,12 @@ export function runPayrollEngineHardeningTests() {
   );
   assert.match(
     templateRouteSource,
-    /const headers = \[\.\.\.payrollSheetHeaders,\s*"Bank",\s*"Bank Account"\]/,
+    // The optional type annotation arrived 2026-09-04 with the col(header)
+    // lookup that replaced ~40 hard-coded cell indices. What this pins is the
+    // ORDER — canonical payroll headers first, the two bank columns appended —
+    // never how the binding is declared. The annotation is allowed; the order
+    // is not.
+    /const headers(?::\s*PayrollTemplateHeader\[\])? = \[\.\.\.payrollSheetHeaders,\s*"Bank",\s*"Bank Account"\]/,
     "Payroll upload template must keep canonical payroll headers first, then append bank reference columns.",
   );
   assert.match(

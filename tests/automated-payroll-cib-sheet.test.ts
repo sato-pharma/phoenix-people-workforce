@@ -37,6 +37,7 @@ function buildAssembledRow(overrides: {
     area: "Cairo",
     baseSalary: 10000,
     bonus: 0,
+    calendarDays: 30,
     crm: 0,
     hrId: overrides.hrId ?? "B-1",
     employmentIncomeTax: 0,
@@ -68,6 +69,7 @@ function buildAssembledRow(overrides: {
     totalAdditions: 0,
     totalDeductions: 0,
     unpaidVacations: 0,
+    workingDays: 30,
   };
   return {
     row,
