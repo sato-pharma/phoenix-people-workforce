@@ -59,6 +59,7 @@ import {
   type ScreeningRoleFilter,
   type ScreeningSeenFilter,
 } from "@/lib/recruitment/screening-link";
+import { intakeSourceLabel } from "@/lib/recruitment/intake-source";
 import { positionFolderLabel } from "@/lib/recruitment/position-folder";
 import { hiringTargetFamily, readRoleFit, roleFitVerdict } from "@/lib/recruitment/role-fit";
 import {
@@ -286,7 +287,7 @@ export async function loadScreeningWorkspace(
       sentForVacancyId: candidate.sentFor?.vacancyId ?? null,
       sentToManagerAt: sentAt,
       sentToManagerName: candidate.managerNotified?.name ?? null,
-      source: text(candidate.source),
+      source: intakeSourceLabel(text(candidate.source)) || null,
       status,
       statusChangedAt: text(candidate.statusChangedAt),
       statusNote: text(candidate.statusNote),

@@ -8,6 +8,12 @@
 // the decisions are pressed repeatedly — a decision bar that moves as the name above it wraps is a
 // decision bar you have to re-find on every candidate.
 //
+// EXCEPT IN FOCUS, where the two ARE merged into one line. That is the trade the owner asked for by
+// name: at full screen the document is what matters, and one row of chrome is the most this screen
+// is allowed to keep. It stays a deliberate exception rather than the default, because the merged
+// row is exactly the thing the paragraph above warns about — acceptable when the point is to read,
+// wrong when the point is to work down a list.
+//
 // THE DECISIONS ARE NOT SYMMETRICAL, and the buttons say so.
 //
 //   • SHORTLIST is one press. It is reversible, it notifies nobody, and it is the commonest thing a
@@ -27,7 +33,20 @@
 // deliberate constraint on this rebuild, not an omission.
 
 import { useState } from "react";
-import { ChevronDown, ChevronRight, Loader2, Mail, MapPin, Phone, Send, SkipForward, ThumbsDown, ThumbsUp } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronRight,
+  ChevronUp,
+  Loader2,
+  Mail,
+  MapPin,
+  Minimize2,
+  Phone,
+  Send,
+  SkipForward,
+  ThumbsDown,
+  ThumbsUp,
+} from "lucide-react";
 
 import {
   CANDIDATE_STATUS_NOTE_MAX_LENGTH,
@@ -59,11 +78,13 @@ export function WorkstationReviewHeader({
   canSend,
   decided,
   error,
+  focus,
   hiringManagers,
   onDecide,
   onNext,
   onSend,
   onSendStateChange,
+  onToggleFocus,
   positionSuggestions,
   row,
   sendState,
@@ -76,11 +97,14 @@ export function WorkstationReviewHeader({
   /** What THIS session decided, which outranks the stored status until the page is reloaded. */
   decided: CandidateStatus | null;
   error: string | null;
+  /** The whole screen is the document. This band answers by becoming one line. */
+  focus: boolean;
   hiringManagers: readonly ManagerPickerOption[];
   onDecide: (status: CandidateStatus, note: string | null) => void;
   onNext: () => void;
   onSend: () => void;
   onSendStateChange: (next: SendState) => void;
+  onToggleFocus: () => void;
   /** Areas and job titles already in use, offered behind the free-typed position. */
   positionSuggestions: { jobTitles: string[]; areas: string[] };
   row: WorkspaceCandidateRow;
@@ -91,13 +115,152 @@ export function WorkstationReviewHeader({
 }) {
   const [rejecting, setRejecting] = useState(false);
   const [sending, setSending] = useState(false);
-  // THE IDENTITY BLOCK FOLDS; the decision bar below it never does. Folding it hands roughly 60px of
-  // a laptop screen back to the document, which on a two-page CV is the difference between reading
-  // and scrolling — and the fold persists down the list, so it is done once, not per candidate.
-  // What survives the fold is the name, the SEAT and the status: enough to be sure the buttons under
-  // it belong to the person on screen, which is the one thing a decision bar must never get wrong.
+  // BOTH BANDS FOLD, and each remembers its answer for the session, so it is done once rather than
+  // per candidate. Folding the identity hands roughly 60px of a laptop screen back to the document,
+  // which on a two-page CV is the difference between reading and scrolling; what survives that fold
+  // is the name, the SEAT and the status — enough to be sure the buttons belong to the person on
+  // screen, which is the one thing a decision bar must never get wrong.
   const [whoOpen, toggleWho] = useSectionFold("review:who");
+  // THE DECISION BAND FOLDS TOO. It did not, and the owner asked for the opposite in plain words:
+  // he reads a CV at full screen. Its control sits in the identity line above rather than in the
+  // band itself, so the band can leave the screen entirely rather than leave a handle behind that
+  // is just a thinner bar.
+  const [actionsOpen, toggleActions] = useSectionFold("review:actions");
   const status = decided ?? row.status ?? "new";
+  const statusPill = (
+    <Pill tone={status === "rejected" ? "danger" : status === "new" ? "accent" : "ok"}>
+      {candidateStatusLabel(status)}
+    </Pill>
+  );
+  const decisions = (
+    <>
+      <DecisionButton
+        disabled={busy}
+        icon={<ThumbsUp className="h-3.5 w-3.5" />}
+        label="Shortlist"
+        onClick={() => onDecide("shortlisted", null)}
+        tone="ok"
+      />
+      <DecisionButton
+        disabled={busy}
+        icon={<ThumbsDown className="h-3.5 w-3.5" />}
+        label="Reject"
+        onClick={() => setRejecting((open) => !open)}
+        pressed={rejecting}
+        tone="danger"
+      />
+      {canSend ? (
+        <DecisionButton
+          disabled={busy}
+          icon={<Send className="h-3.5 w-3.5" />}
+          label="Send to manager"
+          onClick={() => setSending((open) => !open)}
+          pressed={sending}
+          tone="info"
+        />
+      ) : null}
+
+      <span className="flex-1" />
+
+      {busy ? (
+        <span className="inline-flex items-center gap-1 text-[12px] font-semibold text-phx-ink-soft">
+          <Loader2 className="h-3 w-3 animate-spin" />
+          Saving
+        </span>
+      ) : null}
+
+      <DecisionButton
+        disabled={busy}
+        icon={<SkipForward className="h-3.5 w-3.5" />}
+        label="Next candidate"
+        onClick={onNext}
+        tone="accent"
+      />
+    </>
+  );
+  const afterBands = (
+    <>
+      {error ? (
+        <p className="border-t border-phx-danger-line bg-phx-danger-bg px-4 py-1.5 text-[12px] font-semibold text-phx-danger">
+          {error}
+        </p>
+      ) : null}
+      {sentConfirmation ? (
+        <p className="border-t border-phx-ok-line bg-phx-ok-bg px-4 py-1.5 text-[12px] font-semibold text-phx-ok">
+          Sent to {sentConfirmation}.
+        </p>
+      ) : null}
+      {rejecting ? (
+        <RejectPanel
+          busy={busy}
+          onCancel={() => setRejecting(false)}
+          onConfirm={(note) => {
+            setRejecting(false);
+            onDecide("rejected", note);
+          }}
+        />
+      ) : null}
+      {sending && canSend ? (
+        <SendPanel
+          busy={busy}
+          hiringManagers={hiringManagers}
+          onChange={onSendStateChange}
+          positionSuggestions={positionSuggestions}
+          onSend={onSend}
+          state={sendState}
+          suggestedVacancyIds={suggestedVacancyIds}
+          vacancies={vacancies}
+        />
+      ) : null}
+    </>
+  );
+
+  // THE FOCUS STRIP. Two bands become one line: who it is, and what can be done. Nothing is taken
+  // away - a decision taken at full screen is the same decision - and the way back is the FIRST
+  // control on the row, where a reader looks for it, rather than a key he has to have been told.
+  if (focus) {
+    return (
+      <div className="shrink-0 border-b border-phx-line bg-white">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 bg-phx-surface-2 px-3 py-1">
+          <button
+            aria-label="Leave full-screen reading"
+            className="shrink-0 border border-phx-line bg-white p-1 text-phx-ink-2 transition-colors hover:border-phx-accent-line hover:text-phx-accent-press"
+            onClick={onToggleFocus}
+            title="Leave full-screen reading"
+            type="button"
+          >
+            <Minimize2 aria-hidden className="h-3.5 w-3.5" />
+          </button>
+          <span className="min-w-0 break-words text-[13px] font-black leading-tight text-phx-ink">
+            {row.fullName}
+          </span>
+          <span className="min-w-0 flex-1 break-words text-[12px] font-bold leading-tight text-phx-accent-press">
+            {row.appliedForText ?? "No job named on the application"}
+          </span>
+          {statusPill}
+          {decisions}
+        </div>
+        {afterBands}
+      </div>
+    );
+  }
+
+  const actionsToggle = (
+    <button
+      aria-expanded={actionsOpen}
+      aria-label={actionsOpen ? "Hide the decision bar" : "Show the decision bar"}
+      className="shrink-0 text-phx-ink-faint transition-colors hover:text-phx-accent-press"
+      onClick={toggleActions}
+      title={actionsOpen ? "Hide the decision bar" : "Show the decision bar"}
+      type="button"
+    >
+      {actionsOpen ? (
+        <ChevronUp aria-hidden className="h-4 w-4" />
+      ) : (
+        <ChevronDown aria-hidden className="h-4 w-4" />
+      )}
+    </button>
+  );
 
   return (
     <div className="shrink-0 border-b border-phx-line bg-white">
@@ -118,9 +281,8 @@ export function WorkstationReviewHeader({
           <p className="min-w-0 flex-1 break-words text-[13px] font-bold leading-tight text-phx-accent-press">
             {row.appliedForText ?? "No job named on the application"}
           </p>
-          <Pill tone={status === "rejected" ? "danger" : status === "new" ? "accent" : "ok"}>
-            {candidateStatusLabel(status)}
-          </Pill>
+          {statusPill}
+          {actionsToggle}
         </div>
       ) : (
         <div className="flex flex-wrap items-start gap-x-4 gap-y-1 px-4 py-2.5">
@@ -166,9 +328,10 @@ export function WorkstationReviewHeader({
           </div>
 
           <div className="flex shrink-0 flex-col items-end gap-1">
-            <Pill tone={status === "rejected" ? "danger" : status === "new" ? "accent" : "ok"}>
-              {candidateStatusLabel(status)}
-            </Pill>
+            <span className="flex items-center gap-1.5">
+              {statusPill}
+              {actionsToggle}
+            </span>
             {/* The fit read, spelled out here rather than abbreviated as it is in the list — this is
                 where there is room to say what the number actually means. */}
             <span
@@ -189,85 +352,13 @@ export function WorkstationReviewHeader({
       )}
 
       {/* ── What can be done ──────────────────────────────────────────────── */}
-      <div className="flex flex-wrap items-center gap-1.5 border-t border-phx-line bg-phx-surface-2 px-4 py-1.5">
-        <DecisionButton
-          disabled={busy}
-          icon={<ThumbsUp className="h-3.5 w-3.5" />}
-          label="Shortlist"
-          onClick={() => onDecide("shortlisted", null)}
-          tone="ok"
-        />
-        <DecisionButton
-          disabled={busy}
-          icon={<ThumbsDown className="h-3.5 w-3.5" />}
-          label="Reject"
-          onClick={() => setRejecting((open) => !open)}
-          pressed={rejecting}
-          tone="danger"
-        />
-        {canSend ? (
-          <DecisionButton
-            disabled={busy}
-            icon={<Send className="h-3.5 w-3.5" />}
-            label="Send to manager"
-            onClick={() => setSending((open) => !open)}
-            pressed={sending}
-            tone="info"
-          />
-        ) : null}
-
-        <span className="flex-1" />
-
-        {busy ? (
-          <span className="inline-flex items-center gap-1 text-[12px] font-semibold text-phx-ink-soft">
-            <Loader2 className="h-3 w-3 animate-spin" />
-            Saving
-          </span>
-        ) : null}
-
-        <DecisionButton
-          disabled={busy}
-          icon={<SkipForward className="h-3.5 w-3.5" />}
-          label="Next candidate"
-          onClick={onNext}
-          tone="accent"
-        />
-      </div>
-
-      {error ? (
-        <p className="border-t border-phx-danger-line bg-phx-danger-bg px-4 py-1.5 text-[12px] font-semibold text-phx-danger">
-          {error}
-        </p>
-      ) : null}
-      {sentConfirmation ? (
-        <p className="border-t border-phx-ok-line bg-phx-ok-bg px-4 py-1.5 text-[12px] font-semibold text-phx-ok">
-          Sent to {sentConfirmation}.
-        </p>
+      {actionsOpen ? (
+        <div className="flex flex-wrap items-center gap-1.5 border-t border-phx-line bg-phx-surface-2 px-4 py-1.5">
+          {decisions}
+        </div>
       ) : null}
 
-      {rejecting ? (
-        <RejectPanel
-          busy={busy}
-          onCancel={() => setRejecting(false)}
-          onConfirm={(note) => {
-            setRejecting(false);
-            onDecide("rejected", note);
-          }}
-        />
-      ) : null}
-
-      {sending && canSend ? (
-        <SendPanel
-          busy={busy}
-          hiringManagers={hiringManagers}
-          onChange={onSendStateChange}
-          positionSuggestions={positionSuggestions}
-          onSend={onSend}
-          state={sendState}
-          suggestedVacancyIds={suggestedVacancyIds}
-          vacancies={vacancies}
-        />
-      ) : null}
+      {afterBands}
     </div>
   );
 }
@@ -355,11 +446,11 @@ function RejectPanel({
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-2">
         <input
-          aria-label="Anything to add"
+          aria-label="Note"
           className="min-w-0 flex-1 border border-phx-line bg-white px-2 py-1.5 text-[13px] text-phx-ink outline-none focus:border-phx-accent-line"
           maxLength={CANDIDATE_STATUS_NOTE_MAX_LENGTH}
           onChange={(event) => setDetail(event.target.value)}
-          placeholder="Anything to add — optional, and kept in their history"
+          placeholder="Note — optional, kept in the candidate's history"
           value={detail}
         />
         <button

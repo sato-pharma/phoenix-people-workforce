@@ -47,6 +47,7 @@ const EXTEND_MARGIN = 400;
 export function WorkstationCandidateList({
   decidedById,
   emptyLabel,
+  onCollapse,
   onSelect,
   rows,
   search,
@@ -64,6 +65,8 @@ export function WorkstationCandidateList({
    */
   decidedById: Readonly<Record<string, CandidateStatus>>;
   emptyLabel: string;
+  /** Desktop only. Given, the head grows a fold control; omitted, the pane cannot be folded. */
+  onCollapse?: () => void;
   onSelect: (id: string) => void;
   onSearchChange: (value: string) => void;
   rows: readonly WorkspaceCandidateRow[];
@@ -114,7 +117,7 @@ export function WorkstationCandidateList({
 
   return (
     <div className="flex h-full min-h-0 flex-col border-r border-phx-line bg-white">
-      <PaneHead right={totalLabel} title={title} />
+      <PaneHead collapseTo="left" foldLabel="candidates" onCollapse={onCollapse} right={totalLabel} title={title} />
 
       <div className="flex shrink-0 items-center gap-1.5 border-b border-phx-line bg-phx-surface-2 px-2 py-1.5">
         <span className="flex min-w-0 flex-1 items-center gap-1.5 border border-phx-line bg-white px-2">
@@ -144,13 +147,19 @@ export function WorkstationCandidateList({
           <EmptyNote>{emptyLabel}</EmptyNote>
         ) : (
           <>
-            {visible.map((row) => (
+            {visible.map((row, index) => (
               <CandidateBlock
                 active={row.id === selectedId}
                 decided={decidedById[row.id] ?? null}
                 key={row.id}
                 onSelect={() => onSelect(row.id)}
                 row={row}
+                // A band printed on every row is not information, it is wallpaper: the list is
+                // ordered BY band, so forty consecutive rows read "FIELD FORCE" and the eye has to
+                // step over the same three words forty times to get to the next name. Printed only
+                // where it CHANGES it does the job it was written for — it marks where one group of
+                // the queue ends and the next begins — and costs nothing on the rows in between.
+                showBand={index === 0 || visible[index - 1].band !== row.band}
               />
             ))}
             {limit < rows.length ? (
@@ -176,11 +185,14 @@ function CandidateBlock({
   decided,
   onSelect,
   row,
+  showBand,
 }: {
   active: boolean;
   decided: CandidateStatus | null;
   onSelect: () => void;
   row: WorkspaceCandidateRow;
+  /** True on the first row of each band — see the call site for why it is not true on all of them. */
+  showBand: boolean;
 }) {
   const redFlag = row.redFlags[0] ?? null;
   const status = decided ?? row.status;
@@ -251,7 +263,7 @@ function CandidateBlock({
           {decided ? `${candidateStatusLabel(decided)} · just now` : candidateStatusLabel(row.statusRaw)}
         </Pill>
         {row.seen ? (
-          <Pill tone="neutral" title="You have opened this CV before.">
+          <Pill tone="neutral" title="This CV has been opened before.">
             <Eye className="h-2.5 w-2.5" />
             Read
           </Pill>
@@ -301,11 +313,14 @@ function CandidateBlock({
         </span>
       ) : null}
 
-      {/* The band is the queue's own ordering reason. Shown last and quietly: it explains WHY this
-          row sits where it does, which is a question a recruiter only asks when surprised. */}
-      <span className="block text-[10px] uppercase tracking-[0.06em] text-phx-ink-faint">
-        {screeningBandLabels[row.band]}
-      </span>
+      {/* The band is the queue's own ordering reason. Shown quietly, and only where it changes:
+          it explains WHY this row sits where it does, which is a question a recruiter only asks at
+          the boundary between two groups. */}
+      {showBand ? (
+        <span className="block text-[10px] uppercase tracking-[0.06em] text-phx-ink-faint">
+          {screeningBandLabels[row.band]}
+        </span>
+      ) : null}
     </button>
   );
 }

@@ -113,8 +113,8 @@ export function WorkstationCvPane({
                 applicant, or open the file by hand. */}
             <p className="max-w-sm text-[12px] leading-relaxed text-phx-ink-soft">
               {attachedCount === 0
-                ? "Nothing was attached to this candidate at all."
-                : `${attachedCount} file${attachedCount === 1 ? "" : "s"} on the record, none of them a CV this viewer can draw. Download it from the candidate's folder to open it.`}
+                ? "No file is attached to this candidate."
+                : `${attachedCount} file${attachedCount === 1 ? "" : "s"} on the record, none of them a CV this viewer can draw. Download from the candidate's folder to open it.`}
             </p>
           </div>
         )}

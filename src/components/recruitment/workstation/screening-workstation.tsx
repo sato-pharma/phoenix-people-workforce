@@ -107,6 +107,8 @@ export function ScreeningWorkstation({
   canWriteNotes,
   counts,
   filteredOut,
+  focus,
+  onToggleFocus,
   hiringManagers,
   overdueManagerFeedback,
   poolSize,
@@ -119,6 +121,10 @@ export function ScreeningWorkstation({
   canWriteNotes: boolean;
   counts: WorkQueueCounts;
   filteredOut: number;
+  /** Every pane folded at once, so the document has the screen. Owned by the page so the filter
+      bar above this component folds with it. */
+  focus: boolean;
+  onToggleFocus: () => void;
   hiringManagers: readonly WorkspaceManager[];
   overdueManagerFeedback: number;
   poolSize: number;
@@ -134,12 +140,24 @@ export function ScreeningWorkstation({
   const [selectedId, setSelectedId] = useState<string | null>(rows[0]?.id ?? null);
   const [tab, setTab] = useState<IntelligenceTab>("summary");
   const [queueOpen, setQueueOpen] = useState(false);
-  // DESKTOP FOLDING, separate from `queueOpen` above, which is the small-screen drawer. Both panes
-  // start open: folding is something a recruiter does when they want the document wide, never a
-  // state they have to undo before the screen makes sense.
+  // ── WHAT FOLDS, AND WHY FOCUS OVERRIDES RATHER THAN REPLACES ────────────────
+  //
+  // DESKTOP FOLDING, separate from `queueOpen` above, which is the small-screen drawer. All three
+  // panes start open: folding is something a recruiter does when they want the document wide, never
+  // a state they have to undo before the screen makes sense.
+  //
+  // Every pane keeps its OWN flag, and `focus` sits on top of all three as an override. Doing it
+  // that way — rather than having focus write into the three flags — means leaving focus restores
+  // exactly the arrangement the reader had before, with no effect and no second remembered copy of
+  // the state. The owner's need is the whole screen for the document; the way back must cost one
+  // press and must not rearrange his workspace as the price.
   const [railOpen, setRailOpen] = useState(true);
+  const [listOpen, setListOpen] = useState(true);
   const [panelOpen, setPanelOpen] = useState(true);
   const [mobilePane, setMobilePane] = useState<MobilePane>("list");
+  const showRail = railOpen && !focus;
+  const showList = listOpen && !focus;
+  const showPanel = panelOpen && !focus;
 
   const [loaded, setLoaded] = useState<Record<string, LoadedCandidate>>({});
   const [loadError, setLoadError] = useState<Record<string, string>>({});
@@ -375,8 +393,8 @@ export function ScreeningWorkstation({
       <div
         className={cn(
           "z-20 w-[212px] shrink-0",
-          queueOpen ? "absolute inset-y-0 left-0 flex shadow-[6px_0_18px_rgba(15,23,42,0.14)]" : "hidden",
-          railOpen ? "xl:static xl:flex xl:shadow-none" : "xl:hidden",
+          queueOpen && !focus ? "absolute inset-y-0 left-0 flex shadow-[6px_0_18px_rgba(15,23,42,0.14)]" : "hidden",
+          showRail ? "xl:static xl:flex xl:shadow-none" : "xl:hidden",
         )}
       >
         <WorkstationQueuePanel
@@ -402,8 +420,8 @@ export function ScreeningWorkstation({
       {/* What the folded rail leaves behind. It replaces the pane in the flex row rather than
           overlaying it, so folding actually GIVES the width to the CV — which is the only reason
           somebody folds it. */}
-      {!railOpen ? <PaneSpine label="Work queue" onOpen={() => setRailOpen(true)} side="left" /> : null}
-      {queueOpen ? (
+      {!showRail && !focus ? <PaneSpine label="Work queue" onOpen={() => setRailOpen(true)} side="left" /> : null}
+      {queueOpen && !focus ? (
         <button
           aria-label="Close the work queue"
           className="absolute inset-0 z-10 bg-phx-ink/20 xl:hidden"
@@ -414,8 +432,15 @@ export function ScreeningWorkstation({
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         {/* The one bar that exists only on smaller screens: the queue drawer's handle, and the
-            pane switcher. At a workstation neither is needed and neither renders. */}
-        <div className="flex shrink-0 items-center gap-1.5 border-b border-phx-line bg-white px-2 py-1.5 xl:hidden">
+            pane switcher. At a workstation neither is needed and neither renders — and in focus it
+            goes as well, because "the whole screen for the CV" has to mean the same thing on a
+            phone as it does on a laptop. The way back out lives on the strip above the document. */}
+        <div
+          className={cn(
+            "shrink-0 items-center gap-1.5 border-b border-phx-line bg-white px-2 py-1.5 xl:hidden",
+            focus ? "hidden" : "flex",
+          )}
+        >
           <button
             className="inline-flex items-center gap-1 border border-phx-line bg-white px-2 py-1 text-[12px] font-bold text-phx-ink-2 transition hover:bg-phx-paper"
             onClick={() => setQueueOpen((open) => !open)}
@@ -453,12 +478,14 @@ export function ScreeningWorkstation({
           <div
             className={cn(
               "min-h-0 w-full shrink-0 lg:flex lg:w-[288px]",
-              mobilePane === "list" ? "flex" : "hidden",
+              mobilePane === "list" && !focus ? "flex" : "hidden",
+              showList ? undefined : "lg:hidden",
             )}
           >
             <WorkstationCandidateList
               decidedById={decided}
               emptyLabel={emptyLabelFor(queue, chosenVacancy?.jobTitle ?? null, search, poolSize, filteredOut)}
+              onCollapse={() => setListOpen(false)}
               onSelect={openCandidate}
               onSearchChange={setSearch}
               rows={visible}
@@ -468,12 +495,15 @@ export function ScreeningWorkstation({
               totalLabel={`${visible.length} of ${poolSize}`}
             />
           </div>
+          {!showList && !focus ? (
+            <PaneSpine label="Candidates" onOpen={() => setListOpen(true)} side="left" />
+          ) : null}
 
           {/* ── AREA 3 + the CV ──────────────────────────────────────────────── */}
           <div
             className={cn(
               "min-h-0 min-w-0 flex-1 flex-col lg:flex",
-              mobilePane === "cv" ? "flex" : "hidden",
+              mobilePane === "cv" || focus ? "flex" : "hidden",
             )}
           >
             {selected ? (
@@ -483,11 +513,13 @@ export function ScreeningWorkstation({
                   canSend={canSendToManagers}
                   decided={decided[selected.id] ?? null}
                   error={actionError}
+                  focus={focus}
                   hiringManagers={hiringManagers}
                   onDecide={decide}
                   onNext={goToNext}
                   onSend={() => void send()}
                   onSendStateChange={setSendState}
+                  onToggleFocus={onToggleFocus}
                   positionSuggestions={positionSuggestions}
                   row={selected}
                   sendState={sendState}
@@ -517,8 +549,8 @@ export function ScreeningWorkstation({
           <div
             className={cn(
               "min-h-0 w-full shrink-0 lg:flex lg:w-[322px]",
-              mobilePane === "panel" ? "flex" : "hidden",
-              panelOpen ? undefined : "xl:hidden",
+              mobilePane === "panel" && !focus ? "flex" : "hidden",
+              showPanel ? undefined : "xl:hidden",
             )}
           >
             <WorkstationIntelligencePanel
@@ -538,7 +570,7 @@ export function ScreeningWorkstation({
               tab={tab}
             />
           </div>
-          {!panelOpen ? <PaneSpine label="Intelligence" onOpen={() => setPanelOpen(true)} side="right" /> : null}
+          {!showPanel && !focus ? <PaneSpine label="Intelligence" onOpen={() => setPanelOpen(true)} side="right" /> : null}
         </div>
       </div>
     </div>

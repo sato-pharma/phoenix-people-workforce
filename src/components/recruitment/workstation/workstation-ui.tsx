@@ -46,6 +46,7 @@ import { cn } from "@/lib/utils";
 export function PaneHead({
   children,
   collapseTo,
+  foldLabel,
   onCollapse,
   right,
   title,
@@ -53,11 +54,21 @@ export function PaneHead({
   children?: React.ReactNode;
   /** Which way the pane folds — decides the arrow, so it always points at where the pane goes. */
   collapseTo?: "left" | "right";
+  /**
+   * What to call the pane in the fold control, when the visible heading is not its name.
+   *
+   * The candidate list's heading is the QUEUE it is showing — "New CVs", "Shortlisted", "Overdue
+   * with managers" — so the fold control built from it read "Fold the new cvs pane away" while the
+   * spine that brings it back said "Candidates". One pane, two names, and the lower-cased one reads
+   * like a typo. This is the pane's own name, and it must match its `PaneSpine` label exactly.
+   */
+  foldLabel?: string;
   /** Desktop only. Given, the head grows a fold control; omitted, the pane cannot be folded. */
   onCollapse?: () => void;
   right?: React.ReactNode;
   title: string;
 }) {
+  const foldName = (foldLabel ?? title).toLowerCase();
   return (
     <div className="flex min-h-9 shrink-0 items-center justify-between gap-2 border-b border-phx-line bg-gradient-to-b from-white to-phx-surface-2 px-3 py-1.5">
       {/* A 2px tick in the accent, not a heading weight competition. Four panes each need to say
@@ -74,10 +85,10 @@ export function PaneHead({
         /* Hidden below xl, where the pane is already a drawer or a tab and folding it a second way
            would just be a second thing that can hide the CV. */
         <button
-          aria-label={`Fold the ${title.toLowerCase()} pane away`}
+          aria-label={`Fold the ${foldName} pane away`}
           className="hidden shrink-0 border border-phx-line bg-white p-0.5 text-phx-ink-faint transition-colors hover:border-phx-accent-line hover:text-phx-accent-press xl:inline-flex"
           onClick={onCollapse}
-          title={`Fold the ${title.toLowerCase()} pane away`}
+          title={`Fold the ${foldName} pane away`}
           type="button"
         >
           {collapseTo === "right" ? (

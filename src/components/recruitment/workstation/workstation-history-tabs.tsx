@@ -199,7 +199,7 @@ export function WorkstationNotesTab({
             onChange={(event) => setTyped({ id: candidateId, text: event.target.value })}
             /* Said in the placeholder because it is true and people assume otherwise: a note on a
                candidate is part of their record, and anyone who can open the candidate can read it. */
-            placeholder="Add a note — everyone who can open this candidate will see it"
+            placeholder="Add a note. Anyone who can open this candidate can read it."
             rows={2}
             value={draft}
           />
@@ -247,7 +247,7 @@ export function WorkstationNotesTab({
                   {/* The name and title were stamped when the note was WRITTEN, never joined on
                       render: HR_IDs are reused when a seat is refilled, so a late join would
                       eventually put one recruiter's words in their successor's mouth. */}
-                  {note.authorName ?? "Someone"}
+                  {note.authorName ?? "Unnamed author"}
                   {note.authorJobTitle ? (
                     <span className="font-normal text-phx-ink-soft">{note.authorJobTitle}</span>
                   ) : null}

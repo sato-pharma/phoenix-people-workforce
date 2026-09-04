@@ -521,4 +521,176 @@ export async function runRecruitmentScreeningWorkstationTests() {
     /loading=\{Boolean\(selectedId\)/,
     "and keying the panel's loading state off `selectedId` spins forever once that row is filtered away",
   );
+
+  // ── 11 · Every bar and every pane folds, and one control folds them all ──────
+  //
+  // The owner's words, verbatim: "you must guarantee that every every section or every bar is
+  // collapsible. Because I need the full screen to see the CV in." There were four bars that could
+  // not fold — the page's toolbar, the filter bar, the small-screen pane switcher and the decision
+  // bar — and folding the three panes one at a time still cost three presses and left three spines.
+  //
+  // WHY THIS IS PINNED RATHER THAN LEFT TO THE EYE: a fold is one boolean per bar, so the failure
+  // mode is not a broken screen, it is a bar that quietly stops answering the control beside it
+  // while everything still renders. Nothing in a typecheck or a lint run can see that.
+  const pageClient = read("src/components/recruitment/workstation/workstation-page-client.tsx");
+  const reviewHeader = read("src/components/recruitment/workstation/workstation-review-header.tsx");
+  const bare = withoutComments(workstationShell);
+
+  // The page owns focus, because the two bars it draws have to fold with the panes below them.
+  assert.match(
+    withoutComments(pageClient),
+    /const \[focus, setFocus\] = useState\(false\)/,
+    "the focus flag must live on the page, which is the only common parent of the filter bar and the panes",
+  );
+  assert.match(
+    withoutComments(pageClient),
+    /const \[filtersOpen, setFiltersOpen\] = useState\(true\)/,
+    "the filter bar folds on its own too, and starts open",
+  );
+  assert.match(
+    withoutComments(pageClient),
+    /\{focus \|\| fullBleed \|\| !filtersOpen \? null : \(/,
+    "the filter bar must answer its own fold, focus AND full bleed",
+  );
+  assert.match(
+    withoutComments(pageClient),
+    /focus=\{focus\}/,
+    "and the workstation has to be told, or the panes stay put while the bars above them go",
+  );
+
+  // ONE TREE. Full bleed was an early return into a different element tree, so React unmounted the
+  // whole workstation on the way in and out: selection back to row one, every loaded profile thrown
+  // away, the open CV re-fetched. Focus turns full bleed on, so that reset would have landed on the
+  // one press this change exists to make good.
+  assert.doesNotMatch(
+    withoutComments(pageClient),
+    /if \(fullBleed\) \{\s*return \(/,
+    "full bleed must be a class on the one container, never a second tree the workstation remounts into",
+  );
+
+  // Three panes, three flags, one override — and leaving focus must restore what was open before,
+  // which is only true while focus OVERRIDES the flags instead of writing into them.
+  for (const flag of ["showRail = railOpen && !focus", "showList = listOpen && !focus", "showPanel = panelOpen && !focus"]) {
+    assert.ok(
+      bare.includes("const " + flag),
+      "focus must override the pane flag rather than write into it: " + flag,
+    );
+  }
+  for (const setter of ["setRailOpen(false)", "setListOpen(false)", "setPanelOpen(false)"]) {
+    assert.ok(bare.includes(setter), "every pane needs its own fold control: " + setter);
+  }
+  assert.match(
+    bare,
+    /focus \? "hidden" : "flex"/,
+    "the small-screen queue/pane-switcher bar is a bar too, and folds with the rest",
+  );
+
+  // The decision bar. It used to be the one band on the screen that could not be folded, said so
+  // in a comment, and that is exactly what the owner asked to change.
+  assert.match(
+    withoutComments(reviewHeader),
+    /const \[actionsOpen, toggleActions\] = useSectionFold\("review:actions"\)/,
+    "the decision bar folds, and remembers the answer down the list like every other section",
+  );
+  assert.match(
+    withoutComments(reviewHeader),
+    /\{actionsOpen \? \(\s+<div className="flex flex-wrap items-center gap-1\.5 border-t border-phx-line bg-phx-surface-2/,
+    "and the fold has to gate the BAND itself, not merely appear in its own toggle's label",
+  );
+  assert.doesNotMatch(
+    reviewHeader,
+    /the decision bar below it never does/,
+    "the comment that says it never folds has to go with the behaviour it described",
+  );
+
+  // In focus the two bands become ONE line, and the way back out is on it. A focus mode a reader
+  // cannot leave from the screen he is looking at is a trap, not a feature.
+  assert.match(
+    withoutComments(reviewHeader),
+    /if \(focus\) \{/,
+    "focus collapses the identity and decision bands into a single strip",
+  );
+  assert.match(
+    reviewHeader,
+    /aria-label="Leave full-screen reading"/,
+    "and that strip carries the way back out",
+  );
+
+  // ── 12 · The panel's own summary block is square, like everything around it ───
+  //
+  // `CandidateFactsSummary` is SHARED with two older screens, so it kept its rounded slate card and
+  // drew it inside the workstation's square, bordered section — a rounded rectangle in the middle of
+  // a corporate grid, against the owner's standing "no rounded corners" rule. The frame is now a
+  // prop: the older screens keep the card, the workstation asks for nothing at all.
+  const factsSummary = read("src/components/recruitment/candidate-facts-summary.tsx");
+  assert.match(
+    withoutComments(factsSummary),
+    /frame = "card"/,
+    "the default frame must stay the card, so the two screens outside this rebuild do not move",
+  );
+  assert.match(
+    withoutComments(read("src/components/recruitment/workstation/workstation-intelligence.tsx")),
+    /frame="flat"/,
+    "and the workstation asks for the unframed one",
+  );
+  assert.doesNotMatch(
+    withoutComments(factsSummary),
+    /flat \? "[^"]*rounded/,
+    "the flat frame must not round anything",
+  );
+
+  // ── 13 · The two things that made the list read as noise ────────────
+  //
+  // The owner, looking at the screen: "It is very noisy … you must apply in it our rules."
+  // Two of the things making it noisy were rule breaches rather than taste:
+  //
+  //   1. `source` was printed straight out of the column — forty rows reading "whatsapp". The
+  //      standing rule is human-readable names, never raw codes, and a label for exactly this
+  //      value already existed in the CV digest, applied there and nowhere else.
+  //   2. The band was printed on EVERY row. The list is ordered BY band, so the same three words
+  //      repeat down the whole queue and say nothing — it is only information where it CHANGES.
+  //
+  // Both are pinned because both are invisible to a typecheck: a raw code and a labelled one are
+  // the same string type, and a band on every row renders perfectly.
+  const { intakeSourceLabel } = await import("@/lib/recruitment/intake-source");
+  assert.equal(intakeSourceLabel("whatsapp"), "WhatsApp", "the channel is written the way a person writes it");
+  assert.equal(intakeSourceLabel("email"), "Email", "and so is the other one");
+  assert.equal(intakeSourceLabel(null), "", "nothing recorded stays nothing, never the word null");
+  assert.equal(
+    intakeSourceLabel("careers fair"),
+    "careers fair",
+    "an unrecognised value is somebody's own word and is kept verbatim, never folded into 'other'",
+  );
+
+  const workspaceLoader = read("src/lib/recruitment/screening-workspace.ts");
+  assert.match(
+    withoutComments(workspaceLoader),
+    /source: intakeSourceLabel\(/,
+    "the screening row must carry the label, not the stored code",
+  );
+  assert.doesNotMatch(
+    withoutComments(read("src/lib/recruitment/inbound/daily-cv-digest.ts")),
+    /const SOURCE_LABELS/,
+    "and the digest's private copy of the map has to be gone, or the two drift apart again",
+  );
+
+  const listSource = withoutComments(read("src/components/recruitment/workstation/workstation-candidate-list.tsx"));
+  assert.match(
+    listSource,
+    /showBand=\{index === 0 \|\| visible\[index - 1\]\.band !== row\.band\}/,
+    "the band prints on the first row of each group and nowhere else",
+  );
+  assert.match(
+    listSource,
+    /\{showBand \? \(\s+<span className="block text-\[10px\] uppercase/,
+    "and the flag has to gate the band itself, not merely exist",
+  );
+
+  // A folded pane and the spine that brings it back must call the pane the same thing. The list's
+  // heading is the QUEUE it is showing, so the control built from it read "Fold the new cvs pane
+  // away" while the spine said "Candidates" — one pane, two names, one of them reading like a typo.
+  const uiSource = withoutComments(read("src/components/recruitment/workstation/workstation-ui.tsx"));
+  assert.match(uiSource, /const foldName = \(foldLabel \?\? title\)\.toLowerCase\(\)/, "the fold control can be given the pane's own name");
+  assert.doesNotMatch(uiSource, /Fold the \$\{title\.toLowerCase\(\)\}/, "and must no longer build that name out of the heading");
+  assert.match(listSource, /foldLabel="candidates"/, "the list names itself the way its spine does");
 }

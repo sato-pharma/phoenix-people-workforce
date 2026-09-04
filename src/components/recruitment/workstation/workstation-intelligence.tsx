@@ -99,7 +99,7 @@ export function WorkstationIntelligencePanel({
 }) {
   return (
     <div className="flex h-full min-h-0 flex-col border-l border-phx-line bg-white">
-      <PaneHead collapseTo="right" onCollapse={onCollapse} title="Candidate intelligence" />
+      <PaneHead collapseTo="right" foldLabel="intelligence" onCollapse={onCollapse} title="Candidate intelligence" />
       <div className="flex shrink-0 border-b border-phx-line bg-phx-surface-2">
         {intelligenceTabs.map((key) => (
           <button
@@ -192,7 +192,13 @@ function SummaryTab({
         {/* The EXISTING summary component, not a second copy of it. It already resolves the confirmed
             and hedged tiers with one convention, and forking it here is how the two screens would
             start disagreeing about the same person. */}
-        <CandidateFactsSummary candidate={candidate} className="px-3 py-2" columns={1} extraction={extraction} />
+        <CandidateFactsSummary
+          candidate={candidate}
+          className="px-3 py-2"
+          columns={1}
+          extraction={extraction}
+          frame="flat"
+        />
       </CollapsibleSection>
 
       <CollapsibleSection

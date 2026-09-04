@@ -248,7 +248,7 @@ function VacancyButton({
       </span>
       {place ? <span className="block text-[11px] leading-tight text-phx-ink-soft">{place}</span> : null}
       <span className="block text-[11px] leading-tight text-phx-ink-soft">
-        {parts.length > 0 ? parts.join(" · ") : "Nobody is waiting on this seat yet"}
+        {parts.length > 0 ? parts.join(" · ") : "No applicants yet"}
       </span>
     </button>
   );
