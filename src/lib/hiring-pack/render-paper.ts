@@ -19,7 +19,7 @@
 // request, and a caller that forgot it would silently print a paper its owner restricted.
 
 import { systemContractDefaults } from "@/config/system-settings";
-import type { AccessContext } from "@/lib/auth/types";
+import type { AccessContext } from "@/lib/auth/permissions";
 import {
   canRolePrintCustomTemplate,
   loadCurrentCustomTemplate,

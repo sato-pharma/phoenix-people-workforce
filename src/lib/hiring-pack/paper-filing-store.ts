@@ -15,7 +15,7 @@ import { PDFDocument } from "pdf-lib";
 
 import { attachHiringDocumentFiles } from "@/lib/hiring-documents/service";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-import type { AccessContext } from "@/lib/auth/types";
+import type { AccessContext } from "@/lib/auth/permissions";
 import type { PrintableDocument } from "@/lib/hiring-pack/document-registry";
 import {
   buildIssuedFileName,
