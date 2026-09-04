@@ -467,3 +467,48 @@ what left is measurement, narrative, and what §5 already states. Search this se
 
 - **`gh pr merge` from a worktree exits NON-ZERO after the merge SUCCEEDED.** `fatal: 'main' is already used by worktree` is its LOCAL post-merge step failing, never the merge — and it fires on EVERY merge here, since the primary holds `main`. Treat a non-zero exit as UNKNOWN, not failed: `gh pr view <n> --json state,mergeCommit`; `MERGED` means done and only the local branch is left. Retrying errors on an already-merged PR and reads like a worse failure. `gh-pr-merge-exits-nonzero-from-a-worktree-after-it-succeeded`
 
+
+## `list_sessions` reports where a session STARTED, not where it works — 2026-09-04
+
+`AGENTS.md` §2.1 said: *"No OS tool points at the holder — but `list_sessions` DOES: match the husk's
+path against every session's `cwd`."* The second half does not hold here, and it fails in the
+dangerous direction — it reports a busy worktree as empty.
+
+### The measurement
+
+At 13:23 Cairo, `list_sessions` returned 12 sessions. **Every one reported
+`F:\Phoenix Workforce\phoenix-workforce`, the primary checkout.** Not one named a worktree.
+
+At that same moment four worktrees held live work:
+
+| worktree | evidence it was live |
+| --- | --- |
+| `_wt-admin-identity-strip` | HEAD moved `ed609554a` → `e76aed1b8` → `cdc912bf0` |
+| `_wt-kpis-window` | fresh branch cut 4 min earlier; went clean → dirty within minutes |
+| `_wt-portal-sticky-nav` | held the only running dev server (port 3000) |
+| `_wt-staging-migration-autoapply` | HEAD moved `8e681bac4` → `8c5014ae5` |
+
+The decisive case is `_wt-admin-identity-strip`. The session titled "Admin identity banner Phoenix
+logo positioning" reports `prNumber: 3070` and `cwd` = the primary. PR #3070's `headRefName` is
+`codex/admin-identity-strip`, and `git worktree list` shows that branch checked out **only** in
+`_wt-admin-identity-strip`. A session cannot be committing to a branch that is checked out in another
+folder, so `cwd` is simply the folder the session was launched in — not the one it is working in.
+
+### Why it matters
+
+§5's removal ritual leans on "is anybody in this folder". Run as a `cwd` sweep it returns *nobody*
+for every worktree on this machine, always — so the gate passes on folders in active use, and the
+failure mode is deleting someone's live work.
+
+That nearly happened on 2026-09-04. `repo-doctor` reported `_wt-kpis-window` RETIRABLE (PR #3068
+merged, HEAD unmoved since); `list_sessions` showed no session in it; the tree was clean; all ten
+spreadsheets and PDFs inside it were tracked and unmodified. Four gates, all green — on a folder
+whose owner had cut a fresh branch four minutes earlier. What stopped the removal was reading the
+branch and HEAD **live at the moment of removal** and finding they no longer matched the scan:
+`codex/call-rate-standard` @ `23bb098a2` had become `codex/call-rate-never-averaged` @ `28fb7a40d`.
+
+### The check that does work
+
+Match the folder's branch against the open PRs — `gh pr list --state open --json number,headRefName`
+against `git worktree list` — and re-read HEAD immediately before removing, comparing it against the
+SHA read at the gate. Branch identity survives and is observable; `cwd` never described it.

@@ -34,6 +34,14 @@ on:
     # automated "is production actually up?" signal since GCP alerting died, so worst-case
     # detection latency goes from ~1h to ~3h. If that proves too slow, the middle setting is
     # "17 2-18/2 * * *" (2-hourly, 9 runs/day) rather than a return to hourly.
+    #
+    # CORRECTION (2026-09-04). The paragraph above is a dated record and is left as written, but its
+    # arithmetic covers the SCHEDULE leg only. cron-job.org's `phoenix-run-synthetic-journeys`
+    # ("0 * * * *") dispatches this workflow through /api/cron/run-synthetic-journeys, and has done
+    # so 24x/day continuously since at least 2026-08-24 — unchanged by the cut above. Counted over
+    # 2026-09-01..09-04: ~24 dispatch runs/day against ~3 scheduled. The real rate is therefore
+    # ~27/day, not ~6, and editing THIS cron line moves only the ~3. Cadence lives in
+    # src/lib/observability/job-schedule.ts and at cron-job.org. See docs/agents-incident-history.md.
     - cron: "17 2-18/3 * * *"
   workflow_dispatch:
     inputs:

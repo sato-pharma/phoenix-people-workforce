@@ -416,3 +416,78 @@ clause and count the hits.
 changed: PR #2880 added 884 bytes in one commit, more than half of what five passes recovered. The
 only lever with a better rate is the displacement rule enforced when a hook is written — cue in
 `AGENTS.md`, account in `docs/`.
+
+## The fourth Actions cron, and the scheduler that actually drives it — 2026-09-04
+
+`AGENTS.md` §3 said this repository runs **three** GitHub Actions crons "separate from cron-job.org
+and from the dead GCP scheduler". Both halves were wrong, and the second half is the one that sends a
+diagnosis to the wrong place.
+
+### There are four, not three
+
+`gh api repos/Gawish-1997/phoenix-people-workforce/actions/workflows` returns four active scheduled
+workflows:
+
+| workflow | cron | state |
+| --- | --- | --- |
+| `deploy-drift-check.yml` | `9,39 * * * *` | active |
+| `migration-drift-check.yml` | `0 7 * * *` | active |
+| `security-scan.yml` | `17 5 * * *` | active |
+| **`synthetic-journeys.yml`** | `17 2-18/3 * * *` | **active — 1,032 runs, and §3 never listed it** |
+
+A fifth, `security.yml`, reads `disabled_manually` and is correctly absent. The `cron:` lines in
+`deploy-cloud-run.yml` and `deploy-cloud-run-staging.yml` are commented out with restore
+instructions, so they are correctly absent too. §3's own closing instruction — *"Count them before
+adding a fourth"* — was therefore already stale: the fourth existed and was uncounted.
+
+### The two schedulers are chained, not separate
+
+`synthetic-journeys.yml` is not driven by its own `schedule:` trigger. The cron-job.org job
+`phoenix-run-synthetic-journeys` (`0 * * * *`, registered in `src/lib/observability/job-schedule.ts`)
+calls `/api/cron/run-synthetic-journeys`, which `workflow_dispatch`es the workflow via
+`src/lib/observability/dispatch-synthetic-journeys.ts`.
+
+**This design is deliberate and is argued at length in that file.** GitHub's scheduler is
+best-effort; measured 2026-08-05, it did not fire this workflow at all, while cron-job.org fires on
+time. The dispatch is routed through a Phoenix cron route rather than pointing cron-job.org straight
+at GitHub, so the GitHub write token stays in Railway instead of a free-tier third-party account.
+
+Nothing about the mechanism is a defect. The defect was that `AGENTS.md` asserted the opposite
+relationship, so a session reading §3 would treat the two schedulers as disjoint.
+
+### What the run log shows
+
+Counted from `actions/workflows/synthetic-journeys.yml/runs`:
+
+| day | `schedule` | `workflow_dispatch` |
+| --- | --- | --- |
+| 2026-08-23 | 17 | 17 |
+| 2026-08-24 → 08-26 | 15–17 | 24 |
+| 2026-08-27 → 09-04 | 1–4 | 24 |
+
+The 2026-08-29 cadence change documented inside the workflow — hourly to three-hourly, *"cuts it to
+~6/day"* — did exactly what it claimed **to the schedule leg**. The dispatch leg has been a flat
+24/day across the entire window, before and after, and was not part of that calculation. The
+workflow's real rate is **~27 runs/day, not ~6**.
+
+### The cost attribution was wrong too
+
+§3 called `deploy-drift-check.yml` "the standing Actions cost". Measured wall-clock:
+
+| workflow | avg per run | runs/day | wall-clock/day |
+| --- | --- | --- | --- |
+| `deploy-drift-check.yml` | 0.55 min | 48 | ~26 min |
+| `synthetic-journeys.yml` | 2.1 min | ~27 | **~57 min** |
+
+Roughly double. **No money figure is quoted, deliberately.** The per-run timing endpoint returns
+`billable_ms = 0` for these runs, and `users/{user}/settings/billing/actions` now answers HTTP 410
+("this endpoint has been moved"), so billed minutes could not be read. Wall-clock is what was
+measured, so wall-clock is what is stated.
+
+### What to do with this
+
+Change the synthetic-journeys cadence in `job-schedule.ts` and at cron-job.org. Editing the
+workflow's own `cron:` line moves about 3 runs a day and leaves the other 24 untouched — which is
+precisely the mis-diagnosis the §3 hook now warns against. And do not probe the cron-job.org REST API
+to confirm the job: §2.3 records a 100-request **daily** cap that 429s every endpoint with no
+`Retry-After`, so that check costs more than it returns.
