@@ -5,7 +5,8 @@ import {
   applyKpiFilters,
   buildKpiFacets,
   buildKpisQuery,
-  callRateBandOf,
+  amBandOf,
+  pmBandOf,
   coverageBandOf,
   EMPTY_KPI_FILTERS,
   frequencyBandOf,
@@ -70,7 +71,8 @@ function row(overrides: Partial<KpiRepRow> = {}): KpiRepRow {
     campaignShare: 0,
     campaignOnlyDays: 0,
     hasCallRate: true,
-    callRateAttainmentPct: 100,
+    amAttainmentPct: 100,
+    pmAttainmentPct: 100,
     plannedDoctors: 100,
     visitedDoctors: 95,
     missedDoctors: 5,
@@ -178,11 +180,20 @@ export function runKpiBandTests() {
 
   // Same rule on the other axis: a rep with no CRM row at all in the window has no call rate. That
   // can be leave, a sync gap, or a genuinely idle period, and the board must not pick one.
+  const loggedNothing = row({ hasCallRate: false, amAttainmentPct: null, pmAttainmentPct: null });
   assert.equal(
-    callRateBandOf(row({ hasCallRate: false, callRateAttainmentPct: null })),
+    amBandOf(loggedNothing),
     "noplan",
-    "a rep who logged nothing has no call-rate band — 'Behind' would state something the data cannot say",
+    "a rep who logged nothing has no AM band — 'Behind' would state something the data cannot say",
   );
+  assert.equal(pmBandOf(loggedNothing), "noplan", "and no PM band either, for the same reason");
+
+  // THE OWNER'S RULE, 2026-09-04: the two are banded APART. A morning that hit its target sits in
+  // one band while the afternoon that missed sits in another, and no third band merges them —
+  // which is what a manager filtering "Behind" needs, because the two failures are different jobs.
+  const morningOnly = row({ hasCallRate: true, amAttainmentPct: 100, pmAttainmentPct: 20 });
+  assert.equal(amBandOf(morningOnly), "elite", "2 of 2 in the morning is elite on its own axis");
+  assert.equal(pmBandOf(morningOnly), "behind", "2 of 10 in the afternoon is behind on its own axis");
 
   // The boundaries themselves, at the exact edge in both directions.
   assert.equal(coverageBandOf(row({ coveragePct: 90 })), "elite", "90 is elite");
@@ -369,9 +380,10 @@ export function runKpiFacetTests() {
 
 export function runKpiPodiumTests() {
   const rows = [
-    row({ agentCrmId: 1, repName: "Top coverage", coveragePct: 99, frequencyPct: 10, callRateAttainmentPct: 10 }),
-    row({ agentCrmId: 2, repName: "Top frequency", coveragePct: 10, frequencyPct: 99, callRateAttainmentPct: 10 }),
-    row({ agentCrmId: 3, repName: "Top call rate", coveragePct: 10, frequencyPct: 10, callRateAttainmentPct: 99 }),
+    row({ agentCrmId: 1, repName: "Top coverage", coveragePct: 99, frequencyPct: 10, amAttainmentPct: 10, pmAttainmentPct: 10 }),
+    row({ agentCrmId: 2, repName: "Top frequency", coveragePct: 10, frequencyPct: 99, amAttainmentPct: 10, pmAttainmentPct: 10 }),
+    row({ agentCrmId: 3, repName: "Top AM", coveragePct: 10, frequencyPct: 10, amAttainmentPct: 99, pmAttainmentPct: 10 }),
+    row({ agentCrmId: 6, repName: "Top PM", coveragePct: 10, frequencyPct: 10, amAttainmentPct: 10, pmAttainmentPct: 99 }),
     // Deliberately given a LOW call rate rather than the fixture default: having no plan does not
     // mean logging no calls, and at the default 100% this rep would legitimately top the call-rate
     // podium and mask what the assertion below is trying to prove.
@@ -381,31 +393,43 @@ export function runKpiPodiumTests() {
       hasMeasurablePlan: false,
       coveragePct: 0,
       frequencyPct: 0,
-      callRateAttainmentPct: 5,
+      amAttainmentPct: 5,
+      pmAttainmentPct: 5,
     }),
-    row({ agentCrmId: 5, repName: "No calls", hasCallRate: false, callRateAttainmentPct: null }),
+    row({ agentCrmId: 5, repName: "No calls", hasCallRate: false, amAttainmentPct: null, pmAttainmentPct: null }),
   ];
   const podium = buildKpiPodium(rows);
 
-  // THREE LEADERBOARDS, THREE ANSWERS. The board adds no fourth measure, so there is no blended
-  // "best rep" anywhere — and on these fixtures the three winners are three different people,
-  // which is exactly the shape production produces (68% coverage against 39% frequency).
+  // FOUR LEADERBOARDS, FOUR ANSWERS. There is no blended "best rep" anywhere — and on these
+  // fixtures the winners are four different people, which is the shape production produces (68%
+  // coverage against 39% frequency in one month).
   assert.equal(podium.coverage[0]?.repName, "Top coverage");
   assert.equal(podium.frequency[0]?.repName, "Top frequency");
-  assert.equal(podium.callRate[0]?.repName, "Top call rate");
+
+  // THE OWNER'S RULE ON THE LEADERBOARD. AM is ranked against 2 and PM against 10, apart, so the
+  // best morning and the best afternoon are two questions. A single blended call-rate podium could
+  // not have named both of these people, and would have named neither if a third rep had been
+  // merely good at both — which is exactly the averaging that hides a bad afternoon.
+  assert.equal(podium.amCallRate[0]?.repName, "Top AM");
+  assert.equal(podium.pmCallRate[0]?.repName, "Top PM");
+  assert.notEqual(
+    podium.amCallRate[0]?.repName,
+    podium.pmCallRate[0]?.repName,
+    "the morning leader and the afternoon leader are different people here — the whole reason the two are ranked apart",
+  );
 
   // Nobody is put on a podium at 0% for a measure they have no value on.
   for (const entry of [...podium.coverage, ...podium.frequency]) {
     assert.notEqual(entry.repName, "No plan", "a rep with no plan is never ranked on coverage or frequency");
   }
-  for (const entry of podium.callRate) {
-    assert.notEqual(entry.repName, "No calls", "a rep who logged nothing is never ranked on call rate");
+  for (const entry of [...podium.amCallRate, ...podium.pmCallRate]) {
+    assert.notEqual(entry.repName, "No calls", "a rep who logged nothing is never ranked on either call rate");
   }
   assert.ok(podium.coverage.length <= 3, "a podium holds at most three");
   assert.deepEqual(buildKpiPodium([]).coverage, [], "an empty board produces an empty podium, not a crash");
 }
 
-// ── 7. Attainment is one denominator, and identity is stamped by canonical hr id ──────────────
+// ── 7. AM and PM are scored apart, and identity is stamped by canonical hr id ─────────────────
 
 function callRateFixture(overrides: Partial<RepCallRate> = {}): RepCallRate {
   const slice = (verified: number, target: number) => ({
@@ -434,9 +458,13 @@ function callRateFixture(overrides: Partial<RepCallRate> = {}): RepCallRate {
 }
 
 export function runKpiAttainmentAndIdentityTests() {
-  // THE AVERAGING TRAP. This rep hit his AM target exactly and did nothing all afternoon: 2 calls
-  // against the 12 the two targets asked for. Averaging the two slice percentages would read
-  // (100 + 0) / 2 = 50% — half a day's work — when the honest answer is 17%.
+  // THE OWNER'S RULE, 2026-09-04: "this two and this ten. Don't never get average."
+  //
+  // This rep hit his AM target exactly and did nothing all afternoon. Every way of combining the
+  // two into one figure tells a manager something false about that day: averaging the percentages
+  // reads 50%, and putting both over one denominator — which this board did until today — reads
+  // 2 of 12 = 17%. Neither says the true thing, which is that the morning was perfect and the
+  // afternoon did not happen. So the board reports 100% and 0% and stops there.
   const [hitAmOnly] = joinKpiRows({
     callRates: [callRateFixture()],
     docLists: [],
@@ -445,10 +473,11 @@ export function runKpiAttainmentAndIdentityTests() {
     amTarget: 2,
     pmTarget: 10,
   });
-  assert.equal(
-    hitAmOnly?.callRateAttainmentPct,
-    17,
-    "attainment puts both slices over ONE denominator — 2 of 12 is 17%, never the 50% an average would give",
+  assert.equal(hitAmOnly?.amAttainmentPct, 100, "2 verified AM calls against a target of 2 is 100% of the AM standard");
+  assert.equal(hitAmOnly?.pmAttainmentPct, 0, "and nothing all afternoon is 0% of the PM standard, said plainly");
+  assert.ok(
+    !("callRateAttainmentPct" in (hitAmOnly ?? {})),
+    "there is NO combined figure on the row at all — the only reliable way to keep one from being printed",
   );
 
   // Identity is stamped by CANONICAL hr id. Production ids are mixed case and carry legacy aliases,

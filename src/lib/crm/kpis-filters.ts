@@ -16,7 +16,7 @@
  *
  * kpis-board.ts is explicit that the board "assembles the measures that were already right and adds
  * no fourth one". Nothing here invents a composite score. The bands are the SAME three measures cut
- * into ranges, and `callRateAttainmentPct` is the call rate expressed against the call rate's own
+ * into ranges, and the two attainment percentages express each call-rate target against its own
  * target — `attainmentPct` is already a field on CallRateSlice in call-rate.ts. A rep is never
  * ranked on a blended number, because a blended number would be a fourth measure wearing a hat.
  *
@@ -47,8 +47,11 @@ export type KpiFilterableRow = {
   campaignShare: number;
   campaignOnlyDays: number;
   hasCallRate: boolean;
-  /** Verified calls as a percentage of what the AM+PM targets asked for. Null with no working days. */
-  callRateAttainmentPct: number | null;
+  /** Morning calls against the AM target and afternoon calls against the PM target — two figures,
+   * never one. Null with no working days. The owner banned the blend on 2026-09-04; kpis-board.ts
+   * carries the reasoning. */
+  amAttainmentPct: number | null;
+  pmAttainmentPct: number | null;
 
   /** THE DENOMINATOR OF BOTH PLAN KPIs — every doctor the plan names inside the scored window,
    * whether or not his day has arrived. See the window note in crm/kpis-board.ts. */
@@ -117,15 +120,24 @@ export function frequencyBandOf(row: KpiFilterableRow): KpiBand {
 }
 
 /**
- * Call-rate band, on attainment against the AM+PM targets.
+ * The AM band and the PM band — two bands, because there are two standards.
  *
  * A rep who logged NOTHING is `noplan`, not `behind`: `hasCallRate` false means the CRM has no row
  * for him in this window at all, which can be leave, a sync gap or a genuinely idle month. Reading
  * "Behind" onto an absence would state as fact the one thing the data cannot tell you.
+ *
+ * There is deliberately NO combined band. The owner's rule of 2026-09-04 is that AM is judged
+ * against 2 and PM against 10, apart — and a band is a single verdict, so a combined one would be
+ * the banned average wearing a colour.
  */
-export function callRateBandOf(row: KpiFilterableRow): KpiBand {
-  if (!row.hasCallRate || row.callRateAttainmentPct == null) return "noplan";
-  return kpiBandOf(row.callRateAttainmentPct);
+export function amBandOf(row: KpiFilterableRow): KpiBand {
+  if (!row.hasCallRate || row.amAttainmentPct == null) return "noplan";
+  return kpiBandOf(row.amAttainmentPct);
+}
+
+export function pmBandOf(row: KpiFilterableRow): KpiBand {
+  if (!row.hasCallRate || row.pmAttainmentPct == null) return "noplan";
+  return kpiBandOf(row.pmAttainmentPct);
 }
 
 // ── Flags ─────────────────────────────────────────────────────────────────────────────────────
@@ -142,7 +154,8 @@ export const KPI_FLAGS = [
   "campaign-only-days",
   "under-visiting",
   "over-visiting",
-  "below-target",
+  "below-am-target",
+  "below-pm-target",
   "perfect-frequency",
 ] as const;
 
@@ -156,7 +169,8 @@ export const KPI_FLAG_LABEL: Record<KpiFlag, string> = {
   "campaign-only-days": "Had campaign-only days",
   "under-visiting": "More below-plan doctors than above",
   "over-visiting": "Visited someone more than planned",
-  "below-target": "Under the call-rate target",
+  "below-am-target": "Under the AM target",
+  "below-pm-target": "Under the PM target",
   "perfect-frequency": "Every due doctor exactly on plan",
 };
 
@@ -169,7 +183,8 @@ export const KPI_FLAG_HINT: Record<KpiFlag, string> = {
   "campaign-only-days": "Days with campaign calls and not one verified visit.",
   "under-visiting": "Short of the plan more often than over it.",
   "over-visiting": "Over-visiting is a deviation, not a win — the owner's rule.",
-  "below-target": "Verified calls came in under what the AM and PM targets asked for.",
+  "below-am-target": "Verified morning calls came in under the AM target, judged on its own.",
+  "below-pm-target": "Verified afternoon calls came in under the PM target, judged on its own.",
   "perfect-frequency": "100% frequency. Exact is the only pass, so this is the real thing.",
 };
 
@@ -183,9 +198,8 @@ export function kpiFlagsOf(row: KpiFilterableRow): KpiFlag[] {
   if (row.campaignOnlyDays > 0) flags.push("campaign-only-days");
   if (row.underDoctors > 0 && row.underDoctors > row.overDoctors) flags.push("under-visiting");
   if (row.overDoctors > 0) flags.push("over-visiting");
-  if (row.hasCallRate && row.callRateAttainmentPct != null && row.callRateAttainmentPct < 100) {
-    flags.push("below-target");
-  }
+  if (row.hasCallRate && row.amAttainmentPct != null && row.amAttainmentPct < 100) flags.push("below-am-target");
+  if (row.hasCallRate && row.pmAttainmentPct != null && row.pmAttainmentPct < 100) flags.push("below-pm-target");
   if (row.hasMeasurablePlan && row.frequencyPct === 100) flags.push("perfect-frequency");
   return flags;
 }
@@ -199,7 +213,6 @@ export const KPI_SORT_FIELDS = [
   "manager",
   "coverage",
   "frequency",
-  "callrate",
   "am",
   "pm",
   "planned",
@@ -222,7 +235,6 @@ export const KPI_SORT_LABEL: Record<KpiSortField, string> = {
   manager: "Manager",
   coverage: "Coverage",
   frequency: "Frequency",
-  callrate: "Call-rate attainment",
   am: "AM rate",
   pm: "PM rate",
   planned: "Planned doctors",
@@ -260,8 +272,6 @@ function sortKey(row: KpiFilterableRow, field: KpiSortField): number | string | 
       return row.hasMeasurablePlan ? row.coveragePct : null;
     case "frequency":
       return row.hasMeasurablePlan ? row.frequencyPct : null;
-    case "callrate":
-      return row.hasCallRate ? row.callRateAttainmentPct : null;
     case "am":
       return row.amRate;
     case "pm":
@@ -302,7 +312,8 @@ export type KpiFilterState = {
   titles: string[];
   coverage: KpiBand[];
   frequency: KpiBand[];
-  callRate: KpiBand[];
+  amRate: KpiBand[];
+  pmRate: KpiBand[];
   flags: KpiFlag[];
   /** Free text matched against the rep's name, area, line and manager. */
   query: string;
@@ -319,7 +330,8 @@ export const KPI_FILTER_PARAMS = {
   titles: "title",
   coverage: "cov",
   frequency: "freq",
-  callRate: "rate",
+  amRate: "amrate",
+  pmRate: "pmrate",
   flags: "flag",
   query: "q",
   sort: "sort",
@@ -334,7 +346,8 @@ export const EMPTY_KPI_FILTERS: KpiFilterState = {
   titles: [],
   coverage: [],
   frequency: [],
-  callRate: [],
+  amRate: [],
+  pmRate: [],
   flags: [],
   query: "",
   sort: "rep",
@@ -351,7 +364,8 @@ export function hasActiveKpiFilters(filters: KpiFilterState): boolean {
     filters.titles.length > 0 ||
     filters.coverage.length > 0 ||
     filters.frequency.length > 0 ||
-    filters.callRate.length > 0 ||
+    filters.amRate.length > 0 ||
+    filters.pmRate.length > 0 ||
     filters.flags.length > 0 ||
     filters.query.trim().length > 0
   );
@@ -367,7 +381,8 @@ export function countActiveKpiFilters(filters: KpiFilterState): number {
     filters.titles.length +
     filters.coverage.length +
     filters.frequency.length +
-    filters.callRate.length +
+    filters.amRate.length +
+    filters.pmRate.length +
     filters.flags.length +
     (filters.query.trim() ? 1 : 0)
   );
@@ -416,7 +431,8 @@ export function parseKpiFilters(params: Record<string, string | string[] | undef
     titles: splitParam(read(KPI_FILTER_PARAMS.titles)),
     coverage: keepKnown(splitParam(read(KPI_FILTER_PARAMS.coverage)), KPI_BANDS),
     frequency: keepKnown(splitParam(read(KPI_FILTER_PARAMS.frequency)), KPI_BANDS),
-    callRate: keepKnown(splitParam(read(KPI_FILTER_PARAMS.callRate)), KPI_BANDS),
+    amRate: keepKnown(splitParam(read(KPI_FILTER_PARAMS.amRate)), KPI_BANDS),
+    pmRate: keepKnown(splitParam(read(KPI_FILTER_PARAMS.pmRate)), KPI_BANDS),
     flags: keepKnown(splitParam(read(KPI_FILTER_PARAMS.flags)), KPI_FLAGS),
     query: (read(KPI_FILTER_PARAMS.query) ?? "").trim().slice(0, 120),
     sort: (KPI_SORT_FIELDS as readonly string[]).includes(sortRaw) ? (sortRaw as KpiSortField) : "rep",
@@ -437,7 +453,8 @@ export function kpiFiltersToParams(filters: KpiFilterState): Record<string, stri
   put(KPI_FILTER_PARAMS.titles, filters.titles);
   put(KPI_FILTER_PARAMS.coverage, filters.coverage);
   put(KPI_FILTER_PARAMS.frequency, filters.frequency);
-  put(KPI_FILTER_PARAMS.callRate, filters.callRate);
+  put(KPI_FILTER_PARAMS.amRate, filters.amRate);
+  put(KPI_FILTER_PARAMS.pmRate, filters.pmRate);
   put(KPI_FILTER_PARAMS.flags, filters.flags);
   if (filters.query.trim()) out[KPI_FILTER_PARAMS.query] = filters.query.trim();
   if (filters.sort !== "rep") out[KPI_FILTER_PARAMS.sort] = filters.sort;
@@ -473,7 +490,17 @@ export function buildKpisQuery(input: {
 /** Returns a copy of the state with one facet value toggled on or off. */
 export function toggleKpiFacet(
   filters: KpiFilterState,
-  facet: "lines" | "regions" | "areas" | "managers" | "titles" | "coverage" | "frequency" | "callRate" | "flags",
+  facet:
+    | "lines"
+    | "regions"
+    | "areas"
+    | "managers"
+    | "titles"
+    | "coverage"
+    | "frequency"
+    | "amRate"
+    | "pmRate"
+    | "flags",
   value: string,
 ): KpiFilterState {
   const current = filters[facet] as string[];
@@ -545,7 +572,8 @@ export function applyKpiFilters<T extends KpiFilterableRow>(rows: readonly T[], 
     if (!matchesFacet(filters.titles, row.jobTitle)) return false;
     if (filters.coverage.length > 0 && !filters.coverage.includes(coverageBandOf(row))) return false;
     if (filters.frequency.length > 0 && !filters.frequency.includes(frequencyBandOf(row))) return false;
-    if (filters.callRate.length > 0 && !filters.callRate.includes(callRateBandOf(row))) return false;
+    if (filters.amRate.length > 0 && !filters.amRate.includes(amBandOf(row))) return false;
+    if (filters.pmRate.length > 0 && !filters.pmRate.includes(pmBandOf(row))) return false;
     if (filters.flags.length > 0) {
       const rowFlags = kpiFlagsOf(row);
       if (!filters.flags.some((flag) => rowFlags.includes(flag))) return false;
@@ -624,7 +652,8 @@ export type KpiFacets = {
   titles: KpiFacetOption[];
   coverage: KpiFacetOption[];
   frequency: KpiFacetOption[];
-  callRate: KpiFacetOption[];
+  amRate: KpiFacetOption[];
+  pmRate: KpiFacetOption[];
   flags: KpiFacetOption[];
 };
 
@@ -658,7 +687,8 @@ export function buildKpiFacets(rows: readonly KpiFilterableRow[]): KpiFacets {
     titles: buildKpiFacet(rows, (row) => row.jobTitle),
     coverage: bandFacet(rows, coverageBandOf),
     frequency: bandFacet(rows, frequencyBandOf),
-    callRate: bandFacet(rows, callRateBandOf),
+    amRate: bandFacet(rows, amBandOf),
+    pmRate: bandFacet(rows, pmBandOf),
     flags: KPI_FLAGS.filter((flag) => (flagCounts.get(flag) ?? 0) > 0).map((flag) => ({
       value: flag,
       label: KPI_FLAG_LABEL[flag],
