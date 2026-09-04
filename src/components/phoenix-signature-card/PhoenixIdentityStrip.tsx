@@ -19,10 +19,12 @@ import { useEffect, useRef, useState } from "react";
  * is a sibling that borrows the vocabulary and leaves the card untouched.
  *
  * WHAT IT BORROWS, so the two read as one family: the warm paper ground (#fdf8f3) with the same
- * two radial washes, the Phoenix watermark bleeding off the right edge under the wave, the
+ * two radial washes, a Phoenix watermark bleeding off the right edge under the wave, the
  * orange-ringed portrait at the leading edge, the Pinyon Script name, the orange rule with its
- * the orange rule with
- * its dot, and the uppercase letter-spaced title.
+ * dot, and the uppercase letter-spaced title.
+ *
+ * The watermark is the same IDEA but no longer the same FILE — the strip draws the full emblem
+ * (ring, phoenix, bars) and the card keeps the wide phoenix. See the two <img> tags below.
  *
  * THE HEIGHT RULE WAS REVERSED BY THE OWNER ON 2026-09-04, AND THIS IS THE NEWER INSTRUCTION.
  * It was 88/92px because on 2026-09-03 he asked for narrow: "I don't want it to be too thick, too
@@ -209,14 +211,60 @@ export function PhoenixIdentityStrip({
         }}
       />
 
-      {/* Watermark — bleeds off the right edge and under the wave, as it does on the card. */}
+      {/* THE WATERMARK IS THE FULL EMBLEM NOW — ring, phoenix and bars — at the owner's
+          instruction on 2026-09-04: "you remove this and you will add this logo that I will upload
+          to you ... make it the same situation as this, but change the photo."
+
+          IT IS A COPY, NOT THE SHARED FILE. `/brand/identity-watermark.png` is also drawn by
+          `PhoenixSignatureCard`, which renders the employee portal's identity banner — a
+          design-locked surface (CLAUDE.md). Repointing or editing that asset would have changed
+          the locked banner as a side effect of an admin-strip request, so the emblem was copied to
+          its own name. The card is untouched and still draws the old wide phoenix.
+
+          IT IS ALREADY ALPHA-TRANSPARENT at source (81.9% of the file is not fully opaque, corner
+          alpha 0), so "make it also transparent" is served by the file plus `multiply` and a low
+          opacity, not by knocking a white box out of it. `multiply` is what makes it read as
+          printed INTO the paper rather than laid on top: on a cream ground the dark ring and the
+          orange flame both darken the stock instead of hazing it.
+
+          TWO ELEMENTS, ONE PER BREAKPOINT, because the owner asked for a different placement on a
+          phone — "when mobile, don't center him. Put him on the right" — and an inline style
+          cannot carry a media query. That request has a cause worth recording: the OLD watermark
+          is 1350x900, so at 165% of a 120px bar it spanned 297px of a 351px phone screen and read
+          as centred no matter what `right` said. The emblem is square, so the same height is only
+          198px wide, and the mobile copy is smaller and pushed harder into the trailing edge on
+          top of that. */}
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         alt=""
         aria-hidden="true"
-        className="pointer-events-none absolute z-0"
-        src="/brand/identity-watermark.png"
-        style={{ right: "-1.5%", top: "-30%", height: "165%", width: "auto", opacity: 0.9 }}
+        className="pointer-events-none absolute z-0 sm:hidden"
+        src="/brand/identity-strip-emblem.png"
+        style={{
+          height: "142%",
+          mixBlendMode: "multiply",
+          opacity: 0.13,
+          right: "-17%",
+          top: "50%",
+          transform: "translateY(-50%)",
+          width: "auto",
+        }}
+      />
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        alt=""
+        aria-hidden="true"
+        className="pointer-events-none absolute z-0 hidden sm:block"
+        src="/brand/identity-strip-emblem.png"
+        style={{
+          height: "205%",
+          mixBlendMode: "multiply",
+          opacity: 0.115,
+          right: "-7%",
+          top: "50%",
+          transform: "translateY(-50%)",
+          width: "auto",
+        }}
       />
 
       {/* MOBILE ONLY: the portrait as the card's own leading edge — see PORTRAIT_FADE_MASK.
