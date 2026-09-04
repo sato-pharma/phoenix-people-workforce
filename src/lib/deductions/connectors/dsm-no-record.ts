@@ -40,11 +40,16 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { getMappedAgentHrIds, scanVisitsForRange } from "@/lib/crm/reads";
 import { getBaseSalaryMap } from "@/lib/payroll/copilot/feeders.ts";
 import { getConfirmedNationalHolidays } from "@/lib/vacation/national-holidays";
+import { sumDetectedDeductionDayWeights } from "@/lib/field-workforce-compliance/weekend-policy.ts";
 
 import { calculateDeductionAmountFromBaseSalary } from "../calculations.ts";
 import { compactDeductionsHrId } from "../candidate-key.ts";
 import { addDaysIso, isFieldForceWorkingDay } from "../holiday-bridge.ts";
 import { assertBaseSalaryMapLoaded } from "./health.ts";
+// The rep pipeline's own company-wide CRM data-gap detector, reused here so both
+// paths agree on which days a sync outage made unmeasurable — and so the DSM run
+// inherits its fail-closed throw on a CRM outage instead of charging through one.
+import { getSuspectDatesForMonth } from "./crm.ts";
 import type { DeductionsCandidateDraft } from "../types.ts";
 
 /** District sales managers only — never a broader manager title. */
@@ -145,10 +150,21 @@ export async function collectDsmNoRecordCandidates(input: {
   createdBy: string;
 }): Promise<DeductionsCandidateDraft[]> {
   const monthKey = `${input.year}-${String(input.month).padStart(2, "0")}`;
-  const [holidays, leaveDays] = await Promise.all([holidayDates(monthKey), approvedLeaveDays(monthKey)]);
+  const [holidays, leaveDays, suspectDates] = await Promise.all([
+    holidayDates(monthKey),
+    approvedLeaveDays(monthKey),
+    // A day the whole company's CRM feed looks broken (a sync outage) is no more
+    // a manager's absence than a rep's. The rep pipeline already drops these; the
+    // DSM path did not, so a company-wide gap billed every DSM a full day. Same
+    // detector, so the two paths cannot disagree — and it THROWS on a CRM outage,
+    // which fails this run closed rather than charging through missing data.
+    getSuspectDatesForMonth(input.month, input.year),
+  ]);
 
-  // Friday off, and never a public holiday.
-  const workingDays = monthDays(monthKey).filter((day) => isFieldForceWorkingDay(day) && !holidays.has(day));
+  // Friday off, never a public holiday, and never a company-wide CRM data-gap day.
+  const workingDays = monthDays(monthKey).filter(
+    (day) => isFieldForceWorkingDay(day) && !holidays.has(day) && !suspectDates.has(day),
+  );
   if (workingDays.length === 0) return [];
 
   const supabase = getSupabaseAdmin();
@@ -318,9 +334,19 @@ export async function collectDsmNoRecordCandidates(input: {
     });
     if (missing.length === 0) continue;
 
+    // Thursday is a HALF working day for the field force (owner rule 2026-08-02),
+    // and a district manager is one of the Friday-only titles that rule covers.
+    // The rep pipeline already charges a no-record Thursday at 0.5; this path was
+    // billing it at a FULL day. The money comes off the weighted count while
+    // rawValue/dates keep reporting the REAL flagged days — exactly how
+    // collectLeaverCrmCandidate keeps the evidence and the charge separately
+    // auditable. sumDetectedDeductionDayWeights is the title-free helper for dates
+    // that have ALREADY passed the weekly-off filter (Friday/holiday excluded
+    // above), so a DSM's Saturdays stay full days and only the Thursday half bites.
+    const deductionDays = sumDetectedDeductionDayWeights(missing);
     const estimatedAmount = calculateDeductionAmountFromBaseSalary({
       baseSalary,
-      deductionDays: missing.length,
+      deductionDays,
       month: input.month,
       year: input.year,
     });
@@ -356,6 +382,12 @@ export async function collectDsmNoRecordCandidates(input: {
         rule: "District sales managers are recorded on CRM through the rep's double visit; a working day with neither a DV tag nor an own-agent visit is a no-record day.",
         workingDaysConsidered: workingDays.length,
         holidaysExcluded: [...holidays],
+        // Company-wide CRM data-gap days removed before charging — a sync outage
+        // is not a manager's absence. Same detector the rep pipeline uses.
+        suspectDatesExcluded: [...suspectDates].filter((day) => day.startsWith(`${monthKey}-`)).sort(),
+        // What actually fed the amount: Thursdays counted as 0.5, all other
+        // flagged days as 1. missingDays stays the real count of flagged days.
+        deductionDaysWeighted: deductionDays,
         missingDays: missing,
       },
       dates: missing,
