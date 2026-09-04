@@ -367,12 +367,28 @@ type QuickAction = {
 
 export function QuickActions({ actions }: { actions: QuickAction[] }) {
   return (
-    <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:gap-2">
+    /* The row is CONTENT-driven, not column-driven. `grid-cols-2` gave every action the same
+       172px at 375px, and "Review Marketing Requests" — the longest label in the repo at 25
+       characters — came out three lines deep, one word per line (measured 2026-09-05 against the
+       real portal chain, which is 351px at 375px, not 375). The golden rule's remedy is to MERGE
+       columns, but merging unconditionally would stack the general portal's four short labels
+       ("My Plans", "Report It") into a needless four-high tower.
+
+       So each item carries `basis-[calc(50%-0.25rem)]` (two per row, allowing for `gap-2`) with
+       `min-w-fit` on top: a label wider than half the row raises its own item's minimum past the
+       basis, the item no longer fits beside a sibling, and `grow` then stretches it to the full
+       row. Short labels never reach that minimum and stay two-up, unchanged. `min-width: fit-content`
+       is capped by the available space, so this cannot overflow — verified at 320px, where the item
+       still fits and nothing crosses the right edge.
+
+       From `sm` the layout is unchanged: `sm:grow-0 sm:basis-auto` returns the items to content
+       width, measured pixel-identical to the previous markup at 1280px. */
+    <div className="flex flex-wrap gap-2">
       {actions.map((action, i) => (
         <Link
           key={i}
           href={action.href}
-          className="flex min-h-[48px] min-w-0 items-center justify-center gap-2 border border-slate-200 bg-white px-3 py-3 text-xs font-bold uppercase tracking-wide text-slate-700 transition hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700 sm:inline-flex sm:min-h-0 sm:px-4 sm:py-2.5 sm:text-phx-xs"
+          className="flex min-h-[48px] min-w-fit grow basis-[calc(50%-0.25rem)] items-center justify-center gap-2 border border-slate-200 bg-white px-3 py-3 text-xs font-bold uppercase tracking-wide text-slate-700 transition hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700 sm:inline-flex sm:min-h-0 sm:grow-0 sm:basis-auto sm:px-4 sm:py-2.5 sm:text-phx-xs"
         >
           <action.icon className="h-4 w-4 shrink-0 sm:h-3.5 sm:w-3.5" />
           <span className="text-center leading-tight whitespace-normal sm:whitespace-nowrap">{action.label}</span>
