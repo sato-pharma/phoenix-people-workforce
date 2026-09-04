@@ -200,15 +200,43 @@ export function runTargetsRollupAchievementTests(): void {
     "covered sales must accumulate only inside the branch that found a target",
   );
 
+  // The workspace was rebuilt on 2026-09-04 onto the shared target visuals, so the three
+  // assertions that used to live here moved with it. What they GUARANTEE is unchanged; each is
+  // re-pinned on the surviving structure rather than on the literal it happened to wear:
+  //
+  //   - the graded slice used to be shown only when it DIFFERED from the actual ("Graded vs
+  //     target: …"). The command band now prints it unconditionally as its own stat and names the
+  //     ungraded remainder twice — under that stat and in a banner — so the pin is that the band
+  //     reads `coveredActualValue` and states the remainder, not that a conditional survives.
+  //   - the two rollups used to be two hand-written blocks, which is why the region and DM
+  //     division hints were pinned separately. They now render through ONE `RollupList`, so the
+  //     silent divergence that pair guarded against is structurally impossible for that half.
+  //     What still needs pinning is that the one list divides COVERED by target, and that BOTH
+  //     rollups actually go through it — counted, not merely present.
   const workspace = flat(SRC("src/components/sales/targets-workspace.tsx"));
   assert.ok(
-    workspace.includes("props.lineTotal.coveredActualValue !== props.lineTotal.actualValue"),
-    "the Line total card must show the graded figure whenever it differs from the actual",
+    workspace.includes("const notGraded = total ? total.actualValue - total.coveredActualValue : 0;"),
+    "the workspace must derive the ungraded remainder from the graded slice — it is the only thing " +
+      "that explains an Achievement which does not divide the Total sales printed beside it",
   );
-  assert.ok(workspace.includes("Graded vs target:"), "the graded figure needs a label a manager can read");
   assert.ok(
-    workspace.includes("title={divisionHint(region.coveredActualValue, region.targetValue)}") &&
-      workspace.includes("title={divisionHint(dm.coveredActualValue, dm.targetValue)}"),
-    "the region and DM percentages must expose the division behind them",
+    workspace.includes("value={<CountUpNumber value={total.coveredActualValue} format={formatEgp} />}"),
+    "the command band must carry the GRADED figure as a stat of its own, not only the actual",
   );
+  assert.ok(
+    workspace.includes("Graded sales") && workspace.includes("more carries no target"),
+    "the graded figure and its remainder both need a label a manager can read",
+  );
+  assert.ok(
+    workspace.includes(
+      "{`${formatEgpFull(notGraded)} of this line's sales sits on a product with no target this month.`}",
+    ),
+    "an ungraded remainder must be stated in words, or the card's own arithmetic cannot be divided out",
+  );
+  assert.ok(
+    workspace.includes("title={divisionHint(entry.coveredActualValue, entry.targetValue)}"),
+    "the rollup percentages must expose the division behind them, and it must divide COVERED by target",
+  );
+  const rollups = workspace.split("<RollupList entries=").length - 1;
+  assert.equal(rollups, 2, "both the region and the DM rollup must render through the one shared list");
 }
