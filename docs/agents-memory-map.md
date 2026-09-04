@@ -65,7 +65,7 @@ status, give it its own line.
 - **A missing TABLE answers PGRST205, NOT 42P01** — `a-missing-table-answers-pgrst205-not-42p01` **(inline — load-bearing)**
 - **A write REVOKE does NOT make a table read-only** — `a-write-revoke-does-not-stop-a-cascade-or-a-secdef-function`
 - **An append-only table needs a STATEMENT-level BEFORE TRUNCATE trigger** — `append-only-tables-need-a-truncate-trigger`
-- **RLS on with no authenticated grant is the NORM here — 222 of 308 tables — not a…** — `rls-policy-without-an-authenticated-grant-is-usually-correct`
+- **RLS on with no authenticated grant is the NORM here — ~4 in 5 public tables — not a…** — `rls-policy-without-an-authenticated-grant-is-usually-correct`
 - **ONE auth.users row with banned_until = 'infinity' 500s the ENTIRE GoTrue admin API** — `banned-until-infinity-breaks-the-whole-auth-admin-api`
 - **au.f_monthly_achievement SERVES A PRECOMPUTED ROLLUP, and its fingerprint covers…** — `attribution-rollup-fingerprint-ignores-the-sales-data` **(inline — load-bearing)**
 - **The ATS data model carries four traps that each read as normal.** `offer-chain-was-live-in-the-registry-with-a-hole-past-approval` **(inline — load-bearing)** `ats-candidate-children-one-has-no-fk-and-one-is-a-view` **(inline — load-bearing)** `cv-extraction-reads-governorate-but-never-applies-it` **(inline — load-bearing)** `the-medical-rep-cv-schema-reads-12-fields-universal-reads-38` **(inline — load-bearing)**
