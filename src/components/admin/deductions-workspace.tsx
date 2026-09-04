@@ -1657,6 +1657,181 @@ function LeaverSettlementPanel({ monthKey }: { monthKey: string }) {
   );
 }
 
+/** One (line, region) bucket present in this month's deductions, from
+ *  /api/admin/deductions/filters. The pairs — not two independent lists — are
+ *  what let this screen answer "how many will this download" exactly. */
+type DeductionsOrgGroup = { line: string; region: string; candidates: number; employees: number };
+
+type OrgFilterOption = { value: string; candidates: number };
+
+/** Distinct values on one axis, cross-filtered by the OTHER axis's selection, so
+ *  choosing Line: CNS never offers a region that has no CNS deduction. A value
+ *  that is currently selected is always listed even when the other axis has
+ *  narrowed it away — dropping it would silently change what the button does. */
+function orgFilterOptions(
+  groups: DeductionsOrgGroup[],
+  axis: "line" | "region",
+  otherValue: string,
+  selectedValue: string,
+): OrgFilterOption[] {
+  const otherAxis = axis === "line" ? "region" : "line";
+  const totals = new Map<string, number>();
+  for (const group of groups) {
+    if (otherValue && group[otherAxis] !== otherValue) continue;
+    totals.set(group[axis], (totals.get(group[axis]) ?? 0) + group.candidates);
+  }
+  if (selectedValue && !totals.has(selectedValue)) totals.set(selectedValue, 0);
+  return Array.from(totals.entries())
+    .map(([value, candidates]) => ({ value, candidates }))
+    .sort((left, right) => left.value.localeCompare(right.value));
+}
+
+/**
+ * The whole-month Master workbook, with its Line and Region filters.
+ *
+ * The filters live HERE, in the same strip as the button, rather than in the
+ * page toolbar — they narrow the downloaded file and nothing else on screen, and
+ * a control that silently governs only a download has to sit where the download
+ * is. The live "N of M deductions" is rendered for the same reason: pressing
+ * Download can then hold no surprise, and it is computed from the same (line,
+ * region) grouping the server filters on rather than from a second rule.
+ */
+function MasterExportBar({ monthKey }: { monthKey: string }) {
+  const [groups, setGroups] = useState<DeductionsOrgGroup[]>([]);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [line, setLine] = useState("");
+  const [region, setRegion] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setLoading(true);
+    setError(null);
+    fetchJson<{ groups: DeductionsOrgGroup[]; totals: { candidates: number } }>(
+      `/api/admin/deductions/filters?monthKey=${monthKey}`,
+    )
+      .then((payload) => {
+        if (cancelled) return;
+        setGroups(payload.groups ?? []);
+        setTotal(payload.totals?.candidates ?? 0);
+      })
+      .catch((loadError) => {
+        if (!cancelled) setError(loadError instanceof Error ? loadError.message : "Unable to load the filters.");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [monthKey]);
+
+  // The selection is deliberately NOT reset when the month changes — comparing
+  // one line across two months is the normal use. A selection with nothing in
+  // the new month reads 0 and disables the button, which says so plainly.
+  const lineOptions = useMemo(() => orgFilterOptions(groups, "line", region, line), [groups, region, line]);
+  const regionOptions = useMemo(() => orgFilterOptions(groups, "region", line, region), [groups, line, region]);
+  const matching = useMemo(
+    () =>
+      groups.reduce(
+        (sum, group) => ((line && group.line !== line) || (region && group.region !== region) ? sum : sum + group.candidates),
+        0,
+      ),
+    [groups, line, region],
+  );
+
+  const href =
+    `/api/admin/deductions/export/master?monthKey=${monthKey}` +
+    (line ? `&line=${encodeURIComponent(line)}` : "") +
+    (region ? `&region=${encodeURIComponent(region)}` : "");
+  const filtered = Boolean(line || region);
+
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border border-slate-200 bg-white px-4 py-3 shadow-sm">
+      <span className="text-xs font-black uppercase tracking-[0.1em] text-slate-500">Master export</span>
+
+      <label className="flex items-center gap-1.5 text-phx-xs font-black uppercase tracking-[0.08em] text-slate-500">
+        Line
+        <select
+          className="border border-slate-300 bg-white px-2 py-1 text-sm font-semibold text-slate-900 focus:border-orange-400 focus:outline-none"
+          disabled={loading || Boolean(error)}
+          onChange={(event) => setLine(event.target.value)}
+          value={line}
+        >
+          <option value="">All lines</option>
+          {lineOptions.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.value} ({option.candidates})
+            </option>
+          ))}
+        </select>
+      </label>
+
+      <label className="flex items-center gap-1.5 text-phx-xs font-black uppercase tracking-[0.08em] text-slate-500">
+        Region
+        <select
+          className="border border-slate-300 bg-white px-2 py-1 text-sm font-semibold text-slate-900 focus:border-orange-400 focus:outline-none"
+          disabled={loading || Boolean(error)}
+          onChange={(event) => setRegion(event.target.value)}
+          value={region}
+        >
+          <option value="">All regions</option>
+          {regionOptions.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.value} ({option.candidates})
+            </option>
+          ))}
+        </select>
+      </label>
+
+      {filtered ? (
+        <button
+          className="text-phx-xs font-black uppercase tracking-[0.08em] text-slate-400 underline transition hover:text-slate-700"
+          onClick={() => {
+            setLine("");
+            setRegion("");
+          }}
+          type="button"
+        >
+          Clear
+        </button>
+      ) : null}
+
+      <div className="ml-auto flex flex-wrap items-center gap-3">
+        <span className="text-phx-xs font-bold text-slate-500">
+          {loading
+            ? "Counting…"
+            : error
+              ? "Filter options unavailable — the download still works and covers the whole month."
+              : filtered
+                ? `${matching} of ${total} deduction${total === 1 ? "" : "s"} in this selection`
+                : `${total} deduction${total === 1 ? "" : "s"} — the whole company`}
+        </span>
+        {/* An anchor cannot be disabled, so an empty selection renders as a dead
+            button instead. A workbook with no rows in it is not an answer to
+            "which of these did I ask for". */}
+        {!loading && !error && filtered && matching === 0 ? (
+          <span className="inline-flex cursor-not-allowed items-center gap-1.5 whitespace-nowrap border border-slate-200 bg-slate-50 px-3 py-1.5 text-phx-xs font-black uppercase tracking-[0.08em] text-slate-400">
+            <Download className="h-3.5 w-3.5" />
+            Nothing to export
+          </span>
+        ) : (
+          <a
+            className="inline-flex items-center gap-1.5 whitespace-nowrap border border-orange-500 bg-white px-3 py-1.5 text-phx-xs font-black uppercase tracking-[0.08em] text-orange-600 transition hover:bg-orange-50"
+            download
+            href={href}
+          >
+            <Download className="h-3.5 w-3.5" />
+            {filtered ? "Master XLSX (filtered)" : "Master XLSX"}
+          </a>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function DeductionsWorkspace({
   canDecide,
   currentCairoMonthKey,
@@ -1769,18 +1944,6 @@ export function DeductionsWorkspace({
           />
         </label>
         <div className="ml-auto flex items-center gap-2">
-          {/* Master workbook for the whole month, every category together —
-              a per-employee summary of what will actually be deducted plus a
-              full detail sheet (with Line and Direct Manager). Sits BESIDE the
-              per-category "Download XLSX" on each tab, never replacing it. */}
-          <a
-            className="inline-flex items-center gap-1.5 whitespace-nowrap border border-orange-500 bg-white px-3 py-1.5 text-phx-xs font-black uppercase tracking-[0.08em] text-orange-600 transition hover:bg-orange-50"
-            download
-            href={`/api/admin/deductions/export/master?monthKey=${monthKey}`}
-          >
-            <Download className="h-3.5 w-3.5" />
-            Master XLSX
-          </a>
           {canDecide ? (
             <button
               className="inline-flex items-center gap-1.5 rounded-sm bg-orange-500 px-3 py-1.5 text-phx-xs font-black uppercase tracking-[0.08em] text-white transition hover:bg-orange-600 disabled:opacity-50"
@@ -1794,6 +1957,13 @@ export function DeductionsWorkspace({
           ) : null}
         </div>
       </div>
+
+      {/* Master workbook for the whole month, every category together — a
+          per-employee summary of what will actually be deducted plus a full
+          detail sheet (Line, Region and Direct Manager), narrowable to one line
+          and/or one region. Sits BESIDE the per-category "Download XLSX" on each
+          tab, never replacing it. */}
+      <MasterExportBar monthKey={monthKey} />
 
       {canDecide && !monthHasFinished ? (
         <div className="flex items-start gap-2 border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-semibold text-slate-700">
