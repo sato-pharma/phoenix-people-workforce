@@ -1299,6 +1299,7 @@ import { runCommentStripRatchetTests } from "./comment-strip-ratchet.test.ts";
 
 import { runRepoDoctorStripIdleOfferTests } from "./repo-doctor-strip-idle-offer.test.ts";
 import { runRepoDoctorNewestPrTests } from "./repo-doctor-newest-pr.test.ts";
+import { runRepoDoctorOrphanedFoldersTests } from "./repo-doctor-orphaned-folders.test.ts";
 import { runCrmClientTimeoutsTests } from "./crm-client-timeouts.test.ts";
 import { runOutstationMobileWizardStaleCalculationTests } from "./outstation-mobile-wizard-stale-calculation.test.ts";
 import { runOutstationPayrollPayableTotalAgreementTests } from "./outstation-payroll-payable-total-agreement.test.ts";
@@ -4046,6 +4047,15 @@ await runTest("repo-doctor never advises pnpm install in a worktree (restore is 
 await runTest("no source-pinning test strips comments with a regex that eats the code it pins", runCommentStripRatchetTests);
 
 await runTest("repo-doctor offers only what --strip-idle will actually reclaim", runRepoDoctorStripIdleOfferTests);
+await runTest(
+  "a deregistered worktree folder holding files is REPORTED, by name and by content, and is never "
+    + "reachable from --fix (a leftover .git stub used to file it under LIVE, and the bucket without "
+    + "one printed a file count that cannot tell a leftover checkout from the only copy of an "
+    + "afternoon's work; every unknown — unhashable file, unreadable main tree, capped scan, "
+    + "unreadable folder — refuses to print as safe, and a gitignored env copy stays quiet while a "
+    + "stray .xlsx does not)",
+  runRepoDoctorOrphanedFoldersTests,
+);
 await runTest(
   "a worktree is retirable off its NEWEST pull request, never off a stale merged one (a branch "
     + "reused after a squash merge reads as retirable from `--state merged`, and the `git branch -D` "
