@@ -29,8 +29,11 @@ import {
   FileImage,
   FileUp,
   Loader2,
+  PencilLine,
+  Printer,
   Trash2,
   Upload,
+  UserRound,
 } from "lucide-react";
 import { useCallback, useMemo, useRef, useState } from "react";
 
@@ -38,6 +41,11 @@ import { AdminCallout, AdminTableShell } from "@/components/admin/admin-design-s
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  asPrintableDocument,
+  type CustomDocumentNames,
+  type PrintableDocument,
+} from "@/lib/hiring-pack/document-registry";
 import {
   CUSTOM_TEMPLATE_GROUP_LABELS,
   CUSTOM_TEMPLATE_GROUP_NOTES,
@@ -256,7 +264,33 @@ function presetForAspect(widthPx: number, heightPx: number) {
  * company prints" on the server, where the POST enforces it anyway, and means the page above does
  * not have to plumb a role down through a component that is only about templates.
  */
-export function TemplateStudio() {
+type TemplateStudioProps = {
+  /**
+   * Whether an employee is chosen upstairs.
+   *
+   * A template on its own is a blank form — opening it means filling it WITH somebody, so the two
+   * buttons are offered only once there is a somebody. Shown disabled rather than hidden, because a
+   * control that vanishes teaches nothing and one that explains itself teaches the next step.
+   */
+  employeeSelected: boolean;
+  /**
+   * The uploaded templates' names, handed up as they load.
+   *
+   * This component is the only thing that reads that list, and the screen above needs the names to
+   * title a company paper it opens. Passing them up beats fetching the same list twice, and beats
+   * the screen above owning a list it does not otherwise use.
+   */
+  onNamesChange: (names: CustomDocumentNames) => void;
+  onPreview: (document: PrintableDocument, versionId: string) => void;
+  onPrint: (document: PrintableDocument, versionId: string) => void;
+};
+
+export function TemplateStudio({
+  employeeSelected,
+  onNamesChange,
+  onPreview,
+  onPrint,
+}: TemplateStudioProps) {
   const [open, setOpen] = useState(false);
   const [templates, setTemplates] = useState<StoredTemplate[]>([]);
   const [canManage, setCanManage] = useState(false);
@@ -287,14 +321,54 @@ export function TemplateStudio() {
         | { canManage?: boolean; message?: string; templates?: StoredTemplate[] }
         | null;
       if (!response.ok) throw new Error(body?.message ?? `Could not read the templates (${response.status}).`);
-      setTemplates(body?.templates ?? []);
+      const list = body?.templates ?? [];
+      setTemplates(list);
       setCanManage(body?.canManage === true);
+
+      /*
+        BOTH SPELLINGS, because `documentLabel` accepts either and the call sites split on which
+        one they happen to hold. The bare key is what a row carries; `custom:<uuid>` is what a
+        document is. Writing both here costs one line and removes the question from every reader.
+      */
+      const names: Record<string, string> = {};
+      for (const template of list) {
+        names[template.key] = template.name;
+        names[template.document] = template.name;
+      }
+      onNamesChange(names);
     } catch (cause) {
       setListError(cause instanceof Error ? cause.message : "Could not read the templates.");
     } finally {
       setLoaded(true);
     }
-  }, []);
+  }, [onNamesChange]);
+
+  /**
+   * Open an uploaded template on the employee chosen upstairs — in the editor, or straight to print.
+   *
+   * `template.document` arrives from the server as a plain string, so it is NARROWED here rather
+   * than cast: `asPrintableDocument` validates the uuid inside it, the same check the print route
+   * makes and the same one the database constraint makes. A row that cannot narrow is a row nothing
+   * could print, and saying so is better than opening an editor onto a paper that will 404.
+   *
+   * THE VERSION PASSED IS THE ROW'S OWN ID, never the key. The field layer is scoped to a version,
+   * which is what keeps a box placed on v2 off the v1 somebody has already signed.
+   */
+  const openTemplate = useCallback(
+    (template: StoredTemplate, how: "preview" | "print") => {
+      const document = asPrintableDocument(template.document);
+      if (!document) {
+        setListError(
+          `"${template.name}" cannot be opened — its document id is not one this system recognises.`,
+        );
+        return;
+      }
+      setListError(null);
+      if (how === "print") onPrint(document, template.id);
+      else onPreview(document, template.id);
+    },
+    [onPreview, onPrint],
+  );
 
   /**
    * Loaded when the section is first opened, never on page load. This sits at the foot of a screen
@@ -703,6 +777,19 @@ export function TemplateStudio() {
                is the same order the built-in documents are listed in above. A group with nothing in
                it is not shown: an empty heading reads as a thing that failed to load. */
             <div className="space-y-4">
+              {/*
+                SAYS WHY THE BUTTONS ARE OFF rather than leaving two dead controls to be puzzled
+                over. A template is a blank form — opening one means filling it with somebody — so
+                the missing piece is an employee, and naming it is the whole message.
+              */}
+              {!employeeSelected && templates.length > 0 ? (
+                <AdminCallout>
+                  <UserRound className="mt-0.5 h-4 w-4 shrink-0" />
+                  <span>
+                    Choose an employee above to open or print a company template with their details.
+                  </span>
+                </AdminCallout>
+              ) : null}
               {CUSTOM_TEMPLATE_GROUPS.filter((option) =>
                 templates.some((template) => template.group === option),
               ).map((option) => (
@@ -748,6 +835,42 @@ export function TemplateStudio() {
                           {template.note ? (
                             <p className="mt-1 text-xs text-phx-ink-soft">{template.note}</p>
                           ) : null}
+                        </div>
+                        {/*
+                          WHERE AN UPLOADED TEMPLATE BECOMES A PAPER SOMEBODY CAN USE.
+
+                          Same two actions the built-in papers offer, and deliberately the same two
+                          words: Open puts it in the editor, where every field starts unplaced and
+                          "Add a box" is how each one reaches the page; Print asks the same route
+                          for the same bytes without the preview flag.
+
+                          `wrap` and `sm:ml-auto` rather than a fixed column: the golden rule is
+                          that this page never scrolls sideways, so on a narrow screen the pair
+                          drops under the name instead of pushing the row wider.
+                        */}
+                        <div className="flex flex-wrap items-center gap-2 sm:ml-auto sm:shrink-0">
+                          <Button
+                            className="h-9 gap-1.5 rounded-lg"
+                            disabled={!employeeSelected}
+                            onClick={() => openTemplate(template, "preview")}
+                            size="sm"
+                            type="button"
+                            variant="outline"
+                          >
+                            <PencilLine className="h-3.5 w-3.5" />
+                            Open
+                          </Button>
+                          <Button
+                            className="h-9 gap-1.5 rounded-lg"
+                            disabled={!employeeSelected}
+                            onClick={() => openTemplate(template, "print")}
+                            size="sm"
+                            type="button"
+                            variant="outline"
+                          >
+                            <Printer className="h-3.5 w-3.5" />
+                            Print
+                          </Button>
                         </div>
                       </li>
                     ))}

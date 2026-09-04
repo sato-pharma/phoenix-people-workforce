@@ -28,7 +28,7 @@
 // the check does not apply instead.
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 
-import { documentSurface, type DocumentFieldRow } from "@/lib/hiring-pack/field-layout";
+import type { DocumentFieldRow } from "@/lib/hiring-pack/field-layout";
 import { FORM1_PAGE_HEIGHT_PT, FORM1_PAGE_WIDTH_PT } from "@/lib/hiring-pack/form1-layout";
 import { FORM6_PAGE_HEIGHT_PT, FORM6_PAGE_WIDTH_PT } from "@/lib/hiring-pack/form6-layout";
 import {
@@ -101,17 +101,25 @@ function overlapArea(a: DocumentFieldRow, b: DocumentFieldRow): number {
  * geometry — can be pinned without a document, a database or a browser. `label` answers with what
  * the operator calls a row; anything it cannot name falls back to a description of the box.
  *
+ * GIVEN THE PAGE SIZE FOR THE SAME REASON, since 2026-09-04. It used to take the DOCUMENT and look
+ * the size up itself through `pageSizeFor`, which reads a table of the ten — so an uploaded company
+ * template had no size to find, and the honest answers were both wrong: `null` reads as "a flow
+ * document, warn about nothing", which would have silently switched off the off-page warning on
+ * precisely the papers most likely to need it, since every box on an uploaded scan is placed by
+ * hand against artwork nobody has measured. A company template knows its own size — it is on the
+ * template row — so the caller passes it and this function stays what it says it is.
+ *
+ * Null still means a flow document: typeset, no fixed page, nothing to fall off.
+ *
  * HIDDEN ROWS ARE SKIPPED ENTIRELY. A hidden override renders no box at all — `mergePagePlacements`
  * does `if (override.hidden) continue` — so it can neither fall off the page nor overlap anything.
  * Warning about one would send the operator looking for a box that is not there.
  */
 export function fieldWarnings(
-  document: HiringPackDocument,
+  page: PageSize | null,
   rows: readonly DocumentFieldRow[],
   label: (row: DocumentFieldRow) => string,
 ): FieldWarning[] {
-  if (documentSurface(document) !== "page") return [];
-  const page = pageSizeFor(document);
   if (!page) return [];
 
   const live = rows.filter((row) => !row.hidden && row.page !== null);
@@ -161,12 +169,12 @@ export function fieldWarnings(
 
 /** The warnings for each row, keyed by row id — the shape the table reads. */
 export function fieldWarningsByRow(
-  document: HiringPackDocument,
+  page: PageSize | null,
   rows: readonly DocumentFieldRow[],
   label: (row: DocumentFieldRow) => string,
 ): Record<string, FieldWarning[]> {
   const byRow: Record<string, FieldWarning[]> = {};
-  for (const warning of fieldWarnings(document, rows, label)) {
+  for (const warning of fieldWarnings(page, rows, label)) {
     (byRow[warning.rowId] ??= []).push(warning);
   }
   return byRow;

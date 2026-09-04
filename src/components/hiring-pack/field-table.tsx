@@ -56,8 +56,11 @@ import {
   type FieldFillRate,
 } from "@/components/hiring-pack/use-field-fill-rates";
 import type { FieldHistorySummary } from "@/lib/hiring-pack/field-layout-store";
-import { fieldWarningsByRow, type FieldWarning } from "@/lib/hiring-pack/field-warnings";
-import type { HiringPackDocument } from "@/lib/hiring-pack/types";
+import {
+  fieldWarningsByRow,
+  type FieldWarning,
+  type PageSize,
+} from "@/lib/hiring-pack/field-warnings";
 
 export type FieldTableProps = {
   busy: boolean;
@@ -69,8 +72,6 @@ export type FieldTableProps = {
    * not have the table yet.
    */
   changed: Readonly<Record<string, FieldHistorySummary>>;
-  /** Which paper this is — the geometry warnings are measured against its printed page size. */
-  document: HiringPackDocument;
   /** Every field this template can print, as the server measured it against this employee. */
   entries: readonly DocumentFieldInventoryEntry[];
   error: string | null;
@@ -104,6 +105,16 @@ export type FieldTableProps = {
    * hidden field is still here to be shown again.
    */
   onToggleHidden: (row: DocumentFieldRow) => void;
+  /**
+   * The printed size of one side of this paper, in points, or null when it has no fixed page.
+   *
+   * GIVEN, NOT LOOKED UP. The geometry warnings need a page to measure against, and the caller is
+   * the only one that knows it: a built-in paper's size is compiled in, while a company template
+   * carries its own on the template row. Looking it up here from the document would answer null for
+   * every uploaded template, and null reads as "typeset, nothing to fall off" — silently switching
+   * the off-page warning off on precisely the papers whose boxes were all placed by hand.
+   */
+  page: PageSize | null;
   rows: readonly DocumentFieldRow[];
   surface: DocumentSurface;
 };
@@ -280,7 +291,6 @@ function FillRateNote({ rate, roster }: { rate: FieldFillRate | null; roster: nu
 export function FieldTable({
   busy,
   changed,
-  document,
   entries,
   error,
   loading,
@@ -291,6 +301,7 @@ export function FieldTable({
   onSaveRule,
   onSaveRowText,
   onToggleHidden,
+  page,
   rows,
   surface,
 }: FieldTableProps) {
@@ -360,8 +371,8 @@ export function FieldTable({
       const text = row.source.text.trim();
       return text === "" ? "a field you added" : `“${text}”`;
     };
-    return fieldWarningsByRow(document, rows, labelOf);
-  }, [document, entries, rows]);
+    return fieldWarningsByRow(page, rows, labelOf);
+  }, [entries, page, rows]);
 
   /**
    * WHAT HAS BEEN REWRITTEN FOR EVERYONE, counted before anything is filtered away.

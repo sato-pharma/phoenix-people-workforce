@@ -51,6 +51,7 @@ import { TemplateStudio } from "@/components/hiring-pack/template-studio";
 import {
   documentDefaultCopies,
   documentLabel,
+  type CustomDocumentNames,
   type PrintableDocument,
 } from "@/lib/hiring-pack/document-registry";
 import {
@@ -67,7 +68,9 @@ import {
   archivedTemplateVersions,
   findTemplateVersion,
 } from "@/lib/hiring-pack/template-registry";
+import { isBuiltInDocument } from "@/lib/hiring-pack/types";
 import type {
+  CustomHiringPackDocument,
   ExitRoute,
   HiringPackCandidate,
   HiringPackData,
@@ -607,6 +610,19 @@ function signedDatesFromPack(pack: HiringPackData | null): Record<HiringPackDocu
   };
 }
 
+/**
+ * The paper open on screen, shaped as the two props the editor reads it through.
+ *
+ * SHAPED THAT WAY DELIBERATELY, so it can be spread straight into `HiringPackPaperEditor` and the
+ * two fields stay CORRELATED. `documentKey` and `versionId` are not independent — an uploaded
+ * company template must carry its version and one of the ten need not — and passing them as two
+ * separate props hands the compiler two separate questions it cannot relate. Spread as one object,
+ * the union is checked as the single fact it is.
+ */
+type OpenPaper =
+  | { documentKey: HiringPackDocument; versionId: string | null }
+  | { documentKey: CustomHiringPackDocument; versionId: string };
+
 type Props = {
   canManage: boolean;
   candidates: HiringPackCandidate[];
@@ -655,21 +671,32 @@ export function HiringPackManager({
   /**
    * Which document is open on screen as the page it prints as, if any.
    *
-   * NARROWER THAN `openPrint`, AND THAT GAP IS THE BOUNDARY between printing an uploaded
-   * template and editing one. The print route resolves a company template out of the database, so
-   * printing takes anything printable. The paper editor resolves a COMPILED template version —
-   * `currentTemplateVersion(documentKey)` — which an uploaded template has no entry in and cannot
-   * have one in. Widening this before the editor is given a version to scope its field layer
-   * against would open a paper whose dropped boxes save against a version id of `undefined`.
+   * AS WIDE AS `openPrint` NOW — an uploaded company template opens in the editor like any of the
+   * ten. It was deliberately narrower until the editor could resolve a version for one: the paper
+   * editor scopes its whole field layer to a version id, and the ten have a COMPILED answer
+   * (`currentTemplateVersion`) that an uploaded template has no entry in and cannot have one in.
+   * Opening one before that was settled would have dropped boxes against a version of `undefined`
+   * — saved with a 200, read back by nothing, and shown as an empty paper.
    *
-   * `versionId` is only ever set from the Archive, where the point is to look at a SUPERSEDED
-   * template. Null means the same thing it means to the print route: not "the current text", but
-   * "whichever version this employee's signature resolves to".
+   * `PaperEditorProps` now carries that rule in its own type: a company template cannot be handed
+   * to the editor without its version, so this state can be as wide as printing is.
+   *
+   * `versionId` is set from the Archive, where the point is to look at a SUPERSEDED template, and
+   * for every company template, where it is the template row's own id. Null means what it means to
+   * the print route: not "the current text", but "whichever version this employee's signature
+   * resolves to".
    */
-  const [preview, setPreview] = useState<{
-    document: HiringPackDocument;
-    versionId: string | null;
-  } | null>(null);
+  const [preview, setPreview] = useState<OpenPaper | null>(null);
+  /**
+   * What the uploaded templates are CALLED, so a company paper opens under its own name.
+   *
+   * The ten have their labels compiled in; an uploaded template's name is a database row, which is
+   * the entire point of being able to upload one. The Template Studio is what reads that list, so
+   * it hands the names up as it loads them rather than this screen fetching the same list twice.
+   * Empty until the Studio has been opened, and `documentLabel` falls back to "Company template"
+   * until then — a fallback, never a wrong name.
+   */
+  const [customTemplateNames, setCustomTemplateNames] = useState<CustomDocumentNames>({});
   /**
    * Which package is on screen. The joining papers and the leaving papers are one workflow seen from
    * two ends (see the file header), but a person is only ever at one end on the day HR prints, so the
@@ -893,10 +920,28 @@ export function HiringPackManager({
    * Deliberately does NOT go through `openPrint`: the preview asks the same route for the same
    * bytes but with `preview=1`, which is what stops a look at the paper being recorded as a print.
    */
-  const openPreview = useCallback((document: HiringPackDocument, versionId?: string) => {
+  const openPreview = useCallback((document: PrintableDocument, versionId?: string) => {
     setError(null);
     setNotice(null);
-    setPreview({ document, versionId: versionId ?? null });
+
+    if (isBuiltInDocument(document)) {
+      setPreview({ documentKey: document, versionId: versionId ?? null });
+      return;
+    }
+
+    /*
+      A COMPANY TEMPLATE WITHOUT ITS VERSION CANNOT BE OPENED, and this is the one place that has
+      to say so out loud. Every caller that offers one has just listed it and holds the row, so
+      this is unreachable in practice — but "unreachable in practice" is exactly the kind of claim
+      that stops being true when a new caller is added, and the failure it would cause is silent:
+      boxes saved against a scope nothing reads back, on a paper that then renders empty.
+    */
+    if (!versionId) {
+      setError("That company template could not be opened — its version is not known.");
+      return;
+    }
+
+    setPreview({ documentKey: document, versionId });
   }, []);
 
   const setCopiesFor = useCallback((document: PrintableDocument, value: string) => {
@@ -962,15 +1007,14 @@ export function HiringPackManager({
         */}
         {pack && preview ? (
           <HiringPackPaperEditor
-            copies={resolveCopyCount(copies[preview.document], preview.document)}
-            documentKey={preview.document}
-            documentLabel={documentLabel(preview.document)}
+            copies={resolveCopyCount(copies[preview.documentKey], preview.documentKey)}
+            documentLabel={documentLabel(preview.documentKey, customTemplateNames)}
             hrId={pack.employee.hrId}
-            key={`${pack.employee.hrId}-${preview.document}-${preview.versionId ?? "current"}`}
+            key={`${pack.employee.hrId}-${preview.documentKey}-${preview.versionId ?? "current"}`}
             onClose={() => setPreview(null)}
             onPackChange={applyPack}
             pack={pack}
-            versionId={preview.versionId}
+            {...preview}
           />
         ) : null}
 
@@ -1713,7 +1757,12 @@ export function HiringPackManager({
           onPrint={(document, versionId) => openPrint(document, versionId)}
         />
 
-        <TemplateStudio />
+        <TemplateStudio
+          employeeSelected={Boolean(pack)}
+          onNamesChange={setCustomTemplateNames}
+          onPreview={(document, versionId) => openPreview(document, versionId)}
+          onPrint={(document, versionId) => openPrint(document, versionId)}
+        />
       </div>
     </div>
   );

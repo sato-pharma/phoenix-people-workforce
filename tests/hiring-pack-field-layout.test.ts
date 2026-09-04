@@ -853,28 +853,28 @@ function testBoxesThatWillNotPrintAreNamed() {
   assert.ok(size, "a page document must have a printed size to measure against");
 
   // ── The silent one: dragged off the right-hand edge ────────────────────────────────────────
-  const offRight = fieldWarnings("form1", [box({ id: "r", x: size.width - 10, w: 80 })], name);
+  const offRight = fieldWarnings(size, [box({ id: "r", x: size.width - 10, w: 80 })], name);
   assert.equal(offRight.length, 1, "a box running past the right edge must be named");
   assert.equal(offRight[0].kind, "off-page");
   assert.match(offRight[0].message, /will not print/);
   assert.match(offRight[0].message, /right/);
 
-  const offBottom = fieldWarnings("form1", [box({ id: "b", y: size.height - 4, h: 12 })], name);
+  const offBottom = fieldWarnings(size, [box({ id: "b", y: size.height - 4, h: 12 })], name);
   assert.equal(offBottom[0]?.kind, "off-page", "a box running past the bottom edge must be named");
 
   // Reachable only through the fine-tune panel's number inputs, which take a typed value as given —
   // the drag itself clamps at zero.
-  const negative = fieldWarnings("form1", [box({ id: "n", x: -20 })], name);
+  const negative = fieldWarnings(size, [box({ id: "n", x: -20 })], name);
   assert.match(negative[0]?.message ?? "", /left/, "a negative coordinate is off the page too");
 
   // A box that fits says nothing at all. A warning on a correct layout is worse than none, because
   // it teaches the operator to scroll past the row that matters.
-  assert.deepEqual(fieldWarnings("form1", [box({ id: "ok" })], name), []);
+  assert.deepEqual(fieldWarnings(size, [box({ id: "ok" })], name), []);
 
   // Exactly flush with the edge is ON the page, not off it. Half the compiled placements on a
   // government form sit against a printed rule by design.
   assert.deepEqual(
-    fieldWarnings("form1", [box({ id: "flush", w: 80, x: size.width - 80 })], name),
+    fieldWarnings(size, [box({ id: "flush", w: 80, x: size.width - 80 })], name),
     [],
     "a box ending exactly at the edge is inside the page",
   );
@@ -884,7 +884,7 @@ function testBoxesThatWillNotPrintAreNamed() {
   // A collision belongs to the PAIR. Naming it on only one of them would make the answer depend on
   // which row the operator happened to open.
   const collide = fieldWarnings(
-    "form1",
+    size,
     [box({ id: "a", x: 100, y: 100 }), box({ id: "b", x: 120, y: 100 })],
     name,
   );
@@ -898,14 +898,14 @@ function testBoxesThatWillNotPrintAreNamed() {
   // Boxes that merely touch are not overlapping. A row of digit cells on Form 1 abuts its neighbour
   // by design, so warning on contact would put a line under most of the table.
   assert.deepEqual(
-    fieldWarnings("form1", [box({ id: "a", x: 100 }), box({ id: "b", x: 180 })], name),
+    fieldWarnings(size, [box({ id: "a", x: 100 }), box({ id: "b", x: 180 })], name),
     [],
     "boxes that abut are not overlapping",
   );
 
   // Two sides of the same paper are not the same space.
   assert.deepEqual(
-    fieldWarnings("form1", [box({ id: "a", page: 0 }), box({ id: "b", page: 1 })], name),
+    fieldWarnings(size, [box({ id: "a", page: 0 }), box({ id: "b", page: 1 })], name),
     [],
     "boxes on different pages cannot overlap",
   );
@@ -915,7 +915,7 @@ function testBoxesThatWillNotPrintAreNamed() {
   // box that is not there.
   assert.deepEqual(
     fieldWarnings(
-      "form1",
+      size,
       [box({ hidden: true, id: "a", x: 100 }), box({ id: "b", x: 120 })],
       name,
     ),
@@ -929,8 +929,37 @@ function testBoxesThatWillNotPrintAreNamed() {
   // browser puts them, after the text above has been laid out.
   assert.equal(pageSizeFor("contract"), null, "a flow document has no printed page size");
   assert.deepEqual(
-    fieldWarnings("contract", [box({ document: "contract", id: "a", page: null })], name),
+    fieldWarnings(pageSizeFor("contract"), [box({ document: "contract", id: "a", page: null })], name),
     [],
+  );
+
+  // ── AN UPLOADED COMPANY TEMPLATE IS WARNED ABOUT TOO ───────────────────────────────────────
+  //
+  // THE REASON THIS FUNCTION TAKES A SIZE RATHER THAN A DOCUMENT. `pageSizeFor` reads a table of
+  // the ten, so a `custom:<uuid>` document has no size in it and the honest lookup answers null —
+  // which above means "flow document, nothing to warn about". That would have switched the off-page
+  // warning off on precisely the papers that need it most: every box on an uploaded scan is placed
+  // by hand against artwork nobody compiled, so running one off the edge is a click away, and the
+  // failure prints as a blank space on a form somebody signs.
+  //
+  // A company template carries its own measured size on its row. Given that size, the same check
+  // works on it unchanged.
+  const uploaded = { height: 841.89, width: 595.28 }; // A4, as an uploaded PDF usually measures.
+  const offUploaded = fieldWarnings(
+    uploaded,
+    [box({ id: "u", w: 80, x: uploaded.width - 10 })],
+    name,
+  );
+  assert.equal(
+    offUploaded.length,
+    1,
+    "a box off the edge of an UPLOADED template must be named, not silently exempt",
+  );
+  assert.equal(offUploaded[0].kind, "off-page");
+  assert.deepEqual(
+    fieldWarnings(uploaded, [box({ id: "u", w: 80, x: uploaded.width - 80 })], name),
+    [],
+    "and one that fits an uploaded page says nothing",
   );
 
   // ── The one that catches the NEXT page document ────────────────────────────────────────────

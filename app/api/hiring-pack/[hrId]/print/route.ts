@@ -10,6 +10,7 @@ import {
   renderClearanceEmployeeHtml,
 } from "@/lib/hiring-pack/render-clearance";
 import { documentFieldInventory } from "@/lib/hiring-pack/document-inventory";
+import { pageSizeFor } from "@/lib/hiring-pack/field-warnings";
 import {
   asPrintableDocument,
   CUSTOM_DOCUMENT_DEFAULT_COPIES,
@@ -281,8 +282,21 @@ export async function GET(request: Request, { params }: { params: Promise<{ hrId
     // printed the moment somebody looked at its field list.
     // ─────────────────────────────────────────────────────────────────────────────────────────
     if (url.searchParams.get("inventory") === "1") {
+      // THE PAGE SIZE TRAVELS WITH THE FIELD LIST, because the editor cannot work it out alone.
+      //
+      // The field table warns about a box that has been dragged off the edge of the paper, and that
+      // needs the paper's printed size. For the ten it is compiled in and the browser has it. For an
+      // uploaded template it is a measurement off the artwork somebody supplied, held on the
+      // template row and known ONLY here. Left out, the editor's honest answer would be null — and
+      // null means "typeset, nothing to fall off", which would switch the off-page warning off on
+      // exactly the papers whose every box was placed by hand against a scan.
       return NextResponse.json(
-        { fields: documentFieldInventory(requested, data, html) },
+        {
+          fields: documentFieldInventory(requested, data, html),
+          page: template
+            ? { height: template.pageHeightPt, width: template.pageWidthPt }
+            : pageSizeFor(requested as HiringPackDocument),
+        },
         { headers: { "Cache-Control": "no-store, max-age=0" } },
       );
     }

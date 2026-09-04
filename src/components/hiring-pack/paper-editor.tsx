@@ -37,7 +37,7 @@
 //
 // TWO SURFACES, ONE GESTURE. `field-layout.ts` explains why a page document places at an absolute
 // point and a flow document anchors to a moving piece of prose; this component does not re-decide
-// that; it reads `documentSurface(documentKey)` once and drags in whichever coordinate the field's
+// that; it reads `documentSurfaceOf(documentKey)` once and drags in whichever coordinate the field's
 // own rendered position is already expressed in — `left`/`top` on a page field are already the page
 // point, and on an added flow field they are already the offset from its anchor. The SAME pointer
 // math (read the inline style the renderer wrote, add the pointer's own delta, write it back) works
@@ -52,10 +52,10 @@ import { Button } from "@/components/ui/button";
 import { FieldHistoryPanel } from "@/components/hiring-pack/field-history-panel";
 import { Input } from "@/components/ui/input";
 import type { DocumentFieldInventoryEntry } from "@/lib/hiring-pack/document-inventory";
-import {
-  documentSurface,
-  type DocumentFieldRow,
-  type DocumentFieldSource,
+import { documentSurfaceOf } from "@/lib/hiring-pack/document-registry";
+import type {
+  DocumentFieldRow,
+  DocumentFieldSource,
 } from "@/lib/hiring-pack/field-layout";
 import type {
   CarryForwardOffer,
@@ -77,8 +77,14 @@ import {
   PAGE_HEIGHT_PX,
   PAGE_WIDTH_PX,
 } from "@/lib/hiring-pack/paper-zoom";
+import { pageSizeFor, type PageSize } from "@/lib/hiring-pack/field-warnings";
 import { currentTemplateVersion } from "@/lib/hiring-pack/template-registry";
-import type { HiringPackData, HiringPackDocument } from "@/lib/hiring-pack/types";
+import { isBuiltInDocument } from "@/lib/hiring-pack/types";
+import type {
+  CustomHiringPackDocument,
+  HiringPackData,
+  HiringPackDocument,
+} from "@/lib/hiring-pack/types";
 import { cn } from "@/lib/utils";
 
 /**
@@ -292,16 +298,33 @@ const EDITOR_CSS = `
 }
 `;
 
-type PaperEditorProps = {
+type PaperEditorCommonProps = {
   hrId: string;
-  documentKey: HiringPackDocument;
   documentLabel: string;
   copies: number;
-  versionId?: string | null;
   pack: HiringPackData;
   onPackChange: (pack: HiringPackData) => void;
   onClose: () => void;
 };
+
+/**
+ * A UNION, BECAUSE A COMPANY TEMPLATE CANNOT BE OPENED WITHOUT ITS VERSION and the ten always can.
+ *
+ * `versionId` is what scopes the field layer: every box saved from this editor is written against
+ * it, and every box read back is filtered by it. For the ten it is optional because there is a
+ * compiled answer — `currentTemplateVersion(documentKey)` — and it is passed only when an ARCHIVED
+ * version is being viewed. An uploaded template has no compiled anything: its versions are rows,
+ * and the only thing that has read them is the caller that listed them.
+ *
+ * A required prop rather than a runtime check, because the failure it prevents is silent. Without a
+ * version the layer would save against `undefined`, the boxes would land in a scope nothing reads
+ * back, and the screen would show an empty paper after a save that answered 200.
+ */
+type PaperEditorProps = PaperEditorCommonProps &
+  (
+    | { documentKey: HiringPackDocument; versionId?: string | null }
+    | { documentKey: CustomHiringPackDocument; versionId: string }
+  );
 
 /** The value the operator has clicked, when it is one that cannot be typed into in place. */
 type Selection = {
@@ -403,6 +426,17 @@ function buildSelectionFromElement(
  * and never touches state, which is what lets the effect keep each setState inside a callback.
  */
 /**
+ * The field list, and the size of the paper it is a list for.
+ *
+ * The size is here rather than beside it because only the server can answer it for an uploaded
+ * template — see the route's own note. `null` is a flow document: typeset, no fixed page.
+ */
+type InventoryPayload = {
+  entries: DocumentFieldInventoryEntry[];
+  page: PageSize | null;
+};
+
+/**
  * The template's own field list, for the table.
  *
  * At module scope beside `fetchDocumentFields` and for the same reason: a function defined in the
@@ -411,15 +445,15 @@ function buildSelectionFromElement(
  * `react-hooks/set-state-in-effect` error this repository treats as a real defect rather than a
  * style. Nothing here closes over a render.
  */
-async function fetchDocumentInventory(url: string): Promise<DocumentFieldInventoryEntry[]> {
+async function fetchDocumentInventory(url: string): Promise<InventoryPayload> {
   const response = await fetch(url);
   const body = (await response.json().catch(() => null)) as
-    | { fields?: DocumentFieldInventoryEntry[]; message?: string }
+    | { fields?: DocumentFieldInventoryEntry[]; message?: string; page?: PageSize | null }
     | null;
   if (!response.ok) {
     throw new Error(body?.message ?? `Could not read this template's fields (${response.status}).`);
   }
-  return body?.fields ?? [];
+  return { entries: body?.fields ?? [], page: body?.page ?? null };
 }
 
 /** The layout, and — only when this version is untouched and an earlier one is not — the offer. */
@@ -496,14 +530,31 @@ export function HiringPackPaperEditor({
   const [reloadToken, setReloadToken] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  /** The template version this open document is actually printing — the one the field layer is
-   *  scoped against. `versionId` is only ever set when a specific archived version is being viewed;
-   *  otherwise this is the same version the print route itself falls back to. */
+  /**
+   * The template version this open document is actually printing — the one the field layer is
+   * scoped against.
+   *
+   * For one of the ten, `versionId` is only ever set when a specific ARCHIVED version is being
+   * viewed; otherwise this falls back to the same version the print route itself would pick, so
+   * the editor and the paper it shows can never disagree about which artwork the boxes sit on.
+   *
+   * For an uploaded template the prop is required (see `PaperEditorProps`), so the `??` never
+   * reaches the registry — which is the point, because `currentTemplateVersion` only knows the ten
+   * and would have nothing to answer with.
+   */
   const effectiveVersionId = useMemo(
-    () => versionId ?? currentTemplateVersion(documentKey).id,
+    () =>
+      versionId ?? (isBuiltInDocument(documentKey) ? currentTemplateVersion(documentKey).id : ""),
     [documentKey, versionId],
   );
-  const surface = useMemo(() => documentSurface(documentKey), [documentKey]);
+  /**
+   * `documentSurfaceOf`, NOT `documentSurface`. The latter reads an exhaustive `Record` over the
+   * ten, so an uploaded template indexes it to `undefined` — and with `ignoreBuildErrors` on, that
+   * compiles, ships, and turns every surface comparison below into a quiet `false`. The registry's
+   * version answers `"page"` for a company template, which is what an uploaded scan always is, and
+   * the registry test pins the two tables to agree on the ten.
+   */
+  const surface = useMemo(() => documentSurfaceOf(documentKey), [documentKey]);
 
   const [layoutMode, setLayoutMode] = useState(false);
   const [addMode, setAddMode] = useState(false);
@@ -549,6 +600,27 @@ export function HiringPackPaperEditor({
   const [layoutTab, setLayoutTab] = useState<"page" | "fields">("page");
   const [inventory, setInventory] = useState<DocumentFieldInventoryEntry[]>([]);
   const [inventoryLoading, setInventoryLoading] = useState(false);
+  /**
+   * The printed size of an UPLOADED template's page, once the server has said what it is.
+   *
+   * Only ever read for a company template. A built-in paper's size is compiled in and answered
+   * below without a round trip, so the geometry warnings on the ten are never briefly absent
+   * while a fetch is in flight — which would read as "nothing is wrong with this layout".
+   */
+  const [customPage, setCustomPage] = useState<PageSize | null>(null);
+  /**
+   * The paper the field table measures a dragged box against.
+   *
+   * COMPILED IN FOR THE TEN, FETCHED FOR AN UPLOAD, and the split is the point. `pageSizeFor` reads
+   * a table of the ten, so asking it about a company template returns null — and null is not
+   * "unknown" here, it is "flow document, nothing can fall off it". Answering that for an uploaded
+   * scan would silently retire the off-page warning on the one kind of paper where every single box
+   * was positioned by hand.
+   */
+  const page = useMemo<PageSize | null>(
+    () => (isBuiltInDocument(documentKey) ? pageSizeFor(documentKey) : customPage),
+    [customPage, documentKey],
+  );
 
   /**
    * The key a new field will carry when the operator next clicks the page, or null for fixed text.
@@ -922,9 +994,10 @@ export function HiringPackPaperEditor({
     if (!layoutMode || layoutTab !== "fields") return;
     let live = true;
     void fetchDocumentInventory(inventoryUrl).then(
-      (entries) => {
+      (payload) => {
         if (!live) return;
-        setInventory(entries);
+        setInventory(payload.entries);
+        setCustomPage(payload.page);
         setInventoryLoading(false);
       },
       (cause: unknown) => {
@@ -1821,7 +1894,6 @@ export function HiringPackPaperEditor({
               <FieldTable
                 busy={layoutBusy}
                 changed={changed}
-                document={documentKey}
                 entries={inventory}
                 error={fieldsError}
                 loading={inventoryLoading}
@@ -1852,6 +1924,7 @@ export function HiringPackPaperEditor({
                   x: row.x,
                   y: row.y,
                 })}
+                page={page}
                 rows={fields}
                 surface={surface}
               />
