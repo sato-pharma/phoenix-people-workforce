@@ -351,6 +351,7 @@ const PREMIUM_NAV_HREF = "/admin/sfe-command-center";
 function NavRow({
   active,
   dark,
+  hideIcon = false,
   item,
   onActivate,
   onHover,
@@ -362,6 +363,8 @@ function NavRow({
 }: {
   active: boolean;
   dark: boolean;
+  /** Drop the leading icon box. Set inside a domain, where the rows are already grouped. */
+  hideIcon?: boolean;
   item: NavigationSectionItem;
   onActivate: () => void;
   onHover?: (rect: DOMRect) => void;
@@ -382,6 +385,12 @@ function NavRow({
   // tests/sidebar-label-width.test.ts and this row must not start ellipsising).
   const locked = useIsNavItemLocked(item);
   const LeadingIcon = locked ? Lock : Icon;
+  // The icon box was the row's height floor: a 28px tile inside 12px of padding made every row
+  // 52px, which is what made the admin rail scroll (811px of content in a 770px box). Inside a
+  // domain the rows already sit under a title and a heading, so the tile bought nothing for that
+  // cost — dropping it takes rows to 39.5px and the rail stops scrolling. Never in `rail` mode,
+  // where the icon is the only thing rendered and hiding it would leave an empty strip.
+  const dropIcon = hideIcon && !rail;
 
   return (
     <div
@@ -417,6 +426,7 @@ function NavRow({
         onClick={onActivate}
       >
         {active && <span className={cn("absolute left-0 w-[3px] bg-phx-accent", rail ? "top-1.5 bottom-1.5" : "top-1.5 bottom-1.5")} />}
+        {!dropIcon && (
         <span
           className={cn(
             "relative flex h-8 w-8 shrink-0 items-center justify-center transition-colors duration-150",
@@ -445,6 +455,7 @@ function NavRow({
           <LeadingIcon className="h-4 w-4" />
           {rail && <ApprovalNavBadge compact dark={dark} navBadge={item.navBadge} />}
         </span>
+        )}
         {!rail && (
           <span className={cn("flex min-w-0 flex-1 items-center gap-1.5", onTogglePin && "pr-6")}>
             <span
@@ -454,10 +465,22 @@ function NavRow({
                 // Muted, never struck through or greyed to unreadable: the person still has to be
                 // able to read which module it is in order to ask for it back.
                 locked && "opacity-70",
+                // With no icon box there is no amber tile to carry "locked", so the label carries
+                // it instead. Losing the padlock entirely would leave a locked module looking
+                // merely faint, which reads as a rendering glitch rather than as a lock.
+                dropIcon && locked && (dark ? "text-amber-300/90" : "text-amber-600"),
               )}
             >
               {item.label}
             </span>
+            {/* Trailing, never leading: the whole point of dropping the icon was to put every
+                label on one left edge, so the lock is the one thing allowed back — on the right. */}
+            {dropIcon && locked && (
+              <Lock
+                aria-hidden="true"
+                className={cn("h-3 w-3 shrink-0", dark ? "text-amber-300/90" : "text-amber-600")}
+              />
+            )}
             {/* The ↗ marks a hub row, but it is decorative and the badge is not. On a standalone
                 row that also carries a pending count the label is left ~98px, and spending 20px of
                 that on both adornments is what forced the ellipsis. The badge wins. */}
@@ -500,6 +523,7 @@ function SortableNavRow({
   active,
   dark,
   dragDisabled,
+  hideIcon,
   onActivate,
   onTogglePin,
   pinned,
@@ -508,6 +532,7 @@ function SortableNavRow({
   active: boolean;
   dark: boolean;
   dragDisabled: boolean;
+  hideIcon: boolean;
   onActivate: () => void;
   onTogglePin: () => void;
   pinned: boolean;
@@ -532,7 +557,12 @@ function SortableNavRow({
       {!dragDisabled && (
         <button
           aria-label={`Drag to reorder ${item.label}`}
-          className="absolute left-[8px] top-1/2 z-20 flex h-8 w-8 -translate-y-1/2 cursor-grab items-center justify-center bg-[#000000] text-slate-600 opacity-0 transition hover:text-slate-300 focus-visible:opacity-100 active:cursor-grabbing group-hover/dnd-row:opacity-100"
+          className={cn(
+            "absolute top-1/2 z-20 flex h-8 -translate-y-1/2 cursor-grab items-center justify-center bg-[#000000] text-slate-600 opacity-0 transition hover:text-slate-300 focus-visible:opacity-100 active:cursor-grabbing group-hover/dnd-row:opacity-100",
+            // The grip used to overlay the icon box. With no box it would cover the first letters
+            // of the label, so it narrows and moves flush to the edge.
+            hideIcon ? "left-0 w-5" : "left-[8px] w-8",
+          )}
           type="button"
           {...attributes}
           {...listeners}
@@ -543,6 +573,7 @@ function SortableNavRow({
       <NavRow
         active={active}
         dark={dark}
+        hideIcon={hideIcon}
         item={item}
         onActivate={onActivate}
         onTogglePin={onTogglePin}
@@ -559,6 +590,7 @@ function SortableSectionBlock({
   collapsedSectionIds,
   dragDisabled,
   flatSidebar,
+  hideIcon,
   isAdmin,
   itemOrder,
   navInstanceId,
@@ -578,6 +610,8 @@ function SortableSectionBlock({
   dragDisabled: boolean;
   /** True for roles on the flat sidebar (SFE Manager): no headings, no hub-button styling. */
   flatSidebar: boolean;
+  /** Drop the leading icon box on every row in this section. True inside a domain. */
+  hideIcon: boolean;
   isAdmin: boolean;
   itemOrder: string[] | null;
   navInstanceId: string;
@@ -637,7 +671,10 @@ function SortableSectionBlock({
         {isAdmin && !dragDisabled && (
           <button
             aria-label={`Drag to reorder ${section.label} section`}
-            className="absolute left-[8px] top-1/2 z-20 flex h-8 w-8 -translate-y-1/2 cursor-grab items-center justify-center bg-[#000000] text-slate-600 opacity-0 transition hover:text-slate-300 focus-visible:opacity-100 active:cursor-grabbing group-hover/single:opacity-100"
+            className={cn(
+              "absolute top-1/2 z-20 flex h-8 -translate-y-1/2 cursor-grab items-center justify-center bg-[#000000] text-slate-600 opacity-0 transition hover:text-slate-300 focus-visible:opacity-100 active:cursor-grabbing group-hover/single:opacity-100",
+              hideIcon ? "left-0 w-5" : "left-[8px] w-8",
+            )}
             type="button"
             {...attributes}
             {...listeners}
@@ -648,6 +685,7 @@ function SortableSectionBlock({
         <NavRow
           active={soleItem.href === activeHref}
           dark={isAdmin}
+          hideIcon={hideIcon}
           item={soleItem}
           onActivate={() => onActivate(soleItem)}
           onTogglePin={() => onTogglePin(soleItem.href)}
@@ -737,6 +775,7 @@ function SortableSectionBlock({
               <div className="mt-1.5 space-y-1 px-1">
                 {orderedItems.map((item) => (
                   <SortableNavRow
+                    hideIcon={hideIcon}
                     key={item.href}
                     active={item.href === activeHref}
                     dark={isAdmin}
@@ -982,6 +1021,7 @@ function SidebarNav({
   function renderSectionBlock(section: NavigationSection) {
     return (
       <SortableSectionBlock
+        hideIcon={useDomains}
         key={section.id}
         activeHref={activeHref}
         collapsedSectionIds={collapsedSectionIds}
@@ -1245,19 +1285,19 @@ function SidebarNav({
                       <DomainIcon className="h-4 w-4" />
                     </span>
                     {/* Wraps rather than truncating: the owner's rule is no ellipsis, and a domain
-                        name is the one label a viewer cannot look up anywhere else. */}
-                    <span className="min-w-0 flex-1">
-                      <span className="block text-phx-2xs uppercase tracking-[0.08em] text-slate-500">
-                        {domain.sub}
-                      </span>
-                      <span
-                        className={cn(
-                          "block text-phx-md font-bold tracking-[-0.01em]",
-                          open ? "text-white" : "text-slate-300 group-hover/dom:text-white",
-                        )}
-                      >
-                        {domain.name}
-                      </span>
+                        name is the one label a viewer cannot look up anywhere else.
+
+                        One line, not two. The kicker above the name ("Company" over Overview,
+                        "Decisions" over Requests) was a second vocabulary for the same thing, and
+                        the less useful of the two words. Measured on the running rail, the seven
+                        headers cost 381.5px against 312px for the six rows they exist to serve —
+                        the chrome outweighed the content and the rail still scrolled. Dropping the
+                        kicker takes each header from 54.5px to roughly 36px.
+
+                        Orange on all seven, open or closed (owner, 2026-09-04). Open state is
+                        carried by the icon tile and the chevron, so colour is free to be constant. */}
+                    <span className="min-w-0 flex-1 text-phx-md font-bold tracking-[-0.01em] text-phx-accent">
+                      {domain.name}
                     </span>
                     <span className="shrink-0 text-phx-2xs font-semibold text-slate-500">
                       {domain.rowCount}
@@ -1274,13 +1314,17 @@ function SidebarNav({
                   {open &&
                     domain.groups.map((group) => (
                       <SortableContext
-                        key={group.heading}
+                        // Keyed on the first section, not the heading: a heading that repeats a
+                        // row is blanked, and two blanks in one domain would collide.
+                        key={group.sections[0]?.id ?? group.heading}
                         items={group.sections.map((section) => section.id)}
                         strategy={verticalListSortingStrategy}
                       >
-                        <p className="px-1.5 pb-1 pt-3 text-phx-2xs font-bold uppercase tracking-[0.08em] text-slate-500">
-                          {group.heading}
-                        </p>
+                        {group.heading !== "" && (
+                          <p className="px-1.5 pb-1 pt-3 text-phx-2xs font-bold uppercase tracking-[0.08em] text-slate-500">
+                            {group.heading}
+                          </p>
+                        )}
                         {group.sections.map((section) =>
                           renderSectionBlock(
                             // The GROUP owns the heading now, so the section drops its own. This
