@@ -457,14 +457,20 @@ this file already gives them)
   a table is called append-only, immutable, or an audit log, **prove all three verbs are refused
   against a real database**: neither defect is visible from source review, and neither would have
   failed a test written in advance. `append-only-tables-need-a-truncate-trigger`
-- **RLS on with no `authenticated` grant is the NORM here — 222 of 308 public tables — not a defect
+- **RLS on with no `authenticated` grant is the NORM here — ~4 in 5 public tables — not a defect
   class to sweep.** The posture is `service_role` only, stated outright in the default-privileges
-  migration. The `expense_claims` 42501 incident makes "policy exists but no grant" look like a bug
-  to hunt; that one was real for exactly one reason — `listExpenseClaims` reads with the **user's
-  own session**. `getSupabaseRlsClientIfAvailable()` has exactly **three** importers (outstation
-  claims-read, outstation expenses, payroll) and there is **no browser Supabase client anywhere in
-  the repo**, so if the table is not read by one of those three the missing grant is correct, and
-  granting is a pure widening that exposes real HR rows to every logged-in JWT to satisfy nothing.
+  migration. **The exact pair drifts and the hook carries it dated for that reason:** 222 of 308
+  public tables when first measured 2026-07, **258 of 326 on 2026-09-04**, when every one of the
+  326 had RLS enabled. The proportion is what is durable — the schema grew by 18 tables and the
+  posture did not change, so a count read from an older doc under-reports by design, never
+  because a grant went missing. Re-measure with `has_table_privilege('authenticated', c.oid,
+  'SELECT')` over `pg_class` before quoting either number. The `expense_claims` 42501 incident
+  makes "policy exists but no grant" look like a bug to hunt; that one was real for exactly one
+  reason — `listExpenseClaims` reads with the **user's own session**.
+  `getSupabaseRlsClientIfAvailable()` has exactly **three** importers (outstation claims-read,
+  outstation expenses, payroll) and there is **no browser Supabase client anywhere in the repo**,
+  so if the table is not read by one of those three the missing grant is correct, and granting is
+  a pure widening that exposes real HR rows to every logged-in JWT to satisfy nothing.
   Two decoys: inert `TO authenticated` policies that never had a grant behind them, and executable
   `SECURITY INVOKER` functions with zero callers.
   `rls-policy-without-an-authenticated-grant-is-usually-correct`
