@@ -19,10 +19,24 @@ import { useEffect, useRef, useState } from "react";
  * is a sibling that borrows the vocabulary and leaves the card untouched.
  *
  * WHAT IT BORROWS, so the two read as one family: the warm paper ground (#fdf8f3) with the same
- * two radial washes, the Phoenix watermark bleeding off the right edge under the navy wave, the
- * orange-ringed portrait at the leading edge, the Pinyon Script name in navy, the orange rule with
- * its dot, and the uppercase letter-spaced title. Same parts, one quarter of the height: 88px on a
+ * two radial washes, the Phoenix watermark bleeding off the right edge under the wave, the
+ * orange-ringed portrait at the leading edge, the Pinyon Script name, the orange rule with its
+ * dot, and the uppercase letter-spaced title. Same parts, one quarter of the height: 88px on a
  * phone, 92px from `sm` up, both fixed.
+ *
+ * WHAT IT DELIBERATELY DOES NOT BORROW: the card's two COLD values. The card sets the wave to
+ * #0b1f3a and the name to #2a3a5c, both around hue 257-264. The admin shell those two landings
+ * render in has had its whole neutral ramp retinted WARM on purpose — `app/globals.css` moves
+ * slate to hue 72-92, and says why: a temperature swing between adjacent edges "is what reads as
+ * mismatched". The strip's wave is a dark bar sitting 8px above the section header's dark bar at
+ * almost the same lightness and 184 degrees away in hue, which is exactly that failure. So the
+ * two are carried across at the SAME lightness with only hue and chroma moved into the ramp's own
+ * band — #0b1f3a -> #231e18 (L 23.9%, both) and #2a3a5c -> #3f3a33 (L 35.2%, both). Same method
+ * globals.css uses for slate; nothing about the composition shifts.
+ *
+ * The card itself is untouched and stays navy: it renders under `.employee-portal-shell`, which
+ * is a different ground and a different identity. Do not "restore parity" by making either one
+ * match the other.
  *
  * THE NAME SHRINKS TO FIT RATHER THAN CLIPPING. A script face on one line has no good failure
  * mode: wrapping breaks the strip's height, and an ellipsis is banned outright by the owner's
@@ -31,6 +45,27 @@ import { useEffect, useRef, useState } from "react";
  * of `PhoenixSignatureCard` would mean editing the file behind a design-locked portal surface to
  * serve an admin page, which is the wrong trade.
  */
+
+/** The bezel gradient, identical on both breakpoints and to `EmployeePortrait`'s. */
+const PORTRAIT_BEZEL = "linear-gradient(145deg, #f9c06a, #f47b20 40%, #c45200 70%, #f9c06a)";
+
+/**
+ * MOBILE. The employee-portal identity banner's own four-layer glow, at the floor of each of its
+ * `cqw` clamps — the owner, 2026-09-04: "IN MOBILE VIEW I WANT THE PHOTO SHADED AS EMPLOYEE
+ * PORTAL IDENTITY BANNER". Copied from `EmployeePortrait` line 32 rather than re-derived, so the
+ * two cannot drift. The strip is not a container, so the `cqw` middles cannot be used and the
+ * floors are what a small portrait renders at anyway.
+ *
+ * It does NOT clip. The outermost layer is 28px of blur on a 60px portrait with 6px of clearance
+ * inside an `overflow-hidden` section — but the layers are warm and low-alpha on a cream ground,
+ * and the cut is invisible at 2x. Verified at 375px before shipping.
+ */
+const PORTRAIT_GLOW =
+  "0 0 0 2px rgba(244,123,32,0.18), 0 0 12px 3px rgba(244,123,32,0.4),"
+  + " 0 0 28px 5px rgba(255,150,40,0.2), 0 12px 30px rgba(15,35,55,0.2)";
+
+/** DESKTOP. The flat ring the strip has always had; the glow was asked for on mobile only. */
+const PORTRAIT_RING = "0 0 0 2px rgba(244,123,32,0.16), 0 4px 12px rgba(15,35,55,0.16)";
 
 function signatureNameFor(name: string) {
   const parts = name.trim().split(/\s+/).filter(Boolean);
@@ -138,13 +173,18 @@ export function PhoenixIdentityStrip({
       {/* Content sits ABOVE the wave, not on it — hence the bottom inset. */}
       <div className="absolute inset-x-0 bottom-[16px] top-0 z-10 flex min-w-0 items-center gap-3 px-3 sm:px-4">
         <span className="relative block h-[60px] w-[60px] shrink-0 sm:h-[66px] sm:w-[66px]">
+          {/* TWO RINGS, MUTUALLY EXCLUSIVE BY BREAKPOINT. One element would be neater, but an
+              inline style cannot carry a media query and these two shadows are genuinely
+              different things — see PORTRAIT_GLOW / PORTRAIT_RING above. */}
           <span
             aria-hidden="true"
-            className="absolute inset-0 rounded-xl"
-            style={{
-              background: "linear-gradient(145deg, #f9c06a, #f47b20 40%, #c45200 70%, #f9c06a)",
-              boxShadow: "0 0 0 2px rgba(244,123,32,0.16), 0 4px 12px rgba(15,35,55,0.16)",
-            }}
+            className="absolute inset-0 rounded-xl sm:hidden"
+            style={{ background: PORTRAIT_BEZEL, boxShadow: PORTRAIT_GLOW }}
+          />
+          <span
+            aria-hidden="true"
+            className="absolute inset-0 hidden rounded-xl sm:block"
+            style={{ background: PORTRAIT_BEZEL, boxShadow: PORTRAIT_RING }}
           />
           <span className="absolute inset-[2px] overflow-hidden rounded-[10px] bg-[#f8efe5]">
             {photoSrc ? (
@@ -191,11 +231,11 @@ export function PhoenixIdentityStrip({
             still holds. */}
         <div className="flex min-w-0 flex-1 flex-col">
           <p
-            className="italic font-medium text-[#2a3a5c]"
+            className="italic font-medium text-[#3f3a33]"
             ref={nameBoxRef}
             style={{
               fontFamily: '"Pinyon Script", cursive',
-              fontSize: nameFontPx ? `${nameFontPx}px` : "clamp(1.35rem, 4.2vw, 2.4rem)",
+              fontSize: nameFontPx ? `${nameFontPx}px` : "clamp(1.25rem, 4.2vw, 2rem)",
               lineHeight: 1.15,
               margin: 0,
               whiteSpace: "nowrap",
@@ -205,7 +245,7 @@ export function PhoenixIdentityStrip({
               {sigName}
             </span>
           </p>
-          <span aria-hidden="true" className="mt-[3px] flex items-center">
+          <span aria-hidden="true" className="mt-[2px] flex items-center">
             <span className="h-px flex-1" style={{ background: "#f47b20" }} />
             <span className="mx-[3px] h-[5px] w-[5px] rounded-full" style={{ background: "#f47b20" }} />
             <span
@@ -213,12 +253,15 @@ export function PhoenixIdentityStrip({
               style={{ background: "linear-gradient(90deg, rgba(244,123,32,0.5), rgba(244,123,32,0))" }}
             />
           </span>
-          {/* THE TITLE WRAPS, and must keep wrapping. At 0.2em tracking "HR OPERATIONS
-              COORDINATOR" is about 200px, wider than the name above it and wider than the column
-              has at 375px. Left `nowrap` it would not scroll the page — this section is
-              `overflow-hidden`, so it would CLIP, which is the failure `scrollWidth > clientWidth`
-              is blind to (AGENTS.md §4). Two wrapped lines cost 12px and the box has 16px spare at
-              its tightest. */}
+          {/* THE TITLE WRAPS, and must keep wrapping. At this tracking "HR OPERATIONS
+              COORDINATOR" is wider than the column has at 375px. Left `nowrap` it would not
+              scroll the page — this section is `overflow-hidden`, so it would CLIP, which is the
+              failure `scrollWidth > clientWidth` is blind to (AGENTS.md §4).
+
+              THE SPARE ROOM IS NOW SMALL, because the HR ID below took a fourth line. Worst case
+              is the HR landing at 375px: a wrapped two-line title AND the HR ID under a name at
+              the clamp's 1.25rem floor. That is what to re-measure before adding anything else to
+              this column, or before raising the name ceiling back. */}
           <p
             className="break-words text-left font-bold uppercase"
             style={{
@@ -226,18 +269,33 @@ export function PhoenixIdentityStrip({
               fontSize: "11px",
               letterSpacing: "0.18em",
               lineHeight: 1.2,
-              margin: "3px 0 0",
+              margin: "2px 0 0",
             }}
           >
             {titleLabel}
           </p>
-        </div>
+          {/* THE HR ID SITS UNDER THE TITLE, not at the trailing edge — the owner, 2026-09-04:
+              "HR ID UNDER TITLE". It reads as part of the identity block now rather than as a
+              figure floating at the far right of a wide bar.
 
-        {employeeCode ? (
-          <span className="ml-auto shrink-0 pl-3 text-[12px] font-semibold text-[#2a3a5c] opacity-80">
-            {employeeCode}
-          </span>
-        ) : null}
+              IT COSTS A FOURTH LINE, and the strip's height is fixed, so the name ceiling came
+              down with it — 2.4rem to 2rem. 32px still clears the 30px KPI numerals below, which
+              is what #3050 was protecting, and anything smaller gives that back.
+
+              THE BINDING CASE IS DESKTOP, not mobile, which is the opposite of what this column
+              usually worries about. At `sm` the inner box is 76px and the four lines come to
+              73px — name 36.8 (32 x 1.15), rule 7, title 15.2, this line 14 — so 3px spare. At
+              375px the name is at its 1.25rem floor and the box is 72px, so the same four lines
+              come to 59px with 13px spare. Re-measure BOTH before raising the ceiling. */}
+          {employeeCode ? (
+            <p
+              className="font-semibold text-[#3f3a33] opacity-75"
+              style={{ fontSize: "10px", letterSpacing: "0.08em", lineHeight: 1.2, margin: "2px 0 0" }}
+            >
+              {employeeCode}
+            </p>
+          ) : null}
+        </div>
       </div>
 
       {/* The card's wave, scaled to this height. */}
@@ -247,7 +305,7 @@ export function PhoenixIdentityStrip({
         preserveAspectRatio="none"
         viewBox="0 0 1875 118"
       >
-        <path d="M0 38C420 58 1030 58 1875 4V118H0Z" fill="#0b1f3a" />
+        <path d="M0 38C420 58 1030 58 1875 4V118H0Z" fill="#231e18" />
         <path d="M0 38C420 58 1030 58 1875 4" fill="none" stroke="#f47b20" strokeWidth="9" />
       </svg>
     </section>
