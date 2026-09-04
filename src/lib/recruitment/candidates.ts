@@ -486,9 +486,56 @@ async function loadNotACvCandidates(ids: string[]): Promise<Set<string>> {
   return notACv;
 }
 
-export async function listCandidates(): Promise<Candidate[]> {
+/**
+ * Every column `mapCandidate` reads EXCEPT `position_specific_fields`.
+ *
+ * WHY IT IS WORTH SPELLING OUT 71 COLUMNS. `position_specific_fields` is the repeating CV blocks —
+ * work history, education history, certifications, skills, languages — and measured on production
+ * 2026-09-05 it is 1,221 kB of the 2,053 kB that a whole-pool `select("*")` moves: 59.4% of the
+ * bytes, for 744 candidates, on every single load.
+ *
+ * The screening queue reads NONE of it. Its whole derive chain — candidate-screening-facts,
+ * applied-for, screening-order, role-fit, red-flag — has zero references to the field, and the
+ * three enrichments this function runs afterwards have zero as well. The workstation already knew
+ * this column was the expensive one and stopped shipping it to the BROWSER; this is the same fix
+ * applied one hop earlier, to the read that crosses from Frankfurt to Amsterdam.
+ *
+ * KEPT IN STEP BY A TEST, NOT BY CARE. `tests/recruitment-screening-page.test.ts` re-derives this
+ * list from mapCandidate's own source and fails if the two drift, because the failure mode is
+ * silent: a column added by a later migration and mapped here but missing from this list does not
+ * error — mapCandidate simply reads `undefined` and maps it to null, and the field is quietly blank
+ * on every screen fed by the slim read.
+ */
+export const CANDIDATE_COLUMNS_WITHOUT_REPEATING_BLOCKS =
+  "address,applied_for_evidence,applied_for_job_title,background_confirmed_at,background_confirmed_by_hr_id," +
+  "background_confirmed_outcome,created_at,created_by,current_employer,current_job_title," +
+  "current_role_responsibilities,cv_external_url,cv_reference_name,date_of_birth,declared_background," +
+  "declared_expected_salary,declared_experience,degree,email,expected_salary,faculty,folder_filed_at," +
+  "folder_filed_by_hr_id,folder_key,folder_kind,full_name,gender,governorate,grade,graduation_year," +
+  "has_medical_rep_experience,has_prior_work_experience,id,linkedin_url,manager_notified_area," +
+  "manager_notified_at,manager_notified_hr_id,manager_notified_job_title,manager_notified_name," +
+  "manager_notified_region,marital_status,medical_rep_employer,medical_rep_experience_from," +
+  "medical_rep_experience_to,military_status,national_id,nationality,notes,notice_period,phone," +
+  "place_of_birth,preferences_declared_at,preferred_area_name,preferred_region_code," +
+  "preferred_region_name,professional_summary,screening_extra_answers,sent_for_area,sent_for_job_title," +
+  "sent_for_line,sent_for_region,sent_for_vacancy_id,source,status,status_changed_at," +
+  "status_changed_by_hr_id,status_note,university,updated_at,whatsapp,years_experience";
+
+/**
+ * The whole live candidate pool.
+ *
+ * `withRepeatingCvBlocks: false` drops `position_specific_fields` from the read — 59% of the bytes,
+ * and unread by every list-shaped caller. Candidates come back with `positionSpecificFields` as an
+ * EMPTY OBJECT on that path, indistinguishable from a candidate who genuinely has none, so it is
+ * opt-in and the default is unchanged: a caller that renders those blocks must not pass it.
+ */
+export async function listCandidates(
+  options: { withRepeatingCvBlocks?: boolean } = {},
+): Promise<Candidate[]> {
+  const columns =
+    options.withRepeatingCvBlocks === false ? CANDIDATE_COLUMNS_WITHOUT_REPEATING_BLOCKS : "*";
   const rows = await selectEveryCandidateRow((table) =>
-    table.select("*").order("created_at", { ascending: false }),
+    table.select(columns).order("created_at", { ascending: false }),
   );
   const candidates = rows.map(mapCandidate);
   // Concurrently: the two enrichments touch different fields on the same objects and neither reads

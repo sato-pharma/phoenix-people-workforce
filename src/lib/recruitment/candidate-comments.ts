@@ -14,6 +14,7 @@
 // in this module.
 
 import { canonicalHrIdKey, hrIdLookupKeys } from "@/lib/hr-id";
+import { chunkIds } from "@/lib/recruitment/db-batch";
 import { recruitmentDb } from "@/lib/recruitment/db";
 import { CANDIDATE_COMMENT_MAX_LENGTH, type CandidateComment } from "@/lib/recruitment/types";
 import { notifyConversationMessage } from "@/lib/conversations/notify";
@@ -62,8 +63,11 @@ export async function listCandidateComments(candidateId: string): Promise<Candid
 /**
  * Comment counts for a set of candidates, so a list can show "2 comments" without N reads.
  *
- * Chunked at 50: a PostgREST `.in()` carrying several hundred ids returns zero rows and no error,
- * and a card silently reading "no comments" is exactly the failure this module cannot afford.
+ * Batched through `chunkIds`: a PostgREST `.in()` carrying several hundred ids fails outright — the
+ * values go in the request URL and undici caps headers around 16KB — and a card silently reading
+ * "no comments" is exactly the failure this module cannot afford. The size lives in db-batch.ts with
+ * the arithmetic behind it; this file spelled its own 50 and so ran twice the round trips for no
+ * reason, 15 of them against a table holding 8 rows on the screening queue's whole-pool call.
  */
 export async function countCommentsByCandidate(candidateIds: readonly string[]): Promise<Map<string, number>> {
   const counts = new Map<string, number>();
@@ -71,11 +75,11 @@ export async function countCommentsByCandidate(candidateIds: readonly string[]):
   if (ids.length === 0) return counts;
 
   const supabase = recruitmentDb();
-  for (let index = 0; index < ids.length; index += 50) {
+  for (const batch of chunkIds(ids)) {
     const { data, error } = await supabase
       .from("ats_candidate_comments")
       .select("candidate_id")
-      .in("candidate_id", ids.slice(index, index + 50));
+      .in("candidate_id", batch);
     if (error) {
       const code = (error as { code?: string }).code;
       if (code === "42P01" || code === "42703") return counts;
@@ -97,8 +101,8 @@ export async function countCommentsByCandidate(candidateIds: readonly string[]):
  * written BEFORE the send is not an answer to it, and a pile that empties on any comment at all
  * would quietly lose the candidate it exists to chase.
  *
- * Chunked at 50, for the same reason the counter above is: a PostgREST `.in()` carrying several
- * hundred ids returns zero rows and no error.
+ * Batched through `chunkIds`, for the same reason the counter above is, and through the SAME helper
+ * so the two cannot drift apart on the size.
  */
 export async function summarizeCommentsByCandidate(
   candidateIds: readonly string[],
@@ -108,11 +112,11 @@ export async function summarizeCommentsByCandidate(
   if (ids.length === 0) return summary;
 
   const supabase = recruitmentDb();
-  for (let index = 0; index < ids.length; index += 50) {
+  for (const batch of chunkIds(ids)) {
     const { data, error } = await supabase
       .from("ats_candidate_comments")
       .select("candidate_id,created_at")
-      .in("candidate_id", ids.slice(index, index + 50));
+      .in("candidate_id", batch);
     if (error) {
       const code = (error as { code?: string }).code;
       // Same fail-soft as the counter: a missing table is a gap in a side panel, never a reason for

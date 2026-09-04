@@ -8,6 +8,7 @@ import {
   canAccess,
   canAccessFingerprintReport,
   createAccessContext,
+  deadMatrixGrants,
   isRolePermissionWithinHardBoundary,
   permissionActions,
   permissionMatrix,
@@ -346,4 +347,41 @@ export async function runCeoAccountContractTests() {
     "sidebar home must resolve through resolveLandingPathForRole for command-center roles and fall back to the shell home otherwise",
   );
   assert.match(sidebarSource, /<SidebarBrand currentRole=\{currentRole\} mode=\{navigationMode\}/);
+
+  // ── The matrix must not CLAIM what the boundary strips ────────────────────────────────────────
+  //
+  // The CEO block declared `recruitment: ["read"]` and `candidates: ["read"]`. Neither ever took
+  // effect — both are capped to isHrAuthorityRole, which the CEO is not — so the assertions above
+  // were green while the file said the opposite of what the system does. That is worse than a bug:
+  // it is the most authoritative-looking answer in the codebase to "can the CEO read candidates?",
+  // and it is wrong. tests/hr-retention-register.test.ts already makes this check for the composed
+  // HR seats and calls such a grant "a LIE IN THE WORKBOOK, not a safety net".
+  const deadForCeo = deadMatrixGrants().filter((grant) => grant.role === "CEO");
+  for (const resource of ["recruitment", "candidates"] as const) {
+    assert.equal(
+      deadForCeo.some((grant) => grant.resource === resource),
+      false,
+      `the CEO block must not declare ${resource} — the hard boundary strips it, so the line only misleads`,
+    );
+  }
+
+  // AND THE REST MUST NOT GROW. 26 such declarations survive across three resources, measured
+  // 2026-09-05. They are RECORDED, not approved: `support_requests` is the special case that
+  // applyHardPermissionBoundaries overwrites rather than intersects, `employees` is Super-Admin-only
+  // by a boundary the file documents at its own declaration, and `employee_documents` is HR-authority
+  // only. Clearing them is its own pass over a security file and does not belong in a screening
+  // change; what this pin buys is that a NEW one cannot be added quietly beside them.
+  const deadByResource = new Map<string, number>();
+  for (const grant of deadMatrixGrants()) {
+    deadByResource.set(grant.resource, (deadByResource.get(grant.resource) ?? 0) + 1);
+  }
+  assert.deepEqual(
+    [...deadByResource.entries()].sort(([a], [b]) => a.localeCompare(b)),
+    [
+      ["employee_documents", 11],
+      ["employees", 2],
+      ["support_requests", 13],
+    ],
+    "a role now declares a permission the hard boundary strips — either grant it in hardBoundaryAllowedActions or stop declaring it",
+  );
 }

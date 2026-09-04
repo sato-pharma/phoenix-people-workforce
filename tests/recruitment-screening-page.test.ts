@@ -13,6 +13,7 @@ import {
   screeningHref,
   screeningShellPoolHref,
 } from "../src/lib/recruitment/screening-link.ts";
+import { isAfter } from "../src/lib/recruitment/manager-sends.ts";
 
 /**
  * "I want the screening page to have a separate link, and to access it from its own page."
@@ -495,6 +496,16 @@ export async function runRecruitmentScreeningPageTests() {
       /canAccess\(access, "recruitment", "read"\)/,
       `the ${name} screening page must require the recruitment read grant`,
     );
+    // THIS ONE IS LIVE, AND IT LOOKS DEAD — do not "simplify" it away. `recruitment` and
+    // `candidates` share one hard boundary and one HR function, so no ROLE holds the first without
+    // the second, and production carries a single role_permission_overrides row that touches
+    // neither. Read only those two and this gate is unreachable; an audit reached exactly that
+    // conclusion on 2026-09-05 and was wrong.
+    //
+    // `canAccess` has a THIRD gate: a per-account module lock, checked per RESOURCE
+    // (auth/module-locks.ts). A lock on `candidates` alone leaves `recruitment: read` true, so the
+    // caller clears the gate above and lands in this fallback. Not hypothetical — hr-009 had
+    // `payroll`, `payslips` and `deductions` locked over 30 Aug – 3 Sep 2026.
     assert.match(
       source,
       /canAccess\(access, "candidates", "read"\)/,
@@ -760,4 +771,173 @@ export async function runRecruitmentScreeningPageTests() {
 
   // And the cause, not only the symptom: the page can borrow the overlay's full width on demand.
   assert.match(session, /const fullBleed = variant === "overlay" \|\| expanded;/, "the page must be able to go full-bleed");
+
+  // ── 8 · A send is read from the TRAIL, not from the overwritten column ─────
+  //
+  // `manager_notified_*` on the candidate row is the pre-2026-08-30 single-manager record: the next
+  // send overwrites it. Production carries rows where it disagrees with ats_candidate_manager_sends
+  // outright — a CV sent to Saad Salama on 31 Aug 2026 whose candidate columns are both NULL, so the
+  // Manager-feedback pile that exists to chase it could not see it at all, five days on; and one
+  // sent to Ali Moh Ali on 30 Aug and re-sent to Dr Anwar Gaweesh on 1 Sep, where the row still
+  // names the first. `listCandidatesSentToManager` has unioned both sources since the table shipped,
+  // for exactly this reason; the screening loader had not.
+  assert.equal(isAfter("2026-09-01T10:20:57.147+00:00", "2026-08-29T22:42:45.734+00:00"), true, "a later send wins");
+  assert.equal(isAfter("2026-08-29T22:42:45.734+00:00", "2026-09-01T10:20:57.147+00:00"), false, "an earlier send does not");
+  // The live NULL-column case: with nothing on the row, any recorded send is the newer fact.
+  assert.equal(isAfter("2026-08-30T21:15:02.093+00:00", null), true, "a send beats an absent stamp");
+  // Equal stamps are the ordinary case — the same send recorded in both places. It must NOT flip,
+  // or every load would rewrite the stamp with an identical one and the comparison would be noise.
+  assert.equal(isAfter("2026-08-30T21:15:02.093+00:00", "2026-08-30T21:15:02.093+00:00"), false, "the same send is not newer than itself");
+  // Compared as INSTANTS. A plain `timestamp` renders with no offset, and on a STRING compare
+  // "2026-09-01T10:20:57.147" sorts BELOW "2026-08-29T22:42:45.734+00:00" — picking the older send
+  // as the newer one, silently, which is the whole bug in a different disguise.
+  assert.equal(isAfter("2026-09-01T10:20:57.147", "2026-08-29T22:42:45.734+00:00"), true, "the compare must be by instant, not by string order");
+  assert.equal(isAfter("not a date", "2026-08-29T22:42:45.734+00:00"), false, "an unreadable stamp never wins");
+
+  const workspace = read("src/lib/recruitment/screening-workspace.ts");
+  // BEFORE the narrowing, not inside `rowFor`. `matchesScreeningNarrowing` reads
+  // `candidate.managerNotified` for the `?sent=1` / `?unsent=1` filters, so an overlay applied only
+  // to the rendered row would leave the filters answering from the old column while the list beside
+  // them answered from the trail — one screen, two truths.
+  // Anchored on the real CALL, not the bare name: the comment above the overlay explains itself by
+  // naming `matchesScreeningNarrowing`, and an anchor that matched prose would compare the overlay
+  // against its own documentation instead of against the filter.
+  const overlayAt = workspace.indexOf("latestSends.get(candidate.id)");
+  const narrowAt = workspace.indexOf("matchesScreeningNarrowing(candidate, narrowing");
+  // BOTH anchors must exist before the order between them means anything. A bare `a < b` on two
+  // indexOf results is green when the overlay anchor is simply GONE, because -1 is less than
+  // everything — a pin that passes hardest at the moment the thing it guards is deleted.
+  assert.ok(overlayAt >= 0, "the send-trail overlay must still be in the loader");
+  assert.ok(narrowAt >= 0, "the narrowing call must still be in the loader");
+  assert.ok(
+    overlayAt < narrowAt,
+    "the send trail must be overlaid before the filters read managerNotified",
+  );
+  // Only WHITESPACE may precede it. The first cut of this pin was a bare match, so commenting the
+  // line out left it green — it was pinning the words, not the statement. That is the same mistake
+  // section 7's `transform: scale` pin already records, in a different disguise.
+  assert.match(
+    workspace,
+    /\n[ \t]*candidate\.sentFor = stamp\.sentFor;/,
+    "the seat must move with the send — carrying the old position onto a newer send files it under a folder nobody chose",
+  );
+
+  // ── 9 · The pool read leaves the repeating CV blocks behind ────────────────
+  //
+  // Measured on production 2026-09-05: `select("*")` over 744 candidates moves 2,053 kB, of which
+  // 1,221 kB (59.4%) is position_specific_fields — read by nothing in this page's derive chain. The
+  // workstation already refused to ship that column to the browser; this is the same refusal one hop
+  // earlier, on the read that crosses from Frankfurt to Amsterdam.
+  const candidatesSource = read("src/lib/recruitment/candidates.ts");
+  const declared = candidatesSource
+    .slice(candidatesSource.indexOf("CANDIDATE_COLUMNS_WITHOUT_REPEATING_BLOCKS ="))
+    .split(";")[0];
+  // The chunks are JOINED first and split once, which reproduces the runtime string exactly rather
+  // than approximating it. That order matters: a chunk missing its trailing comma would glue two
+  // column names into one nonexistent column, and splitting per chunk would hide it.
+  const declaredColumns = [...declared.matchAll(/"([^"]+)"/g)]
+    .map((match) => match[1])
+    .join("")
+    .split(",");
+
+  // Re-derived from mapCandidate's OWN source, so the two cannot drift. The failure this guards is
+  // silent: a column added by a later migration and mapped in db.ts but missing from the list does
+  // not error — mapCandidate reads `undefined`, maps it to null, and the field is quietly blank on
+  // every screen fed by the slim read.
+  const dbSource = read("src/lib/recruitment/db.ts");
+  const mapCandidateBody = dbSource.slice(
+    dbSource.indexOf("export function mapCandidate"),
+    dbSource.indexOf("export function mapApplication"),
+  );
+  const mapped = [...mapCandidateBody.matchAll(/row\.([a-z0-9_]+)/g)].map((match) => match[1]);
+  const expected = [...new Set(mapped)].filter((column) => column !== "position_specific_fields").sort();
+
+  assert.deepEqual(
+    [...new Set(declaredColumns)].sort(),
+    expected,
+    "the slim column list must name every column mapCandidate reads, except the repeating blocks",
+  );
+  assert.ok(
+    !declaredColumns.includes("position_specific_fields"),
+    "the one column the slim read exists to omit must not be in it",
+  );
+  // Opt-IN, both ways round: the default read is unchanged for every caller that renders those
+  // blocks, and the screening loader is the one that asks to go without them.
+  assert.match(
+    candidatesSource,
+    /options\.withRepeatingCvBlocks === false \? CANDIDATE_COLUMNS_WITHOUT_REPEATING_BLOCKS : "\*"/,
+    "omitting the blocks must be opt-in — a caller that renders them must keep select(*)",
+  );
+  assert.match(
+    workspace,
+    /listCandidates\(\{ withRepeatingCvBlocks: false \}\)/,
+    "the screening loader must be the caller that opts out",
+  );
+
+  // ── 10 · "Have I read this" survives the pool passing 1000 ────────────────
+  //
+  // The view map was one unbounded `.select()`, on the argument that a viewer's history is bounded
+  // by the pool — true at 434 candidates, and the pool passed 700 on 2026-09-03 at roughly 90 CVs a
+  // day. PostgREST caps a request at 1000 rows and says nothing: no error, no marker, just the
+  // oldest CVs this person has already read coming back as unread. `?unseen=1` — the bookmarked
+  // link — would fill up with CVs the owner read weeks earlier, which is the exact complaint the
+  // module was written to end.
+  const views = read("src/lib/recruitment/candidate-views.ts");
+  assert.match(views, /\.range\(from, from \+ VIEW_PAGE_SIZE - 1\)/, "the view history must page");
+  // An explicit, unique order. `.range()` without one is served in whatever order the planner chose
+  // for THAT request, so page two can repeat page one's rows and omit others — paging over an
+  // unordered read loses rows without erroring, the same silent shape as the cap itself.
+  assert.match(views, /\.order\("candidate_id", \{ ascending: true \}\)/, "paging needs a stable order or it loses rows");
+  assert.match(
+    views,
+    /Refusing to report read CVs as unread/,
+    "past the guard it must throw, not return a short map — a truncated view map is the bug, not a degradation",
+  );
+
+  // ── 11 · Square corners, the owner's 2026-09-04 rule ──────────────────────
+  //
+  // No round or semi-round corners anywhere: cards, buttons, tags, inputs, bars, avatars, badges.
+  // Pinned rather than eyeballed because a 4px radius is invisible in a screenshot and survives
+  // review — the rule's own instruction is to count computed radii, never to look.
+  //
+  // (The permission fallbacks these pages carry are asserted further up, in the both-shells loop,
+  // where the comment records why the candidates gate is reachable despite looking dead.)
+  for (const shell of [
+    "app/(admin)/recruitment/screening/page.tsx",
+    "app/employee-portals/recruitment/screening/page.tsx",
+  ]) {
+    assert.doesNotMatch(read(shell), /\brounded[a-z0-9-]*/, `${shell} must have no rounded corners`);
+  }
+
+  // The filter bar this page renders is the other half of that rule. It was squared on 2026-09-05:
+  // `rounded-md` had been added to the eight selects, the bar, the count pill and the Clear button on
+  // 2026-08-31 to match the candidate pool's toolbar — four days before the rule landed — leaving one
+  // screen rendering a rounded bar on top of square panes. Comments may still say the word; classes
+  // may not.
+  const filterBar = read("src/components/recruitment/screening-page-client.tsx").replace(/\/\/.*$/gm, "");
+  assert.doesNotMatch(
+    filterBar,
+    /\brounded[a-z0-9-]*/,
+    "the screening filter bar must be square — tokens.css defaults to 4px, so copying a sibling reintroduces this silently",
+  );
+
+  // ── 12 · One batch size, in one place ─────────────────────────────────────
+  //
+  // Both comment reads spelled their own `index += 50` while db-batch.ts already owned the number
+  // and the reasoning behind it (100: ~3.8KB of ids, inside undici's ~16KB header cap). Half the
+  // size is twice the round trips, and the screening loader calls the summariser with the WHOLE
+  // pool before filtering — 15 sequential crossings to eu-central-1 to read a table holding 8 rows.
+  const comments = read("src/lib/recruitment/candidate-comments.ts");
+  // BOTH reads, counted. `assert.match` is satisfied by ONE occurrence, so with two batching loops
+  // in this file it stays green while half the fix is reverted — proved by breaking exactly that.
+  assert.equal(
+    [...comments.matchAll(/for \(const batch of chunkIds\(ids\)\)/g)].length,
+    2,
+    "both comment reads must batch through chunkIds — the counter and the summariser",
+  );
+  assert.doesNotMatch(
+    comments,
+    /index \+= \d+/,
+    "a hand-rolled batch size is a second copy of a number that already has an owner in db-batch.ts",
+  );
 }

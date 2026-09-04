@@ -64,45 +64,81 @@ function isMissingRelation(error: unknown): boolean {
   return code === "42P01" || code === "42703";
 }
 
+/** PostgREST serves at most this many rows for one request, so a whole-history read must page. */
+const VIEW_PAGE_SIZE = 1000;
+
+/** A runaway guard, not a data cap: 50 pages is 50,000 CVs read by ONE person. */
+const VIEW_PAGE_LIMIT = 50;
+
 /**
  * Everything this viewer has already opened, keyed by candidate id.
  *
  * Scoped to the viewer and NOT to a candidate list: the whole point is to answer "which of these
- * have I read" for a queue of several hundred in one round trip, and one person's view history is
- * bounded by how many CVs they have personally opened — 434 is the entire pool.
+ * have I read" for a queue of several hundred without a round trip per row.
+ *
+ * PAGED, and the page loop is the whole reason this comment changed. It used to read the history in
+ * one unbounded `.select()`, on the argument that a viewer's history is bounded by the pool — which
+ * was true at 434 candidates and is the kind of fact that stops being true without announcement.
+ * The pool passed 700 on 2026-09-03 and takes roughly 90 CVs a day, so an unbounded read here was
+ * weeks from meeting PostgREST's silent 1000-row cap.
+ *
+ * What that would have looked like is why the paging is worth its cost: no error and no truncation
+ * marker, just the oldest CVs this person has already read coming back as unread. The queue would
+ * have offered them again, `?unseen=1` — the bookmarked link — would have filled up with CVs the
+ * owner had read weeks earlier, and the symptom is EXACTLY the complaint this module was written to
+ * end. Past the guard it THROWS rather than returning a short map, because reporting read CVs as
+ * unread is the precise failure the paging exists to remove.
  */
 export async function listCandidateViews(viewerHrId: string | null | undefined): Promise<CandidateViewMap> {
   const viewer = canonicalViewerHrId(viewerHrId);
   if (!viewer) return {};
 
-  const { data, error } = await recruitmentDb()
-    .from("ats_candidate_views")
-    .select("candidate_id,first_seen_at,last_seen_at,view_count")
-    .eq("viewer_hr_id", viewer);
-
-  if (error) {
-    if (isMissingRelation(error)) return {};
-    throw error;
-  }
-
-  const rows = (data ?? []) as Array<{
-    candidate_id?: string | null;
-    first_seen_at?: string | null;
-    last_seen_at?: string | null;
-    view_count?: number | null;
-  }>;
-
+  const supabase = recruitmentDb();
   const views: CandidateViewMap = {};
-  for (const row of rows) {
-    const candidateId = row.candidate_id ? String(row.candidate_id) : null;
-    if (!candidateId) continue;
-    views[candidateId] = {
-      firstSeenAt: String(row.first_seen_at ?? ""),
-      lastSeenAt: String(row.last_seen_at ?? row.first_seen_at ?? ""),
-      viewCount: Number(row.view_count ?? 1),
-    };
+
+  for (let page = 0; page < VIEW_PAGE_LIMIT; page += 1) {
+    const from = page * VIEW_PAGE_SIZE;
+    const { data, error } = await supabase
+      .from("ats_candidate_views")
+      .select("candidate_id,first_seen_at,last_seen_at,view_count")
+      .eq("viewer_hr_id", viewer)
+      // An explicit, unique order. `.range()` without one is served in whatever order the planner
+      // chose for THAT request, so page two can legitimately repeat page one's rows and omit
+      // others — paging over an unordered read loses rows without erroring, which is the same
+      // silent shape as the cap this loop exists to defeat.
+      .order("candidate_id", { ascending: true })
+      .range(from, from + VIEW_PAGE_SIZE - 1);
+
+    if (error) {
+      if (isMissingRelation(error)) return {};
+      throw error;
+    }
+
+    const rows = (data ?? []) as Array<{
+      candidate_id?: string | null;
+      first_seen_at?: string | null;
+      last_seen_at?: string | null;
+      view_count?: number | null;
+    }>;
+
+    for (const row of rows) {
+      const candidateId = row.candidate_id ? String(row.candidate_id) : null;
+      if (!candidateId) continue;
+      views[candidateId] = {
+        firstSeenAt: String(row.first_seen_at ?? ""),
+        lastSeenAt: String(row.last_seen_at ?? row.first_seen_at ?? ""),
+        viewCount: Number(row.view_count ?? 1),
+      };
+    }
+
+    // A short page is the last page. At an exact multiple of the page size this costs one extra
+    // empty request — the price of never guessing where the data ends.
+    if (rows.length < VIEW_PAGE_SIZE) return views;
   }
-  return views;
+
+  throw new Error(
+    `Candidate view paging stopped at ${VIEW_PAGE_LIMIT * VIEW_PAGE_SIZE} rows for one viewer. Refusing to report read CVs as unread.`,
+  );
 }
 
 /**
