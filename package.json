@@ -85,6 +85,8 @@
     "db:marketing:sync-sales-codes": "node --experimental-strip-types --experimental-specifier-resolution=node scripts/sync-sales-pharmacy-codes-into-marketing.ts",
     "cv-drive:backfill": "node --env-file-if-exists=.env.local --experimental-strip-types --experimental-specifier-resolution=node --experimental-loader ./tests/alias-loader.mjs scripts/backfill-cvs-to-drive.mjs",
     "cv-drive:refile": "node --env-file-if-exists=.env.local --experimental-strip-types --experimental-specifier-resolution=node --experimental-loader ./tests/alias-loader.mjs scripts/backfill-cvs-to-drive.mjs --refile",
+    "cv-drive:questions": "node --env-file-if-exists=.env.local --experimental-strip-types --experimental-specifier-resolution=node --experimental-loader ./tests/alias-loader.mjs scripts/cv-area-questions.mjs",
+    "cv-drive:verify": "node --env-file-if-exists=.env.local --experimental-strip-types --experimental-specifier-resolution=node --experimental-loader ./tests/alias-loader.mjs scripts/backfill-cvs-to-drive.mjs --verify",
     "marketing:roi-preview": "node --experimental-strip-types --experimental-specifier-resolution=node --experimental-loader ./tests/alias-loader.mjs scripts/preview-marketing-roi-import.ts",
     "marketing:roi-import": "node --experimental-strip-types --experimental-specifier-resolution=node --experimental-loader ./tests/alias-loader.mjs scripts/import-marketing-roi-sheet.ts",
     "marketing:roi-verify": "node --experimental-strip-types --experimental-specifier-resolution=node --experimental-loader ./tests/alias-loader.mjs scripts/verify-marketing-roi.ts",

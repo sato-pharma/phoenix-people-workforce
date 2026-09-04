@@ -17,10 +17,13 @@ import {
   isInferredPath,
   isUnclassifiedPath,
   NO_LOCATION_FOLDER_NAME,
+  readsAsAJobTitle,
   regionFolderForArea,
+  regionFolderFromTypedArea,
   samePath,
   sanitizeDriveSegment,
   UNCLASSIFIED_FOLDER_NAME,
+  UNREADABLE_TITLE_FOLDER_NAME,
 } from "../src/lib/recruitment/drive-cv-folders.ts";
 import { escapeDriveQueryValue } from "../src/lib/recruitment/drive-tree.ts";
 
@@ -200,53 +203,62 @@ export function runDriveCvFolderTests() {
   assert.ok(!samePath(["a", "b"], ["a", "b", "c"]), "a deeper path is a different path");
   assert.ok(!samePath(["a", "b"], ["a", "c"]));
 
-  // ── The backfill script must not drift from the live module ───────────────────────────────────
+  // ── The backfill script must DELEGATE, never keep its own copy ─────────────────────────────────
   //
-  // scripts/backfill-cvs-to-drive.mjs re-implements the placement tables, because it runs as a bare
-  // node script with no TypeScript path resolution. That duplication is the drift risk, so it is
-  // pinned here: if the Delta (3) overrides or the region names change on one side and not the
-  // other, the backfill would file 950 CVs into folders the live intake never uses again.
-
+  // This pin used to assert the exact opposite, and the story of why it flipped is the reason to
+  // keep reading. scripts/backfill-cvs-to-drive.mjs carried its own region labels, its own Delta (3)
+  // overrides, its own shelf labels and its own sanitizer, because a bare node script has no
+  // TypeScript path resolution. This test pinned that duplication in place and tried to hold the two
+  // copies equal by hand.
+  //
+  // That failed the way a copy always fails: silently, and only once somebody IMPROVES the original.
+  // The script's own `--verify` mode reported 0 CVs in the wrong folder while it read its own
+  // tables, and 5 the moment it read the app's — four hand-typed governorates and one Arabic
+  // sentence that had become a Drive folder. The copy was not merely redundant, it was hiding real
+  // damage from the very check written to find it.
+  //
+  // So the assertion is inverted. The script resolves `@/` through tests/alias-loader.mjs and
+  // imports the live modules; what is pinned now is that it holds no private copy left to drift.
   const backfillSource = fs.readFileSync(
     path.join(process.cwd(), "scripts", "backfill-cvs-to-drive.mjs"),
     "utf8",
   );
-  // Read the override table itself, not the whole file: a bare includes("Suez") keeps passing on any
-  // stray mention of the word elsewhere in the script, which is how a drift guard goes quietly vacuous.
-  const tableStart = backfillSource.indexOf("const RECRUITMENT_AREA_REGION_OVERRIDES = {");
-  assert.ok(tableStart >= 0, "the backfill script must still declare RECRUITMENT_AREA_REGION_OVERRIDES");
-  const tableEnd = backfillSource.indexOf("};", tableStart);
-  assert.ok(tableEnd > tableStart, "the override table must be a closed object literal");
-  const overrideTable = backfillSource.slice(tableStart, tableEnd);
 
-  for (const areaName of Object.keys(recruitmentAreaRegionOverrides)) {
+  // The anti-pattern, by name. A future session reaching for a local table is the thing to catch,
+  // and it is cheaper to catch here than in a folder tree holding 960 people's CVs.
+  for (const copied of [
+    "const RECRUITMENT_AREA_REGION_OVERRIDES",
+    "const REGION_LABELS",
+    "const SHELF_LABELS",
+    "function sanitize",
+  ]) {
     assert.ok(
-      overrideTable.includes(`${areaName}: "D3"`) || overrideTable.includes(`"${areaName}": "D3"`),
-      `the backfill script must carry the Delta (3) override for ${areaName}`,
+      !backfillSource.includes(copied),
+      `the backfill script must not re-declare ${copied} — it imports the live one`,
     );
   }
-  for (const label of ["Alex-BHR", "Delta (3)", "Upper Egypt", "Medical Representative"]) {
-    assert.ok(backfillSource.includes(label), `the backfill script must carry the label ${label}`);
+
+  // And the delegation itself, so that removing a copy can never quietly remove the behaviour too.
+  for (const imported of [
+    'from "@/lib/recruitment/drive-cv-folders"',
+    'from "@/lib/recruitment/candidate-folder-inference"',
+    'from "@/lib/recruitment/candidate-region"',
+    'from "@/lib/recruitment/candidate-folder"',
+    "inferCandidatePlacement",
+    "sanitizeDriveSegment",
+  ]) {
+    assert.ok(backfillSource.includes(imported), `the backfill script must import ${imported}`);
   }
-  // The holding and inferred folder NAMES are no longer typed into the script - it imports them,
-  // which is the point: a renamed shelf can no longer mean two different folders in two files.
-  assert.ok(
-    backfillSource.includes('from "@/lib/recruitment/drive-cv-folders"'),
-    "the backfill script must import the folder names rather than re-declare them",
-  );
-  assert.ok(
-    backfillSource.includes("inferCandidatePlacement"),
-    "the backfill script must use the shared inference, not a copied governorate table",
-  );
   assert.ok(
     !backfillSource.includes("[UNCLASSIFIED]"),
     "no path in the backfill may still fall back to the flat holding folder",
   );
-  assert.equal(
-    Object.keys(recruitmentAreaRegionOverrides).length,
-    5,
-    "Delta (3) covers five areas — if this changes, update the backfill script's copy too",
-  );
+
+  // The Delta (3) override reaching the backfill is no longer two tables agreeing — it is the same
+  // function call the live intake makes, pinned by behaviour a few lines below ("an inferred
+  // Delta (3) governorate files where recruitment says"). The count stays so that an override table
+  // silently emptied still fails something here.
+  assert.equal(Object.keys(recruitmentAreaRegionOverrides).length, 5, "Delta (3) covers five areas");
 
   // ── Inference: a CV with no declared answers still gets a real folder ──────────────────────────
   //
@@ -425,6 +437,80 @@ export function runDriveCvFolderTests() {
     2,
     "an address-derived path stops at the region",
   );
+
+  // ── A hand-typed area still gets a region above it ────────────────────────────────────────────
+  //
+  // Six CVs were found on 2026-09-04 sitting directly under "Medical Representative" with nothing
+  // above them, because the applicant typed a GOVERNORATE where the flow wanted one of our areas.
+  // Loose at the top of a 900-CV shelf is the worst outcome there is: the file is present and
+  // effectively unfindable. Each of these is one of those six, verbatim.
+  for (const [typed, region] of [
+    ["Qena north", "Upper Egypt"],
+    ["Qena", "Upper Egypt"],
+    ["Minia Government", "Upper Egypt"],
+    ["kafrelsheikh", "Delta (1)"],
+    ["Kafr El-Sheikh", "Delta (1)"],
+  ] as const) {
+    assert.deepEqual(
+      driveFolderPathFor({ key: typed, kind: "medical_rep", label: typed }, AREA_REGIONS),
+      ["Medical Representative", region],
+      `a typed governorate must still nest under its region: ${typed}`,
+    );
+  }
+
+  // And deliberately WITHOUT inventing an area folder. "Qena north" sitting beside the real
+  // "Qena 1" and "Qena 2" would read as a company area that nobody owns and no target covers.
+  assert.equal(
+    driveFolderPathFor({ key: "Qena north", kind: "medical_rep", label: "Qena north" }, AREA_REGIONS).length,
+    2,
+    "a hand-typed area never becomes a folder of its own",
+  );
+
+  // A real area is untouched — three levels, area innermost. Sharkia 2 also pins the recruitment
+  // override: the SALES map above still calls it Delta (2), and recruitment files it under
+  // Delta (3). Reading the sales column directly here is the exact mis-file that override prevents.
+  assert.deepEqual(
+    driveFolderPathFor({ key: "Sharkia 2", kind: "medical_rep", label: "Sharkia 2" }, AREA_REGIONS),
+    ["Medical Representative", "Delta (3)", "Sharkia 2"],
+    "a canonical area keeps its own folder, under its RECRUITMENT region",
+  );
+
+  // Nothing readable at all: their own words still beat the top of the shelf.
+  assert.deepEqual(
+    driveFolderPathFor({ key: "somewhere nice", kind: "medical_rep", label: "somewhere nice" }, AREA_REGIONS),
+    ["Medical Representative", "somewhere nice"],
+    "an unreadable area keeps the applicant's own words rather than vanishing up a level",
+  );
+
+  assert.equal(regionFolderFromTypedArea("Minia Government"), "Upper Egypt");
+  assert.equal(regionFolderFromTypedArea("nowhere at all"), null, "an unreadable area names no region");
+
+  // ── A message typed into the job-title box never becomes a folder ─────────────────────────────
+  //
+  // One CV was filed under a folder called "بخصوص الإعلان دا" — "regarding this advertisement".
+  assert.deepEqual(
+    driveFolderPathFor({ key: "بخصوص الإعلان دا", kind: "other", label: "بخصوص الإعلان دا" }, AREA_REGIONS),
+    ["Other positions", UNREADABLE_TITLE_FOLDER_NAME],
+    "a sentence sent as a job title is not a folder name",
+  );
+
+  // The guard is narrow ON PURPOSE. These are the other six titles that shelf actually holds in
+  // production; a cleverer sentence-detector would eventually eat one of them.
+  for (const title of [
+    "Office Coordinator",
+    "Technical Support and infrastructure Engineer",
+    "Area / Regional Manager",
+    "National Sales Manager",
+    "Human Resources",
+    "Other",
+  ] as const) {
+    assert.ok(readsAsAJobTitle(title), `${title} is a real title and must keep its own folder`);
+    assert.equal(
+      driveFolderPathFor({ key: title, kind: "other", label: title }, AREA_REGIONS)[1],
+      sanitizeDriveSegment(title),
+      `${title} must still file under its own name`,
+    );
+  }
 
   // ── Both readers of the area→region grouping must use the PUBLIC view ─────────────────────────
   //
