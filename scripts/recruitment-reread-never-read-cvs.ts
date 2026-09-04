@@ -30,15 +30,29 @@ import { cvRereadOpsMarker } from "@/lib/recruitment/ops-marker";
 // WHAT THIS TOUCHES, AND — more importantly — WHAT IT DOES NOT
 //
 //   It calls extractCandidateFieldsFromCv, which downloads the stored CV, sends it to the
-//   model, and INSERTs one row into ats_candidate_cv_extractions. That is the whole write.
+//   model, INSERTs one row into ats_candidate_cv_extractions, and then GAP-FILLS the candidate
+//   record from that read.
 //
-//   It does NOT update ats_candidates. It does NOT create a candidate, an application or a
-//   requisition. It does NOT send a notification of any kind — no in-app row, no Telegram,
-//   and (per the standing rule) certainly no email. The "new CV received" path lives in the
-//   inbound intake service, which this script never enters. Applying the extracted values
-//   onto a candidate is a SEPARATE, later decision; recordAppliedExtractionFields is never
-//   called here, so applied_fields stays null and the review queue still shows these as
-//   awaiting a human.
+//   IT DOES WRITE TO ats_candidates, and this comment said the opposite until 2026-09-04. The
+//   write arrived in #2359 (2026-08-23) when the review queue that used to collect proposals was
+//   removed; the header was not updated with it, so for twelve days the one paragraph an operator
+//   reads before firing a bulk run described the behaviour of the previous version. Measured on the
+//   82-candidate run of 2026-09-04: 52 employers and 58 medical-rep verdicts on candidate cards
+//   moved to match the new read. Believe the code, not a comment — and update this one if the
+//   behaviour changes again.
+//
+//   The write is deliberately conservative, via selectAutoApplyFields: HIGH confidence only, into a
+//   BLANK column only, so a human edit always wins and nothing is overwritten. On that same run it
+//   correctly refused 12 low-confidence employers whose values were junk ("Egypt", "In Progress",
+//   "I have been working in"). A field still blank after a re-read is usually that gate working.
+//
+//   applied_fields still stays null, and it is NOT the writer — it means "a human reviewed and
+//   saved this one". Never diagnose the auto-apply from it.
+//
+//   It does NOT create a candidate, an application or a requisition. It does NOT send a
+//   notification of any kind — no in-app row, no Telegram, and (per the standing rule) certainly
+//   no email. The "new CV received" path lives in the inbound intake service, which this script
+//   never enters.
 //
 //   Every row it writes is stamped created_by = OPS_MARKER — `ops:cv-reread-<this run's Cairo
 //   day>` — so a re-read is distinguishable from a Talent Acquisition review forever after, and
