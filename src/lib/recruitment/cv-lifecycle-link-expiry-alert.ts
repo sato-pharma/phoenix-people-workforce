@@ -68,7 +68,13 @@ export async function runCvLifecycleLinkExpiryCheck(): Promise<CvLifecycleLinkEx
       .limit(100);
     if (error) throw error;
 
-    verdict = assessCvLifecycleLinkExpiry(
+    // Bound to a `const` and used through it for the rest of this block. `verdict` is a mutable
+    // `let` because the catch below has to report whatever was reached before the throw — and
+    // TypeScript widens a mutable binding back to its declared type inside a CLOSURE, so
+    // `verdict.expired` in the `recipients.map` callback is `possibly null` however thoroughly it
+    // was narrowed out here. That is a real compile error, not a lint preference: it failed the
+    // required typecheck job on this PR's first head. Do not collapse the two back into one.
+    const assessed = assessCvLifecycleLinkExpiry(
       ((data ?? []) as Array<Record<string, unknown>>).map((row) => ({
         expiresAt: String(row.expires_at ?? ""),
         id: String(row.id ?? ""),
@@ -77,8 +83,9 @@ export async function runCvLifecycleLinkExpiryCheck(): Promise<CvLifecycleLinkEx
       })),
       Date.now(),
     );
+    verdict = assessed;
 
-    if (verdict.healthy) return { delivered: 0, reason: "healthy", skipped: true, verdict };
+    if (assessed.healthy) return { delivered: 0, reason: "healthy", skipped: true, verdict: assessed };
 
     const { recipients, warnings } = await resolveNotificationPersonRecipients(
       AUDIENCE_KEY,
@@ -92,18 +99,18 @@ export async function runCvLifecycleLinkExpiryCheck(): Promise<CvLifecycleLinkEx
         newValues: { failClosed: true, warnings },
         summary: "CV-lifecycle link expiry warning skipped — no active recipient resolved.",
       });
-      return { delivered: 0, reason: "no recipients", skipped: true, verdict };
+      return { delivered: 0, reason: "no recipients", skipped: true, verdict: assessed };
     }
 
-    const message = buildCvLifecycleLinkExpiryMessage(verdict);
-    const title =
-      verdict.expired.length > 0
-        ? "Live CV sheet has stopped updating"
-        : `Live CV sheet link expires in ${verdict.expiringSoon[0]?.daysLeft ?? 0} day(s)`;
+    const message = buildCvLifecycleLinkExpiryMessage(assessed);
+    const dead = assessed.expired.length > 0;
+    const title = dead
+      ? "Live CV sheet has stopped updating"
+      : `Live CV sheet link expires in ${assessed.expiringSoon[0]?.daysLeft ?? 0} day(s)`;
     // Bucketed per Cairo day AND per the exact set of link ids, so a link that stays inside the
     // window warns once a day while a NEWLY expiring one still gets through rather than being
     // swallowed by an earlier key.
-    const affected = [...verdict.expired, ...verdict.expiringSoon].map((link) => link.id).sort();
+    const affected = [...assessed.expired, ...assessed.expiringSoon].map((link) => link.id).sort();
     const idempotencyBase = `cv-lifecycle-link-expiring:${cairoDayKey()}:${affected.join(",")}`;
 
     let delivered = 0;
@@ -122,7 +129,7 @@ export async function runCvLifecycleLinkExpiryCheck(): Promise<CvLifecycleLinkEx
           // resolveTelegramGovernance — which would silently drop the one alert that exists to
           // break a silence.
           module: "system",
-          priority: verdict.expired.length > 0 ? "high" : "normal",
+          priority: dead ? "high" : "normal",
           recipientHrId: recipient.hrId,
           recipientUserId: recipient.userId,
           telegram: { ctaLabel: "Open CV sheet links", ctaUrl: SCREEN_URL },
@@ -140,7 +147,7 @@ export async function runCvLifecycleLinkExpiryCheck(): Promise<CvLifecycleLinkEx
       summary: `CV-lifecycle link expiry warning delivered to ${delivered} recipient(s).`,
     });
 
-    return { delivered, skipped: false, verdict };
+    return { delivered, skipped: false, verdict: assessed };
   } catch (error) {
     // Swallow: a warning about a feed going quiet must not become a second, self-inflicted outage.
     logError("CV-lifecycle link expiry check failed", {
