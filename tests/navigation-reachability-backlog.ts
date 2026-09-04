@@ -36,6 +36,23 @@ import type { PhoenixRole } from "@/lib/auth/permissions";
  *   no-link-anywhere              reverse guard  reached from nothing at all — the real findings
  *   absent-from-portal-catalog    catalog sync   rendered by the portal, absent from the Cmd+K catalog
  *   invisible-to-literal-scan     findability    reachable via a runtime-assembled href a literal scan cannot see
+ *   gate-unreadable-and-unlinked  reverse guard  the guard's own BLIND SPOT — see below
+ *
+ * ## The blind spot, added 2026-09-04
+ *
+ * The reverse guard opens its per-role loop with `if (!gate.readable) continue` — an unreadable gate
+ * cannot support a conclusion about who can open the page, so the route is skipped. That is correct
+ * for the question it asks and silent for every other one: on 2026-09-04 **137 of 356 static routes**
+ * were being skipped that way, and a page added tomorrow whose gate the reader cannot parse would
+ * join them without a word.
+ *
+ * Most of those 137 are linked and fine — the skip only hides something when the route is ALSO
+ * offered to nobody. That intersection is what `gate-unreadable-and-unlinked` records, and the guard
+ * now asserts it by identity like every other slice. Redirect-only stubs are excluded mechanically
+ * (`isRedirectOnlyStub`) rather than recorded: a stub that renders nothing is a link, not a page.
+ *
+ * These rows are NOT role-scoped — the whole point is that the roles cannot be computed — so every
+ * one carries `roles: "all"`.
  *
  * A route may legitimately appear once and be claimed by two guards: /employee/outstation/new is a
  * no-link-anywhere row the reverse guard owns AND the one literal-scan strand that is a real gap, so
@@ -56,7 +73,8 @@ export type ReachabilityGapKind =
   | "second-gate-unreadable"
   | "no-link-anywhere"
   | "absent-from-portal-catalog"
-  | "invisible-to-literal-scan";
+  | "invisible-to-literal-scan"
+  | "gate-unreadable-and-unlinked";
 
 export type ReachabilityGap = {
   readonly route: string;
@@ -154,6 +172,27 @@ export const NAVIGATION_REACHABILITY_BACKLOG: readonly ReachabilityGap[] = [
   { route: "/sales/weekly/missing", roles: "all", kind: "invisible-to-literal-scan", reason: "A weekly-planning sub-route reached via a runtime-assembled href from the weekly workspace; no full-route literal.", recorded: "2026-08-28" },
   { route: "/sales/weekly/missing-products", roles: "all", kind: "invisible-to-literal-scan", reason: "A weekly-planning sub-route reached via a runtime-assembled href from the weekly workspace; no full-route literal.", recorded: "2026-08-28" },
   { route: "/whatsapp-connect", roles: "all", kind: "invisible-to-literal-scan", reason: "Public WhatsApp-coexistence onboarding page reached from the external Meta signup flow, not from in-app navigation — correctly carries no sidebar link.", recorded: "2026-08-28" },
+  // ── THE BLIND SPOT, opened 2026-09-04 ─────────────────────────────────────────────────────────
+  // The reverse guard skipped 137 of 356 static routes for an unreadable gate. Eleven of them were
+  // real pages nothing links, and this is the first time any check has looked at them. Every one
+  // turned out to be deliberate — the blind spot was hiding no defect — but it could have hidden any
+  // of them indefinitely, which is the reason the roll-call now exists.
+  //
+  // Five of the eleven are reachable through a string constant the link scan cannot see (a ternary,
+  // a map value, a named export). Broadening the scan's patterns to catch them was considered and
+  // rejected: a looser pattern invents links as readily as it finds them, and the whole value of
+  // this program is that a link it reports is a link that exists. Recorded instead.
+  { route: "/admin/hr-command-center", roles: "all", kind: "gate-unreadable-and-unlinked", reason: "Not a second page — the SAME file as /hr/admin/hr-command-center, which the HR sidebar does link. The HR shell mounts app/(admin)/… under /hr (see stripHrPrefix in tests/support/page-gate-reader.ts), so the un-prefixed path is the mount's underlying route and correctly has no link of its own. Gate is hrBundleForRole, which the reader does not parse.", recorded: "2026-09-04" },
+  { route: "/admin/profile", roles: "all", kind: "gate-unreadable-and-unlinked", reason: "Reached from the topbar account menu — src/components/layout/topbar.tsx:48 assigns it in a ternary (`const profileHref = isAdminMode ? \"/admin/profile\" : …`), which is not one of the four literal shapes the link sweep matches. The link is real; the scan cannot see this shape.", recorded: "2026-09-04" },
+  { route: "/dev/employee-portals", roles: "all", kind: "gate-unreadable-and-unlinked", reason: "A developer preview that calls notFound() when NODE_ENV === \"production\" — it does not exist on the production domain, so having no link there is the correct state, not a gap.", recorded: "2026-09-04" },
+  { route: "/dev/employee-portals/sales", roles: "all", kind: "gate-unreadable-and-unlinked", reason: "A developer preview that calls notFound() when NODE_ENV === \"production\" — it does not exist on the production domain, so having no link there is the correct state, not a gap.", recorded: "2026-09-04" },
+  { route: "/dev/identity-preview", roles: "all", kind: "gate-unreadable-and-unlinked", reason: "A developer preview that calls notFound() when NODE_ENV === \"production\" — it does not exist on the production domain, so having no link there is the correct state, not a gap.", recorded: "2026-09-04" },
+  { route: "/employee-portals/approvals/early-bird", roles: "all", kind: "gate-unreadable-and-unlinked", reason: "The Early Birds notification action URL — EARLY_BIRDS_ACTION_URL in src/lib/early-birds/notify.ts. A notification you tap is a link; it is spelled as a named constant rather than an href key, so the sweep misses it.", recorded: "2026-09-04" },
+  { route: "/marketing-requests", roles: "all", kind: "gate-unreadable-and-unlinked", reason: "The marketing-request notification deep-link base — MARKETING_REQUEST_LINK_BASE in src/lib/marketing-requests/notification-link.ts. Reached by tapping a notification, never from a rail.", recorded: "2026-09-04" },
+  { route: "/terms", roles: "all", kind: "gate-unreadable-and-unlinked", reason: "Public Terms of Service, unauthenticated. It governs the WhatsApp Business channel and is submitted to Meta as a legal URL — reached from outside the app, like /whatsapp-connect and /privacy. An in-app link would be wrong, not missing.", recorded: "2026-09-04" },
+  { route: "/whatsapp-connect", roles: "all", kind: "gate-unreadable-and-unlinked", reason: "Public WhatsApp-coexistence onboarding, reached from the external Meta signup flow. Already recorded as invisible-to-literal-scan for the findability ratchet; this row is the same fact stated for the blind-spot roll-call, which reads a different helper.", recorded: "2026-09-04" },
+  { route: "/workspace/marketing-requests/inbox", roles: "all", kind: "gate-unreadable-and-unlinked", reason: "The Financial Advisor's landing page — src/lib/auth/landing.ts:25 returns it at sign-in. A landing destination is reached before any navigation is rendered, so no rail offers it.", recorded: "2026-09-04" },
+  { route: "/workspace/vacancies", roles: "all", kind: "gate-unreadable-and-unlinked", reason: "Reached through the portal-to-workspace href map in src/components/employee-portal/employee-portal-dashboard.tsx:840, where it is a map VALUE rather than an href key — a shape the literal sweep does not match.", recorded: "2026-09-04" },
   // ── CLEARED 2026-08-30 ────────────────────────────────────────────────────────────────────────
   // /workspace/deductions and /workspace/payslips sat here from 2026-08-28, both recorded as
   // "reached via the workspace shell's basePath prop, never as a full-route literal". That reading
@@ -171,6 +210,18 @@ export const NAVIGATION_REACHABILITY_BACKLOG_SIZE = NAVIGATION_REACHABILITY_BACK
 /** Routes the reverse guard is responsible for — its live orphan set must equal exactly these. */
 export function reverseGuardRecordedRoutes(): string[] {
   return NAVIGATION_REACHABILITY_BACKLOG.filter((gap) => REVERSE_GUARD_GAP_KINDS.includes(gap.kind)).map((gap) => gap.route);
+}
+
+/**
+ * The reverse guard's BLIND SPOT — routes it skips for an unreadable gate AND that nothing links.
+ *
+ * Kept separate from `reverseGuardRecordedRoutes` because the two answer different questions and
+ * must not be able to cancel each other out: those rows are routes whose openers ARE known, these
+ * are routes whose openers are not. A route that gains a readable gate moves from this list to that
+ * one, and both assertions fail until someone moves it.
+ */
+export function reverseGuardBlindSpotRoutes(): string[] {
+  return NAVIGATION_REACHABILITY_BACKLOG.filter((gap) => gap.kind === "gate-unreadable-and-unlinked").map((gap) => gap.route);
 }
 
 /** Portal pages deliberately absent from the searchable/titled nav catalog. */

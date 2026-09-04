@@ -125,4 +125,80 @@ export function runSidebarDomainsTests() {
       `${role}: ${more?.groups.map((g) => g.heading).join(", ")} fell through to "More".`,
     );
   }
+
+  // ── 5. the headings that render BLANK, pinned by identity ───────────────────
+  //
+  // Assertion 3 requires every CONFIGURED heading to be non-empty. That is not the same question as
+  // which headings a viewer actually SEES, because groupAdminSections blanks any heading whose text
+  // repeats one of its own rows — "Automated Payroll" standing above a single row called "Automated
+  // Payroll" is noise, so the heading is dropped.
+  //
+  // The rule is deliberate and the shape below is the one the owner reviewed on 2026-09-04. What was
+  // missing is that the outcome is EMERGENT and ROLE-DEPENDENT: the same group renders headed for one
+  // role and blank for another, purely because the colliding row is gated away from the second.
+  // `money / Automated Payroll` blanks for the Super Admin and renders for the CEO for exactly that
+  // reason. Nothing measured it, so a grouping edit could add a sixth blank band — or turn a labelled
+  // one blank for a single seat — and no check would say a word.
+  //
+  // Pinned by identity rather than by count, so a heading that started blanking and one that stopped
+  // cannot cancel out. A change here is not automatically wrong; it is a change to what the owner
+  // approved, and it should be a decision rather than a side effect.
+  const BLANK_HEADINGS_BY_ROLE: Record<string, string[]> = {
+    "SFE Manager": ["marketing/Marketing & ROI"],
+    "Finance Manager": [],
+    "Financial Advisor": ["marketing/Marketing & ROI", "people/People Management"],
+    "HR Advisory": ["people/People Management", "people/Recruitment & Hiring"],
+    "HR Operations": ["people/People Management"],
+    CEO: ["marketing/Marketing & ROI", "people/People Management"],
+    "Super Admin": [
+      "marketing/Marketing & ROI",
+      "money/Automated Payroll",
+      "overview/Command Center",
+      "people/People Management",
+      "people/Recruitment & Hiring",
+    ],
+  };
+
+  // The heading a group was CONFIGURED with, so a blanked one can still be named in the failure.
+  const configuredHeading = new Map<string, string>();
+  for (const domain of adminSidebarDomains) {
+    for (const group of domain.groups) {
+      for (const sectionId of group.sectionIds) {
+        configuredHeading.set(`${domain.id}::${sectionId}`, group.heading);
+      }
+    }
+  }
+
+  let rolesMeasured = 0;
+  for (const [role, expected] of Object.entries(BLANK_HEADINGS_BY_ROLE)) {
+    const gated = getSections(
+      adminNavigationSections,
+      "admin",
+      buildPermissionLookup(permissionMatrix, role as PhoenixRole),
+      role as PhoenixRole,
+    );
+    const blanks: string[] = [];
+    for (const domain of groupAdminSections(gated)) {
+      for (const group of domain.groups) {
+        if (group.heading) continue;
+        const configured =
+          group.sections
+            .map((section) => configuredHeading.get(`${domain.id}::${section.id}`))
+            .find(Boolean) ?? "?";
+        blanks.push(`${domain.id}/${configured}`);
+      }
+    }
+    rolesMeasured += 1;
+    assert.deepEqual(
+      blanks.sort(),
+      [...expected].sort(),
+      `${role}: the set of admin-rail headings that render blank changed. A heading blanks when it ` +
+        `repeats one of its own visible rows, so this moves when a group is re-headed, a section is ` +
+        `moved between groups, or a row label changes. Confirm the new shape is intended, then update ` +
+        `BLANK_HEADINGS_BY_ROLE.`,
+    );
+  }
+  // Anti-vacuity: the map must still cover every admin-shell role. Without this a role could be
+  // dropped from it and its blanks would stop being watched with the assertion still green.
+  assert.equal(rolesMeasured, 7, `expected 7 admin-shell roles pinned, measured ${rolesMeasured}`);
 }

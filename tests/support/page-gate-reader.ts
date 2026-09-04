@@ -265,6 +265,33 @@ export function hasEntryExit(source: string): boolean {
 }
 
 /**
+ * A page that forwards and renders nothing — `app/(admin)/admin/error-monitor/page.tsx` is twelve
+ * lines that call `redirect("/admin/observability/errors")`.
+ *
+ * It matters because such a stub is a LINK, not a page. The reverse guard already treats
+ * `redirect("/x")` written anywhere as a link TO /x; this is the other half of that statement — the
+ * stub itself needs nothing pointing AT it, because arriving there is indistinguishable from
+ * arriving at its target. Without this predicate every route this repo has ever renamed reads as a
+ * stranded page, and 18 of them do.
+ *
+ * Deliberately narrow. Both halves are tested on the BLANKED source, so a `redirect()` sitting in a
+ * comment or a string cannot qualify a real page:
+ *
+ *   · it forwards            — `redirect(…)` or `permanentRedirect(…)`
+ *   · and it renders nothing — no `return <`, and no `return (` opening JSX
+ *
+ * `return\s*\(?\s*<` cannot be confused with a generic call: `return foo<Bar>(…)` puts an identifier
+ * between the keyword and the angle bracket, so only a JSX return matches.
+ */
+const PAGE_FORWARDS = /\b(?:permanentRedirect|redirect)\s*\(/;
+const PAGE_RENDERS_JSX = /return\s*\(?\s*</;
+
+export function isRedirectOnlyStub(source: string): boolean {
+  const blanked = blankOut(source);
+  return PAGE_FORWARDS.test(blanked) && !PAGE_RENDERS_JSX.test(blanked);
+}
+
+/**
  * Resolve a nav href to the page file that serves it, absolute.
  *
  * `stripHrPrefix` exists because the HR shell mounts the same pages under /hr — /hr/probation is

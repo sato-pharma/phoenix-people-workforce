@@ -18,13 +18,17 @@ import { resolveEmployeePortalNavVisibility } from "@/lib/employee-portal/naviga
 import { getSections, navigationItemVisible } from "@/lib/navigation/active-path";
 
 import {
+  isRedirectOnlyStub,
   isShellGated,
   permissionGateKeys,
   portalTwinRedirect,
   roleSetGates,
   unreadableGatePredicates,
 } from "./support/page-gate-reader";
-import { reverseGuardRecordedRoutes } from "./navigation-reachability-backlog";
+import {
+  reverseGuardBlindSpotRoutes,
+  reverseGuardRecordedRoutes,
+} from "./navigation-reachability-backlog";
 
 /**
  * THE REVERSE GUARD — a page a role can open, that no surface offers it a link to.
@@ -110,6 +114,8 @@ type RouteGate = {
   portalTwin: string | null;
   unreadable: string[];
   readable: boolean;
+  /** Renders nothing and forwards — a link, not a page. Exempt from the blind-spot roll-call. */
+  redirectOnly: boolean;
 };
 
 function walk(dir: string, matches: (name: string) => boolean, out: string[] = []): string[] {
@@ -143,6 +149,7 @@ function readRouteGates(): RouteGate[] {
       portalTwin,
       unreadable: unreadableGatePredicates(source),
       readable: needs.length > 0 || roleSets.length > 0 || shellGated || portalTwin !== null,
+      redirectOnly: isRedirectOnlyStub(source),
     });
   }
   return gates;
@@ -357,6 +364,69 @@ export async function runNavigationGrantedButUnreachableTests(): Promise<void> {
       (nowReachable.length
         ? `No longer stranded (good news — a page gained a link or was removed; delete each stale row ` +
           `from the backlog):\n  ${nowReachable.join("\n  ")}\n`
+        : ""),
+  );
+
+  // ── THE BLIND SPOT: routes the loop above never even looked at ───────────────────────────────
+  //
+  // `if (!gate.readable) continue` is right for the orphan question — a gate the reader cannot parse
+  // cannot say who opens the page — and it is silent for every other question. Measured 2026-09-04:
+  // 137 of 356 static routes are skipped that way, so a page added tomorrow with an unparseable gate
+  // joins them without a word. That is the same failure shape this file's own header warns about,
+  // one level up: the guard ships green while the thing it guards goes unmeasured.
+  //
+  // The skip only HIDES something when the route is also offered to nobody, so that intersection is
+  // what gets a roll-call. Redirect-only stubs are exempted mechanically rather than recorded — a
+  // page that renders nothing and forwards is a link, and 18 of these are exactly that. Everything
+  // left is a real page that no sidebar, hub card, portal entry, component link or notification href
+  // points at, and whose gate nobody can read. Each one needs a link or a written reason.
+  const blindSpot = gates.filter((gate) => !gate.readable);
+  const blindAndUnlinked = blindSpot
+    .filter((gate) => !gate.redirectOnly)
+    .filter((gate) => !offeredToAnyone.has(gate.href))
+    .filter(
+      (gate) =>
+        (linkedFrom.get(gate.href) ?? []).filter(
+          (file) => !file.endsWith(`app${gate.href}/page.tsx`) && !file.includes("system-navigation"),
+        ).length === 0,
+    )
+    .map((gate) => gate.href)
+    .sort();
+
+  console.log(
+    `navigation reachability — blind spot: ${blindSpot.length} of ${gates.length} routes have a gate ` +
+      `the reader cannot parse; ${blindSpot.filter((g) => g.redirectOnly).length} are redirect-only ` +
+      `stubs; ${blindAndUnlinked.length} are real pages nothing links:\n      ${blindAndUnlinked.join("\n      ")}`,
+  );
+
+  // Anti-vacuity, same principle as the floors above. If the reader ever started parsing everything
+  // the blind spot would empty and this roll-call would pass by having nothing to say — so require
+  // it to still be measuring something, and require the stub exemption to still be finding stubs.
+  assert.ok(
+    blindSpot.length >= 50,
+    `expected the unreadable-gate blind spot to still hold 50+ routes, measured ${blindSpot.length} (137 on 2026-09-04) — if the reader genuinely got this much better, lower this floor deliberately rather than deleting it`,
+  );
+  assert.ok(
+    blindSpot.filter((gate) => gate.redirectOnly).length >= 10,
+    `expected 10+ redirect-only stubs among them, found ${blindSpot.filter((g) => g.redirectOnly).length} (18) — a collapse here silently promotes every stub into a finding`,
+  );
+
+  const recordedBlind = [...reverseGuardBlindSpotRoutes()].sort();
+  const newBlind = blindAndUnlinked.filter((route) => !recordedBlind.includes(route));
+  const clearedBlind = recordedBlind.filter((route) => !blindAndUnlinked.includes(route));
+  assert.deepEqual(
+    blindAndUnlinked,
+    recordedBlind,
+    `the reverse guard's blind spot no longer matches the recorded backlog.\n` +
+      (newBlind.length
+        ? `A real page whose gate cannot be read AND that nothing links — the guard would have said ` +
+          `nothing about these before 2026-09-04. Give each a link, or record why it has none as a ` +
+          `gate-unreadable-and-unlinked row in tests/navigation-reachability-backlog.ts:\n  ` +
+          `${newBlind.join("\n  ")}\n`
+        : "") +
+      (clearedBlind.length
+        ? `No longer in the blind spot (a page gained a link, a readable gate, or was removed; delete ` +
+          `each stale row from the backlog):\n  ${clearedBlind.join("\n  ")}\n`
         : ""),
   );
 }

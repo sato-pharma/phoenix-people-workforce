@@ -1365,7 +1365,7 @@ await runTest(
   runNavRolesNameOnlyPermissionHoldersTests,
 );
 await runTest(
-  "navigation granted but unreachable (report mode — a page a role can open that nothing links to)",
+  "navigation granted but unreachable (a page a role can open that nothing links to, plus the unreadable-gate blind spot — both pinned to the backlog by identity)",
   runNavigationGrantedButUnreachableTests,
 );
 await runTest(
