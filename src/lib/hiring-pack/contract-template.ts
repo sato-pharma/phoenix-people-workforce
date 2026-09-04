@@ -142,6 +142,26 @@ export type ContractTemplate = {
   /** The closing "تحريرًا في … بمدينة …" line, on versions that date the contract at the end. */
   closingAr: string | null;
   signatureColumns: readonly ContractSignatureColumn[];
+  /**
+   * Lines naming who signs for the company, printed under its row in the signature grid.
+   *
+   * OPTIONAL, AND ABSENT IS THE HONEST DEFAULT. Versions 1 to 3 have no such annotation — v3 stated
+   * the signatory's capacity as a fourth SIGNING field instead, which is a different thing on the
+   * page. This is declared optional rather than `| null` precisely so those three files are not
+   * touched to add it: an archived contract has to stay byte-for-byte the document that was signed,
+   * and editing three legal texts to write `null` into them buys nothing but risk.
+   *
+   * The cost of optional is that a future version could forget it and print nothing, silently — so
+   * `runContractArchiveTests` asserts the CURRENT version carries both this and the receipt line.
+   */
+  signatoryNoteLinesAr?: readonly string[];
+  /**
+   * The employee's separate signature for receipt of his copy, under the signature table.
+   *
+   * Optional for the same reason as `signatoryNoteLinesAr`, and new in version 4. Never carries a
+   * token: the line exists to be signed by hand, so there is nothing on it for Phoenix to fill.
+   */
+  receiptAcknowledgmentAr?: string;
   /** The running footer, on versions that carry one. */
   footerAr: string | null;
 };
@@ -183,6 +203,8 @@ export function contractTemplateStrings(template: ContractTemplate): string[] {
     ...template.articles.flatMap((article) => [article.number, article.titleAr, article.body]),
     template.closingAr,
     ...template.signatureColumns.flatMap((column) => [column.headingAr, ...column.fieldsAr]),
+    ...(template.signatoryNoteLinesAr ?? []),
+    template.receiptAcknowledgmentAr,
     template.footerAr,
   ].filter((value): value is string => typeof value === "string");
 }

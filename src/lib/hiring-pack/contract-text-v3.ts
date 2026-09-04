@@ -1,5 +1,11 @@
 /**
- * The Sato Pharma fixed-term employment contract — VERSION 3. THE CURRENT TEXT.
+ * The Sato Pharma fixed-term employment contract — VERSION 3. ARCHIVED, still printable.
+ *
+ * This version stopped being the one Phoenix prints on 2026-09-04, when the owner supplied a revised
+ * draft as "الطرف الأول.docx". That draft is `contract-text-v4.ts` and it is the current text; this
+ * file stays because anyone hired between 2026-09-01 and then signed THIS paper, and a reprint has to
+ * put the same words in front of them. Its thirteen articles are byte-identical to version 4's — the
+ * revision changed only the signing apparatus at the two ends of the document.
  *
  * ─────────────────────────────────────────────────────────────────────────────────────────────
  * DO NOT EDIT THE ARABIC IN THIS FILE.
@@ -27,7 +33,7 @@
  *
  * Changes to this text are the owner's lawyer's decision, never an engineering one. When it is itself
  * replaced, it does not get edited and it does not get deleted: a version 4 is added and this one
- * moves to `archived` in `contract-text.ts`, still whole and still printable, because people will
+ * moves to `archived` in `template-registry.ts`, still whole and still printable, because people will
  * have signed it.
  * ─────────────────────────────────────────────────────────────────────────────────────────────
  */
