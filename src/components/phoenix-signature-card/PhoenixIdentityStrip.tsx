@@ -308,16 +308,44 @@ export function PhoenixIdentityStrip({
           taken literally at the size it was then — 28.3px up from a crown sitting 12.3px below the
           edge is a crop, and this section is `overflow-hidden`.
 
-          ONE ELEMENT, NOT TWO, AND THAT IS WHY. It was two — an inline style cannot carry a media
-          query and the sizes genuinely differed per breakpoint. They no longer differ, because the
-          thing they are now measured against does not: `h-8` is `h-8` on a phone. If a later
-          instruction re-splits them, split the ELEMENT again rather than reaching for a class —
-          `cn()` silently drops custom named sizes and only a real browser can see it happen. */}
+          TWO ELEMENTS AGAIN, ONE PER BREAKPOINT, and that is the owner's call, not a drift back.
+          It was two, then one when the sizes stopped differing; it is two again because they
+          differ again. Him, 2026-09-04: "in HRS or identity banner make the Phoenix logo small at
+          the upper right corner in mobile view." An inline style cannot carry a media query and
+          `cn()` silently drops custom named sizes, so the split is by ELEMENT — a `sm:hidden` /
+          `hidden sm:block` pair around two style objects — and never by a size class.
+
+          THE PHONE MARK IS THE SAME MARK AT HALF SIZE, IN THE CORNER. 64px is 128 halved, which
+          draws 39.4px of ink across and 40.9px down; `right: 4px` lands its ink's right edge
+          16.5px in, which is the text column's own `pr-4` gutter, and `top: 0px` needs no nudge
+          because the box carries 9.5px of transparency above the crown by itself. Feet at 50.4px
+          on a 120px bar, so the wave at y=90 is not in play on a phone any more.
+
+          WHAT IT BOUGHT, and it is why he asked: at full size the mark's ink began 128.75px in
+          from a 351px bar, which left the name 98px to live in and crushed the script. Halved and
+          cornered, its ink begins 55.9px in, the name's box is 171px, and the name renders at its
+          natural size again. The desktop mark below is untouched — the SATO column and the
+          "exactly above it" pairing are a desktop reading and still hold there. */}
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         alt=""
         aria-hidden="true"
-        className="pointer-events-none absolute z-0"
+        className="pointer-events-none absolute z-0 sm:hidden"
+        src="/brand/identity-strip-emblem.png"
+        style={{
+          // 64 / 4 / 0 are 128 halved and the text column's own gutter. Read the paragraph above.
+          height: "64px",
+          opacity: 0.2,
+          right: "4px",
+          top: "0px",
+          width: "auto",
+        }}
+      />
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        alt=""
+        aria-hidden="true"
+        className="pointer-events-none absolute z-0 hidden sm:block"
         src="/brand/identity-strip-emblem.png"
         style={{
           // 128 / 25 / -11 are the SATO logo's 79px of ink and its 50px column, each minus this
@@ -435,14 +463,34 @@ export function PhoenixIdentityStrip({
             the rule runs out across the bar. Height is untouched — that part of his instruction
             still holds. */}
         <div className="flex min-w-0 flex-1 flex-col">
+          {/* THE NAME STOPS BEFORE THE PHOENIX TOO — the owner, 2026-09-04: "the name too, end it
+              before the logo." Same clearance as the rule below it, and from the same arithmetic
+              at each breakpoint: the mark's ink starts 55.9px in from the bar's trailing edge on a
+              phone and 128.75px in from `sm` up, so the box ends 68px / 141px in — which is 52px
+              of margin on a phone (`pr-4`) and 117px from `sm` up (`pr-6`).
+
+              THE MARGIN IS A CLASS AND THE RESET IS INLINE, and they must stay split that way. An
+              inline style beats any class, so the `margin: 0` that used to sit in the style object
+              would silently swallow `mr-[52px]` and put the name back under the mark with nothing
+              to show for it — the longhands below reset only the top, bottom and left, and leave
+              the right to the two classes.
+
+              THE PHONE READING WAS THE COST, AND HE SPENT THE MARK INSTEAD. Clearing the full-size
+              watermark left the name 98px to live in on a 351px bar, and the script fell to a size
+              he would not have accepted. The answer was the one this comment already predicted —
+              the mark is what gave: halved and moved into the corner, its ink now begins 55.9px
+              in, so the name keeps 171px and renders at its natural 32px. If a later change grows
+              the phone mark again, this margin grows with it and the name shrinks again, so
+              measure the name at 375px before accepting that trade. */}
           <p
-            className="italic font-medium text-[#3f3a33]"
+            className="italic font-medium text-[#3f3a33] mr-[52px] sm:mr-[117px]"
             ref={nameBoxRef}
             style={{
               fontFamily: '"Pinyon Script", cursive',
               fontSize: nameFontPx ? `${nameFontPx}px` : "clamp(2rem, 5vw, 3.1rem)",
               lineHeight: 1.15,
-              margin: 0,
+              marginBlock: 0,
+              marginLeft: 0,
               whiteSpace: "nowrap",
             }}
           >
@@ -457,22 +505,24 @@ export function PhoenixIdentityStrip({
               across, and the gradient tail crossed it at both widths. Ending the rule short is the
               first of the two answers he offered; the mark itself does not move.
 
-              THE MARGIN IS THE MARK'S OWN INK EDGE, not a nudge. The emblem above draws 79px of
-              ink whose left edge lands 128.75px in from the bar's trailing edge (25px right inset
-              + 24.25px of transparent margin + 79px of ink). Twelve pixels of air puts the end of
-              the rule 141px in — and this row sits inside a column that already stops at the
-              content wrapper's own right padding, so the margin is 141 minus that padding: 125 on
-              a phone (`pr-4`) and 117 from `sm` up (`pr-6`). CHANGE THE EMBLEM'S `height` OR
-              `right` AND BOTH NUMBERS MOVE WITH IT — `tests/identity-strip-emblem.test.ts`
-              recomputes the ink edge from those two and fails if this clearance stops covering it.
+              THE MARGIN IS THE MARK'S OWN INK EDGE, not a nudge, and it is read per breakpoint.
+              From `sm` up the emblem draws 79px of ink whose left edge lands 128.75px in from the
+              bar's trailing edge (25px right inset + 24.25px of transparent margin + 79px of ink);
+              on a phone the corner mark above is that same mark halved, drawing 39.4px of ink that
+              begins 55.9px in. Twelve pixels of air puts the end of this rule at 141px and 68px
+              respectively — and this row sits inside a column that already stops at the content
+              wrapper's own right padding, so each margin is that figure minus that padding: 52 on
+              a phone (`pr-4`) and 117 from `sm` up (`pr-6`). CHANGE EITHER EMBLEM'S `height` OR
+              `right` AND ITS NUMBER MOVES WITH IT — `tests/identity-strip-emblem.test.ts`
+              recomputes both ink edges from those two and fails if this clearance stops covering
+              them.
 
               IT IS THE RULE ALONE, deliberately. Reserving the column on the WRAPPER instead would
-              take the same 113px off the text block at every width, and a phone cannot spare it:
-              the column is ~223px at 375px and already carries four lines, so the title would wrap
-              a third time and clip against `overflow-hidden`. The name shrinks to fit and the
-              title is short and left-aligned; the rule was the only thing actually crossing the
-              mark. */}
-          <span aria-hidden="true" className="mt-[2px] mr-[125px] flex items-center sm:mr-[117px]">
+              take the same width off the text block at every breakpoint, and a phone cannot spare
+              it: the column is ~223px at 375px and already carries four lines, so the title would
+              wrap a third time and clip against `overflow-hidden`. The name carries its own copy
+              of the margin, for the same reason. */}
+          <span aria-hidden="true" className="mt-[2px] mr-[52px] flex items-center sm:mr-[117px]">
             <span className="h-[2px] flex-1" style={{ background: "#f47b20" }} />
             <span className="mx-[5px] h-[7px] w-[7px] rounded-full" style={{ background: "#f47b20" }} />
             <span
