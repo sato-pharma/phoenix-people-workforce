@@ -690,7 +690,10 @@ function renderDocumentCopy(
     <table class="doc-sheet">
       <thead><tr><td class="doc-mastcell">
         <header class="doc-mast">
-          <span class="doc-mast__side"></span>
+          <span class="doc-mast__side doc-mast__id">
+            <strong>${escapeHtml(systemLegalEntity.legalNameAr)}</strong>
+            <span dir="ltr">${escapeHtml(systemLegalEntity.legalNameEn)}</span>
+          </span>
           <span class="doc-mast__title">
             <strong>${escapeHtml(template.titleAr)}</strong>
             <em>${escapeHtml(template.subtitleAr)}</em>
@@ -999,9 +1002,17 @@ export function renderContractHtml(
     gap: 4mm;
     margin-bottom: 2.5mm;
     padding-bottom: 1.5mm;
-    border-bottom: 0.6pt solid ${HOUSE_COLORS.hair};
+    /* THE BRAND RULE. 0.7 mm of Brand Blue, on every document without exception — it is what
+       makes a page recognisable at arm's length, and it replaced the filled navy band that used to
+       do that job for a hundred times the toner. */
+    border-bottom: 0.7mm solid ${HOUSE_COLORS.blue};
   }
-  .doc-mast__side { flex: 0 0 30mm; }
+  .doc-mast__side { flex: 0 0 34mm; }
+  /* The registered name, opposite the mark. Latin is pinned LTR: the full stop that ends
+     "Sato Pharma L.L.C." is a neutral character, and in a right-to-left page it otherwise resolves
+     to the paragraph direction and prints at the FRONT — ".Sato Pharma L.L.C". */
+  .doc-mast__id { text-align: right; color: ${HOUSE_COLORS.muted}; font-size: 6.5pt; line-height: 1.5; }
+  .doc-mast__id strong { display: block; color: ${HOUSE_COLORS.deep}; font-size: 8pt; font-weight: 700; }
   .doc-mast__mark { display: flex; justify-content: flex-start; }
   /* The blue-on-light variant — the same artwork, byte for byte, that the source document embeds.
      The white-wordmark file used by the banded layout would vanish on this page. */
@@ -1017,15 +1028,15 @@ export function renderContractHtml(
     font-weight: 600;
   }
 
-  .doc-foot { padding: 2.5mm 0 0; border-top: 0.6pt solid #b9cad9; font-size: 8pt; }
+  .doc-foot { padding: 2.5mm 0 0; border-top: 0.6pt solid ${HOUSE_COLORS.hair}; font-size: 8pt; }
   /* One signing rule at each margin, as the source sets them. */
   .doc-foot__row { display: flex; justify-content: space-between; color: #33414f; }
 
   .doc-head {
     margin: 3mm 0 1.2mm;
     padding-bottom: 0.8mm;
-    border-bottom: 0.6pt solid #cfdce7;
-    color: #0f6ea8;
+    border-bottom: 0.6pt solid ${HOUSE_COLORS.hair};
+    color: ${HOUSE_COLORS.deep};
     font-size: 10.5pt;
     font-weight: 700;
   }
@@ -1037,12 +1048,16 @@ export function renderContractHtml(
   .doc-ident { width: 100%; margin-top: 0.5mm; border-collapse: collapse; table-layout: fixed; }
   .doc-ident th, .doc-ident td {
     padding: 1.1mm 2mm;
-    border: 0.5pt solid #cfdce7;
+    border: 0.5pt solid ${HOUSE_COLORS.hair};
     font-size: 8.5pt;
     text-align: right;
     vertical-align: middle;
   }
-  .doc-ident__label { width: 32mm; color: #33414f; font-weight: 700; }
+  .doc-ident__label { width: 32mm; color: ${HOUSE_COLORS.deep}; font-weight: 700; }
+  /* The zebra, at 6% of Brand Blue — the owner's one stated exception to the ink rule. It replaces
+     nothing here (the grid keeps its rules) but makes a long identity block scannable. */
+  .doc-ident tbody tr:nth-child(even) th,
+  .doc-ident tbody tr:nth-child(even) td { background: ${HOUSE_COLORS.tint}; }
 
   .doc-arts { margin-top: 1mm; }
   .doc-art {
@@ -1057,10 +1072,10 @@ export function renderContractHtml(
   }
   .doc-art:first-child { border-top: 0; }
   .doc-art__label { flex: 0 0 34mm; text-align: right; }
-  .doc-art__no { display: block; color: #0f6ea8; font-size: 9pt; font-weight: 700; }
+  .doc-art__no { display: block; color: ${HOUSE_COLORS.deep}; font-size: 9pt; font-weight: 700; }
   .doc-art__title {
     display: block;
-    color: #0f6ea8;
+    color: ${HOUSE_COLORS.deep};
     font-size: 8pt;
     font-weight: 700;
     line-height: 1.25;
@@ -1077,10 +1092,12 @@ export function renderContractHtml(
     break-inside: avoid;
     page-break-inside: avoid;
   }
-  .doc-sig th, .doc-sig td { padding: 1.2mm 2mm; border: 0.5pt solid #b9cad9; font-size: 8.5pt; }
+  .doc-sig th, .doc-sig td { padding: 1.2mm 2mm; border: 0.5pt solid ${HOUSE_COLORS.hair}; font-size: 8.5pt; }
   .doc-sig__corner { width: 34mm; }
-  .doc-sig__head { color: #0f6ea8; font-weight: 700; text-align: center; }
-  .doc-sig__party { font-weight: 700; text-align: right; vertical-align: middle; }
+  .doc-sig__head { color: ${HOUSE_COLORS.deep}; font-weight: 700; text-align: center; }
+  .doc-sig__party { font-weight: 700; text-align: right; vertical-align: middle; color: ${HOUSE_COLORS.deep}; }
+  .doc-sig tbody tr:nth-child(even) th,
+  .doc-sig tbody tr:nth-child(even) td { background: ${HOUSE_COLORS.tint}; }
   /* Who signs for the company: ONE row under the table, full width. A flex row with a wide gap keeps
      the name and the capacity side by side instead of stacked, and wrapping means an unusually long
      name drops to a second line rather than running off the sheet — this contract may never scroll

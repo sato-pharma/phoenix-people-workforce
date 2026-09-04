@@ -90,9 +90,17 @@ export const HOUSE_IDENTITY_CSS = `
   }
 
   /* ---------- the letterhead — no filled areas, anywhere ---------- */
-  .lh { display: flex; align-items: flex-end; justify-content: space-between; gap: 8mm; }
+  /* THE ROW IS PINNED LEFT-TO-RIGHT, and the direction is the whole point. These documents lay out
+     right-to-left, so a direction-following row puts the mark on the RIGHT — which is not what the
+     approved sheet shows, and not where the contract has always carried it. The mark belongs
+     physically LEFT on every document, Arabic or English, so the two never disagree. The text inside
+     each half keeps its own direction; only the order of the two halves is fixed here. */
+  .lh {
+    display: flex; direction: ltr;
+    align-items: flex-end; justify-content: space-between; gap: 8mm;
+  }
   .lh__mark img { display: block; width: ${HOUSE_MARK_WIDTH_MM}mm; height: auto; }
-  .lh__id { text-align: end; color: var(--phx-doc-muted); font-size: 6.5pt; line-height: 1.5; }
+  .lh__id { text-align: right; color: var(--phx-doc-muted); font-size: 6.5pt; line-height: 1.5; }
   .lh__id strong { display: block; color: var(--phx-doc-deep); font-size: 8pt; font-weight: 700; }
 
   /* The one element on every document without exception. 0.7 mm of rule, and it is what makes a
