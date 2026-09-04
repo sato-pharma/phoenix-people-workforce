@@ -115,7 +115,14 @@ export function runEmployeePortalNavigationTests() {
   assert.match(portalPrimitivesSource, /export function PortalDesktopTable/);
   assert.match(portalPrimitivesSource, /data-portal-desktop-table/);
   assert.match(portalShellSource, /employee-portal-mobile-safe/);
-  assert.match(portalShellSource, /overflow-x: hidden/);
+  // `clip`, not `hidden` — hidden makes body a scroll container and kills every sticky in
+  // the portal shell. This assertion pinned the defect; it now pins the fix.
+  assert.match(portalShellSource, /overflow-x: clip/);
+  assert.doesNotMatch(
+    portalShellSource,
+    /html, body \{ overflow-x: hidden; \}/,
+    "The portal shell must not reinstate `overflow-x: hidden` on html/body — it makes body a scroll container and every sticky nav scrolls away.",
+  );
   assert.doesNotMatch(
     employeePortalSource,
     /hidden xs:block|block xs:hidden|xs:hidden/,
