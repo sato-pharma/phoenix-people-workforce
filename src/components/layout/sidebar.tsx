@@ -1294,9 +1294,13 @@ function SidebarNav({
                         the chrome outweighed the content and the rail still scrolled. Dropping the
                         kicker takes each header from 54.5px to roughly 36px.
 
-                        Orange on all seven, open or closed (owner, 2026-09-04). Open state is
-                        carried by the icon tile and the chevron, so colour is free to be constant. */}
-                    <span className="min-w-0 flex-1 text-phx-md font-bold tracking-[-0.01em] text-phx-accent">
+                        White on all seven, open or closed (owner, 2026-09-04, reversing the orange
+                        of an hour earlier: "very noisy"). The rail is three levels and each one
+                        must read as a different colour — title white, group heading the dimmest
+                        warm grey at 10px caps, rows a mid grey at 13px. Orange is left to the ACTIVE
+                        row alone, which is what makes it findable. Open state is carried by the icon
+                        tile and the chevron, so the title colour is free to be constant. */}
+                    <span className="min-w-0 flex-1 text-phx-md font-bold tracking-[-0.01em] text-white">
                       {domain.name}
                     </span>
                     <span className="shrink-0 text-phx-2xs font-semibold text-slate-500">
