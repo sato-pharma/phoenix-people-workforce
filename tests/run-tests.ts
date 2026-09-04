@@ -965,6 +965,7 @@ import { runAutomatedPayrollNewHireNetColumnsTests } from "./automated-payroll-n
 import { runAutomatedPayrollNewHireWorkingDaysTotalTests } from "./automated-payroll-new-hire-working-days-total.test.ts";
 import { runMigrationsCairoDateGuardTests } from "./migrations-cairo-date-guard.test.ts";
 import { runMigrationGrandfatherStalenessTests } from "./migration-grandfather-staleness.test.ts";
+import { runStagingMigrationApplierTests } from "./staging-migration-applier.test.ts";
 import { runAutomatedPayrollRejectedExpensesTests } from "./automated-payroll-rejected-expenses.test.ts";
 import { runAutomatedPayrollExpenseResyncTests } from "./automated-payroll-expense-resync.test.ts";
 import { runAutomatedPayrollReadsDeductionsModuleTests } from "./automated-payroll-reads-deductions-module.test.ts";
@@ -2807,6 +2808,11 @@ await runTest(
   "grandfathered duplicate timestamps must still name a real duplicate (a dead exemption re-opens the "
   + "prefix and lies to every reader; three of four were already stale, and the fast check must fail on one)",
   runMigrationGrandfatherStalenessTests,
+);
+await runTest(
+  "staging migration applier (it can never reach production, the ledger insert survives a file ending in a "
+  + "comment, and it ignores the grace window the nightly check needs)",
+  runStagingMigrationApplierTests,
 );
 await runTest("automated payroll rejected expenses (an HR rejection must not be reimbursed; pending still flows)", runAutomatedPayrollRejectedExpensesTests);
 await runTest("automated payroll expense resync (an approval changed after the step was confirmed must reach payroll)", runAutomatedPayrollExpenseResyncTests);

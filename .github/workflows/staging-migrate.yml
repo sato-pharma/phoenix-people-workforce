@@ -1,0 +1,153 @@
+name: Apply Migrations to Staging
+
+# Keeps the staging database's schema level with main, automatically, on the merge that changes it.
+#
+# WHY. Until 2026-09-04 nothing applied migrations to staging at all — it was a hand step, and hand
+# steps get skipped. On 4 September staging was missing 13 migrations merged between 29 August and
+# 2 September (four columns, an index swap, four function bodies), the oldest 137 hours old. The
+# nightly Migration Drift Check had been red for four consecutive nights and had delivered four
+# Telegram alerts about it. The gap was never invisible. It was simply nobody's job, and a detector
+# whose only remedy is a human remembering is a detector that reports the same thing forever.
+#
+# This is the remedy. The drift check keeps its job — it now reports the cases this cannot fix
+# (production, and schema shape) rather than re-reporting a chore.
+#
+# WHY THE TRIGGER IS `push` TO MAIN AND NOT `pull_request`. A PR's migration is SUPPOSED to be
+# unapplied while it is under review; applying it from a branch would put a schema on staging that
+# main does not have, which is the drift this fixes, pointed the other way. `paths` narrows it to
+# merges that actually add or change a migration, so an ordinary merge starts nothing.
+#
+# THIS WORKFLOW CANNOT REACH PRODUCTION. The script it runs checks the target project ref against a
+# one-project allowlist before opening a connection and refuses anything else by name, and the only
+# secret wired in here is the staging one. Production migrations stay a deliberate, owner-approved,
+# one-at-a-time act (AGENTS.md §6) and must not be automated.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "supabase/migrations/**"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "List what would be applied, and apply nothing"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+# Never cancel a run in flight. cancel-in-progress would kill a job midway through a sweep of
+# several migrations, leaving some applied and some not — the one state that is worse than being
+# behind, because the next run's starting point is then unknown. Two merges in quick succession
+# queue instead; the second finds the first's work already recorded and applies only the remainder.
+concurrency:
+  group: staging-migrate
+  cancel-in-progress: false
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  CI_NODE_VERSION: "24"
+  COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    # `secrets` is not a valid context in a step-level `if:` — GitHub rejects the whole workflow
+    # with "Unrecognized named-value: 'secrets'" and every run goes red before any job starts.
+    # That exact mistake broke the drift check for a day on 2026-07-30. Surface the presence of the
+    # secret as a job-level env var instead: `env` CAN read secrets, and a step `if:` CAN read
+    # job-level `env`. Only the boolean lives here; the value itself is injected into the one step
+    # that uses it.
+    env:
+      HAS_STAGING_DB_URL: ${{ secrets.PHOENIX_STAGING_DATABASE_URL != '' }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        # Shallow on purpose. The drift check needs full history because it dates every migration
+        # for its 48-hour grace window; this job passes withCommitTimes:false and never asks, so
+        # fetching 400 commits of history to compute a number it discards is pure runner time.
+
+      - name: Enable Corepack (pnpm)
+        run: corepack enable
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        with:
+          node-version: ${{ env.CI_NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # The whole job, in one command. It prints the target ref before connecting, the count it
+      # found, and every file by name as it goes — so the run log is the evidence, not a summary
+      # of it.
+      - name: Apply missing migrations to staging
+        if: ${{ env.HAS_STAGING_DB_URL == 'true' }}
+        run: pnpm run migrate:staging
+        env:
+          PHOENIX_STAGING_DATABASE_URL: ${{ secrets.PHOENIX_STAGING_DATABASE_URL }}
+          # An env var, not `-- --dry-run`: see the applier's own note. On a push `inputs` is empty,
+          # so this is the empty string and the run applies, which is the point of the workflow.
+          PHOENIX_MIGRATE_DRY_RUN: ${{ inputs.dry_run }}
+
+      # Without this the job would show a green tick having done nothing — indistinguishable at a
+      # glance from "ran and applied everything". That silent-green shape is the thing this whole
+      # area of the repo keeps being bitten by, so say it out loud.
+      - name: Warn when the secret is missing
+        if: ${{ env.HAS_STAGING_DB_URL != 'true' }}
+        run: |
+          echo "::warning::PHOENIX_STAGING_DATABASE_URL is not set — NOTHING was applied and staging may now be behind main. Add it as a repository secret using the SESSION POOLER URI from Supabase (Project Settings -> Database -> Connection pooling) for project cifwmndunmlxjhyjugxa. A direct db.<ref>.supabase.co host is IPv6-only and a GitHub runner has no IPv6, so the direct URL will fail here with a connection timeout."
+
+      # ── Tell a human when staging did NOT get the migration. ───────────────────────────────
+      #
+      # A failing push-triggered workflow notifies nobody by default, exactly as a failing cron
+      # does: GitHub emails the run author, and this run's author is a merge. That silence is what
+      # let the schema-shape check sit red and unread for three days in August while six backup
+      # tables were anon-readable.
+      #
+      # NO STREAK COUNTER here, unlike the drift check, and that is deliberate rather than an
+      # omission. The streak exists to answer "how long has this been broken?" for a NIGHTLY job,
+      # whose failures all look alike. This job fires on a specific merge the owner just made, so
+      # the message can name that commit and the answer is inherent. And the nightly drift check is
+      # the backstop: if this fails and is ignored, the same migration is reported there ~48 hours
+      # later, with a streak count attached.
+      #
+      # continue-on-error so a Telegram outage can never turn a successful apply red, nor a failed
+      # one green. Failure-only: a message on every merge is how an alert becomes furniture.
+      - name: Notify Telegram on failure
+        if: ${{ failure() }}
+        continue-on-error: true
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_ALERT_CHAT_ID: ${{ secrets.TELEGRAM_ALERT_CHAT_ID }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          if [ -z "$TELEGRAM_BOT_TOKEN" ] || [ -z "$TELEGRAM_ALERT_CHAT_ID" ]; then
+            echo "::warning::Telegram alert not sent — TELEGRAM_BOT_TOKEN or TELEGRAM_ALERT_CHAT_ID is unset. Staging is behind main and nobody was told."
+            exit 0
+          fi
+          # NO parse_mode, for the reason the drift check documents: a commit message containing a
+          # lone underscore or asterisk opens a span that is never closed, and Telegram answers
+          # HTTP 400. An alert must never fail because of how it is formatted.
+          SUBJECT=$(printf '%s' "$COMMIT_MSG" | head -n 1)
+          TEXT=$(printf 'STAGING MIGRATION FAILED\n\nA migration merged to main was NOT applied to the staging database, so staging is now behind production.\n\nCommit: %s\n%s\n\nNothing on production is affected — this workflow cannot reach it. What is affected is every test that trusts staging to look like production.\n\n%s' "${COMMIT_SHA:0:12}" "$SUBJECT" "$RUN_URL")
+          # Capture the body, not just the status: a silent non-2xx is how the drift check's own
+          # alert step reported success while delivering nothing on its very first run.
+          HTTP=$(curl -sS --max-time 20 -X POST \
+            "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -d "chat_id=${TELEGRAM_ALERT_CHAT_ID}" \
+            -d "disable_web_page_preview=true" \
+            --data-urlencode "text=${TEXT}" \
+            -o /tmp/tg-response.json -w '%{http_code}')
+          echo "telegram sendMessage HTTP ${HTTP}"
+          if [ "$HTTP" != "200" ]; then
+            echo "::error::Telegram alert FAILED to deliver (HTTP ${HTTP}). Staging is behind main and the message reached nobody. Response: $(head -c 500 /tmp/tg-response.json 2>/dev/null)"
+            exit 1
+          fi
+          echo "Telegram alert delivered."
