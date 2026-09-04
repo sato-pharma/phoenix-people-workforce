@@ -21,8 +21,31 @@ import {
  * WHY it exists. The admin sidebar had 37 sections holding 54 rows, and 24 of those sections held
  * a single row whose label repeated the heading directly above it — the rail printed the same
  * words twice, 24 times, and a role seeing most of them scrolled a wall of headings. The grouping
- * merges those into 14 headings under 7 domains, which is the shape the owner reviewed and
- * approved on 2026-09-04.
+ * merges those into 13 headings under 7 domains — 14 until the heading pass below.
+ *
+ * THE HEADING PASS (owner, 2026-09-04, after reviewing the measured rail). The merge above left a
+ * second-order version of the same stutter it was built to remove. `groupAdminSections` blanks a
+ * heading that repeats one of its own visible rows, so "PEOPLE MANAGEMENT / People Management" did
+ * not print twice — it printed the heading as nothing at all, and FIVE of the 14 came out blank on
+ * the Super Admin's rail. His People domain read as two unlabelled bands followed by a third with a
+ * heading, which is harder to scan than the stutter was.
+ *
+ * Blanking is a fallback, not a layout. The five headings are renamed here so each says something
+ * its rows do not, and the two hiring groups are merged into one — measured against the union of
+ * every row label every admin role can see, so a rename cannot collide for some other seat. The
+ * outcome is pinned by role in tests/sidebar-domains.test.ts: no heading blanks for anybody now,
+ * and the assertion is what keeps it that way.
+ *
+ *   overview  "Command Center"      -> "Dashboards"      (row "Command Center" was the collision)
+ *   people    "People Management"   -> "Employees"       (row "People Management")
+ *   people    "Recruitment & Hiring"-> "Recruitment"     (row "Recruitment & Hiring"), and the
+ *                                                        separate "Hiring" group folds into it —
+ *                                                        two adjacent hiring bands in one domain
+ *   money     "Automated Payroll"   -> "Automation"      (row "Automated Payroll")
+ *   marketing "Marketing & ROI"     -> "Requests & ROI"  (row "Marketing & ROI")
+ *
+ * No row label, permission, gate or section moves. This layer runs strictly AFTER `getSections`,
+ * so it cannot grant or hide anything — it decides only what the bands are called.
  *
  * TWO RULES, both mechanical, both tested in tests/sidebar-domains.test.ts:
  *
@@ -62,7 +85,10 @@ export const adminSidebarDomains: readonly SidebarDomain[] = [
     desc: "Where the day starts — dashboards, the org chart and the 360 views.",
     icon: LayoutDashboard,
     groups: [
-      { heading: "Command Center", sectionIds: ["command-center"] },
+      // Not "Command Center": that is the label of a row inside this very group (the generic
+      // /admin one), and a heading repeating a row is blanked. Its rows are five different
+      // overview dashboards — CEO, SFE, Finance, Business Review and the admin-wide one.
+      { heading: "Dashboards", sectionIds: ["command-center"] },
       {
         heading: "Explore",
         sectionIds: ["organogram", "employee-360", "customer-360", "company-activity-report"],
@@ -85,9 +111,15 @@ export const adminSidebarDomains: readonly SidebarDomain[] = [
     desc: "Employees, attendance, leave and the hiring pipeline.",
     icon: UsersRound,
     groups: [
-      { heading: "People Management", sectionIds: ["people-management"] },
-      { heading: "Recruitment & Hiring", sectionIds: ["recruitment-hiring"] },
-      { heading: "Hiring", sectionIds: ["ceo-recruitment-candidates"] },
+      { heading: "Employees", sectionIds: ["people-management"] },
+      // One recruitment band, not two. "Recruitment & Hiring" blanked (it repeats its own first
+      // row) and "Hiring" sat directly beneath it, so the Super Admin read an unlabelled pair of
+      // rows followed by a headed pair, all four about hiring. The CEO-gated candidate section
+      // keeps its own gate; only the heading above it changes.
+      {
+        heading: "Recruitment",
+        sectionIds: ["recruitment-hiring", "ceo-recruitment-candidates"],
+      },
       {
         heading: "Workforce",
         // The four finance-* sections and vacation-sources are the ones the owner never saw while
@@ -119,7 +151,9 @@ export const adminSidebarDomains: readonly SidebarDomain[] = [
         heading: "Payroll",
         sectionIds: ["payroll", "expenses-outstation", "finance-payslips-center"],
       },
-      { heading: "Automated Payroll", sectionIds: ["automated-payroll"] },
+      // Both rows ARE the automated-payroll module (/admin/automated-payroll and its
+      // /finance sibling), so the heading names the capability rather than repeating the row.
+      { heading: "Automation", sectionIds: ["automated-payroll"] },
     ],
   },
   {
@@ -149,7 +183,9 @@ export const adminSidebarDomains: readonly SidebarDomain[] = [
     desc: "Marketing spend and ROI, and adverse-event reporting.",
     icon: Megaphone,
     groups: [
-      { heading: "Marketing & ROI", sectionIds: ["workspace-marketing-requests"] },
+      // The row "Marketing & ROI" is inside this group; the heading says what the three rows
+      // have in common instead of repeating the first one.
+      { heading: "Requests & ROI", sectionIds: ["workspace-marketing-requests"] },
       { heading: "Safety", sectionIds: ["pharmacovigilance"] },
     ],
   },

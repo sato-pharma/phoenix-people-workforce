@@ -133,30 +133,30 @@ export function runSidebarDomainsTests() {
   // repeats one of its own rows — "Automated Payroll" standing above a single row called "Automated
   // Payroll" is noise, so the heading is dropped.
   //
-  // The rule is deliberate and the shape below is the one the owner reviewed on 2026-09-04. What was
-  // missing is that the outcome is EMERGENT and ROLE-DEPENDENT: the same group renders headed for one
-  // role and blank for another, purely because the colliding row is gated away from the second.
-  // `money / Automated Payroll` blanks for the Super Admin and renders for the CEO for exactly that
-  // reason. Nothing measured it, so a grouping edit could add a sixth blank band — or turn a labelled
-  // one blank for a single seat — and no check would say a word.
+  // The outcome is EMERGENT and ROLE-DEPENDENT: the same group renders headed for one role and blank
+  // for another, purely because the colliding row is gated away from the second. `money / Automated
+  // Payroll` blanked for the Super Admin and rendered for the CEO for exactly that reason. Nothing
+  // measured it, so a grouping edit could add a blank band — or turn a labelled one blank for a
+  // single seat — and no check would say a word.
+  //
+  // Every list is EMPTY, and that is the assertion. When this pin was written on 2026-09-04 five
+  // headings blanked on the Super Admin's rail and his People domain read as two unlabelled bands
+  // above a third that had a heading. The owner's heading pass renamed the five collisions and
+  // merged the two hiring groups (see the header of src/config/sidebar-domains.ts), so no heading
+  // blanks for anybody now. Blanking stays in groupAdminSections as the fallback it was meant to be;
+  // this is what stops it becoming the layout again.
   //
   // Pinned by identity rather than by count, so a heading that started blanking and one that stopped
-  // cannot cancel out. A change here is not automatically wrong; it is a change to what the owner
-  // approved, and it should be a decision rather than a side effect.
+  // cannot cancel out. A row LABEL change can trip this as easily as a heading change — renaming a
+  // row to match the band above it is exactly the collision the pass removed.
   const BLANK_HEADINGS_BY_ROLE: Record<string, string[]> = {
-    "SFE Manager": ["marketing/Marketing & ROI"],
+    "SFE Manager": [],
     "Finance Manager": [],
-    "Financial Advisor": ["marketing/Marketing & ROI", "people/People Management"],
-    "HR Advisory": ["people/People Management", "people/Recruitment & Hiring"],
-    "HR Operations": ["people/People Management"],
-    CEO: ["marketing/Marketing & ROI", "people/People Management"],
-    "Super Admin": [
-      "marketing/Marketing & ROI",
-      "money/Automated Payroll",
-      "overview/Command Center",
-      "people/People Management",
-      "people/Recruitment & Hiring",
-    ],
+    "Financial Advisor": [],
+    "HR Advisory": [],
+    "HR Operations": [],
+    CEO: [],
+    "Super Admin": [],
   };
 
   // The heading a group was CONFIGURED with, so a blanked one can still be named in the failure.
@@ -178,8 +178,10 @@ export function runSidebarDomainsTests() {
       role as PhoenixRole,
     );
     const blanks: string[] = [];
+    let headingsRendered = 0;
     for (const domain of groupAdminSections(gated)) {
       for (const group of domain.groups) {
+        headingsRendered += 1;
         if (group.heading) continue;
         const configured =
           group.sections
@@ -189,6 +191,12 @@ export function runSidebarDomainsTests() {
       }
     }
     rolesMeasured += 1;
+    // Every expected list is empty, so an empty rail would satisfy the comparison below by having
+    // nothing to compare. This is what stops that reading as a pass.
+    assert.ok(
+      headingsRendered >= 8,
+      `${role}: measured ${headingsRendered} rendered heading bands — the rail collapsed, so the blank-heading check below has nothing to say`,
+    );
     assert.deepEqual(
       blanks.sort(),
       [...expected].sort(),
