@@ -88,7 +88,7 @@ var TZ = 'Africa/Cairo';
  * feed's COLUMNS. A sheet that silently keeps the previous design is indistinguishable from one
  * where the update failed.
  */
-var LAYOUT_VERSION = 'v6-phoenix';
+var LAYOUT_VERSION = 'v7-phoenix';
 
 var TAB_SUMMARY = 'Summary';
 var TAB_DAILY = 'Daily Dashboard';
@@ -101,7 +101,14 @@ var ROW_TITLE = 1;
 var ROW_SUBTITLE = 2;
 
 // Summary tab geography. Fixed rows, because tiles and charts must not move under the reader.
-var SUMMARY_COLS = 6;
+// Seven, not six, because six put the two tiles in a row edge to edge: the black label band of
+// the left card ran straight into the black label band of the right one, and what the eye saw was
+// one wide band with two headings in it, not two cards. A card needs air around it or it stops
+// being a card. Column 4 is that air — narrow, empty, and never written to.
+var SUMMARY_COLS = 7;
+var TILE_COL_LEFT = 1;
+var TILE_COL_RIGHT = 5;
+var TILE_GUTTER_COL = 4;
 var TILE_ROWS = [4, 8, 12];
 var SUMMARY_SPARK_TITLE_ROW = 16;
 var SUMMARY_SPARK_ROW = 17;
@@ -737,6 +744,39 @@ var STALE_MARKER = '⚠ STALE';
 var STALE_BG = '#b91c1c';
 var STALE_FG = '#ffffff';
 
+/**
+ * A span of minutes, in the unit a person would say it in.
+ *
+ * This tile read "23249 min" on the first live build. That is sixteen days, and nobody reads it as
+ * sixteen days — it reads as a number that has gone wrong, which is worse than the fact it is
+ * reporting. The figure is real: it is dominated by the backfill, where CVs that arrived months
+ * ago only reached Drive when this pipeline was first run.
+ */
+function humanDuration_(minutes) {
+  if (minutes === null || minutes === undefined || isNaN(minutes)) return '—';
+  if (minutes < 1) return 'under a minute';
+  if (minutes < 60) return Math.round(minutes) + ' min';
+
+  var hours = minutes / 60;
+  if (hours < 48) return (hours < 10 ? hours.toFixed(1) : String(Math.round(hours))) + ' hours';
+
+  var days = hours / 24;
+  return (days < 10 ? days.toFixed(1) : String(Math.round(days))) + ' days';
+}
+
+/**
+ * An ISO day from the feed, as a real date rather than the text of one.
+ *
+ * Built from PARTS. `new Date('2026-07-24')` is UTC midnight, and rendering UTC midnight in Cairo
+ * is the off-by-one that turns a Friday into a Thursday on every row of the tab.
+ */
+function asCairoDate_(value) {
+  var text = String(value === null || value === undefined ? '' : value).trim();
+  var parts = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
+  if (!parts) return value;
+  return new Date(Number(parts[1]), Number(parts[2]) - 1, Number(parts[3]));
+}
+
 /** The subtitle cells that carry a live refresh stamp, and are therefore safe to repaint. */
 function stampedSubtitles(ss) {
   var out = [];
@@ -913,15 +953,15 @@ function writeSummary_(ss, summaryRows, dailyRows, lifecycleRows, stamp) {
   var share = (total && onDrive !== null) ? Math.round((onDrive / total) * 100) : null;
   var minutes = medianMinutesToDrive_(lifecycleRows);
 
-  fillTile_(sheet, TILE_ROWS[0], 1, metrics['CVs in total'] || '—', INK);
-  fillTile_(sheet, TILE_ROWS[0], 4, metrics['CVs received today'] || '—', INK);
-  fillTile_(sheet, TILE_ROWS[1], 1,
+  fillTile_(sheet, TILE_ROWS[0], TILE_COL_LEFT, metrics['CVs in total'] || '—', INK);
+  fillTile_(sheet, TILE_ROWS[0], TILE_COL_RIGHT, metrics['CVs received today'] || '—', INK);
+  fillTile_(sheet, TILE_ROWS[1], TILE_COL_LEFT,
     (metrics['Saved in Google Drive'] || '—') + (share === null ? '' : '  (' + share + '%)'),
     share === 100 ? GOOD : INK);
-  fillTile_(sheet, TILE_ROWS[1], 4, metrics['Still missing from Drive'] || '—', missing ? BAD : GOOD);
-  fillTile_(sheet, TILE_ROWS[2], 1, metrics['Drive errors'] || '—', errors ? BAD : GOOD);
-  fillTile_(sheet, TILE_ROWS[2], 4,
-    minutes === null ? '—' : (minutes < 1 ? 'under a minute' : Math.round(minutes) + ' min'),
+  fillTile_(sheet, TILE_ROWS[1], TILE_COL_RIGHT, metrics['Still missing from Drive'] || '—', missing ? BAD : GOOD);
+  fillTile_(sheet, TILE_ROWS[2], TILE_COL_LEFT, metrics['Drive errors'] || '—', errors ? BAD : GOOD);
+  fillTile_(sheet, TILE_ROWS[2], TILE_COL_RIGHT,
+    humanDuration_(minutes),
     INK);
 
   // ── Where they came from ──
@@ -972,16 +1012,17 @@ function buildSummaryLayout_(sheet, dailyRows) {
   titleBand_(sheet, SUMMARY_COLS, '  CV Lifecycle');
 
   for (var c = 1; c <= SUMMARY_COLS; c++) sheet.setColumnWidth(c, 150);
+  sheet.setColumnWidth(TILE_GUTTER_COL, 18);
 
   // A thin gap under each row of tiles, so they read as cards rather than as a grid.
   for (var t = 0; t < TILE_ROWS.length; t++) sheet.setRowHeight(TILE_ROWS[t] + 3, 12);
 
-  buildTile_(sheet, TILE_ROWS[0], 1, 'CVs IN TOTAL');
-  buildTile_(sheet, TILE_ROWS[0], 4, 'RECEIVED TODAY');
-  buildTile_(sheet, TILE_ROWS[1], 1, 'SAVED IN GOOGLE DRIVE');
-  buildTile_(sheet, TILE_ROWS[1], 4, 'STILL MISSING FROM DRIVE');
-  buildTile_(sheet, TILE_ROWS[2], 1, 'DRIVE ERRORS');
-  buildTile_(sheet, TILE_ROWS[2], 4, 'TYPICAL TIME PHOENIX TO DRIVE');
+  buildTile_(sheet, TILE_ROWS[0], TILE_COL_LEFT, 'CVs IN TOTAL');
+  buildTile_(sheet, TILE_ROWS[0], TILE_COL_RIGHT, 'RECEIVED TODAY');
+  buildTile_(sheet, TILE_ROWS[1], TILE_COL_LEFT, 'SAVED IN GOOGLE DRIVE');
+  buildTile_(sheet, TILE_ROWS[1], TILE_COL_RIGHT, 'STILL MISSING FROM DRIVE');
+  buildTile_(sheet, TILE_ROWS[2], TILE_COL_LEFT, 'DRIVE ERRORS');
+  buildTile_(sheet, TILE_ROWS[2], TILE_COL_RIGHT, 'TYPICAL TIME PHOENIX TO DRIVE');
 
   // ── The daily shape, as one sparkline ──
   sectionTitle_(sheet, SUMMARY_SPARK_TITLE_ROW, SUMMARY_COLS, 'How many arrive each day');
@@ -1010,7 +1051,7 @@ function buildSummaryLayout_(sheet, dailyRows) {
   var donut = sheet.newChart()
     .setChartType(Charts.ChartType.PIE)
     .addRange(sheet.getRange(SUMMARY_CHANNEL_HEADER_ROW, 1, 4, 2))
-    .setPosition(SUMMARY_CHANNEL_TITLE_ROW, 4, 0, 0)
+    .setPosition(SUMMARY_CHANNEL_TITLE_ROW, TILE_COL_RIGHT, 0, 0)
     .setOption('title', 'Share of all CVs')
     .setOption('pieHole', 0.45)
     .setOption('legend', { position: 'labeled' })
@@ -1309,7 +1350,15 @@ function writeDaily_(ss, rows, stamp) {
 
   clearDataBelow_(sheet, DAILY_HEADER_ROW, header.length);
   if (body.length) {
-    sheet.getRange(DAILY_HEADER_ROW + 1, 1, body.length, header.length).setValues(body);
+    // The day arrives as the text "2026-07-24". Left as text it stays "2026-07-24" on the face of
+    // the sheet, which is a database key, not a date — and it cannot be sorted or charted as one.
+    var shaped = [];
+    for (var r = 0; r < body.length; r++) {
+      var line = body[r].slice();
+      line[0] = asCairoDate_(line[0]);
+      shaped.push(line);
+    }
+    sheet.getRange(DAILY_HEADER_ROW + 1, 1, body.length, header.length).setValues(shaped);
   }
   fitBody_(sheet, TAB_DAILY, DAILY_HEADER_ROW, header.length, body.length);
 
@@ -1332,6 +1381,9 @@ function buildDailyLayout_(sheet, header) {
   // Whole numbers. Without this a count of 7 can render as 7.00 once the column has ever held a
   // formatted value, which looks like a bug in the data.
   sheet.getRange(DAILY_HEADER_ROW + 1, 2, FIXED_RANGE_ROWS, header.length - 1).setNumberFormat('#,##0');
+  sheet.getRange(DAILY_HEADER_ROW + 1, 1, FIXED_RANGE_ROWS, 1)
+    .setNumberFormat('ddd dd MMM yyyy')
+    .setHorizontalAlignment('left');
 
   var dailyBody = sheet.getRange(DAILY_HEADER_ROW + 1, 1, FIXED_RANGE_ROWS, header.length);
   var dailyBanding = dailyBody.applyRowBanding(SpreadsheetApp.BandingTheme.LIGHT_GREY, false, false);
