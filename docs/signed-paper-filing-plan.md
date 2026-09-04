@@ -102,5 +102,32 @@ the missing-slot refusal. Each proved red before it is quoted as green.
 
 ---
 
-**Two protected actions sit in here and stop for the owner's word:** applying either migration to
-production, and merging to `main`.
+## Where it stands — 2026-09-04
+
+**All six phases are built, and the loop is closed.** Confirming a signature records the date,
+files the paper, and opens the print tab, and each of the three outcomes is reported in words.
+
+Verified on staging against **CN-0006**: three filed copies, each badged **Issued by Phoenix**, the
+newest reading `835 KB · 2 pages`; the View link serves 854,583 bytes of `%PDF-1.4`. Measured at
+1440px and 375px — `main` is 375/375 with no inner scroller, after the generated filename was made
+to **wrap** rather than sit in its own 188px horizontal scroller.
+
+Four suites are registered and each was proved red on its own headline assertion first:
+`hiring-pack-paper-filing`, `hiring-pack-paper-artwork`, `hiring-document-file-source`, plus the
+existing hiring-pack suites.
+
+### What is deliberately not built yet
+
+**A company template cannot be signed at all**, so it cannot be filed either. `POST /sign` accepts
+only `SIGNABLE_DOCUMENTS` — the seven built-in papers — so `resolveCustomFilingSlot` and the
+`files_under_document_id` column are in place and correct but unreachable. Making them reachable is
+two separate pieces of work: a Studio control to choose the slot, and a decision about where a
+company template's signed date is stored, since it has no `*_signed_at` column of its own and one
+per template is not the answer. Production holds **zero** company templates today, so nothing is
+waiting on it.
+
+---
+
+**Two protected actions sit in here and stop for the owner's word:** applying the three migrations
+to production, and merging to `main`. Neither has been done. Merging first is safe — the code
+recognises the unmigrated window and says so, signatures still record and papers still print.
