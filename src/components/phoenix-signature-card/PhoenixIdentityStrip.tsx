@@ -137,7 +137,7 @@ export function PhoenixIdentityStrip({
 
       {/* Content sits ABOVE the wave, not on it — hence the bottom inset. */}
       <div className="absolute inset-x-0 bottom-[16px] top-0 z-10 flex min-w-0 items-center gap-3 px-3 sm:px-4">
-        <span className="relative block h-14 w-14 shrink-0 sm:h-[58px] sm:w-[58px]">
+        <span className="relative block h-[60px] w-[60px] shrink-0 sm:h-[66px] sm:w-[66px]">
           <span
             aria-hidden="true"
             className="absolute inset-0 rounded-xl"
@@ -152,12 +152,12 @@ export function PhoenixIdentityStrip({
                 alt={`${name} portrait`}
                 className="object-cover object-top"
                 fill
-                sizes="58px"
+                sizes="66px"
                 src={photoSrc}
                 unoptimized
               />
             ) : (
-              <span className="flex h-full w-full items-center justify-center text-base font-black text-[#f47b20]">
+              <span className="flex h-full w-full items-center justify-center text-lg font-black text-[#f47b20]">
                 {initialsFor(name)}
               </span>
             )}
@@ -166,19 +166,36 @@ export function PhoenixIdentityStrip({
 
         <span
           aria-hidden="true"
-          className="hidden h-10 w-px shrink-0 sm:block"
+          className="hidden h-12 w-px shrink-0 sm:block"
           style={{ background: "linear-gradient(180deg, transparent, #e0d0bc 20%, #e0d0bc 80%, transparent)" }}
         />
 
-        {/* `w-fit` is what makes the rule and the title take the NAME's width rather than the
-            column's — the same relationship the card builds with a measured pixel width. */}
-        <div className="w-fit min-w-0 max-w-full">
+        {/* The name ceiling is 2.4rem (38.4px) and that number is MEASURED, not chosen. The
+            strip's inner content box is 76px at `sm`, and the tallest real case — "HR OPERATIONS
+            COORDINATOR" over a name — came to 61px at 2rem, leaving 24px. 2.4rem spends 7 of
+            those and keeps 16px of clearance, so nothing clips. Raise it further only after
+            re-measuring `textColumn.bottom` against the strip height on the HR landing, which is
+            the worst case: it carries the longest title in the system.
+
+            WHY IT MATTERS THAT THIS IS BIG. The KPI numerals immediately below are 30px at weight
+            900. At the old 1.7rem cap the person's own name was SMALLER and four times lighter
+            than the dashboard counters under it, which is what the owner saw.
+
+            THIS BLOCK SPANS THE BAR, and that is a correction, not a drift from the card.
+            It was `w-fit`, so the rule and title took the NAME's width — the card's relationship,
+            faithfully copied. On a 1084px admin bar it measured a disaster: all content ended at
+            208px and 81% of the strip was empty cream. The owner, 2026-09-03: "The banner is too
+            small. It's too small in comparison with the dashboard." The card can hug its name
+            because it is nearly square; a strip four times wider cannot. So the column flexes and
+            the rule runs out across the bar. Height is untouched — that part of his instruction
+            still holds. */}
+        <div className="flex min-w-0 flex-1 flex-col">
           <p
             className="italic font-medium text-[#2a3a5c]"
             ref={nameBoxRef}
             style={{
               fontFamily: '"Pinyon Script", cursive',
-              fontSize: nameFontPx ? `${nameFontPx}px` : "clamp(1.15rem, 3.4vw, 1.7rem)",
+              fontSize: nameFontPx ? `${nameFontPx}px` : "clamp(1.35rem, 4.2vw, 2.4rem)",
               lineHeight: 1.15,
               margin: 0,
               whiteSpace: "nowrap",
@@ -191,7 +208,10 @@ export function PhoenixIdentityStrip({
           <span aria-hidden="true" className="mt-[3px] flex items-center">
             <span className="h-px flex-1" style={{ background: "#f47b20" }} />
             <span className="mx-[3px] h-[5px] w-[5px] rounded-full" style={{ background: "#f47b20" }} />
-            <span className="h-px w-[20%]" style={{ background: "rgba(244,123,32,0.5)" }} />
+            <span
+              className="h-px flex-[2]"
+              style={{ background: "linear-gradient(90deg, rgba(244,123,32,0.5), rgba(244,123,32,0))" }}
+            />
           </span>
           {/* THE TITLE WRAPS, and must keep wrapping. At 0.2em tracking "HR OPERATIONS
               COORDINATOR" is about 200px, wider than the name above it and wider than the column
@@ -200,11 +220,11 @@ export function PhoenixIdentityStrip({
               is blind to (AGENTS.md §4). Two wrapped lines cost 12px and the box has 16px spare at
               its tightest. */}
           <p
-            className="break-words text-center font-bold uppercase"
+            className="break-words text-left font-bold uppercase"
             style={{
               color: "#f47b20",
-              fontSize: "10px",
-              letterSpacing: "0.2em",
+              fontSize: "11px",
+              letterSpacing: "0.18em",
               lineHeight: 1.2,
               margin: "3px 0 0",
             }}
@@ -214,7 +234,7 @@ export function PhoenixIdentityStrip({
         </div>
 
         {employeeCode ? (
-          <span className="ml-auto shrink-0 pl-2 text-[11px] font-semibold text-[#2a3a5c] opacity-70">
+          <span className="ml-auto shrink-0 pl-3 text-[12px] font-semibold text-[#2a3a5c] opacity-80">
             {employeeCode}
           </span>
         ) : null}
