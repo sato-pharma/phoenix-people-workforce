@@ -916,6 +916,7 @@ import { runRscClientFunctionPropTests } from "./rsc-client-function-props.test.
 import { runDirectOrdersInvoiceScanTests } from "./direct-orders-invoice-scan.test.ts";
 import { runDirectOrdersArabicSearchTests } from "./direct-orders-arabic-search.test.ts";
 import { runCrmBrickCentroidsCacheTests } from "./crm-brick-centroids-cache.test.ts";
+import { runBrickCentroidCoverageTests } from "./brick-centroid-coverage.test.ts";
 import { runDirectOrdersAreaAutofillTests } from "./direct-orders-area-autofill.test.ts";
 import { runDirectOrdersExtraAreaGrantTests } from "./direct-orders-extra-area-grants.test.ts";
 import { runDirectOrdersShareLinkControlsTests } from "./direct-orders-share-link-controls.test.ts";
@@ -2789,6 +2790,7 @@ await runTest("client bundle boundary (no \"use client\" module reaches node:cry
 await runTest("direct orders invoice scan (a dim page gains real contrast, a failed prepare returns the original, EXIF rotation is applied, no binarisation, the reader is sent the PREPARED image)", runDirectOrdersInvoiceScanTests);
 await runTest("direct orders Arabic search (every fold survives, the strip class never swallows a letter, an unnamed customer is ranked down not hidden, both birth paths are searched)", runDirectOrdersArabicSearchTests);
 await runTest("CRM brick-centroids cache (shared Data Cache not a per-segment module var, 300s TTL unchanged, sos-reference tag, DB read byte-identical, catch OUTSIDE the cache so a transient error is never cached as [])", runCrmBrickCentroidsCacheTests);
+await runTest("brick centroid coverage (numerator and denominator count the SAME population — an orphan centroid whose brick is retired can never make Geo readiness report more located bricks than exist, which is what kept the Build geo index button hidden)", runBrickCentroidCoverageTests);
 await runTest("direct orders area auto-fill (the body carries pointers only, the server copies the catalogue row and fails closed, a picked pharmacy never carries client geography)", runDirectOrdersAreaAutofillTests);
 await runTest("direct orders extra area grants (B-76 gets Alex-BHR, nobody else gets anything, the grant widens the seat bound instead of replacing it, and only the Direct Orders service may read it)", runDirectOrdersExtraAreaGrantTests);
 await runTest("direct orders share-link controls (export-gated not read-gated, passcode in the body never the URL, expiry mandatory and capped, scope frozen at creation, nothing cached or indexed)", runDirectOrdersShareLinkControlsTests);

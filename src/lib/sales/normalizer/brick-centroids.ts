@@ -212,28 +212,52 @@ async function collectFieldGpsCentroids(): Promise<Map<string, { lat: number; ln
   return result;
 }
 
+/**
+ * Count a coverage summary over ONE population: bricks that still exist.
+ *
+ * `geo_locations` keeps a centroid row after its brick is retired — in production 446 of the 1,142
+ * `brick_centroid` rows are orphans whose `source_key` matches no brick. Counting the numerator
+ * over the raw table while the denominator came from the live brick list put the two halves on
+ * different populations, so the normalizer workspace rendered "949 / 698 bricks located" and its
+ * `success < totalBricks` gate — the ONLY route to the Build geo index button — could never fire,
+ * hiding the 4 live bricks that still have no centroid at all.
+ *
+ * Exported pure so the invariant is testable without a database: a coverage summary may never
+ * report more located bricks than exist.
+ */
+export function summarizeBrickCentroidCoverage(
+  brickIds: readonly string[],
+  rows: readonly { geocode_status: string | null; source_key: string | null }[],
+): BrickCentroidCoverage {
+  const live = new Set(brickIds.map((id) => String(id ?? "")));
+  const liveRows = rows.filter((row) => live.has(String(row.source_key ?? "")));
+  return {
+    cached: liveRows.length,
+    mismatch: liveRows.filter((row) => row.geocode_status === "region_mismatch").length,
+    success: liveRows.filter((row) => row.geocode_status === "success").length,
+    totalBricks: brickIds.length,
+  };
+}
+
 export async function getBrickCentroidCoverage(): Promise<BrickCentroidCoverage> {
   const [refs, cachedRows] = await Promise.all([
     loadSalesReferenceData(),
-    pageAll<{ geocode_status: string | null }>(async (from, to) => {
+    pageAll<{ geocode_status: string | null; source_key: string | null }>(async (from, to) => {
       const { data, error } = await getSupabaseAdmin()
         .from("geo_locations")
-        .select("geocode_status")
+        .select("source_key, geocode_status")
         .eq("source_type", SOURCE_TYPE)
         // ORDER BY id: offset pages must be stably ordered or rows silently vanish (#1446).
         .order("id", { ascending: true })
         .range(from, to);
       if (error) throw error;
-      return (data ?? []) as { geocode_status: string | null }[];
+      return (data ?? []) as { geocode_status: string | null; source_key: string | null }[];
     }),
   ]);
-  const success = cachedRows.filter((r) => r.geocode_status === "success").length;
-  return {
-    cached: cachedRows.length,
-    mismatch: cachedRows.filter((r) => r.geocode_status === "region_mismatch").length,
-    success,
-    totalBricks: (refs.bricks ?? []).length,
-  };
+  return summarizeBrickCentroidCoverage(
+    (refs.bricks ?? []).map((brick) => brick.brickId),
+    cachedRows,
+  );
 }
 
 export async function loadBrickCentroids(): Promise<Map<string, BrickCentroid>> {
