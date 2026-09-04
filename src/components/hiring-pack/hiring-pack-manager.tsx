@@ -904,6 +904,34 @@ export function HiringPackManager({
     }
   }, [applyPack, factsForm, pack, readError]);
 
+  /**
+   * Printing opens the rendered document in its own tab, where the browser's own print dialog does
+   * the rest. That is on purpose: the browser is the only thing in the stack that lays Arabic out
+   * correctly, and "Print → Save as PDF" from that tab produces a real PDF with selectable text.
+   *
+   * RETURNS WHETHER A TAB ACTUALLY OPENED. `window.open` answers null when a popup blocker stops
+   * it, and that silence is the difference between "your paper is printing" and nothing visibly
+   * happening at all. Confirming a signature reports it as its own outcome.
+   */
+  const openPrint = useCallback(
+    (document: PrintableDocument, versionId?: string, copiesOverride?: number): boolean => {
+      if (!pack) return false;
+      // AN EXPLICIT COUNT WINS, and it has to, because this function ALWAYS sends `copies` in the
+      // URL. The server has a default of its own — a company template's is on its row — but a
+      // parameter that is always present means the server's default is never reached. A caller with
+      // no Copies box on screen, which is every company-template row, passes the template's own
+      // number here rather than letting the box's absence silently mean one.
+      const count = copiesOverride ?? resolveCopyCount(copies[document], document);
+      // No `version` parameter is the normal case, and it does NOT mean "print the current text":
+      // the route resolves the version this employee signed. The parameter is only for deliberately
+      // asking for a superseded template from the Archive.
+      const version = versionId ? `&version=${encodeURIComponent(versionId)}` : "";
+      const url = `/api/hiring-pack/${encodeURIComponent(pack.employee.hrId)}/print?document=${document}&copies=${count}${version}`;
+      return window.open(url, "_blank", "noopener,noreferrer") !== null;
+    },
+    [copies, pack],
+  );
+
   const recordSignature = useCallback(
     async (document: HiringPackDocument) => {
       if (!pack) return;
@@ -928,39 +956,42 @@ export function HiringPackManager({
           setError(await readError(response));
           return;
         }
-        applyPack((await response.json()) as HiringPackData);
-        setNotice(`${documentLabel(document)} recorded as signed on ${formatDate(signedDate)}.`);
+        const result = (await response.json()) as {
+          filing: { filed: true; fileName: string; slotName: string } | { filed: false; why: string };
+          pack: HiringPackData;
+        };
+        applyPack(result.pack);
+
+        // ─────────────────────────────────────────────────────────────────────────────────────
+        // THE SECOND OUTCOME. The signature is recorded by the time this runs, so everything
+        // below is about telling the truth about the other two things — whether a copy reached
+        // the employee's file, and whether the paper is on its way to a printer.
+        //
+        // The print tab is opened AFTER the response rather than before it. Opening first would
+        // feel faster, and would put a tab in front of somebody a moment before telling them
+        // their signature failed to record.
+        // ─────────────────────────────────────────────────────────────────────────────────────
+        const printed = openPrint(document);
+        const signedLine = `${documentLabel(document)} recorded as signed on ${formatDate(signedDate)}.`;
+        const printLine = printed
+          ? "The print tab is open."
+          : "The print tab was blocked by your browser — use Print on the row to open it.";
+
+        if (result.filing.filed) {
+          setNotice(`${signedLine} A copy is filed under "${result.filing.slotName}". ${printLine}`);
+        } else {
+          // NOT `setError`. Nothing failed that the person did: the signature is recorded and the
+          // paper prints. Putting this in the error banner would report a successful confirm as a
+          // failure, and the next thing somebody does with a failed confirm is do it again.
+          setNotice(`${signedLine} ${result.filing.why} ${printLine}`);
+        }
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : "Could not record the signature.");
       } finally {
         setBusy("");
       }
     },
-    [applyPack, pack, readError, signDates],
-  );
-
-  /**
-   * Printing opens the rendered document in its own tab, where the browser's own print dialog does
-   * the rest. That is on purpose: the browser is the only thing in the stack that lays Arabic out
-   * correctly, and "Print → Save as PDF" from that tab produces a real PDF with selectable text.
-   */
-  const openPrint = useCallback(
-    (document: PrintableDocument, versionId?: string, copiesOverride?: number) => {
-      if (!pack) return;
-      // AN EXPLICIT COUNT WINS, and it has to, because this function ALWAYS sends `copies` in the
-      // URL. The server has a default of its own — a company template's is on its row — but a
-      // parameter that is always present means the server's default is never reached. A caller with
-      // no Copies box on screen, which is every company-template row, passes the template's own
-      // number here rather than letting the box's absence silently mean one.
-      const count = copiesOverride ?? resolveCopyCount(copies[document], document);
-      // No `version` parameter is the normal case, and it does NOT mean "print the current text":
-      // the route resolves the version this employee signed. The parameter is only for deliberately
-      // asking for a superseded template from the Archive.
-      const version = versionId ? `&version=${encodeURIComponent(versionId)}` : "";
-      const url = `/api/hiring-pack/${encodeURIComponent(pack.employee.hrId)}/print?document=${document}&copies=${count}${version}`;
-      window.open(url, "_blank", "noopener,noreferrer");
-    },
-    [copies, pack],
+    [applyPack, openPrint, pack, readError, signDates],
   );
 
   /**

@@ -18,6 +18,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { FILE_SOURCE_BADGE } from "@/lib/hiring-documents/file-source-badge";
 import type {
   HiringDocumentDefinition,
   HiringDocumentEmployeeRow,
@@ -540,17 +541,25 @@ export function HiringDocumentCapture({
                 className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-phx-line bg-phx-paper px-3 py-2"
                 key={file.id}
               >
-                <div className="min-w-0 overflow-x-auto">
-                  <p className="whitespace-nowrap text-sm font-semibold text-phx-ink">{file.fileName}</p>
-                  <p className="mt-0.5 whitespace-nowrap text-xs text-phx-ink-soft">
+                {/*
+                  WRAPS, NEVER SCROLLS. An issued file's name is long by construction — the paper,
+                  the employee and the signed date, so it says what it is once it has been
+                  downloaded and left this screen. At 375px that name was 188px wider than its box
+                  and sat in its own horizontal scroller; wrapping is the permitted answer and
+                  shortening the name is not, because the ellipsis ban and the name's whole purpose
+                  both point the other way.
+                */}
+                <div className="min-w-0 flex-1 basis-full sm:basis-auto">
+                  <p className="break-words text-sm font-semibold text-phx-ink">{file.fileName}</p>
+                  <p className="mt-0.5 break-words text-xs text-phx-ink-soft">
                     {formatUploadedAt(file.uploadedAt)} · {formatSize(file.sizeBytes)}
                     {file.pageCount ? ` · ${file.pageCount} ${file.pageCount === 1 ? "page" : "pages"}` : ""}
                     {file.uploadedByName ? ` · ${file.uploadedByName}` : ""}
                   </p>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
-                  <Badge variant={file.source === "scan" ? "success" : "neutral"}>
-                    {file.source === "scan" ? "Scanned in Phoenix" : "Uploaded as-is"}
+                  <Badge tone={FILE_SOURCE_BADGE[file.source].tone}>
+                    {FILE_SOURCE_BADGE[file.source].label}
                   </Badge>
                   <Button asChild className="h-8 w-8 rounded-lg p-0" title="View" variant="secondary">
                     <a href={`/api/hiring-documents/files/${file.id}`} rel="noreferrer" target="_blank">
