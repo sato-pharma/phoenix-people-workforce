@@ -15,6 +15,7 @@ import {
 } from "@/lib/hiring-documents/file-storage";
 import { resolveHiringDocumentNotes } from "@/lib/hiring-documents/status-notes";
 import { summarizeHiringDocumentReadiness } from "@/lib/recruitment/onboarding-metrics";
+import { readHiringDocumentFileSource } from "@/lib/hiring-documents/types";
 import type {
   AttachHiringDocumentFilesInput,
   CreateHiringDocumentDefinitionInput,
@@ -656,7 +657,10 @@ function toHiringDocumentFile(row: HiringDocumentFileDbRow, uploaderNames: Map<s
     id: row.id,
     pageCount: row.page_count,
     sizeBytes: row.size_bytes,
-    source: row.source === "scan" ? "scan" : "upload",
+    // THREE VALUES, NOT TWO. A binary `=== "scan" ? … : "upload"` would read every issued paper
+    // back as "Uploaded as-is" — the row would be correct in the database and wrong on every
+    // screen, which is the narrowing this codebase has been bitten by before.
+    source: readHiringDocumentFileSource(row.source),
     uploadedAt: row.uploaded_at,
     uploadedByHrId,
     uploadedByName: uploadedByHrId ? uploaderNames.get(uploadedByHrId) ?? null : null,
@@ -762,7 +766,7 @@ export async function attachHiringDocumentFiles(
         bytes: page.bytes,
         contentType: page.contentType.trim().toLowerCase(),
         fileName: page.fileName,
-        pageCount: null,
+        pageCount: page.pageCount ?? null,
       });
     }
   }

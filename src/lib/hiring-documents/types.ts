@@ -15,11 +15,40 @@ export type HiringDocumentScanMode = "colour" | "greyscale" | "high-contrast";
  *
  * `upload` — the file came in as it was: the scanner's own PDF, a photo, a picture of a page.
  * `scan`   — pages were photographed in Phoenix, polished, and assembled into one PDF by us.
+ * `issued` — Phoenix generated this paper for this employee and filed it when the owner confirmed
+ *            the signature. It is the document that was put in front of them, never a photograph
+ *            of the ink on it.
  *
  * The distinction is shown to HR, because a `scan` has been through contrast and tone correction,
- * and anyone judging whether a stamp looks right should know that before they judge it.
+ * and anyone judging whether a stamp looks right should know that before they judge it. `issued`
+ * matters for a sharper reason: these land in slots named "Signed employment contract", and
+ * somebody opening one is entitled to know they are looking at the unsigned original rather than
+ * at evidence that anybody signed anything.
+ *
+ * ONLY THE SERVER MAY WRITE `issued`. `app/api/hiring-documents/files/route.ts` deliberately
+ * narrows whatever a client sends to `scan` or `upload`, so a hand-uploaded file can never claim
+ * to have been issued by the system.
  */
-export type HiringDocumentFileSource = "upload" | "scan";
+export const HIRING_DOCUMENT_FILE_SOURCES = ["upload", "scan", "issued"] as const;
+
+export type HiringDocumentFileSource = (typeof HIRING_DOCUMENT_FILE_SOURCES)[number];
+
+/**
+ * The stored `source` as the union, defaulting to `upload` for anything unrecognised.
+ *
+ * `upload` is the right default because it claims the least: it says only "this file arrived", with
+ * no assertion about polishing or about who produced it.
+ *
+ * READS THE LIST, so a fourth source can never be silently narrowed away. The shape to avoid is
+ * `value === "scan" ? "scan" : "upload"`, which reads every issued paper back as "Uploaded as-is" —
+ * correct in the database and wrong on every screen. It lives here rather than in the service
+ * because the decision is about a string and nothing else, and this file is the one both the server
+ * and the client component already import.
+ */
+export function readHiringDocumentFileSource(value: string | null): HiringDocumentFileSource {
+  const known = HIRING_DOCUMENT_FILE_SOURCES.find((source) => source === value);
+  return known ?? "upload";
+}
 
 export type HiringDocumentFile = {
   contentType: string;
@@ -44,7 +73,13 @@ export type AttachHiringDocumentFilesInput = {
    * assembles them into a single PDF — one row for the whole document.
    */
   mode: HiringDocumentFileSource;
-  pages: Array<{ bytes: Buffer; contentType: string; fileName: string }>;
+  /**
+   * `pageCount` is only for a caller that already knows it — the filing path counts the pages of
+   * the PDF it just built. A plain upload leaves it null, because counting the pages of an
+   * arbitrary uploaded file is a different job with different failure modes, and a wrong count is
+   * worse than none: the list prints it as fact.
+   */
+  pages: Array<{ bytes: Buffer; contentType: string; fileName: string; pageCount?: number | null }>;
   scanMode?: HiringDocumentScanMode;
   uploadedByHrId: string | null;
 };

@@ -71,6 +71,12 @@ export async function POST(request: Request) {
     const employeeHrId = String(formData.get("employeeHrId") ?? "");
     const documentId = String(formData.get("documentId") ?? "");
     const rawMode = String(formData.get("mode") ?? "upload");
+    // TWO VALUES ONLY, AND THE THIRD IS THE POINT. `HiringDocumentFileSource` also has `issued` —
+    // a paper Phoenix generated and filed itself — and this route must never be able to write it.
+    // Anything a person uploads here arrived from outside the system, whatever the form field says,
+    // and "Issued by Phoenix" on a file somebody chose off their own disk would be a claim about
+    // provenance that nothing checked. The narrowing below is the enforcement; the only writer of
+    // `issued` is the hiring-pack filing path, which builds the bytes itself.
     const mode: HiringDocumentFileSource = rawMode === "scan" ? "scan" : "upload";
     const rawScanMode = formData.get("scanMode");
     const scanMode = isHiringDocumentScanMode(rawScanMode) ? rawScanMode : undefined;
