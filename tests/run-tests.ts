@@ -1274,6 +1274,7 @@ import { runOutstationManagerExpenseEditValidationTests } from "./outstation-man
 import { runDirectOrderPharmacyDeadDistributorColumnsTests } from "./direct-order-pharmacy-dead-distributor-columns.test.ts";
 import { runDirectOrderReversalFamilyCodeTests } from "./direct-orders-reversal-family-code.test.ts";
 import { runSidebarLayoutEditorModeTests } from "./sidebar-layout-editor-mode.test.ts";
+import { runNavRowWayBackTests } from "./nav-row-way-back.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -3968,6 +3969,10 @@ await runTest(
   "the navigation-layout editor gates the catalogue for the mode it is rendered in (an HR seat "
     + "arranging the admin catalogue saved a valid layout that resolved to nothing)",
   runSidebarLayoutEditorModeTests,
+);
+await runTest(
+  "an emptied nav row has a way back (Navigation Layout reachable from the topbar in admin chrome)",
+  runNavRowWayBackTests,
 );
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
