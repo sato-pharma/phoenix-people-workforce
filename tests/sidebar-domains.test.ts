@@ -2,12 +2,11 @@ import assert from "node:assert/strict";
 
 import { adminSidebarDomains } from "../src/config/sidebar-domains.ts";
 import { adminNavigationSections } from "../src/config/system-navigation.ts";
-import { getSections, type PermissionLookup } from "../src/lib/navigation/active-path.ts";
+import { getSections } from "../src/lib/navigation/active-path.ts";
 import { groupAdminSections } from "../src/lib/navigation/sidebar-domains.ts";
 import {
-  permissionActions,
+  buildPermissionLookup,
   permissionMatrix,
-  permissionResources,
   type PhoenixRole,
 } from "../src/lib/auth/permissions.ts";
 
@@ -23,16 +22,6 @@ import {
  * So the assertions below are about CONSERVATION, per role, not about appearance.
  */
 const ROLES = Object.keys(permissionMatrix) as PhoenixRole[];
-
-function lookupForRole(role: PhoenixRole): PermissionLookup {
-  const lookup: PermissionLookup = {};
-  for (const resource of permissionResources) {
-    for (const action of permissionActions) {
-      lookup[`${resource}:${action}`] = permissionMatrix[role][resource]?.includes(action) ?? false;
-    }
-  }
-  return lookup;
-}
 
 function hrefsOfSections(sections: readonly { items: readonly { href: string }[] }[]): string[] {
   return sections.flatMap((section) => section.items.map((item) => item.href)).sort();
@@ -100,7 +89,7 @@ export function runSidebarDomainsTests() {
   // once each. Run across all roles because the input differs per role, and an id that only a
   // Finance Manager ever sees is exactly the kind that goes unplaced without anyone noticing.
   for (const role of ROLES) {
-    const gated = getSections(adminNavigationSections, "admin", lookupForRole(role), role);
+    const gated = getSections(adminNavigationSections, "admin", buildPermissionLookup(permissionMatrix, role), role);
     const domains = groupAdminSections(gated);
 
     const before = hrefsOfSections(gated);
