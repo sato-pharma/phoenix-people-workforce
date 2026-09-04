@@ -88,7 +88,7 @@ const COLLAPSED_KEY_PREFIX = "phoenix-sidebar-collapsed-v2";
 const COLLAPSED_EVENT = "phoenix-sidebar-collapsed-change";
 const PREFS_EVENT = "phoenix-sidebar-prefs-change";
 
-const SIDEBAR_WIDTH_EXPANDED = "w-[292px]";
+const SIDEBAR_WIDTH_EXPANDED = "w-[272px]";
 const SIDEBAR_WIDTH_RAIL = "w-[76px]";
 
 // ── Persistence: collapsed-section set (cross-tab synced) ─────────────────────
@@ -396,7 +396,7 @@ function NavRow({
           "relative flex w-full items-center text-phx-md font-semibold transition-colors duration-150",
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-phx-accent/60 focus-visible:ring-offset-2",
           dark ? "focus-visible:ring-offset-slate-900" : "focus-visible:ring-offset-white",
-          rail ? "justify-center px-0 py-2.5" : "gap-3 px-2.5 py-2.5",
+          rail ? "justify-center px-0 py-2.5" : "gap-2 px-2 py-2.5",
           // Premium row: the owner's own overview outranks every other tab, so it carries a
           // standing gradient + ring instead of only lighting up when active. Deliberately warmer
           // and heavier than the active state so it still reads as "the top one" when you are
@@ -418,7 +418,7 @@ function NavRow({
         {active && <span className={cn("absolute left-0 w-[3px] bg-phx-accent", rail ? "top-1.5 bottom-1.5" : "top-1.5 bottom-1.5")} />}
         <span
           className={cn(
-            "relative flex h-9 w-9 shrink-0 items-center justify-center transition-colors duration-150",
+            "relative flex h-8 w-8 shrink-0 items-center justify-center transition-colors duration-150",
             // `premium` outranks everything; then the active state; then `standalone`, which tints
             // the icon box so a hub button reads as different from a single-destination link.
             premium
@@ -531,7 +531,7 @@ function SortableNavRow({
       {!dragDisabled && (
         <button
           aria-label={`Drag to reorder ${item.label}`}
-          className="absolute left-[10px] top-1/2 z-20 flex h-9 w-9 -translate-y-1/2 cursor-grab items-center justify-center bg-[#000000] text-slate-600 opacity-0 transition hover:text-slate-300 focus-visible:opacity-100 active:cursor-grabbing group-hover/dnd-row:opacity-100"
+          className="absolute left-[8px] top-1/2 z-20 flex h-8 w-8 -translate-y-1/2 cursor-grab items-center justify-center bg-[#000000] text-slate-600 opacity-0 transition hover:text-slate-300 focus-visible:opacity-100 active:cursor-grabbing group-hover/dnd-row:opacity-100"
           type="button"
           {...attributes}
           {...listeners}
@@ -636,7 +636,7 @@ function SortableSectionBlock({
         {isAdmin && !dragDisabled && (
           <button
             aria-label={`Drag to reorder ${section.label} section`}
-            className="absolute left-[10px] top-1/2 z-20 flex h-9 w-9 -translate-y-1/2 cursor-grab items-center justify-center bg-[#000000] text-slate-600 opacity-0 transition hover:text-slate-300 focus-visible:opacity-100 active:cursor-grabbing group-hover/single:opacity-100"
+            className="absolute left-[8px] top-1/2 z-20 flex h-8 w-8 -translate-y-1/2 cursor-grab items-center justify-center bg-[#000000] text-slate-600 opacity-0 transition hover:text-slate-300 focus-visible:opacity-100 active:cursor-grabbing group-hover/single:opacity-100"
             type="button"
             {...attributes}
             {...listeners}
@@ -1089,7 +1089,7 @@ function SidebarNav({
 
       <nav
         ref={navRef}
-        className={cn("flex-1 px-3 py-4", scrollable && "overflow-auto", scrollable && isAdmin && "phoenix-admin-sidebar-scroll")}
+        className={cn("flex-1 px-2 py-4", scrollable && "overflow-auto", scrollable && isAdmin && "phoenix-admin-sidebar-scroll")}
         onScroll={handleNavScroll}
       >
         {/* Layer 1 — pages the viewer promoted out of the modules. Rendered before Favourites and
