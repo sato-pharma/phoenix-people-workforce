@@ -10,6 +10,8 @@ import {
 import { egyptRegionFromFreeText } from "../src/lib/recruitment/candidate-region-freetext.ts";
 import { inferCandidatePlacement } from "../src/lib/recruitment/candidate-folder-inference.ts";
 import {
+  areaGovernorateFolder,
+  areaGovernorateFolders,
   driveFileNameFor,
   driveFolderPathFor,
   driveInferredFolderPath,
@@ -18,6 +20,8 @@ import {
   isUnclassifiedPath,
   NO_LOCATION_FOLDER_NAME,
   readsAsAJobTitle,
+  governorateFolderFromTypedArea,
+  governorateFolderNames,
   regionFolderForArea,
   regionFolderFromTypedArea,
   samePath,
@@ -27,18 +31,45 @@ import {
 } from "../src/lib/recruitment/drive-cv-folders.ts";
 import { escapeDriveQueryValue } from "../src/lib/recruitment/drive-tree.ts";
 
-// The live grouping, as `au.canonical_areas` reports it (verified against production 2026-09-03).
-// Only the rows these assertions need — the map is data, not a fixture to keep exhaustive.
+// The live grouping, as `au.canonical_areas` reports it (re-read from production 2026-09-04).
+//
+// EVERY area the governorate map groups is here, and that is load-bearing rather than tidy: the
+// invariant below walks all of them to prove no governorate parent straddles two regions. The rest
+// are the standalone areas individual assertions need.
 const AREA_REGIONS = {
   "Alex Center": "AB",
   "Alex East": "AB",
+  "Alex West": "AB",
+  Aswan: "OT",
+  "Aswan (Legacy)": "OT",
+  "Assuit 1": "UE",
+  "Assuit 2": "UE",
+  "Behira 1": "AB",
+  "Behira 2": "AB",
+  "Cairo East 1": "CA",
+  "Cairo East 2": "CA",
   "Cairo West": "CA",
+  "Dakahlia 1": "D2",
+  "Dakahlia 2": "D2",
+  "Dakahlia 3": "D2",
   Fayoum: "GZ",
+  "Gharbia 1 (Tanta)": "D1",
+  "Gharbia 2 (Mahalla)": "D1",
   Ismailia: "OT",
+  "Kafr El-Sheikh 1": "D1",
+  "Kafr El-Sheikh 2": "D1",
+  "Menoufia 1": "D1",
+  "Menoufia 2": "D1",
+  "Minia 1": "UE",
+  "Minia 2": "UE",
   "Nasr City": "CA",
   Qalubeya: "D1",
+  "Qena 1": "UE",
+  "Qena 2": "UE",
   "Sharkia 1": "D2",
   "Sharkia 2": "D2",
+  Sohag1: "UE",
+  Sohag2: "UE",
   Suez: "OT",
 };
 
@@ -50,14 +81,126 @@ export function runDriveCvFolderTests() {
 
   assert.deepEqual(
     driveFolderPathFor({ key: "Alex Center", kind: "medical_rep", label: "Alex Center" }, AREA_REGIONS),
-    ["Medical Representative", "Alex-BHR", "Alex Center"],
-    "a medical rep's area must sit inside its region folder",
+    ["Medical Representative", "Alex-BHR", "Alex", "Alex Center"],
+    "a medical rep's area sits inside its region — and, where the city is split, inside its governorate too",
   );
 
   assert.deepEqual(
     driveFolderPathFor({ key: "Nasr City", kind: "medical_rep", label: "Nasr City" }, AREA_REGIONS),
     ["Medical Representative", "Cairo", "Nasr City"],
     "the region folder is the company's own region NAME, not its code",
+  );
+
+  // ── The governorate parent, for a city the company cuts in half ───────────────────────────────
+  //
+  // Owner, 2026-09-04: "we can make a folder called Qena and inside we have two folders, Qena 1 and
+  // Qena 2. If we can identify which one he is from we put him in the folder. If we can't identify
+  // we put him general in the folder which is called Qena."
+  //
+  // So the tree grows one rung, and only where the company actually splits a governorate.
+
+  assert.deepEqual(
+    driveFolderPathFor({ key: "Qena 1", kind: "medical_rep", label: "Qena 1" }, AREA_REGIONS),
+    ["Medical Representative", "Upper Egypt", "Qena", "Qena 1"],
+    "a declared half sits inside its governorate folder",
+  );
+
+  // An area that is nobody's half keeps the shape it has always had. Adding a "Fayoum" folder
+  // holding one "Fayoum" folder would be pure noise, and the same is true of the other five.
+  for (const standalone of ["Fayoum", "Nasr City", "Cairo West", "Qalubeya", "Ismailia", "Suez"] as const) {
+    assert.equal(
+      areaGovernorateFolder(standalone),
+      null,
+      `${standalone} is not half of anything and must group under no parent`,
+    );
+    assert.equal(
+      driveFolderPathFor({ key: standalone, kind: "medical_rep", label: standalone }, AREA_REGIONS).length,
+      3,
+      `${standalone} keeps the two-level shape: region, then area`,
+    );
+  }
+
+  // WHY THIS IS A REVIEWED MAP AND NOT A PATTERN. Every one of these four is live in
+  // `au.canonical_areas` today, and every one of them defeats an obvious derivation rule.
+  assert.equal(areaGovernorateFolder("Gharbia 1 (Tanta)"), "Gharbia", "a city after the number: stripping a trailing digit fails");
+  assert.equal(areaGovernorateFolder("Sohag1"), "Sohag", "no space before the number");
+  assert.equal(areaGovernorateFolder("Cairo East 1"), "Cairo East", "the parent is TWO words");
+  assert.equal(
+    areaGovernorateFolder("Cairo West"),
+    null,
+    "Cairo West shares a first word with Cairo East and is a different place — a first-word rule would swallow it",
+  );
+  assert.equal(
+    areaGovernorateFolder("Aswan (Legacy)"),
+    null,
+    "a retired area must not fold live Aswan CVs into a territory nobody sells",
+  );
+  assert.equal(areaGovernorateFolder("Aswan"), null, "live Aswan is a single area, not a half");
+  // Names that merely CONTAIN a separator are single areas, not a parent and a half.
+  for (const oneArea of [
+    "Port said - Domiat",
+    "Haram - Faisal",
+    "Helwan-Maadi",
+    "Giza - Giza Centers",
+    "Dokki - Mohandseen - Bolak",
+    "Imbaba - Imbaba Centers",
+  ] as const) {
+    assert.equal(areaGovernorateFolder(oneArea), null, `${oneArea} is one area whose NAME holds a separator`);
+  }
+
+  // THE INVARIANT. A parent folder lives inside exactly one region folder, so if two areas sharing a
+  // parent ever resolved to different regions the parent would appear twice and split its own CVs in
+  // half — the precise failure this feature exists to prevent. Walked over the whole map, not a
+  // sample, and over the RECRUITMENT region so the Delta (3) override is included.
+  const membersByParent = new Map<string, string[]>();
+  for (const [area, parent] of Object.entries(areaGovernorateFolders)) {
+    assert.ok(
+      Object.prototype.hasOwnProperty.call(AREA_REGIONS, area),
+      `${area} is grouped under ${parent} but missing from the production fixture — add it, or the invariant below silently skips it`,
+    );
+    membersByParent.set(parent, [...(membersByParent.get(parent) ?? []), area]);
+  }
+  for (const [parent, members] of membersByParent) {
+    const regions = new Set(members.map((area) => regionFolderForArea(area, AREA_REGIONS)));
+    assert.equal(
+      regions.size,
+      1,
+      `every area under "${parent}" must resolve to ONE region, got: ${[...regions].join(", ")}`,
+    );
+    assert.ok(members.length >= 2, `"${parent}" groups ${members.length} area(s) — a parent over one area is noise`);
+  }
+  assert.deepEqual(
+    governorateFolderNames(),
+    ["Alex", "Assuit", "Behira", "Cairo East", "Dakahlia", "Gharbia", "Kafr El-Sheikh", "Menoufia", "Minia", "Qena", "Sharkia", "Sohag"],
+    "the governorate level is exactly these parents",
+  );
+
+  // A CITY never reaches a parent. "Tanta" IS Gharbia 1 and "Mahalla" IS Gharbia 2, so sending
+  // either to the parent would throw away a half we can actually identify — while sending it to the
+  // numbered area would be inference the owner's rule never asked for. Both fall through instead.
+  for (const city of ["Tanta", "Mahalla"] as const) {
+    assert.equal(governorateFolderFromTypedArea(city), null, `${city} names a half, not a governorate`);
+    assert.ok(
+      !driveFolderPathFor({ key: city, kind: "medical_rep", label: city }, AREA_REGIONS).includes("Gharbia"),
+      `${city} must not be filed into the Gharbia parent`,
+    );
+  }
+
+  // And the one-word trap that made `kafr` and `sheikh` unusable as keys: Kafr El-Dawar is in
+  // BEHIRA and Sheikh Zayed is in GIZA. A bare-word match would file both under Kafr El-Sheikh.
+  for (const elsewhere of ["Kafr El-Dawar", "Sheikh Zayed"] as const) {
+    assert.notEqual(
+      governorateFolderFromTypedArea(elsewhere),
+      "Kafr El-Sheikh",
+      `${elsewhere} is not in Kafr El-Sheikh`,
+    );
+  }
+
+  // The two shelves that are not areas never grow this level.
+  assert.deepEqual(
+    driveFolderPathFor({ key: "UE", kind: "district_manager", label: "Upper Egypt" }, AREA_REGIONS),
+    ["District Manager", "Upper Egypt"],
+    "a district manager files by region only — the governorate level is a medical-rep shape",
   );
 
   // ── The Delta (3) trap ────────────────────────────────────────────────────────────────────────
@@ -70,7 +213,7 @@ export function runDriveCvFolderTests() {
 
   assert.deepEqual(
     driveFolderPathFor({ key: "Sharkia 1", kind: "medical_rep", label: "Sharkia 1" }, AREA_REGIONS),
-    ["Medical Representative", "Delta (3)", "Sharkia 1"],
+    ["Medical Representative", "Delta (3)", "Sharkia", "Sharkia 1"],
     "Sharkia 1 is a Delta (3) recruitment area even though sales still files it under Delta (2)",
   );
   assert.equal(regionFolderForArea("Suez", AREA_REGIONS), "Delta (3)", "Suez recruits into Delta (3), not Others");
@@ -78,10 +221,15 @@ export function runDriveCvFolderTests() {
 
   // Every overridden area must actually reach Delta (3) through the Drive path — a rename on either
   // side would otherwise silently drop the override, which is the failure this pins.
+  // Two of the five (Sharkia 1 and 2) also sit under a governorate parent and three stand alone, so
+  // the expected depth is read from the same map the code reads rather than assumed to be one shape.
   for (const areaName of Object.keys(recruitmentAreaRegionOverrides)) {
+    const governorate = areaGovernorateFolder(areaName);
     assert.deepEqual(
       driveFolderPathFor({ key: areaName, kind: "medical_rep", label: areaName }, AREA_REGIONS),
-      ["Medical Representative", "Delta (3)", areaName],
+      governorate
+        ? ["Medical Representative", "Delta (3)", governorate, areaName]
+        : ["Medical Representative", "Delta (3)", areaName],
       `${areaName} must file under Delta (3)`,
     );
   }
@@ -444,35 +592,56 @@ export function runDriveCvFolderTests() {
   // above them, because the applicant typed a GOVERNORATE where the flow wanted one of our areas.
   // Loose at the top of a 900-CV shelf is the worst outcome there is: the file is present and
   // effectively unfindable. Each of these is one of those six, verbatim.
-  for (const [typed, region] of [
-    ["Qena north", "Upper Egypt"],
-    ["Qena", "Upper Egypt"],
-    ["Minia Government", "Upper Egypt"],
-    ["kafrelsheikh", "Delta (1)"],
-    ["Kafr El-Sheikh", "Delta (1)"],
+  //
+  // Each lands on the GOVERNORATE parent, which is the honest depth: the governorate is known and
+  // the half is not. That is the owner's rule of 2026-09-04, and it puts the CV beside the numbered
+  // folders a recruiter already opens instead of loose among every CV in the region.
+  for (const [typed, region, governorate] of [
+    ["Qena north", "Upper Egypt", "Qena"],
+    ["Qena", "Upper Egypt", "Qena"],
+    ["Minia Government", "Upper Egypt", "Minia"],
+    ["kafrelsheikh", "Delta (1)", "Kafr El-Sheikh"],
+    ["Kafr El-Sheikh", "Delta (1)", "Kafr El-Sheikh"],
   ] as const) {
     assert.deepEqual(
       driveFolderPathFor({ key: typed, kind: "medical_rep", label: typed }, AREA_REGIONS),
-      ["Medical Representative", region],
-      `a typed governorate must still nest under its region: ${typed}`,
+      ["Medical Representative", region, governorate],
+      `a typed governorate must nest under its region and its own parent folder: ${typed}`,
     );
   }
 
-  // And deliberately WITHOUT inventing an area folder. "Qena north" sitting beside the real
-  // "Qena 1" and "Qena 2" would read as a company area that nobody owns and no target covers.
-  assert.equal(
-    driveFolderPathFor({ key: "Qena north", kind: "medical_rep", label: "Qena north" }, AREA_REGIONS).length,
-    2,
+  // The rule that survived the change: the applicant's OWN WORDS never become a folder. "Qena north"
+  // files into "Qena" — a folder the company owns — and never into a folder called "Qena north",
+  // which would read beside the real "Qena 1" and "Qena 2" as a territory nobody owns and no target
+  // covers. What is written down is what is known; the exact words stay on the candidate record.
+  assert.deepEqual(
+    driveFolderPathFor({ key: "Qena north", kind: "medical_rep", label: "Qena north" }, AREA_REGIONS),
+    ["Medical Representative", "Upper Egypt", "Qena"],
     "a hand-typed area never becomes a folder of its own",
   );
+  assert.ok(
+    !driveFolderPathFor({ key: "Qena north", kind: "medical_rep", label: "Qena north" }, AREA_REGIONS).includes(
+      "Qena north",
+    ),
+    "the applicant's typed words must appear in no segment of the path",
+  );
+
+  // And it never guesses the HALF. Landing on "Qena 1" would be a coin flip written down as fact,
+  // and a recruiter reading that folder has no way to tell it from a real declared area.
+  for (const half of ["Qena 1", "Qena 2"] as const) {
+    assert.ok(
+      !driveFolderPathFor({ key: "Qena", kind: "medical_rep", label: "Qena" }, AREA_REGIONS).includes(half),
+      `a governorate with no half declared must never be filed into ${half}`,
+    );
+  }
 
   // A real area is untouched — three levels, area innermost. Sharkia 2 also pins the recruitment
   // override: the SALES map above still calls it Delta (2), and recruitment files it under
   // Delta (3). Reading the sales column directly here is the exact mis-file that override prevents.
   assert.deepEqual(
     driveFolderPathFor({ key: "Sharkia 2", kind: "medical_rep", label: "Sharkia 2" }, AREA_REGIONS),
-    ["Medical Representative", "Delta (3)", "Sharkia 2"],
-    "a canonical area keeps its own folder, under its RECRUITMENT region",
+    ["Medical Representative", "Delta (3)", "Sharkia", "Sharkia 2"],
+    "a canonical area keeps its own folder, under its governorate, under its RECRUITMENT region",
   );
 
   // Nothing readable at all: their own words still beat the top of the shelf.
