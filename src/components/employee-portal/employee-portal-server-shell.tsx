@@ -1,8 +1,10 @@
 import { headers } from "next/headers";
+import { Suspense } from "react";
 import { redirect } from "next/navigation";
 
 import { EmployeePortalChrome } from "@/components/employee-portal/employee-portal-layout";
 import { EmployeePortalEmptyState } from "@/components/employee-portal/enterprise-shell";
+import { DocumentTitleSync } from "@/components/layout/document-title-sync";
 import { ModuleLockedNotice } from "@/components/layout/module-locked-notice";
 import { employeeHasActiveDeviceMapping } from "@/lib/attendance/device-user-mapping";
 import { resolveModuleLocksForAccess } from "@/lib/auth/module-locks";
@@ -107,21 +109,31 @@ export async function EmployeePortalServerShell({
     : null;
 
   return (
-    <EmployeePortalChrome
-      data={data}
-      disableSessionGuard={disableSessionGuard}
-      lockedModuleKeys={lockedModuleKeys}
-      visibility={visibility}
-    >
-      {lockedModuleForPage ? (
-        <ModuleLockedNotice
-          homeHref="/employee-portals"
-          lock={pageLock}
-          moduleKey={lockedModuleForPage}
-        />
-      ) : (
-        children
-      )}
-    </EmployeePortalChrome>
+    <>
+      {/* The portal had NO tab naming at all until 2026-09-04: all 118 of its routes
+          rendered the bare brand, so every open portal tab read "Phoenix Workforce"
+          and none could be told apart. Names the tab on in-app navigation; the FIRST
+          paint is named by generateMetadata in app/employee-portals/layout.tsx,
+          through the same resolver. Suspense because it reads useSearchParams. */}
+      <Suspense fallback={null}>
+        <DocumentTitleSync mode="employee-portal" role={access.role} />
+      </Suspense>
+      <EmployeePortalChrome
+        data={data}
+        disableSessionGuard={disableSessionGuard}
+        lockedModuleKeys={lockedModuleKeys}
+        visibility={visibility}
+      >
+        {lockedModuleForPage ? (
+          <ModuleLockedNotice
+            homeHref="/employee-portals"
+            lock={pageLock}
+            moduleKey={lockedModuleForPage}
+          />
+        ) : (
+          children
+        )}
+      </EmployeePortalChrome>
+    </>
   );
 }

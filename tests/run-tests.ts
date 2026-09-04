@@ -24,6 +24,7 @@ import { runNavigationGrantedButUnreachableTests } from "./navigation-granted-bu
 import { runPermissionLookupTotalityTests } from "./permission-lookup-totality.test.ts";
 import { runNavigationRuling11AnalyticsTests } from "./navigation-ruling-11-analytics.test.ts";
 import { runHrUrlNamespaceTests } from "./hr-url-namespace.test.ts";
+import { runModuleTabTitlesTests } from "./module-tab-titles.test.ts";
 import { runNotificationLinksResolveTests } from "./notification-links-resolve.test.ts";
 import { runNavPanelPositionTests } from "./nav-panel-position.test.ts";
 import { runNotificationBellPolishTests } from "./notification-bell-polish.test.ts";
@@ -1292,6 +1293,7 @@ async function runTest(name: string, execute: () => void | Promise<void>) {
 }
 
 await runTest("transactional email survives an unsubscribe (password reset must never be withheld)", runTransactionalEmailNotUnsubscribableTests);
+await runTest("module tab titles (every shell route names its module in the browser tab)", runModuleTabTitlesTests);
 await runTest("i18n config", runI18nConfigTests);
 await runTest("i18n Cairo date boundary (currentCairoDateOnlyIso EEST/EET rollover)", runI18nCairoDateBoundaryTests);
 await runTest("portal target dedup (med-rep achievement sum-distinct, not max, not naive-sum)", runPortalTargetDedupTests);
