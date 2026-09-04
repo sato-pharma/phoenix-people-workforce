@@ -15,14 +15,11 @@ import {
 } from "recharts";
 import {
   AlertTriangle,
-  ArrowDownRight,
-  ArrowUpRight,
   Boxes,
   Building2,
   ChevronDown,
   Loader2,
   MapPin,
-  Minus,
   Package,
   Target,
   TrendingDown,
@@ -35,228 +32,22 @@ import { CountUpNumber } from "@/components/ui/count-up";
 import { cn } from "@/lib/utils";
 import type { BrickNode, VsTargetNode, VsTargetTotals } from "@/lib/sales/vs-target";
 import type { VsTargetDashboardData } from "@/lib/sales/vs-target-page";
-
-const ACTUAL_COLOR = "#F97316";
-const TARGET_COLOR = "#38BDF8";
-
-// ── Formatting ───────────────────────────────────────────────────────────────
-
-function formatEgp(value: number): string {
-  const abs = Math.abs(value);
-  const sign = value < 0 ? "-" : "";
-  if (abs >= 1_000_000) return `${sign}EGP ${(abs / 1_000_000).toFixed(2)}M`;
-  if (abs >= 1_000) return `${sign}EGP ${(abs / 1_000).toFixed(1)}K`;
-  return `${sign}EGP ${Math.round(abs).toLocaleString("en-US")}`;
-}
-
-function formatEgpFull(value: number): string {
-  return `EGP ${Math.round(value).toLocaleString("en-US")}`;
-}
-
-function formatNumber(value: number): string {
-  return Math.round(value).toLocaleString("en-US");
-}
-
-/** A null percentage is "—", never "0%". The difference is the whole point. */
-function formatPct(value: number | null): string {
-  return value == null ? "—" : `${(value * 100).toFixed(1)}%`;
-}
-
-function formatSignedPct(value: number | null): string {
-  if (value == null) return "—";
-  return `${value > 0 ? "+" : ""}${(value * 100).toFixed(1)}%`;
-}
-
-function formatPeriod(period: string | null): string {
-  if (!period) return "—";
-  const match = /^(\d{4})-(\d{2})$/.exec(period.trim());
-  if (!match) return period;
-  return new Date(Number(match[1]), Number(match[2]) - 1, 1).toLocaleDateString("en-US", {
-    month: "short",
-    year: "numeric",
-  });
-}
-
-/** Null (no target) is NEUTRAL, never red — an untargeted area has not underperformed. */
-function achievementTone(value: number | null): string {
-  if (value == null) return "text-slate-400";
-  if (value >= 1) return "text-emerald-600";
-  if (value >= 0.8) return "text-amber-600";
-  if (value >= 0.5) return "text-orange-600";
-  return "text-red-600";
-}
-
-function achievementHex(value: number | null): string {
-  if (value == null) return "#94A3B8";
-  if (value >= 1) return "#10B981";
-  if (value >= 0.8) return "#F59E0B";
-  if (value >= 0.5) return "#F97316";
-  return "#EF4444";
-}
-
-function growthTone(value: number | null): string {
-  if (value == null) return "text-slate-400";
-  if (value > 0) return "text-emerald-600";
-  if (value < 0) return "text-red-600";
-  return "text-slate-500";
-}
-
-// ── Primitives ───────────────────────────────────────────────────────────────
-
-function GrowthPill({ value, dark = false }: { value: number | null; dark?: boolean }) {
-  const Icon = value == null ? Minus : value > 0 ? ArrowUpRight : value < 0 ? ArrowDownRight : Minus;
-  const tone = dark
-    ? value == null
-      ? "text-slate-400"
-      : value > 0
-        ? "text-emerald-400"
-        : value < 0
-          ? "text-red-400"
-          : "text-slate-400"
-    : growthTone(value);
-  return (
-    <span className={cn("inline-flex items-center gap-1 whitespace-nowrap text-xs font-bold", tone)}>
-      <Icon className="h-3.5 w-3.5 shrink-0" />
-      {formatSignedPct(value)}
-    </span>
-  );
-}
-
-/**
- * Achievement as an SVG arc.
- *
- * Drawn by hand rather than with a chart library: it must render identically at four sizes,
- * animate nothing, and never leave an empty frame when the value is null — which is exactly
- * where the first build's recharts panels failed.
- */
-function AchievementRing({
-  value,
-  size = 132,
-  stroke = 11,
-  label,
-  dark = false,
-}: {
-  value: number | null;
-  size?: number;
-  stroke?: number;
-  label?: string;
-  dark?: boolean;
-}) {
-  const radius = (size - stroke) / 2;
-  const circumference = 2 * Math.PI * radius;
-  // Cap the ARC at 100% so an over-achiever cannot wrap the circle, while the printed
-  // number below stays uncapped and truthful.
-  const fraction = value == null ? 0 : Math.max(0, Math.min(1, value));
-  const color = achievementHex(value);
-  return (
-    <div className="relative shrink-0" style={{ width: size, height: size }}>
-      <svg width={size} height={size} className="-rotate-90" aria-hidden>
-        <circle
-          cx={size / 2}
-          cy={size / 2}
-          r={radius}
-          fill="none"
-          stroke={dark ? "rgba(148,163,184,0.22)" : "#E2E8F0"}
-          strokeWidth={stroke}
-        />
-        {value != null ? (
-          <circle
-            cx={size / 2}
-            cy={size / 2}
-            r={radius}
-            fill="none"
-            stroke={color}
-            strokeWidth={stroke}
-            strokeLinecap="butt"
-            strokeDasharray={`${circumference * fraction} ${circumference}`}
-          />
-        ) : null}
-      </svg>
-      <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <span
-          className={cn("whitespace-nowrap font-black tabular-nums", dark ? "" : achievementTone(value))}
-          style={{ fontSize: size / 4.6, color: dark ? color : undefined }}
-        >
-          {formatPct(value)}
-        </span>
-        {label ? (
-          <span
-            className={cn(
-              "mt-0.5 whitespace-nowrap font-bold uppercase tracking-[0.14em]",
-              dark ? "text-slate-400" : "text-muted-foreground",
-            )}
-            style={{ fontSize: Math.max(8, size / 15) }}
-          >
-            {label}
-          </span>
-        ) : null}
-      </div>
-    </div>
-  );
-}
-
-/** Horizontal proportion bar used in the ranked lists and product mix. */
-function ProportionBar({ fraction, color }: { fraction: number; color: string }) {
-  return (
-    <span className="block h-1.5 w-full overflow-hidden bg-slate-200" aria-hidden>
-      <span
-        className="block h-full"
-        style={{ width: `${Math.max(0, Math.min(1, fraction)) * 100}%`, backgroundColor: color }}
-      />
-    </span>
-  );
-}
-
-function AchievementCell({ value }: { value: number | null }) {
-  return (
-    <div className="flex items-center justify-end gap-2 whitespace-nowrap">
-      <span className="h-1.5 w-20 shrink-0 overflow-hidden bg-slate-200" aria-hidden>
-        <span
-          className="block h-full"
-          style={{
-            width: `${(value == null ? 0 : Math.max(0, Math.min(1, value))) * 100}%`,
-            backgroundColor: achievementHex(value),
-          }}
-        />
-      </span>
-      <span className={cn("w-16 text-right font-black tabular-nums", achievementTone(value))}>{formatPct(value)}</span>
-    </div>
-  );
-}
-
-function SectionCard({
-  title,
-  subtitle,
-  icon: Icon,
-  children,
-  actions,
-  className,
-}: {
-  title: string;
-  subtitle?: string;
-  icon: typeof Target;
-  children: React.ReactNode;
-  actions?: React.ReactNode;
-  className?: string;
-}) {
-  return (
-    <section className={cn("flex flex-col border border-border bg-card shadow-sm", className)}>
-      <header className="flex items-center justify-between gap-3 border-b border-border bg-muted/30 px-4 py-2.5">
-        <div className="flex min-w-0 items-center gap-2.5">
-          <Icon className="h-4 w-4 shrink-0 text-orange-500" />
-          <div className="min-w-0">
-            <h2 className="whitespace-nowrap text-phx-md font-black tracking-tight text-foreground">{title}</h2>
-            {subtitle ? (
-              <p className="whitespace-nowrap text-phx-xs text-muted-foreground">{subtitle}</p>
-            ) : null}
-          </div>
-        </div>
-        {actions ? <div className="shrink-0">{actions}</div> : null}
-      </header>
-      <div className="flex-1">{children}</div>
-    </section>
-  );
-}
+import {
+  ACTUAL_COLOR,
+  AchievementCell,
+  AchievementRing,
+  GrowthPill,
+  ProportionBar,
+  SectionCard,
+  TARGET_COLOR,
+  achievementHex,
+  achievementTone,
+  formatEgp,
+  formatEgpFull,
+  formatNumber,
+  formatPct,
+  formatPeriod,
+} from "@/components/sales/target-visuals";
 
 type ChartTooltipEntry = { name?: string | number; value?: unknown; color?: string };
 
