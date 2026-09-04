@@ -346,6 +346,41 @@ file holding the full account, under
   own doctrine is that a grandfather list "must not rot into cover for a name that no longer
   collides" — `tests/hr-function-governance.test.ts` enforces exactly that for its own list.
 
+  **The collision can appear with no change from you, because CI judges the MERGE ref.** Measured
+  2026-09-04 on #3088: `check:migrations` PASSED on that branch's first CI run and FAILED on its
+  second, with only two test files edited in between. In the gap,
+  `20260905000500_contract_signatory_can_differ_per_contract.sql` merged to `main` as #3078, taking
+  the same timestamp as the branch's own `20260905000500_salary_records_working_days.sql`. **That
+  file was never on the branch** — `ls supabase/migrations/` there showed 411 files and no
+  duplicate, and `node scripts/check-migrations.mjs` in the worktree reported *0 errors, passing*.
+  CI checks out the pull request's merge commit, where both files exist, and counted 412. The branch
+  was clean and the merge was not.
+
+  Two readings this rules out. **It is not a flaky check, and not "the same failure again"** — the
+  first red on that PR was a real test failure, so treating the second as more of the same sends you
+  back into a suite that is green. And **a green local `pnpm run test` says nothing about it**:
+  `check:migrations` is its own step in `validate`, one of six repo checks that run *before* the
+  suite, so 1,212 passing test files cannot see it. The tell is the step name in the job log, not
+  the test output.
+
+  **Reproduce the merge condition rather than guessing** — extract main's copy into the worktree,
+  run the check, remove it:
+
+      git show origin/main:supabase/migrations/<their-file>.sql > supabase/migrations/<their-file>.sql
+      node scripts/check-migrations.mjs      # now sees the real 412-file merge set
+      rm supabase/migrations/<their-file>.sql
+
+  Check the extraction is non-empty first. `git show <ref>:<path>` returns EMPTY under MSYS unless
+  `MSYS_NO_PATHCONV=1` is exported, and an empty file makes the check pass for the wrong reason —
+  the same positive-control rule as everywhere else in this file.
+
+  The fix is the rename, and **production needed nothing.** Both rows were already distinct in the
+  ledger under their apply times — `contract_signatory_can_differ_per_contract` at `20260904145559`,
+  `salary_records_working_days` at `20260904175101` — so the two never collided in the database at
+  all, only on disk. After the rename, staging's automated apply matched by `name` and skipped it,
+  leaving **one** ledger row rather than two, which is the concrete confirmation that renaming a
+  file is safe after its migration is already live.
+
   **And the applied-state can flip UNDER a PR**, which is how the correct action came to carry a
   wrong justification. PR #2990's message states the ledger "does NOT hold
   `notification_role_policies_distributor_upload_overdue_key`". The exact timeline, all UTC:
