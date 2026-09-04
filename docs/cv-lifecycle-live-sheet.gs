@@ -404,7 +404,38 @@ function markLayoutBuilt_(key, header) {
  * the new chart, old conditional rules keep colouring cells the new design left plain, and old
  * merges block the new ones. Every rebuild therefore starts from nothing.
  */
-function resetTab_(sheet) {
+/**
+ * Grow the tab until the range the layout is about to address actually exists.
+ *
+ * A new Google Sheets tab is 1000 rows by 26 columns, and `getRange` does not extend the grid — it
+ * throws. Both dimensions were out of bounds here:
+ *
+ *   getRange(5, 1, FIXED_RANGE_ROWS, n)  needs row 1004 on a sheet that has 1000
+ *   the CV Details header                needs column 58 on a sheet that has 26
+ *
+ * Nothing in this file ever grew either one. The reason it went unnoticed for so long is that the
+ * section-marker bug meant no layout builder had EVER run: refreshCvLifecycle bailed out before the
+ * first one. Fixing that ran all four for the first time, and they hit this immediately.
+ *
+ * The failure is unusually quiet from the reader's side. Summary is 6 columns and its ranges are
+ * small, so it rebuilds and looks new; Daily then throws on row 1004 and Detail and Lifecycle never
+ * run at all. One tab changes, three do not, and the sheet reads as "nothing happened" — which is
+ * the opposite of a script that is doing nothing, and sends you looking in the wrong place.
+ *
+ * So this is not called by the builders. It is called by resetTab_, which every builder must run
+ * first, because a builder that has to remember is a builder that eventually will not.
+ */
+function ensureGrid_(sheet, rows, cols) {
+  var haveRows = sheet.getMaxRows();
+  if (rows > haveRows) sheet.insertRowsAfter(haveRows, rows - haveRows);
+
+  var haveCols = sheet.getMaxColumns();
+  if (cols > haveCols) sheet.insertColumnsAfter(haveCols, cols - haveCols);
+}
+
+function resetTab_(sheet, rows, cols) {
+  ensureGrid_(sheet, rows, cols);
+
   var charts = sheet.getCharts();
   for (var i = 0; i < charts.length; i++) sheet.removeChart(charts[i]);
 
@@ -842,7 +873,7 @@ function writeSummary_(ss, summaryRows, dailyRows, lifecycleRows, stamp) {
 }
 
 function buildSummaryLayout_(sheet, dailyRows) {
-  resetTab_(sheet);
+  resetTab_(sheet, SUMMARY_METRIC_HEADER_ROW + SUMMARY_METRIC_CAPACITY + 2, SUMMARY_COLS + 1);
   titleBand_(sheet, SUMMARY_COLS, '  CV Lifecycle');
 
   for (var c = 1; c <= SUMMARY_COLS; c++) sheet.setColumnWidth(c, 150);
@@ -1028,7 +1059,7 @@ function writeDetail_(ss, rows, stamp) {
 }
 
 function buildDetailLayout_(sheet, header) {
-  resetTab_(sheet);
+  resetTab_(sheet, DETAIL_HEADER_ROW + FIXED_RANGE_ROWS + 1, header.length + 1);
   titleBand_(sheet, header.length, '  Everything Phoenix knows about each candidate');
 
   // titleBand_ leaves row 3 as a 10px spacer. Here it carries the group band instead.
@@ -1189,7 +1220,8 @@ function writeDaily_(ss, rows, stamp) {
 }
 
 function buildDailyLayout_(sheet, header) {
-  resetTab_(sheet);
+  // The chart floats to the right of the table, so the grid has to reach past it.
+  resetTab_(sheet, DAILY_HEADER_ROW + FIXED_RANGE_ROWS + 1, header.length + 10);
   titleBand_(sheet, header.length, '  CVs received each day, by channel');
 
   sheet.setColumnWidth(1, 120);
@@ -1376,7 +1408,7 @@ function linkify_(header, body) {
 }
 
 function buildLifecycleLayout_(sheet, header) {
-  resetTab_(sheet);
+  resetTab_(sheet, LIFECYCLE_HEADER_ROW + FIXED_RANGE_ROWS + 1, header.length + 1);
   titleBand_(sheet, header.length, '  Every CV, stage by stage');
 
   sheet.getRange(LIFECYCLE_HEADER_ROW, 1, 1, header.length).setValues([header]);

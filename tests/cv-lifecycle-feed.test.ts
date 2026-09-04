@@ -483,6 +483,57 @@ export function runCvLifecycleFeedTests() {
     "the detail header must survive the parser intact rather than being consumed as a marker",
   );
 
+  // ── A builder may not address a cell it has not reserved ───────────────────────────────
+  //
+  // A new Google Sheets tab is 1000 rows by 26 columns and `getRange` does not extend the grid — it
+  // throws. Both dimensions were out of bounds: the body ranges need row 1004, and the CV Details
+  // header needs column 58. Nothing grew either one.
+  //
+  // What made it expensive to find is how it fails. Summary is six columns with small ranges, so it
+  // rebuilds and looks new; Daily then throws on row 1004 and Detail and Lifecycle never run. One
+  // tab changes and three do not, which reads as "nothing happened" — the same sentence a script
+  // that never ran produces, and it sends you looking at triggers and pastes instead of at rows.
+
+  const gridSource = script.slice(script.indexOf("function ensureGrid_"));
+  const ensureGrid = new Function(
+    gridSource.slice(0, gridSource.indexOf("\n}\n") + 3) + "\nreturn ensureGrid_;",
+  )() as (sheet: unknown, rows: number, cols: number) => void;
+
+  function fakeSheet(rows: number, cols: number) {
+    return {
+      rows,
+      cols,
+      getMaxRows() { return this.rows; },
+      getMaxColumns() { return this.cols; },
+      insertRowsAfter(_after: number, count: number) { this.rows += count; },
+      insertColumnsAfter(_after: number, count: number) { this.cols += count; },
+    };
+  }
+
+  const fresh = fakeSheet(1000, 26);
+  ensureGrid(fresh, 1005, 58);
+  assert.ok(fresh.rows >= 1005, `a fresh tab was left at ${fresh.rows} rows and the layout addresses 1004`);
+  assert.ok(fresh.cols >= 58, `a fresh tab was left at ${fresh.cols} columns and CV Details has 58`);
+
+  const roomy = fakeSheet(2000, 80);
+  ensureGrid(roomy, 1005, 58);
+  assert.equal(roomy.rows, 2000, "a tab that is already big enough must not grow every refresh");
+  assert.equal(roomy.cols, 80, "a tab that is already big enough must not grow every refresh");
+
+  // resetTab_ owns the guarantee, so no builder has to remember it. A builder that calls
+  // resetTab_(sheet) with no size is the regression this catches: it compiles, it runs, and it
+  // throws only on a tab nobody has resized by hand.
+  assert.ok(
+    /function resetTab_\(sheet, rows, cols\) \{\s*ensureGrid_\(sheet, rows, cols\);/.test(script),
+    "resetTab_ must take a size and reserve it before anything else touches the tab",
+  );
+  const bareReset = script.match(/resetTab_\(sheet\)/g);
+  assert.equal(
+    bareReset,
+    null,
+    `${bareReset?.length ?? 0} builder(s) still call resetTab_ without declaring the grid they need`,
+  );
+
   // ── The unauthenticated route must never grow a file surface ─────────────────────────────────
   //
   // The two older share feeds can stream an evidence photo. This one must not: a CV is the most
