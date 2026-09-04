@@ -512,3 +512,86 @@ branch and HEAD **live at the moment of removal** and finding they no longer mat
 Match the folder's branch against the open PRs — `gh pr list --state open --json number,headRefName`
 against `git worktree list` — and re-read HEAD immediately before removing, comparing it against the
 SHA read at the gate. Branch identity survives and is observable; `cwd` never described it.
+
+## `repo-doctor --force`, and the guard that erodes by design — 2026-09-04
+
+`AGENTS.md` documents `repo-doctor`'s `--fix`, `--deep` and `--strip-idle`. It has never mentioned
+`--force` or `--no-auth`, and both matter.
+
+### What `--force` actually switches off
+
+`scripts/repo-doctor.mjs` parses exactly five flags: `--deep`, `--fix`, `--force`, `--no-auth`,
+`--strip-idle` (also `--strip-idle=<minutes>`). `--force` appears in two guards:
+
+| line | guard | what `--force` does |
+| --- | --- | --- |
+| `if (fix && !force)` | the concurrent-session census | skips it entirely |
+| `if (stripIdle && !force)` | the strip-idle mutual-exclusion lock | skips it entirely |
+
+**It does NOT weaken the zero-file proof.** The deletion loop (`if (fix) { … }`) is not gated on
+`force`, and it re-walks each husk immediately before removing it:
+
+```js
+const recheck = walk(r.dir);
+if (recheck.files !== 0 || recheck.unreadable) {
+  console.log(`  SKIPPED ${rel(r.dir)} — it now holds ${num(recheck.files)} file(s).`);
+  continue;
+}
+```
+
+So `--fix --force` still cannot delete a directory holding a single file, and the
+"never delete a `.xlsx` or `.pdf`" rule remains satisfied by construction. **The exposure is not a
+wrong deletion — it is two sessions cleaning at once**, which the script's own comment calls
+"this repo's documented incident pattern (AGENTS.md section 5)".
+
+### Why the guard erodes rather than holds
+
+Both failure paths end by naming the override:
+
+- *"…concurrent cleanup is how this repo lost work before. **Pass `--force` if you are sure.**"*
+- *"…Close the others, or **pass `--force` if you are sure**."*
+- *"…Wait for it, or **pass `--force` if you are sure it is dead**."*
+
+Measured on 2026-09-04 at 17:10 Cairo, running the census's own command:
+
+```
+powershell -Command "@(Get-Process claude | Where-Object { $_.Path -like '*claude-code*' }).Count"
+→ 11
+```
+
+`new-session.mjs --status` agreed (`claude sessions running: 12`, counted a moment apart). **The
+census refuses at anything above 1.** On this machine that is the ordinary state, not an exception —
+so a session following `AGENTS.md` §5's instruction to run `repo:doctor` after every removal meets a
+refusal nearly every time, and the only route forward the tool offers is `--force`. That is how a
+safety guard becomes a habit to type past.
+
+The census additionally **fails closed**: it refuses when it cannot *establish* a count at all — a
+non-Windows host, a timeout, a renamed binary — with the same "pass `--force`" wording. So the
+identical message appears when nothing is wrong, which further trains the override. Failing closed is
+the right design (the comment cites PR #1727 for why the earlier fail-open version was a bug); the
+problem is only that `AGENTS.md` never told anyone the escape hatch exists or what it costs.
+
+**Guidance:** close the other sessions. If you must override, override `--strip-idle` (which deletes
+only caches `new-session.mjs --repair` restores) and not `--fix` (which deletes directories).
+
+### `repo:doctor` is read-only, but it is not local
+
+`AGENTS.md` §5 ended its memory-index bullet with *"It is read-only."* True — and misleading, because
+it reads as *local*. By default the script runs an ORPHAN AUTH USERS section that:
+
+1. reads `.env.local` from the primary checkout for `NEXT_PUBLIC_SUPABASE_URL` and
+   `SUPABASE_SERVICE_ROLE_KEY`;
+2. pages `/auth/v1/admin/users?page=N&per_page=1000` **up to 50 times**;
+3. pages `/rest/v1/app_auth_users?select=hr_id&limit=1000&offset=…`.
+
+`.env.local` on this machine resolves to project **`ozucdzovmcqvepbozvqf`** — PRODUCTION (verified
+2026-09-04 by reading the host portion only; the key was never printed).
+
+The script itself is scrupulous about this: it prints the project ref before querying, and its comment
+cites §8's requirement that the target be shown. **The defect was in `AGENTS.md`, not in the script.**
+
+This connects to a hook already in §2.3 that nothing linked to it: *"ONE `auth.users` row with
+`banned_until = 'infinity'` 500s the ENTIRE GoTrue admin API — page-shaped, so a small `per_page`
+probe passes."* repo-doctor pages at `per_page=1000`, the largest page GoTrue allows — precisely the
+shape that trips it. So the command most likely to hit that production landmine is the one presented
+as local housekeeping. `--no-auth` skips the leg; every other section is unaffected.
