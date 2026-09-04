@@ -37,6 +37,13 @@ import { useEffect, useRef, useState } from "react";
  * block, the full `PhoenixSignatureCard` at aspectRatio 1875/420, which is ~243px on this width:
  * "WITHOUT THIS BUFFENK THIVK BANNER BLOCK". 136px sits deliberately between the two.
  *
+ * THE PORTRAIT IS TWO DIFFERENT THINGS BY BREAKPOINT, AND THAT IS THE OWNER'S OWN SPLIT.
+ * On 2026-09-04 he sent the Phoenix banner artwork and said: "in mobile view i want the photo
+ * frameless fading exactly like this". So below `sm` the photo bleeds off the leading edge at full
+ * height with no bezel, no ring and no corner, dissolving into the paper; from `sm` up it keeps the
+ * framed tile. Both are deliberate — see PORTRAIT_FADE_MASK. A later session "unifying" the two
+ * would be undoing an instruction, not removing a duplicate.
+ *
  * WHAT IT DELIBERATELY DOES NOT BORROW: the card's two COLD values. The card sets the wave to
  * #0b1f3a and the name to #2a3a5c, both around hue 257-264. The admin shell those two landings
  * render in has had its whole neutral ramp retinted WARM on purpose — `app/globals.css` moves
@@ -69,6 +76,11 @@ const PORTRAIT_BEZEL = "linear-gradient(145deg, #f9c06a, #f47b20 40%, #c45200 70
  * two cannot drift. The strip is not a container, so the `cqw` middles cannot be used and the
  * floors are what a small portrait renders at anyway.
  *
+ * IT NOW APPLIES TO THE INITIALS ONLY, and is not dead code. His later instruction the same day
+ * made the mobile PHOTO frameless, so the framed tile survives on a phone purely as the no-photo
+ * fallback — where a glow is still the right answer, because an initials chip has no edge of its
+ * own to dissolve.
+ *
  * It does NOT clip. The outermost layer is 28px of blur on a 60px portrait with 6px of clearance
  * inside an `overflow-hidden` section — but the layers are warm and low-alpha on a cream ground,
  * and the cut is invisible at 2x. Verified at 375px before shipping.
@@ -79,6 +91,30 @@ const PORTRAIT_GLOW =
 
 /** DESKTOP. The flat ring the strip has always had; the glow was asked for on mobile only. */
 const PORTRAIT_RING = "0 0 0 2px rgba(244,123,32,0.16), 0 4px 12px rgba(15,35,55,0.16)";
+
+/**
+ * MOBILE, FRAMELESS. The owner, 2026-09-04, with the Phoenix banner artwork attached: "in mobile
+ * view i want the photo frameless fading exactly like this". In that reference the portrait is not
+ * a tile sitting ON the card — it IS the card's leading edge: full height, flush left, no bezel, no
+ * ring, no rounded corner, its right side dissolving into the paper so there is no seam anywhere.
+ *
+ * SO THE FADE IS THE FRAME. With nothing but a hard edge holding the photo in, the dissolve is the
+ * only thing standing between "bleeds off the edge" and "got cropped", and a SHORT taper reads as
+ * the second. A two-stop ramp was tried first and the end of it was still visible as a seam at 3x;
+ * this one holds solid for the first 38% and then eases off across the remaining 62% in four stops,
+ * so there is no point where the falloff changes rate. `-webkit-mask-image` rides alongside for
+ * Safari, which still wants the prefix.
+ *
+ * IT DELIBERATELY SITS UNDER THE WAVE (z-[1] against the wave's z-[3]), exactly as the reference
+ * does — the navy band crosses in FRONT of the portrait's lower corner and finishes the shape.
+ * Raising this above the wave is what would make it look pasted on.
+ *
+ * DESKTOP IS UNTOUCHED and keeps the bezel + ring. He asked for mobile, and the wide bar is where
+ * the framed portrait still earns its place: at 1084px a bleeding photo would be a stripe.
+ */
+const PORTRAIT_FADE_MASK =
+  "linear-gradient(90deg, #000 0%, #000 38%, rgba(0,0,0,0.86) 56%,"
+  + " rgba(0,0,0,0.55) 72%, rgba(0,0,0,0.22) 86%, transparent 100%)";
 
 function signatureNameFor(name: string) {
   const parts = name.trim().split(/\s+/).filter(Boolean);
@@ -183,9 +219,54 @@ export function PhoenixIdentityStrip({
         style={{ right: "-1.5%", top: "-30%", height: "165%", width: "auto", opacity: 0.9 }}
       />
 
-      {/* Content sits ABOVE the wave, not on it — hence the bottom inset. */}
-      <div className="absolute inset-x-0 bottom-[24px] top-0 z-10 flex min-w-0 items-center gap-4 px-4 sm:px-6">
-        <span className="relative block h-[80px] w-[80px] shrink-0 sm:h-[92px] sm:w-[92px]">
+      {/* MOBILE ONLY: the portrait as the card's own leading edge — see PORTRAIT_FADE_MASK.
+
+          IT IS `aria-hidden`, NOT A SECOND ANNOUNCEMENT. The framed portrait below carries the
+          real alt text and this replaces it at the same breakpoint, but the person's name sits
+          two inches to its right in plain text, so a screen reader loses nothing and is spared
+          "portrait of X" twice from one bar. It is also what keeps this out of the golden rule's
+          overflow measurement, correctly: a decorative bleed is MEANT to cross the edge.
+
+          NO PHOTO, NO BLEED. A frameless nothing is not a design — it is a gap. So this renders
+          only when there is a real photo, and the initials keep the framed tile at every width.
+
+          The widths here are LITERAL Tailwind classes on purpose: `w-[108px]` and the `pl-[112px]`
+          below are a matched pair (108 of photo, 4 of air), and a class name built from a constant
+          is purged from the stylesheet and silently renders as nothing. Change them together. */}
+      {photoSrc ? (
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute bottom-0 left-0 top-0 z-[1] w-[108px] sm:hidden"
+          style={{ maskImage: PORTRAIT_FADE_MASK, WebkitMaskImage: PORTRAIT_FADE_MASK }}
+        >
+          <Image
+            alt=""
+            className="object-cover object-top"
+            fill
+            sizes="108px"
+            src={photoSrc}
+            unoptimized
+          />
+        </div>
+      ) : null}
+
+      {/* Content sits ABOVE the wave, not on it — hence the bottom inset. The leading inset is
+          the bleeding portrait's width plus 4px of air; with no photo there is no bleed, so it
+          falls back to the ordinary gutter and the framed initials tile takes the space. */}
+      <div
+        className={[
+          "absolute inset-x-0 bottom-[24px] top-0 z-10 flex min-w-0 items-center gap-4 pr-4 sm:pl-6 sm:pr-6",
+          photoSrc ? "pl-[112px]" : "pl-4",
+        ].join(" ")}
+      >
+        <span
+          className={[
+            "relative h-[80px] w-[80px] shrink-0 sm:h-[92px] sm:w-[92px]",
+            // Mobile hands the portrait over to the frameless bleed above — but only when there
+            // IS one to hand over.
+            photoSrc ? "hidden sm:block" : "block",
+          ].join(" ")}
+        >
           {/* TWO RINGS, MUTUALLY EXCLUSIVE BY BREAKPOINT. One element would be neater, but an
               inline style cannot carry a media query and these two shadows are genuinely
               different things — see PORTRAIT_GLOW / PORTRAIT_RING above. */}
