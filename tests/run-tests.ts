@@ -197,6 +197,7 @@ import { runRecruitmentAppliedForTests } from "./recruitment-applied-for.test.ts
 import { runRecruitmentManagerGroupingTests } from "./recruitment-manager-grouping.test.ts";
 import { runRecruitmentCandidateSeenTests } from "./recruitment-candidate-seen.test.ts";
 import { runRecruitmentScreeningPageTests } from "./recruitment-screening-page.test.ts";
+import { runRecruitmentScreeningWorkstationTests } from "./recruitment-screening-workstation.test.ts";
 import { runCandidateFolderTests } from "./candidate-folders.test.ts";
 import { runCandidatePoolFiledSearchTests } from "./candidate-pool-filed-search.test.ts";
 import { runCandidateFolderSuggestionTests } from "./candidate-folder-suggestion.test.ts";
@@ -1635,6 +1636,10 @@ await runTest(
 await runTest(
   "recruitment screening page (the queue has an address, in both shells, and the viewer never comes from the URL)",
   runRecruitmentScreeningPageTests,
+);
+await runTest(
+  "recruitment screening workstation (the fit reads the JOB not the person, nothing is fabricated, and the CV never hides behind a modal)",
+  runRecruitmentScreeningWorkstationTests,
 );
 await runTest(
   "recruitment position folders (a CV is sent FOR a vacancy, and a manager's inbox folds into one page per position)",

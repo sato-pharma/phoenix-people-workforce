@@ -503,18 +503,36 @@ export async function runRecruitmentScreeningPageTests() {
     // Re-cut 2026-08-27. This used to require the call to END after `filters`, which stopped being
     // the shape when the loader grew a third argument for the manager list. The PROPERTY is
     // unchanged and is the only thing that matters — the viewer id is the caller's, never a URL
-    // parameter — so the pin now asserts the first two arguments and stops counting the rest.
+    // parameter — so the pin asserts the first two arguments and stops counting the rest.
+    //
+    // Re-cut again 2026-09-04, when the page moved from `loadScreeningQueue` to
+    // `loadScreeningWorkspace` for the review workstation. The LOADER changed; the property this
+    // line exists to hold did not. "Have I read this CV" is a question about the person asking it,
+    // so a viewer id arriving from a URL would let one person open a link that reports somebody
+    // else's reading as their own.
     assert.match(
       source,
-      /loadScreeningQueue\(access\.hrId, filters[,)]/,
+      /loadScreeningWorkspace\(access\.hrId, filters[,)]/,
       `the ${name} screening page must load the view history of the CALLER, not of a URL parameter`,
     );
-    // Sending a CV is `recruitment: update` — the grant the send route itself enforces. Both pages
-    // must decide this, because the loader cannot: only a page holds the AccessContext.
+    // Sending a CV is `recruitment: update` — the grant the send route itself enforces — and so is
+    // writing a note, which the notes route enforces on POST. Both pages must decide this, because
+    // the loader cannot: only a page holds the AccessContext. Asserted as the two halves it is now
+    // written in, so neither the grant nor the wiring can drift on its own.
     assert.match(
       source,
-      /canSendToManagers: await canAccess\(access, "recruitment", "update"\)/,
-      `the ${name} screening page must gate the manager picker on the same grant the send route requires`,
+      /const canUpdate = await canAccess\(access, "recruitment", "update"\)/,
+      `the ${name} screening page must read the same grant the send and note routes require`,
+    );
+    assert.match(
+      source,
+      /canSendToManagers: canUpdate/,
+      `the ${name} screening page must gate the manager picker on that grant, not on something looser`,
+    );
+    assert.match(
+      source,
+      /canWriteNotes=\{canUpdate\}/,
+      `the ${name} screening page must gate the note box on that same grant`,
     );
     // The filter bar is only as good as what reaches it, and the two pages are kept in sync BY
     // HAND — so a filter added to one and forgotten on the other is the exact failure this pair of
@@ -534,7 +552,7 @@ export async function runRecruitmentScreeningPageTests() {
     ]) {
       assert.match(
         source,
-        new RegExp(`${prop}=\\{queue\\.${prop}\\}`),
+        new RegExp(`${prop}=\\{workspace\\.${prop}\\}`),
         `the ${name} screening page must pass ${prop} through, or that filter is dead in this shell`,
       );
     }
@@ -683,7 +701,7 @@ export async function runRecruitmentScreeningPageTests() {
   for (const [name, source] of [["admin", adminPage], ["portal", portalPage]] as const) {
     assert.match(
       source,
-      /hiringManagers=\{queue\.hiringManagers\}/,
+      /hiringManagers=\{workspace\.hiringManagers\}/,
       `the ${name} screening page must hand the loaded managers to the queue`,
     );
   }
