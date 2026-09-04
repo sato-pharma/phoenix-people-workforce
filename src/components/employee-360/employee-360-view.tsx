@@ -1457,43 +1457,62 @@ function MonthCompareTable({ months }: { months: { month: string; cost: number; 
   return (
     <div className="mt-5">
       <div className="mb-1.5 text-xs font-bold text-slate-500">Month-by-month — trips, cost &amp; change vs the previous month</div>
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[440px] border-collapse text-sm">
-          <thead>
-            <tr className="text-phx-xs font-black uppercase tracking-wide text-slate-400">
-              <th className="py-1.5 pr-3 text-left">Month</th>
-              <th className="px-3 py-1.5 text-right">Trips</th>
-              <th className="px-3 py-1.5 text-right">Cost</th>
-              <th className="px-3 py-1.5 text-right">Cost / trip</th>
-              <th className="py-1.5 pl-3 text-right">Δ cost vs prev</th>
-            </tr>
-          </thead>
-          <tbody>
-            {months.map((m, i) => {
-              const prev = i > 0 ? months[i - 1] : null;
-              const delta = prev && prev.cost > 0 ? (m.cost - prev.cost) / prev.cost : null;
-              const costPerTrip = m.trips > 0 ? m.cost / m.trips : null;
-              const up = delta != null && delta > 0;
-              return (
-                <tr key={m.month} className="border-t border-slate-100">
-                  <td className="py-1.5 pr-3 text-left font-semibold tabular-nums text-slate-600">{m.month}</td>
-                  <td className="px-3 py-1.5 text-right tabular-nums text-slate-500">{intFmt.format(m.trips)}</td>
-                  <td className="px-3 py-1.5 text-right font-bold tabular-nums text-slate-800">{compactFmt.format(m.cost)}</td>
-                  <td className="px-3 py-1.5 text-right tabular-nums text-slate-500">{costPerTrip == null ? "—" : compactFmt.format(costPerTrip)}</td>
-                  <td
-                    className={cn(
-                      "py-1.5 pl-3 text-right font-bold tabular-nums",
-                      delta == null ? "text-slate-300" : up ? "text-rose-600" : "text-emerald-600",
-                    )}
-                  >
-                    {delta == null ? "—" : `${up ? "▲ +" : "▼ "}${Math.abs(Math.round(delta * 100))}%`}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+      {/*
+        Bound by the owner's fits-the-screen golden rule (AGENTS.md §4): never a horizontal scroll.
+        This was `overflow-x-auto` over a `min-w-[440px]` floor, which is the bug the rule names
+        explicitly, not the fix — 440px cannot fit a 375px phone, so a manager reading her own
+        outstation history had to drag the table sideways to reach the change column.
+
+        Fixed the way the rule prescribes: `table-fixed` with a `<colgroup>`, and the width won
+        by MERGING columns rather than shrinking the type. "Cost" and "Cost / trip" were two
+        columns saying one thing; they are now one cell, the total above and the per-trip rate
+        beneath it. Four columns share 100% of whatever width there is, at any viewport.
+      */}
+      <table className="w-full table-fixed border-collapse text-sm">
+        <colgroup>
+          <col className="w-[28%]" />
+          <col className="w-[16%]" />
+          <col className="w-[30%]" />
+          <col className="w-[26%]" />
+        </colgroup>
+        <thead>
+          <tr className="text-phx-xs font-black uppercase tracking-wide text-slate-400">
+            <th className="py-1.5 pr-2 text-left align-bottom">Month</th>
+            <th className="px-2 py-1.5 text-right align-bottom">Trips</th>
+            <th className="px-2 py-1.5 text-right align-bottom">
+              Cost
+              <span className="block font-black text-slate-300">per trip</span>
+            </th>
+            <th className="py-1.5 pl-2 text-right align-bottom">Δ cost vs prev</th>
+          </tr>
+        </thead>
+        <tbody>
+          {months.map((m, i) => {
+            const prev = i > 0 ? months[i - 1] : null;
+            const delta = prev && prev.cost > 0 ? (m.cost - prev.cost) / prev.cost : null;
+            const costPerTrip = m.trips > 0 ? m.cost / m.trips : null;
+            const up = delta != null && delta > 0;
+            return (
+              <tr key={m.month} className="border-t border-slate-100">
+                <td className="break-words py-1.5 pr-2 text-left font-semibold tabular-nums text-slate-600">{m.month}</td>
+                <td className="px-2 py-1.5 text-right tabular-nums text-slate-500">{intFmt.format(m.trips)}</td>
+                <td className="px-2 py-1.5 text-right tabular-nums">
+                  <span className="block font-bold text-slate-800">{compactFmt.format(m.cost)}</span>
+                  <span className="block text-phx-xs text-slate-400">{costPerTrip == null ? "—" : compactFmt.format(costPerTrip)}</span>
+                </td>
+                <td
+                  className={cn(
+                    "py-1.5 pl-2 text-right font-bold tabular-nums",
+                    delta == null ? "text-slate-300" : up ? "text-rose-600" : "text-emerald-600",
+                  )}
+                >
+                  {delta == null ? "—" : `${up ? "▲ +" : "▼ "}${Math.abs(Math.round(delta * 100))}%`}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
     </div>
   );
 }

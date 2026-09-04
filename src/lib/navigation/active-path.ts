@@ -46,9 +46,20 @@ export function usesAdminChrome(mode: NavigationMode | undefined): boolean {
 /**
  * Surfaces that carry the arrangeable horizontal nav rows.
  *
- * DELIBERATELY WIDER THAN `usesAdminChrome`, which is a PALETTE question — the portal carries rows
- * and is light, so the two cannot be the same predicate. Keeping them separate is what stops the
- * portal rows inheriting the dark admin chrome.
+ * DELIBERATELY WIDER THAN `usesAdminChrome`, which is a PALETTE question. Keeping the two separate
+ * is what stopped the portal rows inheriting the dark admin chrome while the portal had rows.
+ *
+ * THE PORTAL NO LONGER HAS ANY. Owner rule 2026-09-03 (PR #2994): nothing renders above a person's
+ * own identity card, so `EmployeePortalChrome` dropped `HorizontalNavProvider` entirely along with
+ * the header "+" that was its entry point — read the comment there before changing anything here,
+ * and do NOT "restore parity" by putting them back. `AppShell` is the only surface that mounts the
+ * rows, and every one of its call sites states `navigationMode="admin"`, so this predicate is not
+ * reachable with `"employee-portal"` today.
+ *
+ * It still answers true for the portal on purpose. The value is not what makes the portal
+ * row-less — the shell not mounting the provider is — and narrowing it here would move a live
+ * decision out of the component that states it, into a predicate whose next reader has no way to
+ * see why. It stays a question about which surfaces are ALLOWED rows.
  *
  * One stored layout document serves all three modes, and that is safe by construction rather than
  * by luck: each mode's sections carry disjoint href prefixes — `/admin/...`, `/hr/...`,

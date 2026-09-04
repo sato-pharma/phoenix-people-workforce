@@ -1,3 +1,4 @@
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { LayoutGrid } from "lucide-react";
 
@@ -9,6 +10,8 @@ import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { getSections } from "@/lib/navigation/active-path";
 import { layoutOwnerKey } from "@/lib/navigation/personal-layout";
 import { loadCompanyDefaultLayout, loadEffectiveLayout } from "@/lib/navigation/personal-layout-store";
+import { SHELL_HEADER } from "@/lib/navigation/shell-headers";
+import { resolveShellNavigationMode } from "@/lib/navigation/shell-mode";
 
 export const dynamic = "force-dynamic";
 
@@ -28,11 +31,23 @@ export default async function SidebarLayoutPage() {
   const access = await resolveAccessContextFromPage();
   if (access.source === "guest") redirect("/login");
 
+  // The catalogue has to be the one the viewer's own shell renders from, and which shell that is
+  // depends on the ADDRESS as well as the account. This hardcoded "admin" until 2026-09-03, which
+  // was wrong for exactly the seats that reach this page under a different mode: an HR seat is
+  // pulled onto /hr/admin/sidebar-layout by AppShell and renders HR chrome, so the editor offered
+  // them /admin/... and /sales/... while their rows are built from /hr/... . Nothing errored —
+  // applyPersonalLayout indexes the gated set by href and silently drops anything it does not hold,
+  // and the three modes use disjoint prefixes — so every arrangement they saved simply did nothing.
+  const shellHeader = (await headers()).get(SHELL_HEADER);
+  const navigationMode = resolveShellNavigationMode(access, shellHeader);
+
   const matrix = await getPermissionMatrix();
   const permissionLookup = buildPermissionLookup(matrix, access.role);
+  // Still the viewer's OWN permitted sections, which is the whole security story above: the mode
+  // selects WHICH catalogue is gated, never how much of it survives the gate.
   const gated = getSections(
-    getNavigationSections("admin"),
-    "admin",
+    getNavigationSections(navigationMode),
+    navigationMode,
     permissionLookup,
     access.role,
   );

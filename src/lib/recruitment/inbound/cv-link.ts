@@ -23,6 +23,25 @@ const ALLOWED_HOST_PATTERNS: RegExp[] = [
   /(^|\.)we\.tl$/i,
 ];
 
+// Hosts an allowlisted link may legitimately land on AFTER redirects. Every provider here serves the
+// bytes from a host other than the one the share link names: drive.google.com/uc?export=download
+// hands off to drive.usercontent.google.com, a Docs export to <id>.googleusercontent.com, a Dropbox
+// dl=1 link to dropboxusercontent.com. These are download endpoints only — allowed as a redirect
+// TARGET, never as a link we would follow from an untrusted sender in the first place.
+const ALLOWED_REDIRECT_HOST_PATTERNS: RegExp[] = [
+  ...ALLOWED_HOST_PATTERNS,
+  /(^|\.)usercontent\.google\.com$/i,
+  /(^|\.)googleusercontent\.com$/i,
+  /(^|\.)dropboxusercontent\.com$/i,
+  /(^|\.)1drv\.com$/i,
+  /(^|\.)wetransfer\.net$/i,
+];
+
+export function isAllowlistedCvRedirectHost(hostname: string): boolean {
+  const host = hostname.trim().toLowerCase();
+  return ALLOWED_REDIRECT_HOST_PATTERNS.some((pattern) => pattern.test(host));
+}
+
 export function isAllowlistedCvHost(hostname: string): boolean {
   const host = hostname.trim().toLowerCase();
   return ALLOWED_HOST_PATTERNS.some((pattern) => pattern.test(host));
@@ -150,10 +169,15 @@ export async function fetchCvFromUrl(url: string, maxBytes: number): Promise<CvL
   if (!response.ok) {
     return { ok: false, reason: `The CV link could not be downloaded — ${parsed.hostname} answered ${response.status}.` };
   }
-  // Re-check the host AFTER redirects — a link that bounces off the allowlist is rejected.
+  // Re-check the host AFTER redirects. Providers serve the bytes from a dedicated download host, so
+  // this allowlist is wider than the link one — but it is still an allowlist, and it names the host
+  // it refused so a future provider change is diagnosable instead of silent.
   try {
-    if (response.url && !isAllowlistedCvHost(new URL(response.url).hostname)) {
-      return { ok: false, reason: "The CV link redirected to a host we do not download from." };
+    if (response.url) {
+      const landedOn = new URL(response.url).hostname;
+      if (!isAllowlistedCvRedirectHost(landedOn)) {
+        return { ok: false, reason: `The CV link redirected to ${landedOn}, which we do not download from.` };
+      }
     }
   } catch {
     return { ok: false, reason: "The CV link redirected somewhere that could not be checked." };

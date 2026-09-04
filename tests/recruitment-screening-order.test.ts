@@ -3,6 +3,11 @@ import assert from "node:assert/strict";
 import { candidateRoleFamilies } from "../src/lib/recruitment/candidate-role-family.ts";
 import {
   countByBand,
+  countByRegion,
+  duplicateSets,
+  experienceRank,
+  filterByRegion,
+  NO_REGION,
   orderForScreening,
   screeningBand,
   screeningBandForFamily,
@@ -230,4 +235,157 @@ export function runRecruitmentScreeningOrderTests() {
     countByBand([row("a", { family: "medical_rep", notACv: true }), row("b", { family: "medical_rep" })], describe),
     { field_force: 1, pharma_adjacent: 0, sales: 0, unknown: 0, unrelated: 0, no_cv: 1 },
   );
+
+  // ── Experience, the third tiebreaker ────────────────────────────────────────────────────────────
+  //
+  // Measured on production 2026-09-04: of 534 undecided rows, 296 carry NO years figure at all, 27
+  // are under 2 years, 49 are 2–5, and 162 are 5 or more.
+  assert.equal(experienceRank(12), 0, "a senior candidate ranks first");
+  assert.equal(experienceRank(5), 0, "5 years is the senior cut");
+  assert.equal(experienceRank(3), 1, "mid");
+  assert.equal(experienceRank(2), 1, "2 years is the mid cut");
+  assert.equal(experienceRank(1.5), 2, "under 2 is junior");
+  assert.equal(experienceRank(0), 2, "zero is a real answer, and it is junior");
+
+  // THE headline assertion for this rule. 296 of 534 rows have no figure; ranking them below
+  // everyone who has one would demote more than half the pool for a gap in our own data, and
+  // ranking them above would invent seniority nobody claimed. The middle is the only honest place.
+  assert.equal(experienceRank(null), 1, "an unknown year count sits in the MIDDLE bucket, never last");
+  assert.equal(experienceRank(undefined), 1, "an absent year count sits in the middle too");
+  assert.equal(experienceRank(Number.NaN), 1, "an unreadable figure is an unknown, not a zero");
+
+  // Experience sorts BELOW pharma: a confirmed rep with 1 year still outranks a 20-year non-rep,
+  // because pharma experience is the thing being hired for and the bucket is only a tiebreaker.
+  assert.deepEqual(
+    orderForScreening(
+      [
+        row("veteran, not a rep", { family: "medical_rep", hasPharmaExperience: false, yearsExperience: 20 }),
+        row("junior rep", { family: "medical_rep", hasPharmaExperience: true, yearsExperience: 1 }),
+      ],
+      describe,
+    ).map((r) => r.name),
+    ["junior rep", "veteran, not a rep"],
+    "pharma experience outranks years — years is a tiebreaker, not a promotion",
+  );
+
+  // But ABOVE recency: inside one band with the same pharma answer, the 12-year candidate is met
+  // before the 1-year one even though the 1-year one applied later.
+  assert.deepEqual(
+    orderForScreening(
+      [
+        row("newer, junior", {
+          createdAt: "2026-09-01T00:00:00Z",
+          family: "medical_rep",
+          hasPharmaExperience: true,
+          yearsExperience: 1,
+        }),
+        row("older, senior", {
+          createdAt: "2026-08-01T00:00:00Z",
+          family: "medical_rep",
+          hasPharmaExperience: true,
+          yearsExperience: 12,
+        }),
+      ],
+      describe,
+    ).map((r) => r.name),
+    ["older, senior", "newer, junior"],
+    "within a band and a pharma answer, experience beats recency",
+  );
+
+  // A row with no figure must not fall behind a junior one.
+  assert.deepEqual(
+    orderForScreening(
+      [
+        row("junior", { family: "medical_rep", hasPharmaExperience: true, yearsExperience: 1 }),
+        row("unknown", { family: "medical_rep", hasPharmaExperience: true }),
+      ],
+      describe,
+    ).map((r) => r.name),
+    ["unknown", "junior"],
+    "a missing year count must never cost somebody their place",
+  );
+
+  // ── Near-duplicates: made adjacent, NEVER merged ────────────────────────────────────────────────
+  //
+  // 28 undecided rows share a phone with another row and 9 of those carry a DIFFERENT name — a
+  // mother and daughter, two colleagues, one handset. So the key clusters and reports; it does not
+  // decide. This is the assertion that must fail if anybody ever makes it merge.
+  const twins = [
+    row("Amr Mohamed Rozza", { createdAt: "2026-09-01T00:00:00Z", duplicateKey: "201004316664", family: "medical_rep" }),
+    row("stranger", { createdAt: "2026-08-20T00:00:00Z", family: "medical_rep" }),
+    row("Amr rozza", { createdAt: "2026-07-01T00:00:00Z", duplicateKey: "201004316664", family: "medical_rep" }),
+  ];
+  const clustered = orderForScreening(twins, describe);
+  assert.equal(clustered.length, 3, "clustering must never DROP a row — it is not a merge");
+  assert.deepEqual(
+    clustered.map((r) => r.name),
+    ["Amr Mohamed Rozza", "Amr rozza", "stranger"],
+    "the twin is lifted to sit behind its best-ranked copy, and everybody else keeps their order",
+  );
+
+  // The best-ranked member keeps the place the RANKING gave it — a duplicate can never drag its
+  // twin up the queue, which is the failure that would make this unsafe to do to a list in use.
+  const dragged = [
+    row("strong", { family: "medical_rep", hasPharmaExperience: true }),
+    row("weak twin A", { createdAt: "2026-09-01T00:00:00Z", duplicateKey: "p", family: "finance" }),
+    row("weak twin B", { createdAt: "2026-08-01T00:00:00Z", duplicateKey: "p", family: "finance" }),
+  ];
+  assert.deepEqual(
+    orderForScreening(dragged, describe).map((r) => r.name),
+    ["strong", "weak twin A", "weak twin B"],
+    "a duplicate pair must not climb above a better candidate",
+  );
+
+  // A blank key is not a key — otherwise every row without a phone would cluster into one lump.
+  const blanks = [
+    row("no phone 1", { duplicateKey: "", family: "medical_rep" }),
+    row("no phone 2", { duplicateKey: null, family: "medical_rep" }),
+    row("no phone 3", { duplicateKey: "   ", family: "medical_rep" }),
+  ];
+  assert.equal(orderForScreening(blanks, describe).length, 3, "blank keys must not collapse anything");
+  assert.equal(duplicateSets(blanks, describe).size, 0, "a blank key is never a duplicate set");
+
+  // The sets the screen shows. Only groups of two or more, so a lone CV never gets a badge.
+  const sets = duplicateSets(twins, describe);
+  assert.equal(sets.size, 1, "one duplicate set");
+  assert.deepEqual(
+    sets.get("201004316664")?.map((r) => r.name),
+    ["Amr Mohamed Rozza", "Amr rozza"],
+    "both names come back, because telling one person from two is the reader's job, not ours",
+  );
+
+  // ── Region: a filter, and a bucket for the ones we cannot place ─────────────────────────────────
+  //
+  // 73 of 534 undecided rows resolve to no region at all. They get their own chip rather than
+  // vanishing from every region a screener might pick.
+  const byRegion = [
+    row("cairo", { family: "medical_rep", region: "CA" }),
+    row("delta", { family: "medical_rep", region: "D1" }),
+    row("cairo too", { family: "medical_rep", region: "CA" }),
+    row("nowhere", { family: "medical_rep" }),
+  ];
+  const regionCounts = countByRegion(byRegion, describe);
+  assert.equal(regionCounts.get("CA"), 2);
+  assert.equal(regionCounts.get("D1"), 1);
+  assert.equal(regionCounts.get(NO_REGION), 1, "an unplaceable candidate is counted, never dropped");
+
+  assert.deepEqual(
+    filterByRegion(byRegion, describe, "CA").map((r) => r.name),
+    ["cairo", "cairo too"],
+  );
+  assert.deepEqual(
+    filterByRegion(byRegion, describe, NO_REGION).map((r) => r.name),
+    ["nowhere"],
+    "the no-region chip must be reachable, or 73 people are unscreenable",
+  );
+  assert.equal(filterByRegion(byRegion, describe, null).length, 4, "no filter returns everybody");
+
+  // Filtering must not reorder. The screener picked a region, not a different ranking.
+  const orderedByRegion = orderForScreening(byRegion, describe);
+  assert.deepEqual(
+    filterByRegion(orderedByRegion, describe, "CA").map((r) => r.name),
+    orderedByRegion.filter((r) => r.region === "CA").map((r) => r.name),
+    "a region filter narrows the queue and changes nothing else about it",
+  );
+
 }

@@ -461,3 +461,41 @@ would have shipped a second production deploy to fix a queue that was already re
 
 Cost of the mistake if unwritten: a session reads a normal two-merge morning as a production
 incident. Sessions here merge back-to-back constantly (~30 commits/day), so the window recurs daily.
+
+## New hook — the duplicate-identity test cannot fire across distributors (2026-09-03)
+
+`confirmDirectOrderCleanup` carries an identity standard that reads as strict and safe:
+
+> Identity is proven by a shared distributor customer code — never by a similar name.
+
+The intent is right: Arabic pharmacy names vary by spelling, honorific, and whether the district is
+appended, so name similarity has already merged two different venues here. But the test the sentence
+describes is **structurally incapable of returning true** on the commonest duplicate shape, and a
+session that treats "no shared code" as "not duplicates" is reading a check that never ran.
+
+Every distributor issues customer codes from its **own** catalogue. `direct_order_pharmacy_distributor_codes`
+exists precisely because one venue holds many — one row per distributor. Two pharmacy rows created
+from two different distributors' order files therefore **cannot** share a code, no matter how
+certainly they are the same building. The two pairs merged on 2026-09-03 show it directly:
+
+```
+survivor 75adc578  محمد عبد الغني عزبة النخل   B12-11    EP-PHS 1504555     PS 0001546814
+survivor f7956f28  الجناينى ميت غمر            B187-11   EG     50977       PS 0001503292
+```
+
+The formats do not even collide — `EG` issues 5 digits, `EP-PHS` 7, `PS` 10 zero-padded. There is no
+value either pair could have held that would have made the shared-code test fire.
+
+**What to use instead — evidence that satisfies the standard's intent.** For these two it was: an
+order returned and re-raised byte-identically by the same DM in the same brick, and two distributors
+independently recording the same building number for one venue. Both are far stronger than a name
+match, and neither is a code match.
+
+**What not to do.** Do not relax the rule to name similarity — that is the failure it was written
+against. Do not merge on your own inference either: put the pair to the owner with the evidence, as
+was done here. A merge is reversible in principle (`merged_into_pharmacy_id` survives) but the orders,
+codes and CRM links move with it, and production has no PITR.
+
+Cost of the mistake if unwritten: a session sweeps for duplicates, finds no shared codes, and
+reports the venue list as clean — while the cross-distributor duplicates, which are most of them,
+sit untouched and keep splitting one pharmacy's sales across two rows.

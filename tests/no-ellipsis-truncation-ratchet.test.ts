@@ -103,8 +103,31 @@ import path from "node:path";
  * gone, the five `md:`-prefixed ones were not, and a plain grep for the unprefixed
  * string is what made them invisible. The remaining 240 are all `truncate` or
  * `line-clamp-*`.
+ *
+ * 240 -> 205 on 2026-09-03: thirty-five fell in one pass, walking the HR Business Partner's own
+ * sidebar top to bottom — the second seat done end to end after the employee portal. Every one was
+ * on a live screen on her rail, and every one was fixed rather than deleted.
+ *
+ * The recruitment workspace was the bulk of it at ten. Its candidate table truncated the name, the
+ * contact, the role title, the family, the region and the area — six of the columns a reader scans
+ * to decide who a CV goes to, across 555 production rows. The rest were identity fields of the
+ * same kind: names in the Employee 360 search cards, full names and HR IDs in the contract-renewal
+ * and probation tables, the organogram detail modal's heading, the coaching report's rep name.
+ * `truncate` -> `break-words`, with `break-all` for the CV filename, which has no spaces to
+ * break at. Rows grow taller; that is the trade the portal pass already accepted.
+ *
+ * Two comments in the recruitment workspace argued from the old behaviour ("a name that already
+ * truncates", "this second line already truncates") and were corrected rather than left teaching
+ * it, the same way the five above were.
+ *
+ * ONE site was deliberately NOT retired and is still counted here. employee-management.tsx's
+ * SearchableSelect trigger renders an <input> (searchable-select.tsx:295) — a single-line control
+ * that cannot wrap however it is styled, so dropping the class would not give the text room, it
+ * would swap the ellipsis for a silent clip, which is worse for the reader. It is the same
+ * exception the fits-the-screen rule already makes for a native <select>. Leaving it counted is
+ * the point: the ratchet should carry a known exception, not be quietly relieved of one.
  */
-const BASELINE = 240;
+const BASELINE = 205;
 
 const ROOTS = ["app", "src"];
 

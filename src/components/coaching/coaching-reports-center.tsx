@@ -602,7 +602,7 @@ export function CoachingReportsCenter({
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
                     <p className="font-black text-phx-ink">{report.reportNumber}</p>
-                    <p className="mt-1 truncate font-semibold text-phx-ink">{formatEmployeeDisplayName(report.medicalRepName)}</p>
+                    <p className="mt-1 break-words font-semibold text-phx-ink">{formatEmployeeDisplayName(report.medicalRepName)}</p>
                     <p className="font-mono text-phx-xs text-phx-ink-faint">{report.medicalRepHrId}</p>
                   </div>
                   <Badge className={statusClassName(report.status)}>{statusLabel(report.status)}</Badge>

@@ -40,6 +40,7 @@ import {
   type NavigationMode,
   type PhoenixRole,
 } from "../src/lib/auth/permissions.ts";
+import { resolveShellNavigationMode } from "../src/lib/navigation/shell-mode.ts";
 import { resolvePersonalWorkspaceTabs } from "../src/lib/workspace/personal-workspace-nav.ts";
 
 /**
@@ -409,16 +410,46 @@ export function runHrUrlNamespaceTests() {
     shellSource.includes(`redirect(toHrNamespacePath(requestedPath))`),
     "the redirect target must be built with toHrNamespacePath, which is idempotent — a hand-built `/hr` + path is how a redirect loop starts",
   );
+  // The mode resolution itself moved into src/lib/navigation/shell-mode.ts on 2026-09-03, because a
+  // PAGE needs the same answer: app/(admin)/admin/sidebar-layout/page.tsx has to gate the catalogue
+  // for the mode it is rendered under, and it was hardcoding "admin". Asking resolveNavigationMode
+  // there is the trap — it answers about the PERSON and never returns "hr".
+  //
+  // So these two assertions moved with it, and got STRONGER in the move: the rule now lives in a
+  // plain, JSX-free module this harness can import, so instead of pattern-matching the source for a
+  // ternary we EXECUTE it. What AppShell still has to be pinned on is that it delegates, and that it
+  // hands over the header — a call that forgot the header would resolve every HR seat to admin
+  // chrome with nothing failing anywhere to say so.
+  const shellFlat = shellSource.replace(/\s+/g, " ");
   assert.ok(
-    shellSource.includes(`requestHeaders.get(SHELL_HEADER) === "hr" ? "hr"`),
-    "AppShell must resolve the shell from the proxy header",
+    shellFlat.includes("resolveShellNavigationMode( access, requestHeaders.get(SHELL_HEADER), navigationMode, )")
+      || shellFlat.includes("resolveShellNavigationMode(access, requestHeaders.get(SHELL_HEADER), navigationMode)"),
+    "AppShell must resolve the shell through resolveShellNavigationMode, passing it the proxy header",
+  );
+
+  const hrSeatAccess = {
+    hrId: "a-1",
+    loginId: "a-1",
+    role: "HR Advisory" as PhoenixRole,
+    scope: scopeForRole("HR Advisory"),
+    source: "session" as const,
+  };
+  assert.equal(
+    resolveShellNavigationMode(hrSeatAccess, "hr"),
+    "hr",
+    "the shell must resolve HR chrome from the proxy header",
   );
   // The header check must beat the explicit `navigationMode="admin"` the (admin) layout passes in,
   // or every page in that group would render admin chrome under an /hr address.
-  const headerCheck = shellSource.indexOf(`requestHeaders.get(SHELL_HEADER) === "hr" ? "hr"`);
-  assert.ok(
-    headerCheck > 0 && shellSource.indexOf("navigationMode ?? resolveNavigationMode(access)", headerCheck) > headerCheck,
+  assert.equal(
+    resolveShellNavigationMode(hrSeatAccess, "hr", "admin"),
+    "hr",
     "the shell header must take precedence over the navigationMode prop",
+  );
+  assert.equal(
+    resolveShellNavigationMode(hrSeatAccess, null),
+    "admin",
+    "off the namespace there is no header, and the mode falls back to the question about the person",
   );
   // The redirect must not ALSO be left in the route-group layout: two redirects on one request is
   // how a loop gets built by accident.

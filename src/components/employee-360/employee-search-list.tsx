@@ -214,8 +214,15 @@ export function EmployeeSearchList({
 
   return (
     <div className="space-y-4">
-      {/* Role tabs */}
-      <div className="flex gap-2 overflow-x-auto pb-1">
+      {/*
+        Role tabs — bound by the owner's fits-the-screen golden rule (AGENTS.md §4): never a
+        horizontal scroll, mobile AND desktop friendly. This was `flex gap-2 overflow-x-auto pb-1`,
+        which parked three of the six role pills behind a sideways scroll on a phone. `flex-wrap`
+        is the rule's permitted answer — the row wraps onto a second line instead of scrolling, and
+        the pills keep their `shrink-0` so no label is squeezed below its own text width. (The
+        `pb-1` went with the scrollbar it made room for; `gap-2` now spaces the wrapped rows.)
+      */}
+      <div className="flex flex-wrap gap-2">
         {tabs.map((c) => {
           const Icon = TAB_ICON[c];
           const active = c === activeTab;
@@ -411,14 +418,14 @@ function EmployeeCard({ e, basePath }: { e: Employee360ListItem; basePath: strin
       </span>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
-          <span className="truncate text-sm font-bold text-slate-900">{e.displayName}</span>
+          <span className="min-w-0 break-words text-sm font-bold text-slate-900">{e.displayName}</span>
           {e.employmentStatus && e.employmentStatus !== "active" ? (
             <span className="shrink-0 rounded-full bg-phx-warn-bg px-1.5 py-0.5 text-phx-3xs font-black uppercase tracking-wide text-phx-warn">
               {e.employmentStatus.replace(/_/g, " ")}
             </span>
           ) : null}
         </div>
-        <div className="mt-0.5 truncate text-xs text-slate-500">{e.jobTitle || "—"}</div>
+        <div className="mt-0.5 break-words text-xs text-slate-500">{e.jobTitle || "—"}</div>
         <div className="mt-1.5 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-phx-xs text-slate-400">
           <span className="rounded border border-slate-200 px-1.5 py-0.5 font-mono font-semibold text-slate-500">
             {e.hrId.toUpperCase()}
@@ -428,7 +435,7 @@ function EmployeeCard({ e, basePath }: { e: Employee360ListItem; basePath: strin
           ))}
         </div>
         {e.managerName ? (
-          <div className="mt-1 truncate text-phx-xs text-slate-400">Reports to {e.managerName}</div>
+          <div className="mt-1 break-words text-phx-xs text-slate-400">Reports to {e.managerName}</div>
         ) : null}
       </div>
       <ArrowRight className="mt-1 h-4 w-4 shrink-0 text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-orange-500" />

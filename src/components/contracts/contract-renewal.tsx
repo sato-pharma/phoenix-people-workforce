@@ -455,10 +455,10 @@ export function ContractRenewal({ initialData, initialError }: Props) {
                   const isWarning = days >= 0 && days <= 30;
                   return (
                     <tr className="transition-colors hover:bg-slate-50/65" key={`${row.hr_id}-${index}`}>
-                      <td className={cn(tableCellClassName, "max-w-[82px] truncate font-mono text-text-secondary")}>{row.hr_id || "-"}</td>
-                      <td className={cn(tableCellClassName, "max-w-[82px] truncate font-mono text-text-secondary")}>{row.crm_id || "-"}</td>
-                      <td className={cn(tableCellClassName, "truncate font-semibold text-text")}>{row.full_name}</td>
-                      <td className={cn("max-w-[190px] truncate", tableCellClassName)}>{row.job_title}</td>
+                      <td className={cn(tableCellClassName, "max-w-[82px] break-words font-mono text-text-secondary")}>{row.hr_id || "-"}</td>
+                      <td className={cn(tableCellClassName, "max-w-[82px] break-words font-mono text-text-secondary")}>{row.crm_id || "-"}</td>
+                      <td className={cn(tableCellClassName, "break-words font-semibold text-text")}>{row.full_name}</td>
+                      <td className={cn("max-w-[190px] break-words", tableCellClassName)}>{row.job_title}</td>
                       <td className={tableCellClassName}>{row.line}</td>
                       <td className={tableCellClassName}>{row.area}</td>
                       <td className={tableCellClassName}>{formatStoredDate(row.contract_signed_date)}</td>

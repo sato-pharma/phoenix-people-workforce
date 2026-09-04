@@ -24,6 +24,7 @@ import { isWhatsAppAutoReplyEnabled, sendWhatsAppCvAcknowledgement } from "@/lib
 import { handleUnreadableWhatsAppCv } from "@/lib/recruitment/inbound/whatsapp-unreadable-cv";
 import { fetchAndParseEmailMessagesByUid } from "@/lib/recruitment/inbound/email-poller";
 import { fetchCvFromUrl } from "@/lib/recruitment/inbound/cv-link";
+import { mirrorCandidateCvsToDrive } from "@/lib/recruitment/drive-cv-mirror";
 import { ingestInboundCv, maxInboundCvBytes, type InboundCvIntakeResult } from "@/lib/recruitment/inbound/cv-intake-service";
 import { notifyInboundIntakeDeadLetter } from "@/lib/recruitment/inbound/recruitment-notify";
 import {
@@ -144,6 +145,17 @@ async function processWhatsAppRow(payload: WhatsAppQueuePayload): Promise<Inboun
     await applyPendingExtraAnswers({ candidateId: result.candidateId, waId: payload.from }).catch(() => {});
   }
 
+  // File the CV into the owner's Google Drive, under the region/area folders that mirror the
+  // recruitment shelf. Runs AFTER applyPendingClassification above, deliberately: when an applicant
+  // finished their answers before the worker ran, the folder is already known and the file goes
+  // straight to its real home instead of to the holding folder and then moving.
+  //
+  // Unlike the Telegram mirror below, this is NOT gated on a direct applicant or a new candidate.
+  // The owner asked for every CV to be in the cabinet, and filing costs nobody a notification — a
+  // forwarded CV and a history replay are CVs he wants filed just the same. Best-effort: it never
+  // throws, and a Drive outage leaves the CV captured exactly as before.
+  await mirrorCandidateCvsToDrive(result.candidateId);
+
   // Show the owner who just wrote in. The advertised number is moving to the Cloud API line, which
   // cannot be opened on a phone and never will be — so without this he would gain the automation
   // and lose sight of the conversation. Telegram is the replacement handset: he already carries it
@@ -226,6 +238,11 @@ async function processEmailRow(payload: EmailQueuePayload): Promise<InboundCvInt
     // day over the last three weeks, the one 135-message day being a deliberate one-off backfill.
     const result = await ingestInboundCv({ channel: "email", ...finalInput, reclaim: true });
     if (result.outcome === "error") throw new IntakeErrorOutcome("Email");
+    // The Drive cabinet is not WhatsApp's — the owner asked for every CV in it, and a CV that
+    // arrived in the careers inbox is one. An email applicant never answers the three WhatsApp
+    // questions, so unless a recruiter has filed them by hand this lands in the holding folder,
+    // which is the honest place for a CV nobody has classified. Best-effort, like the WhatsApp side.
+    await mirrorCandidateCvsToDrive(result.candidateId);
     last = result;
   }
   return last;

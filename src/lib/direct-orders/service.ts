@@ -7610,7 +7610,10 @@ export async function confirmDirectOrderCleanup(
       if (!duplicateId || duplicateId === group.keeperId) continue;
       const { data: row } = await supabase
         .from("direct_order_requests")
-        .select("id, status")
+        // The whole row, not `id, status`. The notification below needs the requester and the
+        // pharmacy, and a narrowed select would hand it `undefined` for both rather than fail —
+        // the notice would still "send", addressed to nobody.
+        .select("*")
         .eq("id", duplicateId)
         .maybeSingle();
       const status = String((row as { status?: string } | null)?.status ?? "");
@@ -7653,6 +7656,36 @@ export async function confirmDirectOrderCleanup(
         summary:
           `Direct order cancelled as a confirmed duplicate of ${group.keeperId} — same pharmacy, product, ` +
           `quantity, deal terms and collection date. Reason: ${reason}`,
+      });
+
+      // The workflow registry has declared `notify requester + CC` for this action since it was
+      // added (2026-08-09), and nothing here ever sent it: the event row and the audit row are both
+      // admin-side, so an order was closed under its requester without a word reaching them. The
+      // gap is invisible from the registry screen, which shows the DECLARATION, not the behaviour.
+      //
+      // `cancel_held` — the sibling that also ends at `cancelled` and declares the same recipients —
+      // has always notified, so this is that notice, with its channel choice kept deliberately:
+      // in-app and Telegram reach requester + SFE + Super Admin, and email is dropped, because
+      // having one's own superseded duplicate tidied away is not news worth an inbox entry.
+      const duplicateRequest = mapRequestRow(row as Record<string, unknown>);
+      const resolveName = await nameLookup();
+      const requesterDisplayName =
+        resolveName(duplicateRequest.requesterHrId) ?? duplicateRequest.requesterHrId;
+      const duplicatePharmacy =
+        (await loadPharmaciesByIds([duplicateRequest.pharmacyId])).get(duplicateRequest.pharmacyId) ?? null;
+      const notifyContext = await buildNotifyContext(duplicateRequest, requesterDisplayName, duplicatePharmacy);
+      await notifyDirectOrder({
+        recipients: [duplicateRequest.requesterHrId, ...(await ccRecipients())],
+        channels: ["in_app", "telegram"],
+        title: "Direct order cancelled as a duplicate",
+        message:
+          `${buildDirectOrderNotificationLine(notifyContext)} ` +
+          `It was cancelled as a duplicate of the request that was kept, confirmed by ` +
+          `${resolveName(actorHrId) ?? actorHrId}. Reason: ${reason}`,
+        metrics: buildDirectOrderNotificationMetrics(notifyContext),
+        eventType: "cancelled",
+        requestId: duplicateId,
+        subjectHrId: duplicateRequest.requesterHrId,
       });
     }
   }

@@ -7,6 +7,7 @@
 // The numeric code + the args[] needed to fill the %s placeholders are both in the string,
 // so we can reconstruct the real message client-side from a small curated template map.
 
+import { CROSS_ORIGIN_MASKED_DISPLAY, isCrossOriginMaskedMessage } from "@/lib/error-monitor/cross-origin-masked";
 import { isStaleDeployChunkError, isTransientRouterMountError } from "@/lib/utils/stale-deploy-recovery";
 
 // Condensed, admin-facing versions of React's official error templates
@@ -86,6 +87,11 @@ export function decodeErrorMessage(raw: string, stack?: string | null): DecodedM
 
   if (reactDecoded) {
     display = reactDecoded;
+  } else if (isCrossOriginMaskedMessage(trimmed)) {
+    // Retroactive by design: 1,972 rows already stored read as the bare "Script error.", which
+    // says nothing and looks like an app crash. Decoding at display time relabels every one of
+    // them without a migration.
+    display = CROSS_ORIGIN_MASKED_DISPLAY;
   } else if (isStaleDeployChunkError(asError)) {
     display = "Stale deployment — a code chunk failed to load (auto-recovered on reload).";
   } else if (isTransientRouterMountError(asError)) {

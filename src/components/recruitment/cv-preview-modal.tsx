@@ -414,7 +414,7 @@ export function CvPreviewModal({ fileName, mimeType, downloadUrl, onClose, sideP
         }`}
       >
         <div className="flex items-center justify-between gap-4 border-b border-phx-line px-5 py-3">
-          <p className="truncate text-sm font-semibold text-slate-900">{fileName}</p>
+          <p className="break-all text-sm font-semibold text-slate-900">{fileName}</p>
           <div className="flex items-center gap-3">
             <a
               className="text-xs font-semibold text-slate-500 underline-offset-2 hover:text-slate-900 hover:underline"

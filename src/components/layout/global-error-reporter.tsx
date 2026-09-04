@@ -2,6 +2,10 @@
 
 import { useEffect } from "react";
 
+import {
+  CROSS_ORIGIN_MASKED_DISPLAY,
+  isCrossOriginMaskedErrorEvent,
+} from "@/lib/error-monitor/cross-origin-masked";
 import { reportClientError } from "@/lib/error-monitor/report-client-error";
 import { isStaleDeployChunkError, isTransientRouterMountError, recoverFromStaleDeployOnce } from "@/lib/utils/stale-deploy-recovery";
 
@@ -12,6 +16,14 @@ function isIgnorable(message: string, source?: string | null): boolean {
   if (source && extensionUrlPattern.test(source)) return true;
   return false;
 }
+
+// A cross-origin error the browser emptied carries no information by construction, so a second
+// one carries no more than the first. Reporting every occurrence turned one 20-minute session
+// into 24 identical rows and buried the errors that could actually be acted on. Report the first
+// — dropping it outright would hide a genuine change in how often this happens — and count the
+// rest. Module-level, so it resets on a real page load and holds across App Router navigations,
+// matching the sequence counter in report-client-error.ts.
+let maskedCrossOriginCount = 0;
 
 // Route error.tsx boundaries only catch React render-phase errors within their own
 // segment. A router-mount race or a chunk error thrown outside a component's render
@@ -32,6 +44,14 @@ export function GlobalErrorReporter() {
     function handleError(event: ErrorEvent) {
       const message = event.message || "Unknown window error";
       if (isIgnorable(message, event.filename)) return;
+      if (isCrossOriginMaskedErrorEvent(event)) {
+        maskedCrossOriginCount += 1;
+        if (maskedCrossOriginCount > 1) return;
+        // Pass the string, not an Error: an Error built here would carry THIS file's stack and
+        // read as though the reporter itself threw.
+        reportClientError({ error: CROSS_ORIGIN_MASKED_DISPLAY });
+        return;
+      }
       maybeRecover(event.error, message);
       reportClientError({ error: event.error ?? message });
     }

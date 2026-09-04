@@ -213,7 +213,7 @@ export function OrganogramAudienceDialog({ onClose, rows, scopeLabel }: Props) {
             </span>
             <div className="min-w-0">
               <p className="whitespace-nowrap text-sm font-bold leading-tight">Select people</p>
-              <p className="mt-0.5 whitespace-nowrap text-phx-xs font-medium text-orange-200">
+              <p className="mt-0.5 break-words text-phx-xs font-medium text-orange-200">
                 {scopeLabel}
               </p>
             </div>
@@ -239,7 +239,13 @@ export function OrganogramAudienceDialog({ onClose, rows, scopeLabel }: Props) {
                 <span className="w-14 shrink-0 whitespace-nowrap text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">
                   {ORGANOGRAM_AUDIENCE_FACET_LABELS[facet]}
                 </span>
-                <div className="flex flex-nowrap items-center gap-1.5 overflow-x-auto overscroll-x-contain py-0.5">
+                {/*
+                  Fits-the-screen golden rule (AGENTS.md §4). This was `flex-nowrap
+                  overflow-x-auto`, so on a phone the Area row — the longest, one chip per area —
+                  hid most of its own filters behind a sideways scroll the viewer had to discover.
+                  Wrapping is the rule's permitted answer.
+                */}
+                <div className="flex flex-wrap items-center gap-1.5 py-0.5">
                   {values.map((value) => (
                     <FacetChip
                       active={filters[facet].includes(value)}
@@ -303,13 +309,26 @@ export function OrganogramAudienceDialog({ onClose, rows, scopeLabel }: Props) {
             </p>
           ) : (
             <>
-              {/* Desktop */}
-              <table className="hidden w-full border-collapse text-left md:table">
+              {/*
+                Desktop — `table-fixed` with a `<colgroup>`, per the fits-the-screen golden rule.
+                Every cell here carried `whitespace-nowrap` inside an `overflow-auto` parent, so
+                a full work email beside a long name pushed the table past the dialog and the
+                whole thing scrolled sideways at the narrower desktop widths. Fixed columns share
+                the dialog's width instead, and the cells wrap.
+              */}
+              <table className="hidden w-full table-fixed border-collapse text-left md:table">
+                <colgroup>
+                  <col className="w-10" />
+                  <col className="w-[26%]" />
+                  <col className="w-[22%]" />
+                  <col className="w-[18%]" />
+                  <col className="w-[34%]" />
+                </colgroup>
                 <thead className="sticky top-0 z-10 bg-white">
                   <tr className="border-b border-phx-line">
                     {["", "Name", "Role", "Area", "Work Email"].map((label, index) => (
                       <th
-                        className="whitespace-nowrap px-3 py-2 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400"
+                        className="break-words px-3 py-2 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400"
                         key={label || `col-${index}`}
                         scope="col"
                       >
@@ -331,7 +350,7 @@ export function OrganogramAudienceDialog({ onClose, rows, scopeLabel }: Props) {
                         )}
                         key={key}
                       >
-                        <td className="w-8 px-3 py-1.5">
+                        <td className="px-3 py-1.5">
                           <input
                             aria-label={`Select ${organogramAudienceName(row)}`}
                             checked={selectedKeys.has(key)}
@@ -340,16 +359,17 @@ export function OrganogramAudienceDialog({ onClose, rows, scopeLabel }: Props) {
                             type="checkbox"
                           />
                         </td>
-                        <td className="whitespace-nowrap px-3 py-1.5 text-phx-sm font-bold text-slate-800">
+                        <td className="break-words px-3 py-1.5 text-phx-sm font-bold text-slate-800">
                           {isOpenSeat ? "Open Vacancy" : organogramAudienceName(row)}
                         </td>
-                        <td className="whitespace-nowrap px-3 py-1.5 text-phx-sm font-medium text-slate-600">
+                        <td className="break-words px-3 py-1.5 text-phx-sm font-medium text-slate-600">
                           {organogramAudienceRole(row)}
                         </td>
-                        <td className="whitespace-nowrap px-3 py-1.5 text-phx-sm font-medium text-slate-600">
+                        <td className="break-words px-3 py-1.5 text-phx-sm font-medium text-slate-600">
                           {row.areaName ?? row.regionName ?? row.lineName ?? "—"}
                         </td>
-                        <td className="whitespace-nowrap px-3 py-1.5 text-phx-sm font-medium">
+                        {/* `break-all`, not `break-words`: an email address has no space to break at. */}
+                        <td className="break-all px-3 py-1.5 text-phx-sm font-medium">
                           {isOpenSeat ? (
                             <span className="text-slate-400">No occupant</span>
                           ) : email ? (
@@ -384,17 +404,24 @@ export function OrganogramAudienceDialog({ onClose, rows, scopeLabel }: Props) {
                           onChange={() => toggleRow(key)}
                           type="checkbox"
                         />
-                        <span className="min-w-0 flex-1 overflow-x-auto">
-                          <span className="block whitespace-nowrap text-phx-md font-bold text-slate-800">
+                        {/*
+                          Each recipient row was its own horizontal scroller (`overflow-x-auto`
+                          over `whitespace-nowrap` name and role), so a long Arabic name or a
+                          title like "Group Product Manager" could only be read by dragging that
+                          one row sideways. Both now wrap; nothing is truncated.
+                        */}
+                        <span className="min-w-0 flex-1">
+                          <span className="block break-words text-phx-md font-bold text-slate-800">
                             {isOpenSeat ? "Open Vacancy" : organogramAudienceName(row)}
                           </span>
-                          <span className="block whitespace-nowrap text-phx-xs font-medium text-slate-500">
+                          <span className="block break-words text-phx-xs font-medium text-slate-500">
                             {organogramAudienceRole(row)}
                             {row.areaName ? ` · ${row.areaName}` : ""}
                           </span>
                           <span
                             className={cn(
-                              "block whitespace-nowrap text-phx-xs font-medium",
+                              // `break-all`: this line is usually an email, which has no space to break at.
+                              "block break-all text-phx-xs font-medium",
                               isOpenSeat
                                 ? "text-slate-400"
                                 : email
@@ -417,7 +444,7 @@ export function OrganogramAudienceDialog({ onClose, rows, scopeLabel }: Props) {
         {/* Actions */}
         <div className="space-y-2 border-t border-phx-line bg-slate-50/70 px-5 py-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <p className="whitespace-nowrap text-phx-xs font-bold text-slate-500">
+            <p className="break-words text-phx-xs font-bold text-slate-500">
               {usingTicks
                 ? `${tickedCount} ticked · ${emails.length} email${emails.length === 1 ? "" : "s"}`
                 : `All ${peopleInPick} filtered · ${emails.length} email${emails.length === 1 ? "" : "s"}`}
@@ -459,11 +486,11 @@ export function OrganogramAudienceDialog({ onClose, rows, scopeLabel }: Props) {
 
           {/* Never a silent subset: say who was left out and why. */}
           {copyFailed ? (
-            <p className="whitespace-nowrap text-phx-xs font-bold text-rose-600">
+            <p className="break-words text-phx-xs font-bold text-rose-600">
               The browser blocked the clipboard. Export the sheet instead.
             </p>
           ) : missing.length > 0 || openSeats > 0 ? (
-            <p className="overflow-x-auto whitespace-nowrap text-phx-xs font-medium text-amber-700">
+            <p className="break-words text-phx-xs font-medium text-amber-700">
               Not in the copy:
               {missing.length > 0
                 ? ` ${missing.length} with no work email (${missing
@@ -475,7 +502,7 @@ export function OrganogramAudienceDialog({ onClose, rows, scopeLabel }: Props) {
               {openSeats > 0 ? ` ${openSeats} open seat${openSeats === 1 ? "" : "s"}` : ""}
             </p>
           ) : (
-            <p className="whitespace-nowrap text-phx-xs font-medium text-slate-400">
+            <p className="break-words text-phx-xs font-medium text-slate-400">
               Addresses are separated by a semicolon — paste straight into the To or Bcc field.
             </p>
           )}

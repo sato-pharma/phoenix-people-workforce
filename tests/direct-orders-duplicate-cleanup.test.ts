@@ -603,4 +603,36 @@ export function runDirectOrderDuplicateCleanupTests() {
         "the query, and a board that could see the flag would eventually be asked to filter on it too",
     );
   }
+
+  // ── The cancellation must reach the person whose order it was ─────────────────────────────
+  //
+  // The workflow registry has declared `notify requester + CC` for cancel_duplicate since the action
+  // was added (2026-08-09) and NOTHING sent it. The event row and the audit row are both admin-side,
+  // so an order was closed under its requester without a word reaching them. The registry screen
+  // cannot catch this: it renders the DECLARATION, so the gap reads as compliant from the one place
+  // built to police it — which is why the check has to live here, against the code.
+  {
+    const service = readFileSync(new URL("../src/lib/direct-orders/service.ts", import.meta.url), "utf8");
+    const body = topLevelBlock(service, service.indexOf("export async function confirmDirectOrderCleanup"));
+    assert.ok(body.length > 0, "confirmDirectOrderCleanup must be findable");
+    assert.ok(
+      body.includes("notifyDirectOrder({"),
+      "cancelling a duplicate must NOTIFY the requester — an audit row is not a notification: it is " +
+        "read by the desk, never by the person whose order was closed",
+    );
+    assert.ok(
+      body.includes('channels: ["in_app", "telegram"],'),
+      "and it must drop EMAIL, exactly as its sibling cancel_held does — having one's own superseded " +
+        "duplicate tidied away is not news worth an inbox entry, and widening this would put every " +
+        "cleanup into a District Manager's mailbox",
+    );
+    // The notice addresses the requester, so the row it is built from must carry one. The narrowed
+    // select this replaced would leave requesterHrId undefined and the notification would still
+    // "send" — to nobody — with no error raised anywhere.
+    assert.ok(
+      !body.includes('.select("id, status")'),
+      "the duplicate's row must not be read through a narrowed select — the notification needs the " +
+        "requester and the pharmacy, and a missing recipient fails SILENTLY rather than loudly",
+    );
+  }
 }

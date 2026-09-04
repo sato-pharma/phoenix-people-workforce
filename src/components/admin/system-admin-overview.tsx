@@ -2,8 +2,22 @@ import { Database, Network, ShieldCheck, Users, Wrench } from "lucide-react";
 
 import { CeoCommandCenter, QuickLinkCard, SectionShell } from "@/components/admin/ceo-command-center";
 import { FinanceAdminBands } from "@/components/admin/finance-command-center";
+import { PhoenixIdentityStrip } from "@/components/phoenix-signature-card/PhoenixIdentityStrip";
 import type { SystemAdminOverviewData } from "@/lib/admin/system-overview";
 import type { AccessContext } from "@/lib/auth/permissions";
+
+/**
+ * What the identity strip needs. A narrowed shape rather than `ViewerIdentity` itself, matching
+ * `HrCommandCenterIdentity` on the HR overview — the two pages want the same four fields and
+ * nothing else from the auth module.
+ */
+export type SystemAdminOverviewIdentity = {
+  displayName: string;
+  employeeCode: string | null;
+  photoUrl: string | null;
+  /** The seat's JOB TITLE, already resolved — never the raw permission key. */
+  roleLabel: string;
+};
 
 /**
  * The System Administrator Overview.
@@ -28,24 +42,64 @@ import type { AccessContext } from "@/lib/auth/permissions";
 export function SystemAdminOverview({
   access,
   data,
+  identity,
 }: {
   access: AccessContext;
   data: SystemAdminOverviewData;
+  /**
+   * The signed-in seat, for the identity strip. Resolved by the page from
+   * `resolveViewerIdentityFromPage` — the same source as the topbar chip, so the two cannot
+   * disagree.
+   */
+  identity: SystemAdminOverviewIdentity;
 }) {
   return (
-    <CeoCommandCenter
-      access={access}
-      data={data.ceo}
-      extraBands={
-        <>
-          {/* Omitted rather than zeroed when the finance aggregates did not answer — see
-              getSystemAdminOverviewData. */}
-          {data.finance ? <FinanceAdminBands view={data.finance} /> : null}
-          <SystemToolsBand />
-        </>
-      }
-      variant="admin"
-    />
+    <>
+      {/* THE IDENTITY, AS A 92px STRIP — and the size is the whole point.
+
+          Both halves of the history below are the owner's own instruction, and a session that
+          knows only one half will undo the other:
+
+            1. This page opened with `AdminHeroFrame` + `CeoHeroIdentity` — a full-bleed dark band
+               holding a photo, a badge, a greeting and a clock. It cost roughly a third of the
+               first screen before one row of real work appeared, and on 2026-09-03 he removed it
+               from here and from 131 other admin pages: "remove from all pages this dump block".
+            2. Later the same day he asked for the identity back in the employee portal's idiom,
+               thin: "I don't want it to be too thick, too many space in the page. I want it to be
+               narrow, to have much space for the page to show data." He set the height himself,
+               under 96px. It shipped on the HR overview first (#3037), and he then asked for this
+               page too — "and /admin".
+
+          So the rule that survived both instructions is HEIGHT, not presence: 88px on a phone,
+          92px from `sm` up, both fixed. Anything added here later is measured against that.
+
+          WHY IT IS MOUNTED HERE AND NOT IN `CeoCommandCenter`. That component hosts three
+          variants, and the CEO, SFE and Finance boards are explicitly excluded — the owner, on
+          2026-09-03: "you will keep the CEO and the SFE and the finance as they are today.
+          Exactly, you will not touch them." This file is imported by `/admin` alone, so mounting
+          the strip in it cannot reach those three no matter how the variant flags are later
+          rearranged. The "do not restore it" note in ceo-command-center.tsx still stands and is
+          not contradicted here: what it forbids is the black hero band, on those pages. */}
+      <PhoenixIdentityStrip
+        employeeCode={identity.employeeCode}
+        name={identity.displayName}
+        photoSrc={identity.photoUrl}
+        title={identity.roleLabel}
+      />
+      <CeoCommandCenter
+        access={access}
+        data={data.ceo}
+        extraBands={
+          <>
+            {/* Omitted rather than zeroed when the finance aggregates did not answer — see
+                getSystemAdminOverviewData. */}
+            {data.finance ? <FinanceAdminBands view={data.finance} /> : null}
+            <SystemToolsBand />
+          </>
+        }
+        variant="admin"
+      />
+    </>
   );
 }
 
