@@ -55,7 +55,7 @@ export function SystemAdminOverview({
 }) {
   return (
     <>
-      {/* THE IDENTITY, AS A 92px STRIP — and the size is the whole point.
+      {/* THE IDENTITY, AS A 112px STRIP — and the size is the whole point.
 
           Both halves of the history below are the owner's own instruction, and a session that
           knows only one half will undo the other:
@@ -70,8 +70,16 @@ export function SystemAdminOverview({
                under 96px. It shipped on the HR overview first (#3037), and he then asked for this
                page too — "and /admin".
 
-          So the rule that survived both instructions is HEIGHT, not presence: 88px on a phone,
-          92px from `sm` up, both fixed. Anything added here later is measured against that.
+            3. He then said, twice, that the result was too small against the dashboard under it —
+               "The banner is too small. It's too small in comparison with the dashboard", and
+               after the first fix, "the identity bar is too small still" (2026-09-04). The 96px
+               ceiling he set in (2) is therefore HIS to have lifted, and he lifted it: the strip
+               is 104px on a phone and 112px from `sm` up.
+
+          So the rule that survived all three is that this stays a STRIP — one band, a fraction of
+          the retired block, never a hero — and the exact height is whatever he last measured it
+          at. Anything added here later is measured against that, and the arithmetic that keeps the
+          four lines from clipping lives in `PhoenixIdentityStrip` itself.
 
           WHY IT IS MOUNTED HERE AND NOT IN `CeoCommandCenter`. That component hosts three
           variants, and the CEO, SFE and Finance boards are explicitly excluded — the owner, on

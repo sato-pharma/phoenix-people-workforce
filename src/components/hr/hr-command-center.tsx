@@ -18,7 +18,7 @@
  * column would make a five-tile group a scroll marathon on a 375px screen. The tile's min height
  * and centred axis are what make the pair read cleanly at that width.
  *
- * THE HERO IS A 92px STRIP, NOT A BAND — see the note at the top of the returned tree. It matched
+ * THE HERO IS A 112px STRIP, NOT A BAND — see the note at the top of the returned tree. It matched
  * Finance's exactly (`AdminHeroFrame` + `CeoHeroIdentity`) until the owner removed it on
  * 2026-09-03 for taking a third of the first screen, then asked the same day for the identity back
  * in the employee portal's language and under 96px tall. Height, not presence, is the rule that
@@ -324,7 +324,7 @@ export function HrCommandCenter({
 
   return (
     <div className="min-w-0 max-w-full overflow-x-hidden">
-      {/* THE IDENTITY IS BACK, AS A 92px STRIP — and the size is the whole point.
+      {/* THE IDENTITY IS BACK, AS A 112px STRIP — and the size is the whole point.
 
           History, because both halves of it were the owner's own instruction and a session that
           knows only one half will undo the other:
@@ -340,9 +340,17 @@ export function HrCommandCenter({
                page. I want it to be narrow, to have much space for the page to show data." He
                set the height himself, under 96px.
 
-          So the rule that survived both instructions is HEIGHT, not presence. `PhoenixIdentityStrip`
-          is a fixed 88px on a phone and 92px from `sm` up — about a third of what the old band took
-          and a quarter of the portal card it borrows from. Anything added here later is measured
+            3. He then said, twice, that it was too small against the dashboard under it — most
+               recently "the identity bar is too small still" (2026-09-04). The under-96px ceiling
+               from (2) was his, and he is the one who lifted it.
+
+          So the rule that survived all three is that this stays a STRIP, not a band or a hero.
+          `PhoenixIdentityStrip` is a fixed 104px on a phone and 112px from `sm` up — still a
+          fraction of what the old block took and of the portal card it borrows from. THIS PAGE IS
+          THE WORST CASE for it: "HR OPERATIONS COORDINATOR" is the longest title in the system and
+          both HR seats carry an HR ID, so the strip renders four lines here and three most other
+          places. Re-measure on this page, signed in as HR-009, before changing any size in it.
+          Anything added here later is measured
           against that, not against how the CEO and Finance pages look: those keep their own heroes
           on purpose, and this divergence is still the instruction.
 

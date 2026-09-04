@@ -169,7 +169,7 @@ async function SystemAdminOverviewContent({ access }: { access: AccessContext })
     );
   }
 
-  // The identity is BACK, but as a 92px strip and not as the band that was removed. The full-bleed
+  // The identity is BACK, but as a 112px strip and not as the band that was removed. The full-bleed
   // `AdminHeroFrame` + `CeoHeroIdentity` block went on 2026-09-03 — "remove from all pages this
   // dump block" — and later the same day the owner asked for the identity back in the employee
   // portal's idiom, thin, under 96px. It shipped on the HR overview first and he then named this

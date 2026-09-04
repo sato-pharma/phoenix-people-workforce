@@ -11,6 +11,17 @@ import { useEffect, useRef, useState } from "react";
  * many space in the page. I want it to be narrow, to have much space for the page to show data."
  * He named the height himself — under 96px.
  *
+ * THAT 96px CEILING WAS LIFTED BY HIM, and the history matters because the two instructions read
+ * as contradictory out of order. Twice after setting it he said the result was too small — "The
+ * banner is too small. It's too small in comparison with the dashboard" (2026-09-03), and then,
+ * having seen the fix for that, "the identity bar is too small still" (2026-09-04). The first
+ * time was answered without touching the height, by spanning the block across the bar. The second
+ * time could not be: the measurement below had left 3px of spare vertical room, so no piece of
+ * the identity could grow inside 92px. So the height moved — 104px on a phone, 112px from `sm`
+ * up — and the parts moved with it. It is still a STRIP and the "narrow" half of his instruction
+ * still governs: the block this replaced (`AdminHeroFrame` + `CeoHeroIdentity`) cost roughly a
+ * third of the first screen. Grow this further only on his word, and re-measure both breakpoints.
+ *
  * WHY THIS IS NOT `PhoenixSignatureCard` WITH A CLASS. That card's desktop half is sized by an
  * inline `aspectRatio: 1875 / 420`, and its mobile half by an inline `height: 150px`. Inline
  * styles beat any class a caller passes, so the card cannot be made thin from outside — and it
@@ -21,8 +32,8 @@ import { useEffect, useRef, useState } from "react";
  * WHAT IT BORROWS, so the two read as one family: the warm paper ground (#fdf8f3) with the same
  * two radial washes, the Phoenix watermark bleeding off the right edge under the wave, the
  * orange-ringed portrait at the leading edge, the Pinyon Script name, the orange rule with its
- * dot, and the uppercase letter-spaced title. Same parts, one quarter of the height: 88px on a
- * phone, 92px from `sm` up, both fixed.
+ * dot, and the uppercase letter-spaced title. Same parts, a fraction of the height: 104px on a
+ * phone, 112px from `sm` up, both fixed.
  *
  * WHAT IT DELIBERATELY DOES NOT BORROW: the card's two COLD values. The card sets the wave to
  * #0b1f3a and the name to #2a3a5c, both around hue 257-264. The admin shell those two landings
@@ -56,7 +67,7 @@ const PORTRAIT_BEZEL = "linear-gradient(145deg, #f9c06a, #f47b20 40%, #c45200 70
  * two cannot drift. The strip is not a container, so the `cqw` middles cannot be used and the
  * floors are what a small portrait renders at anyway.
  *
- * It does NOT clip. The outermost layer is 28px of blur on a 60px portrait with 6px of clearance
+ * It does NOT clip. The outermost layer is 28px of blur on a 72px portrait with 6px of clearance
  * inside an `overflow-hidden` section — but the layers are warm and low-alpha on a cream ground,
  * and the cut is invisible at 2x. Verified at 375px before shipping.
  */
@@ -145,7 +156,7 @@ export function PhoenixIdentityStrip({
     <section
       aria-label="Your identity"
       className={[
-        "relative isolate h-[88px] w-full min-w-0 overflow-hidden shadow-[0_6px_20px_rgba(16,35,61,0.10)] sm:h-[92px]",
+        "relative isolate h-[104px] w-full min-w-0 overflow-hidden shadow-[0_6px_20px_rgba(16,35,61,0.10)] sm:h-[112px]",
         className,
       ].join(" ")}
       style={{ background: "#fdf8f3" }}
@@ -171,8 +182,8 @@ export function PhoenixIdentityStrip({
       />
 
       {/* Content sits ABOVE the wave, not on it — hence the bottom inset. */}
-      <div className="absolute inset-x-0 bottom-[16px] top-0 z-10 flex min-w-0 items-center gap-3 px-3 sm:px-4">
-        <span className="relative block h-[60px] w-[60px] shrink-0 sm:h-[66px] sm:w-[66px]">
+      <div className="absolute inset-x-0 bottom-[16px] top-0 z-10 flex min-w-0 items-center gap-3 px-3 sm:gap-4 sm:px-4">
+        <span className="relative block h-[72px] w-[72px] shrink-0 sm:h-[80px] sm:w-[80px]">
           {/* TWO RINGS, MUTUALLY EXCLUSIVE BY BREAKPOINT. One element would be neater, but an
               inline style cannot carry a media query and these two shadows are genuinely
               different things — see PORTRAIT_GLOW / PORTRAIT_RING above. */}
@@ -192,12 +203,12 @@ export function PhoenixIdentityStrip({
                 alt={`${name} portrait`}
                 className="object-cover object-top"
                 fill
-                sizes="66px"
+                sizes="80px"
                 src={photoSrc}
                 unoptimized
               />
             ) : (
-              <span className="flex h-full w-full items-center justify-center text-lg font-black text-[#f47b20]">
+              <span className="flex h-full w-full items-center justify-center text-xl font-black text-[#f47b20]">
                 {initialsFor(name)}
               </span>
             )}
@@ -206,16 +217,22 @@ export function PhoenixIdentityStrip({
 
         <span
           aria-hidden="true"
-          className="hidden h-12 w-px shrink-0 sm:block"
+          className="hidden h-14 w-px shrink-0 sm:block"
           style={{ background: "linear-gradient(180deg, transparent, #e0d0bc 20%, #e0d0bc 80%, transparent)" }}
         />
 
-        {/* The name ceiling is 2.4rem (38.4px) and that number is MEASURED, not chosen. The
-            strip's inner content box is 76px at `sm`, and the tallest real case — "HR OPERATIONS
-            COORDINATOR" over a name — came to 61px at 2rem, leaving 24px. 2.4rem spends 7 of
-            those and keeps 16px of clearance, so nothing clips. Raise it further only after
-            re-measuring `textColumn.bottom` against the strip height on the HR landing, which is
-            the worst case: it carries the longest title in the system.
+        {/* The name ceiling is 2.5rem (40px) and that number is MEASURED, not chosen. Measured
+            on the HR landing signed in as HR-009, which is the worst case in the system — the
+            longest title, "HR OPERATIONS COORDINATOR", over a name AND an HR ID, four lines.
+
+            AT `sm` (1280 viewport, 914px bar): inner box 96px, text column 85px, 6px spare.
+            AT 375px: inner box 88px, text column 64px with the name at its 1.4rem floor, 12px
+            spare. Nothing clips at either, and no child's rect crosses the section's right edge —
+            checked directly, because this section is `overflow-hidden` and would CLIP rather than
+            scroll, which `scrollWidth > clientWidth` is blind to (AGENTS.md §4).
+
+            Raise it further only after re-measuring `textColumn.bottom` against the strip height
+            at BOTH breakpoints on that page. Desktop is the binding one, with 6px.
 
             WHY IT MATTERS THAT THIS IS BIG. The KPI numerals immediately below are 30px at weight
             900. At the old 1.7rem cap the person's own name was SMALLER and four times lighter
@@ -235,7 +252,7 @@ export function PhoenixIdentityStrip({
             ref={nameBoxRef}
             style={{
               fontFamily: '"Pinyon Script", cursive',
-              fontSize: nameFontPx ? `${nameFontPx}px` : "clamp(1.25rem, 4.2vw, 2rem)",
+              fontSize: nameFontPx ? `${nameFontPx}px` : "clamp(1.4rem, 4.6vw, 2.5rem)",
               lineHeight: 1.15,
               margin: 0,
               whiteSpace: "nowrap",
@@ -258,15 +275,15 @@ export function PhoenixIdentityStrip({
               scroll the page — this section is `overflow-hidden`, so it would CLIP, which is the
               failure `scrollWidth > clientWidth` is blind to (AGENTS.md §4).
 
-              THE SPARE ROOM IS NOW SMALL, because the HR ID below took a fourth line. Worst case
-              is the HR landing at 375px: a wrapped two-line title AND the HR ID under a name at
-              the clamp's 1.25rem floor. That is what to re-measure before adding anything else to
-              this column, or before raising the name ceiling back. */}
+              AT 12px IT NO LONGER WRAPS AT 375px — measured, one line, ending 12px inside the
+              section's right edge. Keep `break-words` anyway: the wrap is the safety net, and a
+              longer title than any that exists today would need it. What changed is the column,
+              not the string — the bar is taller and the type is bigger, so there is room. */}
           <p
             className="break-words text-left font-bold uppercase"
             style={{
               color: "#f47b20",
-              fontSize: "11px",
+              fontSize: "12px",
               letterSpacing: "0.18em",
               lineHeight: 1.2,
               margin: "2px 0 0",
@@ -278,19 +295,25 @@ export function PhoenixIdentityStrip({
               "HR ID UNDER TITLE". It reads as part of the identity block now rather than as a
               figure floating at the far right of a wide bar.
 
-              IT COSTS A FOURTH LINE, and the strip's height is fixed, so the name ceiling came
-              down with it — 2.4rem to 2rem. 32px still clears the 30px KPI numerals below, which
-              is what #3050 was protecting, and anything smaller gives that back.
+              IT COSTS A FOURTH LINE. When the strip was 92px that line was paid for out of the
+              name — the ceiling went 2.4rem to 2rem — and it left only 3px of slack, which is
+              why the owner's next "too small" could not be answered inside the old height.
 
               THE BINDING CASE IS DESKTOP, not mobile, which is the opposite of what this column
-              usually worries about. At `sm` the inner box is 76px and the four lines come to
-              73px — name 36.8 (32 x 1.15), rule 7, title 15.2, this line 14 — so 3px spare. At
-              375px the name is at its 1.25rem floor and the box is 72px, so the same four lines
-              come to 59px with 13px spare. Re-measure BOTH before raising the ceiling. */}
+              usually worries about. Measured on the HR landing as HR-009, the worst case: at
+              `sm` the inner box is 96px and the four lines come to 85px — name 46 (40 x 1.15),
+              rule 5, title 14, this line 13, plus the 2px margins — so 6px spare. At 375px the
+              name is at its 1.4rem floor and the box is 88px, so the same four lines come to
+              64px with 12px spare. Re-measure BOTH before raising the ceiling.
+
+              WHY THE NAME MUST STAY BIG: the KPI numerals immediately below are 30px at weight
+              900. A script face at weight 500 already reads lighter than they do at the same
+              size, so dropping the name back under them is what the owner keeps seeing as
+              "too small in comparison with the dashboard". */}
           {employeeCode ? (
             <p
               className="font-semibold text-[#3f3a33] opacity-75"
-              style={{ fontSize: "10px", letterSpacing: "0.08em", lineHeight: 1.2, margin: "2px 0 0" }}
+              style={{ fontSize: "11px", letterSpacing: "0.08em", lineHeight: 1.2, margin: "2px 0 0" }}
             >
               {employeeCode}
             </p>
