@@ -22,3 +22,41 @@ export function cairoDateTime(iso: string | null | undefined): string {
   const time = value.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: "Africa/Cairo" });
   return `${date} · ${time}`;
 }
+
+/**
+ * The same Cairo instant as `2026-08-30 14:05` — for spreadsheets, not screens.
+ *
+ * `cairoDateTime` above is built to be READ, and `30 Aug 2026 · 14:05` reads well and sorts
+ * appallingly: a column of it in Google Sheets orders by the month's first letter, putting April
+ * before August before December, and the middle dot stops Sheets recognising the cell as a date at
+ * all. This form sorts correctly as text AND is parsed as a real datetime, so the sheet can filter,
+ * group and chart on it.
+ *
+ * Deliberately added here rather than beside the feed that first needed it: the platform already
+ * had several private Cairo formatters before this module existed, and a new one living next to one
+ * consumer is how the next one gets written.
+ *
+ * Empty string, never an em dash, for an absent value — a spreadsheet's blank cell is its own "no
+ * value", and a dash in a date column defeats both the sort and the date parsing.
+ */
+export function cairoDateTimeSortable(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const value = new Date(iso);
+  if (Number.isNaN(value.getTime())) return "";
+  // `en-CA` is the locale whose short date is already YYYY-MM-DD. The time is taken from en-GB with
+  // hour12 forced off, because en-CA renders midnight as "24:00" in some ICU builds — which is a
+  // valid time string and a wrong day.
+  const date = value.toLocaleDateString("en-CA", {
+    day: "2-digit",
+    month: "2-digit",
+    timeZone: "Africa/Cairo",
+    year: "numeric",
+  });
+  const time = value.toLocaleTimeString("en-GB", {
+    hour: "2-digit",
+    hour12: false,
+    minute: "2-digit",
+    timeZone: "Africa/Cairo",
+  });
+  return `${date} ${time}`;
+}
