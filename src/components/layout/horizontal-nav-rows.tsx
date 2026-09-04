@@ -1187,7 +1187,7 @@ export function UpperNavRow({ className }: { className?: string } = {}) {
       className={cn(
         className ??
           cn(
-            "border-b px-3 py-1.5 sm:px-6",
+            "border-b px-3 py-1 sm:px-6",
             // `phx-navrow-upper` only tells the stylesheet what colour this row's ground is, so the
             // scroll-shadow gradients in app/globals.css can mask themselves against it. It is not
             // a `--` marker of the retired in-page/fallback kind and nothing keys a `:has()` on it.
@@ -1249,7 +1249,7 @@ export function LowerNavRow({ className }: { className?: string } = {}) {
       className={cn(
         className ??
           cn(
-            "border-b px-3 py-1.5 sm:px-6",
+            "border-b px-3 py-1 sm:px-6",
             // #050505 against the upper row's #000000 was a 5/255 step — invisible, so the two rows
             // read as one tall slab and neither looked deliberate. A slightly lifted gradient plus
             // a WARM top hairline separates them at a glance while staying unmistakably black; the

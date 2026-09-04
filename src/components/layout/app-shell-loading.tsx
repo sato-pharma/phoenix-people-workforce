@@ -12,11 +12,11 @@ export function AppShellLoading({
   const isAdminMode = navigationMode === "admin";
 
   // The skeleton's width must track the REAL rail for that shell, or the whole shell visibly jumps
-  // the moment the actual sidebar mounts: admin is SIDEBAR_WIDTH (292), the portal is
+  // the moment the actual sidebar mounts: admin is SIDEBAR_WIDTH (272), the portal is
   // PORTAL_SIDEBAR_WIDTH (324). Both are written as literal classes rather than interpolated from
   // those constants because Tailwind only emits the arbitrary values it can literally see.
   const skeletonAsideClassName = isAdminMode
-    ? "w-[292px] border-[#1a1a1a] bg-[#000000]"
+    ? "w-[272px] border-[#1a1a1a] bg-[#000000]"
     : "w-[324px] border-phx-line bg-white";
 
   return (
@@ -35,7 +35,7 @@ export function AppShellLoading({
         </aside>
         <div className="flex min-w-0 flex-1 flex-col">
           <header
-            className={`min-h-16 border-b px-4 py-3 ${
+            className={`min-h-12 border-b px-4 py-2 ${
               isAdminMode ? "border-[#1a1a1a] bg-[#000000]" : "border-slate-200 bg-white/90"
             }`}
           >
