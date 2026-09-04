@@ -293,9 +293,22 @@ export function runOrganogramWhatsAppGateTests() {
     contactRouteSource.includes("allowed.has(key)"),
     "the contact-numbers route must filter the directory to the caller's own chart",
   );
+  // POSITIVE CONTROL, and it carries the weight here. This loop shipped with `"\b"`, which in a
+  // plain JS string is U+0008 BACKSPACE rather than a word boundary, so every pattern was
+  // unmatchable and `!test(...)` was permanently true. This route serves employee phone numbers,
+  // so "it is read-only" is a security claim — and it was being made by four assertions that
+  // could not fail. The control below proves the pattern can still match a handler that IS
+  // present before the loop is trusted to report that the others are absent.
+  // The correct form of this pattern already lives in tests/access-registry-coverage.test.ts.
+  const handlerPattern = (verb: string) =>
+    new RegExp("export async function " + verb + "\\b", "u");
+  assert.ok(
+    handlerPattern("GET").test(contactRouteSource),
+    "the contact-numbers route must expose GET — this control proves the verb pattern can match at all, without it the loop below is vacuous",
+  );
   for (const verb of ["POST", "PUT", "PATCH", "DELETE"]) {
     assert.ok(
-      !new RegExp("export async function " + verb + "\b", "u").test(contactRouteSource),
+      !handlerPattern(verb).test(contactRouteSource),
       "the contact-numbers route must expose " + verb + " to nobody — it is a read",
     );
   }

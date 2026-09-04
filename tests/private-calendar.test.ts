@@ -782,7 +782,7 @@ export function runPrivateCalendarTests() {
   assert.match(
     privateCalendarUiSource,
     /const canFilterAcrossEmployees = workspace\.access\.canSelectEmployee;/,
-    "Search\/View\/Employee\/Line\/Department must be gated on whether the viewer can actually see more than one employee",
+    "Search/View/Employee/Line/Department must be gated on whether the viewer can actually see more than one employee",
   );
   assert.match(
     privateCalendarUiSource,

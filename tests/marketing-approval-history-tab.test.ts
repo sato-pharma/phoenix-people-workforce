@@ -216,9 +216,28 @@ export async function runMarketingApprovalHistoryTabTests() {
     );
   }
   // And the banned escapes stay banned on the heading itself.
+  //
+  // POSITIVE CONTROL, and it is the point of this block rather than decoration. This pattern
+  // shipped with both `\b` word boundaries eaten down to literal U+0008 BACKSPACE bytes, so it
+  // could never match anything and `doesNotMatch` was a permanent green — the owner's no-ellipsis
+  // rule was unguarded here from the day it was written. A negative assertion cannot be trusted
+  // without proof that it can still see a real violation, so the two controls below fail loudly
+  // the moment the pattern stops working. The trailing boundary is load-bearing: this file's own
+  // `truncated` state variable must not be mistaken for the Tailwind `truncate` utility.
+  const truncatedHeading = /<h3 className="[^"]*\btruncate\b/;
+  assert.match(
+    '<h3 className="mt-0.5 truncate text-phx-lg">Pharmacy</h3>',
+    truncatedHeading,
+    "the no-ellipsis pattern must match a heading that DOES truncate, or the assertion below is vacuous",
+  );
+  assert.doesNotMatch(
+    '<h3 className="mt-0.5 truncated-marker">Pharmacy</h3>',
+    truncatedHeading,
+    "the no-ellipsis pattern must keep its word boundaries — `truncated` is not the `truncate` utility",
+  );
   assert.doesNotMatch(
     historyComponent,
-    /<h3 className="[^"]*truncate/,
+    truncatedHeading,
     "the customer name must never be truncated with an ellipsis — owner rule",
   );
 

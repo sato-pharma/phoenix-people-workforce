@@ -336,7 +336,7 @@ export function runAttendanceCalendarSourceTests() {
   assert.match(
     fingerprintSource,
     /loadApprovedHalfDayVacationMap/,
-    "the report must look up approved half-day (Am\/Pm Only) vacations before judging short-day\/deduction status",
+    "the report must look up approved half-day (Am/Pm Only) vacations before judging short-day/deduction status",
   );
   assert.match(
     fingerprintSource,
