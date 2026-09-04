@@ -229,18 +229,25 @@ export function labelBudgetPx({
 }
 
 const LABEL_FONT_FAMILY =
-  'font-family:"Aptos","Segoe UI Variable Display","Segoe UI Variable Text","Segoe UI","Inter","Helvetica Neue",Arial,sans-serif';
+  'font-family:"Aptos","Segoe UI Variable Text","Segoe UI Variable Display","Segoe UI","Inter","Helvetica Neue",Arial,sans-serif';
 
 /**
- * Admin label span: 13px / 700 / tracking -0.01em, in the app's resolved sans stack.
+ * Admin label span: 13px / 600 / tracking -0.01em, in the app's resolved sans stack.
  *
- * Read off src/components/layout/sidebar.tsx — `text-phx-md font-bold tracking-[-0.01em]`, where
- * --phx-fs-md is 13px and Tailwind's `font-bold` is 700. This read 600 from #1999 until 2026-08-28
- * while the span has rendered bold since 2026-06-02, so every admin label was measured lighter than
- * it ships and the budget check was correspondingly generous. Nothing caught it because nothing tied
- * the model to the component; tests/sidebar-label-font-sync.test.ts now does.
+ * Read off src/components/layout/sidebar.tsx: the nav row's label span carries only
+ * `tracking-[-0.01em]` and inherits its size and weight from the enclosing <Link>, which is
+ * `text-phx-md font-semibold` — 13px at 600, since --phx-fs-md is 13px.
+ *
+ * This said 700 from 2026-08-28 until 2026-09-04, and the sync test below agreed with it, because
+ * that test matched label spans by requiring `text-phx-` on the span's own line. The nav row does
+ * not carry it — it inherits — so the matcher selected the two spans that DO: the section heading
+ * and the search-result row, both `font-bold`. Model and guard were consistent with each other and
+ * with neither rail row. A heavier face is wider, so for that week every admin label was measured
+ * 1-6px WIDER than it ships and the budget check was correspondingly strict; the entry above it in
+ * this history had the error in the opposite direction. The matcher now resolves inheritance the
+ * way CSS does, which is what makes 600 provable rather than merely asserted.
  */
-export const LABEL_FONT_CSS = `font-size:13px;font-weight:700;letter-spacing:-0.01em;${LABEL_FONT_FAMILY}`;
+export const LABEL_FONT_CSS = `font-size:13px;font-weight:600;letter-spacing:-0.01em;${LABEL_FONT_FAMILY}`;
 
 /**
  * Portal desktop label span: `text-phx-sm font-bold`, no tracking class. Smaller AND heavier than

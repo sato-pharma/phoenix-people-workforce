@@ -62,6 +62,7 @@ import {
   type NavigationSectionItem,
 } from "@/config/system-navigation";
 import { systemAssets, systemIdentity, systemUiText } from "@/config/system-settings";
+import { domainIdForHref, groupAdminSections } from "@/lib/navigation/sidebar-domains";
 import { resolveLandingPathForRole } from "@/lib/auth/landing";
 import { type NavigationMode, type PhoenixRole } from "@/lib/auth/permissions";
 import {
@@ -350,6 +351,7 @@ const PREMIUM_NAV_HREF = "/admin/sfe-command-center";
 function NavRow({
   active,
   dark,
+  hideIcon = false,
   item,
   onActivate,
   onHover,
@@ -361,6 +363,8 @@ function NavRow({
 }: {
   active: boolean;
   dark: boolean;
+  /** Drop the leading icon box. Set inside a domain, where the rows are already grouped. */
+  hideIcon?: boolean;
   item: NavigationSectionItem;
   onActivate: () => void;
   onHover?: (rect: DOMRect) => void;
@@ -381,6 +385,12 @@ function NavRow({
   // tests/sidebar-label-width.test.ts and this row must not start ellipsising).
   const locked = useIsNavItemLocked(item);
   const LeadingIcon = locked ? Lock : Icon;
+  // The icon box was the row's height floor: a 28px tile inside 12px of padding made every row
+  // 52px, which is what made the admin rail scroll (811px of content in a 770px box). Inside a
+  // domain the rows already sit under a title and a heading, so the tile bought nothing for that
+  // cost — dropping it takes rows to 39.5px and the rail stops scrolling. Never in `rail` mode,
+  // where the icon is the only thing rendered and hiding it would leave an empty strip.
+  const dropIcon = hideIcon && !rail;
 
   return (
     <div
@@ -416,6 +426,7 @@ function NavRow({
         onClick={onActivate}
       >
         {active && <span className={cn("absolute left-0 w-[3px] bg-phx-accent", rail ? "top-1.5 bottom-1.5" : "top-1.5 bottom-1.5")} />}
+        {!dropIcon && (
         <span
           className={cn(
             "relative flex h-8 w-8 shrink-0 items-center justify-center transition-colors duration-150",
@@ -444,6 +455,7 @@ function NavRow({
           <LeadingIcon className="h-4 w-4" />
           {rail && <ApprovalNavBadge compact dark={dark} navBadge={item.navBadge} />}
         </span>
+        )}
         {!rail && (
           <span className={cn("flex min-w-0 flex-1 items-center gap-1.5", onTogglePin && "pr-6")}>
             <span
@@ -453,10 +465,22 @@ function NavRow({
                 // Muted, never struck through or greyed to unreadable: the person still has to be
                 // able to read which module it is in order to ask for it back.
                 locked && "opacity-70",
+                // With no icon box there is no amber tile to carry "locked", so the label carries
+                // it instead. Losing the padlock entirely would leave a locked module looking
+                // merely faint, which reads as a rendering glitch rather than as a lock.
+                dropIcon && locked && (dark ? "text-amber-300/90" : "text-amber-600"),
               )}
             >
               {item.label}
             </span>
+            {/* Trailing, never leading: the whole point of dropping the icon was to put every
+                label on one left edge, so the lock is the one thing allowed back — on the right. */}
+            {dropIcon && locked && (
+              <Lock
+                aria-hidden="true"
+                className={cn("h-3 w-3 shrink-0", dark ? "text-amber-300/90" : "text-amber-600")}
+              />
+            )}
             {/* The ↗ marks a hub row, but it is decorative and the badge is not. On a standalone
                 row that also carries a pending count the label is left ~98px, and spending 20px of
                 that on both adornments is what forced the ellipsis. The badge wins. */}
@@ -499,6 +523,7 @@ function SortableNavRow({
   active,
   dark,
   dragDisabled,
+  hideIcon,
   onActivate,
   onTogglePin,
   pinned,
@@ -507,6 +532,7 @@ function SortableNavRow({
   active: boolean;
   dark: boolean;
   dragDisabled: boolean;
+  hideIcon: boolean;
   onActivate: () => void;
   onTogglePin: () => void;
   pinned: boolean;
@@ -531,7 +557,12 @@ function SortableNavRow({
       {!dragDisabled && (
         <button
           aria-label={`Drag to reorder ${item.label}`}
-          className="absolute left-[8px] top-1/2 z-20 flex h-8 w-8 -translate-y-1/2 cursor-grab items-center justify-center bg-[#000000] text-slate-600 opacity-0 transition hover:text-slate-300 focus-visible:opacity-100 active:cursor-grabbing group-hover/dnd-row:opacity-100"
+          className={cn(
+            "absolute top-1/2 z-20 flex h-8 -translate-y-1/2 cursor-grab items-center justify-center bg-[#000000] text-slate-600 opacity-0 transition hover:text-slate-300 focus-visible:opacity-100 active:cursor-grabbing group-hover/dnd-row:opacity-100",
+            // The grip used to overlay the icon box. With no box it would cover the first letters
+            // of the label, so it narrows and moves flush to the edge.
+            hideIcon ? "left-0 w-5" : "left-[8px] w-8",
+          )}
           type="button"
           {...attributes}
           {...listeners}
@@ -542,6 +573,7 @@ function SortableNavRow({
       <NavRow
         active={active}
         dark={dark}
+        hideIcon={hideIcon}
         item={item}
         onActivate={onActivate}
         onTogglePin={onTogglePin}
@@ -558,6 +590,7 @@ function SortableSectionBlock({
   collapsedSectionIds,
   dragDisabled,
   flatSidebar,
+  hideIcon,
   isAdmin,
   itemOrder,
   navInstanceId,
@@ -577,6 +610,8 @@ function SortableSectionBlock({
   dragDisabled: boolean;
   /** True for roles on the flat sidebar (SFE Manager): no headings, no hub-button styling. */
   flatSidebar: boolean;
+  /** Drop the leading icon box on every row in this section. True inside a domain. */
+  hideIcon: boolean;
   isAdmin: boolean;
   itemOrder: string[] | null;
   navInstanceId: string;
@@ -636,7 +671,10 @@ function SortableSectionBlock({
         {isAdmin && !dragDisabled && (
           <button
             aria-label={`Drag to reorder ${section.label} section`}
-            className="absolute left-[8px] top-1/2 z-20 flex h-8 w-8 -translate-y-1/2 cursor-grab items-center justify-center bg-[#000000] text-slate-600 opacity-0 transition hover:text-slate-300 focus-visible:opacity-100 active:cursor-grabbing group-hover/single:opacity-100"
+            className={cn(
+              "absolute top-1/2 z-20 flex h-8 -translate-y-1/2 cursor-grab items-center justify-center bg-[#000000] text-slate-600 opacity-0 transition hover:text-slate-300 focus-visible:opacity-100 active:cursor-grabbing group-hover/single:opacity-100",
+              hideIcon ? "left-0 w-5" : "left-[8px] w-8",
+            )}
             type="button"
             {...attributes}
             {...listeners}
@@ -647,6 +685,7 @@ function SortableSectionBlock({
         <NavRow
           active={soleItem.href === activeHref}
           dark={isAdmin}
+          hideIcon={hideIcon}
           item={soleItem}
           onActivate={() => onActivate(soleItem)}
           onTogglePin={() => onTogglePin(soleItem.href)}
@@ -736,6 +775,7 @@ function SortableSectionBlock({
               <div className="mt-1.5 space-y-1 px-1">
                 {orderedItems.map((item) => (
                   <SortableNavRow
+                    hideIcon={hideIcon}
                     key={item.href}
                     active={item.href === activeHref}
                     dark={isAdmin}
@@ -933,6 +973,76 @@ function SidebarNav({
     [query, visibleSections, savedSectionOrder],
   );
   const orderedSectionIds = useMemo(() => orderedSections.map((s) => s.id), [orderedSections]);
+
+  // ── Domains ────────────────────────────────────────────────────────────────
+  // The admin rail draws its 14 headings inside 7 domains (src/config/sidebar-domains.ts). Off
+  // for everything else, and OFF WHILE SEARCHING: a query should sweep every module the viewer
+  // has, and an accordion that hides two thirds of the results behind a closed domain would make
+  // search quietly worse than the flat list it replaced.
+  //
+  // The SFE Manager keeps the flat, headless rail (`usesFlatSidebar`) — a domain layer over a
+  // deliberately headingless sidebar would reintroduce exactly the chrome that was subtracted.
+  const useDomains = isAdmin && !flatSidebar && !rail && !query;
+  const domains = useMemo(() => {
+    if (!useDomains) return [];
+    // Grouped from the VISIBLE sections rather than the ordered ones, so a group's rows read in
+    // the order sidebar-domains.ts lists them. A saved user order is then applied within each
+    // group, which leaves the default untouched (applyOrder returns the input unchanged when
+    // nothing is saved) while still honouring a drag the viewer actually made.
+    return groupAdminSections(visibleSections).map((domain) => ({
+      ...domain,
+      groups: domain.groups.map((group) => ({
+        ...group,
+        sections: applyOrder(group.sections, (section) => section.id, savedSectionOrder),
+      })),
+    }));
+  }, [useDomains, visibleSections, savedSectionOrder]);
+
+  const activeDomainId = useMemo(() => domainIdForHref(domains, activeHref), [domains, activeHref]);
+  // What the viewer last clicked, REMEMBERED WITH the page it was clicked on. Storing `forActive`
+  // is what lets a navigation hand control back to the active page without an effect: once the
+  // active domain moves, the stored pick no longer matches and is simply ignored. The obvious
+  // alternative — a `useEffect` that resets the pick — is a lint error in this repo (cascading
+  // renders), and this needs no reset because nothing is ever out of sync to begin with.
+  //
+  // `domainId: ""` is a real value and means "the viewer closed it", which is why the fallback
+  // reads it with a length check rather than `||`: closing the open domain must leave the rail
+  // closed rather than snapping straight back open.
+  const [picked, setPicked] = useState<{ domainId: string; forActive: string | null } | null>(null);
+  const pickIsCurrent = picked !== null && picked.forActive === activeDomainId;
+  // One open at a time. Falls back to the domain holding the current page, then to the first —
+  // never to nothing, because a rail showing seven closed buttons and no rows reads as broken.
+  const openDomainId = pickIsCurrent
+    ? picked.domainId || null
+    : (activeDomainId ?? (domains.length > 0 ? domains[0].id : null));
+
+  // One definition, rendered by both paths. Two copies of an 18-prop element is how the grouped
+  // rail and the flat one would drift apart without anyone noticing.
+  function renderSectionBlock(section: NavigationSection) {
+    return (
+      <SortableSectionBlock
+        hideIcon={useDomains}
+        key={section.id}
+        activeHref={activeHref}
+        collapsedSectionIds={collapsedSectionIds}
+        dragDisabled={dragDisabled}
+        flatSidebar={flatSidebar}
+        isAdmin={isAdmin}
+        itemOrder={savedItemOrder?.[section.id] ?? null}
+        navInstanceId={navInstanceId}
+        onActivate={handleActivate}
+        onItemReorder={(newHrefs) => handleItemReorder(section.id, newHrefs)}
+        onTogglePin={togglePin}
+        onToggleSection={toggleSection}
+        pinnedSet={pinnedSet}
+        query={query}
+        section={section}
+        sectionDragging={sectionDragging}
+        sensors={sensors}
+        transitionsReady={isClientReady}
+      />
+    );
+  }
 
   function handleSectionDragEnd(event: DragEndEvent) {
     setSectionDragging(false);
@@ -1150,30 +1260,93 @@ function SidebarNav({
           onDragStart={() => setSectionDragging(true)}
           onDragCancel={() => setSectionDragging(false)}
         >
-          <SortableContext items={orderedSectionIds} strategy={verticalListSortingStrategy}>
-            {orderedSections.map((section) => (
-              <SortableSectionBlock
-                key={section.id}
-                activeHref={activeHref}
-                collapsedSectionIds={collapsedSectionIds}
-                dragDisabled={dragDisabled}
-                flatSidebar={flatSidebar}
-                isAdmin={isAdmin}
-                itemOrder={savedItemOrder?.[section.id] ?? null}
-                navInstanceId={navInstanceId}
-                onActivate={handleActivate}
-                onItemReorder={(newHrefs) => handleItemReorder(section.id, newHrefs)}
-                onTogglePin={togglePin}
-                onToggleSection={toggleSection}
-                pinnedSet={pinnedSet}
-                query={query}
-                section={section}
-                sectionDragging={sectionDragging}
-                sensors={sensors}
-                transitionsReady={isClientReady}
-              />
-            ))}
-          </SortableContext>
+          {useDomains ? (
+            domains.map((domain) => {
+              const open = openDomainId === domain.id;
+              const DomainIcon = domain.icon;
+              return (
+                <div key={domain.id} className="border-b border-white/5 last:border-b-0">
+                  <button
+                    aria-expanded={open}
+                    className="group/dom flex w-full items-center gap-2 px-1.5 py-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-phx-accent/60 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900"
+                    onClick={() =>
+                      setPicked({ domainId: open ? "" : domain.id, forActive: activeDomainId })
+                    }
+                    type="button"
+                  >
+                    <span
+                      className={cn(
+                        "flex h-7 w-7 shrink-0 items-center justify-center transition-colors",
+                        open
+                          ? "bg-phx-accent/15 text-phx-accent ring-1 ring-phx-accent/30"
+                          : "bg-white/5 text-slate-400 group-hover/dom:text-slate-200",
+                      )}
+                    >
+                      <DomainIcon className="h-4 w-4" />
+                    </span>
+                    {/* Wraps rather than truncating: the owner's rule is no ellipsis, and a domain
+                        name is the one label a viewer cannot look up anywhere else.
+
+                        One line, not two. The kicker above the name ("Company" over Overview,
+                        "Decisions" over Requests) was a second vocabulary for the same thing, and
+                        the less useful of the two words. Measured on the running rail, the seven
+                        headers cost 381.5px against 312px for the six rows they exist to serve —
+                        the chrome outweighed the content and the rail still scrolled. Dropping the
+                        kicker takes each header from 54.5px to roughly 36px.
+
+                        White on all seven, open or closed (owner, 2026-09-04, reversing the orange
+                        of an hour earlier: "very noisy"). The rail is three levels and each one
+                        must read as a different colour — title white, group heading the dimmest
+                        warm grey at 10px caps, rows a mid grey at 13px. Orange is left to the ACTIVE
+                        row alone, which is what makes it findable. Open state is carried by the icon
+                        tile and the chevron, so the title colour is free to be constant. */}
+                    <span className="min-w-0 flex-1 text-phx-md font-bold tracking-[-0.01em] text-white">
+                      {domain.name}
+                    </span>
+                    <span className="shrink-0 text-phx-2xs font-semibold text-slate-500">
+                      {domain.rowCount}
+                    </span>
+                    <ChevronRight
+                      className={cn(
+                        "h-3.5 w-3.5 shrink-0 text-slate-500 ease-out",
+                        isClientReady && "transition-transform duration-300",
+                        open && "rotate-90",
+                      )}
+                    />
+                  </button>
+
+                  {open &&
+                    domain.groups.map((group) => (
+                      <SortableContext
+                        // Keyed on the first section, not the heading: a heading that repeats a
+                        // row is blanked, and two blanks in one domain would collide.
+                        key={group.sections[0]?.id ?? group.heading}
+                        items={group.sections.map((section) => section.id)}
+                        strategy={verticalListSortingStrategy}
+                      >
+                        {group.heading !== "" && (
+                          <p className="px-1.5 pb-1 pt-3 text-phx-2xs font-bold uppercase tracking-[0.08em] text-slate-500">
+                            {group.heading}
+                          </p>
+                        )}
+                        {group.sections.map((section) =>
+                          renderSectionBlock(
+                            // The GROUP owns the heading now, so the section drops its own. This
+                            // is the whole point of the merge: 24 of the 37 admin sections held a
+                            // single row whose label repeated the heading right above it.
+                            { ...section, label: "" },
+                          ),
+                        )}
+                      </SortableContext>
+                    ))}
+                </div>
+              );
+            })
+          ) : (
+            <SortableContext items={orderedSectionIds} strategy={verticalListSortingStrategy}>
+              {orderedSections.map((section) => renderSectionBlock(section))}
+            </SortableContext>
+          )}
         </DndContext>
 
         {isAdmin && query && visibleSections.length === 0 && (
