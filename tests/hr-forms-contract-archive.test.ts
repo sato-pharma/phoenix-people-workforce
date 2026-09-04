@@ -118,6 +118,10 @@ function profileFixture(overrides: Partial<HiringPackProfile> = {}): HiringPackP
     contractPrintedAt: null,
     form1PrintedAt: null,
     contractTemplateVersion: null,
+    // Blank, which is the ordinary contract: the company's standing signatory signs it. A
+    // value here means somebody else did, and replaces him everywhere the paper names him.
+    contractSignatoryNameAr: null,
+    contractSignatoryTitleAr: null,
     updatedAt: null,
     ...overrides,
   };
