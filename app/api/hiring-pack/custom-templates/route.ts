@@ -6,6 +6,7 @@ import {
   createCustomTemplate,
   isCustomTemplateLayerMissing,
   listCustomTemplates,
+  replaceCustomTemplateArtwork,
   type CustomTemplatePageBytes,
 } from "@/lib/hiring-pack/custom-template-store";
 import {
@@ -13,6 +14,8 @@ import {
   parseCustomTemplateDraft,
   type CustomTemplateContentType,
 } from "@/lib/hiring-pack/custom-templates";
+import { copyCustomTemplateFieldLayout } from "@/lib/hiring-pack/field-layout-store";
+import { customDocumentFor, isUuid } from "@/lib/hiring-pack/types";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 
 export const runtime = "nodejs";
@@ -166,6 +169,62 @@ export async function POST(request: Request) {
       pages.push({
         bytes,
         contentType: draft.pages[index].contentType as CustomTemplateContentType,
+      });
+    }
+
+    // ── Replacing, or adding? ────────────────────────────────────────────────────────────────
+    // ONE FIELD DECIDES, and it carries the template's stable `key` — never a version id. The key
+    // is what `custom:<key>` names, so a replacement stays the same document and keeps every field
+    // rule, every print link and every place it is listed. Naming a version here would create a
+    // second document that happens to look the same, which is the failure the B1 migration's header
+    // warns about at length.
+    const rawReplaces = form.get("replaces");
+    const replacesKey = typeof rawReplaces === "string" ? rawReplaces.trim() : "";
+    if (replacesKey && !isUuid(replacesKey)) {
+      return NextResponse.json(
+        { error: "invalid_request", message: "The template being replaced was not named correctly." },
+        { status: 400 },
+      );
+    }
+
+    if (replacesKey) {
+      const { archivedVersionId, previousVersion, template } = await replaceCustomTemplateArtwork({
+        actorHrId: access.hrId ?? null,
+        draft,
+        pages,
+        templateKey: replacesKey,
+      });
+
+      // THE FIELD LAYER FOLLOWS THE PAPER, and this runs AFTER the version is live rather than
+      // inside it: the rows live in a different table that may not exist yet, and a template whose
+      // artwork is correct but whose boxes did not copy is recoverable in the editor, while a
+      // replacement rolled back over a missing field table is not what anybody asked for.
+      let fields = { copied: 0, droppedForMissingPage: 0 };
+      let fieldsMessage: string | null = null;
+      try {
+        fields = await copyCustomTemplateFieldLayout({
+          actorHrId: access.hrId ?? null,
+          document: customDocumentFor(replacesKey),
+          fromTemplateVersionId: archivedVersionId,
+          pageCount: template.pages.length,
+          toTemplateVersionId: template.id,
+        });
+      } catch (cause) {
+        fieldsMessage =
+          cause instanceof Error
+            ? `Version ${template.version} is live, but its fields could not be copied from version ${previousVersion}: ${cause.message}`
+            : `Version ${template.version} is live, but its fields could not be copied from version ${previousVersion}.`;
+      }
+
+      return NextResponse.json({
+        replaced: {
+          archivedVersionId,
+          fieldsCopied: fields.copied,
+          fieldsDropped: fields.droppedForMissingPage,
+          fieldsMessage,
+          previousVersion,
+        },
+        template,
       });
     }
 

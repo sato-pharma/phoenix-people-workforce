@@ -14,6 +14,7 @@ import {
   CUSTOM_TEMPLATE_PRINT_SIDES,
   CUSTOM_TEMPLATE_PRINT_SIDES_LABELS,
   describePrintInstruction,
+  fieldsThatFitNewArtwork,
   pagePresetFor,
   parseCustomTemplateDraft,
   roundPoints,
@@ -561,7 +562,99 @@ function testEveryPrintSettingCanBeShown() {
   }
 }
 
+/**
+ * REPLACING THE ARTWORK KEEPS THE SAME DOCUMENT — the identity claim the whole feature rests on.
+ *
+ * A template has two identities on purpose: `key` is stable across versions and `custom:<key>` is
+ * the document, while a version's own `id` is what the field layer scopes its rows to. Replacing a
+ * paper mints a new version id and keeps the key.
+ *
+ * GETTING THIS THE WRONG WAY ROUND IS THE FAILURE WORTH A TEST. If the document were built from the
+ * version id, every replacement would silently become a DIFFERENT document — the field rules, the
+ * placed boxes and any link anybody saved would all still exist, pointing at a document nothing
+ * lists. Nothing would error; the corrected paper would simply print blank.
+ */
+function testAReplacementStaysTheSameDocument() {
+  const key = TEMPLATE_UUID;
+  const versionOne = { id: "1098183b-e15f-42cb-b13e-319766a55e6c", key, version: 1 };
+  const versionTwo = { id: "c479d526-09d8-4133-aadb-2681031f8ba2", key, version: 2 };
+
+  assert.equal(
+    customDocumentFor(versionOne.key),
+    customDocumentFor(versionTwo.key),
+    "two versions of one template must be the SAME document, or replacing artwork orphans every field rule placed on it",
+  );
+  assert.notEqual(
+    versionOne.id,
+    versionTwo.id,
+    "each version needs its own id — the field layer scopes to it, and sharing one would move the archived version's fields instead of copying them",
+  );
+  assert.equal(
+    customTemplateKeyOf(customDocumentFor(key)),
+    key,
+    "the key must be recoverable from the document, because that is how a print request finds which template to load",
+  );
+}
+
+/**
+ * A FIELD ON A PAGE THE REPLACEMENT DOES NOT HAVE IS LEFT BEHIND, AND COUNTED.
+ *
+ * The count is the part that matters. Dropping the field is right — a row on page 3 of a form that
+ * came back with two pages can never be drawn and can never be reached in the editor, so copying it
+ * would file something invisible in both places. Dropping it QUIETLY is the same defect as losing
+ * it: the screen has to be able to say how many, or a replacement that silently halves a layout
+ * looks exactly like one that kept it.
+ */
+function testAFieldOnAMissingPageIsLeftBehind() {
+  // ⚠ ONE-BASED, and this is the whole reason the test exists. A field's `page` counts from 1 while
+  // the artwork's `pageIndex` counts from 0 — they meet in `layeredPages`, which merges each sheet
+  // with `index + 1`. Judging a field against a page COUNT as though both started at 0 drops every
+  // field on the LAST sheet of every replacement, silently, which on a two-sided form is the entire
+  // back page. Live staging rows on a two-page template carry pages 1 and 2.
+  const rows = [
+    { name: "name on sheet 1", page: 1 },
+    { name: "signature on sheet 2", page: 2 },
+    { name: "witness on sheet 3", page: 3 },
+    { name: "anchored into flowing text", page: null },
+  ];
+
+  const twoPages = fieldsThatFitNewArtwork(rows, 2);
+  assert.deepEqual(
+    twoPages.fits.map((row) => row.name),
+    ["name on sheet 1", "signature on sheet 2", "anchored into flowing text"],
+    "a field on sheet 3 has nowhere to land on two pages of artwork — and both fields on sheets 1 and 2 must survive, or the last page of every replacement is lost",
+  );
+  assert.equal(
+    twoPages.droppedForMissingPage,
+    1,
+    "the count of what was left behind is what the screen reports — a silent drop reads as a lost layout",
+  );
+
+  // A NULL PAGE IS NOT A MISSING PAGE. It belongs to a field anchored into flowing text, so no page
+  // of the new artwork can be missing for it; dropping it would discard a row for a reason that does
+  // not apply. Even artwork with no pages at all leaves it standing.
+  assert.equal(
+    fieldsThatFitNewArtwork(rows, 0).fits.length,
+    1,
+    "a flow-anchored field is not pinned to a sheet, so no page count can strand it",
+  );
+
+  // Page 0 can never be drawn — the merge starts at sheet 1 — so it names a sheet no artwork has.
+  assert.equal(
+    fieldsThatFitNewArtwork([{ name: "malformed", page: 0 }], 3).droppedForMissingPage,
+    1,
+    "a page of 0 is a sheet that exists on no artwork, and is reported like any other",
+  );
+
+  // The ordinary case, which is most replacements: same paper, same page count, nothing lost.
+  const sameShape = fieldsThatFitNewArtwork(rows, 3);
+  assert.equal(sameShape.fits.length, rows.length, "replacing like with like must lose nothing");
+  assert.equal(sameShape.droppedForMissingPage, 0, "nothing was left behind, so nothing is reported");
+}
+
 export async function runHiringPackCustomTemplateTests() {
+  testAReplacementStaysTheSameDocument();
+  testAFieldOnAMissingPageIsLeftBehind();
   testHowManyCopiesAndWhichSides();
   testThePrintInstructionSaysWhatComesOut();
   testEveryPrintSettingCanBeShown();

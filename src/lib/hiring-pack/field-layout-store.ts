@@ -20,6 +20,7 @@
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 
 import type { DocumentFieldRow, FlowAnchor } from "@/lib/hiring-pack/field-layout";
+import { fieldsThatFitNewArtwork } from "@/lib/hiring-pack/custom-templates";
 import { validateFieldTemplate } from "@/lib/hiring-pack/field-template";
 import { canonicalHrIdForDisplay } from "@/lib/hr-id";
 import {
@@ -33,7 +34,7 @@ import {
   documentSurfaceOf,
   type PrintableDocument,
 } from "@/lib/hiring-pack/document-registry";
-import type { HiringPackDocument } from "@/lib/hiring-pack/types";
+import type { CustomHiringPackDocument, HiringPackDocument } from "@/lib/hiring-pack/types";
 
 const TABLE = "hiring_pack_document_fields";
 
@@ -893,4 +894,103 @@ export function fieldHistoryFromRecord(record: HistoryRecord): FieldHistoryEntry
     wasUpdatedByHrId: record.was_updated_by_hr_id,
     state,
   };
+}
+
+/**
+ * Copy a company template's field layer onto the version that just replaced it.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────────────────────
+ * WHY THIS IS AUTOMATIC WHERE `carryForwardDocumentFields` IS AN OFFER. For a built-in document a
+ * new version is a new government form: the boxes may legitimately belong somewhere else, so the
+ * editor asks. A company template's replacement is the owner re-uploading the SAME paper with a
+ * correction on it — a typo fixed, a logo changed — and every box he placed is meant to stay where
+ * he put it. Making him re-place fifty fields to correct one word would mean nobody ever corrects
+ * anything, and the reason the B1 migration keys `custom:<key>` on the template rather than the
+ * version was precisely to keep this possible.
+ *
+ * WHY IT IS A SEPARATE FUNCTION AND NOT A FLAG. `carryForwardDocumentFields` validates both version
+ * ids against `templateVersionsFor` — the COMPILED registry, which cannot see a row that was
+ * uploaded this morning — and refuses a target that already holds fields, because it exists to fill
+ * an untouched version. Neither rule fits here, and loosening them would loosen them for the
+ * built-ins too.
+ *
+ * A BOX ON A PAGE THE NEW ARTWORK DOES NOT HAVE IS DROPPED, AND COUNTED. If a three-page form comes
+ * back as two, a field on page 3 has nowhere to land: copying it would file a row nothing can draw
+ * and nothing can reach — invisible on the page and invisible in the table. Dropping it silently
+ * would be the same defect. So it is dropped and reported, and the caller says so.
+ *
+ * ONLY THE TEMPLATE'S OWN RULES ARE COPIED — `employee_hr_id is null`. A per-employee override is a
+ * one-off written for one person's paper; carrying those onto a new version would resurrect edits
+ * made for people who were printed months ago.
+ */
+export async function copyCustomTemplateFieldLayout(input: {
+  document: CustomHiringPackDocument;
+  fromTemplateVersionId: string;
+  toTemplateVersionId: string;
+  pageCount: number;
+  actorHrId: string | null;
+}): Promise<{ copied: number; droppedForMissingPage: number }> {
+  const { actorHrId, document, fromTemplateVersionId, pageCount, toTemplateVersionId } = input;
+  if (fromTemplateVersionId === toTemplateVersionId) {
+    throw new Error("A layout cannot be copied onto the version it already belongs to.");
+  }
+
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from(TABLE)
+    .select(COLUMNS)
+    .eq("document", document)
+    .eq("template_version_id", fromTemplateVersionId)
+    .is("employee_hr_id", null)
+    .order("created_at", { ascending: true })
+    .limit(500);
+
+  // A MISSING TABLE IS "NOTHING TO COPY", not a failed replacement. The version has already been
+  // created and is already current at this point; throwing here would report the whole replacement
+  // as failed when the only thing missing is a field layer that never existed.
+  if (error) {
+    if (isFieldLayerMissing(error)) return { copied: 0, droppedForMissingPage: 0 };
+    throw new Error(error.message);
+  }
+
+  const rows = ((data ?? []) as unknown as FieldRecord[]).filter(
+    // Same validation as everywhere else: a row that cannot be drawn is not carried.
+    (record) => documentFieldFromRecord(record) !== null,
+  );
+
+  const { droppedForMissingPage, fits } = fieldsThatFitNewArtwork(rows, pageCount);
+  if (fits.length === 0) return { copied: 0, droppedForMissingPage };
+
+  const actor = actorHrId ? canonicalHrIdForDisplay(actorHrId) : null;
+  const now = new Date().toISOString();
+  const payload = fits.map((record) => ({
+    document,
+    // A NEW id — the insert omits it. These rows are per-version, so reusing the id would move the
+    // archived version's field instead of copying it, and the old paper would stop reprinting as
+    // the document it was.
+    template_version_id: toTemplateVersionId,
+    employee_hr_id: null,
+    default_key: record.default_key,
+    hidden: record.hidden,
+    page: record.page,
+    anchor_selector: record.anchor_selector,
+    anchor_dx: record.anchor_dx,
+    anchor_dy: record.anchor_dy,
+    x: record.x,
+    y: record.y,
+    w: record.w,
+    h: record.h,
+    align: record.align,
+    font_size: record.font_size,
+    source_kind: record.source_kind,
+    value_key: record.value_key,
+    literal_text: record.literal_text,
+    created_by_hr_id: actor,
+    updated_at: now,
+    updated_by_hr_id: actor,
+  }));
+
+  const { data: inserted, error: insertError } = await supabase.from(TABLE).insert(payload).select("id");
+  if (insertError) throw new Error(insertError.message);
+  return { copied: (inserted ?? []).length, droppedForMissingPage };
 }

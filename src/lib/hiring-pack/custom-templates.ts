@@ -566,3 +566,40 @@ export function buildCustomTemplatePagePath(input: {
 export function documentForTemplateKey(templateKey: string): CustomHiringPackDocument {
   return customDocumentFor(templateKey);
 }
+
+/**
+ * Which of a template's fields survive onto replacement artwork, and how many do not.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────────────────────
+ * THE RULE, AND WHY IT IS HERE RATHER THAN INSIDE THE COPY. When the owner replaces a paper's
+ * artwork the boxes he placed follow it — that is the point of keying the document on the template
+ * rather than the version. But a three-page form can come back as two, and a field on page 3 then
+ * has nowhere to land: copying it would file a row nothing can draw and nothing can reach, invisible
+ * on the page and invisible in the field table, which is indistinguishable from the field having
+ * been forgotten. So it is left behind and COUNTED, and the screen says how many.
+ *
+ * ⚠ A FIELD'S `page` IS ONE-BASED. The artwork's own `pageIndex` is zero-based, and the two meet in
+ * `layeredPages`, which merges each page's fields with `mergePagePlacements(…, index + 1, …)` — so
+ * the first sheet is `pageIndex` 0 and `page` 1. Comparing a field's page against a page COUNT as
+ * though both were zero-based is not a rounding error: on every replacement it would drop each
+ * field on the LAST sheet, silently, and a two-sided form would lose its whole back page. Live
+ * staging rows carry pages 1 and 2 on a two-page template, which is what settled it.
+ *
+ * A NULL PAGE IS NOT A MISSING PAGE. `page` is null for a field anchored into flowing text rather
+ * than pinned to a sheet, so no page of the new artwork can be missing for it.
+ *
+ * A page of 0 OR LESS is dropped and counted with the rest. Nothing can draw it — the merge starts
+ * at 1 — so it names a sheet that does not exist on any artwork, which is exactly what this
+ * reports.
+ *
+ * SEPARATE FROM THE DATABASE CALL because it is the part worth arguing about. The copy itself is a
+ * select and an insert; this is the judgement, and a judgement that only runs against live rows is
+ * one nobody can check.
+ */
+export function fieldsThatFitNewArtwork<T extends { page: number | null }>(
+  rows: readonly T[],
+  pageCount: number,
+): { fits: T[]; droppedForMissingPage: number } {
+  const fits = rows.filter((row) => row.page === null || (row.page >= 1 && row.page <= pageCount));
+  return { droppedForMissingPage: rows.length - fits.length, fits };
+}

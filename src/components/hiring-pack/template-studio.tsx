@@ -31,6 +31,7 @@ import {
   Loader2,
   PencilLine,
   Printer,
+  RefreshCw,
   Trash2,
   Upload,
   UserRound,
@@ -275,6 +276,21 @@ export function TemplateStudio({
    */
   const [openError, setOpenError] = useState<string | null>(null);
 
+  /**
+   * The template this upload REPLACES, or null when it is a new one.
+   *
+   * ─────────────────────────────────────────────────────────────────────────────────────────────
+   * ONE FORM, TWO JOBS, and that is deliberate rather than lazy. Replacing a paper asks for exactly
+   * what adding one asks for — the artwork, the name, the group, how many copies, who may print it —
+   * so a second form would be the same fields twice, drifting apart the first time either is edited.
+   * What changes is the destination, and this holds it.
+   *
+   * IT HOLDS THE WHOLE TEMPLATE, not just its key, because the panel has to show WHICH paper is
+   * about to be superseded and at what version. "Replacing" with no name on screen is how somebody
+   * replaces the wrong document.
+   */
+  const [replacing, setReplacing] = useState<StoredTemplate | null>(null);
+
   const [pages, setPages] = useState<RasterPage[]>([]);
   const [sourceName, setSourceName] = useState<string | null>(null);
   const [name, setName] = useState("");
@@ -362,8 +378,39 @@ export function TemplateStudio({
     setGroup("other");
     setWidthPt("");
     setHeightPt("");
+    setReplacing(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
   }, [revokeDraft]);
+
+  /**
+   * Start replacing one template's artwork: same form, aimed at an existing paper.
+   *
+   * EVERYTHING EXCEPT THE ARTWORK IS PRE-FILLED from the version being replaced, because a
+   * replacement is the same paper corrected. Blanking the name and the group would mean re-answering
+   * questions that already have answers, and the answer most likely to be re-typed slightly
+   * differently is the name — which is what everybody reads to tell two templates apart.
+   *
+   * THE PAGES ARE NOT PRE-FILLED, and cannot be: the whole point is new artwork. `clearDraft` runs
+   * first so a half-finished upload for a different document cannot be sent to this one.
+   */
+  const beginReplace = useCallback(
+    (template: StoredTemplate) => {
+      clearDraft();
+      setReplacing(template);
+      setName(template.name);
+      setNameAr(template.nameAr ?? "");
+      setNote(template.note ?? "");
+      setGroup(template.group);
+      setDefaultCopies(String(template.defaultCopies));
+      setPrintSides(template.printSides);
+      setWidthPt(String(roundPoints(template.pageWidthPt)));
+      setHeightPt(String(roundPoints(template.pageHeightPt)));
+      setError(null);
+      setNotice(null);
+      setOpen(true);
+    },
+    [clearDraft],
+  );
 
   const totalBytes = useMemo(
     () => pages.reduce((sum, page) => sum + page.blob.size, 0),
@@ -460,17 +507,50 @@ export function TemplateStudio({
       pages.forEach((page, index) => {
         form.append(`page-${index}`, page.blob, `page-${index}.png`);
       });
+      // THE STABLE KEY, never the version id. `custom:<key>` is the document, so sending the key is
+      // what keeps this the same paper — same print links, same field rules, one more version.
+      if (replacing) form.set("replaces", replacing.key);
 
       const response = await fetch("/api/hiring-pack/custom-templates", {
         body: form,
         method: "POST",
       });
       const body = (await response.json().catch(() => null)) as
-        | { message?: string; template?: StoredTemplate }
+        | {
+            message?: string;
+            replaced?: {
+              fieldsCopied?: number;
+              fieldsDropped?: number;
+              fieldsMessage?: string | null;
+              previousVersion?: number;
+            };
+            template?: StoredTemplate;
+          }
         | null;
       if (!response.ok) throw new Error(body?.message ?? `Could not save the template (${response.status}).`);
 
-      setNotice(`"${body?.template?.name ?? name}" is in the system.`);
+      const saved = body?.template;
+      if (body?.replaced && saved) {
+        // WHAT ACTUALLY HAPPENED TO THE FIELDS, said out loud. A replacement that silently loses a
+        // layout looks identical to one that kept it until somebody prints the paper and finds it
+        // blank, so the count is reported even when it is the boring number.
+        const copied = body.replaced.fieldsCopied ?? 0;
+        const dropped = body.replaced.fieldsDropped ?? 0;
+        const parts = [
+          `"${saved.name}" is now version ${saved.version}. Version ${body.replaced.previousVersion ?? saved.version - 1} is archived and still prints.`,
+        ];
+        if (copied > 0) parts.push(`${copied} field${copied === 1 ? "" : "s"} carried over.`);
+        else parts.push("It had no fields to carry over.");
+        if (dropped > 0) {
+          parts.push(
+            `${dropped} field${dropped === 1 ? " was" : "s were"} on a page the new artwork does not have, so ${dropped === 1 ? "it was" : "they were"} left behind.`,
+          );
+        }
+        if (body.replaced.fieldsMessage) parts.push(body.replaced.fieldsMessage);
+        setNotice(parts.join(" "));
+      } else {
+        setNotice(`"${saved?.name ?? name}" is in the system.`);
+      }
       clearDraft();
       await loadTemplates();
     } catch (cause) {
@@ -489,6 +569,7 @@ export function TemplateStudio({
     note,
     pages,
     printSides,
+    replacing,
     widthPt,
   ]);
 
@@ -528,6 +609,36 @@ export function TemplateStudio({
             <p className="text-sm text-phx-ink-faint">Reading the company templates…</p>
           ) : canManage ? (
             <div className="rounded-2xl border border-phx-line bg-white/70 p-4 sm:p-5">
+              {/*
+                WHICH PAPER IS ABOUT TO BE SUPERSEDED, named, before anything is chosen. The form
+                looks identical either way, so without this the only difference between adding a
+                template and replacing one is invisible — and replacing the wrong document is not
+                undoable through this screen.
+              */}
+              {replacing ? (
+                <div className="mb-4 flex flex-wrap items-start justify-between gap-3 rounded-xl border border-phx-accent-line bg-phx-accent/5 px-4 py-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-black text-phx-ink">
+                      Replacing “{replacing.name}” — version {replacing.version}
+                    </p>
+                    <p className="mt-1 text-phx-xs text-phx-ink-soft">
+                      Choose the corrected document. It becomes version {replacing.version + 1} and
+                      prints from then on; version {replacing.version} is archived, keeps its own
+                      artwork and still prints for anything already signed against it. The fields you
+                      have placed are copied onto the new version.
+                    </p>
+                  </div>
+                  <Button
+                    className="h-9 shrink-0 gap-2 rounded-xl"
+                    disabled={saving}
+                    onClick={clearDraft}
+                    type="button"
+                    variant="ghost"
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              ) : null}
               <div className="flex flex-wrap items-center gap-3">
                 <Button
                   className="h-10 gap-2 rounded-xl"
@@ -772,8 +883,27 @@ export function TemplateStudio({
                       onClick={() => void save()}
                       type="button"
                     >
-                      {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
-                      {saving ? "Saving…" : "Add to the system"}
+                      {saving ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : replacing ? (
+                        <RefreshCw className="h-4 w-4" />
+                      ) : (
+                        <Upload className="h-4 w-4" />
+                      )}
+                      {/*
+                        THE BUTTON SAYS WHICH OF THE TWO THINGS IT DOES. The form is identical either
+                        way, so a button reading "Add to the system" while a replacement is armed
+                        tells somebody they are adding a paper when they are superseding one — and
+                        superseding is not undoable from this screen. The version number is in the
+                        label because that is the fact that makes it unmistakable.
+                      */}
+                      {saving
+                        ? replacing
+                          ? "Replacing…"
+                          : "Saving…"
+                        : replacing
+                          ? `Replace with version ${replacing.version + 1}`
+                          : "Add to the system"}
                     </Button>
                   </div>
                 </>
@@ -909,6 +1039,27 @@ export function TemplateStudio({
                             <Printer className="h-3.5 w-3.5" />
                             Print
                           </Button>
+                          {/*
+                            REPLACE — current versions only, and only for somebody who may upload.
+                            An archived version has already been superseded; replacing it would have
+                            to un-archive it first, and the honest action there is to replace
+                            whatever is current instead. There is no Delete beside it on purpose:
+                            the owner's archive rule, enforced by a database trigger, is that a
+                            superseded paper is kept.
+                          */}
+                          {canManage && template.status === "current" ? (
+                            <Button
+                              className="h-9 gap-1.5 rounded-lg"
+                              disabled={saving || reading}
+                              onClick={() => beginReplace(template)}
+                              size="sm"
+                              type="button"
+                              variant="ghost"
+                            >
+                              <RefreshCw className="h-3.5 w-3.5" />
+                              Replace
+                            </Button>
+                          ) : null}
                         </div>
                       </li>
                     ))}

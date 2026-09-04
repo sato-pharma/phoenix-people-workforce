@@ -529,3 +529,130 @@ export async function createCustomTemplate(input: {
   if (!loaded) throw new Error("The template was stored but could not be read back.");
   return loaded;
 }
+
+/**
+ * Replace a company template's artwork: the next version becomes current, the old one is archived.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────────────────────
+ * THE OLD VERSION KEEPS EVERYTHING — its artwork objects, its page rows, its field rules, and a
+ * working print link. That is the whole point of archiving rather than overwriting: a paper somebody
+ * signed in August has to reprint in December as the document they signed, not as today's artwork
+ * with today's boxes on it. Nothing here deletes anything belonging to the version it supersedes.
+ *
+ * ORDER: objects, then one database call. That is the opposite of `createCustomTemplate` and the
+ * difference is not arbitrary — there the key and version are decided by the insert, so no path can
+ * be built until the row exists. Here both are already known, so the artwork goes up first and is
+ * deleted again if the transaction refuses, leaving nothing behind. Doing it the other way would
+ * risk committing a CURRENT version whose artwork never arrived, which replaces a working paper with
+ * a blank one.
+ *
+ * THE ROW WORK IS ONE `plpgsql` CALL because it cannot be anything else. Archiving needs the new
+ * version's id, the new row cannot exist while the old one is current, and the foreign key that
+ * reconciles those two is deferred to COMMIT — so there is no ordering of separate PostgREST calls
+ * that passes. `20260904223000_hiring_pack_replace_a_custom_template.sql` carries the full account.
+ */
+export async function replaceCustomTemplateArtwork(input: {
+  templateKey: string;
+  draft: CustomTemplateDraft;
+  pages: CustomTemplatePageBytes[];
+  actorHrId: string | null;
+}): Promise<{ template: CustomTemplate; archivedVersionId: string; previousVersion: number }> {
+  const { actorHrId, draft, pages, templateKey } = input;
+  if (pages.length !== draft.pages.length) {
+    throw new Error("The template's page details and its images do not match. Try the upload again.");
+  }
+  if (pages.length === 0) {
+    throw new Error("A new version needs at least one page.");
+  }
+
+  const current = await loadCurrentCustomTemplate(templateKey);
+  if (!current) {
+    throw new Error(
+      "That template has no version printing today, so there is nothing to replace. Upload it as a new template instead.",
+    );
+  }
+
+  const supabase = getSupabaseAdmin();
+  const nextVersion = current.version + 1;
+  const stored: string[] = [];
+
+  try {
+    const pageRows: Array<Record<string, number | string>> = [];
+    for (let index = 0; index < pages.length; index += 1) {
+      const detail = draft.pages[index];
+      const file = pages[index];
+      // The version in the path is what this upload EXPECTS to become. If another session replaced
+      // the same template in the meantime the function below refuses, and these objects are removed
+      // in the catch — so a stale number here never reaches a row. The path also carries a random
+      // segment, so it cannot collide with anything whatever the number says.
+      const storagePath = buildCustomTemplatePagePath({
+        contentType: file.contentType,
+        pageIndex: index,
+        templateKey,
+        unique: randomUUID(),
+        version: nextVersion,
+      });
+
+      const { error: uploadError } = await supabase.storage
+        .from(CUSTOM_TEMPLATE_BUCKET)
+        .upload(storagePath, file.bytes, {
+          cacheControl: "31536000",
+          contentType: file.contentType,
+          upsert: false,
+        });
+      if (uploadError) {
+        throw new Error(`Page ${index + 1} could not be stored: ${uploadError.message}`);
+      }
+      stored.push(storagePath);
+
+      pageRows.push({
+        content_type: file.contentType,
+        height_px: detail.heightPx,
+        page_index: index,
+        size_bytes: detail.sizeBytes,
+        storage_path: storagePath,
+        width_px: detail.widthPx,
+      });
+    }
+
+    const { data, error } = await supabase.rpc("hiring_pack_replace_custom_template", {
+      p_actor_hr_id: actorHrId,
+      p_default_copies: draft.defaultCopies,
+      p_group: draft.group,
+      p_key: templateKey,
+      p_name: draft.name,
+      p_name_ar: draft.nameAr,
+      p_note: draft.note,
+      p_page_height_pt: draft.pageHeightPt,
+      p_page_width_pt: draft.pageWidthPt,
+      p_pages: pageRows,
+      p_print_sides: draft.printSides,
+      p_printable_by_roles: draft.printableByRoles,
+    });
+    if (error) throw new Error(error.message);
+
+    // A `returns table` function answers as an ARRAY of rows through PostgREST, even at one row.
+    const row = (Array.isArray(data) ? data[0] : data) as
+      | { archived_version_id?: string; new_version_id?: string }
+      | null
+      | undefined;
+    const newVersionId = row?.new_version_id;
+    if (!newVersionId) {
+      throw new Error("The new version was not created. Nothing was changed.");
+    }
+
+    const loaded = await loadCustomTemplateVersion(newVersionId);
+    if (!loaded) throw new Error("The new version was stored but could not be read back.");
+    return {
+      archivedVersionId: row?.archived_version_id ?? current.id,
+      previousVersion: current.version,
+      template: loaded,
+    };
+  } catch (cause) {
+    // ONLY THE OBJECTS THIS CALL UPLOADED. The transaction either committed both the row and its
+    // pages or neither, so there is no row to undo — and nothing here touches the version being
+    // replaced, whose artwork is exactly what has to survive.
+    await removeCustomTemplateObjects(stored);
+    throw cause instanceof Error ? cause : new Error("Could not replace the template.");
+  }
+}

@@ -86,24 +86,48 @@ export function templateNamesOf(templates: readonly StoredTemplate[]): Record<st
   return names;
 }
 
+/**
+ * The network call on its own, holding no state — which is what lets the effect below be legal.
+ *
+ * `react-hooks/set-state-in-effect` is a lint ERROR here rather than a warning, and it counts what
+ * runs SYNCHRONOUSLY from the effect, however many function calls deep. An `async` function that
+ * writes state before its first `await` writes it synchronously, so an effect calling one is
+ * flagged exactly as if the `setState` were typed in the effect body — which is the shape this file
+ * shipped with and CI refused. Separating the fetch from the state is the fix, and it is the same
+ * shape `paper-editor.tsx` already uses for the two loads it does on mount.
+ */
+async function fetchCompanyTemplates(): Promise<{
+  canManage: boolean;
+  templates: StoredTemplate[];
+}> {
+  const response = await fetch("/api/hiring-pack/custom-templates", { cache: "no-store" });
+  const body = (await response.json().catch(() => null)) as
+    | { canManage?: boolean; message?: string; templates?: StoredTemplate[] }
+    | null;
+  if (!response.ok) {
+    throw new Error(body?.message ?? `Could not read the templates (${response.status}).`);
+  }
+  return { canManage: body?.canManage === true, templates: body?.templates ?? [] };
+}
+
 export function useCompanyTemplates(): CompanyTemplates {
   const [templates, setTemplates] = useState<StoredTemplate[]>([]);
   const [canManage, setCanManage] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  /**
+   * The imperative refresh, called after an upload or a replacement.
+   *
+   * THE ERROR IS CLEARED ON SUCCESS, not on entry. Clearing it first makes a failed retry blink the
+   * message away and bring it back, which reads as the screen fixing itself and then breaking again.
+   */
   const reload = useCallback(async () => {
-    setError(null);
     try {
-      const response = await fetch("/api/hiring-pack/custom-templates", { cache: "no-store" });
-      const body = (await response.json().catch(() => null)) as
-        | { canManage?: boolean; message?: string; templates?: StoredTemplate[] }
-        | null;
-      if (!response.ok) {
-        throw new Error(body?.message ?? `Could not read the templates (${response.status}).`);
-      }
-      setTemplates(body?.templates ?? []);
-      setCanManage(body?.canManage === true);
+      const payload = await fetchCompanyTemplates();
+      setTemplates(payload.templates);
+      setCanManage(payload.canManage);
+      setError(null);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not read the templates.");
     } finally {
@@ -111,16 +135,26 @@ export function useCompanyTemplates(): CompanyTemplates {
     }
   }, []);
 
-  /**
-   * EVERY setState IS INSIDE THE PROMISE, never in the effect body.
-   *
-   * `react-hooks/set-state-in-effect` is a lint ERROR in this repository rather than a warning, and
-   * the rule is right: state written during an effect is a second render nobody asked for. `reload`
-   * is a `useCallback` with no dependencies, so this runs once per mount and not once per render.
-   */
   useEffect(() => {
-    void reload();
-  }, [reload]);
+    let live = true;
+    void fetchCompanyTemplates().then(
+      (payload) => {
+        if (!live) return;
+        setTemplates(payload.templates);
+        setCanManage(payload.canManage);
+        setError(null);
+        setLoaded(true);
+      },
+      (cause: unknown) => {
+        if (!live) return;
+        setError(cause instanceof Error ? cause.message : "Could not read the templates.");
+        setLoaded(true);
+      },
+    );
+    return () => {
+      live = false;
+    };
+  }, []);
 
   return { canManage, error, loaded, reload, templates };
 }
