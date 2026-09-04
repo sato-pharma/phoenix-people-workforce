@@ -423,6 +423,53 @@ see* above and was dropped the same day. The cue — and every memory slug — s
 
 - **Remove worktrees with `node scripts/new-session.mjs --remove <task>`** (`pnpm run session:remove`), only after approval. It runs three gates in cost order before touching anything — untracked `.xlsx`/`.pdf` rescue scan, then uncommitted work, then commits that are on no remote branch **and** have no merged PR — drops the `node_modules` junction with `cmd /c rmdir` so no husk is left, and re-reads the folder's branch live rather than trusting an earlier scan (a parallel session can repoint a tree first). **A squash-merged branch legitimately holds commits `main` does not**, so the last gate asks `gh pr list --head <branch> --state merged`, never reachability: pure reachability calls every successfully merged worktree stranded, and the advice that follows from it — "push the branch" — is how you get a conflicting PR that runs no CI at all. By hand it is `git worktree remove` plus that same PR check; `git branch --merged` is always wrong here. Stale worktrees must not accumulate.
 
+### The retune — the count was the wrong instrument (2026-09-04, the same night)
+
+**"4 or fewer" lasted about an hour.** Shown the rule above, the owner answered plainly: *"LEAVE THEM
+THEY ARE ACTIVE WORK"*, then *"10 sessions, retune the thresholds"*. A re-measure settled it in his
+favour, and the correction is not a concession — the first version blamed the wrong term.
+
+| Term | Measured 2026-09-04, 23:5x Cairo | Share of 15.79 GB |
+| --- | --- | --- |
+| 11 agent processes — one per session | 2,964 MB total, mean **269 MB** | 18% |
+| Desktop app shell — 26 processes, fixed | 1,760 MB | 11% |
+| **ONE `next dev`** — PID 3976, port 3011 | **3,454 MB** | **21%** |
+
+Three things follow, and each contradicts the section above.
+
+**The per-session figure was too high.** August separated the main `claude.exe` from its children and
+got ~0.5 GB; September's first pass got ~330 MB; measured across eleven live engines it is **269 MB**.
+The owner's normal ten are **~2.7 GB of 16** — which 16 GB absorbs without complaint.
+
+**One dev server outweighed every session put together.** 3,454 MB against 2,964 MB for all eleven.
+The incident that produced the original rule had ten sessions *and* a 3.27 GB `node` process, and it
+was the second term that broke it. Free RAM was also observed falling **2,969 → 750 MB in about four
+minutes with no session opening** — a dev server growing, invisible to any count.
+
+**A guard that fires at the owner's normal working level is wallpaper.** This section already records
+that failure once: `statusline.mjs` rendered `9 sessions` for hours and nobody acted. A hook warning
+at 5 and escalating at 7, on a machine that habitually runs 10, reaches the identical end by a
+different route — it would have fired an escalated warning on *every* session start.
+
+**So the trigger is free RAM, and the count is only context.** `session-census.mjs` was rewritten:
+
+| Constant | Value | Why that number |
+| --- | --- | --- |
+| `RAM_FLOOR_MB` | 1,800 | `mem-watchdog.ps1`'s own floor — the two must stay in step |
+| `RAM_WARN_MB` | 2,600 | below it, a dev server or cold typecheck (~3.5 GB) crosses the floor |
+| `WARN_AT` / `STOP_AT` | 13 / 16 | ~3.5 / ~4.3 GB of session overhead — a runaway, not a busy night |
+| `CEILING` | 10 | the owner's stated working level; printed as context, **never a trigger** |
+
+When it does speak it names the dev server **first**: stopping one returns ~3.5 GB where closing a
+session returns ~269 MB, and it must be killed by PORT, not by task (§5). It still never blocks a
+session and still kills nothing itself.
+
+**Proved by forcing each branch rather than by reading the code.** With both RAM triggers disabled,
+eleven sessions produced **silence** — the property the owner actually asked for. Raising the floor
+above current free RAM fired the floor branch; disabling only the floor fired *"RAM is tight"*;
+lowering `STOP_AT` to 2 fired the runaway branch. The floor branch also fired for real, unprompted,
+at 975 MB free while these tests were running.
+
 ## Section 5 was trimmed to its floor, and §2.1's `--fix` hook was wrong — 2026-09-01
 
 **What was done.** §5 went from **5,838 → 5,696 bytes, −142 B (2.4%)**. `AGENTS.md` as a whole went
