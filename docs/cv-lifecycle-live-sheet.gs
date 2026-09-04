@@ -2,12 +2,18 @@
  * Phoenix Workforce — CV Lifecycle live Google Sheet
  * ==================================================================================
  * The full life of every CV, from reaching Phoenix to sitting in the owner's Google Drive, in a
- * sheet that fills itself and is meant to be looked at rather than read. Three tabs:
+ * sheet that fills itself and is meant to be looked at rather than read. Four tabs:
  *
  *   Summary          — the cover page: six headline tiles, the daily shape, where CVs come from,
  *                      the busiest Drive folders, and the one caveat nobody should miss.
- *   Daily Dashboard  — one row per day, one column per channel, under a full-width stacked chart.
+ *   Daily Dashboard  — one row per day, one column per channel, beside a stacked chart.
+ *   CV Details       — one row per PERSON: everything Phoenix knows about the candidate, from
+ *                      governorate and education to the answers they typed into WhatsApp.
  *   CV Lifecycle     — one row per CV, every stage stamped in Cairo local time.
+ *
+ * The two middle tabs answer different questions and are deliberately not merged. Daily Dashboard
+ * counts FILES arriving; CV Details describes PEOPLE. 982 files belong to 744 candidates, so one
+ * table cannot be both without either double-counting a person or hiding a CV.
  *
  * ─────────────────────────────────────────────────────────────────────────────────
  * STABILITY IS THE GOVERNING CONSTRAINT. READ THIS BEFORE CHANGING ANYTHING.
