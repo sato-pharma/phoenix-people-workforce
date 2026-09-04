@@ -14,15 +14,15 @@ import {
 import * as React from "react";
 
 import { AdminCallout } from "@/components/admin/admin-design-system";
-import { Badge, type BadgeTone } from "@/components/ui/badge";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { FILE_SOURCE_BADGE } from "@/lib/hiring-documents/file-source-badge";
 import type {
   HiringDocumentDefinition,
   HiringDocumentEmployeeRow,
   HiringDocumentFile,
-  HiringDocumentFileSource,
 } from "@/lib/hiring-documents/types";
 
 type Props = {
@@ -80,19 +80,6 @@ function formatUploadedAt(value: string) {
     year: "numeric",
   }).format(date);
 }
-
-/**
- * How each kind of file announces itself in the list.
- *
- * AN EXHAUSTIVE `Record`, so a fourth source cannot be added without deciding what it says here.
- * "Issued by Phoenix" is the wording that matters: these sit in slots named "Signed …", and the
- * file is the paper as it was generated — the unsigned original, not proof of a signature.
- */
-const FILE_SOURCE_BADGE: Record<HiringDocumentFileSource, { label: string; tone: BadgeTone }> = {
-  issued: { label: "Issued by Phoenix", tone: "info" },
-  scan: { label: "Scanned in Phoenix", tone: "ok" },
-  upload: { label: "Uploaded as-is", tone: "neutral" },
-};
 
 export function HiringDocumentCapture({
   canManage,

@@ -29,7 +29,26 @@ export type HiringDocumentScanMode = "colour" | "greyscale" | "high-contrast";
  * narrows whatever a client sends to `scan` or `upload`, so a hand-uploaded file can never claim
  * to have been issued by the system.
  */
-export type HiringDocumentFileSource = "upload" | "scan" | "issued";
+export const HIRING_DOCUMENT_FILE_SOURCES = ["upload", "scan", "issued"] as const;
+
+export type HiringDocumentFileSource = (typeof HIRING_DOCUMENT_FILE_SOURCES)[number];
+
+/**
+ * The stored `source` as the union, defaulting to `upload` for anything unrecognised.
+ *
+ * `upload` is the right default because it claims the least: it says only "this file arrived", with
+ * no assertion about polishing or about who produced it.
+ *
+ * READS THE LIST, so a fourth source can never be silently narrowed away. The shape to avoid is
+ * `value === "scan" ? "scan" : "upload"`, which reads every issued paper back as "Uploaded as-is" —
+ * correct in the database and wrong on every screen. It lives here rather than in the service
+ * because the decision is about a string and nothing else, and this file is the one both the server
+ * and the client component already import.
+ */
+export function readHiringDocumentFileSource(value: string | null): HiringDocumentFileSource {
+  const known = HIRING_DOCUMENT_FILE_SOURCES.find((source) => source === value);
+  return known ?? "upload";
+}
 
 export type HiringDocumentFile = {
   contentType: string;

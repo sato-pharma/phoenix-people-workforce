@@ -747,6 +747,7 @@ import { runHiringPackInsuranceWageTests } from "./hiring-pack-insurance-wage.te
 import { runHiringPackPaperEditorTests } from "./hiring-pack-paper-editor.test.ts";
 import { runHiringPackCustomTemplateRenderTests } from "./hiring-pack-custom-template-render.test.ts";
 import { runHiringPackCustomTemplateTests } from "./hiring-pack-custom-templates.test.ts";
+import { runHiringDocumentFileSourceTests } from "./hiring-document-file-source.test.ts";
 import { runHiringPackPaperArtworkTests } from "./hiring-pack-paper-artwork.test.ts";
 import { runHiringPackPaperFilingTests } from "./hiring-pack-paper-filing.test.ts";
 import { runHiringPackDocumentRegistryTests } from "./hiring-pack-document-registry.test.ts";
@@ -2467,6 +2468,7 @@ await runTest("hiring pack field layer (a dragged default keeps its kind, an add
 await runTest("hiring pack company templates (a custom document cannot collide with a built-in, a page in pixels is refused, a new version writes beside the old artwork)", runHiringPackCustomTemplateTests);
 await runTest("hiring pack paper filing (a slot is matched on its pinned column not its name, a retired or missing slot refuses rather than guesses, a filed name survives a Windows download)", runHiringPackPaperFilingTests);
 await runTest("hiring pack paper artwork (a scan is embedded as bytes because setContent gives the page no origin, and an unreadable one is reported so filing refuses rather than storing a blank government form)", runHiringPackPaperArtworkTests);
+await runTest("hiring document file source (every source reads back as itself so an issued paper is never reported as an upload, and the exhaustive badge Record is asserted at runtime because ignoreBuildErrors lets a missing key deploy)", runHiringDocumentFileSourceTests);
 await runTest("hiring pack company template printing (a blank template prints its artwork, pages print in upload order, an unfillable placeholder blanks the whole field rather than printing braces)", runHiringPackCustomTemplateRenderTests);
 await runTest("hiring pack document registry (every document — the ten in code and an uploaded one — resolves a name, a copy count and a surface at RUNTIME, which ignoreBuildErrors means the compiler cannot promise)", runHiringPackDocumentRegistryTests);
 await runTest("hiring pack field templates (an unknown placeholder never prints its braces, and one missing value blanks the whole field)", runHiringPackFieldTemplateTests);
