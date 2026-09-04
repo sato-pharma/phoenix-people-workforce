@@ -2,6 +2,8 @@
 // scorecards land in Phase 2). Scope is enforced via the parent application.
 
 import type { AccessContext } from "@/lib/auth/permissions";
+import { cairoMidnightUtcIso } from "@/lib/attendance/timezone";
+import { cairoTodayIso } from "@/lib/attendance/working-days";
 import { getApplication, type ApplicationWithContext } from "@/lib/recruitment/applications";
 import {
   mapInterview,
@@ -212,4 +214,54 @@ export async function listInterviewsDueForReminder(fromIso: string, toIso: strin
     interviewerHrId: textOrNull(row.interviewer_hr_id),
     scheduledAt: textOrNull(row.scheduled_at),
   }));
+}
+
+/**
+ * The candidates with an interview scheduled for TODAY, Cairo — for the screening work-queue rail.
+ *
+ * CAIRO, NEVER THE SERVER'S DAY. Railway runs in UTC and Cairo is UTC+2/+3, so a 09:00 interview
+ * would fall into "yesterday" for the first hours of every working morning if this asked the
+ * process for the date. `cairoMidnightUtcIso` derives the real offset for the day rather than
+ * assuming one, which is what keeps this correct across the DST change.
+ *
+ * TWO HOPS, because an interview hangs off an APPLICATION and only the application knows the
+ * candidate. Production carries very few applications, so this pile is usually empty — and an
+ * honestly empty pile is the answer, not a reason to loosen the join to something that would
+ * report interviews nobody scheduled.
+ *
+ * Fails soft to an empty set: the rail is one line on a screen whose job is showing CVs.
+ */
+export async function listCandidateIdsWithInterviewToday(): Promise<Set<string>> {
+  const today = cairoTodayIso();
+  const from = cairoMidnightUtcIso(today);
+  const to = cairoMidnightUtcIso(today, 1);
+
+  const supabase = recruitmentDb();
+  const { data, error } = await supabase
+    .from("ats_interviews")
+    .select("application_id")
+    .gte("scheduled_at", from)
+    .lt("scheduled_at", to);
+  if (error) return new Set();
+
+  const applicationIds = Array.from(
+    new Set(((data ?? []) as Array<Record<string, unknown>>).map((row) => String(row.application_id ?? "")).filter(Boolean)),
+  );
+  if (applicationIds.length === 0) return new Set();
+
+  const candidateIds = new Set<string>();
+  // Chunked at 50 — a PostgREST `.in()` carrying several hundred ids returns zero rows and no
+  // error, and "nobody is being interviewed today" is exactly the wrong thing to report silently.
+  for (let index = 0; index < applicationIds.length; index += 50) {
+    const { data: rows, error: joinError } = await supabase
+      .from("ats_applications")
+      .select("candidate_id")
+      .in("id", applicationIds.slice(index, index + 50));
+    if (joinError) return candidateIds;
+    for (const row of (rows ?? []) as Array<Record<string, unknown>>) {
+      const id = String(row.candidate_id ?? "");
+      if (id) candidateIds.add(id);
+    }
+  }
+  return candidateIds;
 }

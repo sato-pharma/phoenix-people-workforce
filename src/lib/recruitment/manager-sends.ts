@@ -241,6 +241,33 @@ export async function listSendsForManager(managerHrId: string | null | undefined
 }
 
 /**
+ * Every send of ONE candidate, newest first — the manager half of that person's timeline.
+ *
+ * The candidate row carries only the LAST send, so a CV that went to Tanta and then to Mansoura
+ * reads on the row as though Tanta never happened. That is correct for the row (it answers "where
+ * is this now") and wrong for a history, which is exactly the thing the timeline exists to show.
+ *
+ * Returns an empty list rather than null when the table is missing: this feeds one section of a
+ * side panel, and a panel that refuses to render is worse than a panel that is honestly short.
+ */
+export async function listSendsForCandidate(candidateId: string): Promise<ManagerSend[]> {
+  const id = String(candidateId ?? "").trim();
+  if (!id) return [];
+
+  const { data, error } = await recruitmentDb()
+    .from(MANAGER_SENDS_TABLE)
+    .select("candidate_id,manager_hr_id,manager_name,manager_area,manager_job_title,manager_region,sent_for_area,sent_for_job_title,sent_for_line,sent_for_region,sent_for_vacancy_id,sent_at")
+    .eq("candidate_id", id)
+    .order("sent_at", { ascending: false });
+
+  if (error) {
+    if (isMissingTable(error)) return [];
+    throw error;
+  }
+  return ((data ?? []) as SendDbRow[]).map(mapSend).filter((send) => send.sentAt.length > 0);
+}
+
+/**
  * Has this candidate been sent to this manager?
  *
  * This answers the ACCESS question, not the display one, and it is a separate question from
