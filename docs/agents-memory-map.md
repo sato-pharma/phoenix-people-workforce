@@ -19,6 +19,15 @@ index. No count is given on purpose: the set has already changed three times (it
 index budget under the loader cliff). Before removing any slug from `AGENTS.md`, re-run the
 classifier — the load-bearing set changes as the index does.
 
+**The marker is LINE-scoped, not slug-scoped — do not try to remove just one.**
+`scripts/memory-index-reachability.mjs` tests each LINE for the marker text and, on a match, marks
+**every** slug on that line. So on a row carrying several slugs the markers cannot say different
+things about different slugs: deleting one leaves the rest still marking it, and the map then reads
+as if that slug were not load-bearing while the tool still treats it as marked. This is why the
+classifier can report a slug as `over-marked` when the marker beside it is already gone — read the
+whole LINE, not the token. Tried and reverted 2026-09-04. If one slug genuinely needs a different
+status, give it its own line.
+
 ## 2.1 Session-level traps
 
 - **grep -r hangs on this checkout — use git grep or rg.** — `shell-grep-unusable-use-git-grep-or-rg`
