@@ -982,7 +982,7 @@ export function EmployeePortalSidebar({
   };
 
   return (
-    <aside className={`hidden shrink-0 self-start transition-[width] duration-200 lg:block ${collapsed ? "w-[78px]" : "w-[324px]"}`}>
+    <aside className={`hidden shrink-0 self-stretch transition-[width] duration-200 lg:block ${collapsed ? "w-[78px]" : "w-[324px]"}`}>
       <div className="sticky top-[78px] flex max-h-[calc(100vh-104px)] w-full overflow-hidden rounded-sm border border-slate-200/90 bg-white/96 shadow-[0_24px_70px_rgba(15,23,42,0.14)] ring-1 ring-white/80 backdrop-blur">
         <div className={`${collapsed ? "w-full" : "w-[58px]"} shrink-0 bg-[#101a31]`}>
           <div className="flex h-full min-h-0 flex-col items-center py-4">
@@ -1107,7 +1107,7 @@ export function EmployeePortalChrome({
   return (
     <RouteTransitionProvider>
       <ModuleLockProvider lockedModuleKeys={lockedModuleKeys}>
-      <div className="employee-portal-shell relative min-h-screen overflow-x-hidden bg-[linear-gradient(160deg,#f4f8fc_0%,#f8fafc_28%,#fdf8f5_58%,#f6faf8_82%,#f8fafc_100%)] pt-[56px] lg:pt-[64px]">
+      <div className="employee-portal-shell relative min-h-screen overflow-x-clip bg-[linear-gradient(160deg,#f4f8fc_0%,#f8fafc_28%,#fdf8f5_58%,#f6faf8_82%,#f8fafc_100%)] pt-[56px] lg:pt-[64px]">
         <EmployeePortalRouteProgress />
         <div className="pointer-events-none absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r from-sky-500 via-orange-500 to-emerald-500" />
         <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(rgba(15,23,42,0.035)_1px,transparent_1px),linear-gradient(90deg,rgba(15,23,42,0.035)_1px,transparent_1px)] bg-[size:56px_56px] [mask-image:linear-gradient(180deg,rgba(0,0,0,0.52),transparent_58%)]" />

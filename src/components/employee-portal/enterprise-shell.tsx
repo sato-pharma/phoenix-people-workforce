@@ -12,7 +12,13 @@ import { WorkspaceErrorBoundary } from "@/components/ui/workspace-error-boundary
 /* ------------------------------------------------------------------ */
 
 const portalGlobalStyles = `
-html, body { overflow-x: hidden; }
+/* clip, never hidden: hidden makes body a scroll container, so its height equals its
+   content and it never scrolls - which silently anchors every position:sticky in the
+   portal (the whole sidebar nav included) to a scrollport that never moves, so they
+   scroll away with the page. clip blocks a sideways page scroll just as firmly without
+   creating that container. Same reasoning as .admin-shell in globals.css.
+   NOTE: this block is inside a JS template literal - no backticks below this line. */
+html, body { overflow-x: clip; }
 .employee-portal-command-grid {
   background-image:
     linear-gradient(rgba(255,255,255,0.045) 1px, transparent 1px),
