@@ -170,6 +170,11 @@ export default async function PortalTargetsPage({
       badge="Sales Operations"
       description="Your areas' targets and achievement against loaded distributor sales, by product and month."
       errorBoundaryTitle="Targets unavailable"
+      // The workspace renders its own command band, which carries the headline figures, the
+      // achievement ring and the line/month selectors. Suppress the shell's standard banner so the
+      // page does not open with two stacked dark headers saying the same thing — exactly what the
+      // sibling Sales vs Target portal page does for the same reason.
+      hero={<></>}
       title="Targets"
     >
       <TargetsWorkspace
