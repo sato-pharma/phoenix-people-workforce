@@ -13,6 +13,7 @@ import {
   screeningHref,
   screeningShellPoolHref,
 } from "../src/lib/recruitment/screening-link.ts";
+import { isAfter } from "../src/lib/recruitment/manager-sends.ts";
 
 /**
  * "I want the screening page to have a separate link, and to access it from its own page."
@@ -760,4 +761,126 @@ export async function runRecruitmentScreeningPageTests() {
 
   // And the cause, not only the symptom: the page can borrow the overlay's full width on demand.
   assert.match(session, /const fullBleed = variant === "overlay" \|\| expanded;/, "the page must be able to go full-bleed");
+
+  // ── 8 · A send is read from the TRAIL, not from the overwritten column ─────
+  //
+  // `manager_notified_*` on the candidate row is the pre-2026-08-30 single-manager record: the next
+  // send overwrites it. Production carries rows where it disagrees with ats_candidate_manager_sends
+  // outright — a CV sent to Saad Salama on 31 Aug 2026 whose candidate columns are both NULL, so the
+  // Manager-feedback pile that exists to chase it could not see it at all, five days on; and one
+  // sent to Ali Moh Ali on 30 Aug and re-sent to Dr Anwar Gaweesh on 1 Sep, where the row still
+  // names the first. `listCandidatesSentToManager` has unioned both sources since the table shipped,
+  // for exactly this reason; the screening loader had not.
+  assert.equal(isAfter("2026-09-01T10:20:57.147+00:00", "2026-08-29T22:42:45.734+00:00"), true, "a later send wins");
+  assert.equal(isAfter("2026-08-29T22:42:45.734+00:00", "2026-09-01T10:20:57.147+00:00"), false, "an earlier send does not");
+  // The live NULL-column case: with nothing on the row, any recorded send is the newer fact.
+  assert.equal(isAfter("2026-08-30T21:15:02.093+00:00", null), true, "a send beats an absent stamp");
+  // Equal stamps are the ordinary case — the same send recorded in both places. It must NOT flip,
+  // or every load would rewrite the stamp with an identical one and the comparison would be noise.
+  assert.equal(isAfter("2026-08-30T21:15:02.093+00:00", "2026-08-30T21:15:02.093+00:00"), false, "the same send is not newer than itself");
+  // Compared as INSTANTS. A plain `timestamp` renders with no offset, and on a STRING compare
+  // "2026-09-01T10:20:57.147" sorts BELOW "2026-08-29T22:42:45.734+00:00" — picking the older send
+  // as the newer one, silently, which is the whole bug in a different disguise.
+  assert.equal(isAfter("2026-09-01T10:20:57.147", "2026-08-29T22:42:45.734+00:00"), true, "the compare must be by instant, not by string order");
+  assert.equal(isAfter("not a date", "2026-08-29T22:42:45.734+00:00"), false, "an unreadable stamp never wins");
+
+  const workspace = read("src/lib/recruitment/screening-workspace.ts");
+  // BEFORE the narrowing, not inside `rowFor`. `matchesScreeningNarrowing` reads
+  // `candidate.managerNotified` for the `?sent=1` / `?unsent=1` filters, so an overlay applied only
+  // to the rendered row would leave the filters answering from the old column while the list beside
+  // them answered from the trail — one screen, two truths.
+  // Anchored on the real CALL, not the bare name: the comment above the overlay explains itself by
+  // naming `matchesScreeningNarrowing`, and an anchor that matched prose would compare the overlay
+  // against its own documentation instead of against the filter.
+  const overlayAt = workspace.indexOf("latestSends.get(candidate.id)");
+  const narrowAt = workspace.indexOf("matchesScreeningNarrowing(candidate, narrowing");
+  // BOTH anchors must exist before the order between them means anything. A bare `a < b` on two
+  // indexOf results is green when the overlay anchor is simply GONE, because -1 is less than
+  // everything — a pin that passes hardest at the moment the thing it guards is deleted.
+  assert.ok(overlayAt >= 0, "the send-trail overlay must still be in the loader");
+  assert.ok(narrowAt >= 0, "the narrowing call must still be in the loader");
+  assert.ok(
+    overlayAt < narrowAt,
+    "the send trail must be overlaid before the filters read managerNotified",
+  );
+  // Only WHITESPACE may precede it. The first cut of this pin was a bare match, so commenting the
+  // line out left it green — it was pinning the words, not the statement. That is the same mistake
+  // section 7's `transform: scale` pin already records, in a different disguise.
+  assert.match(
+    workspace,
+    /\n[ \t]*candidate\.sentFor = stamp\.sentFor;/,
+    "the seat must move with the send — carrying the old position onto a newer send files it under a folder nobody chose",
+  );
+
+  // ── 9 · The pool read leaves the repeating CV blocks behind ────────────────
+  //
+  // Measured on production 2026-09-05: `select("*")` over 744 candidates moves 2,053 kB, of which
+  // 1,221 kB (59.4%) is position_specific_fields — read by nothing in this page's derive chain. The
+  // workstation already refused to ship that column to the browser; this is the same refusal one hop
+  // earlier, on the read that crosses from Frankfurt to Amsterdam.
+  const candidatesSource = read("src/lib/recruitment/candidates.ts");
+  const declared = candidatesSource
+    .slice(candidatesSource.indexOf("CANDIDATE_COLUMNS_WITHOUT_REPEATING_BLOCKS ="))
+    .split(";")[0];
+  // The chunks are JOINED first and split once, which reproduces the runtime string exactly rather
+  // than approximating it. That order matters: a chunk missing its trailing comma would glue two
+  // column names into one nonexistent column, and splitting per chunk would hide it.
+  const declaredColumns = [...declared.matchAll(/"([^"]+)"/g)]
+    .map((match) => match[1])
+    .join("")
+    .split(",");
+
+  // Re-derived from mapCandidate's OWN source, so the two cannot drift. The failure this guards is
+  // silent: a column added by a later migration and mapped in db.ts but missing from the list does
+  // not error — mapCandidate reads `undefined`, maps it to null, and the field is quietly blank on
+  // every screen fed by the slim read.
+  const dbSource = read("src/lib/recruitment/db.ts");
+  const mapCandidateBody = dbSource.slice(
+    dbSource.indexOf("export function mapCandidate"),
+    dbSource.indexOf("export function mapApplication"),
+  );
+  const mapped = [...mapCandidateBody.matchAll(/row\.([a-z0-9_]+)/g)].map((match) => match[1]);
+  const expected = [...new Set(mapped)].filter((column) => column !== "position_specific_fields").sort();
+
+  assert.deepEqual(
+    [...new Set(declaredColumns)].sort(),
+    expected,
+    "the slim column list must name every column mapCandidate reads, except the repeating blocks",
+  );
+  assert.ok(
+    !declaredColumns.includes("position_specific_fields"),
+    "the one column the slim read exists to omit must not be in it",
+  );
+  // Opt-IN, both ways round: the default read is unchanged for every caller that renders those
+  // blocks, and the screening loader is the one that asks to go without them.
+  assert.match(
+    candidatesSource,
+    /options\.withRepeatingCvBlocks === false \? CANDIDATE_COLUMNS_WITHOUT_REPEATING_BLOCKS : "\*"/,
+    "omitting the blocks must be opt-in — a caller that renders them must keep select(*)",
+  );
+  assert.match(
+    workspace,
+    /listCandidates\(\{ withRepeatingCvBlocks: false \}\)/,
+    "the screening loader must be the caller that opts out",
+  );
+
+  // ── 10 · "Have I read this" survives the pool passing 1000 ────────────────
+  //
+  // The view map was one unbounded `.select()`, on the argument that a viewer's history is bounded
+  // by the pool — true at 434 candidates, and the pool passed 700 on 2026-09-03 at roughly 90 CVs a
+  // day. PostgREST caps a request at 1000 rows and says nothing: no error, no marker, just the
+  // oldest CVs this person has already read coming back as unread. `?unseen=1` — the bookmarked
+  // link — would fill up with CVs the owner read weeks earlier, which is the exact complaint the
+  // module was written to end.
+  const views = read("src/lib/recruitment/candidate-views.ts");
+  assert.match(views, /\.range\(from, from \+ VIEW_PAGE_SIZE - 1\)/, "the view history must page");
+  // An explicit, unique order. `.range()` without one is served in whatever order the planner chose
+  // for THAT request, so page two can repeat page one's rows and omit others — paging over an
+  // unordered read loses rows without erroring, the same silent shape as the cap itself.
+  assert.match(views, /\.order\("candidate_id", \{ ascending: true \}\)/, "paging needs a stable order or it loses rows");
+  assert.match(
+    views,
+    /Refusing to report read CVs as unread/,
+    "past the guard it must throw, not return a short map — a truncated view map is the bug, not a degradation",
+  );
 }
