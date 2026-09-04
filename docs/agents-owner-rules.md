@@ -678,6 +678,50 @@ running month "just to see".
   `the-screen-that-shows-a-badge-is-not-the-screen-a-rep-can-open`
 
 
+## Relocated from an orphaned memory — 2026-09-04
+
+The memory file `not-every-distributor-uploads-every-month` was written on 2026-09-04 and never
+given an index line, so no session loaded it. `pnpm run repo:doctor` reported it as the repository's
+only orphan. It is an owner rule about how a number is read, so it belongs in §4; the hook is there
+and the account is here.
+
+### 🔴 Not every distributor uploads every month — "N of 17 missing" is never a finding
+
+**The rule, stated by the owner on 2026-09-04:** it is not a concept that every distributor uploads
+every month. The big feeds are monthly — he named **Ibn Sina, overseas (PS), epda and EGD**. The
+rest send when they send.
+
+**So counting a month's uploads against the full distributor list and reporting the shortfall is a
+false alarm** — and it is the shape a session produces naturally: 17 distributors in July, 4 in
+August, *"14 missing"*, which reads as a broken month when nothing is wrong. The denominator is the
+defect. A list of distributors is not a list of obligations.
+
+**Measure the every-month set instead.** Group `source_of_sales_import_batches`
+(`status = 'validated'`) by distributor and period, keep the distributors present in **every** prior
+month, and ask which of those are absent. On 2026-09-04 that was **12 every-month distributors
+(Jan–Jul), 2 already in for August, 10 outstanding worth roughly 6.6M EGP** of typical monthly
+import value — Marcyrl 2.55M, Ibn Sina 1.64M and Direct (Company) 1.50M being 5.7M of it. That is a
+real, rankable answer that names what to chase; *"14 of 17"* was not.
+
+**Cadence: files land across the first two weeks, not on the 1st.** July's seventeen arrived between
+2 and 12 August. A thin upload count in the first week of the following month is **mid-collection,
+never lateness** — do not raise it as one. The closing follows the last file, not the calendar: the
+closing golden rule (§4) sets the *earliest* publishable date, not the actual one.
+
+**Two distributors have simply stopped and are not missing files.** `chimipharm` last appeared in
+May, `EPDA-BULK` in June. EPDA-BULK averaged 4.83M/month, and EPDA-Pharmacies came in for August at
+12.0M against its own 2.83M average — consistent with one feed folding into the other, but
+**unconfirmed**. Never read a stopped feed as an outstanding one, and do not report the fold as
+established until the owner confirms it.
+
+**Why the two big figures are not comparable.** A month's import value of roughly 60M collapses to a
+~10M tracked-line rollup, because Head Office is deliberately absent from both the weekly and the
+monthly tracking (see the Head Office golden rule) and only CNS, Anti Infective and Pedia are
+tracked. Quoting import value beside closing value as if one should equal the other is a second way
+this data produces a false alarm.
+
+`not-every-distributor-uploads-every-month`
+
 ## Section 4 was trimmed to its floor — 2026-09-01
 
 **What was done.** §4 (with §4.1) went from **14,264 → 13,995 bytes, −269 B (1.9%)**, and a further

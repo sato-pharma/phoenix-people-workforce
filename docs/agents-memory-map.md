@@ -164,6 +164,7 @@ status, give it its own line.
 - **Turbify CANNOT issue app passwords centrally — the owner is STAYING, so do not…** — `turbify-cannot-issue-app-passwords-centrally-owner-stays` **(inline — load-bearing)**
 - **A password reset does NOT revoke a Turbify mailbox — the app passwords survive it.** — `a-password-reset-does-not-revoke-a-turbify-mailbox` **(inline — load-bearing)**
 - **Four sales-attribution facts that silently change a number.** `ez-is-credited-evenly-across-cairo-giza-cns-reps` **(inline — load-bearing)** `closing-reads-distributor-product-rollup-not-fact-rollup` **(inline — load-bearing)** `a-case-duplicate-line-map-row-doubled-a-whole-line` **(inline — load-bearing)** `owner-sheet-vocabulary-stores-is-office-upa-is-a-channel` **(inline — load-bearing)**
+- **NOT every distributor uploads every month — "N of 17 missing" is never a finding.** `not-every-distributor-uploads-every-month` **(inline — load-bearing)**
 
 ## 4.1 Marketing customer, venue and licence validation
 
