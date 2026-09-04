@@ -257,10 +257,20 @@
      `pnpm run ui:measure-sidebar-labels` must be re-run afterwards — note that
      harness measures whatever src/config/sidebar-metrics.ts names, so that file
      has to be updated in the same change or the guard silently certifies the old
-     face. That is exactly how this shipped unnoticed. */
+     face. That is exactly how this shipped unnoticed.
+
+     2026-09-04, owner instruction: the two Segoe UI Variable cuts swapped places.
+     Aptos still leads, so a machine with Office renders exactly what it always did
+     and the type scale calibrated against it is untouched. What changed is where
+     everyone ELSE lands. Segoe UI Variable is one family in four optical cuts, and
+     Microsoft's own sizes are Small up to 12pt, Text 12-18pt, Display above 18pt --
+     so an Office-less machine was rendering the whole shell in the DISPLAY cut at
+     13px, two steps off the axis. Text is the cut drawn for this size. Nothing was
+     added or removed here; the widths move by 1-3px either way, which is why the
+     snapshot below is re-measured in the same commit. */
 
   --phx-font-ui:
-    "Aptos", "Segoe UI Variable Display", "Segoe UI Variable Text", "Segoe UI", "Inter",
+    "Aptos", "Segoe UI Variable Text", "Segoe UI Variable Display", "Segoe UI", "Inter",
     "Helvetica Neue", Arial, sans-serif;
   --phx-font-mono:
     "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
