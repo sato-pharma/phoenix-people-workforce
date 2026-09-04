@@ -1248,7 +1248,12 @@ function runVocabularyTests() {
  * on the 3rd, so the denominator was set to roughly quadruple over the following fortnight and the
  * percentage to fall by two thirds while nobody's work changed.
  *
- * Two properties are pinned here, and the second is what makes the change safe to ship:
+ * SCOPE, since 2026-09-04: this is the basis a caller that passes NO window gets — the Reps List
+ * drill-down, which reads one rep's own month. The KPIs board moved to the whole-window basis that
+ * day at the owner's instruction, and runWindowScoringTests below pins that one. Both are live, and
+ * the pair is why each suite now names the caller it speaks for.
+ *
+ * Two properties are pinned here, and the second is what makes the rule safe to ship:
  *   1. a not-yet-due doctor is out of the denominator, UNLESS he was visited early — otherwise a
  *      rep who ran ahead of his own plan scores over 100%;
  *   2. for a COMPLETE month the denominator is the whole list again, so no closed month moves.
@@ -1293,3 +1298,85 @@ export function runCoverageDueDenominatorTests() {
   );
   assert.equal(closed.coveragePct, 50, "2 of 4 for the finished month, exactly as before this rule existed");
 }
+
+/**
+ * THE WINDOW BASIS — the KPIs board's rule since 2026-09-04.
+ *
+ * The suite above pins the TO-DATE basis, which is what a caller that passes no window still gets
+ * and what the Reps List drill-down reads. This one pins the other half: hand the builder a window
+ * and it scores that window WHOLE, because the owner asked for the plain fraction plus a period
+ * control rather than a denominator that grows under the reader.
+ *
+ * Owner, 2026-09-04: "you can show that until now, she covered twenty of hundred doctors ... so her
+ * coverage is twenty percent. Also, make an option to filter by period and choose, for example, one
+ * week, two weeks."
+ *
+ * Four properties, and the third is the one that was actually broken on the board: the period
+ * picker moved the call rate alone, so a week's calls were scored against a whole month's list.
+ */
+export function runWindowScoringTests() {
+  const rows = (contactCrmId: number, planDate: string) => [
+    plan({ agent_crm_id: 900, agent_hr_id: null, contact_crm_id: contactCrmId, plan_date: planDate }),
+  ];
+  const planRows = [
+    ...rows(9001, "2026-08-03"), // week 1, seen
+    ...rows(9002, "2026-08-04"), // week 1, never seen
+    ...rows(9003, "2026-08-28"), // week 4, never seen — still counted by a WHOLE-month window
+    ...rows(9004, "2026-08-27"), // week 4, never seen
+  ];
+  const visitRows = [visit({ agent_crm_id: 900, agent_hr_id: null, contact_crm_id: 9001, visit_date: "2026-08-03" })];
+
+  // 1. THE OWNER'S FRACTION. Scored mid-month, but with the whole month as the window: every one of
+  //    the four is in the denominator, including the two the plan schedules for the 27th and 28th.
+  //    This is the assertion that fails if anyone reinstates the due-so-far divisor.
+  const wholeMonth = repOf(
+    board({ asOf: "2026-08-15", month: MONTH, planRows, visitRows, window: { from: "2026-08-01", to: "2026-08-31" } }),
+    "900",
+  );
+  assert.equal(wholeMonth.plannedDoctors, 4, "the window holds all four planned doctors");
+  assert.equal(wholeMonth.visitedDoctors, 1, "only 9001 was reached");
+  assert.equal(
+    wholeMonth.coveragePct,
+    25,
+    "1 of 4 = 25%. A denominator counting only the doctors already due would read 1 of 2 = 50% and tell the manager a different story about the same month",
+  );
+
+  // 2. NOTHING IS EVER 'NOT DUE' INSIDE A WINDOW, which is what puts frequency on the same basis as
+  //    coverage rather than quietly excusing next week's doctors.
+  assert.equal(wholeMonth.notDueDoctors, 0, "the window is scored whole, so no doctor is held out of frequency");
+  assert.equal(
+    wholeMonth.coverageDueDoctors,
+    wholeMonth.plannedDoctors,
+    "with a window the due denominator IS the whole list — the two collapse, and the KPIs board reads plannedDoctors",
+  );
+
+  // 3. THE PERIOD ACTUALLY NARROWS THE PLAN SIDE. Week 1 must score week 1's doctors, not the
+  //    month's. Until 2026-09-04 getRepDoctorLists took a month and nothing else, so a seven-day
+  //    window still divided by all four.
+  const weekOne = repOf(
+    board({ asOf: "2026-08-15", month: MONTH, planRows, visitRows, window: { from: "2026-08-01", to: "2026-08-07" } }),
+    "900",
+  );
+  assert.equal(weekOne.plannedDoctors, 2, "only 9001 and 9002 are planned inside week 1");
+  assert.equal(weekOne.coveragePct, 50, "1 of the 2 doctors week 1 asked for");
+
+  // 4. ROWS OUTSIDE THE WINDOW ARE DROPPED BY THE BUILDER ITSELF, not merely by the caller's query.
+  //    A visit in week 4 must not mark a week 1 board, or a narrowed period imports work the window
+  //    does not contain.
+  const lateVisit = repOf(
+    board({
+      asOf: "2026-08-15",
+      month: MONTH,
+      planRows,
+      visitRows: [
+        ...visitRows,
+        visit({ agent_crm_id: 900, agent_hr_id: null, contact_crm_id: 9003, visit_date: "2026-08-28" }),
+      ],
+      window: { from: "2026-08-01", to: "2026-08-07" },
+    }),
+    "900",
+  );
+  assert.equal(lateVisit.visitedDoctors, 1, "the 28 August visit is outside week 1 and must not count toward it");
+  assert.equal(lateVisit.plannedDoctors, 2, "and the plan side is still just week 1's two doctors");
+}
+

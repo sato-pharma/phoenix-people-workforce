@@ -282,19 +282,45 @@ function tabHeadline(board: KpisBoard, tab: KpiTab): string {
   return `${totals.frequencyPct}%`;
 }
 
+/**
+ * The four tabs: TWO BY TWO on a phone, four across from `sm` up.
+ *
+ * Four tabs on one 375px row gave each 87px, and `px-3` leaves 63px of that for the word. FREQUENCY
+ * needs 78. The overflow is INVISIBLE to the usual guard — the owner's fits-the-screen rule is
+ * measured as `scrollWidth > clientWidth` on `main`, and clipped text contributes nothing to
+ * `scrollWidth`, so the page measured a clean 375/375 while the label ran out of its own box. What
+ * did fit wrapped instead: CALL RATE broke across two lines and its "1.63 / 6.57" across two more,
+ * making a 97px-tall ragged strip. The owner saw it before any measurement did (2026-09-04: "look
+ * how it is written and look at the frequency — never happen this").
+ *
+ * So the grid, not narrower type. The rule says fit by re-laying-out and never by shrinking text,
+ * and wrapping is the permitted answer — here the wrapping IS the defect, and two columns give each
+ * tab ~175px, enough for the longest label and the longest value on one line each.
+ *
+ * DESKTOP IS UNCHANGED ON PURPOSE. `grid-cols-4` renders the same equal widths the old
+ * `flex-1` items did, so the board this strip sits on keeps its identity and only the phone layout
+ * moves. Both the admin board and the employee portal's render this one component, so both surfaces
+ * are fixed by it — verify on both, they are separate shells.
+ *
+ * ONE MEASUREMENT NOTE for whoever changes this next: a rect read from a hidden Browser pane is
+ * ZERO, not stale. Take a screenshot first to force the paint, then read.
+ */
 function KpiTabStrip({ context }: { context: ViewContext }) {
   const { board, tab: active } = context;
   return (
-    <div className="flex flex-wrap gap-0 border border-b-0 border-slate-200 bg-white">
-      {KPI_TABS.map((tab) => {
+    <div className="grid grid-cols-2 border border-b-0 border-slate-200 bg-white sm:grid-cols-4">
+      {KPI_TABS.map((tab, index) => {
         const current = tab === active;
+        // The hairline between the two phone rows. It is a border rather than a gap so the strip
+        // stays one block, and it goes at `sm` because from there the four sit on a single row.
+        const rowTwo = index >= 2 ? " border-t border-t-slate-200 sm:border-t-0" : "";
         return (
           <Link
             aria-current={current ? "page" : undefined}
             className={
               current
-                ? "min-w-0 flex-1 border-b-2 border-orange-500 bg-orange-50/60 px-3 py-2.5 sm:px-5"
-                : "min-w-0 flex-1 border-b-2 border-transparent px-3 py-2.5 transition-colors hover:bg-slate-50 sm:px-5"
+                ? `min-w-0 border-b-2 border-b-orange-500 bg-orange-50/60 px-3 py-2.5 sm:px-5${rowTwo}`
+                : `min-w-0 border-b-2 border-b-transparent px-3 py-2.5 transition-colors hover:bg-slate-50 sm:px-5${rowTwo}`
             }
             href={hrefWith(context, { tab })}
             key={tab}
@@ -534,7 +560,7 @@ function SummaryTable({ context, rows }: { context: ViewContext; rows: KpiRepRow
               band={coverageBandOf(row)}
               caption={
                 row.hasMeasurablePlan
-                  ? `${row.visitedDoctors} of ${row.coverageDueDoctors} due so far`
+                  ? `${row.visitedDoctors} of ${row.plannedDoctors} planned doctors`
                   : "Nothing planned"
               }
               fill={coverageFill(row)}
@@ -691,7 +717,7 @@ function CoverageTable({ context, rows }: { context: ViewContext; rows: KpiRepRo
             direction={filters.direction}
             href={sortHref(context, "missed")}
             label="Not reached"
-            sub="Of those due"
+            sub="Of the whole list"
           />
           {/* Not sortable: off-plan doctors are a note about where the day went, not a measure the
               board ranks anybody on. A sort control on it would imply otherwise. */}
@@ -706,7 +732,7 @@ function CoverageTable({ context, rows }: { context: ViewContext; rows: KpiRepRo
             direction={filters.direction}
             href={sortHref(context, "coverage")}
             label="Coverage"
-            sub="Covered ÷ due"
+            sub="Covered ÷ planned"
           />
         </tr>
       </thead>
@@ -716,13 +742,13 @@ function CoverageTable({ context, rows }: { context: ViewContext; rows: KpiRepRo
             <RepCell rank={context.showRank ? index + 1 : undefined} row={row} />
             <td className={NUM}>{row.plannedDoctors}</td>
             <td className={NUM}>{row.visitedDoctors}</td>
-            <td className={NUM}>{row.coverageDueDoctors - row.visitedDoctors}</td>
+            <td className={NUM}>{row.missedDoctors}</td>
             <td className={NUM}>{row.offPlanDoctors}</td>
             <MeasureCell
               band={coverageBandOf(row)}
               caption={
                 row.hasMeasurablePlan
-                  ? `${row.visitedDoctors} of ${row.coverageDueDoctors} due so far`
+                  ? `${row.visitedDoctors} of ${row.plannedDoctors} planned doctors`
                   : "No planned doctors to be a percentage of"
               }
               fill={coverageFill(row)}
@@ -779,18 +805,11 @@ function FrequencyTable({ context, rows }: { context: ViewContext; rows: KpiRepR
             sub="Also a deviation"
           />
           <KpiSortableTh
-            active={filters.sort === "notdue"}
-            direction={filters.direction}
-            href={sortHref(context, "notdue")}
-            label="Not due"
-            sub="Held out"
-          />
-          <KpiSortableTh
             active={filters.sort === "frequency"}
             direction={filters.direction}
             href={sortHref(context, "frequency")}
             label="Frequency"
-            sub="Exact ÷ due"
+            sub="Exact ÷ planned"
           />
         </tr>
       </thead>
@@ -801,12 +820,11 @@ function FrequencyTable({ context, rows }: { context: ViewContext; rows: KpiRepR
             <td className={NUM}>{row.onPlanDoctors}</td>
             <td className={NUM}>{row.underDoctors}</td>
             <td className={NUM}>{row.overDoctors}</td>
-            <td className={NUM}>{row.notDueDoctors}</td>
             <MeasureCell
               band={frequencyBandOf(row)}
               caption={
                 row.hasMeasurablePlan
-                  ? `${row.actualCalls} of ${row.plannedCallsToDate} planned calls made`
+                  ? `${row.actualCalls} of ${row.plannedCalls} planned calls made`
                   : "No planned doctors to be a percentage of"
               }
               fill={frequencyFill(row)}
@@ -831,7 +849,7 @@ function RepCard({ rank, row }: { rank?: number; row: KpiRepRow }) {
     {
       band: coverageBandOf(row),
       caption: row.hasMeasurablePlan
-        ? `${row.visitedDoctors}/${row.coverageDueDoctors} due so far`
+        ? `${row.visitedDoctors}/${row.plannedDoctors} planned`
         : "Nothing planned",
       fill: coverageFill(row),
       label: "Coverage",
@@ -977,9 +995,13 @@ export function KpisBoardView({
               basePath={basePath}
               filters={filters}
               month={board.month}
+              monthEnd={board.range.monthEnd}
               monthOptions={monthOptions}
+              monthStart={`${board.month}-01`}
               period={board.range.periodKey}
               periodOptions={periodOptions}
+              rangeFrom={board.range.dateFrom}
+              rangeTo={board.range.windowEnd}
               tab={tab}
             />
           </div>
@@ -1040,11 +1062,9 @@ export function KpisBoardView({
             />
             <KpiTile
               band={kpiBandOf(totals.coveragePct)}
-              caption={
-                partial
-                  ? `${totals.visitedDoctors} of ${totals.coverageDueDoctors} due so far · ${totals.plannedDoctors} planned all month`
-                  : `${totals.visitedDoctors} of ${totals.plannedDoctors} planned doctors`
-              }
+              caption={`${totals.visitedDoctors} of ${totals.plannedDoctors} planned doctors${
+                partial ? " · the period is still running" : ""
+              }`}
               label="Coverage"
               progress={totals.coveragePct}
               value={`${totals.coveragePct}%`}

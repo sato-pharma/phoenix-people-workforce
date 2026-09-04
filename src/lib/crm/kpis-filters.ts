@@ -50,19 +50,17 @@ export type KpiFilterableRow = {
   /** Verified calls as a percentage of what the AM+PM targets asked for. Null with no working days. */
   callRateAttainmentPct: number | null;
 
+  /** THE DENOMINATOR OF BOTH PLAN KPIs — every doctor the plan names inside the scored window,
+   * whether or not his day has arrived. See the window note in crm/kpis-board.ts. */
   plannedDoctors: number;
-  /** The coverage denominator: doctors due by today, plus any seen early. Equals `plannedDoctors`
-   * once the month is complete. */
-  coverageDueDoctors: number;
   visitedDoctors: number;
-  /** Planned doctors with no visit this month, DUE OR NOT. Bigger than the coverage shortfall
-   * mid-month, and the board labels the two differently for exactly that reason. */
+  /** Planned doctors with no visit inside the window. The coverage shortfall, and — now that both
+   * sides count the whole window — the only shortfall this board has. */
   missedDoctors: number;
   coveragePct: number;
   onPlanDoctors: number;
   underDoctors: number;
   overDoctors: number;
-  notDueDoctors: number;
   frequencyPct: number;
   hasMeasurablePlan: boolean;
 };
@@ -210,7 +208,6 @@ export const KPI_SORT_FIELDS = [
   "exact",
   "below",
   "above",
-  "notdue",
   "calls",
   "campaign",
   "workingdays",
@@ -234,7 +231,6 @@ export const KPI_SORT_LABEL: Record<KpiSortField, string> = {
   exact: "Exact",
   below: "Below",
   above: "Above",
-  notdue: "Not due",
   calls: "Total calls",
   campaign: "Campaign share",
   workingdays: "Working days",
@@ -275,18 +271,16 @@ function sortKey(row: KpiFilterableRow, field: KpiSortField): number | string | 
     case "visited":
       return row.visitedDoctors;
     case "missed":
-      // The shortfall against the DUE list, not against the whole month — the same denominator the
-      // percentage beside it uses. Sorting on `missedDoctors` here would rank a rep by how much of
-      // next fortnight's plan he has not reached yet, which is nobody's performance.
-      return row.coverageDueDoctors - row.visitedDoctors;
+      // The shortfall against the WHOLE window, which is the denominator the percentage beside it
+      // now uses too. Identical to `missedDoctors`, and derived rather than read so the column and
+      // the sort can never drift onto two different bases again.
+      return row.plannedDoctors - row.visitedDoctors;
     case "exact":
       return row.onPlanDoctors;
     case "below":
       return row.underDoctors;
     case "above":
       return row.overDoctors;
-    case "notdue":
-      return row.notDueDoctors;
     case "calls":
       return row.totalCalls;
     case "campaign":
@@ -712,6 +706,16 @@ export function buildKpiFacets(rows: readonly KpiFilterableRow[]): KpiFacets {
  * calendar alone.
  */
 export const KPI_VERDICT_THRESHOLD = 1 / 3;
+
+/**
+ * The Period select's value for "a range I typed", as opposed to a month or one of its week blocks.
+ *
+ * It never reaches `repsPlansRange` — the picker switches into a mode on it and then navigates on
+ * the real `from..to` key. A stray `?period=custom` in a hand-edited URL matches neither the range
+ * pattern nor `w[1-5]`, so it falls through to the whole month, which is the right answer for a
+ * period nobody finished choosing.
+ */
+export const KPI_CUSTOM_PERIOD_VALUE = "custom";
 
 /**
  * Has too little of the window been worked for its percentages to mean anything?

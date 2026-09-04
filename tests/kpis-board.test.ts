@@ -163,6 +163,9 @@ function docList(agentCrmId: number, agentHrId: string | null, repName: string):
     agentCrmId,
     agentHrId,
     campaignCalls: 0,
+    // Under a WINDOW these two collapse to plannedDoctors and 0, and the KPIs board no longer reads
+    // either — but this fixture is a RepDoctorListRepRow, whose to-date arm still carries them.
+    coverageDueDoctors: 100,
     coveragePct: 70,
     frequencyPct: 39,
     gradeA: 0,
@@ -178,7 +181,6 @@ function docList(agentCrmId: number, agentHrId: string | null, repName: string):
     plannedCalls: 100,
     plannedCallsToDate: 100,
     plannedDoctors: 100,
-    coverageDueDoctors: 100,
     plannedUnclassified: 0,
     repKey: String(agentCrmId),
     repName,

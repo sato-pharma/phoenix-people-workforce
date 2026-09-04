@@ -350,6 +350,7 @@ import { runCrmVisitTypeLabelTests } from "./crm-visit-type-labels.test.ts";
 import {
   runCoverageDueDenominatorTests,
   runCrmRepDoctorListsTests,
+  runWindowScoringTests,
 } from "./crm-rep-doctor-lists.test.ts";
 import { runCrmContactListsTests } from "./crm-contact-lists.test.ts";
 import { runRepsListTests } from "./reps-list.test.ts";
@@ -1950,10 +1951,17 @@ await runTest(
   runCrmRepDoctorListsTests,
 );
 await runTest(
-  "coverage is scored against the DUE list (a doctor planned for the 28th is not a miss on the 15th, "
-  + "a doctor visited EARLY stays in the denominator so the ratio cannot pass 100%, and a complete "
-  + "month divides by the whole list exactly as before — no closed month moves)",
+  "coverage is scored against the DUE list WHEN NO WINDOW IS GIVEN — the Reps List basis (a doctor "
+  + "planned for the 28th is not a miss on the 15th, a doctor visited EARLY stays in the denominator "
+  + "so the ratio cannot pass 100%, and a complete month divides by the whole list — no closed month "
+  + "moves)",
   runCoverageDueDenominatorTests,
+);
+await runTest(
+  "a scored WINDOW is measured whole — the KPIs board basis (coverage and frequency divide by every "
+  + "doctor planned inside the period, nothing is held out as not-due, the period narrows the PLAN "
+  + "side and not just the call rate, and rows outside the window never leak into it)",
+  runWindowScoringTests,
 );
 await runTest("LocationIQ geocode confidence (reverse/forward scoring + LocationIQ-first/Google-fallback wiring)", runLocationIqGeocodeConfidenceTests);
 await runTest("private calendar", runPrivateCalendarTests);
