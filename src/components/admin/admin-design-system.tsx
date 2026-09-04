@@ -13,9 +13,6 @@ export {
   adminHeroChipClassName,
   adminHeroChipOrangeClassName,
   adminHeroDescriptionClassName,
-  adminHeroGlowAmberClassName,
-  adminHeroGlowOrangeClassName,
-  adminHeroGridOverlayClassName,
   adminHeroKickerClassName,
   adminHeroSkeletonClassName,
   adminHeroSurfaceClassName,
@@ -32,15 +29,12 @@ import {
   pageHeaderRuleClassName,
   pageHeaderTitleClassName,
   adminHeroAccentBarClassName,
-  adminHeroGlowAmberClassName,
-  adminHeroGlowOrangeClassName,
-  adminHeroGridOverlayClassName,
   adminHeroSurfaceClassName,
 } from "@/components/admin/admin-design-tokens";
 
 /**
  * Single source of truth for the black command-center hero surface. Renders the
- * dark gradient + the four decorative aria-hidden layers and provides
+ * flat black surface and provides
  * `DarkSurfaceContext` so primitives (Button, AdminInsightChip) inside it pick
  * legible-on-black styling. Used by `AdminPageHero` and by both command centers,
  * which supply their own bespoke inner content as `children`.
@@ -56,9 +50,6 @@ export function AdminHeroFrame({
   return (
     <DarkSurfaceContext.Provider value={true}>
       <section className={cn(adminHeroSurfaceClassName, className)}>
-        <div aria-hidden="true" className={adminHeroGridOverlayClassName} />
-        <div aria-hidden="true" className={adminHeroGlowOrangeClassName} />
-        <div aria-hidden="true" className={adminHeroGlowAmberClassName} />
         <div aria-hidden="true" className={adminHeroAccentBarClassName} />
         {children}
       </section>
@@ -162,23 +153,23 @@ export function AdminInsightChip({
   const dark = surface ? surface === "dark" : heroDark;
 
   const lightTone = {
-    neutral: "border-slate-200/80 bg-gradient-to-r from-slate-50 to-slate-100 text-slate-600 shadow-sm",
-    orange: "border-orange-200/90 bg-gradient-to-r from-orange-50/95 to-orange-100 text-orange-700 shadow-sm",
-    slate: "border-slate-300/80 bg-gradient-to-r from-slate-100 to-slate-200 text-slate-700 shadow-sm",
-    emerald: "border-emerald-200/90 bg-gradient-to-r from-emerald-50/95 to-emerald-100 text-emerald-700 shadow-sm",
+    neutral: "border-slate-200/80 bg-slate-50 text-slate-600",
+    orange: "border-orange-200/90 bg-orange-50 text-orange-700",
+    slate: "border-slate-300/80 bg-slate-100 text-slate-700",
+    emerald: "border-emerald-200/90 bg-emerald-50 text-emerald-700",
   }[tone];
   const darkTone = {
-    neutral: "border-white/15 bg-white/10 text-slate-200 backdrop-blur",
-    orange: "border-orange-400/40 bg-orange-500/15 text-orange-100 backdrop-blur",
-    slate: "border-white/10 bg-white/[0.06] text-slate-300 backdrop-blur",
-    emerald: "border-emerald-400/40 bg-emerald-500/15 text-emerald-200 backdrop-blur",
+    neutral: "border-white/15 bg-white/10 text-slate-200",
+    orange: "border-orange-400/40 bg-orange-500/15 text-orange-100",
+    slate: "border-white/10 bg-white/[0.06] text-slate-300",
+    emerald: "border-emerald-400/40 bg-emerald-500/15 text-emerald-200",
   }[tone];
 
   return (
     <div
       className={cn(
-        "rounded-full border px-4 py-2 text-xs font-bold uppercase tracking-[0.15em] transition-all duration-200",
-        dark ? cn(darkTone, "hover:border-white/30") : cn(lightTone, "hover:shadow-md"),
+        "border px-4 py-2 text-xs font-bold uppercase tracking-[0.15em] transition-colors",
+        dark ? cn(darkTone, "hover:border-white/30") : cn(lightTone, "hover:border-slate-300"),
       )}
     >
       {children}
@@ -207,8 +198,8 @@ export function AdminStatCard({
     orange: {
       border: "hover:border-orange-300/80",
       bg: "bg-orange-200/15",
-      icon: "from-orange-50 to-orange-100 text-orange-600 shadow-[0_8px_20px_rgba(249,115,22,0.15)] ring-orange-200",
-      card: "border-orange-300/70 bg-gradient-to-br from-orange-100 via-orange-50 to-white text-orange-950 shadow-[0_18px_44px_rgba(249,115,22,0.16)]",
+      icon: "border-orange-200 bg-orange-50 text-orange-600",
+      card: "border-orange-300/70 bg-orange-50 text-orange-950",
       label: "text-orange-700/80",
       value: "text-orange-950",
       description: "text-orange-900/75",
@@ -217,8 +208,8 @@ export function AdminStatCard({
     blue: {
       border: "hover:border-blue-300/80",
       bg: "bg-blue-200/15",
-      icon: "from-blue-50 to-blue-100 text-blue-600 shadow-[0_8px_20px_rgba(59,130,246,0.15)] ring-blue-200",
-      card: "border-blue-300/70 bg-gradient-to-br from-blue-100 via-sky-50 to-white text-blue-950 shadow-[0_18px_44px_rgba(59,130,246,0.16)]",
+      icon: "border-blue-200 bg-blue-50 text-blue-600",
+      card: "border-blue-300/70 bg-blue-50 text-blue-950",
       label: "text-blue-700/80",
       value: "text-blue-950",
       description: "text-blue-900/75",
@@ -227,8 +218,8 @@ export function AdminStatCard({
     emerald: {
       border: "hover:border-emerald-300/80",
       bg: "bg-emerald-200/15",
-      icon: "from-emerald-50 to-emerald-100 text-emerald-600 shadow-[0_8px_20px_rgba(16,185,129,0.15)] ring-emerald-200",
-      card: "border-emerald-300/70 bg-gradient-to-br from-emerald-100 via-emerald-50 to-white text-emerald-950 shadow-[0_18px_44px_rgba(16,185,129,0.16)]",
+      icon: "border-emerald-200 bg-emerald-50 text-emerald-600",
+      card: "border-emerald-300/70 bg-emerald-50 text-emerald-950",
       label: "text-emerald-700/80",
       value: "text-emerald-950",
       description: "text-emerald-900/75",
@@ -237,8 +228,8 @@ export function AdminStatCard({
     violet: {
       border: "hover:border-violet-300/80",
       bg: "bg-violet-200/15",
-      icon: "from-violet-50 to-violet-100 text-violet-600 shadow-[0_8px_20px_rgba(139,92,246,0.15)] ring-violet-200",
-      card: "border-violet-300/70 bg-gradient-to-br from-violet-100 via-fuchsia-50 to-white text-violet-950 shadow-[0_18px_44px_rgba(139,92,246,0.16)]",
+      icon: "border-violet-200 bg-violet-50 text-violet-600",
+      card: "border-violet-300/70 bg-violet-50 text-violet-950",
       label: "text-violet-700/80",
       value: "text-violet-950",
       description: "text-violet-900/75",
@@ -247,8 +238,8 @@ export function AdminStatCard({
     rose: {
       border: "hover:border-rose-300/80",
       bg: "bg-rose-200/15",
-      icon: "from-rose-50 to-rose-100 text-rose-600 shadow-[0_8px_20px_rgba(244,63,94,0.15)] ring-rose-200",
-      card: "border-rose-300/70 bg-gradient-to-br from-rose-100 via-rose-50 to-white text-rose-950 shadow-[0_18px_44px_rgba(244,63,94,0.16)]",
+      icon: "border-rose-200 bg-rose-50 text-rose-600",
+      card: "border-rose-300/70 bg-rose-50 text-rose-950",
       label: "text-rose-700/80",
       value: "text-rose-950",
       description: "text-rose-900/75",
@@ -258,7 +249,7 @@ export function AdminStatCard({
 
   const statDefaultSize = {
     containerClass: "space-y-3",
-    iconContainerClass: "flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br p-3 ring-1 transition-all duration-300 hover:scale-110",
+    iconContainerClass: "flex h-12 w-12 items-center justify-center border p-3",
     labelClass: "text-phx-2xs font-bold uppercase tracking-[0.15em]",
     valueClass: "text-3xl font-black tracking-tight",
     descriptionClass: "mt-4 text-sm leading-6",
@@ -266,7 +257,7 @@ export function AdminStatCard({
 
   const compactSize = {
     containerClass: "space-y-2",
-    iconContainerClass: "flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br p-2 ring-1 transition-all duration-300 hover:scale-110",
+    iconContainerClass: "flex h-9 w-9 items-center justify-center border p-2",
     labelClass: "text-phx-4xs font-black uppercase tracking-[0.12em]",
     valueClass: "text-xl font-black tracking-tight",
     descriptionClass: "mt-2 text-xs leading-4",
@@ -276,7 +267,7 @@ export function AdminStatCard({
 
   if (variant === "full") {
     return (
-      <Card className={cn("rounded-[24px] border p-6 transition-all duration-300 ease-out hover:-translate-y-1 hover:scale-[1.01]", toneClasses.card)}>
+      <Card className={cn("border p-6", toneClasses.card)}>
         <div className="flex items-start justify-between gap-4">
           <div className="space-y-3">
             <p className={cn("text-phx-2xs font-black uppercase tracking-[0.15em]", toneClasses.label)}>{label}</p>
@@ -294,11 +285,10 @@ export function AdminStatCard({
   return (
     <Card
       className={cn(
-        "relative overflow-hidden rounded-[24px] border border-slate-200/90 bg-white/95 shadow-[0_16px_40px_rgba(15,23,42,0.06)] transition-all duration-300 ease-out hover:-translate-y-1 hover:bg-white hover:shadow-[0_24px_52px_rgba(15,23,42,0.14)] hover:scale-[1.02]",
+        "relative overflow-hidden border border-slate-200/90 bg-white transition-colors",
         toneClasses.border,
       )}
     >
-      <div className={cn("pointer-events-none absolute -right-8 -top-10 h-32 w-32 rounded-full blur-3xl", toneClasses.bg)} />
       <div className="flex items-start justify-between gap-4">
         <div className={cn("min-w-0", sizeClasses.containerClass)}>
           <p className={cn(sizeClasses.labelClass, "text-slate-400")}>{label}</p>
@@ -319,13 +309,13 @@ export function AdminCallout({
   tone?: "danger" | "neutral" | "success" | "warning";
 }) {
   const toneClassName = {
-    danger: "border-rose-200/90 bg-gradient-to-r from-rose-50/95 to-white text-rose-800 shadow-[0_8px_20px_rgba(244,63,94,0.12)]",
-    neutral: "border-slate-200/90 bg-gradient-to-r from-slate-50/95 to-white text-slate-700 shadow-[0_8px_20px_rgba(15,23,42,0.08)]",
-    success: "border-emerald-200/90 bg-gradient-to-r from-emerald-50/95 to-white text-emerald-800 shadow-[0_8px_20px_rgba(16,185,129,0.12)]",
-    warning: "border-amber-200/90 bg-gradient-to-r from-amber-50/95 to-white text-amber-900 shadow-[0_8px_20px_rgba(245,158,11,0.12)]",
+    danger: "border-rose-200/90 bg-rose-50 text-rose-800",
+    neutral: "border-slate-200/90 bg-slate-50 text-slate-700",
+    success: "border-emerald-200/90 bg-emerald-50 text-emerald-800",
+    warning: "border-amber-200/90 bg-amber-50 text-amber-900",
   }[tone];
 
-  return <div className={cn("flex items-start gap-3 rounded-xl border px-5 py-4 text-sm transition-all duration-200 hover:shadow-md", toneClassName)}>{children}</div>;
+  return <div className={cn("flex items-start gap-3 border px-5 py-4 text-sm", toneClassName)}>{children}</div>;
 }
 
 export function AdminSectionHeader({
@@ -338,10 +328,10 @@ export function AdminSectionHeader({
   title: string;
 }) {
   return (
-    <div className="flex flex-col gap-4 border-b border-slate-200/80 bg-gradient-to-b from-white to-slate-50/50 px-5 py-5 sm:px-6 sm:flex-row sm:items-start sm:justify-between">
+    <div className="flex flex-col gap-4 border-b border-slate-200/80 bg-white px-5 py-5 sm:px-6 sm:flex-row sm:items-start sm:justify-between">
       <div>
         <div className="flex items-center gap-2.5">
-          <span className="h-2 w-2 rounded-full bg-gradient-to-r from-orange-500 to-amber-400 shadow-[0_0_8px_rgba(249,115,22,0.5)]" />
+          <span className="h-2 w-2 bg-phx-accent" />
           <h2 className="text-lg font-black tracking-tight text-slate-900">{title}</h2>
         </div>
         <p className="mt-2 text-sm leading-6 text-slate-500">{description}</p>
@@ -363,7 +353,7 @@ export function AdminTableShell({
   title: string;
 }) {
   return (
-    <Card className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white/95 shadow-[0_20px_48px_rgba(15,23,42,0.10)] p-0">
+    <Card className="overflow-hidden border border-slate-200/90 bg-white p-0">
       <AdminSectionHeader action={action} description={description} title={title} />
       {children}
     </Card>

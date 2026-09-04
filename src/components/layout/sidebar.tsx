@@ -408,12 +408,14 @@ function NavRow({
           dark ? "focus-visible:ring-offset-slate-900" : "focus-visible:ring-offset-white",
           rail ? "justify-center px-0 py-2.5" : "gap-2 px-2 py-2.5",
           // Premium row: the owner's own overview outranks every other tab, so it carries a
-          // standing gradient + ring instead of only lighting up when active. Deliberately warmer
-          // and heavier than the active state so it still reads as "the top one" when you are
-          // somewhere else in the app.
+          // standing accent TINT instead of only lighting up when active. It was a gradient plus a
+          // ring and a glow until 2026-09-05 ("NO MORE PREMIUM POLISH"); a solid fill is what
+          // replaces them. It still outranks the active state, which is a paler fill. The tint
+          // carries the whole distinction on purpose — a border here would be 1px of layout that
+          // the sibling rows do not have, and would push this row out of alignment with them.
           premium && (dark
-            ? "bg-[linear-gradient(90deg,rgba(249,115,22,0.18)_0%,rgba(249,115,22,0.05)_60%,transparent_100%)] text-white ring-1 ring-phx-accent/45 shadow-[0_6px_20px_rgba(249,115,22,0.16),inset_0_1px_0_rgba(255,255,255,0.08)] hover:ring-phx-accent/70"
-            : "bg-[linear-gradient(90deg,#FFF4E9_0%,#FFFBF7_70%,#FFFFFF_100%)] text-phx-ink ring-1 ring-[#F9A85E]/60 shadow-[0_6px_18px_rgba(249,115,22,0.13)] hover:ring-phx-accent/70"),
+            ? "bg-phx-accent/20 text-white hover:bg-phx-accent/30"
+            : "bg-[#FFF1E4] text-phx-ink hover:bg-[#FFE7D2]"),
           !premium && (dark
             ? active
               ? "bg-white/[0.08] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] ring-1 ring-phx-accent/30"
@@ -433,7 +435,7 @@ function NavRow({
             // `premium` outranks everything; then the active state; then `standalone`, which tints
             // the icon box so a hub button reads as different from a single-destination link.
             premium
-              ? "bg-[linear-gradient(180deg,#FDBA74_0%,#F97316_55%,#EA580C_100%)] text-white shadow-[0_10px_22px_rgba(249,115,22,0.45)] ring-1 ring-white/25"
+              ? "bg-phx-accent text-white"
               : dark
                 ? active
                   ? "bg-[linear-gradient(180deg,#FB923C_0%,#F97316_100%)] text-white shadow-[0_8px_16px_rgba(249,115,22,0.32)]"
