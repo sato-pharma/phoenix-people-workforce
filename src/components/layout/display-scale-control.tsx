@@ -43,6 +43,7 @@ export function DisplayScaleControl({ isAdminMode }: { isAdminMode: boolean }) {
 
   useEffect(() => {
     try {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setScale(parseDisplayScale(window.localStorage.getItem(DISPLAY_SCALE_STORAGE_KEY)));
     } catch {
       // Private-mode localStorage throws on read. The default is already in state and already
