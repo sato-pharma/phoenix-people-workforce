@@ -727,6 +727,7 @@ import { runPhase32ProductionMigrationQueueReviewTests } from "./phase32-product
 import { runPhase33MigrationHistoryReconciliationGateTests } from "./phase33-migration-history-reconciliation-gate.test.ts";
 import { runStagingExecutiveDashboardMigrationReconciliationTests } from "./staging-executive-dashboard-migration-reconciliation.test.ts";
 import { runStagingSafeRebuildTests } from "./staging-safe-rebuild.test.ts";
+import { runSupabaseProjectRefsTests } from "./supabase-project-refs.test.ts";
 import { runEmailProductionReadinessTests } from "./email-production-readiness.test.ts";
 import { runEmailP0TestingTrapTests } from "./email-p0-testing-trap.test.ts";
 import { runEmailEngineHardeningTests } from "./email-engine-hardening.test.ts";
@@ -2497,6 +2498,10 @@ await runTest("phase 32 production migration queue review", runPhase32Production
 await runTest("phase 33 migration history reconciliation gate", runPhase33MigrationHistoryReconciliationGateTests);
 await runTest("staging executive dashboard migration reconciliation", runStagingExecutiveDashboardMigrationReconciliationTests);
 await runTest("staging safe rebuild", runStagingSafeRebuildTests);
+await runTest(
+  "supabase project refs (every hardcoded ref matches AGENTS.md 3; the CLI link classifier)",
+  runSupabaseProjectRefsTests,
+);
 await runTest("email production readiness", runEmailProductionReadinessTests);
 await runTest("email p0 testing trap", runEmailP0TestingTrapTests);
 await runTest("email engine hardening", runEmailEngineHardeningTests);

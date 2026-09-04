@@ -10,6 +10,14 @@ export function runStagingExecutiveDashboardMigrationReconciliationTests() {
   // The approved staging target must come from the environment and fail closed when absent.
   // Pinning a literal ref here is what let the retired sandbox rot in place unnoticed.
   assert.match(script, /PHOENIX_APPROVED_STAGING_REF is required/);
+  // ...but it may no longer REDIRECT the run. Until 2026-09-04 the variable could name ANY project
+  // and this script would reconcile it — and the account can see two with nothing to do with this
+  // app, one of which this checkout's Supabase CLI was linked to that very day. The variable is now
+  // a confirmation, not a choice. tests/supabase-project-refs.test.ts keeps the literal from rotting.
+  assert.match(script, /stagingProjectRef = "cifwmndunmlxjhyjugxa"/);
+  assert.match(script, /The variable confirms the target; it cannot choose a different/);
+  assert.match(script, /plleofqyfbknvwcotzqo/);
+  assert.match(script, /mlbpzvaanusdejqnimst/);
   assert.doesNotMatch(script, /= "oaifhavixhdtwmseshff"/);
   assert.match(script, /blockedProductionRef = "ozucdzovmcqvepbozvqf"/);
   assert.match(script, /20260602082351_executive_dashboard_snapshot\.sql/);

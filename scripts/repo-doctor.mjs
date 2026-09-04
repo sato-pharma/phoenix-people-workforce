@@ -107,6 +107,7 @@ import { classifyMemoryReachability, memoryReachabilityLines } from "./memory-in
 import { classifyBranchPr, listBranchPrs } from "./branch-pr-state.mjs";
 import { countUnpushedCommits } from "./repo-doctor-unpushed.mjs";
 import { archivePushTarget, listArchiveRefs, strandedArchives } from "./repo-doctor-archive-refs.mjs";
+import { classifySupabaseLink } from "./repo-doctor-supabase-link.mjs";
 
 const args = process.argv.slice(2);
 const deep = args.includes("--deep");
@@ -1027,6 +1028,50 @@ let autoloadedIndexBytes = null;
       }
     }
   }
+}
+
+// WHICH SUPABASE PROJECT THE LOCAL CLI IS POINTED AT.
+//
+// The section above proves a commit exists off this laptop. This one proves a COMMAND typed in
+// this folder goes where you think it goes. Found 2026-09-04: this checkout had been linked to
+// "Future Talents Hub" — a live project in the same organization, nothing to do with this app —
+// for nineteen days, and AGENTS.md 8 gives the Supabase CLI no approval prompt to catch it.
+//
+// It has to live here because it cannot live anywhere else: supabase/.temp/ is gitignored, so no
+// required check, no test on a PR and no CI job can ever see the link. Classification lives in
+// repo-doctor-supabase-link.mjs so a test can drive every branch without a CLI or a network.
+//
+// Reads primaryRoot, not cwd: the link belongs to the checkout, and a worktree never has one.
+//
+// READ-ONLY, and it never touches the exit code — the same reasoning as the sections above. It
+// PRINTS the unlink command rather than running it: changing where a database command would land
+// is not something a hygiene report should do behind someone's back.
+{
+  console.log("");
+  console.log("SUPABASE CLI LINK (which project a bare `supabase db push` here would write to)");
+
+  const linkDir = path.join(primaryRoot, "supabase", ".temp");
+  // Absent and unreadable collapse to null on purpose — the one place in this file where that is
+  // correct rather than the trap the other sections warn about: a CLI that cannot read its own
+  // link file cannot push either way, so both really are "no link is in effect".
+  let projectRef = null;
+  let linkedName = null;
+  try {
+    projectRef = fs.readFileSync(path.join(linkDir, "project-ref"), "utf8");
+  } catch {
+    projectRef = null;
+  }
+  try {
+    const parsed = JSON.parse(fs.readFileSync(path.join(linkDir, "linked-project.json"), "utf8"));
+    linkedName = typeof parsed?.name === "string" ? parsed.name : null;
+  } catch {
+    linkedName = null;
+  }
+
+  const verdict = classifySupabaseLink({ projectRef, linkedName });
+  if (verdict.severity === "alarm") console.log("  !! " + verdict.state.toUpperCase());
+  else if (verdict.severity === "warn") console.log("  ! " + verdict.state.toUpperCase());
+  for (const line of verdict.lines) console.log(line);
 }
 
 // THE SECTION ABOVE POLICED A ~21KB FILE AND SAID NOTHING ABOUT THE ~112KB LOADED BESIDE IT.

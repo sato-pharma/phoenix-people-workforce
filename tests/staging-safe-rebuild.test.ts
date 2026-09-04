@@ -6,7 +6,15 @@ export function runStagingSafeRebuildTests() {
   const packageJson = readFileSync("package.json", "utf8");
   const gitignore = readFileSync(".gitignore", "utf8");
 
-  assert.match(script, /currentStagingRef = "izhmxvgiktiafqusolot"/);
+  // The project "current" mode was built to export is GONE from the Supabase account (AGENTS.md
+  // section 3). This line used to pin `currentStagingRef = "izhmxvgiktiafqusolot"` beside a comment
+  // claiming it "still resolves to a real project" — pinning the claim is what kept the falsehood
+  // alive through every later read. Pin the REFUSAL instead, and pin that the old name is gone so
+  // it cannot quietly return.
+  assert.match(script, /retiredStagingRef = "izhmxvgiktiafqusolot"/);
+  assert.match(script, /Refusing "current" mode/);
+  assert.match(script, /exists on the Supabase account/);
+  assert.doesNotMatch(script, /currentStagingRef/);
   assert.match(script, /productionRef = "ozucdzovmcqvepbozvqf"/);
   assert.match(script, /PHOENIX_CONFIRM_STAGING_RLS_RUN/);
   assert.match(script, /YES_STAGING_ONLY/);

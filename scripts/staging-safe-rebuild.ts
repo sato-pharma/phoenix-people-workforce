@@ -24,13 +24,24 @@ type CliResult = {
 
 const localEnvPath = ".env.staging.rls.local";
 const outputRoot = path.join("supabase-export", "staging-rebuild");
-// 2026-07-11: staging moved again, to a new Pro-org project (cifwmndunmlxjhyjugxa) after this
-// ref's free-tier project hit its storage quota and went read-only during a full production
-// clone. This constant now points at that now-archived, no-longer-active project so the script's
-// "current" mode still resolves to a real project instead of the original oaifhavixhdtwmseshff
-// sandbox ref. The live staging target is tracked in AGENTS.md and .env.staging.rls.local, not here
-// — this script's current/new split is a historical rebuild tool, not the source of truth.
-const currentStagingRef = "izhmxvgiktiafqusolot";
+// 2026-07-11: staging moved to a new Pro-org project (cifwmndunmlxjhyjugxa) after this ref's
+// free-tier project hit its storage quota and went read-only during a full production clone.
+//
+// 2026-09-04: that old project is now GONE from the Supabase account — `list_projects` does not
+// return it, and AGENTS.md section 3 lists it among the dead refs. The comment that used to sit
+// here said this constant "still resolves to a real project", and tests/staging-safe-rebuild.test.ts
+// pinned the claim, so the falsehood got DEFENDED rather than looked up. It is kept, renamed, for
+// the one thing it can still do honestly: refuse.
+//
+// "current" mode was built to export THIS project before rebuilding staging elsewhere, and it
+// cannot be exported because it does not exist. So that mode now stops with a message saying so,
+// instead of the opaque "target is not the known current staging project" it produced for every
+// possible value of the environment. Nothing is lost — the mode could not succeed either way.
+//
+// It is deliberately NOT re-pointed at live staging. This file runs `db dump`, archive and apply
+// paths; a historical rebuild tool must not acquire a live target as a side effect of a comment
+// fix. If staging is ever rebuilt again, re-point it deliberately, in its own change.
+const retiredStagingRef = "izhmxvgiktiafqusolot";
 const productionRef = "ozucdzovmcqvepbozvqf";
 const executiveMigrationVersion = "20260602082351";
 const oldStagingArchiveConfirmName = "PHOENIX_CONFIRM_OLD_STAGING_ARCHIVE_ONLINE";
@@ -163,13 +174,17 @@ function assertTarget(kind: TargetKind): DbTarget {
   }
 
   if (kind === "current") {
-    if (!supabaseHost.includes(currentStagingRef) && !rawDatabaseUrl.includes(currentStagingRef)) {
-      throw new Error("Refusing current staging export because the target is not the known current staging project.");
-    }
-  } else {
-    if (supabaseHost.includes(currentStagingRef) || rawDatabaseUrl.includes(currentStagingRef)) {
-      throw new Error("Refusing new staging target because it points to the current staging archive project.");
-    }
+    throw new Error(
+      `Refusing "current" mode: the project it was built to export (${retiredStagingRef}) no longer ` +
+        "exists on the Supabase account — see AGENTS.md section 3. Staging moved to " +
+        "cifwmndunmlxjhyjugxa on 2026-07-11 and this historical rebuild tool was never re-pointed. " +
+        "Re-point it deliberately if staging is ever rebuilt again; a rebuild tool must not acquire " +
+        "a live target by accident.",
+    );
+  }
+
+  if (supabaseHost.includes(retiredStagingRef) || rawDatabaseUrl.includes(retiredStagingRef)) {
+    throw new Error("Refusing new staging target because it points to the retired staging archive project.");
   }
 
   return {

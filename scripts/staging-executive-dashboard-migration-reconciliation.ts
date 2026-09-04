@@ -85,6 +85,29 @@ type ReconciliationReport = {
 
 const localEnvPath = ".env.staging.rls.local";
 const blockedProductionRef = "ozucdzovmcqvepbozvqf";
+
+/**
+ * The only project this script may reconcile. AGENTS.md section 3.
+ *
+ * PHOENIX_APPROVED_STAGING_REF stays REQUIRED and still fails closed when absent — that half of
+ * the design predates this constant and is deliberate: a hardcoded ref with nothing checking it
+ * is exactly how the retired oaifhavixhdtwmseshff sandbox rotted in place here unnoticed.
+ *
+ * What the variable must not be able to do is REDIRECT the run. Until 2026-09-04 it could name
+ * ANY project and this script would reconcile it, and the account can see two that have nothing
+ * to do with this app — one of which, that same day, this checkout's Supabase CLI was actually
+ * linked to. So the variable is now a CONFIRMATION, not a choice: it must name this ref or the
+ * run stops. That keeps the strong guard's property (an allowlist can be too strict but never
+ * too permissive, per apply-migrations-to-staging.ts) without reintroducing silent rot, because
+ * tests/supabase-project-refs.test.ts pins this literal against the AGENTS.md section 3 table.
+ */
+const stagingProjectRef = "cifwmndunmlxjhyjugxa";
+
+/** Named one by one so a refusal says WHICH project it is, not merely "not staging". */
+const foreignProjectRefs = new Map<string, string>([
+  ["plleofqyfbknvwcotzqo", "Future Talents Hub — unrelated to this app"],
+  ["mlbpzvaanusdejqnimst", "the owner's personal project — a DIFFERENT organization"],
+]);
 const targetVersion = "20260602082351";
 const targetMigrationFile = "20260602082351_executive_dashboard_snapshot.sql";
 const backupConfirmationEnv = "PHOENIX_CONFIRM_STAGING_BACKUP";
@@ -153,6 +176,21 @@ function approvedStagingRef() {
   if (!ref) {
     throw new Error(
       "PHOENIX_APPROVED_STAGING_REF is required. Set it to the approved staging project ref in .env.staging.rls.local.",
+    );
+  }
+  const foreign = foreignProjectRefs.get(ref);
+  if (foreign) {
+    throw new Error(
+      `Refusing: PHOENIX_APPROVED_STAGING_REF names ${ref} — ${foreign}. This script only ever ` +
+        `reconciles Phoenix staging (${stagingProjectRef}).`,
+    );
+  }
+  if (ref !== stagingProjectRef) {
+    throw new Error(
+      `Refusing: PHOENIX_APPROVED_STAGING_REF names ${ref}, which is not Phoenix staging ` +
+        `(${stagingProjectRef}). The variable confirms the target; it cannot choose a different ` +
+        "one. Fix the value in .env.staging.rls.local — there is no override here and there must " +
+        "not be one.",
     );
   }
   return ref;
