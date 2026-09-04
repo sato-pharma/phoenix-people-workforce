@@ -40,6 +40,7 @@ import { cache } from "react";
 import { unstable_cache } from "next/cache";
 
 import { getSupabaseAdmin, rpcAll } from "@/lib/supabase/server";
+import { asyncPool } from "@/lib/utils/async-pool";
 import { currentCairoDateParts } from "@/lib/i18n/format";
 import { resolveTargetLineCode, type AchievementRow } from "@/lib/sales/monthly-targets";
 
@@ -178,21 +179,58 @@ export async function loadVsTargetRange(from: string, to: string): Promise<Achie
   return loadAchievementRange(from, to);
 }
 
-/**
- * The same rows, bounded by the ENGINE's floor instead of the dashboard's.
- *
- * Identical query and identical mapping — the only difference is which floor rejects the
- * range. Reach for this from a surface that reports history (employee-360, the monthly
- * dashboard, the admin KPI, reconciliation, the Business Review); reach for loadVsTargetRange
- * from /sales-vs-target and anything that must obey the owner's July picker decision.
- *
- * One round trip for the whole range. Do NOT loop a per-period RPC over this instead —
- * every call crosses the Atlantic to eu-central-1.
- */
-const ACHIEVEMENT_RANGE_CACHE_PREFIX = "sales-vs-target-achievement-range";
+// ── The achievement cache is keyed per MONTH, not per range ──────────────────
+//
+// It used to be keyed per range, and that is what made this the most expensive statement in the
+// database: 7,973 seconds of server time across 3,436 calls — more than every other statement in
+// the instance put together (production pg_stat_statements, read 2026-09-04). Two things caused it.
+//
+// FIRST, NO TWO CALLERS SHARED AN ENTRY. Six surfaces read this loader and five of them anchor at
+// SALES_HISTORY_FLOOR, so the dashboard's 2026-01..2026-09 and Sales Truth's 2026-09..2026-09
+// overlap almost completely — and still missed each other entirely, because the range bounds were
+// in the cache key and an overlap was therefore worth nothing.
+//
+// SECOND, THE COST IS SUPERLINEAR IN THE WIDTH OF THE RANGE. Measured on production 2026-09-04
+// with EXPLAIN ANALYZE, warm, against au.f_sales_vs_target_range directly:
+//
+//     1 month   2026-08             889 rows      41.9 ms
+//     3 months  2026-01..2026-03  2,688 rows      94.7 ms
+//     9 months  2026-01..2026-09  7,880 rows     540.8 ms
+//
+// A nine-month range costs 13x a single month to return 9x the rows, and it was paid in full on
+// every render — even though eight of those nine months are closed and cannot change.
+//
+// Keyed per month, a closed month is computed once per token epoch and then shared by every
+// caller and every range containing it, so the realistic worst case is ONE uncached month.
+//
+// The comment that stood here said "one round trip for the whole range — do NOT loop a per-period
+// RPC over this, every call crosses the Atlantic to eu-central-1." That was true when the app ran
+// outside Europe. Production is now Railway europe-west4 (Amsterdam) against Supabase eu-central-1
+// (Frankfurt), colocated deliberately (AGENTS.md §3), so the per-call latency it warned about is
+// single-digit milliseconds. It does still hold for a laptop in Cairo — which is exactly why the
+// fan-out below goes through asyncPool, whose dev clamp makes it serial there.
+const ACHIEVEMENT_MONTH_CACHE_PREFIX = "sales-vs-target-achievement-month";
 // Token-keyed: the freshness stamp changes the cache key on any input change, so this TTL is
 // NOT a staleness window — it only evicts superseded epochs. Correctness comes from the token.
-const ACHIEVEMENT_RANGE_CACHE_TTL_SECONDS = 3600;
+const ACHIEVEMENT_MONTH_CACHE_TTL_SECONDS = 3600;
+/**
+ * How many UNCACHED months may be in flight at once.
+ *
+ * Only ever reached on a cold epoch; a warm range makes no round trips at all. Four holds at most
+ * four pooler connections per request — so several managers landing together cannot exhaust
+ * Supavisor — while still finishing a fully cold nine-month range in roughly a third of the old
+ * single call. asyncPool clamps this to 1 in development.
+ */
+const ACHIEVEMENT_MONTH_FETCH_CONCURRENCY = 4;
+/**
+ * The widest range the fan-out will expand, mirroring au.f_sales_vs_target_range's own v_max_months.
+ *
+ * Load-bearing, not defensive. The SQL clamp used to bound a malformed or hostile `to` for free,
+ * because the whole range was ONE call and the function clamped it server-side. Expanding the range
+ * here moves that responsibility into this file: without this cap, `to = '9999-12'` would become
+ * tens of thousands of RPCs instead of one clamped query.
+ */
+const ACHIEVEMENT_MAX_MONTHS = 24;
 
 /**
  * A ceiling well under Next's hard 2MB data-cache limit, and the reason the rows below are
@@ -219,8 +257,14 @@ const ACHIEVEMENT_RANGE_CACHE_TTL_SECONDS = 3600;
  * at, so the compressed entry lands far below this ceiling and the cache does what it was
  * written to do again. A gunzip on each hit costs a few milliseconds against a 2.38s round trip
  * to eu-central-1.
+ *
+ * Since 2026-09-04 entries are ONE MONTH each — ~890 rows, an order of magnitude under this
+ * ceiling — so the bypass below should now never fire in production. The guard stays anyway: it
+ * is the only thing standing between a future data-growth month and the dev-server kill above,
+ * and it costs one comparison. Keep the null path and its caller; do not "simplify" either away
+ * on the grounds that the payload is small now.
  */
-export const ACHIEVEMENT_RANGE_CACHE_MAX_BYTES = 1_500_000;
+export const ACHIEVEMENT_CACHE_MAX_BYTES = 1_500_000;
 
 const gzipAsync = promisify(gzip);
 const gunzipAsync = promisify(gunzip);
@@ -241,7 +285,7 @@ const gunzipAsync = promisify(gunzip);
  */
 export async function packAchievementRows(rows: AchievementRow[]): Promise<string | null> {
   const packed = (await gzipAsync(JSON.stringify(rows))).toString("base64");
-  return packed.length > ACHIEVEMENT_RANGE_CACHE_MAX_BYTES ? null : packed;
+  return packed.length > ACHIEVEMENT_CACHE_MAX_BYTES ? null : packed;
 }
 
 /** The exact inverse of packAchievementRows. */
@@ -251,13 +295,41 @@ export async function unpackAchievementRows(packed: string): Promise<Achievement
 }
 
 /**
- * The unstable_cache key parts for one achievement range. Exported ONLY so a test can pin that
- * the freshness token participates in the key: drop the token and two reads taken either side of
- * a seat/target/actuals change would collide on the same entry and the cache could hand back a
- * stale rep/DM attribution. The array order IS the cache key — do not reorder casually.
+ * The unstable_cache key parts for ONE month of achievement rows.
+ *
+ * Exported so a test can pin the two properties the design rests on. (1) The freshness token
+ * participates: drop it and two reads taken either side of a seat/target/actuals change would
+ * collide on one entry and the cache could hand back a stale rep/DM attribution. (2) The key
+ * carries the PERIOD and nothing about the range it was asked for — that is what lets two
+ * different ranges share the months they overlap on, which is the whole point of the change.
+ *
+ * The array order IS the cache key — do not reorder casually.
  */
-export function achievementRangeCacheKeyParts(from: string, to: string, token: string): string[] {
-  return [ACHIEVEMENT_RANGE_CACHE_PREFIX, from, to, token];
+export function achievementMonthCacheKeyParts(period: string, token: string): string[] {
+  return [ACHIEVEMENT_MONTH_CACHE_PREFIX, period, token];
+}
+
+/**
+ * Every period in [from, to] inclusive, ascending, clamped exactly the way the SQL clamps it.
+ *
+ * Mirrors au.f_sales_vs_target_range: floor `from` at SALES_HISTORY_FLOOR (the engine's data
+ * floor), return nothing for a malformed or inverted range, and take at most ACHIEVEMENT_MAX_MONTHS
+ * from the floored start. Callers used to get that clamping for free from the one SQL call; now
+ * that the range is expanded here, this function IS the clamp.
+ *
+ * Pure, so the bound is testable with no database.
+ */
+export function achievementPeriodsInRange(from: string, to: string): string[] {
+  if (!PERIOD_RE.test(from) || !PERIOD_RE.test(to)) return [];
+  const start = from < SALES_HISTORY_FLOOR ? SALES_HISTORY_FLOOR : from;
+  if (to < start) return [];
+  const periods: string[] = [];
+  let cursor: string | null = start;
+  while (cursor && cursor <= to && periods.length < ACHIEVEMENT_MAX_MONTHS) {
+    periods.push(cursor);
+    cursor = shiftPeriod(cursor, 1);
+  }
+  return periods;
 }
 
 /**
@@ -343,6 +415,43 @@ async function loadAchievementRangeUncached(from: string, to: string): Promise<A
   })));
 }
 
+/**
+ * ONE month, from the cross-request cache, computed live only on a miss.
+ *
+ * The token in the key is the entire invalidation story — see loadAchievementCacheStamp. A null
+ * pack means even compressed the month would not fit, so we read it live rather than hand the data
+ * cache an entry that would take the dev server down; that null marker is itself cached for the
+ * epoch, so the next caller skips straight to the live read instead of re-compressing a payload
+ * already known not to fit.
+ */
+async function loadAchievementMonth(period: string, token: string): Promise<AchievementRow[]> {
+  const cached = unstable_cache(
+    async () => packAchievementRows(await loadAchievementRangeUncached(period, period)),
+    achievementMonthCacheKeyParts(period, token),
+    { revalidate: ACHIEVEMENT_MONTH_CACHE_TTL_SECONDS },
+  );
+  const packed = await cached();
+  if (packed === null) return loadAchievementRangeUncached(period, period);
+  return unpackAchievementRows(packed);
+}
+
+/**
+ * The same rows as loadVsTargetRange, bounded by the ENGINE's floor instead of the dashboard's.
+ *
+ * Identical query and identical mapping — the only difference is which floor rejects the range.
+ * Reach for this from a surface that reports history (employee-360, the monthly dashboard, the
+ * admin KPI, reconciliation, the Business Review); reach for loadVsTargetRange from
+ * /sales-vs-target and anything that must obey the owner's July picker decision.
+ *
+ * Served a month at a time so overlapping ranges share their closed months — see the block comment
+ * above ACHIEVEMENT_MONTH_CACHE_PREFIX for the measurements that forced the change.
+ *
+ * The concatenation is byte-identical to the old single-range read: rpcAll orders every call by
+ * (period, line_code, region_code, area_code, product_code), period sorts first, and the months go
+ * back in ascending order — so appending months in order reproduces exactly the sequence one wide
+ * call produced. Callers that group or total are order-insensitive anyway, but Sales Truth
+ * reconciliation compares row-for-row, so this is a contract and not an accident.
+ */
 export async function loadAchievementRange(from: string, to: string): Promise<AchievementRow[]> {
   if (!isValidHistoryPeriod(from) || !isValidHistoryPeriod(to) || to < from) return [];
   // Self-invalidating cross-request cache. The token changes the cache key whenever actuals,
@@ -350,18 +459,16 @@ export async function loadAchievementRange(from: string, to: string): Promise<Ac
   // cache hit can never serve a stale rep/DM attribution. No token ⇒ read live (never stale).
   const token = await loadAchievementCacheStamp();
   if (!token) return loadAchievementRangeUncached(from, to);
-  const cached = unstable_cache(
-    async () => packAchievementRows(await loadAchievementRangeUncached(from, to)),
-    achievementRangeCacheKeyParts(from, to, token),
-    { revalidate: ACHIEVEMENT_RANGE_CACHE_TTL_SECONDS },
+  const periods = achievementPeriodsInRange(from, to);
+  if (periods.length === 0) return [];
+  // Bounded, and serial in development — a cold epoch is the only time any of these is a round
+  // trip at all. asyncPool preserves input order, which is what makes the flat() below ordered.
+  const months = await asyncPool(
+    ACHIEVEMENT_MONTH_FETCH_CONCURRENCY,
+    periods,
+    (period) => loadAchievementMonth(period, token),
   );
-  const packed = await cached();
-  // null means this range does not fit even compressed, so nothing usable was stored. Read live:
-  // correct-but-slow is the right trade against handing the data cache an entry that would take
-  // the process down. The null marker itself is cached for the epoch, so later calls in the same
-  // epoch skip straight here instead of re-compressing a payload already known not to fit.
-  if (packed === null) return loadAchievementRangeUncached(from, to);
-  return unpackAchievementRows(packed);
+  return months.flat();
 }
 
 /**
