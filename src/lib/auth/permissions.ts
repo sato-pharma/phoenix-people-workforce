@@ -583,6 +583,43 @@ export function isRolePermissionWithinHardBoundary(
 }
 
 /**
+ * Grants the base matrix DECLARES that the hard boundary then strips. Empty is the only healthy
+ * answer, and a test pins it there.
+ *
+ * WHY THIS IS WORTH A FUNCTION. `applyHardPermissionBoundaries` deletes such a key at module load,
+ * so a declaration like the CEO's `recruitment: ["read"]` is not a grant, a bug, or a safety net —
+ * it is a sentence in a security file that says the opposite of what the system does. It reads as
+ * deliberate, it survives review, and the next person to ask "can the CEO open recruitment?" gets
+ * the wrong answer from the most authoritative-looking place in the codebase.
+ *
+ * The same check already exists one layer up for the composed HR seats, in
+ * tests/hr-retention-register.test.ts, and its comment calls a stripped grant "a LIE IN THE WORKBOOK,
+ * not a safety net". This is that check for the roles the base matrix spells out by hand.
+ *
+ * It returns the dead grants rather than exposing `defaultPermissionMatrix` itself, deliberately:
+ * that object is PRE-boundary, and anything importing it would be reading permissions the system
+ * does not honour — the exact confusion this exists to remove, handed out as an API.
+ */
+export function deadMatrixGrants(): Array<{
+  role: PhoenixRole;
+  resource: PermissionResource;
+  actions: PermissionAction[];
+}> {
+  const dead: Array<{ role: PhoenixRole; resource: PermissionResource; actions: PermissionAction[] }> = [];
+  for (const role of phoenixRoles) {
+    for (const [resource, actions] of Object.entries(defaultPermissionMatrix[role]) as Array<
+      [PermissionResource, PermissionAction[] | undefined]
+    >) {
+      const stripped = (actions ?? []).filter(
+        (action) => !isRolePermissionWithinHardBoundary(role, resource, action),
+      );
+      if (stripped.length > 0) dead.push({ actions: stripped, resource, role });
+    }
+  }
+  return dead;
+}
+
+/**
  * Minimum permissions that must never be denied via `role_permission_overrides`.
  * These are permissions that the employee portal requires for basic functionality;
  * revoking them via a DB override breaks portal pages with an unrecoverable
@@ -811,11 +848,21 @@ const defaultPermissionMatrix: PermissionMap = {
     support_requests: ["read", "export"],
     team: ["read", "export"],
     vacancies: ["read", "export"],
-    recruitment: ["read"],
-    candidates: ["read"],
+    // NO `recruitment` and NO `candidates`, and their absence is the accurate statement.
+    //
+    // Both were declared here as ["read"] and neither ever took effect: they are hard-boundary
+    // capped to `isHrAuthorityRole`, which the CEO is not, so applyHardPermissionBoundaries deleted
+    // both keys at module load and `canAccess(ceo, "candidates", "read")` has always been false.
+    // tests/ceo-account-contract.test.ts pins that it must stay false — the two lines were claiming
+    // exactly what the contract forbids. Removing them changes no behaviour; it stops the most
+    // authoritative-looking file in the codebase from answering "can the CEO read candidates?" with
+    // the opposite of the truth. See deadMatrixGrants().
+    //
     // NSM/RM/CEO candidate tracking: CEO's own hiring round (District Manager -> HR/RM
     // -> National Sales Manager -> CEO for a District Manager candidate). Deliberately NOT
-    // hard-boundary-capped (see hiring-manager-view.ts) so this grant actually takes effect.
+    // hard-boundary-capped (see hiring-manager-view.ts) so this grant actually takes effect — it is
+    // the one recruitment-shaped resource the CEO genuinely holds, and the reason he is not
+    // shut out of his own hiring round by the two lines removed above.
     hiring_interviews: ["read", "update"],
     report_it: ["read", "create", "export"],
     // SoD: read/export only, matching `resignations` above - the CEO observes an exit, he does

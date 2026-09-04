@@ -496,6 +496,16 @@ export async function runRecruitmentScreeningPageTests() {
       /canAccess\(access, "recruitment", "read"\)/,
       `the ${name} screening page must require the recruitment read grant`,
     );
+    // THIS ONE IS LIVE, AND IT LOOKS DEAD — do not "simplify" it away. `recruitment` and
+    // `candidates` share one hard boundary and one HR function, so no ROLE holds the first without
+    // the second, and production carries a single role_permission_overrides row that touches
+    // neither. Read only those two and this gate is unreachable; an audit reached exactly that
+    // conclusion on 2026-09-05 and was wrong.
+    //
+    // `canAccess` has a THIRD gate: a per-account module lock, checked per RESOURCE
+    // (auth/module-locks.ts). A lock on `candidates` alone leaves `recruitment: read` true, so the
+    // caller clears the gate above and lands in this fallback. Not hypothetical — hr-009 had
+    // `payroll`, `payslips` and `deductions` locked over 30 Aug – 3 Sep 2026.
     assert.match(
       source,
       /canAccess\(access, "candidates", "read"\)/,
@@ -882,5 +892,52 @@ export async function runRecruitmentScreeningPageTests() {
     views,
     /Refusing to report read CVs as unread/,
     "past the guard it must throw, not return a short map — a truncated view map is the bug, not a degradation",
+  );
+
+  // ── 11 · Square corners, the owner's 2026-09-04 rule ──────────────────────
+  //
+  // No round or semi-round corners anywhere: cards, buttons, tags, inputs, bars, avatars, badges.
+  // Pinned rather than eyeballed because a 4px radius is invisible in a screenshot and survives
+  // review — the rule's own instruction is to count computed radii, never to look.
+  //
+  // (The permission fallbacks these pages carry are asserted further up, in the both-shells loop,
+  // where the comment records why the candidates gate is reachable despite looking dead.)
+  for (const shell of [
+    "app/(admin)/recruitment/screening/page.tsx",
+    "app/employee-portals/recruitment/screening/page.tsx",
+  ]) {
+    assert.doesNotMatch(read(shell), /\brounded[a-z0-9-]*/, `${shell} must have no rounded corners`);
+  }
+
+  // The filter bar this page renders is the other half of that rule. It was squared on 2026-09-05:
+  // `rounded-md` had been added to the eight selects, the bar, the count pill and the Clear button on
+  // 2026-08-31 to match the candidate pool's toolbar — four days before the rule landed — leaving one
+  // screen rendering a rounded bar on top of square panes. Comments may still say the word; classes
+  // may not.
+  const filterBar = read("src/components/recruitment/screening-page-client.tsx").replace(/\/\/.*$/gm, "");
+  assert.doesNotMatch(
+    filterBar,
+    /\brounded[a-z0-9-]*/,
+    "the screening filter bar must be square — tokens.css defaults to 4px, so copying a sibling reintroduces this silently",
+  );
+
+  // ── 12 · One batch size, in one place ─────────────────────────────────────
+  //
+  // Both comment reads spelled their own `index += 50` while db-batch.ts already owned the number
+  // and the reasoning behind it (100: ~3.8KB of ids, inside undici's ~16KB header cap). Half the
+  // size is twice the round trips, and the screening loader calls the summariser with the WHOLE
+  // pool before filtering — 15 sequential crossings to eu-central-1 to read a table holding 8 rows.
+  const comments = read("src/lib/recruitment/candidate-comments.ts");
+  // BOTH reads, counted. `assert.match` is satisfied by ONE occurrence, so with two batching loops
+  // in this file it stays green while half the fix is reverted — proved by breaking exactly that.
+  assert.equal(
+    [...comments.matchAll(/for \(const batch of chunkIds\(ids\)\)/g)].length,
+    2,
+    "both comment reads must batch through chunkIds — the counter and the summariser",
+  );
+  assert.doesNotMatch(
+    comments,
+    /index \+= \d+/,
+    "a hand-rolled batch size is a second copy of a number that already has an owner in db-batch.ts",
   );
 }
