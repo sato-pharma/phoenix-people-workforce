@@ -1768,17 +1768,31 @@ export function DeductionsWorkspace({
             value={monthKey}
           />
         </label>
-        {canDecide ? (
-          <button
-            className="ml-auto inline-flex items-center gap-1.5 rounded-sm bg-orange-500 px-3 py-1.5 text-phx-xs font-black uppercase tracking-[0.08em] text-white transition hover:bg-orange-600 disabled:opacity-50"
-            disabled={collecting || !monthHasFinished}
-            onClick={runCollection}
-            type="button"
+        <div className="ml-auto flex items-center gap-2">
+          {/* Master workbook for the whole month, every category together —
+              a per-employee summary of what will actually be deducted plus a
+              full detail sheet (with Line and Direct Manager). Sits BESIDE the
+              per-category "Download XLSX" on each tab, never replacing it. */}
+          <a
+            className="inline-flex items-center gap-1.5 whitespace-nowrap border border-orange-500 bg-white px-3 py-1.5 text-phx-xs font-black uppercase tracking-[0.08em] text-orange-600 transition hover:bg-orange-50"
+            download
+            href={`/api/admin/deductions/export/master?monthKey=${monthKey}`}
           >
-            <PlayCircle className="h-3.5 w-3.5" />
-            {collecting ? "Running…" : `Run collection for ${monthLabel(monthKey)}`}
-          </button>
-        ) : null}
+            <Download className="h-3.5 w-3.5" />
+            Master XLSX
+          </a>
+          {canDecide ? (
+            <button
+              className="inline-flex items-center gap-1.5 rounded-sm bg-orange-500 px-3 py-1.5 text-phx-xs font-black uppercase tracking-[0.08em] text-white transition hover:bg-orange-600 disabled:opacity-50"
+              disabled={collecting || !monthHasFinished}
+              onClick={runCollection}
+              type="button"
+            >
+              <PlayCircle className="h-3.5 w-3.5" />
+              {collecting ? "Running…" : `Run collection for ${monthLabel(monthKey)}`}
+            </button>
+          ) : null}
+        </div>
       </div>
 
       {canDecide && !monthHasFinished ? (

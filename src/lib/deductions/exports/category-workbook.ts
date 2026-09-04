@@ -11,7 +11,13 @@
 import ExcelJS from "exceljs";
 
 import { buildCoverSheet, sanitizeSheetName, writeTable, type CellValue, type TableColumn } from "@/lib/export/phoenix-xlsx-style";
-import { deductionsCategoryLabel, resolveAppliedDeductionDates } from "../calculations.ts";
+import {
+  deductionsCategoryLabel,
+  isEligibleForPublish,
+  resolveAppliedDeductionDates,
+  resolvePublishedAppliedAmount,
+  resolvePublishedAppliedValue,
+} from "../calculations.ts";
 import type { DeductionsCandidateWithDecision, DeductionsCategory } from "../types.ts";
 
 function money(value: number | null): CellValue {
@@ -51,6 +57,26 @@ const COLUMNS: TableColumn[] = [
   { label: "Created At", width: 18 },
 ];
 
+// "Applied Value" / "Applied Amount" mean what PAYROLL WILL ACTUALLY TAKE, so
+// they resolve exactly the way publishMonth does:
+//   - an eligible row shows the published figure, WITH the fallback to
+//     rawValue / estimatedAmount when the reviewer approved without narrowing
+//     the days (which leaves decision.appliedValue / appliedAmount null). That
+//     missing fallback is why an approved deduction printed a blank here.
+//   - a row publish will NOT take (Pending in an approval-required category, or
+//     "Do Not Take Action") applies nothing, so it shows 0 rather than the
+//     detected estimate — the detected figures are already in Raw Value /
+//     Estimated Amount, and the Decision Status column says why.
+// A null amount on an ELIGIBLE row is left blank on purpose: it means "requires
+// review" (no estimate, publish would refuse it), never a legitimate zero.
+function appliedValueCell(candidate: DeductionsCandidateWithDecision): CellValue {
+  return isEligibleForPublish(candidate) ? resolvePublishedAppliedValue(candidate) : 0;
+}
+
+function appliedAmountCell(candidate: DeductionsCandidateWithDecision): CellValue {
+  return isEligibleForPublish(candidate) ? money(resolvePublishedAppliedAmount(candidate)) : 0;
+}
+
 function candidateRow(candidate: DeductionsCandidateWithDecision): CellValue[] {
   return [
     candidate.employeeHrId,
@@ -66,8 +92,8 @@ function candidateRow(candidate: DeductionsCandidateWithDecision): CellValue[] {
     joinDates(candidate.dates),
     joinDates(resolveAppliedDeductionDates(candidate)),
     candidate.decision?.decisionStatus ?? "Pending",
-    candidate.decision?.appliedValue == null ? null : candidate.decision.appliedValue,
-    money(candidate.decision?.appliedAmount ?? null),
+    appliedValueCell(candidate),
+    appliedAmountCell(candidate),
     candidate.decision?.decisionReason ?? "",
     candidate.decision?.hrNote ?? "",
     candidate.decision?.decidedBy ?? "",
@@ -98,10 +124,17 @@ export function buildDeductionsCategoryWorkbook(input: {
 }): ExcelJS.Workbook {
   const { meta, candidates } = input;
   const label = deductionsCategoryLabel(meta.category);
-  const totalAmount = candidates.reduce(
-    (sum, candidate) => sum + (candidate.decision?.appliedAmount ?? candidate.estimatedAmount ?? 0),
-    0,
-  );
+  // The TOTAL is what publish will actually take — the sum of the Applied Amount
+  // column — not every detected candidate. The old total summed Pending and
+  // cleared rows too, so it read far higher than the month would ever deduct.
+  const totalAmount =
+    Math.round(
+      candidates.reduce(
+        (sum, candidate) =>
+          isEligibleForPublish(candidate) ? sum + (resolvePublishedAppliedAmount(candidate) ?? 0) : sum,
+        0,
+      ) * 100,
+    ) / 100;
   const employeeCount = new Set(candidates.map((candidate) => candidate.employeeHrIdCompact)).size;
 
   const workbook = new ExcelJS.Workbook();
@@ -119,7 +152,7 @@ export function buildDeductionsCategoryWorkbook(input: {
       ["Exported by", `${meta.generatedByName} (${meta.generatedByHrId})`],
       ["Candidates in this export", String(candidates.length)],
       ["Employees affected", String(employeeCount)],
-      ["Total estimated/applied amount", `${totalAmount.toFixed(2)} EGP`],
+      ["Total to be deducted (applied)", `${totalAmount.toFixed(2)} EGP`],
     ],
   });
 

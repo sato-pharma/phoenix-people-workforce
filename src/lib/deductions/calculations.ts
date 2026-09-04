@@ -180,6 +180,38 @@ export function resolveAppliedDeductionDates(candidate: {
   return [...selected];
 }
 
+/**
+ * The value this candidate PUBLISHES for: the reviewer's edited day count when
+ * they typed one (`decision.appliedValue`), otherwise every detected day
+ * (`rawValue`). This is publishMonth's own fallback (see publish.ts), extracted
+ * here so the exports show the SAME figure publish commits.
+ *
+ * The defect this closes: the category XLSX printed the raw `decision.appliedValue`
+ * with no fallback, so a deduction approved WITHOUT narrowing days — which leaves
+ * appliedValue null — showed a blank "Applied Value" even though the full detected
+ * value is exactly what publish charges.
+ */
+export function resolvePublishedAppliedValue(candidate: {
+  rawValue: number;
+  decision?: { appliedValue?: number | null } | null;
+}): number {
+  return candidate.decision?.appliedValue ?? candidate.rawValue;
+}
+
+/**
+ * The amount this candidate PUBLISHES: the decided amount when one was set
+ * (`decision.appliedAmount`), otherwise the candidate's own estimate. `null`
+ * only when neither exists — the row publishMonth refuses rather than paying
+ * 0.00, so a null here is "requires review", never a legitimate zero. Same
+ * fallback as publishMonth's resolveAppliedAmount, extracted for the exports.
+ */
+export function resolvePublishedAppliedAmount(candidate: {
+  estimatedAmount: number | null;
+  decision?: { appliedAmount?: number | null } | null;
+}): number | null {
+  return candidate.decision?.appliedAmount ?? candidate.estimatedAmount ?? null;
+}
+
 export type NormalizedAppliedDates = {
   /** The accepted subset, de-duplicated and sorted. */
   dates: string[];

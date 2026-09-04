@@ -6,7 +6,12 @@
 import { writeAuditLog } from "@/lib/admin/audit";
 import type { AccessContext } from "@/lib/auth/permissions";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-import { isEligibleForPublish, resolveAppliedDeductionDates } from "./calculations.ts";
+import {
+  isEligibleForPublish,
+  resolveAppliedDeductionDates,
+  resolvePublishedAppliedAmount,
+  resolvePublishedAppliedValue,
+} from "./calculations.ts";
 import { normalizeMonthKey } from "./candidate-key.ts";
 import { findDayCollisions } from "./conflict.ts";
 import { assertDeductionsPublishActor } from "./permissions.ts";
@@ -19,8 +24,11 @@ import type { DeductionsCandidateWithDecision, DeductionsCategory, DeductionsPub
 // because this is where callers expect to find it.
 export { isEligibleForPublish };
 
+// Thin wrappers over the shared calculations helpers. The definitions live in
+// calculations.ts so the XLSX exports show the SAME figure this path commits —
+// the export drifting from publish is exactly the bug the shared helper closes.
 function resolveAppliedValue(candidate: DeductionsCandidateWithDecision): number {
-  return candidate.decision?.appliedValue ?? candidate.rawValue;
+  return resolvePublishedAppliedValue(candidate);
 }
 
 /**
@@ -49,7 +57,7 @@ function resolvePublishDates(candidate: DeductionsCandidateWithDecision): string
  * employees involved.
  */
 function resolveAppliedAmount(candidate: DeductionsCandidateWithDecision): number | null {
-  return candidate.decision?.appliedAmount ?? candidate.estimatedAmount ?? null;
+  return resolvePublishedAppliedAmount(candidate);
 }
 
 function mapPublicationRow(row: Record<string, unknown>): DeductionsPublication {
