@@ -11,7 +11,7 @@ import {
   type EmployeeDirectoryRow,
 } from "@/lib/employees/employee-directory";
 import { canonicalHrIdKey, hrIdForStorage, hrIdLookupKeys } from "@/lib/hr-id";
-import { ApiError, validationError } from "@/lib/http/api-errors";
+import { ApiError, conflictError, validationError } from "@/lib/http/api-errors";
 import { assertPharmacyRegistryAccess, canManagePharmacyRegistry } from "@/lib/direct-orders/registry-access";
 import {
   assertVenueContactInScope,
@@ -72,6 +72,11 @@ import {
   canAssignDirectOrderSalesMonth,
   deriveDirectOrderSalesMonthChange,
 } from "@/lib/direct-orders/finance-authority";
+import {
+  assertSalesMonthClosingsOpen,
+  periodsTouchedBySalesMonthChange,
+} from "@/lib/direct-orders/sales-month-lock-guard";
+import { isClosingLocked } from "@/lib/sales/monthly-closing-lock";
 import { describeDirectOrderStatus } from "@/lib/direct-orders/status-labels";
 import type { DirectOrderQueueRow } from "@/lib/direct-orders/needs-action";
 import {
@@ -6768,6 +6773,17 @@ export async function setDirectOrderSalesMonth(
   const nextMonth = monthChange.nextMonth;
   if (previousMonth === nextMonth) return before;
 
+  // LOCKED-CLOSING GUARD. The month and the sales move in two steps that are not one transaction,
+  // so a frozen period used to leave the month saved and the sales rejected — see
+  // sales-month-lock-guard.ts for the owner rule this protects. Refuse here, before anything is
+  // written, so Finance gets a sentence instead of a half-applied booking.
+  const touchedPeriods = periodsTouchedBySalesMonthChange(previousMonth, nextMonth);
+  const lockedPeriods: string[] = [];
+  for (const period of touchedPeriods) {
+    if (await isClosingLocked(before.line, period)) lockedPeriods.push(period);
+  }
+  assertSalesMonthClosingsOpen({ line: before.line, lockedPeriods, nextMonth, previousMonth });
+
   const { data: updated, error: updateError } = await supabase
     .from("direct_order_requests")
     .update({ sales_month: nextMonth, updated_at: new Date().toISOString() })
@@ -6779,13 +6795,52 @@ export async function setDirectOrderSalesMonth(
 
   // Rebuild every period this move touched. Sequential, because the RPC takes a per-period
   // advisory lock; de-duplicated so setting a month for the first time rebuilds once.
-  const periods = [...new Set([previousMonth, nextMonth].filter((m): m is string => Boolean(m)))];
+  //
+  // If one fails anyway — a closing locked in the gap since the guard above, or any other rebuild
+  // failure — PUT THE MONTH BACK. The guard makes this near-unreachable; this is what makes the
+  // invariant hold rather than merely be likely. Only the periods that actually rebuilt are
+  // replayed: a period the trigger refused was never changed, and the RPC rebuilds from truth, so
+  // replaying it after the month is restored reproduces exactly the state before this call.
+  const periods = periodsTouchedBySalesMonthChange(previousMonth, nextMonth);
+  const rebuilt: string[] = [];
   for (const period of periods) {
     const { error: rpcError } = await supabase.rpc("phx_rebuild_direct_order_sos_batch", {
       p_period: period,
       p_actor: access.hrId ?? "finance",
     });
-    if (rpcError) throw rpcError;
+    if (!rpcError) {
+      rebuilt.push(period);
+      continue;
+    }
+    await supabase
+      .from("direct_order_requests")
+      .update({ sales_month: previousMonth, updated_at: new Date().toISOString() })
+      .eq("id", input.requestId);
+    const stuck: string[] = [];
+    for (const replay of rebuilt) {
+      const { error: replayError } = await supabase.rpc("phx_rebuild_direct_order_sos_batch", {
+        p_period: replay,
+        p_actor: access.hrId ?? "finance",
+      });
+      if (replayError) stuck.push(replay);
+    }
+    logError("Direct order sales month rolled back: Source of Sales refused the rebuild", {
+      context: { period, periods, requestId: input.requestId, restoredMonth: previousMonth, stuck },
+      error: rpcError,
+    });
+    if (stuck.length > 0) {
+      throw conflictError(
+        `The sales month was put back to ${previousMonth ?? "none"}, but ${stuck.join(" and ")} ` +
+          `could not be rebuilt. Run phx_rebuild_direct_order_sos_batch for ${stuck.join(" and ")} ` +
+          `before trusting that month's closing.`,
+        "closing_rebuild_stuck",
+      );
+    }
+    throw conflictError(
+      `Source of Sales refused to move this order into ${period}, so the sales month was left as ` +
+        `${previousMonth ?? "none"} rather than saved without its sales. ${rpcError.message ?? ""}`.trim(),
+      "closing_locked",
+    );
   }
 
   await writeRequiredAuditLog({

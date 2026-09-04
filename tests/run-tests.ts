@@ -901,6 +901,7 @@ import {
 } from "./direct-orders-unresolved-manager-rung.test.ts";
 import { runDirectOrderOperationalQueryTests } from "./direct-orders-operational-query.test.ts";
 import { runDirectOrderSecondReviewFixTests } from "./direct-orders-second-review-fixes.test.ts";
+import { runDirectOrderSalesMonthLockGuardTests } from "./direct-order-sales-month-lock-guard.test.ts";
 import { runFinanceManagerMonthlyClosingRowTests } from "./finance-manager-monthly-closing-row.test.ts";
 import { runFinanceManagerCalendarRowTests } from "./finance-manager-calendar-row.test.ts";
 import { runFinanceManagerArchivedRoiHiddenTests } from "./finance-manager-archived-roi-hidden.test.ts";
@@ -2800,6 +2801,7 @@ await runTest("direct orders registry replay (the migration chain must be replay
 await runTest("direct orders desk shell (every desk is framed by the workspace tab strip, and the strip has one definition)", runDirectOrderDeskShellTests);
 await runTest("direct orders operational query (scope is a WHERE clause applied before pagination and before the count; every tier fails closed)", runDirectOrderOperationalQueryTests);
 await runTest("direct orders second-review fixes (returned orders correct in place keeping their chain, no phantom draft queue, sales month approved-only server-side, Finance authority in one module)", runDirectOrderSecondReviewFixTests);
+await runTest("direct order sales month refuses a locked closing (the month and its sales move together, or neither moves)", runDirectOrderSalesMonthLockGuardTests);
 await runTest("finance manager monthly closing row (export-only surface not the upload workspace, both gates, no sales:import, full-sheet branch intact)", runFinanceManagerMonthlyClosingRowTests);
 await runTest("finance manager calendar row (authoring page off the sidebar, planning calendar on it, and BOTH gates of the destination pinned)", runFinanceManagerCalendarRowTests);
 await runTest("finance manager archived ROI hidden (removing the role is the fix; hiding the hub never was, because Cmd+K re-admits by role)", runFinanceManagerArchivedRoiHiddenTests);
