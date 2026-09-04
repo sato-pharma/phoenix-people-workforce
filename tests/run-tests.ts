@@ -208,6 +208,7 @@ import { runCandidatePoolFiledSearchTests } from "./candidate-pool-filed-search.
 import { runCandidateFolderSuggestionTests } from "./candidate-folder-suggestion.test.ts";
 import { runDriveCvFolderTests } from "./drive-cv-folders.test.ts";
 import { runCvLifecycleFeedTests } from "./cv-lifecycle-feed.test.ts";
+import { runCvLifecycleShareLinksScreenTests } from "./cv-lifecycle-share-links-screen.test.ts";
 import { runHiringManagerTeamScopeTests } from "./hiring-manager-team-scope.test.ts";
 import { runManagerFolderShelfTests } from "./manager-folder-shelf.test.ts";
 import { runBackgroundReviewQueueTests } from "./background-review-queue.test.ts";
@@ -1691,6 +1692,10 @@ await runTest(
 await runTest(
   "CV lifecycle sheet (the day bucket is Cairo's, a backfilled mirror still counts on its arrival day, and no column claims the candidate's send time)",
   runCvLifecycleFeedTests,
+);
+await runTest(
+  "CV sheet links screen (the token is shown once and is never in the list, the page gate IS the API gate, and the feed cannot expire unannounced)",
+  runCvLifecycleShareLinksScreenTests,
 );
 await runTest(
   "hiring-manager team scope (one National Sales Manager can NEVER read the other's candidates, and the picker is exactly the gate)",
