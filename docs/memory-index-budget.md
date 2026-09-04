@@ -195,6 +195,12 @@ on 2026-08-27 finished the `MEMORY.md` half and not the git half, orphaning two 
 repo-level check could see, because one side of the move is not in the repo at all. Full account in
 §2.1 under Parallel sessions.
 
+> **Corrected 2026-09-04 — "merged" is necessary and NOT sufficient. The paragraph above is left as
+> written because it is a dated record.** A trim that satisfied it exactly still stranded a memory
+> the same day: `CLAUDE.md` loads the WORKING COPY's `AGENTS.md`, so a checkout on a branch that
+> predates the merge names the relocated slug nowhere. The condition is *present in the checkout you
+> trim from*. See **Merged is not the condition** at the end of this file.
+
 ### §2.1 has its own floor, and it is the half that regrows
 
 **The same arithmetic applies inside `AGENTS.md`, one level down, with nothing to enforce it.**
@@ -216,3 +222,37 @@ seven Worktrees bullets whose narrative duplicated §5 — every rule kept, the 
 the remaining gap is RULES added since 2026-09-01, and §2.2 forbids deleting a hook to make room.
 **A floor is only meaningful for the rule-set it was measured on** — re-measure, never chase the
 old number.
+
+### Merged is not the condition — present in the checkout you trim from is
+
+**§2.2's both-halves rule said the destination must be MERGED before the index line is
+trimmed. That is necessary and not sufficient, and the gap cost a real stranding on
+2026-09-04.**
+
+The `gh pr merge` worktree hook was relocated into `AGENTS.md` §2.1 by PR #3064. That PR merged
+to `main` at 12:36:59 UTC and production was serving the merge commit three minutes later, so
+every reading of the rule as written was satisfied: the slug was in `AGENTS.md` on `origin/main`,
+the map row was there beside it, and the PR read `MERGED`. The `MEMORY.md` line was then trimmed
+— and the memory was immediately unrecallable.
+
+**The cause is that `CLAUDE.md` loads the WORKING COPY's `AGENTS.md`, not `origin/main`'s.** The
+primary checkout was sitting on `codex/portal-crm-boards-audit-fixes`, a branch cut before the
+merge, whose `AGENTS.md` names the slug nowhere. With the index line gone the memory had zero
+pointers from anything a session in that folder actually reads, while `git show origin/main:AGENTS.md`
+kept answering that everything was fine.
+
+This is not a rare alignment. Every worktree and every feature branch loads a different
+`AGENTS.md`, and §5 routes most work into worktrees deliberately, so the checkout doing the trim
+is USUALLY not on `main`. The rule now reads *present in the checkout you trim from*, and the
+check is `node scripts/memory-index-reachability.mjs` run **in that folder**, reading
+**0 reachable from neither**.
+
+**Two things made this hard to see, and both are now fixed.** The report printed the stranded
+COUNT and not the names, so "1 reachable from neither" took three greps by hand to resolve into a
+filename — fixed by the STRANDED section, which names each one with its `type` and full
+`description`. And nothing gates any of it: `MEMORY.md` lives outside the repository, so no
+required check can ever see a trim. The rule is behavioural, and the tool is the only instrument.
+
+**The safe direction is unchanged.** A hook written on an unmerged branch still reads as an orphan
+from a checkout that cannot see it, and that is CORRECT — not a tool bug to work around. A false
+orphan costs a reader a minute; a false "reachable" is what strands a memory.

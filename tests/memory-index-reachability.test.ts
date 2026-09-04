@@ -26,6 +26,7 @@ import {
   classifyMemoryReachability,
   memoryReachabilityLines,
   namedInAgents,
+  strandedLines,
 } from "../scripts/memory-index-reachability.mjs";
 
 const TICK = String.fromCharCode(96);
@@ -262,5 +263,91 @@ export function runMemoryIndexReachabilityTests() {
     slugs.has("tailwind-merge-strips-custom-named-font-sizes"),
     "the 2026-08-29 relocation must still be named in AGENTS.md — if it was removed without an "
       + "index line going back, that memory is now invisible (AGENTS.md 2.2, both halves or neither)",
+  );
+
+  // ── 8. A STRANDED MEMORY IS NAMED, NOT MERELY COUNTED ─────────────────────────────────────────
+  // WHY THIS EXISTS. The CLI shipped on 2026-09-04 computed the stranded set and printed only its
+  // SIZE. The gap surfaced the same day, on the trim this very tool was built to make safe: the
+  // `gh pr merge` hook was cut from MEMORY.md once its AGENTS.md half had merged to main, and the
+  // report said "1 reachable from neither". True, and useless — identifying which memory had just
+  // gone unrecallable took three greps by hand. A count tells you a memory cannot be recalled;
+  // only a name tells you which file to put back.
+  //
+  // `countOnly` reproduces the pre-fix rendering so every assertion below can show what the old
+  // output said about the same input — the same discriminating trick section 1 uses on the old
+  // index-only rule. Without it these would pass for free on any string containing a slug.
+  const countOnly = (orphans: string[]) => orphans.length + " reachable from neither";
+
+  const STRANDED = "gh-pr-merge-exits-nonzero-from-a-worktree-after-it-succeeded";
+  const LONG_DESCRIPTION =
+    "From a secondary worktree, gh pr merge prints a fatal about main already being used by a "
+    + "worktree and exits non-zero AFTER the remote merge already succeeded — read the PR state, "
+    + "never retry the merge, because retrying errors on an already-merged PR.";
+
+  const named = strandedLines({
+    orphans: [STRANDED + ".md"],
+    describe: () => ({ type: "project", description: LONG_DESCRIPTION }),
+  });
+  const namedText = named.join("\n");
+
+  assert.doesNotMatch(
+    countOnly([STRANDED + ".md"]),
+    new RegExp(STRANDED),
+    "PIN: the pre-fix rendering was a bare count and could not name anything — if this ever matches, "
+      + "the discriminator is gone and the assertions below stop proving the fix",
+  );
+  assert.match(
+    namedText,
+    new RegExp(STRANDED),
+    "a stranded memory must be named. This is the whole fix: the report has to say WHICH file went "
+      + "unrecallable, because that is the one thing the reader has to act on",
+  );
+  assert.match(namedText, /\(project\)/, "the type routes the fix — 2.2 sends different kinds to different destinations");
+
+  // The description is what recall matches on, and the owner's standing rule bans truncating text
+  // with an ellipsis. Wrapping is the permitted answer, so the whole sentence must survive it.
+  assert.ok(
+    namedText.replace(/\s+/g, " ").includes(LONG_DESCRIPTION),
+    "the description must be printed WHOLE across wrapped lines — it is the field that decides "
+      + "whether a memory is recalled at all, so a trimmed one cuts away the half that says where "
+      + "the hook belongs",
+  );
+  assert.doesNotMatch(namedText, /…/, "no ellipsis: the owner's standing rule is that text is never truncated with one");
+
+  // A memory with no description is worse off than the others — recall cannot match it even after
+  // it is re-indexed — so the report must say that rather than printing a reassuring blank.
+  const noDescription = strandedLines({ orphans: ["bare.md"], describe: () => ({}) }).join("\n");
+  assert.match(noDescription, /bare/);
+  assert.match(noDescription, /no description/, "an undescribed memory must be called out, not shown as a blank line");
+
+  // NO SILENT CAP. A truncated list that does not say it was truncated reads as "that is all of
+  // them" — the confidently-wrong outcome AGENTS.md rule 1 exists for. This matters most in the
+  // exact case the cap exists for: an unreadable AGENTS.md strands every memory at once.
+  const many = Array.from({ length: 27 }, (_, i) => "bulk-hook-" + String(i).padStart(2, "0") + ".md");
+  const capped = strandedLines({ orphans: many, limit: 20 }).join("\n");
+  assert.equal(
+    capped.split("\n").filter((l) => /^ {4}bulk-hook-/.test(l)).length,
+    20,
+    "the cap must actually cap",
+  );
+  assert.match(capped, /7 more not listed/, "the count NOT printed must be stated out loud");
+  assert.match(capped, /--all/, "and so must the flag that prints the rest");
+
+  const uncapped = strandedLines({ orphans: many, limit: Infinity }).join("\n");
+  assert.equal(
+    uncapped.split("\n").filter((l) => /^ {4}bulk-hook-/.test(l)).length,
+    27,
+    "--all must print every one",
+  );
+  assert.doesNotMatch(uncapped, /more not listed/, "nothing was withheld, so nothing may claim it was");
+
+  // The healthy path carries no alarm and offers no remedy nobody needs — the same discipline
+  // section 6 pins on the advice lines.
+  const noneStranded = strandedLines({ orphans: [] }).join("\n");
+  assert.match(noneStranded, /none — every memory file is reachable/);
+  assert.doesNotMatch(
+    noneStranded,
+    /Give each a line/,
+    "a clean report must not print routing advice for a backlog that does not exist",
   );
 }
