@@ -18,6 +18,7 @@
 import { isUnreviewedCandidateStatus } from "@/lib/recruitment/candidate-status";
 import { recruitmentDb } from "@/lib/recruitment/db";
 import { cairoDateKey, cairoHour } from "@/lib/recruitment/inbound/whatsapp-health";
+import { intakeSourceLabel } from "@/lib/recruitment/intake-source";
 
 /** Why one arriving CV still earns its own alert, or `null` when the digest covers it. */
 export type InboundCvAlertReason = "no_file" | "applicant";
@@ -116,19 +117,9 @@ const UNSTATED_JOB_TITLE = "Role not stated";
 
 const UNRECORDED_SOURCE = "Source not recorded";
 
-/** `source` is written as the intake channel (see cv-intake-service.ts), so these are the two live values. */
-const SOURCE_LABELS: Record<string, string> = {
-  email: "Email",
-  whatsapp: "WhatsApp",
-};
-
-function sourceLabel(value: string | null | undefined): string {
-  const raw = String(value ?? "").trim();
-  if (!raw) return "";
-  // Anything unrecognised is shown verbatim rather than folded into an "other" bucket — a value
-  // somebody or something recorded is information, and the owner's rule is that text is never hidden.
-  return SOURCE_LABELS[raw.toLowerCase()] ?? raw;
-}
+// The map moved to `intake-source.ts` when the screening list needed it too. Kept as a local alias
+// so this file reads unchanged.
+const sourceLabel = intakeSourceLabel;
 
 /** Counts by label, biggest first, ties alphabetical so the same day always reads the same way. */
 function groupByLabel(values: Array<string | null | undefined>, fallback: string): DailyCvDigestGroup[] {

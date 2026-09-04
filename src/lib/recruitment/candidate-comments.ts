@@ -90,6 +90,50 @@ export async function countCommentsByCandidate(candidateIds: readonly string[]):
 }
 
 /**
+ * Comment counts AND the newest comment's timestamp, for a set of candidates.
+ *
+ * The timestamp is what lets the work-queue rail tell "sent to a manager and still waiting" from
+ * "sent, and somebody answered" — see screening-workspace.ts. Counting alone cannot: a comment
+ * written BEFORE the send is not an answer to it, and a pile that empties on any comment at all
+ * would quietly lose the candidate it exists to chase.
+ *
+ * Chunked at 50, for the same reason the counter above is: a PostgREST `.in()` carrying several
+ * hundred ids returns zero rows and no error.
+ */
+export async function summarizeCommentsByCandidate(
+  candidateIds: readonly string[],
+): Promise<Map<string, { count: number; latestAt: string | null }>> {
+  const summary = new Map<string, { count: number; latestAt: string | null }>();
+  const ids = Array.from(new Set(candidateIds.filter((id) => id.length > 0)));
+  if (ids.length === 0) return summary;
+
+  const supabase = recruitmentDb();
+  for (let index = 0; index < ids.length; index += 50) {
+    const { data, error } = await supabase
+      .from("ats_candidate_comments")
+      .select("candidate_id,created_at")
+      .in("candidate_id", ids.slice(index, index + 50));
+    if (error) {
+      const code = (error as { code?: string }).code;
+      // Same fail-soft as the counter: a missing table is a gap in a side panel, never a reason for
+      // the screening queue itself to fail to render.
+      if (code === "42P01" || code === "42703") return summary;
+      throw error;
+    }
+    for (const row of (data ?? []) as Array<Record<string, unknown>>) {
+      const key = String(row.candidate_id ?? "");
+      if (!key) continue;
+      const at = String(row.created_at ?? "").trim() || null;
+      const existing = summary.get(key) ?? { count: 0, latestAt: null };
+      existing.count += 1;
+      if (at && (!existing.latestAt || at > existing.latestAt)) existing.latestAt = at;
+      summary.set(key, existing);
+    }
+  }
+  return summary;
+}
+
+/**
  * Write one comment.
  *
  * The author's name and job title are stamped HERE, from what the caller resolved at request time,

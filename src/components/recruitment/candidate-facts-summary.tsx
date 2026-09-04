@@ -18,6 +18,17 @@ import type { Candidate } from "@/lib/recruitment/types";
 type Cell = { hint?: string; label: string; unconfirmed?: boolean; value: string };
 
 /**
+ * WHICH FRAME THIS BLOCK DRAWS AROUND ITSELF.
+ *
+ * `card` is what the two older screens have always had: a rounded, shadowless slate card sitting on
+ * a page. `flat` draws nothing at all, because in the screening workstation this block is already
+ * inside a titled, square, bordered section — a second frame in there is a rounded rectangle in the
+ * middle of a corporate grid, which is exactly the noise the owner objected to, and rounded corners
+ * are against house style besides. The default is `card` so nothing outside the workstation moves.
+ */
+type Frame = "card" | "flat";
+
+/**
  * The facts a screener needs, resolved once and laid out in a responsive grid.
  *
  * `columns` exists because the two callers have very different widths: the drawer runs the full
@@ -28,12 +39,15 @@ export function CandidateFactsSummary({
   className,
   columns = 3,
   extraction,
+  frame = "card",
 }: {
   candidate: Candidate;
   className?: string;
   columns?: 1 | 2 | 3;
   extraction: StoredCvExtraction | null;
+  frame?: Frame;
 }) {
+  const flat = frame === "flat";
   const facts = candidateScreeningFacts({
     ...candidate,
     cvUnconfirmed: unconfirmedCvFactsFromExtraction(extraction?.fields),
@@ -73,7 +87,7 @@ export function CandidateFactsSummary({
       // No span hint either: the value already ends in `repSpan` whenever there is one, so the cell
       // read "Glenmark multinational · 2023 → now" with "2023 → now" repeated underneath it. On a
       // "No" the hint was worse than redundant — it dated a tenure the cell had just denied.
-      label: "Medical rep before",
+      label: "Medical rep experience",
       unconfirmed: !facts.pharmaRep.confirmed,
       value: facts.pharmaRep.value
         ? [candidate.medicalRepEmployer, repSpan].filter(Boolean).join(" · ") || "Yes"
@@ -91,13 +105,13 @@ export function CandidateFactsSummary({
       // DECLARED is a different claim — where they want to work, not where they live — and it gets
       // its own cell in "In their own words" below rather than being repeated here as a footnote.
       hint: facts.region && !facts.region.value.declared ? `${facts.region.value.label} region` : undefined,
-      label: "Lives in",
+      label: "Governorate",
       unconfirmed: !facts.governorate.confirmed,
       value: facts.governorate.value,
     });
   }
-  if (education) cells.push({ hint: graduated ?? undefined, label: "Studied", value: education });
-  if (!education && graduated) cells.push({ label: "Studied", value: graduated });
+  if (education) cells.push({ hint: graduated ?? undefined, label: "Education", value: education });
+  if (!education && graduated) cells.push({ label: "Education", value: graduated });
 
   // ── What the applicant answered on WhatsApp ────────────────────────────────────────────────────
   //
@@ -113,20 +127,21 @@ export function CandidateFactsSummary({
   // owner's report was exactly right: he was answering questions on WhatsApp and screening a card
   // that showed him only the CV.
   const declared: Cell[] = [];
-  if (facts.area) declared.push({ label: "Wants to work in", value: facts.area.value });
+  if (facts.area) declared.push({ label: "Preferred area", value: facts.area.value });
   if (facts.region?.value.declared) {
     // Their own region answer. Shown even when it duplicates the governorate's region, because
     // "they asked for Upper Egypt" and "their address is in Upper Egypt" are different facts that
     // happen to agree — and 20 candidates in production declared a region with no address at all,
     // whose answer had nowhere to appear while the region rode as a hint on "Lives in".
-    declared.push({ label: "Region asked for", value: facts.region.value.label });
+    declared.push({ label: "Preferred region", value: facts.region.value.label });
   }
-  if (facts.background) declared.push({ label: "Studied (their answer)", value: facts.background.value });
+  if (facts.background) declared.push({ label: "Education (declared)", value: facts.background.value });
   if (facts.declaredExperience) {
     declared.push({
-      // "Says" is doing real work: this is a bracket the applicant picked, next to an "Experience"
-      // cell above that is a number counted off their work history. The two can disagree honestly.
-      label: "Says experience",
+      // "(declared)" is doing real work: this is a bracket the applicant picked, next to an
+      // "Experience" cell above that is a number counted off their work history. They can disagree
+      // honestly, and a reader has to be able to see which of the two he is looking at.
+      label: "Experience (declared)",
       value: facts.declaredExperience.value,
     });
   }
@@ -136,7 +151,13 @@ export function CandidateFactsSummary({
   // the reader needs to know the CV is the only place left to look.
   if (cells.length === 0 && declared.length === 0 && !candidate.professionalSummary) {
     return (
-      <div className={`rounded-md border border-dashed border-slate-300 bg-slate-50/60 p-3 ${className ?? ""}`}>
+      <div
+        className={
+          frame === "flat"
+            ? `bg-white px-3 py-2 ${className ?? ""}`
+            : `rounded-md border border-dashed border-slate-300 bg-slate-50/60 p-3 ${className ?? ""}`
+        }
+      >
         <p className="text-xs text-slate-600">
           Nothing has been read off this CV yet — read the document itself, or use “Read the CV again”.
         </p>
@@ -146,24 +167,30 @@ export function CandidateFactsSummary({
 
   const gridColumns =
     columns === 1 ? "grid-cols-1" : columns === 2 ? "grid-cols-1 sm:grid-cols-2" : "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3";
+  // Square, unframed and on the workstation's own tokens; or the slate card the older screens draw.
+  const frameClass = flat ? "bg-white" : "rounded-md border border-slate-200 bg-white p-3";
+  const headingClass = flat
+    ? "text-[11px] font-bold uppercase leading-[1.45] tracking-[0.09em] text-phx-ink-soft"
+    : "text-phx-xs font-semibold uppercase tracking-wide text-slate-500";
+  const ruleClass = flat ? "border-phx-line" : "border-slate-100";
 
   return (
-    <div className={`rounded-md border border-slate-200 bg-white p-3 ${className ?? ""}`}>
+    <div className={`${frameClass} ${className ?? ""}`}>
       {cells.length > 0 ? (
         <>
-          <p className="text-phx-xs font-semibold uppercase tracking-wide text-slate-500">Who this is</p>
+          <p className={headingClass}>From the CV</p>
           <dl className={`mt-2 grid gap-x-6 gap-y-2 ${gridColumns}`}>
-            <FactCells cells={cells} />
+            <FactCells cells={cells} flat={flat} />
           </dl>
         </>
       ) : null}
       {/* Their own answers, under their own heading. The border is the whole point: it says "a
           person told us this" without needing a word of explanation on every cell. */}
       {declared.length > 0 ? (
-        <div className={cells.length > 0 ? "mt-3 border-t border-slate-100 pt-2" : ""}>
-          <p className="text-phx-xs font-semibold uppercase tracking-wide text-slate-500">In their own words</p>
+        <div className={cells.length > 0 ? `mt-3 border-t ${ruleClass} pt-2` : ""}>
+          <p className={headingClass}>Declared by the applicant</p>
           <dl className={`mt-2 grid gap-x-6 gap-y-2 ${gridColumns}`}>
-            <FactCells cells={declared} />
+            <FactCells cells={declared} flat={flat} />
           </dl>
         </div>
       ) : null}
@@ -171,7 +198,7 @@ export function CandidateFactsSummary({
           until 2026-08-24 — it is the fastest read in the whole record and answers "is this person
           plausible" before any structured field does. */}
       {candidate.professionalSummary ? (
-        <p className="mt-3 border-t border-slate-100 pt-2 text-xs leading-relaxed text-slate-700">
+        <p className={`mt-3 border-t ${ruleClass} pt-2 text-xs leading-relaxed text-slate-700`}>
           {candidate.professionalSummary}
         </p>
       ) : null}
@@ -180,12 +207,20 @@ export function CandidateFactsSummary({
 }
 
 /** One run of label/value pairs. Extracted so the CV block and the declared block cannot drift. */
-function FactCells({ cells }: { cells: Cell[] }) {
+function FactCells({ cells, flat = false }: { cells: Cell[]; flat?: boolean }) {
   return (
     <>
       {cells.map((cell) => (
         <div key={cell.label}>
-          <dt className="text-phx-xs font-semibold uppercase tracking-wide text-slate-400">{cell.label}</dt>
+          <dt
+            className={
+              flat
+                ? "text-[10px] font-bold uppercase leading-[1.5] tracking-[0.09em] text-phx-ink-faint"
+                : "text-phx-xs font-semibold uppercase tracking-wide text-slate-400"
+            }
+          >
+            {cell.label}
+          </dt>
           <dd
             className={`text-sm ${cell.unconfirmed ? "italic text-slate-500" : "font-medium text-slate-900"}`}
             // Every value here is free text somebody typed, and some of it is Arabic — the longest

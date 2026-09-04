@@ -340,7 +340,14 @@ export async function runCandidatePositionFolderTests() {
   // by a line the label did not carry. The words a recruiter reads are pinned where they now live,
   // and the screen is pinned to still MOUNT the thing that says them: either half alone would go
   // green while the picker had quietly stopped being rendered.
+  const sendPanel = read("src/components/recruitment/workstation/workstation-review-header.tsx");
   assert.match(session, /<VacancyPicker/, "the position picker is on the screening screen");
+  assert.match(sendPanel, /<VacancyPicker/, "and on the workstation that replaced it as the default screen");
+  // The datalist behind the free-typed position, which the rebuild dropped once and this pins back:
+  // an open list of what has ALREADY been used, never a closed one — the option exists precisely so
+  // a position that is not an open seat yet can be named.
+  assert.match(sendPanel, /list="workstation-position-titles"/, "the free-typed job title offers what is already in use");
+  assert.match(sendPanel, /list="workstation-position-areas"/, "and so does the free-typed area");
   const picker = read("src/components/recruitment/vacancy-picker.tsx");
   assert.match(picker, /For which position\? \(optional\)/, "the position is chosen BEFORE the send");
   assert.match(picker, /name: "Another position"/, "and a position that is not an open seat yet can still be named");
@@ -356,10 +363,15 @@ export async function runCandidatePositionFolderTests() {
     "app/(admin)/recruitment/screening/page.tsx",
     "app/employee-portals/recruitment/screening/page.tsx",
   ]) {
-    assert.match(read(page), /openVacancies=\{queue\.openVacancies\}/, `${page} passes the open vacancies`);
+    // The prop names moved with the 2026-09-04 workstation rebuild (`queue.` became `workspace.`,
+    // `openVacancies` became `vacancies`), and the SCREEN the picker sits on changed with them. The
+    // invariant did not: both shells must still hand the screening screen its open seats AND the
+    // already-used titles and areas behind the free-typed position, or one shell quietly loses the
+    // half that stops a second "Marketing Exec." opening a near-duplicate folder.
+    assert.match(read(page), /vacancies=\{workspace\.vacancies\}/, `${page} passes the open vacancies`);
     assert.match(
       read(page),
-      /positionSuggestions=\{queue\.positionSuggestions\}/,
+      /positionSuggestions=\{workspace\.positionSuggestions\}/,
       `${page} passes the free-typed suggestions`,
     );
   }

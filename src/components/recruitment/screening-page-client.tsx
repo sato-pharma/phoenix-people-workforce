@@ -253,7 +253,7 @@ const filterSelectClass = (active: boolean) =>
  * starts wrapping on a laptop screen. This bar exists only for the `page` variant anyway — the
  * overlay is always fed a queue the pool has already filtered, so it has nothing to switch.
  */
-function ScreeningFilterBar({
+export function ScreeningFilterBar({
   area,
   areaOptions,
   notified,
@@ -463,6 +463,6 @@ function ScreeningFilterBar({
  * The queue wants the whole viewport; the shells around it want their own padding. This keeps the
  * negative-margin trick in one place rather than repeating it in both page files.
  */
-function ScreeningPageFrame({ children }: { children: React.ReactNode }) {
+export function ScreeningPageFrame({ children }: { children: React.ReactNode }) {
   return <div className="-mx-2 sm:-mx-4">{children}</div>;
 }

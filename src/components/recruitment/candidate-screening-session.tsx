@@ -45,16 +45,10 @@ import { suggestPositions } from "@/lib/recruitment/position-suggestion";
 // Type-only: vacancy-options reads the service-role client and must never enter this bundle.
 import type { VacancyOption } from "@/lib/recruitment/vacancy-options";
 import { candidateDisplayName } from "@/lib/recruitment/candidate-display";
-import { candidateRowAppliedFor } from "@/lib/recruitment/applied-for";
-import { candidateScreeningFacts, candidateScreeningRoleFamily } from "@/lib/recruitment/candidate-screening-facts";
+import { describeForOrder } from "@/lib/recruitment/screening-describe";
 import type { CandidateView, CandidateViewMap } from "@/lib/recruitment/candidate-views";
 import { normalizePhone } from "@/lib/recruitment/candidate-matching";
-import {
-  candidateRegionCodes,
-  candidateRegionForGovernorate,
-  candidateRegionLabels,
-  type CandidateRegionCode,
-} from "@/lib/recruitment/candidate-region";
+import { candidateRegionCodes, candidateRegionLabels } from "@/lib/recruitment/candidate-region";
 import {
   countByBand,
   countByRegion,
@@ -65,7 +59,6 @@ import {
   screeningBand,
   screeningBandDescriptions,
   screeningBandLabels,
-  type ScreeningOrderInput,
   type ScreeningRegionKey,
 } from "@/lib/recruitment/screening-order";
 import {
@@ -98,45 +91,6 @@ const bandChipClass: Record<ReturnType<typeof screeningBand>, string> = {
   unrelated: "bg-slate-500/20 text-slate-300",
   no_cv: "bg-slate-500/20 text-slate-400",
 };
-
-/**
- * Where a candidate is, for the region filter — what they SAID first, then what the CV shows.
- *
- * The stated preference wins because it is an answer to our own question, while a governorate is
- * wherever they happen to live: a Beni Suef pharmacist who asked for Cairo is a Cairo candidate.
- * Same precedence the Drive filing uses.
- *
- * Only the two PURE readers are used. The free-text address reader would place 8 more of the 534
- * undecided rows and would pull the whole Egypt place vocabulary into this bundle to do it; those
- * eight land under "Region not on the CV", which is true rather than merely convenient.
- */
-function screeningRegionOf(candidate: Candidate): CandidateRegionCode | null {
-  const stated = String(candidate.preferredRegionCode ?? "").trim().toUpperCase();
-  if ((candidateRegionCodes as readonly string[]).includes(stated)) return stated as CandidateRegionCode;
-  return candidateRegionForGovernorate(candidate.governorate);
-}
-
-/**
- * What the ordering needs to know about one candidate, resolved through the SAME functions the row
- * and the Role filter use — so the queue cannot disagree with the table about who someone is.
- */
-function describeForOrder(candidate: Candidate): ScreeningOrderInput {
-  const facts = candidateScreeningFacts(candidate);
-  return {
-    createdAt: candidate.createdAt,
-    // The phone, normalized by the SAME function the intake dedupe uses. It groups; it never
-    // merges — `candidate-matching.ts` stopped matching on phone in August precisely because it
-    // merged three different applicants into one record, and this must not walk that back.
-    duplicateKey: normalizePhone(candidate.phone ?? candidate.whatsapp),
-    family: candidateScreeningRoleFamily(facts, candidateRowAppliedFor(candidate).text),
-    hasPharmaExperience: facts.pharmaRep?.value ?? null,
-    // A file the extractor already judged not to be a CV is a settled answer, not an open question,
-    // so it goes to the back rather than sitting among the ones only a person can read.
-    notACv: candidate.notACv,
-    region: screeningRegionOf(candidate),
-    yearsExperience: candidate.yearsExperience,
-  };
-}
 
 /**
  * How long a CV must actually be on screen before it counts as read.

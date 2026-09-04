@@ -6,11 +6,11 @@ import {
   EmployeePortalPageShell,
 } from "@/components/employee-portal/enterprise-shell";
 import { AppRouteLoadingState } from "@/components/ui/loading-state";
-import { ScreeningPageClient } from "@/components/recruitment/screening-page-client";
+import { WorkstationPageClient } from "@/components/recruitment/workstation/workstation-page-client";
 import { canAccess, isHrAuthorityRole, resolveNavigationMode, type AccessContext } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { parseScreeningFilters, screeningHref, type ScreeningQueueFilters } from "@/lib/recruitment/screening-link";
-import { loadScreeningQueue } from "@/lib/recruitment/screening-queue";
+import { loadScreeningWorkspace } from "@/lib/recruitment/screening-workspace";
 
 export const dynamic = "force-dynamic";
 
@@ -85,30 +85,35 @@ async function ScreeningContent({
     );
   }
 
-  // Same gate as the admin twin: the picker appears only for a caller who may actually send.
-  const queue = await loadScreeningQueue(access.hrId, filters, {
-    canSendToManagers: await canAccess(access, "recruitment", "update"),
-  });
+  // Same gate as the admin twin: the send picker and the note box appear only for a caller who may
+  // actually write. Everything else on the workspace is readable without it.
+  const canUpdate = await canAccess(access, "recruitment", "update");
+  const workspace = await loadScreeningWorkspace(access.hrId, filters, { canSendToManagers: canUpdate });
 
   return (
-    <ScreeningPageClient
-      area={queue.area}
-      areaOptions={queue.areaOptions}
-      candidates={queue.candidates}
-      hiringManagers={queue.hiringManagers}
-      initialViews={queue.views}
-      notified={queue.notified}
-      openVacancies={queue.openVacancies}
+    <WorkstationPageClient
+      area={workspace.area}
+      areaOptions={workspace.areaOptions}
+      canSendToManagers={workspace.canSendToManagers}
+      canWriteNotes={canUpdate}
+      counts={workspace.counts}
+      filteredOut={workspace.filteredOut}
+      hiringManagers={workspace.hiringManagers}
+      notified={workspace.notified}
+      overdueManagerFeedback={workspace.overdueManagerFeedback}
       poolHref="/employee-portals/recruitment"
-      positionSuggestions={queue.positionSuggestions}
-      received={queue.received}
-      region={queue.region}
-      role={queue.role}
-      seen={queue.seen}
-      source={queue.source}
-      sourceOptions={queue.sourceOptions}
-      status={queue.status}
-      totalCount={queue.candidates.length + queue.filteredOut}
+      poolSize={workspace.poolSize}
+      positionSuggestions={workspace.positionSuggestions}
+      received={workspace.received}
+      region={workspace.region}
+      role={workspace.role}
+      rows={workspace.rows}
+      seen={workspace.seen}
+      source={workspace.source}
+      sourceOptions={workspace.sourceOptions}
+      status={workspace.status}
+      vacancies={workspace.vacancies}
+      vacancyStats={workspace.vacancyStats}
     />
   );
 }

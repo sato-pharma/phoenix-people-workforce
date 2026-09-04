@@ -35,27 +35,23 @@ import { canonicalHrIdForDisplay, canonicalHrIdKey } from "@/lib/hr-id";
 import { createSystemNotification, createSystemNotificationForRecipients } from "@/lib/notifications/system";
 import { logError } from "@/lib/observability/log";
 import { recruitmentManageRoles } from "@/lib/recruitment/access";
+import {
+  STALE_SEND_ESCALATE_AFTER_DAYS,
+  STALE_SEND_NUDGE_AFTER_DAYS,
+} from "@/lib/recruitment/stale-send-thresholds";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 /**
  * How long a CV may sit with a manager before that manager is nudged, and how long before the
  * recruitment desk is told the manager is not answering.
  *
- * Three days rather than one: a manager who is travelling or in the field should not be chased for
- * a CV that arrived yesterday, and an alert that fires on ordinary behaviour is one people learn to
- * ignore. Seven rather than fourteen: intake runs at roughly 13 CVs a day, so a fortnight of
- * silence is long enough for a candidate to accept another offer — the point of the escalation is
- * to reach someone while the candidate is still available.
- *
- * Exported so the message text and the tests read the same numbers this rule is written in.
- *
- * THREE DAYS IS THE OWNER'S OWN CALL, NOT A DEFAULT TO TUNE. He was asked directly on 2026-08-28 —
- * before the first run fired, with the four managers it would reach named — and answered "no keep
- * 3 days". Do not raise it because it looks aggressive for a manager in the field; that is the
- * exact objection he was shown and overruled. Raising it needs him to say so.
+ * THE NUMBERS THEMSELVES LIVE IN stale-send-thresholds.ts and are re-exported here, so every
+ * existing importer keeps resolving them from this module. They moved because the screening
+ * work-queue rail needs the three-day threshold to say "overdue" and is a client component — this
+ * file reaches the service-role Supabase client, which must never enter a browser bundle. Read the
+ * reasoning for both numbers, including the owner's own ruling on the three days, in that file.
  */
-export const STALE_SEND_NUDGE_AFTER_DAYS = 3;
-export const STALE_SEND_ESCALATE_AFTER_DAYS = 7;
+export { STALE_SEND_ESCALATE_AFTER_DAYS, STALE_SEND_NUDGE_AFTER_DAYS } from "@/lib/recruitment/stale-send-thresholds";
 
 /**
  * IN-APP, TELEGRAM AND PUSH ONLY — never email, and exported so a test can assert it out loud.

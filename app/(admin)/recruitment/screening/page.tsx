@@ -3,11 +3,11 @@ import { Suspense } from "react";
 
 import { AppRouteLoadingState } from "@/components/ui/loading-state";
 import { PageContainer } from "@/components/layout/page-container";
-import { ScreeningPageClient } from "@/components/recruitment/screening-page-client";
+import { WorkstationPageClient } from "@/components/recruitment/workstation/workstation-page-client";
 import { canAccess, isHrAuthorityRole, type AccessContext } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { type ScreeningQueueFilters } from "@/lib/recruitment/screening-link";
-import { loadScreeningQueue } from "@/lib/recruitment/screening-queue";
+import { loadScreeningWorkspace } from "@/lib/recruitment/screening-workspace";
 
 export const dynamic = "force-dynamic";
 
@@ -76,31 +76,36 @@ async function ScreeningContent({
   }
 
   // Sending a CV to a manager is a `recruitment: update` act — the same grant the send route
-  // enforces. A screener without it still gets the whole queue and can still shortlist and reject;
-  // they simply get no picker, rather than one that answers 403.
-  const queue = await loadScreeningQueue(access.hrId, filters, {
-    canSendToManagers: await canAccess(access, "recruitment", "update"),
-  });
+  // enforces, and the same grant the notes route enforces on a write. A screener without it still
+  // gets the whole workspace and can still shortlist, reject and read every note; they simply get
+  // no send picker and no note box, rather than ones that answer 403.
+  const canUpdate = await canAccess(access, "recruitment", "update");
+  const workspace = await loadScreeningWorkspace(access.hrId, filters, { canSendToManagers: canUpdate });
 
   return (
-    <ScreeningPageClient
-      area={queue.area}
-      areaOptions={queue.areaOptions}
-      candidates={queue.candidates}
-      hiringManagers={queue.hiringManagers}
-      initialViews={queue.views}
-      notified={queue.notified}
-      openVacancies={queue.openVacancies}
+    <WorkstationPageClient
+      area={workspace.area}
+      areaOptions={workspace.areaOptions}
+      canSendToManagers={workspace.canSendToManagers}
+      canWriteNotes={canUpdate}
+      counts={workspace.counts}
+      filteredOut={workspace.filteredOut}
+      hiringManagers={workspace.hiringManagers}
+      notified={workspace.notified}
+      overdueManagerFeedback={workspace.overdueManagerFeedback}
       poolHref="/recruitment"
-      positionSuggestions={queue.positionSuggestions}
-      received={queue.received}
-      region={queue.region}
-      role={queue.role}
-      seen={queue.seen}
-      source={queue.source}
-      sourceOptions={queue.sourceOptions}
-      status={queue.status}
-      totalCount={queue.candidates.length + queue.filteredOut}
+      poolSize={workspace.poolSize}
+      positionSuggestions={workspace.positionSuggestions}
+      received={workspace.received}
+      region={workspace.region}
+      role={workspace.role}
+      rows={workspace.rows}
+      seen={workspace.seen}
+      source={workspace.source}
+      sourceOptions={workspace.sourceOptions}
+      status={workspace.status}
+      vacancies={workspace.vacancies}
+      vacancyStats={workspace.vacancyStats}
     />
   );
 }
