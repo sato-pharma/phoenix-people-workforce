@@ -62,6 +62,7 @@ import {
   type NavigationSectionItem,
 } from "@/config/system-navigation";
 import { systemAssets, systemIdentity, systemUiText } from "@/config/system-settings";
+import { domainIdForHref, groupAdminSections } from "@/lib/navigation/sidebar-domains";
 import { resolveLandingPathForRole } from "@/lib/auth/landing";
 import { type NavigationMode, type PhoenixRole } from "@/lib/auth/permissions";
 import {
@@ -934,6 +935,75 @@ function SidebarNav({
   );
   const orderedSectionIds = useMemo(() => orderedSections.map((s) => s.id), [orderedSections]);
 
+  // ── Domains ────────────────────────────────────────────────────────────────
+  // The admin rail draws its 14 headings inside 7 domains (src/config/sidebar-domains.ts). Off
+  // for everything else, and OFF WHILE SEARCHING: a query should sweep every module the viewer
+  // has, and an accordion that hides two thirds of the results behind a closed domain would make
+  // search quietly worse than the flat list it replaced.
+  //
+  // The SFE Manager keeps the flat, headless rail (`usesFlatSidebar`) — a domain layer over a
+  // deliberately headingless sidebar would reintroduce exactly the chrome that was subtracted.
+  const useDomains = isAdmin && !flatSidebar && !rail && !query;
+  const domains = useMemo(() => {
+    if (!useDomains) return [];
+    // Grouped from the VISIBLE sections rather than the ordered ones, so a group's rows read in
+    // the order sidebar-domains.ts lists them. A saved user order is then applied within each
+    // group, which leaves the default untouched (applyOrder returns the input unchanged when
+    // nothing is saved) while still honouring a drag the viewer actually made.
+    return groupAdminSections(visibleSections).map((domain) => ({
+      ...domain,
+      groups: domain.groups.map((group) => ({
+        ...group,
+        sections: applyOrder(group.sections, (section) => section.id, savedSectionOrder),
+      })),
+    }));
+  }, [useDomains, visibleSections, savedSectionOrder]);
+
+  const activeDomainId = useMemo(() => domainIdForHref(domains, activeHref), [domains, activeHref]);
+  // What the viewer last clicked, REMEMBERED WITH the page it was clicked on. Storing `forActive`
+  // is what lets a navigation hand control back to the active page without an effect: once the
+  // active domain moves, the stored pick no longer matches and is simply ignored. The obvious
+  // alternative — a `useEffect` that resets the pick — is a lint error in this repo (cascading
+  // renders), and this needs no reset because nothing is ever out of sync to begin with.
+  //
+  // `domainId: ""` is a real value and means "the viewer closed it", which is why the fallback
+  // reads it with a length check rather than `||`: closing the open domain must leave the rail
+  // closed rather than snapping straight back open.
+  const [picked, setPicked] = useState<{ domainId: string; forActive: string | null } | null>(null);
+  const pickIsCurrent = picked !== null && picked.forActive === activeDomainId;
+  // One open at a time. Falls back to the domain holding the current page, then to the first —
+  // never to nothing, because a rail showing seven closed buttons and no rows reads as broken.
+  const openDomainId = pickIsCurrent
+    ? picked.domainId || null
+    : (activeDomainId ?? (domains.length > 0 ? domains[0].id : null));
+
+  // One definition, rendered by both paths. Two copies of an 18-prop element is how the grouped
+  // rail and the flat one would drift apart without anyone noticing.
+  function renderSectionBlock(section: NavigationSection) {
+    return (
+      <SortableSectionBlock
+        key={section.id}
+        activeHref={activeHref}
+        collapsedSectionIds={collapsedSectionIds}
+        dragDisabled={dragDisabled}
+        flatSidebar={flatSidebar}
+        isAdmin={isAdmin}
+        itemOrder={savedItemOrder?.[section.id] ?? null}
+        navInstanceId={navInstanceId}
+        onActivate={handleActivate}
+        onItemReorder={(newHrefs) => handleItemReorder(section.id, newHrefs)}
+        onTogglePin={togglePin}
+        onToggleSection={toggleSection}
+        pinnedSet={pinnedSet}
+        query={query}
+        section={section}
+        sectionDragging={sectionDragging}
+        sensors={sensors}
+        transitionsReady={isClientReady}
+      />
+    );
+  }
+
   function handleSectionDragEnd(event: DragEndEvent) {
     setSectionDragging(false);
     const { active, over } = event;
@@ -1150,30 +1220,85 @@ function SidebarNav({
           onDragStart={() => setSectionDragging(true)}
           onDragCancel={() => setSectionDragging(false)}
         >
-          <SortableContext items={orderedSectionIds} strategy={verticalListSortingStrategy}>
-            {orderedSections.map((section) => (
-              <SortableSectionBlock
-                key={section.id}
-                activeHref={activeHref}
-                collapsedSectionIds={collapsedSectionIds}
-                dragDisabled={dragDisabled}
-                flatSidebar={flatSidebar}
-                isAdmin={isAdmin}
-                itemOrder={savedItemOrder?.[section.id] ?? null}
-                navInstanceId={navInstanceId}
-                onActivate={handleActivate}
-                onItemReorder={(newHrefs) => handleItemReorder(section.id, newHrefs)}
-                onTogglePin={togglePin}
-                onToggleSection={toggleSection}
-                pinnedSet={pinnedSet}
-                query={query}
-                section={section}
-                sectionDragging={sectionDragging}
-                sensors={sensors}
-                transitionsReady={isClientReady}
-              />
-            ))}
-          </SortableContext>
+          {useDomains ? (
+            domains.map((domain) => {
+              const open = openDomainId === domain.id;
+              const DomainIcon = domain.icon;
+              return (
+                <div key={domain.id} className="border-b border-white/5 last:border-b-0">
+                  <button
+                    aria-expanded={open}
+                    className="group/dom flex w-full items-center gap-2 px-1.5 py-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-phx-accent/60 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900"
+                    onClick={() =>
+                      setPicked({ domainId: open ? "" : domain.id, forActive: activeDomainId })
+                    }
+                    type="button"
+                  >
+                    <span
+                      className={cn(
+                        "flex h-7 w-7 shrink-0 items-center justify-center transition-colors",
+                        open
+                          ? "bg-phx-accent/15 text-phx-accent ring-1 ring-phx-accent/30"
+                          : "bg-white/5 text-slate-400 group-hover/dom:text-slate-200",
+                      )}
+                    >
+                      <DomainIcon className="h-4 w-4" />
+                    </span>
+                    {/* Wraps rather than truncating: the owner's rule is no ellipsis, and a domain
+                        name is the one label a viewer cannot look up anywhere else. */}
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-phx-2xs uppercase tracking-[0.08em] text-slate-500">
+                        {domain.sub}
+                      </span>
+                      <span
+                        className={cn(
+                          "block text-phx-md font-bold tracking-[-0.01em]",
+                          open ? "text-white" : "text-slate-300 group-hover/dom:text-white",
+                        )}
+                      >
+                        {domain.name}
+                      </span>
+                    </span>
+                    <span className="shrink-0 text-phx-2xs font-semibold text-slate-500">
+                      {domain.rowCount}
+                    </span>
+                    <ChevronRight
+                      className={cn(
+                        "h-3.5 w-3.5 shrink-0 text-slate-500 ease-out",
+                        isClientReady && "transition-transform duration-300",
+                        open && "rotate-90",
+                      )}
+                    />
+                  </button>
+
+                  {open &&
+                    domain.groups.map((group) => (
+                      <SortableContext
+                        key={group.heading}
+                        items={group.sections.map((section) => section.id)}
+                        strategy={verticalListSortingStrategy}
+                      >
+                        <p className="px-1.5 pb-1 pt-3 text-phx-2xs font-bold uppercase tracking-[0.08em] text-slate-500">
+                          {group.heading}
+                        </p>
+                        {group.sections.map((section) =>
+                          renderSectionBlock(
+                            // The GROUP owns the heading now, so the section drops its own. This
+                            // is the whole point of the merge: 24 of the 37 admin sections held a
+                            // single row whose label repeated the heading right above it.
+                            { ...section, label: "" },
+                          ),
+                        )}
+                      </SortableContext>
+                    ))}
+                </div>
+              );
+            })
+          ) : (
+            <SortableContext items={orderedSectionIds} strategy={verticalListSortingStrategy}>
+              {orderedSections.map((section) => renderSectionBlock(section))}
+            </SortableContext>
+          )}
         </DndContext>
 
         {isAdmin && query && visibleSections.length === 0 && (
