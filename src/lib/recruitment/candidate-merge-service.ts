@@ -29,7 +29,8 @@ import type { Candidate } from "@/lib/recruitment/types";
 export type CandidateMergeResult = {
   borrowedFields: string[];
   candidate: Candidate;
-  copiedHistoryLines: number;
+  /** History lines AND comments: both are copied, because neither can be re-pointed. */
+  copiedAppendOnlyRows: number;
   duplicateName: string;
   /** What could not travel, in the recruiter's words. Empty on a clean merge. */
   leftBehind: string[];
@@ -60,9 +61,6 @@ const childTables = [
   "ats_files",
   "ats_candidate_cv_extractions",
   "ats_cv_intake_events",
-  // No foreign key at all on this one, so a delete would silently orphan its rows rather than
-  // cascade or null them. It has to be moved by hand or the duplicate's comments are lost.
-  "ats_candidate_comments",
 ] as const;
 
 /** One unique-constrained child table, and how to move its rows safely. */
@@ -141,23 +139,70 @@ const dedupedChildTables: readonly DedupedChildTable[] = [
   },
 ];
 
+/** One table whose rows may only be copied, never re-pointed. */
+type AppendOnlyChildTable = {
+  /**
+   * Whether the duplicate's originals can be removed once copied.
+   *
+   * This is the ONE thing the two tables disagree about, and getting it wrong fails in opposite
+   * directions: deleting where it is forbidden throws, and NOT deleting where it is allowed leaves
+   * orphans behind, since neither table has a foreign key to cascade them away.
+   */
+  canDeleteOriginals: boolean;
+  /** The columns carried over verbatim, so a copy sits in history where it actually happened. */
+  columns: string[];
+  /** The free-text column the provenance note is appended to. */
+  noteColumn: string;
+  plural: string;
+  singular: string;
+  table: string;
+};
+
 /**
  * Tables a merge may only ever APPEND to, so their rows are copied rather than moved.
  *
- * `ats_candidate_status_events` carries `ats_candidate_status_events_immutable`, a BEFORE DELETE OR
- * UPDATE row trigger that raises `restrict_violation` unconditionally — for every role, with no
- * exemption — plus a matching TRUNCATE guard. So `reassign` can NEVER move these rows, and this
- * table sat at the END of `childTables` until 2026-09-04, where its guaranteed failure came after
- * the files, extractions and intake events had already moved. Two of twenty-three merges failed
- * that way in production, each leaving the duplicate an empty shell that reads as "a candidate with
- * no CV" rather than as a merge that stopped half-way.
+ * Both refuse an UPDATE of `candidate_id` outright, and BOTH were reached the hard way:
  *
- * The originals stay behind, pointing at a candidate row that no longer exists, and that is not a
- * leak to be tidied up later: the same trigger forbids deleting them. An append-only audit table
- * keeping its own history is the behaviour that was asked for. The copy on the survivor is what
- * makes that history readable from the record it now belongs to.
+ *  - `ats_candidate_status_events` carries `ats_candidate_status_events_immutable`, a
+ *    BEFORE DELETE OR UPDATE row trigger raising `restrict_violation` for every role, plus a
+ *    TRUNCATE guard. It sat in `childTables` — and LAST — until 2026-09-04, so its guaranteed
+ *    failure landed after the files, extractions and intake events had already moved. Two of
+ *    twenty-three production merges stopped there, each leaving the duplicate an empty shell that
+ *    reads as "a candidate with no CV" rather than as a merge that stopped half-way.
+ *  - `ats_candidate_comments` carries `ats_candidate_comments_no_update`, which refuses the same
+ *    UPDATE with a different message ("delete and write a new comment instead"). The 2026-09-04 fix
+ *    for the first table left this one in `childTables`, where it would have failed in EXACTLY the
+ *    same way for any duplicate carrying a comment. Caught by rehearsing a full merge on staging,
+ *    which is the only step that would have caught it: every catalogue read had been about the
+ *    table the incident named.
+ *
+ * A trigger sweep across every child table of `ats_candidates` confirms these two are the whole
+ * set — no other one carries a trigger at all.
+ *
+ * They differ on the originals. Status events cannot be deleted either, so the duplicate's rows
+ * stay behind pointing at a candidate that no longer exists — not a leak to tidy up later, but an
+ * append-only audit table keeping its own history, which is what was asked for. A comment CAN be
+ * deleted, and has no foreign key, so its original must be removed or it outlives the duplicate as
+ * an orphan.
  */
-const appendOnlyChildTables = ["ats_candidate_status_events"] as const;
+const appendOnlyChildTables: readonly AppendOnlyChildTable[] = [
+  {
+    canDeleteOriginals: false,
+    columns: ["actor_hr_id", "created_at", "from_status", "note", "to_status"],
+    noteColumn: "note",
+    plural: "history lines",
+    singular: "history line",
+    table: "ats_candidate_status_events",
+  },
+  {
+    canDeleteOriginals: true,
+    columns: ["author_hr_id", "author_job_title", "author_name", "body", "created_at"],
+    noteColumn: "body",
+    plural: "comments",
+    singular: "comment",
+    table: "ats_candidate_comments",
+  },
+];
 
 /**
  * Rows that point at a candidate through a column of their OWN naming, which `reassign` cannot
@@ -337,23 +382,22 @@ async function moveDeduped(
 }
 
 /**
- * Copies an append-only table's rows onto the survivor. Returns how many lines were copied.
+ * Copies an append-only table's rows onto the survivor. Returns how many rows were copied.
  *
- * `created_at`, `actor_hr_id` and both statuses are carried over verbatim so the copied lines sit
- * in the survivor's history at the moment they actually happened, rather than bunching at the
- * merge. Only the note is touched, to say where the line came from — see
- * `describeCopiedHistoryLine`.
+ * Every declared column is carried over verbatim so a copy sits in the survivor's history at the
+ * moment it actually happened, rather than bunching at the merge. Only the note column is touched,
+ * to say where the row came from — see `describeCopiedHistoryLine`.
  */
-async function copyAppendOnlyHistory(
-  table: string,
+async function copyAppendOnlyRows(
+  spec: AppendOnlyChildTable,
   fromCandidateId: string,
   toCandidateId: string,
   mergedOn: string,
 ): Promise<number> {
   const supabase = recruitmentDb();
   const { data, error } = await supabase
-    .from(table)
-    .select("actor_hr_id,created_at,from_status,note,to_status")
+    .from(spec.table)
+    .select(spec.columns.join(","))
     .eq("candidate_id", fromCandidateId)
     .order("created_at", { ascending: true });
   if (error) throw error;
@@ -361,21 +405,30 @@ async function copyAppendOnlyHistory(
   const rows = (data ?? []) as unknown as Record<string, unknown>[];
   if (rows.length === 0) return 0;
 
-  const copies = rows.map((row) => ({
-    actor_hr_id: row.actor_hr_id ?? null,
-    candidate_id: toCandidateId,
-    created_at: row.created_at,
-    from_status: row.from_status,
-    note: describeCopiedHistoryLine({
+  const copies = rows.map((row) => {
+    const copy: Record<string, unknown> = { candidate_id: toCandidateId };
+    for (const column of spec.columns) copy[column] = row[column] ?? null;
+    const existing = row[spec.noteColumn];
+    copy[spec.noteColumn] = describeCopiedHistoryLine({
       duplicateId: fromCandidateId,
-      existingNote: row.note === null || row.note === undefined ? null : String(row.note),
+      existingNote: existing === null || existing === undefined ? null : String(existing),
       mergedOn,
-    }),
-    to_status: row.to_status,
-  }));
+      table: spec.table,
+    });
+    return copy;
+  });
 
-  const { data: inserted, error: insertError } = await supabase.from(table).insert(copies).select("id");
+  const { data: inserted, error: insertError } = await supabase.from(spec.table).insert(copies).select("id");
   if (insertError) throw insertError;
+
+  // Only where the table allows it. ats_candidate_status_events refuses a DELETE as firmly as an
+  // UPDATE, so its originals stay; a comment can be deleted and has no foreign key, so leaving it
+  // would strand it on a candidate that no longer exists.
+  if (spec.canDeleteOriginals) {
+    const { error: deleteError } = await supabase.from(spec.table).delete().eq("candidate_id", fromCandidateId);
+    if (deleteError) throw deleteError;
+  }
+
   return (inserted ?? []).length;
 }
 
@@ -452,12 +505,14 @@ export async function mergeCandidates(
 
   // Step 2 — see the ordering note above. These run before the plain moves precisely because their
   // collision is a prediction: it is read from the survivor a moment earlier, so it can race.
+  const blockedDeduped: { count: number; plural: string; singular: string }[] = [];
   const leftBehind: string[] = [];
   const movedDeduped: { count: number; plural: string; singular: string }[] = [];
   for (const spec of dedupedChildTables) {
     const { blocked, moved } = await moveDeduped(spec, duplicateId, survivorId);
     if (moved > 0) movedDeduped.push({ count: moved, plural: spec.plural, singular: spec.singular });
     if (blocked > 0) {
+      blockedDeduped.push({ count: blocked, plural: spec.plural, singular: spec.singular });
       leftBehind.push(
         `${countedNoun(blocked, spec.singular, spec.plural)} could not move across — the record being `
         + `kept already had its own, so ${blocked === 1 ? "it was" : "they were"} dropped.`,
@@ -474,12 +529,15 @@ export async function mergeCandidates(
     if (table === "ats_files") movedFiles = moved;
   }
 
-  // Step 4. An INSERT is the only verb this table permits, so the duplicate's own rows stay where
-  // they are — the same trigger that refuses the move refuses a tidy-up delete too.
+  // Step 4. An INSERT is the only verb these tables permit, so their rows are copied, not moved —
+  // and the summary says "copied" for exactly that reason.
   const mergedOn = cairoToday();
-  let copiedHistoryLines = 0;
-  for (const table of appendOnlyChildTables) {
-    copiedHistoryLines += await copyAppendOnlyHistory(table, duplicateId, survivorId, mergedOn);
+  const copied: { count: number; plural: string; singular: string }[] = [];
+  let copiedAppendOnlyRows = 0;
+  for (const spec of appendOnlyChildTables) {
+    const count = await copyAppendOnlyRows(spec, duplicateId, survivorId, mergedOn);
+    copiedAppendOnlyRows += count;
+    if (count > 0) copied.push({ count, plural: spec.plural, singular: spec.singular });
   }
 
   // Step 5, before the delete, for the same reason the child rows move first: once the duplicate is
@@ -488,6 +546,8 @@ export async function mergeCandidates(
     await relink(link.table, link.column, duplicateId, survivorId);
   }
 
+  // Step 6: the duplicate row itself. Every step that could be refused has already run, so reaching
+  // here means the delete is the only thing left that can fail.
   const supabase = recruitmentDb();
   const { error: deleteError } = await supabase.from("ats_candidates").delete().eq("id", duplicateId);
   if (deleteError) throw deleteError;
@@ -507,11 +567,11 @@ export async function mergeCandidates(
   }
 
   const summary = buildSummary({
+    blockedDeduped,
     borrowed,
-    copiedHistoryLines,
+    copied,
     duplicateName,
     extraAnswersChanged,
-    leftBehind,
     movedApplications,
     movedDeduped,
     movedFiles,
@@ -526,7 +586,7 @@ export async function mergeCandidates(
   return {
     borrowedFields: borrowed.map((field) => field.label),
     candidate: merged,
-    copiedHistoryLines,
+    copiedAppendOnlyRows,
     duplicateName,
     leftBehind,
     movedApplications,
@@ -565,11 +625,11 @@ function listPhrase(items: readonly string[]): string {
 }
 
 function buildSummary(input: {
+  blockedDeduped: readonly { count: number; plural: string; singular: string }[];
   borrowed: readonly BorrowedField[];
-  copiedHistoryLines: number;
+  copied: readonly { count: number; plural: string; singular: string }[];
   duplicateName: string;
   extraAnswersChanged: boolean;
-  leftBehind: readonly string[];
   movedApplications: number;
   movedDeduped: readonly { count: number; plural: string; singular: string }[];
   movedFiles: number;
@@ -582,10 +642,11 @@ function buildSummary(input: {
   }
   for (const entry of input.movedDeduped) moved.push(countedNoun(entry.count, entry.singular, entry.plural));
   if (moved.length > 0) parts.push(`Moved ${listPhrase(moved)} across.`);
-  if (input.copiedHistoryLines > 0) {
+  if (input.copied.length > 0) {
+    const copied = input.copied.map((entry) => countedNoun(entry.count, entry.singular, entry.plural));
     parts.push(
-      `Copied ${countedNoun(input.copiedHistoryLines, "history line", "history lines")} onto this record `
-      + "— that history is append-only, so the lines are copied rather than moved.",
+      `Copied ${listPhrase(copied)} onto this record — those are append-only, so the rows are copied `
+      + "rather than moved.",
     );
   }
   const filledIn: string[] = [];
@@ -593,8 +654,17 @@ function buildSummary(input: {
   if (input.extraAnswersChanged) filledIn.push("screening question answers");
   parts.push(filledIn.length > 0 ? `Filled in the ${listPhrase(filledIn)}.` : "Nothing was missing here, so no details changed.");
   // Last, and never omitted: a merge that dropped something has to say so on the one line the
-  // recruiter is shown, or a partial merge is indistinguishable from a clean one.
-  for (const note of input.leftBehind) parts.push(note);
+  // recruiter is shown, or a partial merge is indistinguishable from a clean one. Grouped into ONE
+  // sentence rather than one per table — three tables collide together far more often than any one
+  // does alone, and three near-identical sentences in a row read as a stutter, not as three facts.
+  if (input.blockedDeduped.length > 0) {
+    const dropped = input.blockedDeduped.map((entry) => countedNoun(entry.count, entry.singular, entry.plural));
+    const total = input.blockedDeduped.reduce((sum, entry) => sum + entry.count, 0);
+    parts.push(
+      `${listPhrase(dropped)} could not move across — the record being kept already had its own, so `
+      + `${total === 1 ? "it was" : "they were"} dropped.`,
+    );
+  }
   return parts.join(" ");
 }
 

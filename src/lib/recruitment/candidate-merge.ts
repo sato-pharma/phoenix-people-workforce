@@ -269,14 +269,17 @@ export function splitRowsByExistingKey<Row>(
 }
 
 /**
- * The provenance line stamped onto a history row copied off a duplicate.
+ * The provenance line stamped onto a row copied off a duplicate.
  *
- * `ats_candidate_status_events` is append-only — a BEFORE DELETE OR UPDATE trigger raises
- * `restrict_violation` for every role, so the row cannot be re-pointed and cannot be tidied away
- * afterwards either. Copying it onto the survivor is the only verb the table permits, which leaves
- * the copy indistinguishable from a decision someone actually made on the survivor unless it says
- * so. Hence this note, which is what was written by hand on 2026-09-04 when two merges hit the
- * trigger in production.
+ * TWO of the candidate's child tables refuse an UPDATE outright, so their rows can only be copied:
+ * `ats_candidate_status_events` (a BEFORE DELETE OR UPDATE trigger, so the originals cannot even be
+ * tidied away afterwards) and `ats_candidate_comments` (BEFORE UPDATE only — "delete and write a
+ * new comment instead"). A copy is indistinguishable from something written on the survivor unless
+ * it says otherwise, which is what this note is for; the wording matches the lines written by hand
+ * on 2026-09-04, when two merges hit the status-events trigger in production.
+ *
+ * `table` is named in the text rather than hard-coded because the two tables carry different
+ * reasons, and a note blaming the wrong table sends the next reader to the wrong trigger.
  *
  * The duplicate is named by the LAST six characters of its id: it is already deleted by the time
  * anyone reads this, so the label exists to tie the line back to the backup schema, not to be
@@ -286,11 +289,12 @@ export function describeCopiedHistoryLine(input: {
   duplicateId: string;
   existingNote?: string | null;
   mergedOn: string;
+  table: string;
 }): string {
   const shortId = input.duplicateId.replace(/-/g, "").slice(-6) || input.duplicateId;
   const provenance =
     `[Copied from duplicate record ${shortId} when it was merged in on ${input.mergedOn}. `
-    + "The original row could not be moved: ats_candidate_status_events is append-only.]";
+    + `The original row could not be moved: ${input.table} is append-only.]`;
   const existing = (input.existingNote ?? "").trim();
   return existing.length > 0 ? `${existing} ${provenance}` : provenance;
 }
