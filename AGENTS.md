@@ -120,6 +120,7 @@ it for the hook's wording. Which memory backs which hook:
 - **`refs/deleted-*` is NOT automatic — a plain `git branch -D` archives NOTHING.** Keep the SHA the delete prints; archive with `git update-ref` *before* deleting. `refs/backups/*` on ORIGIN is the only copy that survives losing this laptop.
 - **An empty `git log <branch> --not --remotes=origin` is NOT proof a branch is safe to delete** — `git fetch` never prunes, so the check compares the branch against itself. Gate deletion on the merged PR.
 - **A UTC merge time read against a Cairo commit time INVERTS the merged/stranded verdict.** The answer is CONTENT (`git patch-id --stable`), never a timestamp.
+- **An uncommitted file in the primary can be OLDER than `main`, and `git diff HEAD` dresses it up as NEW work** — HEAD is usually a squash-merged tip, so the diff shows the file's own edit while hiding that `main` moved past it, and committing it REVERTS whatever shipped meanwhile, silently. Settle by CONTENT: `git hash-object <path>` against `git rev-parse main:<path>`, then read the direction of `git diff main -- <path>` (`-` lines are what `main` HAS). **A test that fails against such a file is the STALE BASE, not a defect.**
 - **`git` "Authentication failed" can be the credential HELPER going OOM, not a bad token** — change NO credentials.
 - **`F:\PHX backup` is the disaster-recovery set, and a bundle restore silently returns ZERO refs without `core.longpaths`.** Three of its sections hold LIVE keys.
 
