@@ -288,7 +288,18 @@ export function SearchableSelect({
     onKeyDown?.(event);
   };
 
-  const baseInputClassName = "h-9 w-full rounded-[6px] border border-phx-line bg-white px-3 text-sm font-medium text-phx-ink outline-none transition disabled:opacity-50";
+  // `pr-9`, NOT `px-3`, AND THE MAGNIFIER BELOW IS THE REASON. The icon is absolutely positioned
+  // at `right-2.5` and is 16px wide, so it covers the input from 10px to 26px in from the right
+  // edge. With 12px of right padding the value ran straight underneath it — measured at 375px on
+  // the hiring pack, where "AI-0018 · SamahAshraf · Medical Representative" rendered as
+  // "AI-0018 · SamahAshraf · Medical Re" with the rest disappearing behind the glass. Nothing was
+  // truncated in the DOM and no overflow reading showed anything wrong: the text was simply painted
+  // under an opaque sibling. 36px clears the icon with 10px to spare.
+  //
+  // A caller passing its own `px-*` still wins here, because `cn` is tailwind-merge and `px`
+  // conflicts with `pr`. That is the correct precedence — a caller asking for specific horizontal
+  // padding gets it — and it only means that screen keeps the old behaviour, never that it breaks.
+  const baseInputClassName = "h-9 w-full rounded-[6px] border border-phx-line bg-white px-3 pr-9 text-sm font-medium text-phx-ink outline-none transition disabled:opacity-50";
 
   return (
     <div className="relative" ref={wrapperRef}>

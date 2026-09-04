@@ -131,7 +131,7 @@ const DOCUMENT_BINDINGS: Record<
   },
 };
 
-type EmployeeDbRow = {
+export type EmployeeDbRow = {
   base_salary: number | string | null;
   birth_date: string | null;
   department_id: number | null;
@@ -155,7 +155,7 @@ type EmployeeDbRow = {
   work_email: string | null;
 };
 
-type ProfileDbRow = {
+export type ProfileDbRow = {
   address_building: string | null;
   address_district: string | null;
   address_governorate: string | null;
@@ -183,7 +183,7 @@ type ProfileDbRow = {
   updated_at: string | null;
 };
 
-type OffboardingDbRow = {
+export type OffboardingDbRow = {
   addressee_name_ar: string | null;
   addressee_title_ar: string | null;
   agreement_date: string | null;
@@ -333,7 +333,7 @@ export function addMonthsToIsoDate(iso: string | null, months: number | null): s
   return `${targetYear}-${mm}-${dd}`;
 }
 
-function emptyProfile(hrId: string): HiringPackProfile {
+export function emptyProfile(hrId: string): HiringPackProfile {
   return {
     hrId,
     nationality: null,
@@ -363,7 +363,7 @@ function emptyProfile(hrId: string): HiringPackProfile {
   };
 }
 
-function mapProfile(row: ProfileDbRow): HiringPackProfile {
+export function mapProfile(row: ProfileDbRow): HiringPackProfile {
   return {
     hrId: row.hr_id,
     nationality: cleanText(row.nationality),
@@ -434,7 +434,7 @@ function toExitRoute(value: string | null): ExitRoute | null {
   return value === "resignation" || value === "mutualTermination" ? value : null;
 }
 
-function mapOffboardingProfile(row: OffboardingDbRow): OffboardingProfile {
+export function mapOffboardingProfile(row: OffboardingDbRow): OffboardingProfile {
   return {
     hrId: row.hr_id,
     exitRoute: toExitRoute(cleanText(row.exit_route)),
@@ -680,13 +680,22 @@ export function collectHiringPackGaps(
   return gaps;
 }
 
+/**
+ * Every column the printed papers read off an employee.
+ *
+ * EXPORTED so the roster-wide fill-rate count selects the same set. Two select lists over one table
+ * is exactly the "a narrowed SELECT disarms every gate downstream of it" shape: the count would
+ * report a field as blank for everybody purely because its column was missing from the second list,
+ * and nothing would error.
+ */
+export const HIRING_PACK_EMPLOYEE_COLUMNS =
+  "hr_id, full_name, nickname, name_ar, national_id, gender, social_insurance_number, social_insurance_wage, base_salary, gross_salary, birth_date, hire_date, job_title, department_id, line_id, residence_address, residence_city, mobile_number, work_email, employment_status, last_working_date";
+
 async function loadEmployeeFacts(hrId: string): Promise<HiringPackEmployeeFacts> {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("employees")
-    .select(
-      "hr_id, full_name, nickname, name_ar, national_id, gender, social_insurance_number, social_insurance_wage, base_salary, gross_salary, birth_date, hire_date, job_title, department_id, line_id, residence_address, residence_city, mobile_number, work_email, employment_status, last_working_date",
-    )
+    .select(HIRING_PACK_EMPLOYEE_COLUMNS)
     .eq("hr_id", hrId)
     .maybeSingle<EmployeeDbRow>();
 
@@ -711,29 +720,44 @@ async function loadEmployeeFacts(hrId: string): Promise<HiringPackEmployeeFacts>
     departmentAr = arabicDepartmentName(cleanText(department?.name ?? null));
   }
 
+  return mapEmployeeFacts(data, departmentAr);
+}
+
+/**
+ * One employee row, as the papers read it.
+ *
+ * `departmentAr` is passed in rather than joined here because the caller decides how to get it: the
+ * single-employee load joins one department by id, the roster-wide count reads the whole department
+ * table once. Both then produce the identical shape, which is what lets the fill-rate count answer
+ * "how many people would this field print for" with the same reader that prints it.
+ */
+export function mapEmployeeFacts(
+  row: EmployeeDbRow,
+  departmentAr: string | null,
+): HiringPackEmployeeFacts {
   return {
-    hrId: data.hr_id,
-    fullName: resolveEmployeeDisplayName(data.full_name ?? "", data.nickname, data.hr_id),
-    nameAr: cleanText(data.name_ar),
-    nationalId: cleanText(data.national_id),
-    gender: cleanText(data.gender),
-    socialInsuranceNumber: cleanText(data.social_insurance_number),
-    socialInsuranceWage: toNumber(data.social_insurance_wage),
-    baseSalary: toNumber(data.base_salary),
-    grossSalary: toNumber(data.gross_salary),
-    birthDate: data.birth_date,
-    hireDate: data.hire_date,
-    jobTitle: cleanText(data.job_title),
+    hrId: row.hr_id,
+    fullName: resolveEmployeeDisplayName(row.full_name ?? "", row.nickname, row.hr_id),
+    nameAr: cleanText(row.name_ar),
+    nationalId: cleanText(row.national_id),
+    gender: cleanText(row.gender),
+    socialInsuranceNumber: cleanText(row.social_insurance_number),
+    socialInsuranceWage: toNumber(row.social_insurance_wage),
+    baseSalary: toNumber(row.base_salary),
+    grossSalary: toNumber(row.gross_salary),
+    birthDate: row.birth_date,
+    hireDate: row.hire_date,
+    jobTitle: cleanText(row.job_title),
     departmentAr,
-    departmentId: data.department_id,
-    lineId: data.line_id,
-    residenceAddress: cleanText(data.residence_address),
-    residenceCity: cleanText(data.residence_city),
-    mobileNumber: cleanText(data.mobile_number),
-    workEmail: cleanText(data.work_email),
-    employmentStatus: cleanText(data.employment_status),
-    departed: hasDepartedEmployment(data.employment_status),
-    lastWorkingDate: data.last_working_date,
+    departmentId: row.department_id,
+    lineId: row.line_id,
+    residenceAddress: cleanText(row.residence_address),
+    residenceCity: cleanText(row.residence_city),
+    mobileNumber: cleanText(row.mobile_number),
+    workEmail: cleanText(row.work_email),
+    employmentStatus: cleanText(row.employment_status),
+    departed: hasDepartedEmployment(row.employment_status),
+    lastWorkingDate: row.last_working_date,
   };
 }
 

@@ -19,10 +19,22 @@
 // prints its compiled default, which is what it printed before this feature existed.
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 
-import { documentSurface, type DocumentFieldRow, type FlowAnchor } from "@/lib/hiring-pack/field-layout";
+import type { DocumentFieldRow, FlowAnchor } from "@/lib/hiring-pack/field-layout";
+import { fieldsThatFitNewArtwork } from "@/lib/hiring-pack/custom-templates";
+import { validateFieldTemplate } from "@/lib/hiring-pack/field-template";
 import { canonicalHrIdForDisplay } from "@/lib/hr-id";
+import {
+  templateVersionsFor,
+  type DocumentTemplateVersion,
+  type TemplateStatus,
+} from "@/lib/hiring-pack/template-registry";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-import type { HiringPackDocument } from "@/lib/hiring-pack/types";
+import {
+  asPrintableDocument,
+  documentSurfaceOf,
+  type PrintableDocument,
+} from "@/lib/hiring-pack/document-registry";
+import type { CustomHiringPackDocument, HiringPackDocument } from "@/lib/hiring-pack/types";
 
 const TABLE = "hiring_pack_document_fields";
 
@@ -102,9 +114,16 @@ export function documentFieldFromRecord(record: FieldRecord): DocumentFieldRow |
       ? record.align
       : "right";
 
+  // The stored document is NARROWED, not cast. This column holds a string, and a row naming a
+  // document this build cannot print — a company template deleted from under its layout, a key
+  // from a branch that never shipped — has no coordinates worth drawing. Returning null drops it,
+  // which is what this function already does for a source it cannot read.
+  const document = asPrintableDocument(record.document);
+  if (!document) return null;
+
   return {
     id: record.id,
-    document: record.document as HiringPackDocument,
+    document,
     templateVersionId: record.template_version_id,
     defaultKey: record.default_key,
     hidden: record.hidden === true,
@@ -137,7 +156,7 @@ const COLUMNS =
  * order they expect them to layer.
  */
 export async function loadDocumentFieldLayout(
-  document: HiringPackDocument,
+  document: PrintableDocument,
   templateVersionId: string,
 ): Promise<DocumentFieldRow[]> {
   const supabase = getSupabaseAdmin();
@@ -169,7 +188,7 @@ export async function loadDocumentFieldLayout(
 
 export type DocumentFieldWrite = {
   id?: string;
-  document: HiringPackDocument;
+  document: PrintableDocument;
   templateVersionId: string;
   defaultKey: string | null;
   hidden: boolean;
@@ -246,7 +265,7 @@ export async function deleteDocumentField(id: string): Promise<void> {
  * that was signed, and it is not the caller's to discard.
  */
 export async function resetDocumentFieldLayout(
-  document: HiringPackDocument,
+  document: PrintableDocument,
   templateVersionId: string,
 ): Promise<number> {
   const supabase = getSupabaseAdmin();
@@ -280,6 +299,15 @@ export type DocumentFieldWriteInput = {
   source?: unknown;
 };
 
+/**
+ * The ten written in code, named one by one so this gate never widens by accident.
+ *
+ * A COMPANY TEMPLATE IS ACCEPTED TOO, and not through this set — `asPrintableDocument` below
+ * validates the uuid inside a `custom:<uuid>`, which is the only thing that could be checked here
+ * anyway. The keys of uploaded templates are not knowable at build time; that is what makes them
+ * uploaded. What the check still guarantees is the same thing it always did: whatever reaches the
+ * table is a document this build can print, not an arbitrary string a caller supplied.
+ */
 const KNOWN_DOCUMENTS = new Set<HiringPackDocument>([
   "contract",
   "form1",
@@ -308,9 +336,15 @@ function isFiniteNumber(value: unknown): value is number {
 export function parseDocumentFieldWrite(
   input: DocumentFieldWriteInput,
 ): { ok: true; write: DocumentFieldWrite } | { ok: false; message: string } {
-  const document = input.document;
-  if (typeof document !== "string" || !KNOWN_DOCUMENTS.has(document as HiringPackDocument)) {
-    return { ok: false, message: `document must be one of ${Array.from(KNOWN_DOCUMENTS).join(", ")}.` };
+  const raw = input.document;
+  const document = typeof raw === "string" ? asPrintableDocument(raw) : null;
+  if (!document) {
+    return {
+      ok: false,
+      message:
+        `document must be one of ${Array.from(KNOWN_DOCUMENTS).join(", ")}, ` +
+        "or a company template as custom:<uuid>.",
+    };
   }
 
   const templateVersionId = input.templateVersionId;
@@ -323,7 +357,9 @@ export function parseDocumentFieldWrite(
     return { ok: false, message: 'align must be "right", "center" or "left".' };
   }
 
-  const surface = documentSurface(document as HiringPackDocument);
+  // A company template is always a page surface — fixed artwork, absolute coordinates. See
+  // `documentSurfaceOf`, which is the one function that answers this for both kinds.
+  const surface = documentSurfaceOf(document);
   const rawPage = input.page;
   const rawAnchor = input.anchor;
   let page: number | null = null;
@@ -399,6 +435,21 @@ export function parseDocumentFieldWrite(
     if (typeof text !== "string") {
       return { ok: false, message: "a literal field needs text (an empty string is fine)." };
     }
+    // SHAPE ONLY, AND DELIBERATELY NOT THE KEY NAMES. A literal may carry `{{key}}` placeholders,
+    // and a half-written one — `{{employeeName}` — matches no placeholder at all, so without this it
+    // would print its own braces onto a signed document. That is refused here, where a person is
+    // present to be told.
+    //
+    // WHICH KEYS EXIST IS A PER-DOCUMENT QUESTION AND THIS FUNCTION CANNOT ANSWER IT. A page
+    // document places camelCase record keys, a flow document fills UPPER_SNAKE tokens that are not
+    // in `PAPER_FIELD_BINDINGS` at all, and checking against that table here would refuse
+    // `{{COMPANY_NAME}}` on a contract — a key that resolves perfectly. The editor checks the name
+    // against the document's own live inventory before it ever gets here; and whatever slips past
+    // both, `resolveFieldTemplate` blanks the whole field rather than printing a brace.
+    const templateError = validateFieldTemplate(text);
+    if (templateError) {
+      return { ok: false, message: templateError };
+    }
     source = { kind: "literal", text };
   } else {
     return { ok: false, message: 'source.kind must be "value" or "literal".' };
@@ -410,7 +461,7 @@ export function parseDocumentFieldWrite(
     ok: true,
     write: {
       id,
-      document: document as HiringPackDocument,
+      document,
       templateVersionId,
       defaultKey,
       hidden,
@@ -425,4 +476,521 @@ export function parseDocumentFieldWrite(
       source,
     },
   };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// CARRYING A LAYOUT FORWARD TO A NEW TEMPLATE VERSION
+//
+// Field rows are scoped to `template_version_id`, and that scoping is deliberate: an archived
+// contract has to reprint as the document that was signed, so its layout cannot be disturbed by
+// work done on the current one. The cost is that the day a template is replaced — `contract-v1` to
+// `contract-v2` happened on 2026-08-30, so this is not hypothetical — every rule and every added
+// box written against the outgoing version stops appearing. No error, no marker: the fields are
+// simply back to their compiled defaults, and nothing on any screen says why.
+//
+// So the editor offers to bring them over, and the offer is the whole feature. It is NEVER
+// automatic, because a page document's coordinates are read off the authority's own artwork: if the
+// artwork moved between versions, carrying a coordinate forward puts text in the wrong place on a
+// government form. That is a decision a person makes with both versions in front of them.
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+
+/** How many rows each version of one document holds — the basis of the offer. */
+export type VersionFieldCount = {
+  templateVersionId: string;
+  version: number;
+  status: TemplateStatus;
+  labelEn: string;
+  /** Rows on this version, counted after validation so a row nothing can draw is not offered. */
+  fields: number;
+};
+
+/**
+ * What the editor can offer to carry into `templateVersionId`, or null when there is nothing to say.
+ *
+ * OFFERED ONLY INTO AN EMPTY VERSION. Merging one layout into another produces a page that was
+ * never either version's, and no screen can then show which box came from where. A version that
+ * already holds work is left alone.
+ */
+export type CarryForwardOffer = {
+  /** The version being edited — always empty, or there is no offer. */
+  intoTemplateVersionId: string;
+  /** The newest earlier version that holds rows. */
+  fromTemplateVersionId: string;
+  fromLabelEn: string;
+  fromVersion: number;
+  /** How many rows would be copied. */
+  fields: number;
+};
+
+/**
+ * Every version of one document with a count of the rows stored against it.
+ *
+ * One query for the document, grouped in memory. The alternative — a count per version — is a round
+ * trip per archived template, and the table is small enough that reading its ids costs less than
+ * asking five times.
+ */
+/*
+ * STILL ONE OF THE TEN, and so are `carryForwardOffer` and `carryForwardDocumentFields` below.
+ * All three ask `templateVersionsFor` — the COMPILED template registry — which of a document’s
+ * versions exist. A company template’s versions are rows in `hiring_pack_custom_templates`, not
+ * entries there, so widening these signatures would let a caller pass a template whose version
+ * list comes back empty and read that as “no layout to carry”. Carrying a company template’s
+ * layout onto replaced artwork is real work; it belongs with the store that knows those versions.
+ */
+export async function countDocumentFieldsByVersion(
+  document: HiringPackDocument,
+): Promise<VersionFieldCount[]> {
+  const versions = templateVersionsFor(document);
+  if (versions.length === 0) return [];
+
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from(TABLE)
+    .select(COLUMNS)
+    .eq("document", document)
+    .is("employee_hr_id", null)
+    .limit(2000);
+
+  if (error) {
+    if (isFieldLayerMissing(error)) return versions.map((entry) => versionCount(entry, 0));
+    throw new Error(error.message);
+  }
+
+  const counts = new Map<string, number>();
+  for (const record of (data ?? []) as unknown as FieldRecord[]) {
+    // Counted only if it can be drawn. Offering to carry a row the editor would drop on arrival
+    // would promise seven boxes and deliver six, with nothing to say which one went missing.
+    if (!documentFieldFromRecord(record)) continue;
+    counts.set(record.template_version_id, (counts.get(record.template_version_id) ?? 0) + 1);
+  }
+
+  return versions.map((entry) => versionCount(entry, counts.get(entry.id) ?? 0));
+}
+
+function versionCount(entry: DocumentTemplateVersion, fields: number): VersionFieldCount {
+  return {
+    templateVersionId: entry.id,
+    version: entry.version,
+    status: entry.status,
+    labelEn: entry.labelEn,
+    fields,
+  };
+}
+
+/**
+ * The offer for one version, or null when there is nothing worth offering.
+ *
+ * Null in three cases, and each is a real one rather than a guard for its own sake: the version
+ * being edited already holds work; no earlier version holds any; or the id is not a version of this
+ * document at all.
+ */
+export async function carryForwardOffer(
+  document: HiringPackDocument,
+  templateVersionId: string,
+): Promise<CarryForwardOffer | null> {
+  const target = templateVersionsFor(document).find((entry) => entry.id === templateVersionId);
+  if (!target) return null;
+
+  const counts = await countDocumentFieldsByVersion(document);
+  const source = pickCarryForwardSource(counts, target.version, templateVersionId);
+  if (!source) return null;
+
+  return {
+    intoTemplateVersionId: templateVersionId,
+    fromTemplateVersionId: source.templateVersionId,
+    fromLabelEn: source.labelEn,
+    fromVersion: source.version,
+    fields: source.fields,
+  };
+}
+
+/**
+ * Which version to offer carrying from — the whole decision, separated so it can be pinned.
+ *
+ * THE NEWEST EARLIER VERSION THAT HOLDS ANYTHING. Not the oldest, and not the one with the most
+ * rows: a layout is corrected forward over time, so the most recent work is the most correct, and
+ * offering v1 when v2 also has changes would hand back a layout somebody had already improved on.
+ *
+ * Returns null when the target version already holds work — merging two layouts makes a page that
+ * was never either version's — and when nothing earlier holds any.
+ */
+export function pickCarryForwardSource(
+  counts: readonly VersionFieldCount[],
+  targetVersion: number,
+  targetVersionId: string,
+): VersionFieldCount | null {
+  const into = counts.find((entry) => entry.templateVersionId === targetVersionId);
+  if (!into || into.fields > 0) return null;
+
+  return (
+    counts
+      .filter((entry) => entry.version < targetVersion && entry.fields > 0)
+      .sort((a, b) => b.version - a.version)[0] ?? null
+  );
+}
+
+/**
+ * Copy every field row from one template version of a document to another.
+ *
+ * REFUSES rather than merges when the target already holds rows, and refuses a version id belonging
+ * to a different document — copying a contract's coordinates onto Form 1 would place text over a
+ * government form's own boxes, and the failure would be visible only on paper.
+ *
+ * THE ACTOR IS RECORDED AS THE AUTHOR, not as a system migration, because deciding that the old
+ * boxes still apply to new artwork IS an authoring act. Someone reading the row's history later
+ * needs to see a person there.
+ */
+export async function carryForwardDocumentFields(
+  document: HiringPackDocument,
+  fromTemplateVersionId: string,
+  toTemplateVersionId: string,
+  actorHrId: string | null,
+): Promise<number> {
+  if (fromTemplateVersionId === toTemplateVersionId) {
+    throw new Error("A layout cannot be carried onto the version it already belongs to.");
+  }
+
+  const versions = templateVersionsFor(document);
+  const from = versions.find((entry) => entry.id === fromTemplateVersionId);
+  const to = versions.find((entry) => entry.id === toTemplateVersionId);
+  if (!from || !to) {
+    throw new Error(
+      `Both versions must belong to ${document}. Carrying a layout between documents would place ` +
+        "boxes at coordinates read off a different page.",
+    );
+  }
+
+  const existing = await loadDocumentFieldLayout(document, toTemplateVersionId);
+  if (existing.length > 0) {
+    throw new Error(
+      `${to.labelEn} already has ${existing.length} field${existing.length === 1 ? "" : "s"} of its own. ` +
+        "Carrying forward is offered only into a version nothing has been done to yet.",
+    );
+  }
+
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from(TABLE)
+    .select(COLUMNS)
+    .eq("document", document)
+    .eq("template_version_id", fromTemplateVersionId)
+    .is("employee_hr_id", null)
+    .order("created_at", { ascending: true })
+    .limit(500);
+  if (error) throw new Error(error.message);
+
+  const actor = actorHrId ? canonicalHrIdForDisplay(actorHrId) : null;
+  const now = new Date().toISOString();
+  const payload = ((data ?? []) as unknown as FieldRecord[])
+    // Same validation as the count, for the same reason: a row that cannot be drawn is not carried.
+    .filter((record) => documentFieldFromRecord(record) !== null)
+    .map((record) => ({
+      document,
+      // A NEW id, deliberately — the insert omits it. These rows are per-version by design, and
+      // reusing the id would either collide or move the old version's field instead of copying it.
+      template_version_id: toTemplateVersionId,
+      employee_hr_id: null,
+      default_key: record.default_key,
+      hidden: record.hidden,
+      page: record.page,
+      anchor_selector: record.anchor_selector,
+      anchor_dx: record.anchor_dx,
+      anchor_dy: record.anchor_dy,
+      x: record.x,
+      y: record.y,
+      w: record.w,
+      h: record.h,
+      align: record.align,
+      font_size: record.font_size,
+      source_kind: record.source_kind,
+      value_key: record.value_key,
+      literal_text: record.literal_text,
+      created_by_hr_id: actor,
+      updated_at: now,
+      updated_by_hr_id: actor,
+    }));
+
+  if (payload.length === 0) return 0;
+
+  const { data: inserted, error: insertError } = await supabase
+    .from(TABLE)
+    .insert(payload)
+    .select("id");
+  if (insertError) throw new Error(insertError.message);
+  return (inserted ?? []).length;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// WHAT A FIELD USED TO SAY
+//
+// A save OVERWRITES. Before the history table there was no answer at all to "what did this field
+// print in September", and a reset deleted every row without leaving a trace of what it deleted —
+// on papers people sign.
+//
+// The recording is a database trigger, not code in this module, because there are four write paths
+// and the reset is a bulk delete that never passes through the single-row one. A trigger is written
+// once and cannot be forgotten, including by a hand-run statement during an incident, which is when
+// the record matters most. This half only reads.
+//
+// THE TABLE MAY NOT EXIST YET, for exactly the reason the header of this file gives: its migration
+// is a protected action awaiting the owner. Every read degrades to an empty history rather than
+// failing, so the editor is unchanged until the day the migration lands.
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+
+const HISTORY_TABLE = "hiring_pack_document_field_history";
+
+const HISTORY_COLUMNS =
+  "id, field_id, document, template_version_id, default_key, action, hidden, page, " +
+  "anchor_selector, anchor_dx, anchor_dy, x, y, w, h, align, font_size, source_kind, " +
+  "value_key, literal_text, was_updated_at, was_updated_by_hr_id, changed_at, changed_by_hr_id";
+
+type HistoryRecord = FieldRecord & {
+  field_id: string;
+  action: string;
+  was_updated_at: string;
+  was_updated_by_hr_id: string | null;
+  changed_at: string;
+  changed_by_hr_id: string | null;
+};
+
+/**
+ * One state a field used to be in, and when it stopped being true.
+ *
+ * `state` is the same shape the renderer draws, so a history entry can be previewed with the same
+ * code that prints the live row rather than a second, drifting description of a placement.
+ */
+export type FieldHistoryEntry = {
+  id: string;
+  fieldId: string;
+  /** What happened TO this state: it was edited into something else, or the field was removed. */
+  action: "update" | "delete";
+  /** When it stopped being true. The trustworthy half — lead with this, not with the name. */
+  changedAt: string;
+  /**
+   * Who superseded it. NULL on a delete by design: there is no incoming row to read an actor off,
+   * and the field's last editor is not the person who deleted it.
+   */
+  changedByHrId: string | null;
+  /** When this state was itself written — with `changedAt`, the span it was live for. */
+  wasUpdatedAt: string;
+  wasUpdatedByHrId: string | null;
+  /** The state itself, exactly as it stood. */
+  state: DocumentFieldRow;
+};
+
+/** How much a single field has been rewritten — the whole basis of the inline affordance. */
+export type FieldHistorySummary = {
+  /** How many superseded states this field has. */
+  changes: number;
+  /** When it was last rewritten. What the row shows, and what the panel orders by. */
+  lastChangedAt: string;
+};
+
+/**
+ * Per field, how often it has been rewritten and when it last was — for one document version.
+ *
+ * DELIBERATELY NOT THE FULL HISTORY. This read runs every time the panel opens, and the answer it
+ * feeds is one line of text per row: "changed 12 Sep, 14:20". Two columns instead of the whole
+ * previous state keeps the common path small, and the states themselves are fetched for the one
+ * field somebody actually opens.
+ */
+export async function summariseDocumentFieldHistory(
+  document: PrintableDocument,
+  templateVersionId: string,
+): Promise<Record<string, FieldHistorySummary>> {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from(HISTORY_TABLE)
+    .select("field_id, changed_at")
+    .eq("document", document)
+    .eq("template_version_id", templateVersionId)
+    .order("changed_at", { ascending: false })
+    .limit(2000);
+
+  if (error) {
+    if (isFieldLayerMissing(error)) return {};
+    throw new Error(error.message);
+  }
+
+  return summariseHistoryRows((data ?? []) as unknown as HistoryStampRow[]);
+}
+
+/** The two columns the summary is built from. */
+export type HistoryStampRow = { field_id: string; changed_at: string };
+
+/**
+ * Group change stamps by field: how many, and the latest.
+ *
+ * Pure and exported so the one decision here can be pinned without a database. THE LATEST IS FOUND
+ * BY COMPARING, not by trusting the query's `order`. The read asks for newest first, so taking the
+ * first sighting of each field would be correct today — and would keep being correct-looking on the
+ * day the ordering changed, showing a field's OLDEST state as its most recent change. The row would
+ * read "changed 3 Jan" beside a rule written last week, which is worse than no line at all.
+ */
+export function summariseHistoryRows(
+  rows: readonly HistoryStampRow[],
+): Record<string, FieldHistorySummary> {
+  const summary: Record<string, FieldHistorySummary> = {};
+  for (const row of rows) {
+    const current = summary[row.field_id];
+    if (!current) {
+      summary[row.field_id] = { changes: 1, lastChangedAt: row.changed_at };
+      continue;
+    }
+    current.changes += 1;
+    if (row.changed_at > current.lastChangedAt) current.lastChangedAt = row.changed_at;
+  }
+  return summary;
+}
+
+/**
+ * Every superseded state of ONE field, newest first.
+ *
+ * Read by id rather than by document so it answers for a field that has since been deleted — which
+ * is the case the history exists for. The caller has already proved the document scope; this is the
+ * detail fetch behind opening one row.
+ */
+export async function loadFieldHistory(fieldId: string): Promise<FieldHistoryEntry[]> {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from(HISTORY_TABLE)
+    .select(HISTORY_COLUMNS)
+    .eq("field_id", fieldId)
+    .order("changed_at", { ascending: false })
+    .limit(200);
+
+  if (error) {
+    if (isFieldLayerMissing(error)) return [];
+    throw new Error(error.message);
+  }
+
+  const entries: FieldHistoryEntry[] = [];
+  for (const record of (data ?? []) as unknown as HistoryRecord[]) {
+    const entry = fieldHistoryFromRecord(record);
+    if (entry) entries.push(entry);
+  }
+  return entries;
+}
+
+/**
+ * One history record as an entry, or null if it describes a placement nothing can draw.
+ *
+ * Validated through `documentFieldFromRecord` — the same function the live layout uses — so a state
+ * that would be dropped at render time is dropped here too. Showing a previous state the renderer
+ * would have refused would answer "what did this print" with something that never printed.
+ */
+export function fieldHistoryFromRecord(record: HistoryRecord): FieldHistoryEntry | null {
+  if (record.action !== "update" && record.action !== "delete") return null;
+  // `id` on the history row is the history entry's own id; the state belongs to `field_id`.
+  const state = documentFieldFromRecord({ ...record, id: record.field_id });
+  if (!state) return null;
+  return {
+    id: record.id,
+    fieldId: record.field_id,
+    action: record.action,
+    changedAt: record.changed_at,
+    changedByHrId: record.changed_by_hr_id,
+    wasUpdatedAt: record.was_updated_at,
+    wasUpdatedByHrId: record.was_updated_by_hr_id,
+    state,
+  };
+}
+
+/**
+ * Copy a company template's field layer onto the version that just replaced it.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────────────────────
+ * WHY THIS IS AUTOMATIC WHERE `carryForwardDocumentFields` IS AN OFFER. For a built-in document a
+ * new version is a new government form: the boxes may legitimately belong somewhere else, so the
+ * editor asks. A company template's replacement is the owner re-uploading the SAME paper with a
+ * correction on it — a typo fixed, a logo changed — and every box he placed is meant to stay where
+ * he put it. Making him re-place fifty fields to correct one word would mean nobody ever corrects
+ * anything, and the reason the B1 migration keys `custom:<key>` on the template rather than the
+ * version was precisely to keep this possible.
+ *
+ * WHY IT IS A SEPARATE FUNCTION AND NOT A FLAG. `carryForwardDocumentFields` validates both version
+ * ids against `templateVersionsFor` — the COMPILED registry, which cannot see a row that was
+ * uploaded this morning — and refuses a target that already holds fields, because it exists to fill
+ * an untouched version. Neither rule fits here, and loosening them would loosen them for the
+ * built-ins too.
+ *
+ * A BOX ON A PAGE THE NEW ARTWORK DOES NOT HAVE IS DROPPED, AND COUNTED. If a three-page form comes
+ * back as two, a field on page 3 has nowhere to land: copying it would file a row nothing can draw
+ * and nothing can reach — invisible on the page and invisible in the table. Dropping it silently
+ * would be the same defect. So it is dropped and reported, and the caller says so.
+ *
+ * ONLY THE TEMPLATE'S OWN RULES ARE COPIED — `employee_hr_id is null`. A per-employee override is a
+ * one-off written for one person's paper; carrying those onto a new version would resurrect edits
+ * made for people who were printed months ago.
+ */
+export async function copyCustomTemplateFieldLayout(input: {
+  document: CustomHiringPackDocument;
+  fromTemplateVersionId: string;
+  toTemplateVersionId: string;
+  pageCount: number;
+  actorHrId: string | null;
+}): Promise<{ copied: number; droppedForMissingPage: number }> {
+  const { actorHrId, document, fromTemplateVersionId, pageCount, toTemplateVersionId } = input;
+  if (fromTemplateVersionId === toTemplateVersionId) {
+    throw new Error("A layout cannot be copied onto the version it already belongs to.");
+  }
+
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from(TABLE)
+    .select(COLUMNS)
+    .eq("document", document)
+    .eq("template_version_id", fromTemplateVersionId)
+    .is("employee_hr_id", null)
+    .order("created_at", { ascending: true })
+    .limit(500);
+
+  // A MISSING TABLE IS "NOTHING TO COPY", not a failed replacement. The version has already been
+  // created and is already current at this point; throwing here would report the whole replacement
+  // as failed when the only thing missing is a field layer that never existed.
+  if (error) {
+    if (isFieldLayerMissing(error)) return { copied: 0, droppedForMissingPage: 0 };
+    throw new Error(error.message);
+  }
+
+  const rows = ((data ?? []) as unknown as FieldRecord[]).filter(
+    // Same validation as everywhere else: a row that cannot be drawn is not carried.
+    (record) => documentFieldFromRecord(record) !== null,
+  );
+
+  const { droppedForMissingPage, fits } = fieldsThatFitNewArtwork(rows, pageCount);
+  if (fits.length === 0) return { copied: 0, droppedForMissingPage };
+
+  const actor = actorHrId ? canonicalHrIdForDisplay(actorHrId) : null;
+  const now = new Date().toISOString();
+  const payload = fits.map((record) => ({
+    document,
+    // A NEW id — the insert omits it. These rows are per-version, so reusing the id would move the
+    // archived version's field instead of copying it, and the old paper would stop reprinting as
+    // the document it was.
+    template_version_id: toTemplateVersionId,
+    employee_hr_id: null,
+    default_key: record.default_key,
+    hidden: record.hidden,
+    page: record.page,
+    anchor_selector: record.anchor_selector,
+    anchor_dx: record.anchor_dx,
+    anchor_dy: record.anchor_dy,
+    x: record.x,
+    y: record.y,
+    w: record.w,
+    h: record.h,
+    align: record.align,
+    font_size: record.font_size,
+    source_kind: record.source_kind,
+    value_key: record.value_key,
+    literal_text: record.literal_text,
+    created_by_hr_id: actor,
+    updated_at: now,
+    updated_by_hr_id: actor,
+  }));
+
+  const { data: inserted, error: insertError } = await supabase.from(TABLE).insert(payload).select("id");
+  if (insertError) throw new Error(insertError.message);
+  return { copied: (inserted ?? []).length, droppedForMissingPage };
 }

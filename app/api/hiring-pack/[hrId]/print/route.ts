@@ -9,6 +9,17 @@ import {
   renderClearanceCompanyHtml,
   renderClearanceEmployeeHtml,
 } from "@/lib/hiring-pack/render-clearance";
+import { documentFieldInventory } from "@/lib/hiring-pack/document-inventory";
+import { pageSizeFor } from "@/lib/hiring-pack/field-warnings";
+import { asPrintableDocument, type PrintableDocument } from "@/lib/hiring-pack/document-registry";
+import {
+  canRolePrintCustomTemplate,
+  isCustomTemplateLayerMissing,
+  loadCurrentCustomTemplate,
+  loadCustomTemplateVersion,
+  type CustomTemplate,
+} from "@/lib/hiring-pack/custom-template-store";
+import { renderCustomTemplateHtml } from "@/lib/hiring-pack/render-custom-template";
 import { renderContractHtml } from "@/lib/hiring-pack/render-contract";
 import {
   renderCustodyLaptopHtml,
@@ -33,7 +44,7 @@ import {
   findTemplateVersion,
   templateVersionsFor,
 } from "@/lib/hiring-pack/template-registry";
-import { HIRING_PACK_DOCUMENTS } from "@/lib/hiring-pack/types";
+import { customTemplateKeyOf, HIRING_PACK_DOCUMENTS, isBuiltInDocument } from "@/lib/hiring-pack/types";
 import type { HiringPackData, HiringPackDocument } from "@/lib/hiring-pack/types";
 
 export const runtime = "nodejs";
@@ -47,7 +58,6 @@ export const dynamic = "force-dynamic";
 // owner's standing instruction and مادة (19) of the contract states the four in its own text, so
 // the counts live in `systemContractDefaults` and a caller has to ask deliberately to differ.
 
-const DOCUMENTS = new Set<HiringPackDocument>(HIRING_PACK_DOCUMENTS);
 
 /**
  * What each document prints, and how many of it.
@@ -101,8 +111,35 @@ const RENDERERS: Record<
   },
 };
 
+/**
+ * The uploaded template a `custom:<uuid>` document names, at the version being printed.
+ *
+ * A VERSION IS VALIDATED AGAINST ITS OWN TEMPLATE, exactly as the built-in check below does. A
+ * caller passing one template's document with another template's version id is asking for something
+ * that does not exist, and answering it with the current template would be the same defect the
+ * built-in path already guards: somebody believing they printed an archived form when they printed
+ * today's. Null here means "no such template", which the route answers as a 404.
+ */
+async function resolveCustomTemplate(
+  document: string,
+  requestedVersion: string | null,
+): Promise<CustomTemplate | null> {
+  const key = customTemplateKeyOf(document);
+  if (!key) return null;
+
+  if (requestedVersion) {
+    const version = await loadCustomTemplateVersion(requestedVersion);
+    return version && version.key === key ? version : null;
+  }
+
+  return loadCurrentCustomTemplate(key);
+}
+
 function apiError(error: unknown) {
   if (isForbiddenError(error)) return { message: hiringPackErrorMessage(error), status: 403 };
+  if (isCustomTemplateLayerMissing(error)) {
+    return { message: "Company templates are not set up yet.", status: 409 };
+  }
   if (isHiringPackEmployeeMissing(error)) {
     return { message: hiringPackErrorMessage(error), status: 404 };
   }
@@ -131,12 +168,18 @@ export async function GET(request: Request, { params }: { params: Promise<{ hrId
     const { hrId } = await params;
 
     const url = new URL(request.url);
-    const requested = url.searchParams.get("document") as HiringPackDocument | null;
-    if (!requested || !DOCUMENTS.has(requested)) {
+    // NARROWED, NEVER CAST. `document=` arrives as a query string, and the two shapes it may take
+    // are one of the ten or `custom:<uuid>` with a real uuid inside it — `asPrintableDocument`
+    // is the one function that decides, and it validates the uuid rather than splitting on a colon.
+    const raw = url.searchParams.get("document");
+    const requested: PrintableDocument | null = raw ? asPrintableDocument(raw) : null;
+    if (!requested) {
       return NextResponse.json(
         {
           error: "invalid_hiring_pack_document",
-          message: `Pass document= one of ${HIRING_PACK_DOCUMENTS.join(", ")}.`,
+          message:
+            `Pass document= one of ${HIRING_PACK_DOCUMENTS.join(", ")}, ` +
+            "or a company template as custom:<uuid>.",
         },
         { status: 400 },
       );
@@ -149,8 +192,12 @@ export async function GET(request: Request, { params }: { params: Promise<{ hrId
     // exist, and answering it with a silently-substituted current template is how somebody ends up
     // believing they printed an archived form when they printed today's. Only the contract has more
     // than one version today; the check is written for all five because the next one will not.
+    //
+    // A COMPANY TEMPLATE IS CHECKED THE SAME WAY, further down rather than here: its versions are
+    // rows, so `resolveCustomTemplate` asks the database and refuses a version belonging to another
+    // template. The two paths reach the same verdict; only the register differs.
     const requestedVersion = url.searchParams.get("version");
-    if (requestedVersion) {
+    if (requestedVersion && isBuiltInDocument(requested)) {
       const entry = findTemplateVersion(requestedVersion);
       if (!entry || entry.document !== requested) {
         return NextResponse.json(
@@ -168,8 +215,62 @@ export async function GET(request: Request, { params }: { params: Promise<{ hrId
     }
 
     const data = await getHiringPack(hrId);
-    const renderer = RENDERERS[requested];
-    const copies = resolveCopies(url.searchParams.get("copies"), renderer.copies);
+
+    // ─────────────────────────────────────────────────────────────────────────────────────────
+    // A COMPANY TEMPLATE IS RESOLVED FROM THE DATABASE, not from a table in this file.
+    //
+    // Everything below this point is the same for both kinds — the field layer scopes to the
+    // version, the inventory reads the rendered html, the preview returns identical bytes — so the
+    // branch is only about WHERE the document and its version come from. The ten are compiled in;
+    // an uploaded template is a row, and its "version" is that row's own id.
+    // ─────────────────────────────────────────────────────────────────────────────────────────
+    const template = isBuiltInDocument(requested)
+      ? null
+      : await resolveCustomTemplate(requested, requestedVersion);
+    if (!isBuiltInDocument(requested) && !template) {
+      return NextResponse.json(
+        {
+          error: "unknown_company_template",
+          message: requestedVersion
+            ? "That version is not a version of this company template."
+            : "That company template is no longer on record.",
+        },
+        { status: 404 },
+      );
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────────────────────
+    // THE TEMPLATE'S OWN ROLE LIST, ON TOP OF THE MODULE PERMISSION — the second half of the gate.
+    //
+    // `employee_documents:read` was asserted at the top of this handler and is what the ten
+    // built-in papers stand behind. An uploaded template can narrow that further, because a company
+    // template is not necessarily an HR form: a warning letter or a salary certificate should not
+    // print for everyone who can print a contract. Until now the field was stored, shown on the
+    // upload form, and enforced NOWHERE — which is the worst state for an access control to be in,
+    // because the screen says it is doing something it is not.
+    //
+    // 403 rather than 404: the caller may legitimately see this template listed, so pretending it
+    // does not exist would send somebody chasing a missing paper instead of asking for the role.
+    // ─────────────────────────────────────────────────────────────────────────────────────────
+    if (template && !canRolePrintCustomTemplate(access.role, template.printableByRoles)) {
+      return NextResponse.json(
+        {
+          error: "forbidden_company_template",
+          message: `"${template.name}" is limited to ${(template.printableByRoles ?? []).join(", ")}.`,
+        },
+        { status: 403 },
+      );
+    }
+
+    // THE TEMPLATE'S OWN NUMBER, not a constant — the owner, 2026-09-04: "tell him that it is for
+    // example how many copies". A built-in paper has its count compiled in beside its renderer
+    // because the count is a property of that form; an uploaded template carries the same fact on
+    // its row, set by whoever uploaded it. `CUSTOM_DOCUMENT_DEFAULT_COPIES` is still what a row
+    // written before that column existed resolves to, in the store.
+    const defaultCopies = template
+      ? template.defaultCopies
+      : RENDERERS[requested as HiringPackDocument].copies;
+    const copies = resolveCopies(url.searchParams.get("copies"), defaultCopies);
 
     // The operator's own field layer, read against the version being printed.
     //
@@ -183,11 +284,47 @@ export async function GET(request: Request, { params }: { params: Promise<{ hrId
     // approved and applied that is every environment's state, and a hiring pack that refuses to
     // print because an editor's table is absent would be a worse regression than the feature is a
     // gain.
-    const fields = await loadDocumentFieldLayout(
-      requested,
-      requestedVersion ?? currentTemplateVersion(requested).id,
-    );
-    const html = renderer.render(data, copies, requestedVersion, fields);
+    const versionId = template
+      ? template.id
+      : (requestedVersion ?? currentTemplateVersion(requested as HiringPackDocument).id);
+    const fields = await loadDocumentFieldLayout(requested, versionId);
+    const html = template
+      ? renderCustomTemplateHtml(template, data, copies, fields)
+      : RENDERERS[requested as HiringPackDocument].render(data, copies, requestedVersion, fields);
+
+    // ─────────────────────────────────────────────────────────────────────────────────────────
+    // `inventory=1` ANSWERS "WHAT FIELDS DOES THIS TEMPLATE HAVE?" — the field table's whole data
+    // source, and the reason it hangs off this route rather than a route of its own.
+    //
+    // Everything the question needs has already happened by this line: the permission check, the
+    // employee's resolved pack, the version validation, the field layer, and the document rendered
+    // exactly as it would be served. `documentFieldInventory` reads that same `html` rather than
+    // rendering a second time, so the list can never describe a document different from the one on
+    // screen — which is the failure a separate endpoint would eventually produce.
+    //
+    // RETURNED BEFORE THE PRINT STAMP, deliberately. Opening the field table is not printing, and
+    // `preview=1` exists for exactly this reason; falling through would date every document as
+    // printed the moment somebody looked at its field list.
+    // ─────────────────────────────────────────────────────────────────────────────────────────
+    if (url.searchParams.get("inventory") === "1") {
+      // THE PAGE SIZE TRAVELS WITH THE FIELD LIST, because the editor cannot work it out alone.
+      //
+      // The field table warns about a box that has been dragged off the edge of the paper, and that
+      // needs the paper's printed size. For the ten it is compiled in and the browser has it. For an
+      // uploaded template it is a measurement off the artwork somebody supplied, held on the
+      // template row and known ONLY here. Left out, the editor's honest answer would be null — and
+      // null means "typeset, nothing to fall off", which would switch the off-page warning off on
+      // exactly the papers whose every box was placed by hand against a scan.
+      return NextResponse.json(
+        {
+          fields: documentFieldInventory(requested, data, html),
+          page: template
+            ? { height: template.pageHeightPt, width: template.pageWidthPt }
+            : pageSizeFor(requested as HiringPackDocument),
+        },
+        { headers: { "Cache-Control": "no-store, max-age=0" } },
+      );
+    }
 
     // ─────────────────────────────────────────────────────────────────────────────────────────
     // `preview=1` RETURNS THE SAME DOCUMENT AND RECORDS NOTHING.
@@ -204,7 +341,11 @@ export async function GET(request: Request, { params }: { params: Promise<{ hrId
     // being fixed here is precisely somebody trusting a screen that did not match the paper.
     // ─────────────────────────────────────────────────────────────────────────────────────────
     const isPreview = url.searchParams.get("preview") === "1";
-    if (!isPreview) {
+    // AND ONLY FOR THE TEN. `recordHiringPackPrinted` writes a `*_printed_at` column named in
+    // `DOCUMENT_BINDINGS`, and a company template has no such column — nor should it get one per
+    // template. That is the same position the two custody receipts are already in: they print, the
+    // signed paper is filed, and nothing is stamped. See the note on that table.
+    if (!isPreview && isBuiltInDocument(requested)) {
       // Stamped after the document is built, and never awaited into the response path: a print that
       // works but fails to record itself is a far better outcome than a print that refuses because
       // the audit write hiccupped. `recordHiringPackPrinted` swallows its own failures for the same
