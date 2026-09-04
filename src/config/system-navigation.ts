@@ -1971,7 +1971,10 @@ const hrNavigationSectionSeeds = [
   },
 ] as const satisfies readonly NavigationSectionSeed[];
 
-export const adminNavigationSections: readonly NavigationSection[] = adminNavigationSectionSeeds;
+// `adminNavigationSections` is NOT declared here. It is built at the bottom of this file by
+// `promoteHubRows`, which needs the `*PageItems` arrays — all of which are declared below this
+// point. Declaring it here would read those in their temporal dead zone: a ReferenceError at
+// module load, with a green typecheck.
 export const employeePortalNavigationSections: readonly NavigationSection[] = employeePortalNavigationSectionSeeds;
 export const hrNavigationSections: readonly NavigationSection[] = hrNavigationSectionSeeds;
 
@@ -3782,3 +3785,135 @@ export const hubPageItemGroups: readonly { label: string; items: readonly AdminT
   { items: pharmacovigilancePageItems, label: "Pharmacovigilance" },
   { items: directOrdersPageItems, label: "Direct Orders" },
 ] as const;
+
+// ── Hub rows promoted into the rail (owner, 2026-09-05) ─────────────────────────
+//
+// The owner's rule, in his words: "I don't want any subtitle to be the one that when I
+// press, it redirects me to a page that has big modules. I want a Recruitment and its
+// modules under it." So every sidebar row that opened a hub PAGE is gone, replaced by
+// that hub's own modules under a heading carrying the hub's name.
+//
+// WHY THIS LIVES AT THE BOTTOM OF THE FILE rather than inside `adminNavigationSectionSeeds`:
+// every `*PageItems` array is declared BELOW the seeds. Spreading one into a seed is a
+// temporal-dead-zone ReferenceError at module load — and TypeScript does not model TDZ, so
+// typecheck stays green while the rail renders empty in production.
+//
+// `salesAnalyticsPageItems` is absent for the same reason it is absent from
+// `hubPageItemGroups` above: ruling 11, pinned by tests/navigation-ruling-11-analytics.test.ts.
+// Promoting it would put the delisted module back on the rail itself — louder than the Cmd+K
+// route that ruling already closed.
+type AdminHubPromotion = {
+  /**
+   * Heading rendered above the promoted rows, via a group in src/config/sidebar-domains.ts.
+   * It must not repeat one of its own rows: `groupAdminSections` blanks such a heading, and
+   * tests/sidebar-domains.test.ts pins that no heading blanks for any role.
+   */
+  heading: string;
+  /** The hub row being replaced, matched on its href in the seeds. */
+  hubHref: `/${string}`;
+  items: readonly AdminToolsPageItem[];
+  /**
+   * Where the promoted rows land.
+   *
+   * Twelve of these REUSE the id of the section the hub row was the only occupant of, because
+   * a section id is not private to this file: src/components/admin/sidebar-layout-editor.tsx
+   * saves a per-role layout keyed by it, so renaming one silently orphans a saved layout. The
+   * five `hub-` ids are the ones that had to be new — their original section still has rows of
+   * its own and keeps its id.
+   */
+  sectionId: string;
+};
+
+/**
+ * A rail label wider than its 157px budget lands on `truncate`, and an ellipsis is barred
+ * (owner rule). These eight cards measure 161–195px at the rail's 13px/600/-0.01em, so the
+ * RAIL gets a shorter label while the hub page keeps the full one.
+ *
+ * Keyed by href, so the two hubs that both offer /admin/notification-confidence shorten alike.
+ * Measured, not guessed: the widest short form is "Notification Confidence" at 138px, 19px
+ * inside the budget. tests/sidebar-label-width.test.ts is what holds this honest.
+ */
+const HUB_ROW_RAIL_LABELS: Readonly<Record<string, string>> = {
+  "/admin/customer-pharmacy-mapping": "Pharmacy Mapping",
+  "/admin/mailbox-monitor": "Mailbox Compliance",
+  "/admin/marketing-requests/coverage-report": "Coverage Report",
+  "/admin/notification-confidence": "Notification Confidence",
+  "/admin/screening-questions": "Screening Questions",
+  "/admin/weekly-plans/calendar": "Planning Calendar",
+  "/attendance/employee-day-report": "Day-by-Day Report",
+  "/sales/weekly/distributor-editor": "Distributor Columns",
+};
+
+const adminHubPromotions: readonly AdminHubPromotion[] = [
+  { heading: "People Management", hubHref: "/admin/people-management", items: peopleManagementPageItems, sectionId: "hub-people-management" },
+  { heading: "Probation Tools", hubHref: "/admin/probation-tools", items: probationPageItems, sectionId: "hub-probation-tools" },
+  { heading: "Recruitment & Hiring", hubHref: "/admin/recruitment-hiring", items: recruitmentHiringPageItems, sectionId: "hub-recruitment-hiring" },
+  { heading: "Field Coaching", hubHref: "/admin/field-coaching", items: fieldCoachingPageItems, sectionId: "field-coaching" },
+  { heading: "Attendance", hubHref: "/attendance", items: attendanceManagementPageItems, sectionId: "attendance-management" },
+  { heading: "Leave Management", hubHref: "/leave-management", items: leaveManagementPageItems, sectionId: "leave-management" },
+  { heading: "Payroll Management", hubHref: "/admin/payroll-management", items: payrollManagementPageItems, sectionId: "payroll" },
+  { heading: "Outstation Expenses", hubHref: "/admin/outstation-expenses", items: outstationExpensesPageItems, sectionId: "expenses-outstation" },
+  { heading: "Source of Sales", hubHref: "/sales/source-of-sales-tools", items: sourceOfSalesPageItems, sectionId: "sales-source-of-sales" },
+  { heading: "Weekly Sales", hubHref: "/sales/weekly-tools", items: weeklySalesToolsPageItems, sectionId: "sales-weekly-module" },
+  { heading: "Direct Orders", hubHref: "/admin/direct-orders", items: directOrdersPageItems, sectionId: "sales-direct-orders" },
+  { heading: "CRM", hubHref: "/admin/crm-tools", items: crmPageItems, sectionId: "crm" },
+  { heading: "Marketing & ROI", hubHref: "/admin/marketing-roi", items: marketingRoiPageItems, sectionId: "hub-marketing-roi" },
+  { heading: "Pharmacovigilance", hubHref: "/admin/pharmacovigilance", items: pharmacovigilancePageItems, sectionId: "hub-pharmacovigilance" },
+  { heading: "Admin Tools", hubHref: "/admin/admin-tools", items: adminToolsPageItems, sectionId: "admin-tools" },
+  { heading: "Master Data", hubHref: "/admin/master-data", items: masterDataPageItems, sectionId: "master-data" },
+  { heading: "Access & Comms", hubHref: "/admin/access-communication", items: accessCommunicationPageItems, sectionId: "access-communication" },
+];
+
+/**
+ * A hub's cards as rail rows.
+ *
+ * Two things happen here and nowhere else. A card pointing back at its OWN hub page is dropped —
+ * Direct Orders is the only one, and keeping it would rebuild in a single row exactly the "press
+ * it and land on a page of modules" this promotion exists to remove. And the eight over-budget
+ * labels are swapped for their short forms.
+ *
+ * `description` is deliberately not carried over: it is the hub page's card copy, and the rail
+ * has nowhere to render it.
+ */
+function hubRowsFor(hub: AdminHubPromotion): readonly NavigationSectionItem[] {
+  return hub.items
+    .filter((card) => card.href !== hub.hubHref)
+    .map((card) => ({
+      excludedRoles: card.excludedRoles,
+      href: card.href,
+      icon: card.icon,
+      label: HUB_ROW_RAIL_LABELS[card.href] ?? card.label,
+      permissions: card.permissions,
+      roles: card.roles,
+    }));
+}
+
+/**
+ * Replace every hub row with its hub's modules.
+ *
+ * A section keeps its own id and position when it still has non-hub rows; when the hub row was
+ * its only occupant the section is not emitted at all, and the promotion takes its id instead —
+ * which is why `sectionId` above is usually the original. Role gating is untouched: each card
+ * carries the same permissions/roles/excludedRoles the hub page filtered it with.
+ */
+function promoteHubRows(seeds: readonly NavigationSection[]): readonly NavigationSection[] {
+  const byHubHref = new Map<string, AdminHubPromotion>(adminHubPromotions.map((hub) => [hub.hubHref, hub]));
+  const sections: NavigationSection[] = [];
+  for (const section of seeds) {
+    const kept: NavigationSectionItem[] = [];
+    const promoted: NavigationSection[] = [];
+    for (const item of section.items) {
+      const hub = byHubHref.get(item.href);
+      if (hub === undefined) {
+        kept.push(item);
+        continue;
+      }
+      promoted.push({ id: hub.sectionId, items: hubRowsFor(hub), label: hub.heading });
+    }
+    if (kept.length > 0) sections.push({ ...section, items: kept });
+    sections.push(...promoted);
+  }
+  return sections;
+}
+
+export const adminNavigationSections: readonly NavigationSection[] = promoteHubRows(adminNavigationSectionSeeds);

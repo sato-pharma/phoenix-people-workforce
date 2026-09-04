@@ -1326,13 +1326,21 @@ function SidebarNav({
                         the chrome outweighed the content and the rail still scrolled. Dropping the
                         kicker takes each header from 54.5px to roughly 36px.
 
-                        White on all seven, open or closed (owner, 2026-09-04, reversing the orange
-                        of an hour earlier: "very noisy"). The rail is three levels and each one
-                        must read as a different colour — title white, group heading the dimmest
-                        warm grey at 10px caps, rows a mid grey at 13px. Orange is left to the ACTIVE
-                        row alone, which is what makes it findable. Open state is carried by the icon
-                        tile and the chevron, so the title colour is free to be constant. */}
-                    <span className="min-w-0 flex-1 text-phx-md font-bold tracking-[-0.01em] text-white">
+                        COLOURED, on all seven, open or closed (owner, 2026-09-05: "those big titles,
+                        I want them to be coloured — a different colour than the subtitles that appear
+                        when I expand the big titles").
+
+                        Champagne, and deliberately NOT the accent orange: the orange version of this
+                        header lasted an hour on 2026-09-04 before the owner reversed it as "very
+                        noisy", and orange is what marks the ACTIVE row, which is what makes that row
+                        findable in a rail this long. A warm off-white reads as a colour against the
+                        two greys below it without competing for that job.
+
+                        The rail is three levels and each one must read as a different colour — title
+                        champagne at 13px bold, group heading the dimmest warm grey at 10px caps, rows
+                        a mid grey at 13px. Open state is carried by the icon tile and the chevron, so
+                        the title colour is free to be constant. */}
+                    <span className="min-w-0 flex-1 text-phx-md font-bold tracking-[-0.01em] text-[#EBD7B4]">
                       {domain.name}
                     </span>
                     <span className="shrink-0 border border-white/[0.07] bg-white/[0.04] px-1.5 py-0.5 text-[10px] font-semibold tabular-nums leading-none text-slate-400">

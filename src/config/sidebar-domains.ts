@@ -111,34 +111,30 @@ export const adminSidebarDomains: readonly SidebarDomain[] = [
     desc: "Employees, attendance, leave and the hiring pipeline.",
     icon: UsersRound,
     groups: [
-      { heading: "Employees", sectionIds: ["people-management"] },
-      // One recruitment band, not two. "Recruitment & Hiring" blanked (it repeats its own first
-      // row) and "Hiring" sat directly beneath it, so the Super Admin read an unlabelled pair of
-      // rows followed by a headed pair, all four about hiring. The CEO-gated candidate section
-      // keeps its own gate; only the heading above it changes.
+      // Six hubs used to sit in this domain as six single rows, each opening a page of modules.
+      // They are now six headed bands of real rows (owner, 2026-09-05) — see `adminHubPromotions`
+      // in src/config/system-navigation.ts. Each band merges the hub's own modules with the loose
+      // sections on the same subject, so Attendance is one place rather than a hub row plus two
+      // strays further down.
+      { heading: "People Management", sectionIds: ["hub-people-management", "people-management"] },
+      { heading: "Probation Tools", sectionIds: ["hub-probation-tools", "ceo-probation"] },
       {
-        heading: "Recruitment",
-        sectionIds: ["recruitment-hiring", "ceo-recruitment-candidates"],
+        heading: "Recruitment & Hiring",
+        sectionIds: ["hub-recruitment-hiring", "recruitment-hiring", "ceo-recruitment-candidates"],
       },
       {
-        heading: "Workforce",
-        // The four finance-* sections and vacation-sources are the ones the owner never saw while
-        // reviewing this grouping: they are gated away from Super Admin, so they were absent from
-        // the rail he was looking at. Placed by subject — leave with leave, attendance with
-        // attendance — rather than left to fall through to "More".
-        sectionIds: [
-          "ceo-probation",
-          "field-coaching",
-          "attendance-management",
-          "early-birds",
-          "leave-management",
-          "ceo-company-calendar",
-          "finance-leave-management",
-          "vacation-sources",
-          "finance-resignations",
-          "finance-fingerprint-report",
-        ],
+        heading: "Attendance",
+        sectionIds: ["attendance-management", "early-birds", "finance-fingerprint-report"],
       },
+      { heading: "Field Coaching", sectionIds: ["field-coaching"] },
+      // "Leave", not "Leave Management": `finance-leave-management` carries a row called exactly
+      // "Leave Management", and groupAdminSections blanks a heading that repeats one of its own
+      // rows — which tests/sidebar-domains.test.ts fails on.
+      {
+        heading: "Leave",
+        sectionIds: ["leave-management", "finance-leave-management", "vacation-sources"],
+      },
+      { heading: "Workforce", sectionIds: ["ceo-company-calendar", "finance-resignations"] },
     ],
   },
   {
@@ -147,10 +143,8 @@ export const adminSidebarDomains: readonly SidebarDomain[] = [
     desc: "Salaries, the payroll runs and outstation expenses.",
     icon: ReceiptText,
     groups: [
-      {
-        heading: "Payroll",
-        sectionIds: ["payroll", "expenses-outstation", "finance-payslips-center"],
-      },
+      { heading: "Payroll Management", sectionIds: ["payroll", "finance-payslips-center"] },
+      { heading: "Outstation Expenses", sectionIds: ["expenses-outstation"] },
       // Both rows ARE the automated-payroll module (/admin/automated-payroll and its
       // /finance sibling), so the heading names the capability rather than repeating the row.
       { heading: "Automation", sectionIds: ["automated-payroll"] },
@@ -162,18 +156,16 @@ export const adminSidebarDomains: readonly SidebarDomain[] = [
     desc: "Closings, targets, the source of sales and the CRM.",
     icon: ChartColumnBig,
     groups: [
+      // Four of these eight sections were hub rows; each is now a headed band of its own modules.
+      // What is left — Sales vs Target, Targets, Monthly Closing, PM Product Master — are real
+      // single-page modules, so they keep one shared heading rather than four of one row each.
+      { heading: "Source of Sales", sectionIds: ["sales-source-of-sales"] },
+      { heading: "Weekly Sales", sectionIds: ["sales-weekly-module"] },
+      { heading: "Direct Orders", sectionIds: ["sales-direct-orders"] },
+      { heading: "CRM", sectionIds: ["crm"] },
       {
-        heading: "Sales",
-        sectionIds: [
-          "sales-source-of-sales",
-          "sales-vs-target-module",
-          "monthly-closing",
-          "sales-weekly-module",
-          "sales-direct-orders",
-          "sales-targets-module",
-          "crm",
-          "pm-product-master",
-        ],
+        heading: "Targets & Closing",
+        sectionIds: ["sales-vs-target-module", "sales-targets-module", "monthly-closing", "pm-product-master"],
       },
     ],
   },
@@ -183,10 +175,11 @@ export const adminSidebarDomains: readonly SidebarDomain[] = [
     desc: "Marketing spend and ROI, and adverse-event reporting.",
     icon: Megaphone,
     groups: [
-      // The row "Marketing & ROI" is inside this group; the heading says what the three rows
-      // have in common instead of repeating the first one.
-      { heading: "Requests & ROI", sectionIds: ["workspace-marketing-requests"] },
-      { heading: "Safety", sectionIds: ["pharmacovigilance"] },
+      // The "Marketing & ROI" row is gone — the heading now stands over that hub's eleven modules
+      // plus the two request rows that always sat beside it. Same for Pharmacovigilance, whose two
+      // modules join the Report It row.
+      { heading: "Marketing & ROI", sectionIds: ["hub-marketing-roi", "workspace-marketing-requests"] },
+      { heading: "Pharmacovigilance", sectionIds: ["hub-pharmacovigilance", "pharmacovigilance"] },
     ],
   },
   {
@@ -195,10 +188,12 @@ export const adminSidebarDomains: readonly SidebarDomain[] = [
     desc: "Master data, access control and the admin tooling.",
     icon: Settings2,
     groups: [
-      {
-        heading: "Administration",
-        sectionIds: ["admin-tools", "master-data", "access-communication"],
-      },
+      // All three were hub rows, and all three were the only row in their section — so each keeps
+      // its section id and becomes a headed band of its own modules. "Administration" is gone as a
+      // heading: it stood over exactly three rows that each opened another page of modules.
+      { heading: "Admin Tools", sectionIds: ["admin-tools"] },
+      { heading: "Master Data", sectionIds: ["master-data"] },
+      { heading: "Access & Comms", sectionIds: ["access-communication"] },
     ],
   },
 ];
