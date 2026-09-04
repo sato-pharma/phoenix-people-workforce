@@ -1320,10 +1320,9 @@ export async function calculateOutstationExpense(
 
 // ── Approval notifications ────────────────────────────────────────────────────
 // Submission auto-approves in the same request (no pending-approval step for a
-// human to act on), so this is a heads-up to the direct manager (Cc: skip-level,
-// Bcc: Super Admin oversight) rather than an action queue — the submitting
-// employee is not on it; he was just on the submission screen. Every send is
-// best-effort: a notification failure must never roll back or fail the
+// human to act on), so this is a confirmation to the employee himself (Cc: his
+// direct manager, Bcc: Super Admin oversight) rather than an action queue. Every
+// send is best-effort: a notification failure must never roll back or fail the
 // underlying submit. See submit-recipients.ts for who lands in To/Cc/Bcc and why.
 const OUTSTATION_EMPLOYEE_PORTAL_URL = "/employee-portals/expenses";
 const OUTSTATION_ADMIN_QUEUE_URL = "/admin/outstation/expense-command?tab=queue";
@@ -1390,15 +1389,13 @@ async function notifyOutstationSubmitted(
   options: { heldForReview?: boolean; reviewReason?: string | null } = {},
 ) {
   try {
-    // To = the employee's direct manager, Cc = skip-level manager, Bcc = active Super Admins. The
-    // employee himself is never on this email — he was just on the submission screen. The CEO is
-    // never on this email in any slot (owner, 2026-08-08): when the direct manager is the CEO
-    // (every NSM, and 18 others), the skip-level manager steps up to To instead, and if neither is
-    // available a Super Admin is promoted to To so oversight is never silently dropped. Nothing is
-    // sent when no one at all can be addressed.
+    // To = the employee himself, Cc = his direct manager, Bcc = active Super Admins. The CEO is
+    // never on this email in any slot other than his own To when he is the one submitting (owner,
+    // 2026-08-08): when the direct manager is the CEO (every NSM, and 18 others), the skip-level
+    // manager takes the Cc slot instead. Nothing is sent when the employee cannot be identified.
     const routing = await resolveOutstationSubmitRouting(request.employeeHrId);
     if (!routing.toHrId) {
-      logError("Outstation submit email skipped — no recipient could be resolved (unidentifiable employee, or no manager/skip-level/Super Admin available)", {
+      logError("Outstation submit email skipped — the submitting employee could not be identified", {
         labels: { event: "outstation_submit_email_recipient_unresolved", requestId: String(request.id) },
       });
       return;
@@ -1437,9 +1434,12 @@ async function notifyOutstationSubmitted(
               // Generic on purpose since 2026-08-08: EVERY submission now waits, so this line can
               // no longer name the one hold reason (an unconfirmable governorate) that used to be
               // the only way a claim reached this state. The specific reason, when there is one,
-              // is appended rather than assumed.
+              // is appended rather than assumed. Worded as "a Super Admin" rather than "you" — the
+              // metrics table is shared by every recipient (employee To, manager Cc, Super Admin
+              // Bcc), and only a Super Admin actually acts on a held claim (see "Approval Flow"
+              // below); addressing "you" would tell the employee he can approve his own claim.
               value: [
-                "Awaiting your approval — this claim is NOT added to payroll until you approve or reject it.",
+                "Awaiting Super Admin review — this claim is NOT added to payroll until a Super Admin approves or rejects it.",
                 text(options.reviewReason),
               ]
                 .filter(Boolean)
@@ -1520,9 +1520,9 @@ async function notifyOutstationSubmitted(
     // Short human summary only — the structured fields above (rendered separately as the
     // template's metrics table) already carry every detail, so repeating them here as a
     // second wall of text made the email read as duplicated content.
-    // Addressed to the direct manager (or the next available person in submit-recipients.ts'
-    // fallback chain) — he is the "To", so this reads as a heads-up about someone else's
-    // submission, not a confirmation to the submitter.
+    // Addressed to the employee himself (his manager rides Cc, Super Admin rides Bcc — see
+    // submit-recipients.ts) — third person on purpose since the same lines are also what a
+    // Cc'd manager or Bcc'd Super Admin reads.
     const messageLines = [
       ...(heldForReview
         ? [
