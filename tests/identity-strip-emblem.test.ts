@@ -68,9 +68,9 @@ export function runIdentityStripEmblemTests() {
     );
   }
 
-  const height = Number(/height: "(\d+)px",/.exec(strip)?.[1] ?? NaN);
-  const right = Number(/right: "(\d+)px",/.exec(strip)?.[1] ?? NaN);
-  const top = Number(/top: "(-?\d+)px",/.exec(strip)?.[1] ?? NaN);
+  const height: number = Number(/height: "(\d+)px",/.exec(strip)?.[1] ?? NaN);
+  const right: number = Number(/right: "(\d+)px",/.exec(strip)?.[1] ?? NaN);
+  const top: number = Number(/top: "(-?\d+)px",/.exec(strip)?.[1] ?? NaN);
   assert.ok(
     Number.isFinite(height) && Number.isFinite(right) && Number.isFinite(top),
     "the emblem's three inline numbers must stay readable — everything below is derived from them",
@@ -105,7 +105,7 @@ export function runIdentityStripEmblemTests() {
     ["mobile", /(?:^|\s)mr-\[(\d+)px\]/, WRAPPER_PR.mobile],
     ["sm", /\bsm:mr-\[(\d+)px\]/, WRAPPER_PR.sm],
   ] as const) {
-    const margin = Number(pattern.exec(ruleRow ?? "")?.[1] ?? NaN);
+    const margin: number = Number(pattern.exec(ruleRow ?? "")?.[1] ?? NaN);
     assert.ok(
       Number.isFinite(margin),
       `the rule row lost its ${label} right margin — the orange tail then runs across the phoenix`,
