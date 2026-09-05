@@ -72,7 +72,7 @@ export default async function AdminCompanyCalendarPage() {
         <div className="relative min-w-0 space-y-1.5 pl-3.5">
           <span aria-hidden="true" className={pageHeaderRailClassName} />
           <p className={pageHeaderKickerClassName}>Company · Events</p>
-          <h1 className={pageHeaderTitleClassName}>Events Calendar</h1>
+          <h1 className={pageHeaderTitleClassName}>Company Calendar</h1>
           <p className={pageHeaderDescriptionClassName}>
             Company and team events, public holidays, approved leave, plan days and team birthdays —
             {" "}{reachSentence}

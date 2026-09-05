@@ -311,6 +311,17 @@ export const adminNavigationSectionSeeds = [
     label: "Probation",
   },
   {
+    // RENAMED to "Planning Calendar" on 2026-09-05 (owner). The id keeps its old spelling because a
+    // section id is not private to this file — sidebar-layout-editor.tsx saves a per-role layout
+    // keyed by it, so renaming the id silently orphans every saved arrangement.
+    //
+    // The two rows read the wrong way round against the pages behind them. This href is the
+    // PLANNING calendar — the page titles itself "Company Planning Calendar" and its eyebrow is
+    // "Planning Calendar" — while /admin/company-calendar, the real company events / holidays /
+    // leave / birthdays calendar, was the one labelled "Events Calendar". Anyone looking for the
+    // company calendar opened the planning one. Both names now sit on their own page, and this one
+    // matches what three other places in this repo already call it: the /hr row below, this href's
+    // entry in HUB_ROW_RAIL_LABELS, and the page's own eyebrow.
     id: "ceo-company-calendar",
     items: [
       // Finance Manager merged in from the former `finance-events-calendar` section (module audit,
@@ -333,9 +344,9 @@ export const adminNavigationSectionSeeds = [
       //           unrestricted default and sees every calendar-eligible plan, company-wide.
       // If anyone ever adds a "finance manager" branch to that function, this row starts showing
       // him a narrowed calendar without the nav changing at all.
-      { href: "/admin/weekly-plans/calendar", icon: CalendarRange, label: "Company Calendar", permissions: [{ resource: "weekly_plans", action: "read" }], roles: ["CEO", "SFE Manager", "Finance Manager", "HR Advisory"] },
+      { href: "/admin/weekly-plans/calendar", icon: CalendarRange, label: "Planning Calendar", permissions: [{ resource: "weekly_plans", action: "read" }], roles: ["CEO", "SFE Manager", "Finance Manager", "HR Advisory"] },
     ],
-    label: "Company Calendar",
+    label: "Planning Calendar",
   },
   {
     id: "ceo-recruitment-candidates",
@@ -2853,14 +2864,20 @@ export const attendanceManagementPageItems: readonly AdminToolsPageItem[] = [
   {
     href: "/hr-calendar",
     icon: CalendarDays,
-    label: "Company Calendar",
+    // "HR Calendar", not "Company Calendar" (2026-09-05). It carried the longer name and was
+    // shortened only on the RAIL, through HUB_ROW_RAIL_LABELS; that entry is gone because the
+    // card now says the same thing in both places. It had to move: /admin/company-calendar took
+    // the name "Company Calendar" in the same change, and two cards reading identically on one
+    // hub page is the defect tests/sidebar-rows-read-uniquely.test.ts catches on the rail and
+    // nothing catches here.
+    label: "HR Calendar",
     description: "Company-wide events, holidays, and leave calendar.",
     permissions: [{ resource: "hr_calendar" }],
   },
   {
     href: "/admin/company-calendar",
     icon: CalendarDays,
-    label: "Events Calendar",
+    label: "Company Calendar",
     description: "Admin host of the portal events calendar — events, holidays, leave, and birthdays.",
     permissions: [{ resource: "attendance", action: "read" }],
     roles: ["Super Admin"],
@@ -3896,6 +3913,27 @@ type AdminHubPromotion = {
   hubHref: `/${string}`;
   items: readonly AdminToolsPageItem[];
   /**
+   * Split this hub's rows across SEVERAL bands instead of one.
+   *
+   * Ten hubs carry more rows than a band should hold — Admin Tools alone was 17, Source of Sales
+   * 15 — and a band that long is a wall the eye slides off. Splitting them here rather than in
+   * src/config/sidebar-domains.ts is deliberate: that layer groups whole SECTIONS, and it runs
+   * after `applyPersonalLayout`, so teaching it to take a subset of a section's rows would make a
+   * band's contents depend on whether the viewer had rearranged anything. Emitting real sections
+   * keeps every downstream stage — gating, dedupe, personal layout, the domain grouping — working
+   * on exactly the shape it already handles.
+   *
+   * The FIRST entry must reuse `sectionId`, for the same reason `sectionId` reuses the id of the
+   * section the hub row occupied: sidebar-layout-editor.tsx saves a per-role layout keyed by
+   * section id, so the biggest slice keeps the id any saved arrangement already names.
+   *
+   * Every row of the hub must appear in exactly one entry. A row named nowhere is NOT dropped —
+   * `hubBandsFor` appends it to the first band — but tests/nav-hub-promotion.test.ts fails on it,
+   * because landing in the first band silently is how a new module ends up filed under whatever
+   * heading happens to come first.
+   */
+  split?: readonly { heading: string; hrefs: readonly string[]; sectionId: string }[];
+  /**
    * Where the promoted rows land.
    *
    * Twelve of these REUSE the id of the section the hub row was the only occupant of, because
@@ -3921,10 +3959,13 @@ type AdminHubPromotion = {
  * Measured, not guessed, by `pnpm run ui:measure-sidebar-labels`;
  * tests/sidebar-label-width.test.ts is what holds it honest.
  *
- * WIDTH IS NOT THE ONLY REASON ANY MORE. /hr-calendar is here because its card label collides:
- * on the hub page "Company Calendar" was unambiguous, and on the rail it sat a few rows from
- * /admin/weekly-plans/calendar, which the CEO, SFE Manager and Finance Manager have always known
- * by that same name. Two different pages under one word is the defect
+ * WIDTH IS NOT THE ONLY REASON ANY MORE. /hr-calendar is here because its card label collides.
+ * The page it collided with changed on 2026-09-05 and the entry still earns its place: it used to
+ * sit a few rows from /admin/weekly-plans/calendar, which the CEO, SFE Manager and Finance Manager
+ * knew as "Company Calendar"; that row is now "Planning Calendar", and /admin/company-calendar has
+ * taken the name instead. So /hr-calendar still must not be a second "Company Calendar" on the same
+ * rail — only the neighbour it would collide with is different. Two different pages under one word
+ * is the defect
  * tests/sidebar-rows-read-uniquely.test.ts exists to catch, and the newcomer is the one that
  * gives way — the rail row that was already there keeps its name.
  */
@@ -3936,7 +3977,6 @@ const HUB_ROW_RAIL_LABELS: Readonly<Record<string, string>> = {
   "/admin/outstation/expense-command": "Expense Center",
   "/admin/screening-questions": "Screening Questions",
   "/admin/weekly-plans/calendar": "Planning Calendar",
-  "/hr-calendar": "HR Calendar",
   "/attendance/employee-day-report": "Day-by-Day Report",
   "/sales/weekly/dashboard": "Weekly Dashboard",
   "/sales/weekly/distributor-editor": "Distributor Columns",
@@ -3949,21 +3989,340 @@ const HUB_ROW_RAIL_LABELS: Readonly<Record<string, string>> = {
  * same file.
  */
 export const adminHubPromotions: readonly AdminHubPromotion[] = [
-  { heading: "People Management", hubHref: "/admin/people-management", items: peopleManagementPageItems, sectionId: "hub-people-management" },
+  {
+    heading: "People Management",
+    hubHref: "/admin/people-management",
+    items: peopleManagementPageItems,
+    sectionId: "hub-people-management",
+    split: [
+      {
+        heading: "Employee Records",
+        sectionId: "hub-people-management",
+        hrefs: [
+          "/employees",
+          "/contracts",
+          "/resignations",
+          "/retention",
+          "/mailbox-offboarding",
+        ],
+      },
+      {
+        heading: "HR Reports",
+        sectionId: "hub-people-reports",
+        hrefs: [
+          "/reports/vacancies",
+          "/admin/vacation-report",
+          "/admin/company-activity-report",
+        ],
+      },
+      {
+        heading: "Plans & Support",
+        sectionId: "hub-people-plans",
+        hrefs: [
+          "/admin/weekly-plans",
+          "/admin/support-requests",
+        ],
+      },
+    ],
+  },
   { heading: "Probation Tools", hubHref: "/admin/probation-tools", items: probationPageItems, sectionId: "hub-probation-tools" },
-  { heading: "Recruitment & Hiring", hubHref: "/admin/recruitment-hiring", items: recruitmentHiringPageItems, sectionId: "hub-recruitment-hiring" },
+  {
+    heading: "Recruitment & Hiring",
+    hubHref: "/admin/recruitment-hiring",
+    items: recruitmentHiringPageItems,
+    sectionId: "hub-recruitment-hiring",
+    split: [
+      {
+        heading: "Recruitment & Hiring",
+        sectionId: "hub-recruitment-hiring",
+        hrefs: [
+          "/recruitment",
+          "/cv-database",
+          "/offers",
+          "/hiring-documents",
+          "/hiring-pack",
+        ],
+      },
+      {
+        heading: "CV Pipeline",
+        sectionId: "hub-recruitment-pipeline",
+        hrefs: [
+          "/recruitment/intake-health",
+          "/recruitment/contact-review",
+          "/recruitment/whatsapp-replies",
+        ],
+      },
+    ],
+  },
   { heading: "Field Coaching", hubHref: "/admin/field-coaching", items: fieldCoachingPageItems, sectionId: "field-coaching" },
-  { heading: "Attendance", hubHref: "/attendance", items: attendanceManagementPageItems, sectionId: "attendance-management" },
+  {
+    heading: "Attendance",
+    hubHref: "/attendance",
+    items: attendanceManagementPageItems,
+    sectionId: "attendance-management",
+    split: [
+      {
+        heading: "Attendance Reports",
+        sectionId: "attendance-management",
+        hrefs: [
+          "/attendance/fingerprint-report",
+          "/attendance/employee-day-report",
+          "/attendance/monthly-summary",
+          "/attendance/analytics",
+          "/attendance/exceptions",
+        ],
+      },
+      {
+        heading: "Calendars",
+        sectionId: "attendance-management-calendars",
+        hrefs: [
+          "/hr-calendar",
+          "/admin/company-calendar",
+          "/admin/private-calendars",
+          "/attendance/holiday-calendar",
+          "/admin/weekly-plans/calendar",
+        ],
+      },
+      {
+        heading: "Attendance Setup",
+        sectionId: "attendance-management-setup",
+        hrefs: [
+          "/attendance/device-user-mapping",
+          "/attendance/policies",
+        ],
+      },
+    ],
+  },
   { heading: "Leave Management", hubHref: "/leave-management", items: leaveManagementPageItems, sectionId: "leave-management" },
   { heading: "Payroll Management", hubHref: "/admin/payroll-management", items: payrollManagementPageItems, sectionId: "payroll" },
-  { heading: "Outstation Expenses", hubHref: "/admin/outstation-expenses", items: outstationExpensesPageItems, sectionId: "expenses-outstation" },
-  { heading: "Source of Sales", hubHref: "/sales/source-of-sales-tools", items: sourceOfSalesPageItems, sectionId: "sales-source-of-sales" },
+  {
+    heading: "Outstation Expenses",
+    hubHref: "/admin/outstation-expenses",
+    items: outstationExpensesPageItems,
+    sectionId: "expenses-outstation",
+    split: [
+      {
+        heading: "Expense Desk",
+        sectionId: "expenses-outstation",
+        hrefs: [
+          "/admin/outstation/expense-approvals",
+          "/admin/outstation/expense-command",
+          "/admin/outstation/expense-command?tab=queue",
+          "/admin/outstation/expense-command?tab=queue&action=create-manager-expense",
+        ],
+      },
+      {
+        heading: "Expense Records",
+        sectionId: "expenses-outstation-records",
+        hrefs: [
+          "/admin/outstation/expenses/dashboard",
+          "/admin/outstation/expenses",
+          "/admin/outstation/policy",
+        ],
+      },
+    ],
+  },
+  {
+    heading: "Source of Sales",
+    hubHref: "/sales/source-of-sales-tools",
+    items: sourceOfSalesPageItems,
+    sectionId: "sales-source-of-sales",
+    split: [
+      {
+        heading: "Closing & Achievement",
+        sectionId: "sales-source-of-sales",
+        hrefs: [
+          "/sales",
+          "/sales/monthly-dashboard",
+          "/sales/monthly-closing",
+          "/sales/monthly-closing/performance-review",
+          "/sales/closing-corrections",
+        ],
+      },
+      {
+        heading: "Sales Imports",
+        sectionId: "sales-sos-imports",
+        hrefs: [
+          "/sales/upload",
+          "/sales/import",
+          "/sales/normalizer",
+          "/sales/missing-data",
+        ],
+      },
+      {
+        heading: "Sales Mapping",
+        sectionId: "sales-sos-mapping",
+        hrefs: [
+          "/sales/mapping-database",
+          "/sales/database-mapping",
+          "/sales/territory-management",
+          "/sales/distributor-profiles",
+        ],
+      },
+      {
+        heading: "Sales Integrity",
+        sectionId: "sales-sos-integrity",
+        hrefs: [
+          "/sales/diagnostics",
+          "/sales/truth-check",
+        ],
+      },
+    ],
+  },
   { heading: "Weekly Sales", hubHref: "/sales/weekly-tools", items: weeklySalesToolsPageItems, sectionId: "sales-weekly-module" },
-  { heading: "Direct Orders", hubHref: "/admin/direct-orders", items: directOrdersPageItems, sectionId: "sales-direct-orders" },
-  { heading: "CRM", hubHref: "/admin/crm-tools", items: crmPageItems, sectionId: "crm" },
-  { heading: "Marketing & ROI", hubHref: "/admin/marketing-roi", items: marketingRoiPageItems, sectionId: "hub-marketing-roi" },
+  {
+    heading: "Direct Orders",
+    hubHref: "/admin/direct-orders",
+    items: directOrdersPageItems,
+    sectionId: "sales-direct-orders",
+    split: [
+      {
+        heading: "Direct Orders",
+        sectionId: "sales-direct-orders",
+        hrefs: [
+          "/admin/direct-orders/report",
+          "/admin/direct-orders/held",
+          "/admin/direct-orders/approval-exceptions",
+          "/admin/direct-orders/rep-counters",
+        ],
+      },
+      {
+        heading: "Direct Order Pharmacies",
+        sectionId: "sales-direct-orders-pharmacies",
+        hrefs: [
+          "/admin/direct-orders/pharmacies",
+          "/admin/direct-orders/validations",
+          "/admin/direct-orders/pharmacy-variances",
+          "/admin/direct-orders/cleanup",
+        ],
+      },
+      {
+        heading: "Direct Order Setup",
+        sectionId: "sales-direct-orders-setup",
+        hrefs: [
+          "/admin/direct-orders/caps",
+          "/admin/direct-orders/reconciliation",
+        ],
+      },
+    ],
+  },
+  {
+    heading: "CRM",
+    hubHref: "/admin/crm-tools",
+    items: crmPageItems,
+    sectionId: "crm",
+    split: [
+      {
+        heading: "CRM Boards",
+        sectionId: "crm",
+        hrefs: [
+          "/admin/crm",
+          "/admin/reps-list",
+          "/admin/reps-plans",
+          "/admin/kpis",
+          "/admin/plan-verification",
+        ],
+      },
+      {
+        heading: "CRM Data Quality",
+        sectionId: "crm-integrity",
+        hrefs: [
+          "/admin/crm-integrity",
+          "/admin/double-visit-analytics",
+          "/admin/double-visit-data-integrity",
+          "/admin/brick-coverage",
+          "/admin/field-workforce-compliance",
+        ],
+      },
+    ],
+  },
+  {
+    heading: "Marketing & ROI",
+    hubHref: "/admin/marketing-roi",
+    items: marketingRoiPageItems,
+    sectionId: "hub-marketing-roi",
+    split: [
+      {
+        heading: "ROI",
+        sectionId: "hub-marketing-roi",
+        hrefs: [
+          "/admin/marketing-roi-tracker",
+          "/admin/sales-marketing-intelligence",
+          "/admin/marketing-requests/roi-tracking",
+          "/admin/marketing-roi-report",
+          "/admin/pm-products",
+        ],
+      },
+      {
+        heading: "Requests & Inbox",
+        sectionId: "hub-marketing-requests",
+        hrefs: [
+          "/admin/marketing-requests",
+          "/admin/marketing-requests/all",
+          "/admin/marketing-requests/bulk-upload",
+        ],
+      },
+      {
+        heading: "Validation & Control",
+        sectionId: "hub-marketing-control",
+        hrefs: [
+          "/admin/marketing-requests/coverage-report",
+          "/admin/marketing-requests/validation",
+          "/admin/marketing-requests/control",
+        ],
+      },
+    ],
+  },
   { heading: "Pharmacovigilance", hubHref: "/admin/pharmacovigilance", items: pharmacovigilancePageItems, sectionId: "hub-pharmacovigilance" },
-  { heading: "Admin Tools", hubHref: "/admin/admin-tools", items: adminToolsPageItems, sectionId: "admin-tools" },
+  {
+    heading: "Admin Tools",
+    hubHref: "/admin/admin-tools",
+    items: adminToolsPageItems,
+    sectionId: "admin-tools",
+    split: [
+      {
+        heading: "Platform Health",
+        sectionId: "admin-tools",
+        hrefs: [
+          "/admin/monitoring",
+          "/admin/system-issues",
+          "/admin/data-health",
+          "/admin/synthetic-journeys",
+          "/admin/activity-control",
+        ],
+      },
+      {
+        heading: "Email & Notifications",
+        sectionId: "admin-tools-comms",
+        hrefs: [
+          "/admin/email-control-center",
+          "/admin/notification-recipients",
+          "/admin/notification-confidence",
+          "/admin/notifications/email",
+          "/admin/notifications/email-tracking",
+          "/admin/mailbox-monitor",
+        ],
+      },
+      {
+        heading: "Data & Maintenance",
+        sectionId: "admin-tools-data",
+        hrefs: [
+          "/admin/logs",
+          "/admin/data-backup",
+          "/admin/system-cleanup",
+          "/admin/workflow-control",
+        ],
+      },
+      {
+        heading: "My Tools",
+        sectionId: "admin-tools-personal",
+        hrefs: [
+          "/admin/sidebar-layout",
+          "/admin/dev-preview",
+        ],
+      },
+    ],
+  },
   { heading: "Master Data", hubHref: "/admin/master-data", items: masterDataPageItems, sectionId: "master-data" },
   // NESTED. This one is not a seed row — it is a CARD on the Master Data hub above, and it opens a
   // page of six more modules. It survived the first pass of this promotion invisibly: the rail row
@@ -3972,7 +4331,35 @@ export const adminHubPromotions: readonly AdminHubPromotion[] = [
   // band carries BOTH gates (see NavigationSection.gate). Measured before the change: 8 pages were
   // catalogue-only, 6 of them behind this door.
   { heading: "Customers Database", hubHref: "/admin/customers-database", items: customersDatabasePageItems, sectionId: "hub-customers-database" },
-  { heading: "Access & Comms", hubHref: "/admin/access-communication", items: accessCommunicationPageItems, sectionId: "access-communication" },
+  {
+    heading: "Access & Comms",
+    hubHref: "/admin/access-communication",
+    items: accessCommunicationPageItems,
+    sectionId: "access-communication",
+    split: [
+      {
+        heading: "Access Control",
+        sectionId: "access-communication",
+        hrefs: [
+          "/admin/access",
+          "/admin/scope-visibility",
+          "/admin/module-locks",
+          "/admin/screening-questions",
+        ],
+      },
+      {
+        heading: "Comms Templates",
+        sectionId: "access-communication-templates",
+        hrefs: [
+          "/admin/email-reply-composer",
+          "/admin/email-templates",
+          "/admin/notifications/telegram",
+          "/admin/notifications/telegram/templates",
+          "/admin/notification-confidence",
+        ],
+      },
+    ],
+  },
 ];
 
 /**
@@ -3997,6 +4384,48 @@ function hubRowsFor(hub: AdminHubPromotion): readonly NavigationSectionItem[] {
       permissions: card.permissions,
       roles: card.roles,
     }));
+}
+
+type HubBand = { heading: string; items: NavigationSectionItem[]; sectionId: string };
+
+/**
+ * A hub's rows as the band or bands it becomes.
+ *
+ * Unsplit, this is exactly what it always was: one band carrying the hub's name and id. Split, the
+ * rows are dealt into the named bands IN THE ORDER THE SPLIT WRITES THEM, which is the reading
+ * order they render in — not the order they happen to sit in the hub's own card list.
+ *
+ * A row named by no band is appended to the first rather than dropped. That is the same choice
+ * `UNGROUPED_DOMAIN` makes one layer up and for the same reason: a nav row silently ceasing to
+ * exist is invisible in review — the page still works, the link is simply unreachable — so the
+ * runtime keeps it and tests/nav-hub-promotion.test.ts is what makes the mistake loud.
+ *
+ * An EMPTY band is dropped, which is also load-bearing. Its id then appears in
+ * src/config/sidebar-domains.ts and nowhere in `adminNavigationSections`, and the "phantom
+ * section" assertion in tests/sidebar-domains.test.ts fails — so a split that stops matching the
+ * hub's hrefs is caught rather than rendering a heading over nothing.
+ */
+function hubBandsFor(hub: AdminHubPromotion): readonly HubBand[] {
+  const rows = hubRowsFor(hub);
+  if (hub.split === undefined) {
+    return [{ heading: hub.heading, items: [...rows], sectionId: hub.sectionId }];
+  }
+
+  const unclaimed = new Map<string, NavigationSectionItem>(rows.map((row) => [row.href, row]));
+  const bands: HubBand[] = hub.split.map((band) => {
+    const items: NavigationSectionItem[] = [];
+    for (const href of band.hrefs) {
+      const row = unclaimed.get(href);
+      if (row !== undefined) {
+        items.push(row);
+        unclaimed.delete(href);
+      }
+    }
+    return { heading: band.heading, items, sectionId: band.sectionId };
+  });
+
+  if (bands.length > 0) bands[0].items.push(...unclaimed.values());
+  return bands.filter((band) => band.items.length > 0);
 }
 
 /**
@@ -4044,18 +4473,18 @@ function promoteHubRows(seeds: readonly NavigationSection[]): readonly Navigatio
         }
         moved = true;
         expanded.add(hub.hubHref);
-        promoted.push({
-          // The band's gates are its parent's plus the row's own — see NavigationSection.gate for
-          // why this is a list. For a seed row the parent list is empty and this is the single
-          // gate it always was.
-          gate: [
-            ...(section.gate ?? []),
-            { excludedRoles: item.excludedRoles, permissions: item.permissions, roles: item.roles },
-          ],
-          id: hub.sectionId,
-          items: hubRowsFor(hub),
-          label: hub.heading,
-        });
+        // The band's gates are its parent's plus the row's own — see NavigationSection.gate for
+        // why this is a list. For a seed row the parent list is empty and this is the single
+        // gate it always was. Every band of a split hub carries the SAME gate: they are one hub's
+        // rows drawn under several headings, not several hubs, so splitting must not change who
+        // can reach any of them.
+        const gate = [
+          ...(section.gate ?? []),
+          { excludedRoles: item.excludedRoles, permissions: item.permissions, roles: item.roles },
+        ];
+        for (const band of hubBandsFor(hub)) {
+          promoted.push({ gate, id: band.sectionId, items: band.items, label: band.heading });
+        }
       }
       if (kept.length > 0) next.push({ ...section, items: kept });
       next.push(...promoted);

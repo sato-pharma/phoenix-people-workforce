@@ -257,6 +257,72 @@ export function runNavHubPromotionTests() {
       "doors with their modules; a figure this low means the comparison is reading the same set twice",
   );
 
+  // ── 4b. a split hub deals EVERY row into exactly one band ───────────────────
+  //
+  // Ten hubs are split into several bands (`AdminHubPromotion.split`, 2026-09-05) because a band of
+  // 17 rows is a wall the eye slides off. `hubBandsFor` is deliberately forgiving at runtime — a row
+  // no band names is appended to the FIRST band rather than dropped, because an unreachable link is
+  // the one failure nobody notices — so this is the check that makes the mistake loud instead.
+  //
+  // Landing in the first band silently is exactly how a new module ends up filed under whatever
+  // heading happens to come first: it renders, it works, and it reads as someone's decision. The
+  // hrefs are also checked the other way round, because a split still naming an href its hub has
+  // dropped leaves a band that can only shrink, and an EMPTY band is a phantom section id in
+  // src/config/sidebar-domains.ts — caught there, but with a message about the wrong file.
+  let splitHubs = 0;
+  for (const hub of adminHubPromotions) {
+    if (hub.split === undefined) continue;
+    splitHubs += 1;
+
+    // The hub's own card is dropped by `hubRowsFor` — keeping it would rebuild in one row the
+    // "press it and land on a page of modules" the promotion exists to remove — so compare against
+    // the rows the hub actually becomes, never against `hub.items`.
+    const rows = hub.items.filter((card) => card.href !== hub.hubHref).map((card) => card.href);
+    const named = hub.split.flatMap((band) => band.hrefs);
+
+    assert.deepEqual(
+      named.filter((href, index) => named.indexOf(href) !== index),
+      [],
+      `the "${hub.heading}" split names an href in two bands. The first band wins and the second ` +
+        "renders a row short, which reads as a gating problem rather than as a typo here",
+    );
+    assert.deepEqual(
+      rows.filter((href) => !named.includes(href)).sort(),
+      [],
+      `the "${hub.heading}" split leaves rows unnamed. They are appended to its FIRST band rather ` +
+        "than dropped, so nothing looks broken — they are simply filed under a heading nobody chose",
+    );
+    assert.deepEqual(
+      named.filter((href) => !rows.includes(href)).sort(),
+      [],
+      `the "${hub.heading}" split names hrefs the hub no longer offers. Drop them here, or the band ` +
+        "shrinks toward empty and fails as a phantom section in src/config/sidebar-domains.ts",
+    );
+
+    // The first band inherits the id, and that is not cosmetic: sidebar-layout-editor.tsx saves a
+    // per-role arrangement keyed by section id, so the id has to stay on the biggest slice or every
+    // saved layout silently loses the section it names.
+    assert.equal(
+      hub.split[0].sectionId,
+      hub.sectionId,
+      `the "${hub.heading}" split must open with its own sectionId (${hub.sectionId}); a saved ` +
+        "navigation layout keyed by that id is orphaned otherwise",
+    );
+
+    const ids = hub.split.map((band) => band.sectionId);
+    assert.equal(
+      new Set(ids).size,
+      ids.length,
+      `the "${hub.heading}" split reuses a sectionId across two bands: ${ids.join(", ")}`,
+    );
+  }
+  assert.equal(
+    splitHubs,
+    10,
+    `${splitHubs} hubs carry a split — 10 when the rebalance shipped. Every assertion above loops ` +
+      "over them, so a collapsed list passes without checking anything",
+  );
+
   // ── 5. Sales Analytics stays off the rail ───────────────────────────────────
   //
   // Said twice on the day this shipped: "note that I don't want sales analytics module. Leave it
