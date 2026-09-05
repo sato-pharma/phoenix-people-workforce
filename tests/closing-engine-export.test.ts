@@ -307,6 +307,48 @@ export async function runClosingEngineExportTests() {
     );
   }
 
+  // ── The emblem is a screen mark and must not reach the paper ────────────────────────────────
+  //
+  // Owner's instruction, 2026-09-05. Asserted on the EMITTED workbook rather than on the source,
+  // because the flag lives on the anchor and there is a second writer to that same part:
+  // `clearTitleEmblem` moves the emblem for a long line name, and a build where it moved is the
+  // one that would silently lose the attribute. Both builds are checked — the .xlsm's macro sets
+  // `PrintObject = False` only in memory, so the saved package is what decides the printed page
+  // when the button has not been pressed.
+  //
+  // Anchor-scoped, never a bare count of the attribute: `fPrintsWithSheet="0"` appearing SOMEWHERE
+  // in a drawing says nothing about which shape carries it, and the slicers deliberately keep
+  // printing. A file-wide match would pass with the flag on the wrong element.
+  const anchorsOf = (xml: string) =>
+    xml.match(/<xdr:(twoCellAnchor|oneCellAnchor|absoluteAnchor)\b[^>]*>[\s\S]*?<\/xdr:\1>/g) ?? [];
+  let emblemsChecked = 0;
+  let slicersChecked = 0;
+  for (const [label, drawings] of [["xlsm", macroDrawings], ["xlsx", plainDrawings]] as const) {
+    for (const [name, xml] of Object.entries(drawings)) {
+      for (const anchor of anchorsOf(xml)) {
+        const clientData = /<xdr:clientData\b[^>]*\/>|<xdr:clientData\b[^>]*>[\s\S]*?<\/xdr:clientData>/.exec(anchor)?.[0] ?? "";
+        if (anchor.includes("<xdr:pic")) {
+          emblemsChecked += 1;
+          assert.match(
+            clientData,
+            /fPrintsWithSheet="0"/,
+            `${label} ${name}: the emblem prints onto the page — the owner asked for it off the paper`,
+          );
+        } else if (anchor.includes("<mc:AlternateContent")) {
+          slicersChecked += 1;
+          assert.ok(
+            !/fPrintsWithSheet="0"/.test(clientData),
+            `${label} ${name}: a slicer must KEEP printing — it says which regions the sheet covers`,
+          );
+        }
+      }
+    }
+  }
+  // A loop that matched nothing would pass every assertion above it. These are the counts measured
+  // on the owner's August Anti-Infective export: 12 emblems and 2 slicers, in each of the two builds.
+  assert.equal(emblemsChecked, 24, "both builds must have been walked — 12 emblem anchors in each");
+  assert.equal(slicersChecked, 4, "both builds must have been walked — 2 slicer anchors in each");
+
   const cacheDefinition = await zip.file("xl/pivotCache/pivotCacheDefinition1.xml")!.async("string");
   assert.match(cacheDefinition, /<worksheetSource[^>]*name="SalesData"/, "the cache reads the TABLE, not a fixed range");
   assert.ok(!/June/.test(cacheDefinition), "no month name may be baked into the cache — it is filled every month");

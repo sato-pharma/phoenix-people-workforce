@@ -275,6 +275,7 @@ export async function fillClosingEngine(fill: ClosingEngineFill, options: FillOp
   await orderPivotItems(zip, fill);
   await dropStaleLabelFormats(zip);
   await clearTitleEmblem(zip, fill);
+  await hideEmblemFromPrint(zip);
   await restorePivotCacheSharedItems(zip, fill);
   await dropDeadSharedStrings(zip);
   if (options.macroFree) await stripMacros(zip);
@@ -1566,6 +1567,54 @@ async function clearTitleEmblem(zip: JSZip, fill: ClosingEngineFill): Promise<vo
       ? moveAnchor(widthOf, emblem, needed, anchorX(widthOf, to) - left)
       : emblem.replace(from, writeAnchorX(from, locateColumn(widthOf, needed)));
     zip.file(found.name, found.xml.replace(emblem, moved));
+  }
+}
+
+/**
+ * The `<xdr:clientData>` that closes an anchor — the empty form or the paired one, either of which
+ * may already carry attributes. `CT_AnchorClientData` has no child elements, only `fLocksWithSheet`
+ * and `fPrintsWithSheet`, so collapsing the paired form to an empty tag loses nothing.
+ */
+const CLIENT_DATA = /<xdr:clientData\b([^>]*?)\/>|<xdr:clientData\b([^>]*?)>[\s\S]*?<\/xdr:clientData>/;
+
+/**
+ * Rewrite one `<xdr:clientData>` so its shape does not print, keeping whatever else it carried.
+ * `fLocksWithSheet` travels on this same element, and dropping it would unlock every picture on
+ * the sheet — so the existing attributes are preserved and only this one is replaced.
+ */
+function clientDataWithoutPrinting(_match: string, selfClosing?: string, paired?: string): string {
+  const kept = (selfClosing ?? paired ?? "").replace(/\s*fPrintsWithSheet="[^"]*"/g, "").trim();
+  return `<xdr:clientData${kept ? ` ${kept}` : ""} fPrintsWithSheet="0"/>`;
+}
+
+/**
+ * Keep the emblem off the PRINTED page. Owner's instruction, 2026-09-05.
+ *
+ * The logo is a screen mark here: every sheet's own A1 title already names the company, the month
+ * and the line, so on paper the emblem is a second masthead competing with the one the sheet
+ * carries. `PhxExportPdf` has always walked every shape and turned printing off before it renders,
+ * which is why the PDFs the button produces do not show it.
+ *
+ * BOTH BUILDS, not only the macro-free one. `PrintObject = False` set by the macro is in-memory
+ * and dies with the workbook unless it is saved, and the flag as SAVED in the owner's own engine
+ * says the pictures DO print — measured 2026-09-05 on his August Anti-Infective export: 38 buttons
+ * off, 12 pictures on, 2 slicers on. So the .xlsm's printed page depended on the macro having run,
+ * for that sheet, in that session. Written into the package it is ordinary stored state, and the
+ * two formats then print the same page whether or not anything ran.
+ *
+ * PICTURES ONLY. The two slicers keep printing: the owner asked for the emblem, and a slicer is
+ * what tells a reader which regions the sheet in their hand actually covers.
+ *
+ * Runs AFTER `clearTitleEmblem`, which rewrites these same anchors — the flag is the last word on
+ * them either way, but reading the moved anchor is what keeps the two from fighting over one part.
+ */
+async function hideEmblemFromPrint(zip: JSZip): Promise<void> {
+  for (const file of zip.file(/^xl\/drawings\/drawing\d+\.xml$/)) {
+    const xml = await file.async("string");
+    const printless = xml.replace(DRAWING_ANCHOR, (anchor) =>
+      anchor.includes("<xdr:pic") ? anchor.replace(CLIENT_DATA, clientDataWithoutPrinting) : anchor,
+    );
+    if (printless !== xml) zip.file(file.name, printless);
   }
 }
 
