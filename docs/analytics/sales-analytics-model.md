@@ -12,6 +12,14 @@ set). A prior audit got this wrong by only grepping `supabase/migrations/` and f
 `validation_state` column references as a "critical schema mismatch" — they are correct. Always
 grep BOTH locations for `create table.*<table_name>` before concluding a column doesn't exist.
 
+> **`sales_targets` and `sales_target_batches` are EMPTY LEGACY — never read them.** The note
+> above is about column *shape*, not about where the data is. Both tables hold zero rows on
+> production and always have. The live sales targets are **`au.monthly_targets`**, reached
+> through the service-role RPCs `phx_monthly_targets` / `phx_upsert_monthly_targets`. Both
+> tables now carry a Postgres `COMMENT` saying so. Because they are empty rather than absent,
+> a query against them returns a confident, wrong zero instead of an error — that has already
+> misled one session. See `src/lib/sales/monthly-targets.ts`.
+
 ## Three pipelines — three source families
 
 ### 1. Source of Sales (SoS)
