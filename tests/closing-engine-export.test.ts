@@ -1204,6 +1204,25 @@ export async function runClosingEngineExportTests() {
   const navRels = async (drawing: string) =>
     (await navZip.file(drawing.replace("drawings/", "drawings/_rels/") + ".rels")!.async("string"));
 
+  // Which sheet each drawing belongs to. Needed for the self-link check below, and the reason that
+  // check is worth the mapping: a bar offering the page you are already on is the one defect that
+  // looks completely correct in the XML — every relationship resolves, every target is well formed.
+  const navSheetOf = new Map<string, string>();
+  {
+    const workbook = await navZip.file("xl/workbook.xml")!.async("string");
+    const workbookRels = await navZip.file("xl/_rels/workbook.xml.rels")!.async("string");
+    const target = Object.fromEntries(
+      [...workbookRels.matchAll(/Id="(rId\d+)"[^>]*Target="([^"]+)"/g)].map((m) => [m[1], m[2]]),
+    );
+    for (const sheet of workbook.matchAll(/<sheet name="([^"]+)"[^>]*r:id="(rId\d+)"/g)) {
+      const path = `xl/${(target[sheet[2]] ?? "").replace(/^\/?(xl\/)?/, "")}`;
+      const rels = navZip.file(path.replace(/worksheets\/([^/]+)$/, "worksheets/_rels/$1.rels"));
+      if (!rels) continue;
+      const drawing = /Target="\.\.\/(drawings\/drawing\d+\.xml)"/.exec(await rels.async("string"))?.[1];
+      if (drawing) navSheetOf.set(`xl/${drawing}`, sheet[1]);
+    }
+  }
+
   let navTotal = 0;
   let selfLinks = 0;
   let printingNav = 0;
@@ -1221,6 +1240,7 @@ export async function runClosingEngineExportTests() {
 
       navTotal += 1;
       jumpTargets.add(target);
+      if (`#'${navSheetOf.get(file.name) ?? ""}'!A1` === target) selfLinks += 1;
       assert.ok(
         !/TargetMode="External"/.test(rel![0]),
         `${file.name}: an in-document jump must NOT be External — Excel refuses to follow one that is`,
@@ -1233,6 +1253,10 @@ export async function runClosingEngineExportTests() {
   }
   assert.ok(navTotal >= 30, `every sheet should carry a bar; only ${navTotal} jump buttons were emitted`);
   assert.equal(printingNav, 0, "the navigation bar is a control and must stay off the printed page");
+  // POSITIVE CONTROL for the check above. An empty map makes every comparison miss, so `selfLinks`
+  // would read 0 for a workbook where every button linked to its own sheet -- the assertion would
+  // pass by measuring nothing, which is exactly how this block failed review the first time.
+  assert.ok(navSheetOf.size >= 10, `the drawing->sheet map is empty (${navSheetOf.size}); the self-link check would measure nothing`);
   assert.equal(selfLinks, 0, "a sheet never links to itself");
   for (const target of jumpTargets) {
     assert.match(target, /^#'[^']+'!A1$/, `a jump target must be #'Sheet'!A1, not ${target}`);
