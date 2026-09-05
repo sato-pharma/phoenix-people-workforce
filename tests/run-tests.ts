@@ -329,6 +329,17 @@ import {
   runKpiTabTests,
   runKpisBoardJoinTests,
 } from "./kpis-board.test.ts";
+import {
+  runTwoKpiReportsApplicabilityTests,
+  runTwoKpiReportsConfigurableTests,
+  runTwoKpiReportsGradeAndBandTests,
+  runTwoKpiReportsNeverAveragedTests,
+  runTwoKpiReportsSampleRepTests,
+  runTwoKpiReportsSplitTests,
+  runTwoKpiReportsVisitGateTests,
+  runTwoKpiReportsVocabularyTests,
+  runTwoKpiReportsZeroNormTests,
+} from "./two-kpi-reports-per-rep.test.ts";
 import { runCrmMedicalRepTests } from "./crm-medical-rep.test.ts";
 import { runCrmPlanActualsTests } from "./crm-plan-actuals.test.ts";
 import {
@@ -2049,6 +2060,15 @@ await runTest("KPIs podium (four leaderboards, never a blended rank, and nobody 
 await runTest("KPIs attainment and identity (AM against 2 and PM against 10, never averaged, and a mixed-case hr id still resolves)", runKpiAttainmentAndIdentityTests);
 await runTest("KPIs medical reps only (managers off the board, above the filter layer so no URL undoes it)", runKpiMedicalRepOnlyTests);
 await runTest("KPIs early-window guard (a percentage two days into a month is a position, not a verdict)", runKpiTooEarlyToScoreTests);
+await runTest("two KPI reports (coverage is visited-at-least-once; frequency is the graded norm — different numbers)", runTwoKpiReportsVocabularyTests);
+await runTest("two KPI reports (the split is list_type, never speciality, and every list type lands in a report)", runTwoKpiReportsSplitTests);
+await runTest("two KPI reports (AM and PM are never averaged, and the pair never prints with a slash)", runTwoKpiReportsNeverAveragedTests);
+await runTest("two KPI reports (no pharmacy list is Not applicable; no owner standard is Not scored — never a zero)", runTwoKpiReportsApplicabilityTests);
+await runTest("two KPI reports (a zero norm is nobody set a standard, never zero visits expected)", runTwoKpiReportsZeroNormTests);
+await runTest("two KPI reports (every number is configurable — one answer never disturbs the other three)", runTwoKpiReportsConfigurableTests);
+await runTest("two KPI reports (Sat-Wed only, the catch-all contact excluded, off-list visits surfaced not merged)", runTwoKpiReportsVisitGateTests);
+await runTest("two KPI reports (A+ folds into A in step with the coverage board, and PM is judged on the 8-12 band)", runTwoKpiReportsGradeAndBandTests);
+await runTest("two KPI reports (the owner sample rep reads 92% on doctors, not the 65% the mixed number showed)", runTwoKpiReportsSampleRepTests);
 await runTest("crm reps plans board (live-month cap, company rate over days x reps, rep filter leaves totals alone)", runCrmRepsPlansTests);
 await runTest(
   "reps plans roster (the rep with no visits is a zero row, seeded from the organogram, never a missing person)",
