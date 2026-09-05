@@ -314,8 +314,20 @@ const REMAINING_ROUNDING: Record<string, number> = {
   // answer. They are outside this scan's roots, and the live copies are DATABASE rows in any case —
   // editing that file would not change a single sent email.
 
-  // WITH THE OWNER — a standalone static guide served at /marketing-guide.html, referenced from
-  // nowhere in the codebase and outside both shells.
+  // 🔒 SETTLED — THE MARKETING GUIDE STAYS ROUNDED. Owner, 2026-09-05, asked and answered: "the
+  // marketing guide stays rounded, leave it."
+  //
+  // A standalone illustrated guide served at /marketing-guide.html: outside both shells, so no sweep
+  // reaches it, and referenced from nowhere in the codebase — it is opened by typing the address.
+  // It is a piece of collateral rather than an app surface or a printed company document, which is
+  // the same line the owner drew for email.
+  //
+  // A DECISION, not an outstanding item. 37 corners in one file is the largest single block of
+  // rounding left in the repository, so it is exactly the thing a future sweep will find first and
+  // read as an unfinished job. Do not square it, and do not put it back on the decision sheet.
+  //
+  // The count stays pinned: settled is not unmeasured, so editing this file in either direction
+  // still fails until someone updates this number deliberately.
   "public/marketing-guide.html": 37,
 
   // WITH THE OWNER — the signature card. Two are the employee portrait's own corners and one is a
