@@ -1387,6 +1387,7 @@ import { runCairoTodayLocaleSafeTests } from "./cairo-today-locale-safe.test.ts"
 
 import { runClosingWorkbookLinkOriginTests } from "./closing-workbook-link-origin.test.ts";
 import { runVacancyCloseManagerHrIdCanonicalTests } from "./vacancy-close-manager-hr-id-canonical.test.ts";
+import { runPayrollHoldReasonTests } from "./payroll-hold-reason.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -4391,6 +4392,11 @@ await runTest(
 await runTest(
   "closeVacancyOnHire's manager_hr_id filter is canonicalized (a mixed-case manager id no longer falls through to the manager-less-vacancy fallback and closes the wrong seat)",
   runVacancyCloseManagerHrIdCanonicalTests,
+);
+
+await runTest(
+  "a payroll hold cannot be saved without a reason, and a reason inherited from last month is labelled as carried forward (never overwriting one typed for this month)",
+  runPayrollHoldReasonTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
