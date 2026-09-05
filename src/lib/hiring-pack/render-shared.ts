@@ -329,8 +329,12 @@ export const PRINT_BANNER_CSS = `
     font-family: "Segoe UI", system-ui, sans-serif; font-size: 13px; line-height: 1.55;
     direction: ltr; text-align: left;
   }
+  /* Square, like every other edge in the house. The golden rule is "no round or semi-round
+     corners, anywhere", and this banner sits on screen above all twelve papers, so a radius here
+     is twelve breaches rather than one. tokens.css still ships --phx-radius-* and still calls 4px
+     "the default for cards, inputs and buttons" — that default is the bug, not the house style. */
   .print-banner__action {
-    flex: 0 0 auto; padding: 8px 18px; border: 0; border-radius: 4px;
+    flex: 0 0 auto; padding: 8px 18px; border: 0;
     background: #f8fafc; color: #0f172a; font: inherit; font-weight: 600; cursor: pointer;
     text-decoration: none; line-height: 1.35;
   }
